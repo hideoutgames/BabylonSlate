@@ -438,7 +438,7 @@ function validatePinTyping(
       }
       if (!connected && pin.type.kind !== "exec") {
         const implicitSelfTarget =
-          pin.name === "target" &&
+          pin.id === "target" &&
           node.properties.implicitSelf === true &&
           (pin.type.kind === "objectRef" || pin.type.kind === "actorRef");
         const defaultClearsMissing =

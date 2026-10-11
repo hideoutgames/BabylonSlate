@@ -317,7 +317,7 @@ describe("validateGraphs", () => {
     expect(diags.some((d) => d.code === "pin.missing_input")).toBe(true);
   });
 
-  it("does not warn pin.missing_input for an implicit-self Target", () => {
+  it("does not warn pin.missing_input for an implicit-self Target, only for an argument named target", () => {
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
@@ -325,19 +325,20 @@ describe("validateGraphs", () => {
         flowEntry(),
         {
           id: "call",
-          typeId: "flow.event.call",
+          typeId: "interface.call",
           position: { x: 200, y: 0 },
           pins: [
             pin("execIn", "exec", "in", EXEC),
-            pin("target", "target", "in", objectRef("Hero")),
+            pin("target", "Target", "in", objectRef("Hero")),
+            pin("target__arg", "target", "in", objectRef("Hero")),
           ],
-          properties: { implicitSelf: true, name: "On Hit", classId: "Hero" },
+          properties: { implicitSelf: true, method: "Hit", interfaceGuid: "iface-1" },
         },
       ],
       edges: [execThen("entry", "call")],
     };
-    const diags = validateGraphs([graph], { assetGuid: "a" });
-    expect(diags.some((d) => d.code === "pin.missing_input")).toBe(false);
+    const missing = validateGraphs([graph], { assetGuid: "a" }).filter((d) => d.code === "pin.missing_input");
+    expect(missing.map((d) => d.pinId)).toEqual(["target__arg"]);
   });
 
   it("clears pin.missing_input for an unconnected classRef with a stored default", () => {
