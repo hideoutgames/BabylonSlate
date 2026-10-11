@@ -69,6 +69,8 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
           </FieldLabel>
           <FieldDescription>
             Darken creases and contact points between visible PBR surfaces.
+            Runs where Post Processing quality allows it (Medium and above by
+            default).
           </FieldDescription>
         </FieldContent>
         <Switch
@@ -132,7 +134,8 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
           </FieldLabel>
           <FieldDescription>
             Reflect visible scene objects on PBR surfaces. Environment lighting
-            remains available outside the view.
+            remains available outside the view. Runs where Post Processing
+            quality allows it (High and above by default).
           </FieldDescription>
         </FieldContent>
         <Switch
@@ -196,6 +199,8 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
                 Fog lit by directional, point and spot lights. Light colors tint the
                 fog; enable light shadows for occluded beams. Fog Volumes work with
                 this off. The controls below tune both local and scene-wide fog.
+                Scene-wide fog runs where Post Processing quality allows it (High
+                and above by default); Fog Volumes always render.
               </FieldDescription>
             </FieldContent>
             <Switch

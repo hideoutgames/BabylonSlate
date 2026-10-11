@@ -18,6 +18,7 @@ import {
   identitySerializedTransform,
   normalizeRenderEffectsSettings,
   normalizeShadowSettings,
+  normalizeRenderingQuality,
 } from "@babylonslate/core";
 import {
   applyAuthoredLightProperties,
@@ -298,6 +299,8 @@ export async function runSpatialEffectsProof(
         setSceneRenderSettings(scene, {
           mode: "pbr",
           effects,
+          // Medium, the default tier, skips reflections and scene-wide volumetrics.
+          quality: normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } }),
           shadows: normalizeShadowSettings({
             mapSize: 256,
             localMapSize: 256,
