@@ -453,6 +453,33 @@ describe("collectAndExportGame", () => {
     ).toBe(true);
   });
 
+  it("fails instead of omitting a reachable asset that could not be read", async () => {
+    const mesh = createMeshComponent("mesh-1", "box");
+    mesh.properties.materialGuid = "mat-rock";
+    const scene = { ...createDefaultScene(), actors: [createActor("hero", "Hero", { components: [mesh] })] };
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "mat-rock", type: "Material", name: "Rock" }),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: () => null,
+      sceneByGuid: (guid) => (guid === "scene-1" ? scene : null),
+      graphByGuid: () => null,
+      bytesByGuid: (guid) => {
+        if (guid === "mat-rock") throw new Error("Storage unavailable");
+        return new TextEncoder().encode(JSON.stringify(scene));
+      },
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/Rock.*Storage unavailable/) });
+  });
+
   it("packs a live render texture and its target without a missing-pixels warning", async () => {
     const mesh = createMeshComponent("mesh", "box");
     mesh.properties.materialGuid = "material";

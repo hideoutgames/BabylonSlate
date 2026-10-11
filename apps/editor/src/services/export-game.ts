@@ -119,6 +119,7 @@ export type CollectExportGameParams = {
   parentOf: (classId: string) => string | null | undefined;
   sceneByGuid: (guid: string) => SerializedScene | null;
   graphByGuid: (guid: string) => SerializedGraph | null;
+  /** Throws for an asset whose bytes failed to load; the export then fails. */
   bytesByGuid: (guid: string) => Uint8Array | null;
   payloadByGuid?: (guid: string) => unknown | null;
   navmeshByGuid?: (guid: string) => Uint8Array | null;
@@ -372,7 +373,12 @@ export async function collectAndExportGame(
         animDocs.push({ guid, path: animPath, document: payload });
       }
     }
-    const bytes = params.bytesByGuid(guid);
+    let bytes: Uint8Array | null;
+    try {
+      bytes = params.bytesByGuid(guid);
+    } catch (error) {
+      return { ok: false, error: `${asset.name} could not be read for export: ${error instanceof Error ? error.message : String(error)}` };
+    }
     if (asset.type === "Texture") {
       try {
         const emission = params.areaEmissionBytesByGuid?.(guid);
