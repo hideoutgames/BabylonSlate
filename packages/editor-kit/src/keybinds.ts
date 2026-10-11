@@ -62,8 +62,8 @@ function normalizeKey(key: string): string {
 
 export function parseChord(chord: KeyChord): ParsedChord | null {
   const parts = chord.split("+").map((part) => part.trim());
-  // `Mod++` binds the plus key itself.
-  if (chord.endsWith("++")) parts.splice(parts.length - 2, 2, "+");
+  // `+` and `Mod++` bind the plus key itself.
+  if (chord.trim() === "+" || chord.endsWith("++")) parts.splice(parts.length - 2, 2, "+");
   const key = parts.pop();
   if (!key) return null;
   const modifiers = new Set<ChordModifier>();

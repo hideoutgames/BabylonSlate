@@ -41,6 +41,14 @@ describe("evaluateNumericExpression", () => {
     expect(evaluateNumericExpression("-(1+2)", 0)).toBe(-3);
   });
 
+  it("reads exponent literals like a plain number field", () => {
+    expect(evaluateNumericExpression("1e3", 0)).toBe(1000);
+    expect(evaluateNumericExpression("1e-3", 0)).toBe(0.001);
+    expect(evaluateNumericExpression("2.5E+2*2", 0)).toBe(500);
+    expect(evaluateNumericExpression("1e", 0)).toBeUndefined();
+    expect(evaluateNumericExpression("1e-", 0)).toBeUndefined();
+  });
+
   it("applies a leading * / or + to the current value", () => {
     expect(evaluateNumericExpression("*2", 1.5)).toBe(3);
     expect(evaluateNumericExpression("/2", 1.5)).toBe(0.75);

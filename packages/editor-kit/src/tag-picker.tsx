@@ -1,4 +1,4 @@
-import { createContext, useContext, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { isValidTagPath, type Tag, type TagContainer, type TagDefinition } from "@babylonslate/core";
 import { ChevronDownIcon, MinusIcon, TagsIcon, TagIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
@@ -70,6 +70,11 @@ export function TagPicker(props: TagPickerProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const createId = useId();
   const coarse = isCoarsePointerEnvironment();
+  // A create resolves later; it applies to the value and handler current then.
+  const latest = useRef(props);
+  useLayoutEffect(() => {
+    latest.current = props;
+  });
   const selected = useMemo(
     () => new Set(props.mode === "single" ? (props.value ? [props.value] : []) : props.value.Tags),
     [props.mode, props.value],
@@ -195,11 +200,12 @@ export function TagPicker(props: TagPickerProps) {
     setError("");
     try {
       const tag = await onCreate(path);
-      if (props.mode === "single") {
-        props.onChange(tag);
+      const current = latest.current;
+      if (current.mode === "single") {
+        current.onChange(tag);
         setOpen(false);
       } else {
-        props.onChange({ Tags: [...new Set([...props.value.Tags, tag])] });
+        current.onChange({ Tags: [...new Set([...current.value.Tags, tag])] });
       }
       setDraft("");
       setQuery("");

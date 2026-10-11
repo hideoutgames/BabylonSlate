@@ -100,6 +100,15 @@ function tokenize(source: string): Token[] | undefined {
         break;
       }
       if (!sawDigit) return undefined;
+      // Exponent form (`1e3`, `1e-7`), which a plain number field accepts.
+      if (source[i] === "e" || source[i] === "E") {
+        let end = i + 1;
+        if (source[end] === "+" || source[end] === "-") end += 1;
+        const digits = end;
+        while (end < source.length && source[end]! >= "0" && source[end]! <= "9") end += 1;
+        if (end === digits) return undefined;
+        i = end;
+      }
       const value = Number(source.slice(start, i));
       if (!Number.isFinite(value)) return undefined;
       tokens.push({ kind: "number", value });

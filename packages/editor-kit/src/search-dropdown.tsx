@@ -32,6 +32,8 @@ export interface SearchDropdownProps {
   "data-testid"?: string;
 }
 
+const MENU_KEYS = new Set(["Escape", "ArrowDown", "ArrowUp"]);
+
 /** Searchable dropdown anchored to a trigger. Use for pick lists with a nearby button. */
 export function SearchDropdown({
   open,
@@ -82,7 +84,9 @@ export function SearchDropdown({
         <div
           className="px-1 pb-1"
           onKeyDown={(event) => {
-            if (event.key === "Escape") return;
+            // Escape closes and the arrows move into the results; other keys
+            // stay in the field instead of driving menu typeahead.
+            if (MENU_KEYS.has(event.key)) return;
             event.stopPropagation();
           }}
           onClick={(event) => event.stopPropagation()}
