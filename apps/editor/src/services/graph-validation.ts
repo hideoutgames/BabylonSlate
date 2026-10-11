@@ -374,6 +374,26 @@ function connectedCastClassId(
 }
 
 /**
+ * Cast types its Result from the Class wired into it, else from the Class
+ * picked on the node. Records the picked Class and the Result kind on
+ * `properties` and returns the pin inputs, for the editor and validation alike.
+ */
+function castPinProperties(
+  properties: Record<string, unknown>,
+  graph: SerializedGraph,
+  nodeId: string,
+  nodeRegistry: NodeRegistry,
+  parentOf: (id: string) => string | null | undefined,
+): { pinProperties: Record<string, unknown>; wiredClassId: string | undefined } {
+  const defaultClassId = castDefaultClassId(properties);
+  properties.defaultClassId = defaultClassId;
+  const wiredClassId = connectedCastClassId(graph, nodeId, nodeRegistry);
+  const resultClassId = wiredClassId ?? defaultClassId;
+  properties.resultKind = resultKindForClass(resultClassId, parentOf);
+  return { pinProperties: { ...properties, defaultClassId: resultClassId }, wiredClassId };
+}
+
+/**
  * Get Assets By Class types Classes the way Cast types its result: from the
  * Class wired into it, else from the Class picked on the node.
  */
@@ -736,15 +756,7 @@ export function hydrateSerializedGraphForEditor(
           : undefined;
 
       if (typeId === "casting.cast") {
-        const defaultClassId = castDefaultClassId(properties);
-        properties.defaultClassId = defaultClassId;
-        const wiredClassId = connectedCastClassId(graph, node.id, nodeRegistry);
-        const resultClassId = wiredClassId ?? defaultClassId;
-        properties.resultKind = resultKindForClass(resultClassId, parentOf);
-        const pinProperties = {
-          ...properties,
-          defaultClassId: resultClassId,
-        };
+        const { pinProperties, wiredClassId } = castPinProperties(properties, graph, node.id, nodeRegistry, parentOf);
         const def = nodeRegistry.get(typeId);
         const pins: GraphPin[] = def ? def.pins(pinProperties) : [];
         return {
@@ -753,7 +765,7 @@ export function hydrateSerializedGraphForEditor(
           data: withVisualMeta(
             {
               ...properties,
-              title: wiredClassId ? "Cast to Class" : `Cast to ${defaultClassId}`,
+              title: wiredClassId ? "Cast to Class" : `Cast to ${String(properties.defaultClassId)}`,
               __pins: pins,
             },
             def,
@@ -1003,11 +1015,13 @@ export function createDefaultLogicGraphSerialized(
 
   const inherited = inheritedCustomEventSeeds(options);
   inherited.forEach((event, index) => {
-    const eventId = `event-custom-${event.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")}`;
-    if (graph.nodes.some((node) => node.id === eventId)) return;
+    if (graph.nodes.some((node) => node.type === "flow.event.custom" && node.data.name === event.name)) return;
+    // Names that differ only in punctuation ("Foo Bar", "Foo-Bar") share a slug; each gets its own node.
+    const slug = event.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    let eventId = `event-custom-${slug}`;
+    for (let suffix = 2; graph.nodes.some((node) => node.id === eventId); suffix++) {
+      eventId = `event-custom-${slug}-${suffix}`;
+    }
     const y = 80 + (stubs.length + index) * 160;
     graph = {
       ...graph,
@@ -1514,12 +1528,14 @@ function variableAccessPaletteNodes(
     variable,
     implicitSelf: true,
   }));
+  // Inherited prefab components come from the parent Class graphs, which the
+  // graph panel passes as `otherClassGraphs` (as hydrate and validate read them).
   for (const member of componentGraphMembersForClass({
     graph: options?.graph,
     classId: options?.classId,
     parentClass: options?.parentClass,
     parentOf: options?.parentOf,
-    parentGraphs: options?.parentGraphs,
+    parentGraphs: options?.parentGraphs ?? options?.otherClassGraphs,
   })) {
     rows.push({
       classId: localClassId,
@@ -2239,13 +2255,17 @@ export function scriptPaletteNodes(
   return assemble();
 }
 
-export function hydrateClassDocumentPayload(
+/**
+ * A Class document is a graph. Anything without its node and edge lists is
+ * unreadable, never a default graph that a later save would write over it.
+ */
+export function requireClassGraphPayload(
   payload: Record<string, unknown> | SerializedGraph,
 ): SerializedGraph {
   if (Array.isArray(payload.nodes) && Array.isArray(payload.edges)) {
     return payload as unknown as SerializedGraph;
   }
-  return createDefaultLogicGraphSerialized();
+  throw new Error("The Class document is not a graph: it has no node and edge lists.");
 }
 
 export function materializeLogicGraph(
@@ -2256,6 +2276,7 @@ export function materializeLogicGraph(
 ): LogicGraph {
   if (isLogicGraphPayload(content)) return content;
   const logic = fromSerializedGraph(content, graphId, kind);
+  const parentOf = parentLookup(options?.parentOf);
   for (let i = 0; i < logic.nodes.length; i++) {
     const data = content.nodes[i]?.data as
       | { __pins?: LogicGraph["nodes"][0]["pins"]; __nodeType?: string }
@@ -2281,6 +2302,10 @@ export function materializeLogicGraph(
     }
     refreshInputEvent(typeId, properties, options, content, logic.nodes[i]!.id);
     refreshVariableReferenceAccess(typeId, properties);
+    // Pins follow a wired Class here exactly as they do on the canvas.
+    const pinProperties = typeId === "casting.cast"
+      ? castPinProperties(properties, content, logic.nodes[i]!.id, registry, parentOf).pinProperties
+      : assetsByClassPinProperties(typeId, properties, content, logic.nodes[i]!.id, registry);
     const regenerate = shouldRegeneratePins(typeId);
     const def = registry.get(typeId);
     if (data?.__pins && !regenerate) {
@@ -2295,7 +2320,7 @@ export function materializeLogicGraph(
         ...logic.nodes[i]!,
         typeId,
         properties,
-        pins: def.pins(properties),
+        pins: def.pins(pinProperties),
       };
     } else if (data?.__pins) {
       logic.nodes[i] = {
@@ -2386,7 +2411,8 @@ export function classMemberSymbolsFromGraphs(
       if (member.propertyKey) symbol.propertyKey = member.propertyKey;
       symbols.push(symbol);
     }
-    // The palette also exposes events declared by canvas nodes in older graphs.
+    // Add Node's Event Custom places a canvas node without a member; Calls to
+    // it resolve through these symbols.
     const declaredEvents = new Set(
       (graph.members ?? [])
         .filter((member) => member.kind === "event")
@@ -2527,8 +2553,8 @@ function hostLineageDiagnostics(
   const hierarchy: SubsystemClassHierarchy = {
     ancestry: (id) => walkAncestry(id, parentOf),
   };
-  // A class the lookup does not know (legacy Graph assets, Animation Graph
-  // objects) has no lineage to check against.
+  // A host the lookup does not know (an Animation Graph object, or a caller
+  // without the project's parent lookup) has no lineage to check against.
   const classChain = options.classId
     ? walkAncestry(options.classId, parentOf)
     : [];

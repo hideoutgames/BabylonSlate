@@ -18,7 +18,7 @@ export async function importTemplateArchive(
   const storage = await createTemplateStorage(LIBRARY_ROOT);
   const base =
     name
-      .replace(/\.(zip|babproject)$/i, "")
+      .replace(/\.zip$/i, "")
       .replace(/[^a-zA-Z0-9 _-]/g, "")
       .trim()
       .slice(0, 80) || "Template";

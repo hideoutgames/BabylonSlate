@@ -151,6 +151,38 @@ function MigrationPrompt({
   );
 }
 
+function CloseProjectErrorDialog({
+  message,
+  onDismiss,
+}: {
+  message: string | null;
+  onDismiss: () => void;
+}) {
+  return (
+    <AlertDialog
+      open={message !== null}
+      onOpenChange={(next) => {
+        if (!next) onDismiss();
+      }}
+    >
+      <AlertDialogContent data-testid="close-project-error-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Could Not Close Project</AlertDialogTitle>
+          <AlertDialogDescription>{message}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogAction data-testid="close-project-error-ok" onClick={onDismiss}>
+            OK
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+const SESSION_KEPT_PROJECT_OPEN =
+  "The running Play or Simulate session did not stop, so the project stays open.";
+
 function RecoveryBanner() {
   const { keepRecovery, dismissRecovery } = useDocumentActions();
   const { recoveryAvailable } = useEditorShellState();
@@ -173,7 +205,10 @@ function RecoveryBanner() {
           <Button
             variant="outline"
             data-testid="dismiss-journal"
-            onClick={() => void dismissRecovery()}
+            onClick={() => {
+              // A failed clear keeps the journal, so the banner stays for a retry.
+              dismissRecovery().catch((error: unknown) => console.error("[editor] could not discard the recovery journal", error));
+            }}
           >
             Discard journal
           </Button>
@@ -191,9 +226,10 @@ function RecoveryBanner() {
  */
 function EditorChromeAndPrompts() {
   const { dirtyDocuments } = useSaveState();
-  const { migrationPending, pendingExclusiveScene, externalChangePrompt } = useEditorShellState();
+  const { migrationPending, migrationPromptRequest, pendingExclusiveScene, externalChangePrompt } = useEditorShellState();
   const {
     closeProject,
+    releaseSessionsForProjectClose,
     forceCloseProject,
     saveAll,
     confirmExclusiveSceneOpen,
@@ -212,6 +248,9 @@ function EditorChromeAndPrompts() {
   } = usePlay();
   const [dirtyPrompt, setDirtyPrompt] = useState<string[] | null>(null);
   const closeRequest = useRef(0);
+  /** The close request whose Save All pending migrations refused; Migrate On Save resumes it. */
+  const closeAwaitingMigration = useRef<number | null>(null);
+  const [closeError, setCloseError] = useState<string | null>(null);
   const [savingBeforeClose, setSavingBeforeClose] = useState(false);
   const [showMigrate, setShowMigrate] = useState(false);
   const [pendingTabClose, setPendingTabClose] = useState<
@@ -226,15 +265,35 @@ function EditorChromeAndPrompts() {
   useEffect(() => {
     if (playAwaitingMigration) setShowMigrate(true);
   }, [playAwaitingMigration]);
+  // Save All, the close prompt's Save All and the exclusive Scene's Save all
+  // reach the migration prompt when pending migrations refuse their save.
+  // The count outlives a closed project, so a request made before this
+  // editor mounted (in an earlier project) does not open it.
+  const handledMigrationPromptRequest = useRef(migrationPromptRequest);
+  useEffect(() => {
+    if (migrationPromptRequest === handledMigrationPromptRequest.current) return;
+    handledMigrationPromptRequest.current = migrationPromptRequest;
+    setShowMigrate(true);
+  }, [migrationPromptRequest]);
+
+  /** A failed close keeps the project open; Close Project can be asked again. */
+  const reportCloseFailure = (error: unknown) => {
+    console.error("[editor] Close Project failed", error);
+    setDirtyPrompt(null);
+    setCloseError(error instanceof Error ? error.message : String(error));
+  };
 
   const requestClose = async () => {
     const result = await closeProject();
-    if (result.blocked) {
+    if (result.outcome === "unsaved") {
       setDirtyPrompt([
         ...result.dirty.map((d) => d.ref.label),
         ...(result.projectDirty ? ["Project Settings"] : []),
       ]);
-    } else setDirtyPrompt(null);
+      return;
+    }
+    setDirtyPrompt(null);
+    if (result.outcome === "refused") setCloseError(SESSION_KEPT_PROJECT_OPEN);
   };
 
   const exclusiveDirtyNames = pendingExclusiveScene
@@ -275,12 +334,57 @@ function EditorChromeAndPrompts() {
     for (const doc of tabs) closeDocument(doc.id);
   };
 
-  const requestSave = async () => {
-    if (migrationPending.length > 0) {
-      setShowMigrate(true);
-      return false;
-    }
-    return saveAll();
+  const closePromptOpen =
+    dirtyPrompt !== null ||
+    pendingExclusiveScene !== null ||
+    pendingTabClose !== null;
+
+  const saveBeforeClose = () => {
+    const request = ++closeRequest.current;
+    closeAwaitingMigration.current = null;
+    setSavingBeforeClose(true);
+    void (async () => {
+      try {
+        if (pendingExclusiveScene && !pendingTabClose) {
+          // A Save All that migrations refuse leaves the Scene request pending.
+          closeAwaitingMigration.current = request;
+          await confirmExclusiveSceneOpen("save");
+          return;
+        }
+        // A running session's authoring lock refuses Save All, so it stops
+        // only now that the user chose to save, not when the prompt opened.
+        if (dirtyPrompt !== null && !await releaseSessionsForProjectClose()) {
+          if (request !== closeRequest.current) return;
+          setDirtyPrompt(null);
+          setCloseError(SESSION_KEPT_PROJECT_OPEN);
+          return;
+        }
+        if (request !== closeRequest.current) return;
+        const saved = await saveAll();
+        if (request !== closeRequest.current) return;
+        if (!saved) {
+          // Pending migrations refused it and opened their prompt.
+          closeAwaitingMigration.current = request;
+          return;
+        }
+        if (pendingTabClose) {
+          const tabs = getOpenDocuments().filter((doc) => pendingTabClose.some((tab) => tab.id === doc.id));
+          // A successful write can leave newer edits dirty. Keep the
+          // request open until those edits are saved or discarded.
+          if (tabs.some((doc) => doc.dirty)) {
+            setPendingTabClose(tabs.map((doc) => ({ id: doc.id, name: doc.ref.label, dirty: doc.dirty })));
+            return;
+          }
+          setPendingTabClose(null);
+          for (const doc of tabs) closeDocument(doc.id);
+        } else await requestClose().catch(reportCloseFailure);
+      } catch (error) {
+        // The documents stay dirty and the prompt stays open to retry or discard.
+        console.error("[editor] Save All before closing failed", error);
+      } finally {
+        if (request === closeRequest.current) setSavingBeforeClose(false);
+      }
+    })();
   };
 
   return (
@@ -288,8 +392,8 @@ function EditorChromeAndPrompts() {
       {profileRegion(
         "editor-chrome-bar",
         <EditorChromeBar
-          onCloseProject={() => void requestClose()}
-          onSaveProject={requestSave}
+          onCloseProject={() => void requestClose().catch(reportCloseFailure)}
+          onSaveProject={saveAll}
           onCloseDocument={requestCloseDocument}
           onCloseAllDocuments={requestCloseAllDocuments}
         />,
@@ -297,13 +401,10 @@ function EditorChromeAndPrompts() {
       <DirtyCloseDialog
         saving={savingBeforeClose}
         dirtyNames={promptNames}
-        open={
-          dirtyPrompt !== null ||
-          pendingExclusiveScene !== null ||
-          pendingTabClose !== null
-        }
+        open={closePromptOpen}
         onCancel={() => {
           closeRequest.current += 1;
+          closeAwaitingMigration.current = null;
           setSavingBeforeClose(false);
           setDirtyPrompt(null);
           setPendingTabClose(null);
@@ -311,6 +412,7 @@ function EditorChromeAndPrompts() {
         }}
         onDiscard={() => {
           closeRequest.current += 1;
+          closeAwaitingMigration.current = null;
           if (pendingTabClose) {
             for (const doc of pendingTabClose) closeDocument(doc.id);
             setPendingTabClose(null);
@@ -321,50 +423,39 @@ function EditorChromeAndPrompts() {
             return;
           }
           setDirtyPrompt(null);
-          void forceCloseProject();
+          void forceCloseProject().then((closed) => {
+            if (!closed) setCloseError(SESSION_KEPT_PROJECT_OPEN);
+          }, reportCloseFailure);
         }}
-        onSave={() => {
-          const request = ++closeRequest.current;
-          setSavingBeforeClose(true);
-          void (async () => {
-            try {
-              if (pendingExclusiveScene && !pendingTabClose) {
-                await confirmExclusiveSceneOpen("save");
-                return;
-              }
-              const saved = await requestSave();
-              if (request !== closeRequest.current || !saved) return;
-              if (pendingTabClose) {
-                const tabs = getOpenDocuments().filter((doc) => pendingTabClose.some((tab) => tab.id === doc.id));
-                // A successful write can leave newer edits dirty. Keep the
-                // request open until those edits are saved or discarded.
-                if (tabs.some((doc) => doc.dirty)) {
-                  setPendingTabClose(tabs.map((doc) => ({ id: doc.id, name: doc.ref.label, dirty: doc.dirty })));
-                  return;
-                }
-                setPendingTabClose(null);
-                for (const doc of tabs) closeDocument(doc.id);
-              } else await requestClose();
-            } finally {
-              if (request === closeRequest.current) setSavingBeforeClose(false);
-            }
-          })();
-        }}
+        onSave={saveBeforeClose}
       />
+      <CloseProjectErrorDialog message={closeError} onDismiss={() => setCloseError(null)} />
       <MigrationPrompt
         paths={migrationPending.map((p) => p.path)}
         open={showMigrate}
         onCancel={() => {
+          closeAwaitingMigration.current = null;
           setShowMigrate(false);
           cancelPlayMigration();
         }}
         onApprove={() => {
           setShowMigrate(false);
+          // The close prompt's Save All that the migrations refused continues
+          // once they are approved and saved, unless that prompt has ended.
+          const closeRequestToResume = closePromptOpen && closeAwaitingMigration.current === closeRequest.current
+            ? closeRequest.current
+            : null;
+          closeAwaitingMigration.current = null;
           void (async () => {
-            await approveMigrationsAndSave();
-            if (playAwaitingMigration) {
-              await resumePlayAfterMigration();
-            }
+            const saved = await approveMigrationsAndSave().catch((error: unknown) => {
+              console.error("[editor] Migrate On Save failed", error);
+              return false;
+            });
+            if (saved && closeRequestToResume !== null && closeRequestToResume === closeRequest.current) saveBeforeClose();
+            if (!playAwaitingMigration) return;
+            // Play continues only from a completed save; a refused or failed one ends the request.
+            if (saved) await resumePlayAfterMigration();
+            else cancelPlayMigration();
           })();
         }}
       />

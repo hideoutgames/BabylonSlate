@@ -18,6 +18,20 @@ function originBase(): string {
     : "http://127.0.0.1";
 }
 
+/**
+ * A listed player file is a relative path inside the player root. Its name
+ * becomes an exported archive entry, so nothing may climb out of that root.
+ */
+function isPlayerFileName(name: string): boolean {
+  return (
+    name !== "player-files.json" &&
+    !name.startsWith("/") &&
+    !name.includes("\\") &&
+    !/^[a-z][a-z\d+.-]*:/i.test(name) &&
+    name.split("/").every((part) => part !== "" && part !== "." && part !== "..")
+  );
+}
+
 async function fetchBytes(
   url: string,
   fetchImpl: typeof fetch,
@@ -45,7 +59,7 @@ export async function loadPlayerDistFiles(
       if (Array.isArray(parsed)) {
         names = parsed.filter(
           (entry): entry is string =>
-            typeof entry === "string" && entry !== "player-files.json",
+            typeof entry === "string" && isPlayerFileName(entry),
         );
       }
     } catch {

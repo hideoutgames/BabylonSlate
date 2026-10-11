@@ -8,7 +8,7 @@ import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
   createDefaultLogicGraphSerialized,
-  hydrateClassDocumentPayload,
+  requireClassGraphPayload,
   hydrateSerializedGraphForEditor,
   knownClassIdSet,
   materializeLogicGraph,
@@ -57,18 +57,15 @@ describe("custom event declaration validation", () => {
   });
 });
 
-describe("hydrateClassDocumentPayload", () => {
-  it("seeds a default event graph when the Class payload is empty", () => {
-    const seeded = hydrateClassDocumentPayload({});
-    expect(seeded.nodes.some((node) => node.type.includes("beginPlay"))).toBe(
-      true,
-    );
-    expect(seeded.nodes.some((node) => node.type.includes("tick"))).toBe(true);
+describe("requireClassGraphPayload", () => {
+  it("refuses a Class payload without node and edge lists instead of replacing it", () => {
+    expect(() => requireClassGraphPayload({})).toThrow(/not a graph/);
+    expect(() => requireClassGraphPayload({ nodes: [], members: [] })).toThrow(/not a graph/);
   });
 
   it("keeps an existing SerializedGraph payload", () => {
     const existing: SerializedGraph = { nodes: [], edges: [] };
-    expect(hydrateClassDocumentPayload(existing)).toEqual(existing);
+    expect(requireClassGraphPayload(existing)).toBe(existing);
   });
 });
 
@@ -420,6 +417,14 @@ describe("hydrateSerializedGraphForEditor", () => {
       kind: "actorRef",
       classId: "Actor",
     });
+    // Validation and compile type the Result the same way.
+    const logic = materializeLogicGraph(graph, "cast-graph", "event", {
+      parentOf: (id) => (id === "Hero" ? "Actor" : undefined),
+    });
+    expect(logic.nodes.find((node) => node.id === "cast-1")?.pins.find((pin) => pin.id === "result")?.type).toEqual({
+      kind: "actorRef",
+      classId: "Actor",
+    });
   });
 
   describe("Get Assets By Class", () => {
@@ -760,6 +765,26 @@ describe("createDefaultLogicGraphSerialized", () => {
     ).toBe(true);
   });
 
+  it("seeds each inherited custom event whose name shares a node id slug", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "HeroBase",
+      parentOf: (id) => (id === "HeroBase" ? "Actor" : null),
+      parentGraphs: {
+        HeroBase: {
+          nodes: [],
+          edges: [],
+          members: [
+            { id: "evt-1", kind: "event", name: "Ping", pins: [] },
+            { id: "evt-2", kind: "event", name: "PiNG", pins: [] },
+          ],
+        },
+      },
+    });
+    const custom = graph.nodes.filter((node) => node.type === "flow.event.custom");
+    expect(custom.map((node) => node.data.name)).toEqual(["Ping", "PiNG"]);
+    expect(new Set(custom.map((node) => node.id)).size).toBe(2);
+  });
+
   it("seeds On Evaluate for a BTDecorator class", () => {
     const graph = createDefaultLogicGraphSerialized(registry, {
       parentClass: "BTDecorator",
@@ -897,7 +922,7 @@ describe("validateSerializedGraph", () => {
     ).toBe(true);
   });
 
-  it("does not report a pure cycle when Line Trace location feeds back through Make Vector3", () => {
+  it("does not report a pure cycle when Line Trace location feeds back through Add Vector3", () => {
     const beginPins = registry.get("flow.event.beginPlay")!.pins({});
     const tracePins = registry.get("physics.lineTrace")!.pins({});
     const addPins = registry.get("vector.add3")!.pins({});
@@ -1843,6 +1868,23 @@ describe("scriptPaletteNodes", () => {
     );
     expect(validated?.nodeType).toBe("variables.getValidated");
     expect(validated?.defaultData).toMatchObject({ componentId: "text-1" });
+  });
+
+  it("injects Get rows for components inherited from the parent Class prefab", () => {
+    // The graph panel passes parent graphs as otherClassGraphs, not parentGraphs.
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Base",
+      parentOf: (id) => (id === "Hero" ? "Base" : id === "Base" ? "Actor" : null),
+      classId: "Hero",
+      graph: { nodes: [], edges: [] },
+      otherClassGraphs: {
+        Base: { nodes: [], edges: [], components: [createText3DComponent("text-1")] },
+      },
+    });
+    expect(nodes.find((node) => node.title === "Get 3D Text")?.defaultData).toMatchObject({
+      componentId: "text-1",
+      implicitSelf: true,
+    });
   });
 
   it("injects engine component Get/Set and Call Function from the script API catalog", () => {
@@ -3522,8 +3564,7 @@ describe("subsystems", () => {
       "variables.set:Inventory:Gold",
       "flow.event.call:Inventory:On Refresh",
     ];
-    for (const id of members) expect(suggested).toContain(id);
-    expect(suggested.slice(0, 3)).toEqual(expect.arrayContaining(members.slice(0, 3)));
+    expect(suggested.slice(0, members.length)).toEqual(expect.arrayContaining(members));
   });
 
   it("rebuilds a saved Get node's typed pin and title from its class", () => {

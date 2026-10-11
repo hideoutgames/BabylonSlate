@@ -466,7 +466,7 @@ Two container modes satisfy "baked in" without duplicating every texture inside 
 
 One logical layout, two physical backends behind a single codec:
 - **Directory backend** (OPFS, iPad Documents / linked folder, desktop): a `MyGame/` directory written incrementally as you work. Do not append `.babproject` to the folder name. Existing `MyGame.babproject/` folders still open.
-- **Zip backend** (Export Project everywhere): a `MyGame.zip` containing the same tree at the zip root. Legacy Export Project `.babproject` zips still decode.
+- **Zip backend** (Export Project everywhere): a `MyGame.zip` containing the same tree at the zip root. Open Project from a zip picks `.zip` files only.
 
 ```
 MyGame/

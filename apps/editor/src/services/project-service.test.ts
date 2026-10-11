@@ -95,6 +95,10 @@ describe("ProjectService lifecycle", () => {
     let ready = false;
     void lease.ready.then(acquired => { ready = acquired; });
     await expect(service.saveDocument("scene", MAIN_SCENE_FILE, scene)).rejects.toThrow(/preparing/);
+    // A rename (with its Class reference rewrites) is refused while draining too,
+    // rather than writing until the lock lands mid-rename.
+    await expect(service.renameAsset(service.guidForPath(MAIN_SCENE_FILE)!, "Renamed")).rejects.toThrow(/preparing/);
+    expect(await storage.exists(MAIN_SCENE_FILE)).toBe(true);
     expect(ready).toBe(false);
     proceed();
     await saving;
@@ -129,6 +133,44 @@ describe("ProjectService lifecycle", () => {
     expect([...saved.chunks.values()].some(bytes => bytes.length === 3 && bytes[0] === 9)).toBe(true);
     lease.release();
     await service.closeProject();
+  });
+
+  it("lets a texture commit already writing finish before Close Project releases the folder", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    let finishEncode!: (result: { ktx2: Uint8Array; wallMs: number }) => void;
+    const service = new ProjectService(storage, { encode: () => new Promise(resolve => { finishEncode = resolve; }) });
+    await service.createEmptyProject("EncodeClose", { kind: "2d" });
+    await storage.writeBinary("assets/test.babasset", await encodeBabasset({
+      header: { guid: "encode-close", type: "Texture", name: "Test", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "encode_failed" } },
+      chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
+    }));
+    await service.registry!.reindexPath("assets/test.babasset");
+    const write = storage.writeBinary.bind(storage);
+    let resumeCommit!: () => void;
+    const commitPaused = new Promise<void>(resolve => { resumeCommit = resolve; });
+    let commitStarted!: () => void;
+    const started = new Promise<void>(resolve => { commitStarted = resolve; });
+    // Pause the write that carries the encoded KTX2 (9, 8, 7), not the encoding-state write.
+    const carriesKtx2 = (bytes: Uint8Array) => bytes.some((value, index) => value === 9 && bytes[index + 1] === 8 && bytes[index + 2] === 7);
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      if (path.startsWith("assets/test") && carriesKtx2(bytes)) { commitStarted(); await commitPaused; }
+      return write(path, bytes);
+    });
+    const release = vi.spyOn(storage, "releaseFolder");
+    service.textureEncodeQueue.enqueue({ assetGuid: "encode-close", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
+    await vi.waitFor(() => expect(finishEncode).toBeTypeOf("function"));
+    finishEncode({ ktx2: new Uint8Array([9, 8, 7]), wallMs: 1 });
+    await started;
+    const closing = service.closeProject();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    // The next project would reuse this storage, so the folder stays bound until the commit lands.
+    expect(release).not.toHaveBeenCalled();
+    resumeCommit();
+    await closing;
+    expect(release).toHaveBeenCalled();
+    await storage.openDocumentsProject("EncodeClose");
+    const saved = await decodeBabasset(await storage.readBinary("assets/test.babasset"));
+    expect(saved.header.payload.compressionState).toBe("compressed");
   });
 
   it.each(["chunk", "document"] as const)("retries a complete %s read after a concurrent save without retaining the failed snapshot", async (kind) => {
@@ -798,5 +840,31 @@ describe("texture encode diagnostics", () => {
       "Texture encode failed for Albedo (tex-guid-1): BasisEncoder.encode returned 0",
     );
     expect(service.sessionDiagnostics).toEqual(lines);
+  });
+
+  it("marks the other compressed Textures as fallback when one cannot be written", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("Fallback", { kind: "2d" });
+    for (const name of ["Stuck", "Wall"]) {
+      await storage.writeBinary(`assets/${name}.babasset`, await encodeBabasset({
+        header: { guid: name, type: "Texture", name, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { compressionState: "compressed", usage: "albedo" } },
+        chunks: [
+          { id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) },
+          { id: "ktx2:a", kind: "ktx2", mime: "image/ktx2", data: new Uint8Array([4, 5, 6]) },
+        ],
+      }));
+    }
+    await service.remountRegistry();
+    const lines: string[] = [];
+    service.onDiagnostic((line) => lines.push(line));
+    const write = storage.writeBinary.bind(storage);
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      if (path.startsWith("assets/Stuck")) throw new Error("Disk full");
+      return write(path, bytes);
+    });
+    await service.setTranscoderAvailable(false);
+    expect(service.registry!.getByGuid("Wall")?.header.payload.compressionState).toBe("fallback_uncompressed");
+    expect(lines).toEqual(["Texture fallback state could not be saved for Stuck (Stuck): Disk full"]);
   });
 });

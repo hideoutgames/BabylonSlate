@@ -1065,7 +1065,7 @@ function ContentBrowserWorkspaceBody({
               if (type !== "Model" && type !== "Animation" && type !== "Material" && type !== "Class" && type !== "Graph") continue;
               jobs.push({
                 guid, path: asset.path, type, payload: asset.header.payload,
-                projectGuid, cacheKey: await revisions.cacheKey(guid) ?? `${guid}.render-v2`,
+                projectGuid, cacheKey: await revisions.cacheKey(guid) ?? guid,
               });
             }
             enqueueModelThumbnailJobs(jobs);

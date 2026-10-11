@@ -7,7 +7,6 @@ import {
   documentId,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
-  migrateLegacyLayout,
   type DocumentKind,
 } from "@babylonslate/core";
 import {
@@ -276,6 +275,19 @@ describe("DocumentService", () => {
     finishRead({ nodes: [], edges: [] });
     await rejected;
     expect(service.getOpenDocumentsOrdered().map((doc) => doc.id)).toEqual([CONTENT_BROWSER_ID]);
+  });
+
+  it("does not commit a pending asset read at the old id after the asset moves", async () => {
+    const service = new DocumentService();
+    let finishRead!: (value: { nodes: []; edges: [] }) => void;
+    const pending = service.openDocument(createMockProjectService({
+      loadDocument: vi.fn(() => new Promise<{ nodes: []; edges: [] }>((resolve) => { finishRead = resolve; })),
+    }), { kind: "graph", path: MAIN_CLASS_FILE, label: "Main" });
+    const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    service.repathDocument("graph", MAIN_CLASS_FILE, "assets/Moved.class.babasset");
+    finishRead({ nodes: [], edges: [] });
+    await rejected;
+    expect(service.getOpenDocumentsOrdered()).toEqual([]);
   });
 
   it("waits for blocking UI before reading a scene and only closes the previous scene after success", async () => {
@@ -1267,15 +1279,5 @@ describe("DocumentService revisions", () => {
     // leak into this combination.
     service.updateScene(scene, { ...createDefaultScene(), name: "Edited Again" });
     expect(classesAndTypes()).toBe(afterClassEdit);
-  });
-});
-
-describe("layout migration", () => {
-  it("migrates legacy flat layout to per-document map", () => {
-    const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
-    const legacy = { grid: { root: { type: "branch" } } };
-    const migrated = migrateLegacyLayout(legacy, sceneId);
-    expect(migrated.documents[sceneId]).toEqual(legacy);
-    expect(migrated.tabOrder).toEqual([sceneId]);
   });
 });

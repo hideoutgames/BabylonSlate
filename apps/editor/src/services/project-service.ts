@@ -40,9 +40,7 @@ import {
   isAssetDocumentKind,
   LAYOUT_FILE,
   MAIN_CLASS_FILE,
-  MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
-  migrateLegacyLayout,
   PROJECT_FILE,
   type ProjectDocument,
   type ProjectMetadata,
@@ -166,8 +164,8 @@ import {
   applyKenneyMannequinEmptyScaffold,
   MANNEQUIN_CLASS_FILE,
 } from "../lib/scaffold-empty-3d";
-import { asStructureAsset } from "../lib/type-asset-payload";
-import { createDefaultLogicGraphSerialized, defaultNodeRegistry, hydrateClassDocumentPayload } from "./graph-validation";
+import { asEnumAsset, asStructureAsset } from "../lib/type-asset-payload";
+import { createDefaultLogicGraphSerialized, defaultNodeRegistry, requireClassGraphPayload } from "./graph-validation";
 
 function headerMetaForSave(
   type: string,
@@ -192,7 +190,7 @@ function headerMetaForSave(
   if (materialMeta) return materialMeta;
   // Closed Prefabs sync placed instances and place new ones from the header alone.
   if (type === "Prefab") return { components: normalizePrefab(content).components };
-  if (type === "Class" || type === "Graph") {
+  if (type === "Class") {
     return classHeaderMeta(
       content as {
         members?: Array<{
@@ -216,8 +214,10 @@ function headerMetaForSave(
       },
     );
   }
-  // Closed Structures supply their fields to type catalogs and dependency collection.
+  // Closed Structures and Enums supply their fields and members to type catalogs,
+  // data reads and dependency collection.
   if (type === "Structure") return { ...asStructureAsset(content as Record<string, unknown>) };
+  if (type === "Enum") return { ...asEnumAsset(content as Record<string, unknown>) };
   if (type === "ScriptInterface") {
     const payload = content as {
       guid?: string;
@@ -361,6 +361,10 @@ export class ProjectService {
   private projectSearchIndex: ProjectSearchIndex | null = null;
   private readonly encodeQueue: EncodeQueue;
   private readonly publicEncodeQueue: EncodeQueue;
+  /** The encode result being committed, which Close Project lets finish in its own folder. */
+  private textureCommit: Promise<unknown> | null = null;
+  /** The last queued write of each file the registry does not index. */
+  private readonly unindexedWrites = new Map<string, Promise<void>>();
   private readonly emissionJobs = new Set<AbortController>();
   private readonly processAreaEmission: AreaEmissionProcessor;
   private workerEncode:
@@ -525,7 +529,12 @@ export class ProjectService {
           const registry = this.assetRegistry;
           if (!registry) { succeeded = true; return; }
           const session = this.sourceSession;
-          if (!(await registry.commitCompressedTexture(result))) {
+          const commit = registry.commitCompressedTexture(result);
+          this.textureCommit = commit;
+          const committedHere = await commit.finally(() => {
+            if (this.textureCommit === commit) this.textureCommit = null;
+          });
+          if (!committedHere) {
             // Refused guarded jobs leave the committed file unchanged.
             if (session === this.sourceSession) this.emitRegistryChange();
             succeeded = true;
@@ -577,9 +586,9 @@ export class ProjectService {
       "createFromTemplate", "openListedProject", "closeProject", "renameListedProjectDisplayName",
       "updateListedProject", "reconnect", "loadCurrentProject", "syncPlugins", "applyPluginOverrides",
       "createProjectPlugin", "deleteProjectPlugin", "importPlugin", "remountRegistry",
-      "replaceClassReferencesBeforeDelete", "clearDeletedAssetReferences", "saveDocument",
+      "replaceClassReferencesBeforeDelete", "clearDeletedAssetReferences", "renameAsset", "saveDocument",
       "writeSceneNavmeshChunk", "writeSceneAudioReverbChunk", "writeAudioClipChunk",
-      "removeAudioClipChunk", "saveProject", "upgradeDependencyMetadata",
+      "removeAudioClipChunk", "saveProject", "saveLayouts", "upgradeDependencyMetadata",
     ]);
   }
 
@@ -650,11 +659,11 @@ export class ProjectService {
     };
   }
 
-  private emitTextureEncodeDiagnostic(guid: string, error: unknown): void {
+  private emitTextureEncodeDiagnostic(guid: string, error: unknown, failure = "encode failed"): void {
     const asset = this.assetRegistry?.getByGuid(guid);
     const name = asset?.header.name?.trim() || "Texture";
     const message = error instanceof Error ? error.message : String(error);
-    const line = `Texture encode failed for ${name} (${guid}): ${message}`;
+    const line = `Texture ${failure} for ${name} (${guid}): ${message}`;
     this.diagnostics.push(line);
     if (this.diagnostics.length > 200) this.diagnostics.shift();
     for (const listener of this.diagnosticListeners) listener(line);
@@ -723,17 +732,22 @@ export class ProjectService {
   }
 
   private async markCompressedTexturesFallback(): Promise<void> {
-    if (!this.assetRegistry) return;
-    for (const asset of this.assetRegistry.list({ type: "Texture" })) {
+    const registry = this.assetRegistry;
+    if (!registry) return;
+    for (const asset of registry.list({ type: "Texture" })) {
       const hasKtx2 = asset.header.chunks.some(
         (chunk) => chunk.kind === "ktx2" || chunk.id.startsWith("ktx2:"),
       );
       const state = asset.header.payload.compressionState;
-      if (hasKtx2 && state === "compressed") {
-        await this.assetRegistry.setCompressionState(
-          asset.header.guid,
-          "fallback_uncompressed",
-        );
+      if (!hasKtx2 || state !== "compressed") continue;
+      // Read-only roots and plugins keep their saved state; without a
+      // transcoder the resolver uses their pixels either way.
+      if (registry.getRoot(asset.rootId)?.readOnly || isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) continue;
+      try {
+        await registry.setCompressionState(asset.header.guid, "fallback_uncompressed");
+      } catch (error) {
+        // One unwritable Texture must not stop the others, or the open waiting on them.
+        this.emitTextureEncodeDiagnostic(asset.header.guid, error, "fallback state could not be saved");
       }
     }
   }
@@ -1031,8 +1045,21 @@ export class ProjectService {
     this.migrateOnSaveApproved = true;
   }
 
-  clearMigrateOnSaveApproval(): void {
-    this.migrateOnSaveApproved = false;
+  /** The user approved Migrate On Save for this project session. */
+  get migrationsApproved(): boolean {
+    return this.migrateOnSaveApproved;
+  }
+
+  /** A write stamps the current schema version, so a pending migration needs approval first. */
+  private assertMigrationApproved(path: string): void {
+    if (this.migrationPending.some((p) => p.path === path) && !this.migrateOnSaveApproved) {
+      throw new Error("Asset schema migration requires user approval before save");
+    }
+  }
+
+  /** The file at `path` was written at the current schema version. */
+  private noteMigrated(path: string): void {
+    this.migrationPending = this.migrationPending.filter((p) => p.path !== path);
   }
 
   async listProjects(): Promise<ProjectFolderHandle[]> {
@@ -1052,7 +1079,7 @@ export class ProjectService {
       const picked = await pickImportFiles({
         directory: source === "folder",
         multiple: source === "folder",
-        accept: source === "zip" ? ".zip,.babproject" : undefined,
+        accept: source === "zip" ? ".zip" : undefined,
         maxTotalBytes:
           source === "zip" ? 50 * 1024 * 1024 : PROJECT_IMPORT_LIMIT,
       });
@@ -1074,17 +1101,19 @@ export class ProjectService {
             ? manifest.metadata.name
             : picked[0]!.name
                 .split("/")[0]!
-                .replace(/\.(zip|babproject)$/i, ""),
+                .replace(/\.zip$/i, ""),
         ) || "Imported Project";
       let name = base;
       let suffix = 2;
-      // Existing browser projects remain untouched, even when display names match.
-      for (;;) {
-        await this.storage.openDocumentsProject(name);
-        if (await this.projectFolderIsEmpty()) break;
+      // Existing browser projects remain untouched, even when display names
+      // match. The probe that creates the folder owns it, so a failed import
+      // removes that folder instead of leaving it listed and its name taken.
+      let owned = await this.openOwnedDocumentsProject(name);
+      while (!(await this.projectFolderIsEmpty())) {
         name = `${base} ${suffix++}`;
+        owned = await this.openOwnedDocumentsProject(name);
       }
-      return this.createFromTemplate({ templateFiles: files, name });
+      return this.scaffoldFromTemplate(owned, name, { templateFiles: files });
     }
     await this.storage.pickProjectFolder();
     return this.loadCurrentProject();
@@ -1131,6 +1160,15 @@ export class ProjectService {
     } else {
       owned = await this.openOwnedDocumentsProject(projectName);
     }
+    return this.scaffoldFromTemplate(owned, projectName, options);
+  }
+
+  /** Scaffolds a template into the current folder; `owned` is null for a user-picked folder. */
+  private async scaffoldFromTemplate(
+    owned: OwnedFolder | null,
+    projectName: string,
+    options: { templateFiles: ProjectTreeFile[]; appearance?: ProjectAppearance },
+  ): Promise<ProjectLoadResult> {
     if (await this.storage.exists(PROJECT_FILE) && !owned?.createdHere) {
       throw new Error("A project already exists in this folder.");
     }
@@ -1252,6 +1290,10 @@ export class ProjectService {
     this.sessionEncodes.clear();
     await this.extensions.close();
     this.cancelEmissionJobs();
+    // A KTX2 commit already writing must finish before the shared storage is
+    // released: the next project would reuse it, and the late write would land
+    // in that project's folder. The session bump above ends its follow-up work.
+    await this.textureCommit?.catch(() => {});
     await this.storage.releaseFolder();
     this.projectGuid = null;
     this.migrationPending = [];
@@ -1362,13 +1404,11 @@ export class ProjectService {
       await this.storage.readText(PROJECT_FILE),
     ) as ProjectDocument & { guid?: string; kind?: string; version?: number };
     const document = normalizeProjectDocument(raw, folder.name);
-    this.projectGuid = raw.guid ?? newGuid();
-    // Persist the existing project identity convention before the first player save.
-    // Legacy projects must not acquire a different save namespace on every reopen.
-    if (!raw.guid) {
-      raw.guid = this.projectGuid;
-      await this.storage.writeText(PROJECT_FILE, JSON.stringify(raw, null, 2));
+    // Every project is created with its guid, the namespace of its player saves.
+    if (typeof raw.guid !== "string" || !raw.guid) {
+      throw new Error("Invalid project manifest: project.json has no project guid.");
     }
+    this.projectGuid = raw.guid;
     this.loadedTextureSettings = document.settings.textures;
     this.sourceControlEnabled = document.settings.sourceControl?.enabled === true;
     this.pluginOverrides = document.settings.pluginOverrides ?? {};
@@ -1392,12 +1432,7 @@ export class ProjectService {
     // Legacy Scene-local GameInstance defaults resolve when that Scene is
     // requested. Project opening must not scan every Scene to guess a default.
     const migratedDocument = withDocuments;
-    const layouts = await this.loadLayouts(
-      documentId({
-        kind: "scene",
-        path: migratedDocument.scenes[0] ?? MAIN_SCENE_FILE,
-      }),
-    );
+    const layouts = await this.loadLayouts();
 
     return {
       document: migratedDocument,
@@ -1406,30 +1441,19 @@ export class ProjectService {
     };
   }
 
-  /**
-   * Reconcile the manifest's document list with the asset registry (header-only
-   * index). Legacy `.json` scene/graph files still participate via a thin
-   * fallback so pre-container projects keep opening.
-   */
+  /** Reconcile the manifest's document list with the asset registry (header-only index). */
   private async ensureDocuments(
     document: ProjectDocument,
   ): Promise<ProjectDocument> {
     await this.mountAssetRegistry();
     const found = this.assetRegistry!.listDocumentPaths({ rootId: "project" });
-    const legacy = await this.discoverLegacyJsonDocuments();
     const scenes = uniquePaths([
       ...found.scenes,
-      ...legacy.scenes,
-      ...(found.scenes.length || legacy.scenes.length
-        ? []
-        : await this.keepExisting(document.scenes)),
+      ...(found.scenes.length ? [] : await this.keepExisting(document.scenes)),
     ]);
     const graphs = uniquePaths([
       ...found.graphs,
-      ...legacy.graphs,
-      ...(found.graphs.length || legacy.graphs.length
-        ? []
-        : await this.keepExisting(document.graphs)),
+      ...(found.graphs.length ? [] : await this.keepExisting(document.graphs)),
     ]);
 
     if (scenes.length && graphs.length) {
@@ -1441,16 +1465,12 @@ export class ProjectService {
       scenes.push(MAIN_SCENE_FILE);
     }
     if (!graphs.length) {
-      if (await this.storage.exists(MAIN_GRAPH_FILE)) {
-        graphs.push(MAIN_GRAPH_FILE);
-      } else {
-        await this.saveDocument(
-          "graph",
-          MAIN_CLASS_FILE,
-          createDefaultLogicGraphSerialized(),
-        );
-        graphs.push(MAIN_CLASS_FILE);
-      }
+      await this.saveDocument(
+        "graph",
+        MAIN_CLASS_FILE,
+        createDefaultLogicGraphSerialized(),
+      );
+      graphs.push(MAIN_CLASS_FILE);
     }
     await this.mountAssetRegistry();
     return { ...document, scenes, graphs };
@@ -1748,9 +1768,29 @@ export class ProjectService {
     if (!registry) throw new Error("The asset registry is unavailable.");
     validateClassDeletionReplacements(replacements, registry.list(), deletingGuids);
     const plans = await this.planClassReferenceReplacements(replacements, deletingGuids, onProgress);
-    for (const plan of plans) {
-      await onProgress?.(plan.path);
-      await this.saveDocument(plan.kind, plan.path, plan.content, { parentClass: plan.parentClass });
+    // Like a Class rename, the referrers are rewritten together or not at all.
+    const backups = await Promise.all(plans.map(async (plan) => ({
+      path: plan.path,
+      storage: this.storageForPath(plan.path),
+      bytes: await this.storageForPath(plan.path).readBinary(plan.path),
+    })));
+    let attempted = 0;
+    try {
+      for (const plan of plans) {
+        await onProgress?.(plan.path);
+        attempted += 1;
+        await this.saveDocument(plan.kind, plan.path, plan.content, { parentClass: plan.parentClass });
+      }
+    } catch (error) {
+      const failures: string[] = [];
+      for (const backup of backups.slice(0, attempted)) {
+        try { await backup.storage.writeBinary(backup.path, backup.bytes); }
+        catch { failures.push(backup.path); }
+      }
+      try { await this.remountRegistry(); }
+      catch { failures.push("Asset Registry"); }
+      if (failures.length) throw new Error(`Replacing Class references failed and some files could not be restored: ${failures.join(", ")}. ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+      throw error;
     }
   }
 
@@ -1803,7 +1843,7 @@ export class ProjectService {
     if (nextPath !== before.path && registry.list().some((asset) => asset.path === nextPath)) {
       throw new Error(`Target path already exists: ${nextPath}`);
     }
-    if (before.header.type !== "Class" && before.header.type !== "Graph") {
+    if (before.header.type !== "Class") {
       await options?.beforeWrite?.([before.path, nextPath]);
       return registry.renameAsset(guid, newName);
     }
@@ -1817,7 +1857,7 @@ export class ProjectService {
       throw new Error(`"${nextClassId}" is an engine class name. Choose another Class name.`);
     }
     if (registry.list().some((asset) => asset.header.guid !== guid &&
-      (asset.header.type === "Class" || asset.header.type === "Graph") && classIdFromClassAsset(asset) === nextClassId)) {
+      asset.header.type === "Class" && classIdFromClassAsset(asset) === nextClassId)) {
       throw new Error("A Class with that name already exists.");
     }
     const replacements = [{ guid, classId, replacement: { guid, classId: nextClassId } }];
@@ -1863,6 +1903,7 @@ export class ProjectService {
   /**
    * Set remaining writable assets' references to deleted guids to None.
    * Does not delete files — call after `deleteAsset` / `deleteFolder`.
+   * Returns the referrers whose rewrite failed; the others are repaired regardless.
    */
   async clearDeletedAssetReferences(
     deletedGuids: ReadonlySet<string>,
@@ -1870,12 +1911,13 @@ export class ProjectService {
       deletedClassNames?: ReadonlySet<string>;
       onProgress?: (path: string) => Promise<void>;
     } = {},
-  ): Promise<void> {
+  ): Promise<Array<{ path: string; error: unknown }>> {
     const registry = this.assetRegistry;
     const deletedClassNames = options.deletedClassNames ?? new Set();
-    if (!registry) return;
-    if (deletedGuids.size === 0 && deletedClassNames.size === 0) return;
+    if (!registry) return [];
+    if (deletedGuids.size === 0 && deletedClassNames.size === 0) return [];
 
+    const failed: Array<{ path: string; error: unknown }> = [];
     for (const asset of registry.list()) {
       if (deletedGuids.has(asset.header.guid)) continue;
       const root = registry.getRoot(asset.rootId);
@@ -1905,8 +1947,7 @@ export class ProjectService {
           return header && ["DataDefinition", "Structure"].includes(header.type) && Array.isArray(header.payload.fields) ? header.payload.fields : undefined;
         },
       );
-      const isClass =
-        asset.header.type === "Class" || asset.header.type === "Graph";
+      const isClass = asset.header.type === "Class";
       const nextParent = isClass
         ? fallbackParentClass(asset.header.parentClass, deletedClassNames)
         : undefined;
@@ -1921,10 +1962,12 @@ export class ProjectService {
           walked.value,
           parentChanged ? { parentClass: nextParent } : undefined,
         );
-      } catch {
-        /* read-only or unreadable referrer — leave on disk */
+      } catch (error) {
+        // A pending migration or a write error keeps the dangling reference.
+        failed.push({ path: asset.path, error });
       }
     }
+    return failed;
   }
 
   private async keepExisting(paths: string[]): Promise<string[]> {
@@ -1933,31 +1976,6 @@ export class ProjectService {
       if (await this.storage.exists(path)) kept.push(path);
     }
     return kept;
-  }
-
-  /** Pre-container `.json` documents that the registry does not index. */
-  private async discoverLegacyJsonDocuments(): Promise<{
-    scenes: string[];
-    graphs: string[];
-  }> {
-    const scenes: string[] = [];
-    const graphs: string[] = [];
-
-    for (const dir of ["assets", "scenes", "graphs"]) {
-      let entries;
-      try {
-        entries = await this.storage.readdir(dir);
-      } catch {
-        continue;
-      }
-      for (const entry of entries) {
-        if (entry.isDir) continue;
-        const path = `${dir}/${entry.name}`;
-        if (/\.scene\.json$/.test(entry.name)) scenes.push(path);
-        if (/\.graph\.json$/.test(entry.name)) graphs.push(path);
-      }
-    }
-    return { scenes: scenes.sort(), graphs: graphs.sort() };
   }
 
   private async scaffoldNewProject(
@@ -2129,9 +2147,8 @@ export class ProjectService {
     const fallbackType = isAssetDocumentKind(kind)
       ? assetTypeForDocumentKind(kind)
       : "Class";
-    const raw = isAssetDocumentPath(path)
-      ? await this.readAssetDocument(path, fallbackType, options)
-      : await this.readLegacyJsonDocument(path, fallbackType);
+    if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .babasset document.`);
+    const raw = await this.readAssetDocument(path, fallbackType, options);
 
     const migrated = loadPayloadWithMigration(this.migrations, {
       type: raw.type,
@@ -2162,7 +2179,7 @@ export class ProjectService {
     }
     if (kind === "prefab") return { ...normalizePrefab(content) };
     if (kind === "graph") {
-      return hydrateClassDocumentPayload(
+      return requireClassGraphPayload(
         content as unknown as Record<string, unknown>,
       );
     }
@@ -2238,25 +2255,7 @@ export class ProjectService {
     return { guid: header.guid, type: header.type, name: header.name, version: header.version, payload };
   }
 
-  /** Projects authored before assets moved to .babasset still load from JSON. */
-  private async readLegacyJsonDocument(
-    path: string,
-    type: string,
-  ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
-    const raw = JSON.parse(await this.storage.readText(path)) as Record<
-      string,
-      unknown
-    > & { version?: number };
-    return {
-      type,
-      version:
-        typeof raw.version === "number"
-          ? raw.version
-          : this.migrations.currentVersion(type),
-      payload: raw,
-    };
-  }
-
+  /** Writes a `.babasset` document in its asset's write queue. */
   async saveDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
@@ -2274,7 +2273,17 @@ export class ProjectService {
   private async withDocumentWrite<T>(path: string, write: (currentPath: string) => Promise<T>): Promise<T> {
     const registry = this.assetRegistry;
     const asset = registry?.getByPath(path);
-    if (!asset) return write(path);
+    if (!asset) {
+      // A file the registry does not index (a plugin's settings, a new file)
+      // still takes one write at a time.
+      const run = (this.unindexedWrites.get(path) ?? Promise.resolve()).then(() => write(path));
+      const settled = run.then(() => {}, () => {});
+      this.unindexedWrites.set(path, settled);
+      void settled.then(() => {
+        if (this.unindexedWrites.get(path) === settled) this.unindexedWrites.delete(path);
+      });
+      return run;
+    }
     return registry!.withAssetWrite(asset.header.guid, () => {
       const current = registry!.getByGuid(asset.header.guid);
       if (this.assetRegistry !== registry || !current) {
@@ -2298,11 +2307,8 @@ export class ProjectService {
       const diagnostic = validateMaterialParameterNames(graph)[0];
       if (diagnostic) throw new Error(diagnostic.message);
     }
-    if (this.migrationPending.some((p) => p.path === path) && !this.migrateOnSaveApproved) {
-      throw new Error(
-        "Asset schema migration requires user approval before save",
-      );
-    }
+    if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .babasset document.`);
+    this.assertMigrationApproved(path);
     const storage = this.storageForPath(path);
     const blobs = this.blobsForPath(path);
     if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
@@ -2312,9 +2318,7 @@ export class ProjectService {
     if (dir) {
       await storage.mkdir(dir, true);
     }
-    const existing = isAssetDocumentPath(path)
-      ? await this.readExistingAssetMeta(path)
-      : null;
+    const existing = await this.readExistingAssetMeta(path);
     const type =
       kind === "asset-settings" && existing?.type
         ? existing.type
@@ -2352,9 +2356,12 @@ export class ProjectService {
       options?.parentClass !== undefined
         ? options.parentClass
         : existing?.parentClass ?? (type === "Class" ? "Actor" : null);
+    // Imported assets keep their settings in the header beside their binary
+    // chunks; a Font's MSDF attach merges into that header payload.
     const storeInHeader =
       (kind === "asset-settings" ||
         kind === "texture" ||
+        kind === "font" ||
         kind === "model" ||
         kind === "skeleton" ||
         kind === "animation") &&
@@ -2364,65 +2371,64 @@ export class ProjectService {
       content = withSavedTextureEncodeState(content as Record<string, unknown>, existing.payload);
     }
 
-    if (isAssetDocumentPath(path)) {
-      const guid = await this.guidForAsset(path);
-      const extraChunks = type === "Scene"
-        ? await this.sceneExtraChunksForWrite(path, content as SerializedScene, guid)
-        : await this.extraChunksFor(path);
-      const bytes = await encodeAssetDocument(
-        {
+    const guid = await this.guidForAsset(path);
+    const extraChunks = type === "Scene"
+      ? await this.sceneExtraChunksForWrite(path, content as SerializedScene, guid)
+      : await this.extraChunksFor(path);
+    const bytes = await encodeAssetDocument(
+      {
+        type,
+        name:
+          type === "PluginSettings" &&
+          typeof (content as { displayName?: unknown }).displayName ===
+            "string" &&
+          (content as { displayName: string }).displayName.trim() !== ""
+            ? (content as { displayName: string }).displayName.trim()
+            : (isInputAssetType(type) || type === "DataDefinition" || type === "DataTree") && existing?.name
+              ? existing.name
+              : assetName(path),
+        guid,
+        version,
+        payload: content as unknown as Record<string, unknown>,
+      },
+      {
+        blobs,
+        extraChunks,
+        parentClass,
+        headerPayload: storeInHeader
+          ? (content as unknown as Record<string, unknown>)
+          : undefined,
+        headerMeta: headerMetaForSave(type, content),
+        dependencyMetadata: assetHeaderDependencyMetadata(
           type,
-          name:
-            type === "PluginSettings" &&
-            typeof (content as { displayName?: unknown }).displayName ===
-              "string" &&
-            (content as { displayName: string }).displayName.trim() !== ""
-              ? (content as { displayName: string }).displayName.trim()
-              : (isInputAssetType(type) || type === "DataDefinition" || type === "DataTree") && existing?.name
-                ? existing.name
-                : assetName(path),
-          guid,
-          version,
-          payload: content as unknown as Record<string, unknown>,
-        },
-        {
-          blobs,
-          extraChunks,
+          content as unknown as Record<string, unknown>,
+          this.assetRegistry?.list(),
           parentClass,
-          headerPayload: storeInHeader
-            ? (content as unknown as Record<string, unknown>)
-            : undefined,
-          headerMeta: headerMetaForSave(type, content),
-          dependencyMetadata: assetHeaderDependencyMetadata(
-            type,
-            content as unknown as Record<string, unknown>,
-            this.assetRegistry?.list(),
-            parentClass,
-          ),
-        },
-      );
-      await storage.writeBinary(path, bytes);
-      await this.assetRegistry?.reindexPath(path);
-    } else {
-      await storage.writeText(
-        path,
-        JSON.stringify({ ...content, version }, null, 2),
-      );
-    }
-    this.migrationPending = this.migrationPending.filter((p) => p.path !== path);
+        ),
+      },
+    );
+    await storage.writeBinary(path, bytes);
+    await this.assetRegistry?.reindexPath(path);
+    this.noteMigrated(path);
     if (pluginContentChanged && ownerPlugin) {
-      const document = await decodeAssetDocument(await storage.readBinary(ownerPlugin.settingsPath));
-      const settings = normalizePluginSettings(document.payload, { pluginGuid: ownerPlugin.pluginGuid });
-      await storage.writeBinary(ownerPlugin.settingsPath, await encodePluginSettingsDocument({
-        ...settings,
-        engineVersion: ENGINE_VERSION,
-        pluginDependencies: settings.pluginDependencies.map((dependency) => ({
-          ...dependency,
-          version: this.pluginDescriptors.find((plugin) => plugin.pluginGuid === dependency.guid)?.settings.version ?? dependency.version,
-        })),
-      }));
-    }
-    if (type === "PluginSettings" || pluginContentChanged) {
+      // In the settings file's own write queue, so a PluginSettings save is
+      // read here rather than replaced by the copy read before it, and is not
+      // written while plugin discovery reads the stamp.
+      await this.withDocumentWrite(ownerPlugin.settingsPath, async (settingsPath) => {
+        const document = await decodeAssetDocument(await storage.readBinary(settingsPath));
+        const settings = normalizePluginSettings(document.payload, { pluginGuid: ownerPlugin.pluginGuid });
+        await storage.writeBinary(settingsPath, await encodePluginSettingsDocument({
+          ...settings,
+          engineVersion: ENGINE_VERSION,
+          pluginDependencies: settings.pluginDependencies.map((dependency) => ({
+            ...dependency,
+            version: this.pluginDescriptors.find((plugin) => plugin.pluginGuid === dependency.guid)?.settings.version ?? dependency.version,
+          })),
+        }));
+        await this.syncPlugins();
+      });
+      this.emitRegistryChange();
+    } else if (type === "PluginSettings") {
       await this.syncPlugins();
       this.emitRegistryChange();
     }
@@ -2513,6 +2519,7 @@ export class ProjectService {
     if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
+    this.assertMigrationApproved(path);
     const storage = this.storageForPath(path);
     const guid = await this.guidForAsset(path);
     const extra = extraChunksWithNavmesh(await this.sceneExtraChunksForWrite(path, payload, guid), bytes);
@@ -2535,6 +2542,7 @@ export class ProjectService {
     );
     await storage.writeBinary(path, encoded);
     await this.assetRegistry?.reindexPath(path);
+    this.noteMigrated(path);
   }
 
   /** Update only derived bytes; unsaved geometry waits for an explicit Scene save. */
@@ -2587,12 +2595,14 @@ export class ProjectService {
     mime: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const extra = extraChunksWithAudioClip(await this.extraChunksFor(path), {
-      id: chunkId,
-      bytes,
-      mime,
+    return this.withDocumentWrite(path, async (currentPath) => {
+      const extra = extraChunksWithAudioClip(await this.extraChunksFor(currentPath), {
+        id: chunkId,
+        bytes,
+        mime,
+      });
+      await this.writeAssetDocumentWithExtra(currentPath, payload, extra);
     });
-    await this.writeAssetDocumentWithExtra(path, payload, extra);
   }
 
   /** Drop an extra Audio clip chunk. Never deletes the last `source`. */
@@ -2601,11 +2611,13 @@ export class ProjectService {
     chunkId: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const extra = extraChunksWithoutAudioClip(
-      await this.extraChunksFor(path),
-      chunkId,
-    );
-    await this.writeAssetDocumentWithExtra(path, payload, extra);
+    return this.withDocumentWrite(path, async (currentPath) => {
+      const extra = extraChunksWithoutAudioClip(
+        await this.extraChunksFor(currentPath),
+        chunkId,
+      );
+      await this.writeAssetDocumentWithExtra(currentPath, payload, extra);
+    });
   }
 
   private async writeAssetDocumentWithExtra(
@@ -2616,6 +2628,7 @@ export class ProjectService {
     if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
+    this.assertMigrationApproved(path);
     const storage = this.storageForPath(path);
     const existing = await this.readExistingAssetMeta(path);
     const type = existing?.type ?? "Audio";
@@ -2639,6 +2652,7 @@ export class ProjectService {
     );
     await storage.writeBinary(path, encoded);
     await this.assetRegistry?.reindexPath(path);
+    this.noteMigrated(path);
   }
 
   guidForPath(path: string): string | null {
@@ -2674,6 +2688,10 @@ export class ProjectService {
     }
   }
 
+  /**
+   * The chunks a rewrite of `path` must keep. A file that exists but cannot
+   * be read refuses the write rather than losing them.
+   */
   private async extraChunksFor(path: string) {
     const storage = this.storageForPath(path);
     const blobs = this.blobsForPath(path);
@@ -2684,11 +2702,12 @@ export class ProjectService {
         (hash) => blobs.readBlob(hash),
       );
       return extraChunksFromDecoded(decoded);
-    } catch {
-      return [];
+    } catch (cause) {
+      throw new Error(`${path} could not be read, so it was not overwritten.`, { cause });
     }
   }
 
+  /** The identity a write of `path` keeps; an existing file that cannot be read refuses the write. */
   private async guidForAsset(path: string): Promise<string> {
     const indexed = this.assetRegistry?.getByPath(path);
     if (indexed) return indexed.header.guid;
@@ -2696,15 +2715,14 @@ export class ProjectService {
     if (reserved) return reserved;
     const storage = this.storageForPath(path);
     if (await storage.exists(path)) {
+      let header: ReturnType<typeof readAssetDocumentHeader>;
       try {
-        const header = readAssetDocumentHeader(
-          await storage.readBinary(path),
-        );
-        this.assetGuids.set(path, header.guid);
-        return header.guid;
-      } catch {
-        /* unreadable asset: fall through to a fresh guid */
+        header = readAssetDocumentHeader(await storage.readBinary(path));
+      } catch (cause) {
+        throw new Error(`${path} could not be read, so it was not overwritten.`, { cause });
       }
+      this.assetGuids.set(path, header.guid);
+      return header.guid;
     }
     const guid = newGuid();
     this.assetGuids.set(path, guid);
@@ -2715,14 +2733,7 @@ export class ProjectService {
     document: ProjectDocument,
     layouts: ProjectLayouts,
   ): Promise<void> {
-    if (
-      this.migrationPending.some((p) => p.path === PROJECT_FILE) &&
-      !this.migrateOnSaveApproved
-    ) {
-      throw new Error(
-        "Asset schema migration requires user approval before save",
-      );
-    }
+    this.assertMigrationApproved(PROJECT_FILE);
     const now = new Date().toISOString();
     const updated: ProjectDocument = {
       ...document,
@@ -2741,6 +2752,12 @@ export class ProjectService {
     this.projectGuid = payload.guid as string;
 
     await this.storage.writeText(PROJECT_FILE, JSON.stringify(payload, null, 2));
+    await this.saveLayouts(layouts);
+    this.noteMigrated(PROJECT_FILE);
+  }
+
+  /** Write only `layout.json` (tabs, dock layouts and panel placements), which holds no project content. */
+  async saveLayouts(layouts: ProjectLayouts): Promise<void> {
     await this.storage.writeText(
       LAYOUT_FILE,
       JSON.stringify({ ...layouts, assetGuids: Object.fromEntries(layouts.tabOrder.flatMap((id) => {
@@ -2749,16 +2766,14 @@ export class ProjectService {
         return guid ? [[id, guid]] : [];
       })) }, null, 2),
     );
-    this.migrationPending = this.migrationPending.filter(
-      (p) => p.path !== PROJECT_FILE,
-    );
   }
 
   async documentExists(path: string): Promise<boolean> {
     return this.storageForPath(path).exists(path);
   }
 
-  async loadLayouts(mainSceneId: string): Promise<ProjectLayouts> {
+  /** `layout.json` only restores the editor's view: one of another shape opens with the default layout. */
+  async loadLayouts(): Promise<ProjectLayouts> {
     if (!(await this.storage.exists(LAYOUT_FILE))) {
       return createEmptyLayouts();
     }
@@ -2790,7 +2805,7 @@ export class ProjectService {
       };
     }
 
-    return migrateLegacyLayout(parsed, mainSceneId);
+    return createEmptyLayouts();
   }
 
   captureLayout(api: DockviewApi): Record<string, unknown> {
