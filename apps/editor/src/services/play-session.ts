@@ -1295,6 +1295,18 @@ export function startPlaySession(options: {
       else runtime?.applyRuntimeMaterialEditResult(response);
     },
   });
+  // In-process, a completed Scene, layer or stream reaches readiness with the
+  // snapshot that shows it. When none can be copied yet, the next pumped
+  // snapshot delivers it, as the worker's scene snapshot delivery does.
+  let realizedAwaitingSnapshot: CommandMessage[] = [];
+  const deliverRealized = () => {
+    const realized = realizedAwaitingSnapshot;
+    realizedAwaitingSnapshot = [];
+    for (const command of realized) {
+      sceneReadiness.receive(command);
+      streamReadiness.receive(command);
+    }
+  };
   const onCommand = (command: CommandMessage) => {
     if (command.type === "simulationRetentionUnavailable") {
       if (command.sessionGeneration === (options.sessionGeneration ?? 0)) options.onRetentionUnavailable?.(command.reason);
@@ -1346,8 +1358,11 @@ export function startPlaySession(options: {
       handle.applyCommand(command);
     }
     if ((command.type === "sceneRealized" || command.type === "sceneLayerRealized" || command.type === "sceneStreamRealized") && runtime) {
-      if (!runtime.copySnapshot(snapBuf)) throw new Error("Completed Scene snapshot is unavailable.");
+      realizedAwaitingSnapshot.push(command);
+      if (!runtime.copySnapshot(snapBuf)) return;
       handle.pushSnapshot(snapBuf);
+      deliverRealized();
+      return;
     }
     sceneReadiness.receive(command);
     streamReadiness.receive(command);
@@ -1501,6 +1516,8 @@ export function startPlaySession(options: {
       worker.postControl(control);
     }
   } catch (err) {
+    // A worker that started but could not take its boot controls must not keep running beside the fallback.
+    worker?.terminate();
     worker = null;
     runtimeMode = "in-process";
     runtime = createRuntimeFromLoad(loadControl, (command) =>
@@ -1635,6 +1652,7 @@ export function startPlaySession(options: {
           snapBuf,
         );
         handle.pushSnapshot(snapBuf);
+        deliverRealized();
       }
     }
     // Worker pumps itself; host only feeds input + applies snapshots via onSnapshot.

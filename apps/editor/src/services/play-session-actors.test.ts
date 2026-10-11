@@ -24,7 +24,9 @@ vi.mock("@babylonslate/runtime", async (importOriginal) => ({
 }));
 vi.mock("./game-worker-host", () => ({ createGameWorkerHost: vi.fn() }));
 vi.mock("./input-capture", () => ({
-  attachInputCapture: () => ({ dispose() {}, setSuppressed() {}, neutralize() {} }),
+  attachInputCapture: () => ({
+    dispose() {}, setSuppressed() {}, neutralize() {}, setTick() {}, pollGamepads() {}, ring: { drain: () => [] },
+  }),
 }));
 
 const mainScript: ScriptBundleEntry = {
@@ -66,10 +68,18 @@ describe.each(["worker", "in-process"] as const)(
         acquireAssetSources?: Parameters<typeof startPlaySession>[0]["acquireAssetSources"];
         acquireSceneSources?: (sources: unknown, options: { prepare?: boolean; priority?: string }) => Promise<() => void>;
         onSceneStreamingPaused?: (paused: boolean) => void;
+        /** Collects the host's animation-frame callbacks instead of dropping them. */
+        frames?: FrameRequestCallback[];
+        onRuntime?: (runtime: RuntimeDriver) => void;
+        /** In-process mode: a worker that starts but cannot accept its boot controls. */
+        failingWorkerTerminate?: () => void;
       } = {},
     ): Promise<RuntimeDriver> {
       vi.stubGlobal("window", new EventTarget());
-      vi.stubGlobal("requestAnimationFrame", () => 1);
+      vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+        options.frames?.push(callback);
+        return 1;
+      });
       vi.stubGlobal("cancelAnimationFrame", () => {});
       vi.mocked(createEngine).mockReturnValue({
         applySceneEnvironment() {},
@@ -78,7 +88,7 @@ describe.each(["worker", "in-process"] as const)(
         captureFrame: options.captureFrame,
         cancelFrameCapture() {},
         setGameTimePaused: options.onGameTimePaused ?? (() => {}),
-        scheduler: { invalidate() {}, acquireObstruction: () => () => {}, gateState: () => ({ frameCap: 60 }) },
+        scheduler: { invalidate() {}, acquireObstruction: () => () => {}, gateState: () => ({ frameCap: 60 }), stats: () => ({ renderedFps: 0 }) },
         liveObjectCounts: () => ({ meshes: 0, textures: 0 }),
         applyCommand: options.applyCommand ?? (() => {}),
         pushSnapshot() {},
@@ -114,6 +124,7 @@ describe.each(["worker", "in-process"] as const)(
           onCommand,
           preferSoftwarePhysics: true,
         });
+        options.onRuntime?.(runtime);
         const finishLoading = runtime.finishPlayLoading.bind(runtime);
         vi.spyOn(runtime, "finishPlayLoading").mockImplementation(() => {
           finishLoading();
@@ -127,7 +138,12 @@ describe.each(["worker", "in-process"] as const)(
         });
         return runtime;
       });
-      if (mode === "in-process") {
+      if (mode === "in-process" && options.failingWorkerTerminate) {
+        vi.mocked(createGameWorkerHost).mockReturnValue({
+          onCommand() {}, onSnapshot() {}, pushInput() {}, terminate: options.failingWorkerTerminate,
+          postControl() { throw new DOMException("The load could not be cloned.", "DataCloneError"); },
+        });
+      } else if (mode === "in-process") {
         vi.mocked(createGameWorkerHost).mockImplementation(() => {
           throw new Error("Worker unavailable");
         });
@@ -359,6 +375,37 @@ describe.each(["worker", "in-process"] as const)(
       expect(actors[0]!.transform.position).toEqual({ x: 4, y: 5, z: 6 });
       // Authored Begin Play follows the renderer's completed first-frame ACK.
       await vi.waitFor(() => expect(actors[0]!.getVariable("began")).toBe(true));
+    });
+
+    it.runIf(mode === "in-process")("terminates a worker that could not take its boot controls before falling back", async () => {
+      const terminate = vi.fn();
+      await play({ failingWorkerTerminate: terminate });
+      expect(terminate).toHaveBeenCalledOnce();
+    });
+
+    it.runIf(mode === "in-process")("delivers a completed Scene with the next pumped snapshot when none was ready at realization", async () => {
+      const frames: FrameRequestCallback[] = [];
+      let refusedCopies = 0;
+      let settled = false;
+      const started = play({
+        frames,
+        onRuntime: (runtime) => {
+          const copy = runtime.copySnapshot.bind(runtime);
+          vi.spyOn(runtime, "copySnapshot").mockImplementation((out) => {
+            if (refusedCopies === 0) {
+              refusedCopies += 1;
+              return false;
+            }
+            return copy(out);
+          });
+        },
+      }).finally(() => { settled = true; });
+      await vi.waitFor(() => expect(refusedCopies).toBe(1));
+      await vi.waitFor(() => {
+        frames.shift()?.(performance.now());
+        expect(settled).toBe(true);
+      }, { timeout: 4000 });
+      await expect(started).resolves.toBeDefined();
     });
 
     it("allows the GameInstance to explicitly SpawnActor without an extra default instance", async () => {
