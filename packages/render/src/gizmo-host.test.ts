@@ -98,9 +98,12 @@ describe("gizmo move snap", () => {
     drag.onDragObservable.notifyObservers(event(0.1));
     expect(mesh.position.x).toBeCloseTo(0);
     drag.onDragObservable.notifyObservers(event(0.5));
+    // Float drift on an axis the X handle does not move must not snap it.
+    mesh.position.y += 1e-6;
+    mesh.computeWorldMatrix(true);
     drag.onDragObservable.notifyObservers(event(0.3));
     expect(mesh.position.x).toBeCloseTo(1);
-    expect(mesh.position.y).toBeCloseTo(0.25);
+    expect(mesh.position.y).toBe(0.25);
     host.dispose();
   });
 });
