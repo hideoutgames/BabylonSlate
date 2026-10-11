@@ -13,6 +13,7 @@ import {
   createActor,
   createDefaultScene,
   MAIN_SCENE_FILE,
+  SCENE_SCHEMA_VERSION,
 } from "../packages/core/src/index";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene } from "./open-test-project";
@@ -164,7 +165,7 @@ test("encoded Tilemap atlas renders its pixels in Scene Preview and Play", async
         guid: "00000000-0000-4000-8000-000000000001",
         type: "Scene",
         name: "Main",
-        version: 3,
+        version: SCENE_SCHEMA_VERSION,
         payload: scene as unknown as Record<string, unknown>,
       },
       { dependencies: [tilemapGuid] },

@@ -214,14 +214,6 @@ describe("babasset codec", () => {
 });
 
 describe("schema migration", () => {
-  it("migrates Class v0 to v1", () => {
-    const registry = createDefaultMigrationRegistry();
-    const result = registry.migrate("Class", 0, {});
-    expect(result.migrated).toBe(true);
-    expect(result.version).toBe(1);
-    expect(result.payload.nodes).toEqual([]);
-  });
-
   it("refuses future versions", () => {
     const registry = createDefaultMigrationRegistry();
     expect(() => registry.migrate("Class", 99, {})).toThrow(/newer engine version/);

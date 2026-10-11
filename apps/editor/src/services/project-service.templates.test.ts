@@ -6,6 +6,7 @@ import {
   loadTemplateFiles,
   writeProjectTree,
 } from "@babylonslate/assets";
+import { SCENE_SCHEMA_VERSION } from "@babylonslate/core";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
 
@@ -56,7 +57,7 @@ describe("Create Project from a template", () => {
       type: "Scene",
       name: "level1.scene",
       guid: "template-scene",
-      version: 1,
+      version: SCENE_SCHEMA_VERSION,
       payload: { name: "Level 1", meshes: [] },
     });
     await templates.writeBinary(
