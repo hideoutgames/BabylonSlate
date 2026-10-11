@@ -40,6 +40,23 @@ describe("desktop save IPC ownership", () => {
     await host.release(3, token);
   });
 
+  it("keeps a window from leasing a key inside or above another window's lease", async () => {
+    const host = await createHost();
+    const parent = await host.acquire(1, "project/game");
+    let childGranted = false;
+    const child = host.acquire(2, "project/game/slot").then(token => { childGranted = true; return token; });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(childGranted).toBe(false);
+    await host.release(1, parent);
+    const childToken = await child;
+    let parentGranted = false;
+    const nextParent = host.acquire(1, "project/game").then(token => { parentGranted = true; return token; });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(parentGranted).toBe(false);
+    await host.release(2, childToken);
+    await host.release(1, await nextParent);
+  });
+
   it("returns error categories in a serializable envelope", async () => {
     const host = await createHost();
     expect(await host.result(async () => { throw Object.assign(new Error("Disk full"), { name: "StorageFullError", code: "ENOSPC" }); }))

@@ -178,7 +178,7 @@ iOS audio lifecycle uses a `.playback` session mixed with other apps, so Play an
 | Web | OPFS `babylonslate-game-saves`; writable streams stage changes until `close()`. An exclusive Web Lock spans the service transaction across tabs. Browser persistence requests return the browser decision; storage remains clearable. |
 | iOS | Capacitor `Directory.Library/Application Support/BabylonSlate/game-saves`, independent of Files-visible Documents. Temporary write then rename; Web Locks serialize WebView contexts. |
 | Android | Capacitor `Directory.Data/BabylonSlate/game-saves`; temporary write then rename; Web Locks serialize WebView contexts. |
-| Electron | `userData/game-saves`; main-process temporary file, file sync, rename, then directory sync on POSIX. The application single-instance lock prevents competing host processes; owned IPC leases serialize windows and release on reload, crash or close. |
+| Electron | `userData/game-saves`; main-process temporary file, file sync, rename, then directory sync on POSIX. The application single-instance lock prevents competing host processes; owned IPC leases serialize windows and release on reload, crash or close. A lease covers its key and every key below it, so no two windows hold a key and its parent at once. |
 
 - Filesystem names encode the logical key bytes so case-insensitive hosts cannot merge differently named profiles or slots. Paths reject traversal, empty segments and oversized encoded names.
 - Missing results are reserved for explicit not-found errors. Permission and storage errors propagate; quota errors and explicit native `ENOSPC`/`EDQUOT` map to storage-full. Capacitor generic I/O errors are not guessed to mean full.
