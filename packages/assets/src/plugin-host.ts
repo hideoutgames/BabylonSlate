@@ -1,4 +1,4 @@
-import { ENGINE_VERSION, isStorageNotFound, type PluginEnableOverride, type ProjectStorage } from "@babylonslate/core";
+import { ENGINE_VERSION, isStorageNotFound, type ProjectStorage } from "@babylonslate/core";
 import { DOCUMENT_CHUNK_ID } from "./asset-document";
 import { AccountedPayloadLoader, readAssetCatalog, validateAssetSourceLocator, type AssetCatalogRead } from "./payload-loader";
 import { createVfsBlobStore } from "./blob-store";
@@ -48,27 +48,6 @@ export type PluginGraphInput = Pick<
   PluginDescriptor,
   "pluginGuid" | "settings"
 >;
-
-/** Legacy warning acknowledgement, invalidated by any recorded or installed version change. */
-export function pluginCompatibilityKey(
-  plugin: PluginGraphInput,
-  plugins: readonly PluginGraphInput[],
-  engineVersion: string = ENGINE_VERSION,
-): string {
-  return JSON.stringify({
-    pluginGuid: plugin.pluginGuid,
-    version: plugin.settings.version,
-    recordedEngine: plugin.settings.engineVersion,
-    engineVersion,
-    dependencies: [...plugin.settings.pluginDependencies]
-      .sort((a, b) => a.guid.localeCompare(b.guid))
-      .map((dependency) => [
-        dependency.guid,
-        dependency.version,
-        plugins.find((entry) => entry.pluginGuid === dependency.guid)?.settings.version ?? null,
-      ]),
-  });
-}
 
 export function pluginCompatibilityDiagnostics(
   plugin: PluginGraphInput,
@@ -263,19 +242,13 @@ export function shadowEnginePlugins(
 export function resolvePluginGraph(
   plugins: readonly PluginGraphInput[],
   engineVersion: string = ENGINE_VERSION,
-  overrides: Readonly<Record<string, PluginEnableOverride>> = {},
 ): { order: PluginGraphInput[]; diagnostics: PluginDiagnostic[] } {
   const byGuid = new Map(plugins.map((plugin) => [plugin.pluginGuid, plugin]));
   const diagnostics: PluginDiagnostic[] = [];
   const blocked = new Set<string>();
 
   for (const plugin of plugins) {
-    const compatibility = pluginCompatibilityDiagnostics(plugin, plugins, engineVersion);
-    const accepted = overrides[plugin.pluginGuid]?.acceptedCompatibility ===
-      pluginCompatibilityKey(plugin, plugins, engineVersion);
-    if (compatibility.length > 0 && !accepted) {
-      diagnostics.push(...compatibility);
-    }
+    diagnostics.push(...pluginCompatibilityDiagnostics(plugin, plugins, engineVersion));
     for (const dep of plugin.settings.pluginDependencies) {
       const found = byGuid.get(dep.guid);
       if (!found) {
@@ -371,14 +344,11 @@ export async function mountEnabledPlugins(
   plugins: readonly PluginDescriptor[],
   options: {
     enabledGuids: ReadonlySet<string>;
-    overrides?: Readonly<Record<string, PluginEnableOverride>>;
     storageFor?: (plugin: PluginDescriptor) => ProjectStorage | undefined;
   },
 ): Promise<void> {
   const { order } = resolvePluginGraph(
     plugins.filter((plugin) => options.enabledGuids.has(plugin.pluginGuid)),
-    ENGINE_VERSION,
-    options.overrides,
   );
   const mountIds = new Set(
     order

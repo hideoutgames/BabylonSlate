@@ -952,14 +952,12 @@ export class ProjectService {
   /** Export presets scan their selected plugin roots without changing editor mounts. */
   async listExportAssets(
     enabledPluginGuids: ReadonlySet<string>,
-    overrides: Record<string, PluginEnableOverride> = this.pluginOverrides,
   ): Promise<IndexedAsset[]> {
     const exportRegistry = new AssetRegistry(this.storage, {
       blobs: this.blobs,
     });
     await mountEnabledPlugins(exportRegistry, this.pluginDescriptors, {
       enabledGuids: enabledPluginGuids,
-      overrides,
       storageFor: (plugin) =>
         plugin.source === "engine"
           ? (this.enginePluginStorage ?? undefined)
@@ -1567,7 +1565,6 @@ export class ProjectService {
     }
     await mountEnabledPlugins(registry, this.pluginDescriptors, {
       enabledGuids,
-      overrides: this.pluginOverrides,
       storageFor: (plugin) =>
         plugin.source === "engine"
           ? (this.enginePluginStorage ?? undefined)
@@ -1575,8 +1572,6 @@ export class ProjectService {
     });
     const { diagnostics } = resolvePluginGraph(
       this.pluginDescriptors.filter((plugin) => enabledGuids.has(plugin.pluginGuid)),
-      undefined,
-      this.pluginOverrides,
     );
     this.pluginDiagnostics = diagnostics;
     const discoveredGuids = new Set(
