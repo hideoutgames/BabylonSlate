@@ -28,9 +28,9 @@ test("SceneLayer compiled Tweens fade, tint and move rendered components after o
       transform: { position: [-8, -3, 0], rotation: [0, 0, 0, 1], scale: [4, 2, 1] } },
   ];
   const actions: Array<[string, string, string, Record<string, unknown>]> = [
-    ["fade", "tween.opacity", "2DTextureComponent", { a: 1, b: 0.25 }],
-    ["tint", "tween.tint", "2DMaterialComponent", { a: { x: 1, y: 1, z: 1, w: 1 }, b: { x: 1, y: 0, z: 0, w: 1 } }],
-    ["move", "tween.componentPosition", "2DMaterialComponent", { a: { x: -8, y: -3, z: 0 }, b: { x: 8, y: -3, z: 0 } }],
+    ["fade", "tween.opacity", "2DTextureComponent", { "default:a": 1, "default:b": 0.25 }],
+    ["tint", "tween.tint", "2DMaterialComponent", { "default:a": { x: 1, y: 1, z: 1, w: 1 }, "default:b": { x: 1, y: 0, z: 0, w: 1 } }],
+    ["move", "tween.componentPosition", "2DMaterialComponent", { "default:a": { x: -8, y: -3, z: 0 }, "default:b": { x: 8, y: -3, z: 0 } }],
   ];
   // Separate native entries receive the same single key edge and run concurrently.
   // No Tick loop or renderer mutation performs any part of the interpolation.
@@ -39,7 +39,7 @@ test("SceneLayer compiled Tweens fade, tint and move rendered components after o
     nodes: actions.flatMap(([id, type, componentClassId, data], row) => [
       { id: `${id}-trigger`, type: "input.onAnyKeyPressed", data: {}, position: { x: 0, y: row * 220 } },
       { id: `${id}-target`, type: "component.getNamed", data: { componentClassId, implicitSelf: true }, position: { x: 200, y: row * 220 } },
-      { id, type, data: { ...data, duration: 1 }, position: { x: 450, y: row * 220 } },
+      { id, type, data: { ...data, "default:duration": 1 }, position: { x: 450, y: row * 220 } },
       { id: `${id}-done`, type: "debug.print", data: { "default:value": `Tween ${id} completed`, "default:key": `tween-${id}`, "default:duration": 30 }, position: { x: 750, y: row * 220 } },
     ]),
     edges: actions.flatMap(([id]) => [
