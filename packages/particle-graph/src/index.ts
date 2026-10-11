@@ -52,7 +52,6 @@ export {
   type ParticleGraphLowerContext,
   type ParticleGraphLowerResult,
   type ParticleOperand,
-  type ParticleOperandRange,
   type ParticleOperation,
 } from "./lower";
 export {

@@ -35,11 +35,6 @@ export type ParticleOperand =
       pinId: string;
       /** Float wired into a vector or color input; render realizes the splat. */
       conversion?: ParticleConversion;
-      /**
-       * The pin's range on a wired input Babylon divides by (Lifetime); render
-       * clamps the value into it. Other wired inputs are never clamped.
-       */
-      range?: ParticleOperandRange;
     }
   | {
       kind: "constant";
@@ -48,13 +43,12 @@ export type ParticleOperand =
       value: number[];
     };
 
-export interface ParticleOperandRange {
-  min?: number;
-  max?: number;
-}
-
 export interface ParticleOperation {
-  /** The graph node id: the anchor for build diagnostics and focus. */
+  /**
+   * The graph node id: the anchor for build diagnostics and focus. A bound on a
+   * wired `clampWired` pin is its own Maximum / Minimum / Clamp operation, with
+   * the id `<node id>/<pin id>`.
+   */
   id: string;
   nodeType: string;
   /** Generic or `valueType` result; `"particle"` on the spine; null on Emitter Output. */
@@ -78,11 +72,27 @@ export type ParticleGraphLowerResult =
 
 export type ParticleGraphLowerContext = ParticleGraphValidationContext;
 
-function pinRange(pin: ParticlePinDefinition): ParticleOperandRange {
-  return {
-    ...(pin.min !== undefined ? { min: pin.min } : {}),
-    ...(pin.max !== undefined ? { max: pin.max } : {}),
-  };
+/**
+ * Routes a wired value into a `clampWired` pin (Lifetime) through Maximum,
+ * Minimum or Clamp against the pin's range, so the bound is part of the plan
+ * and a wired 0 never reaches Babylon's `1 / lifeTime`.
+ */
+function boundedOperation(
+  node: ParticleGraphNode,
+  pin: ParticlePinDefinition,
+  type: ParticleNumericType,
+  value: ParticleOperand,
+): ParticleOperation | null {
+  const bound = (limit: number): ParticleOperand => ({ kind: "constant", type: "float", value: [limit] });
+  const operation = (nodeType: string, inputs: Record<string, ParticleOperand>): ParticleOperation =>
+    ({ id: `${node.id}/${pin.id}`, nodeType, resolvedType: type, inputs, properties: {} });
+  const { min, max } = pin;
+  if (min !== undefined && max !== undefined) {
+    return operation("math.clamp", { value, min: bound(min), max: bound(max) });
+  }
+  if (min !== undefined) return operation("math.max", { a: value, b: bound(min) });
+  if (max !== undefined) return operation("math.min", { a: value, b: bound(max) });
+  return null;
 }
 
 function planProperties(node: ParticleGraphNode): Record<string, unknown> {
@@ -131,13 +141,20 @@ export function lowerParticleGraphDocument(
         const from = resolver.outputType(source.id, edge.sourcePinId);
         const to = resolver.inputType(node.id, pin.id);
         const conversion = from && to ? particleConversionFor(from, to) : null;
-        inputs[pin.id] = {
+        const wired: ParticleOperand = {
           kind: "operation",
           operationId: source.id,
           pinId: edge.sourcePinId,
           ...(conversion ? { conversion } : {}),
-          ...(pin.clampWired ? { range: pinRange(pin) } : {}),
         };
+        const bounded =
+          pin.clampWired && to && to !== "particle"
+            ? boundedOperation(node, pin, to, wired)
+            : null;
+        if (bounded) operations.push(bounded);
+        inputs[pin.id] = bounded
+          ? { kind: "operation", operationId: bounded.id, pinId: "out" }
+          : wired;
         continue;
       }
       const value = pin.type.kind === "particle" ? undefined : resolveParticlePinDefault(node, pin);

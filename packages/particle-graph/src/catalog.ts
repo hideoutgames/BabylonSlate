@@ -47,8 +47,8 @@ export interface ParticlePinDefinition {
   min?: number;
   max?: number;
   /**
-   * The range also bounds a wired value: lowering marks the operand and render
-   * clamps it, because Babylon divides by this input (Lifetime).
+   * The range also bounds a wired value: lowering routes it through Maximum /
+   * Minimum / Clamp, because Babylon divides by this input (Lifetime).
    */
   clampWired?: true;
   /** Pin typed by the node's `valueType` property (Random, Gradient). */

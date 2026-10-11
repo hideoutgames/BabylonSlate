@@ -31,8 +31,7 @@ export function particleSettingsFingerprint(settings: ParticleGraphSettings): st
 function describeOperand(operand: ParticleOperand): string {
   if (operand.kind === "constant") return `c:${operand.type}:${operand.value.join("/")}`;
   const conversion = operand.conversion ? `:${operand.conversion.kind}>${operand.conversion.to}` : "";
-  const range = operand.range ? `:[${operand.range.min ?? ""},${operand.range.max ?? ""}]` : "";
-  return `o:${operand.operationId}:${operand.pinId}${conversion}${range}`;
+  return `o:${operand.operationId}:${operand.pinId}${conversion}`;
 }
 
 /**

@@ -143,12 +143,25 @@ describe("particle graph lowering", () => {
       entry.nodes.push({ id: "zero", type: "const.float", position: { x: 0, y: 0 }, properties: { value: [0] } });
       entry.edges.push({ id: "e-zero", sourceNodeId: "zero", sourcePinId: "out", targetNodeId: "create", targetPinId: "lifetime" });
     });
-    expect(operation(plan(wired), "create").inputs.lifetime).toEqual({
+    const bounded = plan(wired);
+    expect(operation(bounded, "create").inputs.lifetime).toEqual({
       kind: "operation",
-      operationId: "zero",
+      operationId: "create/lifetime",
       pinId: "out",
-      range: { min: 0.01 },
     });
+    expect(operation(bounded, "create/lifetime")).toEqual({
+      id: "create/lifetime",
+      nodeType: "math.max",
+      resolvedType: "float",
+      inputs: {
+        a: { kind: "operation", operationId: "zero", pinId: "out" },
+        b: { kind: "constant", type: "float", value: [0.01] },
+      },
+      properties: {},
+    });
+    const ids = bounded.operations.map((entry) => entry.id);
+    expect(ids.indexOf("zero")).toBeLessThan(ids.indexOf("create/lifetime"));
+    expect(ids.indexOf("create/lifetime")).toBeLessThan(ids.indexOf("create"));
   });
 
   it("lowers authored shape directions as operands and leaves unset ones out", () => {
