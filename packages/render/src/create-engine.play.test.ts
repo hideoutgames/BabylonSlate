@@ -338,6 +338,21 @@ describe("Play createEngine view", () => {
     return { handle, canvas };
   }
 
+  it("ignores commands and snapshots that arrive after the view stops", () => {
+    const { handle } = playHandle(sharedEngine());
+    const { scene } = handle;
+    handle.dispose();
+    handle.applyCommand({ type: "spawn", slotId: 4, actorGuid: "hero", classId: "Actor" });
+    handle.applyCommand({ type: "assignMesh", slotId: 4, actorGuid: "hero", meshAssetGuid: null, meshKind: "box" });
+    expect(scene.getMeshByName("actor-4")).toBeNull();
+    const snapshot = new Float32Array(snapshotFloatCount(1));
+    writeSnapshotHeader(snapshot, { frameId: 1, tickIndex: 1, actorCount: 1, scriptMs: 0, physicsMs: 0 });
+    writeActorSlot(snapshot, 0, { slotId: 4, position: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 }, flags: SNAPSHOT_FLAG_VISIBLE });
+    handle.pushSnapshot(snapshot);
+    expect(handle.lastActorPositions()).toEqual([]);
+  });
+
   it("drains accepted cold assignment sources before the final authoring fence completes", async () => {
     const { handle } = playHandle(sharedEngine());
     handle.applyCommand({ type: "spawn", slotId: 4, actorGuid: "hero", classId: "Actor" });

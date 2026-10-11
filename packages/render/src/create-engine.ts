@@ -3166,6 +3166,8 @@ function initializeEngine(
       }
     },
     pushSnapshot: (buffer: Float32Array) => {
+      // Deliveries already queued when the view stopped must not repose it.
+      if (disposed) return;
       interpolator.push(buffer);
       interpAlpha = 1;
       appliedSnapshotIdentity = null;
@@ -3178,6 +3180,9 @@ function initializeEngine(
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
+      // A stopped view keeps its Scene until native release; queued commands
+      // must not spawn or rebind visuals in it.
+      if (disposed) return;
       if (!applyingPreparedCommand)
         finalAuthoringDrain?.abort(new Error(`Runtime render command ${command.type} arrived after the final capture fence.`));
       if (!applyingPreparedCommand && commandSources.receive(command, (prepared) => {
