@@ -311,6 +311,21 @@ describe("app settings", () => {
     }
   });
 
+  it("builds the next update on the last saved settings when a later localStorage read fails", async () => {
+    localStorage.clear();
+    const store = new WebAppSettingsStore();
+    await store.update((settings) => { settings.viewportFrameCap = 60; });
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementationOnce(() => {
+      throw new DOMException("denied", "SecurityError");
+    });
+    try {
+      const next = await store.update((settings) => { settings.undoHistoryLength = 75; });
+      expect([next.viewportFrameCap, next.undoHistoryLength]).toEqual([60, 75]);
+    } finally {
+      getItem.mockRestore();
+    }
+  });
+
   it("falls back to defaults when localStorage holds invalid JSON", async () => {
     localStorage.setItem("babylonslate:engine-settings", "{not-json");
     const store = new WebAppSettingsStore();

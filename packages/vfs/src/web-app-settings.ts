@@ -12,23 +12,27 @@ const KEY = ENGINE_SETTINGS_STORAGE_KEY;
 
 /**
  * Web app-settings backend. Prefers localStorage; settings whose save fails
- * stay in memory for this session.
+ * stay in memory for this session, and a failed read falls back to the
+ * settings this store last saved or loaded.
  */
 export class WebAppSettingsStore implements AppSettingsStore {
   /** The last save localStorage refused; newer than anything it holds. */
   private unsaved: EngineSettings | null = null;
+  /** The settings this store last wrote to or read from localStorage. */
+  private lastKnown: EngineSettings | null = null;
 
   async load(): Promise<EngineSettings> {
     if (this.unsaved) return this.unsaved;
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
-        return engineSettingsSchema.parse(JSON.parse(raw));
+        this.lastKnown = engineSettingsSchema.parse(JSON.parse(raw));
+        return this.lastKnown;
       }
     } catch {
-      /* ignore */
+      /* fall back below */
     }
-    return defaultEngineSettings();
+    return this.lastKnown ?? defaultEngineSettings();
   }
 
   async save(settings: EngineSettings): Promise<void> {
@@ -36,6 +40,7 @@ export class WebAppSettingsStore implements AppSettingsStore {
     try {
       localStorage.setItem(KEY, JSON.stringify(parsed));
       this.unsaved = null;
+      this.lastKnown = parsed;
     } catch {
       this.unsaved = parsed;
     }
