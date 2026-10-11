@@ -3520,15 +3520,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       sub.dispose();
     }
     dockSubscriptionsRef.current.delete(key);
+    // Drags and resizes fire layout changes continuously: the Class parent
+    // lookup is rebuilt only when the registry changes.
+    let parentLookup: { generation: number; parentOf: ReturnType<typeof classParentLookup> } | null = null;
     const rememberPlacements = () => {
       if (preFocusLayoutsRef.current.has(key) || preFocusLayoutsRef.current.has(id) || isPhoneDockLayout(api)) return;
       const dock = asDockWindowApi(api);
-      const kind = documentService.getDocument(id)?.ref.kind;
       const doc = documentService.getDocument(id);
-      const indexed = projectService.registry
-        ?.list()
-        .find((asset) => asset.path === doc?.ref.path);
-      const parentOf = classParentLookup(projectService.registry?.list() ?? []);
+      const kind = doc?.ref.kind;
+      const indexed = doc ? projectService.registry?.getByPath(doc.ref.path) : undefined;
+      const generation = projectService.registryGeneration;
+      if (parentLookup?.generation !== generation) {
+        parentLookup = { generation, parentOf: classParentLookup(projectService.registry?.list() ?? []) };
+      }
+      const parentOf = parentLookup.parentOf;
       const animSurfaceMode: AnimEditorMode | undefined =
         surface === "animationObject"
           ? "animationObject"
