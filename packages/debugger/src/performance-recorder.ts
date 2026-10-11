@@ -77,7 +77,7 @@ const safeId = (value: number) => Number.isSafeInteger(value) && value >= 0;
 export class PerformanceRecorder {
   private active: {
     identity: PerformanceIdentity; startedAtMs: number; durationMs: number;
-    byteBudget: number; retainedBytes: number; previousCompletedAt: number | null;
+    byteBudget: number; retainedBytes: number; previousCompletedAt: number | null; droppedRecords: number;
     frames: BufferStream; ticks: BufferStream; gpu: BufferStream; previousGpuAt: number | null; previousGpuSequence: number;
   } | undefined;
   private result: PerformanceProfile | undefined;
@@ -102,7 +102,7 @@ export class PerformanceRecorder {
     if (!Number.isSafeInteger(byteBudget) || byteBudget < retainedBytes + 8 * PERFORMANCE_FRAME_COLUMNS.length || byteBudget > MAX_PROFILE_BYTE_BUDGET)
       throw new Error("Performance retained-data budget cannot admit metadata and one frame.");
     this.active = { identity: copyIdentity(identity),
-      startedAtMs: this.now(), durationMs, byteBudget, retainedBytes, previousCompletedAt: null,
+      startedAtMs: this.now(), durationMs, byteBudget, retainedBytes, previousCompletedAt: null, droppedRecords: 0,
       frames: newStream(PERFORMANCE_FRAME_COLUMNS), ticks: newStream(PERFORMANCE_TICK_COLUMNS), gpu: newStream(PERFORMANCE_GPU_COLUMNS),
       previousGpuAt: null, previousGpuSequence: 0 };
     this.result = undefined;
@@ -135,7 +135,8 @@ export class PerformanceRecorder {
     if (!(options.drain ? this.recording : this.advance())) return false;
     if (!safeId(sample.tickId) || ![sample.elapsedMs, sample.scriptMs, sample.physicsMs, sample.publishMs, sample.otherMs].every(finite))
       throw new Error("Tick samples require finite non-negative timings and a valid tick identity.");
-    if (sample.elapsedMs > this.active!.durationMs) return false;
+    // A tick stamped past the window is outside the profile, so it counts as dropped.
+    if (sample.elapsedMs > this.active!.durationMs) { this.active!.droppedRecords++; return false; }
     return this.append(this.active!.ticks, PERFORMANCE_TICK_COLUMNS.map((key) => sample[key]));
   }
 
@@ -161,7 +162,7 @@ export class PerformanceRecorder {
       chunks: stream.chunks.map((chunk, index) => index === stream.chunks.length - 1 ? chunk.subarray(0, stream.tailUsed) : chunk) });
     this.result = { kind: "babylonslate-performance", version: 1, identity: state.identity,
       requestedDurationMs: state.durationMs, durationMs: Math.max(0, stoppedAtMs - state.startedAtMs),
-      byteBudget: state.byteBudget, retainedBytes: state.retainedBytes, droppedRecords: reason === "budget" ? 1 : 0,
+      byteBudget: state.byteBudget, retainedBytes: state.retainedBytes, droppedRecords: state.droppedRecords,
       stopReason: reason, frames: finish(state.frames), ticks: finish(state.ticks), gpu: finish(state.gpu) };
     this.onStopped?.(this.result);
     return this.result;
@@ -172,7 +173,7 @@ export class PerformanceRecorder {
     let chunk = stream.chunks.at(-1);
     if (!chunk || stream.tailUsed === chunk.length) {
       const rows = Math.min(CHUNK_RECORDS, Math.floor((state.byteBudget - state.retainedBytes) / (row.length * 8)));
-      if (rows === 0) { this.stop("budget"); return false; }
+      if (rows === 0) { state.droppedRecords++; this.stop("budget"); return false; }
       chunk = new Float64Array(rows * row.length);
       stream.chunks.push(chunk);
       stream.tailUsed = 0;

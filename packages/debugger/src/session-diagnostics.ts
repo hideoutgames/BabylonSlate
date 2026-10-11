@@ -74,7 +74,9 @@ export class SessionDiagnostics<FrameReport> {
       state.releaseFrames = this.ports.observeFrames((sample) => {
         if (state.stopping || this.operation !== state) return;
         if (this.now() >= state.deadline!) { void this.finish(state, "duration"); return; }
-        recorder.recordFrame(sample);
+        // An invalid sample ends the recording as an error here; a throw would only
+        // detach the view's feed and leave the profile running until its deadline.
+        try { recorder.recordFrame(sample); } catch { void this.finish(state, "error"); }
       });
       state.timer = setTimeout(() => { void this.finish(state, "duration"); }, options.durationMs ?? DEFAULT_PROFILE_DURATION_MS);
       this.retained = null;

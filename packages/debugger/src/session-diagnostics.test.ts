@@ -86,6 +86,41 @@ describe("SessionDiagnostics", () => {
     expect(profile!.ticks.count + profile!.droppedRecords).toBe(256);
   });
 
+  it("adds only the runtime's own count when the runtime stops on its budget", async () => {
+    const requests: DiagnosticOperationRequest[] = [];
+    const session = new SessionDiagnostics({ mode: "play", identity: () => identity, now: () => 0,
+      observeFrames: () => () => {}, captureFrame: async () => "frame",
+      runtimeOperation: async (request) => { requests.push(request); return { success: true }; },
+    });
+    await session.startProfile();
+    const recordingId = requests[0]!.recordingId;
+    expect(session.receiveTicks({ recordingId, sequence: 0, rows: new Float64Array([1, 0, 1, 1, 0, 0]), droppedRecords: 1 })).toBe(true);
+    session.runtimeStopped({ recordingId, reason: "budget" });
+    const profile = await session.stopProfile();
+    expect(profile).toMatchObject({ stopReason: "budget", droppedRecords: 1 });
+    expect(profile!.ticks.count).toBe(1);
+  });
+
+  it("ends the recording as an error when a frame sample is invalid", async () => {
+    let now = 0;
+    let frames: ((sample: PerformanceFrameSample) => void) | undefined;
+    const session = new SessionDiagnostics({ mode: "play", identity: () => identity, now: () => now,
+      observeFrames: (listener) => { frames = listener; return () => { frames = undefined; }; },
+      captureFrame: async () => "frame", runtimeOperation: async () => ({ success: true }),
+    });
+    await session.startProfile();
+    const frame = { frameId: 1, tickId: 1, sceneGeneration: 1, completedAtMs: 20, preparationMs: 1,
+      submissionMs: 1, copyMs: 0, drawCalls: 1, width: 64, height: 64, resolutionScale: 1 };
+    now = 30;
+    frames!(frame);
+    expect(() => frames!({ ...frame, frameId: 2, completedAtMs: 10 })).not.toThrow();
+    const profile = await session.stopProfile();
+    expect(profile).toMatchObject({ stopReason: "error" });
+    expect(profile!.frames.count).toBe(1);
+    expect(frames).toBeUndefined();
+    expect(session.active).toBeNull();
+  });
+
   it("collects GPU values only on explicit request and releases every profile lease", async () => {
     let gpu: ((sample: PerformanceGpuSample) => void) | undefined;
     const release = vi.fn(() => { gpu = undefined; });

@@ -80,6 +80,17 @@ describe("PerformanceRecorder", () => {
     expect(result.droppedRecords).toBe(1);
   });
 
+  it("counts a drained tick stamped past the recording window as dropped", () => {
+    const recorder = new PerformanceRecorder({ now: () => 0 });
+    recorder.start(identity, { durationMs: 1000 });
+    const tick = { tickId: 1, elapsedMs: 999, scriptMs: 1, physicsMs: 1, publishMs: 0, otherMs: 0 };
+    expect(recorder.recordTick(tick, { drain: true })).toBe(true);
+    expect(recorder.recordTick({ ...tick, tickId: 2, elapsedMs: 1001 }, { drain: true })).toBe(false);
+    const result = recorder.stop()!;
+    expect(result.ticks.count).toBe(1);
+    expect(result.droppedRecords).toBe(1);
+  });
+
   it("rejects Simulation and overlapping starts without replacing live data", () => {
     const recorder = new PerformanceRecorder();
     expect(() => recorder.start({ ...identity, mode: "simulate" })).toThrow("Use Play or Preview Build");
