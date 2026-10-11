@@ -4867,7 +4867,8 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
         // broken into glitter (see the sun in `realisticSource`).
         "finalSpecularScaled *= swGloss * swSunReach * swSpecKeep;",
         `finalSpecularScaled *= log(1.0 + dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) * swSpecSquash + 0.0001) / (dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) * swSpecSquash + 0.0001);`,
-        `finalSpecularScaled *= mix(1.0, swSpecMod, swSpecModW * smoothstep(0.1, 0.9, dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11))));`,
+        // The glitter's weight rises smoothly with the lobe's luminance (a threshold on it drew an outline around every contour of the slope).
+        `finalSpecularScaled *= mix(1.0, swSpecMod, swSpecModW * 0.6 * dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) / (dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) + 0.15));`,
         "#endif",
         "#endif",
       ].join("\n"),
