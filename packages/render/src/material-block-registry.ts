@@ -6,7 +6,6 @@ import { SlateVoronoiNoiseBlock } from "./voronoi-noise-block";
 import { WaterSurfaceBlock } from "./water-surface-block";
 import {
   AddBlock,
-  AnimatedInputBlockTypes,
   ArcTan2Block,
   ClampBlock,
   Color3,
@@ -607,14 +606,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     return single(block, {}, { color: block.output });
   },
   "input.time": ({ name }) => {
-    const block = new GameTimeInputBlock(
-      name,
-      undefined,
-      NodeMaterialBlockConnectionPointTypes.Float,
-    );
-    // Preview Scenes render independently of the shared Engine's frame loop.
-    // Its frame delta can be stale, so Time uses elapsed seconds directly.
-    block.animationType = AnimatedInputBlockTypes.RealTime;
+    const block = new GameTimeInputBlock(name);
     return single(block, {}, { time: block.output });
   },
   "input.waterSurface": ({ name }) => {
