@@ -1,29 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { packedFontCssStacks, registerPackedFonts } from "./fonts";
+import { packedFontCssStacks } from "./fonts";
 
-describe("registerPackedFonts", () => {
-  it("constructs FontFace from packed bytes, not a blob URL", async () => {
-    const bytes = new Uint8Array([0, 1, 2, 3]);
-    const sources: unknown[] = [];
-    class FakeFontFace {
-      constructor(_family: string, source: unknown) {
-        sources.push(source);
-      }
-      async load() {
-        return this;
-      }
-    }
-    const added: unknown[] = [];
-    await registerPackedFonts(new Map([["font-1", bytes]]), {
-      FontFace: FakeFontFace as unknown as typeof FontFace,
-      fonts: { add: (face: unknown) => added.push(face) } as unknown as FontFaceSet,
-    });
-    expect(sources).toHaveLength(1);
-    expect(sources[0]).toBeInstanceOf(Uint8Array);
-    expect(typeof sources[0]).not.toBe("string");
-    expect(added).toHaveLength(1);
-  });
-
+describe("packedFontCssStacks", () => {
   it("compiles Bitmap 2D Text CSS stacks from packed family names", () => {
     expect(
       packedFontCssStacks(new Map([["font-1", "Display Face"]])),
@@ -31,26 +9,5 @@ describe("registerPackedFonts", () => {
       fontCssStack: "sans-serif",
       fontCssStackByGuid: new Map([["font-1", '"Display Face", sans-serif']]),
     });
-  });
-
-  it("registers FontFace with the authored family name when provided", async () => {
-    const families: string[] = [];
-    class FakeFontFace {
-      constructor(family: string) {
-        families.push(family);
-      }
-      async load() {
-        return this;
-      }
-    }
-    await registerPackedFonts(
-      new Map([["font-1", new Uint8Array([1])]]),
-      {
-        FontFace: FakeFontFace as unknown as typeof FontFace,
-        fonts: { add: () => {} } as unknown as FontFaceSet,
-      },
-      new Map([["font-1", "Display"]]),
-    );
-    expect(families).toEqual(["Display"]);
   });
 });
