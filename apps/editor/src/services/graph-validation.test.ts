@@ -1939,11 +1939,12 @@ describe("scriptPaletteNodes", () => {
     expect(
       nodes.some((node) => node.id === "functions.call:CameraComponent:Possess"),
     ).toBe(true);
+    // An unwired Strength applies the full impulse, like the Physics Add Impulse node.
     expect(
-      nodes.some(
+      nodes.find(
         (node) => node.id === "functions.call:RigidBodyComponent:Add Impulse",
-      ),
-    ).toBe(true);
+      )?.defaultData,
+    ).toMatchObject({ runtime: "addImpulse", "default:strength": 1 });
     expect(
       nodes.some(
         (node) => node.id === "functions.call:NavAgentComponent:Move To",
