@@ -87,6 +87,10 @@ describe("createPlayMesh", () => {
     const material = spriteMesh.material as StandardMaterial;
     expect(material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
     expect(material.alphaCutOff).toBeCloseTo(0.4);
+    // Only the slot's own sprite owns the clip-crossfade overlay.
+    expect(binding.spriteOverlays?.get(1)?.parent).toBe(spriteMesh);
+    createPlayMesh(scene, 3, "sprite", "sprite-1", binding, "actor-3|second");
+    expect(binding.spriteOverlays?.has(3)).toBe(false);
 
     const model = createPlayMesh(scene, 2, "box", "model-1", binding);
     expect(model.getTotalVertices()).toBe(0);

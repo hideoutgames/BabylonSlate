@@ -1807,7 +1807,9 @@ export function createPlayMesh(
         )
       : createPrimitiveMesh(scene, name, "sprite");
     applyAlbedoTexture(mesh, scene, payload?.textureGuid, binding);
-    if (frame && binding) {
+    // Sprite clip crossfades blend the slot's own visual (`resolvePlaySpriteSlot`);
+    // a component part's quad must not take over that single tracked overlay.
+    if (frame && binding && meshName === undefined) {
       if (!binding.spriteOverlays) binding.spriteOverlays = new Map();
       const overlay = createSpriteQuad(
         scene,
