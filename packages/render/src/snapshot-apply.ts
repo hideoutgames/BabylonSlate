@@ -611,6 +611,12 @@ function applyPlayShadows(scene: Scene): void {
 
 const rejectedTextAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
 const rejectedPreparedAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
+
+/** Hash a request and its installed assets only to compare or record a rejection. */
+function rejectionKey(command: AssignMeshCommand, assets: MeshAssetContext, suffix = ""): () => string {
+  let key: string | undefined;
+  return () => key ??= `${JSON.stringify(command)}|${meshAssetFingerprint(assets)}${suffix}`;
+}
 const pendingVisualReplacements = new WeakMap<SnapshotSceneBinding, Map<number, Mesh>>();
 const visualAssignments = new WeakMap<SnapshotSceneBinding, Map<number, AssignMeshCommand>>();
 type ComponentTransformCommand = Extract<CommandMessage, { type: "setComponentTransforms" }>;
@@ -1018,12 +1024,13 @@ export function applyAssignMesh(
   if (stagesModels || (existing && (ownsTexture(meshKind) || command.parts?.some((part) => ownsTexture(part.meshKind))))) {
     const working = existing ?? createModelActorRoot(scene, `actor-${command.slotId}`);
     if (!existing) binding.meshes.set(command.slotId, working);
-    // Staged models never record or compare rejections; skip hashing every
-    // installed asset. Other preparations keep the request-time asset state.
-    const descriptor = stagesModels ? "" : `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}`;
+    // Staged models never record or compare rejections. Other preparations keep
+    // the request-time asset state: installs replace the binding's asset maps,
+    // so a shallow copy is enough to key a later asynchronous rejection.
+    const descriptor = rejectionKey(command, stagesModels ? binding : { ...binding });
     const rejected = rejectedPreparedAssignments.get(binding) ?? new Map<number, string>();
     rejectedPreparedAssignments.set(binding, rejected);
-    if (!stagesModels && rejected.get(command.slotId) === descriptor) return;
+    if (!stagesModels && rejected.has(command.slotId) && rejected.get(command.slotId) === descriptor()) return;
     const targets: PlayVisualTargets = { spriteOverlays: new Map(), lights: new Map(), cameras: new Map() };
     const deferred: DeferredModelLoad[] = [];
     let candidate: Mesh | undefined;
@@ -1042,7 +1049,7 @@ export function applyAssignMesh(
       applyMaterialToActorMeshes(binding, command.slotId, candidate);
     } catch (error) {
       candidate?.dispose(); releaseProvisional();
-      if (!stagesModels) rejected.set(command.slotId, descriptor);
+      if (!stagesModels) rejected.set(command.slotId, descriptor());
       console.warn(`[render] Visual preparation failed: ${String(error)}`);
       return;
     }
@@ -1104,7 +1111,7 @@ export function applyAssignMesh(
     }, (error: unknown) => {
       if (!ownsLoad()) return;
       if (stagesModels) throw error;
-      rejected.set(command.slotId, descriptor);
+      rejected.set(command.slotId, descriptor());
       // The exact texture owner reports preparation failure once.
     }).finally(() => {
       if (refreshes.get(command.slotId) === restart) refreshes.delete(command.slotId);
@@ -1132,7 +1139,7 @@ export function applyAssignMesh(
   if (stagesText) {
     // Script text writes re-emit assignMesh every tick; hash installed assets
     // only to compare or record a rejected allocation.
-    const descriptor = () => `${JSON.stringify(command)}|${meshAssetFingerprint(binding)}|${scene.getEngine().getCaps().maxTextureSize}`;
+    const descriptor = rejectionKey(command, binding, `|${scene.getEngine().getCaps().maxTextureSize}`);
     const rejected = rejectedTextAssignments.get(binding);
     if (existing && rejected?.has(command.slotId) && rejected.get(command.slotId) === descriptor()) return;
     try {
