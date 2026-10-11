@@ -15,6 +15,7 @@ import {
 } from "@babylonslate/behaviour-tree";
 import { blackboardInspectTypes, blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
 import type { RuntimeDiagnostic } from "./diagnostics";
+import { samePlainData } from "./plain-data";
 import { navPointFromUnknown, type RuntimeNavigation } from "./runtime-navigation";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { ScriptHost } from "./script-host";
@@ -27,20 +28,6 @@ const BT_TASK_ACTIVATION = Symbol("btTaskActivation");
 type BtTaskActivation = { active: boolean; blackboard: BlackboardValues; result?: "success" | "failure" };
 /** The fields of a published `btState`, kept to skip unchanged ticks. */
 type BtStatePayload = Pick<BtEvalState, "status" | "btNodeId" | "lastResults" | "blackboard" | "stack">;
-
-/** Structural equality of plain snapshot data, so an unchanged tree allocates no comparison string. */
-function samePlainData(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (typeof a === "number" && typeof b === "number") return Number.isNaN(a) && Number.isNaN(b);
-  if (!a || !b || typeof a !== "object" || typeof b !== "object" || Array.isArray(a) !== Array.isArray(b)) return false;
-  if (Array.isArray(a)) {
-    const other = b as unknown[];
-    return a.length === other.length && a.every((value, index) => samePlainData(value, other[index]));
-  }
-  const left = a as Record<string, unknown>, right = b as Record<string, unknown>;
-  const keys = Object.keys(left);
-  return keys.length === Object.keys(right).length && keys.every((key) => Object.hasOwn(right, key) && samePlainData(left[key], right[key]));
-}
 
 interface BehaviourTreeRuntimeHost {
   world(): World;

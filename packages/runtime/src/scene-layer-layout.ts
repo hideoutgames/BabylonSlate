@@ -1,5 +1,6 @@
 import { resolveOverlayLayout, type OverlaySafeAreaInsets, type VirtualizedItem, type OverlayLayoutEntry, type OverlayLayoutResult, type SerializedActor, type SerializedTransform, type Transform } from "@babylonslate/core";
 import type { Actor, ActorComponent } from "@babylonslate/object-model";
+import { samePlainData } from "./plain-data";
 
 type CachedPose = { authored: SerializedTransform; applied: SerializedTransform };
 const LAYOUT_PROPERTY_KEYS = ["width", "height", "widthMode", "heightMode", "fillWeight", "gap", "horizontalAlignment", "verticalAlignment", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "scrollX", "scrollY", "scrollAxis", "visible", "enabled", "size", "text", "wrapWidth", "wrapHeight", "textureGuid", "itemClassId", "itemCount", "itemWidth", "itemHeight", "columns", "overscan", "useSafeArea", "safeLeft", "safeRight", "safeTop", "safeBottom", "insetLeft", "insetRight", "insetTop", "insetBottom"] as const;
@@ -14,19 +15,6 @@ function layoutProperties(component: ActorComponent): Record<string, unknown> {
 const serialize = (t: Transform): SerializedTransform => ({ position: [t.position.x, t.position.y, t.position.z], rotation: [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w], scale: [t.scale.x, t.scale.y, t.scale.z] });
 const live = (t: SerializedTransform): Transform => ({ position: { x: t.position[0], y: t.position[1], z: t.position[2] }, rotation: { x: t.rotation[0], y: t.rotation[1], z: t.rotation[2], w: t.rotation[3] }, scale: { x: t.scale[0], y: t.scale[1], z: t.scale[2] } });
 
-/** Structural equality of the plain layout inputs, so an unchanged pass allocates no signature string. */
-function sameInput(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (typeof a === "number" && typeof b === "number") return Number.isNaN(a) && Number.isNaN(b);
-  if (!a || !b || typeof a !== "object" || typeof b !== "object" || Array.isArray(a) !== Array.isArray(b)) return false;
-  if (Array.isArray(a)) {
-    const other = b as unknown[];
-    return a.length === other.length && a.every((value, index) => sameInput(value, other[index]));
-  }
-  const left = a as Record<string, unknown>, right = b as Record<string, unknown>;
-  const keys = Object.keys(left);
-  return keys.length === Object.keys(right).length && keys.every((key) => Object.hasOwn(right, key) && sameInput(left[key], right[key]));
-}
 
 /** Retains design poses while arranging; script transform edits replace the design pose. */
 export class SceneLayerLayout {
@@ -39,7 +27,7 @@ export class SceneLayerLayout {
   /** The design pose: reused while the live pose is still the one layout applied. */
   private authored(target: Actor | ActorComponent): SerializedTransform {
     const current = serialize(target.transform), cached = this.poses.get(target);
-    if (cached && sameInput(cached.applied, current)) return cached.authored;
+    if (cached && samePlainData(cached.applied, current)) return cached.authored;
     this.poses.set(target, { authored: current, applied: current });
     return current;
   }
@@ -64,7 +52,7 @@ export class SceneLayerLayout {
     const inputs = [source, pixelsPerUnit, sizes, { ...safeAreaInsets }, virtualItems];
     const previousInputs = this.inputs.get(layerId);
     const previousOwners = this.owners.get(layerId);
-    if (previousInputs && sameInput(previousInputs, inputs) && previousOwners?.length === owners.length && owners.every((owner, index) => previousOwners[index] === owner)) return null;
+    if (previousInputs && samePlainData(previousInputs, inputs) && previousOwners?.length === owners.length && owners.every((owner, index) => previousOwners[index] === owner)) return null;
     const result = resolveOverlayLayout(source, { pixelsPerUnit, safeAreaInsets, virtualItems, textureSize: (guid) => texturePixelSizes[guid], includeUnmanagedBounds: true });
     const byId = new Map(actors.map(a => [a.guid, a]));
     const apply = (target: Actor | ActorComponent, transform: SerializedTransform) => {
