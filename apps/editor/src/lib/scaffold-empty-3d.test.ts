@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDefaultScene, type SerializedGraph } from "@babylonslate/core";
+import { createDefaultScene, quatRotateVector, type SerializedGraph } from "@babylonslate/core";
 import { AssetRegistry, collectAssetDependencyMetadata, createRegistryAssetLoadingService, encodeBabasset, type ImportResult, type IndexedAsset, type RegistryLoadedAsset } from "@babylonslate/assets";
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
@@ -27,7 +27,7 @@ function indexed(
 }
 
 describe("applyKenneyMannequinEmptyScaffold", () => {
-  it("adds the Mannequin capsule and prepares its authored lit material dependencies", async () => {
+  it("adds the Mannequin capsule facing the default camera and prepares its authored lit material dependencies", async () => {
     const created = [
       // The importer preserves unsupported source material features; the
       // template subsequently replaces that slot with its authored lit graph.
@@ -91,6 +91,12 @@ describe("applyKenneyMannequinEmptyScaffold", () => {
 
     const actor = scene.actors.find((entry) => entry.id === MANNEQUIN_ACTOR_ID);
     expect(actor?.classId).toBe(MANNEQUIN_CLASS_ID);
+    // The model's front (+Z) turns toward the default Camera.
+    const [qx, qy, qz, qw] = actor!.transform.rotation;
+    const front = quatRotateVector({ x: qx, y: qy, z: qz, w: qw }, { x: 0, y: 0, z: 1 });
+    const camera = scene.actors.find((entry) => entry.id === scene.settings.mainCameraActorId)!;
+    const [cx, , cz] = camera.transform.position;
+    expect(front.x * cx + front.z * cz).toBeGreaterThan(0);
     const actorBody = actor?.components.find(
       (component) => component.classId === "RigidBodyComponent",
     );

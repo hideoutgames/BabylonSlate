@@ -60,7 +60,7 @@ for (const variant of cases) test(`Basic 3D mannequin ${variant.backend} ${varia
   }
   if (variant.alternate) {
     const scene = await page.evaluate(() => (window as unknown as { __babylonslateTest: { activeSceneContent(): SerializedScene } }).__babylonslateTest.activeSceneContent());
-    scene.actors.find(actor => actor.id === "actor-sun")!.transform.rotation = lookAtRotation([-4, 8, 5], [0, 0, 0]);
+    scene.actors.find(actor => actor.id === "actor-sun")!.transform.rotation = lookAtRotation([4, 8, -5], [0, 0, 0]);
     await setPreviewScene(page, scene);
   }
   const canvas = page.getByTestId("viewport-canvas");
@@ -72,7 +72,8 @@ for (const variant of cases) test(`Basic 3D mannequin ${variant.backend} ${varia
     mode: variant.mode, shadows: variant.profile === "medium" ? initial.requestedShadows : normalizeShadowSettings({ profile: "low" }),
     quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }),
   };
-  await page.evaluate(alternate => window.__babylonslateViewportTest.setShadowCaptureView(alternate ? [-3, 2, 4] : [3, 2, 4], [0, 1.35, 0], 0.7), variant.alternate);
+  // The template Mannequin faces the default camera (-Z); view its front from the Sun's side.
+  await page.evaluate(alternate => window.__babylonslateViewportTest.setShadowCaptureView(alternate ? [3, 2, -4] : [-3, 2, -4], [0, 1.35, 0], 0.7), variant.alternate);
   const beforeSettings = await page.evaluate(() => window.__babylonslateViewportTest.renderingBaseline());
   await page.evaluate(settings => window.__babylonslateViewportTest.setRenderSettings(settings), settings);
   try {

@@ -99,11 +99,12 @@ export const DEFAULT_SCENE_SUN_COLOR: [number, number, number] = [
 export const DEFAULT_SCENE_SUN_INTENSITY = 1.5;
 
 /**
- * Light sits above-right so the editor billboard is visible. Rotation aims
- * Babylon local +Z toward the origin (high-sun direction).
+ * High sun slightly left on the default camera's side (-Z), so surfaces
+ * facing that camera are lit; the editor billboard sits above the origin.
+ * Rotation aims Babylon local +Z toward the origin.
  */
 export const DEFAULT_SCENE_SUN_POSITION: [number, number, number] = [
-  0.35, 1, 0.2,
+  -1.05, 3, -0.6,
 ];
 
 export function createDefaultSkyboxActor() {
