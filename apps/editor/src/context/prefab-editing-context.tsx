@@ -234,7 +234,12 @@ export function PrefabEditingProvider({
     }
     return ids;
   }, [classId, parentOf]);
-  const ancestorDocumentsRef = useRef<readonly OpenDocument[]>([]);
+  // DocumentService edits an open document in place, so the entry keeps its
+  // identity across edits. Key the list on each entry's path and content too.
+  const ancestorDocumentsRef = useRef<{
+    documents: readonly OpenDocument[];
+    keys: readonly (readonly [string, unknown])[];
+  }>({ documents: [], keys: [] });
   const ancestorDocuments = useMemo(() => {
     const next = classDocuments.filter(
       (entry) =>
@@ -243,12 +248,19 @@ export function PrefabEditingProvider({
     );
     const previous = ancestorDocumentsRef.current;
     if (
-      next.length !== previous.length ||
-      next.some((entry, index) => entry !== previous[index])
+      next.length !== previous.keys.length ||
+      next.some(
+        (entry, index) =>
+          entry.ref.path !== previous.keys[index]![0] ||
+          entry.content !== previous.keys[index]![1],
+      )
     ) {
-      ancestorDocumentsRef.current = next;
+      ancestorDocumentsRef.current = {
+        documents: next,
+        keys: next.map((entry) => [entry.ref.path, entry.content] as const),
+      };
     }
-    return ancestorDocumentsRef.current;
+    return ancestorDocumentsRef.current.documents;
   }, [ancestorIds, classDocuments]);
 
   const ancestorsRef = useRef<readonly PrefabAncestor[]>(NO_ANCESTORS);
