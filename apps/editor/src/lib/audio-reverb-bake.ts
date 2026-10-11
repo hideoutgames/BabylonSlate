@@ -1,4 +1,5 @@
 import {
+  AssetFormatVersionError,
   AUDIO_BAKE_DEBOUNCE_MS,
   AUDIO_BAKE_WORKER_TIMEOUT_MS,
   bakeAudioReverb,
@@ -277,14 +278,25 @@ export function sceneFromDocument(
   return scene as AudioReverbBakeScene;
 }
 
-/** Load Scene documents (open or closed) and keep those with a Scene payload. */
+/**
+ * Load Scene documents (open or closed) and keep those with a Scene payload.
+ * A Scene stored in an unsupported format is skipped: export's own read fails
+ * on it only when the game reaches it.
+ */
 export async function collectAudioReverbFlushScenes(options: {
   paths: readonly string[];
   load: (path: string) => Promise<unknown | null>;
 }): Promise<AudioReverbBakeSceneEntry[]> {
   const scenes: AudioReverbBakeSceneEntry[] = [];
   for (const path of options.paths) {
-    const scene = sceneFromDocument(await options.load(path));
+    let document: unknown;
+    try {
+      document = await options.load(path);
+    } catch (error) {
+      if (error instanceof AssetFormatVersionError) continue;
+      throw error;
+    }
+    const scene = sceneFromDocument(document);
     if (scene) scenes.push({ path, scene });
   }
   return scenes;

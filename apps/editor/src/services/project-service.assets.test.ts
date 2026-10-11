@@ -8,6 +8,7 @@ import {
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
   PROJECT_FILE,
+  SCENE_SCHEMA_VERSION,
   type SerializedScene,
 } from "@babylonslate/core";
 import {
@@ -1552,6 +1553,22 @@ describe("project documents as .babasset", () => {
     expect((saved.payload as unknown as SerializedScene).actors[0]!.transform.position[0]).toBe(0);
     expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(new Uint8Array([2]));
     controller.dispose();
+  });
+
+  it("leaves a Scene stored in an unsupported format to export's own read instead of baking it", async () => {
+    const { storage, service } = await scaffolded();
+    const scene = createDefaultScene();
+    await service.saveDocument("scene", MAIN_SCENE_FILE, scene);
+    const stale = "assets/Stale.scene.babasset";
+    await storage.writeBinary(stale, await encodeAssetDocument({
+      guid: "00000000-0000-4000-8000-0000000000aa", type: "Scene", name: "Stale",
+      version: SCENE_SCHEMA_VERSION - 1, payload: scene as unknown as Record<string, unknown>,
+    }));
+    // Export fails on the stale Scene only if the game reaches it (loadExportDocuments).
+    const scenes = await collectAudioReverbFlushScenes({
+      paths: [stale, MAIN_SCENE_FILE], load: (path) => service.loadDocument("scene", path),
+    });
+    expect(scenes.map((entry) => entry.path)).toEqual([MAIN_SCENE_FILE]);
   });
 
   it.each([false, true])("reconciles reverb when manual nav bake saves changed geometry (staged=%s)", async (staged) => {

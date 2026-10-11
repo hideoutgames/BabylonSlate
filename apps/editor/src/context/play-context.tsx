@@ -37,7 +37,7 @@ import type { Diagnostic } from "@babylonslate/scripting";
 import { emptyPlayAudioLibrary, type PlayAudioLibrary, type PlayAudioSourceLoader } from "../lib/play-audio";
 import { appendOutputLogLine } from "../lib/output-log-ring";
 import { classIdFromClassAsset } from "../lib/content-browser-helpers";
-import { PlayPrepareDialog } from "../components/play-prepare-dialog";
+import { PlayFailedDialog, PlayPrepareDialog } from "../components/play-prepare-dialog";
 import { PlayUnsavedDialog, type PlayUnsavedChoice } from "../components/play-unsaved-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
 import { SimulationSessionBar } from "../components/simulation-session-bar";
@@ -202,19 +202,31 @@ interface PlayContextValue {
 const PlayContext = createContext<PlayContextValue | null>(null);
 const OutputLogContext = createContext<{ lines: string[] }>({ lines: [] });
 const LiveBtStateContext = createContext<LiveBtState | null>(null);
-const PlayDiagnosticsActionsContext = createContext<Pick<
-  PlayContextValue, "appendLog" | "reportBtState"
-> | null>(null);
+type PlayDiagnosticsActions = Pick<PlayContextValue, "appendLog" | "reportBtState"> & {
+  /** Counts an open Output Log window until the returned release runs. */
+  openOutputLogWindow: () => () => void;
+  outputLogWindowOpen: () => boolean;
+};
+const PlayDiagnosticsActionsContext = createContext<PlayDiagnosticsActions | null>(null);
 
 /** High-frequency updates must not rerender the session owner or its overlays. */
 function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
   const [logLines, setLogLines] = useState<string[]>([]);
   const [liveBtState, setLiveBtState] = useState<LiveBtState | null>(null);
+  const outputLogWindows = useRef(0);
   const appendLog = useCallback((line: string) => {
     setLogLines((previous) => appendOutputLogLine(previous, line));
   }, []);
-  const actions = useMemo(
-    () => ({ appendLog, reportBtState: setLiveBtState }),
+  const actions = useMemo<PlayDiagnosticsActions>(
+    () => ({
+      appendLog,
+      reportBtState: setLiveBtState,
+      openOutputLogWindow: () => {
+        outputLogWindows.current += 1;
+        return () => { outputLogWindows.current -= 1; };
+      },
+      outputLogWindowOpen: () => outputLogWindows.current > 0,
+    }),
     [appendLog],
   );
   const outputLog = useMemo(() => ({ lines: logLines }), [logLines]);
@@ -240,7 +252,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
 }
 
 function PlaySessionProvider({ children }: { children: ReactNode }) {
-  const { appendLog, reportBtState } = useContext(PlayDiagnosticsActionsContext)!;
+  const { appendLog, reportBtState, outputLogWindowOpen } = useContext(PlayDiagnosticsActionsContext)!;
   const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
   const engineRef = useRef<AbstractEngine | null>(null);
   const providerMountRef = useRef(0);
@@ -276,6 +288,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   } | null>(null);
   const [playBlockedOpen, setPlayBlockedOpen] = useState(false);
   const [blockedDiagnostics, setBlockedDiagnostics] = useState<Diagnostic[]>([]);
+  const [playFailure, setPlayFailure] = useState<{ simulating: boolean; reason: string } | null>(null);
   const [injectThrow, setInjectThrow] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportEntries, setReportEntries] = useState<SessionReportEntry[]>([]);
@@ -1409,9 +1422,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         launchPlay({ injectFixtureThrow: inject, scripts: nextScripts });
       } catch (error) {
         if (!sessionOwner.isCurrent(ticket)) return;
-        appendLog(
-          `Play preparation failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        const reason = error instanceof Error ? error.message : String(error);
+        appendLog(`Play preparation failed: ${reason}`);
+        // With no Output Log window open, the log line alone would go unseen.
+        if (!outputLogWindowOpen()) setPlayFailure({ simulating, reason });
         setPrepareState(null);
         setScripts([]);
       } finally {
@@ -1424,6 +1438,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     },
     [
       appendLog,
+      outputLogWindowOpen,
       launchPlay,
       playFromScene,
       sessionOwner,
@@ -1769,6 +1784,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             }}
           />
         ) : null}
+        {playFailure ? (
+          <PlayFailedDialog
+            title={playFailure.simulating ? "Simulation Failed" : "Play Failed"}
+            reason={playFailure.reason}
+            onClose={() => setPlayFailure(null)}
+          />
+        ) : null}
         <PlayBlockedDialog
           open={playBlockedOpen}
           diagnostics={blockedDiagnostics}
@@ -1900,6 +1922,15 @@ export function usePlayDiagnosticsActions(): Pick<
 
 export function useOutputLog(): { lines: string[] } {
   return useContext(OutputLogContext);
+}
+
+/**
+ * Marks an Output Log window as open while the caller is mounted. Play reports
+ * a preparation failure in a dialog only while no such window is open.
+ */
+export function useOutputLogWindow(): void {
+  const actions = useContext(PlayDiagnosticsActionsContext);
+  useEffect(() => actions?.openOutputLogWindow(), [actions]);
 }
 
 /** Subscribe only the behaviour-tree debugger to live snapshots. */
