@@ -254,14 +254,22 @@ export class NodeStorageAdapter implements ProjectStorage {
       throw nodeStorageError(error, path);
     }
     const out: DirEntry[] = [];
+    let ancestors: string[] | null = null;
     for (const e of entries) {
       if (STAGED_WRITE.test(e.name)) continue;
       const entryPath = join(full, e.name);
       let s: Stats;
       try {
+        const target = e.isSymbolicLink() ? await realpath(entryPath) : null;
         // A link that resolves outside the project root is not part of the project.
-        if (e.isSymbolicLink() && escapes(root.real, await realpath(entryPath))) continue;
+        if (target !== null && escapes(root.real, target)) continue;
         s = await stat(entryPath);
+        // A link to a directory on the path being listed (or one containing it)
+        // would lead every recursive walk back here without end.
+        if (target !== null && s.isDirectory()) {
+          ancestors ??= await realAncestors(root, full);
+          if (ancestors.some((dir) => !escapes(target, dir))) continue;
+        }
       } catch (error) {
         // Removed after it was listed, or a dangling link.
         if (errorCode(error) === "ENOENT") continue;
@@ -307,6 +315,21 @@ export class NodeStorageAdapter implements ProjectStorage {
       mtime: s.mtimeMs,
     };
   }
+}
+
+/**
+ * Real locations of the root and of each directory on the path down to
+ * `full`, as reached through any links along it.
+ */
+async function realAncestors(root: NodeRoot, full: string): Promise<string[]> {
+  const reals = [root.real];
+  let current = root.path;
+  for (const part of relative(root.path, full).split(sep)) {
+    if (!part) continue;
+    current = join(current, part);
+    reals.push(await realpath(current));
+  }
+  return reals;
 }
 
 function escapes(root: string, full: string): boolean {

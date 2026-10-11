@@ -122,6 +122,28 @@ describe("node storage adapter", () => {
     expect(await readFile(join(outside, "secret.txt"), "utf8")).toBe("secret");
   });
 
+  it("leaves out links back up the listed path so a recursive walk ends", async () => {
+    dir = await mkdtemp(join(tmpdir(), "babylonslate-node-"));
+    const storage = new NodeStorageAdapter(dir);
+    await storage.openDocumentsProject("Game");
+    await storage.writeText("assets/hero.babasset", "hero");
+    await storage.mkdir("levels");
+    const project = join(dir, "Game");
+    await symlink(project, join(project, "assets", "up"));
+    // Each link alone points sideways; followed in turn they lead back.
+    await symlink(join(project, "levels"), join(project, "assets", "levels"));
+    await symlink(join(project, "assets"), join(project, "levels", "art"));
+    const walk = async (path: string): Promise<string[]> => {
+      const files: string[] = [];
+      for (const entry of await storage.readdir(path)) {
+        const child = path === "." ? entry.name : `${path}/${entry.name}`;
+        files.push(...(entry.isDir ? await walk(child) : [child]));
+      }
+      return files;
+    };
+    expect((await walk(".")).sort()).toEqual(["assets/hero.babasset", "levels/art/hero.babasset"]);
+  });
+
   it("reopens an existing Documents project by id only", async () => {
     dir = await mkdtemp(join(tmpdir(), "babylonslate-node-"));
     const storage = new NodeStorageAdapter(dir);
