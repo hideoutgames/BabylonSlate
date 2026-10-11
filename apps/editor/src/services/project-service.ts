@@ -363,6 +363,8 @@ export class ProjectService {
   private readonly publicEncodeQueue: EncodeQueue;
   /** The encode result being committed, which Close Project lets finish in its own folder. */
   private textureCommit: Promise<unknown> | null = null;
+  /** The last queued write of each file the registry does not index. */
+  private readonly unindexedWrites = new Map<string, Promise<void>>();
   private readonly emissionJobs = new Set<AbortController>();
   private readonly processAreaEmission: AreaEmissionProcessor;
   private workerEncode:
@@ -2283,7 +2285,17 @@ export class ProjectService {
   private async withDocumentWrite<T>(path: string, write: (currentPath: string) => Promise<T>): Promise<T> {
     const registry = this.assetRegistry;
     const asset = registry?.getByPath(path);
-    if (!asset) return write(path);
+    if (!asset) {
+      // A file the registry does not index (a plugin's settings, a new file)
+      // still takes one write at a time.
+      const run = (this.unindexedWrites.get(path) ?? Promise.resolve()).then(() => write(path));
+      const settled = run.then(() => {}, () => {});
+      this.unindexedWrites.set(path, settled);
+      void settled.then(() => {
+        if (this.unindexedWrites.get(path) === settled) this.unindexedWrites.delete(path);
+      });
+      return run;
+    }
     return registry!.withAssetWrite(asset.header.guid, () => {
       const current = registry!.getByGuid(asset.header.guid);
       if (this.assetRegistry !== registry || !current) {
