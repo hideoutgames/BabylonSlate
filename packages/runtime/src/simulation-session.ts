@@ -136,13 +136,18 @@ export class SimulationSession {
         !Number.isSafeInteger(request.requestId) || request.requestId <= this.lastCaptureRequestId ? "Invalid or superseded capture request ID." : null;
       if (invalid) { resolve(this.host.boundaries().result(boundaryRequest, invalid)); return; }
       this.lastCaptureRequestId = request.requestId;
-      this.host.setPauseReason("loading", true);
-      this.host.materialEditGate()?.cancel("Simulation is stopping; the pending material edit was cancelled.");
-      this._quiescent = true;
-      this.host.resetInputState();
-      this.host.flushInspectorRequests();
-      this.host.flushDeferredSnapshot();
-      resolve(this.host.boundaries().result(boundaryRequest));
+      try {
+        this.host.setPauseReason("loading", true);
+        this.host.materialEditGate()?.cancel("Simulation is stopping; the pending material edit was cancelled.");
+        this._quiescent = true;
+        this.host.resetInputState();
+        this.host.flushInspectorRequests();
+        this.host.flushDeferredSnapshot();
+        resolve(this.host.boundaries().result(boundaryRequest));
+      } catch (error) {
+        // Answer now; a later request ID can retry the boundary.
+        resolve(this.host.boundaries().result(boundaryRequest, error instanceof Error ? error.message : "Simulation quiescence failed."));
+      }
     }));
   }
 
