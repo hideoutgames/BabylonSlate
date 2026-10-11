@@ -199,6 +199,27 @@ describe("particle graph validation", () => {
       expect.objectContaining({ code: "particle.attractorParticleInput", nodeId: "attract", pinId: "position", severity: "warning" }),
     );
     expect(codes(attractorFirst("input.system.emitterPosition"))).not.toContain("particle.attractorParticleInput");
+    // Align Angle never sets Babylon's particle context, so it does not count as an earlier update.
+    const afterAlign = build(
+      [
+        ["create", "particle.create"],
+        ["shape", "shape.point"],
+        ["align", "update.alignAngle"],
+        ["attract", "force.attractor"],
+        ["move", "update.basicPosition"],
+        ["output", "particle.output"],
+        ["source", "input.contextual.position"],
+      ],
+      [
+        ["create", "out", "shape", "particle"],
+        ["shape", "out", "align", "particle"],
+        ["align", "out", "attract", "particle"],
+        ["attract", "out", "move", "particle"],
+        ["move", "out", "output", "particle"],
+        ["source", "out", "attract", "position"],
+      ],
+    );
+    expect(codes(afterAlign)).toContain("particle.attractorParticleInput");
     const afterUpdate = withSpine(
       [["attract", "force.attractor"], ["position", "input.contextual.position"]],
       [["position", "out", "attract", "position"]],

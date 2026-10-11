@@ -101,6 +101,12 @@ export function particleSpine(graph: GraphLike): string[] {
 const RADIAL_SHAPES = new Set(["shape.sphere", "shape.cone", "shape.cylinder"]);
 /** Update closures that move particles; without one nothing moves. */
 const MOTION_UPDATES = new Set(["update.position", "update.basicPosition"]);
+/**
+ * Updates whose Babylon blocks never set the build state's particle context
+ * (`AlignAngleBlock`, `UpdateAttractorBlock`). An Attractor after only these
+ * still reads the previous particle, or none on the first one.
+ */
+const NO_PARTICLE_CONTEXT_UPDATES = new Set(["update.alignAngle", "force.attractor"]);
 
 function pinById(
   pins: readonly ParticlePinDefinition[],
@@ -430,14 +436,14 @@ function validateSpine(
         if (!found) continue;
         diagnostics.push({
           code: "particle.attractorParticleInput",
-          message: `"${found.title}" reads the previous particle here: the Attractor runs first, before any update sets the particle. Place it after another update`,
+          message: `"${found.title}" reads the previous particle here: no update before the Attractor sets the particle (Align Angle and Attractor do not). Place it after another update`,
           severity: "warning",
           nodeId,
           pinId,
         });
       }
     }
-    sawContextUpdate = true;
+    if (!NO_PARTICLE_CONTEXT_UPDATES.has(node.type)) sawContextUpdate = true;
   }
   for (const nodeId of shapes.slice(0, -1)) {
     diagnostics.push({

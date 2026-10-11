@@ -145,7 +145,7 @@ Every node has a `role` (`output`, `create`, `shape`, `update`, `input`, `value`
 | Logic | Condition (`ParticleConditionBlock`; Test, Epsilon) |
 
 - Apply Velocity and Fade To Dead Color keep Babylon's names ("basic position update", "basic color update") as search aliases.
-- Divide, Maximum, Smooth Step, Step and Clamp take Float or vectors, not Color (Babylon's Color4 versions throw or misbehave); Minimum takes Color. Modulo and Power are Float only. Split takes Vector 2, Vector 3 or Color; Combine's W defaults to 1.
+- Divide, Maximum, Smooth Step, Step and Clamp take Float or vectors, not Color (Babylon's Color4 versions throw or misbehave); Minimum takes Color. Modulo and Power are Float only. Split takes Vector 2, Vector 3 or Color; Combine's W defaults to 1. Unwired Reciprocal and Logarithm read 1, so they stay finite.
 - Sphere, Cone and Cylinder emit radially until both Direction 1 and Direction 2 are set; Point and Box default both to (0, 1, 0). Radius Range defaults to 1 (fills the volume).
 - Reserved v1 ids report `particle.unsupportedNode` by name (`PARTICLE_UNSUPPORTED_V1_TYPES`): `shape.mesh`, `shape.custom`, `sprite.setup`, `update.spriteCell`, `update.basicSprite`, `update.noise`, `update.flowMap`, `update.age`, `trigger.spawn`, `utility.localVariable`, `math.nlerp`, `math.floatToInt`.
 - `SystemBlock` `texture`, `targetStopDuration`, `onStart` / `onEnd`, `translationPivot` and `textureMask` are never pins; Loop and Duration are settings.
@@ -182,7 +182,7 @@ Every node has a `role` (`output`, `create`, `shape`, `update`, `input`, `value`
 | `cpuBudget` | Warning | Capacity above 512 |
 | `missingMaterial` | Warning | No Material, or the Material is not in the project |
 | `materialDomain` | Warning | The Material is not in the Particle domain |
-| `attractorParticleInput` | Warning | The Attractor is the first update on the spine and a particle-dependent input reads the previous particle |
+| `attractorParticleInput` | Warning | No update before the Attractor sets the particle (Align Angle and Attractor do not) and a particle-dependent input reads the previous particle |
 | `shapeDirectionPair` | Warning | Only one of Direction 1 / Direction 2 is set on Sphere, Cone or Cylinder |
 | `multipleShapes` | Warning | An earlier Shape on the spine is overridden |
 | `colorOverridden` | Warning | Anchored on Create Particle's Color: an Update Color on the spine reads neither Initial Color nor Particle Color, and no later one reads Initial Color, so Create Particle's Color never shows |

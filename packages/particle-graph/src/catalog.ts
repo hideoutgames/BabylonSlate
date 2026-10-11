@@ -322,13 +322,14 @@ function binaryMath(
   };
 }
 
-function unaryMath(type: string, title: string): ParticleNodeDefinition {
+/** `defaultValue` keeps an unwired node defined (Reciprocal and Logarithm of 0 are infinite). */
+function unaryMath(type: string, title: string, defaultValue = 0): ParticleNodeDefinition {
   return {
     type,
     title,
     category: "Math",
     role: "value",
-    inputs: [{ id: "value", name: "Value", type: GENERIC, defaultValue: [0] }],
+    inputs: [{ id: "value", name: "Value", type: GENERIC, defaultValue: [defaultValue] }],
     outputs: [{ id: "out", name: "Out", type: GENERIC }],
   };
 }
@@ -631,7 +632,7 @@ const MATH_NODES: ParticleNodeDefinition[] = [
   unaryMath("math.floor", "Floor"),
   unaryMath("math.ceil", "Ceiling"),
   unaryMath("math.sqrt", "Square Root"),
-  unaryMath("math.log", "Logarithm"),
+  unaryMath("math.log", "Logarithm", 1),
   unaryMath("math.tan", "Tangent"),
   unaryMath("math.atan", "Arctangent"),
   unaryMath("math.acos", "Arccosine"),
@@ -639,7 +640,7 @@ const MATH_NODES: ParticleNodeDefinition[] = [
   unaryMath("math.sign", "Sign"),
   unaryMath("math.negate", "Negate"),
   unaryMath("math.oneMinus", "One Minus"),
-  unaryMath("math.reciprocal", "Reciprocal"),
+  unaryMath("math.reciprocal", "Reciprocal", 1),
   unaryMath("math.degrees", "Degrees"),
   unaryMath("math.radians", "Radians"),
   unaryMath("math.fract", "Fraction"),
