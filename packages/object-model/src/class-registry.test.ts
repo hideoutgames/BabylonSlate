@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ClassRegistry, hydrateClassVariableValue } from "./class-registry";
+import { ClassRegistry, hydrateClassVariableValue, type VariableDef } from "./class-registry";
 import {
   ENGINE_COMPONENT_CLASS_IDS,
   isHiddenEngineBaseClassId,
@@ -264,6 +264,18 @@ describe("ClassRegistry", () => {
     if (!reparent.ok) {
       expect(reparent.error).toMatch(/inheritance depth limit/);
     }
+    // The moved class carries its subtree: its child must stay within the limit too.
+    registry.register({
+      id: "ShallowChild",
+      parentClassId: "Shallow",
+      kind: "actor",
+      variables: [],
+      implementedInterfaces: [],
+    });
+    expect(registry.reparent("Shallow", "Deep12").ok).toBe(false);
+    expect(registry.ancestry("ShallowChild").length).toBe(4);
+    expect(registry.reparent("Shallow", "Deep11").ok).toBe(true);
+    expect(registry.ancestry("ShallowChild").length).toBe(16);
   });
 
   it("hydrates Array and Map variable defaults at spawn", () => {
@@ -307,5 +319,26 @@ describe("ClassRegistry", () => {
         defaultValue: 8,
       }),
     ).toBe(8);
+  });
+
+  it("gives every spawn its own copy of object, array element and map value defaults", () => {
+    const defaults: VariableDef[] = [
+      { name: "home", type: "vec3", defaultValue: { x: 1, y: 2, z: 3 } },
+      { name: "path", type: "vec3", container: "array", defaultValue: [{ x: 0, y: 0, z: 0 }] },
+      { name: "spawns", type: "vec3", container: "map", defaultValue: [{ key: "a", value: { x: 5, y: 0, z: 0 } }] },
+    ];
+    const [home, path, spawns] = defaults.map(hydrateClassVariableValue) as [
+      { x: number },
+      Array<{ x: number }>,
+      Map<string, { x: number }>,
+    ];
+    home.x = 9;
+    path[0]!.x = 9;
+    spawns.get("a")!.x = 9;
+    expect(defaults.map(hydrateClassVariableValue)).toEqual([
+      { x: 1, y: 2, z: 3 },
+      [{ x: 0, y: 0, z: 0 }],
+      new Map([["a", { x: 5, y: 0, z: 0 }]]),
+    ]);
   });
 });

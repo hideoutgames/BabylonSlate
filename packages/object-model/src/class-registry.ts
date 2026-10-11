@@ -21,17 +21,17 @@ export type VariableDef = {
   keyTypeClassId?: string;
 };
 
-/** Resolve a Class variable's spawn value, including empty Array / Map. */
+/**
+ * Resolve a Class variable's spawn value, including empty Array / Map. Each
+ * call returns its own deep copy, so no spawn shares (or edits) the default.
+ */
 export function hydrateClassVariableValue(variable: VariableDef): unknown {
-  if (variable.container === "array") {
-    return Array.isArray(variable.defaultValue)
-      ? [...variable.defaultValue]
-      : [];
-  }
-  if (variable.container === "map") {
-    return mapFromDefaultEntries(variable.defaultValue);
-  }
-  return variable.defaultValue;
+  const value = variable.defaultValue !== null && typeof variable.defaultValue === "object"
+    ? structuredClone(variable.defaultValue)
+    : variable.defaultValue;
+  if (variable.container === "array") return Array.isArray(value) ? value : [];
+  if (variable.container === "map") return mapFromDefaultEntries(value);
+  return value;
 }
 
 export type ClassKind =
@@ -361,8 +361,14 @@ export class ClassRegistry {
       return err(`reparent would create a cycle: ${classId} -> ${newParentId}`);
     }
     const parentDepth = this.ancestry(newParentId).length;
-    // Reparent keeps this class in the chain, so parent depth must leave room.
-    if (parentDepth >= MAX_CLASS_INHERITANCE_DEPTH) {
+    // The class moves with its whole subtree, so the parent's depth must leave
+    // room for this class and its deepest descendant.
+    let subtreeHeight = 1;
+    for (const id of this.classes.keys()) {
+      const below = this.ancestry(id).indexOf(classId);
+      if (below >= 0) subtreeHeight = Math.max(subtreeHeight, below + 1);
+    }
+    if (parentDepth + subtreeHeight > MAX_CLASS_INHERITANCE_DEPTH) {
       return err(
         `inheritance depth limit (${MAX_CLASS_INHERITANCE_DEPTH}) exceeded for parent ${newParentId}`,
       );
