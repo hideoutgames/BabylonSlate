@@ -39,11 +39,6 @@ function toHandle(folder: FolderRef): ProjectFolderHandle {
   };
 }
 
-function isLegacyBookmark(id: string): boolean {
-  // Legacy ids are base64 bookmarks; new ids are UUIDs.
-  return /^[A-Za-z0-9+/=]{40,}$/.test(id) && !/^[0-9a-f-]{36}$/i.test(id);
-}
-
 function toDirEntry(entry: NativeDirEntry): DirEntry {
   return {
     name: entry.name,
@@ -125,17 +120,6 @@ export class ScopedStorageAdapter implements ProjectStorage {
     }
     const stale = await Preferences.get({ key: STALE_PREF_KEY });
     this.stale = !!this.folder && stale.value === "1";
-
-    if (this.folder && isLegacyBookmark(this.folder.id)) {
-      try {
-        await this.openKnownFolder(toHandle(this.folder));
-      } catch {
-        // An offline legacy provider must not block the Documents tier.
-        // Keep its identity for a later explicit reconnect instead.
-        this.stale = true;
-        await Preferences.set({ key: STALE_PREF_KEY, value: "1" });
-      }
-    }
   }
 
   async pickProjectFolder(): Promise<ProjectFolderHandle> {
@@ -163,12 +147,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
     if (handle.tier !== "external") throw new Error("Expected an external project folder");
     let folder: FolderRef;
     try {
-      if (isLegacyBookmark(handle.id)) {
-        if (!this.plugin.importBookmark) throw { code: ScopedStorageErrorCode.Stale };
-        ({ folder } = await this.plugin.importBookmark({ bookmark: handle.id, name: handle.name }));
-      } else {
-        ({ folder } = await this.plugin.openFolder({ id: handle.id }));
-      }
+      ({ folder } = await this.plugin.openFolder({ id: handle.id }));
     } catch (error) {
       if (isScopedStorageError(error, ScopedStorageErrorCode.Stale) ||
           isScopedStorageError(error, ScopedStorageErrorCode.AccessRevoked) ||

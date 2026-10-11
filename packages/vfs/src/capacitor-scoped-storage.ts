@@ -38,10 +38,6 @@ export interface BabylonSlateScopedStoragePlugin {
   readDocumentsRange(options: NativeRangeOptions & { directory: string }): Promise<NativeRangeRead>;
   pickFolder(): Promise<{ folder: PickedFolder }>;
   openFolder(options: { id: string }): Promise<{ folder: PickedFolder }>;
-  importBookmark?(options: {
-    bookmark: string;
-    name?: string;
-  }): Promise<{ folder: PickedFolder }>;
   beginReadScope?(options: { folder: string }): Promise<{ readScope: string }>;
   endReadScope?(options: { readScope: string }): Promise<void>;
 

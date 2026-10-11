@@ -27,7 +27,6 @@ function createMockPlugin(): BabylonSlateScopedStoragePlugin {
   return {
     pickFolder: vi.fn(),
     openFolder: vi.fn(),
-    importBookmark: vi.fn(),
     readFile: vi.fn(),
     readFileRange: vi.fn(),
     writeFile: vi.fn(),
@@ -140,32 +139,6 @@ describe("ScopedStorageAdapter", () => {
     expect(plugin.openFolder).not.toHaveBeenCalled();
   });
 
-  it("migrates a legacy bookmark id to a stable folder id on init", async () => {
-    const legacyBookmark = btoa("a-legacy-security-scoped-bookmark-that-is-long");
-    prefs.set(
-      "babylonslate:scoped-folder",
-      JSON.stringify({ id: legacyBookmark, name: "Legacy" }),
-    );
-    const plugin = createMockPlugin();
-    vi.mocked(plugin.importBookmark!).mockResolvedValue({
-      folder: { id: "uuid-1", name: "Legacy" },
-    });
-    const adapter = new ScopedStorageAdapter(plugin);
-
-    await adapter.init();
-
-    expect(plugin.importBookmark).toHaveBeenCalledWith({
-      bookmark: legacyBookmark,
-      name: "Legacy",
-    });
-    expect(adapter.getCurrentFolder()).toEqual({
-      id: "uuid-1",
-      name: "Legacy",
-      tier: "external",
-    });
-    expect(prefs.get("babylonslate:scoped-folder")).toContain("uuid-1");
-  });
-
   it("picks a folder and stores a stable folder handle", async () => {
     const plugin = createMockPlugin();
     vi.mocked(plugin.pickFolder).mockResolvedValue({
@@ -184,28 +157,6 @@ describe("ScopedStorageAdapter", () => {
       JSON.stringify({ id: "uuid-2", name: "World" }),
     );
     expect(adapter.getCurrentFolder()).toEqual(handle);
-  });
-
-  it("retains an unreachable legacy bookmark without rejecting mobile initialization", async () => {
-    const id = btoa("a-legacy-security-scoped-bookmark-that-is-long");
-    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id, name: "Offline" }));
-    const plugin = createMockPlugin();
-    vi.mocked(plugin.importBookmark!).mockRejectedValue({ code: "UNREACHABLE" });
-    const adapter = new ScopedStorageAdapter(plugin);
-    await adapter.init();
-    expect(adapter.getCurrentFolder()?.id).toBe(id);
-    expect(await adapter.needsReconnect()).toBe(true);
-  });
-
-  it("migrates a legacy recent handle when opening it", async () => {
-    const plugin = createMockPlugin();
-    const bookmark = btoa("another-legacy-security-scoped-bookmark-that-is-long");
-    vi.mocked(plugin.importBookmark!).mockResolvedValue({ folder: { id: "migrated", name: "Legacy" } });
-    vi.mocked(plugin.readFile).mockResolvedValue({ data: "saved audio metadata" });
-    const adapter = new ScopedStorageAdapter(plugin);
-    await adapter.openKnownFolder({ id: bookmark, name: "Legacy", tier: "external" });
-    expect(await adapter.readText("project.json")).toBe("saved audio metadata");
-    expect(plugin.readFile).toHaveBeenCalledWith({ folder: "migrated", path: "project.json", encoding: "utf8" });
   });
 
   it("retains the failed recent folder as the reconnect target", async () => {
@@ -235,15 +186,6 @@ describe("ScopedStorageAdapter", () => {
     expect(await adapter.needsReconnect()).toBe(true);
     expect(JSON.parse(prefs.get("babylonslate:scoped-folder")!).id).toBe("original");
     expect(plugin.exists).toHaveBeenCalledWith({ folder: "empty", path: "project.json" });
-  });
-
-  it("keeps a stale legacy bookmark recoverable without failing startup", async () => {
-    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: btoa("legacy-security-scoped-bookmark-that-is-long"), name: "Legacy" }));
-    const plugin = createMockPlugin();
-    vi.mocked(plugin.importBookmark!).mockRejectedValue({ code: "STALE" });
-    const adapter = new ScopedStorageAdapter(plugin);
-    await adapter.init();
-    expect(await adapter.needsReconnect()).toBe(true);
   });
 
   it.each(["{broken", "null", '{"id":42}', '{"name":"Game"}'])("ignores malformed persisted folder data: %s", async (value) => {
