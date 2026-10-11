@@ -40,8 +40,9 @@ function setup() {
     targetNodeId: "output",
     targetPinId: "roughness",
   });
+  // "missing" stands in for a Material document that is absent or fails to compile.
   binding.resolveMaterial = (guid, options) =>
-    library.resolve(options?.scene ?? scene, guid, doc, options);
+    guid === "missing" ? null : library.resolve(options?.scene ?? scene, guid, doc, options);
   binding.releaseMaterialInstance = (key) => library.releaseInstance(key);
   disposers.push(() => {
     library.dispose();
@@ -128,6 +129,15 @@ describe("runtime material component identity", () => {
     expect(binding.materialParameters.has("1|hat")).toBe(false);
     set("hat", 0.9);
     expect(binding.materialParameters.has("1|hat")).toBe(false);
+  });
+
+  it("drops a replaced assignment when the new Material does not resolve", () => {
+    const { binding, assign, single } = setup();
+    single("body");
+    assign("body");
+    expect(binding.meshes.get(1)!.material).toBeInstanceOf(NodeMaterial);
+    assign("body", "missing");
+    expect(binding.meshes.get(1)!.material).toBeNull();
   });
 
   it("clears an explicit assignment without detaching a sibling's shared material", () => {
