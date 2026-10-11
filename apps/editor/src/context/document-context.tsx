@@ -2443,6 +2443,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return [{ doc, content: walked.value }];
     });
     await projectService.replaceClassReferencesBeforeDelete(replacements, deletingGuids, onProgress);
+    // The referrer files now name the replacement. Open tabs follow at once,
+    // from their current content, so a failed Project Settings write below
+    // cannot leave a tab whose next Save writes the old reference back.
+    for (const { doc } of openChanges) {
+      const open = documentService.getDocument(doc.id);
+      if (!open?.content) continue;
+      const walked = replaceClassAssetReferences(open.content, replacements, definitionFields);
+      if (!walked.changed) continue;
+      if (open.dirty) documentService.patchLoadedContent(open.id, walked.value);
+      else documentService.replaceLoadedContent(open.id, walked.value);
+    }
+    bump();
     const current = projectDocumentRef.current;
     if (current) {
       const settings = replaceClassAssetReferences(current.settings, replacements);
@@ -2456,11 +2468,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         setProjectDocument(next);
       }
     }
-    for (const { doc, content } of openChanges) {
-      if (doc.dirty) documentService.patchLoadedContent(doc.id, content);
-      else documentService.replaceLoadedContent(doc.id, content);
-    }
-    bump();
   }, [bump, captureMtimeSnapshot, collectGraphTypeSchemas, documentService, projectService, setProjectDocument]);
 
   const renameAsset = useCallback((guid: string, newName: string) => enqueueProjectWrite(async () => {
