@@ -42,7 +42,7 @@ import {
 const decoder = new TextDecoder();
 
 export type LoadedGame = {
-  /** Present for independently addressable exports; legacy fixture hosts may omit it. */
+  /** Assigned by loadGameFromFiles once the catalog's asset service exists. */
   assets?: AssetLoadingService;
   getReadMetrics?: () => StorageReadMetrics;
   onSourcesChanged?: (listener: () => void) => () => void;
