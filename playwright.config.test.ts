@@ -97,6 +97,7 @@ describe("Playwright iPad project filter", () => {
       "p10-tilemap.spec.ts",
       "scene-layer-joystick.spec.ts",
       "scene-modes.spec.ts",
+      "slider-touch.spec.ts",
       "touch-shell.spec.ts",
       "tree-view-touch.spec.ts",
     ]);
@@ -107,6 +108,7 @@ describe("Playwright iPad project filter", () => {
       "Touch shell UX › pointer context menus",
       "Touch shell UX › project long-press stays open after release and can edit",
       "TreeView native touch swipes scroll and a short hold reparents without scrolling",
+      "a touch swipe on a slider track scrolls the panel; only the thumb drags",
     ]);
     const desktopKeys = new Set(desktop.map((test) => `${test.file} › ${test.title}`));
     for (const test of landscape)
