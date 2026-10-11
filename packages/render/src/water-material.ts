@@ -3367,10 +3367,13 @@ export function waterVertexSource(language: ShaderLanguage): { definitions: stri
 export const WATER_VERTEX_WAVE_UNIFORMS: readonly string[] = [
   "slateWaterShape", "slateWaterSwellInfo", ...SWELL_DIRECTION, ...SWELL_AMPLITUDE, ...SWELL_GROUP, ...SWELL_WARP, "slateWaterFft", ...FFT_CASCADE_UNIFORMS,
 ];
-/** `vertexWaveDefines` per cascades the vertex samples (0-3): built once. */
-const VERTEX_WAVE_DEFINES: ReadonlyArray<readonly string[]> = Array.from({ length: WATER_FFT_CASCADES_MAX + 1 }, (_, cascades) => [
-  `#define ${WATER_GPU_WAVES_DEFINE}`, ...(cascades ? [`#define ${FFT_VERTEX} ${cascades}`] : []),
-]);
+/** `vertexWaveDefines` per blend state (off, on) and cascades the vertex samples (0-3): built once. */
+const VERTEX_WAVE_DEFINES: ReadonlyArray<ReadonlyArray<readonly string[]>> = [false, true].map((blend) =>
+  Array.from({ length: WATER_FFT_CASCADES_MAX + 1 }, (_, cascades) => [
+    `#define ${WATER_GPU_WAVES_DEFINE}`, ...(cascades ? [`#define ${FFT_VERTEX} ${cascades}`] : []), ...(blend ? [`#define ${WATER_BLEND_DEFINE}`] : []),
+  ]));
+/** `vertexWaveAttributes` per blend state (off, on). */
+const VERTEX_WAVE_ATTRIBUTES: ReadonlyArray<readonly string[]> = [["slateWaterData"], ["slateWaterData", "slateWaterBlend"]];
 
 /**
  * The GPU swell for another pass's vertex shader that computes a `worldPos` vec4 from the same world matrix and has a
@@ -3382,9 +3385,10 @@ export function waterOutlineVertexSource(language: ShaderLanguage): { declaratio
   const wgsl = language === ShaderLanguage.WGSL;
   const uniforms = WATER_VERTEX_WAVE_UNIFORMS.map((name) => (wgsl ? `uniform ${name}: vec4f;` : `uniform vec4 ${name};`)).join("\n");
   const attribute = wgsl ? "attribute slateWaterData: vec4f;" : "attribute vec4 slateWaterData;";
+  const blend = `#ifdef ${WATER_BLEND_DEFINE}\n${wgsl ? "attribute slateWaterBlend: vec4f;" : "attribute vec4 slateWaterBlend;"}\n#endif`;
   const displacement = vertexWaveSource(false);
   return {
-    declarations: `\n#ifdef ${WATER_GPU_WAVES_DEFINE}\n${attribute}\n${uniforms}${fftHelpers(wgsl, FFT_VERTEX)}#endif\n`,
+    declarations: `\n#ifdef ${WATER_GPU_WAVES_DEFINE}\n${attribute}\n${blend}\n${uniforms}${fftHelpers(wgsl, FFT_VERTEX)}#endif\n`,
     displacement: bindVertexSource(wgsl ? toWgsl(displacement) : displacement, wgsl, "uniforms."),
   };
 }
@@ -4469,10 +4473,14 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   private bankFade(): number { return this.body.kind === "global" ? 0 : waterBankFadeLength(this.water, this.waveScale); }
   /**
    * Defines another pass's program needs for `waterOutlineVertexSource` to match this material's vertex shader,
-   * including the cascades of the FFT detail band its vertex stage samples. Allocation-free.
+   * including the cascades of the FFT detail band its vertex stage samples and the blend scaling. Allocation-free.
    */
   vertexWaveDefines(): readonly string[] {
-    return VERTEX_WAVE_DEFINES[this.fftVertex]!;
+    return VERTEX_WAVE_DEFINES[this._blend ? 1 : 0]![this.fftVertex]!;
+  }
+  /** Mesh attributes `waterOutlineVertexSource` reads under `vertexWaveDefines`. Allocation-free. */
+  vertexWaveAttributes(): readonly string[] {
+    return VERTEX_WAVE_ATTRIBUTES[this._blend ? 1 : 0]!;
   }
   /**
    * Sets `WATER_VERTEX_WAVE_UNIFORMS` and the band's sampler on another pass's effect for this frame, as
