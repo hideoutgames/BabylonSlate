@@ -1417,6 +1417,8 @@ function initializeEngine(
     if (JSON.stringify(previous?.textures) !== JSON.stringify(quality.textures)) {
       resourceCache.setByteCeiling(quality.textures.byteBudget);
       for (const texture of scene.textures) applyTextureAnisotropy(texture);
+      for (const layer of sceneLayerCompositor?.layers() ?? [])
+        for (const texture of layer.scene.textures) applyTextureAnisotropy(texture);
     }
     if (previous && previous.postprocessing.resolutionScale !== quality.postprocessing.resolutionScale) {
       rebuildPostProcessStack();
@@ -3345,10 +3347,13 @@ function initializeEngine(
       }
       if (command.type === "sceneLayerCreate") {
         const layer = sceneLayerCompositor?.create(command);
-        // Layers resolve project quality (Geometry, Water) through the world view.
+        // Layers resolve project quality (Geometry, Water, texture anisotropy)
+        // through the world view.
         if (layer) {
           followSceneRenderSettings(layer.scene, scene);
           setSceneGameTimePaused(layer.scene, gameTimePaused);
+          for (const texture of layer.scene.textures) applyTextureAnisotropy(texture);
+          layer.scene.onNewTextureAddedObservable.add(applyTextureAnisotropy);
         }
         syncOverlayLayer(command.layerId);
         scheduler.invalidate("snapshot");

@@ -86,7 +86,7 @@ are ready; see the typed session contract below.
 | `cel.specularEnabled`, `lightMixing` | Material/graph rebuild | Shader variants; independent of quality presets |
 | `environmentLighting.enabled`, `intensity`, `rotationYDegrees`, `celStrength` | Live state | Scene environment owner; texture replacement separately requires readiness |
 | `quality.resolution.scale`, `dynamic`, `minScale`, `targetFps` | Resource resize/state | Existing hardware scaling controller; report actual dimensions and scale |
-| `quality.textures.anisotropy` | Live sampling state | Capability-clamped texture sampling |
+| `quality.textures.anisotropy` | Live sampling state | Capability-clamped texture sampling in the world and SceneLayer Scenes |
 | `quality.textures.lodBias` | Material/graph rebuild | Quality texture blocks/plugins |
 | `quality.textures.byteBudget` | Resource admission | Shared Engine resource cache; no forced disposal of referenced assets |
 | `quality.geometry.autoLod`, `lodDistanceScale` | Live selection state | Scene automatic LOD selector; generated levels stay loaded, so no model reloads |

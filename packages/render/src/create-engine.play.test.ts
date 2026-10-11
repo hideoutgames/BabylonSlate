@@ -338,6 +338,18 @@ describe("Play createEngine view", () => {
     return { handle, canvas };
   }
 
+  it("applies the world texture anisotropy to SceneLayer textures", () => {
+    const engine = sharedEngine();
+    Object.assign(engine.getCaps(), { maxAnisotropy: 2 });
+    const { handle } = playHandle(engine);
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+    const layerScene = handle.sceneLayerScenes().find(layer => layer.layerId === "hud")!.scene;
+    const world = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, handle.scene);
+    const overlay = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, layerScene);
+    expect(world.anisotropicFilteringLevel).toBe(2);
+    expect(overlay.anisotropicFilteringLevel).toBe(2);
+  });
+
   it("ignores commands and snapshots that arrive after the view stops", () => {
     const { handle } = playHandle(sharedEngine());
     const { scene } = handle;
