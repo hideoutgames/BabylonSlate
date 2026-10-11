@@ -40,7 +40,7 @@ function rowsFor(
                           : undefined,
       assetType: (guid) =>
         guid === "mesh-1"
-          ? "Mesh"
+          ? "Model"
           : guid === "sprite-1"
             ? "Sprite"
             : guid === "graph-1"
@@ -362,7 +362,7 @@ describe("componentPropertyRows", () => {
     });
   });
 
-  it("exposes MeshComponent.assetGuid as an asset pick of Mesh/Model", () => {
+  it("exposes MeshComponent.assetGuid as a Model asset pick", () => {
     const { rows, onPickAsset } = rowsFor({
       id: "mesh",
       classId: "MeshComponent",
@@ -373,20 +373,20 @@ describe("componentPropertyRows", () => {
       kind: "asset",
       value: "mesh-1",
       displayLabel: "Rock",
-      displayType: "Mesh",
-      visual: { assetType: "Mesh" },
+      displayType: "Model",
+      visual: { assetType: "Model" },
     });
     expect(rows.find((row) => row.id.endsWith("-meshKind"))).toBeUndefined();
     if (asset?.kind === "asset") asset.onPick();
     expect(onPickAsset).toHaveBeenCalledWith(
       expect.objectContaining({
         property: "assetGuid",
-        allowedTypes: ["Mesh", "Model"],
+        allowedTypes: ["Model"],
       }),
     );
   });
 
-  it("exposes Mesh Kind only when MeshComponent has no Model or Mesh asset", () => {
+  it("exposes Mesh Kind only when MeshComponent has no Model asset", () => {
     const { rows } = rowsFor({
       id: "mesh",
       classId: "MeshComponent",
@@ -1069,7 +1069,7 @@ describe("gameInstanceClassEntries", () => {
         header: { type: "Class", name: "MyGame", parentClass: "GameInstance" },
       },
       { header: { type: "Class", name: "Hero", parentClass: "Actor" } },
-      { header: { type: "Mesh", name: "Rock" } },
+      { header: { type: "Model", name: "Rock" } },
     ]);
     expect(entries.map((entry) => entry.id)).toEqual(["GameInstance", "MyGame"]);
   });

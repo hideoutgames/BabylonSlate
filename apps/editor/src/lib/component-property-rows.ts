@@ -764,7 +764,7 @@ export function componentPropertyRows(
           component,
           "assetGuid",
           "Asset",
-          ["Mesh", "Model"],
+          ["Model"],
           update,
           context,
           "Pick Mesh",

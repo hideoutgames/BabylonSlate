@@ -315,16 +315,6 @@ describe("projectAddComponentItems", () => {
     ]);
   });
 
-  it("binds a legacy Mesh type onto MeshComponent.assetGuid", () => {
-    const items = projectAddComponentItems([
-      asset({ guid: "rock", name: "Rock", type: "Mesh" }),
-    ]);
-    expect(items[0]).toMatchObject({
-      classId: "MeshComponent",
-      properties: { assetGuid: "rock" },
-    });
-  });
-
   it("includes user ActorComponent classes and excludes Actor classes", () => {
     const items = projectAddComponentItems([
       asset({

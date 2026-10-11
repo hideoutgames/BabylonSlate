@@ -233,7 +233,6 @@ const PROJECT_ASSET_BINDINGS: Record<
   { classId: string; property: string }
 > = {
   Model: { classId: "MeshComponent", property: "assetGuid" },
-  Mesh: { classId: "MeshComponent", property: "assetGuid" },
   Audio: { classId: "AudioComponent", property: "audioAssetGuid" },
   ParticleSystem: { classId: "ParticleComponent", property: "particleSystemGuid" },
   Water: { classId: "WaterLakeComponent", property: "assetGuid" },
