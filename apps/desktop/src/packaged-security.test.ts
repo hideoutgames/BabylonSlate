@@ -70,23 +70,22 @@ describe("known project folders", () => {
   it("reopens projects-home folders and picker grants by the canonical path it opens", async () => {
     const base = await realpath(await mkdtemp(join(tmpdir(), "babylonslate-known-")));
     try {
-      const game = join(base, "home", "projects", "Game");
+      const projects = join(base, "projects");
+      const game = join(projects, "Game");
       const outside = join(base, "outside");
       await mkdir(game, { recursive: true });
       await mkdir(outside);
       // Junctions need no privilege on Windows; other hosts create directory links.
-      await symlink(join(base, "home"), join(base, "linked-home"), "junction");
-      await symlink(outside, join(base, "home", "projects", "Linked"), "junction");
-      const projects = join(base, "linked-home", "projects");
+      await symlink(outside, join(projects, "Linked"), "junction");
       const noGrants = async () => [];
 
-      // The listed id and the canonical id it reopens as both stay openable.
-      expect(await knownProjectFolder(`node:${join(projects, "Game")}`, projects, noGrants)).toBe(game);
       expect(await knownProjectFolder(`node:${game}`, projects, noGrants)).toBe(game);
       // A link inside the projects home opens its target, which needs a grant.
       await expect(knownProjectFolder(`node:${join(projects, "Linked")}`, projects, noGrants)).rejects.toThrow("folder picker");
       expect(await knownProjectFolder(`node:${join(projects, "Linked")}`, projects, async () => [outside])).toBe(outside);
       await expect(knownProjectFolder(`node:${base}`, projects, noGrants)).rejects.toThrow("folder picker");
+      // Only host-issued node: ids reopen; a bare display name never opens a folder by name.
+      await expect(knownProjectFolder("Game", projects, async () => [game])).rejects.toThrow("folder picker");
     } finally {
       await rm(base, { recursive: true, force: true });
     }

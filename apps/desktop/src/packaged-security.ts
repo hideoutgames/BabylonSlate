@@ -50,19 +50,21 @@ export function allowsEditorPermission(permission: string, requestingUrl: string
 }
 
 /**
- * Canonical folder a `node:` project id may reopen without the picker: a folder
- * directly inside the projects home, or one granted through the folder picker.
- * Both checks use the canonical path that is then opened, so a link cannot stand
- * in for a project and a non-canonical home still matches its own projects.
+ * Canonical folder a project id may reopen without the picker: a folder directly
+ * inside the canonical `projectsHome`, or one granted through the folder picker.
+ * The desktop host only issues `node:` ids, so any other id is refused. Both
+ * checks use the canonical path that is then opened, so a link cannot stand in
+ * for a project.
  */
 export async function knownProjectFolder(
   id: string,
   projectsHome: string,
   grants: () => Promise<readonly string[]>,
 ): Promise<string> {
-  const target = await realpath(id.slice("node:".length));
-  const home = await realpath(projectsHome).catch(() => null);
-  if (dirname(target) === home || (await grants()).includes(target)) return target;
+  if (id.startsWith("node:")) {
+    const target = await realpath(id.slice("node:".length));
+    if (dirname(target) === projectsHome || (await grants()).includes(target)) return target;
+  }
   throw new Error("Choose this folder using the folder picker first");
 }
 

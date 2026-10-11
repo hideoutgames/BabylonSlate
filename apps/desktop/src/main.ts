@@ -123,12 +123,16 @@ async function createWindow(): Promise<void> {
   await window.loadURL("app://babylonslate/index.html");
 }
 
-function registerIpc(): void {
+async function registerIpc(): Promise<void> {
+  // Listed, Documents and reopened project ids all use the canonical home, so a
+  // userData path reached through a link still gives each project one id.
   const projectsRoot = join(app.getPath("userData"), "projects");
+  await mkdir(projectsRoot, { recursive: true });
+  const projectsHome = await realpath(projectsRoot);
   function projects(event: IpcMainInvokeEvent): NodeStorageAdapter {
     let storage = projectStorage.get(event.sender.id);
     if (!storage) {
-      storage = new NodeStorageAdapter(projectsRoot);
+      storage = new NodeStorageAdapter(projectsHome);
       projectStorage.set(event.sender.id, storage);
     }
     return storage;
@@ -224,11 +228,8 @@ function registerIpc(): void {
   handle("project:openKnown", async (event, handle) => {
     const storage = projects(event);
     const folder = handle as ProjectFolderHandle;
-    if (folder.id.startsWith("node:")) {
-      const target = await knownProjectFolder(folder.id, projectsRoot, grantedFolders);
-      return storage.openAbsoluteFolder(target, folder.name, folder.tier);
-    }
-    return storage.openKnownFolder(folder);
+    const target = await knownProjectFolder(folder.id, projectsHome, grantedFolders);
+    return storage.openAbsoluteFolder(target, folder.name, folder.tier);
   });
   handle("project:list", async event => projects(event).listProjects());
   handle("project:release", async event => projects(event).releaseFolder());
@@ -296,7 +297,7 @@ void app.whenReady().then(async () => {
       return new Response(response.body, { status: response.status, headers });
     } catch { return new Response(null, { status: 404 }); }
   });
-  registerIpc();
+  await registerIpc();
   if (app.isPackaged) {
     try {
       const manifest = JSON.parse(await readFile(join(rendererRoot, "build-manifest.json"), "utf8"));
