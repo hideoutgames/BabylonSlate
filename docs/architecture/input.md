@@ -108,7 +108,7 @@ Pure with respect to the browser — feed synthetic streams from the determinist
 | `getAxis2D(axis)` | `axes2D[axis]` |
 | `gamepadConnections` | pads first sampled or disconnected this tick |
 | `getPressedKeys()` | ordered physical Key rising edges this tick |
-| `setGamepadRumble(index, intensity, durationMs)` | forwarded to main thread when supported |
+| `setGamepadRumble(index, intensity, durationMs)` | logged only (`input` category); no rumble command or `vibrationActuator` call yet |
 
 Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolve` → `TickContext` for script/physics phases. Each `tick()` consumes **all** events queued since the previous tick. Event `tick` is recorded on traces; it does not gate consumption. Play's worker host stamps canvas/gamepad samples with the last worker `stats.tickIndex` (not `performance.now() / 16.67`), so compiled Input Axis events see the same stick as the host input stream.
 
