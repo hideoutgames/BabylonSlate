@@ -476,6 +476,14 @@ function validatePinTyping(
   return out;
 }
 
+function executeJavaScriptRowNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((row: unknown) => {
+    const name = row && typeof row === "object" ? (row as { name?: unknown }).name : undefined;
+    return typeof name === "string" ? [name] : [];
+  });
+}
+
 function validateExecuteJavaScript(
   graph: LogicGraph,
   ctx: TypeContext,
@@ -484,10 +492,23 @@ function validateExecuteJavaScript(
   for (const node of graph.nodes) {
     if (node.typeId !== "debug.executeJavaScript") continue;
     const body = String(node.properties.body ?? "");
+    // Parse the body the way the compiler wraps it, without evaluating it: a
+    // strict-mode module function taking ctx and the inputs, with each output
+    // declared by `let`. Invalid row names are the node's own error, so they
+    // fall back to a bare wrapper here.
+    const ParseFunction = node.properties.async ? AsyncFunction : Function;
+    const inputs = executeJavaScriptRowNames(node.properties.inputs);
+    const outputs = executeJavaScriptRowNames(node.properties.outputs);
+    let params = ["ctx", ...inputs];
+    let prologue = `"use strict";${outputs.length > 0 ? ` let ${outputs.join(", ")};` : ""}`;
     try {
-      // Match the compiler's function kind without evaluating authored code.
-      const ParseFunction = node.properties.async ? AsyncFunction : Function;
-      new ParseFunction(body);
+      new ParseFunction(...params, prologue);
+    } catch {
+      params = ["ctx"];
+      prologue = '"use strict";';
+    }
+    try {
+      new ParseFunction(...params, `${prologue}\n${body}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const match = /:(\d+):(\d+)/.exec(message);
@@ -498,7 +519,7 @@ function validateExecuteJavaScript(
           assetGuid: ctx.assetGuid,
           graphId: graph.id,
           nodeId: node.id,
-          bodyLine: match ? Number(match[1]) : 1,
+          bodyLine: match ? Math.max(1, Number(match[1]) - 1) : 1,
           bodyColumn: match ? Number(match[2]) : 1,
         }),
       );

@@ -149,6 +149,10 @@ describe("validateGraphs", () => {
     { async: true, body: "const result = await ctx.saveGame();", parseError: false },
     { async: true, body: "await ctx.saveGame(!!! invalid js {", parseError: true },
     { async: false, body: "this is !!! invalid js {", parseError: true },
+    // The compiled wrapper is strict-mode, takes the inputs as parameters and declares the outputs.
+    { async: false, body: "with (ctx) { doubled = speed; }", parseError: true },
+    { async: false, body: "let doubled = speed;", parseError: true },
+    { async: false, body: "doubled = speed * 2;", parseError: false },
   ])("validates ExecuteJavaScript with its authored async flag ($async, $body)", ({ async, body, parseError }) => {
     const graph: LogicGraph = {
       id: "g",
@@ -169,7 +173,12 @@ describe("validateGraphs", () => {
             pin("execIn", "exec", "in", EXEC),
             pin("execOut", "then", "out", EXEC),
           ],
-          properties: { async, body },
+          properties: {
+            async,
+            body,
+            inputs: [{ name: "speed", type: FLOAT }],
+            outputs: [{ name: "doubled", type: FLOAT }],
+          },
         },
       ],
       edges: [execThen("in", "js")],
