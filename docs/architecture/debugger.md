@@ -42,8 +42,8 @@ Every registered command has a tier. A non-debug registry **does not register de
 
 | Tier | Ships | Commands |
 | --- | --- | --- |
-| **core** | Every build | `changescene`, `quality` and its rendering groups, `framecap`, `volume`, `quit`, `help`, plus user `BDebugCommand` classes |
-| **debug** | Debugger bundled | `showfps`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `debugphysics`, `showbounds`, `actorboundingbox`, `wireframe`, `pause`, `resume` (alias `unpause`), `step`, `slomo`, `freecam`, `shownav`, `shownavdebug`, `showpathfinding`, `shownavagent`, `behaviourtreedebug`, `showaudiodebug`, `dumpactors`, `inspect`, `dumplog`, `snapshot start`, `snapshot stop` |
+| **core** | Every build | `changescene`, `quality` and its rendering groups, `renderpath`, `framecap`, `volume`, `quit`, `help`, plus user `BDebugCommand` classes |
+| **debug** | Debugger bundled | `showfps`, `lightsdebug`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `debugphysics`, `showbounds`, `actorboundingbox`, `wireframe`, `pause`, `resume` (alias `unpause`), `step`, `slomo`, `freecam`, `shownav`, `shownavdebug`, `showpathfinding`, `shownavagent`, `behaviourtreedebug`, `showaudiodebug`, `dumpactors`, `inspect`, `possess`, `destroyactor`, `dumplog`, `snapshot start`, `snapshot stop` |
 
 Real export tree-shaking of the debug module is landed: the release player calls `createCommandRegistry({ includeDebug: false })` via `includeDebugCommands: manifest.bundleDebugger`. Preview Build and a **Bundle Debugger** export preset keep the debug tier. See [exporter.md](exporter.md).
 
@@ -65,6 +65,7 @@ The registry does not touch the world or renderer. Runtime implements:
 | --- | --- |
 | `changescene` | `changeScene(guid)` → load that guid from the Play scene library into the World (same as `ctx.changeScene`) |
 | `quality` / `quality shadows` / `quality resolution` / `quality textures` / `quality geometry` / `quality water` / `quality postprocessing` / `quality lighting` | Shared `RenderingQualitySession` resolver; emits a `setScalability` transaction with session overrides. Optional arguments query effective values. Tiers are Low, Medium, High and Ultra; individual groups and all overrides can reset. `quality water <field> <value>` completes every Water setting name. |
+| `renderpath [auto\|forward\|clusteredForward\|reset]` | `setRenderPath` requests a session render path through the same scalability service; `reset` returns to the project path. No argument prints the requested and effective path, GPU backend and limits. |
 | `volume` / `framecap` | Typed setters emit `setGlobalVolume` / a `setScalability` frame-cap patch; optional arguments query current values. |
 | `quit` | `quit()` → runtime `stop` |
 | `help [name]` | Core. Lists registered commands (user included) or one command’s parameters. Stripped debug names print “not available in this build” |
@@ -76,6 +77,7 @@ The registry does not touch the world or renderer. Runtime implements:
 | `wireframe` / `showbounds` / `actorboundingbox` / `showcollision` / `shownav` | Play-scene overlays. Collision / nav meshes use `RENDERING_GROUP.world` with depth test (not a group-0 underlay). Collision uses `PhysicsBackend.listDebugColliders()` (boxes/spheres/circles/capsules/polylines/convex hulls; body rotation of local offsets and polyline points). `actorboundingbox` calls the same `setShowBounds` host as `showbounds`. Separate from per-collider **Render In Game** world dashes. |
 | `showaudiodebug` | `{ type: "setShowAudioDebug" }`. DOM overlay of playing AudioV2 voices (applies; not log-only) |
 | `dumpactors` / `inspect [name\|guid]` | Format `inspectWorld()`. Bare `inspect` uses overlay Inspector selection when known, else prints usage |
+| `possess <name\|guid>` / `destroyactor <name\|guid>` | `possessCamera` switches to the actor's CameraComponent and turns free cam off; `destroyActor` stops its audio and particles, then destroys it through the runtime lifecycle. Both resolve one live actor and work while paused. |
 | `dumplog` | `dumpLog()` from the log ring |
 | `snapshot start` / `snapshot stop` | `startSnapshot` / `stopSnapshot` → `TraceRecorder`; stop emits a `trace` command |
 
@@ -151,7 +153,7 @@ the paused interval. Stop remains available outside hidden document tabs.
 
 | Live edit | Current owner/capability |
 | --- | --- |
-| Actor/local component pose | Validated transform/physics boundary; teleports preserve velocity and reset interpolation; unsafe owners report restart required |
+| Actor/local component pose | Validated transform/physics boundary; teleports preserve velocity and reset interpolation; unsafe owners report restart required (an enabled Ragdoll on the actor or a moved descendant, or a selected Physics Constraint / Scene Streaming component; a disabled Ragdoll still teleports) |
 | Exposed Class scalar/vector/reference values | Reflected typed setter when supported; Maps/structures and unsupported types remain inspection-only |
 | Existing Mesh shadows/material assignment, camera/light/outline, rigid body/collider/navigation fields, audio volume | Explicit runtime descriptors; colliders use their owner rebuild boundary; other asset replacements/rebuilds may require restart |
 | Surface float/color/texture parameters | Session-owned `MaterialObject` parameters with staged asset preparation; no shared source-material writes |

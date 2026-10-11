@@ -24,10 +24,12 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 
 | Command | Registered | Applies | Notes |
 | --- | --- | --- | --- |
-| `changescene` | yes | **yes** | Loads from the Play scene library (guid or display name). Same path as `ctx.changeScene`. An unknown scene fails with `unknown scene: <name>`. |
+| `changescene` | yes | **yes** | Loads from the Play scene library (guid or display name). A library key wins over another Scene's display name, and a display name shared by several Scenes resolves to the first one listed. Same path as `ctx.changeScene`. An unknown scene fails with `unknown scene: <name>`. |
 | `quality [low\|medium\|high\|ultra\|reset]` | yes | **yes** | Applies all scalability groups, or queries effective values when omitted. |
 | `quit` | yes | **yes** | `runtime.stop()`. Overlay Stop is a separate chrome path. |
 | `quality shadows/resolution/textures/geometry/water/postprocessing/lighting [tier\|reset]` | yes | **yes** | Applies or resets one group. Shadow budget, distance and enabled state are independent settings. |
+| `quality lighting budget <count\|auto>` | yes | **yes** | Sets the session's local-light budget (`maxLocalLights`, a non-negative integer) and marks lighting Custom; `auto` returns to the automatic budget. |
+| `renderpath [auto\|forward\|clusteredForward\|reset]` | yes | **yes** | Requests a session render path through the scalability service; `reset` returns to the project path. No arg → requested and effective path, GPU backend and limits. |
 | `quality geometry lod on\|off`, `quality geometry distance <0.25..4>` | yes | **yes** | Switches automatic Model LOD or scales its switch distances for the session. |
 | `quality water <field> <value>` | yes | **yes** | One Water setting for the session: `shadingDetail low..ultra`, `meshDensity 0.5..1.5`, `contactResolution 256..1024`, `refraction on\|off`, `refractionScale 0.25..1`, `reflections sky\|screenSpace\|planar`, `reflectionSteps 4..32`, `planarScale 0.25..1`, `fft on\|off`, `fftSize 64\|128\|256`, `fftCascades 1..3`. Out-of-range or non-integer values are rejected. |
 | `quality resolution scale <0.25..1>` | yes | **yes** | Sets a fixed fraction of target width/height without resetting simulation. |
