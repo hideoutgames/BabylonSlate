@@ -47,7 +47,7 @@ Each tick `AnimGraphRuntime.tick` (`packages/runtime/src/anim-graph-runtime.ts`,
 
 Trace frames record each component's evaluation state, graph guid and pending jump (`TraceFrame.animGraphs`) plus each actor's current sprite clip (`TraceFrame.sprites`). `restoreFromTrace` replaces evaluation, initialization and pending jumps with the frame's, so the next tick continues the recorded state and time without re-running On Initialize Animation, and shows the recorded sprite frame at once ([debugger.md](debugger.md#trace-recorder)).
 
-`self` on those scripts is the **Actor**. Get/Set Variable hit the component `variableStore` when the host passes it. Animation Object Get Variable nodes migrate with `implicitSelf: true`.
+`self` on those scripts is the **Actor**. Get/Set Variable hit the component `variableStore` when the host passes it. Animation Object Get Variable nodes carry `implicitSelf: true`, so an unwired Target reads `self`.
 
 **Actor Class graphs** may use `anim.actor.*`. Get/Set Anim Graph Variable, Get Current State, and Jump To State take a required `AnimationGraphComponent` target so they operate on that instance (wire the component's Get Variable node, such as **Get Animation Graph**, from its virtual `component:<id>` row under the Class Variables). An unwired Target is a no-op (empty name/id; jump does nothing). `tickAnimGraphs` evaluates every live `AnimationGraphComponent` on the actor; pending jumps and eval state are keyed by component. `animState` stays one command per actor slot — last graph in component order wins playback. `anim.event.*` / `anim.rule.*` / `anim.state.*` stay gated to Animation Object / rule hosts. Jump is pending until the next `tickAnimGraphs` so Actor `onTick` (inside `world.tick()`) cannot race the evaluator.
 

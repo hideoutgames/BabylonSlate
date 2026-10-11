@@ -342,7 +342,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 
 **Closed (node-graph completeness pass):** dynamic Format String and Enum Select; Bool-indexed typed Selects; safe immutable Array/Map catalogs including Break Map; Switch on Int/String; For Loop / For Each / For Each Map with Break variants; per-object Do Once / Do N / Flip Flop / Gate state; deterministic string/math/vector/transform/Actor utilities; complete same-tick trace/overlap/sphere-sweep outputs with live Actor resolution; dynamic-pin Inspector/hydration/persistence; catalog codegen contracts and Preview acceptance.
 
-**Closed (class-owned graphs):** logic graphs live on Class assets (`.class.babasset`); New Asset is authored-only; Prefab/Components are Actor-lineage only; Enum/Structure/ScriptInterface open DockView documents (import data types stay compact `asset-settings` tabs). Legacy Graph files still load.
+**Closed (class-owned graphs):** logic graphs live on Class assets (`.class.babasset`); New Asset is authored-only; Prefab/Components are Actor-lineage only; Enum/Structure/ScriptInterface and imported types open DockView documents.
 
 **Closed (`cursor/ui-logic-graph-pass-2e3e`):** FunctionLibrary static Call Function palette (open docs + `header.payload.functions`); EditorFunctionLibrary engine base; `NodeDefinition.editorOnly` + Editor Only tape; Add Node Context Sensitive (host-legal catalog; pin filter only when on). HUD Designer | Logic from that pass was later **removed from the engine**.
 

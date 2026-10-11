@@ -187,7 +187,7 @@ Content Browser, Outliner, catalogs, search, and document tabs resolve **icons**
 | `--asset-scene` | Scene, AudioMixer (yellow, Unreal Level) | Scene, AudioMixer (`Volume2`) |
 | `--asset-graph` | Graph (cyan) | Graph |
 | `--asset-texture` | Texture, Sprite, Tileset, Tilemap (magenta) | Texture |
-| `--asset-material` | Material, Material Function, Shader, Particle Emitter, Particle Graph, Particle System (green, former Audio) | Material, Particle Emitter (`Wind`), Particle Graph (`Network`), Particle System (`Sparkles`) |
+| `--asset-material` | Material, Material Function, Particle Emitter, Particle Graph, Particle System (green, former Audio) | Material, Particle Emitter (`Wind`), Particle Graph (`Network`), Particle System (`Sparkles`) |
 | `--asset-model` | Model (orange) | Model |
 | `--asset-audio` | unused by a Content Browser type (lime; kept so asset hues stay ≥25° apart) | — |
 | `--asset-font` | Font (sky) | Font |

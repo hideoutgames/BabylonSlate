@@ -10,9 +10,8 @@ selected count, in RGBA order; the title displays the selection. Numeric inputs
 are padded to V4 before selecting channels: every missing channel is `1`.
 A disconnected input retains its zero V4 default.
 
-One authored asset type covers what used to be split between an empty imported
-`Material` stub and an authored `Shader` graph. A **Material** is a node graph
-with a `domain`, and a **Material Function** is a reusable typed subgraph.
+A **Material** is a node graph with a `domain`, and a **Material Function** is a
+reusable typed subgraph.
 
 `@babylonslate/shader-graph` owns the IR, validator and lowering and stays
 Babylon-free. `@babylonslate/render` maps a lowered plan onto real Babylon
@@ -70,8 +69,7 @@ Aliases are catalog metadata and are not stored in authored graph properties.
 | `MaterialFunction` | `material-function` | `.matfunc.babasset` |
 | `MaterialInstance` | `material-instance` | `.matinst.babasset` |
 
-Imported `Material` stubs open as `material` too. The removed `Shader` /
-`ShaderGraph` header types no longer open as Material documents.
+Imported `Material` stubs open as `material` too.
 
 `MaterialDocument` (v3) carries `domain` (`surface` | `landscape` | `postProcess` | `particle` | `text`),
 `shadingModel`, `blendMode`, `twoSided`, `defaultNormals`, `alphaCutoff`, `preview` and the graph.
