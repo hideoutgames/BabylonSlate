@@ -58,11 +58,11 @@ async function resolveWasmBinary(havokWasmUrl?: string): Promise<ArrayBuffer> {
     // does not resolve `node:*`. Native `import()` works in Vitest; `new
     // Function("return import(s)")` does not (ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING).
     const nodePrefix = "node:";
-    const nodeModule = (await import(nodePrefix + "module")) as Record<
+    const nodeModule = (await import(/* @vite-ignore */ nodePrefix + "module")) as Record<
       string,
       unknown
     >;
-    const nodeFs = (await import(nodePrefix + "fs")) as Record<string, unknown>;
+    const nodeFs = (await import(/* @vite-ignore */ nodePrefix + "fs")) as Record<string, unknown>;
     const createRequire = nodeModule.createRequire as
       | ((url: string | URL) => {
           (id: string): string;

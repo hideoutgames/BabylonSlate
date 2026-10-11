@@ -1441,9 +1441,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setReportOpen(true);
       }
       publishPlaySessionClosed(result);
-      appendLog(
-        `Play ended (${result.runtimeMode}; textures ${result.textureCountBefore}→pending)`,
-      );
+      appendLog(`Play ended (${result.runtimeMode})`);
       void result.released.then(({ textureCountAfter, textureLeak, quarantined }) => {
         if (quarantined) appendLog("Game resources did not confirm release. Reload the editor before starting another session.");
         appendLog(

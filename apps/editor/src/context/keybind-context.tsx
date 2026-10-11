@@ -74,11 +74,16 @@ export function KeybindProvider({
     const onPointerDown = (event: PointerEvent) => pointers.add(event.pointerId);
     const onPointerUp = (event: PointerEvent) => pointers.delete(event.pointerId);
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing || state.current.suspended) return;
-      // A three-finger viewport pan must not fire keyboard history.
-      if (pointers.size >= 3) return;
+      if (event.defaultPrevented || event.isComposing) return;
       const chord = chordFromEvent(event, apple);
       if (!chord) return;
+      // Nothing to save, a modal, or Play must not fall through to the browser.
+      for (const [commandId, chords] of state.current.bindings) {
+        if (chords.includes(chord) && editorCommand(commandId)?.blocksBrowserDefault) event.preventDefault();
+      }
+      if (state.current.suspended) return;
+      // A three-finger viewport pan must not fire keyboard history.
+      if (pointers.size >= 3) return;
       const typing = keepsNativeEditing(event.target);
       for (const [commandId, chords] of state.current.bindings) {
         if (!chords.includes(chord)) continue;
