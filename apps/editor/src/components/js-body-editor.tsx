@@ -20,6 +20,24 @@ export type JsBodyEditorProps = {
 };
 const externalValueSync = Annotation.define<boolean>();
 
+/**
+ * The one span that differs between `current` and `next`. An external value
+ * (Undo, a reload) replaces only that span, so the caret, selection and
+ * scroll outside it stay where they were.
+ */
+function changedSpan(current: string, next: string): { from: number; to: number; insert: string } {
+  let from = 0;
+  const shared = Math.min(current.length, next.length);
+  while (from < shared && current.charCodeAt(from) === next.charCodeAt(from)) from += 1;
+  let currentEnd = current.length;
+  let nextEnd = next.length;
+  while (currentEnd > from && nextEnd > from && current.charCodeAt(currentEnd - 1) === next.charCodeAt(nextEnd - 1)) {
+    currentEnd -= 1;
+    nextEnd -= 1;
+  }
+  return { from, to: currentEnd, insert: next.slice(from, nextEnd) };
+}
+
 export function JsBodyEditor(props: JsBodyEditorProps) {
   return <CodeBodyEditor {...props} language="javascript" />;
 }
@@ -121,7 +139,7 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
     const current = view.state.doc.toString();
     if (current !== value) {
       view.dispatch({
-        changes: { from: 0, to: current.length, insert: value },
+        changes: changedSpan(current, value),
         annotations: externalValueSync.of(true),
       });
     }
