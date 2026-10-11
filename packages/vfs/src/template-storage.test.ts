@@ -46,6 +46,15 @@ describe("createTemplateStorage", () => {
     expect(storage.getCurrentFolder()?.name).toBe("Templates");
   });
 
+  it("keeps the library out of the OPFS project list and the restored project", async () => {
+    const projects = new OpfsStorageAdapter();
+    const project = await projects.openDocumentsProject("Game");
+    await createTemplateStorage("Templates");
+    const reopened = new OpfsStorageAdapter();
+    expect(await reopened.listProjects()).toEqual([project]);
+    expect(reopened.getCurrentFolder()).toEqual(project);
+  });
+
   it("binds the Documents tier at the templates folder on mobile", async () => {
     isMobile.mockReturnValue(true);
     const storage = await createTemplateStorage("Templates");

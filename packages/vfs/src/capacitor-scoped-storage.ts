@@ -106,6 +106,22 @@ export function isScopedStorageError(
   );
 }
 
+/** Base64 for native bridge payloads, built in chunks rather than one string append per byte. */
+export function encodeBase64(data: Uint8Array): string {
+  const chunks: string[] = [];
+  for (let offset = 0; offset < data.length; offset += 0x8000) {
+    chunks.push(String.fromCharCode(...data.subarray(offset, offset + 0x8000)));
+  }
+  return btoa(chunks.join(""));
+}
+
+export function decodeBase64(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
 export const BabylonSlateScopedStorage =
   registerPlugin<BabylonSlateScopedStoragePlugin>(
     "BabylonSlateScopedStorage",

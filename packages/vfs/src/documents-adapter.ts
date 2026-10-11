@@ -1,4 +1,4 @@
-import { BabylonSlateScopedStorage, type NativeRangeOptions, type NativeRangeRead } from "./capacitor-scoped-storage";
+import { BabylonSlateScopedStorage, decodeBase64, encodeBase64, type NativeRangeOptions, type NativeRangeRead } from "./capacitor-scoped-storage";
 import { rethrowNativeStorageRangeError, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
 import { StorageNotFoundError } from "@babylonslate/core";
 import type {
@@ -8,9 +8,15 @@ import type {
   ProjectStorage,
 } from "@babylonslate/core";
 import { Directory, Filesystem } from "@capacitor/filesystem";
+import { getHostPlatform, type HostPlatform } from "./platform";
 import { projectFolderName, projectRelativePath } from "./project-path";
 
 const PROJECTS_ROOT = "BabylonSlate/projects";
+
+/** Files-visible Documents on iPad; app-private Data on Android, whose public Documents needs a picker. */
+export function mobileDocumentsDirectory(platform: HostPlatform = getHostPlatform()): Directory {
+  return platform === "android" ? Directory.Data : Directory.Documents;
+}
 
 function hasFilesystemCode(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
@@ -61,23 +67,6 @@ export interface DocumentsFilesystemApi {
   }): Promise<{ type: string; size: number; mtime: number }>;
 }
 
-function encodeBinary(data: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < data.length; i++) {
-    binary += String.fromCharCode(data[i]!);
-  }
-  return btoa(binary);
-}
-
-function decodeBinary(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    out[i] = binary.charCodeAt(i);
-  }
-  return out;
-}
-
 /**
  * Durable mobile default tier via Capacitor Filesystem: iPad Documents or
  * Android app-private Data. No picker — projects live under BabylonSlate/projects/.
@@ -91,7 +80,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
 
   constructor(
     fs: DocumentsFilesystemApi = Filesystem as unknown as DocumentsFilesystemApi,
-    directory: Directory = Directory.Documents,
+    directory: Directory = mobileDocumentsDirectory(),
   ) {
     this.fs = fs;
     this.directory = directory;
@@ -205,7 +194,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
         directory: this.directory,
         encoding: "base64",
       });
-      const bytes = decodeBinary(data);
+      const bytes = decodeBase64(data);
       this.reads.record("full", bytes.byteLength);
       return bytes;
     } catch (error) {
@@ -225,14 +214,14 @@ export class DocumentsStorageAdapter implements ProjectStorage {
         throw new Error("Documents filesystem does not support bounded reads");
       } catch (error) { rethrowNativeStorageRangeError(error, path); }
     });
-    try { return validateStorageRangeResult(path, offset, length, { ...result, bytes: decodeBinary(result.data) }, expectedRevision); }
+    try { return validateStorageRangeResult(path, offset, length, { ...result, bytes: decodeBase64(result.data) }, expectedRevision); }
     catch (error) { rethrowStorageReadFailure(error, result.actualBytesRead); }
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {
     await this.fs.writeFile({
       path: this.abs(path),
-      data: encodeBinary(data),
+      data: encodeBase64(data),
       directory: this.directory,
       encoding: "base64",
       recursive: true,
@@ -251,7 +240,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
-    const full = this.abs(path === "." ? "" : path, true);
+    const full = this.abs(path, true);
     try {
       const { files } = await this.fs.readdir({
         path: full,

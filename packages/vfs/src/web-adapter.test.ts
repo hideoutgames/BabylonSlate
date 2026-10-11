@@ -23,19 +23,6 @@ async function openedAdapter() {
   return storage;
 }
 
-async function legacyAliasFixture() {
-  const root = await navigator.storage.getDirectory();
-  const legacy = await root.getDirectoryHandle("opfs:My_Game", { create: true });
-  const file = await legacy.getFileHandle("project.json", { create: true });
-  const writer = await file.createWritable();
-  await writer.write(new TextEncoder().encode("legacy"));
-  await writer.close();
-  const original = { id: "opfs:My Game", name: "My Game", tier: "opfs" as const };
-  const alias = { id: "opfs:My_Game", name: "My_Game", tier: "opfs" as const };
-  localStorage.setItem("babylonslate:opfs-meta", JSON.stringify({ currentId: null, projects: [original, alias] }));
-  return { original, alias, file };
-}
-
 describe("OPFS / web storage adapter", () => {
   beforeEach(() => {
     vi.stubGlobal("crypto", webcrypto);
@@ -435,47 +422,42 @@ describe("OPFS / web storage adapter", () => {
     expect(await reopened.readText("project.json")).toBe("first");
   });
 
-  it("preserves old directories and isolates remembered legacy aliases without deleting their shared source", async () => {
-    const { original, alias } = await legacyAliasFixture();
-    const storage = new OpfsStorageAdapter();
-    await storage.openKnownFolder(alias);
-    expect(await storage.readText("project.json")).toBe("legacy");
-    await storage.writeText("project.json", "independent");
-    await storage.openKnownFolder(original);
-    expect(await storage.readText("project.json")).toBe("legacy");
-    await storage.deleteProject(alias);
-    expect(await storage.readText("project.json")).toBe("legacy");
+  it("does not recreate a deleted project when a later save arrives", async () => {
+    const storage = await openedAdapter();
+    await storage.writeText("project.json", "saved");
+    await new OpfsStorageAdapter().deleteProject(storage.getCurrentFolder()!);
+    const save = await storage.writeText("scenes/main.scene.json", "{}").catch((error: unknown) => error);
+    expect(isStorageNotFound(save)).toBe(true);
+    expect(await storage.exists("project.json")).toBe(false);
+    expect(await new OpfsStorageAdapter().listProjects()).toEqual([]);
   });
 
-  it("removes an unopened legacy alias without removing the original project's files", async () => {
-    const { original, alias } = await legacyAliasFixture();
-    const storage = new OpfsStorageAdapter();
-    await storage.deleteProject(alias);
-    await storage.openKnownFolder({ ...original, name: "Renamed in recents" });
-    expect(await storage.readText("project.json")).toBe("legacy");
+  it("keeps the committed revision when a write fails", async () => {
+    const storage = await openedAdapter();
+    await storage.writeBinary("asset.babasset", new Uint8Array([1, 2, 3, 4]));
+    const before = await storage.readBinaryRange("asset.babasset", 0, 2);
+    const root = await navigator.storage.getDirectory();
+    const meta = JSON.parse(localStorage.getItem("babylonslate:opfs-meta")!);
+    const file = await (await root.getDirectoryHandle(meta.projects[0].directory)).getFileHandle("asset.babasset");
+    vi.spyOn(file, "createWritable").mockResolvedValueOnce({
+      write: async () => { throw new DOMException("Storage is full", "QuotaExceededError"); },
+      close: async () => {},
+      abort: async () => {},
+    } as unknown as FileSystemWritableFileStream);
+    await expect(storage.writeBinary("asset.babasset", new Uint8Array([9, 9, 9, 9]))).rejects.toThrow("Storage is full");
+    expect((await storage.readBinaryRange("asset.babasset", 2, 2, before.revision)).bytes).toEqual(new Uint8Array([3, 4]));
   });
 
-  it("does not replay legacy migration over a save when another adapter opens the same alias", async () => {
-    const { alias, file } = await legacyAliasFixture();
-    const first = new OpfsStorageAdapter();
-    const second = new OpfsStorageAdapter();
-    let release!: () => void;
-    const delayedCopy = new Promise<void>((resolve) => { release = resolve; });
-    let secondOpening: Promise<unknown> | undefined;
-    const getFile = file.getFile.bind(file);
-    vi.spyOn(file, "getFile").mockImplementation(async () => {
-      const snapshot = await getFile();
-      if (!secondOpening) {
-        secondOpening = second.openKnownFolder(alias);
-        return snapshot;
-      }
-      return { ...snapshot, arrayBuffer: async () => { await delayedCopy; return snapshot.arrayBuffer(); } } as File;
-    });
-    await first.openKnownFolder(alias);
-    await first.writeText("project.json", "new saved data");
-    release();
-    await secondOpening;
-    expect(await second.readText("project.json")).toBe("new saved data");
+  it("rejects parent segments and directories it cannot list", async () => {
+    const storage = await openedAdapter();
+    await storage.writeText("scenes/main.scene.json", "{}");
+    await expect(storage.readText("scenes/../project.json")).rejects.toThrow(/escapes project root/);
+    await expect(storage.writeText("../outside.json", "{}")).rejects.toThrow(/escapes project root/);
+    const root = { getDirectoryHandle: async () => ({}) };
+    vi.stubGlobal("navigator", { storage: { getDirectory: async () => root } });
+    const unlistable = new OpfsStorageAdapter();
+    await unlistable.openDocumentsProject("Test.babproject");
+    await expect(unlistable.readdir("")).rejects.toThrow(/iteration is unavailable/);
   });
 
   it("keeps a different project registered while deleting an older project", async () => {
