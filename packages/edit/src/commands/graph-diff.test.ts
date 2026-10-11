@@ -197,7 +197,8 @@ describe("diffGraphCommands", () => {
       ...before,
       functionGraphs: { ...before.functionGraphs, fall: { nodes: [], edges: [] } },
     });
-    expect(addFunction.map((command) => command.mergeKey)).toEqual([undefined]);
+    expect(addFunction).toHaveLength(1);
+    expect((addFunction[0] as SetGraphFunctionGraphsCommand).mergeKey).toBeUndefined();
   });
 
   it("keeps a seeded function graph after applying the add-function diff", () => {

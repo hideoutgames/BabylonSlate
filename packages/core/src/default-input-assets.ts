@@ -1,12 +1,13 @@
 import { DEFAULT_PROJECT_INPUT_SETTINGS } from "./project";
 import {
   normalizeInputAssetPayload,
-  type AxisBinding,
   type InputAssetDefinition,
 } from "./input-assets";
 
 /** Each starter binding's stable id within its asset. */
-function withBindingIds(bindings: readonly AxisBinding[]): AxisBinding[] {
+function withBindingIds(
+  bindings: readonly Record<string, unknown>[],
+): Record<string, unknown>[] {
   return bindings.map((binding, index) => ({ ...binding, id: `binding-${index + 1}` }));
 }
 

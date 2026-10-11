@@ -359,7 +359,6 @@ describe("collectExportReachability", () => {
       ...createDefaultScene(),
       settings: {
         ...createDefaultScene().settings,
-        gameInstanceClass: "MyGame",
         environmentTextureGuid: "ibl-1",
       },
       actors: [
@@ -381,6 +380,7 @@ describe("collectExportReachability", () => {
     };
     const result = collectExportReachability({
       startupSceneGuid: "scene-1",
+      gameInstanceClass: "MyGame",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
         asset({
