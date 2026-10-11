@@ -40,7 +40,7 @@ The native **Key** enum uses the same catalog as Input Action/Axis authoring: ke
 
 For WASD rebinding, store the selected **Input Binding**, gate **On Any Key Pressed** with the menu's waiting flag, pass Key to **Set Input Axis Binding**, and clear the waiting flag after success. Replacing W retains its original Y component and positive/negative direction. The game owns menu gating and persistence; these nodes do not automatically write browser storage or suppress gameplay input.
 
-**Input Binding** contains Input (asset GUID/name), Id, Label, Key, Shift/Ctrl/Alt/Meta, the native **Input Component** enum (X/Y), Digital Value, Scale, Dead Zone, Invert, and Sensitivity. Profile additions/removals use version 2 edits; controls still resolve through the device/code mapping model. Imports validate the complete profile before applying it; per-slot version 1 `overrides` from older saves still import and export. The obsolete string-based input nodes, native Input Control/Input Device types, and capture/status graph workflow have been removed.
+**Input Binding** contains Input (asset GUID/name), Id, Label, Key, Shift/Ctrl/Alt/Meta, the native **Input Component** enum (X/Y), Digital Value, Scale, Dead Zone, Invert, and Sensitivity. Exported profiles are version 2 `edits` keyed by asset GUID and binding Id (additions, replacements, removals); controls still resolve through the device/code mapping model. Imports validate the complete profile before applying it and reject any other version. The obsolete string-based input nodes, native Input Control/Input Device types, and capture/status graph workflow have been removed.
 
 ## Storage and defaults
 
