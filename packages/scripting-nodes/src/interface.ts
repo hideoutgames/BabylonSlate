@@ -5,24 +5,17 @@ import {
   objectRef,
 } from "@babylonslate/scripting";
 import {
+  CALL_PIN_IDS,
+  memberArgPinId,
   memberPinRows,
   objectLiteralKey,
   pinTypeForMember,
   type MemberPinRow,
 } from "./member-pins";
 
-const CALL_INTERFACE_RESERVED_PINS = new Set([
-  "interfaceGuid",
-  "method",
-  "result",
-  "target",
-]);
-
+/** A method signature row that becomes a Call Interface pin. */
 export function isCallInterfaceMethodPin(row: MemberPinRow | undefined): boolean {
-  if (!row || typeof row.name !== "string" || row.name.length === 0) {
-    return false;
-  }
-  return !CALL_INTERFACE_RESERVED_PINS.has(row.name);
+  return !!row && typeof row.name === "string" && row.name.length > 0;
 }
 
 function signaturePins(properties: Record<string, unknown>) {
@@ -34,7 +27,7 @@ function signaturePins(properties: Record<string, unknown>) {
   const execPins = rows.flatMap((row) => {
     if (row.typeId !== "exec") return [];
     const direction = row.direction === "out" ? "out" : "in";
-    return [pin(row.name!, row.name!, direction, EXEC)];
+    return [pin(memberArgPinId(row.name!, CALL_PIN_IDS), row.name!, direction, EXEC)];
   });
   const exec =
     execPins.length > 0
@@ -50,7 +43,7 @@ function signaturePins(properties: Record<string, unknown>) {
       if (rowDir !== direction) return [];
       return [
         pin(
-          row.name!,
+          memberArgPinId(row.name!, CALL_PIN_IDS),
           row.name!,
           direction,
           pinTypeForMember(row.typeId, row.typeClassId),
@@ -110,7 +103,7 @@ export const interfaceNodes: NodeDefinition[] = [
         ) {
           continue;
         }
-        args.push(`${objectLiteralKey(pinDef.name)}: ${ctx.input(pinDef.name)}`);
+        args.push(`${objectLiteralKey(pinDef.name)}: ${ctx.input(pinDef.id)}`);
       }
       const call = `ctx.callInterface(${targetExpr}, ${jsonProp(properties, "interfaceGuid")}, ${jsonProp(properties, "method")}, { ${args.join(", ")} })`;
       const outPins = ctx.node.pins.filter(
@@ -123,7 +116,7 @@ export const interfaceNodes: NodeDefinition[] = [
       const assigns = outPins
         .map(
           (pinDef) =>
-            `${objectLiteralKey(pinDef.name)}: ${ctx.output(pinDef.name)}`,
+            `${objectLiteralKey(pinDef.name)}: ${ctx.output(pinDef.id)}`,
         )
         .join(", ");
       ctx.emit(`({ ${assigns} } = ${call} ?? {});`);

@@ -181,3 +181,37 @@ describe("Print and Print String", () => {
     ).toBe(false);
   });
 });
+
+describe("Execute JavaScript", () => {
+  it("binds inputs and outputs named like the exec pins to their own pins", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "js", "debug.executeJavaScript", {
+          inputs: [{ name: "exec", type: { kind: "float" } }],
+          outputs: [{ name: "then", type: { kind: "float" } }],
+          "default:in_exec": 4,
+          body: "then = exec * 2;",
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "js", "execIn"),
+        edge("e2", "js", "execOut", "log", "execIn"),
+        edge("e3", "js", "out_then", "log", "message"),
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const body = compiled.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const onBeginPlay = new Function(`"use strict";\n${body}\nreturn onBeginPlay;`)() as (ctx: unknown) => void;
+    const logged: string[] = [];
+    onBeginPlay({
+      formatValue: String,
+      log: (_severity: string, _category: string, message: string) => logged.push(message),
+    });
+    expect(logged).toEqual(["8"]);
+  });
+});

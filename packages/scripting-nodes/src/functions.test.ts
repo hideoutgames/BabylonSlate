@@ -63,6 +63,33 @@ describe("functions.call", () => {
     ]);
   });
 
+  it("sends a parameter named target apart from the Target pin", () => {
+    const registry = createDefaultNodeRegistry();
+    const pins = [{ name: "target", typeId: "float", direction: "in" }];
+    const explicit = node(registry, "explicit", "functions.call", {
+      functionName: "Aim", classId: "Guard", implicitSelf: false, pins, "default:target__arg": 7,
+    });
+    const implicit = node(registry, "implicit", "functions.call", {
+      functionName: "Aim", classId: "Guard", implicitSelf: true, pins, "default:target__arg": 9,
+    });
+    expect(explicit.pins.filter((pin) => pin.id === "target")).toHaveLength(1);
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [node(registry, "begin", "flow.event.beginPlay"), node(registry, "other", "actor.getSelf"), explicit, implicit],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "explicit", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "explicit", sourcePinId: "execOut", targetNodeId: "implicit", targetPinId: "execIn" },
+        { id: "e3", sourceNodeId: "other", sourcePinId: "out", targetNodeId: "explicit", targetPinId: "target" },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const run = new Function(`${compiled.source.replace(/^export /gm, "")}\nreturn onBeginPlay;`)() as (context: unknown) => void;
+    const calls: unknown[] = [];
+    run({ self: "guard", invokeFunction: (...args: unknown[]) => { calls.push(args); return {}; } });
+    expect(calls).toEqual([["guard", "Aim", { target: 7 }], ["guard", "Aim", { target: 9 }]]);
+  });
+
   it("omits Target and maps signature pins when implicitSelf is true", () => {
     const def = createDefaultNodeRegistry().get("functions.call")!;
     const pins = def.pins({

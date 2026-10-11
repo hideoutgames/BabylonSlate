@@ -29,6 +29,11 @@ function node(
   };
 }
 
+function loadModule(source: string, entry = "onBeginPlay"): Record<string, unknown> {
+  const body = source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+  return new Function(`${body}\nreturn { ${entry} };`)() as Record<string, unknown>;
+}
+
 describe("flow nodes", () => {
   it("registers On Command Run pins from the parameter list", () => {
     const command = flowNodes.find((node) => node.id === "flow.event.commandRun");
@@ -300,6 +305,35 @@ describe("flow nodes", () => {
     );
   });
 
+  it("sends a custom event argument named target apart from the Target pin", () => {
+    const registry = createDefaultNodeRegistry();
+    const pins = [{ name: "target", typeId: "float", direction: "out" }];
+    const explicit = node(registry, "explicit", "flow.event.call", {
+      name: "On Alert", classId: "Guard", implicitSelf: false, pins, "default:target__arg": 7,
+    });
+    const implicit = node(registry, "implicit", "flow.event.call", {
+      name: "On Alert", classId: "Guard", implicitSelf: true, pins, "default:target__arg": 9,
+    });
+    expect(explicit.pins.filter((pin) => pin.id === "target")).toHaveLength(1);
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [node(registry, "begin", "flow.event.beginPlay"), node(registry, "other", "actor.getSelf"), explicit, implicit],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "explicit", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "explicit", sourcePinId: "execOut", targetNodeId: "implicit", targetPinId: "execIn" },
+        { id: "e3", sourceNodeId: "other", sourcePinId: "out", targetNodeId: "explicit", targetPinId: "target" },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const calls: unknown[] = [];
+    (loadModule(compiled.source).onBeginPlay as (ctx: unknown) => void)({
+      self: "guard",
+      invokeCustomEvent: (...args: unknown[]) => calls.push(args),
+    });
+    expect(calls).toEqual([["guard", "On_Alert", { target: 7 }], ["guard", "On_Alert", { target: 9 }]]);
+  });
+
   it("registers Call Parent Event with passthrough data pins", () => {
     const callParent = flowNodes.find(
       (node) => node.id === "flow.event.callParent",
@@ -326,26 +360,38 @@ describe("flow nodes", () => {
     ]);
   });
 
-  it("compiles Call Parent Event to ctx.invokeEvent on the parent class", () => {
+  it("forwards a catalog event's arguments to the parent unless an input is wired", () => {
     const registry = createDefaultNodeRegistry();
+    const callParent = node(registry, "cp", "flow.event.callParent", {
+      eventType: "flow.event.hit",
+      eventName: "On Hit",
+      parentClassId: "HeroBase",
+    });
+    expect(
+      callParent.pins.filter((pin) => pin.kind === "data" && pin.direction === "in").map((pin) => pin.id),
+    ).toEqual(["hitResult", "otherActor", "location", "normal"]);
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
       nodes: [
-        node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "cp", "flow.event.callParent", {
-          eventType: "flow.event.beginPlay",
-          eventName: "Begin Play",
-          parentClassId: "HeroBase",
-        }),
+        node(registry, "hit", "flow.event.hit"),
+        node(registry, "origin", "vector.make3"),
+        callParent,
       ],
       edges: [
         {
           id: "e1",
-          sourceNodeId: "begin",
+          sourceNodeId: "hit",
           sourcePinId: "execOut",
           targetNodeId: "cp",
           targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "origin",
+          sourcePinId: "out",
+          targetNodeId: "cp",
+          targetPinId: "location",
         },
       ],
     };
@@ -353,9 +399,15 @@ describe("flow nodes", () => {
       assetGuid: "a",
       registry,
     });
-    expect(compiled.source).toContain(
-      'ctx.invokeEvent("HeroBase", "onBeginPlay", {  });',
-    );
+    const args = { otherActor: "rock", location: { x: 1, y: 2, z: 3 } };
+    const calls: unknown[] = [];
+    (loadModule(compiled.source, "onHit").onHit as (ctx: unknown) => void)({
+      args,
+      invokeEvent: (...call: unknown[]) => calls.push(call),
+    });
+    expect(calls).toEqual([
+      ["HeroBase", "onHit", { otherActor: "rock", location: { x: 0, y: 0, z: 0 } }],
+    ]);
   });
 
   it("compiles function Output data pins as a return object", () => {

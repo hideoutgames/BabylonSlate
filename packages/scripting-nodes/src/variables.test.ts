@@ -448,6 +448,54 @@ describe("variables.get / variables.set", () => {
     expect(compiled.source).toContain("ctx.setVariable(\"Health\", 8)");
   });
 
+  it.each([
+    { name: "target", implicitSelf: false },
+    { name: "then", implicitSelf: true },
+    { name: "exec", implicitSelf: true },
+  ])("binds Set Variable pins by id for a variable named $name", ({ name, implicitSelf }) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "self", "actor.getSelf"),
+        node(registry, "set", "variables.set", {
+          variableName: name,
+          typeId: "float",
+          classId: "Guard",
+          implicitSelf,
+          "default:value": 3,
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "set", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "set", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "e3", sourceNodeId: "set", sourcePinId: "out", targetNodeId: "log", targetPinId: "message" },
+        ...(implicitSelf
+          ? []
+          : [{ id: "e4", sourceNodeId: "self", sourcePinId: "out", targetNodeId: "set", targetPinId: "target" }]),
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const body = compiled.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const onBeginPlay = new Function(`${body}\nreturn { onBeginPlay };`)()
+      .onBeginPlay as (ctx: unknown) => void;
+    const writes: unknown[][] = [];
+    const messages: string[] = [];
+    const guard = { classId: "Guard" };
+    onBeginPlay({
+      self: guard,
+      setVariable: (key: string, value: unknown) => writes.push([guard, key, value]),
+      setVariableOn: (owner: unknown, key: string, value: unknown) => writes.push([owner, key, value]),
+      formatValue: String,
+      log: (_severity: string, _category: string, message: string) => messages.push(message),
+    });
+    expect(writes).toEqual([[guard, name, 3]]);
+    expect(messages).toEqual(["3"]);
+  });
+
   it("Validated Get uses exec, Is Valid, Not Valid, and a typed value out", () => {
     const def = createDefaultNodeRegistry().get("variables.getValidated")!;
     const pins = def.pins({

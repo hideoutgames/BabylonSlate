@@ -188,7 +188,8 @@ export const debugNodes: NodeDefinition[] = [
           bodyLine: index + 1,
         })),
       );
-      const args = ["ctx", ...inputs.map((i) => ctx.input(i.name))].join(", ");
+      // Row names can equal the exec pins' names, so look up the prefixed ids.
+      const args = ["ctx", ...inputs.map((i) => ctx.input(`in_${i.name}`))].join(", ");
       if (isAsync) ctx.requestAsync();
       const call = isAsync ? `await ${fnName}(${args})` : `${fnName}(${args})`;
       if (outputs.length === 0) {
@@ -196,7 +197,7 @@ export const debugNodes: NodeDefinition[] = [
         return;
       }
       const bindings = outputs
-        .map((o) => `${o.name}: ${ctx.output(o.name)}`)
+        .map((o) => `${o.name}: ${ctx.output(`out_${o.name}`)}`)
         .join(", ");
       ctx.emit(`({ ${bindings} } = ${call});`);
     },

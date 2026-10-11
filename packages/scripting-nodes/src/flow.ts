@@ -20,8 +20,11 @@ import {
   ENGINE_HIT_RESULT_STRUCT_ID,
 } from "@babylonslate/scripting";
 import {
+  CALL_PIN_IDS,
+  EXEC_PIN_IDS,
   dataMemberPins,
   jsIdent,
+  memberArgPinId,
   memberPinRows,
   objectLiteralKey,
   pinTypeForMember,
@@ -88,7 +91,59 @@ const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "bt.event.evaluate": "onEvaluate",
 };
 
+/** Runtime export of the catalog event a Call Parent node targets, if any. */
+function catalogEventExport(
+  properties: Record<string, unknown>,
+): string | undefined {
+  const eventType =
+    typeof properties.eventType === "string" ? properties.eventType : "";
+  return Object.prototype.hasOwnProperty.call(EVENT_EXPORT_BY_TYPE, eventType)
+    ? EVENT_EXPORT_BY_TYPE[eventType]
+    : undefined;
+}
+
 type EventArgPin = { id: string; name: string; type: PinType };
+
+type CallParentArg = {
+  /** Key in the args object the parent event reads. */
+  key: string;
+  name: string;
+  type: PinType;
+  inId: string;
+  outId: string;
+};
+
+/**
+ * Call Parent data pins: a catalog event's own outputs (keyed by pin id, as
+ * its entry reads `ctx.args[<id>]`), or the custom event's signature rows.
+ */
+function callParentArgs(properties: Record<string, unknown>): CallParentArg[] {
+  if (catalogEventExport(properties)) {
+    const def = flowNodes.find((entry) => entry.id === properties.eventType);
+    return (def?.pins({}) ?? [])
+      .filter((entry) => entry.kind === "data" && entry.direction === "out")
+      .map((entry) => ({
+        key: entry.id,
+        name: entry.name,
+        type: entry.type,
+        inId: entry.id,
+        outId: `${entry.id}__out`,
+      }));
+  }
+  return memberPinRows(properties).flatMap((row) => {
+    if (!row || typeof row.name !== "string" || row.name.length === 0) {
+      return [];
+    }
+    if (row.typeId === "exec") return [];
+    return [{
+      key: row.name,
+      name: row.name,
+      type: pinTypeForMember(row.typeId, row.typeClassId),
+      inId: memberArgPinId(row.name, EXEC_PIN_IDS),
+      outId: `${row.name}__out`,
+    }];
+  });
+}
 
 /** Catalog event entry whose data outputs read `ctx.args[<pin id>]`. */
 function argsEvent(
@@ -441,13 +496,13 @@ export const flowNodes: NodeDefinition[] = [
     pure: true,
     pins: (properties) => [
       pin("execOut", "then", "out", EXEC),
-      ...dataMemberPins(properties, "out"),
+      ...dataMemberPins(properties, "out", EXEC_PIN_IDS),
     ],
     codegen: (ctx) => {
       const out: Record<string, string> = {};
       for (const pinDef of ctx.node.pins) {
         if (pinDef.kind === "exec" || pinDef.direction !== "out") continue;
-        out[pinDef.name] = `(ctx.commandArgs[${JSON.stringify(pinDef.name)}])`;
+        out[pinDef.id] = `(ctx.commandArgs[${JSON.stringify(pinDef.name)}])`;
       }
       if (Object.keys(out).length === 0) return;
       return out;
@@ -470,7 +525,7 @@ export const flowNodes: NodeDefinition[] = [
         pin("execIn", "exec", "in", EXEC),
         pin("execOut", "then", "out", EXEC),
         ...targetPin,
-        ...dataMemberPins(properties, "in"),
+        ...dataMemberPins(properties, "in", CALL_PIN_IDS),
       ];
     },
     codegen: (ctx) => {
@@ -480,7 +535,7 @@ export const flowNodes: NodeDefinition[] = [
           : "Custom";
       const eventName = jsIdent(raw);
       const targetPin = ctx.node.pins.find(
-        (entry) => entry.name === "target" && entry.direction === "in",
+        (entry) => entry.id === "target" && entry.direction === "in",
       );
       const targetConnected =
         !!targetPin &&
@@ -498,11 +553,11 @@ export const flowNodes: NodeDefinition[] = [
         if (
           pinDef.direction !== "in" ||
           pinDef.kind === "exec" ||
-          pinDef.name === "target"
+          pinDef.id === "target"
         ) {
           continue;
         }
-        args.push(`${JSON.stringify(pinDef.name)}: ${ctx.input(pinDef.name)}`);
+        args.push(`${JSON.stringify(pinDef.name)}: ${ctx.input(pinDef.id)}`);
       }
       ctx.emit(
         `ctx.invokeCustomEvent(${targetExpr}, ${JSON.stringify(eventName)}, { ${args.join(", ")} });`,
@@ -513,58 +568,47 @@ export const flowNodes: NodeDefinition[] = [
     id: "flow.event.callParent",
     title: "Call Parent Event",
     category: "flow",
-    pins: (properties) => {
-      const rows = memberPinRows(properties);
-      const dataPins = rows.flatMap((row) => {
-        if (!row || typeof row.name !== "string" || row.name.length === 0) {
-          return [];
-        }
-        if (row.typeId === "exec") return [];
-        const type = pinTypeForMember(row.typeId, row.typeClassId);
-        return [
-          pin(row.name, row.name, "in", type),
-          pin(`${row.name}__out`, row.name, "out", type),
-        ];
-      });
-      return [
-        pin("execIn", "exec", "in", EXEC),
-        pin("execOut", "then", "out", EXEC),
-        ...dataPins,
-      ];
-    },
+    pins: (properties) => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      ...callParentArgs(properties).flatMap((arg) => [
+        pin(arg.inId, arg.name, "in", arg.type),
+        pin(arg.outId, arg.name, "out", arg.type),
+      ]),
+    ],
     codegen: (ctx) => {
       const parentClassId =
         typeof ctx.node.properties.parentClassId === "string" &&
         ctx.node.properties.parentClassId.trim()
           ? ctx.node.properties.parentClassId.trim()
           : "BObject";
-      const eventType =
-        typeof ctx.node.properties.eventType === "string"
-          ? ctx.node.properties.eventType
-          : "";
+      const catalogEvent = catalogEventExport(ctx.node.properties);
       const rawName =
         typeof ctx.node.properties.eventName === "string"
           ? ctx.node.properties.eventName
           : typeof ctx.node.properties.name === "string"
             ? ctx.node.properties.name
             : "Custom";
-      const catalogEvent =
-        eventType && EVENT_EXPORT_BY_TYPE[eventType]
-          ? EVENT_EXPORT_BY_TYPE[eventType]
-          : undefined;
       const eventName = catalogEvent ?? jsIdent(rawName);
-      const args: string[] = [];
-      for (const pinDef of ctx.node.pins) {
-        if (pinDef.kind === "exec" || pinDef.direction !== "in") continue;
-        args.push(`${JSON.stringify(pinDef.name)}: ${ctx.input(pinDef.name)}`);
-      }
+      const args = callParentArgs(ctx.node.properties);
+      const wired = (pinId: string) =>
+        ctx.graph.edges.some(
+          (edge) => edge.targetNodeId === ctx.node.id && edge.targetPinId === pinId,
+        );
+      // A catalog event forwards the running event's arguments; a wired
+      // input replaces one. Custom events send exactly their inputs.
+      const fields = args
+        .filter((arg) => !catalogEvent || wired(arg.inId))
+        .map((arg) => `${JSON.stringify(arg.key)}: ${ctx.input(arg.inId)}`);
+      const sent = catalogEvent
+        ? `{ ...ctx.args${fields.map((field) => `, ${field}`).join("")} }`
+        : `{ ${fields.join(", ")} }`;
+      const passThrough = args
+        .map((arg) => ` ${ctx.output(arg.outId)} = __args[${JSON.stringify(arg.key)}];`)
+        .join("");
       ctx.emit(
-        `ctx.invokeEvent(${JSON.stringify(parentClassId)}, ${JSON.stringify(eventName)}, { ${args.join(", ")} });`,
+        `{ const __args = ${sent}; ctx.invokeEvent(${JSON.stringify(parentClassId)}, ${JSON.stringify(eventName)}, __args);${passThrough} }`,
       );
-      for (const pinDef of ctx.node.pins) {
-        if (pinDef.kind === "exec" || pinDef.direction !== "in") continue;
-        ctx.emit(`${ctx.output(pinDef.name)} = ${ctx.input(pinDef.name)};`);
-      }
     },
   },
   {
