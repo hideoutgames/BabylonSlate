@@ -58,6 +58,20 @@ describe("Electron userData app settings", () => {
     expect((await store.load()).viewportFrameCap).toBe(30);
   });
 
+  it("builds the next update on a save the bridge refused, not the older file", async () => {
+    const stored = defaultEngineSettings();
+    stored.viewportFrameCap = 60;
+    const bridge = fakeBridge(JSON.stringify(stored));
+    bridge.writeSettings.mockRejectedValue(new Error("disk full"));
+    const store = new ElectronAppSettingsStore(bridge);
+
+    await store.update((settings) => { settings.viewportFrameCap = 30; });
+    const next = await store.update((settings) => { settings.undoHistoryLength = 75; });
+
+    expect([next.viewportFrameCap, next.undoHistoryLength]).toEqual([30, 75]);
+    expect((await store.load()).viewportFrameCap).toBe(30);
+  });
+
   it("detects the Electron host from the injected bridge", () => {
     expect(isElectronHost()).toBe(false);
     expect(getHostPlatform()).toBe("web");

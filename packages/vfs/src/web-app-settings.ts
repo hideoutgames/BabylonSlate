@@ -11,12 +11,15 @@ export const ENGINE_SETTINGS_STORAGE_KEY = "babylonslate:engine-settings";
 const KEY = ENGINE_SETTINGS_STORAGE_KEY;
 
 /**
- * Web app-settings backend. Prefers localStorage; falls back to in-memory.
+ * Web app-settings backend. Prefers localStorage; settings whose save fails
+ * stay in memory for this session.
  */
 export class WebAppSettingsStore implements AppSettingsStore {
-  private memory: EngineSettings | null = null;
+  /** The last save localStorage refused; newer than anything it holds. */
+  private unsaved: EngineSettings | null = null;
 
   async load(): Promise<EngineSettings> {
+    if (this.unsaved) return this.unsaved;
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
@@ -25,17 +28,16 @@ export class WebAppSettingsStore implements AppSettingsStore {
     } catch {
       /* ignore */
     }
-    if (this.memory) return this.memory;
     return defaultEngineSettings();
   }
 
   async save(settings: EngineSettings): Promise<void> {
     const parsed = engineSettingsSchema.parse(settings);
-    this.memory = parsed;
     try {
       localStorage.setItem(KEY, JSON.stringify(parsed));
+      this.unsaved = null;
     } catch {
-      /* memory-only fallback */
+      this.unsaved = parsed;
     }
   }
 
