@@ -146,7 +146,7 @@ Pure functions keyed by extension: `(bytes, options) → ImportResult[]`.
 | images | Texture; Usage from whole words of the file name (`pixel`, `sprite`, `tileset` → Pixel Art; `lut`, `color grading` → Color Grading LUT; `ui`, `gui`, `hud`, `button` → UI; `normal` → Normal; else Albedo), so `abnormal` or `buttonhole` stay Albedo |
 | ENV / prefiltered DDS | Texture with cube dimension, HDR encoding, face size and roughness mip metadata; original `source` chunk retained |
 | glb / gltf | Model (+ Material / Texture / Skeleton / Animation as needed) |
-| audio | Audio |
+| audio | Audio; the source chunk's MIME is sniffed from the bytes (WAV, OGG, MP3), else taken from the extension |
 | woff2 / woff / ttf / otf | Font |
 | facetype JSON / MSDF JSON + PNG | Attach to the existing Font of that family name (the one in the import folder, else the only one in the import's root), or **create** a Font when there is none or several share the name. MSDF PNG is a Font sidecar (`msdf-atlas-png`), not a Texture. A JSON is a representation by name (`msdf` / `facetype`) or by shape (msdf-bmfont `chars` array; facetype.js `glyphs` + `resolution`); any other JSON is refused. A JSON naming its atlas page pairs only with that PNG |
 | `.babasset` | Unpack / remapped copy |

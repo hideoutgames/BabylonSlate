@@ -1,4 +1,4 @@
-import { pngPixelSize } from "./bytes";
+import { sniffSourceImageSize } from "./image-size";
 import {
   DEFAULT_SPRITE_COLLISION,
   DEFAULT_SPRITE_PIVOT,
@@ -213,7 +213,7 @@ export function applyTexturePixelSizesToSpriteAnimation(
   return changed ? { ...payload, frames } : payload;
 }
 
-/** Fill missing Sprite Animation frame sizes from PNG texture bytes. */
+/** Fill missing Sprite Animation frame sizes from texture source bytes (PNG, JPEG, WebP, GIF). */
 export function hydrateSpriteAnimationPixelSizes(
   animations: ReadonlyMap<string, SpriteAnimationPayload>,
   textureBytes: ReadonlyMap<string, Uint8Array>,
@@ -222,7 +222,7 @@ export function hydrateSpriteAnimationPixelSizes(
   const sizeForGuid = (guid: string): TexturePixelSize | null => {
     if (cache.has(guid)) return cache.get(guid) ?? null;
     const bytes = textureBytes.get(guid);
-    const size = bytes ? pngPixelSize(bytes) : null;
+    const size = bytes ? sniffSourceImageSize(bytes) : null;
     cache.set(guid, size);
     return size;
   };

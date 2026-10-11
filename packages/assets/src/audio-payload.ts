@@ -245,8 +245,10 @@ export function pickWeightedAudioClip(
 ): AudioClipPayload {
   const list = clips.length > 0 ? clips : [defaultAudioClip()];
   const total = list.reduce((sum, clip) => sum + Math.max(0, clip.weight), 0);
-  if (total <= 0) return list[0]!;
-  const sample = Math.min(0.999999, Math.max(0, random())) * total;
+  const unit = Math.min(0.999999, Math.max(0, random()));
+  // All-zero weights are equal weights.
+  if (total <= 0) return list[Math.floor(unit * list.length)]!;
+  const sample = unit * total;
   let cursor = 0;
   for (const clip of list) {
     cursor += Math.max(0, clip.weight);

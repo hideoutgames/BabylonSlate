@@ -221,13 +221,19 @@ describe("importers", () => {
     expect(pickerImportAccept()).toMatch(/\.stl/);
   });
 
-  it("imports audio", async () => {
+  it("imports audio with the MIME its bytes carry, else its extension's", async () => {
     const results = await importAudio(new Uint8Array([1]), {
       fileName: "hit.wav",
       existingGuids: new Set(),
     });
     expect(results[0]!.type).toBe("Audio");
     expect(results[0]!.chunks[0]!.mime).toBe("audio/wav");
+    // An MP3 saved with a .wav name.
+    const renamed = await importAudio(new Uint8Array([0x49, 0x44, 0x33, 0x04]), {
+      fileName: "hit.wav",
+      existingGuids: new Set(),
+    });
+    expect(renamed[0]!.chunks[0]!.mime).toBe("audio/mpeg");
   });
 
   it("labels preview blobs from WAV, MP3, and OGG bytes", () => {

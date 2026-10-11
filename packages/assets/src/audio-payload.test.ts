@@ -98,6 +98,10 @@ describe("audio payloads", () => {
     expect(pickWeightedAudioClip(clips, () => 0.24).chunkId).toBe("source");
     expect(pickWeightedAudioClip(clips, () => 0.25).chunkId).toBe("source:2");
     expect(pickWeightedAudioClip(clips, () => 0.99).chunkId).toBe("source:2");
+    // All-zero weights are equal weights, not always the first clip.
+    const silent = clips.map((clip) => ({ ...clip, weight: 0 }));
+    expect(pickWeightedAudioClip(silent, () => 0.49).chunkId).toBe("source");
+    expect(pickWeightedAudioClip(silent, () => 0.5).chunkId).toBe("source:2");
     expect(
       resolveAudioPitch(
         {

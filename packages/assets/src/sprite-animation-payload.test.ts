@@ -179,18 +179,20 @@ describe("SpriteAnimation payload", () => {
     expect(sized.frames[2]?.height).toBeUndefined();
   });
 
-  it("hydrates missing sizes from PNG IHDR bytes keyed by texture guid", () => {
-    const payload = createDefaultSpriteAnimationPayload();
-    payload.frames[0]!.textureGuid = "hero-tex";
+  it("hydrates missing sizes from texture source bytes keyed by guid, not only PNG", () => {
+    const payload = parseSpriteAnimationPayload({
+      frames: [{ textureGuid: "hero-tex" }, { textureGuid: "gif-tex" }],
+    });
+    // GIF89a with a 48 x 24 logical screen.
+    const gif = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 48, 0, 24, 0]);
     const hydrated = hydrateSpriteAnimationPixelSizes(
       new Map([["walk", payload]]),
-      new Map([["hero-tex", pngIhdr(200, 100)]]),
+      new Map([["hero-tex", pngIhdr(200, 100)], ["gif-tex", gif]]),
     );
-    expect(hydrated.get("walk")?.frames[0]).toMatchObject({
-      textureGuid: "hero-tex",
-      width: 200,
-      height: 100,
-    });
+    expect(hydrated.get("walk")?.frames).toMatchObject([
+      { textureGuid: "hero-tex", width: 200, height: 100 },
+      { textureGuid: "gif-tex", width: 48, height: 24 },
+    ]);
   });
 });
 
