@@ -983,12 +983,25 @@ only when constructing a map, so unchanged frames do not poll driver errors.
 Exhausted requests remain suppressed until settings change, scene reload or context
 restoration. Cleanup failures stop retries and propagate a recovery error.
 Local maps with known opaque, undeformed casters render once and refresh on change.
-A scene-wide caster revision covers actual world-matrix changes (including externally
+Each caster's revision covers actual world-matrix changes (including externally
 supplied frozen attachment matrices), geometry edits, visibility, participation and
-material depth/culling changes. Unchanged forced matrix computations do not invalidate
+material depth/culling changes. A local map tracks only the casters that can reach its
+light's range (bounding sphere within the range; deforming casters at twice their radius):
+one of them changing, entering or leaving re-renders that map once, while changes
+elsewhere in the scene leave it cached. Unchanged forced matrix computations do not invalidate
 maps. Local light pose/projection, depth range, camera identity and floating render-origin
-changes also invalidate. Maps keep their allocation; no per-frame signature arrays or
-per-light whole-scene scans are added. Diagnostics expose `on-change` or `continuous`.
+changes also invalidate. Maps keep their allocation and unchanged frames allocate no
+signature arrays; each local map tests every caster's bounding sphere against its range
+once per frame. Diagnostics expose `on-change` or `continuous`.
+
+**Local depth range.** A point/spot map's depth ends at its light's range
+(`fitLocalShadowDepth` sets `shadowMaxZ`) instead of the camera's far plane, unless the
+range reaches that far plane. Each cube face or spot frustum therefore culls casters
+beyond the range, and deforming casters, which the caster index never plane-culls, are
+dropped when twice their bounds cannot reach it. Physical PBR falloff has no authored
+cutoff, so a light still reaches slightly past its range; there, objects beyond the range
+cast no shadow from it. On the FeatureTest main scene (10 m shadowed point light, camera
+far plane 1000 m) the point cube fell from 302 to 16 draws per frame.
 The policy scans before allocation/projection and again before per-camera targets,
 after active-mesh evaluation. It uses Babylon render-once counters and explicit resets;
 readiness probes do not count as a completed render. Unready caster shaders retain
@@ -1013,13 +1026,13 @@ shadow path unless authored WPO or masking still requires a variant. Replaced
 mask generations and shadow programs retire before their material graphs, without
 disposing borrowed textures. No browser test compares authored-shadow pixels.
 Alpha, skeletons, morphs, deformation, instances, updatable vertex or index buffers, camera-dependent
-geometry and unknown shader/hooks keep refreshing conservatively. Any uncertain visible
-caster currently keeps every local map live; any dirty caster invalidates all local maps.
+geometry and unknown shader/hooks keep refreshing conservatively. An uncertain visible
+caster keeps live only the local maps whose range it can reach.
 Index mutability uses a narrow Babylon 9.29 adapter read because dynamic index edits
 can bypass geometry notifications; an unknown mutability state also keeps maps live.
 The camera-dependent sun always refreshes. This policy adds no authored mobility defaults,
-staggered refresh, baking or distinct free-camera inspection override. Spatially selective
-invalidation and device performance qualification remain separate work.
+staggered refresh, baking or distinct free-camera inspection override. Device performance
+qualification remains separate work.
 `shadow-map-refresh.test.ts` and `shadow-controller.test.ts` cover the refresh policy;
 no browser test compares cached and freshly rendered maps.
 Light diagnostics distinguish disabled, non-illuminating, intentionally unshadowed,
