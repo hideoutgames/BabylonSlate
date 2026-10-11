@@ -362,6 +362,8 @@ export class ProjectService {
   private projectSearchIndex: ProjectSearchIndex | null = null;
   private readonly encodeQueue: EncodeQueue;
   private readonly publicEncodeQueue: EncodeQueue;
+  /** The encode result being committed, which Close Project lets finish in its own folder. */
+  private textureCommit: Promise<unknown> | null = null;
   private readonly emissionJobs = new Set<AbortController>();
   private readonly processAreaEmission: AreaEmissionProcessor;
   private workerEncode:
@@ -528,7 +530,12 @@ export class ProjectService {
           const registry = this.assetRegistry;
           if (!registry) { succeeded = true; return; }
           const session = this.sourceSession;
-          if (!(await registry.commitCompressedTexture(result))) {
+          const commit = registry.commitCompressedTexture(result);
+          this.textureCommit = commit;
+          const committedHere = await commit.finally(() => {
+            if (this.textureCommit === commit) this.textureCommit = null;
+          });
+          if (!committedHere) {
             // Refused guarded jobs leave the committed file unchanged.
             if (session === this.sourceSession) this.emitRegistryChange();
             succeeded = true;
@@ -1270,6 +1277,10 @@ export class ProjectService {
     this.sessionEncodes.clear();
     await this.extensions.close();
     this.cancelEmissionJobs();
+    // A KTX2 commit already writing must finish before the shared storage is
+    // released: the next project would reuse it, and the late write would land
+    // in that project's folder. The session bump above ends its follow-up work.
+    await this.textureCommit?.catch(() => {});
     await this.storage.releaseFolder();
     this.projectGuid = null;
     this.migrationPending = [];
