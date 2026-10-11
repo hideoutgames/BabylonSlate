@@ -8,8 +8,10 @@ import { getBuildIdentity } from "../lib/build-identity";
 import {
   getHostPlatform,
   MAX_UNDO_BYTE_BUDGET,
+  MAX_HARDWARE_SCALING_LEVEL,
   MAX_UNDO_HISTORY_LENGTH,
   MAX_VIEWPORT_FRAME_CAP,
+  MIN_HARDWARE_SCALING_LEVEL,
   MIN_UNDO_BYTE_BUDGET,
   MIN_VIEWPORT_FRAME_CAP,
   type EngineSettings,
@@ -393,7 +395,8 @@ export function EngineSettingsForm({
             </FieldLabel>
             <NumberField
               id="setting-hardware-scale"
-              min={0.25}
+              min={MIN_HARDWARE_SCALING_LEVEL}
+              max={MAX_HARDWARE_SCALING_LEVEL}
               step={0.25}
               className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-hardware-scale"

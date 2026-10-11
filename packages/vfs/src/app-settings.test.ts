@@ -157,15 +157,17 @@ describe("app settings", () => {
     );
   });
 
-  it("bounds undo history length, the Undo memory limit and the viewport frame cap", () => {
-    const high = engineSettingsSchema.parse({ undoHistoryLength: 1e9, undoByteBudget: 1e12, viewportFrameCap: 1000 });
+  it("bounds undo history length, the Undo memory limit, the viewport frame cap and hardware scaling", () => {
+    const high = engineSettingsSchema.parse({ undoHistoryLength: 1e9, undoByteBudget: 1e12, viewportFrameCap: 1000, hardwareScalingLevel: 8 });
     expect(high.undoHistoryLength).toBe(1000);
     expect(high.undoByteBudget).toBe(1_073_741_824);
     expect(high.viewportFrameCap).toBe(240);
-    const low = engineSettingsSchema.parse({ undoHistoryLength: 2.6, undoByteBudget: 0, viewportFrameCap: 0 });
+    expect(high.hardwareScalingLevel).toBe(4);
+    const low = engineSettingsSchema.parse({ undoHistoryLength: 2.6, undoByteBudget: 0, viewportFrameCap: 0, hardwareScalingLevel: 0.25 });
     expect(low.undoHistoryLength).toBe(3);
     expect(low.undoByteBudget).toBe(1_048_576);
     expect(low.viewportFrameCap).toBe(10);
+    expect(low.hardwareScalingLevel).toBe(1);
     expect(engineSettingsSchema.safeParse({ undoByteBudget: "16" }).success).toBe(false);
   });
 
