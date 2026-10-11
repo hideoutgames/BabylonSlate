@@ -52,7 +52,7 @@ Bundled Engine Plugins use an HTTP file catalog. The build emits each `.babasset
 | Memory | Tests | In-memory tree |
 | Read-only wrapper | Engine plugins | `createReadOnlyProjectStorage(inner)` — reads pass through; `write*` / `mkdir` / `remove` / `deleteProject` throw |
 | Node | CI / tools | Real filesystem under a root path; `openAbsoluteFolder` for Electron pickers |
-| Electron | Desktop editor | Renderer `ElectronStorageAdapter` over preload IPC; one main-process `NodeStorageAdapter` per editor document, dropped when that document is replaced, crashes or closes. Whole-file reads, ranged reads and writes are capped at 512 MiB per call |
+| Electron | Desktop editor | Renderer `ElectronStorageAdapter` over preload IPC; one main-process `NodeStorageAdapter` per editor document, dropped when that document is replaced, crashes or closes. A recent folder reopens without the picker only when its canonical path is directly inside `userData/projects` or was granted through the picker. Whole-file reads, ranged reads and writes are capped at 512 MiB per call |
 
 `openKnownFolder(handle)` rebinds a previously known project (Documents / OPFS / external bookmark) without showing a picker. The picker is only for first bind and Reconnect.
 

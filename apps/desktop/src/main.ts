@@ -25,6 +25,7 @@ import {
   allowsEditorPermission,
   isEditorSender,
   isPreviewFrameUrl,
+  knownProjectFolder,
   MAX_IPC_BYTES,
   rendererFile,
   validateIpcArguments,
@@ -38,6 +39,8 @@ const editorWindows = new Set<number>();
 const projectStorage = new Map<number, NodeStorageAdapter>();
 let updates: ReturnType<typeof createDesktopUpdates> | undefined;
 let saveGames: DesktopSaveGames | undefined;
+/** Set once the primary instance has registered IPC and may open editor windows. */
+let windowsAllowed = false;
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) app.quit();
 app.on("second-instance", () => {
@@ -222,14 +225,8 @@ function registerIpc(): void {
     const storage = projects(event);
     const folder = handle as ProjectFolderHandle;
     if (folder.id.startsWith("node:")) {
-      const known = await storage.listProjects();
-      const target = await realpath(folder.id.slice("node:".length));
-      if (!known.some(item => item.id === folder.id) && !(await grantedFolders()).includes(target)) throw new Error("Choose this folder using the folder picker first");
-      return storage.openAbsoluteFolder(
-        target,
-        folder.name,
-        folder.tier,
-      );
+      const target = await knownProjectFolder(folder.id, projectsRoot, grantedFolders);
+      return storage.openAbsoluteFolder(target, folder.name, folder.tier);
     }
     return storage.openKnownFolder(folder);
   });
@@ -314,6 +311,7 @@ void app.whenReady().then(async () => {
       }
     } catch (error) { console.warn("Automatic updates unavailable:", error); }
   }
+  windowsAllowed = true;
   await createWindow();
 });
 
@@ -321,6 +319,7 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
+// A quitting second instance, or a primary still starting up, never opens a window here.
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+  if (windowsAllowed && BrowserWindow.getAllWindows().length === 0) void createWindow();
 });

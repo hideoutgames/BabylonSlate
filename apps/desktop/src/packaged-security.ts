@@ -1,4 +1,5 @@
-import { isAbsolute, relative, resolve } from "node:path";
+import { realpath } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 /** Largest payload one project IPC call may move through the main process. */
 export const MAX_IPC_BYTES = 512 * 1024 * 1024;
@@ -46,6 +47,23 @@ export function isPreviewFrameUrl(rawUrl: string): boolean {
 /** The editor frame may write the clipboard; every other permission is denied. */
 export function allowsEditorPermission(permission: string, requestingUrl: string, mainFrame: boolean): boolean {
   return permission === "clipboard-sanitized-write" && isEditorSender(requestingUrl, mainFrame);
+}
+
+/**
+ * Canonical folder a `node:` project id may reopen without the picker: a folder
+ * directly inside the projects home, or one granted through the folder picker.
+ * Both checks use the canonical path that is then opened, so a link cannot stand
+ * in for a project and a non-canonical home still matches its own projects.
+ */
+export async function knownProjectFolder(
+  id: string,
+  projectsHome: string,
+  grants: () => Promise<readonly string[]>,
+): Promise<string> {
+  const target = await realpath(id.slice("node:".length));
+  const home = await realpath(projectsHome).catch(() => null);
+  if (dirname(target) === home || (await grants()).includes(target)) return target;
+  throw new Error("Choose this folder using the folder picker first");
 }
 
 function text(value: unknown, max = 1024 * 1024): asserts value is string {

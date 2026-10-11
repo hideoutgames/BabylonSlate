@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolve } from "node:path";
-import { allowsEditorPermission, rendererFile, isEditorSender, isPreviewFrameUrl, validateIpcArguments } from "./packaged-security";
+import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { allowsEditorPermission, knownProjectFolder, rendererFile, isEditorSender, isPreviewFrameUrl, validateIpcArguments } from "./packaged-security";
 
 describe("packaged renderer boundary", () => {
   it("resolves encoded asset filenames without treating filename characters as URL delimiters", () => {
@@ -61,5 +63,32 @@ describe("packaged renderer boundary", () => {
       ["asset.babasset", 0, 1024 * 1024 * 1024, undefined], ["asset.babasset", Number.MAX_SAFE_INTEGER, 1, undefined],
       ["asset.babasset", 0, 1, {}],
     ]) expect(() => validateIpcArguments("project:readBinaryRange", args)).toThrow();
+  });
+});
+
+describe("known project folders", () => {
+  it("reopens projects-home folders and picker grants by the canonical path it opens", async () => {
+    const base = await realpath(await mkdtemp(join(tmpdir(), "babylonslate-known-")));
+    try {
+      const game = join(base, "home", "projects", "Game");
+      const outside = join(base, "outside");
+      await mkdir(game, { recursive: true });
+      await mkdir(outside);
+      // Junctions need no privilege on Windows; other hosts create directory links.
+      await symlink(join(base, "home"), join(base, "linked-home"), "junction");
+      await symlink(outside, join(base, "home", "projects", "Linked"), "junction");
+      const projects = join(base, "linked-home", "projects");
+      const noGrants = async () => [];
+
+      // The listed id and the canonical id it reopens as both stay openable.
+      expect(await knownProjectFolder(`node:${join(projects, "Game")}`, projects, noGrants)).toBe(game);
+      expect(await knownProjectFolder(`node:${game}`, projects, noGrants)).toBe(game);
+      // A link inside the projects home opens its target, which needs a grant.
+      await expect(knownProjectFolder(`node:${join(projects, "Linked")}`, projects, noGrants)).rejects.toThrow("folder picker");
+      expect(await knownProjectFolder(`node:${join(projects, "Linked")}`, projects, async () => [outside])).toBe(outside);
+      await expect(knownProjectFolder(`node:${base}`, projects, noGrants)).rejects.toThrow("folder picker");
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
   });
 });
