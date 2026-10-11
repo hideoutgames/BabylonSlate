@@ -7,7 +7,7 @@ import {
   type GraphCanvasDropApi,
   type PaletteNode,
 } from "@babylonslate/graph-ui";
-import { formatEventMemberName, NamePromptDialog, PanelFrame } from "@babylonslate/editor-kit";
+import { formatEventMemberName, NamePromptDialog, PanelFrame, walkAncestry } from "@babylonslate/editor-kit";
 import { isEditorGraphHost, type SerializedGraph } from "@babylonslate/core";
 import {
   Empty,
@@ -343,6 +343,8 @@ export function GraphPanel(
     classId,
     graph: graphContent ?? undefined,
     otherClassGraphs,
+    // Inherited prefab components become Get rows, as in hydrate and validation.
+    parentGraphs: otherClassGraphs,
     activeFunctionId,
     assetType: indexed?.header.type,
     functionLibraries,
@@ -357,7 +359,18 @@ export function GraphPanel(
   };
   const paletteInputRef = useRef(paletteInput);
   paletteInputRef.current = paletteInput;
-  const paletteKey = scriptPaletteInjectorKey(paletteInput);
+  // A closed palette holds only catalog rows, which follow the host's ancestry
+  // and graph slice. The injector key walks every class, asset and scene, so it
+  // is built only while Add Node is open.
+  const paletteKey = paletteOpen
+    ? scriptPaletteInjectorKey(paletteInput)
+    : JSON.stringify([
+        classId ?? null,
+        paletteInput.assetType ?? null,
+        paletteInput.animationGraphHost ?? null,
+        activeFunctionId ?? null,
+        walkAncestry(parentClass ?? "Actor", parentOf),
+      ]);
   const paletteNodes = useMemo(
     (): PaletteNode[] =>
       scriptPaletteNodes(registry, paletteInputRef.current, {
