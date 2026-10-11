@@ -1,5 +1,5 @@
 import type { CommandMessage } from "@babylonslate/bridge";
-import { deprojectCursorRay, type SerializedScene } from "@babylonslate/core";
+import { deprojectCursorRay, SCENE_LAYER_DEFAULT_LAYER_BOUNDS, type SerializedScene } from "@babylonslate/core";
 import type { ResolvedInputTick } from "@babylonslate/input";
 import type { Actor, World } from "@babylonslate/object-model";
 import { actorChainWorldTransform } from "./actor-world-transform";
@@ -8,6 +8,9 @@ import type { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { SceneLayerOverlay } from "./scene-layer-overlay";
 import type { SceneStreams } from "./scene-streams";
+
+/** The Scene Layer camera's distance in front of the layer plane (`SceneLayerCompositor`'s HUD camera at z = -10). */
+const SCENE_LAYER_CAMERA_DISTANCE = 10;
 
 interface RuntimeCameraHost {
   world(): World;
@@ -22,7 +25,7 @@ interface RuntimeCameraHost {
   /** The cursor of the most recent resolved input tick. */
   cursor(): ResolvedInputTick["cursor"];
   overlay(): Pick<SceneLayerOverlay, "canvasSize">;
-  physics(): Pick<RuntimePhysicsWorlds, "main">;
+  physics(): Pick<RuntimePhysicsWorlds, "main" | "layer">;
   emit(command: CommandMessage): void;
 }
 
@@ -31,7 +34,8 @@ interface RuntimeCameraHost {
  * script `Possess Camera` choice and the possessed slot, the authored
  * `attemptPossessViewTarget` fallback the Scene realizer runs after a
  * Scene's actors spawn, the Play camera actor the snapshot and cursor
- * projection read, and `Project Cursor To Scene`. Its `releaseSlot` hook
+ * projection read, and `Project Cursor To Scene` (through a Scene Layer's
+ * own camera for that layer's scripts). Its `releaseSlot` hook
  * forgets a possession whose slot was released.
  */
 export class RuntimeCamera implements RuntimeSubsystem {
@@ -202,6 +206,43 @@ export class RuntimeCamera implements RuntimeSubsystem {
       ...hit,
       worldOrigin: ray.origin,
       worldDirection: ray.direction,
+    };
+  }
+
+  /**
+   * `Project Cursor To Scene` from a Scene Layer's script: the cursor through
+   * that layer's orthographic camera (at z = -10 looking along +Z, Layer Width
+   * × Height stretched over the Play canvas, as the compositor draws and picks
+   * it) to a point on the layer plane, answered by the first collider of the
+   * layer's own 2D world there. No hit when the layer has no physics. It draws
+   * no debug line: debug draws render in the main Scene, not in layers.
+   */
+  projectCursorToSceneLayer(layerGuid: string, channel?: string) {
+    const bounds = this.host.world().findSceneLayer(layerGuid)?.layerBounds ?? SCENE_LAYER_DEFAULT_LAYER_BOUNDS;
+    const canvas = this.host.overlay().canvasSize();
+    const cursor = this.host.cursor();
+    const point = {
+      x: (cursor.x / Math.max(1, canvas.width) - 0.5) * bounds.width,
+      y: (0.5 - cursor.y / Math.max(1, canvas.height)) * bounds.height,
+      z: 0,
+    };
+    const worldOrigin = { x: point.x, y: point.y, z: -SCENE_LAYER_CAMERA_DISTANCE };
+    const worldDirection = { x: 0, y: 0, z: 1 };
+    // A 2D world has no depth to cast along: the colliders containing the point answer.
+    const overlap = this.host.physics().layer(layerGuid)?.sphereOverlap(point, 0, { channel });
+    const actorId = overlap?.actorIds[0];
+    if (!overlap || !actorId) {
+      return { hit: false, location: null, normal: null, distance: 0, actorId: null, bodyId: null, worldOrigin, worldDirection };
+    }
+    return {
+      hit: true,
+      location: point,
+      normal: { x: 0, y: 0, z: -1 },
+      distance: SCENE_LAYER_CAMERA_DISTANCE,
+      actorId,
+      bodyId: overlap.bodyIds[0] ?? null,
+      worldOrigin,
+      worldDirection,
     };
   }
 }

@@ -41,7 +41,7 @@ describe("ScriptHost physics query resolution", () => {
     }).actor).toBe(target);
     expect(lineTrace).toHaveBeenCalledWith(start, end, {
       ignoreActorIds: ["ignored"],
-    });
+    }, null);
     expect(draws).toEqual([
       expect.objectContaining({
         kind: "line", start, end: { x: 0, y: 4.5, z: 0 },

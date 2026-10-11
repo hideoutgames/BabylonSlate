@@ -867,6 +867,8 @@ export type CommandMessage =
   | {
       type: "debugColliders";
       colliders: readonly DebugColliderPrimitive[];
+      /** The Scene Layer instance whose own world (and overlay scene) these colliders belong to; absent for the main world. */
+      layerId?: string;
     }
   | {
       type: "sceneLayerCreate";
