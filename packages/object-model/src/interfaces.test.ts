@@ -15,7 +15,7 @@ describe("ScriptInterface dispatch", () => {
       methods: [
         {
           name: "ApplyDamage",
-          outputs: { applied: false, remaining: 0 },
+          outputs: { applied: false, remaining: 0, hitAt: { x: 0, y: 0, z: 0 } },
         },
       ],
     });
@@ -26,14 +26,18 @@ describe("ScriptInterface dispatch", () => {
       implementedInterfaces: [],
     });
 
-    const result = dispatchInterface(
+    const dispatch = () => dispatchInterface(
       interfaces,
       target,
       "iface-damageable",
       "ApplyDamage",
       { amount: 10 },
     );
-    expect(result).toEqual({ applied: false, remaining: 0 });
+    const result = dispatch();
+    expect(result).toEqual({ applied: false, remaining: 0, hitAt: { x: 0, y: 0, z: 0 } });
+    // Each dispatch owns its defaults: editing one result never leaks into the next.
+    (result.hitAt as { x: number }).x = 5;
+    expect(dispatch().hitAt).toEqual({ x: 0, y: 0, z: 0 });
   });
 
   it("invokes a registered handler when implemented", () => {
