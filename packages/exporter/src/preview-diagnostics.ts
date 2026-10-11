@@ -4,7 +4,7 @@ export const PREVIEW_DIAGNOSTIC_MESSAGE = "babylonslate-preview-diagnostic-contr
 export type PreviewDiagnosticOperation = "profile-start" | "profile-stop" | "frame" | "input";
 export type PreviewDiagnosticSettings = { durationMs?: number; byteBudget?: number; inputSuppressed?: boolean; gpuTiming?: boolean };
 export type PreviewDiagnosticResult = { success: boolean; reason?: string; result?: unknown };
-export type PreviewProfileTransfer = { metadata: Record<string, unknown>; frames: Float64Array[]; ticks: Float64Array[]; gpu?: Float64Array[] };
+export type PreviewProfileTransfer = { metadata: Record<string, unknown>; frames: Float64Array[]; ticks: Float64Array[]; gpu: Float64Array[] };
 type Incoming = { source: unknown; origin: string; data: unknown };
 export type PreviewDiagnosticEndpoint = {
   source(): unknown; origin(): string;
@@ -156,7 +156,7 @@ export function createPreviewDiagnosticServer(endpoint: PreviewDiagnosticEndpoin
       let sequence = 0;
       try {
         send({ action: "profile-start", profileId, metadata: transfer.metadata });
-        for (const stream of ["frames", "ticks", "gpu"] as const) for (const source of transfer[stream] ?? []) {
+        for (const stream of ["frames", "ticks", "gpu"] as const) for (const source of transfer[stream]) {
           if (closed || client !== owner) return gone;
           if (source.byteLength > MAX_CHUNK_BYTES) throw new Error("Preview profile chunk exceeds the transport budget.");
           const rows = source.slice();

@@ -36,7 +36,7 @@ export function createPreviewDiagnostics(options: {
       const gpu = transfer.metadata.gpu as Record<string, unknown> | undefined;
       const profile = parsePerformanceProfile({ ...transfer.metadata,
         frames: { ...frames, chunks: transfer.frames }, ticks: { ...ticks, chunks: transfer.ticks },
-        gpu: { ...gpu, chunks: transfer.gpu ?? [] } });
+        gpu: { ...gpu, chunks: transfer.gpu } });
       if (!profile) { failProfile("Preview returned an invalid or incomplete performance profile."); return; }
       retained = profile;
       profileActive = false;
