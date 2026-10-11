@@ -1120,10 +1120,10 @@ function syncFunctionGraphPins(
   };
 }
 
+/** Get / Set / Validated Get nodes bound to `member` by its id. */
 function isVariableAccessNode(
   node: SerializedGraph["nodes"][number],
   member: GraphClassMember,
-  previous?: GraphClassMember,
 ): boolean {
   if (
     node.type !== "variables.get" &&
@@ -1132,15 +1132,7 @@ function isVariableAccessNode(
   ) {
     return false;
   }
-  const variableId = node.data.variableId;
-  if (typeof variableId === "string" && variableId) {
-    return variableId === member.id;
-  }
-  const variableName = node.data.variableName;
-  return (
-    variableName === member.name ||
-    (typeof previous?.name === "string" && variableName === previous.name)
-  );
+  return node.data.variableId === member.id;
 }
 
 function stampVariableTypeOnData(
@@ -1215,10 +1207,9 @@ function mapGraphNodes(
 export function syncVariableAccessNodes(
   graph: SerializedGraph,
   member: GraphClassMember,
-  previous?: GraphClassMember,
 ): SerializedGraph {
   return mapGraphNodes(graph, (node) =>
-    isVariableAccessNode(node, member, previous)
+    isVariableAccessNode(node, member)
       ? patchVariableAccessNode(node, member)
       : node,
   );
@@ -1665,7 +1656,7 @@ export function patchClassMember(
   const next = { ...graph, members };
   const declared = next.members?.find((member) => member.id === memberId);
   if (declared?.kind === "variable") {
-    return syncVariableAccessNodes(next, declared, previous);
+    return syncVariableAccessNodes(next, declared);
   }
   if (!patch.pins) return next;
   if (declared?.kind === "event") {
