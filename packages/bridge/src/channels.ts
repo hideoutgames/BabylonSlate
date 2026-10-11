@@ -1,7 +1,7 @@
 import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderPathStatus, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue } from "@babylonslate/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
-import type { ActorDefaults, CollisionTriangleMesh, ProjectInputSettings, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
+import type { ActorDefaults, CollisionTriangleMesh, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
 
 /** Rest-pose Complex Collision triangles for one Model; typed arrays clone as one memcpy. */
 export type CookedCollisionMeshEntry = { guid: string } & CollisionTriangleMesh;
@@ -157,9 +157,8 @@ export type ControlMessage =
   renderSettings?: Partial<RenderProjectSettings>;
       project?: { name: string; version: string };
       sceneAssetGuid: string;
-      /** Authored project mappings; omitted legacy loads use defaults. */
+      /** Authored Input Action / Input Axis assets; omitted loads use the starter controls. */
       inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
-  inputMappings?: ProjectInputSettings;
       focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
       pixelsPerUnit?: number;
       texturePixelSizes?: Record<string, { width: number; height: number }>;

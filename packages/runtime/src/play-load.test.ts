@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import type { ControlMessage } from "@babylonslate/bridge";
-import { createDefaultSceneLayer } from "@babylonslate/core";
+import { createDefaultSceneLayer, type InputAssetDefinition } from "@babylonslate/core";
 import {
   loadedBackendModules,
   resetHavokModuleCache,
@@ -13,6 +13,17 @@ import {
   shouldSpawnScriptedActor,
   unmatchedScriptSpawns,
 } from "./play-load";
+
+/** An Input Action asset whose guid is its name, bound to keyboard keys. */
+function keyAction(name: string, codes: readonly string[]): InputAssetDefinition {
+  return {
+    guid: name,
+    type: "InputAction",
+    name,
+    valueType: "button",
+    bindings: codes.map((code, index) => ({ id: `${name}-${index}`, device: "key", code })),
+  };
+}
 
 describe("runtimeOptionsFromLoadControl", () => {
   it("maps a load control message onto runtime physics options", () => {
@@ -232,13 +243,7 @@ describe("createRuntimeFromLoad", () => {
     const message = {
       type: "load" as const,
       sceneAssetGuid: "empty",
-      inputMappings: {
-        actions: [
-          { name: "Fire", bindings: [{ device: "key", code: "KeyF" }] },
-          { name: "Jump", bindings: [{ device: "key", code: "KeyH" }, { device: "key", code: "KeyG" }] },
-        ],
-        axes: [],
-      },
+      inputAssets: [keyAction("Fire", ["KeyF"]), keyAction("Jump", ["KeyH", "KeyG"])],
     };
     const runtime = createRuntimeFromLoad(message, () => {});
     try {
@@ -253,7 +258,7 @@ describe("createRuntimeFromLoad", () => {
   });
 
   it("H13: explicitly deleted mappings stay empty at runtime", () => {
-    const message = { type: "load" as const, sceneAssetGuid: "empty", inputMappings: { actions: [], axes: [] } };
+    const message = { type: "load" as const, sceneAssetGuid: "empty", inputAssets: [] };
     const runtime = createRuntimeFromLoad(message, () => {});
     try {
       runtime.start();

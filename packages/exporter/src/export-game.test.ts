@@ -133,18 +133,6 @@ describe("exportGame", () => {
     const stored = new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE));
     expect(parseGameManifest(stored).project).toEqual({ name: "Orbit Workshop", version: "2.4.0-beta.3" });
   });
-  it.each([true, false])("H13: retains authored input in exported manifests with debugger=%s", async (bundleDebugger) => {
-    const inputMappings = { actions: [{ name: "Jump", bindings: [{ device: "key", code: "KeyH" }] }], axes: [] };
-    const options = { bundleDebugger, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [], playerFiles: stubPlayer(), inputMappings };
-    const result = await exportGame(options);
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error("Export failed");
-    const stored = new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE));
-    expect(parseGameManifest(stored).inputMappings).toEqual(inputMappings);
-    const legacy = JSON.parse(stored);
-    delete legacy.inputMappings;
-    expect(parseGameManifest(JSON.stringify(legacy)).inputMappings).toBeUndefined();
-  });
   it("puts index.html at the zip root and records startupSceneGuid", async () => {
     const cel = normalizeCelShadingSettings({ shadowBands: 5, lightMixing: "blend",
       outlineDistanceFadeEnabled: true, outlineFadeStart: 30, outlineFadeEnd: 90 });

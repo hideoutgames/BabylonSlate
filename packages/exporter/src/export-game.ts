@@ -294,7 +294,6 @@ export async function exportGame(
     ...(options.saveGame ? { saveGame: structuredClone(options.saveGame) } : {}),
     project: { name: options.project?.name ?? "", version: options.project?.version ?? "" },
     ...(options.inputAssets !== undefined ? { inputAssets: structuredClone(options.inputAssets) } : {}),
-    ...(options.inputMappings !== undefined ? { inputMappings: structuredClone(options.inputMappings) } : {}),
     focusNavigation: normalizeFocusNavigationSettings(options.focusNavigation),
     startupSceneGuid: options.startupSceneGuid,
     ...(options.defaultFontGuid ? { defaultFontGuid: options.defaultFontGuid } : {}),

@@ -422,7 +422,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.behaviourTrees.replaceAnimClipCatalog((options.animClipCatalog ?? []).filter((entry) => entry.guid));
     const registry = createClassRegistry();
     this.resolver = new InputResolver(normalizeInputMappings(
-      options.inputAssets !== undefined ? inputMappingsFromAssets(options.inputAssets) : options.inputMappings ?? createDefaultInputMappings(),
+      options.inputAssets !== undefined ? inputMappingsFromAssets(options.inputAssets) : createDefaultInputMappings(),
     ));
     if (options.tilemaps || options.tilesets) this.physics.bindAll();
     if (options.sprites || options.spriteAnimations) {

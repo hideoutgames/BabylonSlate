@@ -76,10 +76,12 @@ describe("runtime session boundaries", () => {
   });
 
   it("resets every resolved input device while paused without ticking or accepting queued presses", async () => {
-    const runtime = makeRuntime({ inputMappings: {
-      actions: [{ name: "Fire", bindings: [{ device: "key", code: "KeyF" }, { device: "mouseButton", code: "0" }, { device: "gamepadButton", code: "0:0" }] }],
-      axes: [{ name: "Move", bindings: [{ device: "gamepadAxis", code: "0:0" }, { device: "touch", code: "move" }] }],
-    } });
+    const runtime = makeRuntime({ inputAssets: [
+      { guid: "Fire", type: "InputAction", name: "Fire", valueType: "button", bindings: [
+        { id: "key", device: "key", code: "KeyF" }, { id: "mouse", device: "mouseButton", code: "0" }, { id: "pad", device: "gamepadButton", code: "0:0" }] },
+      { guid: "Move", type: "InputAxis", name: "Move", valueType: "1d", bindings: [
+        { id: "stick", device: "gamepadAxis", code: "0:0" }, { id: "touch", device: "touch", code: "move" }] },
+    ] });
     try {
       runtime.realizePlayWorld(); runtime.start();
       runtime.pushInput([{ kind: "key", tick: 0, code: "KeyF", phase: "down" },

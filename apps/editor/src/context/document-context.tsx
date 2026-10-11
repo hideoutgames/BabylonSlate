@@ -2265,7 +2265,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         infiniteLoopDetection:
           exportDocument?.settings.infiniteLoopDetection,
         loopCount: exportDocument?.settings.loopCount,
-        inputMappings: exportDocument?.settings.input,
         focusNavigation: exportDocument?.settings.focusNavigation,
         tagRegistry: exportDocument?.settings.tags,
         playerFiles,
@@ -2824,9 +2823,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
               ...current.settings.sourceControl,
               ...settings.sourceControl,
             },
-            input: settings.input
-              ? settings.input
-              : current.settings.input,
           }),
           metadata: {
             ...current.metadata,

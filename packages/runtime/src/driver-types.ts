@@ -38,7 +38,7 @@ import type {
   WaterDefinition,
 } from "@babylonslate/core";
 import type { RegisteredCommand, TraceBtState, TraceFrame, TracePayload, UserCommandDef } from "@babylonslate/debugger";
-import type { InputBindingControls, InputMappings, RawInputEvent, ResolvedInputTick } from "@babylonslate/input";
+import type { InputBindingControls, RawInputEvent, ResolvedInputTick } from "@babylonslate/input";
 import type { NavObstacleKind, NavPoint } from "@babylonslate/navigation";
 import type { Actor, BObject, DebugInspectSnapshot, SceneLayer, World } from "@babylonslate/object-model";
 import type { PhysicsWorldKind } from "@babylonslate/physics";
@@ -75,9 +75,8 @@ export interface RuntimeDriverOptions {
   dt?: number;
   maxActors?: number;
   onCommand?: (command: CommandMessage) => void;
-  /** Project Settings input mappings; defaults when omitted. */
+  /** Authored Input Action / Input Axis assets; the starter controls when omitted. */
   inputAssets?: InputAssetDefinition[];
-  inputMappings?: InputMappings;
   focusNavigation?: Partial<FocusNavigationSettings>;
   /**
    * Demo actors exist so an empty project still shows motion in Preview. Without

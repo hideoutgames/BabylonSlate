@@ -483,7 +483,6 @@ function initializePlayer(
     inputAssets: manifest.inputAssets,
     dataAssets: content.dataAssets,
     assetCatalog: runtimeAssetCatalogFromManifest(manifest.assets),
-    inputMappings: manifest.inputMappings,
     focusNavigation: manifest.focusNavigation,
     pixelsPerUnit: content.pixelsPerUnit,
     texturePixelSizes: Object.fromEntries(content.texturePixelSizes),

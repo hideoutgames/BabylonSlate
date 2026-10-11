@@ -23,7 +23,6 @@ export async function minimalProjectFiles(
   project.metadata.createdAt = project.metadata.updatedAt =
     "2026-01-01T00:00:00.000Z";
   project.settings.startupSceneGuid = sceneGuid;
-  project.settings.input = { actions: [], axes: [] };
   const scene = createDefaultScene();
   scene.actors = [
     createActor("actor-1", "Actor", {
