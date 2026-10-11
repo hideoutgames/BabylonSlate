@@ -359,7 +359,6 @@ async function saveManualCapture(ctx: FeatureTestContext, renderTargetGuid: stri
       gNode("self", "actor.getSelf", 240, 180),
       gNode("as-capture", "casting.cast", 480, 0, {
         "default:class": "RenderTargetCapture",
-        defaultClassId: "RenderTargetCapture",
         resultKind: "actorRef",
       }),
       gNode("capture", "render-target.capture", 760, 0),

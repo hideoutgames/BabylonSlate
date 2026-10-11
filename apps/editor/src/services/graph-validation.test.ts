@@ -313,7 +313,6 @@ describe("hydrateSerializedGraphForEditor", () => {
           type: "casting.cast",
           position: { x: 0, y: 0 },
           data: {
-            defaultClassId: "Hero",
             "default:class": "Hero",
             title: "Cast to BObject",
             __pins: [
@@ -363,7 +362,6 @@ describe("hydrateSerializedGraphForEditor", () => {
           type: "casting.cast",
           position: { x: 200, y: 0 },
           data: {
-            defaultClassId: "Hero",
             "default:class": "Hero",
           },
         },
@@ -1320,7 +1318,7 @@ describe("scriptPaletteNodes", () => {
     );
     expect(sceneCast?.title).toBe("Cast to Main Hall");
     expect(sceneCast?.defaultData).toMatchObject({
-      defaultClassId: "Scene:scene-1",
+      "default:class": "Scene:scene-1",
       resultKind: "objectRef",
     });
     expect(nodes.some((node) => node.title === "Get Scene Name")).toBe(true);
@@ -2548,14 +2546,12 @@ describe("scriptPaletteNodes", () => {
       },
     });
     expect(nodes.some((node) => node.id === "casting.cast")).toBe(false);
-    expect(nodes.some((node) => node.id === "casting.castActor")).toBe(false);
     const actorCast = nodes.find((node) => node.id === "casting.cast:Actor");
     expect(actorCast?.title).toBe("Cast to Actor");
     expect(actorCast?.pure).not.toBe(true);
     expect(actorCast?.pins?.some((pin) => pin.id === "execIn")).toBe(true);
     expect(actorCast?.pins?.some((pin) => pin.id === "execOut")).toBe(true);
     expect(actorCast?.defaultData).toMatchObject({
-      defaultClassId: "Actor",
       "default:class": "Actor",
       resultKind: "actorRef",
     });
@@ -2570,7 +2566,7 @@ describe("scriptPaletteNodes", () => {
     const heroCast = nodes.find((node) => node.id === "casting.cast:Hero");
     expect(heroCast?.title).toBe("Cast to Hero");
     expect(heroCast?.defaultData).toMatchObject({
-      defaultClassId: "Hero",
+      "default:class": "Hero",
       resultKind: "actorRef",
     });
     const giCast = nodes.find((node) => node.id === "casting.cast:GameInstance");

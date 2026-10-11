@@ -456,8 +456,7 @@ function objectClassAffinity(
   const draggedClass = classIdOf(dragged.type);
   if (!draggedClass) return 0;
   const memberClass = stringData(node.defaultData, "classId");
-  const castClass =
-    stringData(node.defaultData, "defaultClassId") || memberClass;
+  const castClass = stringData(node.defaultData, "default:class");
   if (isMemberCatalog(node) && memberClass === draggedClass) return 4;
   if (isCastCatalog(node) && castClass === draggedClass) return 3;
   for (const pin of node.pins ?? []) {

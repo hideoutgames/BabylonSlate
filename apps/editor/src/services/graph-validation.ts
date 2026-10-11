@@ -375,7 +375,7 @@ function connectedCastClassId(
 
 /**
  * Cast types its Result from the Class wired into it, else from the Class
- * picked on the node. Records the picked Class and the Result kind on
+ * picked on the node (`default:class`). Records the Result kind on
  * `properties` and returns the pin inputs, for the editor and validation alike.
  */
 function castPinProperties(
@@ -384,13 +384,20 @@ function castPinProperties(
   nodeId: string,
   nodeRegistry: NodeRegistry,
   parentOf: (id: string) => string | null | undefined,
-): { pinProperties: Record<string, unknown>; wiredClassId: string | undefined } {
+): {
+  pinProperties: Record<string, unknown>;
+  defaultClassId: string;
+  wiredClassId: string | undefined;
+} {
   const defaultClassId = castDefaultClassId(properties);
-  properties.defaultClassId = defaultClassId;
   const wiredClassId = connectedCastClassId(graph, nodeId, nodeRegistry);
   const resultClassId = wiredClassId ?? defaultClassId;
   properties.resultKind = resultKindForClass(resultClassId, parentOf);
-  return { pinProperties: { ...properties, "default:class": resultClassId }, wiredClassId };
+  return {
+    pinProperties: { ...properties, "default:class": resultClassId },
+    defaultClassId,
+    wiredClassId,
+  };
 }
 
 /**
@@ -743,7 +750,7 @@ export function hydrateSerializedGraphForEditor(
           : undefined;
 
       if (typeId === "casting.cast") {
-        const { pinProperties, wiredClassId } = castPinProperties(properties, graph, node.id, nodeRegistry, parentOf);
+        const { pinProperties, defaultClassId, wiredClassId } = castPinProperties(properties, graph, node.id, nodeRegistry, parentOf);
         const def = nodeRegistry.get(typeId);
         const pins: GraphPin[] = def ? def.pins(pinProperties) : [];
         return {
@@ -752,7 +759,7 @@ export function hydrateSerializedGraphForEditor(
           data: withVisualMeta(
             {
               ...properties,
-              title: wiredClassId ? "Cast to Class" : `Cast to ${String(properties.defaultClassId)}`,
+              title: wiredClassId ? "Cast to Class" : `Cast to ${defaultClassId}`,
               __pins: pins,
             },
             def,
@@ -1752,7 +1759,6 @@ function castPaletteNodes(
   return classIds.map((classId) => {
     const resultKind = resultKindForClass(classId, parentOf);
     const defaultData: Record<string, unknown> = {
-      defaultClassId: classId,
       "default:class": classId,
       resultKind,
     };

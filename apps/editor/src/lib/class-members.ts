@@ -440,7 +440,7 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "component.getNamed") {
     return false;
   }
-  if (nodeId === "casting.cast" || nodeId === "casting.castActor") {
+  if (nodeId === "casting.cast") {
     return false;
   }
   // One Get <Subsystem> row per project subsystem class is injected instead.

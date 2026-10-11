@@ -374,7 +374,7 @@ function delay(id: string, x: number, y: number, seconds: number): GraphNode {
 }
 
 function cast(id: string, x: number, y: number, classId: string, resultKind: "actorRef" | "objectRef"): GraphNode {
-  return gNode(id, "casting.cast", x, y, { "default:class": classId, defaultClassId: classId, resultKind });
+  return gNode(id, "casting.cast", x, y, { "default:class": classId, resultKind });
 }
 
 /** Get Variable on another object (Target wired). */
