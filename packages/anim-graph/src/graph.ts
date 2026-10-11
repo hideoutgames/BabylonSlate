@@ -56,14 +56,6 @@ export interface AnimTransition {
   /** Canvas handle ids (`right-out` / `left-in`); missing ids draw on those default sides. */
   sourceHandle?: string;
   targetHandle?: string;
-  /**
-   * In-memory gate for a transition with no rule decision. Never read from or
-   * written to saved documents, and not carried through the canvas; authored
-   * transitions use `ruleGraph`.
-   */
-  condition?: string;
-  hasExitTime?: boolean;
-  exitTime?: number;
 }
 
 export interface AnimGraphDocument {
@@ -75,8 +67,6 @@ export interface AnimGraphDocument {
   clips: AnimClipRef[];
   variables: AnimGraphVariable[];
   animationObject: SerializedGraph;
-  /** Bool variable names, derived from `variables` on parse. */
-  parameters: string[];
 }
 
 export interface AnimTransitionDecision {
@@ -85,9 +75,6 @@ export interface AnimTransitionDecision {
 }
 
 export interface AnimGraphInputs {
-  variables?: Record<string, unknown>;
-  /** @deprecated Prefer `variables`; bool conditions still map into the store. */
-  conditions?: Record<string, boolean>;
   transitionRules?: Record<string, AnimTransitionDecision>;
   decideTransition?: (
     transition: AnimTransition,
@@ -276,7 +263,6 @@ export function createDefaultAnimGraph(name = "Locomotion"): AnimGraphDocument {
     ],
     variables: [],
     animationObject: createDefaultAnimationObjectGraph(),
-    parameters: [],
   };
 }
 
@@ -574,16 +560,7 @@ function layerFor(
   };
 }
 
-function readBool(
-  inputs: AnimGraphInputs,
-  name: string,
-): boolean {
-  if (inputs.variables && name in inputs.variables) {
-    return inputs.variables[name] === true;
-  }
-  return inputs.conditions?.[name] === true;
-}
-
+/** A transition with no decision passes, like a rule graph with both sinks unwired. */
 function transitionPasses(
   transition: AnimTransition,
   facts: AnimStateFacts,
@@ -591,13 +568,7 @@ function transitionPasses(
 ): boolean {
   const decided = inputs.decideTransition?.(transition, facts);
   const rule = decided ?? inputs.transitionRules?.[transition.id];
-  if (rule) return rule.enter === true && rule.exit === true;
-  const conditionOk =
-    !transition.condition || readBool(inputs, transition.condition);
-  const exitOk =
-    !transition.hasExitTime ||
-    animExitTimeReached(facts, transition.exitTime ?? 0);
-  return conditionOk && exitOk;
+  return !rule || (rule.enter === true && rule.exit === true);
 }
 
 export function evaluateAnimGraph(
@@ -952,9 +923,6 @@ export function parseAnimGraphDocument(
     clips,
     variables,
     animationObject: parseAnimationObject(source.animationObject),
-    parameters: variables
-      .filter((variable) => variable.typeId === "bool")
-      .map((variable) => variable.name),
   };
 }
 

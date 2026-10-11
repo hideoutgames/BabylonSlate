@@ -11,7 +11,7 @@ Worker-side state machine plus per-instance Animation Object graphs that drive c
 | Field | Role |
 | --- | --- |
 | `states` / `entryStateId` / `clips` | FSM. Clip kind is `animation` (**Animation** guid + glTF `AnimationGroup` name) or `sprite` (**Sprite Animation** guid; Clip Name hidden). Legacy Sprite guid + clip name still resolves via `spriteClipFrameAt`. |
-| `variables[]` | Typed graph-owned store (`bool` / `int` / `float` / `string` / `tag` / Tag Container). Parse derives `parameters` from the bool variable names. |
+| `variables[]` | Typed graph-owned store (`bool` / `int` / `float` / `string` / `tag` / Tag Container). |
 | `animationObject` | Serialized scripting graph. Default seeds protected `Event Initialize Animation` and `Event Update Animation`. |
 | `transitions[]` | `blendSeconds`, `priority` (lower wins), `ruleGraph`, `sourceHandle` / `targetHandle` (`<side>-out` / `<side>-in`; missing or unknown ids draw on `right-out` / `left-in`). |
 
@@ -23,11 +23,11 @@ Pure function: `(graph, dt, previous, inputs) → AnimEvalState`. Deterministic;
 
 Each tick produces `stateId`, `normalisedTime` in `[0, 1]`, `blendWeights`, `facts` (elapsed / duration / remaining / looping / loop count / one-tick `justLooped` / `justFinished` / unwrapped `totalNormalisedTime` and `previousTotalNormalisedTime`), and weighted `layers[]` (`clipAssetGuid`, `clipName`, `clipKind`, `normalisedTime`, `weight`). `blendSeconds` crossfades two layers; the selected transition's `blendSeconds` is stored on `AnimEvalState` when the blend starts, so a duplicate `(from, to)` row cannot change its length mid-blend.
 
-Transition fire: **Exit State** (leave source) **and** **Enter State** (enter target) must both be true. Disconnected sinks default **true**. `decideTransition(transition, facts)` sees **post-advance** facts. `undefined` falls through to `transitionRules`, then the in-memory `condition` / `hasExitTime` gate (never parsed or saved). A transition with no decision and no gate always passes. A transition to a missing state never fires, and a graph whose entry state is missing starts on its first state (one with no states returns an empty evaluation) instead of throwing.
+Transition fire: **Exit State** (leave source) **and** **Enter State** (enter target) must both be true. Disconnected sinks default **true**. `decideTransition(transition, facts)` sees **post-advance** facts. `undefined` falls through to `transitionRules`; a transition with no decision passes, like a rule graph with both sinks unwired. A transition to a missing state never fires, and a graph whose entry state is missing starts on its first state (one with no states returns an empty evaluation) instead of throwing.
 
-**Exit time** (`animExitTimeReached(facts, exitTime)`; the in-memory `hasExitTime` gate and the **Exit Time Reached** rule node share it) fires on crossing, Unity-style. Facts are post-wrap, so plain `normalisedTime` never reaches 1 on a looping state and can skip a threshold near the end:
+**Exit time** (`animExitTimeReached(facts, exitTime)`, behind the **Exit Time Reached** rule node) fires on crossing, Unity-style. Facts are post-wrap, so plain `normalisedTime` never reaches 1 on a looping state and can skip a threshold near the end:
 
-- Looping, `exitTime ≤ 1`: true on the tick the clip passes `exitTime`, `exitTime + 1`, … (each loop). `1` fires at every loop completion; `0` on entering the state and at every wrap. A condition that opens after the crossing waits for the next loop.
+- Looping, `exitTime ≤ 1`: true on the tick the clip passes `exitTime`, `exitTime + 1`, … (each loop). `1` fires at every loop completion; `0` on entering the state and at every wrap. A rule whose other input opens after the crossing waits for the next loop.
 - Looping, `exitTime > 1`: true once, when the unwrapped time passes it.
 - Non-looping: unchanged level test `normalisedTime ≥ exitTime` (clamped at 1).
 
@@ -42,7 +42,7 @@ Each tick `AnimGraphRuntime.tick` (`packages/runtime/src/anim-graph-runtime.ts`,
 1. Seed component `variableStore` from document defaults.
 2. Once per `${slotId}:{guid}`, `invokeAnimEvent(AnimGraph:{guid}, onInitializeAnimation)`.
 3. Every tick, `invokeAnimEvent(..., onUpdateAnimation, dt)`.
-4. `evaluateAnimGraph` with `decideTransition` → `invokeAnimRule(AnimRule:{guid}:{id})` (`exports.evaluate` → `{ enter, exit }`; missing class / throw → `undefined`, so the transition passes unless an in-memory gate holds it).
+4. `evaluateAnimGraph` with `decideTransition` → `invokeAnimRule(AnimRule:{guid}:{id})` (`exports.evaluate` → `{ enter, exit }`; missing class / throw → `undefined`, so the transition passes).
 5. If the current clip is `kind: "sprite"` with an asset guid, `setActorSpriteClip`; otherwise clear it so a later Model state does not keep the last Sprite Animation box.
 
 Trace frames record each component's evaluation state, graph guid and pending jump (`TraceFrame.animGraphs`) plus each actor's current sprite clip (`TraceFrame.sprites`). `restoreFromTrace` replaces evaluation, initialization and pending jumps with the frame's, so the next tick continues the recorded state and time without re-running On Initialize Animation, and shows the recorded sprite frame at once ([debugger.md](debugger.md#trace-recorder)).
