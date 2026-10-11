@@ -377,7 +377,7 @@ export async function collectAndExportGame(
     if (asset.type === "Texture") {
       // Required emissions were checked above; a stale emission no area light
       // in the closure uses is left out rather than failing the export.
-      let emission: Uint8Array | null | undefined = null;
+      let emission: Uint8Array | null | undefined;
       try {
         emission = params.areaEmissionBytesByGuid?.(guid);
       } catch {
