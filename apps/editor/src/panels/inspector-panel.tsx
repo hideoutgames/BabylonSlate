@@ -9,8 +9,8 @@ import { useMemo, useState } from "react";
 import { normalizeModelPayload } from "@babylonslate/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
 import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
-import { normalizeRenderTargetCaptureProperties, type SerializedScene } from "@babylonslate/core";
-import { RenderTargetCaptureActorsField } from "../components/render-target-capture-actors-field";
+import { normalizeRenderTargetCaptureProperties } from "@babylonslate/core";
+import { ClassCaptureActorsField } from "../components/class-capture-actors-field";
 import { RichTextAppearModesField } from "../components/rich-text-appear-modes-field";
 import {
   AssetLoadingField,
@@ -163,7 +163,6 @@ import {
 
 const CLASS_KINDS = ["graph"] as const;
 const MODEL_KINDS = ["model"] as const;
-const SCENE_KINDS = ["scene"] as const;
 const WORLD_KINDS = ["scene", "scene-layer"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
 const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
@@ -977,10 +976,9 @@ function PrefabComponentDetails({
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
   const { assetRegistry, registryEpoch } = useRegistryState();
-  // Open Class, Model and Scene tabs override saved content in these rows.
+  // Open Class and Model tabs override saved content in these rows.
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const modelDocuments = useOpenDocumentsOfKinds(MODEL_KINDS);
-  const sceneDocuments = useOpenDocumentsOfKinds(SCENE_KINDS);
   // Kept across renders, so a gizmo drag does not walk every Class again.
   const classGraphs = useMemo(() => {
     void registryEpoch;
@@ -1064,8 +1062,7 @@ function PrefabComponentDetails({
           />
         ) : null}
         {component.classId === "RenderTargetCaptureComponent" && component.properties.captureOnlyActors === true ? (
-          <RenderTargetCaptureActorsField
-            actors={(sceneDocuments[0]?.content as SerializedScene | undefined)?.actors ?? []}
+          <ClassCaptureActorsField
             actorIds={normalizeRenderTargetCaptureProperties(component.properties).actorIds}
             onChange={(actorIds) => onUpdate("actorIds", actorIds)} />
         ) : null}
