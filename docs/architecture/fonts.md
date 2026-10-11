@@ -54,14 +54,14 @@ Project Settings (`packages/core` `ProjectSettings.fonts`): `defaultFontGuid`, `
 
 ## Registry (`render`)
 
-`FontRegistry` takes an injectable `FontFaceHost` so Node tests mock `document.fonts`:
+`FontRegistry` takes an injectable `FontFaceHost` so Node tests mock `FontFace` and `document.fonts`:
 
 1. `new FontFace(family, bytes)` + `document.fonts.add`.
-2. **Await** `document.fonts.load` before the first 3D Text / Font sample paint (`register` / `registerAll`).
-3. Late resolve → `consumeDirty()` so a host can `markAsDirty()`.
+2. **Await** that face's own `FontFace.load()` before the first 3D Text / Font sample paint (`register` / `registerAll`). A family-wide `document.fonts.load` would match only the regular face, so a bold or italic face could report ready before it loads.
+3. Late resolve → `consumeDirty()` so a host can `markAsDirty()`. `createEngine({ fontFaceEntries })` registers at construction; world `whenEditorModelsReady` awaits that registration, and a face that resolves late invalidates the render scheduler like `registerFonts`.
 4. Failed load → editor warning, never a silent substitution.
 5. One document face per registered font content (guid, family, weight, style and a SHA-256 of the bytes); repeated registrations share it. Changed bytes replace the face only after the new one loads, and failed faces are removed.
-6. `dispose()` removes only that registry's faces, so sibling views keep theirs. `EngineHandle.dispose()`, construction rollback and the Font document preview dispose their registries.
+6. `dispose()` removes only that registry's faces, so sibling views keep theirs, and `isReady` turns false for every guid it served. `EngineHandle.dispose()`, construction rollback and the Font document preview dispose their registries.
 
 The Font document workspace calls `register` when the asset has a `source` chunk (imported woff/ttf/otf). New Asset fonts have payload only — the sample still compiles a CSS stack that terminates in the Project Settings generic fallback. Editor viewports **await** `registerFonts` before `setMeshAssets` so Bitmap 2D Text rasterize sees loaded faces. Imported fonts store payload on the babasset **header** (no `document` chunk); `decodeAssetDocument` falls back to `header.payload` so they open. Saving a Font keeps extra chunks (`source`, facetype, msdf) beside the rewritten document body.
 

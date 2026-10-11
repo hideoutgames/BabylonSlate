@@ -49,7 +49,6 @@ import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
 import * as snapshotApply from "./snapshot-apply";
 import * as presentation from "./presented-frame";
-import { SnapshotInterpolator } from "./snapshot-sync";
 import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
@@ -337,6 +336,33 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     return { handle, canvas };
   }
+
+  it("applies the world texture anisotropy to SceneLayer textures", () => {
+    const engine = sharedEngine();
+    Object.assign(engine.getCaps(), { maxAnisotropy: 2 });
+    const { handle } = playHandle(engine);
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+    const layerScene = handle.sceneLayerScenes().find(layer => layer.layerId === "hud")!.scene;
+    const world = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, handle.scene);
+    const overlay = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, layerScene);
+    expect(world.anisotropicFilteringLevel).toBe(2);
+    expect(overlay.anisotropicFilteringLevel).toBe(2);
+  });
+
+  it("ignores commands and snapshots that arrive after the view stops", () => {
+    const { handle } = playHandle(sharedEngine());
+    const { scene } = handle;
+    handle.dispose();
+    handle.applyCommand({ type: "spawn", slotId: 4, actorGuid: "hero", classId: "Actor" });
+    handle.applyCommand({ type: "assignMesh", slotId: 4, actorGuid: "hero", meshAssetGuid: null, meshKind: "box" });
+    expect(scene.getMeshByName("actor-4")).toBeNull();
+    const snapshot = new Float32Array(snapshotFloatCount(1));
+    writeSnapshotHeader(snapshot, { frameId: 1, tickIndex: 1, actorCount: 1, scriptMs: 0, physicsMs: 0 });
+    writeActorSlot(snapshot, 0, { slotId: 4, position: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 }, flags: SNAPSHOT_FLAG_VISIBLE });
+    handle.pushSnapshot(snapshot);
+    expect(handle.lastActorPositions()).toEqual([]);
+  });
 
   it("drains accepted cold assignment sources before the final authoring fence completes", async () => {
     const { handle } = playHandle(sharedEngine());
@@ -1026,6 +1052,13 @@ describe("Play createEngine view", () => {
     finishCompile();
     await Promise.all([warming, frame]);
     await expect(handle.whenMaterialTexturesReady()).rejects.toThrow("disposed");
+  });
+
+  it("abandons world warm-up once a live Play scene change begins", async () => {
+    const { handle } = playHandle(sharedEngine());
+    const warming = expect(handle.prewarmSceneMaterials()).rejects.toThrow("superseded");
+    handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 1 });
+    await warming;
   });
 
   it("fails the loading transaction when its first render throws", async () => {
@@ -1803,52 +1836,6 @@ describe("Play createEngine view", () => {
     expect(mesh.getAbsolutePosition().asArray()).toEqual([7, 3, 0]);
   });
 
-  it("re-applies the same snapshot frame when the sampled alpha changes", () => {
-    const engine = sharedEngine();
-    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
-    const { handle } = playHandle(engine);
-    const renderLoop = runRenderLoop.mock.calls[0]![0]!;
-    const frame = () => {
-      engine.onBeginFrameObservable.notifyObservers(engine);
-      renderLoop();
-      engine.onEndFrameObservable.notifyObservers(engine);
-    };
-    handle.applyCommand({
-      type: "assignMesh",
-      slotId: 0,
-      meshKind: "box",
-      meshAssetGuid: null,
-    });
-    handle.pushSnapshot(actorSnapshot(1, 0));
-    handle.pushSnapshot(actorSnapshot(2, 10));
-    const apply = vi.spyOn(snapshotApply, "applySnapshotToScene");
-    // The host samples between the pushed pair; force the interpolation alpha
-    // through the interpolator boundary so the pose really differs.
-    const realSample = SnapshotInterpolator.prototype.sample;
-    let forcedAlpha: number | null = null;
-    const sample = vi
-      .spyOn(SnapshotInterpolator.prototype, "sample")
-      .mockImplementation(function (this: SnapshotInterpolator, alpha: number) {
-        return realSample.call(this, forcedAlpha ?? alpha);
-      });
-    try {
-      forcedAlpha = 0.5;
-      frame();
-      expect(apply).toHaveBeenCalledTimes(1);
-      expect(handle.lastActorPositions()[0]?.x).toBeCloseTo(5);
-      frame();
-      expect(apply).toHaveBeenCalledTimes(1);
-
-      forcedAlpha = 0.75;
-      frame();
-      expect(apply).toHaveBeenCalledTimes(2);
-      expect(handle.lastActorPositions()[0]?.x).toBeCloseTo(7.5);
-    } finally {
-      sample.mockRestore();
-      apply.mockRestore();
-    }
-  });
-
   it("restores an already-blocked material dirty mechanism after snapshot apply", () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
@@ -1944,6 +1931,53 @@ describe("Play createEngine view", () => {
     expect(pressure?.gpuMs).toBeNull();
   });
 
+  it("lets only the sole rendering view drive the Engine-wide scaling valve", async () => {
+    const engine = sharedEngine();
+    const { handle: scene } = editorHandle(engine);
+    const { handle: prefab } = editorHandle(engine);
+    await scene.prewarmSceneMaterials();
+    await prefab.prewarmSceneMaterials();
+    const sceneValve = vi.spyOn(scene.scaling, "noteFramePressure");
+    const prefabValve = vi.spyOn(prefab.scaling, "noteFramePressure");
+    const frame = () => {
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+    };
+    frame();
+    frame();
+    // Both views presented, but neither owns the shared scale alone.
+    expect(scene.renderDiagnostics().pressure?.cpuMs).toBeGreaterThanOrEqual(0);
+    expect(sceneValve).not.toHaveBeenCalled();
+    expect(prefabValve).not.toHaveBeenCalled();
+    prefab.setRegisterViewEnabled(false);
+    scene.scheduler.invalidate("asset");
+    frame();
+    expect(sceneValve).toHaveBeenCalled();
+    expect(prefabValve).not.toHaveBeenCalled();
+    // RTT previews register no view, yet draw into the same Engine frame.
+    scene.setRegisterViewEnabled(false);
+    const previews = [0, 1].map(() => createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true, present: "rtt" }));
+    handles.push(...previews);
+    for (const preview of previews) await preview.prewarmSceneMaterials();
+    const previewValves = previews.map((preview) => vi.spyOn(preview.scaling, "noteFramePressure"));
+    const frames = async (until: () => boolean) => {
+      for (let attempt = 0; attempt < 20 && !until(); attempt += 1) {
+        engine.onBeginFrameObservable.notifyObservers(engine);
+        if (!renderViews(engine)) engine._renderFrame();
+        engine.onEndFrameObservable.notifyObservers(engine);
+        await new Promise<void>((resolve) => setTimeout(resolve, 20));
+      }
+    };
+    await frames(() => previews.every((preview) => preview.renderDiagnostics().pressure !== null));
+    expect(previews.map((preview) => preview.renderDiagnostics().pressure?.cpuMs)).toEqual([expect.any(Number), expect.any(Number)]);
+    expect(previewValves.map((valve) => valve.mock.calls.length)).toEqual([0, 0]);
+    // Hiding one preview leaves the other as the Engine's only rendering view.
+    previews[1]!.scheduler.setVisible(false);
+    await frames(() => previewValves[0]!.mock.calls.length > 0);
+    expect(previewValves[0]).toHaveBeenCalled();
+  });
+
   it("rebinds editor MeshComponent materials after setMaterialDocuments", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
@@ -1985,6 +2019,8 @@ describe("Play createEngine view", () => {
   it("disables the Scene registerView while overlay Play owns the framebuffer", () => {
     const engine = sharedEngine();
     const { handle: editor, canvas: editorCanvas } = editorHandle(engine);
+    const { handle: hidden, canvas: hiddenCanvas } = editorHandle(engine);
+    hidden.setRegisterViewEnabled(false);
     const playCanvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const play = createEngine(playCanvas, {
       sharedEngine: engine,
@@ -1992,6 +2028,7 @@ describe("Play createEngine view", () => {
     });
 
     const editorView = engine.views.find((view) => view.target === editorCanvas);
+    const hiddenView = engine.views.find((view) => view.target === hiddenCanvas);
     const playView = engine.views.find((view) => view.target === playCanvas);
     expect(editorView?.enabled).toBe(false);
     expect(playView?.enabled).toBe(true);
@@ -1999,6 +2036,8 @@ describe("Play createEngine view", () => {
     play.dispose();
     syncEditorPlayState(editor, false);
     expect(editorView?.enabled).toBe(true);
+    // A view that was already off before Play (a hidden tab) stays off.
+    expect(hiddenView?.enabled).toBe(false);
   });
 
   it("does not setSize from a disabled Scene view while Play is open", () => {
@@ -3252,6 +3291,32 @@ describe("Play createEngine view", () => {
     ).toBe(false);
   });
 
+  it("leaves a free cam drag that starts on a blocking HUD button to the button", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas();
+    const events: string[] = [];
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true,
+      onSceneLayerPointer: event => events.push(event.event) });
+    handles.push(handle);
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    handle.applyCommand({ type: "setFreeCam", enabled: true });
+    const camera = handle.scene.activeCamera as UniversalCamera;
+    const rotation = () => JSON.stringify([camera.rotation.asArray(), camera.rotationQuaternion?.asArray() ?? null]);
+    const start = rotation();
+    canvas.emit("pointerdown", pointerAt(128, 128));
+    canvas.emit("pointermove", pointerAt(160, 150));
+    canvas.emit("pointerup", pointerAt(160, 150));
+    expect(events).toContain("onPressStart");
+    expect(rotation()).toBe(start);
+    canvas.emit("pointerdown", pointerAt(16, 16, { pointerId: 2 }));
+    canvas.emit("pointermove", pointerAt(48, 40, { pointerId: 2 }));
+    canvas.emit("pointerup", pointerAt(48, 40, { pointerId: 2 }));
+    expect(rotation()).not.toBe(start);
+  });
+
   it("applies setScalability quality on Play views only, not the editor viewport", () => {
     const playEngine = sharedEngine();
     const playLoop = vi.spyOn(playEngine, "runRenderLoop");
@@ -3267,6 +3332,56 @@ describe("Play createEngine view", () => {
     editorLoop.mock.calls[0]![0]();
     expect(play.handle.scaling.getLevel()).toBe(2);
     expect(editor.handle.scaling.getLevel()).toBe(1);
+  });
+
+  it("holds a spatial voice still after its emitter despawns and another actor reuses the slot", async () => {
+    const { createDefaultAudioPayload } = await import("@babylonslate/assets");
+    const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
+    const backend = new FakeAudioPlaybackBackend();
+    // The Fake keeps the reused pose row by reference; record each placement.
+    const placed: number[] = [];
+    vi.spyOn(backend, "setVoicePose").mockImplementation((_voiceId, pose) => { placed.push(pose.x); });
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      playMode: true,
+      audioBackend: backend,
+      audioBytes: new Map([["hum", new Uint8Array([1, 2, 3, 4])]]),
+      audioLibrary: {
+        mixerGuid: null,
+        mixers: new Map(),
+        channels: new Map(),
+        audio: new Map([["hum", { ...createDefaultAudioPayload(), soundAttenuationGuid: "near" }]]),
+        attenuations: new Map([["near", {
+          innerRadius: 1, maxRadius: 50, distanceModel: "linear", rolloff: 1,
+          spatialisation: "equalPower", cone: null, doppler: null,
+        }]]),
+      },
+    });
+    handles.push(handle);
+    await handle.unlockAudio();
+    const presentSlotAt = (frameId: number, x: number) => {
+      const buf = new Float32Array(snapshotFloatCount(8));
+      writeSnapshotHeader(buf, { frameId, tickIndex: frameId, actorCount: 1, scriptMs: 0, physicsMs: 0 });
+      writeActorSlot(buf, 0, {
+        slotId: 1, position: { x, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 }, flags: SNAPSHOT_FLAG_VISIBLE,
+      });
+      handle.pushSnapshot(buf);
+      runRenderLoop.mock.calls[0]![0]();
+    };
+    handle.applyCommand({ type: "spawn", slotId: 1, actorGuid: "speaker", classId: "Actor" });
+    handle.applyCommand({ type: "playSound", assetGuid: "hum", volume: 1, frameId: 1, voiceId: "v1", emitterActorGuid: "speaker" });
+    await vi.waitFor(() => {
+      presentSlotAt(1, 10);
+      expect(placed.at(-1)).toBe(10);
+    });
+    handle.applyCommand({ type: "despawn", slotId: 1, actorGuid: "speaker" });
+    handle.applyCommand({ type: "spawn", slotId: 1, actorGuid: "successor", classId: "Actor" });
+    presentSlotAt(2, 30);
+    expect(placed).not.toContain(30);
+    expect(placed.at(-1)).toBe(10);
   });
 
   it("syncs the Fake audio listener to the possessed camera world pose", async () => {
@@ -4101,7 +4216,7 @@ describe("Play createEngine view", () => {
     expect(handle.scene.activeCamera).toBe(camera);
   });
 
-  it("emits 2DButton onClick from touch down/up and from pointercancel over the button", () => {
+  it("emits 2DButton onClick from touch down/up and pointercancel, and ends hover when the touch leaves", () => {
     const engine = sharedEngine();
     vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
     vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
@@ -4128,6 +4243,10 @@ describe("Play createEngine view", () => {
         { event: "onClick", actorGuid: "btn" },
       ]),
     );
+    events.length = 0;
+    // A lifted touch leaves the canvas, so the button stops being hovered.
+    canvas.emit("pointerleave", pointerAt(128, 128));
+    expect(events).toEqual([{ event: "onMouseLeave", actorGuid: "btn" }]);
 
     events.length = 0;
     canvas.emit("pointerdown", pointerAt(128, 128, { pointerId: 2 }));
@@ -4186,6 +4305,24 @@ describe("Play createEngine view", () => {
     canvas.emit("pointerdown", pointerAt(128, 128, { pointerId: 4 }));
     canvas.emit("pointerup", pointerAt(128, 128, { pointerId: 4 }));
     expect(events.filter(event => event === "onClick")).toHaveLength(1);
+  });
+
+  it("scrolls a horizontal overlay box with a trackpad swipe and with a vertical wheel", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas();
+    const scrolls: Array<{ deltaX: number }> = [];
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true, onSceneLayerScroll: event => scrolls.push(event) });
+    handles.push(handle);
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    handle.applyCommand({ type: "sceneLayerLayout", layerId: "hud", entries: [{ actorId: "strip", componentId: "viewport", slotId: 2, rect: { x: 0, y: 0, width: 9, height: 9 }, clip: null, scrollAncestors: [], scroll: { x: 0, y: 0, maxX: 20, maxY: 0, axis: "horizontal", viewport: { x: 0, y: 0, width: 9, height: 9 }, scaleX: 2, scaleY: 2 } }] });
+    canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 32, deltaY: 0, deltaMode: 0 });
+    canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 0, deltaY: 32, deltaMode: 0 });
+    // A mostly vertical wheel with horizontal jitter scrolls by its dominant axis.
+    canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 1, deltaY: 32, deltaMode: 0 });
+    expect(scrolls.map(scroll => scroll.deltaX)).toEqual([expect.closeTo(0.5625), expect.closeTo(0.5625), expect.closeTo(0.5625)]);
   });
 
   it("scrolls nested overlay content with wheel and cancels button activation after touch dragging", () => {

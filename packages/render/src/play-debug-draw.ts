@@ -15,6 +15,17 @@ import { markPlayDebugOverlay } from "./play-debug-overlay";
 
 export const PLAY_DEBUG_DRAW_PREFIX = "playDebugDraw:";
 
+/** Sphere rings/meridians: two O(segments²) loops rebuilt each tick for duration-0 draws. */
+const MAX_SPHERE_SEGMENTS = 64;
+/** Cone half-angle and frustum FOV stay below the tangent's pole (90° / 180°). */
+const MAX_CONE_ANGLE_DEGREES = 89;
+const MIN_FRUSTUM_FOV_DEGREES = 1;
+const MAX_FRUSTUM_FOV_DEGREES = 179;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
 type DrawEntry = {
   meshes: AbstractMesh[];
   /** GreasedLine auto-materials; mesh disposal leaves them in the scene. */
@@ -210,7 +221,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
     color: Color3,
     lines: LineBatch,
   ): void => {
-    const rings = Math.max(4, Math.round(segments));
+    const rings = clamp(Math.round(segments), 4, MAX_SPHERE_SEGMENTS);
     for (let i = 1; i < rings; i++) {
       const lat = (i / rings) * Math.PI - Math.PI / 2;
       const y = Math.sin(lat) * radius;
@@ -316,14 +327,14 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
     const origin = asVec3(command.origin, { x: 0, y: 0, z: 0 });
     const direction = asVec3(command.direction, { x: 0, y: 1, z: 0 });
     const length = Math.max(0.01, asNumber(command.length, 1));
-    const angle = (asNumber(command.angle, 30) * Math.PI) / 180;
+    const angle = (clamp(asNumber(command.angle, 30), 0, MAX_CONE_ANGLE_DEGREES) * Math.PI) / 180;
     const color = asColor(command.color);
     const axis =
       direction.lengthSquared() < 1e-8
         ? new Vector3(0, 1, 0)
         : direction.normalize();
     const base = origin.add(axis.scale(length));
-    const radius = length * Math.tan(Math.max(0, angle));
+    const radius = length * Math.tan(angle);
     const { right, up } = orthonormalBasis(axis);
     const segments = 12;
     const rim: Vector3[] = [];
@@ -390,7 +401,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
     const rotation = asRotator(command.rotation);
     const near = Math.max(0.01, asNumber(command.near, 0.1));
     const far = Math.max(near + 0.01, asNumber(command.far, 10));
-    const fov = (asNumber(command.fov, 90) * Math.PI) / 180;
+    const fov = (clamp(asNumber(command.fov, 90), MIN_FRUSTUM_FOV_DEGREES, MAX_FRUSTUM_FOV_DEGREES) * Math.PI) / 180;
     const aspect = Math.max(0.01, asNumber(command.aspect, 16 / 9));
     const tan = Math.tan(fov / 2);
     const nearH = tan * near;

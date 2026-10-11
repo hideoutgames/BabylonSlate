@@ -53,7 +53,7 @@ export function createGameWorkerHost(): GameWorkerHost {
         return;
       }
       const buffer = new Float32Array(ab);
-      // Consumers (SnapshotInterpolator.push) copy synchronously, so the
+      // Consumers (SnapshotSampler.push) copy synchronously, so the
       // buffer is safe to hand straight back for the worker's next frame —
       // avoids a fresh ArrayBuffer allocation every tick. The worker caps
       // unreturned snapshots, so a throwing consumer must still return it.

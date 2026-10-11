@@ -31,7 +31,6 @@ function fixture(actorCount: number) {
   const snapshot: SampledSnapshot = {
     frameId: 1,
     tickIndex: 1,
-    alpha: 1,
     actorCount,
     actors: Array.from({ length: actorCount }, (_, slotId) => {
       binding.meshKinds.set(slotId, "box");

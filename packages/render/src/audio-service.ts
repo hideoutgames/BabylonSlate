@@ -376,6 +376,11 @@ export class AudioService {
     this.actorSlots.set(actorGuid, slotId);
   }
 
+  /** Despawn: a voice outliving its emitter must not follow the slot's next owner. */
+  forgetActorSlot(actorGuid: string, slotId: number): void {
+    if (this.actorSlots.get(actorGuid) === slotId) this.actorSlots.delete(actorGuid);
+  }
+
   handleCommand(command: CommandMessage): void {
     if (command.type === "stopSound") this.preparingVoices.get(command.voiceId)?.abort(new Error("Audio voice stopped during loading."));
     if (this.disposed) return;
@@ -858,6 +863,14 @@ export class AudioService {
       if (!pose) {
         this.lastDistance = null;
         this.backend.setVoiceMuffle(voice.voiceId, 0);
+        // A pose-less emitter holds its last position, so it stops shifting
+        // pitch, and its next pose must not read as a jump from the stale one.
+        if (voice.previousPose) {
+          voice.previousPose = null;
+          if (voice.spatial.doppler?.enabled) {
+            this.backend.setVoicePlaybackRate(voice.voiceId, voice.pitch);
+          }
+        }
         continue;
       }
       this.backend.setVoicePose(voice.voiceId, pose);

@@ -22,7 +22,7 @@ function fixture() {
   const actor = (slotId: number): ActorSlot => ({ slotId, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 }, flags: SNAPSHOT_FLAG_VISIBLE });
   const childSlot = actor(1);
   const targetSlot = actor(2);
-  const apply = () => snapshot.applySnapshotToScene(handle.scene, binding, { actors: [childSlot, targetSlot], actorCount: 2, alpha: 1, frameId: 1, tickIndex: 1 });
+  const apply = () => snapshot.applySnapshotToScene(handle.scene, binding, { actors: [childSlot, targetSlot], actorCount: 2, frameId: 1, tickIndex: 1 });
   const attach = (name: string) => {
     expect(snapshot.applyAttachToBone).toBeTypeOf("function");
     snapshot.applyAttachToBone(binding, { type: "attachToBone", slotId: 1, targetSlotId: 2, boneName: name });
@@ -132,7 +132,7 @@ describe("render bone attachment", () => {
         expect(runtime.copySnapshot(buffer)).toBe(true);
         const header = readSnapshotHeader(buffer);
         const actors = Array.from({ length: header.actorCount }, (_, index) => readActorSlot(buffer, index));
-        snapshot.applySnapshotToScene(scene, binding, { actors, actorCount: actors.length, frameId: header.frameId, tickIndex: header.tickIndex, alpha: 1 });
+        snapshot.applySnapshotToScene(scene, binding, { actors, actorCount: actors.length, frameId: header.frameId, tickIndex: header.tickIndex });
       };
       renderTick();
       expect(child.getAbsolutePosition().x).toBeCloseTo(6);

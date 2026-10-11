@@ -78,6 +78,18 @@ describe("cold command source preparation", () => {
     preparation.dispose();
   });
 
+  it("still applies commands queued behind a replacement whose sources fail", async () => {
+    const preparation = new CommandSourcePreparation();
+    preparation.setLoader(async () => { throw new Error("Missing source file"); });
+    const applied: string[] = [];
+    const apply = (command: CommandMessage) => { applied.push(command.type); };
+    preparation.receive(mesh("replacement"), apply);
+    preparation.receive({ type: "attachToBone", slotId: 7, targetSlotId: 3, boneName: "hand" }, apply);
+    await expect(preparation.whenReady([7])).rejects.toThrow("Missing source file");
+    expect(applied).toEqual(["attachToBone"]);
+    preparation.dispose();
+  });
+
   it("cancels a despawned consumer and releases late preparation without publishing it", async () => {
     const result = deferred<() => void>();
     let signal: AbortSignal | undefined;

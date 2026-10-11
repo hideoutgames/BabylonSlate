@@ -221,7 +221,6 @@ export function invalidateSlotAnimLoad(
 }
 
 function replayPendingAnimState(
-  scene: Scene,
   binding: ModelAnimLoadBinding,
   slotId: number,
 ): void {
@@ -229,7 +228,6 @@ function replayPendingAnimState(
   if (!pending) return;
   applyAnimStateToScene(
     sceneAnimHostFromBinding(binding as SnapshotSceneBinding, {
-      animationGroups: scene.animationGroups,
       spritePayloads: binding.spritePayloads,
     }),
     pending,
@@ -435,7 +433,7 @@ function wrapGroup(
     dispose(): void;
   },
   clipAssetGuid: string,
-): NamedSeekableGroup & { dispose(): void } {
+): NamedSeekableGroup & { dispose(): void; retire(): void } {
   let initialized = false;
   const initialize = () => {
     if (initialized) return;
@@ -454,8 +452,11 @@ function wrapGroup(
     group.setWeightForAllAnimatables?.(0);
   };
   let active = false;
+  // A retired group's AnimationGroup is (being) disposed; a queued weighted
+  // seek must not start it again on the next animation pass.
+  let retired = false;
   const cancelBlend = () => pendingBlends.get(group.getScene())?.delete(wrapped);
-  const wrapped: NamedSeekableGroup & { dispose(): void } = {
+  const wrapped: NamedSeekableGroup & { dispose(): void; retire(): void } = {
     name: group.name,
     from: group.from,
     to: group.to,
@@ -475,6 +476,7 @@ function wrapGroup(
       group.goToFrame(frame);
     },
     blendToFrame: (frame, weight) => {
+      if (retired) return;
       blendsFor(group.getScene()).set(wrapped, () => {
         initialize();
         active = true;
@@ -484,7 +486,14 @@ function wrapGroup(
     },
     setWeightForAllAnimatables: (weight) =>
       group.setWeightForAllAnimatables?.(weight),
-    dispose: () => group.dispose(),
+    retire: () => {
+      retired = true;
+      cancelBlend();
+    },
+    dispose: () => {
+      wrapped.retire();
+      group.dispose();
+    },
   };
   return wrapped;
 }
@@ -742,7 +751,7 @@ export function beginSlotModelAnimLoad(
       const existing = (binding.slotAnimationGroups.get(slotId) ?? []).filter(
         (group) => !nativeGuids.has(group.clipAssetGuid ?? ""),
       );
-      const wrapped: NamedSeekableGroup[] = instance.animationGroups.map((group) =>
+      const wrapped: ReturnType<typeof wrapGroup>[] = instance.animationGroups.map((group) =>
         wrapGroup(group, clipGuids?.get(group.name) ?? clipAssetGuid),
       );
       for (const row of retargets) {
@@ -794,9 +803,11 @@ export function beginSlotModelAnimLoad(
       // Playback borrows these groups; releasing a visual must also drop its
       // lookup references, including editor generations with fresh slot IDs.
       prepared.bundle.releaseWith(() => {
+        // The bundle disposes these AnimationGroups without the wrappers.
+        for (const group of wrapped) group.retire();
         const current = binding.slotAnimationGroups?.get(slotId);
         if (!current) return;
-        const remaining = current.filter((group) => !wrapped.includes(group));
+        const remaining = current.filter((group) => !wrapped.some((own) => own === group));
         if (remaining.length) binding.slotAnimationGroups!.set(slotId, remaining);
         else binding.slotAnimationGroups!.delete(slotId);
       });
@@ -807,7 +818,7 @@ export function beginSlotModelAnimLoad(
       hideModelPlaceholder(placeholder);
       previousInstance?.bundle.dispose();
       onAdopted?.(placeholder);
-      replayPendingAnimState(scene, binding, slotId);
+      replayPendingAnimState(binding, slotId);
       const current = prepared;
       // Levels share the master's buffers and materials, so their effects are
       // already compiled. A replaced or despawned instance keeps none.
@@ -870,7 +881,7 @@ export function publishModelHierarchyAnimations(
       else binding.slotAnimationGroups!.delete(slotId);
     });
   }
-  replayPendingAnimState(scene, binding, slotId);
+  replayPendingAnimState(binding, slotId);
 }
 
 /** True when name-match retarget keeps at least one channel. */

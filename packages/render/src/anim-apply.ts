@@ -146,13 +146,8 @@ export interface MissingAnimClip {
 
 export interface SceneAnimHost {
   isPhysicsDriven?(slotId: number): boolean;
-  animationGroups: NamedSeekableGroup[];
-  getAnimationGroups?(slotId: number): readonly NamedSeekableGroup[];
-  getAnimationGroup?(
-    slotId: number,
-    clipName: string,
-    clipAssetGuid?: string,
-  ): NamedSeekableGroup | undefined;
+  /** The slot's own groups; clips resolve only from these, never another actor's. */
+  getAnimationGroups(slotId: number): readonly NamedSeekableGroup[];
   getSpriteSlot?(slotId: number): SpriteAnimSlot | undefined;
   onMissingClip?(info: MissingAnimClip): void;
 }
@@ -195,20 +190,6 @@ function findClipGroup(
     if (groupMatchesClip(groups[i]!, clipName, clipAssetGuid)) return groups[i];
   }
   return undefined;
-}
-
-function resolveAnimationGroup(
-  scene: SceneAnimHost,
-  slotId: number,
-  layer: AnimClipLayer,
-): NamedSeekableGroup | undefined {
-  const fromHost = scene.getAnimationGroup?.(
-    slotId,
-    layer.clipName,
-    layer.clipAssetGuid,
-  );
-  if (fromHost) return fromHost;
-  return findClipGroup(scene.animationGroups, layer.clipName, layer.clipAssetGuid);
 }
 
 function applySpriteLayer(
@@ -287,6 +268,7 @@ export function applyAnimStateToScene(
   let spriteSecondary: AnimClipLayer | undefined;
   let resolvedCount = 0;
   let seekCount = 0;
+  const slotGroups = scene.getAnimationGroups(command.slotId);
   try {
     for (let i = 0; i < layers.length; i++) {
       const layer = layers[i]!;
@@ -296,10 +278,11 @@ export function applyAnimStateToScene(
         continue;
       }
       resolvedLayers[resolvedCount] = layer;
-      resolvedGroups[resolvedCount] = resolveAnimationGroup(scene, command.slotId, layer);
+      // A slot without its own clip (still loading, or not on its Model) must
+      // not seek another actor's group of the same name.
+      resolvedGroups[resolvedCount] = findClipGroup(slotGroups, layer.clipName, layer.clipAssetGuid);
       resolvedCount++;
     }
-    const slotGroups = scene.getAnimationGroups?.(command.slotId) ?? NO_GROUPS;
     for (let i = 0; i < slotGroups.length; i++) {
       const group = slotGroups[i]!;
       // Restore channels absent from the incoming clip before its pose is applied.
@@ -358,23 +341,15 @@ export function applyAnimStateToScene(
 export function sceneAnimHostFromBinding(
   binding: SnapshotSceneBinding,
   options: {
-    animationGroups: NamedSeekableGroup[];
     spritePayloads?: ReadonlyMap<string, SpritePayload>;
     spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
     applyTexture?: (mesh: Mesh, textureGuid: string | null | undefined) => void;
     onMissingClip?: (info: MissingAnimClip) => void;
-  },
+  } = {},
 ): SceneAnimHost {
   return {
     isPhysicsDriven: (slotId) => binding.ragdoll?.isDriven(slotId) ?? false,
-    animationGroups: options.animationGroups,
     getAnimationGroups: (slotId) => binding.slotAnimationGroups?.get(slotId) ?? NO_GROUPS,
-    getAnimationGroup: (slotId, clipName, clipAssetGuid) =>
-      findClipGroup(
-        binding.slotAnimationGroups?.get(slotId) ?? NO_GROUPS,
-        clipName,
-        clipAssetGuid,
-      ),
     getSpriteSlot: (slotId) => {
       const slot = resolvePlaySpriteSlot(
         binding,
