@@ -42,6 +42,29 @@ describe("AnimGraphRuntime", () => {
     expect(state?.timeMs).toBeCloseTo(200);
   });
 
+  it("starts a component switched to another graph at that graph's entry state without the old graph's jump", () => {
+    const withRun = (name: string) => {
+      const document = createDefaultAnimGraph(name);
+      document.states.push({ ...document.states[0]!, id: "run", name: "Run" });
+      return document;
+    };
+    const { actors, invokeAnimEvent, runtime } = setup(withRun("First"));
+    runtime.register("second", withRun("Second"));
+    const component = actors[0]!.components[0]!;
+    runtime.tick(0.1);
+    runtime.tick(0.1);
+    runtime.control(component)!.jumpToState("Run");
+    component.setVariable("graphGuid", "second");
+    runtime.tick(0.1);
+
+    expect(runtime.traceStates()).toEqual([{
+      componentGuid: component.guid,
+      graphGuid: "second",
+      state: expect.objectContaining({ stateId: "idle", timeMs: expect.closeTo(100) }),
+    }]);
+    expect(invokeAnimEvent.mock.calls.filter(([, event]) => event === "onInitializeAnimation")).toHaveLength(2);
+  });
+
   it("gives each component its own copy of an object variable default", () => {
     const document = createDefaultAnimGraph();
     const tags = { Tags: ["Idle"] };
