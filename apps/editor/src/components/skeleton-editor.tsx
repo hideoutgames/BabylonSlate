@@ -25,7 +25,8 @@ import {
   useRegistryState,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { ModelSourceReadError, useModelSourceBytes } from "./model-editor";
+import { useModelSourceBytes } from "../lib/use-model-source-bytes";
+import { ModelSourceReadError } from "./model-editor";
 import { SkeletonPreviewCanvas } from "./skeleton-preview-canvas";
 
 function asRecord(value: unknown): Record<string, unknown> {
