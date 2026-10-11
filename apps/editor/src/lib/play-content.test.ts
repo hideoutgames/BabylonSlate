@@ -22,7 +22,6 @@ import {
   behaviourTreeGuidsFromScene,
   blackboardGuidsFromScene,
   collectPlayScriptDocuments,
-  playPrefabDependencyScene,
   overlayTextureGuidsFromScenes,
   mergePlayAnimGraphs,
   collectAnimGraphCompileDocuments,
@@ -62,52 +61,6 @@ import {
   sceneLayerGuidsFromScenes,
   materialGuidsFromGraphs,
 } from "./play-content";
-
-describe("playPrefabDependencyScene", () => {
-  it("exposes assets from unplaced prefab components to the Play content collectors", () => {
-    const scripts = [{
-      classId: "UnplacedActor",
-      components: [
-        { id: "mesh", classId: "MeshComponent", properties: { assetGuid: "model", materialGuid: "surface" } },
-        { id: "cable", classId: "CableComponent", properties: { materialGuid: "braided-rope" } },
-        { id: "sprite", classId: "SpriteComponent", properties: { assetGuid: "sprite" } },
-        { id: "tiles", classId: "TilemapComponent", properties: { assetGuid: "tilemap" } },
-        { id: "anim", classId: "AnimationGraphComponent", properties: { graphGuid: "animation-graph" } },
-        { id: "ai", classId: "BehaviourTreeComponent", properties: { treeGuid: "tree", blackboardGuid: "blackboard" } },
-        { id: "text", classId: "Text3DComponent", properties: { fontAssetGuid: "font" } },
-        { id: "sky", classId: "SkyboxComponent", properties: { faces: { px: "sky-texture" } } },
-      ],
-    }];
-    const original = structuredClone(scripts);
-    const dependencies = playPrefabDependencyScene(scripts);
-    expect({
-      models: modelAssetGuidsFromScene(dependencies),
-      materials: materialGuidsFromScenes([dependencies]),
-      sprites: spriteAssetGuidsFromScene(dependencies),
-      tilemaps: tilemapAssetGuidsFromScene(dependencies),
-      animationGraphs: animationGraphGuidsFromScene(dependencies),
-      behaviourTrees: behaviourTreeGuidsFromScene(dependencies),
-      blackboards: blackboardGuidsFromScene(dependencies),
-      fonts: playFontGuidsFromScenes([dependencies]),
-      skyTextures: skyboxFaceGuidsFromScene(dependencies),
-    }).toEqual({
-      models: ["model"],
-      materials: ["surface", "braided-rope"],
-      sprites: ["sprite"],
-      tilemaps: ["tilemap"],
-      animationGraphs: ["animation-graph"],
-      behaviourTrees: ["tree"],
-      blackboards: ["blackboard"],
-      fonts: ["font"],
-      skyTextures: ["sky-texture"],
-    });
-    expect(scripts).toEqual(original);
-  });
-
-  it("adds no dependency scene for classes without prefab components", () => {
-    expect(playPrefabDependencyScene([{ classId: "Empty", components: [] }])).toBeNull();
-  });
-});
 
 describe("collectPlayScriptDocuments", () => {
   it("keeps Class graphs and drops editor-only assets", () => {
@@ -956,14 +909,10 @@ it("prepares retained surface textures only for the current component assignment
   expect(materialInstanceTextureGuidsFromScenes([null, scene, scene])).toEqual(["instance-texture"]);
 });
 
-describe("SceneLayer control and switcher dependencies", () => {
-  it("loads assigned control visuals and inherited switcher default assets for Play", () => {
-    const scene = { ...createDefaultScene(), actors: [createActor("switch", "Switcher", { classId: "SceneLayerActorSwitcher", properties: { sceneLayerActors: [{ classId: "Screen", defaults: { Artwork: "texture-override", Caption: "unused" } }] }, components: [{ id: "slider", classId: "2DSliderComponent", properties: { trackMaterialGuid: "track-material", thumbTextureGuid: "thumb-texture" } }] })] };
-    const dependencies = playPrefabDependencyScene([
-      { classId: "Base", variables: [{ name: "Artwork", type: "asset" }, { name: "Caption", type: "string" }] },
-      { classId: "Screen", parentClassId: "Base" },
-    ], [scene], () => "Texture");
-    expect(overlayTextureGuidsFromScenes([scene, dependencies])).toEqual(["thumb-texture", "texture-override"]);
-    expect(materialGuidsFromScenes([scene, dependencies])).toEqual(["track-material"]);
+describe("SceneLayer control dependencies", () => {
+  it("loads assigned control visuals for Play", () => {
+    const scene = { ...createDefaultScene(), actors: [createActor("switch", "Switcher", { components: [{ id: "slider", classId: "2DSliderComponent", properties: { trackMaterialGuid: "track-material", thumbTextureGuid: "thumb-texture" } }] })] };
+    expect(overlayTextureGuidsFromScenes([scene])).toEqual(["thumb-texture"]);
+    expect(materialGuidsFromScenes([scene])).toEqual(["track-material"]);
   });
 });

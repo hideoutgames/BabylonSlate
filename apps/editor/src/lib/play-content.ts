@@ -1,6 +1,6 @@
 import { parseAnimGraphDocument, resolveAnimGraphClips } from "@babylonslate/anim-graph";
 import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
-import type { ControlMessage, ScriptBundleEntry } from "@babylonslate/bridge";
+import type { ControlMessage } from "@babylonslate/bridge";
 import {
   parseBehaviourTreeDocument,
   parseBlackboardDocument,
@@ -25,11 +25,7 @@ import {
   tilemapTilesetGuids,
 } from "@babylonslate/assets";
 import {
-  actorPropertyReferences,
-  type GraphClassMember,
   UI_CONTROL_2D_CLASS_IDS,
-  createActor,
-  createDefaultSceneSettings,
   isEditorOnlyAsset,
   parseSkyboxFaces,
   sceneLayerToEditorScene,
@@ -56,45 +52,6 @@ export interface PlayContentDocument {
   id: string;
   ref: { kind: string; path: string };
   content: unknown;
-}
-
-/** Read-only dependency input for unplaced prefab assets; never load into a World. */
-export function playPrefabDependencyScene(
-  scripts: readonly Pick<ScriptBundleEntry, "classId" | "components" | "parentClassId" | "variables" | "actorDefaults">[],
-  scenes: readonly SerializedScene[] = [],
-  assetType?: (guid: string) => string | undefined,
-): SerializedScene | null {
-  const actors = scripts.flatMap((script, index) =>
-    script.components?.length || script.actorDefaults?.properties
-      ? [createActor(`prefab-dependency:${index}`, script.classId, {
-          classId: script.classId,
-          components: script.components,
-          properties: script.actorDefaults?.properties,
-        })]
-      : [],
-  );
-  const byClassId = new Map(scripts.map(script => [script.classId, script]));
-  const references = actorPropertyReferences([scenes, actors], classId => {
-    const script = byClassId.get(classId);
-    return script ? { parentClassId: script.parentClassId, members: script.variables?.map((variable, index): GraphClassMember => ({ ...variable, id: String(index), kind: "variable", typeId: variable.type })) } : null;
-  });
-  const componentForAsset: Record<string, [string, string]> = {
-    Material: ["2DMaterialComponent", "materialGuid"], MaterialInstance: ["2DMaterialComponent", "materialGuid"], Texture: ["2DTextureComponent", "textureGuid"],
-    Font: ["2DTextComponent", "fontAssetGuid"], Model: ["MeshComponent", "assetGuid"], Sprite: ["SpriteComponent", "assetGuid"], Tilemap: ["TilemapComponent", "assetGuid"],
-    AnimationGraph: ["AnimationGraphComponent", "graphGuid"], BehaviourTree: ["BehaviourTreeComponent", "treeGuid"], Blackboard: ["BehaviourTreeComponent", "blackboardGuid"],
-  };
-  for (const guid of references.assetGuids) {
-    const target = componentForAsset[assetType?.(guid) ?? ""];
-    if (target) actors.push(createActor(`override-dependency:${guid}`, "Override Dependency", { components: [{ id: `override-component:${guid}`, classId: target[0], properties: { [target[1]]: guid } }] }));
-  }
-  if (actors.length === 0) return null;
-  return {
-    name: "Prefab Dependencies",
-    viewportMode: "3d",
-    settings: createDefaultSceneSettings(),
-    folders: [],
-    actors,
-  };
 }
 
 export function filterPlayScriptDocuments<
