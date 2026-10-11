@@ -5,6 +5,8 @@ import type { SceneLoadProgress } from "@babylonslate/render";
  * Preview Build and exported players own no loading chrome: authored Scene
  * Layers present loading through Game Instance events. The host only mirrors
  * the transaction onto the player root so tests and embedders can observe it.
+ * When loading ends, phase and progress are removed; the load id remains to
+ * identify the last transaction.
  */
 export function publishPlayerSceneLoading(
   root: HTMLElement,
@@ -18,6 +20,8 @@ export function publishPlayerSceneLoading(
     return;
   }
   root.dataset.sceneLoading = "false";
+  delete root.dataset.sceneLoadPhase;
+  delete root.dataset.sceneLoadProgress;
 }
 
 /**

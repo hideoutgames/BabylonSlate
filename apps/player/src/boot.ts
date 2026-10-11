@@ -1,4 +1,4 @@
-import { createSaveStorageServer, newGuid } from "@babylonslate/core";
+import { classIdForAssetPath, createSaveStorageServer, newGuid } from "@babylonslate/core";
 import { createSaveGameStorage } from "@babylonslate/vfs";
 import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
 import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
@@ -22,13 +22,11 @@ import {
   type RuntimeDriver,
 } from "@babylonslate/runtime";
 import {
-  audioStats,
   attachLifecyclePause,
   createEngine,
   createSceneLoadReadiness,
   createSceneStreamingReadiness,
   navDebugBlockersFromActors,
-  particleStats,
   type EngineHandle,
   type RenderShadingSettings,
   type SceneLoadProgress,
@@ -130,8 +128,13 @@ export type PlayerBootOptions = {
   traceByteBudget?: number;
   sharedEngine?: AbstractEngine;
   content?: PackedGameContent;
-  /** Runs after every player resource has attempted cleanup, including startup rollback. */
-  onStopped?: () => void;
+  /**
+   * Runs after every player resource has attempted cleanup, including startup
+   * rollback. `viewReleased` is present once a view was created: a shared-Engine
+   * view releases its Scene only after native work settles, so the shared
+   * Engine must stay alive until that promise settles.
+   */
+  onStopped?: (viewReleased?: Promise<void>) => void;
   onRenderOutputChanged?: (settings: RenderProjectSettings) => void;
   onStats?: (stats: {
     ticks: number;
@@ -167,10 +170,12 @@ export function startPlayer(options: PlayerBootOptions): PlayerBootHandle {
     }
     return errors;
   };
-  // First acquired, last released: the backend owner must outlive every view.
-  own(() => options.onStopped?.());
+  // First acquired, last released: the backend owner must outlive every view,
+  // including a shared-Engine view's deferred Scene release.
+  let viewReleased: Promise<void> | undefined;
+  own(() => options.onStopped?.(viewReleased));
   try {
-    return initializePlayer(options, own, releaseAll);
+    return initializePlayer(options, own, releaseAll, (released) => { viewReleased = released; });
   } catch (error) {
     const errors = releaseAll();
     if (errors.length) throw new AggregateError([error, ...errors], "Player startup and cleanup failed.", { cause: error });
@@ -182,6 +187,7 @@ function initializePlayer(
   options: PlayerBootOptions,
   own: (cleanup: () => void) => () => void,
   releaseAll: () => unknown[],
+  onViewReleased: (released: Promise<void>) => void,
 ): PlayerBootHandle {
   const { canvas, game } = options;
   own(() => game.dispose?.());
@@ -399,7 +405,7 @@ function initializePlayer(
     },
     onRuntimeOutputChanged: (settings) => { runtimeOutput = settings; options.onRenderOutputChanged?.(settings); },
   });
-  own(() => handle.dispose());
+  own(() => { try { handle.dispose(); } finally { onViewReleased(handle.whenReleased()); } });
   handle.applySceneEnvironment(scene);
   const releaseConsoleCapture = captureConsoleLogs(
     console,
@@ -434,14 +440,6 @@ function initializePlayer(
   handle.scheduler.invalidate("play");
   const printHud = mountPlayerPrintOverlay(canvas.parentElement ?? canvas);
   own(() => printHud.dispose());
-  if (typeof window !== "undefined") {
-    (
-      window as { __babylonslateAudioStats?: typeof audioStats }
-    ).__babylonslateAudioStats = audioStats;
-    (
-      window as { __babylonslateParticleStats?: typeof particleStats }
-    ).__babylonslateParticleStats = particleStats;
-  }
   const framebuffer = playFramebufferSize(manifest.render);
   if (framebuffer) {
     handle.setSize(framebuffer.width, framebuffer.height);
@@ -491,15 +489,13 @@ function initializePlayer(
     texturePixelSizes: Object.fromEntries(content.texturePixelSizes),
     gravity: scene.settings.gravity,
     havokWasmUrl: havokWasmUrl(),
-    gameInstanceClass:
-      (typeof manifest.gameInstanceClass === "string" &&
-      manifest.gameInstanceClass.trim()
-        ? manifest.gameInstanceClass.trim()
-        : undefined) ??
-      scene.settings.gameInstanceClass ??
-      undefined,
+    gameInstanceClass: manifest.gameInstanceClass,
     scenes,
-    classAssetGuids: Object.fromEntries(manifest.assets.filter(entry => entry.type === "Class" || entry.type === "Graph").flatMap(entry => [...new Set([entry.classId, entry.name, entry.guid, `scene:${entry.guid}`].filter((id): id is string => !!id))].map(id => [id, entry.guid]))),
+    // Runtime Class lookups use the class id only, as in Editor Play.
+    classAssetGuids: Object.fromEntries(manifest.assets.flatMap(entry => {
+      const classId = entry.type === "Class" ? entry.classId ?? (entry.assetPath ? classIdForAssetPath(entry.assetPath) : undefined) : undefined;
+      return classId ? [[classId, entry.guid]] : [];
+    })),
     consoleCommands: manifest.assets.flatMap(entry => {
       if (!entry.consoleCommand) return [];
       const classId = entry.classId ?? game.scripts.find(script => script.assetGuid === entry.guid)?.classId ?? entry.name ?? entry.guid;
@@ -530,6 +526,7 @@ function initializePlayer(
   let inputTransition = 0;
   let inputTransitionPending = false;
   let lastBoundaryId = 0;
+  let issuedBoundaries = 0;
   let pendingBoundary: Promise<void> = Promise.resolve();
   const boundaryClient = options.previewDiagnostics ? createSessionBoundaryClient(0, request => {
     if (halted) throw new Error("Preview has stopped.");
@@ -544,6 +541,7 @@ function initializePlayer(
     handle.setGameInputEnabled(!suppressed);
   };
   const requestBoundary = (action: SessionBoundaryRequest["action"]): Promise<void> => {
+    const issued = ++issuedBoundaries;
     const request = boundaryClient!.request(action).then(result => {
       if (!result.success) throw new Error(result.reason ?? "Preview runtime rejected the boundary.");
       if (halted || result.requestId <= lastBoundaryId) return;
@@ -556,8 +554,16 @@ function initializePlayer(
     });
     pendingBoundary = request;
     // Capture awaits the rejecting promise; background event owners also report
-    // failure without leaking an unhandled rejection or unfreezing the view.
-    void request.catch(error => options.onConsoleEvent?.({ type: "log", severity: "error", message: String(error) }));
+    // failure without leaking an unhandled rejection. The runtime's state is then
+    // unknown, so the latest failed boundary releases the view freeze and the
+    // input hold it placed; explicit editor suppression still applies.
+    void request.catch(error => {
+      if (!halted && issued === issuedBoundaries) {
+        handle.setPaused(false);
+        applyInputOwnership();
+      }
+      options.onConsoleEvent?.({ type: "log", severity: "error", message: String(error) });
+    });
     return request;
   };
   const setEditorInputSuppressed = async (suppressed: boolean) => {
@@ -567,10 +573,15 @@ function initializePlayer(
     inputTransitionPending = true;
     applyInputOwnership();
     input?.neutralize();
-    await requestBoundary({ kind: "resetInput" });
-    if (transition !== inputTransition || halted) return;
-    inputTransitionPending = false;
-    applyInputOwnership();
+    try {
+      await requestBoundary({ kind: "resetInput" });
+    } finally {
+      // A failed reset still ends the transition; it must not hold input forever.
+      if (transition === inputTransition && !halted) {
+        inputTransitionPending = false;
+        applyInputOwnership();
+      }
+    }
   };
   const pauseState = createPlayerPauseState();
   let detachLifecycle = () => {};
@@ -578,6 +589,9 @@ function initializePlayer(
   let resetBoot = () => {};
   let hudStats: PlayerHudStats | undefined;
   let snapBuf = new Float32Array(snapshotFloatCount(256));
+  // In-process Scene markers wait for a complete Actor pose, as the worker
+  // transport holds them; a missed copy defers readiness instead of losing it.
+  const heldRealized: Array<{ type: string } & Record<string, unknown>> = [];
   own(() => { halted = true; cancelAnimationFrame(raf); });
   own(() => resetBoot());
   own(() => pauseGate?.reset());
@@ -678,7 +692,18 @@ function initializePlayer(
   let sourcePublication: Promise<void> = Promise.resolve();
   const pendingSourceRequests = new Map<number, { resolve: () => void; reject: (error: unknown) => void }>();
   own(() => { for (const request of pendingSourceRequests.values()) request.reject(new DOMException("Player stopped", "AbortError")); pendingSourceRequests.clear(); });
+  // Acquiring an already loaded source, or releasing one that stays retained,
+  // leaves every loaded source in place: skip the rebuild and the source union.
+  let loadedSources: unknown[] | null = null;
+  const loadedSourcesChanged = () => {
+    const next: unknown[] = [...game.payloads, ...(game.decodedPayloads ?? []), ...(game.complexMeshes ?? [])].flat();
+    next.push(...game.scripts);
+    const changed = !loadedSources || next.length !== loadedSources.length || next.some((value, index) => value !== loadedSources![index]);
+    loadedSources = next;
+    return changed;
+  };
   const refreshSourceContent = () => {
+    if (!loadedSourcesChanged() && publishedScripts) return sourcePublication;
     const next = packedContentFromGame(game);
     // Services retain these library objects. Mutate their maps and install the
     // complete surviving union so releasing one instance cannot break another.
@@ -757,12 +782,18 @@ function initializePlayer(
     } catch (error) { releaseRender?.(); source.release(); throw error; }
   });
   const systemAssets = game.systemAssetGuids ?? requiredGameAssets(manifest, manifest.assets.filter(entry => entry.startupRequired).map(entry => entry.guid));
-  const systemSources = game.acquireScene && systemAssets.size ? handle.acquireSceneSources(renderSources(gameSourceSubset(game, systemAssets))).then(release => { if (halted) release(); else own(release); }) : Promise.resolve();
+  // Startup-required render sources outlive the startup Scene's initial
+  // sources. A failed upload is retried by the next Scene acquire instead of
+  // rejecting every later one; until then the initial sources still hold them.
+  let systemSources: Promise<void> | undefined;
+  const acquireSystemSources = () => systemSources ??= handle.acquireSceneSources(renderSources(gameSourceSubset(game, systemAssets)))
+    .then(release => { if (halted) release(); else own(release); }, (error: unknown) => { systemSources = undefined; throw error; });
+  if (game.acquireScene && systemAssets.size) void acquireSystemSources().catch(() => {});
   const acquireScene = game.acquireScene ? async (guid: string, request: { consumer: string; signal: AbortSignal }) => {
     const source = await game.acquireScene!(guid, request);
     let releaseRender: (() => void) | undefined;
     try {
-      await systemSources;
+      if (systemAssets.size) await acquireSystemSources();
       request.signal.throwIfAborted();
       releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, [guid]))), { prepare: true, signal: request.signal });
       request.signal.throwIfAborted();
@@ -782,7 +813,8 @@ function initializePlayer(
     else runtime?.notifyAssetPreloadResult(result);
   };
   const publishAssetStates = () => {
-    const states = manifest.assets.map(entry => ({ guid: entry.guid, state: [...preparingPreloads.values()].some(ids => ids.has(entry.guid)) ? "loading" as const : resourceFailures.has(entry.guid) ? "failed" as const : game.assets?.getLoadState(entry.guid) ?? "ready" as const }));
+    const preparing = new Set([...preparingPreloads.values()].flatMap(ids => [...ids]));
+    const states = manifest.assets.map(entry => ({ guid: entry.guid, state: preparing.has(entry.guid) ? "loading" as const : resourceFailures.has(entry.guid) ? "failed" as const : game.assets?.getLoadState(entry.guid) ?? "ready" as const }));
     if (worker) worker.postControl({ type: "assetLoadStates", states });
     else runtime?.setAssetLoadStates(states);
   };
@@ -812,7 +844,8 @@ function initializePlayer(
     void (async () => {
       if (!game.acquireAssets) throw new Error("This player does not provide demand-driven asset loading.");
       const source = await game.acquireAssets(ids, { consumer: `preload:${String(command.ownerId)}`, signal: request.controller.signal, priority,
-        onProgress: ({ completed, total }) => { preloadResult({ preloadId, success: true, progress: total ? Math.min(0.9, completed / total * 0.9) : 0 }); publishAssetStates(); },
+        // Progress changes no published state: the preload's closure stays loading until it settles.
+        onProgress: ({ completed, total }) => { preloadResult({ preloadId, success: true, progress: total ? Math.min(0.9, completed / total * 0.9) : 0 }); },
       });
       let releaseRender: (() => void) | undefined;
       try {
@@ -889,12 +922,13 @@ function initializePlayer(
     if (command.type === "snapshotLayout")
       handle.applyCommand(command as never);
     applyPlayerEngineCommand(handle, command);
-    if ((command.type === "sceneRealized" || command.type === "sceneLayerRealized" || command.type === "sceneStreamRealized") && runtime) {
-      if (!runtime.copySnapshot(snapBuf)) throw new Error("Completed Scene snapshot is unavailable.");
-      handle.pushSnapshot(snapBuf);
+    const realized = (command.type === "sceneRealized" || command.type === "sceneLayerRealized" || command.type === "sceneStreamRealized") && runtime;
+    if (realized && !runtime!.copySnapshot(snapBuf)) heldRealized.push(command);
+    else {
+      if (realized) handle.pushSnapshot(snapBuf);
+      sceneReadiness.receive(command);
+      streamReadiness.receive(command);
     }
-    sceneReadiness.receive(command);
-    streamReadiness.receive(command);
     if (command.type === "print") {
       printHud.applyPrint({
         message: command.message,
@@ -906,7 +940,8 @@ function initializePlayer(
     if (command.type === "stats") {
       emitHudStats(
         applyWorkerPlayerStats(hudStats, {
-          ticks: lastWorkerTickIndex,
+          // A dropped snapshot must not leave the count behind the simulation.
+          ticks: typeof command.tickIndex === "number" ? command.tickIndex : lastWorkerTickIndex,
           fps: Number(command.fps ?? 0),
           scriptMs: Number(command.scriptMs ?? 0),
           physicsMs: Number(command.physicsMs ?? 0),
@@ -1041,7 +1076,10 @@ function initializePlayer(
   if (options.previewDiagnostics) applyInputOwnership();
   own(() => input?.dispose());
   const releaseUnlock = unlockAudioOnFirstGesture(() => {
-    void handle.unlockAudio();
+    // The next gesture retries; a failure is reported, not left unhandled.
+    handle.unlockAudio().catch((error: unknown) => {
+      if (!halted) options.onConsoleEvent?.({ type: "log", severity: "warning", message: `Audio could not start: ${error instanceof Error ? error.message : String(error)}` });
+    });
   }, canvas);
   own(releaseUnlock);
   last = performance.now();
@@ -1064,7 +1102,11 @@ function initializePlayer(
       else if (runtime) runtime.pushInputBuffer(encodeInputEvents(drained));
     }
     if (runtime) {
-      runtime.advance(elapsed);
+      // Like the worker loop, a throwing tick is reported and the next frame
+      // still runs. A tick can also halt the player, which disposes the view.
+      try { runtime.advance(elapsed); }
+      catch (error) { if (!halted) runtime?.reportError(error); }
+      if (halted || !runtime) return;
       if (runtime.copySnapshot(snapBuf)) {
         lastWorkerTickIndex = applyPlayerSnapshotTick(
           lastWorkerTickIndex,
@@ -1072,6 +1114,10 @@ function initializePlayer(
         );
         ticks = lastWorkerTickIndex;
         handle.pushSnapshot(snapBuf);
+        for (const command of heldRealized.splice(0)) {
+          sceneReadiness.receive(command);
+          streamReadiness.receive(command);
+        }
       }
     }
     if (now - fpsWindowStart >= 1000) {
