@@ -370,8 +370,14 @@ export function writeOverlayBoxTransform(
     mesh.scaling.set(next.scale[0], next.scale[1], next.scale[2]);
     const invX = next.scale[0] !== 0 ? start.scale[0] / next.scale[0] : 1;
     const invY = next.scale[1] !== 0 ? start.scale[1] / next.scale[1] : 1;
-    for (const child of mesh.getChildMeshes(false)) {
-      child.scaling.set(invX, invY, 1);
+    // Only this text's own glyph quads counter-scale; child actors and helpers
+    // keep their scale. A glyph's rest scale (bold MSDF) is kept across moves.
+    for (const child of mesh.getChildMeshes(true)) {
+      const glyph = child.metadata as { text2dGlyph?: boolean; text2dRestScale?: [number, number] } | null;
+      if (!glyph?.text2dGlyph) continue;
+      const rest = glyph.text2dRestScale ?? [child.scaling.x, child.scaling.y];
+      if (!glyph.text2dRestScale) child.metadata = { ...glyph, text2dRestScale: rest };
+      child.scaling.set(rest[0] * invX, rest[1] * invY, child.scaling.z);
     }
     return;
   }
