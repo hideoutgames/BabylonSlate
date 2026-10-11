@@ -73,7 +73,6 @@ test.describe("P14 export smoke", () => {
       new TextDecoder().decode(unzipped[GAME_MANIFEST_FILE]),
     );
     expect(manifest.startupSceneGuid).toBe("scene-guid-export");
-    expect(manifest.mode).toBe("packed");
     const startupPath = manifest.assets.find(asset => asset.guid === manifest.startupSceneGuid)!.path!;
     expect(unzipped[startupPath]).toEqual(artifact.files.get(startupPath));
 

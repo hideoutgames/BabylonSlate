@@ -102,7 +102,7 @@
     "[desktop-chrome] > ragdoll.spec.ts > a UI-authored ragdoll articulates the real Mannequin in worker Play and stops cleanly": 33000,
     "[desktop-chrome] > release-news.spec.ts > release news survives reload and the account menu reopens it offline": 17000,
     "[desktop-chrome] > render-scalability.spec.ts > scalability updates budgets, persists Custom and preserves independent settings, the project render path, and an admitted Ultra sun": 39300,
-    "[desktop-chrome] > render-settings-export.spec.ts > non-default packed settings reach the standalone webgl2 player": 33600,
+    "[desktop-chrome] > render-settings-export.spec.ts > non-default settings reach the standalone webgl2 player": 33600,
     "[desktop-chrome] > render-targets.spec.ts > render targets capture only their selected pass on webgl2": 3400,
     "[desktop-chrome] > runtime-scene-loading.spec.ts > Play paints repeated Scene Loading transitions and Stop cancels the next reload": 12800,
     "[desktop-chrome] > save-game-parity.spec.ts > editor Play and Preview Build share persistent preview progress": 12800,

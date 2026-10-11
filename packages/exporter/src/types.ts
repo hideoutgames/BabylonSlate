@@ -7,8 +7,6 @@ import type {
 } from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 
-export type ExportMode = "packed" | "loose";
-
 export type ExportIndexedAsset = {
   guid: string;
   type: string;
@@ -138,7 +136,6 @@ export type GameManifest = {
   reverbDecayScale?: number;
   reverbDampingScale?: number;
   bundleDebugger: boolean;
-  mode: ExportMode;
   render: RenderProjectSettings;
   playFrameCap: number;
   touchMinTargetPx?: number;
@@ -163,7 +160,6 @@ export type ExportGameOptions = {
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   inputMappings?: ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
-  mode?: ExportMode;
   bundleDebugger: boolean;
   startupSceneGuid: string;
   gameInstanceClass?: string | null;

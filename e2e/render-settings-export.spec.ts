@@ -36,10 +36,10 @@ const magentaPixels = (page: Page, captured: string) => page.evaluate(async (bas
   return count;
 }, captured);
 
-// One packed WebGL2 export keeps the standalone settings and deferred-loading
+// One WebGL2 export keeps the standalone settings and deferred-loading
 // journey in CI; backend variants are covered by webgpu-backend and player-backend.
-for (const variant of [{ mode: "packed", backend: "webgl2" }] as const) {
-  test(`non-default ${variant.mode} settings reach the standalone ${variant.backend} player`, async ({ page, baseURL }, testInfo) => {
+for (const variant of [{ backend: "webgl2" }] as const) {
+  test(`non-default settings reach the standalone ${variant.backend} player`, async ({ page, baseURL }, testInfo) => {
     test.setTimeout(120_000);
     await page.addInitScript(() => { Error.stackTraceLimit = 30; });
     const errors: string[] = [];
@@ -57,7 +57,7 @@ for (const variant of [{ mode: "packed", backend: "webgl2" }] as const) {
     });
     const scripts = scalabilityGraphScripts();
     const exported = await exportGame({
-      mode: variant.mode, bundleDebugger: true, startupSceneGuid: "first",
+      bundleDebugger: true, startupSceneGuid: "first",
       renderSettings, playFrameCap: 30, scripts,
       assets: [...scripts.map((script) => ({ guid: script.assetGuid, type: "Class", sceneGuid: "first", name: script.classId,
         bytes: new TextEncoder().encode(JSON.stringify({ components: [] })) })), ...["first", "second"].map((guid) => {

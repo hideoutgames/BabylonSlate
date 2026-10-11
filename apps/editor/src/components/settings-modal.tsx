@@ -174,7 +174,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     id: "export",
     label: "Export",
     keywords:
-      "export project zip download packaged player export game packed debugger file count always package folders folder include unreferenced",
+      "export project zip download packaged player export game debugger file count always package folders folder include unreferenced",
   },
   {
     id: "sourceControl",
@@ -1428,20 +1428,6 @@ export function SettingsModal({
         <FieldGroup className="gap-4">
           <FieldSet>
             <FieldLegend>Export</FieldLegend>
-              <Field className="settings-field">
-              <FieldLabel htmlFor="setting-export-packed">Packed</FieldLabel>
-              <Switch
-                id="setting-export-packed"
-                checked={exportPreset.packed}
-                onCheckedChange={(checked) =>
-                  updateExportPreset({ packed: checked === true })
-                }
-                data-testid="setting-export-packed"
-              />
-              <FieldDescription>
-                  Stores assets in a .babpack file. Off exports separate files.
-              </FieldDescription>
-            </Field>
               <Field className="settings-field">
               <FieldLabel htmlFor="setting-export-debugger">
                 Bundle Debugger

@@ -70,7 +70,7 @@ describe("exportGame", () => {
     expect(generated.find(asset => asset.guid === "script:hero:Hero")?.ownerGuid).toBe("hero");
   });
   it("preserves focus input selections and normalizes unsafe repeat values through player manifests", async () => {
-    const result = await exportGame({ mode: "packed", bundleDebugger: false, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles: stubPlayer(),
+    const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles: stubPlayer(),
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       focusNavigation: normalizeFocusNavigationSettings({ navigationInputGuid: "menu-axis", activateInputGuid: "accept", wrap: true }),
     });
@@ -81,7 +81,7 @@ describe("exportGame", () => {
     malformed.focusNavigation.repeatInterval = -10;
     expect(parseGameManifest(JSON.stringify(malformed)).focusNavigation?.repeatInterval).toBe(0.02);
   });
-  it.each(["packed", "loose"] as const)("normalizes the complete %s render contract at export and player read", async (mode) => {
+  it("normalizes the complete render contract at export and player read", async () => {
     const authored = {
       ...DEFAULT_RENDER_PROJECT_SETTINGS,
       gpuBackend: "webgpu" as const,
@@ -93,7 +93,7 @@ describe("exportGame", () => {
       localQualityOverrides: { resolution: { scale: 0.25 } },
     };
     const result = await exportGame({
-      mode, bundleDebugger: false, startupSceneGuid: "scene-1",
+      bundleDebugger: false, startupSceneGuid: "scene-1",
       renderSettings: authored, playFrameCap: Infinity, scripts: [], assets: [], playerFiles: stubPlayer(),
     });
     if (!result.ok) throw new Error(result.error);
@@ -120,9 +120,8 @@ describe("exportGame", () => {
       expect(parseGameManifest(JSON.stringify(malformed)).playFrameCap).toBe(value === 24 ? 24 : 60);
     }
   });
-  it.each(["packed", "loose"] as const)("retains project identity in %s release builds", async (mode) => {
+  it("retains project identity in release builds", async () => {
     const result = await exportGame({
-      mode,
       project: { name: "Orbit Workshop", version: "2.4.0-beta.3" },
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
@@ -255,7 +254,6 @@ describe("exportGame", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.manifest.mode).toBe("packed");
     expect(result.value.manifest.assets[0]?.path).toBe("assets/data-0.bin");
     expect(result.value.files.get("assets/data-0.bin")).toEqual(new Uint8Array([1, 2, 3]));
     expect(result.value.manifest.bundleDebugger).toBe(true);
@@ -353,9 +351,8 @@ describe("exportGame", () => {
     expect(result.value.files.get(result.value.manifest.assets.find(asset => asset.guid === "scene-2")!.path!)).toEqual(new Uint8Array([3]));
   });
 
-  it("keeps loose mode as one file per asset", async () => {
+  it("writes one file per asset", async () => {
     const result = await exportGame({
-      mode: "loose",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -378,7 +375,6 @@ describe("exportGame", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.manifest.mode).toBe("loose");
     expect(result.value.manifest.assets).toHaveLength(2);
     expect(result.value.files.get(result.value.manifest.assets[0]!.path!)).toEqual(new Uint8Array([1]));
     expect(result.value.files.get(result.value.manifest.assets[1]!.path!)).toEqual(new Uint8Array([2]));
@@ -387,7 +383,7 @@ describe("exportGame", () => {
   it("exports namespaced sidecars to portable loose files without merging distinct asset IDs", async () => {
     const guids = ["area-emission:tex", "area-emission/tex", "area-emission_tex", "Area-emission:tex", "audioReverb:scene", "CON"];
     const result = await exportGame({
-      mode: "loose", bundleDebugger: false, startupSceneGuid: "scene-1",
+      bundleDebugger: false, startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [], playerFiles: stubPlayer(),
       assets: guids.map((guid, index) => ({
@@ -411,7 +407,6 @@ describe("exportGame", () => {
 
   it("records authored Texture pixel size on the manifest index", async () => {
     const result = await exportGame({
-      mode: "loose",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -443,7 +438,6 @@ describe("exportGame", () => {
 
   it("fails when the file count exceeds the hard limit", async () => {
     const result = await exportGame({
-      mode: "loose",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -614,15 +608,14 @@ describe("exportGame", () => {
     expect(two.value.files.has("assets/HavokPhysics_es.js")).toBe(false);
   });
 
-  it.each(["packed", "loose"] as const)(
-    "retains Rapier for SceneLayers alongside a 3d world in %s exports",
-    async (mode) => {
+  it(
+    "retains Rapier for SceneLayers alongside a 3d world",
+    async () => {
       const result = await exportGame({
         bundleDebugger: false,
         startupSceneGuid: "scene-1",
         renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
         physicsWorld: "3d",
-        mode,
         scripts: [],
         assets: [
           {
@@ -884,9 +877,8 @@ describe("exportGame", () => {
     );
   });
 
-  it("records Font names on loose-mode index entries", async () => {
+  it("records Font names on index entries", async () => {
     const result = await exportGame({
-      mode: "loose",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,

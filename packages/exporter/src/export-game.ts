@@ -243,7 +243,6 @@ function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetByte
 export async function exportGame(
   options: ExportGameOptions,
 ): Promise<Result<ExportArtifact, string>> {
-  const mode = options.mode ?? "packed";
   const warnAt = options.fileCountWarn ?? DEFAULT_FILE_COUNT_WARN;
   const failAt = options.fileCountFail ?? DEFAULT_FILE_COUNT_FAIL;
   const gameInstanceClass = options.gameInstanceClass?.trim() || undefined;
@@ -283,8 +282,8 @@ export async function exportGame(
     startupRequired: asset.startupRequired || projectAssetGuids.has(asset.guid) || asset.guid === options.audioMixerGuid ||
       (!!gameInstanceClass && classIdOf(asset) === gameInstanceClass) || asset.type === "InputAction" || asset.type === "InputAxis",
   }));
-  // Packaging choice never changes runtime addressability. A ZIP is only the
-  // delivery container; static hosts serve independent immutable asset files.
+  // Every asset is its own immutable file. A ZIP is only the delivery
+  // container; static hosts serve the files independently.
   const index = await writeAssetFiles(files, prepared);
 
   inlineCssIntoIndex(files);
@@ -307,7 +306,6 @@ export async function exportGame(
     reverbDecayScale: clampAudioScale(options.reverbDecayScale, 1),
     reverbDampingScale: clampAudioScale(options.reverbDampingScale, 1),
     bundleDebugger: options.bundleDebugger,
-    mode,
     render: normalizeRenderProjectSettings(options.renderSettings),
     playFrameCap: normalizePlayFrameCap(options.playFrameCap),
     touchMinTargetPx:
@@ -375,7 +373,7 @@ const OUTDATED_MANIFEST = "rebuild this game with the current exporter.";
 /** Fields `exportGame` always writes; a manifest without one predates the current exporter. */
 const REQUIRED_MANIFEST_FIELDS = [
   "project", "focusNavigation", "startupSceneGuid", "occlusionEnabled", "reverbWetScale", "reverbDecayScale",
-  "reverbDampingScale", "bundleDebugger", "mode", "render", "playFrameCap", "touchMinTargetPx", "pixelsPerUnit",
+  "reverbDampingScale", "bundleDebugger", "render", "playFrameCap", "touchMinTargetPx", "pixelsPerUnit",
   "pixelPerfect", "sortingLayers", "physicsWorld", "assets",
 ] as const satisfies readonly (keyof GameManifest)[];
 const DEBUGGER_MANIFEST_FIELDS = ["infiniteLoopDetection", "loopCount"] as const satisfies readonly (keyof GameManifest)[];
