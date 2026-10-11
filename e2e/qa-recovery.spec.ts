@@ -54,12 +54,7 @@ async function journalCommands(page: Page) {
     for await (const directory of (derived as Listable).values()) {
       if (directory.kind !== "directory") continue;
       const project = directory as FileSystemDirectoryHandle;
-      // An older single-file journal, then the ordered segments.
-      try {
-        await readLines(await project.getFileHandle("journal.jsonl"));
-      } catch (error) {
-        if (!(error instanceof DOMException && error.name === "NotFoundError")) throw error;
-      }
+      // The journal is a folder of ordered segments.
       try {
         const segments = await project.getDirectoryHandle("journal");
         const files: FileSystemFileHandle[] = [];
