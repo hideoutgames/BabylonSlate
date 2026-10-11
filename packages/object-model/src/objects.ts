@@ -210,6 +210,10 @@ export class Actor extends BObject {
     if (component.owner) {
       throw new Error(`component ${component.guid} already attached`);
     }
+    // Including during its own On Destroyed: nothing would ever end the component.
+    if (this.destroyed) {
+      throw new Error(`cannot attach component ${component.guid} to destroyed actor ${this.guid}`);
+    }
     component.owner = this;
     this.components.push(component);
     this.world?.markStructureChanged?.();
@@ -580,10 +584,13 @@ type SubsystemOptions<H> = {
 
 /**
  * Hidden abstract base of GameSubsystem and SceneSubsystem. `onCreation` is
- * the subsystem's On Init. End runs at most once; the instance is `ended`
- * from the moment End starts and `destroyed` once it returns.
+ * the subsystem's On Init. Init and End each run at most once, and End's hook
+ * only after Init started: an instance retired before its On Init ends
+ * silently. The instance is `ended` from the moment End starts and
+ * `destroyed` once it returns.
  */
 export abstract class Subsystem extends BObject {
+  private initStarted = false;
   private endStarted = false;
 
   constructor(options: SubsystemOptions<LifecycleHooks>) {
@@ -594,11 +601,17 @@ export abstract class Subsystem extends BObject {
     return this.endStarted;
   }
 
+  override callOnCreation(): void {
+    if (this.initStarted || this.endStarted) return;
+    this.initStarted = true;
+    super.callOnCreation();
+  }
+
   protected runEnd(end: () => void): void {
     if (this.endStarted) return;
     this.endStarted = true;
     try {
-      end();
+      if (this.initStarted) end();
     } finally {
       this.destroyed = true;
     }
