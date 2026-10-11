@@ -303,7 +303,7 @@ The document opens the Material layout in DockView. `ParticleGraphEditingProvide
 
 ### Preview
 
-- Emitter and Particle Graph Previews wrap the emitter in a synthetic one-slot System. System Preview loads each slot from its open tab first, else from its document, under its own document kind (`particle-emitter` or `particle-graph`); registry headers carry no emitter payload.
+- Emitter and Particle Graph Previews wrap the emitter in a synthetic one-slot System. System Preview loads each slot from its open tab first, else from its document, under its own document kind (`particle-emitter` or `particle-graph`); registry headers carry no emitter payload. It reloads when a slot changes or a slot's open tab is edited, not when another open emitter is.
 - `ParticlePreviewCanvas` runs a `ParticleService` (`statsScope: "local"`) on a disposable preview Scene on the app-lifetime Engine (RTT + 2D blit, never a second Engine). Emitter Preview has no skybox; System Preview shows the engine default skybox when Preview Skybox is on. Textures come from the Materials' Texture Sample nodes.
 - Controls (`ParticlePreviewSurface`): **Restart** re-issues `assignParticle`; **Play / Pause** calls `setPaused`; a **GPU / CPU / GPU + CPU** badge; an active-count badge polled every 250 ms (`~n / capacity` on GPU, where the count is the claimed ring). The backend tooltip (`backendHint` overrides it) reads:
   - CPU with Basic emitters only: the 512 cap;
