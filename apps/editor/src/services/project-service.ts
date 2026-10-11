@@ -354,6 +354,8 @@ export class ProjectService {
   private readonly migrations = defaultRegistry();
   private readonly blobs: BlobStore;
   private assetRegistry: AssetRegistry | null = null;
+  /** The source session `assetRegistry` was mounted in. */
+  private assetRegistrySession = -1;
   private readonly registryMounts = new Set<{ session: number; promise: Promise<AssetRegistry> }>();
   private sourceLoading: AssetLoadingService | null = null;
   private sourceSession = 0;
@@ -514,7 +516,7 @@ export class ProjectService {
         // (alignment) job leaves the saved state alone until it commits, so
         // nothing on disk requeues it later, source control on or not.
         if (state === "compressed" || job.guard) return;
-        const registry = this.assetRegistry;
+        const registry = this.encodeRegistry();
         if (!registry) return;
         const session = this.sourceSession;
         void this.writeAdmission.continue(async () => {
@@ -528,7 +530,7 @@ export class ProjectService {
         this.encodeWriteReleases.delete(result.assetGuid);
         let succeeded = false;
         try {
-          const registry = this.assetRegistry;
+          const registry = this.encodeRegistry();
           if (!registry) { succeeded = true; return; }
           const session = this.sourceSession;
           const commit = registry.commitCompressedTexture(result);
@@ -566,7 +568,7 @@ export class ProjectService {
         this.encodeWriteReleases.delete(guid);
         this.emitTextureEncodeDiagnostic(guid, error);
         const message = error instanceof Error ? error.message : String(error);
-        const registry = this.assetRegistry;
+        const registry = this.encodeRegistry();
         if (!registry) { release?.(); return; }
         const session = this.sourceSession;
         void this.writeAdmission.continue(async () => {
@@ -1513,6 +1515,16 @@ export class ProjectService {
     return this.assetLoadingService.createScope(owner);
   }
 
+  /**
+   * The registry an encode callback writes through. Once Close Project or a
+   * project load bumps the session, the old registry is still set, but the
+   * shared storage it writes through may be released or rebound to another
+   * folder, so a late result writes nothing.
+   */
+  private encodeRegistry(): AssetRegistry | null {
+    return this.assetRegistrySession === this.sourceSession ? this.assetRegistry : null;
+  }
+
   private resetAssetLoading(): void {
     this.sourceLoading?.dispose();
     this.sourceLoading = null;
@@ -1555,6 +1567,7 @@ export class ProjectService {
     await registry.mountRoot(projectContentRoot());
     if (session !== this.sourceSession) throw new DOMException("Project changed during catalog scan", "AbortError");
     this.assetRegistry = registry;
+    this.assetRegistrySession = session;
     for (const conflict of registry.listGuidConflicts()) {
       if (reportedConflicts.has(conflict.path)) continue;
       this.pushDiagnostic(`${conflict.path} is hidden: it has the same asset id as ${conflict.indexedPath}. Remove the copy or import it again to give it its own id.`);

@@ -173,6 +173,44 @@ describe("ProjectService lifecycle", () => {
     expect(saved.header.payload.compressionState).toBe("compressed");
   });
 
+  it("writes nothing for a texture encode that finishes after Close Project has begun", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    let finishEncode!: (result: { ktx2: Uint8Array; wallMs: number }) => void;
+    const service = new ProjectService(storage, { encode: () => new Promise(resolve => { finishEncode = resolve; }) });
+    await service.createEmptyProject("EncodeLate", { kind: "2d" });
+    await storage.writeBinary("assets/test.babasset", await encodeBabasset({
+      header: { guid: "encode-late", type: "Texture", name: "Test", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "encode_failed" } },
+      chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
+    }));
+    await service.registry!.reindexPath("assets/test.babasset");
+    service.textureEncodeQueue.enqueue({ assetGuid: "encode-late", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
+    await vi.waitFor(() => expect(finishEncode).toBeTypeOf("function"));
+    await vi.waitFor(async () => {
+      const header = (await decodeBabasset(await storage.readBinary("assets/test.babasset"))).header;
+      expect(header.payload.compressionState).toBe("encoding");
+    });
+    const release = storage.releaseFolder.bind(storage);
+    let resumeRelease!: () => void;
+    const releasePaused = new Promise<void>(resolve => { resumeRelease = resolve; });
+    let releaseStarted!: () => void;
+    const releasing = new Promise<void>(resolve => { releaseStarted = resolve; });
+    vi.spyOn(storage, "releaseFolder").mockImplementation(async () => {
+      releaseStarted();
+      await releasePaused;
+      return release();
+    });
+    const writes = vi.spyOn(storage, "writeBinary");
+    const closing = service.closeProject();
+    await releasing;
+    // The encode lands while the folder is being released and the old registry is still set.
+    finishEncode({ ktx2: new Uint8Array([9, 8, 7]), wallMs: 1 });
+    // The queue counts a job until its completion handler has finished.
+    await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(0));
+    resumeRelease();
+    await closing;
+    expect(writes).not.toHaveBeenCalled();
+  });
+
   it.each(["chunk", "document"] as const)("retries a complete %s read after a concurrent save without retaining the failed snapshot", async (kind) => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("ConcurrentRead");
