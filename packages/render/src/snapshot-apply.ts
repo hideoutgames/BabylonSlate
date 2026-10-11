@@ -1512,10 +1512,8 @@ export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
   for (const slotId of [...binding.seenSlots]) {
     if (!binding.isOverlaySlot?.(slotId)) binding.seenSlots.delete(slotId);
   }
-  // Like their visuals, a possessed or Default overlay camera survives.
-  const survives = (slotId: number | null) => slotId !== null && binding.isOverlaySlot?.(slotId) === true ? slotId : null;
-  binding.possessedCameraSlotId = survives(binding.possessedCameraSlotId);
-  binding.defaultCameraSlotId = survives(binding.defaultCameraSlotId);
+  binding.possessedCameraSlotId = null;
+  binding.defaultCameraSlotId = null;
 }
 
 function disposeSlotVisuals(

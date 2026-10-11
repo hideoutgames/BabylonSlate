@@ -85,7 +85,7 @@ An anchor-only Outliner object has no viewport mesh, billboard, pick target, giz
 
 Play overlay walks layers high `zOrder` → low, `scene.pick` each overlay scene, honors HitTest, then optionally the world. Overlay scenes participate in pointer-move picks for hover; world scenes keep `skipPointerMovePicking: true`. Hits still walk sibling visual Hit Test (`Ignore` / `Block` / `Pass Through`); the **button** is what opts the Actor into clickable overlay interaction.
 
-An overlay-flagged slot whose layer Scene is not live yet hides any world-Scene copy of its visual; it migrates to the layer and resumes its snapshot visibility once the layer exists. A world Scene reload retires only world slots, so a possessed or Default camera on an overlay slot stays selected.
+An overlay-flagged slot whose layer Scene is not live yet hides any world-Scene copy of its visual; it migrates to the layer and resumes its snapshot visibility once the layer exists.
 
 Runtime mesh assignments share one live-button lookup for Hit Test, button presence, and an unambiguous button ID. Own buttons take precedence; otherwise direct children are scanned once in world order. The lookup refreshes on each assignment, so it cannot retain stale component or hierarchy state. This removes repeated scans per assignment; child discovery still scans the world once for actors without their own buttons.
 

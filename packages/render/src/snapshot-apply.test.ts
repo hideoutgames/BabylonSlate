@@ -26,7 +26,6 @@ import {
   disposeWorldOverlayLeftovers,
   isPlayHelperMeshKind,
   retirePlaySlot,
-  retirePlayWorldSlots,
   type AssignMeshCommand,
 } from "./snapshot-apply";
 import { setupDefaultViewport } from "./viewport";
@@ -1961,19 +1960,6 @@ describe("createPlayMesh", () => {
     expect(binding.meshes.get(4)?.position.x).toBeCloseTo(2);
     expect(binding.meshes.get(4)?.isVisible).toBe(true);
     overlay.dispose();
-  });
-
-  it("keeps a possessed or Default overlay camera when world slots retire", () => {
-    const binding = createSnapshotSceneBinding();
-    binding.isOverlaySlot = (slotId) => slotId === 5;
-    binding.possessedCameraSlotId = 5;
-    binding.defaultCameraSlotId = 3;
-    retirePlayWorldSlots(binding);
-    expect([binding.possessedCameraSlotId, binding.defaultCameraSlotId]).toEqual([5, null]);
-    binding.possessedCameraSlotId = 3;
-    binding.defaultCameraSlotId = 5;
-    retirePlayWorldSlots(binding);
-    expect([binding.possessedCameraSlotId, binding.defaultCameraSlotId]).toEqual([null, 5]);
   });
 
   it("disposes leftover world actor meshes that are not in the snapshot binding", () => {
