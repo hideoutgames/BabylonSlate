@@ -204,6 +204,8 @@ function transformPoint(transform: Transform, point: [number, number, number]): 
   point[2] = transform.position.z + iz * q.w - iw * q.z - ix * q.y + iy * q.x;
 }
 
+const NO_TRIGGERS = { includeTriggers: false } as const;
+
 function fallbackSweep(backend: PhysicsBackend, radius: number): SphereSweepQuery {
   const start: PhysicsTransform = { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
   const end: PhysicsTransform = { position: { x: 0, y: 0, z: 0 }, rotation: start.rotation };
@@ -212,7 +214,8 @@ function fallbackSweep(backend: PhysicsBackend, radius: number): SphereSweepQuer
     sweep(sx, sy, sz, ex, ey, ez) {
       start.position.x = sx; start.position.y = sy; start.position.z = sz;
       end.position.x = ex; end.position.y = ey; end.position.z = ez;
-      return backend.shapeSweep(shape, start, end);
+      // Cables rest on solid colliders only, as the native sphere sweeps do.
+      return backend.shapeSweep(shape, start, end, NO_TRIGGERS);
     },
     dispose() {},
   };
