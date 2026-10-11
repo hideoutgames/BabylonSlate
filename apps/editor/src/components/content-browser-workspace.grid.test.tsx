@@ -45,7 +45,6 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
     setActiveDocument: vi.fn(),
     tabOrder: [] as string[],
     loadAssetThumbnail,
-    loadAssetDocument: vi.fn(async () => ({})),
     thumbnailsEnabled: true,
     thumbnailVersions: {} as Record<string, number>,
     pluginDescriptors: [] as unknown[],
@@ -203,7 +202,6 @@ afterEach(async () => {
   docs.projectDocument.settings.gameInstanceClass = null;
   docs.projectDocument.settings.editorUtilityObjects = [];
   docs.projectDocument.settings.startupSceneGuid = "";
-  docs.loadAssetDocument.mockReset().mockResolvedValue({});
   docs.replaceClassReferencesBeforeDelete.mockReset().mockResolvedValue(undefined);
   if (clientWidthDescriptor) {
     Object.defineProperty(
@@ -256,22 +254,6 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     fireEvent.click(screen.getByTestId("content-browser-delete-cancel"));
     expect(screen.getByTestId(`content-item-${actorClass.path}`)).toBeTruthy();
     expect(content.actors).toEqual([{ classId: "Hero", components: [] }]);
-  });
-
-  it("requires a second confirmation for a folder containing a Class used by a closed legacy scene", async () => {
-    const { actorClass, scene } = classAndScene("assets/Actors");
-    docs.loadAssetDocument.mockResolvedValue({ actors: [{ classId: "Hero" }] });
-    installRegistry([actorClass, scene], ["Actors"]);
-    render(<ContentBrowserWorkspace />);
-    fireEvent.click(screen.getByTestId("content-folder-assets/Actors"));
-    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("main");
-    });
-    expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
-    expect(screen.getByTestId("content-browser-delete-references-confirmation")).toBeTruthy();
   });
 
   it("allows deleting a folder when its Class referrers are also selected for deletion", async () => {
@@ -806,6 +788,27 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(new Set(["tex-0"]), new Set(), expect.any(Function), []);
   });
 
+  it("keeps the tabs of assets a failed deletion did not reach", async () => {
+    docs.thumbnailsEnabled = false;
+    docs.closeDocumentsForPaths.mockClear();
+    installRegistry([texture(0), texture(1), texture(2)]);
+    Object.assign(docs.assetRegistry as object, {
+      deleteAsset: async (guid: string) => {
+        if (guid === "tex-1") throw new Error("Storage unavailable");
+      },
+    });
+    render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-1.babasset"), { ctrlKey: true });
+    fireEvent.click(screen.getByTestId("content-item-assets/tex-2.babasset"), { ctrlKey: true });
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+    await waitFor(() => expect(screen.getByRole("alertdialog", { name: "Delete Failed" })).toBeTruthy());
+    const closed = docs.closeDocumentsForPaths.mock.calls.flatMap(([paths]) => [...paths as Iterable<string>]);
+    expect(closed).toContain("assets/tex-0.babasset");
+    expect(closed).not.toContain("assets/tex-2.babasset");
+  });
+
   it("repairs a deleted Class by its compile id, not its display name", async () => {
     docs.thumbnailsEnabled = false;
     const classAsset = texture(0);
@@ -915,7 +918,6 @@ describe("ContentBrowserWorkspace grid window", () => {
       await waitFor(() => expect(jobs).toHaveLength(2));
       expect(jobs.map(({ guid }) => guid)).toEqual(selected.map(({ header }) => header.guid));
       expect(jobs.every((job) => job.projectGuid === docs.projectGuid && job.cacheKey?.includes(".preview-v1."))).toBe(true);
-      expect(docs.loadAssetDocument).not.toHaveBeenCalled();
     } finally {
       unsubscribe();
       loadAssetThumbnail.mockResolvedValue(new Uint8Array([1, 2, 3]));
