@@ -150,7 +150,7 @@ export function tilemapTileIdentity(
   }
   if (!chosen) return null;
   const localId = gid - chosen.firstGid + 1;
-  if (chosen.tileCount > 0 && localId > chosen.tileCount) return null;
+  if (localId > chosen.tileCount) return null;
   return { guid: chosen.guid, localId };
 }
 
@@ -192,19 +192,14 @@ export function reconcileTilemapTilesets(
   if (refs.length === 0) return map;
   const ordered = [...refs].sort((a, b) => a.firstGid - b.firstGid);
   // Pointer/selection redraws normally keep the same capacities. Scan painted
-  // cells only when a legacy reservation, atlas growth or overlap needs repair.
+  // cells only when atlas growth or overlap needs repair.
   if (ordered.every((ref, index) => {
     const atlas = knownTilesets.get(ref.guid);
-    return ref.tileCount > 0
-      && ref.tileCount >= (atlas ? atlasTileCount(atlas) : 0)
+    return ref.tileCount >= (atlas ? atlasTileCount(atlas) : 0)
       && ref.firstGid + ref.tileCount <= (ordered[index + 1]?.firstGid ?? Infinity);
   })) return map;
-  const highest = highestPaintedGid(map);
-  const nextRefs = new Map(ordered.map((ref, index) => {
-    const nextFirst = ordered[index + 1]?.firstGid ?? Math.max(ref.firstGid + 1, highest + 1);
-    return [ref.guid, { ...ref, tileCount: ref.tileCount || Math.max(1, nextFirst - ref.firstGid) }];
-  }));
-  let nextFree = highest + 1;
+  const nextRefs = new Map(ordered.map((ref) => [ref.guid, { ...ref }]));
+  let nextFree = highestPaintedGid(map) + 1;
   for (const ref of nextRefs.values()) nextFree = Math.max(nextFree, ref.firstGid + ref.tileCount);
   const unowned = new Set<number>();
   for (const layer of map.layers) {
@@ -268,9 +263,7 @@ export function removeTilemapTileset(
   const nextFirstGid = Math.min(
     ...map.tilesets.filter((ref) => ref.firstGid > firstGid).map((ref) => ref.firstGid),
   );
-  const endGid = removed.tileCount > 0
-    ? Math.min(nextFirstGid, firstGid + removed.tileCount)
-    : nextFirstGid;
+  const endGid = Math.min(nextFirstGid, firstGid + removed.tileCount);
   const layers = map.layers.map((layer) => ({
     ...layer,
     chunks: layer.chunks.flatMap((chunk) => {
@@ -287,7 +280,7 @@ function nextTilesetFirstGid(
 ): number {
   let next = highestPaintedGid(map) + 1;
   for (const ref of map.tilesets) {
-    next = Math.max(next, ref.firstGid + Math.max(1, ref.tileCount));
+    next = Math.max(next, ref.firstGid + ref.tileCount);
   }
   return next;
 }
@@ -325,7 +318,8 @@ function normalizeTilesetRefs(value: unknown): TilemapTilesetRef[] {
       refs.push({
         guid,
         firstGid: positiveInt(row.firstGid, 1),
-        tileCount: nonNegativeInt(row.tileCount, 0),
+        // Every saved range reserves at least one tile; the next edit grows it to the atlas.
+        tileCount: Math.max(1, positiveInt(row.tileCount, 1)),
       });
     }
   }
@@ -565,12 +559,6 @@ function stringOrNull(value: unknown): string | null {
 
 function positiveInt(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? Math.floor(value)
-    : fallback;
-}
-
-function nonNegativeInt(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? Math.floor(value)
     : fallback;
 }

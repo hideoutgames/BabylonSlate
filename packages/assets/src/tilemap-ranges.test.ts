@@ -83,43 +83,7 @@ describe("Tilemap Tileset reservations", () => {
     });
   });
 
-  it("bounds legacy ownership by saved ranges and preserves the last painted local ID", () => {
-    const map = mapWith([2, 12, 0, 0]);
-    map.tilesets.forEach((ref) => {
-      ref.tileCount = 0;
-    });
-    const next = reconcileTilemapTilesets(
-      map,
-      new Map([
-        ["a", atlas(4)],
-        ["b", atlas(1)],
-      ]),
-    );
-    expect(next.tilesets).toEqual([
-      { guid: "a", firstGid: 13, tileCount: 4 },
-      { guid: "b", firstGid: 3, tileCount: 10 },
-    ]);
-    expect(next.layers[0]!.chunks[0]!.tiles).toEqual([14, 12, 0, 0]);
-    expect(tilemapTileIdentity(next, 12)).toEqual({ guid: "b", localId: 10 });
-  });
-
-  it("allocates additions after unknown painted IDs and legacy atlas capacity", () => {
-    const map = normalizeTilemapPayload({
-      tilesets: [{ guid: "a", firstGid: 1 }],
-      chunkSize: 2,
-      layers: [{ chunks: [{ cx: 0, cy: 0, tiles: [4, 0, 0, 0] }] }],
-    });
-    const next = addTilemapTileset(
-      map,
-      "b",
-      atlas(2),
-      new Map([["a", atlas(8)]]),
-    );
-    expect(next.tilesets).toEqual([
-      { guid: "a", firstGid: 1, tileCount: 8 },
-      { guid: "b", firstGid: 9, tileCount: 2 },
-    ]);
-    expect(next.layers[0]!.chunks[0]!.tiles[0]).toBe(4);
+  it("allocates additions after unknown painted IDs", () => {
     expect(
       addTilemapTileset(mapWith([1, 2, 3, 20]), "c", atlas(2)).tilesets[2]!
         .firstGid,
