@@ -385,18 +385,24 @@ export function MaterialEditingProvider({
     readAssetChunk,
   ]);
 
+  // One lowering per document and function set feeds the cost class, texture
+  // keys and an instance's root parameters.
+  const lowering = useMemo(
+    () => (document ? lowerMaterialDocument(document, { functions }) : null),
+    [document, functions],
+  );
+
   const costClass = useMemo(() => {
-    if (!document) return "cheap" as const;
-    const lowered = lowerMaterialDocument(document, { functions });
-    if (!lowered.ok) return "expensive" as const;
-    return classifyMaterialCost(lowered.plan.cost, {
+    if (!document || !lowering) return "cheap" as const;
+    if (!lowering.ok) return "expensive" as const;
+    return classifyMaterialCost(lowering.plan.cost, {
       frameBudgetMs,
       domain: document.domain,
       observedCompileMs: previewState.compileSamplesMs,
     });
     // `compileSamplesMs` deliberately participates: measured timings refine
     // the policy as the session goes on.
-  }, [document, frameBudgetMs, functions, previewState.compileSamplesMs]);
+  }, [document, frameBudgetMs, lowering, previewState.compileSamplesMs]);
 
   const compileKey = useMemo(() => {
     if (!document) return null;
@@ -416,13 +422,11 @@ export function MaterialEditingProvider({
   }, [documentId]);
 
   const textureGuidsKey = useMemo(() => {
-    if (!document) return "";
-    const lowered = lowerMaterialDocument(document, { functions });
-    if (!lowered.ok) return "";
+    if (!lowering?.ok) return "";
     const overrideTextures = Object.values(instanceOverrides ?? {}).flatMap((value) =>
       value.kind === "texture" && value.textureAssetGuid ? [value.textureAssetGuid] : []);
-    return [...new Set([...lowered.plan.dependencies.textures, ...overrideTextures])].sort().join(",");
-  }, [document, functions, instanceOverrides]);
+    return [...new Set([...lowering.plan.dependencies.textures, ...overrideTextures])].sort().join(",");
+  }, [instanceOverrides, lowering]);
   const textureSourcesKey = useMemo(() => {
     void registryEpoch;
     return JSON.stringify((textureGuidsKey ? textureGuidsKey.split(",") : []).map((guid) => {
@@ -473,10 +477,7 @@ export function MaterialEditingProvider({
     };
   }, [assetRegistry, documentId, invalidatePreview, readAssetChunk, textureGuidsKey, textureSourcesKey]);
 
-  const rootLowering = useMemo(() => {
-    if (!isInstanceDocument || !document) return null;
-    return lowerMaterialDocument(document, { functions });
-  }, [document, functions, isInstanceDocument]);
+  const rootLowering = isInstanceDocument ? lowering : null;
   const rootParameters = useMemo(
     () => rootLowering?.ok ? materialParameterDefaults(rootLowering.plan) : null,
     [rootLowering],
