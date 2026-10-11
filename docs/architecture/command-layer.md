@@ -58,12 +58,12 @@ Dependencies are explicit constructor options: `DocumentService`, the `EditSessi
 
 | Owned by the Play content service | Stays in `DocumentProvider` |
 | --- | --- |
-| The 25 `collectPlay*` loaders (open tabs override saved files; `requiredGuids` limits reads) and `collectEditorUtilityScripts` | `loadAssetDocument`, `loadGraphDocument` and `readAssetChunk` (injected into the service) |
+| The 17 `collectPlay*` loaders the viewports, previews and Play compile use (open tabs override saved files and Font / Animation headers; `requiredGuids` limits reads) and `collectEditorUtilityScripts` | `loadAssetDocument`, `loadGraphDocument` and `readAssetChunk` (injected into the service) |
 | Class / Animation Graph compilation and the `GraphScriptCompileCache` (`clearCompileCache` on project open / close) | `lastCompiledSignature`, `playLoadedSignature`, `playPreviewBundles` / `playPreviewDiagnostics` state, `scriptsStale` and `graphsNeedCompile` |
 | Compile signatures: `graphSignature` (the `currentGraphSignature` memo, keyed on `GRAPH_SIGNATURE_KINDS` revisions), Compile on Save (`compileOpenGraphs`) and the signature a whole-project Play compile records | When Compile on Save runs |
 | `collectGraphTypeSchemas` (also used by rename / delete reference repair) | |
 
-Dependencies are explicit options: `DocumentService`, `ProjectService`, `readAssetChunk` and a `projectDocument` reader. React state is set through the injected `onPreviewScriptsCompiled(signature, bundles, diagnostics)`. Play source preparation (`play-asset-sources.ts`, including Complex Collision cooking) is unchanged and does not go through it. `play-content-service.test.ts` covers it without React.
+Dependencies are explicit options: `DocumentService`, `ProjectService`, `readAssetChunk` and a `projectDocument` reader. React state is set through the injected `onPreviewScriptsCompiled(signature, bundles, diagnostics)`. Play source preparation (`play-asset-sources.ts`, including Complex Collision cooking) builds Play's Animation Graph, behaviour-tree, data, particle, Scene and SceneLayer catalogs itself and does not go through it. `play-content-service.test.ts` covers it without React.
 
 ## Ownership
 
@@ -230,7 +230,7 @@ Chrome tabs, undo, and DockView hosts are three different lifetimes (engineplan 
 - Named constants (not Engine Settings): `DOCUMENT_IDLE_UNMOUNT_MS` = 120_000, `MAX_WARM_DOCUMENT_WORKSPACES` = 3.
 - Pause the idle clock while the app is backgrounded.
 - State Machine|Animation Object unmounts the **inactive mode** DockView immediately (no grace).
-- Overlay Play **does not pin** Scene tabs. Open Scene documents stay mounted while the tab is open (they count toward the warm cap). The project owns the Engine on a hidden constructor canvas (`data-testid="project-engine-canvas"`); the Scene viewport is a `registerView` client. Closing the Scene tab (or exclusive one-Scene-tab replace) unmounts that Scene immediately and releases that handle's resource-cache leases (`bindResourceCacheToHandle` dispose); it does not dispose the project Engine. Overlay Play / Prefab / Material reuse `ensureSharedEngine`. Preview Build is an iframe and does not use that Engine.
+- Overlay Play **does not pin** Scene tabs. Open Scene documents stay mounted while the tab is open (they count toward the warm cap). The project owns the Engine on a hidden constructor canvas (`data-testid="project-engine-canvas"`); the Scene viewport is a `registerView` client. Closing the Scene tab (or exclusive one-Scene-tab replace) unmounts that Scene immediately and releases that handle's resource-cache leases (`bindResourceCacheToHandle` dispose); it does not dispose the project Engine. Overlay Play / Prefab / Material reuse `ensureSharedEngine`. Preview Build is an iframe and does not use that Engine. Closing the Scene a Play, Simulation or Preview Build session started from, or opening another Scene (which replaces it), first stops that session through the document transition gate; the source is recorded when the session starts, so it does not follow the active tab. A session started from the project startup Scene is not tied to an open document.
 - Closing a tab still tears down immediately (Save / Discard / Cancel unchanged).
 
 ## Scene apply path

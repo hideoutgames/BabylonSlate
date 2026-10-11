@@ -89,7 +89,7 @@ import { PreviewSessionReport } from "../components/preview-session-report";
 import type { PlaySessionResult } from "../services/play-session";
 import { SimulationSession } from "../services/simulation-session";
 import { simulationSceneDocument, type SimulationViewport } from "../services/simulation-viewport";
-import { GameSessionOwner, type GameSessionState, type GameSessionTicket } from "../services/game-session-owner";
+import { GameSessionOwner, transitionClosesSessionSource, type GameSessionState, type GameSessionTicket } from "../services/game-session-owner";
 import { automatedSessionReportingHeld, publishPlaySessionClosed } from "../services/runtime-probes";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
 import {
@@ -251,6 +251,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [sessionOwner] = useState(() => new GameSessionOwner<PlaySessionResult>());
   const sessionState = useSyncExternalStore(sessionOwner.subscribe, sessionOwner.getSnapshot);
   const sessionTicketRef = useRef<GameSessionTicket | null>(null);
+  /** The open Scene document the current session was started from, if any. */
+  const sessionSourceDocumentRef = useRef<string | null>(null);
   const [playOpen, setPlayOpen] = useState(false);
   const simulationViewports = useRef(new Map<string, SimulationViewport>());
   const [simulationViewportRevision, setSimulationViewportRevision] = useState(0);
@@ -261,7 +263,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     sessionState.lifecycle === "stopping" || sessionState.quarantined;
   const [simulationAssetGuids, setSimulationAssetGuids] = useState<readonly string[] | undefined>();
   const [playSaveGame, setPlaySaveGame] = useState<import("@babylonslate/core").SaveGameConfiguration>();
-  const playingRef = useRef(false);
   const [preparing, setPreparing] = useState(false);
   const [playAwaitingMigration, setPlayAwaitingMigration] = useState(false);
   const [playResumeRequested, setPlayResumeRequested] = useState(false);
@@ -308,7 +309,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     options?: PlayOptions;
   } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const previewOpenRef = useRef(false);
   const initialPreviewTarget = useMemo(
     () => previewTargetFromSrc(playerPreviewSrc(0), window.location.href),
     [],
@@ -355,7 +355,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     const prepared = await acquireAssetSources([guid], options);
     const scene = prepared.game.scenes.get(guid);
     if (!scene) { prepared.release(); throw new Error(`Scene ${guid} could not be prepared.`); }
-    return { ...prepared, scene };
+    return { ...prepared, scene, audioReverb: prepared.game.audioReverbBytes.get(guid) ?? null };
   }, [acquireAssetSources]);
   const releaseInitialSources = useCallback(() => {
     const prepared = initialPlaySourceRef.current;
@@ -424,8 +424,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const previewRequestRef = useRef(0);
   const previewClosingRef = useRef(false);
   const previewDiagnosticsRef = useRef<SessionReportEntry[]>([]);
-  playingRef.current = playing;
-  previewOpenRef.current = previewOpen;
   const [playAnimGraphs, setPlayAnimGraphs] = useState<PlayAnimGraphEntry[]>(
     [],
   );
@@ -589,13 +587,14 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => registerBeforeTransition?.((transition) => {
     if (sessionOwner.canStart()) return true;
-    const sourceId = simulationRef.current?.baseline.id ?? openDocuments.find(document => document.ref.kind === "scene" && document.ref.path === playScene?.path)?.id;
-    if ((transition.kind === "close-document" || transition.kind === "replace-document") && transition.documentId !== sourceId) return true;
+    // Keyed to the session's own source: the resolved Play scene follows the active tab once boot sources are released.
+    const sourceId = simulationRef.current?.baseline.id ?? sessionSourceDocumentRef.current;
+    if (!transitionClosesSessionSource(transition, sourceId)) return true;
     return sessionOwner.stop().then(async result => {
       if (result) await result.released;
       return sessionOwner.canStart();
     }).catch(error => { appendLog(`Could not release the game session before changing documents: ${String(error)}`); return false; });
-  }), [registerBeforeTransition, sessionOwner, playScene?.path, openDocuments, appendLog]);
+  }), [registerBeforeTransition, sessionOwner, appendLog]);
   void simulationViewportRevision;
   const playPhysics = playScene
     ? playPhysicsFromSceneSettings(playScene.scene.settings)
@@ -604,7 +603,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   // Play requests read documents, dirty state and collectors as they are when
   // Play is pressed. Keeping that per-edit state out of the callbacks'
   // dependencies keeps the Play context value stable while documents change.
-  const playRequestInputs = { documents, openPlaySceneGuid, hasStartupScene };
+  const playRequestInputs = { documents, openPlaySceneGuid, openPlaySceneDocumentId: openPlayScene?.sceneAssetGuid ?? null, hasStartupScene };
   const playRequestInputsRef = useRef(playRequestInputs);
   useLayoutEffect(() => {
     playRequestInputsRef.current = playRequestInputs;
@@ -714,7 +713,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       incoming: engine,
       previous,
       owned: ownedEngineRef.current,
-      overlayPlaying: playingRef.current && !previewOpenRef.current,
     });
     engineRef.current = isUsableEngine(next) ? next : null;
     setSharedEngineGeneration((current) =>
@@ -994,6 +992,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         saveAll,
       },
       openPlaySceneGuid,
+      openPlaySceneDocumentId,
     } = playRequestInputsRef.current;
     const effectiveStartup = resolvePreviewStartupGuid({
       playFromScene,
@@ -1026,6 +1025,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     const ticket = sessionOwner.begin("preview");
     if (!ticket) return;
     sessionTicketRef.current = ticket;
+    sessionSourceDocumentRef.current = playFromScene ? openPlaySceneDocumentId : null;
     const requestId = ++previewRequestRef.current;
     const traceByteBudget = appSettings.traceByteBudget;
     const isCurrentRequest = () => previewRequestRef.current === requestId && sessionOwner.isCurrent(ticket);
@@ -1150,6 +1150,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         },
         hasStartupScene,
         openPlaySceneGuid,
+        openPlaySceneDocumentId,
       } = playRequestInputsRef.current;
       const simulationTarget = simulating ? simulationSceneDocument(openDocuments, activeDocumentId) : null;
       const simulationViewport = simulationTarget ? simulationViewports.current.get(simulationTarget.id) : undefined;
@@ -1196,6 +1197,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       const ticket = sessionOwner.begin(simulating ? "simulate" : "play");
       if (!ticket) return;
       sessionTicketRef.current = ticket;
+      sessionSourceDocumentRef.current = simulating ? simulationTarget?.id ?? null : playFromScene ? openPlaySceneDocumentId : null;
       pendingScriptsRef.current = null;
       let presentationRequested = false;
       if (!simulating) setSimulationAssetGuids(undefined);
@@ -1619,7 +1621,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             inputAssets={playInputAssets}
             dataAssets={playDataAssets}
             assetCatalog={playCatalog}
-            inputMappings={projectDocument?.settings.input}
             focusNavigation={projectDocument?.settings.focusNavigation}
             sortingLayers={projectDocument?.settings.twoD.sortingLayers}
             pixelsPerUnit={
@@ -1772,7 +1773,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             error={previewError}
             onClose={closePreview}
             registerBeforeStop={registerPreviewBeforeStop}
-            onLoad={sendPreviewPack}
             onTrace={(trace) => void openRecordedTrace(trace)}
             showStats={overlayStats}
             showConsole={overlayConsole}

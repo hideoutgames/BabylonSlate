@@ -46,7 +46,7 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `freecam` | yes | **yes** | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stolen; 2D pinch zooms ortho; gamepad still forwards (`help freecam` documents that split). Overlay Play shows a touch fly stick while on. Off / `changescene` / `possessCamera` restore. FPS look (drag right looks right). |
 | `lightsdebug on/off` | yes | **yes** | Independent default-off light diagnostics; detailed rows are collected only while enabled. |
 | `showfps` | yes | **yes** | Opens/collapses Stats HUD (`setShowFps`). Flag default is **on**. |
-| `stat unit` / `memory` / `draws` / `threads` | yes | **yes** | Opens Stats HUD and highlights that row. A bare group word (`stat`, `snapshot`) fails with its subcommand usage instead of `unknown command`. `threads` is main vs worker timings (fps vs script/physics), not OS threads. |
+| `stat unit` / `memory` / `draws` / `threads` | yes | **yes** | Opens Stats HUD and highlights that row. A bare group word (`stat`, `snapshot`) fails with its subcommand usage instead of `unknown command`. `threads` adds worker traffic, not OS threads: overlay Play shows bridge messages per second, and the packed player HUD shows live actors / snapshot capacity and tick count. |
 | `showcollision` / `showbounds` / `actorboundingbox` / `wireframe` | yes | **yes** | Play-scene overlays. Collision uses `listDebugColliders()` (boxes/spheres/circles/capsules/polylines/convex hulls, including body rotation of local offsets and polyline points). Overlay meshes sit in `RENDERING_GROUP.world` (depth-tested, not a group-0 underlay). Reuse by id when pose changes. Skip helper/debug meshes. `actorboundingbox` is an alias of `showbounds`. |
 | `shownav` / `shownavdebug` | yes | **yes** | Baked navmesh and NavMesh Blocker volumes in the world rendering group. A bake with no walkable triangles draws no navmesh fill. Blocking Volumes belong to physics. |
 | `debugphysics [on\|off]` | yes | **yes** | Alias of `showcollision`: actual simulation collider shapes, including cylinders, triangle meshes, planar capsules, and closed chains. Reuses meshes as bodies move. |
@@ -156,7 +156,7 @@ This is the missing “spectate without pausing” tool. It is not a Possess Cam
 | Command | Target |
 | --- | --- |
 | `showfps [on\|off]` | Open/collapse the Stats HUD (same as the Stats chrome button), not a second FPS widget. |
-| `stat unit` / `memory` / `draws` / `threads` | Ensure Stats HUD is open and highlight that row. `threads` means main vs worker timings (script/physics vs render), not OS threads. |
+| `stat unit` / `memory` / `draws` / `threads` | Ensure Stats HUD is open and highlight that row. `threads` means worker traffic (bridge messages per second in overlay Play; actors and ticks in the packed player), not OS threads. |
 | `wireframe [on\|off]` | Force wireframe on Play scene meshes (skip helper/debug lines). |
 | `showbounds [on\|off]` | AABB / selection-style bounds on spawned Play meshes. |
 | `actorboundingbox [on\|off]` | Same host as `showbounds` (`setShowBounds`). Keep `showbounds` as the existing alias. |

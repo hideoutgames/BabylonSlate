@@ -366,7 +366,8 @@ export function DebugConsole({
         <div className="relative flex min-h-0 flex-1 flex-col">
           <ScrollArea
             className="min-h-0 flex-1"
-            onScroll={(event) => {
+            // The inner viewport scrolls and scroll does not bubble; capture it here.
+            onScrollCapture={(event) => {
               const viewport = event.target as HTMLElement;
               followOutputRef.current =
                 viewport.scrollHeight -

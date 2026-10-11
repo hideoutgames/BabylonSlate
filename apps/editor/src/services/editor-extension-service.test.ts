@@ -164,8 +164,14 @@ describe("EditorExtensionService lifecycle", () => {
     expect(service.getSnapshot().diagnostics).toEqual([]);
   });
 
-  it("retries a transient activation failure when the module and settings have not changed", async () => {
+  it("retries a transient activation failure without restarting extensions that already started", async () => {
     const { project, service, messages } = await fixture();
+    await writeProjectExtension(project, "steady", enabledSettings("steady"), `
+      export function activate(api) {
+        api.log("Steady Started");
+        return () => api.log("Steady Stopped");
+      }
+    `);
     await writeProjectExtension(project, "tools", enabledSettings("tools"), `
       export async function activate(api) {
         await api.code.read("code/ready.ts");
@@ -177,6 +183,7 @@ describe("EditorExtensionService lifecycle", () => {
     expect(service.getSnapshot().commands).toEqual([]);
     expect(service.getSnapshot().diagnostics.length).toBeGreaterThan(0);
 
+    await service.refresh();
     await project.mkdir("code", true);
     await project.writeText("code/ready.ts", "export const ready = true;");
     await service.refresh();
@@ -184,7 +191,7 @@ describe("EditorExtensionService lifecycle", () => {
     expect(service.getSnapshot().commands).toMatchObject([{ extensionId: "tools", id: "run" }]);
     expect(service.getSnapshot().diagnostics).toEqual([]);
     await service.run("tools", "run", {});
-    expect(messages).toEqual(["Ready"]);
+    expect(messages).toEqual(["Steady Started", "Ready"]);
   });
 
   it("restores the installed module and its commands when replacement storage fails", async () => {

@@ -157,11 +157,6 @@ export function shouldForwardPlayEngineCommand(type: string): boolean {
   return isPlayEngineCommandType(type);
 }
 
-export function overlayLogForCommand(command: CommandMessage): string | null {
-  if (command.type === "playSound") return null;
-  return null;
-}
-
 export function applyPlayActiveScene(options: {
   handle: {
     loadScene: (
@@ -241,8 +236,12 @@ export function applyPlaySessionStep(target: PlaySessionStepTarget): boolean {
   }
   if (target.runtime) {
     target.runtime.resume();
-    target.runtime.tick();
-    target.runtime.pause();
+    // A throwing tick still returns to pause; Step never leaves the game running.
+    try {
+      target.runtime.tick();
+    } finally {
+      target.runtime.pause();
+    }
     return true;
   }
   return false;
@@ -380,7 +379,7 @@ export type PlaySourcePreparation = {
 };
 export type PlaySceneSourceLoader = (guid: string, options: {
   consumer: string; signal: AbortSignal;
-}) => Promise<PlaySourcePreparation & { scene: SerializedScene }>;
+}) => Promise<PlaySourcePreparation & { scene: SerializedScene; /** The Scene's baked reverb field, if any. */ audioReverb: Uint8Array | null }>;
 export type PlayAssetSourceLoader = (guids: string[], options: {
   consumer: string; signal: AbortSignal; onProgress?: (progress: number) => void;
   /** Orders this load's source reads against other queued work; default gameplay. */
@@ -610,7 +609,6 @@ export function startPlaySession(options: {
   dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
   /** Packaged authored assets the Asset Registry nodes query, snapshotted when Play starts. */
   assetCatalog?: import("@babylonslate/core").RuntimeAssetCatalogEntry[];
-  inputMappings?: import("@babylonslate/core").ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   /** Called when a session-fatal diagnostic (infinite loop) arrives. */
   onFatalDiagnostic?: () => void;
@@ -656,11 +654,16 @@ export function startPlaySession(options: {
       diagnosticClient.receive(await runtime.requestDiagnosticOperation(request));
     },
   });
+  // Declared before any runtime callback can read them.
+  let stopped = false;
+  let stopResult: PlaySessionResult | null = null;
   let gameInputMode: "game" | "edit" = "game";
   let inputTransition = 0;
   let inputTransitionPending = false;
   let editorInputSuppressed = false;
   let editorInputRoutingEnabled = false;
+  /** Capture routes exclusively once anything took input away; it must also hear the return. */
+  let inputExclusive = false;
   let acknowledgedPaused = false;
   let lastBoundaryId = 0;
   const requestedPauses = new Set<import("@babylonslate/bridge").SessionPauseReason>();
@@ -695,8 +698,12 @@ export function startPlaySession(options: {
   const suppressGameInput = () => {
     const suppressed = editorInputSuppressed || inputTransitionPending || gameInputMode === "edit" || acknowledgedPaused || requestedPauses.size > 0;
     const routed = options.mode === "simulate" || editorInputRoutingEnabled;
-    // Ordinary Play keeps shared routing until something actually takes input away.
-    if (routed || suppressed) input?.setSuppressed(suppressed);
+    // Ordinary Play keeps shared routing until something actually takes input
+    // away; from then on the exclusive capture is told when input returns.
+    if (input && (routed || suppressed || inputExclusive)) {
+      input.setSuppressed(suppressed);
+      inputExclusive = true;
+    }
     if (routed) handle.setGameInputEnabled(!suppressed);
     return suppressed;
   };
@@ -811,10 +818,8 @@ export function startPlaySession(options: {
         diagnostic.severity === "error" ? "error" : "warning",
       );
     },
-    onTouchAxis: (controlId, value) => {
-      if (options.mode === "simulate") input?.setTouchAxis(controlId, value);
-      else input?.ring.push({ kind: "touchAxis", controlId, value, tick: playInputStampTick(runtime?.getWorld().clock.tickIndex, lastWorkerTickIndex) });
-    },
+    // Virtual sticks share the capture's suppression and fresh-transition admission.
+    onTouchAxis: (controlId, value) => input?.setTouchAxis(controlId, value),
     onSceneLayerScroll: (event) => {
       if (options.mode === "simulate" && suppressGameInput()) return;
       const control = { type: "sceneLayerScroll" as const, ...event };
@@ -904,6 +909,8 @@ export function startPlaySession(options: {
   }) : Promise.resolve();
   void sessionSourcesReady.catch((error: unknown) => options.onLog?.(`Session sources: ${String(error)}`, "error"));
   const preparedScenes = new Map((options.scenes ?? []).map((entry) => [entry.guid, entry.scene]));
+  // Baked reverb follows its prepared Scene, so every later activation finds it.
+  const preparedSceneReverbs = new Map(options.audioReverbByScene ?? []);
   const sceneSourceOwners = new Map<string, number>();
   let nextSourceRequestId = 0;
   const sourceRequests = new Map<number, { resolve(): void; reject(error: Error): void }>();
@@ -1018,7 +1025,7 @@ export function startPlaySession(options: {
   const acquireScene: AcquireRuntimeScene | undefined = options.acquireSceneSources ? async (guid, request) => {
     publishAssetStates([guid], "loading");
     if (request.stream) streamSceneAssets.set(request.stream.actorGuid, { guid, loadId: request.stream.streamLoadId });
-    let prepared: PlaySourcePreparation & { scene: SerializedScene };
+    let prepared: Awaited<ReturnType<PlaySceneSourceLoader>>;
     let release: () => void;
     try {
       prepared = await options.acquireSceneSources!(guid, request);
@@ -1028,6 +1035,8 @@ export function startPlaySession(options: {
       throw error;
     }
     preparedScenes.set(guid, prepared.scene);
+    if (prepared.audioReverb) preparedSceneReverbs.set(guid, prepared.audioReverb);
+    else preparedSceneReverbs.delete(guid);
     let sceneScopes = sceneSourceScopes.get(guid);
     if (!sceneScopes) sceneSourceScopes.set(guid, sceneScopes = new Set());
     sceneScopes.add(prepared);
@@ -1041,7 +1050,10 @@ export function startPlaySession(options: {
       if (!sceneSourceScopes.get(guid)?.size) sceneSourceScopes.delete(guid);
       const remaining = (sceneSourceOwners.get(guid) ?? 1) - 1;
       if (remaining) sceneSourceOwners.set(guid, remaining);
-      else { sceneSourceOwners.delete(guid); preparedScenes.delete(guid); preparedAssetGuids.delete(guid); publishAssetStates([guid], "unloaded"); }
+      else {
+        sceneSourceOwners.delete(guid); preparedScenes.delete(guid); preparedSceneReverbs.delete(guid);
+        preparedAssetGuids.delete(guid); publishAssetStates([guid], "unloaded");
+      }
       release();
     } };
   } : undefined;
@@ -1107,6 +1119,7 @@ export function startPlaySession(options: {
     for (const guid of persistent) if (!scoped.has(guid)) initialSourceGuids.add(guid);
     if (initialSourcesReady) publishAssetStates([...initialSourceGuids], "ready");
     for (const guid of preparedScenes.keys()) if (!sceneSourceOwners.has(guid)) preparedScenes.delete(guid);
+    for (const guid of preparedSceneReverbs.keys()) if (!sceneSourceOwners.has(guid)) preparedSceneReverbs.delete(guid);
     for (const key of ["textureBytes", "modelBytes", "modelPayloads", "complexMeshes", "spritePayloads", "spriteAnimationPayloads",
       "tilemapPayloads", "tilesetPayloads", "waterPayloads", "fontFacetypeBytes", "fontMsdfJson", "fontMsdfPng",
       "fontCssStackByGuid", "fontFaceEntries", "materialDocuments", "materialFunctions", "audioLibrary", "particleLibrary",
@@ -1145,7 +1158,7 @@ export function startPlaySession(options: {
         boot: { guid: options.sceneAssetGuid, scene: options.scene },
         currentSceneGuid: hostSceneGuid,
         forceReload: receivedActiveScene,
-        audioReverbByScene: options.audioReverbByScene,
+        audioReverbByScene: preparedSceneReverbs,
       });
       if (receivedActiveScene && options.acquireSceneSources) releaseInitialSources();
       receivedActiveScene = true;
@@ -1296,15 +1309,20 @@ export function startPlaySession(options: {
       else runtime?.applyRuntimeMaterialEditResult(response);
     },
   });
-  const onCommand = (command: CommandMessage) => {
-    if (command.type === "simulationRetentionUnavailable") {
-      if (command.sessionGeneration === (options.sessionGeneration ?? 0)) options.onRetentionUnavailable?.(command.reason);
-      return;
+  // In-process, a completed Scene, layer or stream reaches readiness with the
+  // snapshot that shows it. When none can be copied yet, the next pumped
+  // snapshot delivers it, as the worker's scene snapshot delivery does.
+  let realizedAwaitingSnapshot: CommandMessage[] = [];
+  const deliverRealized = () => {
+    const realized = realizedAwaitingSnapshot;
+    realizedAwaitingSnapshot = [];
+    for (const command of realized) {
+      sceneReadiness.receive(command);
+      streamReadiness.receive(command);
     }
-    if (command.type === "simulationQuiesced") { acceptQuiesced(command); return; }
-    if (command.type === "simulationCaptureChunk" || command.type === "simulationCaptureResult") { captureClient.receive(command); return; }
-    if (captureFenceActive && shouldForwardPlayEngineCommand(command.type)) captureFenceChanged = true;
-    if (materialEditHost.receive(command)) return;
+  };
+  const onCommand = (command: CommandMessage) => {
+    // Diagnostics finish their final recording while the session stops.
     if (command.type === "diagnosticOperationResult") { diagnosticClient.receive(command); return; }
     if (command.type === "performanceTicks") {
       if (command.sessionGeneration === (options.sessionGeneration ?? 0)) performanceDiagnostics?.receiveTicks(command);
@@ -1314,6 +1332,21 @@ export function startPlaySession(options: {
       if (command.sessionGeneration === (options.sessionGeneration ?? 0)) performanceDiagnostics?.runtimeStopped(command);
       return;
     }
+    // Stop released the presentation, preparation and every correlated client.
+    // Output that was already queued, or the stop phase's own, only reaches the log.
+    if (stopped) {
+      if (command.type === "log") options.onLog?.(command.message, command.severity ?? "log");
+      else if (command.type === "diagnostic") options.onLog?.(command.message, command.severity ?? "error");
+      return;
+    }
+    if (command.type === "simulationRetentionUnavailable") {
+      if (command.sessionGeneration === (options.sessionGeneration ?? 0)) options.onRetentionUnavailable?.(command.reason);
+      return;
+    }
+    if (command.type === "simulationQuiesced") { acceptQuiesced(command); return; }
+    if (command.type === "simulationCaptureChunk" || command.type === "simulationCaptureResult") { captureClient.receive(command); return; }
+    if (captureFenceActive && shouldForwardPlayEngineCommand(command.type)) captureFenceChanged = true;
+    if (materialEditHost.receive(command)) return;
     if (command.type === "sessionBoundaryResult") { boundaryClient.receive(command); return; }
     if (command.type === "runtimeInspectorResult") {
       if (command.success && command.payload?.kind === "mutation" && acknowledgedPaused) handle.requestPausedRedraw();
@@ -1347,8 +1380,11 @@ export function startPlaySession(options: {
       handle.applyCommand(command);
     }
     if ((command.type === "sceneRealized" || command.type === "sceneLayerRealized" || command.type === "sceneStreamRealized") && runtime) {
-      if (!runtime.copySnapshot(snapBuf)) throw new Error("Completed Scene snapshot is unavailable.");
+      realizedAwaitingSnapshot.push(command);
+      if (!runtime.copySnapshot(snapBuf)) return;
       handle.pushSnapshot(snapBuf);
+      deliverRealized();
+      return;
     }
     sceneReadiness.receive(command);
     streamReadiness.receive(command);
@@ -1417,8 +1453,6 @@ export function startPlaySession(options: {
       options.onBehaviourTreeDebug?.(command.enabled);
     if (command.type === "behaviourTreeSnapshot")
       options.onBehaviourTreeSnapshot?.(command.trees);
-    const overlayLog = overlayLogForCommand(command);
-    if (overlayLog) options.onLog?.(overlayLog, "log");
   };
 
   const scripts = options.scripts ?? [];
@@ -1455,7 +1489,6 @@ export function startPlaySession(options: {
     inputAssets: options.inputAssets,
     dataAssets: options.dataAssets,
     assetCatalog: options.assetCatalog,
-    inputMappings: options.inputMappings,
     focusNavigation: options.focusNavigation,
     pixelsPerUnit: options.pixelsPerUnit,
     texturePixelSizes: Object.fromEntries(options.texturePixelSizes ?? []),
@@ -1475,6 +1508,7 @@ export function startPlaySession(options: {
     runtimeMode = "worker";
     worker.onCommand((cmd) => onCommand(cmd));
     worker.onSnapshot((buffer) => {
+      if (stopped) return;
       lastWorkerTickIndex = applyPlaySnapshotTick(lastWorkerTickIndex, buffer);
       handle.pushSnapshot(buffer);
     });
@@ -1502,6 +1536,8 @@ export function startPlaySession(options: {
       worker.postControl(control);
     }
   } catch (err) {
+    // A worker that started but could not take its boot controls must not keep running beside the fallback.
+    worker?.terminate();
     worker = null;
     runtimeMode = "in-process";
     runtime = createRuntimeFromLoad(loadControl, (command) =>
@@ -1596,7 +1632,8 @@ export function startPlaySession(options: {
   if (options.mode === "simulate") input.setSuppressed(false);
 
   const unlock = () => {
-    void handle.unlockAudio();
+    void handle.unlockAudio().catch((error: unknown) =>
+      options.onLog?.(`Audio unlock: ${error instanceof Error ? error.message : String(error)}`, "warning"));
   };
   canvas.addEventListener("pointerdown", unlock);
   canvas.addEventListener("touchstart", unlock);
@@ -1608,8 +1645,6 @@ export function startPlaySession(options: {
   let sessionDiagnostics: SessionReportEntry[] = [];
   let droppedDiagnostics = 0;
   let lastObservedMoveX: number | null = null;
-  let stopped = false;
-  let stopResult: PlaySessionResult | null = null;
 
   const pump = () => {
     if (stopped) return;
@@ -1636,6 +1671,7 @@ export function startPlaySession(options: {
           snapBuf,
         );
         handle.pushSnapshot(snapBuf);
+        deliverRealized();
       }
     }
     // Worker pumps itself; host only feeds input + applies snapshots via onSnapshot.
@@ -1731,24 +1767,38 @@ export function startPlaySession(options: {
       editorInputSuppressed = suppressed;
       input.neutralize();
       suppressGameInput();
-      const result = await boundaryClient.request({ kind: "resetInput" });
-      if (!result.success) throw new Error(result.reason ?? "Editor input ownership could not be reset");
-      if (transition !== inputTransition) return;
-      inputTransitionPending = false;
-      suppressGameInput();
+      try {
+        const result = await boundaryClient.request({ kind: "resetInput" });
+        if (!result.success) throw new Error(result.reason ?? "Editor input ownership could not be reset");
+      } finally {
+        // A failed reset still ends this transition; the open surface keeps its own hold.
+        if (transition === inputTransition && !stopped) {
+          inputTransitionPending = false;
+          suppressGameInput();
+        }
+      }
     },
     setInputMode: async (mode) => {
       const transition = ++inputTransition;
+      const previous = gameInputMode;
       inputTransitionPending = true;
       gameInputMode = mode;
       input.neutralize();
       suppressGameInput();
-      const result = await boundaryClient.request({ kind: "resetInput" });
-      if (!result.success) throw new Error(result.reason ?? "Game input could not be reset");
-      if (transition !== inputTransition) return;
-      inputTransitionPending = false;
-      suppressGameInput();
-      handle.setSimulationEditMode(mode === "edit");
+      let reset = false;
+      try {
+        const result = await boundaryClient.request({ kind: "resetInput" });
+        if (!result.success) throw new Error(result.reason ?? "Game input could not be reset");
+        reset = true;
+      } finally {
+        if (transition === inputTransition && !stopped) {
+          // A failed reset keeps the previous mode instead of half-applying the new one.
+          if (!reset) gameInputMode = previous;
+          inputTransitionPending = false;
+          suppressGameInput();
+          if (reset) handle.setSimulationEditMode(mode === "edit");
+        }
+      }
     },
     requestPausedRedraw: () => handle.requestPausedRedraw(),
     lastMoveX: () => {
@@ -1865,6 +1915,7 @@ export function startPlaySession(options: {
       sceneSources?.dispose();
       for (const preloadId of preloads.keys()) releasePreload(preloadId);
       preparedScenes.clear();
+      preparedSceneReverbs.clear();
       sceneSourceOwners.clear();
       streamSceneAssets.clear();
       sceneSourceScopes.clear();

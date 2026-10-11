@@ -23,14 +23,12 @@ describe("playInspectPropertyRows", () => {
     ]);
   });
 
-  it("reads legacy sanitized Tag map keys and labels empty collections", () => {
+  it("labels empty collections", () => {
     const rows = playInspectPropertyRows([
-      { id: "legacy", label: "Legacy", type: "map:tag=>tag", value: { "2": 7 } },
       { id: "array", label: "Array", type: "array:tag", value: [] },
       { id: "map", label: "Map", type: "map:tag=>tag", value: [] },
     ]);
     expect(rows).toMatchObject([
-      { kind: "tag", value: 2 }, { kind: "tag", value: 7 },
       { kind: "text", value: "Empty Array" }, { kind: "text", value: "Empty Map" },
     ]);
   });

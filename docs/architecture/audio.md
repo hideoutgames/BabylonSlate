@@ -8,7 +8,7 @@ There is **no second sound type**. Imported `Audio` stays kind `audio` with a `s
 
 - **Import** a WAV / MP3 / OGG. New Asset does not create sounds (the Audio group says so). Imported Audio opens a DockView document (`audio`: Preview / Details / Clips).
 - **Place Actors → Project** tile for that Audio. That binds `audioAssetGuid` with Play On Start. The engine **Audio** speaker stays empty until an asset is picked.
-- **Play**, then **click the game view** to enable audio. Overlay Play and the bundled-debugger player show **Click the game view to enable audio** while play-on-start is queued and AudioV2 is still locked. Do not auto-unlock at load. Overlay **Pause** pauses live AudioV2 voices (it does not stop or dispose them). Console `pause` stays sim-only.
+- **Play**, then **click the game view** to enable audio. Overlay Play and the bundled-debugger player show **Click the game view to enable audio** while play-on-start is queued and AudioV2 is still locked. Do not auto-unlock at load. Overlay **Pause** pauses live AudioV2 voices (it does not stop or dispose them). Console `pause` / `resume` reach the same completed pause boundary, so they pause and resume those voices too.
 - Mixer, channel, and attenuation are optional. Playback is `assetVolume × playCallVolume` with those refs at None.
 
 Also:
@@ -119,6 +119,8 @@ If a geometry edit reaches Save before its matching bake, Save removes the older
 Export flushes bakes against the persisted Scene snapshots it packages, so an open dirty tab cannot substitute different geometry. Material-only changes reuse cached bake bytes and associate them with the new authored snapshot without repeating the geometry bake. Manual navmesh writes share the Scene write queue and preserve the other derived chunks.
 
 Both Save and manual navmesh baking reconcile reverb with the Scene geometry they write: they attach a matching staged result or remove probes belonging to the previous geometry. A later export can safely join an already completed bake.
+
+Overlay Play applies the activated Scene's baked field on every scene change. A Scene prepared on demand carries its own `audioReverb` chunk, and the field is dropped with that Scene's last owner, so a later Scene, or a return to the startup Scene, keeps its reverb.
 
 Versioned Scene extra chunk `audioReverb` (magic `BSAR`, same extra-chunk pattern as `navmesh`). **v2** appends a bit-packed occupancy bitmap after the probes (~1 KiB at 24×24×16); v1 chunks omit occupancy and stay unoccluded until Save rebakes. Stay under 64 KiB. Save/export await a current result for **every** Scene asset in the Play library (open or closed), not only open tabs, or write a marked dry fallback (`audio.reverb_bake_failed`); they never hang. Export packs a sidecar `type: "AudioReverb"`, guid `audioReverb:<sceneGuid>`. Packed Audio is a **BSAU** envelope (JSON payload + source bytes, or JSON + a length-prefixed clip table).
 

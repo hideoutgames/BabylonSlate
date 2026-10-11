@@ -158,6 +158,33 @@ export function isBlockingEditorOverlayOpen(
   return false;
 }
 
+function containsOverlay(nodes: NodeList): boolean {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    if (node instanceof Element && (node.matches(BLOCKING_OVERLAY_SELECTOR) || node.querySelector(BLOCKING_OVERLAY_SELECTOR))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * True when a mutation batch can open, close, add or remove a blocking
+ * overlay. Other editor DOM churn skips the document-wide overlay query.
+ */
+function mutationsMayAffectOverlays(records: readonly MutationRecord[]): boolean {
+  for (const record of records) {
+    if (record.type === "attributes") {
+      // A data-slot change can turn an element into, or out of, an overlay.
+      if (record.attributeName === "data-slot") return true;
+      if (record.target instanceof Element && record.target.matches(BLOCKING_OVERLAY_SELECTOR)) return true;
+    } else if (containsOverlay(record.addedNodes) || containsOverlay(record.removedNodes)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function overlayIsOpen(el: Element): boolean {
   if (el.hasAttribute("data-closed") || el.hasAttribute("hidden")) {
     return false;
@@ -249,12 +276,14 @@ export function attachViewportRenderGate(options: {
     intersection.observe(canvas);
   }
 
-  const mutation = new MutationObserver(() => applyObstructed());
+  const mutation = new MutationObserver((records) => {
+    if (mutationsMayAffectOverlays(records)) applyObstructed();
+  });
   mutation.observe(document.body, {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ["data-open", "data-closed", "hidden", "data-slot"],
+    attributeFilter: ["data-open", "data-closed", "hidden", "aria-hidden", "data-slot"],
   });
 
   let settingsVersion = -1;

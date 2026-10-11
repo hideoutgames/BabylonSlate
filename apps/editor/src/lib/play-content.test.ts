@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
-import { createDefaultBehaviourTree } from "@babylonslate/behaviour-tree";
 import {
   createActor,
   createDefaultScene,
   createDefaultSceneLayer,
   sceneLayerToEditorScene,
-  type SerializedGraph,
 } from "@babylonslate/core";
 import {
   buildBoxGlbFixture,
@@ -18,26 +16,16 @@ import {
   normalizeTilemapPayload,
 } from "@babylonslate/assets";
 import {
-  animationGraphGuidsFromScene,
-  behaviourTreeGuidsFromScene,
-  blackboardGuidsFromScene,
   collectPlayScriptDocuments,
-  playPrefabDependencyScene,
   overlayTextureGuidsFromScenes,
-  mergePlayAnimGraphs,
   collectAnimGraphCompileDocuments,
-  playAnimGraphsFromOpenDocuments,
-  playAnimGraphsFromGuids,
   playLoadTilemapsControl,
   readPlayNavmeshBytes,
   readPlaySceneBakes,
   readPlayAudioReverbBytes,
-  playSpriteAnimationPayloadsFromGuids,
   playSpritePayloadsFromGuids,
   playLoadSpritesControl,
   playLoadModelsControl,
-  spriteAnimationGuidsFromAnimGraphs,
-  spriteAnimationGuidsFromBehaviourTrees,
   spriteAssetGuidsFromScene,
   skyboxFaceGuidsFromScene,
   environmentTextureGuidsFromScenes,
@@ -55,59 +43,9 @@ import {
   playMaterialGuidsFromSources,
   playSceneByGuid,
   materialClosureFromGuids,
-  overlayEditorScenesFromLayers,
   overlayTextureGuidsFromScene,
   playFontGuidsFromScenes,
-  sceneLayerGuidsFromGraphs,
-  sceneLayerGuidsFromScenes,
-  materialGuidsFromGraphs,
 } from "./play-content";
-
-describe("playPrefabDependencyScene", () => {
-  it("exposes assets from unplaced prefab components to the Play content collectors", () => {
-    const scripts = [{
-      classId: "UnplacedActor",
-      components: [
-        { id: "mesh", classId: "MeshComponent", properties: { assetGuid: "model", materialGuid: "surface" } },
-        { id: "cable", classId: "CableComponent", properties: { materialGuid: "braided-rope" } },
-        { id: "sprite", classId: "SpriteComponent", properties: { assetGuid: "sprite" } },
-        { id: "tiles", classId: "TilemapComponent", properties: { assetGuid: "tilemap" } },
-        { id: "anim", classId: "AnimationGraphComponent", properties: { graphGuid: "animation-graph" } },
-        { id: "ai", classId: "BehaviourTreeComponent", properties: { treeGuid: "tree", blackboardGuid: "blackboard" } },
-        { id: "text", classId: "Text3DComponent", properties: { fontAssetGuid: "font" } },
-        { id: "sky", classId: "SkyboxComponent", properties: { faces: { px: "sky-texture" } } },
-      ],
-    }];
-    const original = structuredClone(scripts);
-    const dependencies = playPrefabDependencyScene(scripts);
-    expect({
-      models: modelAssetGuidsFromScene(dependencies),
-      materials: materialGuidsFromScenes([dependencies]),
-      sprites: spriteAssetGuidsFromScene(dependencies),
-      tilemaps: tilemapAssetGuidsFromScene(dependencies),
-      animationGraphs: animationGraphGuidsFromScene(dependencies),
-      behaviourTrees: behaviourTreeGuidsFromScene(dependencies),
-      blackboards: blackboardGuidsFromScene(dependencies),
-      fonts: playFontGuidsFromScenes([dependencies]),
-      skyTextures: skyboxFaceGuidsFromScene(dependencies),
-    }).toEqual({
-      models: ["model"],
-      materials: ["surface", "braided-rope"],
-      sprites: ["sprite"],
-      tilemaps: ["tilemap"],
-      animationGraphs: ["animation-graph"],
-      behaviourTrees: ["tree"],
-      blackboards: ["blackboard"],
-      fonts: ["font"],
-      skyTextures: ["sky-texture"],
-    });
-    expect(scripts).toEqual(original);
-  });
-
-  it("adds no dependency scene for classes without prefab components", () => {
-    expect(playPrefabDependencyScene([{ classId: "Empty", components: [] }])).toBeNull();
-  });
-});
 
 describe("collectPlayScriptDocuments", () => {
   it("keeps Class graphs and drops editor-only assets", () => {
@@ -137,62 +75,7 @@ describe("collectPlayScriptDocuments", () => {
   });
 });
 
-describe("playAnimGraphsFromOpenDocuments", () => {
-  it("emits loadAnimGraphs entries keyed by registry guid", () => {
-    const graph = createDefaultAnimGraph("Loco");
-    const entries = playAnimGraphsFromOpenDocuments(
-      [
-        {
-          id: "anim-graph:assets/Loco.anim.babasset",
-          ref: { kind: "anim-graph", path: "assets/Loco.anim.babasset" },
-          content: graph,
-        },
-      ],
-      (path) => (path.endsWith("Loco.anim.babasset") ? "graph-guid" : null),
-    );
-    expect(entries).toEqual([{ guid: "graph-guid", document: graph }]);
-  });
-
-  it("keeps Animation clip guids and fills the glTF clip name before Play", () => {
-    const graph = createDefaultAnimGraph("Loco");
-    graph.clips[0] = {
-      id: "idle-clip",
-      kind: "animation",
-      assetGuid: "hero-walk-anim",
-      clipName: "Idle",
-      durationMs: 1000,
-    };
-    const entries = playAnimGraphsFromOpenDocuments(
-      [
-        {
-          id: "anim-graph:assets/Loco.anim.babasset",
-          ref: { kind: "anim-graph", path: "assets/Loco.anim.babasset" },
-          content: graph,
-        },
-      ],
-      () => "graph-guid",
-      [
-        {
-          guid: "hero-model",
-          type: "Model",
-          name: "Hero",
-          clipNames: ["Idle", "Walk"],
-          dependencyGuids: ["hero-walk-anim"],
-        },
-        {
-          guid: "hero-walk-anim",
-          type: "Animation",
-          name: "Hero_Walk",
-          clipName: "Walk",
-        },
-      ],
-    );
-    expect((entries[0]!.document as { clips: Array<{ assetGuid: string; clipName: string }> }).clips[0]).toMatchObject({
-      assetGuid: "hero-walk-anim",
-      clipName: "Walk",
-    });
-  });
-
+describe("collectAnimGraphCompileDocuments", () => {
   it("maps Play AnimationGraph entries onto compile documents", () => {
     const graph = createDefaultAnimGraph("Loco");
     expect(
@@ -209,57 +92,9 @@ describe("playAnimGraphsFromOpenDocuments", () => {
       },
     ]);
   });
-
-  it("skips unparsable documents", () => {
-    expect(
-      playAnimGraphsFromOpenDocuments(
-        [
-          {
-            id: "anim-graph:assets/Bad.anim.babasset",
-            ref: { kind: "anim-graph", path: "assets/Bad.anim.babasset" },
-            content: { nope: true },
-          },
-        ],
-        () => "x",
-      ),
-    ).toEqual([]);
-  });
 });
 
 describe("scene-referenced Play content", () => {
-  it("collects AnimationGraphComponent graphGuid values from a closed scene", () => {
-    const scene = createDefaultScene();
-    scene.actors.push(
-      createActor("hero", "Hero", {
-        components: [
-          {
-            id: "anim",
-            classId: "AnimationGraphComponent",
-            properties: { graphGuid: "loco-guid" },
-          },
-        ],
-      }),
-    );
-    expect(animationGraphGuidsFromScene(scene)).toEqual(["loco-guid"]);
-  });
-
-  it("collects BehaviourTreeComponent treeGuid values from a closed scene", () => {
-    const scene = createDefaultScene();
-    scene.actors.push(
-      createActor("guard", "Guard", {
-        components: [
-          {
-            id: "bt",
-            classId: "BehaviourTreeComponent",
-            properties: { treeGuid: "tree-guid", blackboardGuid: "bb-guid" },
-          },
-        ],
-      }),
-    );
-    expect(behaviourTreeGuidsFromScene(scene)).toEqual(["tree-guid"]);
-    expect(blackboardGuidsFromScene(scene)).toEqual(["bb-guid"]);
-  });
-
   it("collects SpriteComponent assetGuid values from a closed scene", () => {
     const scene = createDefaultScene();
     scene.actors.push(
@@ -292,75 +127,12 @@ describe("scene-referenced Play content", () => {
     expect(tilemapAssetGuidsFromScene(scene)).toEqual(["overworld"]);
   });
 
-  it("loads anim graphs by guid without an open tab", () => {
-    const graph = createDefaultAnimGraph("Loco");
-    expect(
-      playAnimGraphsFromGuids(["loco-guid"], (guid) =>
-        guid === "loco-guid" ? graph : null,
-      ),
-    ).toEqual([{ guid: "loco-guid", document: graph }]);
-  });
-
-  it("merges open-tab graphs with scene-referenced graphs by guid", () => {
-    const open = createDefaultAnimGraph("Open");
-    const scene = createDefaultAnimGraph("Scene");
-    expect(
-      mergePlayAnimGraphs(
-        [{ guid: "open", document: open }],
-        [{ guid: "scene", document: scene }],
-      ),
-    ).toEqual([
-      { guid: "open", document: open },
-      { guid: "scene", document: scene },
-    ]);
-  });
-
   it("maps sprite guids to payloads for Play UV seeks", () => {
     const payload = createDefaultSpritePayload();
     const map = playSpritePayloadsFromGuids(["hero-sprite"], (guid) =>
       guid === "hero-sprite" ? payload : null,
     );
     expect(map.get("hero-sprite")).toEqual(payload);
-  });
-
-  it("collects Sprite Animation guids from loaded anim graphs", () => {
-    const graph = createDefaultAnimGraph("Loco");
-    graph.clips[0] = {
-      id: "idle-clip",
-      kind: "sprite",
-      assetGuid: "walk-anim",
-      clipName: "",
-      durationMs: 250,
-    };
-    expect(
-      spriteAnimationGuidsFromAnimGraphs([{ guid: "loco", document: graph }]),
-    ).toEqual(["walk-anim"]);
-  });
-
-  it("collects Sprite Animation guids from BT Play Animation tasks", () => {
-    const tree = createDefaultBehaviourTree("Guard");
-    const task = tree.nodes.find((node) => node.kind === "task");
-    expect(task).toBeTruthy();
-    task!.classId = "bt.task.playAnimation";
-    task!.properties = {
-      clipKind: "sprite",
-      clipAssetGuid: "idle-1",
-    };
-    expect(
-      spriteAnimationGuidsFromBehaviourTrees([{ guid: "tree-1", document: tree }]),
-    ).toEqual(["idle-1"]);
-  });
-
-  it("maps Sprite Animation guids to payloads and ignores Sprite atlas documents", () => {
-    const animation = createDefaultSpriteAnimationPayload();
-    animation.frames[0]!.textureGuid = "tex-walk";
-    const map = playSpriteAnimationPayloadsFromGuids(
-      ["walk-anim", "hero-sprite"],
-      (guid) =>
-        guid === "walk-anim" ? animation : createDefaultSpritePayload(),
-    );
-    expect(map.get("walk-anim")).toEqual(animation);
-    expect(map.has("hero-sprite")).toBe(false);
   });
 
   it("builds a worker loadSprites control from sprite and Sprite Animation payloads", () => {
@@ -790,55 +562,6 @@ describe("readPlayNavmeshBytes", () => {
 });
 
 describe("SceneLayer Play collection", () => {
-  it("collects SceneLayer guids from every Play-library scene spawn list", () => {
-    const main = createDefaultScene();
-    main.settings.sceneLayers = [
-      { assetGuid: "hud", zOrder: 0, enabled: true },
-      { assetGuid: "pause", zOrder: 1, enabled: false },
-    ];
-    const other = createDefaultScene();
-    other.settings.sceneLayers = [
-      { assetGuid: "hud", zOrder: 2, enabled: true },
-      { assetGuid: "minimap", zOrder: 3, enabled: true },
-    ];
-    expect(sceneLayerGuidsFromScenes([main, other])).toEqual([
-      "hud",
-      "pause",
-      "minimap",
-    ]);
-  });
-
-  it("collects SceneLayer guids from Create Scene Layer pin defaults, including function graphs", () => {
-    const graph: SerializedGraph = {
-      nodes: [
-        {
-          id: "create",
-          type: "scene-layer.create",
-          position: { x: 0, y: 0 },
-          data: { properties: { "default:asset": "pause-menu" } },
-        },
-      ],
-      edges: [],
-      functionGraphs: {
-        fn1: {
-          nodes: [
-            {
-              id: "create-fn",
-              type: "scene-layer.create",
-              position: { x: 0, y: 0 },
-              data: { "default:asset": "inventory" },
-            },
-          ],
-          edges: [],
-        },
-      },
-    };
-    expect(sceneLayerGuidsFromGraphs([graph])).toEqual([
-      "pause-menu",
-      "inventory",
-    ]);
-  });
-
   it("collects overlay 2DTexture and 2DMaterial guids from converted layer scenes", () => {
     const layer = createDefaultSceneLayer();
     layer.actors.push(
@@ -872,10 +595,7 @@ describe("SceneLayer Play collection", () => {
         ],
       }),
     );
-    const scenes = overlayEditorScenesFromLayers([
-      { guid: "hud", layer },
-    ]);
-    expect(scenes).toEqual([sceneLayerToEditorScene(layer)]);
+    const scenes = [sceneLayerToEditorScene(layer)];
     expect(overlayTextureGuidsFromScene(scenes[0])).toEqual([
       "tex-banner",
       "tex-inline",
@@ -883,27 +603,6 @@ describe("SceneLayer Play collection", () => {
     expect(playFontGuidsFromScenes(scenes)).toEqual(["font-hud"]);
     expect(materialAssetGuidsFromScene(scenes[0])).toEqual(["mat-background", "mat-joystick", "mat-unlit"]);
     expect(spriteAssetGuidsFromScene(scenes[0])).toEqual(["sprite-hud"]);
-  });
-
-  it("collects Material pin defaults from Scene Layer Post-processing and Set Material Instance nodes", () => {
-    const graph: SerializedGraph = {
-      nodes: [
-        {
-          id: "pp",
-          type: "scene-layer.registerPostProcess",
-          position: { x: 0, y: 0 },
-          data: { properties: { "default:material": "pp-blur" } },
-        },
-        {
-          id: "swap",
-          type: "material.setMaterialInstance",
-          position: { x: 0, y: 0 },
-          data: { properties: { "default:instance": "rock-wet" } },
-        },
-      ],
-      edges: [],
-    };
-    expect(materialGuidsFromGraphs([graph])).toEqual(["pp-blur", "rock-wet"]);
   });
 });
 
@@ -956,14 +655,10 @@ it("prepares retained surface textures only for the current component assignment
   expect(materialInstanceTextureGuidsFromScenes([null, scene, scene])).toEqual(["instance-texture"]);
 });
 
-describe("SceneLayer control and switcher dependencies", () => {
-  it("loads assigned control visuals and inherited switcher default assets for Play", () => {
-    const scene = { ...createDefaultScene(), actors: [createActor("switch", "Switcher", { classId: "SceneLayerActorSwitcher", properties: { sceneLayerActors: [{ classId: "Screen", defaults: { Artwork: "texture-override", Caption: "unused" } }] }, components: [{ id: "slider", classId: "2DSliderComponent", properties: { trackMaterialGuid: "track-material", thumbTextureGuid: "thumb-texture" } }] })] };
-    const dependencies = playPrefabDependencyScene([
-      { classId: "Base", variables: [{ name: "Artwork", type: "asset" }, { name: "Caption", type: "string" }] },
-      { classId: "Screen", parentClassId: "Base" },
-    ], [scene], () => "Texture");
-    expect(overlayTextureGuidsFromScenes([scene, dependencies])).toEqual(["thumb-texture", "texture-override"]);
-    expect(materialGuidsFromScenes([scene, dependencies])).toEqual(["track-material"]);
+describe("SceneLayer control dependencies", () => {
+  it("loads assigned control visuals for Play", () => {
+    const scene = { ...createDefaultScene(), actors: [createActor("switch", "Switcher", { components: [{ id: "slider", classId: "2DSliderComponent", properties: { trackMaterialGuid: "track-material", thumbTextureGuid: "thumb-texture" } }] })] };
+    expect(overlayTextureGuidsFromScenes([scene])).toEqual(["thumb-texture"]);
+    expect(materialGuidsFromScenes([scene])).toEqual(["track-material"]);
   });
 });

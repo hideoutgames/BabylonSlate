@@ -30,6 +30,8 @@ export class EditorExtensionService {
   private listeners = new Set<() => void>();
   private state: ExtensionSnapshot = { entries: [], commands: [], diagnostics: [] };
   private fingerprint = "";
+  /** Extensions active in the current host, which the fingerprint describes. */
+  private started = new Set<string>();
   private mutation: Promise<unknown> = Promise.resolve();
   private writeGuard: (path: string) => void = () => {};
   private readonly services: EditorExtensionServices;
@@ -97,6 +99,7 @@ export class EditorExtensionService {
     }
     this.cleanupDiagnostics = this.cleanupDiagnostics.slice(-50);
     this.host = this.createHost();
+    this.started = new Set();
   }
   private storageFor(entry: ExtensionDescriptor): ProjectStorage {
     const storage = entry.source === "engine" ? this.engineStorage : this.storage;
@@ -133,15 +136,16 @@ export class EditorExtensionService {
       const fingerprint = JSON.stringify([entries, modules, overrides]);
       if (fingerprint !== this.fingerprint) {
         await this.resetHost();
-        const active = new Set<string>();
-        for (const { entry, path, source } of modules) {
-          if (entry.settings.extensionDependencies.some((dependency) => !active.has(dependency.guid))) {
-            diagnostics.push(`${entry.settings.displayName}: a required Extension failed to start.`);
-            continue;
-          }
-          if (await this.host.activate({ id: entry.extensionGuid, path, source })) active.add(entry.extensionGuid);
+        this.fingerprint = fingerprint;
+      }
+      // Unchanged packages keep running; only those that did not start are retried.
+      for (const { entry, path, source } of modules) {
+        if (this.started.has(entry.extensionGuid)) continue;
+        if (entry.settings.extensionDependencies.some((dependency) => !this.started.has(dependency.guid))) {
+          diagnostics.push(`${entry.settings.displayName}: a required Extension failed to start.`);
+          continue;
         }
-        this.fingerprint = active.size === graph.order.length ? fingerprint : "";
+        if (await this.host.activate({ id: entry.extensionGuid, path, source })) this.started.add(entry.extensionGuid);
       }
       this.packageDiagnostics = diagnostics;
       this.publishHostState(entries);

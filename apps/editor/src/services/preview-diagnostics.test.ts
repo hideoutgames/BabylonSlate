@@ -29,15 +29,16 @@ describe("Preview diagnostics lifecycle", () => {
       quality: "Low", frameCap: 60, dynamicResolution: false, enabledDiagnostics: ["performance"], gpuTiming: "unavailable" });
     recorder.recordTick({ tickId: 14, elapsedMs: 0, scriptMs: 2, physicsMs: 1, publishMs: 0.1, otherMs: 0 });
     const result = recorder.stop()!;
-    const { frames, ticks, ...header } = result;
+    const { frames, ticks, gpu, ...header } = result;
     const server = createPreviewDiagnosticServer({ source: () => parent, origin: () => origin,
       send: (data) => window.dispatchEvent(new MessageEvent("message", { source: player, origin, data })) }, {
       async execute(operation) {
         events.push(operation);
         if (operation === "profile-start") await startBoundary;
         if (operation === "profile-stop") await server.publishProfile({
-          metadata: { ...header, frames: { columns: frames.columns, count: frames.count }, ticks: { columns: ticks.columns, count: ticks.count } },
-          frames: frames.chunks, ticks: ticks.chunks,
+          metadata: { ...header, frames: { columns: frames.columns, count: frames.count }, ticks: { columns: ticks.columns, count: ticks.count },
+            gpu: { columns: gpu.columns, count: gpu.count } },
+          frames: frames.chunks, ticks: ticks.chunks, gpu: gpu.chunks,
         });
         return { success: true };
       },
@@ -60,6 +61,43 @@ describe("Preview diagnostics lifecycle", () => {
     expect(onError).not.toHaveBeenCalled();
     adapter.dispose();
     expect(events.filter((event) => event === "closed")).toHaveLength(1);
+  });
+
+  it("fails Stop when the profile transfer failed and accepts the next recording", async () => {
+    const parent = {};
+    const origin = window.location.origin;
+    const player = { postMessage: (data: unknown) => server.receive({ source: parent, origin, data }) } as unknown as Window;
+    const recorder = new PerformanceRecorder({ now: () => 0 });
+    recorder.start({ sessionId: "packaged-player", mode: "preview", sourceSha: null, buildId: null,
+      sceneId: "scene", backend: "webgl2", renderPath: "frameGraph", runtimeHost: "worker",
+      quality: "Low", frameCap: 60, dynamicResolution: false, enabledDiagnostics: ["performance"], gpuTiming: "unavailable" });
+    const { frames, ticks, gpu, ...header } = recorder.stop()!;
+    const server = createPreviewDiagnosticServer({ source: () => parent, origin: () => origin,
+      send: (data) => window.dispatchEvent(new MessageEvent("message", { source: player, origin, data })) }, {
+      async execute(operation) {
+        // A chunk over the transport limit makes the publisher send profile-error and still resolve.
+        if (operation === "profile-stop") await server.publishProfile({
+          metadata: { ...header, frames: { columns: frames.columns, count: frames.count }, ticks: { columns: ticks.columns, count: ticks.count },
+            gpu: { columns: gpu.columns, count: gpu.count } },
+          frames: [new Float64Array(8192)], ticks: ticks.chunks, gpu: gpu.chunks,
+        });
+        return { success: true };
+      },
+      close: () => {},
+    });
+    const onProfile = vi.fn();
+    const onError = vi.fn();
+    const adapter = createPreviewDiagnostics({ source: () => player, origin, onProfile, onError });
+
+    expect((await adapter.startProfile()).success).toBe(true);
+    const stopped = await adapter.stopProfile();
+
+    expect(stopped).toMatchObject({ success: false, reason: expect.stringContaining("transport budget") });
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onProfile).not.toHaveBeenCalled();
+    expect(adapter.lastProfile).toBeNull();
+    expect((await adapter.startProfile()).success).toBe(true);
+    await adapter.finish();
   });
 
   it("bounds Stop while a player is unresponsive and clears pending transport timers", async () => {

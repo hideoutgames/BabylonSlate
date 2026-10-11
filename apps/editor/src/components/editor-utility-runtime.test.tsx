@@ -160,6 +160,17 @@ describe("EditorUtilityRuntime", () => {
     );
   });
 
+  it("stops loading an unmounted host's remaining scripts", async () => {
+    let finishFirst!: () => void;
+    load.mockImplementationOnce(() => new Promise<void>((resolve) => { finishFirst = resolve; }));
+    docs.collectEditorUtilityScripts.mockResolvedValueOnce([{ classId: "Tools" }, { classId: "More" }]);
+    const view = render(<EditorUtilityRuntime />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    view.unmount();
+    await act(async () => { finishFirst(); });
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
   it("does not reboot when project settings identity changes with the same list", async () => {
     const view = render(<EditorUtilityRuntime />);
     await waitFor(() => {

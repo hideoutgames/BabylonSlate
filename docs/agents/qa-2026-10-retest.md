@@ -48,7 +48,7 @@ Investigation starts at `94f3692a2` (7 October). The supplied Run-1 retest and n
 | Folder creation destination | Existing behavior already targets the viewed breadcrumb directory. Interaction coverage verifies that selecting a child tile does not redirect creation. |
 | Recover during scene loading / graph wording | Queue recovery until the pending scene read settles. Banner says document edits. A fully replayed no-op journal is cleared only while all content stays saved. |
 | Infinite loops | Warn on unconditional synchronous execution cycles and literal-True While loops. Runtime guard reports explicit asset/graph/node identity and remains contained during startup, ticks and shutdown. Arbitrary data-dependent/JavaScript termination cannot generally be determined at compile time. |
-| Stats checked but HUD hidden | The menu controls availability of the overlay button; HUD starts collapsed by design. Labels now say Stats Button, Console Button and Inspector Button. |
+| Stats checked but HUD hidden | The menu controls availability of the overlay button; HUD starts collapsed by design. Labels say Stats, Console, Inspector and Profiler under the Play Overlay group. |
 | Folder menu lacks Rename | Rename already existed; correcting accidental context multi-selection restores its availability. |
 | Material seed nodes overlap | Increase spacing between initial Color and Output nodes, including PostProcess seeds. |
 | Emissive clipped / Escape discards color | Current picker uses a viewport-bounded portal with scrolling and fixed actions. The 1100×420 browser check passes; clipping was not reproduced. Escape intentionally cancels its uncommitted draft; Done applies it. |
