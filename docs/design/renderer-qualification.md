@@ -1278,7 +1278,7 @@ not that per-view sizing contract.
 
 Future A16 qualification should cover empty, representative authored, many objects/instances, many lights, dense overlap, animated characters, and repeated selection/inspector/gizmo interaction runs in editor and standalone player. Existing performance-room tooling below covers only part of that matrix. Direct GPU timer values must be distinguished from estimates; unavailable measurements stay unavailable. Do not derive universal actor/light counts or treat reduced resolution as equal-quality savings.
 
-**Existing sustained route: tooling landed, runs pending.** The route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) enumerates on CI and skips without the env flag; no machine with enough free memory has completed a full session yet. Nothing on this page is A16/iOS PWA qualification — desktop Chromium observations only. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
+**Existing sustained route: tooling landed, runs pending.** The route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) runs only through `playwright.perf.config.ts` (the CI config ignores it) and skips without the env flag; no machine with enough free memory has completed a full session yet. Nothing on this page is A16/iOS PWA qualification — desktop Chromium observations only. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
 ## Model and generated-text lifetime follow-up
 
 The physical A16 run is waived for this follow-up at the user's request. Acceptance still requires the local native and browser checks below; unexecuted fixtures are not evidence and no device-performance result is claimed.
@@ -1415,7 +1415,7 @@ The first three selectors cover `bef1b987`'s five material-admission cases, `ae6
 
 After those corrections pass, resume only their affected consumers from the architecture notes, including `material-parameters.test.ts`, `resource-cache-upload.test.ts`, `snapshot-apply.test.ts`, `editor-scene-sync.chunks.test.ts` and `scene-loader.test.ts`, then scoped static and browser segments. Browser runs must report requested/effective backend and driver. Software WebGPU is a local correctness result; fallback does not pass a WebGPU gate. Real packaged Havok is required for collider/teleport acceptance, and browser emission/readback remains required for GPU particle behavior.
 
-Sustained-route status: **tooling landed, runs pending.** The sustained route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) enumerates on CI and skips without the env flag; no machine with enough free memory has completed a full session yet. Its browser observations are desktop Chromium only; nothing on this page establishes A16/iOS PWA qualification. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
+Sustained-route status: **tooling landed, runs pending.** The sustained route (`e2e/play-sustained-route.spec.ts`, `BL_PERF_SUSTAINED=1`) runs only through `playwright.perf.config.ts` (the CI config ignores it) and skips without the env flag; no machine with enough free memory has completed a full session yet. Its browser observations are desktop Chromium only; nothing on this page establishes A16/iOS PWA qualification. Budgets live in [perf-budget.md](perf-budget.md); the engine-level design is in [render.md](../architecture/render.md).
 
 ### Historical rendering integration checkpoint
 
@@ -1427,7 +1427,7 @@ No tests, static checks, build, dependency installation or browser runs were per
 
 ## Coverage matrix
 
-"CI" means the standard e2e suite (Chromium, SwiftShader/software WebGPU via `SOFTWARE_WEBGPU_ARGS`). "Local-only (env gate)" specs enumerate but skip without their flag. "Unit" means Vitest coverage with no browser run.
+"CI" means the standard e2e suite (Chromium, SwiftShader/software WebGPU via `SOFTWARE_WEBGPU_ARGS`). "Unit" means Vitest coverage with no browser run.
 
 ### Backend
 
@@ -1457,7 +1457,7 @@ No tests, static checks, build, dependency installation or browser runs were per
 | --- | --- |
 | Shadows | `basic-3d-mannequin-shadows.spec.ts`, `basic-3d-mannequin-shadow-hosts.spec.ts`, `webgpu-backend.spec.ts` (WebGPU shadow proof); refresh and FrameGraph shadow binding are unit only (`shadow-map-refresh.test.ts`, `framegraph-managed-shadows.test.ts`) |
 | Project post-processing effects | `color-pipeline.spec.ts` (bloom in the editor viewport) |
-| Authored post-process stack | Unit only (`framegraph-post-process.test.ts`, `scene-post-process-*.test.ts`) |
+| Authored post-process stack | `engine-settings.spec.ts` (editor viewport pass count, per-entry toggle, Engine Settings gate), `p9-content.spec.ts` (stack applied in Play and gated by Engine Settings); FrameGraph wiring is unit only (`framegraph-post-process.test.ts`, `scene-post-process-*.test.ts`) |
 | SceneLayers | `scene-layer-rendering.spec.ts` (compiled Tweens on rendered components) |
 | Particles | `p17-particles.spec.ts` (Particle Material with Texture Sample, Basic emitter and System, Play billboards, teardown, save/reopen); `particle-graph.spec.ts` (Particle Graph authoring, CPU preview, mixed Basic + Graph System in Play) |
 
@@ -1476,7 +1476,7 @@ No tests, static checks, build, dependency installation or browser runs were per
 | --- | --- |
 | Context loss | Unit only (`create-engine.play.test.ts`, `rgbd-texture-lifetime.test.ts` — `noteRestore`, texture release, material invalidation). **Not covered** in e2e: no spec forces a real `WEBGL_lose_context` on a live session |
 | Backend switch | `webgpu-backend.spec.ts` (WebGPU→WebGL2→WebGPU through Project Settings, one Engine, undo/redo and Play after) |
-| Backend fallback | `webgl2-fallback.spec.ts` (WebGPU requested while `requestAdapter` resolves null → one WebGL2 Engine, presented viewport, explicit reason in Project Settings, Play afterwards) |
+| Backend fallback | `webgl2-fallback.spec.ts` (WebGPU requested while `requestAdapter` resolves null → one WebGL2 Engine, presented viewport, fallback reason in renderer diagnostics, Project Settings keeps the WebGPU request, Play afterwards) |
 | Scene reload | `runtime-scene-loading.spec.ts` (repeated transitions + Stop in Play) |
 | WebContent termination | Not covered. Capacitor's native handler reloads the WebView to Home; the editor does not detect or report the previous exit. OS delivery on a real device is untested |
 
@@ -1504,7 +1504,7 @@ BL_PERF_SUSTAINED=1 BL_PERF_QUALITY=low pnpm run test:e2e e2e/play-sustained-rou
 
 | Env | Default | Effect |
 | --- | --- | --- |
-| `BL_PERF_SUSTAINED` | off | `1` opts in; otherwise the spec skips (CI no-op) |
+| `BL_PERF_SUSTAINED` | off | `1` opts in; otherwise the spec skips |
 | `BL_PERF_SUSTAINED_MINUTES` | `20` | Sampled duration **per host** after warm-up |
 | `BL_PERF_SUSTAINED_WARMUP_MS` | `60000` | Warm-up per host before sampling |
 | `BL_PERF_SAMPLE_MS` | `30000` | Window length |

@@ -209,13 +209,13 @@ type Diagnostic = {
 
 | Trigger | Scope |
 | --- | --- |
-| Edit (≈300ms debounce) | Open graph |
+| Edit (250ms debounce) | Open graph |
 | Save | Document + dependents with reference diagnostics |
 | Pre-Preview | Project graphs compiled for Play (`collectPlayPreviewScripts`), including Class/Graph documents and AnimationGraph Animation Object / transition-rule scripts; Play loads the seed from **Play from Scene** (open tab or `startupSceneGuid`). No seed → Play disabled. Enabled plugin Class graphs participate via `registry.list()`; plugin EUOs stay on the editor ScriptHost ([plugins.md](plugins.md)) |
 | Export | Hard gate + export-only rules (debug-tier commands); Development Only nodes stripped by codegen |
 | CI | Golden fixture projects |
 
-Warnings never block. Errors block Preview via dialog (tap-to-navigate + **Play Anyway** + Engine Settings "don't ask again"), not a hard refuse. Tap-to-navigate focuses the node **and activates that graph tab** (so a background Class document is shown even when a scene tab was active for Play). Export-preset-only rules stay off the edit-time path.
+Warnings never block. Errors block Preview via dialog (tap-to-navigate + **Play Anyway**; no persistent bypass), not a hard refuse. Tap-to-navigate focuses the node **and activates that graph tab** (so a background Class document is shown even when a scene tab was active for Play). Export-preset-only rules stay off the edit-time path.
 
 ## Compiler
 
@@ -733,7 +733,7 @@ Preview runs compiled graphs: `ScriptHost` binds Begin Play / Tick entry points 
 
 - Blob-URL dynamic import in WKWebView — spike early; fallback already in `loadCompiledModule`.
 - Re-parenting class invalidation — design Class panel UX against `ClassRegistry.reparent` from the start.
-- Blocking Preview dialog becoming dismiss-reflex — Play Anyway + "don't ask again"; demote noisy rules rather than harden the dialog.
+- Blocking Preview dialog becoming dismiss-reflex — Play Anyway per run; demote noisy rules rather than harden the dialog.
 - ExecuteJavaScript unsandboxed — disclose on import when assets contain JS bodies.
 - Anchor tables invalidated by code moves — rewrite offsets on concat; never minify.
 
