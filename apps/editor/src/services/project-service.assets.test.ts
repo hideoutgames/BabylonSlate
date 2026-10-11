@@ -1348,43 +1348,6 @@ describe("project documents as .babasset", () => {
     expect(encode).toHaveBeenCalledTimes(3);
   });
 
-  it("decodes a legacy Tileset only during explicit maintenance and reuses it across remounts until it changes", async () => {
-    const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Legacy.babproject");
-    await installMinimalProject(storage);
-    const tilesetPath = "assets/ground.tileset.babasset";
-    // Saved before atlas meta existed: only its document names the texture.
-    const writeLegacyTileset = async (textureGuid: string) => storage.writeBinary(tilesetPath, await encodeAssetDocument({
-      guid: "ground", type: "Tileset", name: "Ground", version: 1,
-      payload: { ...createDefaultTilesetPayload(), textureGuid } as unknown as Record<string, unknown>,
-    }, { dependencies: [textureGuid] }));
-    await writeLegacyTileset("tex-a");
-    const service = new ProjectService(storage);
-    await service.loadCurrentProject();
-    const tilesetReads = () => service.registry!.payloadLoader.snapshot().recentRequests
-      .filter(request => request.path === tilesetPath && request.chunkId === "document").length;
-    expect(tilesetReads()).toBe(0);
-    expect(service.registry!.isAtlasTexture("tex-a")).toBe(false);
-    await service.registry!.resolveLegacyAtlasReferrers();
-    expect(tilesetReads()).toBe(1);
-    expect(service.registry!.isAtlasTexture("tex-a")).toBe(true);
-
-    await service.remountRegistry();
-    // The new registry reuses the decoded referrer without another document read.
-    await service.registry!.resolveLegacyAtlasReferrers();
-    expect(tilesetReads()).toBe(0);
-    expect(service.registry!.isAtlasTexture("tex-a")).toBe(true);
-
-    // Another checkout of the Tileset, still without meta, picks another texture.
-    await writeLegacyTileset("tex-b");
-    await service.remountRegistry();
-    expect(tilesetReads()).toBe(0);
-    await service.registry!.resolveLegacyAtlasReferrers();
-    expect(tilesetReads()).toBe(1);
-    expect(service.registry!.isAtlasTexture("tex-a")).toBe(false);
-    expect(service.registry!.isAtlasTexture("tex-b")).toBe(true);
-  });
-
   it("saves Model slots onto the header without replacing the source GLB", async () => {
     const { storage, service } = await scaffolded();
     const source = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 1, 2, 3, 4]);

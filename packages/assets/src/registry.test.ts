@@ -10,7 +10,8 @@ import {
 import { EncodeQueue } from "./encode-queue";
 import { AssetRegistry, RegistryGenerationClock } from "./registry";
 import { ThumbnailDecodeLru } from "./thumbnails";
-import { SourceRevisionChangedError, type ProjectStorageReader, type StorageReadOptions } from "@babylonslate/core";
+import { ENGINE_VERSION, SourceRevisionChangedError, type ProjectStorageReader, type StorageReadOptions } from "@babylonslate/core";
+import { createFontPayload } from "./font-payload";
 
 async function createStorage(): Promise<MemoryStorageAdapter> {
   const storage = new MemoryStorageAdapter("documents");
@@ -1259,6 +1260,108 @@ describe("AssetRegistry", () => {
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     expect(registry.getByGuid("tex-mtime")?.mtime).toBe(expected);
+  });
+
+  it("records the written file's mtime after a rename, a duplicate and a Font attach", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/tex.babasset", { guid: "tex", type: "Texture", name: "tex" });
+    await writeAsset(storage, "assets/Ui.babasset", { guid: "font", type: "Font", name: "Ui" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.renameAsset("tex", "Renamed");
+    const copy = await registry.duplicateAsset("tex", "project");
+    await registry.importFile("project", "", "Ui.facetype.json", new TextEncoder().encode('{"glyphs":{}}'));
+    expect(registry.getByGuid("font")!.header.chunks.some((chunk) => chunk.id === "facetype-glyphs")).toBe(true);
+    for (const guid of ["tex", copy.header.guid, "font"]) {
+      const asset = registry.getByGuid(guid)!;
+      expect(asset.mtime).not.toBeNull();
+      expect(asset.mtime).toBe((await storage.stat(asset.path)).mtime);
+    }
+  });
+
+  it("attaches a representation to the Font of its name in the import folder, and to no Font when the name is ambiguous", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/a/Ui.babasset", { guid: "font-a", type: "Font", name: "Ui" });
+    await writeAsset(storage, "assets/b/Ui.babasset", { guid: "font-b", type: "Font", name: "Ui" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const glyphs = () => new TextEncoder().encode('{"glyphs":{}}');
+    const hasGlyphs = (guid: string) => registry.getByGuid(guid)!.header.chunks.some((chunk) => chunk.id === "facetype-glyphs");
+
+    expect(await registry.importFile("project", "a", "Ui.facetype.json", glyphs())).toEqual([]);
+    expect([hasGlyphs("font-a"), hasGlyphs("font-b")]).toEqual([true, false]);
+    // Two Fonts named Ui and neither in this folder: the import makes its own.
+    const created = await registry.importFile("project", "c", "Ui.facetype.json", glyphs());
+    expect(created.map((asset) => [asset.header.type, asset.path])).toEqual([["Font", "assets/c/Ui.babasset"]]);
+    expect(hasGlyphs("font-b")).toBe(false);
+  });
+
+  it("attaches MSDF into a saved Font's document, keeping its source and fallbacks", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    // Saved from the Font editor: the payload lives in the document chunk.
+    await storage.writeBinary("assets/Ui.babasset", await encodeAssetDocument({
+      type: "Font", name: "Ui", guid: "font", version: 1,
+      payload: createFontPayload("Ui", { fallbackGuids: ["fallback"], representations: { source: true } }) as unknown as Record<string, unknown>,
+    }, { extraChunks: [{ id: "source", kind: "font", mime: "font/ttf", data: new Uint8Array([1, 2, 3]) }] }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+
+    const json = new TextEncoder().encode(JSON.stringify({ pages: ["Ui-msdf.png"], chars: [] }));
+    await registry.importFile("project", "", "Ui-msdf.json", json, { sidecars: { "Ui-msdf.png": new Uint8Array([9]) } });
+    const expected = {
+      family: "Ui",
+      fallbackGuids: ["fallback"],
+      representations: { source: true, facetype: false, msdfJson: true, msdfPng: true, msdf: true },
+    };
+    expect((await decodeAssetDocument(await storage.readBinary("assets/Ui.babasset"))).payload).toMatchObject(expected);
+    expect(registry.getByGuid("font")!.header.payload).toMatchObject(expected);
+  });
+
+  it("fails a pending Texture's encode that has no source pixels instead of leaving it pending", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    await storage.writeBinary("assets/tex.babasset", await encodeBabasset({
+      header: {
+        guid: "tex", type: "Texture", name: "tex", engineVersion: "0.0.0", version: 1, mode: "thin",
+        dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "pending" },
+      },
+      chunks: [],
+    }));
+    const registry = new AssetRegistry(storage);
+    registry.setEncodePipeline(new EncodeQueue({ onComplete: async () => {} }));
+    await registry.mountRoot(projectContentRoot());
+
+    expect(await registry.requeueUncompressedTextures()).toBe(0);
+    expect(registry.getByGuid("tex")!.header.payload).toMatchObject({
+      compressionState: "encode_failed",
+      encodeError: "The Texture has no source pixels to encode.",
+    });
+  });
+
+  it("gives overlapping copies of one folder different names", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/fx/spark.babasset", { guid: "spark", type: "Texture", name: "spark" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+
+    const copies = await Promise.all([registry.duplicateFolder("project", "fx"), registry.duplicateFolder("project", "fx")]);
+    expect(copies.sort()).toEqual(["fx_1", "fx_2"]);
+    for (const copy of copies) expect(registry.getByPath(`assets/${copy}/spark.babasset`)).toBeDefined();
+  });
+
+  it("knows a created Tileset's atlas from its header payload without reading a document", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const tileset = await registry.createAsset("project", "Ground.tileset.babasset", {
+      type: "Tileset", name: "Ground", guid: "ground", version: 1, dependencies: [], parentClass: null,
+      payload: { textureGuid: "atlas", tileWidth: 16, tileHeight: 16 }, chunks: [],
+    });
+    expect(tileset.header.engineVersion).toBe(ENGINE_VERSION);
+    expect(registry.isAtlasTexture("atlas")).toBe(true);
+    expect(registry.payloadLoader.snapshot().recentRequests).toEqual([]);
   });
 });
 

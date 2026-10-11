@@ -37,7 +37,7 @@ See [render.md](render.md) and [engineplan §11.4](../engineplan.md).
 2. Font document **Import MSDF Atlas…** (`data-testid="font-import-msdf"`) — always attaches to the open Font.
 3. Font tile context menu **Import MSDF Atlas…**.
 
-Incomplete picks leave `representations.msdf` false until the pair is complete. Attach merges representation flags with OR so attaching MSDF does not clear `source`. Export packs `FontMsdf` (`font-msdf:<guid>`) and `FontMsdfAtlas` (`font-msdf-png:<guid>`) when the Font is in the closure and both chunks exist. A packed game missing the sidecar falls back to Bitmap (log once).
+Incomplete picks leave `representations.msdf` false until the pair is complete. Attach merges representation flags with OR so attaching MSDF does not clear `source`. It merges into the Font's saved payload, its `document` chunk once the Font editor has saved it, and writes the result to both that chunk and the header, so a closed Font's MSDF flag and an open editor's header both see the new chunks. Export packs `FontMsdf` (`font-msdf:<guid>`) and `FontMsdfAtlas` (`font-msdf-png:<guid>`) when the Font is in the closure and both chunks exist. A packed game missing the sidecar falls back to Bitmap (log once).
 
 ## Fallback stack
 

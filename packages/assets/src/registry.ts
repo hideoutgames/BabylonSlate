@@ -43,7 +43,7 @@ import { clampDimension,
 import { payloadPixelSize, textureEncodeSettingsFor } from "./resolve-gpu-texture";
 import { DEFAULT_THUMBNAIL_MAX_EDGE, generateThumbnailBytes } from "./thumbnails";
 import { AREA_EMISSION_CHUNK_KIND, areaEmissionChunkId, currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionProgress } from "./area-emission";
-import { sha256Hex } from "./bytes";
+import { sha256Hex, stableStringify } from "./bytes";
 import { moveStorageFile, moveStorageTree, STORAGE_MOVE_BACKUP_PREFIX } from "./storage-move";
 import { collectAssetDependencyMetadata, type AssetDependencyClass } from "./asset-dependencies";
 import { resolveAssetCatalogDependencies } from "./catalog-class-dependencies";
@@ -126,12 +126,6 @@ export interface AssetRegistryOptions {
    */
   generationClock?: RegistryGenerationClock;
   /**
-   * Textures each decoded legacy atlas referrer samples, by type and document
-   * chunk sha256. Pass the same map to every remount so unchanged referrers
-   * are not read and decoded again.
-   */
-  legacyAtlasCache?: Map<string, readonly string[]>;
-  /**
    * Textures an alignment check is requeuing right now. Pass the same set to
    * every remount that shares one encode queue, so a check on the previous
    * registry and one on the next skip each other's Texture.
@@ -179,16 +173,12 @@ export class AssetRegistry {
   private readonly atlasByReferrer = new Map<string, readonly string[]>();
   /** Texture guid -> atlas referrers sampling it. */
   private readonly atlasReferrers = new Map<string, Set<string>>();
-  /** Atlas referrers whose header predates the `atlasTextures` meta. */
-  private readonly legacyAtlasReferrers = new Set<string>();
-  private legacyAtlasResolution: Promise<void> = Promise.resolve();
   private atlasStatusListener: ((textureGuids: string[]) => void) | null = null;
   /** Texture guid -> atlas status before the changes not yet reported. */
   private readonly atlasStatusBefore = new Map<string, boolean>();
   private atlasFlushScheduled = false;
   private ownWriteListener: ((write: OwnAssetWrite) => void) | null = null;
   private createdTextureListener: ((asset: IndexedAsset) => void) | null = null;
-  private readonly legacyAtlasCache: Map<string, readonly string[]>;
   /**
    * Textures an alignment check is requeuing right now. Imports and
    * Duplicates run the pass outside the editor's serialized passes, so a
@@ -202,7 +192,6 @@ export class AssetRegistry {
     this.blobs = options.blobs ?? createVfsBlobStore(storage);
     this.loader =
       options.payloadLoader ?? new AccountedPayloadLoader(storage, { blobs: this.blobs });
-    this.legacyAtlasCache = options.legacyAtlasCache ?? new Map();
     this.alignmentRequeues = options.alignmentRequeues ?? new Set();
     this.clock = options.generationClock ?? new RegistryGenerationClock();
   }
@@ -647,7 +636,7 @@ export class AssetRegistry {
         guid: result.guid,
         type: result.type,
         name: result.name,
-        engineVersion: "0.0.0",
+        engineVersion: ENGINE_VERSION,
         version: result.version,
         mode: "thin",
         ...dependencies,
@@ -855,10 +844,10 @@ export class AssetRegistry {
     if (newPath !== asset.path) {
       await moveStorageFile(storage, asset.path, newPath, fileBytes, encoded);
       this.repathGuidConflicts((path) => path === asset.path ? newPath : path);
-      return this.indexHeader(asset.rootId, newPath, readBabassetHeader(encoded));
+      return this.indexHeader(asset.rootId, newPath, readBabassetHeader(encoded), false, await this.statMtime(storage, newPath));
     }
     await storage.writeBinary(asset.path, encoded);
-    return this.indexHeader(asset.rootId, asset.path, readBabassetHeader(encoded));
+    return this.indexHeader(asset.rootId, asset.path, readBabassetHeader(encoded), false, await this.statMtime(storage, asset.path));
   }
 
   async duplicateAsset(
@@ -952,7 +941,7 @@ export class AssetRegistry {
         : "";
       if (dir) await destStorage.mkdir(dir, true);
       await destStorage.writeBinary(candidate, encoded);
-      return this.indexCreatedHeader(rootId, candidate, readBabassetHeader(encoded));
+      return this.indexCreatedHeader(rootId, candidate, readBabassetHeader(encoded), await this.statMtime(destStorage, candidate));
     } finally {
       release();
     }
@@ -995,22 +984,36 @@ export class AssetRegistry {
         siblingNames.push(folder.slice(folder.lastIndexOf("/") + 1));
       }
     }
-    // Skip names on disk the index does not know (a folder made outside the
+    if (isWithinFolder(destParentPath, fromPath)) {
+      throw new Error("Cannot copy a folder into itself");
+    }
+    // Pick and claim the copy's name together, skipping names another copy
+    // holds and folders on disk the index does not know (made outside the
     // editor since the scan), as Duplicate does for files.
     let destRelative: string;
     let destPath: string;
+    let release: () => void;
     for (;;) {
       const uniqueName = nextCopyName(folderName, siblingNames);
+      siblingNames.push(uniqueName);
       destRelative = joinRelative(targetParentRelative, uniqueName);
       destPath = joinRootPath(root, destRelative);
-      if (!(await storage.exists(destPath))) break;
-      siblingNames.push(uniqueName);
+      if (this.isPathReserved(destPath) || this.knownFolders.has(destPath)) continue;
+      release = this.reservePath(destPath, `Folder already exists: ${destPath}`);
+      let free = false;
+      try {
+        free = !(await storage.exists(destPath));
+      } finally {
+        if (!free) release();
+      }
+      if (free) break;
     }
-    if (destPath !== fromPath && isWithinFolder(destPath, fromPath)) {
-      throw new Error("Cannot copy a folder into itself");
+    try {
+      const conflict = `Folder already exists: ${destPath}`;
+      await this.withCreationWrite(() => this.writeCreatedFolder(root, destPath, conflict));
+    } finally {
+      release();
     }
-
-    await this.createFolder(rootId, destRelative);
 
     const nested = [...this.knownFolders].filter(
       (folder) => folder !== fromPath && isWithinFolder(folder, fromPath),
@@ -1111,7 +1114,7 @@ export class AssetRegistry {
     const options: ImportOptions = {
       fileName,
       existingGuids: new Set(this.byGuid.keys()),
-      fontGuidsByName: this.fontGuidsByName(),
+      fontGuidsByName: this.fontGuidsByName(rootId, folderRelative),
       modelImportScale: extras?.modelImportScale,
       sidecars: extras?.sidecars,
       attachToGuid: extras?.attachToGuid,
@@ -1347,9 +1350,9 @@ export class AssetRegistry {
       await this.setCompressionState(guid, "pending");
     }
     const latest = this.byGuid.get(guid) ?? asset;
-    const source = await this.loadSourcePixels(latest);
+    // A guarded job wrote no state, so a missing source leaves the Texture as it was.
+    const source = options?.guard ? await this.loadSourcePixels(latest) : await this.encodeSource(latest);
     if (!source) return false;
-    await this.resolveLegacyAtlasReferrers();
     const settings = this.encodeSettingsFor(latest, usage, {
       sourceSize: sniffSourceImageSize(source.bytes),
       ...(options?.maxDimension
@@ -1390,7 +1393,11 @@ export class AssetRegistry {
         state === "pending" ||
         state === "encoding"
       ) {
-        if (await this.retryTextureEncoding(header.guid)) count += 1;
+        try {
+          if (await this.retryTextureEncoding(header.guid)) count += 1;
+        } catch {
+          // One Texture replaced on disk mid-pass must not stop the others.
+        }
       }
     }
     return count;
@@ -1418,12 +1425,27 @@ export class AssetRegistry {
     return { scenes: scenes.sort(), graphs: graphs.sort() };
   }
 
-  private fontGuidsByName(): Map<string, string> {
-    const map = new Map<string, string>();
+  /**
+   * The Font each family name attaches an imported representation to: the
+   * Font of that name in the import folder, else the only one in the import's
+   * root. A name several Fonts there share attaches to none, so the import
+   * makes its own Font rather than joining whichever one the index lists last.
+   */
+  private fontGuidsByName(rootId: string, folderRelative: string): Map<string, string> {
+    const root = this.roots.get(rootId);
+    const folder = root ? joinRootPath(root, folderRelative) : null;
+    const byName = new Map<string, IndexedAsset[]>();
     for (const asset of this.byGuid.values()) {
-      if (asset.header.type === "Font") {
-        map.set(asset.header.name, asset.header.guid);
-      }
+      if (asset.placeholder || asset.header.type !== "Font" || asset.rootId !== rootId) continue;
+      const fonts = byName.get(asset.header.name) ?? [];
+      fonts.push(asset);
+      byName.set(asset.header.name, fonts);
+    }
+    const map = new Map<string, string>();
+    for (const [name, fonts] of byName) {
+      const local = fonts.filter((font) => parentPath(font.path) === folder);
+      const font = local.length > 0 ? (local.length === 1 ? local[0] : undefined) : fonts.length === 1 ? fonts[0] : undefined;
+      if (font) map.set(name, font.header.guid);
     }
     return map;
   }
@@ -1433,9 +1455,8 @@ export class AssetRegistry {
     const usage = String(asset.header.payload.usage ?? "albedo");
     if (isEnvironmentTexturePayload(asset.header.payload) || !shouldCompressTexture(usage)) return;
     if (asset.header.payload.compressionState !== "pending") return;
-    const source = await this.loadSourcePixels(asset);
+    const source = await this.encodeSource(asset);
     if (!source) return;
-    await this.resolveLegacyAtlasReferrers();
     const settings = this.encodeSettingsFor(asset, usage, { sourceSize: sniffSourceImageSize(source.bytes) });
     const chunkId = await textureEncodeChunkId(settings, usage);
     this.encodeQueue?.enqueue({
@@ -1469,42 +1490,11 @@ export class AssetRegistry {
   /**
    * Report textures whose atlas status changed (a referrer saved, deleted,
    * duplicated, imported, or a plugin root mounted). Set after the initial
-   * scan; changes are reported once legacy referrers are decoded.
+   * scan.
    */
   setAtlasStatusListener(listener: ((textureGuids: string[]) => void) | null): void {
     this.atlasStatusListener = listener;
     this.atlasStatusBefore.clear();
-  }
-
-  /**
-   * Decode referrers whose header has no `atlasTextures` meta (saved before
-   * it existed, or created and never saved) so their atlases are known.
-   * Serialized; the alignment pass and every enqueue await it.
-   */
-  resolveLegacyAtlasReferrers(): Promise<void> {
-    const run = async () => {
-      while (this.legacyAtlasReferrers.size > 0) {
-        const guid = this.legacyAtlasReferrers.values().next().value as string;
-        this.legacyAtlasReferrers.delete(guid);
-        const asset = this.byGuid.get(guid);
-        if (!asset || !ATLAS_REFERRER_TYPES.has(asset.header.type)) continue;
-        let textures: string[] = [];
-        try {
-          const document = await this.readAssetDocument(guid);
-          textures = atlasTextureGuids(asset.header.type, document.payload);
-          const key = legacyAtlasCacheKey(asset.header);
-          if (key) this.legacyAtlasCache.set(key, textures);
-        } catch {
-          // Unreadable: it samples nothing we can see.
-        }
-        // Re-indexed or removed meanwhile: that entry owns its atlas state.
-        if (this.byGuid.get(guid) !== asset) continue;
-        this.setAtlasReferrer(guid, textures);
-      }
-    };
-    const next = this.legacyAtlasResolution.then(run, run);
-    this.legacyAtlasResolution = next.catch(() => undefined);
-    return next;
   }
 
   /**
@@ -1534,7 +1524,6 @@ export class AssetRegistry {
     ktx2SizeCache?: Map<string, ImageSize | null>;
   } = {}): Promise<string[]> {
     if (!this.encodeQueue) return [];
-    await this.resolveLegacyAtlasReferrers();
     const guids = options.guids
       ? [...new Set(options.guids)]
       : this.list({ type: "Texture" }).map((asset) => asset.header.guid);
@@ -1576,7 +1565,6 @@ export class AssetRegistry {
   ): Promise<boolean> {
     const queue = this.encodeQueue;
     if (!queue) return false;
-    await this.resolveLegacyAtlasReferrers();
     const asset = await this.settledTexture(guid);
     if (!asset || queue.has(guid) || this.alignmentRequeues.has(guid)) return false;
     const usage = options.usage ?? String(asset.header.payload.usage ?? "albedo");
@@ -1676,6 +1664,26 @@ export class AssetRegistry {
     const size = bytes ? sniffKtx2Size(bytes) : null;
     cache?.set(entry.sha256, size);
     return size;
+  }
+
+  /**
+   * Source pixels for an encode job the Texture's `pending` state announced.
+   * When it has no pixels chunk, or the chunk cannot be read, the Texture is
+   * marked `encode_failed` with the reason rather than left `pending` with no
+   * job to finish it.
+   */
+  private async encodeSource(asset: IndexedAsset): Promise<{ bytes: Uint8Array; mime?: string; sha256: string } | null> {
+    let error = "The Texture has no source pixels to encode.";
+    try {
+      const source = await this.loadSourcePixels(asset);
+      if (source) return source;
+    } catch (cause) {
+      // Replaced on disk meanwhile: the next rescan indexes the new file.
+      if (cause instanceof SourceRevisionChangedError) throw cause;
+      error = `The Texture's source pixels could not be read: ${cause instanceof Error ? cause.message : String(cause)}`;
+    }
+    await this.setCompressionState(asset.header.guid, "encode_failed", { error });
+    return null;
   }
 
   /** Source pixels with their sha256, which an encode job's commit checks the file against. */
@@ -1814,27 +1822,29 @@ export class AssetRegistry {
 
     const { chunks, ...headerRest } = decoded.header;
     void chunks;
-    const familyFallback =
-      typeof (headerRest.payload as { family?: unknown } | undefined)?.family ===
-      "string"
-        ? ((headerRest.payload as { family: string }).family)
-        : asset.header.name;
-    const payload =
+    // A Font saved from its editor keeps its payload in the document chunk,
+    // which readers prefer: merge into that payload and store it there too.
+    const documentChunk = chunksById.get(DOCUMENT_CHUNK_ID);
+    const current = documentChunk
+      ? JSON.parse(new TextDecoder().decode(documentChunk.data)) as Record<string, unknown>
+      : headerRest.payload;
+    const familyFallback = typeof current.family === "string" ? current.family : asset.header.name;
+    const merged =
       asset.header.type === "Font"
-        ? (mergeFontAttachPayload(
-            headerRest.payload,
-            result.payload,
-            familyFallback,
-          ) as unknown as Record<string, unknown>)
-        : { ...headerRest.payload, ...result.payload };
+        ? (mergeFontAttachPayload(current, result.payload, familyFallback) as unknown as Record<string, unknown>)
+        : { ...current, ...result.payload };
+    if (documentChunk) {
+      chunksById.set(DOCUMENT_CHUNK_ID, { ...documentChunk, data: new TextEncoder().encode(stableStringify(merged)) });
+    }
     const bytes = await encodeBabasset({
-      header: { ...headerRest, payload },
+      // Header readers (font stacks, an open Font editor) see the same payload.
+      header: { ...headerRest, payload: { ...headerRest.payload, ...merged } },
       chunks: [...chunksById.values()],
       writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
     });
     await storage.writeBinary(asset.path, bytes);
     const header = readBabassetHeader(bytes);
-    this.indexHeader(asset.rootId, asset.path, header);
+    this.indexHeader(asset.rootId, asset.path, header, false, await this.statMtime(storage, asset.path));
   }
 
   private storageOf(root: ContentRoot): ProjectStorage {
@@ -1945,13 +1955,14 @@ export class AssetRegistry {
       set.add(header.guid);
     }
     if (!placeholder && ATLAS_REFERRER_TYPES.has(header.type)) {
-      const key = legacyAtlasCacheKey(header);
-      const listed = headerAtlasTextureGuids(header.payload) ?? (key ? this.legacyAtlasCache.get(key) : undefined);
-      if (listed) {
-        this.setAtlasReferrer(header.guid, listed);
-      } else {
-        this.legacyAtlasReferrers.add(header.guid);
-      }
+      // Every document save lists the atlases in the header. A referrer whose
+      // payload is still its header (created or imported, not yet saved as a
+      // document) names them in that payload.
+      const inHeader = !header.chunks.some((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
+      this.setAtlasReferrer(
+        header.guid,
+        headerAtlasTextureGuids(header.payload) ?? (inHeader ? atlasTextureGuids(header.type, header.payload) : []),
+      );
     }
     return indexed;
   }
@@ -2011,7 +2022,6 @@ export class AssetRegistry {
       this.byPath.delete(asset.path);
     }
     this.changed();
-    this.legacyAtlasReferrers.delete(asset.header.guid);
     this.setAtlasReferrer(asset.header.guid, []);
     for (const dep of asset.header.dependencies) {
       const set = this.inbound.get(dep);
@@ -2050,12 +2060,6 @@ function committedEncodeRecord(
   };
 }
 
-/** A legacy atlas referrer's document content, when it has a document chunk. */
-function legacyAtlasCacheKey(header: BabassetHeader): string | null {
-  const document = header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
-  return document ? `${header.type}:${document.sha256}` : null;
-}
-
 function sortFolderTree(node: FolderNode): void {
   node.children.sort((a, b) => a.name.localeCompare(b.name));
   node.assets.sort();
@@ -2070,6 +2074,10 @@ function joinRootPath(root: ContentRoot, relativePath: string): string {
 function joinRelative(folderRelative: string, fileName: string): string {
   const trimmed = folderRelative.replace(/^\/+|\/+$/g, "");
   return trimmed ? `${trimmed}/${fileName}` : fileName;
+}
+
+function parentPath(path: string): string {
+  return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 }
 
 function isWithinFolder(path: string, folder: string): boolean {

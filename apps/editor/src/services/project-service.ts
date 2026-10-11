@@ -407,8 +407,6 @@ export class ProjectService {
   private readonly sessionEncodes = new Map<string, string>();
   /** Committed KTX2 (and sniffed source) sizes by chunk sha256, kept across registry remounts. */
   private readonly ktx2SizeCache = new Map<string, ImageSize | null>();
-  /** Textures decoded legacy atlas referrers sample, by content, kept across registry remounts. */
-  private readonly legacyAtlasCache = new Map<string, readonly string[]>();
   /** Textures an alignment check is requeuing, shared by remounts as the encode queue is. */
   private readonly alignmentRequeues = new Set<string>();
   /** Change counter shared by every project registry, so remounts never rewind it. */
@@ -1503,7 +1501,6 @@ export class ProjectService {
       DEFAULT_TEXTURE_ENCODE_SETTINGS.maxDimension;
     const registry = new AssetRegistry(this.storage, {
       blobs: this.blobs,
-      legacyAtlasCache: this.legacyAtlasCache,
       alignmentRequeues: this.alignmentRequeues,
       generationClock: this.registryClock,
     });

@@ -134,7 +134,8 @@ export function remapImportResultGuids(
 ): ImportResult[] {
   const remap = new Map<string, string>();
   for (const result of results) {
-    if (existingGuids.has(result.guid)) {
+    // A representation for an existing Font carries that Font's guid on purpose.
+    if (!result.attachToGuid && existingGuids.has(result.guid)) {
       remap.set(result.guid, newAssetGuid());
     }
   }

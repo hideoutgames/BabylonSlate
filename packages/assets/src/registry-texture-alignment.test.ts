@@ -297,7 +297,7 @@ describe("texture encode alignment", () => {
     await writeTexture(storage, "assets/sourceless-odd.babasset", "sourceless-odd", {
       source: [1, 1], pixels: false, committed: { id: KEY_MAX_1, size: [1, 1] },
     });
-    // A Tileset saved before atlas meta existed: only its document names the texture.
+    // A Tileset document lists the texture it samples in its header.
     await storage.writeBinary("assets/ground.tileset.babasset", await encodeAssetDocument({
       guid: "ground", type: "Tileset", name: "Ground", version: 1,
       payload: { ...createDefaultTilesetPayload(), textureGuid: "atlas-odd" } as unknown as Record<string, unknown>,

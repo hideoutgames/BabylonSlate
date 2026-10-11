@@ -1,5 +1,6 @@
+import { ENGINE_VERSION } from "@babylonslate/core";
 import {
-  decodeBabasset,
+  decodeBabassetChunk,
   encodeBabasset,
   readBabassetHeader,
   type ChunkInput,
@@ -8,6 +9,7 @@ import {
 import type { BlobStore } from "./blob-store";
 import { stableStringify } from "./bytes";
 import { collectAssetDependencyMetadata, type AssetDependencyContext, type AssetDependencyMetadata } from "./asset-dependencies";
+import { ATLAS_REFERRER_TYPES, ATLAS_TEXTURES_META, atlasTextureGuids } from "./atlas-textures";
 
 /** Editor documents keep their JSON body in one chunk so headers stay cheap to scan. */
 export const DOCUMENT_CHUNK_ID = "document";
@@ -69,13 +71,17 @@ export async function encodeAssetDocument(
         parentClass: options.parentClass,
         dependencies: options.dependencies,
       })),
-      engineVersion: options.engineVersion ?? "0.0.0",
+      engineVersion: options.engineVersion ?? ENGINE_VERSION,
       guid: document.guid,
       mode: "thin",
       name: document.name,
       parentClass: options.parentClass ?? null,
       payload: {
         ...(options.headerPayload ?? {}),
+        // The registry reads a referrer's atlases from its header, never its document.
+        ...(ATLAS_REFERRER_TYPES.has(document.type)
+          ? { [ATLAS_TEXTURES_META]: atlasTextureGuids(document.type, document.payload) }
+          : {}),
         ...(options.headerMeta ?? {}),
       },
       type: document.type,
@@ -98,16 +104,22 @@ export async function encodeAssetDocument(
   });
 }
 
+/**
+ * The document of a `.babasset`: its `document` chunk, else its header
+ * payload. Only that chunk is read and verified; other chunks (source bytes,
+ * bakes, encodes) are neither loaded from blobs nor hashed.
+ */
 export async function decodeAssetDocument(
   bytes: Uint8Array,
   options: { blobs?: BlobStore } = {},
 ): Promise<AssetDocument> {
-  const decoded = await decodeBabasset(
+  const header = readBabassetHeader(bytes);
+  const body = await decodeBabassetChunk(
     bytes,
+    DOCUMENT_CHUNK_ID,
     options.blobs ? (sha256) => options.blobs!.readBlob(sha256) : undefined,
   );
-  const body = decoded.chunks.get(DOCUMENT_CHUNK_ID);
-  const headerPayload = decoded.header.payload;
+  const headerPayload = header.payload;
   let payload: Record<string, unknown>;
   if (body) {
     payload = JSON.parse(new TextDecoder().decode(body)) as Record<
@@ -116,7 +128,7 @@ export async function decodeAssetDocument(
     >;
   } else if (
     headerPayload &&
-    (Object.keys(headerPayload).length > 0 || decoded.header.type === "Audio")
+    (Object.keys(headerPayload).length > 0 || header.type === "Audio")
   ) {
     payload = headerPayload;
   } else {
@@ -125,10 +137,10 @@ export async function decodeAssetDocument(
     );
   }
   return {
-    type: decoded.header.type,
-    name: decoded.header.name,
-    guid: decoded.header.guid,
-    version: decoded.header.version,
+    type: header.type,
+    name: header.name,
+    guid: header.guid,
+    version: header.version,
     payload,
   };
 }
