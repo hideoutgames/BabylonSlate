@@ -19,7 +19,9 @@ Preview, including neutralization and fresh-transition admission. The correlated
 session-boundary client lives in `@babylonslate/bridge`; editor compatibility
 exports reuse it. Preview input ownership and pause requests validate source,
 origin and session identity without arming diagnostics. Capture waits for the
-acknowledged boundary and preserves independent lifecycle/user reasons.
+acknowledged boundary and preserves independent lifecycle/user reasons. When the
+latest Preview boundary fails or times out, the player releases the view freeze
+and input hold it placed; explicit editor input suppression still applies.
 
 ## Transports
 
