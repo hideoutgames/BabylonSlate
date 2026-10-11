@@ -8,7 +8,7 @@ import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
   createDefaultLogicGraphSerialized,
-  hydrateClassDocumentPayload,
+  requireClassGraphPayload,
   hydrateSerializedGraphForEditor,
   knownClassIdSet,
   materializeLogicGraph,
@@ -57,18 +57,15 @@ describe("custom event declaration validation", () => {
   });
 });
 
-describe("hydrateClassDocumentPayload", () => {
-  it("seeds a default event graph when the Class payload is empty", () => {
-    const seeded = hydrateClassDocumentPayload({});
-    expect(seeded.nodes.some((node) => node.type.includes("beginPlay"))).toBe(
-      true,
-    );
-    expect(seeded.nodes.some((node) => node.type.includes("tick"))).toBe(true);
+describe("requireClassGraphPayload", () => {
+  it("refuses a Class payload without node and edge lists instead of replacing it", () => {
+    expect(() => requireClassGraphPayload({})).toThrow(/not a graph/);
+    expect(() => requireClassGraphPayload({ nodes: [], members: [] })).toThrow(/not a graph/);
   });
 
   it("keeps an existing SerializedGraph payload", () => {
     const existing: SerializedGraph = { nodes: [], edges: [] };
-    expect(hydrateClassDocumentPayload(existing)).toEqual(existing);
+    expect(requireClassGraphPayload(existing)).toBe(existing);
   });
 });
 
@@ -417,6 +414,14 @@ describe("hydrateSerializedGraphForEditor", () => {
       type: { kind: string; classId?: string };
     }>;
     expect(pins.find((pin) => pin.id === "result")?.type).toEqual({
+      kind: "actorRef",
+      classId: "Actor",
+    });
+    // Validation and compile type the Result the same way.
+    const logic = materializeLogicGraph(graph, "cast-graph", "event", {
+      parentOf: (id) => (id === "Hero" ? "Actor" : undefined),
+    });
+    expect(logic.nodes.find((node) => node.id === "cast-1")?.pins.find((pin) => pin.id === "result")?.type).toEqual({
       kind: "actorRef",
       classId: "Actor",
     });
@@ -3522,8 +3527,7 @@ describe("subsystems", () => {
       "variables.set:Inventory:Gold",
       "flow.event.call:Inventory:On Refresh",
     ];
-    for (const id of members) expect(suggested).toContain(id);
-    expect(suggested.slice(0, 3)).toEqual(expect.arrayContaining(members.slice(0, 3)));
+    expect(suggested.slice(0, members.length)).toEqual(expect.arrayContaining(members));
   });
 
   it("rebuilds a saved Get node's typed pin and title from its class", () => {

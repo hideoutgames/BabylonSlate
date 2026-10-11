@@ -167,7 +167,7 @@ import {
   MANNEQUIN_CLASS_FILE,
 } from "../lib/scaffold-empty-3d";
 import { asStructureAsset } from "../lib/type-asset-payload";
-import { createDefaultLogicGraphSerialized, defaultNodeRegistry, hydrateClassDocumentPayload } from "./graph-validation";
+import { createDefaultLogicGraphSerialized, defaultNodeRegistry, requireClassGraphPayload } from "./graph-validation";
 
 function headerMetaForSave(
   type: string,
@@ -2187,7 +2187,7 @@ export class ProjectService {
     }
     if (kind === "prefab") return { ...normalizePrefab(content) };
     if (kind === "graph") {
-      return hydrateClassDocumentPayload(
+      return requireClassGraphPayload(
         content as unknown as Record<string, unknown>,
       );
     }
