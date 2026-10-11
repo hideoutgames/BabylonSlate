@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AssetPicker,
   AssetPickerControl,
@@ -32,6 +32,7 @@ import {
   fontFamilyFromRepresentationFileName,
   glyphsFallingToFallback,
   groupMsdfImportBatch,
+  mergeFontAttachPayload,
   msdfAtlasPickError,
   normalizeFontPayload,
 } from "@babylonslate/assets";
@@ -106,6 +107,10 @@ function FontEditor({
   const { projectDocument } = useProjectState();
   const { assetRegistry } = useRegistryState();
   const font = normalizeFontPayload(payload, "Custom Font");
+  // The attach awaits storage; its follow-up commit starts from the document
+  // as it is then, not from the render that started the import.
+  const payloadRef = useRef(payload);
+  payloadRef.current = payload;
   const [sample, setSample] = useState("The quick brown fox");
   const [fontsReady, setFontsReady] = useState(false);
   const [fontError, setFontError] = useState<string | null>(null);
@@ -145,11 +150,16 @@ function FontEditor({
     }
     const updated = assetRegistry.getByGuid(indexedFont.header.guid);
     if (updated) {
+      // A saved Font keeps its payload in the document chunk, so the header
+      // only reliably carries the newly attached representation flags. Merge
+      // those into the open document instead of replacing it with the header.
+      const attached = normalizeFontPayload(updated.header.payload, font.family);
       onChange(
-        normalizeFontPayload(updated.header.payload, font.family) as unknown as Record<
-          string,
-          unknown
-        >,
+        mergeFontAttachPayload(
+          payloadRef.current,
+          { representations: attached.representations },
+          font.family,
+        ) as unknown as Record<string, unknown>,
       );
     }
   };
