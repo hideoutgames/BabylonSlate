@@ -1528,12 +1528,14 @@ function variableAccessPaletteNodes(
     variable,
     implicitSelf: true,
   }));
+  // Inherited prefab components come from the parent Class graphs, which the
+  // graph panel passes as `otherClassGraphs` (as hydrate and validate read them).
   for (const member of componentGraphMembersForClass({
     graph: options?.graph,
     classId: options?.classId,
     parentClass: options?.parentClass,
     parentOf: options?.parentOf,
-    parentGraphs: options?.parentGraphs,
+    parentGraphs: options?.parentGraphs ?? options?.otherClassGraphs,
   })) {
     rows.push({
       classId: localClassId,
@@ -2409,7 +2411,8 @@ export function classMemberSymbolsFromGraphs(
       if (member.propertyKey) symbol.propertyKey = member.propertyKey;
       symbols.push(symbol);
     }
-    // The palette also exposes events declared by canvas nodes in older graphs.
+    // Add Node's Event Custom places a canvas node without a member; Calls to
+    // it resolve through these symbols.
     const declaredEvents = new Set(
       (graph.members ?? [])
         .filter((member) => member.kind === "event")
@@ -2550,8 +2553,8 @@ function hostLineageDiagnostics(
   const hierarchy: SubsystemClassHierarchy = {
     ancestry: (id) => walkAncestry(id, parentOf),
   };
-  // A class the lookup does not know (legacy Graph assets, Animation Graph
-  // objects) has no lineage to check against.
+  // A host the lookup does not know (an Animation Graph object, or a caller
+  // without the project's parent lookup) has no lineage to check against.
   const classChain = options.classId
     ? walkAncestry(options.classId, parentOf)
     : [];

@@ -1870,6 +1870,23 @@ describe("scriptPaletteNodes", () => {
     expect(validated?.defaultData).toMatchObject({ componentId: "text-1" });
   });
 
+  it("injects Get rows for components inherited from the parent Class prefab", () => {
+    // The graph panel passes parent graphs as otherClassGraphs, not parentGraphs.
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Base",
+      parentOf: (id) => (id === "Hero" ? "Base" : id === "Base" ? "Actor" : null),
+      classId: "Hero",
+      graph: { nodes: [], edges: [] },
+      otherClassGraphs: {
+        Base: { nodes: [], edges: [], components: [createText3DComponent("text-1")] },
+      },
+    });
+    expect(nodes.find((node) => node.title === "Get 3D Text")?.defaultData).toMatchObject({
+      componentId: "text-1",
+      implicitSelf: true,
+    });
+  });
+
   it("injects engine component Get/Set and Call Function from the script API catalog", () => {
     const nodes = scriptPaletteNodes(registry, {
       parentClass: "Actor",
