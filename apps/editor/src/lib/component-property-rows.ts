@@ -252,14 +252,20 @@ function collisionLayerNames(
   return names.length > 0 ? names : ["Default"];
 }
 
-function layerNameFromBitmask(
+/**
+ * Layer Select label for a stored membership mask. A single named bit is that
+ * layer; any other mask (no bits, several, or bits past the named layers) is
+ * described as its own option, never as a layer the collider is not in.
+ */
+function layerLabelFromBitmask(
   layer: number,
   names: readonly string[],
 ): string {
-  for (let bit = 0; bit < names.length; bit++) {
-    if ((layer & (1 << bit)) !== 0) return names[bit]!;
+  const labels: string[] = [];
+  for (let bit = 0; bit < 32; bit++) {
+    if ((layer & (1 << bit)) !== 0) labels.push(names[bit] ?? `Layer ${bit + 1}`);
   }
-  return names[0] ?? "Default";
+  return labels.length > 0 ? labels.join(", ") : "None";
 }
 
 function collisionLayerRow(
@@ -270,7 +276,7 @@ function collisionLayerRow(
 ): PropertyRow {
   const names = collisionLayerNames(collisionLayers);
   const layer = asNumber(component.properties.layer, 1);
-  const value = layerNameFromBitmask(layer, names);
+  const value = layerLabelFromBitmask(layer, names);
   const options = names.includes(value) ? names : [...names, value];
   return {
     kind: "enum",

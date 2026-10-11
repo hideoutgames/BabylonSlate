@@ -991,6 +991,22 @@ describe("componentPropertyRows", () => {
     });
   });
 
+  it.each([
+    [0, "None"],
+    [0b11, "Default, Enemy"],
+    [0b100, "Layer 3"],
+  ])("labels stored collision layer mask %i as %s instead of the first layer", (layer, label) => {
+    const { rows } = rowsFor(
+      { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 0.5 }, layer } },
+      { collisionLayers: ["Default", "Enemy"] },
+    );
+    const row = rows.find((entry) => entry.id.endsWith("-layer"));
+    expect(row).toMatchObject({ kind: "enum", value: label });
+    if (row?.kind === "enum") {
+      expect(row.options.map((option) => option.value)).toEqual(["Default", "Enemy", label]);
+    }
+  });
+
   it("keeps an unfinished primitive editable without admitting it to physics", () => {
     const result = rowsFor({ id: "col", classId: "ColliderComponent", properties: {
       shape: { kind: "sphere", radius: 0 },
