@@ -13,17 +13,25 @@ export type ComponentGraphMember = GraphClassMember & {
   inheritedFrom?: string;
 };
 
+/**
+ * The first of each repeated label keeps it; later ones take the next free
+ * ` N` suffix, skipping any label a component already shows (a component
+ * renamed "3D Text 2" beside two "3D Text" rows), so every name is unique.
+ */
 function uniquifyLabels(labels: readonly string[]): string[] {
-  const counts = new Map<string, number>();
-  for (const label of labels) {
-    counts.set(label, (counts.get(label) ?? 0) + 1);
-  }
-  const seen = new Map<string, number>();
+  const shown = new Set(labels);
+  const used = new Set<string>();
+  const nextSuffix = new Map<string, number>();
   return labels.map((label) => {
-    if ((counts.get(label) ?? 0) < 2) return label;
-    const next = (seen.get(label) ?? 0) + 1;
-    seen.set(label, next);
-    return next === 1 ? label : `${label} ${next}`;
+    let unique = label;
+    if (used.has(label)) {
+      let suffix = nextSuffix.get(label) ?? 2;
+      while (used.has(`${label} ${suffix}`) || shown.has(`${label} ${suffix}`)) suffix += 1;
+      nextSuffix.set(label, suffix + 1);
+      unique = `${label} ${suffix}`;
+    }
+    used.add(unique);
+    return unique;
   });
 }
 
