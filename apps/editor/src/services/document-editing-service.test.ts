@@ -12,7 +12,7 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { appendJournalLines } from "@babylonslate/assets";
+import { appendJournalLines, readJournalLines } from "@babylonslate/assets";
 import {
   commandToJournalPayload,
   DEFAULT_EDIT_BYTE_BUDGET,
@@ -242,6 +242,31 @@ describe("DocumentEditingService", () => {
     editing.stepHistory("undo");
     expect(documents.getDocument(SCENE_ID)!.content).toEqual(baseline);
     expect(documents.getDocument(SCENE_ID)!.dirty).toBe(false);
+  });
+
+  it("keeps the recovery journal when one of its records cannot be read", async () => {
+    const derived = new MemoryStorageAdapter("documents");
+    await derived.openDocumentsProject("derived-root");
+    const resolved = vi.fn();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { documents, editing, open } = createEditing({
+      derivedStorage: async () => derived,
+      onRecoveryResolved: resolved,
+    });
+    await open(SCENE_REF, createDefaultScene("2d"));
+    const opened = documents.getDocument(SCENE_ID)!.content as SerializedScene;
+    // The readable record ends at the saved content, which alone would clear the journal.
+    await appendJournalLines(derived, "project-guid", [serializeJournalLine({
+      v: 1, docId: SCENE_ID, at: "2026-10-11T10:00:00Z",
+      command: commandToJournalPayload(new SetSceneNameCommand(opened.name, opened.name)),
+    }), "{\"v\":1,\"docId\""]);
+
+    await editing.replayRecoveryJournal();
+    expect(resolved).toHaveBeenCalled();
+    expect(documents.getDocument(SCENE_ID)!.dirty).toBe(false);
+    expect(await readJournalLines(derived, "project-guid")).toHaveLength(2);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("1 unreadable recovery record"));
+    warn.mockRestore();
   });
 
   it("does not replay a project's recovery journal into another project opened during the read", async () => {

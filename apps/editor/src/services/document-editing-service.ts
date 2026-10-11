@@ -411,7 +411,10 @@ export class DocumentEditingService {
       }
     }
 
-    const { documents, skipped } = replayJournalLines(lines, openDocs);
+    const { documents, skipped, malformed } = replayJournalLines(lines, openDocs);
+    if (malformed.length > 0) {
+      console.warn(`[journal] ${malformed.length} unreadable recovery record(s) could not be replayed`);
+    }
     for (const [id, content] of documents) {
       const doc = this.documents.getDocument(id);
       if (!doc || doc.content === content) continue;
@@ -426,8 +429,8 @@ export class DocumentEditingService {
     }
     // Undo can leave the journal at the saved content. There is nothing to
     // save in that case, so retire the replayed journal without a no-op edit.
-    // Retain skipped records and any edits made while the clear is queued.
-    if (skipped.length === 0) {
+    // Retain skipped or unreadable records and any edits made while the clear is queued.
+    if (skipped.length === 0 && malformed.length === 0) {
       await this.journal.clearAfterFlush(guid, () => truncateJournal(derived, guid, () =>
         this.project.guid === guid &&
         this.documents.getDirtyDocuments().length === 0 &&
