@@ -587,7 +587,7 @@ export class ProjectService {
       "createFromTemplate", "openListedProject", "closeProject", "renameListedProjectDisplayName",
       "updateListedProject", "reconnect", "loadCurrentProject", "syncPlugins", "applyPluginOverrides",
       "createProjectPlugin", "deleteProjectPlugin", "importPlugin", "remountRegistry",
-      "replaceClassReferencesBeforeDelete", "clearDeletedAssetReferences", "saveDocument",
+      "replaceClassReferencesBeforeDelete", "clearDeletedAssetReferences", "renameAsset", "saveDocument",
       "writeSceneNavmeshChunk", "writeSceneAudioReverbChunk", "writeAudioClipChunk",
       "removeAudioClipChunk", "saveProject", "saveLayouts", "upgradeDependencyMetadata",
     ]);

@@ -95,6 +95,10 @@ describe("ProjectService lifecycle", () => {
     let ready = false;
     void lease.ready.then(acquired => { ready = acquired; });
     await expect(service.saveDocument("scene", MAIN_SCENE_FILE, scene)).rejects.toThrow(/preparing/);
+    // A rename (with its Class reference rewrites) is refused while draining too,
+    // rather than writing until the lock lands mid-rename.
+    await expect(service.renameAsset(service.guidForPath(MAIN_SCENE_FILE)!, "Renamed")).rejects.toThrow(/preparing/);
+    expect(await storage.exists(MAIN_SCENE_FILE)).toBe(true);
     expect(ready).toBe(false);
     proceed();
     await saving;
