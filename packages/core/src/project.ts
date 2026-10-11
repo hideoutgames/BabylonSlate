@@ -271,8 +271,6 @@ export interface SourceControlProjectSettings {
 
 export interface PluginEnableOverride {
   enabled: boolean;
-  /** Legacy acknowledgement of version warnings; never required for enablement. */
-  acceptedCompatibility?: string;
 }
 
 export const DEFAULT_EXPORT_FILE_COUNT_WARN = 800;
@@ -671,13 +669,7 @@ function normalizePluginOverrides(value: unknown): Record<string, PluginEnableOv
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
     const enabled = (raw as { enabled?: unknown }).enabled;
     if (typeof enabled !== "boolean") continue;
-    const accepted = (raw as { acceptedCompatibility?: unknown }).acceptedCompatibility;
-    out[guid] = {
-      enabled,
-      ...(enabled && typeof accepted === "string" && accepted.trim() !== ""
-        ? { acceptedCompatibility: accepted }
-        : {}),
-    };
+    out[guid] = { enabled };
   }
   return out;
 }
