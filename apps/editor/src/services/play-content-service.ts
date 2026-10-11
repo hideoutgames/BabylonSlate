@@ -296,11 +296,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     const headers = Object.fromEntries(
       assets.map((asset) => [
         asset.path,
-        {
-          type: asset.header.type,
-          parentClass: asset.header.parentClass ?? null,
-          name: asset.header.name,
-        },
+        { type: asset.header.type, parentClass: asset.header.parentClass ?? null },
       ]),
     );
     const parentOf = classParentLookup(assets);
@@ -314,7 +310,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     );
     const classIds = new Set(registered.map((id) => id.trim()).filter(Boolean));
     const selectedGuids = new Set(assets
-      .filter((asset) => classIds.has(asset.header.name.trim() || classIdForGraphPath(asset.path)))
+      .filter((asset) => classIds.has(classIdForGraphPath(asset.path)))
       .map((asset) => asset.header.guid));
     const documents = await loadClassGraphDocuments(selectedGuids);
     const selected = selectEditorUtilityGraphs(documents, {
