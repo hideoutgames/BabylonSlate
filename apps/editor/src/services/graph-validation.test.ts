@@ -902,7 +902,7 @@ describe("validateSerializedGraph", () => {
     ).toBe(true);
   });
 
-  it("does not report a pure cycle when Line Trace location feeds back through Make Vector3", () => {
+  it("does not report a pure cycle when Line Trace location feeds back through Add Vector3", () => {
     const beginPins = registry.get("flow.event.beginPlay")!.pins({});
     const tracePins = registry.get("physics.lineTrace")!.pins({});
     const addPins = registry.get("vector.add3")!.pins({});

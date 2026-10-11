@@ -548,7 +548,7 @@ The nodes acquire the requested Scene document and required source dependencies 
 Parent a Class to **GameSubsystem** (session lifetime) or **SceneSubsystem** (main-Scene lifetime) to get an engine-created singleton. Only leaf classes are created; lifecycle order, identity and notification pairing are in [object-model.md](object-model.md#subsystems).
 
 - The New Class parent tree lists both bases under BObject; the hidden `Subsystem` base never appears in parent, Class Type or Cast pickers.
-- New Class refuses a name whose class id is a locked engine id (`GameSubsystem`, `Actor`, …). Renaming an existing Class is not guarded.
+- New Class and Rename both refuse a name whose class id is a locked engine id (`GameSubsystem`, `Actor`, …); Rename reports it in the name dialog.
 
 **Events per lineage.** Add Event lists and `event.wrong_lineage` validation both read `engineNativeEventsFor`.
 
