@@ -13,7 +13,7 @@ export type PlayerBackendHandle = PlayerBootHandle & {
 
 /** One private graphics context for this player, released after its runtime/views. */
 export async function startPlayerWithBackend(
-  options: Omit<PlayerBootOptions, "sharedEngine" | "content"> & { signal?: AbortSignal },
+  options: Omit<PlayerBootOptions, "sharedEngine" | "content" | "onStopped"> & { signal?: AbortSignal; onStopped?: () => void },
 ): Promise<PlayerBackendHandle> {
   options.signal?.throwIfAborted();
   const content = packedContentFromGame(options.game);
@@ -39,11 +39,20 @@ export async function startPlayerWithBackend(
   });
   let released = false;
   let releaseFailure: unknown;
-  const releaseOwner = () => {
+  const releaseOwner = (viewReleased?: Promise<void>) => {
     if (released) return;
     released = true;
     const errors: unknown[] = [];
-    try { owner.dispose(); } catch (error) { errors.push(error); }
+    // The view releases its Scene on this Engine once native work settles.
+    // Dispose the Engine only after that, even when the release was
+    // quarantined: Engine disposal is the final native owner.
+    if (viewReleased) {
+      void viewReleased.catch(() => {}).then(() => owner.dispose()).catch((error: unknown) => {
+        console.error(`[player] Graphics backend cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    } else {
+      try { owner.dispose(); } catch (error) { errors.push(error); }
+    }
     try { options.onStopped?.(); } catch (error) { errors.push(error); }
     if (errors.length) {
       releaseFailure = errors.length === 1 ? errors[0] : new AggregateError(errors, "Player backend cleanup failed.");
@@ -83,6 +92,8 @@ export async function startPlayerWithBackend(
       stopped = true;
       const errors: unknown[] = [];
       try { result = player.stop(); } catch (error) { errors.push(error); }
+      // Player Stop already released the owner after its view; this covers a
+      // Stop that failed before reaching that cleanup.
       try { releaseOwner(); } catch (error) { errors.push(error); }
       if (releaseFailure !== undefined && !errors.includes(releaseFailure)) errors.push(releaseFailure);
       if (errors.length) throw new AggregateError(errors, "Player shutdown failed.");

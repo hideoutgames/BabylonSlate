@@ -128,8 +128,13 @@ export type PlayerBootOptions = {
   traceByteBudget?: number;
   sharedEngine?: AbstractEngine;
   content?: PackedGameContent;
-  /** Runs after every player resource has attempted cleanup, including startup rollback. */
-  onStopped?: () => void;
+  /**
+   * Runs after every player resource has attempted cleanup, including startup
+   * rollback. `viewReleased` is present once a view was created: a shared-Engine
+   * view releases its Scene only after native work settles, so the shared
+   * Engine must stay alive until that promise settles.
+   */
+  onStopped?: (viewReleased?: Promise<void>) => void;
   onRenderOutputChanged?: (settings: RenderProjectSettings) => void;
   onStats?: (stats: {
     ticks: number;
@@ -165,10 +170,12 @@ export function startPlayer(options: PlayerBootOptions): PlayerBootHandle {
     }
     return errors;
   };
-  // First acquired, last released: the backend owner must outlive every view.
-  own(() => options.onStopped?.());
+  // First acquired, last released: the backend owner must outlive every view,
+  // including a shared-Engine view's deferred Scene release.
+  let viewReleased: Promise<void> | undefined;
+  own(() => options.onStopped?.(viewReleased));
   try {
-    return initializePlayer(options, own, releaseAll);
+    return initializePlayer(options, own, releaseAll, (released) => { viewReleased = released; });
   } catch (error) {
     const errors = releaseAll();
     if (errors.length) throw new AggregateError([error, ...errors], "Player startup and cleanup failed.", { cause: error });
@@ -180,6 +187,7 @@ function initializePlayer(
   options: PlayerBootOptions,
   own: (cleanup: () => void) => () => void,
   releaseAll: () => unknown[],
+  onViewReleased: (released: Promise<void>) => void,
 ): PlayerBootHandle {
   const { canvas, game } = options;
   own(() => game.dispose?.());
@@ -397,7 +405,7 @@ function initializePlayer(
     },
     onRuntimeOutputChanged: (settings) => { runtimeOutput = settings; options.onRenderOutputChanged?.(settings); },
   });
-  own(() => handle.dispose());
+  own(() => { try { handle.dispose(); } finally { onViewReleased(handle.whenReleased()); } });
   handle.applySceneEnvironment(scene);
   const releaseConsoleCapture = captureConsoleLogs(
     console,
