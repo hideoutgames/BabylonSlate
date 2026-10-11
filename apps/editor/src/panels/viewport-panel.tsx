@@ -375,37 +375,52 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     return () => registerNavBakeCollector(null);
   }, [registerNavBakeCollector]);
 
+  const navmeshPath =
+    doc && isSceneWorkspaceKind(doc.ref.kind) ? doc.ref.path : null;
+  const navmeshOverlayOn = Boolean(
+    scene && (navmeshVisible || navmeshOverlayEnabled(scene)),
+  );
+  const lastBakedNavmesh = navBake?.lastBytes ?? null;
+  // The stored chunk changes only with the asset (a registry change), so scene
+  // edits redraw blockers from the bytes already read.
+  const [storedNavmesh, setStoredNavmesh] = useState<{
+    path: string;
+    bytes: Uint8Array | null;
+  } | null>(null);
   useEffect(() => {
-    const overlay = navDebugRef.current;
-    const path =
-      doc && isSceneWorkspaceKind(doc.ref.kind) ? doc.ref.path : null;
-    const enabled = Boolean(
-      scene && (navmeshVisible || navmeshOverlayEnabled(scene)),
-    );
-    if (!overlay || !enabled || !scene) {
-      overlay?.clear();
-      return;
-    }
-    const blockers = navDebugBlockersFromActors(scene.actors);
+    void registryEpoch;
+    if (!navmeshOverlayOn || !navmeshPath || lastBakedNavmesh) return;
     let cancelled = false;
     void (async () => {
-      const bytes =
-        navBake?.lastBytes ??
-        (path ? await readAssetChunk(path, NAVMESH_CHUNK_ID) : null);
-      if (cancelled) return;
-      await overlay.sync(bytes ?? null, blockers, scene.settings.physicsWorld);
+      const bytes = await readAssetChunk(navmeshPath, NAVMESH_CHUNK_ID);
+      if (!cancelled) setStoredNavmesh({ path: navmeshPath, bytes: bytes ?? null });
     })();
     return () => {
       cancelled = true;
     };
+  }, [lastBakedNavmesh, navmeshOverlayOn, navmeshPath, readAssetChunk, registryEpoch]);
+
+  useEffect(() => {
+    const overlay = navDebugRef.current;
+    if (!overlay || !navmeshOverlayOn || !scene) {
+      overlay?.clear();
+      return;
+    }
+    const stored = storedNavmesh?.path === navmeshPath ? storedNavmesh : null;
+    // Wait for this scene's stored chunk unless a bake supplies the bytes.
+    if (navmeshPath && !lastBakedNavmesh && !stored) return;
+    void overlay.sync(
+      lastBakedNavmesh ?? stored?.bytes ?? null,
+      navDebugBlockersFromActors(scene.actors),
+      scene.settings.physicsWorld,
+    );
   }, [
-    doc?.ref.kind,
-    doc?.ref.path,
-    navBake?.lastBytes,
+    lastBakedNavmesh,
     navOverlayGeneration,
-    navmeshVisible,
-    readAssetChunk,
+    navmeshOverlayOn,
+    navmeshPath,
     scene,
+    storedNavmesh,
   ]);
 
   /** Turn the mesh state a gizmo drag left behind into one scene command. */

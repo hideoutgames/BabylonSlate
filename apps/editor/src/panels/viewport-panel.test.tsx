@@ -12,6 +12,7 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { playAudioLibraryFromAssets } from "../lib/play-audio";
 import type { SceneShapeEditTarget } from "../context/scene-editing-context";
 
+const navmeshOverlaySync = vi.hoisted(() => vi.fn(async () => {}));
 const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() => {
   const handle = {
     engine: {
@@ -132,6 +133,7 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
     NavMeshDebugOverlay: class {
       clear(): void {}
       dispose(): void {}
+      sync = navmeshOverlaySync;
     },
     syncEditorPlayState: vi.fn(),
   };
@@ -646,6 +648,26 @@ describe("ViewportPanel engine", () => {
     play.playing = true;
     view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
     expect((screen.getByRole("button", { name: "Drop" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("reads the stored navmesh once while scene edits redraw its overlay", async () => {
+    const scene = createDefaultScene();
+    const document = {
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: { ...scene, settings: { ...scene.settings, showNavmesh: true } },
+    };
+    const stored = new Uint8Array([1, 2, 3]);
+    documents.readAssetChunk.mockReset().mockResolvedValue(stored);
+    navmeshOverlaySync.mockClear();
+    documents.openDocuments = [document];
+    const view = renderViewport();
+    await waitFor(() => expect(navmeshOverlaySync).toHaveBeenCalledWith(stored, [], "3d"));
+    const syncs = navmeshOverlaySync.mock.calls.length;
+    documents.openDocuments = [{ ...document, content: { ...document.content, actors: [createActor("box", "Box")] } }];
+    view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
+    await waitFor(() => expect(navmeshOverlaySync.mock.calls.length).toBeGreaterThan(syncs));
+    expect(navmeshOverlaySync).toHaveBeenLastCalledWith(stored, [], "3d");
+    expect(documents.readAssetChunk).toHaveBeenCalledOnce();
   });
 
   it("disables Drop while changed scene models are loading", async () => {
