@@ -157,11 +157,6 @@ export function shouldForwardPlayEngineCommand(type: string): boolean {
   return isPlayEngineCommandType(type);
 }
 
-export function overlayLogForCommand(command: CommandMessage): string | null {
-  if (command.type === "playSound") return null;
-  return null;
-}
-
 export function applyPlayActiveScene(options: {
   handle: {
     loadScene: (
@@ -241,8 +236,12 @@ export function applyPlaySessionStep(target: PlaySessionStepTarget): boolean {
   }
   if (target.runtime) {
     target.runtime.resume();
-    target.runtime.tick();
-    target.runtime.pause();
+    // A throwing tick still returns to pause; Step never leaves the game running.
+    try {
+      target.runtime.tick();
+    } finally {
+      target.runtime.pause();
+    }
     return true;
   }
   return false;
@@ -1417,8 +1416,6 @@ export function startPlaySession(options: {
       options.onBehaviourTreeDebug?.(command.enabled);
     if (command.type === "behaviourTreeSnapshot")
       options.onBehaviourTreeSnapshot?.(command.trees);
-    const overlayLog = overlayLogForCommand(command);
-    if (overlayLog) options.onLog?.(overlayLog, "log");
   };
 
   const scripts = options.scripts ?? [];
