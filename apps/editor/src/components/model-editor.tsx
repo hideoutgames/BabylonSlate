@@ -48,23 +48,51 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function useModelSourceBytes(path: string | undefined): Uint8Array | null {
+export type ModelSourceRead = { bytes: Uint8Array | null; error: string | null };
+
+const NO_MODEL_SOURCE: ModelSourceRead = { bytes: null, error: null };
+
+/**
+ * The `source` chunk of the Model at `path`. Bytes read for another path are
+ * never returned, so a path change shows no mesh until its own read lands, and
+ * a failed read reports its error instead of leaving the previous mesh.
+ */
+export function useModelSourceBytes(path: string | undefined): ModelSourceRead {
   const { readAssetChunk } = useDocumentActions();
-  const [sourceBytes, setSourceBytes] = useState<Uint8Array | null>(null);
+  const [loaded, setLoaded] = useState<(ModelSourceRead & { path: string }) | null>(null);
   useEffect(() => {
-    if (!path) {
-      setSourceBytes(null);
-      return;
-    }
+    if (!path) return;
     let cancelled = false;
-    void readAssetChunk(path, "source").then((bytes) => {
-      if (!cancelled) setSourceBytes(bytes);
-    });
+    readAssetChunk(path, "source").then(
+      (bytes) => {
+        if (!cancelled) setLoaded({ path, bytes, error: null });
+      },
+      (error: unknown) => {
+        if (!cancelled)
+          setLoaded({
+            path,
+            bytes: null,
+            error: error instanceof Error ? error.message : "The Model source could not be read.",
+          });
+      },
+    );
     return () => {
       cancelled = true;
     };
   }, [path, readAssetChunk]);
-  return sourceBytes;
+  return path && loaded?.path === path ? loaded : NO_MODEL_SOURCE;
+}
+
+/** Shown in place of a mesh preview when the Model source could not be read. */
+export function ModelSourceReadError({ error }: { error: string }) {
+  return (
+    <Empty>
+      <EmptyHeader>
+        <EmptyTitle>Failed to Read Mesh</EmptyTitle>
+        <EmptyDescription>{error}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
 }
 
 export function ModelPreviewPanel(_props: IDockviewPanelProps) {
@@ -72,12 +100,13 @@ export function ModelPreviewPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const { applyAssetDocumentChange } = useDocumentActions();
   const doc = useOpenDocument(documentId);
-  const sourceBytes = useModelSourceBytes(doc?.ref.path);
+  const source = useModelSourceBytes(doc?.ref.path);
   return (
     <PanelFrame data-testid="model-preview-panel">
       <ModelPreview
         payload={asRecord(doc?.content)}
-        sourceBytes={sourceBytes}
+        sourceBytes={source.bytes}
+        sourceError={source.error}
         onChange={(next) => {
           void applyAssetDocumentChange(documentId, next);
         }}
@@ -91,7 +120,7 @@ export function ModelCollidersPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const { applyAssetDocumentChange } = useDocumentActions();
   const doc = useOpenDocument(documentId);
-  const sourceBytes = useModelSourceBytes(doc?.ref.path);
+  const { bytes: sourceBytes } = useModelSourceBytes(doc?.ref.path);
   return (
     <PanelFrame data-testid="model-colliders-panel">
       <ModelColliders
@@ -125,12 +154,22 @@ export function ModelDetailsPanel(_props: IDockviewPanelProps) {
 export function ModelPreview({
   payload,
   sourceBytes = null,
+  sourceError = null,
   onChange,
 }: {
   payload: Record<string, unknown>;
   sourceBytes?: Uint8Array | null;
+  /** Why the Model source could not be read, shown instead of a mesh. */
+  sourceError?: string | null;
   onChange?: (next: Record<string, unknown>) => void;
 }) {
+  if (sourceError) {
+    return (
+      <div className="flex h-full flex-col p-3" data-testid="model-preview">
+        <ModelSourceReadError error={sourceError} />
+      </div>
+    );
+  }
   if (!sourceBytes || !isGltfModelBytes(sourceBytes)) {
     return (
       <div className="flex h-full flex-col p-3" data-testid="model-preview">

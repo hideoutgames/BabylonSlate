@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   PanelFrame,
@@ -22,11 +21,11 @@ import {
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import {
-  useDocumentActions,
   useOpenDocument,
   useRegistryState,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { ModelSourceReadError, useModelSourceBytes } from "./model-editor";
 import { SkeletonPreviewCanvas } from "./skeleton-preview-canvas";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -35,38 +34,18 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function useOwningModelBytes(modelGuid: string): Uint8Array | null {
-  const { readAssetChunk } = useDocumentActions();
-  const { assetRegistry } = useRegistryState();
-  const [bytes, setBytes] = useState<Uint8Array | null>(null);
-  const path = assetRegistry
-    ?.list()
-    .find((asset) => asset.header.guid === modelGuid)?.path;
-  useEffect(() => {
-    if (!path) {
-      setBytes(null);
-      return;
-    }
-    let cancelled = false;
-    void readAssetChunk(path, "source").then((value) => {
-      if (!cancelled) setBytes(value);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [path, readAssetChunk]);
-  return bytes;
-}
-
 export function SkeletonPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
   const doc = useOpenDocument(documentId);
+  const { assetRegistry } = useRegistryState();
   const skeleton = normalizeSkeletonPayload(asRecord(doc?.content));
-  const sourceBytes = useOwningModelBytes(skeleton.modelGuid);
+  const source = useModelSourceBytes(
+    skeleton.modelGuid ? assetRegistry?.getByGuid(skeleton.modelGuid)?.path : undefined,
+  );
   return (
     <PanelFrame data-testid="skeleton-preview-panel">
-      <SkeletonPreview payload={skeleton} sourceBytes={sourceBytes} />
+      <SkeletonPreview payload={skeleton} sourceBytes={source.bytes} sourceError={source.error} />
     </PanelFrame>
   );
 }
@@ -85,10 +64,20 @@ export function SkeletonDetailsPanel(_props: IDockviewPanelProps) {
 export function SkeletonPreview({
   payload,
   sourceBytes = null,
+  sourceError = null,
 }: {
   payload: SkeletonPayload;
   sourceBytes?: Uint8Array | null;
+  /** Why the owning Model source could not be read, shown instead of a mesh. */
+  sourceError?: string | null;
 }) {
+  if (sourceError) {
+    return (
+      <div className="flex h-full flex-col p-3" data-testid="skeleton-preview">
+        <ModelSourceReadError error={sourceError} />
+      </div>
+    );
+  }
   if (!sourceBytes || !isGltfModelBytes(sourceBytes)) {
     return (
       <div className="flex h-full flex-col p-3" data-testid="skeleton-preview">

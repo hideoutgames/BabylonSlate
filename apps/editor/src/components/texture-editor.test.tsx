@@ -209,4 +209,15 @@ describe("Texture editor", () => {
     render(<TexturePreview path="assets/empty.babasset" payload={{ usage: "albedo" }} />);
     expect(await screen.findByText("No Image Data")).toBeTruthy();
   });
+
+  it("reports a failed pixel read and previews the pixels on Retry", async () => {
+    readAssetChunk.mockRejectedValueOnce(new Error("Asset chunk changed during 3 read attempts"));
+    render(<TexturePreview path="assets/albedo.babasset" payload={{ usage: "albedo" }} />);
+    expect(await screen.findByText("Texture Preview Failed")).toBeTruthy();
+    expect(screen.getByText("Asset chunk changed during 3 read attempts")).toBeTruthy();
+    expect(screen.queryByText("Loading Preview…")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByTestId("texture-preview-image")).toBeTruthy();
+    expect(readAssetChunk).toHaveBeenCalledTimes(2);
+  });
 });
