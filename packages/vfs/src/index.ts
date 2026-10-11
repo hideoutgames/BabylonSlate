@@ -9,6 +9,7 @@ export * from "./documents-adapter";
 export * from "./electron-app-settings";
 export * from "./electron-storage-adapter";
 export * from "./import-picker";
+export * from "./library-folders";
 export * from "./memory-adapter";
 export * from "./mounted-storage";
 export * from "./http-catalog-storage";

@@ -13,11 +13,12 @@ import { newGuid, type ProjectStorage } from "@babylonslate/core";
 import {
   createReadOnlyProjectStorage,
   createTemplateStorage,
+  ENGINE_EXTENSION_LIBRARY_FOLDER,
   MemoryStorageAdapter,
 } from "@babylonslate/vfs";
 import { ensureEngineExtensionStorage } from "./engine-extensions";
 
-export const ENGINE_EXTENSION_LIBRARY_ROOT = "__slate_engine_extensions__";
+export const ENGINE_EXTENSION_LIBRARY_ROOT = ENGINE_EXTENSION_LIBRARY_FOLDER;
 const DEFAULTS_FILE = "defaults.json";
 
 export interface EngineExtensionEntry extends ExtensionDescriptor {

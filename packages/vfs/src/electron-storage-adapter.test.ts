@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
-import { ElectronStorageAdapter } from "./electron-storage-adapter";
-import type { ElectronProjectBridge } from "./platform";
+import { ElectronLibraryStorageAdapter, ElectronStorageAdapter } from "./electron-storage-adapter";
+import type { ElectronLibraryBridge, ElectronProjectBridge } from "./platform";
 import { createMountedProjectStorage } from "./mounted-storage";
 
 function fakeProjectBridge(): ElectronProjectBridge {
@@ -105,5 +105,62 @@ describe("ElectronStorageAdapter", () => {
     const denied = await storage.stat("project.json").catch((error: unknown) => error);
     expect(isStorageNotFound(denied)).toBe(false);
     expect((denied as Error).message).toMatch(/EACCES/);
+  });
+});
+
+/** Main-process stand-in: one file tree per library scope. */
+function fakeLibraryBridge(): ElectronLibraryBridge & { files: Map<string, Uint8Array> } {
+  const files = new Map<string, Uint8Array>();
+  const key = (scope: string, path: string) => `${scope}/${path}`;
+  return {
+    files,
+    readBinary: vi.fn(async (scope, path) => {
+      const bytes = files.get(key(scope, path));
+      if (!bytes) throw new Error(`Error invoking remote method 'library:readBinary': StorageNotFoundError: File not found: ${path}`);
+      return bytes.slice().buffer;
+    }),
+    readBinaryRange: vi.fn(async (scope, path, offset, length) => {
+      const bytes = files.get(key(scope, path))!;
+      return { bytes: bytes.slice(offset, offset + length).buffer, totalSize: bytes.length, revision: "1", actualBytesRead: length };
+    }),
+    writeBinary: vi.fn(async (scope, path, data) => { files.set(key(scope, path), new Uint8Array(data)); }),
+    exists: vi.fn(async (scope, path) => files.has(key(scope, path))),
+    readdir: vi.fn(async () => []),
+    mkdir: vi.fn(async () => {}),
+    remove: vi.fn(async (scope, path) => { files.delete(key(scope, path)); }),
+    stat: vi.fn(async () => ({ isDir: false, size: 0, mtime: 0 })),
+  };
+}
+
+describe("ElectronLibraryStorageAdapter", () => {
+  it("keeps each library's files in its own main-process scope", async () => {
+    const bridge = fakeLibraryBridge();
+    const templates = new ElectronLibraryStorageAdapter("__slate_templates__", bridge);
+    const plugins = new ElectronLibraryStorageAdapter("__slate_engine_plugins__", bridge);
+    expect(await templates.openDocumentsProject("__slate_templates__")).toMatchObject({ name: "__slate_templates__" });
+    await templates.writeBinary("Starter.zip", new Uint8Array([1, 2, 3]));
+
+    expect([...bridge.files.keys()]).toEqual(["__slate_templates__/Starter.zip"]);
+    expect(await templates.readBinary("Starter.zip")).toEqual(new Uint8Array([1, 2, 3]));
+    expect((await templates.readBinaryRange("Starter.zip", 1, 2)).bytes).toEqual(new Uint8Array([2, 3]));
+    expect(await plugins.exists("Starter.zip")).toBe(false);
+    const missing = await plugins.readBinary("Starter.zip").catch((error: unknown) => error);
+    expect(isStorageNotFound(missing)).toBe(true);
+  });
+
+  it("refuses project folder operations and other folder names", async () => {
+    const bridge = fakeLibraryBridge();
+    const storage = new ElectronLibraryStorageAdapter("__slate_templates__", bridge);
+    await expect(storage.openDocumentsProject("Game")).rejects.toThrow("cannot open or list project folders");
+    await expect(storage.pickProjectFolder()).rejects.toThrow("cannot open or list project folders");
+    await expect(storage.listProjects()).rejects.toThrow("cannot open or list project folders");
+    await expect(storage.openKnownFolder({ id: "node:/elsewhere", name: "Elsewhere", tier: "external" }))
+      .rejects.toThrow("cannot open or list project folders");
+    expect(storage.getCurrentFolder()).toBeNull();
+  });
+
+  it("reports a missing desktop library bridge", async () => {
+    const storage = new ElectronLibraryStorageAdapter("__slate_templates__", null);
+    await expect(storage.exists("Starter.zip")).rejects.toThrow("bridge is not installed");
   });
 });
