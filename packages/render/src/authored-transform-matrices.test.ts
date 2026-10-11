@@ -1,4 +1,4 @@
-import { Vector3 } from "@babylonjs/core";
+import { Quaternion, Vector3 } from "@babylonjs/core";
 import {
   composeAffineTransform,
   multiplyAffineTransforms,
@@ -9,7 +9,7 @@ import {
 } from "@babylonslate/core";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { authoredActorMatrices } from "./authored-transform-matrices";
+import { authoredActorMatrices, authoredActorWorldTransform } from "./authored-transform-matrices";
 
 function actor(id: string, parentId: string | null, transform: SerializedTransform): SerializedActor {
   return { id, name: id, classId: "Actor", parentId, transform, visible: true, locked: false, components: [], folderId: null };
@@ -86,6 +86,20 @@ describe("authored actor matrices", () => {
     const x = new Vector3(axes[0]!, axes[1]!, axes[2]!), y = new Vector3(axes[4]!, axes[5]!, axes[6]!);
     expect(Math.abs(Vector3.Dot(x, y))).toBeGreaterThan(0.1);
     expect(shearedActorIds(actors)).toEqual(["sheared"]);
+  });
+
+  it("detach an actor under a flattened parent at its world position with the chain's rotation", () => {
+    const turn = Quaternion.RotationAxis(new Vector3(0, 0, 1), 0.6), tilt = Quaternion.RotationAxis(new Vector3(1, 0, 0), 0.4);
+    const actors = [
+      actor("flat", null, { position: [1, 2, 3], rotation: turn.asArray() as [number, number, number, number], scale: [2, 1, 0] }),
+      actor("child", "flat", { position: [1, 0, 0], rotation: tilt.asArray() as [number, number, number, number], scale: [1, 3, 1] }),
+    ];
+    const detached = authoredActorWorldTransform(actors, actors[1]!);
+    const position = authoredActorMatrices(actors)(actors[1]!).getTranslation();
+    expect(detached.position).toEqual([expect.closeTo(position.x, 6), expect.closeTo(position.y, 6), expect.closeTo(position.z, 6)]);
+    expect(detached.scale).toEqual([expect.closeTo(2, 6), expect.closeTo(3, 6), expect.closeTo(0, 6)]);
+    const expected = turn.multiply(tilt);
+    expect(detached.rotation).toEqual(expected.asArray().map((value) => expect.closeTo(value, 6)));
   });
 
   it("match the runtime's matrix composition", () => {

@@ -68,7 +68,11 @@ export function authoredActorMatrices(actors: readonly SerializedActor[]): (acto
   return world;
 }
 
-/** Serializable world pose for detaching an actor from its authored parents. */
+/**
+ * Serializable world pose for detaching an actor from its authored parents: the world matrix's translation, rotation
+ * and scale (a sheared matrix loses its shear), or for a degenerate one (a zero scale on the chain) its exact position
+ * and the chain's composed rotation and scale.
+ */
 export function authoredActorWorldTransform(
   actors: readonly SerializedActor[],
   actor: SerializedActor,
@@ -78,7 +82,19 @@ export function authoredActorWorldTransform(
   const scale = new Vector3();
   const rotation = new Quaternion();
   const position = new Vector3();
-  matrix.decompose(scale, rotation, position);
+  // A zero scale on the chain leaves no rotation in the matrix: Babylon resets it, or derives one from the singular
+  // axes, and flips Y on the zero determinant. The actor then keeps its exact world position, and its rotation and
+  // scale compose along the chain.
+  const decomposed = matrix.decompose(scale, rotation, position);
+  if (!decomposed || Math.abs(matrix.determinant()) <= 1e-6 * Math.abs(scale.x * scale.y * scale.z)) {
+    const byId = new Map(actors.map((entry) => [entry.id, entry]));
+    rotation.copyFrom(Quaternion.FromArray(actor.transform.rotation));
+    scale.copyFrom(Vector3.FromArray(actor.transform.scale));
+    for (let parent = byId.get(actor.parentId); parent; parent = parent.parentId ? byId.get(parent.parentId) : undefined) {
+      Quaternion.FromArray(parent.transform.rotation).multiplyToRef(rotation, rotation);
+      scale.multiplyInPlace(Vector3.FromArray(parent.transform.scale));
+    }
+  }
   return {
     position: [position.x, position.y, position.z],
     rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
