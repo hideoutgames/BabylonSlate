@@ -13,40 +13,53 @@ const AXES2 = ["x", "y"] as const;
 const AXES3 = ["x", "y", "z"] as const;
 const AXES4 = ["x", "y", "z", "w"] as const;
 
+/**
+ * Each helper binds its inputs once (`a`, `b`, `v`, `s`, `t`), so an impure
+ * input such as Random Float is sampled once and every component sees it.
+ */
 function componentWise(
   a: string,
   b: string,
   op: "+" | "-" | "*" | "/",
   axes: readonly string[],
 ): string {
-  return `{ ${axes.map((axis) => `${axis}: (${a}).${axis} ${op} (${b}).${axis}`).join(", ")} }`;
+  return `((a, b) => ({ ${axes.map((axis) => `${axis}: a.${axis} ${op} b.${axis}`).join(", ")} }))(${a}, ${b})`;
 }
 
 function scaleExpr(v: string, s: string, axes: readonly string[]): string {
-  return `{ ${axes.map((axis) => `${axis}: (${v}).${axis} * (${s})`).join(", ")} }`;
+  return `((v, s) => ({ ${axes.map((axis) => `${axis}: v.${axis} * s`).join(", ")} }))(${v}, ${s})`;
 }
 
 function lerpExpr(a: string, b: string, t: string, axes: readonly string[]): string {
-  return `{ ${axes.map((axis) => `${axis}: (${a}).${axis} + ((${b}).${axis} - (${a}).${axis}) * (${t})`).join(", ")} }`;
+  return `((a, b, t) => ({ ${axes.map((axis) => `${axis}: a.${axis} + (b.${axis} - a.${axis}) * t`).join(", ")} }))(${a}, ${b}, ${t})`;
 }
 
 function dotExpr(a: string, b: string, axes: readonly string[]): string {
-  return `(${axes.map((axis) => `(${a}).${axis} * (${b}).${axis}`).join(" + ")})`;
+  return `((a, b) => ${axes.map((axis) => `a.${axis} * b.${axis}`).join(" + ")})(${a}, ${b})`;
+}
+
+function distanceExpr(a: string, b: string, axes: readonly string[]): string {
+  return `((a, b) => Math.hypot(${axes.map((axis) => `a.${axis} - b.${axis}`).join(", ")}))(${a}, ${b})`;
+}
+
+/** `Math.hypot` over the components of `v`, which must be a bound name. */
+function hypotOf(v: string, axes: readonly string[]): string {
+  return `Math.hypot(${axes.map((axis) => `${v}.${axis}`).join(", ")})`;
 }
 
 function lengthExpr(v: string, axes: readonly string[]): string {
-  return `Math.hypot(${axes.map((axis) => `(${v}).${axis}`).join(", ")})`;
+  return `((v) => ${hypotOf("v", axes)})(${v})`;
 }
 
 /** Reads the vector once, so the length and every component see one value. */
 function normalizeExpr(v: string, axes: readonly string[]): string {
   const unit = axes.map((axis) => `${axis}: v.${axis} / l`).join(", ");
   const zero = axes.map((axis) => `${axis}: 0`).join(", ");
-  return `((v) => { const l = ${lengthExpr("v", axes)}; return l > 1e-8 ? { ${unit} } : { ${zero} }; })(${v})`;
+  return `((v) => { const l = ${hypotOf("v", axes)}; return l > 1e-8 ? { ${unit} } : { ${zero} }; })(${v})`;
 }
 
 function lengthSquaredExpr(v: string, axes: readonly string[]): string {
-  return `(${axes.map((axis) => `(${v}).${axis} * (${v}).${axis}`).join(" + ")})`;
+  return `((v) => ${axes.map((axis) => `v.${axis} * v.${axis}`).join(" + ")})(${v})`;
 }
 
 function binaryVec(
@@ -140,13 +153,9 @@ export const vectorNodes: NodeDefinition[] = [
       pin("b", "b", "in", VEC3),
       pin("out", "out", "out", VEC3),
     ],
-    codegen: (ctx) => {
-      const a = ctx.input("a");
-      const b = ctx.input("b");
-      return {
-        out: `{ x: (${a}).x + (${b}).x, y: (${a}).y + (${b}).y, z: (${a}).z + (${b}).z }`,
-      };
-    },
+    codegen: (ctx) => ({
+      out: componentWise(ctx.input("a"), ctx.input("b"), "+", AXES3),
+    }),
   },
   {
     id: "vector.scale3",
@@ -159,13 +168,9 @@ export const vectorNodes: NodeDefinition[] = [
       pin("s", "s", "in", FLOAT),
       pin("out", "out", "out", VEC3),
     ],
-    codegen: (ctx) => {
-      const v = ctx.input("v");
-      const s = ctx.input("s");
-      return {
-        out: `{ x: (${v}).x * (${s}), y: (${v}).y * (${s}), z: (${v}).z * (${s}) }`,
-      };
-    },
+    codegen: (ctx) => ({
+      out: scaleExpr(ctx.input("v"), ctx.input("s"), AXES3),
+    }),
   },
   {
     id: "vector.make2",
@@ -263,13 +268,9 @@ export const vectorNodes: NodeDefinition[] = [
       pin("b", "B", "in", VEC3),
       pin("out", "Out", "out", VEC3),
     ],
-    codegen: (ctx) => {
-      const a = ctx.input("a");
-      const b = ctx.input("b");
-      return {
-        out: `{ x: (${a}).y * (${b}).z - (${a}).z * (${b}).y, y: (${a}).z * (${b}).x - (${a}).x * (${b}).z, z: (${a}).x * (${b}).y - (${a}).y * (${b}).x }`,
-      };
-    },
+    codegen: (ctx) => ({
+      out: `((a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x }))(${ctx.input("a")}, ${ctx.input("b")})`,
+    }),
   },
   {
     id: "vector.length3",
@@ -319,7 +320,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: `Math.hypot((${ctx.input("a")}).x - (${ctx.input("b")}).x, (${ctx.input("a")}).y - (${ctx.input("b")}).y, (${ctx.input("a")}).z - (${ctx.input("b")}).z)`,
+      out: distanceExpr(ctx.input("a"), ctx.input("b"), AXES3),
     }),
   },
   {
@@ -406,7 +407,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: `Math.hypot((${ctx.input("a")}).x - (${ctx.input("b")}).x, (${ctx.input("a")}).y - (${ctx.input("b")}).y)`,
+      out: distanceExpr(ctx.input("a"), ctx.input("b"), AXES2),
     }),
   },
   {
@@ -493,7 +494,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: `Math.hypot((${ctx.input("a")}).x - (${ctx.input("b")}).x, (${ctx.input("a")}).y - (${ctx.input("b")}).y, (${ctx.input("a")}).z - (${ctx.input("b")}).z, (${ctx.input("a")}).w - (${ctx.input("b")}).w)`,
+      out: distanceExpr(ctx.input("a"), ctx.input("b"), AXES4),
     }),
   },
   {
