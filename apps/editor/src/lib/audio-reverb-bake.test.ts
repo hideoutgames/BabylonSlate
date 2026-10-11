@@ -310,4 +310,16 @@ describe("staticAudioGeometryFingerprint", () => {
       staticAudioGeometryFingerprint(sceneWith([boxActor("wall", [10, 0, 0])])),
     );
   });
+
+  it("changes when an ancestor of a static mesh moves", () => {
+    const attached = (rootX: number) => {
+      const root = createActor("root", "Root", {
+        transform: { ...identitySerializedTransform(), position: [rootX, 0, 0] },
+      });
+      return sceneWith([root, { ...boxActor("wall", [0, 0, 0]), parentId: "root" }]);
+    };
+    expect(staticAudioGeometryFingerprint(attached(0))).not.toBe(
+      staticAudioGeometryFingerprint(attached(10)),
+    );
+  });
 });
