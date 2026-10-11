@@ -66,7 +66,7 @@ vi.mock("../context/document-context", async () => {
       ],
       applyAssetDocumentChange: store.applyAssetDocumentChange,
       applyGraphChange: vi.fn(),
-      projectDocument: { settings: { input: { actions: [], axes: [] } } },
+      projectDocument: { settings: {} },
       activeDocumentId: DOC_ID,
       animEditorMode: "stateMachine",
       assetRegistry: {

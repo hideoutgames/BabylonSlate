@@ -10,7 +10,7 @@ const state = vi.hoisted(() => ({ graph: { nodes: [], edges: [] } as SerializedG
 vi.mock("../context/document-workspace-context", () => ({ useDocumentWorkspace: () => ({ documentId: "graph:assets/Test.class.babasset" }) }));
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [{ id: "graph:assets/Test.class.babasset", ref: { kind: "graph", path: "assets/Test.class.babasset", label: "Test" }, content: state.graph, layout: null, dirty: false }],
-  projectDocument: { settings: { input: { actions: [], axes: [] } } },
+  projectDocument: { settings: {} },
   assetRegistry: { list: () => [] },
 })));
 vi.mock("../context/validation-context", () => ({ useValidation: () => ({ focusDiagnostic: null, setFocusDiagnostic: vi.fn() }) }));
