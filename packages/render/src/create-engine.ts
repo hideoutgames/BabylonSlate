@@ -48,7 +48,7 @@ import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets
 import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { nativePreparationForEngine, type NativePreparationLimits, type NativePreparationPriority } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
-import type { AbstractEngine, BaseTexture, Camera } from "@babylonjs/core";
+import type { AbstractEngine, BaseTexture, Camera, EngineView } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution, type RenderDiagnostics } from "./render-diagnostics";
@@ -900,11 +900,10 @@ function initializeEngine(
     : null;
   const releaseOffscreenDispatch = presentRtt ? retainOffscreenFrameDispatch(engine) : null;
   onRollback(() => releaseOffscreenDispatch?.());
-  if (registeredView && options.playMode) {
-    // Scene tabs stay mounted; Babylon _renderViews still setSize+blit every
-    // enabled view. Disable them so overlay Play owns the framebuffer.
-    setOtherEngineViewsEnabled(engine, canvas, false);
-  }
+  // Scene tabs stay mounted; Babylon _renderViews still setSize+blit every
+  // enabled view. Disable them so overlay Play owns the framebuffer, and
+  // re-enable only those afterwards (a hidden tab's view stays disabled).
+  const heldEngineViews = registeredView && options.playMode ? holdOtherEngineViews(engine, canvas) : [];
 
   const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
   // Every view shares the same graph path for authored and selection outlines.
@@ -3115,7 +3114,9 @@ function initializeEngine(
           if (engine.getHardwareScalingLevel() !== previousScaling) {
             engine.setHardwareScalingLevel(previousScaling);
           }
-          setOtherEngineViewsEnabled(engine, canvas, true);
+          for (const view of heldEngineViews) {
+            if (engine.views?.includes(view)) setRegisteredViewEnabled(view, true);
+          }
         }
       }
       if (ownsEngine) {
@@ -4193,14 +4194,18 @@ function retainMainThreadDecoding(restoreWorkers: () => void): () => void {
   };
 }
 
-function setOtherEngineViewsEnabled(
+/** Disable every other enabled view; returns the views to re-enable later. */
+function holdOtherEngineViews(
   engine: AbstractEngine,
   except: HTMLCanvasElement,
-  enabled: boolean,
-): void {
+): EngineView[] {
+  const held: EngineView[] = [];
   for (const view of engine.views ?? []) {
-    if (view.target !== except) setRegisteredViewEnabled(view, enabled);
+    if (view.target === except || !registeredViewIsEnabled(view)) continue;
+    setRegisteredViewEnabled(view, false);
+    held.push(view);
   }
+  return held;
 }
 
 /** Create the project-lifetime Engine (no scene). */

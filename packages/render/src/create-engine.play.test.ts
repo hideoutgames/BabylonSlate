@@ -1992,6 +1992,8 @@ describe("Play createEngine view", () => {
   it("disables the Scene registerView while overlay Play owns the framebuffer", () => {
     const engine = sharedEngine();
     const { handle: editor, canvas: editorCanvas } = editorHandle(engine);
+    const { handle: hidden, canvas: hiddenCanvas } = editorHandle(engine);
+    hidden.setRegisterViewEnabled(false);
     const playCanvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const play = createEngine(playCanvas, {
       sharedEngine: engine,
@@ -1999,6 +2001,7 @@ describe("Play createEngine view", () => {
     });
 
     const editorView = engine.views.find((view) => view.target === editorCanvas);
+    const hiddenView = engine.views.find((view) => view.target === hiddenCanvas);
     const playView = engine.views.find((view) => view.target === playCanvas);
     expect(editorView?.enabled).toBe(false);
     expect(playView?.enabled).toBe(true);
@@ -2006,6 +2009,8 @@ describe("Play createEngine view", () => {
     play.dispose();
     syncEditorPlayState(editor, false);
     expect(editorView?.enabled).toBe(true);
+    // A view that was already off before Play (a hidden tab) stays off.
+    expect(hiddenView?.enabled).toBe(false);
   });
 
   it("does not setSize from a disabled Scene view while Play is open", () => {
