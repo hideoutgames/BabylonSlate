@@ -542,15 +542,23 @@ describe("@babylonslate/physics", () => {
         linearDamping: 0, angularDamping: 0, gravityScale: 0, transform: identity(),
       });
       // An area of 4 would add 4 units of default-density mass.
-      backend.createCollider({
-        id: "crate-col", bodyId: "crate", shape: { kind: "box2d", halfExtents: { x: 1, y: 1 } },
-        friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff,
-      });
-      backend.addImpulse("crate", { x: 4, y: 0, z: 0 });
-      expect(backend.getBodyVelocity("crate")!.linear.x).toBeCloseTo(2, 4);
+      for (const [id, half, x] of [["crate-col", 1, 0], ["crate-handle", 0.5, 1.5]] as const) {
+        backend.createCollider({
+          id, bodyId: "crate", shape: { kind: "box2d", halfExtents: { x: half, y: half } },
+          translation: { x, y: 0, z: 0 },
+          friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff,
+        });
+      }
+      const pushed = (velocity: number) => {
+        backend.addImpulse("crate", { x: 4, y: 0, z: 0 });
+        expect(backend.getBodyVelocity("crate")!.linear.x).toBeCloseTo(velocity, 4);
+      };
+      pushed(2);
+      // The remaining collider carries the whole mass.
+      backend.destroyCollider("crate-handle");
+      pushed(4);
       backend.updateBody("crate", { mass: 4 });
-      backend.addImpulse("crate", { x: 4, y: 0, z: 0 });
-      expect(backend.getBodyVelocity("crate")!.linear.x).toBeCloseTo(3, 4);
+      pushed(5);
     } finally { backend.dispose(); }
   });
 

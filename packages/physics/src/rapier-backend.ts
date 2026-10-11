@@ -337,7 +337,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       if (constraint.desc.bodyAId === bodyId || constraint.desc.bodyBId === bodyId) this.destroyConstraint(id);
     }
     for (const [id, collider] of [...this.colliders]) {
-      if (collider.desc.bodyId === bodyId) this.destroyCollider(id);
+      if (collider.desc.bodyId === bodyId) this.removeCollider(id, false);
     }
     for (const [id, character] of [...this.characters]) {
       if (character.desc.bodyId === bodyId) this.destroyCharacterController(id);
@@ -632,7 +632,10 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   }
 
   destroyCollider(colliderId: string): void {
+    const body = this.bodies.get(this.colliders.get(colliderId)?.desc.bodyId ?? "");
     this.removeCollider(colliderId, false);
+    // The remaining colliders take over the authored mass.
+    if (body) this.distributeMass(body);
   }
 
   private removeCollider(colliderId: string, refresh: boolean): void {
