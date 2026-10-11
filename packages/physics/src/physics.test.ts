@@ -510,7 +510,56 @@ describe("@babylonslate/physics", () => {
     expect(right?.hit).toBe(true);
     expect(top?.hit).toBe(true);
     expect(bottom?.hit).toBe(true);
+    // The closing edge is part of the same collider: an overlap that moves from
+    // the first edge onto the closing (left) edge stays open until both are left.
+    backend.createBody({
+      id: "probe", actorId: "actor-probe", motionType: "kinematic", mass: 1,
+      linearDamping: 0, angularDamping: 0, gravityScale: 0,
+      transform: { position: { x: 0.1, y: 0.1, z: 0 }, rotation: identityRotation() },
+    });
+    backend.createCollider({
+      id: "probe-col", bodyId: "probe", shape: { kind: "box2d", halfExtents: { x: 0.2, y: 0.2 } },
+      friction: 0, restitution: 0, isTrigger: true, layer: 1, mask: 0xffffffff,
+    });
+    const overlaps = (x: number, y: number) => {
+      backend.teleportBody("probe", { position: { x, y, z: 0 }, rotation: identityRotation() });
+      backend.step(1 / 60);
+      return backend.pollContacts().filter((event) => event.kind !== "hit").map((event) => event.kind);
+    };
+    expect(overlaps(0.1, 0.1)).toEqual(["overlapBegin"]);
+    expect(overlaps(0.1, 1)).toEqual([]);
+    expect(overlaps(1, 1)).toEqual(["overlapEnd"]);
     backend.dispose();
+  });
+
+  it("Rapier gives a dynamic body its authored mass, whatever its colliders' area", async () => {
+    const backend = await createPhysicsBackend({
+      kind: "2d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+    });
+    try {
+      backend.createBody({
+        id: "crate", actorId: "crate", motionType: "dynamic", mass: 2,
+        linearDamping: 0, angularDamping: 0, gravityScale: 0, transform: identity(),
+      });
+      // An area of 4 would add 4 units of default-density mass.
+      for (const [id, half, x] of [["crate-col", 1, 0], ["crate-handle", 0.5, 1.5]] as const) {
+        backend.createCollider({
+          id, bodyId: "crate", shape: { kind: "box2d", halfExtents: { x: half, y: half } },
+          translation: { x, y: 0, z: 0 },
+          friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff,
+        });
+      }
+      const pushed = (velocity: number) => {
+        backend.addImpulse("crate", { x: 4, y: 0, z: 0 });
+        expect(backend.getBodyVelocity("crate")!.linear.x).toBeCloseTo(velocity, 4);
+      };
+      pushed(2);
+      // The remaining collider carries the whole mass.
+      backend.destroyCollider("crate-handle");
+      pushed(4);
+      backend.updateBody("crate", { mass: 4 });
+      pushed(5);
+    } finally { backend.dispose(); }
   });
 
   it("lazy factory loads only Rapier for 2d worlds", async () => {
@@ -709,6 +758,92 @@ describe("@babylonslate/physics", () => {
     backend.dispose();
   });
 
+  it.each(["software", "rapier"] as const)("%s shapeSweep sweeps the whole shape, including an initial overlap", async (kind) => {
+    const gravity = { x: 0, y: 0, z: 0 };
+    const backend = kind === "software"
+      ? createSoftwarePhysicsBackend("3d", gravity)
+      : await createPhysicsBackend({ kind: "2d", gravity, allowSoftwareFallback: false });
+    const pose = (x: number, y: number) => ({ position: { x, y, z: 0 }, rotation: identityRotation() });
+    const sphere = { kind: "sphere" as const, radius: 0.25 };
+    try {
+      backend.createBody({ id: "box", actorId: "box", motionType: "static", mass: 0,
+        linearDamping: 0, angularDamping: 0, gravityScale: 0, transform: pose(0, 0) });
+      backend.createCollider({ id: "box-col", bodyId: "box",
+        shape: backend.kind === "2d" ? { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } }
+          : { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+        friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
+      // The center line passes above the box; the sphere's lower half still meets it.
+      expect(backend.lineTrace({ x: -5, y: 0.6, z: 0 }, { x: 5, y: 0.6, z: 0 }).hit).toBe(false);
+      expect(backend.shapeSweep(sphere, pose(-5, 0.6), pose(5, 0.6))).toMatchObject({ hit: true, actorId: "box" });
+      const head = backend.shapeSweep(sphere, pose(-5, 0), pose(5, 0));
+      expect(head.distance).toBeCloseTo(4.25, 2);
+      expect(head.location!.x).toBeCloseTo(-0.5, 2);
+      expect(head.normal!.x).toBeCloseTo(-1, 2);
+      const overlapping = backend.shapeSweep(sphere, pose(0.6, 0), pose(5, 0));
+      expect(overlapping).toMatchObject({ hit: true, distance: 0, actorId: "box" });
+      expect(overlapping.normal!.x).toBeCloseTo(1, 2);
+      // A rotating sweep is rejected, not swept at its start rotation.
+      const turned = { position: { x: 5, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 } };
+      expect(() => backend.shapeSweep(sphere, pose(-5, 0), turned)).toThrow(/rotation/);
+    } finally { backend.dispose(); }
+  });
+
+  it("software pushes dynamic bodies out along the shallowest axis, apart by mass, and only for colliding layers", () => {
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const body = (id: string, motionType: "static" | "dynamic", x: number, y: number,
+      halfExtents = { x: 0.5, y: 0.5, z: 0.5 }, layer = 1, mask = 0xffffffff) => {
+      backend.createBody({ id, actorId: id, motionType, mass: 1, linearDamping: 0, angularDamping: 0,
+        gravityScale: 0, transform: { position: { x, y, z: 0 }, rotation: identityRotation() } });
+      backend.createCollider({ id: `${id}-col`, bodyId: id, shape: { kind: "box", halfExtents },
+        friction: 0, restitution: 0, isTrigger: false, layer, mask });
+    };
+    const x = (id: string) => backend.getBodyTransform(id)!.position.x;
+    const y = (id: string) => backend.getBodyTransform(id)!.position.y;
+    try {
+      // Falling onto the seam of two floor tiles rises once by its penetration.
+      body("left-tile", "static", -5, -0.5, { x: 5, y: 0.5, z: 5 });
+      body("right-tile", "static", 5, -0.5, { x: 5, y: 0.5, z: 5 });
+      body("lander", "dynamic", 0, 0.4);
+      backend.setBodyLinearVelocity("lander", { y: -3 });
+      // A wall overlapped from the side pushes sideways instead of up.
+      body("wall", "static", 30, 0, { x: 0.5, y: 4, z: 4 });
+      body("leaner", "dynamic", 30.9, 0);
+      // Two dynamic bodies share the correction by mass.
+      body("a", "dynamic", 60, 0);
+      body("b", "dynamic", 60.6, 0);
+      // A pair that excludes the other's layer neither contacts nor separates.
+      body("floor", "static", 90, -0.5, { x: 5, y: 0.5, z: 5 });
+      body("ghost", "dynamic", 90, 0.4, undefined, 2, 2);
+      backend.step(1 / 60);
+      expect(y("lander")).toBeCloseTo(0.5, 6);
+      expect(backend.getBodyVelocity("lander")!.linear.y).toBe(0);
+      expect(x("leaner")).toBeCloseTo(31, 6);
+      expect(y("leaner")).toBeCloseTo(0, 6);
+      expect(x("a")).toBeCloseTo(59.8, 6);
+      expect(x("b")).toBeCloseTo(60.8, 6);
+      expect(y("ghost")).toBeCloseTo(0.4, 6);
+      expect(backend.pollContacts().some((event) => event.actorAId === "ghost" || event.actorBId === "ghost")).toBe(false);
+    } finally { backend.dispose(); }
+  });
+
+  it("software 2D shapes are planar slabs at their body's depth, whatever their kind", () => {
+    const backend = createSoftwarePhysicsBackend("2d", { x: 0, y: 0, z: 0 });
+    const body = (id: string, z: number, shape: { kind: "box2d"; halfExtents: { x: number; y: number } } | { kind: "circle"; radius: number }) => {
+      backend.createBody({ id, actorId: id, motionType: "kinematic", mass: 1, linearDamping: 0, angularDamping: 0,
+        gravityScale: 0, transform: { position: { x: 0, y: 0, z }, rotation: identityRotation() } });
+      backend.createCollider({ id: `${id}-col`, bodyId: id, shape, friction: 0, restitution: 0,
+        isTrigger: false, layer: 1, mask: 0xffffffff });
+    };
+    try {
+      body("ground", 0, { kind: "box2d", halfExtents: { x: 1, y: 1 } });
+      body("box", 0.5, { kind: "box2d", halfExtents: { x: 1, y: 1 } });
+      body("circle", 0.5, { kind: "circle", radius: 1 });
+      const touching = backend.pollContacts().flatMap((event) => [event.actorAId, event.actorBId]);
+      expect(touching).not.toContain("ground");
+      expect(backend.sphereOverlap({ x: 0, y: 0, z: 0.5 }, 0.1).actorIds.sort()).toEqual(["box", "circle"]);
+    } finally { backend.dispose(); }
+  });
+
   it("applyColliderChanges flips a blocking overlap to a trigger begin", () => {
     const backend = createSoftwarePhysicsBackend("3d", {
       x: 0,
@@ -872,6 +1007,20 @@ describe("@babylonslate/physics", () => {
       mask: 0xffffffff,
       rotation: { x: 0, y: yaw90, z: 0, w: yaw90 },
     });
+    // A cylinder tilted 45° about X reaches y = 2·cos45° + 0.5·sin45° at its top rim.
+    backend.createCollider({
+      id: "tilted-cylinder",
+      bodyId: "body",
+      shape: { kind: "cylinder", radius: 0.5, height: 4 },
+      friction: 0.5,
+      restitution: 0,
+      isTrigger: false,
+      layer: 1,
+      mask: 0xffffffff,
+      translation: { x: 10, y: 0, z: 0 },
+      rotation: { x: Math.sin(Math.PI / 8), y: 0, z: 0, w: Math.cos(Math.PI / 8) },
+    });
+    expect(backend.sphereOverlap({ x: 10, y: 1.7, z: 1.06 }, 0.02).bodyIds).toEqual(["body"]);
     expect(
       backend.sphereOverlap({ x: 1.5, y: 0, z: 0 }, 0.2).bodyIds,
     ).toContain("body");

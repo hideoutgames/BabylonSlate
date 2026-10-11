@@ -1322,7 +1322,7 @@ The project is built by autonomous agents working in parallel, which is a failur
 - `vitest@^3` to `^4`, and `@playwright/test@^1.51` to `^1.62`.
 - Add `zod@^4` for schemas, `fflate` for zip, `fast-check` and `@vitest/coverage-v8`. `coi-serviceworker` is vendored as a locally modified copy in `apps/editor/public/`, not installed as a package.
 - Add the Basis Universal encoder wasm for import-time KTX2 encoding, plus `ktx-parse` as a dev dependency so the A16 encode smoke can read KTX2 headers (production sniffs headers in `ktx2-info.ts`). The matching transcoder files Babylon needs at load (`basis_transcoder` js and wasm, the UASTC-to-ASTC and UASTC-to-BC7 modules, the Zstd decoder) are vendored into `public/` rather than fetched from a CDN, since both the editor and an itch.io export must be self-contained. Section 3.5 has the rationale.
-- Add `@dimforge/rapier2d-compat` for the 2D physics backend, loaded only when a scene uses a 2D world so a 3D-only game never downloads it. Wasm-load failure falls back to `SoftwarePhysicsBackend` (AABB); `planck.js` is not a dependency.
+- Add `@dimforge/rapier2d-compat` for the 2D physics backend, loaded only when a scene uses a 2D world so a 3D-only game never downloads it. Play and Preview Build stop with an error when it fails to load (no `SoftwarePhysicsBackend` substitution); `planck.js` is not a dependency.
 - Add `recast-navigation` (`@recast-navigation/core`, `@recast-navigation/generators`, and `@recast-navigation/babylon` for editor-side mesh input and debug draw) as the single navigation library for both editor baking and worker queries. Babylon's built-in `RecastJSPlugin` is deliberately unused: it is `Scene`-coupled and therefore main-thread-only, and mixing it with a second wrapper would stake the navmesh format on two libraries agreeing byte-for-byte. Loaded only for scenes that have a navmesh.
 - Add `d3-hierarchy` for behaviour tree auto-layout. It is a few kilobytes and a strict tree is precisely what its `tree()` layout is for; `elkjs` is the wrong trade at roughly two orders of magnitude more weight for generality this case does not need.
 - Add CodeMirror 6 (`@codemirror/state`, `@codemirror/view`, `@codemirror/lang-javascript`) for the ExecuteJavaScript body editor. The single-line Play console input stays a plain field with registry autocomplete and the touch accessory key row ([debugger](architecture/debugger.md)). It was rewritten specifically for touch and leans on native `contenteditable`, which is why it works on iPad where Monaco explicitly does not, and it is 50 to 200kB against Monaco's several megabytes. It loads lazily so it never lands in the editor's initial bundle.
@@ -1486,9 +1486,9 @@ Granular tasks tracked against the roadmap in section 18. Update checkboxes as s
 
 > **P7 follow-ups** (named later slices, not silent incompleteness). Do not treat these as leftover architecture work on the V2/Rapier backends:
 > - Mixed 2D/3D collider diagnostic (docs claimed a diagnostic; load currently coerces/skips via `parseColliderProperties`).
-> - Query quality: Rapier `shapeSweep` approximates lineTrace; Havok `sphereOverlap` uses AABB.
+> - Query quality: done; Rapier casts the swept shape and Havok sphere overlaps test collider shapes ([physics.md](architecture/physics.md#backends)).
 > - Per-backend **file** goldens are not required (Havok vs Rapier numeric drift); within-backend reproducibility stays in [physics.md](architecture/physics.md).
-> - Software AABB is the wasm-failure path; do not add `planck.js`. Software character controllers now work in both 2D and 3D.
+> - Software AABB is the test path and is never substituted for a failed wasm load; do not add `planck.js`. Software character controllers now work in both 2D and 3D.
 > - Full 5 Hz stats HUD landed in **P8** `p8-console-hud`; tilemap merged chain colliders are **P10**.
 
 ### P8

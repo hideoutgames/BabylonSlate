@@ -1,4 +1,4 @@
-/** Authored component IDs can repeat between actors in older scene documents. */
+/** Component IDs can repeat between actors, so the actor guid qualifies them. */
 export function componentColliderPhysicsId(
   actorGuid: string,
   componentGuid: string,
@@ -13,7 +13,8 @@ export function componentColliderPhysicsId(
  * A hosted child shape on a simulated ancestor's compound. The host guid keeps
  * it distinct from the child's own-body collider and from another host's copy,
  * so moving between bodies never reuses a live ID, while component-bound
- * script events still decode the child's component ID.
+ * script events still decode the child's component ID. Component colliders
+ * take the host as a last array entry; tilemap chain IDs take a suffix.
  */
 export function hostedColliderPhysicsId(
   colliderId: string,
@@ -27,31 +28,20 @@ export function hostedColliderPhysicsId(
     : `${colliderId}@${host}`;
 }
 
-/** Restore authored IDs when routing contacts to component-bound script events. */
+/**
+ * Restore authored IDs when routing contacts to component-bound script events.
+ * Colliders that no component owns (tilemap chains) keep their own ID.
+ */
 export function componentIdFromColliderPhysicsId(
   colliderId: string | undefined,
 ): string | undefined {
   if (!colliderId) return undefined;
-  const prefix = colliderId.startsWith("collider:")
+  const prefix = colliderId.startsWith("collider:[")
     ? "collider:"
-    : colliderId.startsWith("mesh-collider:")
+    : colliderId.startsWith("mesh-collider:[")
       ? "mesh-collider:"
       : null;
   if (!prefix) return colliderId;
-  const identity = colliderId.slice(prefix.length);
-  if (identity.startsWith("[")) {
-    try {
-      const parts: unknown = JSON.parse(identity);
-      if (
-        Array.isArray(parts) &&
-        parts.length >= 2 &&
-        typeof parts[1] === "string"
-      ) {
-        return parts[1];
-      }
-    } catch {
-      // Accept legacy component IDs that happen to start with a bracket.
-    }
-  }
-  return prefix === "collider:" ? identity : colliderId;
+  const parts = JSON.parse(colliderId.slice(prefix.length)) as unknown[];
+  return parts[1] as string;
 }
