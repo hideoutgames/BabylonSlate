@@ -49,7 +49,15 @@ export function literalPinType(
   pin: SerializedPin,
 ): PinType | null {
   if (pin.colorHint) return { kind: "color" };
-  if (pin.type.kind === "generic") return { kind: "float" };
+  if (pin.type.kind === "generic") {
+    // An unwired generic group edits as its host fallback (Particle Split
+    // Value falls back to Color), else as Float.
+    const fallback = { kind: pin.type.fallback } as PinType;
+    return typeof pin.type.fallback === "string" &&
+      pinAcceptsLiteralDefault(fallback)
+      ? fallback
+      : { kind: "float" };
+  }
   if (!pinAcceptsLiteralDefault(pin.type as PinType)) return null;
   return pin.type as PinType;
 }

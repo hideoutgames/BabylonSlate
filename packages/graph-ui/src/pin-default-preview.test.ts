@@ -375,6 +375,19 @@ describe("pinDefaultPreview", () => {
     ).toEqual({ kind: "float", text: "1.5" });
   });
 
+  it("previews an unwired generic input as its host fallback type", () => {
+    const splitValue = pin({
+      id: "value",
+      name: "Value",
+      kind: "data",
+      direction: "in",
+      type: { kind: "generic", accepts: ["vec2", "vec3", "color"], fallback: "color" },
+    });
+    expect(
+      pinDefaultPreview(splitValue, { "default:value": [1, 0, 0, 1] }, false),
+    ).toEqual({ kind: "color", rgb: "rgb(255, 0, 0)" });
+  });
+
   it("uses catalog defaultValue number arrays when nothing is authored", () => {
     const roughness: SerializedPin = {
       id: "roughness",

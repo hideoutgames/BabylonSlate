@@ -283,13 +283,15 @@ export function displayNodeTitle(
 
 /**
  * Overlay a resolved display type onto a declared pin for connect / Add Node.
- * Does not mutate the stored pin.
+ * A boxed wildcard keeps its declared type: it accepts any value, and its
+ * display type (the wired peer's type) only colours it. Does not mutate the
+ * stored pin.
  */
 export function pinWithDisplayType(
   pin: SerializedPin,
   displayType: SerializedPin["type"] | undefined,
 ): SerializedPin {
-  if (!displayType) return pin;
+  if (!displayType || pin.type.kind === "boxedWildcard") return pin;
   return { ...pin, type: displayType };
 }
 

@@ -10,7 +10,6 @@ import {
   collectDisplayConnectPins,
   containerPointerToClient,
   isClientPointOverGraphNode,
-  pinWithDisplayType,
   screenCentersForSafePins,
   shouldOpenAddNodeOnConnectEnd,
   type ConnectEndMode,
@@ -87,10 +86,11 @@ export function GraphConnectionLineView({
   connectionLineKind = "default",
 }: GraphConnectionLineViewProps) {
   const declaredPin = pinOnDraggedNode(fromNode, fromHandle.id);
-  const pin = declaredPin
-    ? pinWithDisplayType(declaredPin, pinDisplayType(fromNode.id, declaredPin.id))
-    : undefined;
-  const pinStyle = edgeStyleForPin(pin?.type);
+  const pinStyle = edgeStyleForPin(
+    declaredPin
+      ? (pinDisplayType(fromNode.id, declaredPin.id) ?? declaredPin.type)
+      : undefined,
+  );
   // Pin compatibility only changes with the graph, not with each pointer move.
   const safeRefs = useMemo(
     () =>
@@ -118,7 +118,7 @@ export function GraphConnectionLineView({
           targetPosition: toPosition,
         })[0];
   // Measure the DOM only when the zone decides the hint.
-  const showHint = !pin || toHandle
+  const showHint = !declaredPin || toHandle
     ? false
     : connectEndMode === "add-node" ||
       (!isClientPointOverGraphNode(pointer, root) &&
