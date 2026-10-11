@@ -124,7 +124,7 @@ Capacitor 8.5.2 handles `webViewWebContentProcessDidTerminate` natively — `Web
 
 ## Template library
 
-`createTemplateStorage(root)` binds an app-owned folder (`__slate_templates__` for templates) in the same tier as projects, so `listTemplates()` reads directory and zip templates through the ordinary project backends on every host. There is no user-chosen templates folder; a `templatesFolder` key in older saved settings is dropped on load. Each directory or `.zip` / legacy `.babproject` entry with a `project.json` manifest becomes a card. Entries without a manifest are skipped rather than failing the Homepage.
+`createTemplateStorage(root)` binds an app-owned folder (`__slate_templates__` for templates) in the same tier as projects, so `listTemplateCatalog()` lists directory and zip templates through the ordinary project backends on every host. There is no user-chosen templates folder; a `templatesFolder` key in older saved settings is dropped on load. Each directory with a `project.json` manifest and each `.zip` entry becomes a card without any archive being opened; folders without a manifest are skipped rather than failing the Homepage. `loadTemplateFiles()` decodes only the chosen template and refuses one without a manifest.
 
 ## Write performance decision (§19)
 
