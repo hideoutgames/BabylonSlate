@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
   fireEvent,
@@ -53,6 +53,12 @@ vi.mock("@clerk/react", () => ({
   UserProfile: () => null,
   SignOutButton: () => null,
 }));
+
+// The desktop account UI is lazy-loaded. Transform it once up front so a cold
+// module graph cannot outlast the default findBy timeout under worker load.
+beforeAll(async () => {
+  await import("./homepage-account-desktop");
+});
 
 beforeEach(() => {
   vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
