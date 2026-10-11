@@ -1869,7 +1869,8 @@ class InProcessRuntime implements RuntimeDriver {
    *    World tick (actors, then physics through `onPhysics`), deferred owner
    *    work and streamed Scenes. The tick ends here when it stopped the session.
    * 3. Scene systems (timed): tween cleanup, Delays, animation graphs, tile
-   *    animation time, behaviour trees and the crowd.
+   *    animation time, behaviour trees and the crowd. The tick also ends here
+   *    when one of them stopped the session.
    * 4. Component commands changed during the tick: painters, text reveal, deformers.
    * 5. Publish: advance the frame id, then the pose snapshot and debug views;
    *    `TickPipeline` records stats and the trace frame last.
@@ -1886,6 +1887,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.tickWorld(pending, simDt);
     if (this.stopped) return;
     this.tickSceneSystems(simDt);
+    if (this.stopped) return;
     this.ticks.closePhaseTiming();
     this.flushComponentCommands();
     const completedFrameId = this.frameId;
