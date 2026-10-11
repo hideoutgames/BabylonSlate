@@ -29,6 +29,26 @@ function isSet(value: unknown): boolean {
   return value !== undefined && value !== null && value !== false;
 }
 
+/**
+ * Value equality for blackboard values: vectors, rotators, Tag Containers and
+ * arrays compare by their fields, so a key and the authored value are equal
+ * whenever their contents match.
+ */
+function blackboardEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (typeof left !== "object" || typeof right !== "object" || left === null || right === null) {
+    return false;
+  }
+  if (Array.isArray(left) !== Array.isArray(right)) return false;
+  const a = left as Record<string, unknown>;
+  const b = right as Record<string, unknown>;
+  const keys = Object.keys(a);
+  return (
+    keys.length === Object.keys(b).length &&
+    keys.every((key) => Object.hasOwn(b, key) && blackboardEqual(a[key], b[key]))
+  );
+}
+
 function compareBlackboard(
   left: unknown,
   op: unknown,
@@ -36,7 +56,7 @@ function compareBlackboard(
 ): boolean {
   switch (op) {
     case "neq":
-      return left !== right;
+      return !blackboardEqual(left, right);
     case "gt":
       return Number(left) > Number(right);
     case "gte":
@@ -47,7 +67,7 @@ function compareBlackboard(
       return Number(left) <= Number(right);
     case "eq":
     default:
-      return left === right;
+      return blackboardEqual(left, right);
   }
 }
 

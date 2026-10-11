@@ -414,6 +414,28 @@ describe("evaluateBehaviourTree", () => {
     ).toBe("success");
   });
 
+  it.each([
+    { op: "eq", z: 3, want: "success" },
+    { op: "eq", z: 4, want: "failure" },
+    { op: "neq", z: 3, want: "failure" },
+    { op: "neq", z: 4, want: "success" },
+  ])("compares a vec3 blackboard value by its components ($op, z $z)", ({ op, z, want }) => {
+    const leaf = node("leaf", "task", "bt.task.succeed");
+    leaf.decorators.push({
+      id: "at",
+      classId: "BTDecorator_CompareBlackboardValue",
+      abortMode: "none",
+      observedKeys: ["target"],
+      properties: { key: "target", op, value: { x: 1, y: 2, z } },
+    });
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["leaf"]), leaf],
+      "root",
+    );
+    const blackboard = { target: { x: 1, y: 2, z: 3 } };
+    expect(evaluateBehaviourTree(doc, null, 1 / 60, { blackboard }).status).toBe(want);
+  });
+
   it("succeeds a zero-duration wait on the first tick", () => {
     const wait = node("wait", "task", "bt.task.wait");
     wait.properties = { durationMs: 0 };
