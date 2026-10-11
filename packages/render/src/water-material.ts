@@ -569,7 +569,8 @@ if (U.slateWaterPlanar.x > 0.5) {
   vec2 swPlanarUv = swPlanarClip.xy / max(swPlanarClip.w, 0.000001) * 0.5 + vec2(0.5);
   vec4 swPlanarHit = swPlanarTexel(swPlanarUv);
   vec3 swPlanarColor = swPlanarHit.rgb / max(swPlanarHit.a, 0.001);
-  swObjRefl = vec4(mix(swPlanarColor, SW_TO_LINEAR(swPlanarColor), U.slateWaterPlanar.y), swPlanarHit.a);
+  // A point behind the mirrored camera has no projection (its uv would clamp to an edge texel): the sky stays.
+  swObjRefl = vec4(mix(swPlanarColor, SW_TO_LINEAR(swPlanarColor), U.slateWaterPlanar.y), swPlanarHit.a * step(0.000001, swPlanarClip.w));
 }`)}${ifDefined(SSR, `
 if (U.slateWaterPlanar.x < 0.5) {
   swObjRefl = swMarch(IN.vPositionW, swReflRay);
