@@ -473,10 +473,11 @@ export function createGizmoHost(
     mesh.computeWorldMatrix(true);
   };
 
-  const startDrag = (handle: object) => {
+  // `handle` is the axis or plane gizmo dragged; the overlay box passes null.
+  const startDrag = (handle: object | null) => {
     dragging = true;
     const mesh = position.attachedMesh;
-    const axes = translateAxes.get(handle);
+    const axes = handle ? translateAxes.get(handle) : undefined;
     snapDrag =
       translateSnap > 0 && mesh && axes
         ? (() => {
@@ -602,7 +603,7 @@ export function createGizmoHost(
       ? createOverlayTransformBox(layer, scene, {
           scheduler: options.scheduler,
           canvasCssHeight: options.canvasCssHeight,
-          onDragStart: startDrag,
+          onDragStart: () => startDrag(null),
           onDrag: drag,
           onDragEnd: endDrag,
         })
