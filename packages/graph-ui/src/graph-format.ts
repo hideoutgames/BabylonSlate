@@ -1,8 +1,5 @@
 import type { SerializedPin } from "./graph-types";
-import {
-  MARQUEE_FALLBACK_HEIGHT,
-  MARQUEE_FALLBACK_WIDTH,
-} from "./graph-marquee";
+import { estimateGraphNodeSize } from "./graph-virtualize";
 
 export const FORMAT_GAP_X = 80;
 export const FORMAT_GAP_Y = 40;
@@ -38,10 +35,12 @@ type GraphIndex = {
 };
 
 function nodeSize(node: FormatNode): { width: number; height: number } {
-  return {
-    width: node.width ?? node.measured?.width ?? MARQUEE_FALLBACK_WIDTH,
-    height: node.height ?? node.measured?.height ?? MARQUEE_FALLBACK_HEIGHT,
-  };
+  const width = node.width ?? node.measured?.width;
+  const height = node.height ?? node.measured?.height;
+  if (width !== undefined && height !== undefined) return { width, height };
+  // Off-screen nodes that were never mounted have no measured size.
+  const estimate = estimateGraphNodeSize(node.pins);
+  return { width: width ?? estimate.width, height: height ?? estimate.height };
 }
 
 function compareNodes(

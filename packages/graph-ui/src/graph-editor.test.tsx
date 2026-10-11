@@ -14,7 +14,7 @@ import type { GraphDocument } from "./graph-types";
 import { isAssignable, type PinType } from "@babylonslate/scripting";
 import { FORMAT_GAP_X, FORMAT_GAP_Y } from "./graph-format";
 import type { PinCompatibilityRule } from "./graph-connect";
-import { MARQUEE_FALLBACK_HEIGHT, MARQUEE_FALLBACK_WIDTH } from "./graph-marquee";
+import { estimateGraphNodeSize } from "./graph-virtualize";
 import { treeNodeTypes } from "./tree-node";
 import { animGraphEdgeTypes } from "./anim-graph-nodes";
 import { nodeRoleClass, type NodeVisualRole } from "./node-theme";
@@ -681,6 +681,34 @@ describe("GraphEditor", () => {
       expect(mounted).toBeLessThan(80);
       expect(container.querySelector('[data-id="n199"]')).not.toBeNull();
       expect(getByTestId("graph-copy")).toHaveProperty("disabled", false);
+    } finally {
+      restore();
+    }
+  });
+
+  it("frames unmounted off-screen nodes with Size Graph To Fit", { timeout: 15_000 }, async () => {
+    const restore = installImmediateGraphHostSize();
+    const nodes = [
+      { id: "near", position: { x: 0, y: 0 } },
+      { id: "far", position: { x: 6000, y: 4000 } },
+    ].map((node) => ({
+      ...node,
+      type: "debug.log",
+      data: { message: node.id, __pins: debugLogPins },
+    }));
+    try {
+      const { container, getByRole } = render(
+        <GraphEditor
+          initialGraph={{ nodes, edges: [] }}
+          sessionViewport={{ x: 0, y: 0, zoom: 1 }}
+        />,
+      );
+      expect(container.querySelector('[data-id="far"]')).toBeNull();
+      fireEvent.click(getByRole("button", { name: "Size Graph To Fit" }));
+      await waitFor(() => {
+        expect(container.querySelector('[data-id="far"]')).not.toBeNull();
+      });
+      expect(container.querySelector('[data-id="near"]')).not.toBeNull();
     } finally {
       restore();
     }
@@ -3433,7 +3461,7 @@ describe("GraphEditor", () => {
       { x: 0, y: 40 },
     );
     expect(lastGraph.nodes.find((node) => node.id === "log-b")?.position).toEqual({
-      x: MARQUEE_FALLBACK_WIDTH + FORMAT_GAP_X,
+      x: estimateGraphNodeSize(debugLogPins).width + FORMAT_GAP_X,
       y: 40,
     });
   });
@@ -3497,10 +3525,10 @@ describe("GraphEditor", () => {
     const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
     expect(lastGraph.nodes.find((node) => node.id === "get")?.position).toEqual({
       x: 0,
-      y: 40 + MARQUEE_FALLBACK_HEIGHT + FORMAT_GAP_Y,
+      y: 40 + estimateGraphNodeSize(debugLogPins).height + FORMAT_GAP_Y,
     });
     expect(lastGraph.nodes.find((node) => node.id === "log-b")?.position).toEqual({
-      x: MARQUEE_FALLBACK_WIDTH + FORMAT_GAP_X,
+      x: estimateGraphNodeSize(debugLogPins).width + FORMAT_GAP_X,
       y: 40,
     });
   });
@@ -3765,6 +3793,90 @@ describe("GraphEditor", () => {
     expect(getByTestId("graph-delete").hasAttribute("disabled")).toBe(true);
     expect(getByTestId("graph-copy").hasAttribute("disabled")).toBe(true);
     expect(container.querySelector('[data-id="in-1"]')).not.toBeNull();
+  });
+
+  it("keeps protected nodes when the Backspace key deletes the selection", async () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            {
+              id: "in-1",
+              type: "flow.function.input",
+              position: { x: 0, y: 0 },
+              data: { __protected: true, title: "Input" },
+            },
+            {
+              id: "log-a",
+              type: "debug.log",
+              position: { x: 200, y: 0 },
+              data: { message: "A", __pins: debugLogPins },
+            },
+          ],
+          edges: [],
+        }}
+        focusedNodeId="in-1"
+        onChange={onChange}
+      />,
+    );
+    const pressBackspace = async () => {
+      fireEvent.keyDown(document.body, { key: "Backspace", code: "Backspace" });
+      fireEvent.keyUp(document.body, { key: "Backspace", code: "Backspace" });
+      await act(async () => {});
+    };
+    await waitFor(() => {
+      expect(
+        container.querySelector('.react-flow__node.selected[data-id="in-1"]'),
+      ).not.toBeNull();
+    });
+    await pressBackspace();
+    expect(container.querySelector('[data-id="in-1"]')).not.toBeNull();
+
+    fireEvent.click(container.querySelector('[data-id="log-a"]')!);
+    await pressBackspace();
+    await waitFor(() => {
+      expect(container.querySelector('[data-id="log-a"]')).toBeNull();
+    });
+    expect(container.querySelector('[data-id="in-1"]')).not.toBeNull();
+    const last = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(last.nodes.map((node) => node.id)).toEqual(["in-1"]);
+  });
+
+  it("gives every paste fresh node ids and its own offset", () => {
+    const onChange = vi.fn();
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    try {
+      const { container, getByTestId } = render(
+        <GraphEditor
+          initialGraph={{
+            nodes: [
+              {
+                id: "log-a",
+                type: "debug.log",
+                position: { x: 0, y: 0 },
+                data: { message: "A", __pins: debugLogPins },
+              },
+            ],
+            edges: [],
+          }}
+          onChange={onChange}
+        />,
+      );
+      fireEvent.click(container.querySelector('[data-id="log-a"]')!);
+      fireEvent.click(getByTestId("graph-copy"));
+      fireEvent.click(getByTestId("graph-paste"));
+      fireEvent.click(getByTestId("graph-paste"));
+      const last = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(new Set(last.nodes.map((node) => node.id)).size).toBe(3);
+      expect(last.nodes.map((node) => node.position)).toEqual([
+        { x: 0, y: 0 },
+        { x: 40, y: 40 },
+        { x: 80, y: 80 },
+      ]);
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("stamps XYFlow node.dragHandle from nodeDragHandle", async () => {

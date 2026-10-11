@@ -1,4 +1,4 @@
-import { useReactFlow, useStore, type FitViewOptions } from "@xyflow/react";
+import { useReactFlow, useStore } from "@xyflow/react";
 import { MaximizeIcon, MinusIcon, PlusIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -8,14 +8,14 @@ import {
 } from "@babylonslate/ui/components/tooltip";
 
 /** Canvas sibling so transformed or elevated nodes cannot cover navigation. */
-export function GraphViewportControls({ fitViewOptions }: { fitViewOptions: FitViewOptions }) {
-  const { zoomIn, zoomOut, fitView } = useReactFlow();
+export function GraphViewportControls({ onFitGraph }: { onFitGraph: () => void }) {
+  const { zoomIn, zoomOut } = useReactFlow();
   const atMinZoom = useStore((state) => state.transform[2] <= state.minZoom);
   const atMaxZoom = useStore((state) => state.transform[2] >= state.maxZoom);
   const actions = [
     { label: "Zoom In", Icon: PlusIcon, disabled: atMaxZoom, run: () => zoomIn() },
     { label: "Zoom Out", Icon: MinusIcon, disabled: atMinZoom, run: () => zoomOut() },
-    { label: "Size Graph To Fit", Icon: MaximizeIcon, disabled: false, run: () => fitView(fitViewOptions) },
+    { label: "Size Graph To Fit", Icon: MaximizeIcon, disabled: false, run: onFitGraph },
   ];
 
   return (

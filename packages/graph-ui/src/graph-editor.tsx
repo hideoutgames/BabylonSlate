@@ -9,6 +9,7 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
   getBezierPath,
+  getViewportForBounds,
   useReactFlow,
   useStore,
   useStoreApi,
@@ -20,6 +21,7 @@ import {
   type FinalConnectionState,
   type NodeChange,
   type NodeTypes,
+  type OnBeforeDelete,
   type OnConnectStartParams,
   type OnNodeDrag,
 } from "@xyflow/react";
@@ -126,6 +128,7 @@ import { formatGraphNodes } from "./graph-format";
 import { findProximityConnections, type ProximityPin } from "./graph-proximity";
 import {
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
+  graphNodesBounds,
   selectVisibleGraphElements,
 } from "./graph-virtualize";
 import {
@@ -258,6 +261,37 @@ export interface GraphEditorProps {
 
 const DOUBLE_TAP_MS = 350;
 const PASTE_OFFSET = 40;
+
+/** `base`, or `base-2`, `base-3`, … when a node already uses it. */
+function uniqueNodeId(base: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(base)) return base;
+  for (let suffix = 2; ; suffix++) {
+    const id = `${base}-${suffix}`;
+    if (!taken.has(id)) return id;
+  }
+}
+
+/**
+ * Nudge a placement by `PASTE_OFFSET` steps until none of `positions` lands
+ * on an existing node, so repeated inserts and pastes cascade.
+ */
+function nonOverlappingOffset(
+  positions: ReadonlyArray<{ x: number; y: number }>,
+  existing: ReadonlyArray<{ position: { x: number; y: number } }>,
+  firstStep: number,
+): number {
+  const overlaps = (offset: number) =>
+    positions.some((position) =>
+      existing.some(
+        (node) =>
+          Math.abs(node.position.x - (position.x + offset)) < PASTE_OFFSET &&
+          Math.abs(node.position.y - (position.y + offset)) < PASTE_OFFSET,
+      ),
+    );
+  let offset = firstStep * PASTE_OFFSET;
+  while (overlaps(offset)) offset += PASTE_OFFSET;
+  return offset;
+}
 
 function asConnection(connection: Connection | Edge): Connection {
   return {
@@ -641,7 +675,7 @@ function GraphEditorCanvas({
     membersRef.current = initialGraph.members;
     componentsRef.current = initialGraph.components;
   });
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, setViewport } = useReactFlow();
   const storeApi = useStoreApi();
   const graphStateRef = useRef({ nodes, edges });
   useLayoutEffect(() => {
@@ -1608,14 +1642,17 @@ function GraphEditorCanvas({
           y: window.innerHeight / 2,
         });
       if (!pendingConnect) {
-        while (graphStateRef.current.nodes.some((node) =>
-          Math.abs(node.position.x - position.x) < PASTE_OFFSET &&
-          Math.abs(node.position.y - position.y) < PASTE_OFFSET,
-        )) {
-          position = { x: position.x + PASTE_OFFSET, y: position.y + PASTE_OFFSET };
-        }
+        const offset = nonOverlappingOffset(
+          [position],
+          graphStateRef.current.nodes,
+          0,
+        );
+        position = { x: position.x + offset, y: position.y + offset };
       }
-      const id = `${paletteNode.id}-${Date.now()}`;
+      const id = uniqueNodeId(
+        `${paletteNode.id}-${Date.now()}`,
+        new Set(graphStateRef.current.nodes.map((node) => node.id)),
+      );
       const data: Record<string, unknown> = {
         ...(paletteNode.defaultData ?? {}),
         title: paletteNode.title,
@@ -1767,10 +1804,19 @@ function GraphEditorCanvas({
     if (!clip) return;
     const pasteable = clip.nodes.filter((node) => !isProtectedNode(node));
     if (pasteable.length === 0) return;
+    const current = graphStateRef.current.nodes;
+    // Each paste lands one step past the copies already on the canvas.
+    const offset = nonOverlappingOffset(
+      pasteable.map((node) => node.position),
+      current,
+      1,
+    );
+    const taken = new Set(current.map((node) => node.id));
     const idMap = new Map<string, string>();
     const stamp = Date.now();
     const nextNodes = pasteable.map((node, index) => {
-      const id = `${node.id}-copy-${stamp}-${index}`;
+      const id = uniqueNodeId(`${node.id}-copy-${stamp}-${index}`, taken);
+      taken.add(id);
       idMap.set(node.id, id);
       return withDragHandle(
         {
@@ -1778,8 +1824,8 @@ function GraphEditorCanvas({
           id,
           selected: true,
           position: {
-            x: node.position.x + PASTE_OFFSET,
-            y: node.position.y + PASTE_OFFSET,
+            x: node.position.x + offset,
+            y: node.position.y + offset,
           },
           data: { ...node.data },
         },
@@ -1830,6 +1876,36 @@ function GraphEditorCanvas({
       return nextNodes;
     });
   }, [emitChange]);
+
+  // Keyboard delete (XYFlow `deleteKeyCode`) keeps protected nodes, like the
+  // toolbar, along with wires that were only doomed by touching them.
+  const handleBeforeDelete = useCallback<OnBeforeDelete<CanvasNode, Edge>>(
+    async ({ nodes: doomedNodes, edges: doomedEdges }) => {
+      const removable = doomedNodes.filter((node) => !isProtectedNode(node));
+      const removed = new Set(removable.map((node) => node.id));
+      return {
+        nodes: removable,
+        edges: doomedEdges.filter(
+          (edge) =>
+            edge.selected ||
+            removed.has(edge.source) ||
+            removed.has(edge.target),
+        ),
+      };
+    },
+    [],
+  );
+
+  // XYFlow `fitView` only sees mounted nodes; virtualisation unmounts the rest.
+  const fitGraph = useCallback(() => {
+    const bounds = graphNodesBounds(graphStateRef.current.nodes);
+    const { width, height, minZoom } = storeApi.getState();
+    if (!bounds || width <= 0 || height <= 0) return;
+    const { maxZoom, padding } = graphViewport.fitViewOptions;
+    void setViewport(
+      getViewportForBounds(bounds, width, height, minZoom, maxZoom, padding),
+    );
+  }, [graphViewport.fitViewOptions, setViewport, storeApi]);
 
   const breakSelectionLinks = useCallback(() => {
     const selectedEdgeIds = new Set(
@@ -2427,6 +2503,7 @@ function GraphEditorCanvas({
           edgesReconnectable={false}
           onlyRenderVisibleElements={false}
           onNodesChange={handleNodesChange}
+          onBeforeDelete={handleBeforeDelete}
           onNodeDragStart={(_event, node) => { proximityDragRef.current = !readOnly && nodesDraggable; shakenRef.current = false; const zoom = storeApi.getState().transform[2]; shakeTracker.current.reset(node.position.x * zoom, node.position.y * zoom, performance.now()); }}
           onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}
@@ -2492,7 +2569,7 @@ function GraphEditorCanvas({
             fitViewOptions={graphViewport.focusedFitViewOptions}
           />
         </ReactFlow>
-        <GraphViewportControls fitViewOptions={graphViewport.fitViewOptions} />
+        <GraphViewportControls onFitGraph={fitGraph} />
         {marqueeScreen ? (
           <div
             data-testid="graph-marquee"
