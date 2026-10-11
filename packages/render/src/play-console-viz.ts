@@ -308,6 +308,9 @@ export function createPlayCollisionOverlay(scene: Scene): {
         let slot = slots.get(collider.id);
         if (!slot || !sameColliderShape(slot.shape, collider)) {
           slot?.mesh.dispose();
+          // A failed rebuild must not leave the disposed mesh to be reused
+          // when the previous shape returns.
+          slots.delete(collider.id);
           const mesh = createMesh(collider);
           if (!mesh) continue;
           slot = { mesh, shape: collider };
