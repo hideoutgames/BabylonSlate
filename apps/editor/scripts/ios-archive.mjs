@@ -19,7 +19,8 @@ let uploaded = false;
 const infoPath = join(editor, "ios/App/App/Info.plist");
 try {
   if (process.platform !== "darwin" || process.env.DEVELOPER_DIR !== "/Applications/Xcode_26.6.app/Contents/Developer") throw new Error("Pinned macOS toolchain required");
-  const identity = JSON.parse(await readFile(join(repo, "release/generated/ipados-manifest.json"), "utf8"));
+  const identityText = await readFile(join(repo, "release/generated/ipados-manifest.json"), "utf8");
+  const identity = JSON.parse(identityText);
   validateAppleConfiguration(process.env, identity);
   const privateDir = applePrivateDirectory();
   await mkdir(privateDir, { mode: 0o700 });
@@ -35,6 +36,9 @@ try {
   validatePrivacyManifest(await plist(join(editor, "ios/App/App/PrivacyInfo.xcprivacy"), "privacy-source"));
   const capacitor = JSON.parse(await readFile(join(editor, "ios/App/App/capacitor.config.json"), "utf8"));
   if (!["BabylonSlateSecretsPlugin", "BabylonSlateScopedStoragePlugin", "BabylonSlateAudioLifecyclePlugin", "BabylonSlateMemoryPlugin"].every(name => capacitor.packageClassList?.includes(name))) throw new Error("Custom Capacitor registration is missing; use ios:sync");
+  // Only a distribution build (which refuses test-mode storage) emits build-manifest.json.
+  const bundledIdentity = await readFile(join(editor, "ios/App/App/public/build-manifest.json"), "utf8").catch(() => null);
+  if (bundledIdentity !== identityText) throw new Error("Native web bundle is not this identity's distribution build; use ios:sync");
 
   stage = "apple-preflight";
   const api = appleClient();

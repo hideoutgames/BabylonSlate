@@ -13,8 +13,8 @@ import { validateUpdateFeed } from "../../../scripts/distribution/update-feed.mj
 const platform = process.argv[2];
 const hosts = { windows: "win32", macos: "darwin", linux: "linux" };
 if (!hosts[platform] || process.platform !== hosts[platform]) throw new Error(`${platform || "Desktop"} packaging requires its native host`);
-if (process.env.VITE_TEST_MODE === "true" || process.env.VITE_TEST_QUERY === "true") throw new Error("Native distribution must use production storage");
 const desktop = fileURLToPath(new URL("..", import.meta.url));
+// Only a distribution build (which refuses test-mode storage) emits build-manifest.json into dist.
 const manifest = JSON.parse(await readFile(join(desktop, "../editor/dist/build-manifest.json"), "utf8"));
 if (!["test", "release"].includes(manifest.channel) || !manifest.packageVersion || manifest.platform !== platform) throw new Error("Distribution manifest required for the selected platform");
 if (manifest.channel === "release") validatePatchNotes(manifest.patchNotes, manifest.applicationVersion);
