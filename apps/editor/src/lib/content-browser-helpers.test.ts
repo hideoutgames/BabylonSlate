@@ -217,9 +217,11 @@ describe("content-browser-helpers", () => {
   });
 
   it("matches search across name, path, and type", () => {
-    const item = asset({ name: "Crate", type: "Model", path: "assets/models/crate.babasset" });
-    expect(matchesAssetSearch(item, "model")).toBe(true);
+    // Each needle occurs in exactly one field, so every field is checked.
+    const item = asset({ name: "Crate", type: "Model", path: "assets/props/box.babasset" });
     expect(matchesAssetSearch(item, "crate")).toBe(true);
+    expect(matchesAssetSearch(item, "props")).toBe(true);
+    expect(matchesAssetSearch(item, "model")).toBe(true);
     expect(matchesAssetSearch(item, "missing")).toBe(false);
   });
 
