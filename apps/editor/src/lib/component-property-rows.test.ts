@@ -816,8 +816,11 @@ describe("componentPropertyRows", () => {
     const light = rowsFor({
       id: "light",
       classId: "LightComponent",
-      properties: { intensity: 1, color: [1, 0, 0] },
+      properties: { intensity: 1, color: [1, 0, 0], shadowPriority: 2 },
     });
+    expect(light.rows.filter((row) => row.id.endsWith("-shadowPriority"))).toEqual([
+      expect.objectContaining({ kind: "number", label: "Shadow Priority", value: 2 }),
+    ]);
     expect(light.rows.find((row) => row.id.endsWith("-color"))).toMatchObject({
       kind: "color",
       value: [1, 0, 0],

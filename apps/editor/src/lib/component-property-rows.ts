@@ -1533,6 +1533,7 @@ export function componentPropertyRows(
             "innerAngle",
             "enabled",
             "castShadows",
+            "shadowPriority",
           ]),
         ),
       );
