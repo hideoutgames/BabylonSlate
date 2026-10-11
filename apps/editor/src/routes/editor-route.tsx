@@ -267,8 +267,13 @@ function EditorChromeAndPrompts() {
   }, [playAwaitingMigration]);
   // Save All, the close prompt's Save All and the exclusive Scene's Save all
   // reach the migration prompt when pending migrations refuse their save.
+  // The count outlives a closed project, so a request made before this
+  // editor mounted (in an earlier project) does not open it.
+  const handledMigrationPromptRequest = useRef(migrationPromptRequest);
   useEffect(() => {
-    if (migrationPromptRequest > 0) setShowMigrate(true);
+    if (migrationPromptRequest === handledMigrationPromptRequest.current) return;
+    handledMigrationPromptRequest.current = migrationPromptRequest;
+    setShowMigrate(true);
   }, [migrationPromptRequest]);
 
   /** A failed close keeps the project open; Close Project can be asked again. */

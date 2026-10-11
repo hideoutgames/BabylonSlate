@@ -408,6 +408,15 @@ describe("schema migration prompt", () => {
     expect(screen.getByTestId("migrate-on-save-dialog")).toBeTruthy();
   });
 
+  it("stays closed for a refusal made before the editor opened, such as in a closed project", () => {
+    state.migrationPromptRequest = 1;
+    const { rerender } = render(<EditorRoute />);
+    expect(screen.queryByTestId("migrate-on-save-dialog")).toBeNull();
+    state.migrationPromptRequest = 2;
+    rerender(<EditorRoute />);
+    expect(screen.getByTestId("migrate-on-save-dialog")).toBeTruthy();
+  });
+
   it.each([true, false])("resumes a waiting Play only when Migrate On Save saved (saved: %s)", async (saved) => {
     const resume = vi.fn(async () => {});
     const cancel = vi.fn();
