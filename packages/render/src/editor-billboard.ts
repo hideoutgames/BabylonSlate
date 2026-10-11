@@ -47,24 +47,18 @@ const texturesByEngine = new WeakMap<
   Map<EditorBillboardIcon, Texture>
 >();
 
-const ICON_ALIASES: Record<string, EditorBillboardIcon> = {
-  light: "point_light",
-  rigidbody: "default",
-  particles: "particle",
-};
-
 export function editorBillboardKind(icon: EditorBillboardIcon): string {
   return `${BILLBOARD_KIND_PREFIX}${icon}`;
+}
+
+function isEditorBillboardIcon(icon: string | null | undefined): icon is EditorBillboardIcon {
+  return EDITOR_BILLBOARD_ICONS.includes(icon as EditorBillboardIcon);
 }
 
 export function resolveEditorBillboardIcon(
   icon: string | null | undefined,
 ): EditorBillboardIcon {
-  if (!icon) return "default";
-  if (EDITOR_BILLBOARD_ICONS.includes(icon as EditorBillboardIcon)) {
-    return icon as EditorBillboardIcon;
-  }
-  return ICON_ALIASES[icon] ?? "default";
+  return isEditorBillboardIcon(icon) ? icon : "default";
 }
 
 export function parseEditorBillboardIcon(
@@ -72,11 +66,7 @@ export function parseEditorBillboardIcon(
 ): EditorBillboardIcon | null {
   if (!kind?.startsWith(BILLBOARD_KIND_PREFIX)) return null;
   const icon = kind.slice(BILLBOARD_KIND_PREFIX.length);
-  if (EDITOR_BILLBOARD_ICONS.includes(icon as EditorBillboardIcon)) {
-    return icon as EditorBillboardIcon;
-  }
-  if (icon in ICON_ALIASES) return ICON_ALIASES[icon]!;
-  return null;
+  return isEditorBillboardIcon(icon) ? icon : null;
 }
 
 export function lightBillboardIcon(
@@ -125,9 +115,8 @@ export function syncEditorBillboardParentScale(mesh: Mesh): void {
 export function createEditorBillboard(
   scene: Scene,
   name: string,
-  icon: EditorBillboardIcon | string,
+  icon: EditorBillboardIcon,
 ): Mesh {
-  const resolved = resolveEditorBillboardIcon(icon);
   const mesh = MeshBuilder.CreatePlane(
     name,
     { size: BILLBOARD_SIZE, sideOrientation: Mesh.DOUBLESIDE },
@@ -135,7 +124,7 @@ export function createEditorBillboard(
   );
   mesh.billboardMode = Mesh.BILLBOARDMODE_ALL;
   mesh.isPickable = true;
-  mesh.metadata = { ...(mesh.metadata ?? {}), editorBillboard: resolved };
+  mesh.metadata = { ...(mesh.metadata ?? {}), editorBillboard: icon };
   applyEditorBillboardPass(mesh);
   mesh.onBeforeRenderObservable.add(() => {
     syncEditorBillboardParentScale(mesh);
@@ -147,7 +136,7 @@ export function createEditorBillboard(
   material.emissiveColor = DEFAULT_FILL.clone();
   material.diffuseColor = Color3.Black();
   material.specularColor = Color3.Black();
-  const texture = iconTexture(scene, resolved);
+  const texture = iconTexture(scene, icon);
   // The icon multiplies the unlit tint; emissiveTexture would add white to it.
   material.diffuseTexture = texture;
   material.opacityTexture = texture;
