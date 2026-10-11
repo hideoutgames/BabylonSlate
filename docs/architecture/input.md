@@ -40,7 +40,7 @@ The native **Key** enum uses the same catalog as Input Action/Axis authoring: ke
 
 For WASD rebinding, store the selected **Input Binding**, gate **On Any Key Pressed** with the menu's waiting flag, pass Key to **Set Input Axis Binding**, and clear the waiting flag after success. Replacing W retains its original Y component and positive/negative direction. The game owns menu gating and persistence; these nodes do not automatically write browser storage or suppress gameplay input.
 
-**Input Binding** contains Input (asset GUID/name), Id, Label, Key, Shift/Ctrl/Alt/Meta, the native **Input Component** enum (X/Y), Digital Value, Scale, Dead Zone, Invert, and Sensitivity. Profile additions/removals use version 2 edits; controls still resolve through the device/code mapping model. Imports validate the complete profile before applying it; per-slot version 1 `overrides` from older saves still import and export. The obsolete string-based input nodes, native Input Control/Input Device types, and capture/status graph workflow have been removed.
+**Input Binding** contains Input (asset GUID/name), Id, Label, Key, Shift/Ctrl/Alt/Meta, the native **Input Component** enum (X/Y), Digital Value, Scale, Dead Zone, Invert, and Sensitivity. Exported profiles are version 2 `edits` keyed by asset GUID and binding Id (additions, replacements, removals); controls still resolve through the device/code mapping model. Imports validate the complete profile before applying it and reject any other version. The obsolete string-based input nodes, native Input Control/Input Device types, and capture/status graph workflow have been removed.
 
 ## Storage and defaults
 
@@ -55,7 +55,7 @@ The built-in 3D template includes Jump, Confirm, Move, and Look assets in `asset
 | `ActionMapping` | `name`, `bindings[]` |
 | `AxisMapping` | `name`, `kind` (`"1d"` \| `"2d"`), `bindings[]` |
 
-Each **binding** targets a device (`key`, `mouseButton`, `pointer`, `gamepadButton`, `gamepadAxis`, `touch`) plus a device-specific `code`. Optional `modifiers` (shift/ctrl/alt/meta). Bindable codes and labels live in `bindingCodesForDevice()` / `bindingCodeLabel()` (`packages/input/src/binding-catalog.ts`) so the input asset picker and stored-binding labels stay in sync.
+Each **binding** targets a device (`key`, `mouseButton`, `gamepadButton`, `gamepadAxis`, `touch`) plus a device-specific `code`. Optional `modifiers` (shift/ctrl/alt/meta). Bindable codes and labels live in `bindingCodesForDevice()` / `bindingCodeLabel()` (`packages/input/src/binding-catalog.ts`) so the input asset picker and stored-binding labels stay in sync.
 
 **Axis bindings** additionally carry per-binding tuning:
 
@@ -68,7 +68,7 @@ Each **binding** targets a device (`key`, `mouseButton`, `pointer`, `gamepadButt
 | `component` | `"x"` \| `"y"` for `kind: "2d"` axes |
 | `digitalValue` | Constant while a digital binding is held |
 
-`InputMappings` = `{ actions[], axes[] }`. `normalizeInputMappings()` coerces unknown `project.json` payloads and **drops empty `code`s** so Play never treats a blank mouse/pointer draft as button 0. Input asset authoring passes `{ allowIncomplete: true }` so device switches and Add Binding keep `{ device, code: "" }` rows until a control is picked. `createDefaultInputMappings()` supplies Jump / Confirm / Move / Look defaults. Default **Move** includes keyboard and gamepad stick bindings. **Jump** includes Space and Gamepad 1 Face Button Down; **Confirm** uses Enter and Face Button Right. Synthetic touch controls are no longer included in starter defaults.
+`InputMappings` = `{ actions[], axes[] }`. `normalizeInputMappings()` validates a mapping document and **drops empty `code`s** so Play never treats a blank mouse draft as button 0; a missing list is empty, never replaced by defaults. `createDefaultInputMappings()` supplies Jump / Confirm / Move / Look defaults. Default **Move** includes keyboard and gamepad stick bindings. **Jump** includes Space and Gamepad 1 Face Button Down; **Confirm** uses Enter and Face Button Right. Synthetic touch controls are no longer included in starter defaults.
 
 Gamepad picker labels are layout-agnostic Standard Gamepad names (Face Button Down/Right/Left/Up, bumpers, triggers, Left/Right Stick Click, D-Pad, Home). Stored codes stay `padIndex:buttonIndex`. Closed bindings stay pad-qualified (`Gamepad 1 Face Button Down`); picker rows show the button name under a `Gamepad N` group.
 
@@ -87,9 +87,11 @@ interface ResolvedInputTick {
 ```
 
 - **`resolve(events)`** — apply one tick's events and retain action transitions along the event sequence. A complete tap between ticks reports both `pressed` and `released` while final `held` is false; the next empty tick reports neither edge. Multiple bindings still combine into one action, so releasing one binding while another remains held does not release the action.
+- **Names.** `inputs` is keyed by asset GUID. The name-keyed `actions` / `axes` / `axes2D` combine every asset with that display name the same way: an action is held while any of them is held, and axis values add up and clamp to ±1.
 - **`kind: "2d"`** axes fold x/y bindings into `axes2D[name]`; magnitude also exposed on `axes[name]` for 1D callers.
+- **Gamepad samples** carry the pad's whole state; buttons and axes a sample omits count as released.
 - **Raw kinds.** `pointer` (mouse and touch arrive as Pointer Events), `key`, polled `gamepad` samples, `gamepadDisconnect`, and `touchAxis`.
-- **Cursor.** Primary `kind: "pointer"` (mouse or first `pointerId`; extra fingers ignored) keeps `{ x, y, pressed }` in canvas CSS pixels. XY sticks after up/cancel. Touch uses the same cursor sample as mouse.
+- **Cursor.** Primary `kind: "pointer"` (mouse or first `pointerId`; extra fingers ignored) keeps `{ x, y, pressed }` in canvas CSS pixels. A finger that was secondary stays secondary after the primary lifts, but a new contact becomes primary whenever no primary contact is down. XY sticks after up/cancel. Touch uses the same cursor sample as mouse.
 - **Chorded mouse buttons.** Pointer Events fire `pointerdown`/`pointerup` only for the first and last held button; a second button changes `buttons` on a `pointermove`. Capture (`@babylonslate/input/dom`, used by Play and the exported player) tracks each pointer's mask and turns that move into a per-button `down`/`up` edge, and `pointerup` first emits `up` for every other chorded button still held. The resolver also treats an `up` naming a button the contact never pressed as a missed chord and releases the whole contact.
 - **Gamepad connections.** A pad reports `connected: true` on its first sample. Play and the exported player compare each gamepad poll with the previous one and push `gamepadDisconnect` for a pad that is no longer returned (empty slot or `connected: false`). The resolver then reports `connected: false` once and drops that pad's held buttons and stick values; a later sample reconnects it. **On Gamepad Connected** and **On Gamepad Disconnected** run once per transition with the pad index.
 
@@ -112,7 +114,7 @@ Pure with respect to the browser — feed synthetic streams from the determinist
 
 Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolve` → `TickContext` for script/physics phases. Each `tick()` consumes **all** events queued since the previous tick. Event `tick` is recorded on traces; it does not gate consumption. Play's worker host stamps canvas/gamepad samples with the `tickIndex` of the latest published snapshot (not the throttled `stats` command or `performance.now() / 16.67`), and in-process Play uses the world clock's tick, so compiled Input Axis events see the same stick as the host input stream.
 
-- **Overflow.** `InputRingBuffer` (capture 512, runtime 512) fills while ticks are held back, such as blocking stream loads or save boundaries. At capacity it coalesces the oldest continuous sample (pointer move, gamepad or touch-axis sample) whose next event for the same control keeps every resolver threshold edge (zero and 0.5), so the latest value and complete taps survive. A queue of press/release edges grows up to four times capacity; beyond that the oldest press or sample is dropped. Releases (key up, pointer up/cancel, zero touch axis, all-zero pad sample, disconnect) are never dropped while a press remains.
+- **Overflow.** `InputRingBuffer` (capture 512, runtime 512) fills while ticks are held back, such as blocking stream loads or save boundaries. At capacity it coalesces the oldest continuous sample (pointer move, gamepad or touch-axis sample) whose next event for the same control keeps every resolver threshold edge (zero and 0.5), so the latest value and complete taps survive. A queue of press/release edges grows up to four times capacity; beyond that the oldest press or sample is dropped. Releases (key up, pointer up/cancel, zero touch axis, all-zero pad sample, disconnect) are never dropped; a queue holding only releases drops only a release that a later release of the same control repeats.
 - **Wire encoding.** `encodeInputEvents` stores a pointer's `pointerId` as signed 32-bit (`PointerEvent.pointerId` is a `long`) and `button` as signed 8-bit, so pen/touch ids above 65535 stay distinct and hover moves keep `button: -1`. Host and worker share one build; the format is transient and not persisted.
 
 

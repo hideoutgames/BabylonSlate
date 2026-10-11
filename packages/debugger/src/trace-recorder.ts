@@ -77,9 +77,9 @@ export type TraceFrame = {
   tickIndex: number;
   /**
    * Time dilation this tick's step used (step = undilated `dt` × dilation).
-   * A change made during a tick appears on the next frame. Absent reads as 1.
+   * A change made during a tick appears on the next frame.
    */
-  timeDilation?: number;
+  timeDilation: number;
   scriptMs: number;
   physicsMs: number;
   logs: TraceLogEvent[];
@@ -108,8 +108,7 @@ export type TracePayload = {
   seed: number;
   dt: number;
   frames: TraceFrame[];
-  /** Optional so existing .babtrace documents remain readable. */
-  retention?: TraceRetention;
+  retention: TraceRetention;
 };
 
 export type TraceRecorderOptions = {
@@ -122,7 +121,7 @@ const encoder = new TextEncoder();
 export class TraceRecorder {
   private readonly byteBudget: number;
   private recording = false;
-  private payload: (TracePayload & { retention: TraceRetention }) | null = null;
+  private payload: TracePayload | null = null;
   private frameBytes: number[] = [];
   private encodedBytes = 0;
   private headerBytes = 0;
@@ -137,7 +136,9 @@ export class TraceRecorder {
     return this.recording;
   }
 
-  start(meta: { seed: number; dt: number }): void {
+  /** Returns false and keeps the current recording when one is already running. */
+  start(meta: { seed: number; dt: number }): boolean {
+    if (this.recording) return false;
     const retention: TraceRetention = {
       byteBudget: this.byteBudget,
       droppedFrames: 0,
@@ -159,6 +160,7 @@ export class TraceRecorder {
     this.frameBytes = [];
     this.headerBytes = headerBytes;
     this.encodedBytes = headerBytes;
+    return true;
   }
 
   recordFrame(frame: TraceFrame): void {

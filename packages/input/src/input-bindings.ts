@@ -10,7 +10,6 @@ import {
   normalizeInputMappings,
   type ActionBinding,
   type AxisBinding,
-  type InputDevice,
   type InputMappings,
 } from "./mappings";
 
@@ -36,20 +35,6 @@ export interface InputBindingControls {
   importBindings(data: string): boolean;
 }
 
-interface BindingOverride {
-  bindingId?: string;
-  kind: "action" | "axis";
-  mapping: string;
-  index: number;
-  defaultBinding: AxisBinding;
-  device: InputDevice;
-  code: string;
-  shift?: boolean;
-  ctrl?: boolean;
-  alt?: boolean;
-  meta?: boolean;
-}
-
 interface BindingEdit {
   kind: "action" | "axis";
   mapping: string;
@@ -60,67 +45,7 @@ interface BindingEdit {
 const editKey = (edit: Pick<BindingEdit, "kind" | "mapping" | "id">) =>
   JSON.stringify([edit.kind, edit.mapping, edit.id]);
 
-const devices: readonly string[] = [
-  "key",
-  "mouseButton",
-  "pointer",
-  "gamepadButton",
-  "gamepadAxis",
-  "touch",
-];
 const modifiers = ["shift", "ctrl", "alt", "meta"] as const;
-const overrideKey = (kind: string, mapping: string, index: number) =>
-  JSON.stringify([kind, mapping, index]);
-
-/** Canonical semantic identity also distinguishes chords and 2D axis slots. */
-const authoredSignature = (binding: AxisBinding) =>
-  JSON.stringify([
-    binding.device,
-    binding.code,
-    ...modifiers.map((name) => binding.modifiers?.[name] === true),
-    binding.component ?? "x",
-    binding.digitalValue ?? 1,
-    binding.deadZone ?? 0,
-    binding.scale ?? 1,
-    binding.invert === true,
-    binding.sensitivity ?? 1,
-  ]);
-
-function matchingMappings<T extends { id?: string; name: string }>(
-  rows: readonly T[],
-  key: string,
-): T[] {
-  const byId = rows.filter((row) => row.id === key);
-  if (byId.length) return byId;
-  return rows.filter((row) => row.name === key);
-}
-
-function slot(
-  mappings: InputMappings,
-  kind: string,
-  mapping: string,
-  index: number,
-): ActionBinding | AxisBinding | undefined {
-  if (!Number.isInteger(index) || index < 0) return undefined;
-  const rows =
-    kind === "action" ? mappings.actions : kind === "axis" ? mappings.axes : [];
-  return matchingMappings(rows, mapping)[0]?.bindings[index];
-}
-
-function validControl(device: unknown, code: unknown): device is InputDevice {
-  if (
-    typeof device !== "string" ||
-    !devices.includes(device) ||
-    typeof code !== "string" ||
-    !code.trim()
-  )
-    return false;
-  if (device === "mouseButton") return /^\d+$/.test(code);
-  if (device === "pointer") return code === "primary" || /^\d+$/.test(code);
-  if (device === "gamepadButton" || device === "gamepadAxis")
-    return /^\d+:\d+$/.test(code);
-  return true;
-}
 
 function bindingLabel(binding: ActionBinding): string {
   const prefix = [
@@ -134,14 +59,10 @@ function bindingLabel(binding: ActionBinding): string {
   );
 }
 
-/**
- * Session edits over authored defaults. Imported version 1 profiles may still
- * carry per-slot `overrides` from older player saves.
- */
+/** Session edits over authored defaults, keyed by asset and binding id. */
 export class InputBindingProfile implements InputBindingControls {
   private readonly defaults: InputMappings;
   private current: InputMappings;
-  private overrides = new Map<string, BindingOverride>();
   private edits = new Map<string, BindingEdit>();
   private nextBindingId = 0;
   private readonly onChange: (mappings: InputMappings) => void;
@@ -351,15 +272,9 @@ export class InputBindingProfile implements InputBindingControls {
         ? this.defaults.actions
         : kind === "axis"
           ? this.defaults.axes
-          : null;
-    const selected =
-      rows && mapping ? matchingMappings(rows, mapping)[0] : undefined;
-    if (!resetAll && !selected) return false;
-    mapping = selected?.id ?? selected?.name ?? mapping;
-    for (const [key, override] of this.overrides) {
-      if (resetAll || (override.kind === kind && override.mapping === mapping))
-        this.overrides.delete(key);
-    }
+          : [];
+    if (!resetAll && !rows.some((row) => !!mapping && row.id === mapping))
+      return false;
     for (const [key, edit] of this.edits) {
       if (resetAll || (edit.kind === kind && edit.mapping === mapping))
         this.edits.delete(key);
@@ -369,11 +284,7 @@ export class InputBindingProfile implements InputBindingControls {
   }
 
   exportBindings(): string {
-    return JSON.stringify({
-      version: this.edits.size ? 2 : 1,
-      overrides: [...this.overrides.values()],
-      ...(this.edits.size ? { edits: [...this.edits.values()] } : {}),
-    });
+    return JSON.stringify({ version: 2, edits: [...this.edits.values()] });
   }
 
   importBindings(data: string): boolean {
@@ -385,147 +296,86 @@ export class InputBindingProfile implements InputBindingControls {
     }
     if (!parsed || typeof parsed !== "object") return false;
     const document = parsed as Record<string, unknown>;
-    if (
-      (document.version !== 1 && document.version !== 2) ||
-      !Array.isArray(document.overrides)
-    )
-      return false;
+    if (document.version !== 2 || !Array.isArray(document.edits)) return false;
     const edits = new Map<string, BindingEdit>();
-    if (document.version === 2) {
-      if (!Array.isArray(document.edits)) return false;
-      for (const value of document.edits) {
-        if (!value || typeof value !== "object") return false;
-        const edit = value as BindingEdit;
-        if (
-          (edit.kind !== "action" && edit.kind !== "axis") ||
-          typeof edit.mapping !== "string" ||
-          typeof edit.id !== "string" ||
-          !edit.id ||
-          typeof edit.added !== "boolean"
-        )
-          return false;
-        const row = (
-          edit.kind === "action" ? this.defaults.actions : this.defaults.axes
-        ).find((entry) => entry.id === edit.mapping);
-        if (
-          !row ||
-          edit.added === row.bindings.some((binding) => binding.id === edit.id)
-        )
-          return false;
-        if (edit.binding === null) {
-          if (edit.added) return false;
-        } else {
-          if (
-            !edit.binding ||
-            edit.binding.id !== edit.id ||
-            !inputKeyFromControl(edit.binding.device, edit.binding.code)
-          )
-            return false;
-          for (const field of [
-            "scale",
-            "sensitivity",
-            "digitalValue",
-            "deadZone",
-          ] as const) {
-            const value = edit.binding[field];
-            if (
-              value !== undefined &&
-              (typeof value !== "number" || !Number.isFinite(value))
-            )
-              return false;
-          }
-          if (
-            edit.binding.deadZone !== undefined &&
-            (edit.binding.deadZone < 0 || edit.binding.deadZone >= 1)
-          )
-            return false;
-          if (
-            edit.binding.component !== undefined &&
-            edit.binding.component !== "x" &&
-            edit.binding.component !== "y"
-          )
-            return false;
-          if (
-            edit.binding.invert !== undefined &&
-            typeof edit.binding.invert !== "boolean"
-          )
-            return false;
-          if (
-            edit.binding.modifiers !== undefined &&
-            (!edit.binding.modifiers ||
-              typeof edit.binding.modifiers !== "object" ||
-              modifiers.some(
-                (flag) =>
-                  edit.binding!.modifiers?.[flag] !== undefined &&
-                  typeof edit.binding!.modifiers?.[flag] !== "boolean",
-              ))
-          )
-            return false;
-          const normalized = normalizeInputAssetPayload(
-            edit.kind === "action" ? "InputAction" : "InputAxis",
-            { bindings: [edit.binding] },
-          ).bindings[0];
-          if (!normalized) return false;
-          edit.binding = normalized;
-        }
-        if (edits.has(editKey(edit))) return false;
-        edits.set(editKey(edit), structuredClone(edit));
-      }
-    }
-    const next = new Map<string, BindingOverride>();
-    for (const value of document.overrides) {
+    for (const value of document.edits) {
       if (!value || typeof value !== "object") return false;
-      const row = value as Record<string, unknown>;
+      const edit = value as BindingEdit;
       if (
-        (row.kind !== "action" && row.kind !== "axis") ||
-        typeof row.mapping !== "string" ||
-        typeof row.index !== "number" ||
-        !validControl(row.device, row.code)
+        (edit.kind !== "action" && edit.kind !== "axis") ||
+        typeof edit.mapping !== "string" ||
+        typeof edit.id !== "string" ||
+        !edit.id ||
+        typeof edit.added !== "boolean"
       )
         return false;
-      const mappings =
-        row.kind === "action" ? this.defaults.actions : this.defaults.axes;
-      const candidates = mappings.filter(
-        (entry) => (entry.id ?? entry.name) === row.mapping,
-      );
-      if (candidates.length !== 1) return false;
-      const mapping = candidates[0]!;
-      if (mapping.id && typeof row.bindingId !== "string") return false;
-      const originalAuthored = row.defaultBinding as AxisBinding | undefined;
-      const matching = mapping.bindings
-        .map((binding, index) => ({ binding, index }))
-        .filter(({ binding, index }) =>
-          typeof row.bindingId === "string"
-            ? binding.id === row.bindingId
-            : originalAuthored &&
-              authoredSignature(binding) ===
-                authoredSignature(originalAuthored) &&
-              index === row.index,
-        );
-      if (matching.length !== 1) return false;
-      const { binding: original, index } = matching[0]!;
+      const row = (
+        edit.kind === "action" ? this.defaults.actions : this.defaults.axes
+      ).find((entry) => entry.id === edit.mapping);
       if (
-        modifiers.some(
-          (name) => row[name] !== undefined && typeof row[name] !== "boolean",
+        !row ||
+        edit.added === row.bindings.some((binding) => binding.id === edit.id)
+      )
+        return false;
+      if (edit.binding === null) {
+        if (edit.added) return false;
+      } else {
+        if (
+          !edit.binding ||
+          edit.binding.id !== edit.id ||
+          !inputKeyFromControl(edit.binding.device, edit.binding.code)
         )
-      )
-        return false;
-      const override: BindingOverride = {
-        kind: row.kind,
-        mapping: mapping.id ?? mapping.name,
-        index,
-        ...(original.id ? { bindingId: original.id } : {}),
-        defaultBinding: structuredClone(original),
-        device: row.device,
-        code: row.code as string,
-      };
-      for (const name of modifiers)
-        if (row[name] === true) override[name] = true;
-      const key = overrideKey(override.kind, override.mapping, override.index);
-      if (next.has(key)) return false;
-      next.set(key, override);
+          return false;
+        for (const field of [
+          "scale",
+          "sensitivity",
+          "digitalValue",
+          "deadZone",
+        ] as const) {
+          const value = edit.binding[field];
+          if (
+            value !== undefined &&
+            (typeof value !== "number" || !Number.isFinite(value))
+          )
+            return false;
+        }
+        if (
+          edit.binding.deadZone !== undefined &&
+          (edit.binding.deadZone < 0 || edit.binding.deadZone >= 1)
+        )
+          return false;
+        if (
+          edit.binding.component !== undefined &&
+          edit.binding.component !== "x" &&
+          edit.binding.component !== "y"
+        )
+          return false;
+        if (
+          edit.binding.invert !== undefined &&
+          typeof edit.binding.invert !== "boolean"
+        )
+          return false;
+        if (
+          edit.binding.modifiers !== undefined &&
+          (!edit.binding.modifiers ||
+            typeof edit.binding.modifiers !== "object" ||
+            modifiers.some(
+              (flag) =>
+                edit.binding!.modifiers?.[flag] !== undefined &&
+                typeof edit.binding!.modifiers?.[flag] !== "boolean",
+            ))
+        )
+          return false;
+        const normalized = normalizeInputAssetPayload(
+          edit.kind === "action" ? "InputAction" : "InputAxis",
+          { bindings: [edit.binding] },
+        ).bindings[0];
+        if (!normalized) return false;
+        edit.binding = normalized;
+      }
+      if (edits.has(editKey(edit))) return false;
+      edits.set(editKey(edit), structuredClone(edit));
     }
-    this.overrides = next;
     this.edits = edits;
     this.apply();
     return true;
@@ -533,20 +383,6 @@ export class InputBindingProfile implements InputBindingControls {
 
   private apply(): void {
     this.current = structuredClone(this.defaults);
-    for (const override of this.overrides.values()) {
-      const binding = slot(
-        this.current,
-        override.kind,
-        override.mapping,
-        override.index,
-      )!;
-      binding.device = override.device;
-      binding.code = override.code;
-      delete binding.modifiers;
-      for (const name of modifiers) {
-        if (override[name]) (binding.modifiers ??= {})[name] = true;
-      }
-    }
     for (const edit of this.edits.values()) {
       const row = (
         edit.kind === "action" ? this.current.actions : this.current.axes

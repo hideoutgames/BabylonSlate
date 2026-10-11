@@ -1,8 +1,14 @@
 import type { CommandParameter, CommandResult } from "./types";
 
-/** Split a console line into tokens; `name="quoted value"` stays one named token. */
-export function tokenize(line: string): string[] {
-  const tokens: string[] = [];
+/** A console token; `name` is set only for an unquoted `name=value` / `name:value` argument. */
+export type CommandToken = { value: string; name?: string };
+
+/**
+ * Split a console line into tokens; `name="quoted value"` stays one named token.
+ * A quoted token is always a value, even when its text looks like `name=value`.
+ */
+export function tokenizeCommand(line: string): CommandToken[] {
+  const tokens: CommandToken[] = [];
   let i = 0;
   const n = line.length;
 
@@ -40,15 +46,25 @@ export function tokenize(line: string): string[] {
         line[i] === '"' || line[i] === "'"
           ? readQuoted(line[i]!)
           : readWord();
-      tokens.push(`${name}=${value}`);
+      tokens.push({ name, value });
     } else if (line[i] === '"' || line[i] === "'") {
-      tokens.push(readQuoted(line[i]!));
+      tokens.push({ value: readQuoted(line[i]!) });
     } else {
-      tokens.push(readWord());
+      tokens.push({ value: readWord() });
     }
     skipWs();
   }
   return tokens;
+}
+
+/** `tokenizeCommand` as text; a named argument reads `name=value`. */
+export function tokenize(line: string): string[] {
+  return tokenizeCommand(line).map(tokenText);
+}
+
+function tokenText(token: string | CommandToken): string {
+  if (typeof token === "string") return token;
+  return token.name === undefined ? token.value : `${token.name}=${token.value}`;
 }
 
 function coerce(
@@ -69,7 +85,7 @@ function coerce(
     }
     case "float": {
       const value = Number(raw);
-      if (!Number.isFinite(value)) {
+      if (raw.trim() === "" || !Number.isFinite(value)) {
         return {
           ok: false,
           output: `parameter "${param.name}" expects float, got "${raw}"`,
@@ -108,15 +124,21 @@ function coerce(
 }
 
 export function parseCommandArgs(
-  tokens: readonly string[],
+  tokens: readonly CommandToken[],
   parameters: readonly CommandParameter[],
 ): { ok: true; args: Record<string, unknown> } | { ok: false; output: string } {
   const named = new Map<string, string>();
   const positional: string[] = [];
   for (const token of tokens) {
-    const eq = /^([A-Za-z_][\w]*)=(.*)$/.exec(token);
-    if (eq) named.set(eq[1]!.toLowerCase(), eq[2]!);
-    else positional.push(token);
+    if (token.name === undefined) {
+      positional.push(token.value);
+      continue;
+    }
+    const key = token.name.toLowerCase();
+    if (!parameters.some((param) => param.name.toLowerCase() === key)) {
+      return { ok: false, output: `unknown parameter "${token.name}"` };
+    }
+    named.set(key, token.value);
   }
 
   const args: Record<string, unknown> = {};
@@ -126,8 +148,8 @@ export function parseCommandArgs(
     let raw: string | undefined;
     if (named.has(key)) raw = named.get(key);
     else if (pos < positional.length) {
-      raw = positional[pos];
-      pos += 1;
+      raw = param.rest ? positional.slice(pos).join(" ") : positional[pos];
+      pos = param.rest ? positional.length : pos + 1;
     }
     if (raw === undefined) {
       if (param.defaultValue !== undefined) {
@@ -149,18 +171,18 @@ export function parseCommandArgs(
   return { ok: true, args };
 }
 
-export function matchCommandName(
-  tokens: readonly string[],
+export function matchCommandName<T extends string | CommandToken>(
+  tokens: readonly T[],
   known: ReadonlySet<string>,
-): { name: string; rest: string[] } {
+): { name: string; rest: T[] } {
   if (tokens.length === 0) return { name: "", rest: [] };
   for (let len = tokens.length; len >= 1; len -= 1) {
-    const name = tokens.slice(0, len).join(" ").toLowerCase();
+    const name = tokens.slice(0, len).map(tokenText).join(" ").toLowerCase();
     if (known.has(name)) {
       return { name, rest: tokens.slice(len) };
     }
   }
-  return { name: tokens[0]!.toLowerCase(), rest: tokens.slice(1) };
+  return { name: tokenText(tokens[0]!).toLowerCase(), rest: tokens.slice(1) };
 }
 
 export function fail(output: string): CommandResult {

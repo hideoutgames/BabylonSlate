@@ -245,8 +245,6 @@ Encode coverage (unit): source-first encode + Safari RGBA fallback + `encodeErro
 
 `e2e/skybox-creator.spec.ts` imports `albedo.png`, creates a Skybox Creator helper, picks that Texture, Create writes six `*_px`…`*_nz` Textures in the same folder, asserts Windows Preview/Cubemap/Details, a letterboxed 4×3 net whose Front cell is ~¼ × ⅓ of the net (square cells fill the letterbox), the Cubemap canvas inside the Cubemap panel, and save/reopen. Exporter unit tests cover packed closure omitting the helper while keeping referenced face Textures.
 
-Static style rules that a running browser cannot prove (a hardcoded radius on an element no test renders) are audited by `findHardcodedRadii` in `@babylonslate/test-kit/style-audit`.
-
 ## Golden files
 
 `readGolden` / `writeGolden` / `normalizeGoldenText` in `@babylonslate/test-kit` back byte-exact surfaces (container formats, compiler output, P3 world snapshots, tilemap chunks, 2D projection). `normalizeGoldenText` normalizes CRLF and trailing newlines so goldens do not churn across platforms.

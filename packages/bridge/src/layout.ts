@@ -21,16 +21,14 @@ export function snapshotFloatCount(maxActors: number): number {
   return SNAPSHOT_HEADER_FLOATS + maxActors * SNAPSHOT_ACTOR_STRIDE;
 }
 
+const bitsScratch = new DataView(new ArrayBuffer(4));
+
 export function floatBitsToU32(f: number): number {
-  const buf = new ArrayBuffer(4);
-  const view = new DataView(buf);
-  view.setFloat32(0, f, true);
-  return view.getUint32(0, true);
+  bitsScratch.setFloat32(0, f, true);
+  return bitsScratch.getUint32(0, true);
 }
 
 export function u32ToFloatBits(u: number): number {
-  const buf = new ArrayBuffer(4);
-  const view = new DataView(buf);
-  view.setUint32(0, u >>> 0, true);
-  return view.getFloat32(0, true);
+  bitsScratch.setUint32(0, u >>> 0, true);
+  return bitsScratch.getFloat32(0, true);
 }

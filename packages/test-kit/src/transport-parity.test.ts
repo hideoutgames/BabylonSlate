@@ -11,8 +11,9 @@ import {
 import { createInProcessRuntime } from "@babylonslate/runtime";
 
 /**
- * P4 acceptance: same scenario identical in-process, over SAB seq-lock, and
- * over transferable ping-pong (actor transforms after N ticks).
+ * P4 payload fidelity: one in-process run (actor transforms after N ticks)
+ * republished over SAB seq-lock and transferable ping-pong must read back the
+ * same. It does not run three independent hosts (see testing.md).
  */
 describe("multi-transport scenario parity", () => {
   it("matches SAB and transferable snapshot payloads to in-process", () => {

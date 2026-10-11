@@ -402,6 +402,10 @@ describe("createCommandRegistry", () => {
     expect(pauseHelp.success).toBe(true);
     expect(pauseHelp.output).toContain("pause");
     expect(pauseHelp.output.toLowerCase()).toContain("pause");
+    expect(registry.execute("help stat unit", recordingHost())).toMatchObject({
+      success: true,
+      output: expect.stringMatching(/^stat unit — /),
+    });
   });
 
   it("reports stripped names from help instead of unknown", () => {

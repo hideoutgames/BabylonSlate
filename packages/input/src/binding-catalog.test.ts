@@ -28,17 +28,11 @@ describe("bindingCodesForDevice", () => {
     ).toMatchObject({ label: "F12", group: "Function" });
   });
 
-  it("lists mouse buttons and primary pointer", () => {
+  it("lists mouse buttons", () => {
     expect(codesOf("mouseButton")).toEqual(["0", "1", "2", "3", "4"]);
     expect(
       bindingCodesForDevice("mouseButton").find((entry) => entry.code === "0"),
     ).toMatchObject({ label: "Mouse Left", group: "Mouse" });
-    expect(codesOf("pointer")).toEqual(["primary"]);
-    expect(bindingCodesForDevice("pointer")[0]).toMatchObject({
-      code: "primary",
-      label: "Primary Pointer",
-      group: "Pointer",
-    });
   });
 
   it("lists standard gamepad buttons and axes across four pads", () => {

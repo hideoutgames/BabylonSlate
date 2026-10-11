@@ -14,7 +14,7 @@ export {
   type CreateCommandRegistryOptions,
 } from "./registry";
 export { CORE_COMMAND_NAMES, DEBUG_COMMAND_NAMES, MAX_TIME_DILATION, isReservedConsoleCommandName } from "./commands";
-export { tokenize, parseCommandArgs, matchCommandName } from "./parser";
+export { tokenize, tokenizeCommand, parseCommandArgs, matchCommandName, type CommandToken } from "./parser";
 export {
   warnDebugTierConsoleCommands,
   warnReservedConsoleCommandNames,

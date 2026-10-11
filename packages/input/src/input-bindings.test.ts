@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { InputResolver } from "./resolver";
-import { createDefaultInputMappings } from "./mappings";
 import type { RawInputEvent } from "./ring-buffer";
 
 const key = (code: string, phase: "down" | "up" = "down"): RawInputEvent => ({
@@ -10,90 +9,35 @@ const key = (code: string, phase: "down" | "up" = "down"): RawInputEvent => ({
   tick: 0,
 });
 
-/** Version 1 player saves store per-slot overrides of authored bindings. */
-const jumpOnJ = JSON.stringify({
-  version: 1,
-  overrides: [
+const jumpMappings = () => ({
+  actions: [
     {
-      kind: "action",
-      mapping: "Jump",
-      index: 0,
-      defaultBinding: { device: "key", code: "Space" },
-      device: "key",
-      code: "KeyJ",
+      id: "jump",
+      name: "Jump",
+      bindings: [{ id: "keyboard", device: "key" as const, code: "Space" }],
     },
   ],
+  axes: [],
 });
+const jump = { Name: "Jump", Asset: "jump" };
 
 describe("runtime input bindings", () => {
-  it("rejects reordered axis slots with the same key but different components", () => {
-    const defaults = {
-      actions: [],
-      axes: [
-        {
-          name: "Diagonal",
-          kind: "2d" as const,
-          bindings: [
-            { device: "key" as const, code: "KeyW", component: "x" as const },
-            { device: "key" as const, code: "KeyW", component: "y" as const },
-          ],
-        },
-      ],
-    };
+  it("requires the modifier chord stored on an imported edit", () => {
+    const resolver = new InputResolver(jumpMappings());
     const saved = JSON.stringify({
-      version: 1,
-      overrides: [
-        {
-          kind: "axis",
-          mapping: "Diagonal",
-          index: 0,
-          defaultBinding: { device: "key", code: "KeyW", component: "x" },
-          device: "key",
-          code: "KeyA",
-        },
-      ],
-    });
-    const game = new InputResolver(defaults);
-    expect(game.bindings.importBindings(saved)).toBe(true);
-    expect(game.resolve([key("KeyA")]).axes2D.Diagonal).toEqual({
-      x: 1,
-      y: 0,
-    });
-    defaults.axes[0]!.bindings.reverse();
-    const updatedGame = new InputResolver(defaults);
-    expect(updatedGame.bindings.importBindings(saved)).toBe(false);
-    expect(updatedGame.resolve([key("KeyA")]).axes2D.Diagonal).toEqual({
-      x: 0,
-      y: 0,
-    });
-    expect(updatedGame.resolve([key("KeyW")]).axes2D.Diagonal).toEqual({
-      x: 1,
-      y: 1,
-    });
-  });
-
-  it("requires the modifier chord stored on an imported version 1 override", () => {
-    const resolver = new InputResolver({
-      actions: [
-        {
-          id: "jump",
-          name: "Jump",
-          bindings: [{ id: "keyboard", device: "key", code: "Space" }],
-        },
-      ],
-      axes: [],
-    });
-    const saved = JSON.stringify({
-      version: 1,
-      overrides: [
+      version: 2,
+      edits: [
         {
           kind: "action",
           mapping: "jump",
-          index: 0,
-          bindingId: "keyboard",
-          device: "key",
-          code: "KeyJ",
-          ctrl: true,
+          id: "keyboard",
+          added: false,
+          binding: {
+            id: "keyboard",
+            device: "key",
+            code: "KeyJ",
+            modifiers: { ctrl: true },
+          },
         },
       ],
     });
@@ -108,42 +52,43 @@ describe("runtime input bindings", () => {
       released: true,
       held: false,
     });
-    expect(
-      resolver.bindings.getInputBindings({ Name: "", Asset: "jump" }),
-    ).toMatchObject([{ Ctrl: true, Shift: false, Label: "Ctrl + J" }]);
+    expect(resolver.bindings.getInputBindings(jump)).toMatchObject([
+      { Ctrl: true, Shift: false, Label: "Ctrl + J" },
+    ]);
   });
 
-  it("round trips only overrides and rejects malformed imports atomically", () => {
-    const original = new InputResolver(createDefaultInputMappings());
-    expect(original.bindings.importBindings(jumpOnJ)).toBe(true);
+  it("round trips edits and rejects malformed imports atomically", () => {
+    const original = new InputResolver(jumpMappings());
+    const keyboard = original.bindings.getInputBindings(jump)[0]!;
+    expect(original.bindings.setInputActionBinding(keyboard, "KeyJ")).toBe(true);
     const saved = original.bindings.exportBindings();
-    const next = new InputResolver(createDefaultInputMappings());
+    const next = new InputResolver(jumpMappings());
     expect(next.bindings.importBindings(saved)).toBe(true);
     expect(next.resolve([key("KeyJ")]).actions.Jump?.pressed).toBe(true);
     expect(next.reset().actions.Jump).toEqual({ pressed: false, released: false, held: false });
-    expect(next.bindings.exportBindings()).toBe(saved);
+    expect(JSON.parse(next.bindings.exportBindings())).toEqual(JSON.parse(saved));
     expect(next.resolve([key("KeyJ")]).actions.Jump?.pressed).toBe(true);
     const malformed = JSON.parse(saved);
-    malformed.overrides[0].code = "KeyH";
-    malformed.overrides.push({});
+    malformed.edits[0].binding.code = "KeyH";
+    malformed.edits.push({});
     expect(next.bindings.importBindings(JSON.stringify(malformed))).toBe(false);
-    expect(next.bindings.exportBindings()).toBe(saved);
+    expect(JSON.parse(next.bindings.exportBindings())).toEqual(JSON.parse(saved));
     expect(next.bindings.importBindings("not json")).toBe(false);
-    expect(next.bindings.importBindings('{"version":3,"overrides":[]}')).toBe(
+    expect(next.bindings.importBindings('{"version":1,"overrides":[]}')).toBe(
       false,
     );
     next.bindings.resetBindings();
     expect(JSON.parse(next.bindings.exportBindings())).toEqual({
-      version: 1,
-      overrides: [],
+      version: 2,
+      edits: [],
     });
     expect(next.resolve([key("Space")]).actions.Jump).toEqual({
       pressed: true,
       released: true,
       held: true,
     });
-    const changedDefaults = createDefaultInputMappings();
-    changedDefaults.actions[0]!.bindings.reverse();
+    const changedDefaults = jumpMappings();
+    changedDefaults.actions[0]!.bindings[0]!.id = "space";
     const updatedGame = new InputResolver(changedDefaults);
     expect(updatedGame.bindings.importBindings(saved)).toBe(false);
     expect(updatedGame.resolve([key("KeyJ")]).actions.Jump?.held).toBe(false);
