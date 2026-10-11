@@ -66,11 +66,19 @@ export function SceneLayerSwitcherFields({ properties: authoredProperties, class
 function SwitcherDefaults({ index, defaults, members, schemas, enumMembers, classes, assets, onChange }: { index: number; defaults: Record<string, unknown>; members: GraphClassMember[]; schemas: ReturnType<typeof typeSchemasFromGraphAssets>; enumMembers: Record<string, readonly string[]>; classes: ClassPickerEntry[]; assets: Array<{ guid: string; name: string; type: string; path: string }>; onChange: (defaults: Record<string, unknown>) => void }) {
   const [open, setOpen] = useState(false);
   const [pick, setPick] = useState<{ kind: "asset" | "class"; constraint: string; change: (value: string | null) => void } | null>(null);
-  const scalarRows = (member: GraphClassMember, value: unknown, change: (value: unknown) => void, suffix = ""): PropertyRow[] => variableDefaultPropertyRows(member.typeId ?? "string", value, change, {
-    schemas, enumMembers, typeClassId: member.typeClassId, label: humanizePropertyLabel(member.name), pinId: `${index}-${member.id}${suffix}`,
-    assetEntries: assets.map(asset => ({ id: asset.guid, name: asset.name, type: asset.type })), classEntries: classes,
-    onPickAsset: (_id, constraint) => setPick({ kind: "asset", constraint, change }), onPickClass: (_id, constraint) => setPick({ kind: "class", constraint, change }),
-  });
+  const scalarRows = (member: GraphClassMember, value: unknown, change: (value: unknown) => void, suffix = ""): PropertyRow[] => {
+    // A pick writes through the row that asked, so a Structure field keeps the rest of the value.
+    const pickFor = (kind: "asset" | "class") => (rowId: string, constraint: string) => setPick({ kind, constraint, change: (picked) => {
+      const row = built.find(entry => entry.id === rowId);
+      if (row?.kind === "asset") row.onChange(picked);
+    } });
+    const built = variableDefaultPropertyRows(member.typeId ?? "string", value, change, {
+      schemas, enumMembers, typeClassId: member.typeClassId, label: humanizePropertyLabel(member.name), pinId: `${index}-${member.id}${suffix}`,
+      assetEntries: assets.map(asset => ({ id: asset.guid, name: asset.name, type: asset.type })), classEntries: classes,
+      onPickAsset: pickFor("asset"), onPickClass: pickFor("class"),
+    });
+    return built;
+  };
   const rows: PropertyRow[] = [
     { kind: "text", id: `switcher-default-name-${index}`, label: "Name", value: typeof defaults.name === "string" ? defaults.name : "", onChange: name => onChange({ ...defaults, name }) },
     { kind: "boolean", id: `switcher-default-visible-${index}`, label: "Visible", value: defaults.visible !== false, onChange: visible => onChange({ ...defaults, visible }) },
