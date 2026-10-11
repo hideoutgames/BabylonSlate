@@ -150,8 +150,10 @@ describe("ProjectService lifecycle", () => {
     const commitPaused = new Promise<void>(resolve => { resumeCommit = resolve; });
     let commitStarted!: () => void;
     const started = new Promise<void>(resolve => { commitStarted = resolve; });
+    // Pause the write that carries the encoded KTX2 (9, 8, 7), not the encoding-state write.
+    const carriesKtx2 = (bytes: Uint8Array) => bytes.some((value, index) => value === 9 && bytes[index + 1] === 8 && bytes[index + 2] === 7);
     vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
-      if (path.startsWith("assets/test")) { commitStarted(); await commitPaused; }
+      if (path.startsWith("assets/test") && carriesKtx2(bytes)) { commitStarted(); await commitPaused; }
       return write(path, bytes);
     });
     const release = vi.spyOn(storage, "releaseFolder");

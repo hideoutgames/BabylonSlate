@@ -1,6 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createMemoryOpfsRoot } from "../../../../packages/vfs/src/test-support/memory-opfs";
-import { OpfsStorageAdapter } from "@babylonslate/vfs";
+import { describe, expect, it, vi } from "vitest";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
 
 const picker = vi.hoisted(() => ({ files: [] as Array<{ name: string; bytes: Uint8Array }> }));
@@ -9,16 +8,9 @@ vi.mock("@babylonslate/vfs", async (importOriginal) => ({
   pickImportFiles: async () => picker.files,
 }));
 
-beforeEach(() => {
-  localStorage.clear();
-  const root = createMemoryOpfsRoot();
-  vi.stubGlobal("navigator", { storage: { getDirectory: async () => root } });
-});
-afterEach(() => vi.unstubAllGlobals());
-
 describe("ProjectService web import", () => {
   it("removes the folder of a failed import, so the next import keeps the name", async () => {
-    const storage = new OpfsStorageAdapter();
+    const storage = new MemoryStorageAdapter("documents");
     const service = new ProjectService(storage);
     const encode = (text: string) => new TextEncoder().encode(text);
     picker.files = [
