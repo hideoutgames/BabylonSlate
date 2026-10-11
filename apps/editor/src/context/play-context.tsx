@@ -1772,7 +1772,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             error={previewError}
             onClose={closePreview}
             registerBeforeStop={registerPreviewBeforeStop}
-            onLoad={sendPreviewPack}
             onTrace={(trace) => void openRecordedTrace(trace)}
             showStats={overlayStats}
             showConsole={overlayConsole}

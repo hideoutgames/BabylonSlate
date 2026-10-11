@@ -41,7 +41,6 @@ export type PreviewBuildOverlayProps = {
   onClose: () => void;
   /** Called after this iframe presentation has unmounted. */
   onDetached?: () => void;
-  onLoad?: () => void;
   onTrace?: (trace: TracePayload) => void;
   /** The shared session owner invokes this before closing or replacing Preview. */
   registerBeforeStop?: (finalize: () => Promise<void>) => () => void;
@@ -58,7 +57,6 @@ export function PreviewBuildOverlay({
   iframeRef,
   onClose,
   onDetached,
-  onLoad,
   onTrace,
   registerBeforeStop,
   error = null,
@@ -303,7 +301,6 @@ export function PreviewBuildOverlay({
         src={src}
         className="absolute inset-0 h-full w-full border-0 bg-black outline-none focus-visible:outline-none"
         data-testid="preview-build-iframe"
-        onLoad={onLoad}
       />
       {error ? (
         <div
