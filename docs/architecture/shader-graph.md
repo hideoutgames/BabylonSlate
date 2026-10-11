@@ -146,7 +146,8 @@ builds without Custom GLSL: after a material's first build, it adopts the
 `buildId` of an earlier build on the same Engine whose `compiledShaders` text
 is byte-identical under the same name, surface variant and shader language.
 Babylon effects are reference-counted, so shared programs stay alive while any
-material uses them. Later rebuilds (graph edits) take a fresh id.
+material uses them. Later rebuilds (graph edits) take a fresh id. The Engine
+forgets a program's source once every material on it is disposed.
 
 `MaterialLibrary` compiles an instance under its root's name
 (`material:<rootGuid>`) so block names, and therefore the shader text, match,
