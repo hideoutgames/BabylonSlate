@@ -142,6 +142,7 @@ function host(bytes?: number) {
     depthTextureExtension: true,
     textureFloatRender: true,
     textureHalfFloatRender: true,
+    blendFloat: true,
   });
   if (bytes !== undefined) limitManagedRenderBytes(engine, bytes);
   // Preserve native graph/material/texture ownership. NullEngine only lacks the
@@ -288,6 +289,27 @@ it("rejects unsupported depth and a constrained replacement before declaring tar
   });
   expect(declare).not.toHaveBeenCalled();
   expect(managedRenderReservations(h.engine).reservedBytes).toBe(0);
+});
+
+it("uses half-float scene depth where 32-bit float targets cannot blend", async () => {
+  const h = host();
+  // iPad: float targets render but EXT_float_blend is absent, so a blended
+  // transparent draw into an RGBA32F geometry target is INVALID_OPERATION.
+  h.engine.getCaps().blendFloat = false;
+  const plan = prepareScenePostProcessPlan(
+    h.library,
+    [{ id: "depth", materialGuid: "depth", order: 0, enabled: true }],
+    () => document("sceneDepth"),
+  );
+  const owner = successful(h.create(plan));
+  h.connect(owner);
+  await h.graph.buildAsync();
+  expect(
+    h.graph.textureManager.getTextureFromHandle(
+      owner.geometryTask!.geometryNormViewDepthTexture,
+    )!.type,
+  ).toBe(Constants.TEXTURETYPE_HALF_FLOAT);
+  await h.retire();
 });
 
 it("shares one demanded geometry set and isolated Z, reconciles every output, and scales only opted-in passes", async () => {

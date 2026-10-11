@@ -5,7 +5,7 @@ import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import type { MaterialParameterValue } from "@babylonslate/core";
 import { AuthoredPostProcessTask } from "./framegraph-post-process";
-import { LogicalGeometryTask } from "./framegraph-logical-buffers";
+import { geometryDepthTextureType, LogicalGeometryTask } from "./framegraph-logical-buffers";
 import type { MaterialLibrary } from "./material-library";
 import type { PostProcessStackDiagnostic } from "./post-process-material";
 import type {
@@ -114,11 +114,7 @@ export function createScenePostProcessGraph(
       reason:
         "Shared post-process geometry buffers exceed device capabilities.",
     };
-  const depthType = caps.textureFloatRender
-    ? Constants.TEXTURETYPE_FLOAT
-    : caps.textureHalfFloatRender
-      ? Constants.TEXTURETYPE_HALF_FLOAT
-      : undefined;
+  const depthType = geometryDepthTextureType(caps);
   if (sceneDepth && depthType === undefined)
     return {
       ok: false,
