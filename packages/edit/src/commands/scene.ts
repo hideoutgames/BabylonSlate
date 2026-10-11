@@ -567,7 +567,8 @@ export class SetComponentPropertyCommand
         component.id === this.componentId
           ? withComponentLinkage({
               ...component,
-              properties: withProperty(component.properties, this.property, this.to),
+              // A copy, so an in-place write to the live value cannot reach the snapshot.
+              properties: withProperty(component.properties, this.property, structuredClone(this.to)),
             }, this.linkage?.to)
           : component,
       ),
@@ -620,7 +621,14 @@ export class SetComponentTransformCommand
       ...actor,
       components: actor.components.map((component) =>
         component.id === this.componentId && component.classId !== "2DAnchorComponent"
-          ? withComponentLinkage({ ...component, transform: this.to }, this.linkage?.to)
+          ? withComponentLinkage({
+              ...component,
+              transform: {
+                position: [...this.to.position],
+                rotation: [...this.to.rotation],
+                scale: [...this.to.scale],
+              },
+            }, this.linkage?.to)
           : component,
       ),
     }));

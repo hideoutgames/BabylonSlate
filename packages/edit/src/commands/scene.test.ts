@@ -309,6 +309,19 @@ describe("scene commands", () => {
     );
   });
 
+  it("keeps component property and transform snapshots apart from the edited document", () => {
+    const scene = baseScene();
+    const from = scene.actors[0]!.components[0]!.transform!;
+    const to: SerializedTransform = { ...from, position: [2, 0, 0] };
+    const property = new SetComponentPropertyCommand("a", "c1", "heights", undefined, [1, 2]);
+    const applied = property.apply(new SetComponentTransformCommand("a", "c1", from, to).apply(scene));
+    const component = applied.actors[0]!.components[0]!;
+    component.transform!.position[0] = 9;
+    (component.properties.heights as number[])[0] = 9;
+    expect(to.position).toEqual([2, 0, 0]);
+    expect(property.to).toEqual([1, 2]);
+  });
+
   it("SetSceneSettingCommand apply-then-invert restores the document", () => {
     const scene = baseScene();
     expectRoundTrip(
