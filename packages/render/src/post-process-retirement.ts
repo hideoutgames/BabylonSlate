@@ -24,13 +24,15 @@ export class PostProcessRetirement {
     });
   }
 
+  /** Also covers generations retired while the wait is in progress. */
   async whenDisposed(): Promise<void> {
-    await Promise.allSettled(this.reported);
+    while (this.reported.size) await Promise.allSettled(this.reported);
     if (this.reportFailed) throw this.reportError;
   }
 
+  /** Also covers generations retired while the wait is in progress. */
   async whenReleased(): Promise<void> {
-    await Promise.allSettled(this.released);
+    while (this.released.size) await Promise.allSettled(this.released);
     if (this.releaseFailed) throw this.releaseError;
   }
 

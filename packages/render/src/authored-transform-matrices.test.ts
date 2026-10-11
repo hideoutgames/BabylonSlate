@@ -1,4 +1,4 @@
-import { Vector3 } from "@babylonjs/core";
+import { Quaternion, Vector3 } from "@babylonjs/core";
 import {
   composeAffineTransform,
   multiplyAffineTransforms,
@@ -9,7 +9,7 @@ import {
 } from "@babylonslate/core";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { authoredActorMatrices } from "./authored-transform-matrices";
+import { authoredActorMatrices, authoredActorWorldTransform, authoredTransformMatrix } from "./authored-transform-matrices";
 
 function actor(id: string, parentId: string | null, transform: SerializedTransform): SerializedActor {
   return { id, name: id, classId: "Actor", parentId, transform, visible: true, locked: false, components: [], folderId: null };
@@ -86,6 +86,29 @@ describe("authored actor matrices", () => {
     const x = new Vector3(axes[0]!, axes[1]!, axes[2]!), y = new Vector3(axes[4]!, axes[5]!, axes[6]!);
     expect(Math.abs(Vector3.Dot(x, y))).toBeGreaterThan(0.1);
     expect(shearedActorIds(actors)).toEqual(["sheared"]);
+  });
+
+  it("detach an actor under a flattened parent at its world position with the chain's rotation", () => {
+    const turn = Quaternion.RotationAxis(new Vector3(0, 0, 1), 0.6), tilt = Quaternion.RotationAxis(new Vector3(1, 0, 0), 0.4);
+    const quarter = Quaternion.RotationAxis(new Vector3(0, 0, 1), Math.PI / 2);
+    const actors = [
+      actor("flat", null, { position: [1, 2, 3], rotation: turn.asArray() as [number, number, number, number], scale: [2, 1, 0] }),
+      actor("child", "flat", { position: [1, 0, 0], rotation: tilt.asArray() as [number, number, number, number], scale: [1, 3, 1] }),
+      actor("mirrored flat", null, { position: [0, 1, 0], rotation: [0, 0, 0, 1], scale: [2, -1, 0] }),
+      actor("quarter", "mirrored flat", { position: [1, 0, 0], rotation: quarter.asArray() as [number, number, number, number], scale: [1, 3, 1] }),
+    ];
+    const world = authoredActorMatrices(actors);
+    // A tilt out of the flattened plane has no exact pose: each local axis keeps its world length.
+    const detached = authoredActorWorldTransform(actors, actors[1]!);
+    const position = world(actors[1]!).getTranslation();
+    expect(detached.position).toEqual([expect.closeTo(position.x, 6), expect.closeTo(position.y, 6), expect.closeTo(position.z, 6)]);
+    expect(detached.scale).toEqual([expect.closeTo(2, 6), expect.closeTo(3 * Math.cos(0.4), 6), expect.closeTo(Math.sin(0.4), 6)]);
+    const expected = turn.multiply(tilt);
+    expect(detached.rotation).toEqual(expected.asArray().map((value) => expect.closeTo(value, 6)));
+    // A right-angle turn under a flattened, mirrored parent maps every local axis where the attached actor does.
+    const attached = Array.from(world(actors[3]!).m);
+    const copied = Array.from(authoredTransformMatrix(authoredActorWorldTransform(actors, actors[3]!)).m);
+    expect(copied).toEqual(attached.map((value) => expect.closeTo(value, 5)));
   });
 
   it("match the runtime's matrix composition", () => {

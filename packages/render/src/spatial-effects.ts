@@ -54,6 +54,16 @@ class PreparedSSR extends ThinSSRPostProcess {
     pendingDefines.delete(this);
   }
 }
+/**
+ * Babylon's combiner takes its Fresnel's view direction from the view position even for an orthographic camera, whose
+ * view rays are parallel, while its ray trace uses the parallel direction there: under `ORTHOGRAPHIC_CAMERA` the
+ * combiner takes the parallel direction too.
+ */
+function parallelOrthographicView(_name: string, shaderType: string, code: string): string {
+  if (shaderType !== "fragment") return code;
+  return code.replace(/(var csViewDirection: vec3f|vec3 csViewDirection)\s*=\s*normalize\(csPosition\);/, (line, declaration: string) =>
+    `\n#ifdef ORTHOGRAPHIC_CAMERA\n${declaration}=normalize(${declaration.startsWith("var") ? "vec3f" : "vec3"}(0.0, 0.0, csPosition.z));\n#else\n${line}\n#endif\n`);
+}
 class PreparedSSRCombine extends ThinSSRBlurCombinerPostProcess {
   override updateEffect(
     ...args: Parameters<EffectWrapper["updateEffect"]>
@@ -65,6 +75,7 @@ class PreparedSSRCombine extends ThinSSRBlurCombinerPostProcess {
     // Babylon's combiner omits the orthographic define used by its view-position helper.
     if (this.camera?.mode === Camera.ORTHOGRAPHIC_CAMERA)
       args[0] = `${args[0] ?? ""}\n#define ORTHOGRAPHIC_CAMERA\n`;
+    EffectWrapper.RegisterShaderCodeProcessing(this.name, { processCodeAfterIncludes: parallelOrthographicView });
     if (this.camera?.getScene().useRightHandedSystem)
       args[0] = `${args[0] ?? ""}\n#define SSRAYTRACE_RIGHT_HANDED_SCENE\n`;
     super.updateEffect(...args);
@@ -277,6 +288,8 @@ export function createSpatialStages(
     }
     if (reflections) {
       const scale = Math.max(0.25, reflections.resolutionScale * quality);
+      // Compose onto the color reflections read, which already carries occlusion.
+      const mainInput = stages.length;
       const ssr = own(
         new PreparedSSR("Scene Reflections", scene, {
           blockCompilation: true,
@@ -333,7 +346,7 @@ export function createSpatialStages(
       stages.push({
         wrapper: combine,
         scale: 1,
-        mainInput: 0,
+        mainInput,
         geometry: true,
         bind: () => {},
       });
@@ -379,6 +392,7 @@ export function createSpatialStages(
           ),
           uniforms,
           samplers,
+          failure,
         ),
       );
       const inverseProjection = Matrix.Identity(),

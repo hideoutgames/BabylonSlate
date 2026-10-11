@@ -242,9 +242,9 @@ describe("material node contracts", () => {
       expect(sampler.texture?.getSize()).toMatchObject({ width: 1, height: 1 });
     }
   });
-  it("advances Seconds-mode Time when previews render without fresh engine frame deltas", async () => {
+  it("advances Time when previews render without fresh engine frame deltas", async () => {
     const doc = createDefaultMaterialDocument();
-    node(doc, "time", "input.time", { timeMode: "seconds" });
+    node(doc, "time", "input.time");
     node(doc, "sine", "math.sin");
     wire(doc, "time", "time", "sine", "value");
     wire(doc, "sine", "out", "output", "roughness");
@@ -282,7 +282,7 @@ describe("material node contracts", () => {
   });
   it.each(["a", "b"])("compiles animated normal displacement with Time on Multiply %s", async (timePin) => {
     const doc = createDefaultMaterialDocument();
-    node(doc, "time", "input.time", { timeMode: "seconds" });
+    node(doc, "time", "input.time");
     node(doc, "sine", "math.sin");
     node(doc, "normal", "input.vertexNormalWS");
     node(doc, "multiply", "math.multiply");

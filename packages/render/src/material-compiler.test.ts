@@ -514,6 +514,27 @@ describe("material compiler", () => {
     expect(parent.getParameter("Roughness")).toEqual({ kind: "float", value: 0.2 });
   });
 
+  it("forgets a shared program once every material on it is disposed", async () => {
+    const scene = host();
+    const compile = () => {
+      const result = compileMaterialPlan(planFor(multiplyMaterial()), { scene, name: "material:released" });
+      if (!result.ok) throw new Error("compile failed");
+      disposers.push(() => result.dispose());
+      return result;
+    };
+    const [first, sharer] = [compile(), compile()];
+    await Promise.all([first.ready, sharer.ready]);
+    first.dispose();
+    const whileShared = compile();
+    await whileShared.ready;
+    expect(whileShared.material.buildId).toBe(first.material.buildId);
+    sharer.dispose();
+    whileShared.dispose();
+    const afterRelease = compile();
+    await afterRelease.ready;
+    expect(afterRelease.material.buildId).not.toBe(first.material.buildId);
+  });
+
   it("carries a constant value onto its input block", () => {
     const scene = host();
     const doc = createDefaultMaterialDocument();

@@ -29,7 +29,11 @@ export type VolumeShadow = {
   packed: boolean;
 };
 
-/** Bounded, deterministic selection; borrowed cluster children stay eligible. */
+/**
+ * Bounded, deterministic selection; borrowed cluster children stay eligible. Distance chooses which lights take part,
+ * not their slots: the selected lights take slots by id, so lights crossing in distance change neither the shader
+ * layout nor its key.
+ */
 export function selectVolumetricLights(
   scene: Scene,
   camera: Camera,
@@ -53,7 +57,8 @@ export function selectVolumetricLights(
       (light.parent && !light.parent.isEnabled())
     )
       continue;
-    light.parent?.computeWorldMatrix(true);
+    // A parent moved since its world matrix was cached; recomputing an unchanged one would invalidate its subtree.
+    if (light.parent && !light.parent.isSynchronized()) light.parent.computeWorldMatrix(true);
     const transformed = light.computeTransformedInformation();
     const distance =
       light instanceof DirectionalLight
@@ -73,7 +78,7 @@ export function selectVolumetricLights(
       a.distance - b.distance ||
       a.light.uniqueId - b.light.uniqueId,
   );
-  return candidates.slice(0, settings.maxLights).map(({ light }) => light);
+  return candidates.slice(0, settings.maxLights).map(({ light }) => light).sort((a, b) => a.uniqueId - b.uniqueId);
 }
 
 export function volumeShadowGenerator(

@@ -118,6 +118,8 @@ export function simplifyLevels(simplifier: Simplifier, input: LodSimplifyInput):
       return indices;
     });
     const triangles = ranges.reduce((total, range) => total + range.length / 3, 0);
+    // A collapsed mesh is culling, not a level, and every later level would collapse too.
+    if (triangles === 0) break;
     // A later level has a larger error budget and may still reduce enough.
     if (triangles > currentTriangles * (1 - MIN_REDUCTION)) continue;
     levels.push({ screenSize, ranges, triangles });

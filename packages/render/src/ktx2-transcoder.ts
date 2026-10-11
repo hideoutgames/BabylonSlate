@@ -146,8 +146,10 @@ export function configureKtx2DecoderRuntime(
 }
 
 /**
- * HEAD/GET every self-hosted transcoder URL (JS and wasm). Used to decide
+ * HEAD every self-hosted transcoder URL (JS and wasm). Used to decide
  * `fallback_uncompressed` and whether export should pack PNG instead of KTX2.
+ * A 404 is missing; a host that refuses HEAD gets a one-byte ranged GET whose
+ * body is cancelled, so the probe never downloads a decoder.
  */
 export async function probeKtx2TranscoderAvailable(
   basePath: string = DEFAULT_KTX2_PUBLIC_BASE,
@@ -158,7 +160,9 @@ export async function probeKtx2TranscoderAvailable(
     for (const url of urls) {
       const head = await fetchImpl(url, { method: "HEAD" });
       if (head.ok) continue;
-      const get = await fetchImpl(url, { method: "GET" });
+      if (head.status === 404) return false;
+      const get = await fetchImpl(url, { method: "GET", headers: { Range: "bytes=0-0" } });
+      void get.body?.cancel().catch(() => {});
       if (!get.ok) return false;
     }
     return true;

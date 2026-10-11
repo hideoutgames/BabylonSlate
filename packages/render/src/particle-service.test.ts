@@ -540,6 +540,26 @@ describe("ParticleService", () => {
     expect(leases.released).toBe(2);
   });
 
+  it("keeps the drawn Material leased until the rebind that supersedes a pending one binds", async () => {
+    const { scene, service, leases, bound, assign } = host();
+    service.updateLibrary(library({ "fx-graph": graph("mat") }));
+    assign();
+    const system = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(started(system)).toBe(true));
+    const releasedAtBind = new Map<string, number>();
+    const push = bound.push.bind(bound);
+    bound.push = (...guids: string[]) => { for (const guid of guids) releasedAtBind.set(guid, leases.released); return push(...guids); };
+    // The second edit supersedes the first one's bind before its Material is built.
+    service.updateLibrary(library({ "fx-graph": graph("mat-2") }));
+    service.updateLibrary(library({ "fx-graph": graph("mat-3") }));
+    await vi.waitFor(() => expect(leases.released).toBe(2));
+    expect([...bound]).toEqual(["mat", "mat-3"]);
+    // "mat" was still drawing when "mat-3" bound: no lease went before it.
+    expect(releasedAtBind.get("mat-3")).toBe(0);
+    service.dispose();
+    expect(leases.released).toBe(3);
+  });
+
   it("keeps a rebound Particle Graph slot when the replaced Material's preparation is cancelled", async () => {
     const { scene, service, leases, diagnostics, assign, state } = host({
       ready: (guid, released) => guid === "mat"

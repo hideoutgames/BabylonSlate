@@ -606,18 +606,15 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     const block = new InputBlock(context.name); block.value = new Color4(1, 1, 1, 1);
     return single(block, {}, { color: block.output });
   },
-  "input.time": ({ name, operation }) => {
+  "input.time": ({ name }) => {
     const block = new GameTimeInputBlock(
       name,
       undefined,
       NodeMaterialBlockConnectionPointTypes.Float,
     );
     // Preview Scenes render independently of the shared Engine's frame loop.
-    // Its frame delta can be stale, so Seconds must use elapsed time directly.
-    // Keep the historical scene-animation rate for authored legacy nodes.
-    block.animationType = operation.properties.timeMode === "seconds"
-      ? AnimatedInputBlockTypes.RealTime
-      : AnimatedInputBlockTypes.Time;
+    // Its frame delta can be stale, so Time uses elapsed seconds directly.
+    block.animationType = AnimatedInputBlockTypes.RealTime;
     return single(block, {}, { time: block.output });
   },
   "input.waterSurface": ({ name }) => {

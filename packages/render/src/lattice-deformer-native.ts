@@ -22,6 +22,8 @@ export class LatticeDeformerPlugin extends MaterialPluginBase {
     (defines as MaterialDefines & { SLATE_LATTICE: boolean }).SLATE_LATTICE = hasMeshLatticeDeformer(mesh);
   }
   override hardBindForSubMesh(buffer: UniformBuffer, _scene: Scene, _engine: unknown, subMesh: SubMesh): void {
+    // Only an effect compiled with the cage reads it: ordinary draws skip the parent walk and the uniform write.
+    if (!(subMesh.materialDefines as (MaterialDefines & { SLATE_LATTICE?: boolean }) | null)?.SLATE_LATTICE) return;
     bindMeshLatticeDeformerBuffer(buffer, subMesh.getEffectiveMesh());
   }
   override getSamplers(samplers: string[]): void { samplers.push("latticeData"); }

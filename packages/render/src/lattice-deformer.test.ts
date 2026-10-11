@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BoundingInfo, Matrix, Mesh, MeshBuilder, MultiMaterial, NullEngine, Scene, StandardMaterial, Vector3, VertexBuffer, type Effect } from "@babylonjs/core";
+import { BoundingInfo, Matrix, Mesh, MeshBuilder, MultiMaterial, NullEngine, Scene, StandardMaterial, Vector3, VertexBuffer, type Effect, type MaterialPluginBase, type UniformBuffer } from "@babylonjs/core";
 import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
 import { bindMeshLatticeDeformer, disposeMeshLatticeDeformer, flushSceneLatticeDeformers, hasMeshLatticeDeformer, markLatticeComponentRoot, refreshMeshLatticeDeformer, setMeshLatticeDeformer, type LatticeDeformerConfig } from "./lattice-deformer";
@@ -72,6 +72,23 @@ describe("component lattice resource ownership", () => {
     expect(Vector3.TransformCoordinates(new Vector3(10, 0, 0), matrices.get("slateWorldToLattice")!).asArray()).toEqual([0, 0, 0]);
     bindMeshLatticeDeformer(effect, attached);
     expect(effect.setFloat).toHaveBeenLastCalledWith("slateLatticeEnabled", 0);
+  });
+
+  it("binds the cage on native draws compiled with it and leaves ordinary draws of the same material alone", () => {
+    const { engine, root, mesh, scene } = fixture();
+    const plain = MeshBuilder.CreateBox("plain", { size: 2 }, scene);
+    plain.material = mesh.material;
+    setMeshLatticeDeformer(root, cage());
+    const plugin = mesh.material!.pluginManager!.getPlugin<MaterialPluginBase>("SlateLattice")!;
+    const bound = (target: Mesh) => {
+      const subMesh = target.subMeshes[0]!, floats = new Map<string, number>();
+      mesh.material!.isReadyForSubMesh(target, subMesh);
+      const buffer = { updateFloat: (name: string, value: number) => floats.set(name, value), updateMatrix: () => {}, updateVector3: () => {}, updateFloat3: () => {}, setTexture: () => {} };
+      plugin.hardBindForSubMesh(buffer as unknown as UniformBuffer, scene, engine, subMesh);
+      return floats;
+    };
+    expect(bound(mesh).get("slateLatticeEnabled")).toBe(1);
+    expect(bound(plain).has("slateLatticeEnabled")).toBe(false);
   });
 
   it("allocates nothing for an identity cage and rolls back an unsupported device assignment", () => {

@@ -141,7 +141,8 @@ builds without Custom GLSL: after a material's first build, it adopts the
 `buildId` of an earlier build on the same Engine whose `compiledShaders` text
 is byte-identical under the same name, surface variant and shader language.
 Babylon effects are reference-counted, so shared programs stay alive while any
-material uses them. Later rebuilds (graph edits) take a fresh id.
+material uses them. Later rebuilds (graph edits) take a fresh id. The Engine
+forgets a program's source once every material on it is disposed.
 
 `MaterialLibrary` compiles an instance under its root's name
 (`material:<rootGuid>`) so block names, and therefore the shader text, match,
@@ -388,7 +389,8 @@ place. `MaterialLibrary` caches per Scene keyed by asset guid plus plan hash and
 refcounts instances. A Babylon material belongs to one Scene, so the editor
 viewport, a preview tab and a Play session each hold their own. A new material
 replaces the old one only after it builds, so a failed edit leaves the previous
-material on screen. `acquire` rebuilds when the cached `NodeMaterial` is
+material on screen. A newer edit supersedes a build that has not published yet:
+meshes already using it move to the newer build, which inherits its references. `acquire` rebuilds when the cached `NodeMaterial` is
 already disposed (removed from `scene.materials` — NodeMaterial has no
 `isDisposed()`). Disposing a Scene releases its entries, pending builds and
 texture leases even without `releaseScene`; `acquire` on a disposed Scene returns
@@ -722,12 +724,10 @@ revision, keeping imports, renames, removals, and texture eligibility current;
 closed controls resolve their selected labels by GUID without listing assets.
 Preview texture references are retained once per byte revision and released on
 tab teardown. Newly added Divide / Modulo nodes start with divisor 1 and Power
-starts with exponent 1. New Time nodes expose elapsed seconds since the shared
+starts with exponent 1. Time nodes expose elapsed seconds since the shared
 Engine started, independent of preview frame rate or the Scene viewport's render
 loop. Time-driven displacement continues when only a Material preview is drawing;
-after a suspended preview resumes, Time reflects the current elapsed time. Legacy
-nodes preserve Babylon's previous scene-animation timing (0.6 units per second
-at 60 FPS).
+after a suspended preview resumes, Time reflects the current elapsed time.
 
 Custom GLSL nodes have stable pin IDs, GLSL variable names and explicit Float /
 Vector 2 / Vector 3 / Vector 4 types. The body returns the first output and assigns named additional
