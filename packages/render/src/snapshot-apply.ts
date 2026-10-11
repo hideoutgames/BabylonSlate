@@ -1609,7 +1609,9 @@ function createPlayVisual(
     for (const part of parts ?? []) {
       const child = meshes.get(part.componentId);
       if (!child) continue;
-      const parent = part.parentId ? meshes.get(part.parentId) : undefined;
+      // The link that would close a component parent cycle attaches to the origin.
+      const named = part.parentId ? meshes.get(part.parentId) : undefined;
+      const parent = named && named !== child && !named.isDescendantOf(child) ? named : undefined;
       child.parent = parent ?? root;
       let attachment: TransformNode = child;
       const ancestors: TransformNode[] = [];
@@ -1688,7 +1690,8 @@ function attachPlaySpringArms(
       for (let i = 0; i < (part.parentTransforms?.length ?? 0); i++) {
         if (attachment.parent instanceof TransformNode) attachment = attachment.parent;
       }
-      attachment.parent = attachmentParentFor(parent);
+      const socket = attachmentParentFor(parent);
+      if (socket !== attachment && !socket.isDescendantOf(attachment)) attachment.parent = socket;
     }
   }
   const cameraPart = parts.find((part) => part.meshKind === "camera");

@@ -177,6 +177,22 @@ describe("createPlayMesh", () => {
     expect(scene.getMeshByName("actor-5")).not.toBeNull();
   });
 
+  it("attaches the link that would close a component parent cycle to the actor origin", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const part = (componentId: string, parentId: string) => ({ componentId, parentId, meshKind: "box",
+      position: [1, 0, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [1, 1, 1] as [number, number, number] });
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshKind: "box", meshAssetGuid: null,
+      parts: [part("a", "b"), part("b", "a")] });
+    const root = binding.meshes.get(0)!;
+    const a = scene.getMeshByName("actor-0|a")!, b = scene.getMeshByName("actor-0|b")!;
+    expect(a.parent).toBe(b);
+    expect(b.parent).toBe(root);
+    expect(a.computeWorldMatrix(true).getTranslation().x).toBeCloseTo(2);
+  });
+
   it("builds a 9-slice 2DPanel play mesh from overlayPanel margins", () => {
     const handle = createTestEngine();
     handles.push(handle);
