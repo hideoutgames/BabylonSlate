@@ -25,12 +25,16 @@ export const scalabilityNodes: NodeDefinition[] = [
     pins: () => [pin("settings", "Settings", "out", structRef("engine:ScalabilitySnapshot")), pin("ready", "Ready", "out", BOOL),
       pin("requestedBackend", "Requested GPU Backend", "out", enumRef("engine:GpuBackend")), pin("effectiveBackend", "Effective GPU Backend", "out", enumRef("engine:GpuBackend")),
       pin("fallbackReason", "Fallback Reason", "out", STRING), pin("vignetteColor", "Vignette Color", "out", COLOR), pin("outlineColor", "CEL Outline Color", "out", COLOR)],
-    codegen: () => ({ settings: graphSnapshot("ctx.getScalability()"), ready: "(ctx.getScalability()?.effective != null)",
-      requestedBackend: "((s) => s?.pipeline?.requested.gpuBackend ?? s?.requested.render.gpuBackend ?? 'auto')(ctx.getScalability())",
-      effectiveBackend: "((s) => s?.pipeline?.effective.gpuBackend ?? s?.effective?.render.gpuBackend ?? 'auto')(ctx.getScalability())",
-      fallbackReason: "(ctx.getScalability()?.pipeline?.limits.join(' ' ) ?? '')",
-      vignetteColor: "((c) => ({ x: c?.[0] ?? 0, y: c?.[1] ?? 0, z: c?.[2] ?? 0, w: 1 }))(ctx.getScalability()?.effective?.render.effects?.vignette.color)",
-      outlineColor: "((c) => ({ x: c?.[0] ?? 0.03, y: c?.[1] ?? 0.03, z: c?.[2] ?? 0.03, w: 1 }))(ctx.getScalability()?.effective?.render.cel?.outlineColor)" }) },
+    // Every output of one statement reads the same snapshot.
+    codegen: (ctx) => {
+      const s = ctx.shared?.("ctx.getScalability()") ?? "ctx.getScalability()";
+      return { settings: graphSnapshot(s), ready: `(${s}?.effective != null)`,
+        requestedBackend: `((s) => s?.pipeline?.requested.gpuBackend ?? s?.requested.render.gpuBackend ?? 'auto')(${s})`,
+        effectiveBackend: `((s) => s?.pipeline?.effective.gpuBackend ?? s?.effective?.render.gpuBackend ?? 'auto')(${s})`,
+        fallbackReason: `(${s}?.pipeline?.limits.join(' ' ) ?? '')`,
+        vignetteColor: `((c) => ({ x: c?.[0] ?? 0, y: c?.[1] ?? 0, z: c?.[2] ?? 0, w: 1 }))(${s}?.effective?.render.effects?.vignette.color)`,
+        outlineColor: `((c) => ({ x: c?.[0] ?? 0.03, y: c?.[1] ?? 0.03, z: c?.[2] ?? 0.03, w: 1 }))(${s}?.effective?.render.cel?.outlineColor)` };
+    } },
   setter("setPreset", "Set Scalability Preset", "Apply a session quality tier. CEL/PBR, outline appearance and artistic effects remain independently authored.",
     [input("preset", "Preset", enumRef("engine:ScalabilityPreset"), "medium")], (ctx) => `{ kind: "preset", preset: ${ctx.input("preset")} }`),
   setter("setRenderScale", "Set Render Scale", "Set fixed render scale (0.25–1). Disables dynamic resolution. Wait for the settings-changed event for effective values.",

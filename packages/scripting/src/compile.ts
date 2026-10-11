@@ -409,6 +409,43 @@ export function compileGraph(
   const pureInProgress = new Set<string>();
   let pureExpressions = createPureExpressions(graph, options.registry);
   /**
+   * Pure nodes with two or more wired data outputs. Each output expression
+   * reads the node's inputs, so a wired pure input is memoized per executing
+   * statement: outputs used by one statement see one evaluation of it.
+   */
+  const sharedInputNodes = new Set(
+    graph.nodes
+      .filter((node) => {
+        if (!options.registry.get(node.typeId)?.pure) return false;
+        const wired = new Set(
+          index.outgoing(node.id)
+            .filter((edge) => findPin(node, edge.sourcePinId)?.kind === "data")
+            .map((edge) => edge.sourcePinId),
+        );
+        return wired.size >= 2;
+      })
+      .map((node) => node.id),
+  );
+  /**
+   * Statement-scoped memos: each holds the value computed during the current
+   * `__stmt` epoch. Every emitted exec node, and each While Loop condition
+   * check, starts a new epoch. Declared per entry point.
+   */
+  let memoDecls: string[] = [];
+  const memoByKey = new Map<string, string>();
+  let useEpoch = false;
+  function memoExpression(key: string, expression: string): string {
+    const cached = memoByKey.get(key);
+    if (cached) return cached;
+    const name = `__memo_${memoDecls.length}`;
+    memoDecls.push(
+      `  let ${name}_at = -1, ${name}_v; const ${name} = () => (${name}_at === __stmt ? ${name}_v : (${name}_v = (${expression}), ${name}_at = __stmt, ${name}_v));`,
+    );
+    const call = `${name}()`;
+    memoByKey.set(key, call);
+    return call;
+  }
+  /**
    * Impure output slots are declared once at the top of the entry point so a
    * node emitted under several exec branches neither redeclares them nor
    * traps its results inside a block scope.
@@ -492,9 +529,19 @@ export function compileGraph(
       input(pinName) {
         const p = pinForCodegen(node, pinName, "in");
         if (!p) return "undefined";
-        return pinExpr(node, p);
+        const expression = pinExpr(node, p);
+        if (!sharedInputNodes.has(node.id)) return expression;
+        const edge = index.incoming(node.id, p.id);
+        const source = edge && index.node(edge.sourceNodeId);
+        if (!source || shouldStrip(source) || !options.registry.get(source.typeId)?.pure) {
+          return expression;
+        }
+        return memoExpression(`in:${node.id}:${p.id}`, expression);
       },
       reference(pinName) { return referenceExpr(node, pinName); },
+      shared(expression) {
+        return memoExpression(`shared:${node.id}:${expression}`, expression);
+      },
       continueIf(expression) { continuation?.(expression); },
       branch(expression, truePin, falsePin) { branch?.(expression, truePin, falsePin); },
       inputType(pinName) {
@@ -672,7 +719,9 @@ export function compileGraph(
 
     if (meta.kind === "whileLoop") {
       const conditionExpr = ctx.input(meta.conditionPin);
-      const opening = emitBody(`  while (${conditionExpr}) {`, anchor);
+      // Each condition check is a statement of its own.
+      const condition = useEpoch ? `(__stmt++, ${conditionExpr})` : conditionExpr;
+      const opening = emitBody(`  while (${condition}) {`, anchor);
       if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
       loopStack.push({ label: `__loop_${nextLabel++}`, opening });
       emitAlong(execSuccessorEdges(index, node.id, meta.loopBodyPin), visited);
@@ -943,6 +992,7 @@ export function compileGraph(
         });
         break;
       }
+      if (useEpoch) emitBody("  __stmt++;");
 
       if (node.typeId === "flow.branch") {
         const ctx = makeCtx(node);
@@ -1235,12 +1285,15 @@ export function compileGraph(
     outputDecls.clear();
     exprCache.clear();
     pureExpressions = createPureExpressions(graph, options.registry);
+    memoDecls = [];
+    memoByKey.clear();
     isAsync = false;
 
     for (const node of graph.nodes) {
       if (shouldStrip(node)) continue;
       if (options.registry.get(node.typeId)?.pure) ensurePure(node);
     }
+    useEpoch = memoDecls.length > 0;
 
     if (entry) emitExecChain(entry.id);
     else emitBody(`  // empty graph`);
@@ -1257,7 +1310,11 @@ export function compileGraph(
         isAsync,
         ...(entry ? entryComponentId(entry) : {}),
       },
-      declLines: [...outputDecls.values(), ...pureExpressions.declarations],
+      declLines: [
+        ...outputDecls.values(),
+        ...pureExpressions.declarations,
+        ...(memoDecls.length > 0 ? ["  let __stmt = 0;", ...memoDecls] : []),
+      ],
       bodyLines: body.filter((line) => line.text !== ""),
     });
   }

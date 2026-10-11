@@ -89,4 +89,24 @@ describe("scalability nodes", () => {
     );
     expect(logs).toEqual(["webgl2"]);
   });
+
+  it("Get Effective Scalability reads one snapshot for every output a statement uses", () => {
+    let reads = 0;
+    const logs: unknown[] = [];
+    runBeginPlay(
+      [["get", "scalability.getEffective"], ["concat", "string.concat"], ["log", "debug.log"], ["logReady", "debug.log"]],
+      [["begin", "execOut", "log", "execIn"], ["log", "execOut", "logReady", "execIn"],
+        ["get", "requestedBackend", "concat", "a"], ["get", "effectiveBackend", "concat", "b"],
+        ["concat", "out", "log", "message"], ["get", "ready", "logReady", "message"]],
+      {
+        getScalability: () => {
+          reads += 1;
+          return { requested: { render: { gpuBackend: "webgpu" } }, effective: { render: { gpuBackend: "webgl2" } }, pipeline: null };
+        },
+        formatValue: (value: unknown) => value,
+        log: (_severity: string, _category: string, value: unknown) => logs.push(value),
+      },
+    );
+    expect({ reads, logs }).toEqual({ reads: 2, logs: ["webgpuwebgl2", true] });
+  });
 });

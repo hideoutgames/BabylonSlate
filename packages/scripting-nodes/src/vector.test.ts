@@ -192,4 +192,44 @@ describe("vector nodes", () => {
     });
     expect(samples).toBe(3);
   });
+
+  it("Break Vector3 reads its input once per statement for all of its outputs", () => {
+    const registry = createDefaultNodeRegistry();
+    const edge = (id: string, source: string, sourcePin: string, target: string, targetPin: string) => ({
+      id, sourceNodeId: source, sourcePinId: sourcePin, targetNodeId: target, targetPinId: targetPin,
+    });
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "pos", "variables.get", { variableName: "Pos", typeId: "vec3", implicitSelf: true }),
+        node(registry, "break", "vector.break3"),
+        node(registry, "concat", "string.concat"),
+        node(registry, "logXY", "debug.log"),
+        node(registry, "logZ", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "logXY", "execIn"),
+        edge("e2", "logXY", "execOut", "logZ", "execIn"),
+        edge("e3", "pos", "value", "break", "in"),
+        edge("e4", "break", "x", "concat", "a"),
+        edge("e5", "break", "y", "concat", "b"),
+        edge("e6", "concat", "out", "logXY", "message"),
+        edge("e7", "break", "z", "logZ", "message"),
+      ],
+    };
+    let reads = 0;
+    const logs: string[] = [];
+    (loadModule(compileGraph(graph, { assetGuid: "a", registry }).source).onBeginPlay as (ctx: unknown) => void)({
+      getVariable: () => {
+        reads += 1;
+        return { x: reads, y: reads * 10, z: reads * 100 };
+      },
+      formatValue: (value: unknown) => String(value),
+      log: (_severity: string, _category: string, message: string) => logs.push(message),
+    });
+    // X and Y share one read; the next statement reads Pos again.
+    expect({ reads, logs }).toEqual({ reads: 2, logs: ["110", "200"] });
+  });
 });
