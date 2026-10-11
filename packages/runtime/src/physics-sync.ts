@@ -1109,8 +1109,15 @@ export class PhysicsWorldSync {
     this.applyActorColliders(actor, bodyId, pose);
     // A static body has no velocity to preserve or reset. Rewriting its
     // unchanged pose would only refresh native membership and trigger pairs.
-    if (this.isStaticBody(actor.guid)) this.syncStaticPose(actor, bodyId, pose);
-    else this.backend.teleportBody(bodyId, physicsPose(pose), options);
+    if (this.isStaticBody(actor.guid)) {
+      this.syncStaticPose(actor, bodyId, pose);
+      return;
+    }
+    this.backend.teleportBody(bodyId, physicsPose(pose), options);
+    // A kinematic body (including Movement) may hold this tick's pre-step
+    // target, which the next step would otherwise move it back to.
+    if (this.appliedBodyProperties.get(actor.guid)?.value.motionType === "kinematic")
+      this.backend.setBodyTargetTransform(bodyId, physicsPose(pose));
   }
 
   private isStaticBody(actorId: string): boolean {
@@ -1148,8 +1155,9 @@ export class PhysicsWorldSync {
   /**
    * Lazy character controller keyed by actor guid. Applies the resolved
    * transform to the actor immediately so the next kinematic sync keeps it.
-   * The world-to-local conversion uses the parent's pose at call time: scripts,
-   * readback and navigation may have moved it since the last pre-step pass.
+   * The solve starts from the actor's composed pose at call time, as Movement's
+   * does, and converts back against the parent's pose at call time: scripts,
+   * readback and navigation may have moved either since the last pre-step pass.
    */
   moveCharacter(
     actor: Actor,
@@ -1177,7 +1185,8 @@ export class PhysicsWorldSync {
       });
       this.characterByActor.set(actor.guid, actor.guid);
     }
-    const moved = this.backend.moveCharacter(actor.guid, translation, dt);
+    const startPose = physicsPose(current().get(actor.guid)!);
+    const moved = this.backend.moveCharacter(actor.guid, translation, dt, startPose);
     if (!moved) return;
     // The controller also moves a static body natively: republish it next sync.
     this.staticPoses.delete(actor.guid);
@@ -1229,17 +1238,14 @@ export class PhysicsWorldSync {
     }
     // Parent transforms are authored repositioning, separate from the motor's
     // displacement and velocity. Native kinematic targets have not stepped yet.
+    // The backend keeps the authored facing and replaces the pre-movement
+    // target captured at the start of this physics tick.
     const startPose = physicsPose(world(actor));
     const moved = this.backend.moveCharacter(actor.guid, translation, dt, startPose);
     if (!moved) return null;
-    // Native kinematic targets have not stepped yet: preserve the actor's
-    // authored facing instead of overwriting it with last tick's body rotation.
-    moved.rotation = startPose.rotation;
     const local = actorLocalPhysicsTransform(moved, actor, transforms());
     Object.assign(actor.transform.position, local.position);
     Object.assign(actor.transform.rotation, local.rotation);
-    // Replace the pre-movement target captured at the start of this physics tick.
-    this.backend.setBodyTargetTransform(bodyId, moved);
     return { position: moved.position, velocity: moved.velocity, grounded: moved.grounded };
   }
 
@@ -1450,8 +1456,12 @@ export class PhysicsWorldSync {
         };
         this.tilemapCollidersByActor.set(actor.guid, prepared);
       }
-      for (const collider of prepared.colliders)
-        colliders.set(collider.id, collider);
+      // Chains follow the component's local transform and the actor's scale,
+      // as the tilemap's visual does.
+      for (const collider of prepared.colliders) {
+        const baked = this.geometry(tilemap, collider.id).prepare(collider.shape, tilemap.transform, scale);
+        colliders.set(collider.id, { ...collider, bodyId, ...baked });
+      }
     } else {
       this.tilemapCollidersByActor.delete(actor.guid);
     }
@@ -1922,6 +1932,7 @@ export class PhysicsWorldSync {
           colliders.set(id, {
             id,
             bodyId,
+            // Tilemap-local; the caller bakes the component transform and scale.
             shape: { kind: "chain", points: chain.points, loop: chain.loop },
             friction: 0.5,
             restitution: 0,
