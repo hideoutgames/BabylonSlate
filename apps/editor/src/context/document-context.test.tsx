@@ -1069,7 +1069,7 @@ describe("DocumentProvider closed document history", () => {
     expect(documents().canUndoActiveDocument).toBe(false);
   });
 
-  it("reopens Main with empty history when the open-time prefab sync updates its Class instance", async () => {
+  it("reopens Main dirty with empty history when the open-time prefab sync updates its Class instance", async () => {
     const actions = await openProject();
     const second = await createScene(actions, "Second");
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
@@ -1120,6 +1120,14 @@ describe("DocumentProvider closed document history", () => {
     // History from before the sync cannot replay onto the synced instance.
     expect(documents().canUndoActiveDocument).toBe(false);
     expect(documents().canRedoActiveDocument).toBe(false);
+    // The file still holds the old instance until Save writes the synced one.
+    expect(documents().dirtyDocuments.map((doc) => doc.id)).toContain(MAIN_SCENE_ID);
+    await act(() => actions.saveAll());
+    // Closed, Main is read from its file.
+    await act(() => actions.openDocument(sceneRef(second.path)));
+    const saved = (await actions.loadAssetDocument("scene", MAIN_SCENE_FILE)) as SerializedScene;
+    expect(saved.actors.find((actor) => actor.id === instance.id)!.components.map((component) => component.sourceId))
+      .toEqual([sprite.id]);
   });
 
   it("gives a Scene created at a deleted Scene's path none of the deleted Scene's history", async () => {

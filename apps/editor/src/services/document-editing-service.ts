@@ -337,9 +337,11 @@ export class DocumentEditingService {
     if (options?.quiet) {
       // The open-time sync rewrites instances without a command, so history
       // recorded before it (such as history kept from a closed tab) no longer
-      // fits the content and must not replay onto it.
+      // fits the content and must not replay onto it. The file still holds
+      // the old instances, so the Scene is dirty until Save writes them.
       this.editSession.dropDocument(sceneDoc.id);
-      this.documents.patchLoadedContent(sceneDoc.id, next);
+      this.documents.updateScene(sceneDoc.id, next, "compare");
+      this.options.scheduleDebouncedSave();
       this.options.bump();
       return;
     }
