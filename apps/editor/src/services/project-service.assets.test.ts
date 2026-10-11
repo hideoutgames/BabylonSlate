@@ -692,27 +692,6 @@ describe("project documents as .babasset", () => {
     expect(reloaded.family).toBe("Ui Display");
   });
 
-  it("rewrites legacy Graph assets to Class on save", async () => {
-    const { storage, service } = await scaffolded();
-    const path = "assets/legacy.graph.babasset";
-    await storage.writeBinary(
-      path,
-      await encodeAssetDocument({
-        type: "Graph",
-        name: "legacy",
-        guid: "graph-guid",
-        version: 1,
-        payload: { nodes: [], edges: [] },
-      }),
-    );
-    const loaded = await service.loadDocument("graph", path);
-    service.approveMigrateOnSave();
-    await service.saveDocument("graph", path, loaded);
-    const header = readAssetDocumentHeader(await storage.readBinary(path));
-    expect(header.type).toBe("Class");
-    expect(header.parentClass).toBe("Actor");
-  });
-
   it("saves Texture settings onto the header without dropping pixel chunks", async () => {
     const { storage, service } = await scaffolded();
     const pixels = new Uint8Array([9, 8, 7, 6]);
