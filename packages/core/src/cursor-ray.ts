@@ -80,9 +80,11 @@ export function deprojectCursorRay(
     z: 1,
   });
   const direction = normalize(quatRotateVector(rotation, local));
+  // The clip planes sit at view depth near / far, which an off-center ray
+  // reaches after near / cos and far / cos of its angle to the view axis.
   return {
-    origin: add(position, scale(direction, near)),
+    origin: add(position, scale(direction, near / local.z)),
     direction,
-    end: add(position, scale(direction, far)),
+    end: add(position, scale(direction, far / local.z)),
   };
 }
