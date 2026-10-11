@@ -584,9 +584,8 @@ type SubsystemOptions<H> = {
 
 /**
  * Hidden abstract base of GameSubsystem and SceneSubsystem. `onCreation` is
- * the subsystem's On Init. Init and End each run at most once, and End's hook
- * only after Init started: an instance retired before its On Init ends
- * silently. The instance is `ended` from the moment End starts and
+ * the subsystem's On Init. Init and End each run at most once, and Init never
+ * after End. The instance is `ended` from the moment End starts and
  * `destroyed` once it returns.
  */
 export abstract class Subsystem extends BObject {
@@ -601,6 +600,11 @@ export abstract class Subsystem extends BObject {
     return this.endStarted;
   }
 
+  /** True once the World called On Init. */
+  protected get initCalled(): boolean {
+    return this.initStarted;
+  }
+
   override callOnCreation(): void {
     if (this.initStarted || this.endStarted) return;
     this.initStarted = true;
@@ -611,7 +615,7 @@ export abstract class Subsystem extends BObject {
     if (this.endStarted) return;
     this.endStarted = true;
     try {
-      if (this.initStarted) end();
+      end();
     } finally {
       this.destroyed = true;
     }
@@ -636,6 +640,7 @@ export class GameSubsystem extends Subsystem {
     this.gameHooks = options.hooks ?? {};
   }
 
+  /** On End, like the Game Instance's, even when `World.end()` ran before `start()`. */
   callOnGameEnd(): void {
     this.runEnd(() => this.gameHooks.onGameEnd?.(this));
   }
@@ -692,8 +697,15 @@ export class SceneSubsystem extends Subsystem {
     this.sceneHooks = options.hooks ?? {};
   }
 
+  /**
+   * On End, even when the host deferred its scripted On Init. Only an
+   * instance retired before the World called its On Init (a sibling's On
+   * Init replaced the Scene) ends silently.
+   */
   callOnEnd(): void {
-    this.runEnd(() => this.sceneHooks.onEnd?.(this));
+    this.runEnd(() => {
+      if (this.initCalled) this.sceneHooks.onEnd?.(this);
+    });
   }
 
   callOnSceneLoaded(sceneName: string): void {

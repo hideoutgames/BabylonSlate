@@ -856,6 +856,18 @@ describe("World subsystems", () => {
     world.end();
     expect(world.tick()).toBe(-1);
     expect(events.slice(before)).toEqual([]);
+
+    // Ended before start() (Stop during loading): GameSubsystems hear On End like the Game Instance.
+    const unstarted: string[] = [];
+    const early = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    early.setGameInstance(recordingGameInstance(unstarted));
+    early.setGameSubsystems([
+      recordingGameSubsystem(early, "Zeta", unstarted),
+      recordingGameSubsystem(early, "Alpha", unstarted),
+    ]);
+    early.end();
+    early.start();
+    expect(unstarted).toEqual(["gi:end", "Zeta:end", "Alpha:end"]);
   });
 
   it("ends SceneSubsystems on every main-scene exit and creates fresh instances per Scene", () => {
