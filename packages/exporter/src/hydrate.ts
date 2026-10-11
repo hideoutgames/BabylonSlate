@@ -1,14 +1,15 @@
 import type { DataAssetCatalogEntry } from "@babylonslate/core";
 import { normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
-import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import { normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
 import {
   parseAnimGraphDocument,
   resolveAnimGraphClips,
   type AnimClipCatalogEntry,
+  type AnimGraphDocument,
 } from "@babylonslate/anim-graph";
 import {
   materialParameterTextureAssetGuids,
+  applyTexturePixelSizesToSpriteAnimation,
   hydrateSpriteAnimationPixelSizes,
   resolveModelAnimationDurations,
   modelClipAnimationGuidsFromAnimations,
@@ -169,7 +170,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
   const waterPayloads = new Map<string, WaterDefinition>();
   const tilemapPayloads = new Map<string, TilemapPayload>();
   const tilesetPayloads = new Map<string, TilesetPayload>();
-  const animGraphs: Array<{ guid: string; document: unknown }> = [];
+  const animGraphs: Array<{ guid: string; document: AnimGraphDocument }> = [];
   const behaviourTrees: Array<{ guid: string; document: unknown }> = [];
   const blackboards: Array<{ guid: string; document: unknown }> = [];
   const materialDocuments = new Map<string, MaterialDocument>();
@@ -194,7 +195,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     if (!bytes && decoded === undefined) continue;
     const parsed = decoded ?? jsonFromBytes(bytes!);
     if (entry.type === "DataDefinition" || entry.type === "DataTree" || entry.type === "Structure" || entry.type === "Enum") {
-      if (parsed) dataAssets.push({ guid: entry.guid, type: entry.type, name: entry.guid, payload: parsed });
+      if (parsed) dataAssets.push({ guid: entry.guid, type: entry.type, name: entry.name ?? entry.guid, payload: parsed });
       continue;
     }
     if (entry.type === "RenderTarget" && parsed) {
@@ -302,11 +303,17 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       ? game.manifest.pixelsPerUnit
       : 100;
 
+  // Authored Texture sizes from the catalog first; packed PNG headers fill the rest
+  // (a KTX2 chunk has no PNG header).
+  const texturePixelSizes = texturePixelSizesFromManifest(game.manifest.assets);
   const sizedSpriteAnimations = hydrateSpriteAnimationPixelSizes(
-    spriteAnimationPayloads,
+    new Map([...spriteAnimationPayloads].map(([guid, payload]) => [guid,
+      applyTexturePixelSizesToSpriteAnimation(payload, (textureGuid) => texturePixelSizes.get(textureGuid))])),
     game.textureBytes,
   );
 
+  const animations = [...animationPayloads].map(([guid, payload]) => ({ guid, payload }));
+  const retargetAnimationLoads = retargetAnimationLoadsFromAnimations(animations);
   const clipCatalog = resolveModelAnimationDurations<AnimClipCatalogEntry>([
     ...[...animationPayloads.entries()].map(([guid, payload]) => ({
       guid,
@@ -323,17 +330,11 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       name: guid,
       durationMs: spriteAnimationDurationMs(payload),
     })),
-  ], game.modelBytes, retargetAnimationLoadsFromAnimations(
-    [...animationPayloads].map(([guid, payload]) => ({ guid, payload })),
-  ), game.modelAnimationDurations);
-  const resolvedAnimGraphs = animGraphs.map((entry) => {
-    const document = parseAnimGraphDocument(entry.document);
-    if (!document) return entry;
-    return {
-      guid: entry.guid,
-      document: resolveAnimGraphClips(document, clipCatalog),
-    };
-  });
+  ], game.modelBytes, retargetAnimationLoads, game.modelAnimationDurations);
+  const resolvedAnimGraphs = animGraphs.map((entry) => ({
+    guid: entry.guid,
+    document: resolveAnimGraphClips(entry.document, clipCatalog),
+  }));
 
   for (const [guid, document] of materializeMaterialInstances(materialDocuments, materialInstances)) {
     materialDocuments.set(guid, document);
@@ -360,10 +361,10 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     renderTargetTextures,
     postProcessStack: startupScene?.settings.postProcessStack ?? [],
     pixelsPerUnit,
-    sortingLayers: game.manifest.sortingLayers?.length ? game.manifest.sortingLayers : DEFAULT_SORTING_LAYERS,
+    sortingLayers: game.manifest.sortingLayers,
     pixelPerfect: game.manifest.pixelPerfect === true,
     audioLibrary: {
-      sourceRevisions: game.audioSourceRevisions ?? new Map((game.manifest.assets ?? []).filter(entry => entry.type === "Audio" && audio.has(entry.guid) && entry.revision).map(entry => [entry.guid, entry.revision!])),
+      sourceRevisions: new Map((game.manifest.assets ?? []).filter(entry => entry.type === "Audio" && audio.has(entry.guid) && entry.revision).map(entry => [entry.guid, entry.revision!])),
       mixerGuid: game.manifest.audioMixerGuid?.trim() || null,
       mixers,
       channels,
@@ -371,16 +372,12 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       attenuations,
     },
     particleLibrary: particleLibraryFromAssets(particleAssets),
-    modelClipAnimationGuids: modelClipAnimationGuidsFromAnimations(
-      [...animationPayloads.entries()].map(([guid, payload]) => ({ guid, payload })),
-    ),
-    retargetAnimationLoads: retargetAnimationLoadsFromAnimations(
-      [...animationPayloads.entries()].map(([guid, payload]) => ({ guid, payload })),
-    ),
+    modelClipAnimationGuids: modelClipAnimationGuidsFromAnimations(animations),
+    retargetAnimationLoads,
     modelPayloads: new Map(game.modelPayloads),
     complexMeshes: game.complexMeshes ? new Map(game.complexMeshes)
       : cookComplexCollisionMeshes(game.modelBytes, game.modelPayloads, gameComplexCollisionModelGuids(game)),
-    texturePixelSizes: texturePixelSizesFromManifest(game.manifest.assets),
+    texturePixelSizes,
   };
 }
 
