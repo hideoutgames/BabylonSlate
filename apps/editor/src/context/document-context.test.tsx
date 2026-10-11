@@ -572,9 +572,9 @@ describe("DocumentProvider actions and route", () => {
     expect(openScene(MAIN_SCENE_ID)).toBe(original);
     await act(async () => { resolve(false); await Promise.resolve(); });
     expect(openScene(MAIN_SCENE_ID)).toBe(original);
-    let closing!: Promise<void>;
+    let closing!: Promise<boolean>;
     act(() => { closing = actions.forceCloseProject(); });
-    await act(async () => { resolve(false); await closing; });
+    await act(async () => { resolve(false); expect(await closing).toBe(false); });
     expect(documents().route).toBe("editor");
     expect(openScene(MAIN_SCENE_ID)).toBe(original);
     act(() => actions.closeDocument(MAIN_SCENE_ID));
