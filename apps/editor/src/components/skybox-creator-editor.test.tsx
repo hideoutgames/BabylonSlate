@@ -151,7 +151,7 @@ describe("SkyboxCreatorEditor", () => {
   it("records the created faces on the document as it is when the writes finish", async () => {
     let releaseRead!: () => void;
     readAssetChunk.mockImplementationOnce(
-      () => new Promise<Uint8Array>((resolve) => { releaseRead = () => resolve(PNG_MAGIC); }),
+      () => new Promise<typeof PNG_MAGIC>((resolve) => { releaseRead = () => resolve(PNG_MAGIC); }),
     );
     const payload = (x: number) => ({
       ...createDefaultSkyboxCreatorPayload(),
