@@ -541,6 +541,8 @@ export function compileGraph(
       },
       reference(pinName) { return referenceExpr(node, pinName); },
       shared(expression) {
+        // With one wired output there is nothing to share.
+        if (!sharedInputNodes.has(node.id)) return expression;
         return memoExpression(`shared:${node.id}:${expression}`, expression);
       },
       continueIf(expression) { continuation?.(expression); },

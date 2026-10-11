@@ -51,8 +51,9 @@ export type CodegenContext = {
   /**
    * Pure codegen: an expression reading `expression` evaluated at most once
    * per executing statement, so several outputs can share one evaluation.
-   * Missing where the host compiles without statements (callers fall back to
-   * `expression`).
+   * Returns `expression` unchanged when the node has fewer than two wired
+   * outputs. Missing where the host compiles without statements (callers fall
+   * back to `expression`).
    */
   shared?(expression: string): string;
   indent: string;
