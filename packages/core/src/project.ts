@@ -276,7 +276,10 @@ export interface ExportPreset {
   id: string;
   name: string;
   pluginOverrides: Record<string, PluginEnableOverride>;
-  /** Packed `.babpack` export; default on. */
+  /**
+   * Recorded as the game manifest `mode` (`packed` when on, the default).
+   * Packed and loose exports write the same independent-file layout.
+   */
   packed: boolean;
   /** Release zip default off; Preview Build always on. */
   bundleDebugger: boolean;
