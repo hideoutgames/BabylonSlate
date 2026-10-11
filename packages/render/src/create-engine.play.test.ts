@@ -2002,6 +2002,27 @@ describe("Play createEngine view", () => {
     frame();
     expect(sceneValve).toHaveBeenCalled();
     expect(prefabValve).not.toHaveBeenCalled();
+    // RTT previews register no view, yet draw into the same Engine frame.
+    scene.setRegisterViewEnabled(false);
+    const previews = [0, 1].map(() => createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true, present: "rtt" }));
+    handles.push(...previews);
+    for (const preview of previews) await preview.prewarmSceneMaterials();
+    const previewValves = previews.map((preview) => vi.spyOn(preview.scaling, "noteFramePressure"));
+    const frames = async (until: () => boolean) => {
+      for (let attempt = 0; attempt < 20 && !until(); attempt += 1) {
+        engine.onBeginFrameObservable.notifyObservers(engine);
+        if (!renderViews(engine)) engine._renderFrame();
+        engine.onEndFrameObservable.notifyObservers(engine);
+        await new Promise<void>((resolve) => setTimeout(resolve, 20));
+      }
+    };
+    await frames(() => previews.every((preview) => preview.renderDiagnostics().pressure !== null));
+    expect(previews.map((preview) => preview.renderDiagnostics().pressure?.cpuMs)).toEqual([expect.any(Number), expect.any(Number)]);
+    expect(previewValves.map((valve) => valve.mock.calls.length)).toEqual([0, 0]);
+    // Hiding one preview leaves the other as the Engine's only rendering view.
+    previews[1]!.scheduler.setVisible(false);
+    await frames(() => previewValves[0]!.mock.calls.length > 0);
+    expect(previewValves[0]).toHaveBeenCalled();
   });
 
   it("rebinds editor MeshComponent materials after setMaterialDocuments", () => {

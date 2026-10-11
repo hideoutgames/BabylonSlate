@@ -1015,6 +1015,11 @@ function initializeEngine(
   setupDefaultViewport(scene);
 
   const scheduler = new RenderScheduler();
+  // A handle without a registered view draws into the same Engine frame as the
+  // registered views; the sole-view gate counts it while its canvas is shown.
+  const viewlessShown = registeredView ? null : () => !disposed && scheduler.isShown();
+  const releaseViewless = viewlessShown ? retainViewlessRenderer(engine, viewlessShown) : null;
+  onRollback(() => releaseViewless?.());
   let frameCopyReady = false;
   let frameWasLoading = false;
   const presentationStats = {
@@ -2325,6 +2330,7 @@ function initializeEngine(
     rendererGpuLease = null;
   });
   const soleRenderingView = () => {
+    if (hasShownViewlessSibling(engine, viewlessShown)) return false;
     let enabled = 0;
     for (const view of engine.views ?? []) {
       if (registeredViewIsEnabled(view)) enabled += 1;
@@ -3019,6 +3025,7 @@ function initializeEngine(
       engine.onEndFrameObservable.remove(presentationObserver);
       releaseViewAdmission?.();
       releaseOffscreenDispatch?.();
+      releaseViewless?.();
       unsubscribeEditorDrop();
       releasePlayLoop?.();
       releaseMainThreadDecoding?.();
@@ -4227,6 +4234,28 @@ function holdOtherEngineViews(
     held.push(view);
   }
   return held;
+}
+
+// Handles without a registered view (RTT previews) still draw into their
+// Engine's frame. Each entry reports whether that handle's canvas is shown.
+const viewlessRenderers = new WeakMap<AbstractEngine, Set<() => boolean>>();
+
+function retainViewlessRenderer(engine: AbstractEngine, shown: () => boolean): () => void {
+  let renderers = viewlessRenderers.get(engine);
+  if (!renderers) viewlessRenderers.set(engine, renderers = new Set());
+  renderers.add(shown);
+  return () => {
+    renderers.delete(shown);
+    if (!renderers.size && viewlessRenderers.get(engine) === renderers) viewlessRenderers.delete(engine);
+  };
+}
+
+/** Whether a viewless handle other than `except` may draw into this Engine's frame. */
+function hasShownViewlessSibling(engine: AbstractEngine, except: (() => boolean) | null): boolean {
+  for (const shown of viewlessRenderers.get(engine) ?? []) {
+    if (shown !== except && shown()) return true;
+  }
+  return false;
 }
 
 /** Create the project-lifetime Engine (no scene). */
