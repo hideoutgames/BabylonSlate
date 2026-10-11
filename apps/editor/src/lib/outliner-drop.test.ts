@@ -166,6 +166,24 @@ describe("outlinerTreeDropMoves", () => {
     ).toEqual([]);
   });
 
+  it("returns no move when an unselected folder drops onto an actor", () => {
+    const world = scene({
+      folders: [
+        { id: "outer", name: "Outer", parentFolderId: null },
+        { id: "pack", name: "Pack", parentFolderId: "outer" },
+      ],
+      actors: [createActor("hero", "Hero", { folderId: "outer" })],
+    });
+    expect(
+      outlinerTreeDropMoves({
+        dragRowId: folderRowId("pack"),
+        targetRowId: actorRowId("hero"),
+        selectedRowIds: [],
+        scene: world,
+      }),
+    ).toEqual([]);
+  });
+
   it("does not invent extra actors when applying collapsed folder and actor moves", () => {
     const world = scene({
       folders: [
