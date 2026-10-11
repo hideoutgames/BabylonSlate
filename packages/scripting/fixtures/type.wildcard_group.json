@@ -1,0 +1,184 @@
+{
+  "id": "wildcard-group",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 2800,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "log",
+      "typeId": "debug.log",
+      "position": {
+        "x": 2600,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "message",
+          "name": "message",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "array",
+            "element": {
+              "kind": "resolvingWildcard"
+            }
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "append",
+      "typeId": "array.append",
+      "position": {
+        "x": 2400,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "array",
+          "name": "array",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "array",
+            "element": {
+              "kind": "resolvingWildcard"
+            }
+          }
+        },
+        {
+          "id": "item",
+          "name": "item",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "resolvingWildcard"
+          }
+        },
+        {
+          "id": "out",
+          "name": "out",
+          "kind": "data",
+          "direction": "out",
+          "type": {
+            "kind": "array",
+            "element": {
+              "kind": "resolvingWildcard"
+            }
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "float",
+      "typeId": "literal.make",
+      "position": {
+        "x": 3000,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "out",
+          "name": "out",
+          "kind": "data",
+          "direction": "out",
+          "type": {
+            "kind": "float"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "strings",
+      "typeId": "literal.make",
+      "position": {
+        "x": 3200,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "out",
+          "name": "out",
+          "kind": "data",
+          "direction": "out",
+          "type": {
+            "kind": "array",
+            "element": {
+              "kind": "string"
+            }
+          }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry.execOut->log.execIn",
+      "sourceNodeId": "entry",
+      "sourcePinId": "execOut",
+      "targetNodeId": "log",
+      "targetPinId": "execIn"
+    },
+    {
+      "id": "append.out->log.message",
+      "sourceNodeId": "append",
+      "sourcePinId": "out",
+      "targetNodeId": "log",
+      "targetPinId": "message"
+    },
+    {
+      "id": "float.out->append.item",
+      "sourceNodeId": "float",
+      "sourcePinId": "out",
+      "targetNodeId": "append",
+      "targetPinId": "item"
+    },
+    {
+      "id": "strings.out->append.array",
+      "sourceNodeId": "strings",
+      "sourcePinId": "out",
+      "targetNodeId": "append",
+      "targetPinId": "array"
+    }
+  ]
+}

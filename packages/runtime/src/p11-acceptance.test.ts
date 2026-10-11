@@ -236,7 +236,7 @@ function finishOnActivateScript(): CompiledScript {
     nodes: [
       node(registry, "activate", "bt.event.activate"),
       node(registry, "log", "debug.log", {
-        message: "activated",
+        "default:message": "activated",
         severity: "log",
         category: "BT",
       }),
@@ -272,7 +272,7 @@ function abortHoldTaskScript(): CompiledScript {
       node(registry, "tick", "bt.event.tick"),
       node(registry, "abort", "bt.event.abort"),
       node(registry, "log", "debug.log", {
-        message: "aborted",
+        "default:message": "aborted",
         severity: "log",
         category: "BT",
       }),

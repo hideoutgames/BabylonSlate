@@ -1,0 +1,43 @@
+{
+  "id": "unknown-class",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 8400,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": [],
+  "context": {
+    "knownClassIds": [
+      "Actor",
+      "Hero"
+    ],
+    "members": [
+      {
+        "id": "target",
+        "name": "Target",
+        "kind": "variable",
+        "classId": "Hero",
+        "typeId": "object",
+        "typeClassId": "RemovedClass"
+      }
+    ]
+  }
+}

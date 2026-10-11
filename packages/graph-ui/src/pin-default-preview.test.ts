@@ -199,7 +199,7 @@ describe("pinDefaultPreview", () => {
     });
   });
 
-  it("shows the selected enum member with authored, legacy, and catalog default precedence", () => {
+  it("shows the selected enum member with authored and catalog default precedence", () => {
     const enumPin: SerializedPin = {
       id: "mode-id",
       name: "mode",
@@ -211,7 +211,7 @@ describe("pinDefaultPreview", () => {
     expect(pinDefaultPreview(enumPin, { "default:mode-id": "runFast", "default:mode": "Idle" }, false, { e1: "Movement Mode" }))
       .toEqual({ kind: "enumRef", text: "Run Fast" });
     expect(pinDefaultPreview(enumPin, { "default:mode": "Idle" }, false))
-      .toEqual({ kind: "enumRef", text: "Idle" });
+      .toEqual({ kind: "enumRef", text: "Walk" });
     expect(pinDefaultPreview(enumPin, {}, false))
       .toEqual({ kind: "enumRef", text: "Walk" });
     expect(pinDefaultPreview(enumPin, { "default:mode-id": "" }, false))
@@ -226,8 +226,6 @@ describe("pinDefaultPreview", () => {
       properties: { "default:classId": "Mannequin", classId: "Actor" },
       want: "Mannequin",
     },
-    { properties: { classId: "Mannequin" }, want: "Mannequin" },
-    { properties: { "default:Class ID": "Mannequin" }, want: "Mannequin" },
     { properties: { "default:classId": "" }, want: "" },
   ])(
     "shows the selected class with defaults $properties",

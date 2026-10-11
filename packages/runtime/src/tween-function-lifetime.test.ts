@@ -26,7 +26,7 @@ describe("FunctionLibrary tween lifetime", () => {
       nodes: [
         node(registry, "input", "flow.function.input", { pins: signature }),
         node(registry, "value", "variables.get", { variableName: "Amount", typeId: "float", scope: "local", implicitSelf: true }),
-        node(registry, "tween", "tween.float", { a: 2, b: 8, duration: 2 }),
+        node(registry, "tween", "tween.float", { "default:a": 2, "default:b": 8, "default:duration": 2 }),
         node(registry, "log", "debug.log"),
       ],
       edges: [edge("input", "exec", "tween", "execIn"), edge("value", "value", "tween", "target"),

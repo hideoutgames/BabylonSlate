@@ -40,7 +40,7 @@ test("SceneLayer compiled Tweens fade, tint and move rendered components after o
       { id: `${id}-trigger`, type: "input.onAnyKeyPressed", data: {}, position: { x: 0, y: row * 220 } },
       { id: `${id}-target`, type: "component.getNamed", data: { componentClassId, implicitSelf: true }, position: { x: 200, y: row * 220 } },
       { id, type, data: { ...data, duration: 1 }, position: { x: 450, y: row * 220 } },
-      { id: `${id}-done`, type: "debug.print", data: { value: `Tween ${id} completed`, key: `tween-${id}`, duration: 30 }, position: { x: 750, y: row * 220 } },
+      { id: `${id}-done`, type: "debug.print", data: { "default:value": `Tween ${id} completed`, "default:key": `tween-${id}`, "default:duration": 30 }, position: { x: 750, y: row * 220 } },
     ]),
     edges: actions.flatMap(([id]) => [
       { id: `${id}-start`, source: `${id}-trigger`, sourceHandle: "execOut", target: id, targetHandle: "execIn" },

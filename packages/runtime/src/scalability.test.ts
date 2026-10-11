@@ -28,13 +28,13 @@ describe("compiled Class Graph scalability", () => {
       structGuid: `engine:${guid}`, fields: [{ name, typeId: "struct", typeClassId: `engine:${type}` }],
     });
     const { runtime } = await run({ id: "outline-settings", kind: "event", nodes: [
-      node("begin", "flow.event.beginPlay"), node("outline", "scalability.setCelOutlines", { enabled: true, color: { x: 0.2, y: 0.4, z: 0.6, w: 1 }, width: 3 }),
+      node("begin", "flow.event.beginPlay"), node("outline", "scalability.setCelOutlines", { "default:enabled": true, "default:color": { x: 0.2, y: 0.4, z: 0.6, w: 1 }, "default:width": 3 }),
       node("changed", "flow.event.scalabilityChanged"), node("effective", "scalability.getEffective"),
       struct("snapshot", "ScalabilitySnapshot", "effective", "RuntimeRenderingSettings"),
       struct("runtime", "RuntimeRenderingSettings", "render", "RenderSettings"),
       struct("render", "RenderSettings", "cel", "CelShading"), node("roundtrip", "scalability.setCelShading"),
       node("color", "struct.break", { structGuid: "engine:CelShading", fields: [{ name: "outlineColor", typeId: "color" }] }),
-      node("colorRoundtrip", "scalability.setCelOutlines", { enabled: true, width: 3 }),
+      node("colorRoundtrip", "scalability.setCelOutlines", { "default:enabled": true, "default:width": 3 }),
     ], edges: [edge("begin", "execOut", "outline", "execIn"), edge("changed", "execOut", "roundtrip", "execIn"),
       edge("effective", "settings", "snapshot", "in"), edge("snapshot", "effective", "runtime", "in"),
       edge("runtime", "render", "render", "in"), edge("render", "cel", "roundtrip", "settings"),
@@ -54,7 +54,7 @@ describe("compiled Class Graph scalability", () => {
     } finally { runtime.stop(); }
   });
   it.each(["low", "medium", "high", "ultra"])("executes the %s enum preset without changing artistic mode or frame cap", async (preset) => {
-    const { runtime } = await run({ id: "settings", kind: "event", nodes: [node("begin", "flow.event.beginPlay"), node("preset", "scalability.setPreset", { preset })],
+    const { runtime } = await run({ id: "settings", kind: "event", nodes: [node("begin", "flow.event.beginPlay"), node("preset", "scalability.setPreset", { "default:preset": preset })],
       edges: [edge("begin", "execOut", "preset", "execIn")] });
     try {
       expect(runtime.getScalability().requested.render.quality?.lighting.profile).toBe(preset);
@@ -65,8 +65,8 @@ describe("compiled Class Graph scalability", () => {
   });
   it("executes typed setters, emits confirmed readback through the event and shares reset with console commands", async () => {
     const { runtime, commands, actor } = await run({ id: "settings", kind: "event", nodes: [
-      node("begin", "flow.event.beginPlay"), node("cap", "scalability.setFrameCap", { fps: 20 }),
-      node("scale", "scalability.setRenderScale", { scale: 0.5 }), node("aa", "scalability.setAntialiasing", { enabled: true }),
+      node("begin", "flow.event.beginPlay"), node("cap", "scalability.setFrameCap", { "default:fps": 20 }),
+      node("scale", "scalability.setRenderScale", { "default:scale": 0.5 }), node("aa", "scalability.setAntialiasing", { "default:enabled": true }),
       node("changed", "flow.event.scalabilityChanged"), node("log", "debug.log"),
       node("revision", "struct.break", { structGuid: "engine:ScalabilitySnapshot", fields: [{ name: "appliedRevision", typeId: "float" }] }),
       node("revisionText", "literal.toStringFloat"),
@@ -91,7 +91,7 @@ describe("compiled Class Graph scalability", () => {
   });
   it("returns validation failures from a graph instead of changing requested settings", async () => {
     const { runtime, commands } = await run({ id: "settings", kind: "event", nodes: [node("begin", "flow.event.beginPlay"),
-      node("cap", "scalability.setFrameCap", { fps: -10 }), node("log", "debug.log"),
+      node("cap", "scalability.setFrameCap", { "default:fps": -10 }), node("log", "debug.log"),
       node("result", "struct.break", { structGuid: "engine:ScalabilityResult", fields: [{ name: "status", typeId: "enum", typeClassId: "engine:ScalabilityStatus" }] }),
       node("status", "enum.toString", { enumGuid: "engine:ScalabilityStatus" })],
       edges: [edge("begin", "execOut", "cap", "execIn"), edge("cap", "execOut", "log", "execIn"), edge("cap", "result", "result", "in"), edge("result", "status", "status", "in"), edge("status", "out", "log", "message")] });

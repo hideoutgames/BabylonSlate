@@ -140,19 +140,34 @@ export function hydrateStructInstance(
   const result: Record<string, unknown> = {};
   for (const field of fields) {
     if (!field.name) continue;
-    if (Object.prototype.hasOwnProperty.call(authored, field.name)) {
-      const type = pinTypeForVariable(field);
-      if (type.kind === "structRef") {
-        const nested = type.guid ? schemas?.structs[type.guid] : undefined;
-        result[field.name] = nested
-          ? hydrateStructInstance(nested.fields, authored[field.name], schemas)
-          : authored[field.name];
-      } else {
-        result[field.name] = authored[field.name];
-      }
-    } else {
-      result[field.name] = defaults[field.name];
-    }
+    result[field.name] = Object.prototype.hasOwnProperty.call(authored, field.name)
+      ? hydrateValue(pinTypeForVariable(field), authored[field.name], schemas)
+      : defaults[field.name];
   }
   return result;
+}
+
+/** Structures nested in arrays and map entries hydrate like a single field. */
+function hydrateValue(type: PinType, value: unknown, schemas?: TypeSchemas): unknown {
+  if (type.kind === "structRef") {
+    const nested = type.guid ? schemas?.structs[type.guid] : undefined;
+    return nested ? hydrateStructInstance(nested.fields, value, schemas) : value;
+  }
+  if (type.kind === "array") {
+    return Array.isArray(value)
+      ? value.map((item) => hydrateValue(type.element, item, schemas))
+      : value;
+  }
+  if (type.kind === "map" && Array.isArray(value)) {
+    return value.map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+      const pair = entry as Record<string, unknown>;
+      return {
+        ...pair,
+        key: hydrateValue(type.key, pair.key, schemas),
+        value: hydrateValue(type.value, pair.value, schemas),
+      };
+    });
+  }
+  return value;
 }

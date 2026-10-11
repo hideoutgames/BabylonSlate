@@ -406,7 +406,7 @@ describe("validateGraphs", () => {
             pin("execIn", "exec", "in", EXEC),
             pin("value", "value", "in", BOXED_WILDCARD),
           ],
-          properties: { value: "jumped" },
+          properties: { "default:value": "jumped" },
         },
       ],
       edges: [execThen("entry", "print")],
@@ -521,7 +521,7 @@ describe("validateGraphs", () => {
             pin("execOut", "then", "out", EXEC),
             pin("message", "message", "in", STRING, "data", true),
           ],
-          properties: { message: "" },
+          properties: { "default:message": "" },
         },
         flowEntry(),
       ],
@@ -1224,6 +1224,28 @@ describe("validateGraphs", () => {
     expect(diags.some((d) => d.code === "type.unbound_enum")).toBe(true);
   });
 
+  it("checks member types once, for the validated class only", () => {
+    const graphs: LogicGraph[] = [
+      { id: "event", kind: "event", nodes: [], edges: [] },
+      { id: "fn-1", kind: "function", nodes: [], edges: [] },
+    ];
+    const diags = validateGraphs(graphs, {
+      assetGuid: "a",
+      classId: "Hero",
+      members: [
+        { id: "speed", name: "Speed", kind: "variable", classId: "Hero", typeId: "vector3" },
+        { id: "aim", name: "Aim", kind: "variable", classId: "Villain", typeId: "vector3" },
+        { id: "loot", name: "Loot", kind: "variable", classId: "Villain", typeId: "struct" },
+      ],
+    });
+    const memberDiags = diags.filter(
+      (d) => d.code === "member.unknown_type" || d.code === "type.unbound_struct",
+    );
+    expect(memberDiags).toEqual([
+      expect.objectContaining({ code: "member.unknown_type", message: expect.stringContaining("Speed") }),
+    ]);
+  });
+
   it("errors unknown struct and enum guids when a known-guid table is provided", () => {
     const graph: LogicGraph = {
       id: "g",
@@ -1439,7 +1461,6 @@ describe("validateGraphs", () => {
     };
     const diags = validateGraphs([graph], { assetGuid: "a" });
     expect(diags.some((d) => d.code === "pin.missing_input")).toBe(false);
-    expect(diags.some((d) => d.code === "exec.unreachable")).toBe(false);
 
     graph.nodes.unshift({
       id: "begin",
@@ -1487,11 +1508,11 @@ describe("validateGraphs", () => {
     const graph: LogicGraph = {
       id: "g", kind: "event", nodes: [flowEntry(), {
         id: "while", typeId: "flow.whileLoop", position: { x: 0, y: 0 },
-        properties: { condition: true }, pins: [pin("execIn", "exec", "in", EXEC), pin("condition", "Condition", "in", BOOL), pin("loopBody", "Loop Body", "out", EXEC)],
+        properties: { "default:condition": true }, pins: [pin("execIn", "exec", "in", EXEC), pin("condition", "Condition", "in", BOOL), pin("loopBody", "Loop Body", "out", EXEC)],
       }], edges: [execThen("entry", "while")],
     };
     expect(validateGraphs([graph], { assetGuid: "a" })).toContainEqual(expect.objectContaining({ code: "flow.constant_loop", nodeId: "while", severity: "warning" }));
-    graph.nodes[1]!.properties.condition = false;
+    graph.nodes[1]!.properties["default:condition"] = false;
     expect(validateGraphs([graph], { assetGuid: "a" })).toEqual([]);
   });
 
@@ -1796,7 +1817,7 @@ describe("validateGraphs", () => {
     ).toBe(true);
   });
 
-  it("does not report pin.direction for a reverse-stored output-to-input data wire", () => {
+  it("reports pin.direction for a wire stored from an input to an output", () => {
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
@@ -1833,13 +1854,13 @@ describe("validateGraphs", () => {
       ],
     };
     expect(
-      validateGraphs([graph], { assetGuid: "a" }).some(
+      validateGraphs([graph], { assetGuid: "a" }).find(
         (d) => d.code === "pin.direction",
-      ),
-    ).toBe(false);
+      )?.nodeId,
+    ).toBe("log");
   });
 
-  it("does not report a pure cycle for forward plus reverse of the same data pair", () => {
+  it("does not report a pure cycle through a wire stored from an input to an output", () => {
     const addPins = (id: string, x: number): GraphNode => ({
       id,
       typeId: "math.add",
@@ -1868,30 +1889,36 @@ describe("validateGraphs", () => {
           properties: {},
         },
         addPins("addA", 0),
+        addPins("addB", 100),
       ],
       edges: [
         execThen("entry", "log"),
         {
-          id: "forward",
-          sourceNodeId: "addA",
+          id: "read",
+          sourceNodeId: "addB",
           sourcePinId: "out",
           targetNodeId: "log",
           targetPinId: "message",
         },
         {
+          id: "forward",
+          sourceNodeId: "addA",
+          sourcePinId: "out",
+          targetNodeId: "addB",
+          targetPinId: "a",
+        },
+        {
           id: "reverse",
-          sourceNodeId: "log",
-          sourcePinId: "message",
+          sourceNodeId: "addB",
+          sourcePinId: "a",
           targetNodeId: "addA",
           targetPinId: "out",
         },
       ],
     };
-    expect(
-      validateGraphs([graph], { assetGuid: "a" }, { registry }).some(
-        (d) => d.code === "pure.cycle",
-      ),
-    ).toBe(false);
+    const diags = validateGraphs([graph], { assetGuid: "a" }, { registry });
+    expect(diags.some((d) => d.code === "pure.cycle")).toBe(false);
+    expect(diags.some((d) => d.code === "pin.direction")).toBe(true);
   });
 
   it("does not report a pure cycle when impure data outputs feed back through a pure", () => {

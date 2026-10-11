@@ -120,7 +120,7 @@ describe("variables.get / variables.set", () => {
           variableName: "Health",
           typeId: "float",
           implicitSelf: true,
-          "default:Health": 8,
+          "default:value": 8,
         }),
         node(registry, "get", "variables.get", {
           variableName: "Health",
@@ -261,7 +261,7 @@ describe("variables.get / variables.set", () => {
           implicitSelf: false,
           classId: "Text3DComponent",
           propertyKey: "text",
-          "default:Text": "Hi",
+          "default:value": "Hi",
         }),
         node(registry, "log", "debug.log"),
       ],
@@ -309,7 +309,7 @@ describe("variables.get / variables.set", () => {
           typeId: "float",
           scope: "local",
           implicitSelf: true,
-          "default:Temp": 4,
+          "default:value": 4,
         }),
         node(registry, "get", "variables.get", {
           variableName: "Temp",
@@ -357,7 +357,7 @@ describe("variables.get / variables.set", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "spawn", "actor.spawn", { classId: "Guard" }),
+        node(registry, "spawn", "actor.spawn", { "default:classId": "Guard" }),
         node(registry, "get", "variables.get", {
           variableName: "Health",
           typeId: "float",
@@ -415,7 +415,7 @@ describe("variables.get / variables.set", () => {
           variableName: "Health",
           typeId: "float",
           implicitSelf: true,
-          "default:Health": 8,
+          "default:value": 8,
         }),
         node(registry, "log", "debug.log"),
       ],

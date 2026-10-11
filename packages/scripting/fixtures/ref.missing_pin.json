@@ -1,0 +1,64 @@
+{
+  "id": "missing-pin",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 3800,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "log",
+      "typeId": "debug.log",
+      "position": {
+        "x": 3600,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry.execOut->log.ghost",
+      "sourceNodeId": "entry",
+      "sourcePinId": "execOut",
+      "targetNodeId": "log",
+      "targetPinId": "ghost"
+    }
+  ]
+}

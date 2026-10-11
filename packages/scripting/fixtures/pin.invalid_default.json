@@ -1,0 +1,76 @@
+{
+  "id": "invalid-default",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 6800,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "log",
+      "typeId": "debug.log",
+      "position": {
+        "x": 6600,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "target",
+          "name": "target",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "actorRef",
+            "classId": "Actor"
+          }
+        }
+      ],
+      "properties": {
+        "default:target": "Player"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry.execOut->log.execIn",
+      "sourceNodeId": "entry",
+      "sourcePinId": "execOut",
+      "targetNodeId": "log",
+      "targetPinId": "execIn"
+    }
+  ]
+}

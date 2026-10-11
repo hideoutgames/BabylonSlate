@@ -322,7 +322,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Engine Settings “don’t ask again” | later polish (`apps/editor`) | Play Anyway exists; no permanent skip preference |
 | Class / outliner validation icons | later polish (`apps/editor`) | `hasError` on Class members is never set |
 | Project-wide pre-Preview validation sweep | later polish (`apps/editor`, `scripting`) | Play now validates the compiled project graph set (`collectPlayPreviewScripts`); startup-map / GameInstance / plugin EUO sweep still deferred |
-| Validator fixture per diagnostic code | later polish (`scripting`) | CI has `type.mismatch` and `js.parse` fixtures; other codes are unit-tested |
+| Validator fixture per diagnostic code | Done | `packages/scripting/fixtures/` holds one broken graph per validator diagnostic code |
 | Latent nodes as async generator state machines | later polish (`scripting`) | Host promises today; Delay / async ExecuteJavaScript still run |
 | Timeline / delegate timer nodes | later design (`scripting`, runtime, editor) | Needs authored curves and delegate/event pins; not a fixed-pin catalog addition |
 | Advanced physics query shapes / filters | P7 polish (`physics`, runtime, scripting-nodes) | Box/capsule overlap, arbitrary shape descriptors, ignore-Actor lists, and backend parity need a query-filter contract |

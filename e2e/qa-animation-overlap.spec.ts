@@ -198,7 +198,7 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
       },
       valueType: "button",
     }),
-    node("walk", "anim.actor.jumpToState", { state: "Walk" }),
+    node("walk", "anim.actor.jumpToState", { "default:state": "Walk" }),
     node("confirm", "input.actionEvent", {
       "default:binding": {
         Input: {
@@ -211,7 +211,7 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
       },
       valueType: "button",
     }),
-    node("idle", "anim.actor.jumpToState", { state: "Idle" }),
+    node("idle", "anim.actor.jumpToState", { "default:state": "Idle" }),
     node("graph", "component.getNamed", {
       componentClassId: "AnimationGraphComponent",
       implicitSelf: true,
@@ -219,8 +219,8 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
     node("tick", "flow.event.tick"),
     node("state", "anim.actor.getCurrentState"),
     node("print", "debug.print", {
-      key: "anim-state",
-      duration: 30,
+      "default:key": "anim-state",
+      "default:duration": 30,
       developmentOnly: false,
     }),
   ];
@@ -380,9 +380,9 @@ test("D800: the authored trigger receives Begin Overlap when it is the second co
   graph.nodes = [
     node("overlap", "flow.event.beginOverlap", { componentId: "trigger" }),
     node("print", "debug.print", {
-      value: "OVERLAP",
-      key: "overlap",
-      duration: 30,
+      "default:value": "OVERLAP",
+      "default:key": "overlap",
+      "default:duration": 30,
       developmentOnly: false,
     }),
   ];

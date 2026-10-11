@@ -219,9 +219,9 @@ describe("physics nodes", () => {
       nodes: [
         node("begin", "flow.event.beginPlay"),
         node("trace", "physics.lineTrace", {
-          start: { x: 0, y: 10, z: 0 },
-          end: { x: 0, y: -1, z: 0 },
-          ...(drawDebug === undefined ? {} : { drawDebug }),
+          "default:start": { x: 0, y: 10, z: 0 },
+          "default:end": { x: 0, y: -1, z: 0 },
+          ...(drawDebug === undefined ? {} : { "default:drawDebug": drawDebug }),
         }),
         node("log", "debug.log"),
       ],

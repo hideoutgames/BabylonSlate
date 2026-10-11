@@ -111,7 +111,6 @@ describe("structured flow catalog", () => {
 
 describe("structured flow compile + runtime", () => {
   it.each([
-    { firstIndex: 0, lastIndex: 2 },
     { "default:firstIndex": 0, "default:lastIndex": 2 },
   ])(
     "compiles For Loop properties %j with index slots and completion",
@@ -124,7 +123,7 @@ describe("structured flow compile + runtime", () => {
           node(registry, "entry", "flow.entry"),
           node(registry, "loop", "flow.forLoop", properties),
           node(registry, "log", "debug.log"),
-          node(registry, "done", "debug.log", { message: "done" }),
+          node(registry, "done", "debug.log", { "default:message": "done" }),
         ],
         edges: [
           edge("e1", "entry", "execOut", "loop", "execIn"),
@@ -155,7 +154,7 @@ describe("structured flow compile + runtime", () => {
       kind: "event",
       nodes: [
         node(registry, "entry", "flow.entry"),
-        node(registry, "loop", "flow.forEach", { array: [3, 8, 11] }),
+        node(registry, "loop", "flow.forEach", { "default:array": [3, 8, 11] }),
         node(registry, "log", "debug.log"),
       ],
       edges: [
@@ -180,13 +179,13 @@ describe("structured flow compile + runtime", () => {
       nodes: [
         node(registry, "entry", "flow.entry"),
         node(registry, "loop", "flow.forEachWithBreak", {
-          array: ["a", "b", "c"],
+          "default:array": ["a", "b", "c"],
         }),
-        node(registry, "gt", "math.greater", { b: 0 }),
+        node(registry, "gt", "math.greater", { "default:b": 0 }),
         node(registry, "branch", "flow.branch"),
         node(registry, "brk", "flow.break"),
         node(registry, "log", "debug.log"),
-        node(registry, "done", "debug.log", { message: "done" }),
+        node(registry, "done", "debug.log", { "default:message": "done" }),
       ],
       edges: [
         edge("e1", "entry", "execOut", "loop", "execIn"),
@@ -217,14 +216,14 @@ describe("structured flow compile + runtime", () => {
       nodes: [
         node(registry, "entry", "flow.entry"),
         node(registry, "loop", "flow.forEachMap", {
-          map: [
+          "default:map": [
             ["k1", 9],
             ["k2", 2],
           ],
         }),
         node(registry, "log", "debug.log"),
         node(registry, "value", "debug.log"),
-        node(registry, "done", "debug.log", { message: "done" }),
+        node(registry, "done", "debug.log", { "default:message": "done" }),
       ],
       edges: [
         edge("e1", "entry", "execOut", "loop", "execIn"),
@@ -252,8 +251,8 @@ describe("structured flow compile + runtime", () => {
       nodes: [
         node(registry, "entry", "flow.entry"),
         node(registry, "loop", "flow.forLoop", {
-          firstIndex: 0,
-          lastIndex: 1,
+          "default:firstIndex": 0,
+          "default:lastIndex": 1,
         }),
         node(registry, "log", "debug.log"),
       ],
@@ -284,8 +283,8 @@ describe("structured flow compile + runtime", () => {
       kind: "event",
       nodes: [
         node(registry, "entry", "flow.entry"),
-        node(registry, "branch", "flow.branch", { condition: true }),
-        node(registry, "log", "debug.log", { message: "t" }),
+        node(registry, "branch", "flow.branch", { "default:condition": true }),
+        node(registry, "log", "debug.log", { "default:message": "t" }),
       ],
       edges: [
         edge("e1", "entry", "execOut", "branch", "execIn"),
@@ -302,8 +301,8 @@ describe("structured flow compile + runtime", () => {
       nodes: [
         node(registry, "entry", "flow.entry"),
         node(registry, "seq", "flow.sequence", { count: 2 }),
-        node(registry, "a", "debug.log", { message: "a" }),
-        node(registry, "b", "debug.log", { message: "b" }),
+        node(registry, "a", "debug.log", { "default:message": "a" }),
+        node(registry, "b", "debug.log", { "default:message": "b" }),
       ],
       edges: [
         edge("e1", "entry", "execOut", "seq", "execIn"),
@@ -325,8 +324,8 @@ describe("structured flow compile + runtime", () => {
       nodes: [
         node(registry, "entry", "flow.entry"),
         node(registry, "loop", "flow.forLoop", {
-          firstIndex: 0,
-          lastIndex: 0,
+          "default:firstIndex": 0,
+          "default:lastIndex": 0,
         }),
         node(registry, "log", "debug.log"),
       ],
@@ -347,18 +346,18 @@ describe("structured flow compile + runtime", () => {
       nodes: [
         node(registry, "entry", "flow.entry"),
         node(registry, "outer", "flow.forLoopWithBreak", {
-          firstIndex: 0,
-          lastIndex: 1,
+          "default:firstIndex": 0,
+          "default:lastIndex": 1,
         }),
         node(registry, "inner", "flow.forLoopWithBreak", {
-          firstIndex: 0,
-          lastIndex: 5,
+          "default:firstIndex": 0,
+          "default:lastIndex": 5,
         }),
-        node(registry, "gt", "math.greater", { b: 1 }),
+        node(registry, "gt", "math.greater", { "default:b": 1 }),
         node(registry, "branch", "flow.branch"),
         node(registry, "brk", "flow.break"),
         node(registry, "log", "debug.log"),
-        node(registry, "outerDone", "debug.log", { message: "outerDone" }),
+        node(registry, "outerDone", "debug.log", { "default:message": "outerDone" }),
       ],
       edges: [
         edge("e1", "entry", "execOut", "outer", "execIn"),
@@ -387,7 +386,7 @@ describe("structured flow compile + runtime", () => {
       nodes: [
         node(registry, "entry", "flow.entry"),
         node(registry, "once", "flow.doOnce"),
-        node(registry, "log", "debug.log", { message: "once" }),
+        node(registry, "log", "debug.log", { "default:message": "once" }),
       ],
       edges: [
         edge("e1", "entry", "execOut", "once", "execIn"),

@@ -102,6 +102,55 @@ describe("editor utility events", () => {
     ]);
   });
 
+  it("exports a custom event named with a reserved word under a declarable name", () => {
+    const registry = new NodeRegistry();
+    registry.register({
+      id: "flow.event.custom",
+      title: "Event Custom",
+      category: "flow",
+      pure: true,
+      pins: () => [pin("execOut", "then", "out", EXEC)],
+      codegen: () => {},
+    });
+    const compiled = compileGraph(
+      {
+        id: "g",
+        kind: "event",
+        nodes: [
+          { id: "a", typeId: "flow.event.custom", position: { x: 0, y: 0 }, pins: registry.get("flow.event.custom")!.pins({}), properties: { name: "default" } },
+        ],
+        edges: [],
+      },
+      { assetGuid: "a", registry },
+    );
+    expect(compiled.entryPoints).toEqual([expect.objectContaining({ name: "default_", event: "default" })]);
+    const exports = new Function(`${compiled.source.replace(/export function /g, "function ")}\nreturn { default_ };`)();
+    expect(typeof exports.default_).toBe("function");
+  });
+
+  it("compiles Call Custom Event and Call Parent Event where they are wired, never as entries", () => {
+    const registry = new NodeRegistry();
+    const callPins = () => [pin("execIn", "exec", "in", EXEC), pin("execOut", "then", "out", EXEC)];
+    registry.registerAll([
+      { id: "flow.event.beginPlay", title: "Begin Play", category: "flow", pure: true, pins: () => [pin("execOut", "then", "out", EXEC)], codegen: () => {} },
+      { id: "flow.event.call", title: "Call", category: "flow", pins: callPins, codegen: (ctx) => ctx.emit("ctx.call();") },
+      { id: "flow.event.callParent", title: "Call Parent", category: "flow", pins: callPins, codegen: (ctx) => ctx.emit("ctx.callParent();") },
+    ]);
+    const node = (id: string, typeId: string): GraphNode => ({ id, typeId, position: { x: 0, y: 0 }, pins: registry.get(typeId)!.pins({}), properties: {} });
+    const compiled = compileGraph(
+      {
+        id: "g",
+        kind: "event",
+        nodes: [node("begin", "flow.event.beginPlay"), node("call", "flow.event.call"), node("parent", "flow.event.callParent")],
+        edges: [{ id: "e", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "call", targetPinId: "execIn" }],
+      },
+      { assetGuid: "a", registry },
+    );
+    expect(compiled.entryPoints.map((point) => point.name)).toEqual(["onBeginPlay"]);
+    expect(compiled.source).toContain("ctx.call();");
+    expect(compiled.source).not.toContain("ctx.callParent();");
+  });
+
   it("maps Actor collision event nodes to ScriptHost events", () => {
     expect(EVENT_BY_TYPE_ID["flow.event.hit"]).toBe("onHit");
     expect(EVENT_BY_TYPE_ID["flow.event.beginOverlap"]).toBe("onBeginOverlap");

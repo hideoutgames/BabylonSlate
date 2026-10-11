@@ -1,0 +1,42 @@
+{
+  "id": "unknown-guid",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 11000,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": [],
+  "context": {
+    "knownGuids": [
+      "stats"
+    ],
+    "members": [
+      {
+        "id": "loadout",
+        "name": "Loadout",
+        "kind": "variable",
+        "classId": "Hero",
+        "typeId": "struct",
+        "typeClassId": "removed-structure"
+      }
+    ]
+  }
+}

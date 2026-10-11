@@ -67,12 +67,12 @@ describe("execution cycles", () => {
 
   it.each(["delay", "javascript", "function"])("awaits every iteration through a latent %s node", async (kind) => {
     const wait = kind === "delay"
-      ? node("wait", "timers.delay", { duration: 0.25 })
+      ? node("wait", "timers.delay", { "default:duration": 0.25 })
       : kind === "javascript"
         ? node("wait", "debug.executeJavaScript", { async: true, body: "await ctx.delay(0.25);" })
         : node("wait", "functions.call", { classId: "Waiter", functionName: "Wait", implicitSelf: true });
     const graph: LogicGraph = { id: "g", kind: "event", nodes: [
-      node("entry", "flow.entry"), node("repeat", "flow.doN", { n: 3 }), wait,
+      node("entry", "flow.entry"), node("repeat", "flow.doN", { "default:n": 3 }), wait,
       node("record", "debug.executeJavaScript", {
         inputs: [{ name: "counter", type: INT }], body: "ctx.values.push(counter);",
       }),
@@ -110,7 +110,7 @@ describe("execution cycles", () => {
       node("entry", "flow.entry"), node("sequence", "flow.sequence", { count: 3 }),
       node("gate", "flow.gate"),
       node("record", "debug.executeJavaScript", { body: "ctx.count++;" }),
-      node("switch", "flow.switchInt", { cases: [1], value: 1 }),
+      node("switch", "flow.switchInt", { cases: [1], "default:value": 1 }),
     ], edges: [
       edge("entry", "execOut", "sequence", "execIn"),
       edge("sequence", "then0", "gate", "open"),
@@ -127,7 +127,7 @@ describe("execution cycles", () => {
 
   it("Break exits its structured loop even when reached inside an execution cycle", () => {
     const graph: LogicGraph = { id: "g", kind: "event", nodes: [
-      node("entry", "flow.entry"), node("loop", "flow.forLoopWithBreak", { firstIndex: 0, lastIndex: 9 }),
+      node("entry", "flow.entry"), node("loop", "flow.forLoopWithBreak", { "default:firstIndex": 0, "default:lastIndex": 9 }),
       node("step", "debug.executeJavaScript", {
         outputs: [{ name: "again", type: BOOL }], body: "ctx.count++; again = ctx.count < 3;",
       }),
@@ -150,7 +150,7 @@ describe("execution cycles", () => {
   it.each([false, true])("checks runaway cycles even without emitted action statements (stripped=%s)", (stripped) => {
     const type = stripped ? "debug.log" : "flow.branch";
     const graph: LogicGraph = { id: "g", kind: "event", nodes: [
-      node("entry", "flow.entry"), node("repeat", type, { condition: true, developmentOnly: stripped }),
+      node("entry", "flow.entry"), node("repeat", type, { "default:condition": true, developmentOnly: stripped }),
     ], edges: [
       edge("entry", "execOut", "repeat", "execIn"),
       edge("repeat", stripped ? "execOut" : "true", "repeat", "execIn"),
