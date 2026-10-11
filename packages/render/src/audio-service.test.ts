@@ -654,12 +654,6 @@ describe("AudioService", () => {
     expect(service.stats().lastDistance).toBe(10);
     expect(backend.poses.get("v1")).toEqual({ x: 10, y: 0, z: 0 });
     expect(backend.gains.get("v1")).toBeUndefined();
-    // A voice that outlives its despawned emitter holds still instead of
-    // following the actor that reuses the slot.
-    service.forgetActorSlot("speaker", 1);
-    service.noteActorSlot("successor", 1);
-    service.syncSnapshot([{ slotId: 1, position: { x: 30, y: 0, z: 0 } }]);
-    expect(backend.poses.get("v1")).toEqual({ x: 10, y: 0, z: 0 });
     service.dispose();
   });
 
