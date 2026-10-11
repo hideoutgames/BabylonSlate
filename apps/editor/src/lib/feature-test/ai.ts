@@ -201,7 +201,6 @@ export async function placeFeatureTestAi(ctx: FeatureTestContext): Promise<void>
         bakeBoundsEnabled: true,
         bakeBoundsMin: navPoint(zone.at(-halfX, BAKE_MIN_Y, -halfZ)),
         bakeBoundsMax: navPoint(zone.at(halfX, BAKE_MAX_Y, halfZ)),
-        debugOverlay: false,
       }),
     ]),
   );
@@ -324,7 +323,11 @@ export function featureTestNavBakeInput(scene: SerializedScene): NavMeshGenerate
   parts.push(...staticBlockerBakeParts(scene.actors, "3d", bounds));
   return {
     ...mergeNavBakeMeshes(parts),
-    settings: { ...parseNavMeshSettings(navMesh.properties), supportDynamicObstacles: settings.supportDynamicObstacles },
+    settings: {
+      ...parseNavMeshSettings(navMesh.properties),
+      tiled: settings.tiled,
+      supportDynamicObstacles: settings.supportDynamicObstacles,
+    },
   };
 }
 

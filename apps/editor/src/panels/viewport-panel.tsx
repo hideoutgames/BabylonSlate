@@ -18,7 +18,6 @@ import {
   EDITOR_CANVAS_COLOR_SCHEME,
   NavMeshDebugOverlay,
   navDebugBlockersFromActors,
-  navmeshOverlayEnabled,
   selectionGizmoRoots,
   syncEditorPlayState,
   engineAdapterInfo,
@@ -380,7 +379,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const path =
       doc && isSceneWorkspaceKind(doc.ref.kind) ? doc.ref.path : null;
     const enabled = Boolean(
-      scene && (navmeshVisible || navmeshOverlayEnabled(scene)),
+      scene && (navmeshVisible || scene.settings.showNavmesh === true),
     );
     if (!overlay || !enabled || !scene) {
       overlay?.clear();

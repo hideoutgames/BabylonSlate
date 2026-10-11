@@ -11,7 +11,6 @@ import {
   NAVMESH_DEBUG_Y_OFFSET,
   NavMeshDebugOverlay,
   navDebugBlockersFromActors,
-  navmeshOverlayEnabled,
 } from "./nav-debug-overlay";
 import { createActor } from "@babylonslate/core";
 
@@ -159,46 +158,5 @@ describe("navmesh overlay helpers", () => {
         scale: [2, 4, 6],
       },
     ]);
-  });
-
-  it("enables the overlay from showNavmesh or a leftover debugOverlay flag", () => {
-    expect(
-      navmeshOverlayEnabled({
-        settings: { showNavmesh: false },
-        actors: [
-          createActor("nav", "Nav", {
-            components: [
-              {
-                id: "n",
-                classId: "NavMeshComponent",
-                properties: { debugOverlay: false },
-              },
-            ],
-          }),
-        ],
-      }),
-    ).toBe(false);
-    expect(
-      navmeshOverlayEnabled({
-        settings: { showNavmesh: true },
-        actors: [],
-      }),
-    ).toBe(true);
-    expect(
-      navmeshOverlayEnabled({
-        settings: {},
-        actors: [
-          createActor("nav", "Nav", {
-            components: [
-              {
-                id: "n",
-                classId: "NavMeshComponent",
-                properties: { debugOverlay: true },
-              },
-            ],
-          }),
-        ],
-      }),
-    ).toBe(true);
   });
 });

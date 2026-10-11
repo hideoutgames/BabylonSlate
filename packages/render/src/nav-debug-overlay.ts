@@ -52,20 +52,6 @@ export function navDebugBlockersFromActors(
   return poses;
 }
 
-export function navmeshOverlayEnabled(scene: {
-  settings: { showNavmesh?: boolean };
-  actors: readonly SerializedActor[];
-}): boolean {
-  if (scene.settings.showNavmesh === true) return true;
-  return scene.actors.some((actor) =>
-    actor.components.some(
-      (component) =>
-        component.classId === "NavMeshComponent" &&
-        component.properties.debugOverlay === true,
-    ),
-  );
-}
-
 /**
  * Editor and Play navmesh overlay. Recast has no published `@recast-navigation/babylon`
  * helper; primitives come from Recast `DebugDrawerUtils` and land as a Babylon mesh.
