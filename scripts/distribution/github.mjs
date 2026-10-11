@@ -6,7 +6,9 @@ export function githubClient({ repository = process.env.GITHUB_REPOSITORY, token
       method,
       headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", ...(body ? { "Content-Type": "application/json" } : {}), ...(contentType ? { "Content-Type": contentType } : {}) },
       body: bytes ?? (body ? JSON.stringify(body) : undefined),
-      signal: AbortSignal.timeout(120000),
+      // Metadata requests get two minutes; package uploads also get one second per MiB,
+      // so a slow but progressing upload is not aborted into a partial draft asset.
+      signal: AbortSignal.timeout(120000 + (bytes ? Math.ceil(bytes.byteLength / 1048576) * 1000 : 0)),
       redirect: "error",
     });
     if (optional && response.status === 404) return null;
