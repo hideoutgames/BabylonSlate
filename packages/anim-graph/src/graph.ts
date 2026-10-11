@@ -834,9 +834,6 @@ function parseAnimationObject(value: unknown): SerializedGraph {
     return {
       nodes: value.nodes.map((node) => ({ ...node, data: { ...node.data } })),
       edges: value.edges.map((edge) => ({ ...edge })),
-      ...(Array.isArray(value.members) ? { members: value.members } : {}),
-      ...(Array.isArray(value.components) ? { components: value.components } : {}),
-      ...(value.functionGraphs ? { functionGraphs: value.functionGraphs } : {}),
     };
   }
   return createDefaultAnimationObjectGraph();
