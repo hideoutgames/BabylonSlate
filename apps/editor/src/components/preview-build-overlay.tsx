@@ -35,6 +35,12 @@ import { SelectableText } from "@babylonslate/editor-kit";
 import { useDiagnosticResultsStore } from "../context/diagnostic-results-context";
 import { createPreviewDiagnostics } from "../services/preview-diagnostics";
 
+function sameNames(next: readonly string[] | undefined, previous: readonly string[] | undefined): boolean {
+  if (next === previous) return true;
+  if (!next || !previous || next.length !== previous.length) return false;
+  return next.every((name, index) => name === previous[index]);
+}
+
 export type PreviewBuildOverlayProps = {
   src: string;
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
@@ -243,10 +249,14 @@ export function PreviewBuildOverlay({
           ready.current = true;
           setUserCommands(data.commands);
         }
-        setContext((previous) => ({
-          scenes: data.scenes ?? previous.scenes,
-          actors: data.actors ?? previous.actors,
-        }));
+        // The open console polls this catalog; an unchanged list keeps the previous state.
+        setContext((previous) => {
+          const scenes = data.scenes ?? previous.scenes;
+          const actors = data.actors ?? previous.actors;
+          return sameNames(scenes, previous.scenes) && sameNames(actors, previous.actors)
+            ? previous
+            : { scenes, actors };
+        });
       }
       if (data?.type !== PREVIEW_CONSOLE_EVENT_MESSAGE) return;
       const command = data.command;
