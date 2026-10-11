@@ -48,8 +48,7 @@ describe("trace view helpers", () => {
     expect(asTracePayload({ ...payload, retention })?.retention).toEqual(retention);
     expect(asTracePayload({ ...payload, retention: null })).toBeNull();
     expect(asTracePayload({ ...payload, retention: undefined })).toBeNull();
-    const { timeDilation: _timeDilation, ...withoutDilation } = payload.frames[0]!;
-    expect(asTracePayload({ ...payload, frames: [withoutDilation] })).toBeNull();
+    expect(asTracePayload({ ...payload, frames: [{ ...payload.frames[0]!, timeDilation: undefined }] })).toBeNull();
     for (const invalid of [
       { byteBudget: -1 },
       { droppedFrames: 0.5 },
