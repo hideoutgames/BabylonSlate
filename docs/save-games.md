@@ -20,7 +20,7 @@ Save Games persist selected gameplay data independently of project files. A proj
 ## Author a definition
 
 1. In Content Browser, choose **New Asset → Scripting → Save Game**.
-2. In **Fields**, choose **Add Field** and enter a name, then select it in the searchable list. **Details** edits its Name, Type, Single/Array Container and Default Value, using the same controls as Class Variables. For a minimal example, create `coins` as Integer with default `0`, and `checkpoint` as String with default `start`. Array defaults use **Add Item** with reorder/remove controls.
+2. In **Fields**, choose **Add Field** and enter a name, then select it in the searchable list. **Details** edits its Name, Type, Single/Array Container and Default Value, using the same controls as Class Variables. Name accepts the same names as Add Field: an empty, duplicate or reserved name shows why under the field and is not saved. For a minimal example, create `coins` as Integer with default `0`, and `checkpoint` as String with default `start`. Array defaults use **Add Item** with reorder/remove controls.
 3. In **Details → Save Setup**, choose **Use As Project Default**. The same choice is available under **Project Settings → Save Games → Default Definition**.
 4. Keep the default profile and slot for a one-save game, or edit them in **Save Setup** for multiple characters and manual saves. Use **Set Save** field nodes to update progress, **Save Game** at checkpoints and **Load Game** before reading progress.
 
