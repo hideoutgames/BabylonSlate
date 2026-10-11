@@ -17,6 +17,14 @@ export interface TypeMigrationChain {
   migrations?: readonly MigrationFn[];
 }
 
+/**
+ * A stored schema version this engine refuses: older than any registered
+ * step reads, or newer than current. Its message is written for the user.
+ */
+export class AssetFormatVersionError extends Error {
+  override readonly name = "AssetFormatVersionError";
+}
+
 export class MigrationRegistry {
   private readonly chains = new Map<string, TypeMigrationChain>();
 
@@ -49,7 +57,7 @@ export class MigrationRegistry {
     }
     const current = chain.currentVersion;
     if (version > current) {
-      throw new Error(
+      throw new AssetFormatVersionError(
         `Asset type "${type}" version ${version} was made with a newer engine version (current ${current})`,
       );
     }
@@ -59,7 +67,7 @@ export class MigrationRegistry {
     const steps = chain.migrations ?? [];
     const oldest = current - steps.length;
     if (version < oldest) {
-      throw new Error(
+      throw new AssetFormatVersionError(
         `Asset type "${type}" version ${version} uses an unsupported old format. This engine reads version ${current}${oldest < current ? ` and upgrades from version ${oldest}` : ""}; older files are not upgraded.`,
       );
     }

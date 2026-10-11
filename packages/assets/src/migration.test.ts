@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SCENE_SCHEMA_VERSION } from "@babylonslate/core";
 import {
+  AssetFormatVersionError,
   MATERIAL_PAYLOAD_VERSION,
   MigrationRegistry,
   createDefaultMigrationRegistry,
@@ -77,14 +78,16 @@ describe("default migration registry", () => {
       ["ParticleSystem", 0],
     ] as const;
     for (const [type, version] of old) {
-      expect(() =>
+      const load = () =>
         loadPayloadWithMigration(registry, {
           type,
           version,
           payload: {},
           path: "assets/Old.babasset",
-        }),
-      ).toThrow(/unsupported old format/);
+        });
+      // The editor shows this error type's message to the user.
+      expect(load).toThrow(AssetFormatVersionError);
+      expect(load).toThrow(/unsupported old format/);
     }
   });
 

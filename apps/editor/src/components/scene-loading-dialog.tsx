@@ -26,6 +26,8 @@ export type SceneLoadingDialogProps = {
   finalFocus?: RefObject<HTMLElement | null>;
   /** Debug Mode only: builds the text **Copy Error** / **Copy Details** puts on the clipboard. */
   onCopyDetails?: () => string;
+  /** A user-facing failure reason (such as an unsupported file format) shown instead of the generic text. */
+  reason?: string;
 };
 
 /** Copies synchronously built text inside the tap and shows the result briefly. */
@@ -54,6 +56,7 @@ export function SceneLoadingDialog({
   onStop,
   finalFocus,
   onCopyDetails,
+  reason,
 }: SceneLoadingDialogProps) {
   return (
     <Dialog open={open} onOpenChange={() => {}}>
@@ -66,7 +69,9 @@ export function SceneLoadingDialog({
         {failed ? (
           <ProgressDialogFailure
             title={rendering ? "Rendering Update Failed" : "Scene Loading Failed"}
-            description={phase === "Loading Document"
+            description={reason
+              ? `${reason} Close this message to return to the current workspace.`
+              : phase === "Loading Document"
               ? "The scene document could not be read. Retry, or close this message to return to the current workspace."
               : "The viewport could not finish loading. Retry, or close this message to adjust the scene or rendering settings."}
             actions={(

@@ -189,6 +189,7 @@ import {
 import { readProjectJsonMtime, refreshMtimeSnapshotAfterEditorSave } from "../lib/external-change";
 import { ProjectSaveState } from "../lib/project-save-state";
 import {
+  AssetFormatVersionError,
   applyOwnAssetWrite,
   classifyExternalChanges,
   snapshotIndexedMtimes,
@@ -4204,6 +4205,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
                             failed={sceneDocumentLoad?.failed}
                             onRetry={() => { if (sceneDocumentLoad) void finishOpenDocument(sceneDocumentLoad.ref); }}
                             onDismiss={cancelSceneDocumentLoad}
+                            reason={sceneDocumentLoad?.error instanceof AssetFormatVersionError ? sceneDocumentLoad.error.message : undefined}
                             onCopyDetails={debugMode && sceneDocumentLoad ? () => formatSceneLoadReport({
                               surface: "Scene Document", scene: sceneDocumentLoad.ref.path, phase: "Loading Document",
                               progress: null, failed: sceneDocumentLoad.failed, elapsedMs: null, error: sceneDocumentLoad.error,
