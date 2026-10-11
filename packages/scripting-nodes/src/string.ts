@@ -221,8 +221,10 @@ export const stringNodes: NodeDefinition[] = [
       pin("replacement", "Replacement", "in", STRING),
       pin("out", "Out", "out", STRING),
     ],
+    // An empty Search leaves In unchanged; replaceAll("") would insert the
+    // replacement at every character boundary.
     codegen: (ctx) => ({
-      out: `(String(${ctx.input("in")}).replaceAll(String(${ctx.input("search")}), String(${ctx.input("replacement")})))`,
+      out: `((s, f, r) => f === "" ? s : s.replaceAll(f, r))(String(${ctx.input("in")}), String(${ctx.input("search")}), String(${ctx.input("replacement")}))`,
     }),
   },
   {
