@@ -1,79 +1,32 @@
 import type { SerializedGraph } from "@babylonslate/core";
-import type { LogicGraph, GraphNode, GraphEdge } from "./ir";
-import { BOOL, EXEC, STRING, type PinType } from "./types";
-import { pin } from "./node-registry";
+import type { LogicGraph, GraphNode, GraphEdge, GraphPin } from "./ir";
+import { STRING, type PinType } from "./types";
 
 /**
- * Adapt legacy SerializedGraph (no pin ends) into LogicGraph.
- * logMessage nodes become debug.log with a string message property.
+ * Read a saved graph: node pins come from `data.__pins` and every wire from
+ * its `sourceHandle` / `targetHandle`. A wire without a handle keeps an empty
+ * pin id, which validation reports as `ref.missing_pin`.
  */
 export function fromSerializedGraph(
   graph: SerializedGraph,
   id = "main",
   kind: LogicGraph["kind"] = "event",
 ): LogicGraph {
-  const nodes: GraphNode[] = graph.nodes.map((n) => {
-    if (n.type === "logMessage" || n.type === "debug.log") {
-      const data = (n.data ?? {}) as Record<string, unknown>;
-      return {
-        id: n.id,
-        typeId: "debug.log",
-        position: n.position,
-        pins: [
-          pin("execIn", "exec", "in", EXEC),
-          pin("execOut", "then", "out", EXEC),
-          pin("message", "message", "in", STRING, "data", true),
-        ],
-        properties: {
-          ...data,
-          message: String(data["default:message"] ?? data.message ?? ""),
-          severity: data.severity ?? "log",
-          category: data.category ?? "Script",
-        },
-      };
-    }
-    return {
-      id: n.id,
-      typeId: n.type,
-      position: n.position,
-      pins: inferPinsFromData(n.data),
-      properties: { ...(n.data as Record<string, unknown>) },
-    };
-  });
-
-  // Legacy edges lack pin ids — connect first exec out → first exec in when both exist.
-  const edges: GraphEdge[] = graph.edges.map((e, i) => {
-    const source = nodes.find((n) => n.id === e.source);
-    const target = nodes.find((n) => n.id === e.target);
-    const sourcePin =
-      source?.pins.find((p) => p.kind === "exec" && p.direction === "out") ??
-      source?.pins.find((p) => p.direction === "out");
-    const targetPin =
-      target?.pins.find((p) => p.kind === "exec" && p.direction === "in") ??
-      target?.pins.find((p) => p.direction === "in");
-    return {
-      id: e.id || `e${i}`,
-      sourceNodeId: e.source,
-      sourcePinId: sourcePin?.id ?? "out",
-      targetNodeId: e.target,
-      targetPinId: targetPin?.id ?? "in",
-    };
-  });
-
+  const nodes: GraphNode[] = graph.nodes.map((n) => ({
+    id: n.id,
+    typeId: n.type,
+    position: n.position,
+    pins: Array.isArray(n.data.__pins) ? (n.data.__pins as GraphPin[]) : [],
+    properties: { ...n.data },
+  }));
+  const edges: GraphEdge[] = graph.edges.map((e, i) => ({
+    id: e.id || `e${i}`,
+    sourceNodeId: e.source,
+    sourcePinId: e.sourceHandle ?? "",
+    targetNodeId: e.target,
+    targetPinId: e.targetHandle ?? "",
+  }));
   return { id, kind, nodes, edges };
-}
-
-function inferPinsFromData(
-  data: Record<string, unknown>,
-): GraphNode["pins"] {
-  const pins = [
-    pin("execIn", "exec", "in", EXEC),
-    pin("execOut", "then", "out", EXEC),
-  ];
-  if (typeof data.condition === "boolean") {
-    pins.push(pin("condition", "condition", "in", BOOL));
-  }
-  return pins;
 }
 
 export function toSerializedGraph(graph: LogicGraph): SerializedGraph {
@@ -91,14 +44,6 @@ export function toSerializedGraph(graph: LogicGraph): SerializedGraph {
       sourceHandle: e.sourcePinId,
       targetHandle: e.targetPinId,
     })),
-  } as SerializedGraph & {
-    edges: Array<{
-      id: string;
-      source: string;
-      target: string;
-      sourceHandle?: string;
-      targetHandle?: string;
-    }>;
   };
 }
 

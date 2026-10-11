@@ -138,7 +138,7 @@ describe("actor nodes", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "spawn", "actor.spawn", { classId: "Child" }),
+        node(registry, "spawn", "actor.spawn", { "default:classId": "Child" }),
       ],
       edges: [
         {
@@ -187,7 +187,7 @@ describe("actor nodes", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "spawn", "actor.spawn", { classId: "Child" }),
+        node(registry, "spawn", "actor.spawn", { "default:classId": "Child" }),
       ],
       edges: [
         {

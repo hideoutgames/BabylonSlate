@@ -132,7 +132,7 @@ describe("compiled runtime input rebinding", () => {
       runtime,
       [
         node("any", "input.onAnyKeyPressed"),
-        node("set", "input.setActionBinding", { binding }),
+        node("set", "input.setActionBinding", { "default:binding": binding }),
         node("log", "debug.log"),
       ],
       [
@@ -197,11 +197,11 @@ describe("compiled runtime input rebinding", () => {
       [
         node("begin", "flow.event.beginPlay"),
         node("add", "input.addAxisBinding", {
-          input: move,
-          key: "KeyS",
-          binding: { Component: "Y", DigitalValue: -1, Scale: 0.5 },
+          "default:input": move,
+          "default:key": "KeyS",
+          "default:binding": { Component: "Y", DigitalValue: -1, Scale: 0.5 },
         }),
-        node("remove", "input.removeAxisBinding", { input: move, key: "KeyW" }),
+        node("remove", "input.removeAxisBinding", { "default:input": move, "default:key": "KeyW" }),
         node("export", "input.exportBindings"),
         node("log", "debug.log"),
       ],
@@ -230,7 +230,7 @@ describe("compiled runtime input rebinding", () => {
       restored,
       [
         node("begin", "flow.event.beginPlay"),
-        node("import", "input.importBindings", { data: saved }),
+        node("import", "input.importBindings", { "default:data": saved }),
       ],
       [edge("begin", "execOut", "import", "execIn")],
     );

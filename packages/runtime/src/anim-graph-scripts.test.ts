@@ -219,7 +219,7 @@ describe("runtime AnimationGraph scripts", () => {
         node(registry, "enter-state", "anim.rule.enterState"),
         node(registry, "exit-state", "anim.rule.exitState"),
         node(registry, "exit-time", "anim.state.exitTimeReached", {
-          exitTime: 0.95,
+          "default:exitTime": 0.95,
         }),
       ],
       edges: [
@@ -313,7 +313,7 @@ describe("runtime AnimationGraph scripts", () => {
         node(registry, "tick", "input.actionEvent", {
           "default:binding": { Input: { Name: "Jump", Asset: "jump" } },
         }),
-        node(registry, "jump", "anim.actor.jumpToState", { state: "Walk" }),
+        node(registry, "jump", "anim.actor.jumpToState", { "default:state": "Walk" }),
         node(registry, "graph", "component.getNamed", {
           componentClassId: "AnimationGraphComponent",
           implicitSelf: true,
@@ -520,7 +520,7 @@ describe("runtime AnimationGraph scripts", () => {
       kind: "event",
       nodes: [
         node(registry, "tick", "flow.event.tick"),
-        node(registry, "jump", "anim.actor.jumpToState", { state: "Dash" }),
+        node(registry, "jump", "anim.actor.jumpToState", { "default:state": "Dash" }),
         node(registry, "graph", "variables.get", {
           variableName: "Second Graph",
           typeId: "object",

@@ -24,64 +24,53 @@ import {
   BOOL,
 } from "./index";
 import type { SerializedGraph } from "@babylonslate/core";
+import type { LogicGraph } from "./ir";
 
 describe("serialize adapter", () => {
-  it("round-trips legacy logMessage graphs", () => {
-    const legacy: SerializedGraph = {
+  it("round-trips pins and wire handles, keeping wires on their own exec outputs", () => {
+    const logic: LogicGraph = {
+      id: "main",
+      kind: "event",
       nodes: [
         {
-          id: "log-1",
-          type: "logMessage",
-          position: { x: 1, y: 2 },
-          data: { message: "hi" },
-        },
-      ],
-      edges: [],
-    };
-    const logic = fromSerializedGraph(legacy, "main");
-    expect(logic.nodes[0]?.typeId).toBe("debug.log");
-    expect(isLogicGraphPayload(logic)).toBe(true);
-    const back = toSerializedGraph(logic);
-    expect(back.nodes[0]?.type).toBe("debug.log");
-  });
-
-  it("maps legacy edges without handles", () => {
-    const legacy: SerializedGraph = {
-      nodes: [
-        {
-          id: "a",
-          type: "flow.entry",
+          id: "branch",
+          typeId: "flow.branch",
           position: { x: 0, y: 0 },
-          data: {},
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("condition", "condition", "in", BOOL),
+            pin("true", "true", "out", EXEC),
+            pin("false", "false", "out", EXEC),
+          ],
+          properties: { "default:condition": true },
         },
-        {
-          id: "b",
-          type: "debug.log",
-          position: { x: 1, y: 0 },
-          data: { message: "x" },
-        },
-      ],
-      edges: [{ id: "e", source: "a", target: "b" }],
-    };
-    const logic = fromSerializedGraph(legacy);
-    expect(logic.edges[0]?.sourceNodeId).toBe("a");
-    expect(logic.edges[0]?.targetNodeId).toBe("b");
-  });
-
-  it("keeps authored default:message on debug.log nodes", () => {
-    const logic = fromSerializedGraph({
-      nodes: [
         {
           id: "log",
-          type: "debug.log",
-          position: { x: 0, y: 0 },
-          data: { "default:message": "hud-clicked" },
+          typeId: "debug.log",
+          position: { x: 200, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("message", "message", "in", STRING),
+          ],
+          properties: {},
         },
       ],
-      edges: [],
-    });
-    expect(logic.nodes[0]?.properties["default:message"]).toBe("hud-clicked");
-    expect(logic.nodes[0]?.properties.message).not.toBe("");
+      edges: [
+        {
+          id: "e",
+          sourceNodeId: "branch",
+          sourcePinId: "false",
+          targetNodeId: "log",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const back = fromSerializedGraph(toSerializedGraph(logic));
+    expect(back.edges).toEqual(logic.edges);
+    expect(back.nodes.map((node) => node.pins)).toEqual(logic.nodes.map((node) => node.pins));
+    expect(back.nodes[0]?.typeId).toBe("flow.branch");
+    expect(back.nodes[0]?.properties["default:condition"]).toBe(true);
+    expect(isLogicGraphPayload(back)).toBe(true);
   });
 
   it("compiles a function graph slice as kind function", () => {

@@ -35,7 +35,7 @@ describe("render nodes", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "res", "render.setResolution", { width: 1280, height: 720 }),
+        node(registry, "res", "render.setResolution", { "default:width": 1280, "default:height": 720 }),
       ],
       edges: [
         {

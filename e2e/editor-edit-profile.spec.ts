@@ -140,7 +140,7 @@ function classGraph(): SerializedGraph {
       id: `print-${index}`,
       type: "debug.print",
       position: { x: index * GRAPH_COLUMN_PITCH, y: 0 },
-      data: { key: `value-${index}`, duration: 30 },
+      data: { "default:key": `value-${index}`, "default:duration": 30 },
     });
     edges.push(
       {

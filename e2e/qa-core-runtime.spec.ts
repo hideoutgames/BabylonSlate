@@ -55,7 +55,7 @@ for (const preview of [true]) {
         {
           id: "print",
           type: "debug.print",
-          data: { key: "spawned", duration: 30 },
+          data: { "default:key": "spawned", "default:duration": 30 },
           position: { x: 600, y: 0 },
         },
       ],

@@ -36,7 +36,7 @@ describe("Save Game graph execution", () => {
   });
 
   it("passes explicit slots/profiles and leaves default selection to the service", async () => {
-    const run = compile([node("entry", "flow.entry"), node("first", "saveGame.saveGame", { slot: "checkpoint", profile: "player-2" }),
+    const run = compile([node("entry", "flow.entry"), node("first", "saveGame.saveGame", { "default:slot": "checkpoint", "default:profile": "player-2" }),
       node("default", "saveGame.loadGame")], [edge("entry", "execOut", "first", "execIn"), edge("first", "completed", "default", "execIn")]);
     const saved: unknown[] = [];
     await run({ saveGame: async (options: unknown) => { saved.push(options); return { ok: true, value: {} }; },

@@ -26,7 +26,7 @@ const inputGraph = (guids: Record<string, string>): SerializedGraph => ({
       id: `${action}-print`,
       type: "debug.print",
       position: { x: 360, y: index * 160 },
-      data: { value: action, key: action, duration: 1 },
+      data: { "default:value": action, "default:key": action, "default:duration": 1 },
     },
   ]),
   edges: ["Jump", "Fire", "Confirm"].map((action) => ({

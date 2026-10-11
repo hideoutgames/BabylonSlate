@@ -24,7 +24,7 @@ test("H10: one Undo restores a deleted graph node and its edge", async ({
         id: "print",
         type: "debug.print",
         position: { x: 360, y: 80 },
-        data: { value: "History control", key: "history", duration: 1 },
+        data: { "default:value": "History control", "default:key": "history", "default:duration": 1 },
       },
     ],
     edges: [

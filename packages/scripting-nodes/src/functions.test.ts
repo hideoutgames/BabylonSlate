@@ -185,7 +185,7 @@ describe("functions.call", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "spawn", "actor.spawn", { classId: "Guard" }),
+        node(registry, "spawn", "actor.spawn", { "default:classId": "Guard" }),
         node(registry, "call", "functions.call", {
           functionName: "Alert",
           classId: "Guard",

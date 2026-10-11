@@ -102,7 +102,7 @@ describe("compiler emits runnable JavaScript", () => {
           registry,
           "js1",
           "debug.executeJavaScript",
-          jsProps("first = value + 1;", "first", { value: 1 }),
+          jsProps("first = value + 1;", "first", { "default:in_value": 1 }),
         ),
         node(
           registry,
@@ -144,7 +144,7 @@ describe("compiler emits runnable JavaScript", () => {
           "debug.executeJavaScript",
           jsProps("out = await Promise.resolve(value + 5);", "out", {
             async: true,
-            value: 2,
+            "default:in_value": 2,
           }),
         ),
         node(registry, "log", "debug.log"),
@@ -177,7 +177,7 @@ describe("compiler emits runnable JavaScript", () => {
         node(registry, "entry", "flow.entry"),
         node(registry, "seq", "flow.sequence", { count: 2 }),
         node(registry, "cmd", "debug.executeConsoleCommand", {
-          command: "stat fps",
+          "default:command": "stat fps",
         }),
         node(registry, "log", "debug.log"),
       ],
@@ -212,9 +212,9 @@ describe("compiler emits runnable JavaScript", () => {
       nodes: [
         node(registry, "entry", "flow.entry"),
         node(registry, "cmd", "debug.executeConsoleCommand", {
-          command: "warmup",
+          "default:command": "warmup",
         }),
-        node(registry, "branch", "flow.branch", { condition: true }),
+        node(registry, "branch", "flow.branch", { "default:condition": true }),
         node(registry, "log", "debug.log"),
       ],
       edges: [
@@ -304,7 +304,7 @@ describe("compiler emits runnable JavaScript", () => {
       kind: "event",
       nodes: [
         node(registry, "hit", "flow.event.custom", { name: "On Hit" }),
-        node(registry, "log", "debug.log", { message: "hit" }),
+        node(registry, "log", "debug.log", { "default:message": "hit" }),
       ],
       edges: [edge("e1", "hit", "execOut", "log", "execIn")],
     };
@@ -347,7 +347,7 @@ describe("compiler emits runnable JavaScript", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "spawn", "actor.spawn", { classId: "Guard" }),
+        node(registry, "spawn", "actor.spawn", { "default:classId": "Guard" }),
         node(registry, "call", "flow.event.call", {
           name: "On Alert",
           classId: "Guard",

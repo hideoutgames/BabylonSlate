@@ -150,7 +150,7 @@ describe("Game Instance native events and scene APIs", () => {
           kind: "event",
           nodes: [
             node(registry, "begin", "flow.event.beginPlay"),
-            node(registry, "log", "debug.log", { message: "begin-play" }),
+            node(registry, "log", "debug.log", { "default:message": "begin-play" }),
           ],
           edges: [edge("e1", "begin", "execOut", "log", "execIn")],
         },

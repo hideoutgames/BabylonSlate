@@ -39,7 +39,7 @@ for (const preview of [false]) {
         event!,
         { id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
         { id: "call", type: "flow.event.call", position: { x: 300, y: 0 }, data: { name: "Ping", implicitSelf: true, pins: [] } },
-        { id: "print", type: "debug.print", position: { x: 300, y: 180 }, data: { value: "PING_CALLED", key: "ping", duration: 30 } },
+        { id: "print", type: "debug.print", position: { x: 300, y: 180 }, data: { "default:value": "PING_CALLED", "default:key": "ping", "default:duration": 30 } },
       ],
       edges: [
         { id: "begin-call", source: "begin", sourceHandle: "execOut", target: "call", targetHandle: "execIn" },

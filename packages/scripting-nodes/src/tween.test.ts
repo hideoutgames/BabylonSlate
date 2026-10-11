@@ -21,8 +21,8 @@ function floatGraph(registry: NodeRegistry, properties: Record<string, unknown> 
     id: "g", kind: "event",
     nodes: [node(registry, "entry", "flow.entry"),
       node(registry, "variable", "variables.get", { variableName: "Amount", typeId: "float", implicitSelf: true, ...properties }),
-      node(registry, "tween", "tween.float", { a: 2, b: 8 }),
-      node(registry, "done", "debug.log", { message: "completed" })],
+      node(registry, "tween", "tween.float", { "default:a": 2, "default:b": 8 }),
+      node(registry, "done", "debug.log", { "default:message": "completed" })],
     edges: [edge("entry", "execOut", "tween", "execIn"), edge("variable", "value", "tween", "target"), edge("tween", "execOut", "done", "execIn")],
   };
 }
@@ -64,7 +64,7 @@ describe("Tween compilation", () => {
   it("keeps each local's reference stable across tweens and isolated between invocations", async () => {
     const registry = createDefaultNodeRegistry();
     const graph = floatGraph(registry, { scope: "local" });
-    graph.nodes.push(node(registry, "again", "tween.float", { a: 8, b: 12 }));
+    graph.nodes.push(node(registry, "again", "tween.float", { "default:a": 8, "default:b": 12 }));
     graph.nodes.find((entry) => entry.id === "done")!.properties = {};
     graph.edges = graph.edges.filter((entry) => entry.sourceNodeId !== "tween");
     graph.edges.push(edge("tween", "execOut", "again", "execIn"), edge("variable", "value", "again", "target"),
@@ -89,7 +89,7 @@ describe("Tween compilation", () => {
   it("skips canceled Completed paths while preserving sibling Sequence outputs", async () => {
     const registry = createDefaultNodeRegistry();
     const graph = floatGraph(registry);
-    graph.nodes.push(node(registry, "sequence", "flow.sequence"), node(registry, "sibling", "debug.log", { message: "sibling" }));
+    graph.nodes.push(node(registry, "sequence", "flow.sequence"), node(registry, "sibling", "debug.log", { "default:message": "sibling" }));
     graph.edges = graph.edges.filter((entry) => entry.sourceNodeId !== "entry");
     graph.edges.push(edge("entry", "execOut", "sequence", "execIn"), edge("sequence", "then0", "tween", "execIn"), edge("sequence", "then1", "sibling", "execIn"));
     const logs: string[] = [];
@@ -124,7 +124,7 @@ describe("Tween compilation", () => {
       : { x: 0, y: 0, z: 0, w: 1 };
     const b = valueType === "float" ? 1 : a;
     const graph: LogicGraph = { id: "g", kind: "event", nodes: [node(registry, "entry", "flow.entry"),
-      node(registry, "tween", typeId!, { a, b, ...(space === "world" ? { space } : {}) })],
+      node(registry, "tween", typeId!, { "default:a": a, "default:b": b, ...(space === "world" ? { "default:space": space } : {}) })],
       edges: [edge("entry", "execOut", "tween", "execIn")] };
     const calls: unknown[][] = [];
     await load(graph, registry)({ tweenProperty: async (...args: unknown[]) => { calls.push(args); return true; } });

@@ -155,7 +155,7 @@ describe("editor utility ScriptHost events", () => {
               id: "log",
               type: "debug.log",
               position: { x: 200, y: 0 },
-              data: { message: "editor-up", category: "Editor" },
+              data: { "default:message": "editor-up", category: "Editor" },
             },
           ],
           edges: [
