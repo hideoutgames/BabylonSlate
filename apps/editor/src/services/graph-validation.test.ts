@@ -171,7 +171,7 @@ describe("hydrateSerializedGraphForEditor", () => {
     });
   });
 
-  it("titles Call Parent from eventType and the name fallback", () => {
+  it("titles Call Parent from eventType and eventName", () => {
     const graph: SerializedGraph = {
       nodes: [
         {
@@ -189,7 +189,7 @@ describe("hydrateSerializedGraphForEditor", () => {
           position: { x: 0, y: 80 },
           data: {
             eventType: "flow.event.custom",
-            name: "on hit",
+            eventName: "on hit",
             parentClassId: "Actor",
           },
         },
@@ -201,7 +201,6 @@ describe("hydrateSerializedGraphForEditor", () => {
     expect(hydrated.nodes[1]?.data).toMatchObject({
       title: "Call On Hit Parent",
       eventName: "On Hit",
-      name: "On Hit",
     });
   });
 

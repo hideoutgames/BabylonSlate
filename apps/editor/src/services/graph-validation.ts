@@ -789,16 +789,9 @@ export function hydrateSerializedGraphForEditor(
         const eventType =
           typeof properties.eventType === "string" ? properties.eventType : "";
         const rawName =
-          typeof properties.eventName === "string"
-            ? properties.eventName
-            : typeof properties.name === "string"
-              ? properties.name
-              : "";
+          typeof properties.eventName === "string" ? properties.eventName : "";
         const bodyName = formatEventMemberName(rawName);
-        if (bodyName) {
-          properties.eventName = bodyName;
-          properties.name = bodyName;
-        }
+        if (bodyName) properties.eventName = bodyName;
         const label =
           eventType && eventType !== "flow.event.custom"
             ? formatEventMemberName(

@@ -911,10 +911,6 @@ export function ensureCallParentForEvent(
                 : formatEventMemberName(
                     NATIVE_EVENT_TITLES[options.eventType] ?? options.eventType,
                   ),
-            name:
-              options.eventType === "flow.event.custom"
-                ? formatEventMemberName(options.eventName ?? "Event")
-                : undefined,
             parentClassId,
             pins,
             __nodeType: "flow.event.callParent",
@@ -1052,12 +1048,12 @@ function syncEventPins(
   return {
     ...graph,
     nodes: graph.nodes.map((node) => {
+      // Call Parent names its event in `eventName`; the event and Call Custom
+      // Event use `name`.
+      const rawName =
+        node.type === "flow.event.callParent" ? node.data.eventName : node.data.name;
       const nodeName =
-        typeof node.data.name === "string"
-          ? formatEventMemberName(node.data.name)
-          : typeof node.data.eventName === "string"
-            ? formatEventMemberName(node.data.eventName)
-            : "";
+        typeof rawName === "string" ? formatEventMemberName(rawName) : "";
       const isEvent =
         node.type === "flow.event.custom" &&
         (node.id === member.id || nodeName === memberName);
@@ -1076,7 +1072,6 @@ function syncEventPins(
       }
       if (isCallParent) {
         nextData.eventName = memberName;
-        nextData.name = memberName;
         nextData.title = `Call ${memberName} Parent`;
       }
       delete nextData.__pins;
