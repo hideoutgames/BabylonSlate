@@ -62,7 +62,7 @@ export const dataNodes: NodeDefinition[] = [
       const path = ctx.input("entryPath");
       return {
         paths: `ctx.data.${operation}(${tree}, ${path})`,
-        found: `(${path} === "" ? ctx.data.hasTree(${tree}) : ctx.data.hasEntry(${tree}, ${path}))`,
+        found: `((t, p) => (p === "" ? ctx.data.hasTree(t) : ctx.data.hasEntry(t, p)))(${tree}, ${path})`,
       };
     },
   })),

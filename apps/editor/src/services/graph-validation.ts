@@ -390,7 +390,7 @@ function castPinProperties(
   const wiredClassId = connectedCastClassId(graph, nodeId, nodeRegistry);
   const resultClassId = wiredClassId ?? defaultClassId;
   properties.resultKind = resultKindForClass(resultClassId, parentOf);
-  return { pinProperties: { ...properties, defaultClassId: resultClassId }, wiredClassId };
+  return { pinProperties: { ...properties, "default:class": resultClassId }, wiredClassId };
 }
 
 /**

@@ -5,7 +5,10 @@ import {
   objectRef,
 } from "@babylonslate/scripting";
 import {
+  CALL_PIN_IDS,
+  assignResultFields,
   jsIdent,
+  memberArgPinId,
   memberPinRows,
   objectLiteralKey,
   type MemberPinRow,
@@ -39,7 +42,7 @@ export const functionCallNodes: NodeDefinition[] = [
           .filter((row) => (row.direction === "out" ? "out" : "in") === direction)
           .map((row) =>
             pin(
-              row.name,
+              memberArgPinId(row.name, CALL_PIN_IDS),
               row.name,
               direction,
               row.typeId === "exec" ? EXEC : pinTypeForVariable(row),
@@ -68,7 +71,7 @@ export const functionCallNodes: NodeDefinition[] = [
           : "";
       const functionName = runtime || jsIdent(raw);
       const targetPin = ctx.node.pins.find(
-        (entry) => entry.name === "target" && entry.direction === "in",
+        (entry) => entry.id === "target" && entry.direction === "in",
       );
       const targetConnected =
         !!targetPin &&
@@ -94,11 +97,11 @@ export const functionCallNodes: NodeDefinition[] = [
         if (
           pinDef.direction !== "in" ||
           pinDef.kind === "exec" ||
-          pinDef.name === "target"
+          pinDef.id === "target"
         ) {
           continue;
         }
-        args.push(`${objectLiteralKey(pinDef.name)}: ${ctx.input(pinDef.name)}`);
+        args.push(`${objectLiteralKey(pinDef.name)}: ${ctx.input(pinDef.id)}`);
       }
       const latent =
         !runtime && ctx.isLatentFunction?.(classId, functionName) === true;
@@ -114,13 +117,10 @@ export const functionCallNodes: NodeDefinition[] = [
         ctx.emit(`${call};`);
         return;
       }
-      const assigns = outPins
-        .map(
-          (pinDef) =>
-            `${objectLiteralKey(pinDef.name)}: ${ctx.output(pinDef.name)}`,
-        )
-        .join(", ");
-      ctx.emit(`({ ${assigns} } = ${call} ?? {});`);
+      ctx.emit(assignResultFields(
+        outPins.map((pinDef) => ({ key: pinDef.name, slot: ctx.output(pinDef.id), type: pinDef.type })),
+        call,
+      ));
     },
   },
 ];

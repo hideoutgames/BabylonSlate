@@ -10,6 +10,22 @@ import {
   arrayOf,
 } from "@babylonslate/scripting";
 
+/**
+ * A navigation point query: the host returns null on a miss. Found reports
+ * the miss and the Vector3 output stays a zero vector, never null.
+ */
+function emitNavPoint(
+  ctx: Parameters<NodeDefinition["codegen"]>[0],
+  pointPin: string,
+  query: string,
+): void {
+  const point = ctx.output(pointPin);
+  const found = ctx.output("found");
+  ctx.emit(
+    `{ const __point = ${query}; ${found} = __point != null; ${point} = __point ?? { x: 0, y: 0, z: 0 }; }`,
+  );
+}
+
 /** Navigation query and crowd nodes — sync on the calling execution pin (P11). */
 export const navigationNodes: NodeDefinition[] = [
   {
@@ -84,11 +100,10 @@ export const navigationNodes: NodeDefinition[] = [
       pin("execOut", "then", "out", EXEC),
       pin("point", "point", "in", VEC3),
       pin("closest", "closest", "out", VEC3),
+      pin("found", "Found", "out", BOOL),
     ],
     codegen: (ctx) => {
-      ctx.emit(
-        `${ctx.output("closest")} = ctx.getClosestNavigablePoint(${ctx.input("point")});`,
-      );
+      emitNavPoint(ctx, "closest", `ctx.getClosestNavigablePoint(${ctx.input("point")})`);
     },
   },
   {
@@ -101,11 +116,10 @@ export const navigationNodes: NodeDefinition[] = [
       pin("center", "center", "in", VEC3),
       pin("radius", "radius", "in", FLOAT),
       pin("point", "point", "out", VEC3),
+      pin("found", "Found", "out", BOOL),
     ],
     codegen: (ctx) => {
-      ctx.emit(
-        `${ctx.output("point")} = ctx.getRandomPointInRadius(${ctx.input("center")}, ${ctx.input("radius")});`,
-      );
+      emitNavPoint(ctx, "point", `ctx.getRandomPointInRadius(${ctx.input("center")}, ${ctx.input("radius")})`);
     },
   },
   {

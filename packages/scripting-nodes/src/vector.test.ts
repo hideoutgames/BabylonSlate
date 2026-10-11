@@ -124,4 +124,72 @@ describe("vector nodes", () => {
     });
     expect(logs).toEqual(["0"]);
   });
+
+  it.each([
+    ["vector.make2", "vector.normalize2", ["x", "y"]],
+    ["vector.make3", "vector.normalize3", ["x", "y", "z"]],
+    ["vector.make4", "vector.normalize4", ["x", "y", "z", "w"]],
+  ] as const)("%s → %s reads a changing input once for a unit result", (makeId, normalizeId, axes) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "norm",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        ...axes.map((axis) => node(registry, `r${axis}`, "math.random")),
+        node(registry, "make", makeId),
+        node(registry, "norm", normalizeId),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        ...axes.map((axis) => ({ id: `w${axis}`, sourceNodeId: `r${axis}`, sourcePinId: "out", targetNodeId: "make", targetPinId: axis })),
+        { id: "e2", sourceNodeId: "make", sourcePinId: "out", targetNodeId: "norm", targetPinId: "v" },
+        { id: "e3", sourceNodeId: "norm", sourcePinId: "out", targetNodeId: "log", targetPinId: "message" },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    let sample = 0;
+    const logged: Array<Record<string, number>> = [];
+    (loadModule(compiled.source).onBeginPlay as (ctx: unknown) => void)({
+      random: { float: () => (sample += 1) },
+      formatValue: (value: Record<string, number>) => value,
+      log: (_severity: string, _category: string, value: Record<string, number>) => logged.push(value),
+    });
+    expect(sample).toBe(axes.length);
+    expect(Math.hypot(...axes.map((axis) => logged[0]![axis]!))).toBeCloseTo(1, 12);
+  });
+
+  it.each([
+    ["vector.add3", "a"], ["vector.sub3", "a"], ["vector.mul3", "b"], ["vector.div3", "a"],
+    ["vector.scale3", "v"], ["vector.dot3", "b"], ["vector.cross3", "a"], ["vector.length3", "v"],
+    ["vector.lengthSquared3", "v"], ["vector.distance3", "b"], ["vector.lerp3", "a"],
+  ] as const)("%s reads a changing Vector3 on pin %s once", (typeId, pinId) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "once",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        ...["x", "y", "z"].map((axis) => node(registry, `r${axis}`, "math.random")),
+        node(registry, "make", "vector.make3"),
+        node(registry, "op", typeId),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        ...["x", "y", "z"].map((axis) => ({ id: `w${axis}`, sourceNodeId: `r${axis}`, sourcePinId: "out", targetNodeId: "make", targetPinId: axis })),
+        { id: "e2", sourceNodeId: "make", sourcePinId: "out", targetNodeId: "op", targetPinId: pinId },
+        { id: "e3", sourceNodeId: "op", sourcePinId: "out", targetNodeId: "log", targetPinId: "message" },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    let samples = 0;
+    (loadModule(compiled.source).onBeginPlay as (ctx: unknown) => void)({
+      random: { float: () => (samples += 1) },
+      formatValue: (value: unknown) => value,
+      log: () => {},
+    });
+    expect(samples).toBe(3);
+  });
 });

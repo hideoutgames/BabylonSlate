@@ -63,6 +63,33 @@ describe("functions.call", () => {
     ]);
   });
 
+  it("sends a parameter named target apart from the Target pin", () => {
+    const registry = createDefaultNodeRegistry();
+    const pins = [{ name: "target", typeId: "float", direction: "in" }];
+    const explicit = node(registry, "explicit", "functions.call", {
+      functionName: "Aim", classId: "Guard", implicitSelf: false, pins, "default:target__arg": 7,
+    });
+    const implicit = node(registry, "implicit", "functions.call", {
+      functionName: "Aim", classId: "Guard", implicitSelf: true, pins, "default:target__arg": 9,
+    });
+    expect(explicit.pins.filter((pin) => pin.id === "target")).toHaveLength(1);
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [node(registry, "begin", "flow.event.beginPlay"), node(registry, "other", "actor.getSelf"), explicit, implicit],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "explicit", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "explicit", sourcePinId: "execOut", targetNodeId: "implicit", targetPinId: "execIn" },
+        { id: "e3", sourceNodeId: "other", sourcePinId: "out", targetNodeId: "explicit", targetPinId: "target" },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const run = new Function(`${compiled.source.replace(/^export /gm, "")}\nreturn onBeginPlay;`)() as (context: unknown) => void;
+    const calls: unknown[] = [];
+    run({ self: "guard", invokeFunction: (...args: unknown[]) => { calls.push(args); return {}; } });
+    expect(calls).toEqual([["guard", "Aim", { target: 7 }], ["guard", "Aim", { target: 9 }]]);
+  });
+
   it("omits Target and maps signature pins when implicitSelf is true", () => {
     const def = createDefaultNodeRegistry().get("functions.call")!;
     const pins = def.pins({
@@ -441,5 +468,50 @@ describe("functions.call", () => {
       expect(compiled.source).toContain("ctx.callComponentFunction(");
       expect(compiled.source).toContain(`"${runtime}"`);
     }
+  });
+
+  it("keeps an output's type default when the call result omits that field", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "call", "functions.call", {
+          classId: "Hero",
+          functionName: "Score",
+          implicitSelf: true,
+          pins: [
+            { name: "exec", typeId: "exec", direction: "in" },
+            { name: "then", typeId: "exec", direction: "out" },
+            { name: "count", typeId: "int", direction: "out" },
+            { name: "label", typeId: "string", direction: "out" },
+          ],
+        }),
+        node(registry, "logCount", "debug.log"),
+        node(registry, "logLabel", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "call", targetPinId: "exec" },
+        { id: "e2", sourceNodeId: "call", sourcePinId: "then", targetNodeId: "logCount", targetPinId: "execIn" },
+        { id: "e3", sourceNodeId: "logCount", sourcePinId: "execOut", targetNodeId: "logLabel", targetPinId: "execIn" },
+        { id: "e4", sourceNodeId: "call", sourcePinId: "count", targetNodeId: "logCount", targetPinId: "message" },
+        { id: "e5", sourceNodeId: "call", sourcePinId: "label", targetNodeId: "logLabel", targetPinId: "message" },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const run = new Function(`${compiled.source.replace(/^export /gm, "")}\nreturn onBeginPlay;`)() as (context: unknown) => void;
+    const logged = (result: unknown) => {
+      const logs: unknown[] = [];
+      run({
+        self: "hero",
+        invokeFunction: () => result,
+        formatValue: (value: unknown) => value,
+        log: (_severity: string, _category: string, value: unknown) => logs.push(value),
+      });
+      return logs;
+    };
+    expect(logged({ count: 2 })).toEqual([2, ""]);
+    expect(logged(undefined)).toEqual([0, ""]);
   });
 });

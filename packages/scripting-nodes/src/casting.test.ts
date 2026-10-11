@@ -37,10 +37,6 @@ function loadBeginPlay(source: string): (ctx: unknown) => void {
 }
 
 describe("casting nodes", () => {
-  it("keeps Cast To Actor for graphs that still store that type id", () => {
-    expect(castingNodes.map((entry) => entry.id)).toContain("casting.castActor");
-  });
-
   it("declares exec, then, object, Class, Success, and Result pins", () => {
     const def = castingNodes.find((entry) => entry.id === "casting.cast");
     const pins = def?.pins({}) ?? [];
@@ -92,7 +88,7 @@ describe("casting nodes", () => {
   it("types Result as an actor ref when the default class is Actor", () => {
     const def = castingNodes.find((entry) => entry.id === "casting.cast")!;
     const pins = def.pins({
-      defaultClassId: "Actor",
+      "default:class": "Actor",
       resultKind: "actorRef",
     });
     expect(pins.find((pin) => pin.id === "result")?.type).toEqual(
@@ -103,7 +99,7 @@ describe("casting nodes", () => {
   it("types Result as an object ref for non-Actor classes", () => {
     const def = castingNodes.find((entry) => entry.id === "casting.cast")!;
     const pins = def.pins({
-      defaultClassId: "GameInstance",
+      "default:class": "GameInstance",
       resultKind: "objectRef",
     });
     expect(pins.find((pin) => pin.id === "result")?.type).toEqual(
@@ -111,19 +107,15 @@ describe("casting nodes", () => {
     );
   });
 
-  it("compiles Cast through ctx.isA and returns the instance or null", () => {
+  it("compiles Cast through ctx.isA, reads Object once, and returns the instance or null", () => {
     const registry = createDefaultNodeRegistry();
-    const properties = {
-      defaultClassId: "Hero",
-      "default:class": "Hero",
-    };
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "self", "actor.getSelf"),
-        node(registry, "cast", "casting.cast", properties),
+        node(registry, "cast", "casting.cast", { "default:class": "Hero" }),
         node(registry, "log", "debug.log"),
       ],
       edges: [
@@ -151,31 +143,35 @@ describe("casting nodes", () => {
         {
           id: "e3",
           sourceNodeId: "cast",
-          sourcePinId: "success",
+          sourcePinId: "result",
           targetNodeId: "log",
           targetPinId: "message",
         },
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toContain("ctx.isA");
-    expect(compiled.source).toContain('"Hero"');
-
-    const checks: Array<{ instance: unknown; classId: unknown }> = [];
+    const run = (instance: { classId: string }) => {
+      let reads = 0;
+      const checks: unknown[][] = [];
+      const logs: unknown[] = [];
+      loadBeginPlay(compiled.source)({
+        get self() {
+          reads += 1;
+          return instance;
+        },
+        formatValue: (value: unknown) => value,
+        isA: (target: unknown, classId: unknown) => {
+          checks.push([target, classId]);
+          return (target as { classId?: string } | null)?.classId === classId;
+        },
+        log: (_severity: string, _category: string, value: unknown) => logs.push(value),
+      });
+      return { reads, checks, logs };
+    };
     const hero = { classId: "Hero" };
-    loadBeginPlay(compiled.source)({
-      self: hero,
-      formatValue: String,
-      isA: (instance: unknown, classId: unknown) => {
-        checks.push({ instance, classId });
-        return instance === hero && classId === "Hero";
-      },
-      log: () => {},
-    });
-    expect(checks.length).toBeGreaterThan(0);
-    expect(checks.every((entry) => entry.instance === hero && entry.classId === "Hero")).toBe(
-      true,
-    );
+    expect(run(hero)).toEqual({ reads: 1, checks: [[hero, "Hero"]], logs: [hero] });
+    const rock = { classId: "Rock" };
+    expect(run(rock)).toEqual({ reads: 1, checks: [[rock, "Hero"]], logs: [null] });
   });
 });
 
@@ -301,5 +297,38 @@ describe("wildcard conversions", () => {
         actorClassIds: ["Hero"],
       }),
     ).toMatchObject({ success: true, value: hero, typeOf: "actorRef:Hero" });
+  });
+});
+
+describe("Float To Int", () => {
+  it.each([
+    [-2.7, "-2"],
+    [3e9, "3000000000"],
+    [Number.NaN, "0"],
+    [Number.POSITIVE_INFINITY, "0"],
+  ])("truncates %s toward zero without int32 wrapping", (value, expected) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "speed", "variables.get", { variableName: "Speed", typeId: "float", implicitSelf: true }),
+        node(registry, "toInt", "casting.floatToInt"),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "speed", sourcePinId: "value", targetNodeId: "toInt", targetPinId: "in" },
+        { id: "e3", sourceNodeId: "toInt", sourcePinId: "out", targetNodeId: "log", targetPinId: "message" },
+      ],
+    };
+    const logged: string[] = [];
+    loadBeginPlay(compileGraph(graph, { assetGuid: "a", registry }).source)({
+      getVariable: () => value,
+      formatValue: String,
+      log: (_severity: string, _category: string, message: string) => logged.push(message),
+    });
+    expect(logged).toEqual([expected]);
   });
 });

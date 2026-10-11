@@ -24,6 +24,7 @@ const HIT_RESULT = structRef(ENGINE_HIT_RESULT_STRUCT_ID);
 const COLLISION_CHANNEL = enumRef(ENGINE_COLLISION_CHANNEL_ENUM_ID);
 const ACTOR_ARRAY = arrayOf(actorRef("Actor"));
 
+/** A miss reports zero Location and Normal on the struct and on the exploded pins alike. */
 function emitMappedHit(
   ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
   expr: string,
@@ -35,7 +36,7 @@ function emitMappedHit(
   const distance = ctx.output("distance");
   const actor = ctx.output("actor");
   ctx.emit(
-    `{ const __hit = ${expr}; ${hitResult} = { Hit: __hit.hit === true, Location: __hit.location ?? { x: 0, y: 0, z: 0 }, Normal: __hit.normal ?? { x: 0, y: 0, z: 0 }, Actor: __hit.actor ?? null, Distance: __hit.distance ?? 0 }; ${hit} = __hit.hit === true; ${location} = __hit.location ?? null; ${normal} = __hit.normal ?? null; ${distance} = __hit.distance ?? 0; ${actor} = __hit.actor ?? null; }`,
+    `{ const __hit = ${expr}; ${hitResult} = { Hit: __hit.hit === true, Location: __hit.location ?? { x: 0, y: 0, z: 0 }, Normal: __hit.normal ?? { x: 0, y: 0, z: 0 }, Actor: __hit.actor ?? null, Distance: __hit.distance ?? 0 }; ${hit} = __hit.hit === true; ${location} = __hit.location ?? { x: 0, y: 0, z: 0 }; ${normal} = __hit.normal ?? { x: 0, y: 0, z: 0 }; ${distance} = __hit.distance ?? 0; ${actor} = __hit.actor ?? null; }`,
   );
 }
 
@@ -174,7 +175,7 @@ export const physicsNodes: NodeDefinition[] = [
       pin("execOut", "then", "out", EXEC),
       pin("target", "target", "in", actorRef("Actor")),
       pin("impulse", "impulse", "in", VEC3),
-      pin("strength", "strength", "in", FLOAT, "data", true),
+      pin("strength", "strength", "in", FLOAT, "data", true, 1),
     ],
     codegen: (ctx) => {
       ctx.emit(

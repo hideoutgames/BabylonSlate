@@ -8,8 +8,23 @@ import {
   arrayOf,
   defaultValueLiteral,
 } from "@babylonslate/scripting";
+import { VALUE_INDEX_OF, hasValueTypePin } from "./map";
 
 const T = RESOLVING_WILDCARD;
+
+/**
+ * Index of `item` in `array`. Vector, rotator, color, transform and struct
+ * reads are new objects each time, so those items match by value.
+ */
+function itemIndexExpr(
+  ctx: Parameters<NodeDefinition["codegen"]>[0],
+  array: string,
+  item: string,
+): string {
+  return hasValueTypePin(ctx, "item")
+    ? `${VALUE_INDEX_OF}(${array},${item})`
+    : `${array}.indexOf(${item})`;
+}
 
 function outFallback(ctx: Parameters<NodeDefinition["codegen"]>[0], pinId = "out") {
   const outPin = ctx.node.pins.find((entry) => entry.id === pinId);
@@ -49,27 +64,6 @@ export const arrayMapNodes: NodeDefinition[] = [
   {
     id: "array.get",
     title: "Array Get",
-    category: "array",
-    pure: true,
-    pins: () => [
-      pin("array", "Array", "in", arrayOf(T)),
-      pin("index", "Index", "in", INT),
-      pin("out", "Out", "out", T),
-      pin("valid", "Valid", "out", BOOL),
-    ],
-    codegen: (ctx) => {
-      const array = ctx.input("array");
-      const index = ctx.input("index");
-      const fallback = outFallback(ctx);
-      return {
-        valid: `((a,i)=>{const l=a??[];return Number.isInteger(i)&&i>=0&&i<l.length;})(${array},${index})`,
-        out: `((a,i,d)=>{const l=a??[];return Number.isInteger(i)&&i>=0&&i<l.length?l[i]:d;})(${array},${index},${fallback})`,
-      };
-    },
-  },
-  {
-    id: "array.getSafe",
-    title: "Get Safe",
     category: "array",
     pure: true,
     pins: () => [
@@ -149,9 +143,15 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("item", "Item", "in", T),
       pin("out", "Out", "out", BOOL),
     ],
-    codegen: (ctx) => ({
-      out: `((${ctx.input("array")})??[]).includes(${ctx.input("item")})`,
-    }),
+    codegen: (ctx) => {
+      const array = `((${ctx.input("array")})??[])`;
+      const item = ctx.input("item");
+      return {
+        out: hasValueTypePin(ctx, "item")
+          ? `(${itemIndexExpr(ctx, array, item)}>=0)`
+          : `${array}.includes(${item})`,
+      };
+    },
   },
   {
     id: "array.find",
@@ -164,7 +164,7 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("out", "Out", "out", INT),
     ],
     codegen: (ctx) => ({
-      out: `((${ctx.input("array")})??[]).indexOf(${ctx.input("item")})`,
+      out: itemIndexExpr(ctx, `((${ctx.input("array")})??[])`, ctx.input("item")),
     }),
   },
   {
@@ -223,10 +223,10 @@ export const arrayMapNodes: NodeDefinition[] = [
       const index = ctx.input("index");
       const item = ctx.input("item");
       ctx.emit(`${out} = ((${array})??[]).slice();`);
+      // Read the index once so the bounds check and the write use one value.
       ctx.emit(
-        `${success} = Number.isInteger(${index})&&${index}>=0&&${index}<${out}.length;`,
+        `{ const __i = ${index}; ${success} = Number.isInteger(__i)&&__i>=0&&__i<${out}.length; if (${success}) { ${out}[__i] = ${item}; } }`,
       );
-      ctx.emit(`if (${success}) { ${out}[${index}] = ${item}; }`);
     },
   },
   {
@@ -245,8 +245,9 @@ export const arrayMapNodes: NodeDefinition[] = [
       const out = ctx.output("out");
       const index = ctx.input("index");
       ctx.emit(`${out} = ((${ctx.input("array")})??[]).slice();`);
+      // Read the index once; a non-finite index inserts at the front.
       ctx.emit(
-        `${out}.splice((Number.isFinite(${index})?Math.max(0,${index}|0):0), 0, ${ctx.input("item")});`,
+        `{ const __i = ${index}; ${out}.splice(Number.isFinite(__i)?Math.max(0,Math.trunc(__i)):0, 0, ${ctx.input("item")}); }`,
       );
     },
   },
@@ -267,10 +268,10 @@ export const arrayMapNodes: NodeDefinition[] = [
       const success = ctx.output("success");
       const index = ctx.input("index");
       ctx.emit(`${out} = ((${ctx.input("array")})??[]).slice();`);
+      // Read the index once so the bounds check and the removal use one value.
       ctx.emit(
-        `${success} = Number.isInteger(${index})&&${index}>=0&&${index}<${out}.length;`,
+        `{ const __i = ${index}; ${success} = Number.isInteger(__i)&&__i>=0&&__i<${out}.length; if (${success}) { ${out}.splice(__i, 1); } }`,
       );
-      ctx.emit(`if (${success}) { ${out}.splice(${index}, 1); }`);
     },
   },
   {
@@ -290,7 +291,7 @@ export const arrayMapNodes: NodeDefinition[] = [
       const success = ctx.output("success");
       const item = ctx.input("item");
       ctx.emit(`${out} = ((${ctx.input("array")})??[]).slice();`);
-      ctx.emit(`{ const __i = ${out}.indexOf(${item}); ${success} = __i>=0; if (${success}) { ${out}.splice(__i, 1); } }`);
+      ctx.emit(`{ const __i = ${itemIndexExpr(ctx, out, item)}; ${success} = __i>=0; if (${success}) { ${out}.splice(__i, 1); } }`);
     },
   },
   {

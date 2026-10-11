@@ -50,7 +50,7 @@ function targetConnected(
   ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
 ): boolean {
   const targetPin = ctx.node.pins.find(
-    (entry) => entry.name === "target" && entry.direction === "in",
+    (entry) => entry.id === "target" && entry.direction === "in",
   );
   if (!targetPin) return false;
   return ctx.graph.edges.some(
@@ -63,7 +63,7 @@ function usesImplicitSelf(
   ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
 ): boolean {
   const hasTarget = ctx.node.pins.some(
-    (entry) => entry.name === "target" && entry.direction === "in",
+    (entry) => entry.id === "target" && entry.direction === "in",
   );
   return !hasTarget || (!targetConnected(ctx) && ctx.node.properties.implicitSelf === true);
 }
@@ -114,7 +114,7 @@ export const variableNodes: NodeDefinition[] = [
         ctx.node.properties.scope === "local"
           ? localVariableIdent(name)
           : memberGetExpr(ctx, name);
-      return { [name]: expr };
+      return { value: expr };
     },
   },
   {
@@ -134,8 +134,10 @@ export const variableNodes: NodeDefinition[] = [
     },
     codegen: (ctx) => {
       const name = variableNameOf(ctx.node.properties);
-      const value = ctx.input(name);
-      const out = ctx.output(name);
+      // Pin names follow the variable name, which may equal a fixed pin's
+      // name or id (`exec`, `then`, `target`); look up by id.
+      const value = ctx.input("value");
+      const out = ctx.output("out");
       if (ctx.node.properties.scope === "local") {
         const ident = localVariableIdent(name);
         ctx.emit(`${ident} = ${value};`);
@@ -143,14 +145,15 @@ export const variableNodes: NodeDefinition[] = [
         return;
       }
       const quoted = JSON.stringify(storeKeyOf(ctx.node.properties, name));
+      // Evaluate the value once: the stored value and the output are one sample.
+      ctx.emit(`${out} = ${value};`);
       if (usesImplicitSelf(ctx)) {
-        ctx.emit(`ctx.setVariable(${quoted}, ${value});`);
+        ctx.emit(`ctx.setVariable(${quoted}, ${out});`);
       } else {
         ctx.emit(
-          `ctx.setVariableOn(${ctx.input("target")}, ${quoted}, ${value});`,
+          `ctx.setVariableOn(${ctx.input("target")}, ${quoted}, ${out});`,
         );
       }
-      ctx.emit(`${out} = ${value};`);
     },
   },
   {

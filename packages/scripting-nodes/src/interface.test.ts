@@ -100,23 +100,54 @@ describe("interface nodes", () => {
       interfaceGuid: "iface-damageable",
       method: "Apply Damage",
     });
-    const withStale = node(registry, "stale", "interface.call", {
-      interfaceGuid: "iface-damageable",
-      method: "Apply Damage",
+    expect(bare.pins.map((pin) => pin.id)).not.toEqual(
+      expect.arrayContaining(["interfaceGuid", "method", "result"]),
+    );
+  });
+
+  it("sends method arguments named target or result apart from the Target pin", () => {
+    const registry = createDefaultNodeRegistry();
+    const call = node(registry, "call", "interface.call", {
+      interfaceGuid: "iface-aim",
+      method: "Aim",
+      implicitSelf: false,
       pins: [
-        { name: "interfaceGuid", typeId: "string", direction: "in" },
-        { name: "method", typeId: "string", direction: "in" },
-        { name: "result", typeId: "object", direction: "out" },
-        { name: "amount", typeId: "float", direction: "in" },
+        { name: "target", typeId: "float", direction: "in" },
+        { name: "result", typeId: "float", direction: "out" },
       ],
+      "default:target__arg": 7,
     });
-    for (const call of [bare, withStale]) {
-      expect(call.pins.map((pin) => pin.id)).not.toEqual(
-        expect.arrayContaining(["interfaceGuid", "method", "result"]),
-      );
-    }
-    expect(withStale.pins.some((pin) => pin.id === "amount")).toBe(true);
-    expect(withStale.pins.some((pin) => pin.id === "target")).toBe(true);
+    expect(call.pins.filter((pin) => pin.id === "target")).toHaveLength(1);
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "other", "actor.getSelf"),
+        call,
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "call", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "other", sourcePinId: "out", targetNodeId: "call", targetPinId: "target" },
+        { id: "e3", sourceNodeId: "call", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+        { id: "e4", sourceNodeId: "call", sourcePinId: "result", targetNodeId: "log", targetPinId: "message" },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const calls: unknown[] = [];
+    const logged: string[] = [];
+    (loadModule(compiled.source).onBeginPlay as (ctx: unknown) => void)({
+      self: "guard",
+      callInterface: (...args: unknown[]) => {
+        calls.push(args);
+        return { result: 4 };
+      },
+      formatValue: String,
+      log: (_severity: string, _category: string, message: string) => logged.push(message),
+    });
+    expect(calls).toEqual([["guard", "iface-aim", "Aim", { target: 7 }]]);
+    expect(logged).toEqual(["4"]);
   });
 
   it("signature pins include a Target of any object plus method I/O", () => {
@@ -194,5 +225,36 @@ describe("interface nodes", () => {
     expect(calls[0]?.[1]).toBe("iface-damageable");
     expect(calls[0]?.[2]).toBe("Apply Damage");
     expect(calls[0]?.[3]).toMatchObject({ amount: expect.anything() });
+  });
+
+  it.each([
+    [true, "self"],
+    [undefined, null],
+  ] as const)("an unwired Target with implicitSelf %s calls on %s", (implicitSelf, expected) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "call", "interface.call", {
+          interfaceGuid: "iface-damageable",
+          method: "Apply Damage",
+          ...(implicitSelf === undefined ? {} : { implicitSelf }),
+        }),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "call", targetPinId: "execIn" },
+      ],
+    };
+    const targets: unknown[] = [];
+    (loadModule(compileGraph(graph, { assetGuid: "a", registry }).source).onBeginPlay as (ctx: unknown) => void)({
+      self: "self",
+      callInterface: (target: unknown) => {
+        targets.push(target);
+        return {};
+      },
+    });
+    expect(targets).toEqual([expected]);
   });
 });

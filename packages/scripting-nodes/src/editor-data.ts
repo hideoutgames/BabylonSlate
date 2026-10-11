@@ -91,7 +91,7 @@ export const editorDataNodes: NodeDefinition[] = [
     ...common, id: "editorData.moveEntry", title: "Move Data Subtree",
     description: "Moves an entry under New Parent Path, preserving owned values and child order. Index -1 appends; other indexes are zero-based.",
     pins: () => [...resultPins(), treePin(), pathPin(), pathPin("newParentPath", "New Parent Path", true), pin("index", "Index", "in", INT, "data", true, -1), pin("value", "Entry Path", "out", STRING)],
-    codegen: (ctx) => emitResult(ctx, `moveEntry(${ctx.input("tree")}, ${ctx.input("entryPath")}, ${ctx.input("newParentPath")}, ${ctx.input("index")} === -1 ? undefined : ${ctx.input("index")})`, '""'),
+    codegen: (ctx) => emitResult(ctx, `moveEntry(${ctx.input("tree")}, ${ctx.input("entryPath")}, ${ctx.input("newParentPath")}, ((i) => (i === -1 ? undefined : i))(${ctx.input("index")}))`, '""'),
   },
   {
     ...common, id: "editorData.reorderChildren", title: "Reorder Data Children",
