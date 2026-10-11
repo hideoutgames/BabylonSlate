@@ -483,6 +483,15 @@ describe("BehaviourTreeEditor", () => {
     expect(task?.properties.durationMs).toBe(250);
   });
 
+  it("clears Details when the selected node is deselected on the canvas", async () => {
+    const { container } = renderTree(treeWithWait());
+    fireEvent.click(screen.getByTestId("bt-node-task"));
+    expect(screen.getByTestId("property-durationMs")).toBeTruthy();
+    fireEvent.click(container.querySelector(".react-flow__pane")!);
+    await waitFor(() => expect(screen.queryByTestId("property-durationMs")).toBeNull());
+    expect(screen.queryByTestId("bt-add-decorator")).toBeNull();
+  });
+
   it("picks an Audio asset on Play Sound in Details", async () => {
     const doc = createDefaultBehaviourTree();
     const task = doc.nodes.find((node) => node.id === "task")!;

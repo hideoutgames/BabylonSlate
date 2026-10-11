@@ -341,6 +341,8 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
     setAttachmentCatalog,
   } = useBehaviourTreeEditing();
   const knownNodeIds = useRef<Set<string> | null>(null);
+  /** The node the canvas last reported as selected, if any. */
+  const canvasSelectedId = useRef<string | null>(null);
   const nodeIdKey = doc.nodes.map((node) => node.id).join("\0");
   useEffect(() => {
     const current = new Set(doc.nodes.map((node) => node.id));
@@ -478,7 +480,19 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
           hiddenToolbarActions={["copy", "paste", "breakLinks", "format"]}
           onSelectionChange={(nodeIds) => {
             const nextId = nodeIds[0];
-            if (!nextId) return;
+            if (!nextId) {
+              // Deselecting a node on the canvas clears Details. The empty
+              // selection reported on mount keeps the default Root selection,
+              // and a deleted node leaves the selection its delete chose.
+              const previous = canvasSelectedId.current;
+              canvasSelectedId.current = null;
+              if (previous && doc.nodes.some((node) => node.id === previous)) {
+                setSelectedId(null);
+                setAttachmentId(null);
+              }
+              return;
+            }
+            canvasSelectedId.current = nextId;
             setSelectedId(nextId);
             setAttachmentId((current) => {
               if (!current) return null;
