@@ -229,7 +229,7 @@ function transitionLabel(doc: AnimGraphDocument, transition: AnimTransition): st
 
 function useAnimGraphDocument() {
   const { documentId } = useDocumentWorkspace();
-  const { applyAssetDocumentChange } = useDocumentActions();
+  const { applyAssetDocumentChange, getOpenDocuments } = useDocumentActions();
   const { assetRegistry } = useRegistryState();
   const entry = useOpenDocument(documentId);
   const listed = assetRegistry?.list() ?? [];
@@ -250,6 +250,14 @@ function useAnimGraphDocument() {
       asAnimGraph((entry?.content ?? {}) as Record<string, unknown>, catalog),
     [entry?.content, catalog],
   );
+  /**
+   * The stored document now. GraphEditor reports edits while it renders, so
+   * the graph commits a microtask later; it builds on this, not on `doc`.
+   */
+  const latestDoc = () => {
+    const content = getOpenDocuments().find((open) => open.id === documentId)?.content;
+    return content ? asAnimGraph(content as Record<string, unknown>, catalog) : doc;
+  };
   /** `mergeKey` groups one scrub's edits into one undo entry. */
   const commit = (next: AnimGraphDocument, mergeKey?: string) => {
     void applyAssetDocumentChange(
@@ -258,7 +266,7 @@ function useAnimGraphDocument() {
       mergeKey,
     );
   };
-  return { doc, commit, assetRegistry, documentId, catalog };
+  return { doc, latestDoc, commit, assetRegistry, documentId, catalog };
 }
 
 function AnimGraphVariablesList({
@@ -431,7 +439,7 @@ export function AnimObjectVariablesPanel(_props: IDockviewPanelProps) {
 
 export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { doc, commit, documentId, catalog } = useAnimGraphDocument();
+  const { doc, latestDoc, commit, documentId, catalog } = useAnimGraphDocument();
   const {
     selectedId,
     setSelectedId,
@@ -620,7 +628,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
               const transitionId = openTransition.id;
               queueMicrotask(() => {
                 commit(
-                  patchTransition(doc, transitionId, {
+                  patchTransition(latestDoc(), transitionId, {
                     ruleGraph: persistTransitionRuleGraph(nextRule),
                   }),
                 );
@@ -665,9 +673,9 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
             queueMicrotask(() => setSelectedTransitionId(edgeIds[0] ?? null));
           }}
           onChange={(next) => {
-            const updated = serializedToAnimGraph(next, doc);
             const keepSelection = selectedId;
             queueMicrotask(() => {
+              const updated = serializedToAnimGraph(next, latestDoc());
               if (
                 keepSelection &&
                 !updated.states.some((state) => state.id === keepSelection)
