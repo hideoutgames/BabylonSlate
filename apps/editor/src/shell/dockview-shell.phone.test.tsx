@@ -16,7 +16,6 @@ vi.mock("./use-platform-layout", () => ({
   usePlatformLayoutOptions: () => ({
     singleWindow: device.phone,
     disableFloatingGroups: device.phone,
-    disablePopout: device.phone,
     dndStrategy: "pointer",
   }),
 }));
@@ -33,6 +32,8 @@ vi.mock("./panel-registry", () => {
       "scene-details": panel,
       "output-log": panel,
       "compiler-results": panel,
+      locks: panel,
+      "function-graph": panel,
     },
   };
 });
@@ -67,6 +68,31 @@ describe("phone window navigation", () => {
     expect(chooser.textContent).toContain("Outliner");
   });
 
+  it("shows a renamed function graph under its new title", async () => {
+    let dock: DockviewApi | undefined;
+    render(
+      <DockviewShell
+        documentKind="scene"
+        onReady={(api) => {
+          dock = api;
+        }}
+      />,
+    );
+    act(() => {
+      dock!.addPanel({
+        id: "function-graph:fn-jump",
+        component: "function-graph",
+        title: "Jump",
+      });
+    });
+    const chooser = screen.getByRole("combobox", { name: "Window" });
+    expect(chooser.textContent).toContain("Jump");
+    await act(async () => {
+      dock!.getPanel("function-graph:fn-jump")!.api.setTitle("Leap");
+    });
+    expect(chooser.textContent).toContain("Leap");
+  });
+
   it("restores the docked layout on resize while keeping the same Dockview API", () => {
     device.phone = false;
     let dock: DockviewApi | undefined;
@@ -89,6 +115,48 @@ describe("phone window navigation", () => {
     expect(dock).toBe(originalApi);
     expect(dock!.hasMaximizedGroup()).toBe(false);
     expect(dock!.panels).toHaveLength(5);
+  });
+
+  it("closes Locks when source control turns off after the dock is ready", () => {
+    device.phone = false;
+    let dock: DockviewApi | undefined;
+    const onReady = (api: DockviewApi) => {
+      dock = api;
+    };
+    const { rerender } = render(
+      <DockviewShell documentKind="scene" sourceControl onReady={onReady} />,
+    );
+    expect(dock!.getPanel("locks")).toBeDefined();
+    rerender(
+      <DockviewShell documentKind="scene" sourceControl={false} onReady={onReady} />,
+    );
+    expect(dock!.getPanel("locks")).toBeUndefined();
+  });
+
+  it("returns to the saved floating windows when a phone open also closes Locks", () => {
+    device.phone = false;
+    let dock: DockviewApi | undefined;
+    const onReady = (api: DockviewApi) => {
+      dock = api;
+    };
+    const desktop = render(
+      <DockviewShell documentKind="scene" sourceControl onReady={onReady} />,
+    );
+    act(() => dock!.addFloatingGroup(dock!.getPanel("scene-details")!));
+    const saved = dock!.toJSON() as unknown as Record<string, unknown>;
+    desktop.unmount();
+    device.phone = true;
+    const phone = render(
+      <DockviewShell documentKind="scene" initialLayout={saved} onReady={onReady} />,
+    );
+    expect(dock!.getPanel("locks")).toBeUndefined();
+    expect(captureAdaptiveDockviewLayout(dock!)).toEqual(saved);
+    device.phone = false;
+    phone.rerender(
+      <DockviewShell documentKind="scene" initialLayout={saved} onReady={onReady} />,
+    );
+    expect(dock!.getPanel("scene-details")!.api.location.type).toBe("floating");
+    expect(dock!.getPanel("locks")).toBeUndefined();
   });
 
   it("restores saved detached panels without opening a phone browser window", () => {
