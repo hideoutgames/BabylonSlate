@@ -706,6 +706,12 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
         "default:binding": binding("FT_ScriptPulse", types.pulseAction),
       }),
       callEvent("input-pulse", 260, 1300, pulse, { "default:Strength": 1 }),
+      // The pad that pressed Pulse (pad 0) answers with a short rumble.
+      gNode("pulse-rumble", "input.setGamepadRumble", 520, 1300, {
+        "default:index": 0,
+        "default:intensity": 0.6,
+        "default:durationMs": 150,
+      }),
       gNode("on-nudge", "input.axisEvent", 0, 1500, {
         valueType: "2d",
         "default:binding": binding("FT_ScriptNudge", types.nudgeAxis),
@@ -758,6 +764,7 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
       gWire("pulse-text", "out", "pulse-print", "inString"),
 
       gWire("on-pulse", "started", "input-pulse", "execIn"),
+      gExec("input-pulse", "pulse-rumble"),
       gWire("on-nudge", "held", "nudge", "execIn"),
       gWire("on-nudge", "value", "nudge-axes", "in"),
       gWire("nudge-axes", "x", "nudge-vector", "x"),

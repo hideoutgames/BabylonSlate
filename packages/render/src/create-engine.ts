@@ -1,3 +1,4 @@
+import { applyGamepadRumble } from "./gamepad-rumble";
 import { acquireEngineGpuTiming, observeEngineGpuTiming, type EngineGpuTimingLease, type EngineGpuTimingObservation, type EngineGpuTimingSample } from "./engine-gpu-timing";
 import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest, type RuntimeMaterialCommitCommand } from "./runtime-material-edit";
 import { drainFinalAuthoringResources } from "./final-authoring-drain";
@@ -3269,6 +3270,7 @@ function initializeEngine(
       if (command.type === "setCursorVisible") {
         playCursor?.setVisible(command.visible);
       }
+      if (command.type === "setGamepadRumble") applyGamepadRumble(command);
       if (command.type === "spawn") {
         captureActorSlots.set(command.slotId, command.actorGuid);
         runtimeComponentTokens.delete(command.slotId);

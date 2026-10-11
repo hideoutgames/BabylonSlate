@@ -743,6 +743,14 @@ export type CommandMessage =
       visible: boolean;
       frameId: number;
     }
+  /** Rumble a pad by its Gamepad API index: intensity 0..1; zero intensity or duration stops it. */
+  | {
+      type: "setGamepadRumble";
+      gamepadIndex: number;
+      intensity: number;
+      durationMs: number;
+      frameId: number;
+    }
   | {
       type: "consoleResult";
       success: boolean;
