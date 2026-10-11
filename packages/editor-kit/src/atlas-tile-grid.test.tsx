@@ -373,6 +373,67 @@ describe("AtlasTileGrid", () => {
     expect(Number(surface.getAttribute("data-zoom") ?? "1")).toBeGreaterThan(1);
   });
 
+  it("refits on resize until the user zooms, then keeps their view", () => {
+    const callbacks: Array<() => void> = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          callbacks.push(callback);
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    let size = { width: 64, height: 32 };
+    const sizeOf = (key: "width" | "height") => ({
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.getAttribute("data-testid") === "atlas-surface" ? size[key] : 0;
+      },
+    });
+    const restoreWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    const restoreHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", sizeOf("width"));
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", sizeOf("height"));
+    try {
+      render(
+        <AtlasTileGrid
+          tileset={twoTileSet()}
+          imageUrl="blob:atlas"
+          selectedId={1}
+          onSelect={() => {}}
+          panZoom
+          data-testid="atlas"
+        />,
+      );
+      const surface = screen.getByTestId("atlas-surface");
+      const zoomOf = () => Number(surface.getAttribute("data-zoom"));
+      const resize = (width: number, height: number) => {
+        size = { width, height };
+        act(() => callbacks.forEach((callback) => callback()));
+      };
+      expect(zoomOf()).toBeCloseTo(1.84);
+      resize(128, 64);
+      expect(zoomOf()).toBeCloseTo(3.68);
+
+      fireEvent.wheel(surface, { deltaY: -120, clientX: 10, clientY: 10 });
+      expect(zoomOf()).toBeCloseTo(7.36);
+      resize(64, 32);
+      expect(zoomOf()).toBeCloseTo(7.36);
+    } finally {
+      for (const [key, descriptor] of [
+        ["clientWidth", restoreWidth],
+        ["clientHeight", restoreHeight],
+      ] as const) {
+        if (descriptor) Object.defineProperty(HTMLElement.prototype, key, descriptor);
+        else Reflect.deleteProperty(HTMLElement.prototype, key);
+      }
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("pans the atlas when two fingers translate without changing spread", async () => {
     HTMLElement.prototype.setPointerCapture = () => {
       throw new DOMException("No active pointer with the given id is found.");

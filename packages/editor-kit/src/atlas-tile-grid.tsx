@@ -142,17 +142,20 @@ export function AtlasTileGrid({
   );
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+  // Set once the user pans or zooms; a later surface resize keeps their view.
+  const userViewRef = useRef(false);
 
   useLayoutEffect(() => {
     if (!panZoom) return;
     const surface = surfaceRef.current;
     if (!surface) return;
+    userViewRef.current = false;
     let previousWidth = 0;
     let previousHeight = 0;
     const fit = () => {
       const width = surface.clientWidth;
       const height = surface.clientHeight;
-      if (width <= 0 || height <= 0) return;
+      if (width <= 0 || height <= 0 || userViewRef.current) return;
       if (width === previousWidth && height === previousHeight) return;
       previousWidth = width;
       previousHeight = height;
@@ -291,6 +294,7 @@ export function AtlasTileGrid({
       const scale = nextZoom / pinchRef.current.zoom;
       const midX = (points[0]!.x + points[1]!.x) / 2;
       const midY = (points[0]!.y + points[1]!.y) / 2;
+      userViewRef.current = true;
       setZoom(nextZoom);
       setPan({
         x:
@@ -352,6 +356,7 @@ export function AtlasTileGrid({
       if (distance < TAP_SELECT_PX) return;
       drag.panned = true;
       didPanRef.current = true;
+      userViewRef.current = true;
     }
     const dx = event.clientX - drag.lastX;
     const dy = event.clientY - drag.lastY;
@@ -413,6 +418,7 @@ export function AtlasTileGrid({
       Math.max(MIN_ZOOM, zoom * 2 ** (-event.deltaY / 120)),
     );
     const scale = nextZoom / zoom;
+    userViewRef.current = true;
     setZoom(nextZoom);
     setPan({
       x: originX - (originX - pan.x) * scale,

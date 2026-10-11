@@ -44,12 +44,11 @@ export function MultilineTextField({
 }: MultilineTextFieldProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
-  // Reseed the draft while rendering when the editor opens or the value changes.
-  const [seededFrom, setSeededFrom] = useState<{ open: boolean; value: string } | null>(null);
-  if (seededFrom?.open !== open || seededFrom.value !== value) {
-    setSeededFrom({ open, value });
-    if (open) setDraft(value);
-  }
+  // Seed only when the editor opens; a value change while open keeps the typing.
+  const openEditor = () => {
+    setDraft(value);
+    setOpen(true);
+  };
 
   const finish = () => {
     if (!open) return;
@@ -72,7 +71,7 @@ export function MultilineTextField({
           !value.trim() && "text-muted-foreground",
           className,
         )}
-        onClick={() => setOpen(true)}
+        onClick={openEditor}
         data-testid={testId}
       >
         {renderPreview ? renderPreview(value) : <span className="line-clamp-4 break-words">{preview}</span>}
@@ -81,7 +80,7 @@ export function MultilineTextField({
         open={open}
         onOpenChange={(next) => {
           if (!next) finish();
-          else setOpen(true);
+          else if (!open) openEditor();
         }}
       >
         <DialogContent

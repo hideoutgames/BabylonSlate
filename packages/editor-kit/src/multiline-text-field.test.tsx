@@ -33,6 +33,27 @@ describe("MultilineTextField", () => {
     });
   });
 
+  it("keeps the open draft when the value changes and reseeds on the next open", async () => {
+    const onChange = vi.fn();
+    const view = render(
+      <MultilineTextField value="First" onChange={onChange} title="Text" data-testid="ml" />,
+    );
+    fireEvent.click(screen.getByTestId("ml"));
+    fireEvent.change(screen.getByTestId("ml-editor"), { target: { value: "Typed" } });
+    view.rerender(
+      <MultilineTextField value="Second" onChange={onChange} title="Text" data-testid="ml" />,
+    );
+    expect((screen.getByTestId("ml-editor") as HTMLTextAreaElement).value).toBe("Typed");
+    fireEvent.click(screen.getByTestId("ml-done"));
+    expect(onChange).toHaveBeenLastCalledWith("Typed");
+    await waitFor(() => {
+      expect(screen.queryByTestId("ml-editor")).toBeNull();
+    });
+
+    fireEvent.click(screen.getByTestId("ml"));
+    expect((screen.getByTestId("ml-editor") as HTMLTextAreaElement).value).toBe("Second");
+  });
+
   it("hosts markup autocomplete inside the modal", () => {
     render(
       <MultilineTextField

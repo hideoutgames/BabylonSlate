@@ -147,7 +147,7 @@ Scale about the midpoint, then apply two-finger translation. Wheel zooms about t
 | Hold still ≥500ms or right-click on **empty grid** | New Folder, New Asset, Import |
 | Left tree: tap folder | Set the grid’s current folder |
 | Left tree: tap asset | Set the grid to that asset’s parent and select the guid |
-| Left tree: Ctrl/Shift/Meta click, horizontal swipe ≥44px, or two-finger tap | Add or range-select folders and assets (same `TreeView` contract as the Outliner) |
+| Left tree: Ctrl/Meta click or horizontal swipe ≥44px; Shift click or two-finger tap | Add folders and assets; range-select them (same `TreeView` contract as the Outliner) |
 | Left tree: double-tap / double-click a folder or asset label | Rename inline (writable roots; root folders excluded). An invalid or taken name reopens in the Rename dialog with its error. Use toolbar **Open** to open. |
 | Left tree: hold ~250ms then drag | Reparent (`moveAsset` / `moveFolder`). Drop on the **middle** of a folder row moves into that folder; the **top/bottom 8px** of a folder row (1px insert line, no row highlight) moves into that folder’s **parent** instead. Asset rows always resolve to the asset’s parent. If the dragged row is in the current selection, the collapsed selection moves (folder+descendant overlap omits the descendants; folder select does not auto-select children). Dragging an unselected row moves only that row. Pointer capture waits until that hold arms; rows are not `touch-none`, so early movement still scrolls. No context menu on the tree. Root `assets` is not draggable. |
 | Context-menu **Move…** / **Copy to Folder…** | Opens `ContentBrowserMoveDialog` for the whole selection (`moveAsset` / `copyAsset` / `moveFolder` / `copyFolder`) |
