@@ -475,7 +475,7 @@ describe("editor camera controller", () => {
     const { scene } = createHandle();
     const controller = createEditorCamera(scene, { mode: "2d" });
     controller.setCanvasHeight(600);
-    controller.setPixelPerfect({ pixelsPerUnit: 100, integerZoomSteps: true });
+    controller.setPixelPerfect({ pixelsPerUnit: 100 });
     controller.zoom(2);
     expect(controller.pixelZoom()).toBe(2);
 

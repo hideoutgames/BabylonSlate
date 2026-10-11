@@ -485,7 +485,7 @@ describe("attachViewportGestures", () => {
   it("pinch-zooms a pixel-perfect 2D camera smoothly", () => {
     const { controller } = attach("2d");
     controller.setCanvasHeight(600);
-    controller.setPixelPerfect({ pixelsPerUnit: 100, integerZoomSteps: true });
+    controller.setPixelPerfect({ pixelsPerUnit: 100 });
 
     canvas.emit("pointerdown", pointer(1, 0, 100));
     canvas.emit("pointerdown", pointer(2, 100, 100));
