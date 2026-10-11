@@ -269,7 +269,7 @@ describe("importPluginZip", () => {
     const plan = planPluginImport({
       incoming: inspected,
       existingPlugins: [],
-      occupiedGuids: new Set(),
+      indexedAssets: [],
       existingFolderNames: [],
     });
     expect(plan.kind).toBe("install");
@@ -306,7 +306,7 @@ describe("importPluginZip", () => {
     const plan = planPluginImport({
       incoming: inspected,
       existingPlugins: existing,
-      occupiedGuids: new Set(["pack-guid"]),
+      indexedAssets: [],
       existingFolderNames: ["pack"],
     });
     expect(plan).toMatchObject({
@@ -351,7 +351,7 @@ describe("importPluginZip", () => {
     const plan = planPluginImport({
       incoming: inspected,
       existingPlugins: await discoverProjectPlugins(storage),
-      occupiedGuids: new Set(["pack-guid", "hero-1"]),
+      indexedAssets: [{ header: { guid: "hero-1" } }],
       existingFolderNames: ["pack"],
     });
     expect(plan.kind).toBe("update");
@@ -393,7 +393,7 @@ describe("importPluginZip", () => {
     const plan = planPluginImport({
       incoming: inspected,
       existingPlugins: await discoverProjectPlugins(storage),
-      occupiedGuids: new Set(["shared-guid"]),
+      indexedAssets: [{ header: { guid: "shared-guid" } }],
       existingFolderNames: [],
       createGuid: () => "remapped-guid",
     });
@@ -416,7 +416,7 @@ describe("importPluginZip", () => {
     ).toBe("other-class");
   });
 
-  it("gives a new plugin's assets that the project already has new guids, and moves references with them", async () => {
+  it("gives a new plugin's assets that the project already has new guids, and keeps the guids of placeholders it fills", async () => {
     const storage = await projectStorage();
     await writeClass(storage, "assets/Taken.class.babasset", { guid: "tex-1", name: "Taken" });
 
@@ -440,7 +440,12 @@ describe("importPluginZip", () => {
     const plan = planPluginImport({
       incoming: inspected,
       existingPlugins: [],
-      occupiedGuids: new Set(["tex-1"]),
+      // Project content still references the sprite and the plugin, so both are Unresolved placeholders.
+      indexedAssets: [
+        { header: { guid: "tex-1" } },
+        { header: { guid: "sprite-1" }, placeholder: true },
+        { header: { guid: "pack-guid" }, placeholder: true },
+      ],
       existingFolderNames: [],
       createGuid: () => "tex-2",
     });

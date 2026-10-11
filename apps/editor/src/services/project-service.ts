@@ -1655,14 +1655,10 @@ export class ProjectService {
     decision?: "keep" | "replace",
   ): Promise<PluginImportResult> {
     const incoming = await inspectBabplugin(bytes);
-    const occupiedGuids = new Set<string>([
-      ...this.pluginDescriptors.map((plugin) => plugin.pluginGuid),
-      ...(this.assetRegistry?.list().map((asset) => asset.header.guid) ?? []),
-    ]);
     const plan = planPluginImport({
       incoming,
       existingPlugins: this.pluginDescriptors,
-      occupiedGuids,
+      indexedAssets: this.assetRegistry?.list() ?? [],
       existingFolderNames: this.pluginDescriptors.map(
         (plugin) => plugin.folderName,
       ),

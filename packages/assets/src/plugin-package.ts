@@ -231,10 +231,21 @@ export async function exportPluginZip(
   return encodeProjectZip(files);
 }
 
+/** An indexed asset as `AssetRegistry.list()` returns it, reduced to what import planning reads. */
+export interface PluginImportIndexedAsset {
+  header: { guid: string };
+  placeholder?: boolean;
+}
+
+/**
+ * Plan a `.babplugin` import. A guid counts as taken when an existing plugin
+ * or a real indexed asset has it. An Unresolved placeholder does not take its
+ * guid: the incoming plugin may be what fills it.
+ */
 export function planPluginImport(options: {
   incoming: InspectedBabplugin;
   existingPlugins: readonly PluginDescriptor[];
-  occupiedGuids: ReadonlySet<string>;
+  indexedAssets: readonly PluginImportIndexedAsset[];
   existingFolderNames: readonly string[];
   createGuid?: () => string;
 }): PluginImportPlan {
@@ -261,10 +272,14 @@ export function planPluginImport(options: {
     options.incoming.settings.displayName,
     options.existingFolderNames,
   );
+  const occupiedGuids = new Set(options.existingPlugins.map((plugin) => plugin.pluginGuid));
+  for (const asset of options.indexedAssets) {
+    if (!asset.placeholder) occupiedGuids.add(asset.header.guid);
+  }
   const createGuid = options.createGuid ?? newAssetGuid;
-  const assetGuids = containedGuidRemap(options.incoming, options.occupiedGuids, createGuid);
+  const assetGuids = containedGuidRemap(options.incoming, occupiedGuids, createGuid);
   const remapped = Object.keys(assetGuids).length > 0 ? { assetGuids } : {};
-  if (options.occupiedGuids.has(guid)) {
+  if (occupiedGuids.has(guid)) {
     return {
       kind: "remap-plugin",
       folderName,
@@ -278,8 +293,9 @@ export function planPluginImport(options: {
 
 /**
  * A new plugin's assets that share a guid with an asset the project already
- * has get new guids, so both stay indexed. An update keeps its ids: they are
- * the ids the plugin's previous version, and its users, already have.
+ * has get new guids, so both stay indexed. An asset that fills a placeholder
+ * keeps its guid, so its referrers resolve to it. An update keeps its ids:
+ * they are the ids the plugin's previous version, and its users, already have.
  */
 function containedGuidRemap(
   incoming: InspectedBabplugin,
