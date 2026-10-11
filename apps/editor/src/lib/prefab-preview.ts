@@ -222,9 +222,12 @@ export function reparentPrefabComponents(
     components.map((component) => [component.id, component]),
   );
   const roots = selected.filter((id) => {
+    const seen = new Set<string>([id]);
     let parent = byId.get(id)?.parentId ?? null;
-    while (parent) {
+    // A cyclic parent chain in saved data must not hang the drop.
+    while (parent && !seen.has(parent)) {
       if (selectedSet.has(parent)) return false;
+      seen.add(parent);
       parent = byId.get(parent)?.parentId ?? null;
     }
     return true;
@@ -425,6 +428,8 @@ function prefabRootPreviewActor() {
  * (compiler bump, Save All) rebuilds the component list even when the
  * authored payload is unchanged; keying on that array restarts collection
  * and can cancel `setMaterialDocuments` before MeshComponent materials bind.
+ * Transforms do not change what loads, so a Details scrub or gizmo commit
+ * only reloads the preview scene (`prefabPreviewTransformKey`).
  */
 export function prefabPreviewLoadKey(
   components: readonly SerializedComponent[],
@@ -434,10 +439,16 @@ export function prefabPreviewLoadKey(
       id: component.id,
       classId: component.classId,
       parentId: component.parentId ?? null,
-      transform: component.transform ?? null,
       properties: component.properties,
     })),
   );
+}
+
+/** Changes when a component moves, so the preview scene reloads without restarting asset loads. */
+export function prefabPreviewTransformKey(
+  components: readonly SerializedComponent[],
+): string {
+  return JSON.stringify(components.map((component) => component.transform ?? null));
 }
 
 /** Preview: Prefab Root at the origin plus one actor per component. */

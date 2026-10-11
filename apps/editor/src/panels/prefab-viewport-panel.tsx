@@ -39,6 +39,7 @@ import {
   previewSceneFor,
   PREFAB_ROOT_ID,
   prefabPreviewLoadKey,
+  prefabPreviewTransformKey,
   prefabSelectedActorIds,
   prefabSelectedIdFromPick,
 } from "../lib/prefab-preview";
@@ -307,6 +308,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   }, [playing, preparing]);
 
   const previewLoadKey = prefabPreviewLoadKey(previewComponents);
+  const previewTransformKey = prefabPreviewTransformKey(previewComponents);
   const materialLibraryKey = useMemo(() => {
     void registryEpoch;
     return savedMaterialLibraryKey(assetRegistry?.list() ?? []);
@@ -354,7 +356,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     engineRef.current?.loadScene(
       previewSceneFor(previewComponentsRef.current, prefabPhysicsWorld),
     );
-  }, [previewLoadKey, sharedEngine, prefabPhysicsWorld]);
+  }, [previewLoadKey, previewTransformKey, sharedEngine, prefabPhysicsWorld]);
 
   useEffect(() => {
     const handle = engineRef.current;

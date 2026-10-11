@@ -625,6 +625,30 @@ describe("PrefabViewportPanel engine", () => {
     expect(collectPlayMaterialLibrary.mock.calls.length).toBe(loads);
   });
 
+  it("reloads the preview scene for a moved component without restarting asset collection", async () => {
+    const { rerender } = render(
+      <PrefabViewportPanel {...({} as IDockviewPanelProps)} />,
+    );
+    await waitFor(() => expect(handle.setMeshAssets).toHaveBeenCalled());
+    const collections = collectPlayMaterialLibrary.mock.calls.length;
+    const sceneLoads = handle.loadScene.mock.calls.length;
+    prefabState.components = prefabState.components.map((component) => ({
+      ...component,
+      transform: { position: [2, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+    }));
+    rerender(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(handle.loadScene).toHaveBeenCalledTimes(sceneLoads + 1);
+    expect(handle.loadScene.mock.lastCall?.[0].actors).toContainEqual(
+      expect.objectContaining({
+        id: "prefab-mesh",
+        transform: expect.objectContaining({ position: [2, 0, 0] }),
+      }),
+    );
+    expect(collectPlayMaterialLibrary.mock.calls.length).toBe(collections);
+  });
+
   it("refreshes a saved Material while its prefab stays mounted", async () => {
     const savedAsset = async (value: number) => ({
       path: "assets/Surface.material.babasset",
