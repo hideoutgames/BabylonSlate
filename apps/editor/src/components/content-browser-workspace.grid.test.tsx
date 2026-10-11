@@ -85,6 +85,7 @@ function texture(index: number): IndexedAsset {
     rootId: "project",
     path: `assets/tex-${index}.babasset`,
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: `tex-${index}`,
       type: "Texture",
       name: `tex-${index}`,

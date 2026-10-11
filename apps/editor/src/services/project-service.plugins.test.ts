@@ -39,6 +39,7 @@ async function writeClassAsset(
     path,
     await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: options.guid,
         type: "Class",
         name: options.name,
@@ -208,6 +209,7 @@ describe("ProjectService plugin roots", () => {
       `${folderPath}/assets/Texture.texture.babasset`,
       await encodeBabasset({
         header: {
+          dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "export-texture",
           type: "Texture",
           name: "Texture",

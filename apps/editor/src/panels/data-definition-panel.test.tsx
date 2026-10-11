@@ -27,7 +27,7 @@ beforeEach(() => {
   state.readOnly = false;
   const payload = { kind: "dataDefinition", fields: [{ id: "damage", name: "Damage", typeId: "float", defaultValue: 12 }] };
   state.documents = [{ id, ref: { kind: "data-definition", path, label: "Weapon" }, content: payload, layout: null, dirty: false }];
-  state.assets = [{ rootId: "project", path, header: { guid: "weapon", name: "Weapon", type: "DataDefinition", version: 1, engineVersion: "0.0.0", mode: "thin", dependencies: [], payload, chunks: [] } }];
+  state.assets = [{ rootId: "project", path, header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid: "weapon", name: "Weapon", type: "DataDefinition", version: 1, engineVersion: "0.0.0", mode: "thin", dependencies: [], payload, chunks: [] } }];
   state.apply.mockImplementation(async (_id: string, content: Record<string, unknown>) => {
     state.documents = [{ ...state.documents[0]!, content, dirty: true }];
     return true;

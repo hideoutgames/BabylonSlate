@@ -46,6 +46,7 @@ function asset(): IndexedAsset {
     rootId: "project",
     path: "assets/hero.babasset",
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: "hero-1",
       type: "Texture",
       name: "hero",

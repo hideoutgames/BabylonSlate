@@ -113,7 +113,7 @@ describe("ProjectService lifecycle", () => {
     const service = new ProjectService(storage, { encode: () => new Promise(resolve => { finishEncode = resolve; }) });
     await service.createEmptyProject("EncodeDrain", { kind: "2d" });
     await storage.writeBinary("assets/test.babasset", await encodeBabasset({
-      header: { guid: "encode-drain", type: "Texture", name: "Test", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "encode_failed" } },
+      header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid: "encode-drain", type: "Texture", name: "Test", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "encode_failed" } },
       chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
     }));
     await service.registry!.reindexPath("assets/test.babasset");
@@ -139,7 +139,7 @@ describe("ProjectService lifecycle", () => {
     const service = new ProjectService(storage, { encode: () => new Promise(resolve => { finishEncode = resolve; }) });
     await service.createEmptyProject("EncodeClose", { kind: "2d" });
     await storage.writeBinary("assets/test.babasset", await encodeBabasset({
-      header: { guid: "encode-close", type: "Texture", name: "Test", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "encode_failed" } },
+      header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid: "encode-close", type: "Texture", name: "Test", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "encode_failed" } },
       chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
     }));
     await service.registry!.reindexPath("assets/test.babasset");
@@ -177,7 +177,7 @@ describe("ProjectService lifecycle", () => {
     const service = new ProjectService(storage, { encode: () => new Promise(resolve => { finishEncode = resolve; }) });
     await service.createEmptyProject("EncodeLate", { kind: "2d" });
     await storage.writeBinary("assets/test.babasset", await encodeBabasset({
-      header: { guid: "encode-late", type: "Texture", name: "Test", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "encode_failed" } },
+      header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid: "encode-late", type: "Texture", name: "Test", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "encode_failed" } },
       chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
     }));
     await service.registry!.reindexPath("assets/test.babasset");
@@ -833,6 +833,7 @@ describe("texture encode diagnostics", () => {
     await service.createEmptyProject("EncodeDiag", { kind: "2d" });
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "tex-guid-1",
         type: "Texture",
         name: "Albedo",
@@ -884,7 +885,7 @@ describe("texture encode diagnostics", () => {
     await service.createEmptyProject("Fallback", { kind: "2d" });
     for (const name of ["Stuck", "Wall"]) {
       await storage.writeBinary(`assets/${name}.babasset`, await encodeBabasset({
-        header: { guid: name, type: "Texture", name, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { compressionState: "compressed", usage: "albedo" } },
+        header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid: name, type: "Texture", name, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload: { compressionState: "compressed", usage: "albedo" } },
         chunks: [
           { id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) },
           { id: "ktx2:a", kind: "ktx2", mime: "image/ktx2", data: new Uint8Array([4, 5, 6]) },

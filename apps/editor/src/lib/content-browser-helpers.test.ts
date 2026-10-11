@@ -107,6 +107,7 @@ function asset(
     rootId: "project",
     path: overrides.path ?? "assets/tex.babasset",
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       guid: overrides.guid ?? "guid-1",
       type: overrides.type ?? "Texture",
       name: overrides.name ?? "tex",

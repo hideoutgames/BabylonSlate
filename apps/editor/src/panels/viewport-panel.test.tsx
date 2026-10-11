@@ -947,7 +947,7 @@ describe("ViewportPanel engine", () => {
   it("refreshes a prepared emission asset without rebuilding the scene or reacting to unchanged registry content", async () => {
     const sourceHash = "a".repeat(64);
     const header = readAssetDocumentHeader(await encodeAssetDocument({ type: "Texture", guid: "emission", name: "Emitter", version: 1, payload: {} }));
-    header.chunks.push({ id: "pixels", kind: "pixels", mime: "image/png", sha256: sourceHash, locator: { inline: { offset: 0, length: 4 } } });
+    header.chunks.push({ id: "pixels", kind: "pixels", mime: "image/png", sha256: sourceHash, byteLength: 4, locator: { inline: { offset: 0, length: 4 } } });
     let asset = { rootId: "project", path: "assets/Emitter.texture.babasset", header };
     documents.assetRegistry = { list: () => [asset], getByGuid: (guid) => guid === "emission" ? asset : undefined };
     // The registry re-indexes a rewritten Texture with a new header; it never edits one in place.
@@ -963,7 +963,7 @@ describe("ViewportPanel engine", () => {
     const loads = handle.loadScene.mock.calls.length;
     const collects = documents.collectPlayAreaEmissions.mock.calls.length;
     const refresh = () => view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
-    reindex([...asset.header.chunks, { id: areaEmissionChunkId(sourceHash), kind: "area-emission", mime: "application/octet-stream", sha256: "b".repeat(64), locator: { inline: { offset: 4, length: 8 } } }]);
+    reindex([...asset.header.chunks, { id: areaEmissionChunkId(sourceHash), kind: "area-emission", mime: "application/octet-stream", sha256: "b".repeat(64), byteLength: 8, locator: { inline: { offset: 4, length: 8 } } }]);
     refresh();
     await waitFor(() => expect(documents.collectPlayAreaEmissions).toHaveBeenCalledTimes(collects + 1));
     await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));

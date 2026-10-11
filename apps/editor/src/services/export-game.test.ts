@@ -72,7 +72,7 @@ describe("collectAndExportGame", () => {
         payload, ...collectAssetDependencyMetadata(type, payload),
         chunks: type === "Model" ? [{
           id: "source", kind: "geometry", mime: "model/gltf-binary", sha256: "aa",
-          locator: { inline: { offset: 0, length: 4 } },
+          byteLength: 4, locator: { inline: { offset: 0, length: 4 } },
         }] : [],
       },
     }));
