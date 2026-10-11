@@ -428,8 +428,9 @@ export function compileGraph(
   );
   /**
    * Statement-scoped memos: each holds the value computed during the current
-   * `__stmt` epoch. Every emitted exec node, and each While Loop condition
-   * check, starts a new epoch. Declared per entry point.
+   * `__stmt` epoch. Every emitted exec node, each While Loop condition check
+   * and each For Loop bound check after the first starts a new epoch.
+   * Declared per entry point.
    */
   let memoDecls: string[] = [];
   const memoByKey = new Map<string, string>();
@@ -746,8 +747,11 @@ export function compileGraph(
           `    const ${bound} = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.trunc(n) : 0; };`,
           anchor,
         );
+        // The first Last Index check shares the For Loop's statement with
+        // First Index; each later check is a statement of its own.
+        const update = useEpoch ? `${iter}++, __stmt++` : `${iter}++`;
         const opening = emitBody(
-          `    for (let ${iter} = ${bound}(${firstExpr}); ${iter} <= ${bound}(${lastExpr}); ${iter}++) {`,
+          `    for (let ${iter} = ${bound}(${firstExpr}); ${iter} <= ${bound}(${lastExpr}); ${update}) {`,
           anchor,
         );
         if (instrumentLoops) emitBody(`      ${loopCheck(anchor.nodeId)}`, anchor);
