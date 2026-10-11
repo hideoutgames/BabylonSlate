@@ -68,7 +68,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
       shaderLanguage: graph.engine.isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
       onError: this.compileFailure.for(`${name} Compose`),
     });
-    this.onBeforeTaskExecute.add(() => this.sync());
+    this.onBeforeTaskExecute.add(() => this.sync(true));
   }
   get drawingPassCount(): number { return this.view.active ? 1 + SHARED_OUTLINE_GROUPS.filter((group) => this.view.groupActive(group)).length : 0; }
   get renderRecordCount(): number { return this.view.active ? 1 + 2 * (this.drawingPassCount - 1) : 0; }
@@ -148,7 +148,12 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     });
     this.sync();
   }
-  private sync(): void {
+  /**
+   * `cull` narrows the strict occluders to those that can affect this frame;
+   * readiness keeps the full list so an occluder's program is ready before it
+   * comes into view.
+   */
+  private sync(cull = false): void {
     if (this.disposed) return;
     this.view.prepare();
     for (const record of this.masks) {
@@ -156,7 +161,10 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
       if (record.clearPass) record.clearPass.disabled = !active;
       if (record.drawPass) record.drawPass.disabled = !active;
       record.objects.camera = this.camera;
-      record.objects.objectList = { meshes: active ? this.view.meshesForGroup(record.group) : [], particleSystems: [] };
+      const meshes = !active ? [] : cull && record.group === "strict"
+        ? this.view.strictOccludersFor(this.camera, this.width, this.height)
+        : this.view.meshesForGroup(record.group);
+      record.objects.objectList = { meshes, particleSystems: [] };
       record.renderer.prune();
     }
     if (this.composePass) this.composePass.disabled = !this.view.active;
