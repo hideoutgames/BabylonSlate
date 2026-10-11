@@ -200,7 +200,9 @@ the current leased asset metadata after on-demand acquisitions. Unsupported init
 quiescence still precedes any failed Stop resolution. Source-document and project
 transitions await Stop and actual release before recovery cleanup or replacement.
 Unexpected host teardown requests discard, while an unconfirmed native release
-keeps the authoring protection and shared Engine quarantined until reload.
+keeps the authoring protection and shared Engine quarantined until reload. The
+Keep write itself is atomic: a Discard that arrives after it started waits for
+it, and takes effect only if the write fails.
 
 ### Final authoring capture transport
 
