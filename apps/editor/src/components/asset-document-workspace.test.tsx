@@ -141,9 +141,11 @@ describe("AssetDocumentWorkspace authoring", () => {
   });
   it("removes its preview font face from the document when the Font document closes", async () => {
     const faces = new Set<unknown>();
+    // FontRegistry waits on each registered face's own load().
     vi.stubGlobal("FontFace", class {
       family: string;
       constructor(family: string) { this.family = family; }
+      load() { return Promise.resolve(this); }
     });
     const fonts = Object.getOwnPropertyDescriptor(document, "fonts");
     Object.defineProperty(document, "fonts", {
@@ -151,8 +153,6 @@ describe("AssetDocumentWorkspace authoring", () => {
       value: {
         add: (face: unknown) => faces.add(face),
         delete: (face: unknown) => faces.delete(face),
-        load: async () => [],
-        check: () => true,
       },
     });
     try {
