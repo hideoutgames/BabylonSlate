@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolve } from "node:path";
-import { rendererFile, isEditorSender, validateIpcArguments } from "./packaged-security";
+import { allowsEditorPermission, rendererFile, isEditorSender, isPreviewFrameUrl, validateIpcArguments } from "./packaged-security";
 
 describe("packaged renderer boundary", () => {
   it("resolves encoded asset filenames without treating filename characters as URL delimiters", () => {
@@ -10,7 +10,7 @@ describe("packaged renderer boundary", () => {
   it("resolves player and wasm resources only inside the renderer root", () => {
     expect(rendererFile("app://babylonslate/player/index.html", "renderer")).toBe(resolve("renderer/player/index.html"));
     expect(rendererFile("app://babylonslate/assets/physics.wasm", "renderer")).toBe(resolve("renderer/assets/physics.wasm"));
-    for (const url of ["file:///secret", "app://other/index.html", "app://babylonslate/%2e%2e/secret", "app://babylonslate/..%5csecret", "app://babylonslate/C:/secret", "app://babylonslate/%252e%252e/secret", "app://babylonslate/assets/key%00"]) {
+    for (const url of ["file:///secret", "app://other/index.html", "app://babylonslate/%2e%2e/secret", "app://babylonslate/..%5csecret", "app://babylonslate/C:/secret", "app://babylonslate/%252e%252e/secret", "app://babylonslate/assets/key%00", "app://babylonslate/..%20/secret", "app://babylonslate/assets/..%20./secret", "app://babylonslate/.../secret"]) {
       expect(() => rendererFile(url, "renderer")).toThrow();
     }
   });
@@ -20,6 +20,16 @@ describe("packaged renderer boundary", () => {
       expect(isEditorSender(url, true)).toBe(false);
     }
     expect(isEditorSender("app://babylonslate/index.html", false)).toBe(false);
+  });
+  it("limits subframes to the Preview player and grants the editor only clipboard writes", () => {
+    expect(isPreviewFrameUrl("app://babylonslate/player/index.html?preview=1&t=2")).toBe(true);
+    for (const url of ["https://example.com/", "app://babylonslate/index.html", "app://other/player/index.html", "about:blank"]) {
+      expect(isPreviewFrameUrl(url)).toBe(false);
+    }
+    expect(allowsEditorPermission("clipboard-sanitized-write", "app://babylonslate/index.html", true)).toBe(true);
+    expect(allowsEditorPermission("clipboard-sanitized-write", "app://babylonslate/player/index.html", false)).toBe(false);
+    expect(allowsEditorPermission("clipboard-read", "app://babylonslate/index.html", true)).toBe(false);
+    expect(allowsEditorPermission("media", "app://babylonslate/index.html", true)).toBe(false);
   });
   it("rejects malformed privileged arguments and filesystem escapes", () => {
     expect(() => validateIpcArguments("save-games:list", ["save-games/project/game/profile/"])).not.toThrow();

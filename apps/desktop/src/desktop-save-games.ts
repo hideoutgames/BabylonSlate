@@ -13,7 +13,8 @@ interface Lease {
 /** Main-process lease ownership prevents another window from releasing an active transaction. */
 export class DesktopSaveGames {
   private readonly leases = new Map<string, Lease>();
-  private readonly epochs = new Map<number, number>();
+  /** Owners with lock acquisitions in flight; closing an owner bumps its epoch. */
+  private readonly acquiring = new Map<number, { epoch: number; pending: number }>();
   private readonly storage: NodeSaveGameStorage;
   constructor(storage: NodeSaveGameStorage) { this.storage = storage; }
 
@@ -29,15 +30,23 @@ export class DesktopSaveGames {
   }
 
   async acquire(owner: number, key: string): Promise<string> {
-    const epoch = this.epochs.get(owner) ?? 0;
-    const release = await this.storage.acquireLock(key);
-    if ((this.epochs.get(owner) ?? 0) !== epoch) {
-      release();
-      throw new Error("Save request owner closed");
+    const state = this.acquiring.get(owner) ?? { epoch: 0, pending: 0 };
+    this.acquiring.set(owner, state);
+    const epoch = state.epoch;
+    state.pending += 1;
+    try {
+      const release = await this.storage.acquireLock(key);
+      if (state.epoch !== epoch) {
+        release();
+        throw new Error("Save request owner closed");
+      }
+      const token = randomUUID();
+      this.leases.set(token, { owner, key, release, pending: new Set(), closing: false });
+      return token;
+    } finally {
+      state.pending -= 1;
+      if (state.pending === 0) this.acquiring.delete(owner);
     }
-    const token = randomUUID();
-    this.leases.set(token, { owner, key, release, pending: new Set(), closing: false });
-    return token;
   }
 
   async release(owner: number, token: string): Promise<void> {
@@ -50,7 +59,8 @@ export class DesktopSaveGames {
   }
 
   async releaseOwner(owner: number): Promise<void> {
-    this.epochs.set(owner, (this.epochs.get(owner) ?? 0) + 1);
+    const state = this.acquiring.get(owner);
+    if (state) state.epoch += 1;
     await Promise.all([...this.leases].filter(([, lease]) => lease.owner === owner).map(([token]) => this.release(owner, token)));
   }
 

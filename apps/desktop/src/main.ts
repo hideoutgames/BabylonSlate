@@ -1,4 +1,5 @@
-import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -17,15 +18,24 @@ import { isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/cor
 import { NodeSaveGameStorage } from "@babylonslate/vfs/save-game-node";
 import { DesktopSaveGames } from "./desktop-save-games";
 import type { ProjectFolderHandle } from "@babylonslate/core";
-import { DesktopSecretStore } from "./desktop-secret-store";
+import { DesktopSecretStore, isMissingFile } from "./desktop-secret-store";
 import { DesktopAccountSecretStore } from "./desktop-account-secrets";
 import { fetchDesktopHttp, type DesktopHttpRequest } from "./desktop-http";
-import { isEditorSender, rendererFile, validateIpcArguments } from "./packaged-security";
+import {
+  allowsEditorPermission,
+  isEditorSender,
+  isPreviewFrameUrl,
+  MAX_IPC_BYTES,
+  rendererFile,
+  validateIpcArguments,
+} from "./packaged-security";
 import { automaticUpdatesEnabled, createDesktopUpdates, updatesSupported } from "./desktop-updates";
 
 const rootDir = join(app.getAppPath(), "host");
 const rendererRoot = join(app.getAppPath(), "renderer");
 const editorWindows = new Set<number>();
+/** Each editor document owns the project folder it opened. */
+const projectStorage = new Map<number, NodeStorageAdapter>();
 let updates: ReturnType<typeof createDesktopUpdates> | undefined;
 let saveGames: DesktopSaveGames | undefined;
 const primaryInstance = app.requestSingleInstanceLock();
@@ -49,6 +59,35 @@ function userDataFile(name: string): string {
   return join(app.getPath("userData"), name);
 }
 
+/** Replace a host file in one rename, so a crash or a reader never sees a partial write. */
+async function replaceFile(path: string, contents: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, contents, { mode: 0o600 });
+    await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+/** Run read-modify-write tasks on one host file in call order. */
+function serialized(): <T>(task: () => Promise<T>) => Promise<T> {
+  let tail: Promise<unknown> = Promise.resolve();
+  return task => {
+    const run = tail.then(task);
+    tail = run.catch(() => undefined);
+    return run;
+  };
+}
+
+/** A gone document's project folder and save leases end with it. */
+function releaseOwner(owner: number): void {
+  projectStorage.delete(owner);
+  void saveGames?.releaseOwner(owner);
+}
+
 async function createWindow(): Promise<void> {
   const window = new BrowserWindow({
     width: 1440,
@@ -62,11 +101,11 @@ async function createWindow(): Promise<void> {
   });
   const contentsId = window.webContents.id;
   editorWindows.add(contentsId);
-  window.on("closed", () => { editorWindows.delete(contentsId); void saveGames?.releaseOwner(contentsId); });
-  window.webContents.on("render-process-gone", () => { void saveGames?.releaseOwner(contentsId); });
-  window.webContents.on("did-start-navigation", (_event, _url, _inPlace, isMainFrame) => {
-    if (isMainFrame) void saveGames?.releaseOwner(contentsId);
-  });
+  window.on("closed", () => { editorWindows.delete(contentsId); releaseOwner(contentsId); });
+  window.webContents.on("render-process-gone", () => releaseOwner(contentsId));
+  // Fires once a new main-frame document commits; same-document navigations
+  // and navigations that never commit keep the current page's state.
+  window.webContents.on("did-navigate", () => releaseOwner(contentsId));
   // Windows can terminate an installer during shutdown/logoff. Keep it cached
   // for a subsequent normal exit instead.
   window.on("session-end", () => updates?.setEnabled(false));
@@ -74,13 +113,23 @@ async function createWindow(): Promise<void> {
   window.webContents.on("will-navigate", (event, url) => {
     if (!isEditorSender(url, true)) event.preventDefault();
   });
+  window.webContents.on("will-frame-navigate", event => {
+    if (!event.isMainFrame && !isPreviewFrameUrl(event.url)) event.preventDefault();
+  });
   window.webContents.on("will-attach-webview", event => event.preventDefault());
   await window.loadURL("app://babylonslate/index.html");
 }
 
 function registerIpc(): void {
   const projectsRoot = join(app.getPath("userData"), "projects");
-  const storage = new NodeStorageAdapter(projectsRoot);
+  function projects(event: IpcMainInvokeEvent): NodeStorageAdapter {
+    let storage = projectStorage.get(event.sender.id);
+    if (!storage) {
+      storage = new NodeStorageAdapter(projectsRoot);
+      projectStorage.set(event.sender.id, storage);
+    }
+    return storage;
+  }
   saveGames = new DesktopSaveGames(new NodeSaveGameStorage(userDataFile("game-saves")));
   const saves = saveGames;
   handle("save-games:read", (event, key) => saves.result(() => saves.read(event.sender.id, String(key))));
@@ -91,9 +140,18 @@ function registerIpc(): void {
   handle("save-games:release-lock", (event, token) => saves.result(() => saves.release(event.sender.id, String(token))));
   const settingsPath = userDataFile("engine-settings.json");
   const grantsPath = userDataFile("project-folder-grants.json");
+  const grantUpdates = serialized();
   async function grantedFolders(): Promise<string[]> {
-    try { return JSON.parse(await readFile(grantsPath, "utf8")) as string[]; }
+    let json: string;
+    try { json = await readFile(grantsPath, "utf8"); }
+    catch (error) {
+      if (isMissingFile(error)) return [];
+      throw error;
+    }
+    let grants: unknown;
+    try { grants = JSON.parse(json); }
     catch { return []; }
+    return Array.isArray(grants) ? grants.filter((grant): grant is string => typeof grant === "string") : [];
   }
 
   handle("settings:read", async () => {
@@ -103,20 +161,17 @@ function registerIpc(): void {
       return null;
     }
   });
-  handle("settings:write", async (_event, json) => {
-    await mkdir(dirname(settingsPath), { recursive: true });
-    await writeFile(settingsPath, String(json));
+  const settingsWrites = serialized();
+  handle("settings:write", (_event, json) => settingsWrites(async () => {
+    await replaceFile(settingsPath, String(json));
     updates?.setEnabled(automaticUpdatesEnabled(String(json)));
-  });
+  }));
 
   const secretsPath = userDataFile("source-control-secrets.json");
   const secrets = new DesktopSecretStore(
     {
       read: () => readFile(secretsPath, "utf8"),
-      write: async (contents) => {
-        await mkdir(dirname(secretsPath), { recursive: true });
-        await writeFile(secretsPath, contents);
-      },
+      write: contents => replaceFile(secretsPath, contents),
     },
     safeStorage,
   );
@@ -134,12 +189,7 @@ function registerIpc(): void {
   const accountSecretsPath = userDataFile("account-secrets.json");
   const accountSecrets = new DesktopAccountSecretStore({
     read: () => readFile(accountSecretsPath, "utf8"),
-    write: async (contents) => {
-      await mkdir(dirname(accountSecretsPath), { recursive: true });
-      const temporary = `${accountSecretsPath}.tmp`;
-      await writeFile(temporary, contents, { mode: 0o600 });
-      await rename(temporary, accountSecretsPath);
-    },
+    write: contents => replaceFile(accountSecretsPath, contents),
   }, safeStorage);
   handle("account-secrets:get", async (_event, key) => accountSecrets.get(String(key)));
   handle("account-secrets:set", async (_event, key, value) => accountSecrets.set(String(key), String(value)));
@@ -149,7 +199,8 @@ function registerIpc(): void {
     return fetchDesktopHttp(request as DesktopHttpRequest, (url, init) => net.fetch(url, init));
   });
 
-  handle("project:pickFolder", async () => {
+  handle("project:pickFolder", async event => {
+    const storage = projects(event);
     const picked = await dialog.showOpenDialog({
       properties: ["openDirectory", "createDirectory"],
     });
@@ -157,16 +208,18 @@ function registerIpc(): void {
       throw new Error("Folder picker cancelled");
     }
     const selected = await realpath(picked.filePaths[0]);
-    const grants = new Set(await grantedFolders());
-    grants.add(selected);
-    await mkdir(dirname(grantsPath), { recursive: true });
-    await writeFile(grantsPath, JSON.stringify([...grants]));
+    await grantUpdates(async () => {
+      const grants = new Set(await grantedFolders());
+      grants.add(selected);
+      await replaceFile(grantsPath, JSON.stringify([...grants]));
+    });
     return storage.openAbsoluteFolder(selected);
   });
-  handle("project:openDocuments", async (_event, name) => {
-    return storage.openDocumentsProject(String(name));
+  handle("project:openDocuments", async (event, name) => {
+    return projects(event).openDocumentsProject(String(name));
   });
-  handle("project:openKnown", async (_event, handle) => {
+  handle("project:openKnown", async (event, handle) => {
+    const storage = projects(event);
     const folder = handle as ProjectFolderHandle;
     if (folder.id.startsWith("node:")) {
       const known = await storage.listProjects();
@@ -180,18 +233,22 @@ function registerIpc(): void {
     }
     return storage.openKnownFolder(folder);
   });
-  handle("project:list", async () => storage.listProjects());
-  handle("project:release", async () => storage.releaseFolder());
-  handle("project:readBinary", async (_event, path) => {
+  handle("project:list", async event => projects(event).listProjects());
+  handle("project:release", async event => projects(event).releaseFolder());
+  handle("project:readBinary", async (event, path) => {
+    const storage = projects(event);
+    // Whole-file reads share the ranged-read and write cap; larger files use ranges.
+    const { size } = await storage.stat(String(path));
+    if (size !== null && size > MAX_IPC_BYTES) throw new Error(`File is too large to read at once: ${String(path)}`);
     const bytes = await storage.readBinary(String(path));
     return bytes.buffer.slice(
       bytes.byteOffset,
       bytes.byteOffset + bytes.byteLength,
     );
   });
-  handle("project:readBinaryRange", async (_event, path, offset, length, revision) => {
+  handle("project:readBinaryRange", async (event, path, offset, length, revision) => {
     try {
-      const result = await storage.readBinaryRange(String(path), Number(offset), Number(length), revision as string | undefined);
+      const result = await projects(event).readBinaryRange(String(path), Number(offset), Number(length), revision as string | undefined);
       return { ...result, bytes: result.bytes.buffer.slice(result.bytes.byteOffset, result.bytes.byteOffset + result.bytes.byteLength) };
     } catch (error) {
       // Electron only transports Error.message for rejected invokes. Return a
@@ -201,33 +258,35 @@ function registerIpc(): void {
         actualBytesRead: (error as { actualBytesRead?: number } | null)?.actualBytesRead ?? 0 };
     }
   });
-  handle("project:writeBinary", async (_event, path, data) => {
-    await storage.writeBinary(
+  handle("project:writeBinary", async (event, path, data) => {
+    await projects(event).writeBinary(
       String(path),
       new Uint8Array(data as ArrayBuffer),
     );
   });
-  handle("project:exists", async (_event, path) =>
-    storage.exists(String(path)),
+  handle("project:exists", async (event, path) =>
+    projects(event).exists(String(path)),
   );
-  handle("project:readdir", async (_event, path) =>
-    storage.readdir(String(path)),
+  handle("project:readdir", async (event, path) =>
+    projects(event).readdir(String(path)),
   );
-  handle("project:mkdir", async (_event, path, recursive) =>
-    storage.mkdir(String(path), recursive !== false),
+  handle("project:mkdir", async (event, path, recursive) =>
+    projects(event).mkdir(String(path), recursive !== false),
   );
-  handle("project:remove", async (_event, path) =>
-    storage.remove(String(path)),
+  handle("project:remove", async (event, path) =>
+    projects(event).remove(String(path)),
   );
-  handle("project:stat", async (_event, path) =>
-    storage.stat(String(path)),
+  handle("project:stat", async (event, path) =>
+    projects(event).stat(String(path)),
   );
 }
 
 void app.whenReady().then(async () => {
   if (!primaryInstance) return;
-  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  session.defaultSession.setPermissionCheckHandler(() => false);
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) =>
+    callback(editorWindows.has(contents.id) && allowsEditorPermission(permission, details.requestingUrl, details.isMainFrame)));
+  session.defaultSession.setPermissionCheckHandler((contents, permission, _origin, details) =>
+    contents !== null && editorWindows.has(contents.id) && allowsEditorPermission(permission, details.requestingUrl ?? "", details.isMainFrame));
   protocol.handle("app", async request => {
     try {
       if (!["GET", "HEAD"].includes(request.method)) return new Response(null, { status: 405 });
@@ -247,8 +306,11 @@ void app.whenReady().then(async () => {
       if (updatesSupported(process.platform, manifest, app.getVersion(), process.env)) {
         const { autoUpdater } = await import("electron-updater");
         updates = createDesktopUpdates(autoUpdater, error => console.warn("Automatic update failed:", error));
-        const settings = await readFile(userDataFile("engine-settings.json"), "utf8").catch(() => null);
-        updates.setEnabled(automaticUpdatesEnabled(settings));
+        // Missing settings default on; an unreadable file may hold an opt-out.
+        updates.setEnabled(await readFile(userDataFile("engine-settings.json"), "utf8").then(
+          automaticUpdatesEnabled,
+          (error: unknown) => isMissingFile(error),
+        ));
       }
     } catch (error) { console.warn("Automatic updates unavailable:", error); }
   }
