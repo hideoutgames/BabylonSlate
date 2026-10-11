@@ -137,10 +137,10 @@ describe("assetPickerAllowedTypes", () => {
     expect(assetPickerAllowedTypes("Texture", undefined)).toEqual(["Texture", "RenderTargetTexture"]);
     expect(assetPickerAllowedTypes("RenderTarget", undefined)).toEqual(["RenderTarget"]);
   });
-  it("uses catalog typeClassIds so Mesh Get/Set can pick Mesh or Model", () => {
-    expect(assetPickerAllowedTypes("Model", ["Mesh", "Model"])).toEqual([
-      "Mesh",
+  it("uses catalog typeClassIds instead of the pin asset type", () => {
+    expect(assetPickerAllowedTypes("Model", ["Model", "Sprite"])).toEqual([
       "Model",
+      "Sprite",
     ]);
   });
 

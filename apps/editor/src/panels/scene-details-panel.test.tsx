@@ -107,10 +107,10 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
         header: {
           guid: "mesh-1",
           name: "Rock",
-          type: "Mesh",
+          type: "Model",
           parentClass: null,
         },
-        path: "assets/Rock.mesh.babasset",
+        path: "assets/Rock.model.babasset",
       },
       {
         header: {
@@ -164,10 +164,10 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
       guid === "mesh-1"
         ? {
             header: {
-              guid: "mesh-1", name: "Rock", type: "Mesh",
+              guid: "mesh-1", name: "Rock", type: "Model",
               payload: { materialSlots: [{ index: 0, name: "Rock", materialGuid: "mat-rock" }] },
             },
-            path: "assets/Rock.mesh.babasset",
+            path: "assets/Rock.model.babasset",
           }
         : undefined,
   },
@@ -615,7 +615,7 @@ describe("SceneDetailsPanel authoring", () => {
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const button = screen.getByTestId("property-actor-1-component-1-assetGuid");
     expect(button.textContent).toContain("Rock");
-    expect(button.textContent).toContain("Mesh");
+    expect(button.textContent).toContain("Model");
     expect(button.textContent).not.toContain("mesh-1");
     expect(
       button
@@ -920,7 +920,7 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.queryByTestId("search-item-mat-rock")).toBeNull();
   });
 
-  it("adds a project Mesh as MeshComponent with assetGuid set", () => {
+  it("adds a project Model as MeshComponent with assetGuid set", () => {
     harness.selectedActorIds = ["actor-1"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByTestId("details-add-component"));
