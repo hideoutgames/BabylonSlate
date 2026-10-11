@@ -806,41 +806,6 @@ export function attenuationPlotPoints(
   return points;
 }
 
-export function remapAudioPayloadGuids(
-  assetType: string,
-  payload: Record<string, unknown>,
-  remap: ReadonlyMap<string, string>,
-): Record<string, unknown> {
-  const rewrite = (guid: string | null): string | null =>
-    guid ? (remap.get(guid) ?? guid) : null;
-  if (assetType === "Audio") {
-    const audio = normalizeAudioPayload(payload);
-    return {
-      ...audio,
-      audioChannelGuid: rewrite(audio.audioChannelGuid),
-      soundAttenuationGuid: rewrite(audio.soundAttenuationGuid),
-    };
-  }
-  if (assetType === "AudioMixer") {
-    const mixer = normalizeAudioMixerPayload(payload);
-    return {
-      ...mixer,
-      channels: mixer.channels.map((entry) => ({
-        ...entry,
-        channelGuid: rewrite(entry.channelGuid) ?? entry.channelGuid,
-      })),
-    };
-  }
-  if (assetType === "AudioChannel") {
-    const channel = normalizeAudioChannelPayload(payload);
-    return {
-      ...channel,
-      parentChannelGuid: rewrite(channel.parentChannelGuid),
-    };
-  }
-  return payload;
-}
-
 const PACKED_AUDIO_MAGIC = new Uint8Array([0x42, 0x53, 0x41, 0x55]); // BSAU
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

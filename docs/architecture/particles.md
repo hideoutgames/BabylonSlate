@@ -417,7 +417,7 @@ That version boundary also prepares native update/gradient resources before crea
 
 ## Tests
 
-- Assets: `particle-values.test.ts`, `particle-schedule.test.ts`, `particle-basic-emitter.test.ts`, `particle-library.test.ts` (including the graph dependency, guid-remap and emitter-key cases), `particle-payload.test.ts`, `migration.test.ts` and `unique-names.test.ts` (the `.particlegraph` suffix).
+- Assets: `particle-values.test.ts`, `particle-schedule.test.ts`, `particle-basic-emitter.test.ts`, `particle-library.test.ts` (including the graph dependency and emitter-key cases), `particle-payload.test.ts`, `migration.test.ts` and `unique-names.test.ts` (the `.particlegraph` suffix).
 - Particle Graph IR (`packages/particle-graph/src`): `catalog`, `document`, `validate`, `lower`, `serialize-particle-graph` and `pin-defaults` tests (normalization, anchored diagnostics, deterministic position-free lowering, canvas round trip and connection rules).
 - Render: `particle-system-factory.test.ts` (blend mapping against Babylon-imported constants, billboard ids through Babylon's billboard shader paths, seconds, shapes, readiness texture), `particle-emission-driver.test.ts`, `particle-service.test.ts`, `particle-lifecycle.test.ts`, `particle-material-ownership.test.ts`, `particle-preview.test.ts`, `node-material-particles.test.ts`, `material-compiler.test.ts` (a particle Texture Sample reads `particle_uv`), `create-engine.play.test.ts`.
 - Render, Particle Graph:

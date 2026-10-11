@@ -96,27 +96,6 @@ export function normalizeModelPayload(value: unknown): ModelPayload {
   };
 }
 
-export function remapModelPayloadGuids(
-  assetType: string,
-  payload: Record<string, unknown>,
-  remap: ReadonlyMap<string, string>,
-): Record<string, unknown> {
-  if (assetType !== "Model") return payload;
-  const model = normalizeModelPayload(payload);
-  return {
-    ...model,
-    materialSlots: model.materialSlots.map((slot) => ({
-      ...slot,
-      materialGuid: slot.materialGuid
-        ? (remap.get(slot.materialGuid) ?? slot.materialGuid)
-        : null,
-    })),
-    skeletonGuid: model.skeletonGuid
-      ? (remap.get(model.skeletonGuid) ?? model.skeletonGuid)
-      : null,
-  };
-}
-
 /** Slot Material guids for Show References, remap, and export. */
 export function modelMaterialGuids(payload: unknown): string[] {
   const guids = new Set<string>();

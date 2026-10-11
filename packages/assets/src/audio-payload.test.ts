@@ -6,7 +6,6 @@ import {
   AUDIO_SPEED_OF_SOUND,
   audioAssetDependencies,
   fillEmptySourceClipName,
-  remapAudioPayloadGuids,
   computeAttenuationGain,
   computeDopplerPlaybackRate,
   audioChannelHasParentCycle,
@@ -376,51 +375,6 @@ describe("audio payloads", () => {
     expect(audioAssetDependencies("Class", { audioChannelGuid: "ch-1" })).toEqual(
       [],
     );
-  });
-
-  it("remaps Audio, mixer, and channel guids in payloads", () => {
-    const remap = new Map([
-      ["ch-old", "ch-new"],
-      ["att-old", "att-new"],
-    ]);
-    expect(
-      remapAudioPayloadGuids(
-        "Audio",
-        {
-          volume: 1,
-          audioChannelGuid: "ch-old",
-          soundAttenuationGuid: "att-old",
-        },
-        remap,
-      ),
-    ).toEqual({
-      volume: 1,
-      audioChannelGuid: "ch-new",
-      soundAttenuationGuid: "att-new",
-      clips: [{ chunkId: "source", name: "", weight: 1 }],
-      pitch: 1,
-      pitchRandom: false,
-      pitchMin: 1,
-      pitchMax: 1,
-      loop: false,
-    });
-    expect(
-      remapAudioPayloadGuids(
-        "AudioMixer",
-        { globalVolume: 1, channels: [{ channelGuid: "ch-old", volume: 0.5 }] },
-        remap,
-      ),
-    ).toEqual({
-      globalVolume: 1,
-      channels: [{ channelGuid: "ch-new", volume: 0.5 }],
-    });
-    expect(
-      remapAudioPayloadGuids(
-        "AudioChannel",
-        { parentChannelGuid: "ch-old", effects: [] },
-        remap,
-      ),
-    ).toMatchObject({ parentChannelGuid: "ch-new" });
   });
 
   it("resolves session playback gain without inventing mixer or channel factors", () => {

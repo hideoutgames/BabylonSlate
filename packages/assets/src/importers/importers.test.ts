@@ -424,3 +424,47 @@ it("refuses a colliding import whose document cannot be remapped instead of keep
     { type: "Class", name: "Player", guid: "player", version: 1, dependencies: ["jump"], payload: {}, chunks: [{ id: "document", kind: "document", mime: "application/json", data: new TextEncoder().encode("{ not json") }] },
   ], new Set(["jump"]))).toThrow(/Player.*Nothing was imported/);
 });
+
+it("remaps every stored reference to a colliding asset, keeping values declared as text", () => {
+  const asset = (type: string, guid: string, payload: Record<string, unknown>, document?: Record<string, unknown>) => ({
+    type, name: guid, guid, version: 1, dependencies: [], payload,
+    chunks: document ? [{ id: "document", kind: "document", mime: "application/json", data: new TextEncoder().encode(JSON.stringify(document)) }] : [],
+  });
+  const scene = { actors: [{ id: "a", classId: "Actor", components: [
+    { id: "mesh", classId: "MeshComponent", properties: { assetGuid: "tex", materialSlotOverrides: { Body: "mat" } } },
+    { id: "label", classId: "2DRichTextComponent", properties: { text: "Coin [img=tex size=14] x3 [IMG=other]" } },
+  ] }] };
+  const player = { members: [
+    { kind: "variable", name: "Skin", typeId: "asset", typeClassId: "Texture", defaultValue: "tex" },
+    { kind: "variable", name: "Caption", typeId: "string", defaultValue: "tex" },
+  ] };
+  const results = remapImportResultGuids([
+    asset("Texture", "tex", {}),
+    asset("Material", "mat", {}),
+    asset("Font", "fallback", {}),
+    asset("Tileset", "set", { textureGuid: "tex" }),
+    asset("Sprite", "sprite", { textureGuid: "tex" }),
+    asset("Tilemap", "map", { tilesets: [{ guid: "set", firstGid: 1, tileCount: 4 }] }),
+    asset("Font", "font", { fallbackGuids: ["fallback"] }),
+    asset("Water", "water", { materialGuid: "mat" }),
+    asset("SkyboxCreator", "sky", { sourceTextureGuid: "tex", generatedFaces: { px: "tex", nx: null } }),
+    asset("MaterialInstance", "inst", { parentGuid: "mat" }, { parentGuid: "mat", overrides: { Albedo: { kind: "texture", textureAssetGuid: "tex" } } }),
+    asset("Scene", "scene", {}, scene),
+    asset("Class", "player", player, player),
+  ], new Set(["tex", "mat", "set", "fallback"]));
+  const guid = (name: string) => results.find((entry) => entry.name === name)!.guid;
+  const payload = (name: string) => results.find((entry) => entry.name === name)!.payload;
+  const document = (name: string) => JSON.parse(new TextDecoder().decode(results.find((entry) => entry.name === name)!.chunks[0]!.data));
+  for (const name of ["tex", "mat", "set", "fallback"]) expect(guid(name)).not.toBe(name);
+  expect(payload("set")).toEqual({ textureGuid: guid("tex") });
+  expect(payload("sprite")).toEqual({ textureGuid: guid("tex") });
+  expect(payload("map")).toEqual({ tilesets: [{ guid: guid("set"), firstGid: 1, tileCount: 4 }] });
+  expect(payload("font")).toEqual({ fallbackGuids: [guid("fallback")] });
+  expect(payload("water")).toEqual({ materialGuid: guid("mat") });
+  expect(payload("sky")).toEqual({ sourceTextureGuid: guid("tex"), generatedFaces: { px: guid("tex"), nx: null } });
+  expect(document("inst")).toEqual({ parentGuid: guid("mat"), overrides: { Albedo: { kind: "texture", textureAssetGuid: guid("tex") } } });
+  expect(document("scene").actors[0].components[0].properties).toEqual({ assetGuid: guid("tex"), materialSlotOverrides: { Body: guid("mat") } });
+  expect(document("scene").actors[0].components[1].properties.text).toBe(`Coin [img=${guid("tex")} size=14] x3 [IMG=other]`);
+  expect(document("player").members.map((member: { defaultValue: unknown }) => member.defaultValue)).toEqual([guid("tex"), "tex"]);
+  expect(payload("player")).toEqual(document("player"));
+});
