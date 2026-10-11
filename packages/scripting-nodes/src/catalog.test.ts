@@ -29,7 +29,6 @@ describe("node catalog", () => {
     expect(registry.get("debug.drawCoordinateSystem")?.title).toBe(
       "Draw Debug Coordinate System",
     );
-    expect(registry.get("render.setResolution")).toBeDefined();
     expect(registry.get("camera.possess")).toBeDefined();
     expect(registry.get("light.setIntensity")).toBeDefined();
     expect(registry.get("bt.event.activate")).toBeDefined();

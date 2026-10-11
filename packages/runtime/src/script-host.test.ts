@@ -2403,8 +2403,8 @@ describe("script host runs compiled graphs", () => {
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "res", "scalability.setResolution", {
-          width: 800,
-          height: 600,
+          "default:width": 800,
+          "default:height": 600,
         }),
       ],
       edges: [edge("e1", "begin", "execOut", "res", "execIn")],
