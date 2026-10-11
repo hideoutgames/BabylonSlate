@@ -4,11 +4,20 @@ import {
   documentId,
   MAIN_SCENE_FILE,
   type DocumentRef,
+  type ProjectStorage,
   type SerializedActor,
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { DEFAULT_EDIT_BYTE_BUDGET, EditSession } from "@babylonslate/edit";
+import { appendJournalLines } from "@babylonslate/assets";
+import {
+  commandToJournalPayload,
+  DEFAULT_EDIT_BYTE_BUDGET,
+  EditSession,
+  serializeJournalLine,
+  SetSceneNameCommand,
+} from "@babylonslate/edit";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { JournalBuffer } from "../lib/journal-buffer";
 import { DocumentEditingService } from "./document-editing-service";
 import { DocumentService } from "./document-service";
@@ -26,7 +35,11 @@ function fromDisk<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function createEditing(options: { maxBytes?: number } = {}) {
+function createEditing(options: {
+  maxBytes?: number;
+  derivedStorage?: () => Promise<ProjectStorage>;
+  onRecoveryResolved?: () => void;
+} = {}) {
   const documents = new DocumentService();
   const editSession = new EditSession({ maxBytes: options.maxBytes ?? DEFAULT_EDIT_BYTE_BUDGET });
   const files = new Map<string, unknown>();
@@ -48,13 +61,13 @@ function createEditing(options: { maxBytes?: number } = {}) {
     project,
     sourceControl: new SourceControlService(),
     journal,
-    derivedStorage: () => Promise.reject(new Error("Recovery is not part of these tests.")),
+    derivedStorage: options.derivedStorage ?? (() => Promise.reject(new Error("Recovery is not part of these tests."))),
     bump: () => {},
     scheduleDebouncedSave: () => {},
     onHistoryCleared: (id) => historyCleared.push(id),
     registryTick: () => 0,
     isProjectDirty: () => false,
-    onRecoveryResolved: () => {},
+    onRecoveryResolved: options.onRecoveryResolved ?? (() => {}),
   });
   const open = async (ref: DocumentRef, content: unknown) => {
     files.set(ref.path, content);
@@ -64,7 +77,7 @@ function createEditing(options: { maxBytes?: number } = {}) {
     await journal.flush();
     return journalLines.map((line) => ({ docId: line.docId, type: line.command.type }));
   };
-  return { documents, editSession, editing, historyCleared, open, journaled };
+  return { documents, editSession, editing, historyCleared, open, journaled, project };
 }
 
 const SCENE_REF: DocumentRef = { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" };
@@ -187,5 +200,29 @@ describe("DocumentEditingService", () => {
     editing.stepHistory("undo");
     expect(documents.getDocument(SCENE_ID)!.content).toEqual(baseline);
     expect(documents.getDocument(SCENE_ID)!.dirty).toBe(false);
+  });
+
+  it("does not replay a project's recovery journal into another project opened during the read", async () => {
+    const derived = new MemoryStorageAdapter("documents");
+    await derived.openDocumentsProject("derived-root");
+    let switchProject = () => {};
+    const resolved = vi.fn();
+    const { documents, editing, open, project } = createEditing({
+      derivedStorage: async () => { switchProject(); return derived; },
+      onRecoveryResolved: resolved,
+    });
+    await open(SCENE_REF, createDefaultScene("2d"));
+    const opened = documents.getDocument(SCENE_ID)!.content as SerializedScene;
+    await appendJournalLines(derived, "project-guid", [serializeJournalLine({
+      v: 1, docId: SCENE_ID, at: "2026-10-11T10:00:00Z",
+      command: commandToJournalPayload(new SetSceneNameCommand(opened.name, "Recovered")),
+    })]);
+    // The same Scene path in the project that replaced it.
+    switchProject = () => { (project as { guid: string }).guid = "other-project-guid"; };
+
+    await editing.replayRecoveryJournal();
+    expect(documents.getDocument(SCENE_ID)!.content).toBe(opened);
+    expect(documents.getDocument(SCENE_ID)!.dirty).toBe(false);
+    expect(resolved).not.toHaveBeenCalled();
   });
 });

@@ -173,7 +173,10 @@ function RecoveryBanner() {
           <Button
             variant="outline"
             data-testid="dismiss-journal"
-            onClick={() => void dismissRecovery()}
+            onClick={() => {
+              // A failed clear keeps the journal, so the banner stays for a retry.
+              dismissRecovery().catch((error: unknown) => console.error("[editor] could not discard the recovery journal", error));
+            }}
           >
             Discard journal
           </Button>

@@ -1838,6 +1838,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return projectService.withBaselineSave(async writer => {
       const progress = beginSaveAllProgress();
       const document = projectDocumentRef.current;
+      const guid = projectService.guid;
       const dirtyBefore = documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(document));
       if (!document) {
         recordSaveAllTrace({
@@ -1907,13 +1908,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         setMigrationPending([]);
         progress.phase("mtime");
         await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
-        const guid = projectService.guid;
         if (guid) {
           progress.phase("journal");
           const derived = await ensureDerived();
-          const cleared = await journalBuffer.afterFlush(guid, () =>
+          // The journal holds document edits only; Project Settings changed
+          // during the save are not in it and must not keep saved edits there.
+          const cleared = await journalBuffer.clearAfterFlush(guid, () =>
             truncateJournal(derived, guid, () =>
-              documentService.getDirtyDocuments().length === 0 && projectDocumentRef.current === document,
+              projectService.guid === guid && documentService.getDirtyDocuments().length === 0,
             ),
           );
           if (cleared) setRecoveryAvailable(false);
@@ -2098,7 +2100,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const guid = projectService.guid;
     if (guid) {
       const derived = await ensureDerived();
-      await journalBuffer.afterFlush(guid, () => truncateJournal(derived, guid));
+      await journalBuffer.clearAfterFlush(guid, () => truncateJournal(derived, guid));
     }
     emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.shutdown);
     await projectService.closeProject();
@@ -2285,9 +2287,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const guid = projectService.guid;
     if (guid) {
       const derived = await ensureDerived();
-      await journalBuffer.afterFlush(guid, () => truncateJournal(derived, guid));
+      await journalBuffer.clearAfterFlush(guid, () => truncateJournal(derived, guid));
     }
-    setRecoveryAvailable(false);
+    // The banner belongs to the project open now; another may have opened meanwhile.
+    if (projectService.guid === guid) setRecoveryAvailable(false);
   }, [ensureDerived, journalBuffer, projectService]);
 
   const keepRecovery = useCallback(() => {

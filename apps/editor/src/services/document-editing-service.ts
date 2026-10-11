@@ -346,17 +346,22 @@ export class DocumentEditingService {
     await this.applySceneChange(sceneDoc.id, next, { prefabSync: true });
   }
 
-  /** Replay the crash-recovery journal onto its documents, opening cold ones first. */
+  /**
+   * Replay the crash-recovery journal onto its documents, opening cold ones
+   * first. Stops without resolving recovery when an authoring lock or another
+   * project takes over during its reads, so the banner stays for a retry.
+   */
   async replayRecoveryJournal(): Promise<void> {
     const authoring = this.documents.getAuthoringLock();
     if (authoring.readOnly) return;
     const guid = this.project.guid;
     if (!guid) return;
+    const current = () => this.documents.getAuthoringLock() === authoring && this.project.guid === guid;
     const derived = await this.options.derivedStorage();
     const lines = resolveClassRenameRecovery(await this.journal.afterFlush(guid, () =>
       readJournalLines(derived, guid),
     ), this.project.registry);
-    if (this.documents.getAuthoringLock() !== authoring) return;
+    if (!current()) return;
     if (lines.length === 0) {
       this.options.onRecoveryResolved();
       return;
@@ -365,7 +370,7 @@ export class DocumentEditingService {
     // Ensure every journal target document is open so replay is not skipped.
     // Resolved ids follow renames, so a renamed document opens at its new path.
     for (const { docId } of resolveJournalLines(lines)) {
-      if (this.documents.getAuthoringLock() !== authoring) return;
+      if (!current()) return;
       const ref = parseDocumentId(docId);
       if (!ref || !isAssetDocumentKind(ref.kind)) continue;
       if (this.documents.getState().openDocuments.get(docId)?.content != null) continue;
@@ -382,7 +387,7 @@ export class DocumentEditingService {
       }
     }
 
-    if (this.documents.getAuthoringLock() !== authoring) return;
+    if (!current()) return;
 
     const openDocs = new Map<string, DocumentContent>();
     for (const doc of this.documents.getOpenDocumentsOrdered()) {
@@ -408,7 +413,7 @@ export class DocumentEditingService {
     // save in that case, so retire the replayed journal without a no-op edit.
     // Retain skipped records and any edits made while the clear is queued.
     if (skipped.length === 0) {
-      await this.journal.afterFlush(guid, () => truncateJournal(derived, guid, () =>
+      await this.journal.clearAfterFlush(guid, () => truncateJournal(derived, guid, () =>
         this.project.guid === guid &&
         this.documents.getDirtyDocuments().length === 0 &&
         !this.options.isProjectDirty(),
