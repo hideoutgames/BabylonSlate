@@ -70,7 +70,7 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 ## Dockview
 
 - Dockview 8's `dndStrategy` defaults to `'auto'`: HTML5 drag for mouse, pointer events for touch and pen. Touch panel drag therefore needs no extra configuration.
-- Tab strips are **26px on coarse pointers** and **18px on fine pointers**; grips stay 44px+. Editor chrome and panel headers use `--chrome-row` (28px).
+- Tab strips are **26px on fine pointers** and **30px on coarse pointers**, with 20px / 26px tabs; grips stay 44px+. Editor chrome and panel headers use `--chrome-row` (28px).
 - Sashes stay visually thin (4px) but carry a widened hit area via a transparent pseudo-element, because Dockview sizes the sash element itself from an internal constant that CSS cannot override.
 - Panel **content** is a gesture-safe zone — viewport and graph handle their own gestures.
 - No popout / floating groups on iOS/Android.
