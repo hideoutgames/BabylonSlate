@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { IPAD_TEST_TAG } from "./ipad-tag";
 
 test("gallery primitives, dialogs, and editor composites", async ({ page }) => {
   await page.goto("/?test=1&gallery=1");
@@ -97,5 +98,36 @@ test("gallery primitives, dialogs, and editor composites", async ({ page }) => {
     await expect(page.getByTestId("gallery-nested-menu-content")).toBeVisible();
     await page.getByTestId("context-menu-item-more").click();
     await expect(page.getByTestId("context-menu-sub-more")).toBeVisible();
+  });
+});
+
+/** Scrolls an overlay's tall content to its end, then closes it with the pinned × button. */
+async function closeAfterScrolling(page: Page, overlayId: string, touch: boolean) {
+  await page.getByTestId(`${overlayId}-open`).click();
+  const overlay = page.getByTestId(overlayId);
+  await expect(overlay).toBeVisible();
+  const close = overlay.getByRole("button", { name: "Close", exact: true });
+  const end = page.getByTestId(`${overlayId}-end`);
+  await expect(close).toBeInViewport({ ratio: 1 });
+  await expect(end).not.toBeInViewport();
+  const before = await close.boundingBox();
+
+  await end.scrollIntoViewIfNeeded();
+  await expect(end).toBeInViewport();
+  await expect(close).toBeInViewport({ ratio: 1 });
+  expect(await close.boundingBox()).toEqual(before);
+
+  if (touch) await close.tap();
+  else await close.click();
+  await expect(overlay).toBeHidden();
+}
+
+test.describe("tall overlays", { tag: IPAD_TEST_TAG }, () => {
+  test("dialog and sheet keep Close visible and usable after scrolling", async ({ page }, testInfo) => {
+    const touch = Boolean(testInfo.project.use.hasTouch);
+    await page.goto("/?test=1&gallery=1");
+    await expect(page.getByTestId("component-gallery")).toBeVisible();
+    await closeAfterScrolling(page, "gallery-long-dialog", touch);
+    await closeAfterScrolling(page, "gallery-long-sheet", touch);
   });
 });

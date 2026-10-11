@@ -67,7 +67,8 @@ export function AssetReferenceDialog({
       }}
     >
       <DialogContent
-        className="editor-dialog-large flex min-h-0 flex-col overflow-hidden"
+        className="editor-dialog-large"
+        bodyClassName="flex flex-col overflow-hidden"
         data-testid="content-browser-refs-dialog"
       >
         <DialogHeader className="shrink-0">

@@ -94,6 +94,7 @@ describe("Playwright iPad project filter", () => {
 
     // Only touch-driven journeys are tagged for iPad; every iPad run is also a desktop run.
     expect(filesOf(landscape)).toEqual([
+      "component-gallery.spec.ts",
       "p10-tilemap.spec.ts",
       "scene-layer-joystick.spec.ts",
       "scene-modes.spec.ts",
@@ -109,6 +110,7 @@ describe("Playwright iPad project filter", () => {
       "Touch shell UX › project long-press stays open after release and can edit",
       "TreeView native touch swipes scroll and a short hold reparents without scrolling",
       "a touch swipe on a slider track scrolls the panel; only the thumb drags",
+      "tall overlays › dialog and sheet keep Close visible and usable after scrolling",
     ]);
     const desktopKeys = new Set(desktop.map((test) => `${test.file} › ${test.title}`));
     for (const test of landscape)

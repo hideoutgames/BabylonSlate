@@ -236,7 +236,8 @@ export function TagPicker(props: TagPickerProps) {
     {open ? <Dialog open onOpenChange={setOpen}>
       <DialogContent showCloseButton={false} overlayClassName="catalog-menu-overlay bg-transparent" finalFocus={triggerRef}
         initialFocus={(interaction) => coarse && interaction !== "keyboard" ? bodyRef.current : searchRef.current}
-        className="catalog-menu catalog-menu-popup flex max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-lg p-0 sm:max-w-none"
+        className="catalog-menu catalog-menu-popup max-w-none translate-x-0 translate-y-0 rounded-lg sm:max-w-none"
+        bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
         style={popupMenuFrame(anchor, { width: 400, height: 470 })} data-testid={`${testId}-dialog`}>
         <div className="flex shrink-0 items-center justify-between gap-2 px-3 pt-3 pb-2">
           <DialogTitle className="text-sm">{multiple ? "Select Tags" : "Select Tag"}</DialogTitle>

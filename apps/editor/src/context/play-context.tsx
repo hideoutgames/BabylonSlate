@@ -85,6 +85,7 @@ import {
 import { useDocuments } from "./document-context";
 import { useValidation } from "./validation-context";
 import { PreviewSessionReport } from "../components/preview-session-report";
+import type { SessionReportLocationSources } from "../lib/session-report-locations";
 import type { PlaySessionResult } from "../services/play-session";
 import { SimulationSession } from "../services/simulation-session";
 import { simulationSceneDocument, type SimulationViewport } from "../services/simulation-viewport";
@@ -116,6 +117,7 @@ import {
   type TilesetPayload,
   type ModelPayload,
   type RetargetAnimationLoad,
+  readStoredAssetDocument,
 } from "@babylonslate/assets";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
@@ -552,6 +554,31 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     return guids;
   }, [assetRegistry, registryEpoch]);
   const guidForPath = (path: string) => guidByPath.get(path) ?? null;
+  // Session report names: open tabs supply working content, closed assets are read on demand.
+  const reportLocationSources = useMemo<SessionReportLocationSources>(() => {
+    const indexed = (ref: string) => {
+      const asset = assetRegistry?.getByGuid(ref) ?? assetRegistry?.getByPath(ref);
+      return asset && !asset.placeholder ? asset : undefined;
+    };
+    return {
+      findAsset: (ref) => {
+        const asset = indexed(ref);
+        return asset
+          ? { guid: asset.header.guid, path: asset.path, name: asset.header.name, type: asset.header.type }
+          : undefined;
+      },
+      openContent: (asset) =>
+        openDocuments.find((doc) => doc.ref.path === asset.path)?.content ?? undefined,
+      readContent: async (asset) => {
+        const found = indexed(asset.guid);
+        if (!assetRegistry || !found) throw new Error(`Asset is unavailable: ${asset.guid}`);
+        const document = await readStoredAssetDocument(assetRegistry.storageFor(found.rootId), found.path, {
+          blobs: assetRegistry.blobsFor(found.rootId),
+        });
+        return document.payload;
+      },
+    };
+  }, [assetRegistry, openDocuments]);
   const openPlayScene = playSceneFromOpenDocuments(
     openDocuments,
     activeDocumentId,
@@ -1795,9 +1822,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           entries={reportEntries}
           dropped={dropped}
           onOpenChange={setReportOpen}
+          locationSources={reportLocationSources}
           onNavigate={(entry) => {
             const nav = sessionReportNavigation(entry, {
               getByGuid: (guid) => assetRegistry?.getByGuid(guid),
+              getByPath: (path) => assetRegistry?.getByPath(path),
             });
             setFocusedNodeId(nav.focusedNodeId || PREVIEW_FIXTURE_NODE_ID);
             setFocusDiagnostic({

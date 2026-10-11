@@ -136,7 +136,8 @@ import {
 } from "@babylonslate/ui/components/resizable";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { Separator } from "@babylonslate/ui/components/separator";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@babylonslate/ui/components/sheet";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@babylonslate/ui/components/dialog";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@babylonslate/ui/components/sheet";
 import { Skeleton } from "@babylonslate/ui/components/skeleton";
 import { Slider } from "@babylonslate/ui/components/slider";
 import { Switch } from "@babylonslate/ui/components/switch";
@@ -1533,6 +1534,43 @@ function GalleryDangerDialog() {
   );
 }
 
+const GALLERY_LONG_ROWS = Array.from({ length: 40 }, (_, index) => `Setting ${index + 1}`);
+
+/** Content taller than the viewport: only the body scrolls; Close stays pinned. */
+function GalleryLongOverlays() {
+  const rows = GALLERY_LONG_ROWS.map((label) => (
+    <p key={label} className="text-sm">{label}</p>
+  ));
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Dialog>
+        <DialogTrigger render={<Button variant="outline" size="sm" data-testid="gallery-long-dialog-open" />}>Open Long Dialog</DialogTrigger>
+        <DialogContent data-testid="gallery-long-dialog">
+          <DialogHeader>
+            <DialogTitle>Long Dialog</DialogTitle>
+            <DialogDescription>The close button stays visible while this list scrolls.</DialogDescription>
+          </DialogHeader>
+          {rows}
+          <p className="text-sm" data-testid="gallery-long-dialog-end">End of List</p>
+        </DialogContent>
+      </Dialog>
+      <Sheet>
+        <SheetTrigger render={<Button variant="outline" size="sm" data-testid="gallery-long-sheet-open" />}>Open Long Sheet</SheetTrigger>
+        <SheetContent side="right" data-testid="gallery-long-sheet">
+          <SheetHeader>
+            <SheetTitle>Long Sheet</SheetTitle>
+            <SheetDescription>The close button stays visible while this list scrolls.</SheetDescription>
+          </SheetHeader>
+          <div className="flex flex-col gap-4 px-4 pb-4">
+            {rows}
+            <p className="text-sm" data-testid="gallery-long-sheet-end">End of List</p>
+          </div>
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}
+
 function GalleryResizable() {
   return (
     <section className="flex flex-col gap-4">
@@ -1591,11 +1629,12 @@ export function ComponentGallery() {
             <GalleryDangerDialog />
             <Sheet modal={false}>
               <SheetTrigger render={<Button variant="outline" size="sm" data-testid="gallery-console-sheet-open" />}>Open Console Sheet</SheetTrigger>
-              <SheetContent side="bottom" showOverlay={false} className="gap-0 rounded-none shadow-none data-[side=bottom]:h-[min(40dvh,22rem)] pointer-coarse:data-[side=bottom]:h-[min(50dvh,26rem)]" data-testid="gallery-console-sheet">
+              <SheetContent side="bottom" showOverlay={false} className="rounded-none shadow-none data-[side=bottom]:h-[min(40dvh,22rem)] pointer-coarse:data-[side=bottom]:h-[min(50dvh,26rem)]" bodyClassName="gap-0" data-testid="gallery-console-sheet">
                 <SheetHeader><SheetTitle>Console Sheet</SheetTitle></SheetHeader>
                 <SelectableText className="px-4 font-mono text-xs">A flat nonmodal drawer leaves the view above visible and interactive.</SelectableText>
               </SheetContent>
             </Sheet>
+            <GalleryLongOverlays />
           </section>
 
           <GalleryTouchControls />

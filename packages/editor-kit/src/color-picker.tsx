@@ -176,7 +176,8 @@ export function ColorPicker({
     }}>
       <DialogContent showCloseButton={false} overlayClassName="catalog-menu-overlay bg-transparent"
         finalFocus={triggerRef} initialFocus={paletteRef}
-        className="catalog-menu catalog-menu-popup flex max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-lg p-0 sm:max-w-none"
+        className="catalog-menu catalog-menu-popup max-w-none translate-x-0 translate-y-0 rounded-lg sm:max-w-none"
+        bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
         style={popupMenuFrame(current.anchor, { width: 360, height: withAlpha ? (coarse ? 492 : 440) : (coarse ? 420 : 368) })}
         data-testid={`${testId}-dialog`}
         onPointerDown={(event) => event.stopPropagation()}

@@ -113,10 +113,11 @@ export function CatalogDialog({
           interaction === "keyboard" ? searchRef.current : bodyRef.current
         }
         className={cn(
-          "catalog-dialog editor-dialog-large flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none",
+          "catalog-dialog editor-dialog-large max-w-none sm:max-w-none",
           size === "medium" && "catalog-dialog-medium",
           className,
         )}
+        bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
         <DialogHeader className="min-h-14 shrink-0 border-b px-4 py-3 pr-14">
           <DialogTitle>{title}</DialogTitle>
