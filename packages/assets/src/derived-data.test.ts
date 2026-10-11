@@ -52,27 +52,6 @@ describe("derived-data journal", () => {
     expect(await readJournalLines(storage, "proj-1")).toEqual(expected);
   });
 
-  it("recovers a single-file journal from an older session ahead of newer edits, and clears both layouts", async () => {
-    const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("derived-root");
-    await storage.mkdir("derived/proj-1", true);
-    await storage.writeText("derived/proj-1/journal.jsonl", "older-1\nolder-2\n");
-    expect(await hasJournal(storage, "proj-1")).toBe(true);
-
-    await appendJournalLine(storage, "proj-1", "newer");
-    expect(await readJournalLines(storage, "proj-1")).toEqual([
-      "older-1",
-      "older-2",
-      "newer",
-    ]);
-
-    expect(await truncateJournal(storage, "proj-1")).toBe(true);
-    expect(await hasJournal(storage, "proj-1")).toBe(false);
-    expect(await readJournalLines(storage, "proj-1")).toEqual([]);
-    await appendJournalLine(storage, "proj-1", "after save");
-    expect(await readJournalLines(storage, "proj-1")).toEqual(["after save"]);
-  });
-
   it("clears a journal that spans several segments", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("derived-root");

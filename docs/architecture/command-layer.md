@@ -124,7 +124,7 @@ The replacement command rejects values JSON would silently lose or coerce (inclu
 
 ## Journal format
 
-Path: `derived/{projectGuid}/journal/00000000.jsonl`, `00000001.jsonl`, … (app-private storage; see [containers.md](containers.md)). Lines are read in segment order. A project journalled by an older build may still have the single file `derived/{projectGuid}/journal.jsonl`; it is read first, and every clear removes both layouts.
+Path: `derived/{projectGuid}/journal/00000000.jsonl`, `00000001.jsonl`, … (app-private storage; see [containers.md](containers.md)). Lines are read in segment order, and a clear removes the segment folder.
 
 Each line is one JSON object:
 
