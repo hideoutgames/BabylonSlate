@@ -106,7 +106,7 @@
     "[desktop-chrome] > render-targets.spec.ts > render targets capture only their selected pass on webgl2": 3400,
     "[desktop-chrome] > runtime-scene-loading.spec.ts > Play paints repeated Scene Loading transitions and Stop cancels the next reload": 12800,
     "[desktop-chrome] > save-game-parity.spec.ts > editor Play and Preview Build share persistent preview progress": 12800,
-    "[desktop-chrome] > save-game-parity.spec.ts > packed exported game restores OPFS progress after a cold page reload": 4600,
+    "[desktop-chrome] > save-game-parity.spec.ts > exported game restores OPFS progress after a cold page reload": 4600,
     "[desktop-chrome] > save-game-workflow.spec.ts > Save Game authoring preserves field identity and project defaults through reload": 19200,
     "[desktop-chrome] > scalability-play.spec.ts > saved Class scalability graphs compile and run with confirmed events in editor Play on webgl2": 31400,
     "[desktop-chrome] > scene-layer-controls.spec.ts > SceneLayer controls retain authored materials and edited values in Play": 11200,
