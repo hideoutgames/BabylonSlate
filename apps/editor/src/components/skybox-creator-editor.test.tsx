@@ -467,6 +467,17 @@ describe("SkyboxCreatorCubemap", () => {
     expect(decodeSourceToRgba).not.toHaveBeenCalled();
   });
 
+  it("explains a source Texture that is no longer in the project", async () => {
+    render(
+      <SkyboxCreatorCubemap
+        payload={{ ...createDefaultSkyboxCreatorPayload(), sourceTextureGuid: "tex-gone" } as unknown as Record<string, unknown>}
+      />,
+    );
+    expect(await screen.findByText("The source Texture is missing.")).toBeTruthy();
+    expect(screen.queryByText("Decoding the Texture…")).toBeNull();
+    expect(readAssetChunk).not.toHaveBeenCalled();
+  });
+
   it("encodes the six preview faces once after a placement drag settles", async () => {
     const payload = (x: number) => ({
       ...createDefaultSkyboxCreatorPayload(),

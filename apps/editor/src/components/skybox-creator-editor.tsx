@@ -91,7 +91,11 @@ function useSkyboxCreatorDecodedSource(sourceTextureGuid: string | null) {
     setDecoded(null);
     setUrl(null);
     setError(null);
-    if (!sourceTextureGuid || !texturePath || !readAssetChunk) return;
+    if (!sourceTextureGuid) return;
+    if (!texturePath || !readAssetChunk) {
+      setError("The source Texture is missing.");
+      return;
+    }
     void (async () => {
       try {
         const image = await readTextureImageBytes(readAssetChunk, texturePath);
