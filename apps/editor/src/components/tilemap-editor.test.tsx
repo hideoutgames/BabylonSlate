@@ -343,7 +343,7 @@ describe("TilemapPalette", () => {
   });
 
   it("revokes every atlas URL when it closes while an atlas is still loading", async () => {
-    let finishAtlas!: (bytes: Uint8Array) => void;
+    let finishAtlas!: (bytes: Uint8Array<ArrayBuffer>) => void;
     readAssetChunk.mockImplementationOnce(() => new Promise((resolve) => { finishAtlas = resolve; }));
     const createUrl = vi.spyOn(URL, "createObjectURL").mockImplementation(() => "blob:atlas");
     const revokeUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
