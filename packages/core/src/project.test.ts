@@ -130,7 +130,6 @@ describe("project schema", () => {
   it("creates a 2D project without a cube and with pixel-perfect units", () => {
     const project = createEmptyProject("SideScroller", { kind: "2d" });
     expect(project.settings.twoD.pixelPerfect).toBe(true);
-    expect(project.settings.twoD.integerZoomSteps).toBe(true);
     const scene = createDefaultScene("2d");
     expect(scene.viewportMode).toBe("2d");
     expect(scene.settings.physicsWorld).toBe("2d");
@@ -153,7 +152,6 @@ describe("project schema", () => {
       twoD: {
         pixelsPerUnit: 0,
         pixelPerfect: true,
-        integerZoomSteps: true,
         sortingLayers: ["Default", " Default ", "", "UI", "Default"],
       },
     });

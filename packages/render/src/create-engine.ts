@@ -655,7 +655,7 @@ export interface EditorTools {
   setDrawMeshCollision: (enabled: boolean) => void;
   /** Project 2D unit settings; pass null to leave pixel-perfect framing off. */
   setPixelPerfect: (
-    settings: { pixelsPerUnit: number; integerZoomSteps: boolean } | null,
+    settings: { pixelsPerUnit: number } | null,
   ) => void;
   /** Ordered sorting layers from project settings, back to front. */
   setSortingLayers: (layers: readonly string[]) => void;
