@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   GITHUB_BLOB_BASE,
+  GITHUB_TREE_BASE,
   installRepoLinkRewriter,
   rewriteRepoSourceHref,
 } from "./rewrite-repo-links";
@@ -39,6 +40,16 @@ describe("rewriteRepoSourceHref", () => {
     ).toThrow(/outside the repository/);
     expect(rewriteRepoSourceHref("../packages/ui/src/styles/globals.css", "engineplan.md"))
       .toBe(`${GITHUB_BLOB_BASE}packages/ui/src/styles/globals.css`);
+  });
+
+  it("links repository directories to GitHub's tree view", () => {
+    expect(
+      rewriteRepoSourceHref("../../packages/ui/src/components/", "architecture/components.md"),
+    ).toBe(`${GITHUB_TREE_BASE}packages/ui/src/components/`);
+    expect(rewriteRepoSourceHref("../../engine-logos/", "architecture/theming.md"))
+      .toBe(`${GITHUB_TREE_BASE}engine-logos/`);
+    expect(rewriteRepoSourceHref("packages/render/src/default-skybox/", "engineplan.md"))
+      .toBe(`${GITHUB_TREE_BASE}packages/render/src/default-skybox/`);
   });
 
   it("preserves in-docs markdown links, including hashes", () => {

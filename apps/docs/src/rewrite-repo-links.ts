@@ -3,6 +3,15 @@ import path from "node:path";
 export const GITHUB_BLOB_BASE =
   "https://github.com/hideoutgames/BabylonSlate/blob/main/";
 
+/** GitHub's directory view; a link ending in `/` names a directory. */
+export const GITHUB_TREE_BASE =
+  "https://github.com/hideoutgames/BabylonSlate/tree/main/";
+
+function githubRepoUrl(repoPath: string, suffix: string): string {
+  const base = repoPath.endsWith("/") ? GITHUB_TREE_BASE : GITHUB_BLOB_BASE;
+  return `${base}${repoPath}${suffix}`;
+}
+
 const REPO_ROOT_PREFIXES = [
   "apps/",
   "packages/",
@@ -53,7 +62,7 @@ export function rewriteRepoSourceHref(href: string, fromDocPath: string): string
 
   const stripped = pathname.replace(/^\.\//, "");
   if (isRepoRootStyle(stripped)) {
-    return `${GITHUB_BLOB_BASE}${stripped}${suffix}`;
+    return githubRepoUrl(stripped, suffix);
   }
 
   const fromDir = path.posix.dirname(fromDocPath || ".");
@@ -65,7 +74,7 @@ export function rewriteRepoSourceHref(href: string, fromDocPath: string): string
         `Link "${href}" in docs/${fromDocPath} points outside the repository.`,
       );
     }
-    return `${GITHUB_BLOB_BASE}${repoPath}${suffix}`;
+    return githubRepoUrl(repoPath, suffix);
   }
 
   if (SOURCE_FILE.test(pathname)) {
