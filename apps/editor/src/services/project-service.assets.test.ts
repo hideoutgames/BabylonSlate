@@ -682,6 +682,9 @@ describe("project documents as .babasset", () => {
     });
     const saved = await decodeBabasset(await storage.readBinary(path));
     expect(saved.chunks.get("source")).toEqual(source);
+    // The whole payload stays in the header, where an MSDF attach merges.
+    expect(saved.header.payload).toMatchObject({ family: "Ui Display", weight: 400, style: "normal" });
+    expect(saved.header.chunks.some((chunk) => chunk.id === "document")).toBe(false);
     const reloaded = (await service.loadDocument("font", path)) as Record<
       string,
       unknown

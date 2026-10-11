@@ -2313,9 +2313,12 @@ export class ProjectService {
       options?.parentClass !== undefined
         ? options.parentClass
         : existing?.parentClass ?? (type === "Class" ? "Actor" : null);
+    // Imported assets keep their settings in the header beside their binary
+    // chunks; a Font's MSDF attach merges into that header payload.
     const storeInHeader =
       (kind === "asset-settings" ||
         kind === "texture" ||
+        kind === "font" ||
         kind === "model" ||
         kind === "skeleton" ||
         kind === "animation") &&
