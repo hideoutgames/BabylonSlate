@@ -11,8 +11,6 @@ import {
   isAssetDocumentKind,
   isSceneWorkspaceKind,
   labelFromPath,
-  migrateLegacyLayout,
-  migrateRestoredDocumentId,
   parseDocumentId,
 } from "./document";
 
@@ -168,33 +166,6 @@ describe("Class and settings documents", () => {
         name: "Hero_Idle",
       }).label,
     ).toBe("Hero_Idle Animation");
-  });
-
-  it("rewrites a saved asset-settings Model tab to the model document kind", () => {
-    expect(
-      migrateRestoredDocumentId(
-        "asset-settings:assets/hero.babasset",
-        (path) => (path === "assets/hero.babasset" ? "Model" : null),
-      ),
-    ).toBe("model:assets/hero.babasset");
-    expect(
-      migrateRestoredDocumentId(
-        "asset-settings:assets/albedo.babasset",
-        () => "Texture",
-      ),
-    ).toBe("texture:assets/albedo.babasset");
-    expect(
-      migrateRestoredDocumentId("asset-settings:assets/missing.babasset", () => null),
-    ).toBe("asset-settings:assets/missing.babasset");
-    expect(
-      migrateRestoredDocumentId("model:assets/hero.babasset", () => "Model"),
-    ).toBe("model:assets/hero.babasset");
-    expect(
-      migrateRestoredDocumentId(
-        "asset-settings:assets/hero_idle.babasset",
-        () => "Animation",
-      ),
-    ).toBe("animation:assets/hero_idle.babasset");
   });
 
   it("opens imported Audio as a DockView document", () => {
@@ -368,18 +339,12 @@ describe("document ids and layouts", () => {
     });
   });
 
-  it("starts empty and wraps a legacy dock layout under the main scene", () => {
+  it("starts with empty layouts", () => {
     expect(createEmptyLayouts()).toEqual({
       documents: {},
       tabOrder: [],
       activeDocumentId: null,
       showPluginContent: false,
-    });
-    const legacy = { grid: { root: "viewport" } };
-    expect(migrateLegacyLayout(legacy, "scene:main")).toEqual({
-      documents: { "scene:main": legacy },
-      tabOrder: ["scene:main"],
-      activeDocumentId: "scene:main",
     });
   });
 

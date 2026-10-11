@@ -651,26 +651,6 @@ function normalizeGameInstanceClass(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }
 
-/**
- * One-shot copy of a scene Game Instance onto the project field so old
- * projects keep Play/Preview/export after the picker moved to Project Settings.
- */
-export function migrateGameInstanceClassFromScenes(
-  settings: ProjectSettings,
-  scenes: ReadonlyArray<{
-    settings?: { gameInstanceClass?: string | null };
-  }>,
-): ProjectSettings {
-  if (settings.gameInstanceClass) return settings;
-  for (const scene of scenes) {
-    const value = scene.settings?.gameInstanceClass;
-    if (typeof value === "string" && value.trim()) {
-      return { ...settings, gameInstanceClass: value.trim() };
-    }
-  }
-  return settings;
-}
-
 /** Project field wins; scene value is a fallback for unsaved / in-flight loads. */
 export function resolveGameInstanceClass(
   project: { gameInstanceClass?: string | null } | null | undefined,

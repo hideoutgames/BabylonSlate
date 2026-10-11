@@ -42,7 +42,6 @@ import {
   MAIN_CLASS_FILE,
   MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
-  migrateLegacyLayout,
   PROJECT_FILE,
   type ProjectDocument,
   type ProjectMetadata,
@@ -1396,12 +1395,7 @@ export class ProjectService {
     // Legacy Scene-local GameInstance defaults resolve when that Scene is
     // requested. Project opening must not scan every Scene to guess a default.
     const migratedDocument = withDocuments;
-    const layouts = await this.loadLayouts(
-      documentId({
-        kind: "scene",
-        path: migratedDocument.scenes[0] ?? MAIN_SCENE_FILE,
-      }),
-    );
+    const layouts = await this.loadLayouts();
 
     return {
       document: migratedDocument,
@@ -2770,7 +2764,7 @@ export class ProjectService {
     return this.storageForPath(path).exists(path);
   }
 
-  async loadLayouts(mainSceneId: string): Promise<ProjectLayouts> {
+  async loadLayouts(): Promise<ProjectLayouts> {
     if (!(await this.storage.exists(LAYOUT_FILE))) {
       return createEmptyLayouts();
     }
@@ -2802,7 +2796,7 @@ export class ProjectService {
       };
     }
 
-    return migrateLegacyLayout(parsed, mainSceneId);
+    return createEmptyLayouts();
   }
 
   captureLayout(api: DockviewApi): Record<string, unknown> {

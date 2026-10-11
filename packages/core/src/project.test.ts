@@ -12,7 +12,6 @@ import {
   PROJECT_FILE,
   normalizeProjectSettings,
   normalizeRenderProjectSettings,
-  migrateGameInstanceClassFromScenes,
   resolveGameInstanceClass,
   type ProjectSettings,
 } from "./project";
@@ -341,22 +340,6 @@ describe("project schema", () => {
     expect(
       normalizeProjectSettings({ gameInstanceClass: "MyGame" }).gameInstanceClass,
     ).toBe("MyGame");
-  });
-
-  it("copies Game Instance from a scene when the project field is empty", () => {
-    const settings = normalizeProjectSettings({});
-    expect(
-      migrateGameInstanceClassFromScenes(settings, [
-        { settings: { gameInstanceClass: null } },
-        { settings: { gameInstanceClass: "MyGame" } },
-      ]).gameInstanceClass,
-    ).toBe("MyGame");
-    expect(
-      migrateGameInstanceClassFromScenes(
-        { ...settings, gameInstanceClass: "Keep" },
-        [{ settings: { gameInstanceClass: "MyGame" } }],
-      ).gameInstanceClass,
-    ).toBe("Keep");
   });
 
   it("prefers the project Game Instance over a scene value", () => {
