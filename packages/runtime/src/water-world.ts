@@ -256,6 +256,23 @@ export class WaterWorld {
     waterActorId: string | null,
     inputs: RefreshInputs | null,
   ): void {
+    try {
+      this.evaluateInto(state, actors, time, buoyancy, waterActorId, inputs);
+    } finally {
+      // A throwing pass must not leave its actors in the next pass's scratch.
+      this.sourceActors.length = this.sourceComponents.length = this.sourceBodies.length = this.composed.length = 0;
+      this.byGuid.clear();
+    }
+  }
+
+  private evaluateInto(
+    state: WaterState,
+    actors: readonly Actor[],
+    time: number,
+    buoyancy: boolean,
+    waterActorId: string | null,
+    inputs: RefreshInputs | null,
+  ): void {
     state.time = time;
     inputs?.clear(actors.length);
     const { bodies, removals, landscapes } = state;
@@ -314,8 +331,6 @@ export class WaterWorld {
     }
     // A comparison per evaluation; neighbours are rediscovered only when a body, its pose or the distance changed.
     state.blend.update(bodies, this.blendDistance);
-    sourceActors.length = sourceComponents.length = sourceBodies.length = composed.length = 0;
-    this.byGuid.clear();
   }
 
   /**
