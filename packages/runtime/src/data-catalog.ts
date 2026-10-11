@@ -51,8 +51,12 @@ export class RuntimeDataCatalog implements RuntimeDataApi {
     const definitions = new Set<string>();
     for (const asset of catalog) {
       if (asset.type !== "DataDefinition" || !isDataDefinitionAsset(asset.payload)) continue;
+      // Only the schema gates reads. Entries resolve from their own values and never
+      // read Definition defaults, so a stale default (for example one missing a field
+      // added to a nested Definition) must not hide every entry.
       try {
-        if (!validateDataDefinition(asset.payload, schemas, asset.guid).some((issue) => issue.severity === "error")) {
+        const schema = { ...asset.payload, fields: asset.payload.fields.map(({ defaultValue: _default, ...field }) => field) };
+        if (!validateDataDefinition(schema, schemas, asset.guid).some((issue) => issue.severity === "error")) {
           definitions.add(asset.guid);
         }
       } catch {
