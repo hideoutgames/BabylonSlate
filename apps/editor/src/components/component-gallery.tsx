@@ -1492,8 +1492,10 @@ function GalleryForms() {
 }
 
 function GalleryDangerDialog() {
+  // Controlled like production callers: the Action is a plain button.
+  const [open, setOpen] = useState(false);
   return (
-    <AlertDialog>
+    <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger
         render={
           <Button variant="outline" data-testid="gallery-danger-dialog-open" />
@@ -1521,6 +1523,7 @@ function GalleryDangerDialog() {
             variant="destructive"
             size="touch"
             data-testid="gallery-danger-dialog-confirm"
+            onClick={() => setOpen(false)}
           >
             Delete
           </AlertDialogAction>
