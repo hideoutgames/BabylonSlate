@@ -198,7 +198,7 @@ The worker owns all constraints and ragdoll bodies. `PhysicsBackend.createConstr
 
 `PhysicsBackend.getBodyVelocity` returns an owned snapshot of world-space linear velocity, angular velocity in radians/second, and center of mass. `setBodyAngularVelocity` sets a dynamic body's angular velocity (Z only in 2D). Ragdoll activation uses each collider's mass center to inherit the actor's rigid velocity field, and whole-assembly impulses act at those centers without introducing torque at bone pivots.
 
-Constraint reconciliation reuses identity and scalar descriptor storage on unchanged ticks. It still detects direct variable-map writes and in-place edits to anchors or frames; native joints are rebuilt only when their authored settings, body owners, or effective scales change. Invalid edits preserve the last usable joint.
+Constraint reconciliation reuses identity and scalar descriptor storage on unchanged ticks. It still detects direct variable-map writes and in-place edits to anchors or frames; native joints are rebuilt only when their authored settings, body owners, or effective scales change. Invalid edits preserve the last usable joint; the other constraints still reconcile and removed joints are released before the first failure is reported.
 
 Ragdoll synchronization scans current component membership but resolves transforms only for enabled ragdolls and their ancestors. With no active assembly, post-step ragdoll readback returns before traversing the actor list. No persistent transform cache hides script movement, reparenting, scale edits, or same-ID replacements.
 
