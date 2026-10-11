@@ -167,11 +167,16 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
       await clickPlayAndWaitForOverlay(page);
       await page.getByTestId("play-overlay-close").click({ timeout: 5_000 });
       await expect(page.getByTestId("preview-session-report")).toBeVisible();
-      await expect(page.getByTestId("session-report-row")).toHaveAttribute(
-        "data-node-id",
-        "task",
+      const treeGroup = page.locator(
+        `[data-testid="session-report-group"][data-asset-ref="${treeGuid}"]`,
       );
-      await page.getByTestId("session-report-row").click();
+      const treeToggle = treeGroup.getByTestId("session-report-group-toggle");
+      await expect(treeToggle).toContainText("Patrol");
+      await treeToggle.click();
+      const taskRow = treeGroup.getByTestId("session-report-row");
+      await expect(taskRow).toHaveAttribute("data-node-id", "task");
+      await expect(taskRow).toContainText("Patrol › Succeed");
+      await taskRow.click();
       await expect(page.getByTestId("focused-graph-node")).toHaveAttribute(
         "data-node-id",
         "task",

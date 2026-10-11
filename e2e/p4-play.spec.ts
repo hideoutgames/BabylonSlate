@@ -43,6 +43,9 @@ test.describe("P4 Play overlay and session report", () => {
       "data-mode",
       /^(worker|in-process)$/,
     );
+    // Groups start collapsed; the fixture names no project asset.
+    await expect(page.getByTestId("session-report-row")).toHaveCount(0);
+    await page.getByTestId("session-report-group-toggle").click();
     await page.getByTestId("session-report-row").click();
     await expect(page.getByTestId("focused-graph-node")).toHaveAttribute(
       "data-node-id",
