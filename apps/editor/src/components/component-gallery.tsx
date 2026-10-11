@@ -895,7 +895,7 @@ function GalleryComposites() {
       placeholder: "None",
       onPick: () => setPickerOpen(true),
       onChange: () => {},
-      ...assetRowIdentity({ name: "Rock", type: "Mesh" }),
+      ...assetRowIdentity({ name: "Rock", type: "Model" }),
     },
     {
       kind: "asset",
@@ -1141,7 +1141,7 @@ function GalleryComposites() {
         </div>
         <Button variant="outline" className="h-auto" onClick={() => setPickerOpen(true)}>
           {selectedPickerIdentity(
-            assetRowIdentity({ name: "Rock", type: "Mesh" }),
+            assetRowIdentity({ name: "Rock", type: "Model" }),
             "Open asset picker",
           )}
         </Button>
@@ -1265,7 +1265,7 @@ function GalleryComposites() {
           open={pickerOpen}
           onOpenChange={setPickerOpen}
           assets={[
-            { guid: "gallery-asset", name: "Rock", type: "Mesh" },
+            { guid: "gallery-asset", name: "Rock", type: "Model" },
             { guid: "gallery-material", name: "Stone", type: "Material" },
           ]}
           allowedTypes={["Material"]}
