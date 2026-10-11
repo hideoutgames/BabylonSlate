@@ -325,6 +325,8 @@ async function launchLoaded(
             previewHostOrigin,
           );
         })
+        // A failed or unanswered inspection keeps the last published actors.
+        .catch((error: unknown) => { if (!stopped) console.warn("Preview actor catalog could not refresh.", error); })
         .finally(() => {
           inspecting = false;
         });

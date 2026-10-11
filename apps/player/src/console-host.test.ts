@@ -41,6 +41,31 @@ describe("player console host", () => {
     expect(await host.inspectWorld()).toEqual({ tickIndex: 9, nodes: [] });
   });
 
+  it("rejects a failed inspection instead of reporting an empty world", async () => {
+    const host = createPlayerConsoleHost({
+      execute: () => undefined,
+      inspect: () => () => { throw new Error("inspect failed"); },
+      post: () => {},
+    });
+    await expect(host.inspectWorld()).rejects.toThrow("inspect failed");
+  });
+
+  it("rejects an unanswered worker inspection and asks again next time", async () => {
+    vi.useFakeTimers();
+    try {
+      const controls: unknown[] = [];
+      const host = createPlayerConsoleHost({ execute: () => undefined, post: (control) => controls.push(control), inspectTimeoutMs: 50 });
+      const unanswered = host.inspectWorld();
+      const rejected = expect(unanswered).rejects.toThrow(/did not answer/);
+      await vi.advanceTimersByTimeAsync(50);
+      await rejected;
+      const next = host.inspectWorld();
+      expect(controls).toEqual([{ type: "inspect" }, { type: "inspect" }]);
+      host.receive({ type: "inspectSnapshot", snapshot: { tickIndex: 7, nodes: [] } });
+      expect(await next).toEqual({ tickIndex: 7, nodes: [] });
+    } finally { vi.useRealTimers(); }
+  });
+
   it("executes commands through the runtime and keeps worker responses paired with requests", async () => {
     const controls: unknown[] = [];
     let execute:
