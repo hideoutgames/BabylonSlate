@@ -19,9 +19,7 @@ import { normalizeSceneStreamingProperties } from "./scene-streaming";
  * from `viewportMode` on normalize. `editorJoystickEnabled` is additive on v3
  * (missing keys normalize to true). `grid.showGrid` is additive (missing keys
  * normalize to true so older scenes keep the editor grid). `showNavmesh` is
- * additive (missing keys normalize to false, except a leftover
- * `NavMeshComponent.debugOverlay === true` migrates the overlay on). Fog
- * color/start/end,
+ * additive (missing keys normalize to false). Fog color/start/end,
  * `environmentTextureGuid`, and Default Camera ids are additive on v3 (missing
  * keys normalize to defaults; a Default Camera pick requires both actor and
  * component ids). v4 distinguishes automatic shadow capacity from a saved
@@ -169,10 +167,7 @@ export interface SceneSettings {
   cameraBounds2D: SceneCameraBounds2D;
   /** Editor viewport on-screen stick for flying/panning the camera. */
   editorJoystickEnabled: boolean;
-  /**
-   * Editor viewport navmesh debug overlay. Missing keys normalize to false
-   * unless a leftover NavMesh `debugOverlay` flag is true.
-   */
+  /** Editor viewport navmesh debug overlay. Missing keys normalize to false. */
   showNavmesh: boolean;
   /**
    * Ordered post-process Material passes for the active camera. Empty by
@@ -418,12 +413,20 @@ export function normalizePrefab(value: unknown): SerializedPrefab {
   };
 }
 
-function normalizeActor(value: unknown, index: number): SerializedActor {
+/** A missing actor id becomes `actor-<index>`, suffixed until no other actor uses it. */
+function freshActorId(index: number, taken: Set<string>): string {
+  let id = `actor-${index}`;
+  for (let suffix = 2; taken.has(id); suffix += 1) id = `actor-${index}-${suffix}`;
+  taken.add(id);
+  return id;
+}
+
+function normalizeActor(value: unknown, index: number, takenIds: Set<string>): SerializedActor {
   const source = (value ?? {}) as Record<string, unknown>;
   const components = Array.isArray(source.components) ? source.components.map(normalizeComponent) : [];
   const suppressedComponentSourceIds = normalizeSuppressedComponentSourceIds(source.suppressedComponentSourceIds);
   return {
-    id: typeof source.id === "string" ? source.id : `actor-${index}`,
+    id: typeof source.id === "string" ? source.id : freshActorId(index, takenIds),
     name: typeof source.name === "string" ? source.name : `Actor ${index + 1}`,
     classId: typeof source.classId === "string" ? source.classId : "Actor",
     parentId: typeof source.parentId === "string" ? source.parentId : null,
@@ -703,26 +706,18 @@ export function normalizeScene(value: unknown): SerializedScene {
     source.viewportMode === "2d" ? "2d" : "3d";
   const folders = normalizeFolders(source.folders);
   const name = typeof source.name === "string" ? source.name : "Untitled";
-  const actors = Array.isArray(source.actors) ? source.actors.map(normalizeActor) : [];
+  const rawActors: unknown[] = Array.isArray(source.actors) ? source.actors : [];
+  // Authored ids first, so a repaired missing id never takes one a later actor owns.
+  const takenIds = new Set(rawActors.flatMap((entry) => {
+    const id = entry && typeof entry === "object" ? (entry as Record<string, unknown>).id : undefined;
+    return typeof id === "string" ? [id] : [];
+  }));
+  const actors = rawActors.map((entry, index) => normalizeActor(entry, index, takenIds));
   assertUniqueSceneActorIds(actors, name);
-  const settings = normalizeSceneSettings(source.settings, viewportMode);
-  const rawSettings =
-    source.settings && typeof source.settings === "object"
-      ? (source.settings as Record<string, unknown>)
-      : {};
-  const leftoverNavDebug =
-    !("showNavmesh" in rawSettings) &&
-    actors.some((actor) =>
-      actor.components.some(
-        (component) =>
-          component.classId === "NavMeshComponent" &&
-          component.properties.debugOverlay === true,
-      ),
-    );
   return {
     name,
     viewportMode,
-    settings: leftoverNavDebug ? { ...settings, showNavmesh: true } : settings,
+    settings: normalizeSceneSettings(source.settings, viewportMode),
     actors: withResolvedFolderIds(actors, folders),
     folders,
   };
@@ -812,10 +807,16 @@ export function wouldCreateCycle(
   actorId: string,
   parentId: string | null,
 ): boolean {
-  let cursor = parentId;
+  if (parentId === null) return false;
+  const byId = new Map(scene.actors.map((actor) => [actor.id, actor]));
+  let cursor: string | null = parentId;
+  const seen = new Set<string>();
   while (cursor !== null) {
     if (cursor === actorId) return true;
-    cursor = findActor(scene, cursor)?.parentId ?? null;
+    // A loop above the new parent never ends at the root, so refuse the move.
+    if (seen.has(cursor)) return true;
+    seen.add(cursor);
+    cursor = byId.get(cursor)?.parentId ?? null;
   }
   return false;
 }
