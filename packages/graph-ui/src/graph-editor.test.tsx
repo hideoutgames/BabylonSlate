@@ -1,6 +1,6 @@
 import { act, fireEvent, render, cleanup, screen, waitFor } from "@testing-library/react";
 import { useStore } from "@xyflow/react";
-import { useEffect, useState } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
 import { DRAG_ARM_MS, EditorReadOnlyContext, TagProvider } from "@babylonslate/editor-kit";
@@ -3843,6 +3843,43 @@ describe("GraphEditor", () => {
     expect(last.nodes.map((node) => node.id)).toEqual(["in-1"]);
   });
 
+  it("removes a wired node's links when the Backspace key deletes it", async () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <GraphEditor initialGraph={graphWithWiredPins()} onChange={onChange} />,
+    );
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="log-b"]')!);
+    fireEvent.keyDown(document.body, { key: "Backspace", code: "Backspace" });
+    fireEvent.keyUp(document.body, { key: "Backspace", code: "Backspace" });
+    await act(async () => {});
+    await waitFor(() => {
+      expect(container.querySelector('[data-id="log-b"]')).toBeNull();
+    });
+    const last = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(last.nodes.map((node) => node.id)).toEqual(["log-a", "log-c"]);
+    expect(last.edges.map((edge) => edge.id)).toEqual([
+      "e:log-a:execOut:log-c:execIn",
+    ]);
+  });
+
+  it("pastes each copied wire once under Strict Mode", () => {
+    const onChange = vi.fn();
+    const { container, getByTestId } = render(
+      <StrictMode>
+        <GraphEditor initialGraph={graphWithWiredPins()} onChange={onChange} />
+      </StrictMode>,
+    );
+    fireEvent.keyDown(document.body, { key: "Control", code: "ControlLeft" });
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="log-a"]')!);
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="log-b"]')!);
+    fireEvent.keyUp(document.body, { key: "Control", code: "ControlLeft" });
+    fireEvent.click(getByTestId("graph-copy"));
+    fireEvent.click(getByTestId("graph-paste"));
+    const last = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(last.nodes).toHaveLength(5);
+    expect(last.edges).toHaveLength(3);
+  });
+
   it("gives every paste fresh node ids and its own offset", () => {
     const onChange = vi.fn();
     const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
@@ -4636,6 +4673,102 @@ describe("GraphEditor", () => {
     } finally {
       restoreLayout();
     }
+  });
+
+  describe("selection that replaces the node selection", () => {
+    const transitionGraph = () => {
+      const graph = graphWithWiredPins();
+      graph.edges = graph.edges.map((edge) => ({ ...edge, type: "animTransition" }));
+      return graph;
+    };
+    const selectTransition = async (container: HTMLElement) => {
+      const badge = await waitFor(() => {
+        const found = container.querySelector(
+          '[data-testid="anim-transition-badge-e:log-a:execOut:log-b:execIn"]',
+        );
+        expect(found).not.toBeNull();
+        return found!;
+      });
+      fireEvent.click(badge);
+    };
+
+    it("clears a selected wire when a node is focused from search", async () => {
+      const restoreLayout = stubMeasuredGraphLayout();
+      try {
+        const onEdgeSelectionChange = vi.fn();
+        const graph = transitionGraph();
+        const view = (focusedNodeId?: string) => (
+          <GraphEditor
+            initialGraph={graph}
+            edgeTypes={animGraphEdgeTypes}
+            focusedNodeId={focusedNodeId}
+            onEdgeSelectionChange={onEdgeSelectionChange}
+          />
+        );
+        const { container, rerender } = render(view());
+        await selectTransition(container);
+        await waitFor(() => {
+          expect(onEdgeSelectionChange).toHaveBeenLastCalledWith([
+            "e:log-a:execOut:log-b:execIn",
+          ]);
+        });
+        rerender(view("log-c"));
+        await waitFor(() => {
+          expect(onEdgeSelectionChange).toHaveBeenLastCalledWith([]);
+        });
+      } finally {
+        restoreLayout();
+      }
+    });
+
+    it("pastes without leaving an earlier wire for Break Links", async () => {
+      const restoreLayout = stubMeasuredGraphLayout();
+      try {
+        const onChange = vi.fn();
+        const { container, getByTestId } = render(
+          <GraphEditor
+            initialGraph={transitionGraph()}
+            edgeTypes={animGraphEdgeTypes}
+            onChange={onChange}
+          />,
+        );
+        fireEvent.click(container.querySelector('.react-flow__node[data-id="log-c"]')!);
+        fireEvent.click(getByTestId("graph-copy"));
+        await selectTransition(container);
+        fireEvent.click(getByTestId("graph-paste"));
+        expect(getByTestId("graph-break-links")).toHaveProperty("disabled", true);
+        const last = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+        expect(last.edges).toHaveLength(2);
+      } finally {
+        restoreLayout();
+      }
+    });
+
+    it("selects wires on a read-only canvas without editing it", async () => {
+      const restoreLayout = stubMeasuredGraphLayout();
+      try {
+        const onChange = vi.fn();
+        const onEdgeSelectionChange = vi.fn();
+        const { container } = render(
+          <GraphEditor
+            initialGraph={transitionGraph()}
+            edgeTypes={animGraphEdgeTypes}
+            readOnly
+            onChange={onChange}
+            onEdgeSelectionChange={onEdgeSelectionChange}
+          />,
+        );
+        await selectTransition(container);
+        await waitFor(() => {
+          expect(onEdgeSelectionChange).toHaveBeenLastCalledWith([
+            "e:log-a:execOut:log-b:execIn",
+          ]);
+        });
+        expect(onChange).not.toHaveBeenCalled();
+      } finally {
+        restoreLayout();
+      }
+    });
   });
 });
 
