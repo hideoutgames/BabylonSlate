@@ -33,6 +33,19 @@ describe("worker save storage", () => {
     client.dispose(); server.dispose();
   });
 
+  it("reports idle only after a locked write and its release have finished", async () => {
+    const { client, server, storage } = fixture();
+    const saved = client.storage.withLock("project", async () => {
+      await client.storage.write("slot", "end of play");
+    });
+    await client.whenIdle();
+    expect(await storage.read("slot")).toBe("end of play");
+    await saved;
+    // Nothing waiting: idle at once.
+    await client.whenIdle();
+    client.dispose(); server.dispose();
+  });
+
   it("releases a terminated worker's lock even when another acquisition is queued", async () => {
     const { client, server, storage } = fixture();
     let started!: () => void;

@@ -742,6 +742,8 @@ export type CommandMessage =
       visible: boolean;
       frameId: number;
     }
+  /** The worker finished its `stop` phase (End Play, On Game End and their save writes). */
+  | { type: "runtimeStopped" }
   /** Rumble a pad by its Gamepad API index: intensity 0..1; zero intensity or duration stops it. */
   | {
       type: "setGamepadRumble";

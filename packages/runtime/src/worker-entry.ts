@@ -377,7 +377,7 @@ function handleControl(msg: ControlMessage): void {
       }
       return;
     }
-    case "stop":
+    case "stop": {
       releaseAfterPose();
       bootGeneration++;
       boot.reset();
@@ -388,7 +388,11 @@ function handleControl(msg: ControlMessage): void {
       sceneSources.dispose();
       stopConsoleCapture?.();
       stopConsoleCapture = null;
+      // End Play and On Game End may still be writing saves through the host:
+      // report the stop once they finish, so the host keeps this worker until then.
+      void saveStorage.whenIdle().then(() => onCommand({ type: "runtimeStopped" }));
       return;
+    }
     case "setPaused":
       pauseGate.setPaused(msg.paused);
       return;
