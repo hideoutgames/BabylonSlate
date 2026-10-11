@@ -71,10 +71,16 @@ export function remapImportResultGuids(
     requiredDependencies: result.requiredDependencies?.map((dep) => remap.get(dep) ?? dep),
     chunks: result.chunks.map((chunk) => {
       if (chunk.id !== "document") return chunk;
+      // The header is remapped, so a document left as it was would still
+      // name the colliding guids: refuse the import instead.
+      let mapped: Record<string, unknown>;
       try {
-        const mapped = remapDocumentPayload(result.type, JSON.parse(new TextDecoder().decode(chunk.data)), remap, definitionFields);
-        return { ...chunk, data: new TextEncoder().encode(JSON.stringify(mapped)) };
-      } catch { return chunk; }
+        mapped = remapDocumentPayload(result.type, JSON.parse(new TextDecoder().decode(chunk.data)), remap, definitionFields);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(`Cannot give "${result.name}" (${result.type}) new asset ids: its document could not be read (${reason}). Nothing was imported.`);
+      }
+      return { ...chunk, data: new TextEncoder().encode(JSON.stringify(mapped)) };
     }),
     payload: remapHeaderPayload(result.type, result.payload, remap, definitionFields),
     attachToGuid: result.attachToGuid

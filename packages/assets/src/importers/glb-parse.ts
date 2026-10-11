@@ -418,12 +418,24 @@ function gltfJsonToGlb(
     : [];
   const buffer0 = buffers[0];
   const bufferUri = typeof buffer0?.uri === "string" ? buffer0.uri : "";
-  if (bufferUri && isRelativeResourceUri(bufferUri)) {
-    const sidecar = sidecarBytesForUri(bufferUri, sidecars);
-    if (!sidecar) {
-      throw new Error(MISSING_GLTF_BIN);
+  if (bufferUri) {
+    // The GLB's BIN chunk becomes buffer 0, so its bytes must come along: a
+    // sidecar file or a data URI. A remote URL would leave the BIN empty.
+    let bytes: Uint8Array | null;
+    if (isRelativeResourceUri(bufferUri)) {
+      bytes = sidecarBytesForUri(bufferUri, sidecars);
+      if (!bytes) throw new Error(MISSING_GLTF_BIN);
+    } else if (bufferUri.startsWith("data:")) {
+      try {
+        bytes = decodeDataUri(bufferUri)?.bytes ?? null;
+      } catch {
+        bytes = null;
+      }
+      if (!bytes) throw new Error("glTF buffer 0 has an unreadable data URI.");
+    } else {
+      throw new Error("glTF import needs buffer 0 as a .bin file or a data URI, not a URL.");
     }
-    bin = sidecar;
+    bin = bytes;
     const rest = { ...buffer0 };
     delete rest.uri;
     buffers[0] = { ...rest, byteLength: bin.byteLength };
@@ -628,7 +640,8 @@ function clipTimeRange(
     const accessor = accessors[row.input] as Record<string, unknown> | undefined;
     const max = Array.isArray(accessor?.max) ? accessor.max : [];
     const seconds = typeof max[0] === "number" ? max[0] : NaN;
-    if (!Number.isFinite(seconds) || seconds <= 0) continue;
+    // A channel keyed only at t = 0 still starts the take there.
+    if (!Number.isFinite(seconds) || seconds < 0) continue;
     found = true;
     const min = Array.isArray(accessor?.min) ? accessor.min : [];
     const start = typeof min[0] === "number" && Number.isFinite(min[0]) ? min[0] : 0;

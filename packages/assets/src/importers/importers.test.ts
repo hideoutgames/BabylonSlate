@@ -55,6 +55,24 @@ describe("importers", () => {
     expect(salute!.payload.usage).toBe("albedo");
   });
 
+  it("infers Usage from whole words of the file name only", async () => {
+    const usages: Record<string, string> = {
+      "rock_normal.png": "normal",
+      "RockNormal.png": "normal",
+      "abnormal_growth.png": "albedo",
+      "normalized_noise.png": "albedo",
+      "ok_button.png": "ui",
+      "buttonhole.png": "albedo",
+      "Hero_Spritesheet.png": "pixelArt",
+      "pixelated_sky.png": "albedo",
+      "tileset01.png": "pixelArt",
+    };
+    for (const [fileName, usage] of Object.entries(usages)) {
+      const [texture] = await importImage(new Uint8Array([1, 2, 3]), { fileName, existingGuids: new Set() });
+      expect(texture!.payload.usage, fileName).toBe(usage);
+    }
+  });
+
   it("imports models with material/texture/animation dependents", async () => {
     const results = await importModel(buildMinimalGlbFixture({ animationName: "Walk" }), {
       fileName: "hero.glb",
@@ -276,6 +294,19 @@ describe("importers", () => {
     ]);
   });
 
+  it("recognizes font glyph JSON by the generators' shape and rejects other JSON", async () => {
+    const json = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
+    const options = (fileName: string) => ({ fileName, existingGuids: new Set<string>() });
+    const [msdf] = await importByExtension("Ui.json", json({ info: { size: 32 }, chars: [] }), options("Ui.json"));
+    expect(msdf!.chunks[0]!.kind).toBe("font-msdf");
+    const [facetype] = await importByExtension("Ui.json", json({ glyphs: {}, resolution: 1000 }), options("Ui.json"));
+    expect(facetype!.chunks[0]!.kind).toBe("font-facetype");
+    for (const value of [{ atlas: "sheet.png", frames: {} }, { chars: "abc" }, { facetype: true }, { name: "config" }]) {
+      await expect(importByExtension("data.json", json(value), options("data.json")), JSON.stringify(value))
+        .rejects.toThrow(/not a font file/);
+    }
+  });
+
   it("attaches an MSDF PNG named with msdf to an existing Font and leaves MSDF incomplete without JSON", async () => {
     const attached = await importFont(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), {
       fileName: "Ui-msdf.png",
@@ -385,4 +416,11 @@ it("remaps native Input Type references inside document chunks and nested graph 
   expect(results[1]!.payload).toEqual(expected);
   expect(JSON.parse(new TextDecoder().decode(results[1]!.chunks[0]!.data))).toEqual(expected);
   expect(results[1]!.dependencies).toEqual([guid]);
+});
+
+it("refuses a colliding import whose document cannot be remapped instead of keeping its old references", () => {
+  expect(() => remapImportResultGuids([
+    { type: "InputAction", name: "Jump", guid: "jump", version: 1, dependencies: [], payload: {}, chunks: [] },
+    { type: "Class", name: "Player", guid: "player", version: 1, dependencies: ["jump"], payload: {}, chunks: [{ id: "document", kind: "document", mime: "application/json", data: new TextEncoder().encode("{ not json") }] },
+  ], new Set(["jump"]))).toThrow(/Player.*Nothing was imported/);
 });

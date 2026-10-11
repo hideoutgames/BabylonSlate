@@ -14,12 +14,28 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   gif: "image/gif",
 };
 
+const PIXEL_ART_WORDS = new Set(["pixel", "pixels", "pixelart", "sprite", "sprites", "spritesheet", "tileset", "tilesets"]);
+const UI_WORDS = new Set(["ui", "gui", "hud", "button", "buttons"]);
+const NORMAL_WORDS = new Set(["normal", "normals", "normalmap"]);
+
+/** Words of a file name: split at separators, digits and camelCase humps. */
+function fileNameWords(fileName: string): string[] {
+  return baseName(fileName)
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(Boolean);
+}
+
+/** Usage from whole words of the name, so `abnormal` or `buttonhole` stay Albedo. */
 function usageFromFileName(fileName: string): string {
-  const lower = fileName.toLowerCase();
-  if (/(pixel|sprite|tileset)/.test(lower)) return "pixelArt";
-  if (/(^|[^a-z])lut([^a-z]|$)|color[_-]?grading/.test(lower)) return "colorGrading";
-  if (/(ui[_-]|hud[_-]|button)/.test(lower)) return "ui";
-  if (/normal/.test(lower)) return "normal";
+  const words = fileNameWords(fileName);
+  const joined = ` ${words.join(" ")} `;
+  if (words.some((word) => PIXEL_ART_WORDS.has(word))) return "pixelArt";
+  if (words.includes("lut") || words.includes("colorgrading") || joined.includes(" color grading ")) return "colorGrading";
+  if (words.some((word) => UI_WORDS.has(word))) return "ui";
+  if (words.some((word) => NORMAL_WORDS.has(word))) return "normal";
   return "albedo";
 }
 

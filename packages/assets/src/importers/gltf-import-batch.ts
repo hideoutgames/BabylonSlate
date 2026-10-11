@@ -77,7 +77,11 @@ function isGltfSidecar(file: ImportFileBytes): boolean {
   return GLTF_SIDECAR_EXTENSIONS.has(extensionOf(file.name));
 }
 
-/** Embed matching sidecars into each GLB/glTF; consumed images are not re-imported. */
+/**
+ * Embed matching sidecars into each GLB/glTF; embedded images are not
+ * re-imported. A model that cannot be embedded (its BIN is missing) is kept
+ * as picked, and its sidecars no other model embedded import on their own.
+ */
 export function embedGltfImportBatch(
   files: ImportFileBytes[],
 ): ImportFileBytes[] {
@@ -90,6 +94,8 @@ export function embedGltfImportBatch(
       !models.some((entry) => entry.sidecars.includes(file)),
   );
   const consumedExtras = new Set<ImportFileBytes>();
+  const embedded = new Set<ImportFileBytes>();
+  const released = new Set<ImportFileBytes>();
   for (const { model, sidecars } of models) {
     const extras = unusedSidecars.filter((file) => !sidecars.includes(file));
     const map = sidecarLookupMap([...sidecars, ...extras]);
@@ -97,6 +103,7 @@ export function embedGltfImportBatch(
       const ingested = ingestGltfForImport(model.name, model.bytes, map);
       const name = model.name.replace(/\.gltf$/i, ".glb");
       prepared.push({ name, bytes: ingested.bytes });
+      for (const sidecar of sidecars) embedded.add(sidecar);
       const uris = collectGltfExternalUris(model.name, model.bytes);
       for (const extra of extras) {
         if (uris.some((uri) => sidecarMatchesUri(extra, uri))) {
@@ -105,10 +112,12 @@ export function embedGltfImportBatch(
       }
     } catch {
       prepared.push(model);
+      for (const sidecar of sidecars) released.add(sidecar);
     }
   }
   return [
     ...prepared,
     ...rest.filter((file) => !consumedExtras.has(file)),
+    ...files.filter((file) => released.has(file) && !embedded.has(file)),
   ];
 }
