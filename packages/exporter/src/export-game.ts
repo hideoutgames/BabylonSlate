@@ -1,4 +1,4 @@
-import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, type Result } from "@babylonslate/core";
+import { err, ok, DEFAULT_LOOP_COUNT, normalizeSceneLayer, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, type Result } from "@babylonslate/core";
 import { collectAssetDependencyMetadata, extractPackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@babylonslate/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
@@ -158,6 +158,19 @@ async function writeLooseAssets(
   return { packs: [], index };
 }
 
+/**
+ * An exported Scene Layer gets a Rapier 2D world only with Enable Physics, read
+ * as the player reads it. An unreadable layer payload keeps Rapier.
+ */
+function enablesSceneLayerPhysics(asset: ExportAssetBytes): boolean {
+  if (asset.type !== "SceneLayer" || encodingFor(asset) !== "json") return false;
+  try {
+    return normalizeSceneLayer(JSON.parse(decoder.decode(asset.bytes))).settings.physicsEnabled;
+  } catch {
+    return true;
+  }
+}
+
 function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetBytes[] {
   const byId = new Map(assets.map(asset => [asset.guid, asset]));
   const byName = new Map(assets.filter(asset => asset.name).map(asset => [asset.name!, asset.guid]));
@@ -245,7 +258,7 @@ export async function exportGame(
     for (const [path, bytes] of selectPlayerRuntimeFiles(options.playerFiles, {
       physicsWorld,
       includePreviewDiagnostics: options.includePreviewDiagnostics === true && options.bundleDebugger,
-      hasSceneLayers: options.assets.some((asset) => asset.type === "SceneLayer"),
+      hasPhysicsSceneLayers: options.assets.some(enablesSceneLayerPhysics),
     })) {
       files.set(path, bytes);
     }
