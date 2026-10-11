@@ -307,7 +307,7 @@ Overlay Play collects Texture literals from **Set Material Texture Parameter** n
 
 ## Runtime Material Parameters
 
-Compiler block names remove numeric-ID separator artifacts before Babylon allocates unique shader symbols. Editor-generated Texture Sample IDs therefore produce legal GLSL samplers; distinct operations retain separate texture bindings even when their sanitized names coincide. Custom GLSL function names encode the complete operation identity, including legacy expressions, so sanitizing block names cannot merge different function bodies. Authored graph IDs and public parameter names remain unchanged.
+Compiler block names remove numeric-ID separator artifacts before Babylon allocates unique shader symbols. Editor-generated Texture Sample IDs therefore produce legal GLSL samplers; distinct operations retain separate texture bindings even when their sanitized names coincide. Custom GLSL function names encode the complete operation identity, so sanitizing block names cannot merge different function bodies. Authored graph IDs and public parameter names remain unchanged.
 
 Post-process material readiness lets the prepared graph's existing passes complete and invalidates the viewport. It must not rebuild the stack: releasing its last material reference on readiness would start another asynchronous compile and freeze the editor. Stack, document, camera, and enable/disable changes still rebuild and release their owned resources.
 
