@@ -132,6 +132,7 @@ function dispatchPointer(
   type: "pointerdown" | "pointermove" | "pointerup",
   clientX: number,
   clientY: number,
+  pointerId = 1,
 ): void {
   const event = new MouseEvent(type, {
     bubbles: true,
@@ -139,7 +140,7 @@ function dispatchPointer(
     clientX,
     clientY,
   });
-  Object.defineProperty(event, "pointerId", { value: 1 });
+  Object.defineProperty(event, "pointerId", { value: pointerId });
   Object.defineProperty(event, "pointerType", { value: "touch" });
   target.dispatchEvent(event);
 }
@@ -364,6 +365,33 @@ describe("attachGraphPaneMarquee", () => {
     expect(armed).toEqual([true]);
     dispatchPointer(pane, "pointerup", 20, 20);
     expect(armed).toEqual([true, false]);
+    handle.dispose();
+  });
+
+  it("ends an armed hold when a second finger lands, so the pane pans again", () => {
+    const { wrapper, pane } = mountEmptyPane();
+    const armed: boolean[] = [];
+    const rects: Array<ScreenRect | null> = [];
+    const handle = attachGraphPaneMarquee(wrapper, {
+      onMarqueeRect: (rect) => rects.push(rect),
+      onMarqueeEnd: () => {
+        throw new Error("should not end a marquee");
+      },
+      onArmedChange: (next) => armed.push(next),
+    });
+
+    vi.useFakeTimers();
+    dispatchPointer(pane, "pointerdown", 20, 20, 1);
+    vi.advanceTimersByTime(DRAG_ARM_MS);
+    dispatchPointer(pane, "pointerdown", 200, 200, 2);
+    expect(armed).toEqual([true, false]);
+    // The pinch's moves reach React Flow instead of drawing a marquee.
+    const move = dispatchBubbling(pane, "touchmove", 120, 120);
+    expect(move.defaultPrevented).toBe(false);
+    dispatchPointer(pane, "pointerup", 200, 200, 2);
+    dispatchPointer(pane, "pointerup", 120, 120, 1);
+    expect(armed).toEqual([true, false]);
+    expect(rects.filter((rect) => rect !== null)).toEqual([]);
     handle.dispose();
   });
 });

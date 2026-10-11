@@ -16,7 +16,11 @@ function pointInRect(
   );
 }
 
-/** Client hit-test + React Flow conversion for tree drops onto the graph. */
+/**
+ * Client hit-test + React Flow conversion for tree drops onto the graph.
+ * Chrome drawn over the canvas (`data-graph-overlay`, the toolbar) is not
+ * graph, so a drop there is refused rather than spawning under it.
+ */
 export function createGraphCanvasDropApi(
   element: HTMLElement | null,
   clientToFlow: (point: { x: number; y: number }) => { x: number; y: number },
@@ -24,7 +28,15 @@ export function createGraphCanvasDropApi(
   return {
     containsClientPoint(clientX, clientY) {
       if (!element) return false;
-      return pointInRect(clientX, clientY, element.getBoundingClientRect());
+      if (!pointInRect(clientX, clientY, element.getBoundingClientRect())) {
+        return false;
+      }
+      for (const overlay of element.querySelectorAll("[data-graph-overlay]")) {
+        if (pointInRect(clientX, clientY, overlay.getBoundingClientRect())) {
+          return false;
+        }
+      }
+      return true;
     },
     clientToFlow(clientX, clientY) {
       return clientToFlow({ x: clientX, y: clientY });

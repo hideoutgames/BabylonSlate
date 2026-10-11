@@ -181,6 +181,18 @@ export function attachGraphPaneMarquee(
     options.onMarqueeRect(null);
   };
 
+  const cancelGesture = () => {
+    if (!gesture) return;
+    try {
+      if (wrapper.hasPointerCapture?.(gesture.pointerId)) {
+        wrapper.releasePointerCapture(gesture.pointerId);
+      }
+    } catch {
+      // jsdom may not implement releasePointerCapture.
+    }
+    clearGesture();
+  };
+
   const captureIfArmed = () => {
     if (!gesture?.armed || gesture.captured) return;
     try {
@@ -194,8 +206,14 @@ export function attachGraphPaneMarquee(
   const onDown = (event: Event) => {
     const target = event.target as Node | null;
     if (!target || !wrapper.contains(target)) return;
+    if (gesture) {
+      // A second finger pinches or pans, so the held marquee ends and pane
+      // panning comes back; a repeated press from the same pointer restarts.
+      const secondPointer = pointerIdOf(event) !== gesture.pointerId;
+      cancelGesture();
+      if (secondPointer) return;
+    }
     if (!isEmptyPaneTarget(event.target)) return;
-    if (gesture?.timer) clearTimeout(gesture.timer);
     const startClient = clientPointFromEvent(event);
     if (!startClient) return;
     const next = {
@@ -272,14 +290,7 @@ export function attachGraphPaneMarquee(
       event.stopImmediatePropagation();
       options.onMarqueeEnd(start, point);
     }
-    try {
-      if (wrapper.hasPointerCapture?.(gesture.pointerId)) {
-        wrapper.releasePointerCapture(gesture.pointerId);
-      }
-    } catch {
-      // jsdom may not implement releasePointerCapture.
-    }
-    clearGesture();
+    cancelGesture();
   };
 
   const touchMoveOptions: AddEventListenerOptions = {

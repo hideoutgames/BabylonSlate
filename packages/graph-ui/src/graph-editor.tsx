@@ -2416,6 +2416,7 @@ function GraphEditorCanvas({
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
             className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-sm"
+            data-graph-overlay=""
             data-testid="graph-toolbar"
           >
             {paletteNodes && paletteNodes.length > 0 ? (
