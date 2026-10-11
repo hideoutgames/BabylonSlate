@@ -365,10 +365,16 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
      */
     private void replaceDocument(FolderAccess folder, Uri parent, DocumentMetadata existing, String name, byte[] payload)
         throws Exception {
+        int swapFlags = DocumentsContract.Document.FLAG_SUPPORTS_DELETE | DocumentsContract.Document.FLAG_SUPPORTS_RENAME;
+        if ((documentFlags(existing.uri) & swapFlags) != swapFlags) {
+            // A file the provider cannot both delete and rename can only be rewritten in place.
+            writeDocument(existing.uri, payload);
+            return;
+        }
         Uri staged = createChild(folder, parent, "application/octet-stream", ".babylonslate-" + UUID.randomUUID() + ".tmp");
         try {
+            // Only the staged file's own flags say whether it can take the old name.
             if ((documentFlags(staged) & DocumentsContract.Document.FLAG_SUPPORTS_RENAME) == 0) {
-                // A provider without rename can only rewrite the file in place.
                 deleteQuietly(staged);
                 writeDocument(existing.uri, payload);
                 return;
