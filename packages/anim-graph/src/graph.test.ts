@@ -22,7 +22,6 @@ import {
   decorateTransitionRuleGraph,
   persistTransitionRuleGraph,
   animExitTimeReached,
-  ANIM_EXIT_TIME_REACHED_TYPE,
   type AnimEvalState,
   type AnimGraphDocument,
 } from "./index";
@@ -130,6 +129,32 @@ describe("anim graph evaluator", () => {
     expect(codes).toContain("anim.badTransition");
   });
 
+  it("never fires a transition to a missing state", () => {
+    const doc = createDefaultAnimGraph();
+    doc.transitions.push({
+      id: "bad",
+      fromStateId: "idle",
+      toStateId: "gone",
+      blendSeconds: 0,
+      priority: 0,
+      ruleGraph: createDefaultTransitionRuleGraph(),
+    });
+    const first = evaluateAnimGraph(doc, null, 0.25, {});
+    expect(first.stateId).toBe("idle");
+    // The clock keeps running instead of snapping back through the entry state.
+    expect(evaluateAnimGraph(doc, first, 0.25, {}).normalisedTime).toBeCloseTo(0.5, 5);
+  });
+
+  it("evaluates a graph whose entry state is missing instead of throwing", () => {
+    const doc = createDefaultAnimGraph();
+    doc.entryStateId = "missing";
+    expect(evaluateAnimGraph(doc, null, 0.25, {}).stateId).toBe("idle");
+    const empty = { ...doc, states: [] };
+    const idle = evaluateAnimGraph(empty, null, 0.25, {});
+    expect(idle.layers).toEqual([]);
+    expect(idle.blendWeights).toEqual({});
+  });
+
   it("clamps a non-looping clip at the end", () => {
     const doc = createDefaultAnimGraph();
     doc.states[0]!.loop = false;
@@ -174,7 +199,7 @@ describe("anim graph evaluator", () => {
     });
   });
 
-  it("preserves transition condition and blend fields across a graph-ui round-trip", () => {
+  it("preserves transition blend fields across a graph-ui round-trip", () => {
     const doc = createDefaultAnimGraph();
     doc.states.push({
       id: "run",
@@ -195,10 +220,7 @@ describe("anim graph evaluator", () => {
       id: "idle-to-run",
       fromStateId: "idle",
       toStateId: "run",
-      condition: "moving",
       blendSeconds: 0.25,
-      hasExitTime: true,
-      exitTime: 0.8,
       priority: 0,
       ruleGraph: createDefaultTransitionRuleGraph(),
     });
@@ -206,10 +228,7 @@ describe("anim graph evaluator", () => {
     expect(next.transitions[0]).toMatchObject({
       fromStateId: "idle",
       toStateId: "run",
-      condition: "moving",
       blendSeconds: 0.25,
-      hasExitTime: true,
-      exitTime: 0.8,
     });
   });
 
@@ -227,10 +246,7 @@ describe("anim graph evaluator", () => {
       id: "idle-to-run",
       fromStateId: "idle",
       toStateId: "run",
-      condition: "moving",
       blendSeconds: 0.25,
-      hasExitTime: true,
-      exitTime: 0.8,
       priority: 0,
       ruleGraph: createDefaultTransitionRuleGraph(),
     });
@@ -247,10 +263,7 @@ describe("anim graph evaluator", () => {
       id: "canvas-edge-1",
       fromStateId: "idle",
       toStateId: "run",
-      condition: "moving",
       blendSeconds: 0.25,
-      hasExitTime: true,
-      exitTime: 0.8,
     });
   });
 
@@ -590,24 +603,6 @@ describe("anim graph v2 document", () => {
     ).toBe(true);
   });
 
-  it("migrates legacy parameter names into typed bool variables", () => {
-    const parsed = parseAnimGraphDocument({
-      name: "Loco",
-      entryStateId: "idle",
-      states: [{ id: "idle", name: "Idle", clipId: null, speed: 1, loop: true }],
-      transitions: [],
-      clips: [],
-      parameters: ["moving", "attack"],
-    });
-    expect(parsed?.schemaVersion).toBe(ANIM_GRAPH_SCHEMA_VERSION);
-    expect(parsed?.variables.map((row) => row.name)).toEqual([
-      "moving",
-      "attack",
-    ]);
-    expect(parsed?.variables.every((row) => row.typeId === "bool")).toBe(true);
-    expect(parsed?.parameters).toEqual(["moving", "attack"]);
-  });
-
   it("preserves Tag variable types and normalizes serialized TagContainer defaults", () => {
     const parsed = parseAnimGraphDocument({
       name: "Tagged State",
@@ -628,123 +623,6 @@ describe("anim graph v2 document", () => {
     expect(animGraphMembersFromVariables(parsed!.variables)[1]).toMatchObject({
       typeId: "struct", typeClassId: "engine:TagContainer", defaultValue: { Tags: [300, 301] },
     });
-  });
-
-  it("migrates a named condition onto Exit State and leaves Enter State disconnected", () => {
-    const parsed = parseAnimGraphDocument({
-      name: "Loco",
-      entryStateId: "idle",
-      states: [
-        { id: "idle", name: "Idle", clipId: null, speed: 1, loop: true },
-        { id: "run", name: "Run", clipId: null, speed: 1, loop: true },
-      ],
-      transitions: [
-        {
-          id: "idle-to-run",
-          fromStateId: "idle",
-          toStateId: "run",
-          condition: "moving",
-          blendSeconds: 0.2,
-          hasExitTime: false,
-          exitTime: 0,
-        },
-      ],
-      clips: [],
-      parameters: ["moving"],
-    });
-    const rule = parsed?.transitions[0]?.ruleGraph;
-    expect(rule?.nodes.some((node) => node.type === ANIM_RULE_ENTER_TYPE)).toBe(
-      true,
-    );
-    expect(rule?.nodes.some((node) => node.type === ANIM_RULE_EXIT_TYPE)).toBe(
-      true,
-    );
-    const getVar = rule?.nodes.find((node) => node.type === "variables.get");
-    expect(getVar?.data.variableName).toBe("moving");
-    expect(
-      rule?.edges.some(
-        (edge) =>
-          edge.source === getVar?.id &&
-          edge.target ===
-            rule.nodes.find((node) => node.type === ANIM_RULE_EXIT_TYPE)?.id,
-      ),
-    ).toBe(true);
-    expect(
-      rule?.edges.some(
-        (edge) =>
-          edge.target ===
-          rule.nodes.find((node) => node.type === ANIM_RULE_ENTER_TYPE)?.id,
-      ),
-    ).toBe(false);
-  });
-
-  function legacyExitTimeDocument(ruleGraph?: unknown) {
-    return parseAnimGraphDocument({
-      name: "Loco",
-      entryStateId: "idle",
-      states: [
-        { id: "idle", name: "Idle", clipId: null, speed: 1, loop: true },
-        { id: "run", name: "Run", clipId: null, speed: 1, loop: true },
-      ],
-      transitions: [
-        {
-          id: "idle-to-run",
-          fromStateId: "idle",
-          toStateId: "run",
-          blendSeconds: 0.2,
-          hasExitTime: true,
-          exitTime: 0.8,
-          ...(ruleGraph ? { ruleGraph } : {}),
-        },
-      ],
-      clips: [],
-      parameters: [],
-    });
-  }
-
-  it("migrates a legacy exit time onto Exit State as Exit Time Reached", () => {
-    const rule = legacyExitTimeDocument()?.transitions[0]?.ruleGraph;
-    const reached = rule?.nodes.find(
-      (node) => node.type === ANIM_EXIT_TIME_REACHED_TYPE,
-    );
-    expect(reached?.data.exitTime).toBe(0.8);
-    expect(rule?.edges).toContainEqual(
-      expect.objectContaining({
-        source: reached?.id,
-        sourceHandle: "value",
-        target: "exit-state",
-        targetHandle: "value",
-      }),
-    );
-    expect(
-      rule?.nodes.some((node) => node.type === "anim.state.normalisedTime"),
-    ).toBe(false);
-  });
-
-  it("upgrades a previously migrated Normalised Time comparison but not an edited one", () => {
-    const migrated = (b: number) => ({
-      nodes: [
-        ...createDefaultTransitionRuleGraph().nodes,
-        { id: "normalised-time-1", type: "anim.state.normalisedTime", position: { x: 80, y: 40 }, data: { title: "Normalised Time" } },
-        { id: "exit-time-1", type: "math.greaterEqual", position: { x: 220, y: 40 }, data: { title: "Greater or Equal", b } },
-      ],
-      edges: [
-        { id: "e-1", source: "normalised-time-1", target: "exit-time-1", sourceHandle: "value", targetHandle: "a" },
-        { id: "e-2", source: "exit-time-1", target: "exit-state", sourceHandle: "out", targetHandle: "value" },
-      ],
-    });
-    const upgraded = legacyExitTimeDocument(migrated(0.8))?.transitions[0]?.ruleGraph;
-    expect(upgraded?.nodes.map((node) => node.type)).toEqual([
-      ANIM_RULE_ENTER_TYPE,
-      ANIM_RULE_EXIT_TYPE,
-      ANIM_EXIT_TIME_REACHED_TYPE,
-    ]);
-    expect(upgraded?.nodes[2]).toMatchObject({ id: "exit-time-1", data: { exitTime: 0.8 } });
-    expect(upgraded?.edges).toEqual([
-      { id: "e-2", source: "exit-time-1", target: "exit-state", sourceHandle: "value", targetHandle: "value" },
-    ]);
-    const edited = legacyExitTimeDocument(migrated(0.5))?.transitions[0]?.ruleGraph;
-    expect(edited).toEqual(migrated(0.5));
   });
 
   it("warns on a duplicate same-direction transition but not on a Both Ways pair", () => {
@@ -1331,6 +1209,19 @@ describe("resolveAnimGraphClips", () => {
       assetGuid: "orphan-anim",
       clipName: "Walk",
     });
+  });
+
+  it("keeps a Model clip name the Model lacks, even when it matches the state name", () => {
+    const doc = createDefaultAnimGraph();
+    doc.clips[0] = {
+      id: "idle-clip",
+      kind: "animation",
+      assetGuid: "hero-model",
+      clipName: "Idle",
+      durationMs: 1000,
+    };
+    const resolved = resolveAnimGraphClips(doc, [{ ...catalog[0]!, clipNames: ["Walk"] }]);
+    expect(resolved.clips[0]?.clipName).toBe("Idle");
   });
 
   it("fills an empty Model clip name from the first glTF group", () => {
