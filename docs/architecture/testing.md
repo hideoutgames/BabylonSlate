@@ -59,7 +59,7 @@ For public API changes, select directly affected consumers for scoped typechecki
 
 ## Responsive editor checks
 
-- `e2e/phone-editor.spec.ts` covers the 390x844 phone window switcher with one visible Dockview window, the 844x390 landscape round trip with injected safe-area insets, and restoration to the 1194x834 tablet layout. Physical Home Screen testing remains necessary for iOS status-bar effects, installed-phone insets and rotation timing.
+- `e2e/phone-editor.spec.ts` covers the 390x844 phone window switcher with one visible Dockview window, the 844x390 landscape round trip, injected safe-area insets back in 390x844 portrait, and restoration to the 1194x834 tablet layout. Physical Home Screen testing remains necessary for iOS status-bar effects, installed-phone insets and rotation timing.
 - `e2e/phone-content-browser.spec.ts` covers touch folder navigation in the drawer and explicit Open. These run under desktop-chrome with phone viewport/touch overrides; existing iPad tests remain unchanged.
 - Shared CatalogDialog tests cover category selection; real Dockview tests cover panel visibility, preservation, and layout restoration. Phone browser emulation does not certify native iOS/Android packaging or physical-device behavior.
 - Tablet folder-pan coverage creates enough rows to scroll at 1194x600, keeping the coarse-pointer viewport above the 500px phone-layout height breakpoint.
@@ -98,14 +98,14 @@ The shared Save All browser helper waits for scene reloads to finish and uses an
 
 [`.github/workflows/verify.yml`](../../.github/workflows/verify.yml) splits that gate into three standard `ubuntu-latest` job templates (`static`, unsharded `unit` coverage, and a 4-way `e2e` shard matrix). [`.github/workflows/preview.yml`](../../.github/workflows/preview.yml) deploys GitHub Pages. [`.github/workflows/webkit-smoke.yml`](../../.github/workflows/webkit-smoke.yml) runs the optional [WebKit smoke lane](#webkit-smoke-lane) after merges. Do not enable or target [larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/using-larger-runners). Agent rule: [`.agents/rules/github-actions-standard-runners.md`](../../.agents/rules/github-actions-standard-runners.md).
 
-The repository plans around a 20-job concurrency budget; account limits and actual overlapping work must be observed rather than inferred from workflow job counts. Each ready PR uses 6 Verify jobs (`static` + `unit` + 4 e2e shards). Four ready PRs can use 24, and a merge adds `main` Verify (6) + one Preview job + one optional WebKit smoke job; GitHub queues jobs beyond the 20-job concurrency cap rather than failing them. Preserve the four-ready-PR cadence and standard runners. Do not shard Vitest coverage: per-package 60% gates need the full suite, and a blob-merge job would add another runner.
+The repository plans around a 20-job concurrency budget; account limits and actual overlapping work must be observed rather than inferred from workflow job counts. Each ready PR uses 6 Verify jobs (`static` + `unit` + 4 e2e shards). Four ready PRs can use 24, and a merge adds `main` Verify (6) + Preview (three sequential jobs: build, deploy, smoke, so one runs at a time) + one optional WebKit smoke job; GitHub queues jobs beyond the 20-job concurrency cap rather than failing them. Preserve the four-ready-PR cadence and standard runners. Do not shard Vitest coverage: per-package 60% gates need the full suite, and a blob-merge job would add another runner.
 
 Browser shards start independently and each builds its own immutable player/editor bundle before testing. The explicit hosted-only `ci-bundle` contract leaves full typechecking in the required static job; local standalone builds still typecheck. The shared build artifact dependency is removed. See [CI performance](../ci-performance.md) for the existing-run baseline, provisional pilot criteria and rollback; no measured speedup is claimed yet.
 
 - **Concurrency.** Verify cancels superseded runs for the same pull request (or `main` ref). Preview already cancels in-progress Pages deploys.
 - **Timeouts.** `static` is 15 minutes (tooling checks, typecheck, lint, docs and test-artifact builds). `unit` is 45 minutes (`pnpm test:coverage`, unsharded). Each `e2e` shard is 35 minutes: the heaviest shard measures 24–26 minutes on slow runners, and Playwright's 60-second per-test timeout already bounds a hung test. Playwright Chromium download times out at 5 minutes so a hung browser fetch cannot occupy a runner for six hours.
 - **Playwright cache.** Each `e2e` shard restores `~/.cache/ms-playwright` keyed on `pnpm-lock.yaml`, then runs `playwright install chromium` (not `--with-deps`, not `install-deps`). `ubuntu-latest` already has Chromium's shared libraries. Playwright's extra CJK/cyrillic font packages (~21MB) time out when several shards hit the Ubuntu archive together; this suite has no screenshot baselines that need those fonts.
-- **Shards.** CI runs `pnpm test:e2e --partition=N/4` with `fail-fast: false`, using measured durations and the shared static artifact. Local `pnpm test:e2e` / `pnpm verify` stay unsharded. Playwright uses one worker to limit resource use; each test owns a fresh browser context and storage. Project creation helpers select Basic 3D before filling project details; 2D cases select Basic 2D. The Feature Test starter is covered by the node scaffold test `apps/editor/src/services/project-service.feature-test.test.ts`; its browser route is perf-only. Helpers wait for the launcher splash to unmount before issuing editor gestures, since mounted chrome can still be covered and inert. The viewport post-process acceptance check allows 30 seconds for background asset recollection before checking the attached pass, rather than the default five-second UI assertion budget.
+- **Shards.** CI runs `pnpm test:e2e --partition=N/4` with `fail-fast: false`, using measured durations; each shard builds its own `ci-bundle` bundle. Local `pnpm test:e2e` / `pnpm verify` stay unsharded. Playwright uses one worker to limit resource use; each test owns a fresh browser context and storage. Project creation helpers select Basic 3D before filling project details; 2D cases select Basic 2D. The Feature Test starter is covered by the node scaffold test `apps/editor/src/services/project-service.feature-test.test.ts`; its browser route is perf-only. Helpers wait for the launcher splash to unmount before issuing editor gestures, since mounted chrome can still be covered and inert. The viewport post-process acceptance check allows 30 seconds for background asset recollection before checking the attached pass, rather than the default five-second UI assertion budget.
 - **Drafts.** Draft PRs skip Verify jobs. Agents pass explicit targeted checks before opening a PR as a draft. Mark ready once a slot is free: fewer than four other counted non-draft PRs target `main` (#271 excluded). If all four slots are occupied, wait and recheck. `ready_for_review` or a later non-draft `synchronize` starts Verify. Agents monitor the current head, fix CI failures, rerun checks affected by each repair before pushing, and merge after all gates pass. Rules: [PR cadence](../../.agents/rules/github-actions-pr-cadence.md) and [delivery workflow](../../.agents/rules/agent-workflow.md#workflow).
 - **Skipped check ghosts.** Opening or pushing a draft still triggers Verify; the job `if` skips the runners, but GitHub records skipped checks. A skipped matrix does **not** expand, so the draft run shows bare `static` / `unit` / `e2e` (the unsharded `e2e` name looks like a leftover full E2E job). `ready_for_review` on the same SHA then adds the real six jobs. The Checks tab keeps both runs (often **9** rows: three skipped + six live). Those skipped rows do not count toward the 20-job cap. Do not add a second “full unit/e2e” workflow or drop the draft `if` to hide them.
 
@@ -132,7 +132,7 @@ Startup regressions verify deployment-base WASM URLs, failed explicit downloads 
 
 ## Coverage gates
 
-Coverage is scoped to `packages/*/src/**` and gated **per package** at 60% (lines, functions, branches, statements), including `@babylonslate/exporter` and `@babylonslate/source-control`. `apps/editor` is outside the gate (Playwright). `pnpm test:coverage` therefore instruments packages without the editor jsdom suite (that suite OOMs a 4GB Node heap under v8 coverage) and then runs `apps/editor` unit tests as four sequential shards without coverage. `apps/player` and `apps/desktop` are outside the gate (export/Preview e2e and source-read host tests). `apps/docs` is outside the gate (VitePress build + unit tests for sidebar coverage and the repo-link rewriter).
+Coverage is scoped to `packages/*/src/**` and gated **per package** at 60% (lines, functions, branches, statements), including `@babylonslate/exporter` and `@babylonslate/source-control`. `@babylonslate/physics` is the exception: 50% lines, functions and statements, 45% branches. `apps/editor` is outside the gate (Playwright). `pnpm test:coverage` therefore instruments packages without the editor jsdom suite (that suite OOMs a 4GB Node heap under v8 coverage) and then runs `apps/editor` unit tests without coverage (logic tests in Node, DOM tests in batches of at most 50 files). `apps/player` and `apps/desktop` are outside the gate (export/Preview e2e and source-read host tests). `apps/docs` is outside the gate (VitePress build + unit tests for sidebar coverage and the repo-link rewriter).
 
 Excluded, each for a stated reason:
 
@@ -140,18 +140,19 @@ Excluded, each for a stated reason:
 | --- | --- |
 | `mobile-storage-adapter.ts` | Wraps Documents + scoped; device spike |
 | `preferences-app-settings.ts` | Capacitor Preferences; device spike |
+| `capacitor-secret-store.ts` | Keychain / Keystore plugin; device spike |
 | `documents-adapter.ts` | Capacitor Filesystem production path; unit-tested via injected fake FS |
 | `derived-storage.ts` | Thin OPFS/Documents factory; Playwright cold-reopen |
 | `node-adapter.ts` | CI/tooling adapter; own unit tests, excluded from browser package gate |
-| Electron main / preload | `apps/desktop`; source-read unit tests, not a live Electron run |
 | `create-engine.ts` | Needs a real WebGL context; covered by Playwright |
 | `babylon-audio-backend.ts` | Babylon AudioV2; unit tests inject `FakeAudioPlaybackBackend` |
-| `ui-surface.ts` | Standalone `CreateFullscreenUI` + Canvas2D blit need a real Engine canvas |
 | `worker-entry.ts` | Game worker host; Play is covered by e2e, while `worker-entry.test.ts` verifies boot, repeated advancement, and cancellation with worker RAF present or absent. Pause On Play gating is unit-tested in `play-pause-gate.test.ts`; inspect control (`inspect-control.ts`) has no unit test |
 | `bake-worker.ts` | Navmesh bake worker; covered through the editor host |
 | `audio-reverb-worker.ts` | Audio reverb bake worker; occupancy/probe bake is covered in `audio-reverb.test.ts` plus editor host |
 | `havok-backend.ts`, `havok-loader.ts`, `rapier-backend.ts` | Wasm backends; HavokPlugin path asserted in `havok-v2.test.ts`; coverage of the Babylon/Havok surface is environment-dependent |
+| `worker-encode.ts`, `decode-source-rgba.ts` | Browser Worker + OffscreenCanvas encode path; covered by editor wiring and the Node Basis smoke (`node-basis-encode.ts`) |
 | `packages/ui/**` | shadcn primitives generated by the CLI |
+| `index.ts`, `styles/**`, `test-support/**` | Re-export barrels, stylesheets and test helpers |
 
 `scoped-storage-adapter.ts` is **not** excluded: its Capacitor plugins are mocked in `scoped-storage-adapter.test.ts`, which covers bookmark reopen without a picker, staleness surfacing as Reconnect, and the tiers it refuses. Only the on-device `NSFileCoordinator` behaviour stays unproven.
 
@@ -279,7 +280,7 @@ Measures React commit cost per editor edit, so store and context changes can be 
 
 ## Property tests
 
-`fast-check` is available for pure logic. Current uses: golden text normalization idempotence, `.babasset` chunk round-tripping, edit command apply-then-invert, and navigation coordinate remapping.
+`fast-check` is available for pure logic. Current uses: `.babasset` chunk round-tripping, edit command apply-then-invert and scene diff round trips, navigation coordinate remapping, actor world-transform composition, and authored transform matrices matching the runtime composition.
 
 ## Test cost policy
 
