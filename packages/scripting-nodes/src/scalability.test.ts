@@ -72,7 +72,7 @@ describe("scalability nodes", () => {
     expect({ reads, logs }).toEqual({ reads: 1, logs: ["webgpu"] });
   });
 
-  it("Get Effective Scalability reports the effective backend of an acknowledgement without a pipeline", () => {
+  it("Get Effective Scalability reports the backend of the confirmed settings that Ready uses", () => {
     const logs: unknown[] = [];
     runBeginPlay(
       [["get", "scalability.getEffective"], ["log", "debug.log"]],

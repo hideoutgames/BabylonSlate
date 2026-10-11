@@ -29,8 +29,8 @@ export const scalabilityNodes: NodeDefinition[] = [
     codegen: (ctx) => {
       const s = ctx.shared?.("ctx.getScalability()") ?? "ctx.getScalability()";
       return { settings: graphSnapshot(s), ready: `(${s}?.effective != null)`,
-        requestedBackend: `((s) => s?.pipeline?.requested.gpuBackend ?? s?.requested.render.gpuBackend ?? 'auto')(${s})`,
-        effectiveBackend: `((s) => s?.pipeline?.effective.gpuBackend ?? s?.effective?.render.gpuBackend ?? 'auto')(${s})`,
+        requestedBackend: `(${s}?.requested.render.gpuBackend ?? 'auto')`,
+        effectiveBackend: `(${s}?.effective?.render.gpuBackend ?? 'auto')`,
         fallbackReason: `(${s}?.pipeline?.limits.join(' ' ) ?? '')`,
         vignetteColor: `((c) => ({ x: c?.[0] ?? 0, y: c?.[1] ?? 0, z: c?.[2] ?? 0, w: 1 }))(${s}?.effective?.render.effects?.vignette.color)`,
         outlineColor: `((c) => ({ x: c?.[0] ?? 0.03, y: c?.[1] ?? 0.03, z: c?.[2] ?? 0.03, w: 1 }))(${s}?.effective?.render.cel?.outlineColor)` };
