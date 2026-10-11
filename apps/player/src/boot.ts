@@ -818,7 +818,7 @@ function initializePlayer(
   };
   const publishAssetStates = () => {
     const preparing = new Set([...preparingPreloads.values()].flatMap(ids => [...ids]));
-    const states = manifest.assets.map(entry => ({ guid: entry.guid, state: preparing.has(entry.guid) ? "loading" as const : resourceFailures.has(entry.guid) ? "failed" as const : game.assets?.getLoadState(entry.guid) ?? "ready" as const }));
+    const states = manifest.assets.map(entry => ({ guid: entry.guid, state: preparing.has(entry.guid) ? "loading" as const : resourceFailures.has(entry.guid) ? "failed" as const : game.assets.getLoadState(entry.guid) }));
     if (worker) worker.postControl({ type: "assetLoadStates", states });
     else runtime?.setAssetLoadStates(states);
   };
