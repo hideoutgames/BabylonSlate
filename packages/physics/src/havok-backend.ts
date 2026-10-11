@@ -167,6 +167,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     {
       actorAId: string;
       actorBId: string;
+      /** The begin event's colliders, so every end routes to the same components. */
+      colliderAId?: string;
+      colliderBId?: string;
       contacts: number;
       /** A teleport dropped the native pair; the next step must re-report it. */
       refreshing: boolean;
@@ -1150,19 +1153,14 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     // overlap events to its trigger component, even after a blocking collider.
     let colliderAId = this.firstColliderIdForActor(actorAId, isTriggerEvent);
     let colliderBId = this.firstColliderIdForActor(actorBId, isTriggerEvent);
-    let normal = {
-      x: event.normal?.x ?? 0,
-      y: event.normal?.y ?? 1,
-      z: event.normal?.z ?? 0,
-    };
-    if (a > b) {
+    const swapped = a > b;
+    if (swapped) {
       const swap = a;
       a = b;
       b = swap;
       const swapCollider = colliderAId;
       colliderAId = colliderBId;
       colliderBId = swapCollider;
-      normal = { x: -normal.x, y: -normal.y, z: -normal.z };
     }
     if (kind === "overlapBegin" || kind === "overlapEnd") {
       // Havok reports each overlapping child-shape pair. Keep the actor overlap
@@ -1179,6 +1177,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         this.activeTriggerPairs.set(pairKey, {
           actorAId: a,
           actorBId: b,
+          ...(colliderAId ? { colliderAId } : {}),
+          ...(colliderBId ? { colliderBId } : {}),
           contacts: 1,
           refreshing: false,
         });
@@ -1189,6 +1189,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         pair.contacts -= 1;
         if (pair.contacts > 0) return;
         this.activeTriggerPairs.delete(pairKey);
+        // End on the colliders the begin event named.
+        colliderAId = pair.colliderAId;
+        colliderBId = pair.colliderBId;
       }
     }
     const key = `${kind}|${a}|${b}`;
@@ -1200,18 +1203,41 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     ) {
       return;
     }
-    this.pendingContacts.push({
-      kind,
+    const pair = {
       actorAId: a,
       actorBId: b,
       ...(colliderAId ? { colliderAId } : {}),
       ...(colliderBId ? { colliderBId } : {}),
+    };
+    if (kind !== "hit") {
+      this.pendingContacts.push({ kind, ...pair });
+      return;
+    }
+    const sign = swapped ? -1 : 1;
+    this.pendingContacts.push({
+      kind,
+      ...pair,
       location: {
         x: event.point?.x ?? 0,
         y: event.point?.y ?? 0,
         z: event.point?.z ?? 0,
       },
-      normal,
+      normal: {
+        x: sign * (event.normal?.x ?? 0),
+        y: sign * (event.normal?.y ?? 1),
+        z: sign * (event.normal?.z ?? 0),
+      },
+    });
+  }
+
+  /** Ends an actor overlap with the colliders its begin event named. */
+  private pushOverlapEnd(pair: { actorAId: string; actorBId: string; colliderAId?: string; colliderBId?: string }): void {
+    this.pendingContacts.push({
+      kind: "overlapEnd",
+      actorAId: pair.actorAId,
+      actorBId: pair.actorBId,
+      ...(pair.colliderAId ? { colliderAId: pair.colliderAId } : {}),
+      ...(pair.colliderBId ? { colliderBId: pair.colliderBId } : {}),
     });
   }
 
@@ -1416,13 +1442,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     for (const [key, pair] of this.activeTriggerPairs) {
       if (!pair.refreshing) continue;
       this.activeTriggerPairs.delete(key);
-      this.pendingContacts.push({
-        kind: "overlapEnd",
-        actorAId: pair.actorAId,
-        actorBId: pair.actorBId,
-        location: { x: 0, y: 0, z: 0 },
-        normal: { x: 0, y: 1, z: 0 },
-      });
+      this.pushOverlapEnd(pair);
     }
   }
 
@@ -1435,13 +1455,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     for (const [key, pair] of this.activeTriggerPairs) {
       if (pair.actorAId !== actorId && pair.actorBId !== actorId) continue;
       this.activeTriggerPairs.delete(key);
-      this.pendingContacts.push({
-        kind: "overlapEnd",
-        actorAId: pair.actorAId,
-        actorBId: pair.actorBId,
-        location: { x: 0, y: 0, z: 0 },
-        normal: { x: 0, y: 1, z: 0 },
-      });
+      this.pushOverlapEnd(pair);
     }
     this.resetTriggerActors.add(actorId);
   }

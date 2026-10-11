@@ -511,64 +511,43 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         const boxA = aabbForCollider(colliderA.desc, bodyA.transform);
         const boxB = aabbForCollider(colliderB.desc, bodyB.transform);
         if (!aabbOverlap(boxA, boxB)) continue;
-        const centerA = aabbCenter(boxA);
-        const centerB = aabbCenter(boxB);
         let colliderAId = colliderA.desc.id;
         let colliderBId = colliderB.desc.id;
-        const location = {
-          x: (centerA.x + centerB.x) * 0.5,
-          y: (centerA.y + centerB.y) * 0.5,
-          z: (centerA.z + centerB.z) * 0.5,
-        };
-        let normal = {
-          x: centerB.x - centerA.x,
-          y: centerB.y - centerA.y,
-          z: centerB.z - centerA.z,
-        };
-        const length = Math.hypot(normal.x, normal.y, normal.z);
-        if (length < 1e-8) {
-          normal = { x: 0, y: 1, z: 0 };
-        } else {
-          normal = {
-            x: normal.x / length,
-            y: normal.y / length,
-            z: normal.z / length,
-          };
-        }
-        if (actorAId > actorBId) {
+        const swapped = actorAId > actorBId;
+        if (swapped) {
           const swapId = actorAId;
           actorAId = actorBId;
           actorBId = swapId;
           const swapCollider = colliderAId;
           colliderAId = colliderBId;
           colliderBId = swapCollider;
-          normal = { x: -normal.x, y: -normal.y, z: -normal.z };
         }
         const key = `${actorAId}\t${colliderAId}\t${actorBId}\t${colliderBId}`;
         const isTrigger = colliderA.desc.isTrigger || colliderB.desc.isTrigger;
         if (isTrigger) {
           currentOverlap.add(key);
-          if (!this.previousOverlapKeys.has(key)) {
-            events.push({
-              kind: "overlapBegin",
-              actorAId,
-              actorBId,
-              colliderAId,
-              colliderBId,
-              location,
-              normal,
-            });
-          }
+          if (!this.previousOverlapKeys.has(key))
+            events.push({ kind: "overlapBegin", actorAId, actorBId, colliderAId, colliderBId });
         } else if (!hitKeys.has(key)) {
           hitKeys.add(key);
+          const centerA = aabbCenter(swapped ? boxB : boxA);
+          const centerB = aabbCenter(swapped ? boxA : boxB);
+          const dx = centerB.x - centerA.x;
+          const dy = centerB.y - centerA.y;
+          const dz = centerB.z - centerA.z;
+          const length = Math.hypot(dx, dy, dz);
           events.push({
             kind: "hit",
             actorAId,
             actorBId,
             colliderAId,
             colliderBId,
-            location,
-            normal,
+            location: {
+              x: (centerA.x + centerB.x) * 0.5,
+              y: (centerA.y + centerB.y) * 0.5,
+              z: (centerA.z + centerB.z) * 0.5,
+            },
+            normal: length < 1e-8 ? { x: 0, y: 1, z: 0 } : { x: dx / length, y: dy / length, z: dz / length },
           });
         }
       }
@@ -577,15 +556,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       if (currentOverlap.has(key)) continue;
       const [actorAId, colliderAId, actorBId, colliderBId] = key.split("\t");
       if (!actorAId || !actorBId) continue;
-      events.push({
-        kind: "overlapEnd",
-        actorAId,
-        actorBId,
-        colliderAId,
-        colliderBId,
-        location: { x: 0, y: 0, z: 0 },
-        normal: { x: 0, y: 1, z: 0 },
-      });
+      events.push({ kind: "overlapEnd", actorAId, actorBId, colliderAId, colliderBId });
     }
     this.previousOverlapKeys = currentOverlap;
     return events;

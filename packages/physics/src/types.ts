@@ -155,15 +155,17 @@ export type CharacterMovementResult = PhysicsTransform & {
   grounded: boolean;
 };
 
-export type PhysicsContactEvent = {
-  kind: "hit" | "overlapBegin" | "overlapEnd";
+type PhysicsContactPair = {
   actorAId: string;
   actorBId: string;
   colliderAId?: string;
   colliderBId?: string;
-  location: Vec3;
-  normal: Vec3;
 };
+
+/** Blocking hits carry a contact point and the normal from A toward B; overlaps name only the pair. */
+export type PhysicsContactEvent =
+  | (PhysicsContactPair & { kind: "hit"; location: Vec3; normal: Vec3 })
+  | (PhysicsContactPair & { kind: "overlapBegin" | "overlapEnd" });
 
 export type PhysicsBackendOptions = {
   kind: PhysicsWorldKind;

@@ -680,12 +680,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     for (const key of this.refreshingTriggerKeys) {
       const pair = parseContactKey(key);
       if (!pair || !this.triggerKeys.delete(key)) continue;
-      this.pendingContacts.push({
-        kind: "overlapEnd",
-        ...pair,
-        location: { x: 0, y: 0, z: 0 },
-        normal: { x: 0, y: 1, z: 0 },
-      });
+      this.pendingContacts.push({ kind: "overlapEnd", ...pair });
     }
     this.refreshingTriggerKeys.clear();
   }
@@ -1010,12 +1005,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       )
         continue;
       this.triggerKeys.delete(key);
-      this.pendingContacts.push({
-        kind: "overlapEnd",
-        ...pair,
-        location: { x: 0, y: 0, z: 0 },
-        normal: { x: 0, y: 1, z: 0 },
-      });
+      this.pendingContacts.push({ kind: "overlapEnd", ...pair });
     }
   }
 
@@ -1095,8 +1085,6 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
           actorBId,
           colliderAId: idA,
           colliderBId: idB,
-          location: this.contactLocation(idA, idB),
-          normal: this.contactNormal(idA, idB),
         });
       } else if (this.triggerKeys.delete(key)) {
         this.pendingContacts.push({
@@ -1105,8 +1093,6 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
           actorBId,
           colliderAId: idA,
           colliderBId: idB,
-          location: { x: 0, y: 0, z: 0 },
-          normal: { x: 0, y: 1, z: 0 },
         });
       }
       return;
