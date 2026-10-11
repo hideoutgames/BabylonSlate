@@ -369,6 +369,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
   registerWaterContent(content: ReadonlyMap<string, WaterDefinition> | Readonly<Record<string, WaterDefinition>>): void {
     this.waters = new Map(Array.from(content instanceof Map ? content.entries() : Object.entries(content), ([guid, value]) => [guid, normalizeWaterDefinition(value)]));
     this.mainSync.water.setContent(this.waters);
+    for (const sync of this.layerSyncs()) sync.water.setContent(this.waters);
   }
 
   registerTileContent(tilemaps: Map<string, TilemapPayload>, tilesets: Map<string, TilesetPayload>, pixelsPerUnit?: number): void {
