@@ -253,7 +253,7 @@ export class TickPipeline {
         type: "trace",
         payload: payload as unknown as Record<string, unknown>,
       });
-      if (payload.retention?.stopReason === "oversized-frame") {
+      if (payload.retention.stopReason === "oversized-frame") {
         this.host.reportLog(
           `Trace recording stopped: an oversized frame exceeds the ${payload.retention.byteBudget}-byte retained-data budget. ` +
           `${payload.frames.length} complete frames retained; ${payload.retention.droppedFrames} frames dropped.`,

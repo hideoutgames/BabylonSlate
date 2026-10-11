@@ -1524,7 +1524,7 @@ class InProcessRuntime implements RuntimeDriver {
    * frame lacks and `playSound` at the recorded offset for each recorded voice.
    */
   restoreFromTrace(frame: TraceFrame): void {
-    this.setTimeDilation(frame.timeDilation ?? 1);
+    this.setTimeDilation(frame.timeDilation);
     this.behaviourTrees.restoreFromTrace(frame.bt ?? []);
     this.animGraphs.restoreFromTrace(frame.animGraphs ?? []);
     const recordedClips = new Map((frame.sprites ?? []).map((clip) => [clip.actorGuid, clip]));
