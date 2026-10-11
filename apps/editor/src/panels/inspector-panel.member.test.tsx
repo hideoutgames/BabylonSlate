@@ -444,13 +444,14 @@ describe("Inspector class member details", () => {
   });
 
   it("commits Array container and resets the Default for a class variable", () => {
-    renderMemberInspector("var-1");
+    // The scalar Default "audio-1" must not survive as an Array default.
+    renderMemberInspector("var-asset");
     screen.getByTestId("inspector-member-container-array").click();
     expect(applyGraphChange).toHaveBeenCalled();
     const next = applyGraphChange.mock.calls[0]?.[1];
-    expect(next?.members?.find((member) => member.id === "var-1")).toEqual(
+    expect(next?.members?.find((member) => member.id === "var-asset")).toEqual(
       expect.objectContaining({
-        typeId: "bool",
+        typeId: "asset",
         container: "array",
         defaultValue: [],
       }),
@@ -614,7 +615,6 @@ describe("Inspector class member details", () => {
     );
   });
 
-  it("clears an incompatible Asset Default when Asset Type changes", async () => {
   it("picks a Structure Default's asset field without replacing the other fields", async () => {
     renderMemberInspector("var-loadout");
     screen.getByTestId("property-:Cue").click();
@@ -630,6 +630,7 @@ describe("Inspector class member details", () => {
     });
   });
 
+  it("clears an incompatible Asset Default when Asset Type changes", async () => {
     renderMemberInspector("var-asset");
     screen.getByTestId("inspector-member-asset-type").click();
     await waitFor(() => {
