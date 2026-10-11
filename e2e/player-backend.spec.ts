@@ -8,7 +8,7 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
-async function playerFiles(baseURL: string, backend: "webgl2" | "webgpu") {
+async function playerFiles(baseURL: string, backend: "webgpu") {
   const packed = await exportGame({
     bundleDebugger: false,
     startupSceneGuid: "backend-scene",
@@ -27,7 +27,8 @@ async function playerFiles(baseURL: string, backend: "webgl2" | "webgpu") {
   return packed.value.files;
 }
 
-for (const backend of ["webgpu"] as ("webgl2" | "webgpu")[]) {
+// p14-export.spec.ts boots the default (WebGL2) packed player; this pins WebGPU.
+for (const backend of ["webgpu"] as const) {
   test(`standalone player uses the packed ${backend} backend and presents its scene`, async ({ page, baseURL }, testInfo) => {
     test.setTimeout(120_000);
     const errors: string[] = [];
@@ -77,6 +78,7 @@ for (const backend of ["webgpu"] as ("webgl2" | "webgpu")[]) {
       await page.evaluate((type) => window.postMessage({ type }, window.location.origin), PREVIEW_STOP_MESSAGE);
       await expect(root).toHaveAttribute("data-booted", "false");
       const ticks = await root.getAttribute("data-ticks");
+      expect(Number(ticks ?? "0"), "the booted player ticked before Stop").toBeGreaterThan(0);
       await page.waitForTimeout(200);
       expect(await root.getAttribute("data-ticks")).toBe(ticks);
       expect(errors).toEqual([]);

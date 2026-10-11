@@ -66,6 +66,30 @@ async function injectGamepad(
   }, pad);
 }
 
+/** Play with a held stick, then require resolved Move.x and the authored actor. */
+async function playWithGamepad(page: Page): Promise<void> {
+  await injectGamepad(page, { axes: [0.85, 0, 0, 0] });
+  await clickPlayAndWaitForOverlay(page);
+  await expect(page.getByTestId("play-canvas")).toBeVisible();
+  // Prefer resolved InputResolver Move.x (play-session.lastMoveX) over raw axis.
+  await expect
+    .poll(async () => {
+      const attr = await page
+        .getByTestId("play-move-x")
+        .getAttribute("data-move-x");
+      return Number(attr ?? "0");
+    })
+    .toBeGreaterThan(0.5);
+  await expect
+    .poll(async () => {
+      return page.getByTestId("play-actor-guids").getAttribute("data-guids");
+    })
+    .toContain("actor-1");
+  await page.getByTestId("play-overlay-close").click();
+  await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+  await injectGamepad(page, null);
+}
+
 test.describe("P6 first-playable scene editing", () => {
   test("build, save, reopen, play in 3D and 2D with gamepad and gizmo undo", async ({
     page,
@@ -129,32 +153,11 @@ test.describe("P6 first-playable scene editing", () => {
     await openMainScene(page);
     await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
 
-    await injectGamepad(page, { axes: [0.85, 0, 0, 0] });
-    await clickPlayAndWaitForOverlay(page);
-    await expect(page.getByTestId("play-canvas")).toBeVisible();
-    // Prefer resolved InputResolver Move.x (play-session.lastMoveX) over raw axis.
-    await expect
-      .poll(async () => {
-        const attr = await page
-          .getByTestId("play-move-x")
-          .getAttribute("data-move-x");
-        return Number(attr ?? "0");
-      })
-      .toBeGreaterThan(0.5);
-
-    await expect
-      .poll(async () => {
-        return page.getByTestId("play-actor-guids").getAttribute("data-guids");
-      })
-      .toContain("actor-1");
-
-    await page.getByTestId("play-overlay-close").click();
-    await injectGamepad(page, null);
+    await playWithGamepad(page);
 
     await page.getByTestId("viewport-mode-toggle").click();
     await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("3D");
-    await clickPlayAndWaitForOverlay(page);
-    await page.getByTestId("play-overlay-close").click();
+    await playWithGamepad(page);
   });
 
   test("dragging an Outliner actor onto the viewport duplicates it", async ({

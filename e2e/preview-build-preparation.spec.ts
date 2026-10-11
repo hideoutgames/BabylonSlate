@@ -38,8 +38,9 @@ test("Preview Build keeps export failures visible and can launch after correctio
   await expect(page.getByTestId("play-preview")).toBeEnabled();
 });
 
-for (const previewBuild of [false]) {
-  test(`${previewBuild ? "Preview Build" : "Play"} requests migration approval and launches after approval`, async ({ page }) => {
+// CI exercises migration approval through Play; Preview Build preparation is covered above.
+for (const mode of ["Play"] as const) {
+  test(`${mode} requests migration approval and launches after approval`, async ({ page }) => {
     const files = await minimalProjectFiles();
     const scene = await decodeAssetDocument(files.get(MAIN_SCENE_FILE)!);
     files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ ...scene, version: 2 }));
@@ -53,19 +54,13 @@ for (const previewBuild of [false]) {
       return host.__babylonslateTest.nudgeActiveSceneActor();
     })).toBe(true);
     await expect(page.getByTestId("save-all-project")).toBeEnabled();
-    if (previewBuild) await enablePreviewBuild(page);
     await page.getByTestId("play-preview").click();
     const migration = page.getByTestId("migrate-on-save-dialog");
     await expect(migration).toBeVisible();
     await expect(page.getByTestId("preview-build-iframe")).toHaveCount(0);
     await migration.getByTestId("migrate-approve").click();
-    if (previewBuild) {
-      await waitForPreviewBuildBoot(page);
-      await page.getByTestId("preview-build-close").click();
-    } else {
-      await waitForPlayOverlay(page);
-      await page.getByTestId("play-overlay-close").click();
-    }
+    await waitForPlayOverlay(page);
+    await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("play-preview")).toBeEnabled();
   });
 }

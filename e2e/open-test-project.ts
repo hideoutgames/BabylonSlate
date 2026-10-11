@@ -14,18 +14,10 @@ export async function waitForEditorInteractive(page: Page): Promise<void> {
   });
 }
 
-/** Click the Homepage TestProject row (name with or without `.babproject`). */
+/** Click the Homepage TestProject row. */
 export async function clickListedTestProject(page: Page): Promise<void> {
   await acceptUnsavedPlayPrompts(page);
-  const listed = page.getByTestId("open-listed-project-TestProject");
-  const listedLegacy = page.getByTestId(
-    "open-listed-project-TestProject.babproject",
-  );
-  if ((await listed.count()) > 0) {
-    await listed.click();
-    return;
-  }
-  await listedLegacy.click();
+  await page.getByTestId("open-listed-project-TestProject").click();
 }
 
 /** Homepage → Create Project dialog (named TestProject) → editor chrome.
@@ -42,16 +34,8 @@ export async function openTestProject(
   });
   await expect(page.getByTestId("homepage")).toBeVisible();
   const listed = page.getByTestId("open-listed-project-TestProject");
-  const listedLegacy = page.getByTestId(
-    "open-listed-project-TestProject.babproject",
-  );
   if ((await listed.count()) > 0) {
     await listed.click();
-    await waitForEditorInteractive(page);
-    return;
-  }
-  if ((await listedLegacy.count()) > 0) {
-    await listedLegacy.click();
     await waitForEditorInteractive(page);
     return;
   }
@@ -83,12 +67,7 @@ export async function submitCreateOrOpenListed(
   }
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("create-project-dialog")).toHaveCount(0);
-  const listed = page.getByTestId(`open-listed-project-${listedName}`);
-  if ((await listed.count()) > 0) {
-    await listed.click();
-    return;
-  }
-  await page.getByTestId(`open-listed-project-${listedName}.babproject`).click();
+  await page.getByTestId(`open-listed-project-${listedName}`).click();
 }
 
 export async function openContentBrowser(page: Page): Promise<void> {

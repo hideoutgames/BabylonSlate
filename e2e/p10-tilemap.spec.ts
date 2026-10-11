@@ -119,7 +119,8 @@ async function pinchPaintCanvas(
 }
 
 test.describe("P10 tilemaps", () => {
-  test("2D project paints tiles, plays an animated sprite, and reports physics", {
+  // Sprite Animation frame playback is unit-covered (packages/render/src/anim-apply.test.ts).
+  test("2D project paints tiles, binds a sprite and animation graph, and reports physics", {
     tag: IPAD_TEST_TAG,
   }, async ({ page }) => {
     test.setTimeout(180_000);

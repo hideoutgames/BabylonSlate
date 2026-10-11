@@ -49,8 +49,8 @@ async function setShading(page: Page, mode: "pbr" | "unlit", prefix = "") {
   );
 }
 
-async function expectSkyboxPixels(canvas: Locator) {
-  await expect.poll(() => canvas.evaluate((node: HTMLCanvasElement) => {
+function skyboxPixels(canvas: Locator): Promise<number> {
+  return canvas.evaluate((node: HTMLCanvasElement) => {
     if (!node.width || !node.height) return 0;
     const copy = document.createElement("canvas");
     copy.width = copy.height = 32;
@@ -66,7 +66,11 @@ async function expectSkyboxPixels(canvas: Locator) {
           pixels[i + 1]! > 40 && pixels[i + 3]! > 240) sky++;
     }
     return sky;
-  }), { timeout: 20_000 }).toBeGreaterThan(100);
+  });
+}
+
+async function expectSkyboxPixels(canvas: Locator) {
+  await expect.poll(() => skyboxPixels(canvas), { timeout: 20_000 }).toBeGreaterThan(100);
 }
 
 test("Scene fog changes authored PBR surface pixels in the editor and Play", async ({ page }) => {
@@ -162,7 +166,7 @@ test("Emissive color popup stays reachable outside the graph and within a short 
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
 });
 
-test("Unlit preserves skyboxes and PBR model color in Scene, Prefab, and Model Preview", async ({
+test("Unlit preserves model color and skybox state in Scene, Prefab, and Model Preview", async ({
   page,
 }, testInfo) => {
   test.setTimeout(180_000);
@@ -292,8 +296,11 @@ test("Unlit preserves skyboxes and PBR model color in Scene, Prefab, and Model P
     }).__babylonslatePrefabViewportTest?.diagnostics());
     await testInfo.attach("prefab-render-state", { body: JSON.stringify(diagnostics), contentType: "application/json" });
   }
+  // Prefab Preview opts out of the preview skybox (black clear) in both modes.
+  expect(await skyboxPixels(prefab)).toBeLessThan(10);
   await prefab.screenshot({ path: testInfo.outputPath("prefab-unlit.png") });
   await setShading(page, "pbr", "prefab-");
   await expect.poll(() => greenPixels(prefab)).toBeGreaterThan(500);
+  expect(await skyboxPixels(prefab)).toBeLessThan(10);
   await prefab.screenshot({ path: testInfo.outputPath("prefab-pbr.png") });
 });

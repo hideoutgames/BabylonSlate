@@ -79,14 +79,17 @@ test("clustered point and spot contributions preserve native and graph PBR and C
       capture.reference[center]! - capture.reference[center + 1]!,
       capture.name,
     ).toBeGreaterThan(20);
-    expect(
-      Math.max(
-        ...capture.clustered.map((value, index) =>
-          Math.abs(value - capture.reference[index]!),
+    // The conventional reference is rendered twice; clustered pixels must match
+    // both frames, so an unsettled first reference cannot pass the tie check.
+    for (const reference of [capture.reference, capture.referenceSettled])
+      expect(
+        Math.max(
+          ...capture.clustered.map((value, index) =>
+            Math.abs(value - reference[index]!),
+          ),
         ),
-      ),
-      capture.name,
-    ).toBeLessThanOrEqual(2);
+        capture.name,
+      ).toBeLessThanOrEqual(2);
   }
   for (const mixing of ["pbr", "strongest", "additive", "blend"]) {
     const pixels = (pose: string) =>

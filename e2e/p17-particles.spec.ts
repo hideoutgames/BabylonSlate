@@ -286,6 +286,16 @@ test.describe("P17 particles", () => {
     await rate.fill("35");
     await rate.press("Tab");
     await expect(rate).toHaveValue("35");
+    await createContentBrowserAsset(page, "ParticleSystem", "ReopenFire");
+    await openAssetFromBrowser(page, "assets/ReopenFire.particles.babasset");
+    await expect(
+      page.getByTestId("document-workspace-particle-system"),
+    ).toBeVisible();
+    await addSystemEmitter(
+      page,
+      "assets/ReopenSparks.emitter.babasset",
+      /ReopenSparks/,
+    );
     await saveAllIfEnabled(page);
 
     await closeProjectViaSettings(page);
@@ -301,5 +311,9 @@ test.describe("P17 particles", () => {
     await openAssetFromBrowser(page, "assets/ReopenSparks.emitter.babasset");
     await expect(page.getByTestId("property-material")).toContainText(/ReopenMat/i);
     await expect(page.getByTestId("property-rate")).toHaveValue("35");
+    await openAssetFromBrowser(page, "assets/ReopenFire.particles.babasset");
+    await expect(page.getByTestId("particle-system-emitter-0")).toContainText(
+      /ReopenSparks/,
+    );
   });
 });

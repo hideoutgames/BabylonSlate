@@ -54,6 +54,7 @@ async function journalCommands(page: Page) {
     for await (const directory of (derived as Listable).values()) {
       if (directory.kind !== "directory") continue;
       const project = directory as FileSystemDirectoryHandle;
+      // The journal is a folder of ordered segments.
       try {
         const segments = await project.getDirectoryHandle("journal");
         const files: FileSystemFileHandle[] = [];
