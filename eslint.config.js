@@ -68,8 +68,9 @@ const pureNoReactNoBabylon = boundary(
 
 /**
  * Physics hosts Babylon Physics V2 on a worker-local NullEngine Scene.
- * It may import `@babylonjs/core` and `@babylonjs/havok`, but not React,
- * Capacitor, or editor-only Babylon packages (gui/loaders/inspector).
+ * It may import `@babylonjs/core` and `@babylonjs/havok` and no other Babylon
+ * package (gui/loaders/inspector and every other editor-side package), and
+ * never React or Capacitor.
  */
 const physicsNoReactNoCapacitor = boundary(
   "boundary/physics",
@@ -80,20 +81,10 @@ const physicsNoReactNoCapacitor = boundary(
       message: "physics must not import React (engineplan section 2.2).",
     },
     {
-      group: [
-        "@babylonjs/gui",
-        "@babylonjs/gui/*",
-        "@babylonjs/loaders",
-        "@babylonjs/loaders/*",
-        "@babylonjs/materials",
-        "@babylonjs/materials/*",
-        "@babylonjs/serializers",
-        "@babylonjs/serializers/*",
-        "@babylonjs/inspector",
-        "@babylonjs/inspector/*",
-      ],
+      // An allowlist, so a newly installed Babylon package is rejected by default.
+      group: ["@babylonjs/*", "!@babylonjs/core", "!@babylonjs/havok"],
       message:
-        "physics may import @babylonjs/core Physics V2 and @babylonjs/havok only — not gui/loaders/inspector.",
+        "physics may import @babylonjs/core Physics V2 and @babylonjs/havok only — not gui/loaders/inspector or other Babylon packages.",
     },
     {
       group: CAPACITOR_PATTERNS,
