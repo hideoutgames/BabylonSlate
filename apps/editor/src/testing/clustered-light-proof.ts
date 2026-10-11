@@ -357,8 +357,6 @@ export async function runClusteredLightProof() {
             const centerHit = scene
               .pick(canvas.width / 2, canvas.height / 2)
               ?.pickedPoint?.asArray();
-            scene.render(false);
-            const referenceSettled = await read();
             const effectiveMaterial: Material | null = surface.material;
             const referenceDefines = surface.subMeshes[0]?.effect?.defines
               .split("\n")
@@ -384,7 +382,6 @@ export async function runClusteredLightProof() {
             ties.push({
               name: `${kind}-camera-${x}`,
               reference,
-              referenceSettled,
               referenceOrder,
               centerHit,
               referenceDefines,
