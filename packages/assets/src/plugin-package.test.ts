@@ -74,7 +74,7 @@ async function writeClass(
     path,
     await encodeBabasset({
       header: {
-        dependencyMetadataVersion: 1, requiredDependencies: [],
+        dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
         guid: options.guid,
         type: "Class",
         name: options.name,

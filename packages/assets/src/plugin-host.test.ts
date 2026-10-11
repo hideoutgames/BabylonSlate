@@ -44,7 +44,7 @@ async function writePluginFolder(
     await storage.mkdir(dir, true);
     const bytes = await encodeBabasset({
       header: {
-        dependencyMetadataVersion: 1, requiredDependencies: [],
+        dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
         guid: asset.guid,
         type: asset.type,
         name: asset.name,

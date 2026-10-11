@@ -56,7 +56,7 @@ async function writeAsset(
   if (dir) await storage.mkdir(dir, true);
   const bytes = await encodeBabasset({
     header: {
-      dependencyMetadataVersion: 1, requiredDependencies: [],
+      dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
       guid: options.guid,
       type: options.type,
       name: options.name,
@@ -1189,6 +1189,7 @@ describe("AssetRegistry", () => {
           dependencyMetadataVersion: 1,
           dependencies: metadata.dependencies ?? [],
           requiredDependencies: metadata.dependencies ?? [],
+          ...(type === "Class" ? { requiredVariableNames: [] } : {}),
           ...(metadata.classReferences ? { classReferences: metadata.classReferences, requiredClassReferences: metadata.classReferences } : {}),
         },
       }));

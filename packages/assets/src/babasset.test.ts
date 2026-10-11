@@ -190,7 +190,7 @@ describe("babasset codec", () => {
       fc.asyncProperty(fc.uint8Array({ minLength: 0, maxLength: 64 }), async (data) => {
         const bytes = await encodeBabasset({
           header: {
-            dependencyMetadataVersion: 1, requiredDependencies: [],
+            dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
             guid: "p",
             type: "Class",
             name: "P",
