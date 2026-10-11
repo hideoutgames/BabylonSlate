@@ -500,11 +500,13 @@ export class ProjectService {
         ? createWorkerEncodeFn({ workerUrl: editorEncodeWorkerUrl() })
         : null);
     this.encodeQueue = new EncodeQueue({
-      encode: (source, settings, mime) =>
+      // The signal aborts a timed-out job, so the worker encoder can end a hung encode.
+      encode: (source, settings, mime, signal) =>
         (this.configuredEncode ?? this.workerEncode ?? stubEncodeKtx2)(
           source,
           settings,
           mime,
+          signal,
         ),
       onState: (guid, state, job) => {
         if (state === "encoding") this.encodeWriteReleases.set(guid, this.writeAdmission.retain());
@@ -516,7 +518,8 @@ export class ProjectService {
         if (!registry) return;
         const session = this.sourceSession;
         void this.writeAdmission.continue(async () => {
-          await registry.setCompressionState(guid, state);
+          // Nothing lands on a file whose pixels were replaced after this job read them.
+          await registry.setCompressionState(guid, state, { canWrite: (_guid, current) => encodeJobMayWrite(job, current) });
           await this.refreshTextureWrite(guid, registry, session);
         }).catch(error => this.emitTextureEncodeDiagnostic(guid, error));
       },
@@ -569,7 +572,7 @@ export class ProjectService {
         void this.writeAdmission.continue(async () => {
           await registry.setCompressionState(guid, "encode_failed", {
             error: message,
-            ...(job.guard ? { canWrite: (_guid: string, current: BabassetHeader) => encodeJobMayWrite(job, current) } : {}),
+            canWrite: (_guid, current) => encodeJobMayWrite(job, current),
           });
           await this.refreshTextureWrite(guid, registry, session);
         }).catch(failure => this.emitTextureEncodeDiagnostic(guid, failure)).finally(() => release?.());
