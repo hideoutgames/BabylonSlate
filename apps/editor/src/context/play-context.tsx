@@ -261,7 +261,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     sessionState.lifecycle === "stopping" || sessionState.quarantined;
   const [simulationAssetGuids, setSimulationAssetGuids] = useState<readonly string[] | undefined>();
   const [playSaveGame, setPlaySaveGame] = useState<import("@babylonslate/core").SaveGameConfiguration>();
-  const playingRef = useRef(false);
   const [preparing, setPreparing] = useState(false);
   const [playAwaitingMigration, setPlayAwaitingMigration] = useState(false);
   const [playResumeRequested, setPlayResumeRequested] = useState(false);
@@ -308,7 +307,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     options?: PlayOptions;
   } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const previewOpenRef = useRef(false);
   const initialPreviewTarget = useMemo(
     () => previewTargetFromSrc(playerPreviewSrc(0), window.location.href),
     [],
@@ -424,8 +422,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const previewRequestRef = useRef(0);
   const previewClosingRef = useRef(false);
   const previewDiagnosticsRef = useRef<SessionReportEntry[]>([]);
-  playingRef.current = playing;
-  previewOpenRef.current = previewOpen;
   const [playAnimGraphs, setPlayAnimGraphs] = useState<PlayAnimGraphEntry[]>(
     [],
   );
@@ -714,7 +710,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       incoming: engine,
       previous,
       owned: ownedEngineRef.current,
-      overlayPlaying: playingRef.current && !previewOpenRef.current,
     });
     engineRef.current = isUsableEngine(next) ? next : null;
     setSharedEngineGeneration((current) =>
