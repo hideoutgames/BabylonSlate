@@ -29,7 +29,6 @@ import {
   AssetLoadingService,
   complexCollisionModelGuids,
   cookComplexCollisionMesh,
-  modelAnimationDurations,
   sha256Hex,
   type AssetLoadScope,
   type AssetLoadPriority,
@@ -78,7 +77,6 @@ export type LoadedGame = {
   complexMeshes?: Map<string, CollisionTriangleMesh>;
   /** On-demand fallback for the runtime's `requestComplexCollision`; `null` when the Model is not loaded. */
   cookComplexCollision?: (guid: string) => CollisionTriangleMesh | null;
-  modelAnimationDurations?: Map<string, ReadonlyMap<string, number | undefined>>;
   navmeshBytes: Map<string, Uint8Array>;
   audioReverbBytes: Map<string, Uint8Array>;
 };
@@ -132,7 +130,6 @@ export async function loadGameFromFiles(
   const payloads = new Map<string, Uint8Array>();
   const decodedPayloads = new Map<string, unknown>();
   const complexMeshes = new Map<string, CollisionTriangleMesh>();
-  const durations = new Map<string, ReadonlyMap<string, number | undefined>>();
   const navmeshBytes = new Map<string, Uint8Array>();
   const audioReverbBytes = new Map<string, Uint8Array>();
 
@@ -218,11 +215,9 @@ export async function loadGameFromFiles(
       install = () => { areaEmissions.set(guid, value); };
     } else if (entry.type === "Model") {
       const value = extractPackedModelAsset(bytes);
-      const animationDurations = modelAnimationDurations(value.source);
       // Complex Collision is a separate representation, cooked in prepare() only when needed.
       model = value;
-      decodedBytes = animationDurations.size * 128;
-      install = () => { modelBytes.set(entry.guid, value.source); modelPayloads.set(entry.guid, value.payload); durations.set(entry.guid, animationDurations); };
+      install = () => { modelBytes.set(entry.guid, value.source); modelPayloads.set(entry.guid, value.payload); };
     } else if (entry.type === "Font") install = () => {
       fontBytes.set(entry.guid, bytes);
       if (entry.name?.trim()) fontFamilies.set(entry.guid, entry.name.trim());
@@ -262,7 +257,6 @@ export async function loadGameFromFiles(
     payloads,
     decodedPayloads,
     complexMeshes,
-    modelAnimationDurations: durations,
     navmeshBytes,
     audioReverbBytes,
   };
@@ -282,7 +276,6 @@ export async function loadGameFromFiles(
       if (index >= 0) scripts.splice(index, 1);
     }
     decodedPayloads.delete(entry.guid);
-    durations.delete(entry.guid);
     for (const map of [scenes, sceneLayers, textureBytes, modelBytes, modelPayloads, fontBytes, audioPayloads]) map.delete(entry.guid);
     const owner = entry.guid.slice(entry.guid.indexOf(":") + 1);
     if (entry.type === AREA_EMISSION_EXPORT_TYPE) areaEmissions.delete(owner);

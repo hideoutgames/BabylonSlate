@@ -23,7 +23,6 @@ import {
   createDefaultParticleEmitterPayload,
   createDefaultParticleSystemPayload,
   createDefaultSpriteAnimationPayload,
-  encodeGlbJsonBin,
   normalizeAudioPayload,
 } from "@babylonslate/assets";
 import { exportGame as buildExport, type ExportGameOptions, navmeshExportGuid } from "@babylonslate/exporter";
@@ -387,16 +386,6 @@ describe("packedContentFromGame", () => {
     expect(content.modelClipAnimationGuids.get("hero-model")?.get("Idle")).toBe(
       "hero-idle-anim",
     );
-    const legacyGame = await loadGameFromFiles(packed.value.files);
-    legacyGame.modelBytes.set("hero-model", encodeGlbJsonBin({
-      animations: [{ name: "Idle", samplers: [{ input: 0 }] }],
-      accessors: [{ min: [47], max: [48] }],
-    }, new Uint8Array()));
-    const repaired = packedContentFromGame(legacyGame);
-    expect(repaired.animClipCatalog.find((clip) => clip.guid === "hero-idle-anim")?.durationMs).toBe(1000);
-    expect(repaired.animGraphs.find((entry) => entry.guid === "anim-1")?.document).toMatchObject({
-      clips: [{ clipName: "Idle", durationMs: 1000 }],
-    });
   });
 
   it("includes BT Play Animation clips in the packed worker clip catalog", async () => {

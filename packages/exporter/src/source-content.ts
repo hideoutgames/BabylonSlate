@@ -9,7 +9,6 @@ export type GameSourceContent = {
   audioSourceRevisions?: ReadonlyMap<string, string>;
   /** Cooked Complex Collision meshes; omitted means "cook the scanned Models from `modelBytes`". */
   complexMeshes?: ReadonlyMap<string, CollisionTriangleMesh>;
-  modelAnimationDurations?: ReadonlyMap<string, ReadonlyMap<string, number | undefined>>;
   manifest: GameManifest;
   scripts: ScriptBundleEntry[];
   scenes: Map<string, SerializedScene>;
@@ -59,7 +58,6 @@ export function gameSourceSubset(game: GameSourceContent, ids: ReadonlySet<strin
     ...(game.audioSourceRevisions ? { audioSourceRevisions: select(game.audioSourceRevisions) } : {}),
     ...(game.decodedPayloads ? { decodedPayloads: select(game.decodedPayloads) } : {}),
     ...(game.complexMeshes ? { complexMeshes: select(game.complexMeshes) } : {}),
-    ...(game.modelAnimationDurations ? { modelAnimationDurations: select(game.modelAnimationDurations) } : {}),
     scenes: select(game.scenes), sceneLayers: select(game.sceneLayers),
     textureBytes: select(game.textureBytes), areaEmissions: select(game.areaEmissions),
     modelBytes: select(game.modelBytes), modelPayloads: select(game.modelPayloads),
