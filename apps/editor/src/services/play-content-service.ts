@@ -24,6 +24,7 @@ import {
   type TilemapPayload,
   type TilesetPayload,
 } from "@babylonslate/assets";
+import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { sceneAssetClassId } from "@babylonslate/object-model";
 import { encodeRgbaPng } from "@babylonslate/render";
@@ -110,8 +111,8 @@ import {
   GraphScriptCompileCache,
 } from "./script-compiler";
 
-/** Class graphs and the typed asset catalogs their compilation reads. */
-export const GRAPH_SIGNATURE_KINDS = ["graph", "input-action", "input-axis", "data-definition", "data-tree", "structure", "enum"] as const;
+/** Class graphs, Animation Graphs and the typed asset catalogs their compilation reads. */
+export const GRAPH_SIGNATURE_KINDS = ["graph", "anim-graph", "input-action", "input-axis", "data-definition", "data-tree", "structure", "enum"] as const;
 
 export interface PlayContentServiceOptions {
   documents: DocumentService;
@@ -139,6 +140,38 @@ function openGraphCompileDocuments(
 }
 
 /**
+ * The compiled parts of open Animation Graphs as signature slices: the
+ * Animation Object graph and each transition rule with its endpoints, which
+ * decide the one-way rule decoration.
+ */
+function openAnimGraphSignatureSlices(
+  documentService: DocumentService,
+): Array<{ path: string; content: SerializedGraph }> {
+  return documentService
+    .getOpenDocumentsOrdered()
+    .filter((doc) => doc.ref.kind === "anim-graph" && doc.content)
+    .flatMap((doc) => {
+      const parsed = parseAnimGraphDocument(doc.content);
+      if (!parsed) return [];
+      return [
+        { path: `${doc.ref.path}#animation-object`, content: parsed.animationObject },
+        ...parsed.transitions.map((transition) => ({
+          path: `${doc.ref.path}#rule-${transition.id}:${transition.fromStateId}>${transition.toStateId}`,
+          content: transition.ruleGraph,
+        })),
+      ];
+    });
+}
+
+/** A Play session needs every asset in its closure; a whole-project pass logs and skips. */
+function reportLoadFailure(label: string, path: string, error: unknown, required: boolean): void {
+  if (required) {
+    throw new Error(`Could not load ${label} ${path}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
+  console.error(`[play] failed to load ${label} ${path}`, error);
+}
+
+/**
  * Play and export content collection, without React: the `collectPlay*`
  * loaders (open tabs override saved documents), Class / Animation Graph script
  * compilation with its codegen cache, and the compile signatures that decide
@@ -158,9 +191,9 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     );
   };
 
-  /** Fingerprint of the open graphs and the catalogs they compile against (node positions omitted). */
+  /** Fingerprint of the open Class and Animation Graphs and the catalogs they compile against (node positions omitted). */
   const graphSignature = (tags: ProjectDocument["settings"]["tags"] | undefined) => graphCompileSignature(
-    openGraphCompileDocuments(documentService),
+    [...openGraphCompileDocuments(documentService), ...openAnimGraphSignatureSlices(documentService)],
     inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
     tags,
     collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
@@ -172,14 +205,14 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
   };
 
   /**
-   * Compile on Save: warm the codegen cache for open graphs only and return
-   * their signature. Play bundles are not recorded; Play still runs
-   * `collectPlayPreviewScripts` for the full set.
+   * Compile on Save: warm the codegen cache for open Class and Animation
+   * Graphs only and return their signature. Play bundles are not recorded;
+   * Play still runs `collectPlayPreviewScripts` for the full set.
    */
   const compileOpenGraphs = (tags: ProjectDocument["settings"]["tags"] | undefined): string => {
     const assets = projectService.registry?.list() ?? [];
-    const graphs = documentService
-      .getOpenDocumentsOrdered()
+    const openDocuments = documentService.getOpenDocumentsOrdered();
+    const graphs = openDocuments
       .filter((doc) => doc.ref.kind === "graph" && doc.content)
       .map((doc) => {
         const asset = assets.find((entry) => entry.path === doc.ref.path);
@@ -189,26 +222,37 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
           parentClassId: asset?.header.parentClass ?? null,
         };
       });
+    const animGraphs = openDocuments
+      .filter((doc) => doc.ref.kind === "anim-graph" && doc.content)
+      .map((doc) => ({
+        guid: assets.find((entry) => entry.path === doc.ref.path)?.header.guid ?? doc.ref.path,
+        path: doc.ref.path,
+        document: doc.content,
+      }));
     const typeSchemas = collectGraphTypeSchemas();
+    const inputAssets = inputAssetCatalog(assets, [...documentService.getState().openDocuments.values()]);
+    const dataAssets = collectDataGraphAssets(assets, [...documentService.getState().openDocuments.values()]);
     compileGraphDocuments(graphs, {
-      inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
-      dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+      inputAssets,
+      dataAssets,
       cache: compileCache,
       enums: typeSchemas.enums,
       structs: typeSchemas.structs,
       dataDefinitions: typeSchemas.dataDefinitions,
       tagRegistry: tags,
     });
+    compileAnimGraphScripts(animGraphs, { cache: compileCache, inputAssets, dataAssets, ...typeSchemas, tagRegistry: tags });
     return graphCompileSignature(
-      graphs,
-      inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+      [...graphs, ...openAnimGraphSignatureSlices(documentService)],
+      inputAssets,
       tags,
-      collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+      dataAssets,
       typeSchemas,
     );
   };
 
-  const loadClassGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[]): Promise<
+  /** `strict` fails on an unreadable Class instead of compiling without it. */
+  const loadClassGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false): Promise<
     Array<{ path: string; content: SerializedGraph }>
   > => {
     const paths = classAssetPaths((projectService.registry?.list() ?? []).filter((asset) => !requiredGuids || requiredGuids.has(asset.header.guid)));
@@ -227,13 +271,13 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         )) as SerializedGraph;
         documents.push({ path, content });
       } catch (error) {
-        console.error(`[play] failed to load graph ${path}`, error);
+        reportLoadFailure("Class", path, error, strict);
       }
     }
     return documents;
   };
 
-  const loadProjectGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[]): Promise<
+  const loadProjectGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false): Promise<
     Array<{
       path: string;
       content: SerializedGraph;
@@ -241,7 +285,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       parentClassId?: string | null;
     }>
   > => {
-    const documents = await loadClassGraphDocuments(requiredGuids, sourceDocuments);
+    const documents = await loadClassGraphDocuments(requiredGuids, sourceDocuments, strict);
     const assets = projectService.registry?.list() ?? [];
     const headers = Object.fromEntries(
       assets.map((asset) => [
@@ -257,7 +301,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     return collectPlayScriptDocuments(documents, headers, parentOf);
   };
 
-  const loadProjectAnimGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[]) => {
+  const loadProjectAnimGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false) => {
     const assets = (projectService.registry?.list() ?? []).filter(
       (asset) => asset.header.type === "AnimationGraph" && (!requiredGuids || requiredGuids.has(asset.header.guid)),
     );
@@ -277,10 +321,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
           document: await projectService.loadDocument("anim-graph", asset.path),
         });
       } catch (error) {
-        console.error(
-          `[play] failed to load AnimationGraph ${asset.path}`,
-          error,
-        );
+        reportLoadFailure("Animation Graph", asset.path, error, strict);
       }
     }
     return collectAnimGraphCompileDocuments(
@@ -334,8 +375,10 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     bundles: ScriptBundleEntry[];
     diagnostics: Diagnostic[];
   }> => {
-    const documents = await loadProjectGraphDocuments(requiredGuids, sourceDocuments);
-    const animDocuments = await loadProjectAnimGraphDocuments(requiredGuids, sourceDocuments);
+    // A Play session's closure is required content; a whole-project compile skips unreadable files.
+    const strict = requiredGuids !== undefined;
+    const documents = await loadProjectGraphDocuments(requiredGuids, sourceDocuments, strict);
+    const animDocuments = await loadProjectAnimGraphDocuments(requiredGuids, sourceDocuments, strict);
     const parentOf = classParentLookup(projectService.registry?.list() ?? []);
     const assets = projectService.registry?.list() ?? [];
     const openDocuments = sourceDocuments ?? [...documentService.getState().openDocuments.values()];
@@ -1026,7 +1069,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
           scene: normalizeScene(content),
         });
       } catch (error) {
-        console.error(`[play] failed to load scene ${path}`, error);
+        reportLoadFailure("Scene", path, error, requiredGuids !== undefined);
       }
     }
     return scenes;

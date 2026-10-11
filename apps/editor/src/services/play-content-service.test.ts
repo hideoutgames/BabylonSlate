@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import type { DocumentRef, SerializedGraph } from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { DocumentService } from "./document-service";
@@ -65,6 +66,37 @@ describe("createPlayContentService", () => {
 
     documents.updateGraph(id, logGraph("edited"));
     expect(playContent.graphSignature(undefined)).not.toBe(compiled[0]!.signature);
+  });
+
+  it("makes the compiled signature stale when an open Animation Graph's compiled graph changes", async () => {
+    const graph = createDefaultAnimGraph();
+    const { documents, playContent, open } = createPlayContent([
+      { guid: "locomotion", type: "AnimationGraph", name: "Locomotion", path: "Locomotion.babasset", content: graph },
+    ]);
+    const id = await open({ kind: "anim-graph", path: "Locomotion.babasset", label: "Locomotion" });
+    const compiledSignature = playContent.compileOpenGraphs(undefined);
+    expect(playContent.graphSignature(undefined)).toBe(compiledSignature);
+
+    documents.updateAssetDocument(id, {
+      ...graph,
+      animationObject: { ...graph.animationObject, nodes: [...graph.animationObject.nodes, ...logGraph("tick").nodes] },
+    });
+    expect(playContent.graphSignature(undefined)).not.toBe(compiledSignature);
+  });
+
+  it("fails a Play compile on an unreadable required Class and skips it in a whole-project compile", async () => {
+    const { project, playContent } = createPlayContent([
+      { guid: "hero", type: "Class", name: "Hero", path: "Hero.babasset", content: logGraph("saved") },
+    ]);
+    vi.mocked(project.loadDocument).mockRejectedValue(new Error("disk read failed"));
+
+    await expect(playContent.collectPlayPreviewScripts(new Set(["hero"]))).rejects.toThrow(
+      "Could not load Class Hero.babasset: disk read failed",
+    );
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(playContent.collectPlayPreviewScripts()).resolves.toMatchObject({ bundles: [] });
+    expect(logged).toHaveBeenCalledOnce();
+    logged.mockRestore();
   });
 
   it("collects only requested Play assets and prefers an unsaved open tab over the saved file", async () => {
