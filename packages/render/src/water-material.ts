@@ -3506,6 +3506,12 @@ export const WATER_REMOVAL_SLOTS = 4;
 /**
  * Runs at CUSTOM_FRAGMENT_UPDATE_ALPHA: still before the depth pre-pass, so removed water leaves no
  * depth behind, but after WebGPU has copied the fragment inputs (MAIN_BEGIN would see zeros there).
+ *
+ * Computes the contact derivatives and whether this fragment is removed (`swRemoved`: a removal volume, a blend partner's
+ * share, or land above the water), then discards at once only in the depth pre-pass (`DEPTHPREPASS`, set by Babylon from the
+ * colour-write state: nothing after it reads a derivative and removed water must write no depth). The colour pass
+ * discards in `beforeFogSource`, after every look's derivatives (foam, normals, footprints, line work) were taken with the
+ * whole 2x2 quad running: a derivative taken after a neighbour's discard is undefined on some GPUs.
  */
 function cutSource(wgsl: boolean): string {
   const sample = wgsl
@@ -3562,7 +3568,7 @@ float swLayer = (clamp(IN.vSlateWater.x / max(0.001, U.slateWaterContactInfo.z),
 vec4 swLayerW = max(vec4(0.0), vec4(1.0) - abs(vec4(0.0, 1.0, 2.0, 3.0) - vec4(swLayer)));
 float swContactSigned = mix(1.0, dot(swContactTex, swLayerW) * 2.0 - 1.0, swContactOn) * U.slateWaterContactInfo.y;
 vec2 swContactDerivative = vec2(dFdx(swContactSigned), dFdy(swContactSigned));
-// Derivatives before discard.
+// Derivatives before any discard.
 vec2 swDx = dFdx(swPosW.xz);
 vec2 swDy = dFdy(swPosW.xz);
 float swDet = swDx.x * swDy.y - swDx.y * swDy.x;
@@ -3598,7 +3604,10 @@ if (U.slateWaterWaves.x > 0.0 && swField.a > ${f(WATER_FIELD_TERRAIN_ALPHA)}) {
 }
 float swCut = min(min(${removals[0]}, ${removals[1]}), min(${removals[2]}, ${removals[3]}));
 // Only real terrain removes water; cells extended past a landscape's edge (alpha ramp) never do.
-if (swCut < 0.0 || swBlendKeep < 0.0 || (swField.a * swFieldOn > ${f(WATER_FIELD_TERRAIN_ALPHA)} && swTerrainDepth <= 0.0)) { discard; }
+${wgsl ? "var swRemoved: bool" : "bool swRemoved"} = swCut < 0.0 || swBlendKeep < 0.0 || (swField.a * swFieldOn > ${f(WATER_FIELD_TERRAIN_ALPHA)} && swTerrainDepth <= 0.0);
+#ifdef DEPTHPREPASS
+if (swRemoved) { discard; }
+#endif
 `;
 }
 
@@ -3778,7 +3787,10 @@ export function toWgsl(source: string): string {
 }
 
 /**
- * CUSTOM_FRAGMENT_BEFORE_FOG. Realistic colour is premultiplied by coverage: undo it for Babylon's non-premultiplied
+ * CUSTOM_FRAGMENT_BEFORE_FOG. The colour pass first discards removed water (`swRemoved`, see `cutSource`): the look's
+ * derivatives ran with every fragment of the quad alive, and nothing from here on takes one.
+ *
+ * Realistic colour is premultiplied by coverage: undo it for Babylon's non-premultiplied
  * blend, fog and image processing. Bright glints and reflections raise coverage instead of clipping in 8-bit targets.
  *
  * The refracted scene (`swRefracted`, its share `swRefractedWeight`; `SLATE_WATER_REFRACTION`) is light from behind
@@ -3795,6 +3807,10 @@ function beforeFogSource(wgsl: boolean): string {
   const declare = (type: string, name: string, value: string) => (wgsl ? `var ${name}: ${type} = ${value};` : `${type} ${name} = ${value};`);
   const brightest = (c: string) => `max(${c}.r, max(${c}.g, ${c}.b))`;
   return [
+    // Removed water leaves the colour pass here, after every derivative of the look (the depth pre-pass left in `cutSource`).
+    "#ifndef DEPTHPREPASS",
+    "if (swRemoved) { discard; }",
+    "#endif",
     `#ifdef ${REFRACTION}`,
     declare(v3, "swRefractedOut", "swRefracted"),
     "#ifdef FOG",
