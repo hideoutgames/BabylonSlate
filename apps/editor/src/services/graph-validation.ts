@@ -51,6 +51,7 @@ import {
   sceneAssetClassId,
   subsystemBaseClassIdOf,
   subsystemClassIdsForGet,
+  type EngineScriptPin,
   type SubsystemClassHierarchy,
 } from "@babylonslate/object-model";
 import {
@@ -1221,12 +1222,13 @@ type FunctionRow = {
  * missing-input warning.
  */
 function engineScalarInputDefaults(
-  pins: readonly { name: string; typeId: string; direction: "in" | "out"; container?: string }[],
+  pins: readonly EngineScriptPin[],
 ): Record<string, unknown> | undefined {
   const defaults: Record<string, unknown> = {};
   for (const pin of pins) {
     if (pin.direction !== "in" || (pin.container && pin.container !== "single")) continue;
-    if (pin.typeId === "float" || pin.typeId === "int") defaults[pin.name] = 0;
+    if (pin.defaultValue !== undefined) defaults[pin.name] = pin.defaultValue;
+    else if (pin.typeId === "float" || pin.typeId === "int") defaults[pin.name] = 0;
     else if (pin.typeId === "bool") defaults[pin.name] = false;
   }
   return Object.keys(defaults).length > 0 ? defaults : undefined;
@@ -1444,7 +1446,6 @@ type VariableRow = {
   name: string;
   typeId: string;
   typeClassId?: string;
-  typeClassIds?: readonly string[];
   container?: "single" | "array" | "map";
   keyTypeId?: string;
   keyTypeClassId?: string;
@@ -1562,7 +1563,6 @@ function variableAccessPaletteNodes(
           name: variable.name,
           typeId: variable.typeId,
           typeClassId: variable.typeClassId,
-          typeClassIds: variable.typeClassIds,
           container: variable.container,
           scope: "member",
           propertyKey: variable.propertyKey,
@@ -1638,9 +1638,6 @@ function variableAccessPaletteNodes(
       };
       if (variable.functionId) defaultData.functionId = variable.functionId;
       if (variable.typeClassId) defaultData.typeClassId = variable.typeClassId;
-      if (variable.typeClassIds && variable.typeClassIds.length > 0) {
-        defaultData.typeClassIds = [...variable.typeClassIds];
-      }
       if (variable.componentId) defaultData.componentId = variable.componentId;
       if (variable.propertyKey) defaultData.propertyKey = variable.propertyKey;
       if (variable.container === "array" || variable.container === "map") {

@@ -26,7 +26,8 @@ export interface ParticleGraphPin {
   /** Particle pins are data pins: data inputs take one link, like Babylon's particle inputs. */
   kind: "data";
   direction: "in" | "out";
-  type: { kind: string; accepts?: readonly ParticleNumericType[] };
+  /** `fallback` is the type an unwired generic group edits and lowers as. */
+  type: { kind: string; accepts?: readonly ParticleNumericType[]; fallback?: ParticleNumericType };
   defaultValue?: number[];
   min?: number;
   max?: number;
@@ -44,7 +45,11 @@ function toPin(pin: ParticlePinDefinition, direction: "in" | "out"): ParticleGra
     direction,
     type:
       pin.type.kind === "generic"
-        ? { kind: "generic", ...(pin.type.accepts ? { accepts: pin.type.accepts } : {}) }
+        ? {
+            kind: "generic",
+            ...(pin.type.accepts ? { accepts: pin.type.accepts } : {}),
+            ...(pin.type.fallback ? { fallback: pin.type.fallback } : {}),
+          }
         : { kind: pin.type.kind },
     ...(pin.defaultValue ? { defaultValue: [...pin.defaultValue] } : {}),
     ...(pin.min !== undefined ? { min: pin.min } : {}),

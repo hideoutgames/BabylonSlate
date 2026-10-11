@@ -349,6 +349,38 @@ describe("collectNavBakeGeometry", () => {
     }
   });
 
+  it("places 2D colliders by their actor's world transform", () => {
+    const parent = createActor("parent", "Parent", {
+      transform: { position: [5, 0, 0], rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2], scale: [1, 1, 1] },
+    });
+    const child = createActor("child", "Child", {
+      parentId: "parent",
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [4, 1, 1] },
+      components: [{
+        id: "col",
+        classId: "ColliderComponent",
+        properties: { shape: { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } } },
+      }],
+    });
+    const sceneData: SerializedScene = {
+      ...createDefaultScene("2d"),
+      viewportMode: "2d",
+      actors: [parent, child],
+    };
+    // The actor origin (5, 0) is outside these bounds; its turned, scaled box reaches in.
+    const geometry = collectNavBakeGeometry({ meshForActor: () => null }, sceneData, {
+      bakeBounds: { min: { x: -4, y: -4, z: -4 }, max: { x: 4.75, y: 4, z: 4 } },
+    });
+    // Skip the floor quad (four vertices); the rest is the collider.
+    const wall = geometry.positions.slice(12);
+    expect(wall.length).toBeGreaterThan(0);
+    const xs = wall.filter((_, index) => index % 3 === 0);
+    const ys = wall.filter((_, index) => index % 3 === 2);
+    expect([Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]).toEqual([
+      expect.closeTo(4.5, 5), expect.closeTo(5.5, 5), expect.closeTo(-2, 5), expect.closeTo(2, 5),
+    ]);
+  });
+
   it("extends the 2D floor under colliders far from every actor origin", () => {
     const sceneData: SerializedScene = {
       ...createDefaultScene("2d"),

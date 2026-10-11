@@ -9,6 +9,7 @@ type BakeResponse =
 
 export type AudioReverbWorkerHost = {
   bake: (geometry: AudioReverbGeometry, signal?: AbortSignal) => Promise<Uint8Array>;
+  /** Stops the worker; any bake still waiting rejects with an AbortError. */
   terminate: () => void;
 };
 
@@ -25,6 +26,13 @@ export function createAudioReverbWorker(): AudioReverbWorkerHost {
     number,
     { resolve: (bytes: Uint8Array) => void; reject: (error: Error) => void }
   >();
+  // Set once the worker can no longer answer; later bakes reject with it.
+  let closed: Error | null = null;
+  const close = (error: Error) => {
+    closed ??= error;
+    for (const waiter of pending.values()) waiter.reject(error);
+    pending.clear();
+  };
   worker.onmessage = (event: MessageEvent<BakeResponse>) => {
     const msg = event.data;
     const waiter = pending.get(msg.id);
@@ -36,8 +44,23 @@ export function createAudioReverbWorker(): AudioReverbWorkerHost {
     }
     waiter.resolve(msg.bytes);
   };
+  // A worker that fails to load or crashes never replies, and neither error
+  // names the request, so every waiting bake fails.
+  worker.onerror = (event: ErrorEvent) => {
+    close(
+      new Error(
+        event.message
+          ? `Audio reverb bake worker failed: ${event.message}`
+          : "Audio reverb bake worker failed.",
+      ),
+    );
+  };
+  worker.onmessageerror = () => {
+    close(new Error("Audio reverb bake worker sent a reply that could not be read."));
+  };
   return {
     bake(geometry, signal) {
+      if (closed) return Promise.reject(closed);
       const id = nextId;
       nextId += 1;
       return new Promise((resolve, reject) => {
@@ -53,7 +76,9 @@ export function createAudioReverbWorker(): AudioReverbWorkerHost {
     },
     terminate() {
       worker.terminate();
-      pending.clear();
+      const error = new Error("Audio reverb bake aborted");
+      error.name = "AbortError";
+      close(error);
     },
   };
 }

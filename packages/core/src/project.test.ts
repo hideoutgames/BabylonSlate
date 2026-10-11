@@ -39,10 +39,6 @@ describe("project schema", () => {
     expect(normalizeRenderProjectSettings(null)).toEqual(normalizeProjectSettings(undefined).render);
     expect(normalizeRenderProjectSettings({ width: 0.25, height: 1.9 })).toMatchObject({ width: 1, height: 2 });
   });
-  it("H13: keeps deliberately empty input mappings instead of restoring defaults", () => {
-    expect(normalizeProjectSettings({ input: { actions: [], axes: [] } }).input).toEqual({ actions: [], axes: [] });
-    expect(normalizeProjectSettings(undefined).input.actions.some((action) => action.name === "Jump")).toBe(true);
-  });
   it("creates an empty project with expected paths", () => {
     const project = createEmptyProject("Demo");
     expect(project.metadata.name).toBe("Demo");
@@ -54,18 +50,6 @@ describe("project schema", () => {
       ...DEFAULT_SORTING_LAYERS,
     ]);
     expect(project.settings.physics.collisionLayers).toEqual(["Default"]);
-    expect(project.settings.input.actions.some((a) => a.name === "Jump")).toBe(
-      true,
-    );
-    const jumpPad = project.settings.input.actions
-      .find((a) => a.name === "Jump")
-      ?.bindings.find((b) => b.device === "gamepadButton")?.code;
-    const confirmPad = project.settings.input.actions
-      .find((a) => a.name === "Confirm")
-      ?.bindings.find((b) => b.device === "gamepadButton")?.code;
-    expect(jumpPad).toBe("0:0");
-    expect(confirmPad).toBe("0:1");
-    expect(jumpPad).not.toBe(confirmPad);
     expect(project.settings.fonts).toEqual({
       defaultFontGuid: null,
       globalFallback: "sans-serif",

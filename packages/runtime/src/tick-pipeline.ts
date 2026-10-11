@@ -237,7 +237,10 @@ export class TickPipeline {
   /** Console `snapshot start`: refused while a profile or frame capture records. */
   startTrace(): CommandResult | undefined {
     if (this.diagnosticRecorder?.busy) return { success: false, output: "Stop the current profile or frame capture first." };
-    this.trace.start({ seed: this.options.seed, dt: this.options.dt });
+    // A second start keeps the running recording and the last finished trace.
+    if (!this.trace.start({ seed: this.options.seed, dt: this.options.dt })) {
+      return { success: false, output: "snapshot already recording" };
+    }
     this._lastTrace = null;
     return undefined;
   }
@@ -250,7 +253,7 @@ export class TickPipeline {
         type: "trace",
         payload: payload as unknown as Record<string, unknown>,
       });
-      if (payload.retention?.stopReason === "oversized-frame") {
+      if (payload.retention.stopReason === "oversized-frame") {
         this.host.reportLog(
           `Trace recording stopped: an oversized frame exceeds the ${payload.retention.byteBudget}-byte retained-data budget. ` +
           `${payload.frames.length} complete frames retained; ${payload.retention.droppedFrames} frames dropped.`,

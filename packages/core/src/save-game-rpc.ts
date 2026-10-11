@@ -26,13 +26,18 @@ export function createSaveStorageClient(send: (request: SaveStorageRequest) => v
   let nextId = 0;
   let closed = false;
   const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+  const idleWaiters: Array<() => void> = [];
+  const settle = () => {
+    if (pending.size > 0) return;
+    for (const waiter of idleWaiters.splice(0)) waiter();
+  };
   function request(operation: SaveStorageRequest["operation"], key = "", text?: string): Promise<unknown> {
     if (closed) return Promise.reject(new Error("Save storage session closed"));
     return new Promise((resolve, reject) => {
       const id = ++nextId;
       pending.set(id, { resolve, reject });
       try { send({ id, operation, key, text }); }
-      catch (error) { pending.delete(id); reject(error); }
+      catch (error) { pending.delete(id); reject(error); settle(); }
     });
   }
   const storage: SaveGameStorage = {
@@ -62,11 +67,30 @@ export function createSaveStorageClient(send: (request: SaveStorageRequest) => v
       pending.delete(response.id);
       if (response.error) waiter.reject(Object.assign(new Error(response.error.message), response.error));
       else waiter.resolve(response.value);
+      settle();
+    },
+    /**
+     * Settles once no request waits for its reply. A reply's continuation
+     * (a lock's write, then its release) sends its next request before the
+     * next task, so idleness is confirmed a task later.
+     */
+    whenIdle(): Promise<void> {
+      return new Promise((resolve) => {
+        const check = () => {
+          if (pending.size > 0) { idleWaiters.push(check); return; }
+          setTimeout(() => {
+            if (pending.size > 0) idleWaiters.push(check);
+            else resolve();
+          }, 0);
+        };
+        check();
+      });
     },
     dispose() {
       closed = true;
       for (const waiter of pending.values()) waiter.reject(new Error("Save storage session closed"));
       pending.clear();
+      settle();
     },
   };
 }

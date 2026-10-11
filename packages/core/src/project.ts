@@ -60,23 +60,6 @@ export interface TwoDProjectSettings {
   sortingLayers: string[];
 }
 
-/**
- * Action / axis mappings authored in Project Settings. The structural shape
- * matches `@babylonslate/input`'s `InputMappings`; normalisation lives there so
- * `core` stays free of an input dependency.
- */
-export interface ProjectInputSettings {
-  actions: Array<{
-    name: string;
-    bindings: Array<Record<string, unknown>>;
-  }>;
-  axes: Array<{
-    name: string;
-    kind?: "1d" | "2d";
-    bindings: Array<Record<string, unknown>>;
-  }>;
-}
-
 export interface PlayPreviewProjectSettings {
   /** When true, Play overlay fills the window (current behavior). */
   followSystem: boolean;
@@ -213,7 +196,6 @@ export interface ProjectSettings {
   textures: TextureProjectSettings;
   twoD: TwoDProjectSettings;
   physics: PhysicsProjectSettings;
-  input: ProjectInputSettings;
   focusNavigation: FocusNavigationSettings;
   fonts: FontProjectSettings;
   audio: AudioProjectSettings;
@@ -532,51 +514,6 @@ function normalizeCollisionLayers(value: unknown): string[] {
   return layers.length > 0 ? layers : [...DEFAULT_COLLISION_LAYERS];
 }
 
-export const DEFAULT_PROJECT_INPUT_SETTINGS: ProjectInputSettings = {
-  actions: [
-    {
-      name: "Jump",
-      bindings: [
-        { device: "key", code: "Space" },
-        { device: "gamepadButton", code: "0:0" },
-      ],
-    },
-    {
-      name: "Confirm",
-      bindings: [
-        { device: "key", code: "Enter" },
-        // Face Button Right (index 1) — Jump already owns Face Button Down (0:0).
-        { device: "gamepadButton", code: "0:1" },
-      ],
-    },
-  ],
-  axes: [
-    {
-      name: "Move",
-      kind: "2d",
-      bindings: [
-        { device: "key", code: "KeyA", component: "x", digitalValue: -1 },
-        { device: "key", code: "KeyD", component: "x", digitalValue: 1 },
-        { device: "key", code: "KeyS", component: "y", digitalValue: -1 },
-        { device: "key", code: "KeyW", component: "y", digitalValue: 1 },
-        { device: "gamepadAxis", code: "0:0", component: "x", deadZone: 0.15 },
-        {
-          device: "gamepadAxis",
-          code: "0:1",
-          component: "y",
-          deadZone: 0.15,
-          invert: true,
-        },
-      ],
-    },
-    {
-      name: "Look",
-      kind: "1d",
-      bindings: [{ device: "gamepadAxis", code: "0:2", deadZone: 0.15 }],
-    },
-  ],
-};
-
 function normalizePositiveAspect(value: unknown, fallback: number): number {
   return typeof value === "number" && value > 0 ? value : fallback;
 }
@@ -709,22 +646,6 @@ function normalizeEditorUtilityObjects(value: unknown): string[] {
   return ids;
 }
 
-function normalizeProjectInput(value: unknown): ProjectInputSettings {
-  const source = (value ?? {}) as Record<string, unknown>;
-  const hasActions = Array.isArray(source.actions);
-  const hasAxes = Array.isArray(source.axes);
-  if (!hasActions && !hasAxes) {
-    return structuredClone(DEFAULT_PROJECT_INPUT_SETTINGS);
-  }
-  // Full validation (device enums, dead zones) runs in `@babylonslate/input`.
-  return {
-    actions: hasActions
-      ? (source.actions as ProjectInputSettings["actions"])
-      : [],
-    axes: hasAxes ? (source.axes as ProjectInputSettings["axes"]) : [],
-  };
-}
-
 export function normalizeProjectSettings(
   settings:
     | (Partial<Omit<ProjectSettings, "audio" | "render">> & {
@@ -772,7 +693,6 @@ export function normalizeProjectSettings(
         settings?.textures?.autoRequeueUncompressed ??
         DEFAULT_TEXTURE_PROJECT_SETTINGS.autoRequeueUncompressed,
     },
-    input: normalizeProjectInput(settings?.input),
     focusNavigation: normalizeFocusNavigationSettings(settings?.focusNavigation),
     fonts: {
       defaultFontGuid:

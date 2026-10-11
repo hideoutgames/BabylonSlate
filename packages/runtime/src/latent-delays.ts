@@ -4,15 +4,6 @@ import type { RuntimeSubsystem } from "./runtime-subsystems";
 
 type DelayWaiter = { remaining: number; resolve: () => void; owner?: BObject | null };
 
-/**
- * A Delay whose owner was destroyed before it resumed. The owner's graph ends
- * there without a diagnostic, like a cancelled tween; ScriptHost reports it
- * only to a caller that is still alive.
- */
-export class DelayOwnerDestroyed extends Error {
-  constructor() { super("Delay cancelled: its owner was destroyed."); this.name = "AbortError"; }
-}
-
 /** Script `Delay` timers, counted in simulation time while their owner may run. */
 export class LatentDelays implements RuntimeSubsystem {
   private readonly waiters: DelayWaiter[] = [];
@@ -28,7 +19,7 @@ export class LatentDelays implements RuntimeSubsystem {
   /**
    * Count one tick for every waiter whose owner may run, then resume the due
    * ones in order. A destroyed owner's waiter resumes at once, so its
-   * continuation ends (`DelayOwnerDestroyed`) rather than staying pending.
+   * continuation ends (an owner cancellation) rather than staying pending.
    */
   advance(dt: number): void {
     if (this.waiters.length === 0) return;

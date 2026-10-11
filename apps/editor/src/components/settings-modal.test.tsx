@@ -26,17 +26,14 @@ const {
   sourceControlEnabled,
   projectSourceControl,
   projectExportPresets,
-  lastProjectInput,
   lastProjectRender,
   pluginDescriptors,
   applyPluginOverrides,
 } = vi.hoisted(() => {
-  const lastProjectInput = { current: null as unknown };
   const lastProjectRender = { current: null as import("@babylonslate/core").RenderProjectSettings | null };
   return {
     updateProjectVersion: vi.fn(),
-    updateProjectSettings: vi.fn((patch: { input?: unknown; render?: import("@babylonslate/core").RenderProjectSettings }) => {
-      if (patch?.input) lastProjectInput.current = patch.input;
+    updateProjectSettings: vi.fn((patch: { render?: import("@babylonslate/core").RenderProjectSettings }) => {
       if (patch?.render) lastProjectRender.current = patch.render;
     }),
     setShowPluginContent: vi.fn(),
@@ -53,7 +50,6 @@ const {
     sourceControlEnabled: { current: false },
     projectSourceControl: { current: null as Partial<import("@babylonslate/core").SourceControlProjectSettings> | null },
     projectExportPresets: { current: null as import("@babylonslate/core").ExportPreset[] | null },
-    lastProjectInput,
     lastProjectRender,
     pluginDescriptors: [] as PluginDescriptor[],
     applyPluginOverrides: vi.fn(async () => undefined),
@@ -74,10 +70,6 @@ vi.mock("../context/document-context", async () => {
   return (await import("../testing/document-context-mock")).documentContextMock(() => {
     const projectDocument = emptyProject("Demo");
     if (lastProjectRender.current) projectDocument.settings.render = lastProjectRender.current;
-    if (lastProjectInput.current) {
-      projectDocument.settings.input =
-        lastProjectInput.current as typeof projectDocument.settings.input;
-    }
     if (sourceControlEnabled.current) {
       projectDocument.settings.sourceControl = {
         ...projectDocument.settings.sourceControl,
@@ -175,7 +167,6 @@ vi.mock("../context/document-context", async () => {
 
 afterEach(() => {
   cleanup();
-  lastProjectInput.current = null;
   lastProjectRender.current = null;
   updateProjectSettings.mockClear();
   updateProjectVersion.mockClear();

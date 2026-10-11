@@ -134,23 +134,17 @@ describe("structNodePropertyRows", () => {
 
 describe("assetPickerAllowedTypes", () => {
   it("admits live render output for a Texture pin without widening other asset types", () => {
-    expect(assetPickerAllowedTypes("Texture", undefined)).toEqual(["Texture", "RenderTargetTexture"]);
-    expect(assetPickerAllowedTypes("RenderTarget", undefined)).toEqual(["RenderTarget"]);
-  });
-  it("uses catalog typeClassIds instead of the pin asset type", () => {
-    expect(assetPickerAllowedTypes("Model", ["Model", "Sprite"])).toEqual([
-      "Model",
-      "Sprite",
-    ]);
+    expect(assetPickerAllowedTypes("Texture")).toEqual(["Texture", "RenderTargetTexture"]);
+    expect(assetPickerAllowedTypes("RenderTarget")).toEqual(["RenderTarget"]);
   });
 
-  it("falls back to the pin asset type when typeClassIds is missing", () => {
-    expect(assetPickerAllowedTypes("Material", undefined)).toEqual(["Material", "MaterialInstance"]);
+  it("admits Material Instances for a Material pin", () => {
+    expect(assetPickerAllowedTypes("Material")).toEqual(["Material", "MaterialInstance"]);
   });
 
   it("lists every asset for a pin that accepts any asset instead of filtering to an empty type", () => {
-    expect(assetPickerAllowedTypes("", undefined)).toEqual([]);
-    expect(assetPickerAllowedTypes("  ", [])).toEqual([]);
+    expect(assetPickerAllowedTypes("")).toEqual([]);
+    expect(assetPickerAllowedTypes("  ")).toEqual([]);
   });
 });
 

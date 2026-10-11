@@ -209,6 +209,31 @@ describe("ScriptHost actor and component writes", () => {
     expect(hero.getVariable("changes")).toBe(1);
   });
 
+  it("applies a different text set inside On Text Changed without firing it again", async () => {
+    const host = new ScriptHost(services());
+    await host.load(script("Hero", [
+      "export function onTextChanged(ctx) {",
+      "  ctx.self.setVariable('changes', (ctx.self.getVariable('changes') ?? 0) + 1);",
+      "  ctx.callComponentFunction(ctx.getComponentById(ctx.self, 'label'), 'setText', { text: ctx.args.text + '!' });",
+      "}",
+    ].join("\n"), {
+      entryPoints: [{ name: "onTextChanged", event: "onTextChanged", isAsync: false, componentId: "label" }],
+    }));
+    const hero = new Actor({ classId: "Hero" });
+    const label = new ActorComponent({ classId: "Text3DComponent", guid: "label" });
+    hero.attachComponent(label);
+    const ctx = host.createContext(hero, 0, 0);
+
+    ctx.callComponentFunction(label, "setText", { text: "Hi" });
+    expect(label.getVariable("text")).toBe("Hi!");
+    expect(hero.getVariable("changes")).toBe(1);
+
+    // The guard lasts only for the running handler: a later write fires again.
+    ctx.callComponentFunction(label, "setText", { text: "Bye" });
+    expect(label.getVariable("text")).toBe("Bye!");
+    expect(hero.getVariable("changes")).toBe(2);
+  });
+
   it("refuses native component calls on a destroyed component", () => {
     const playSound = vi.fn();
     const host = new ScriptHost(services({ playSound }));

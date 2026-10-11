@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createDefaultInputAssets } from "./default-input-assets";
 import { normalizeInputAssetPayload } from "./input-assets";
 
 describe("input asset controls", () => {
@@ -68,5 +69,13 @@ describe("input asset controls", () => {
       { id: "one", device: "key", code: "", modifiers: { ctrl: true } },
     ]);
     expect(normalizeInputAssetPayload("InputAction", {}).bindings).toEqual([]);
+  });
+
+  it("gives the starter Jump and Confirm actions different gamepad buttons", () => {
+    const padButton = (name: string) => createDefaultInputAssets()
+      .find((asset) => asset.name === name)
+      ?.bindings.find((binding) => binding.device === "gamepadButton")?.code;
+    expect(padButton("Jump")).toBe("0:0");
+    expect(padButton("Confirm")).toBe("0:1");
   });
 });

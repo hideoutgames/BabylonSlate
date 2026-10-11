@@ -76,10 +76,12 @@ describe("runtime session boundaries", () => {
   });
 
   it("resets every resolved input device while paused without ticking or accepting queued presses", async () => {
-    const runtime = makeRuntime({ inputMappings: {
-      actions: [{ name: "Fire", bindings: [{ device: "key", code: "KeyF" }, { device: "mouseButton", code: "0" }, { device: "gamepadButton", code: "0:0" }] }],
-      axes: [{ name: "Move", bindings: [{ device: "gamepadAxis", code: "0:0" }, { device: "touch", code: "move" }] }],
-    } });
+    const runtime = makeRuntime({ inputAssets: [
+      { guid: "Fire", type: "InputAction", name: "Fire", valueType: "button", bindings: [
+        { id: "key", device: "key", code: "KeyF" }, { id: "mouse", device: "mouseButton", code: "0" }, { id: "pad", device: "gamepadButton", code: "0:0" }] },
+      { guid: "Move", type: "InputAxis", name: "Move", valueType: "1d", bindings: [
+        { id: "stick", device: "gamepadAxis", code: "0:0" }, { id: "touch", device: "touch", code: "move" }] },
+    ] });
     try {
       runtime.realizePlayWorld(); runtime.start();
       runtime.pushInput([{ kind: "key", tick: 0, code: "KeyF", phase: "down" },
@@ -118,12 +120,15 @@ describe("runtime session boundaries", () => {
     } finally { runtime.stop(); }
   });
 
-  it("reports a held continuation whose owner was destroyed during Pause as an owner cancellation", async () => {
+  it("ends a held continuation whose owner was destroyed during Pause without a diagnostic", async () => {
     const commands: CommandMessage[] = [];
     const runtime = makeRuntime({ playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Delayed" })] },
       onCommand: command => commands.push(command) });
     await runtime.loadScripts([{ classId: "Delayed", parentClassId: "Actor", assetGuid: "delayed", anchors: [],
-      source: 'export async function begin(ctx) { await ctx.delay(0.01); ctx.log("log", "test", "continued"); }',
+      source: `export async function begin(ctx) {
+        try { await ctx.delay(0.01); } catch (error) { ctx.log("log", "test", "ended " + error.message); throw error; }
+        ctx.log("log", "test", "continued");
+      }`,
       entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }] }]);
     try {
       runtime.realizePlayWorld(); runtime.start(); runtime.tick();
@@ -133,11 +138,9 @@ describe("runtime session boundaries", () => {
       expect(runtime.executeConsoleCommand('destroyactor "actor"').success).toBe(true);
       runtime.resume();
       await flush();
-      const diagnostics = commands.flatMap(command => command.type === "diagnostic" ? [command.message] : []);
-      expect(diagnostics).toHaveLength(1);
-      expect(diagnostics[0]).toMatch(/owner was destroyed/);
-      expect(diagnostics[0]).not.toMatch(/Scene realization/);
-      expect(commands.some(command => command.type === "log" && command.message === "continued")).toBe(false);
+      const logs = commands.flatMap(command => command.type === "log" && command.category === "test" ? [command.message] : []);
+      expect(logs).toEqual(["ended Script continuation cancelled: its owner was destroyed."]);
+      expect(commands.filter(command => command.type === "diagnostic")).toEqual([]);
     } finally { runtime.stop(); }
   });
 

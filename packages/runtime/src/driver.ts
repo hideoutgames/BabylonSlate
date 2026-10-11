@@ -422,7 +422,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.behaviourTrees.replaceAnimClipCatalog((options.animClipCatalog ?? []).filter((entry) => entry.guid));
     const registry = createClassRegistry();
     this.resolver = new InputResolver(normalizeInputMappings(
-      options.inputAssets !== undefined ? inputMappingsFromAssets(options.inputAssets) : options.inputMappings ?? createDefaultInputMappings(),
+      options.inputAssets !== undefined ? inputMappingsFromAssets(options.inputAssets) : createDefaultInputMappings(),
     ));
     if (options.tilemaps || options.tilesets) this.physics.bindAll();
     if (options.sprites || options.spriteAnimations) {
@@ -1524,7 +1524,7 @@ class InProcessRuntime implements RuntimeDriver {
    * frame lacks and `playSound` at the recorded offset for each recorded voice.
    */
   restoreFromTrace(frame: TraceFrame): void {
-    this.setTimeDilation(frame.timeDilation ?? 1);
+    this.setTimeDilation(frame.timeDilation);
     this.behaviourTrees.restoreFromTrace(frame.bt ?? []);
     this.animGraphs.restoreFromTrace(frame.animGraphs ?? []);
     const recordedClips = new Map((frame.sprites ?? []).map((clip) => [clip.actorGuid, clip]));

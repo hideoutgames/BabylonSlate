@@ -20,6 +20,12 @@ interface Candidate {
   bounds: FocusBounds;
   properties: FocusTargetProperties;
 }
+/** Scene Layer actors with focus-target components, in world order, for one world structure revision. */
+interface FocusTargets {
+  revision: number;
+  byGuid: Map<string, Actor>;
+  entries: Array<{ actor: Actor; components: ActorComponent[] }>;
+}
 
 function fallbackResolver(): InputResolver {
   const directions: AxisBinding[] = [
@@ -67,6 +73,7 @@ export class SceneLayerFocusNavigation {
   private direction: FocusDirection | null = null;
   private repeatRemaining = 0;
   private initialLayer: string | null = null;
+  private targets: FocusTargets | null = null;
 
   constructor(world: World, settings: Partial<FocusNavigationSettings> | undefined, host: FocusNavigationHost) {
     this.world = world;
@@ -74,16 +81,35 @@ export class SceneLayerFocusNavigation {
     this.settings = normalizeFocusNavigationSettings(settings);
   }
 
+  /**
+   * Which actors and components can be focus targets changes only with the
+   * world structure (spawn, destroy, attach, reparent), so the full actor walk
+   * reruns only after a structural change. Availability, admission, transforms
+   * and bounds are read live on every call.
+   */
+  private focusTargets(): FocusTargets {
+    const revision = this.world.structuralRevision;
+    if (this.targets?.revision === revision) return this.targets;
+    const actors = this.world.getActors();
+    const entries: FocusTargets["entries"] = [];
+    for (const actor of actors) {
+      if (!actor.sceneLayerId) continue;
+      const components = actor.components.filter((component) => isFocusTargetClass(component.classId));
+      if (components.length > 0) entries.push({ actor, components });
+    }
+    this.targets = { revision, byGuid: actorGuidIndex(actors), entries };
+    return this.targets;
+  }
+
   private candidates(): Candidate[] {
     if (!this.settings.enabled) return [];
     // Focus targets live only on Scene Layer actors; a world without a live layer has none to walk.
     const liveLayers = this.world.getSceneLayers().filter((layer) => !layer.destroyed);
     if (liveLayers.length === 0) return [];
-    const actors = this.world.getActors();
-    const byGuid = actorGuidIndex(actors);
+    const { byGuid, entries } = this.focusTargets();
     const result: Candidate[] = [];
-    for (const actor of actors) {
-      if (!actor.sceneLayerId || !available(actor) || !this.host.canRun(actor)) continue;
+    for (const { actor, components } of entries) {
+      if (!available(actor) || !this.host.canRun(actor)) continue;
       const visited = new Set<string>([actor.guid]);
       let parentId = actorParentGuid(actor);
       let visible = true;
@@ -96,8 +122,8 @@ export class SceneLayerFocusNavigation {
       if (!visible) continue;
       const actorTransform = actorWorldTransform(actor, byGuid);
       if (!actorTransform) continue;
-      for (const component of actor.components) {
-        if (!isFocusTargetClass(component.classId) || !available(component)) continue;
+      for (const component of components) {
+        if (!available(component)) continue;
         const properties = parseFocusTargetProperties(Object.fromEntries(component.variables));
         if (!properties.focusEnabled) continue;
         if (component.getVariable("focused") === undefined) component.setVariable("focused", false);

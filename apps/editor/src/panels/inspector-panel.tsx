@@ -1728,10 +1728,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         setAssetPinPick({
           pinId,
           assetType,
-          allowedTypes: assetPickerAllowedTypes(
-            assetType,
-            selectedNode.data.typeClassIds,
-          ),
+          allowedTypes: assetPickerAllowedTypes(assetType),
         });
       },
       schemas: typeSchemas,

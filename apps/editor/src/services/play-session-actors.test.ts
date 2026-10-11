@@ -76,6 +76,8 @@ describe.each(["worker", "in-process"] as const)(
         onRuntime?: (runtime: RuntimeDriver) => void;
         /** In-process mode: a worker that starts but cannot accept its boot controls. */
         failingWorkerTerminate?: () => void;
+        /** Worker mode: observes the host terminating the worker. */
+        workerTerminate?: () => void;
         /** Worker mode: deliver output as the worker would, including after Stop. */
         onWorker?: (worker: { command(command: CommandMessage): void; snapshot(buffer: Float32Array): void }) => void;
         /** In-process mode: prepares Scenes for scene changes. */
@@ -176,7 +178,7 @@ describe.each(["worker", "in-process"] as const)(
             onSnapshot = handler;
           },
           pushInput() {},
-          terminate() {},
+          terminate: options.workerTerminate ?? (() => {}),
           postControl(control) {
             if (control.type === "load")
               runtime = createRuntimeFromLoad(control, onCommand);
@@ -281,6 +283,43 @@ describe.each(["worker", "in-process"] as const)(
       worker.snapshot(new Float32Array(16));
       expect(applyCommand).not.toHaveBeenCalled();
       expect(pushSnapshot).not.toHaveBeenCalled();
+    });
+
+    it.runIf(mode === "worker")("keeps a stopped worker running End Play until it reports the stop finished", async () => {
+      const terminate = vi.fn();
+      let worker!: { command(command: CommandMessage): void; snapshot(buffer: Float32Array): void };
+      await play({ workerTerminate: terminate, onWorker: (output) => { worker = output; } });
+      const { released } = session!.stop();
+      session = undefined;
+      let settled = false;
+      void released.then(() => { settled = true; });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(terminate).not.toHaveBeenCalled();
+      // The next session waits for release, so End Play saves cannot land in it.
+      expect(settled).toBe(false);
+      worker.command({ type: "runtimeStopped" });
+      expect(terminate).toHaveBeenCalledOnce();
+      await expect(released).resolves.toMatchObject({ quarantined: false });
+      worker.command({ type: "runtimeStopped" });
+      expect(terminate).toHaveBeenCalledOnce();
+    });
+
+    it.runIf(mode === "worker")("terminates a stopped worker that never reports the stop finished", async () => {
+      const terminate = vi.fn();
+      await play({ workerTerminate: terminate });
+      vi.useFakeTimers();
+      try {
+        const { released } = session!.stop();
+        session = undefined;
+        let settled = false;
+        void released.then(() => { settled = true; });
+        await vi.advanceTimersByTimeAsync(2999);
+        expect(terminate).not.toHaveBeenCalled();
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(terminate).toHaveBeenCalledOnce();
+        await expect(released).resolves.toMatchObject({ quarantined: false });
+      } finally { vi.useRealTimers(); }
     });
 
     it.runIf(mode === "in-process")("applies each Scene's baked reverb on every later scene change", async () => {

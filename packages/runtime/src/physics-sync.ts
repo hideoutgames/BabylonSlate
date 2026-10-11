@@ -20,7 +20,7 @@ import {
   spriteAnimationFrameAt,
   spriteClipFrameAt,
   spriteCollisionToBox2d,
-  tilemapChunkChains,
+  tilemapLayerChains,
   tilemapTilesetGuids,
   type ModelPayload,
   type SpriteAnimationPayload,
@@ -1915,33 +1915,31 @@ export class PhysicsWorldSync {
     let index = 0;
     for (const layer of tilemap.layers) {
       if (!layer.collision) continue;
-      for (const chunk of layer.chunks) {
-        const chains = tilemapChunkChains({
-          tiles: chunk.tiles,
-          chunkSize: tilemap.chunkSize,
-          chunkX: chunk.cx,
-          chunkY: chunk.cy,
-          tileset: fallback,
-          worldTileWidth,
-          worldTileHeight,
-          resolveGid,
+      // One outline per layer: solid tiles merge across chunk borders, so no
+      // chain edge sits at a border for a body to catch on.
+      const chains = tilemapLayerChains({
+        chunks: layer.chunks,
+        chunkSize: tilemap.chunkSize,
+        tileset: fallback,
+        worldTileWidth,
+        worldTileHeight,
+        resolveGid,
+      });
+      for (const chain of chains) {
+        if (chain.points.length < 2) continue;
+        const id = `tilemap:${actor.guid}:${layer.id}:${index}`;
+        colliders.set(id, {
+          id,
+          bodyId,
+          // Tilemap-local; the caller bakes the component transform and scale.
+          shape: { kind: "chain", points: chain.points, loop: chain.loop },
+          friction: 0.5,
+          restitution: 0,
+          isTrigger: false,
+          layer: 1,
+          mask: 0xffffffff,
         });
-        for (const chain of chains) {
-          if (chain.points.length < 2) continue;
-          const id = `tilemap:${actor.guid}:${layer.id}:${chunk.cx}:${chunk.cy}:${index}`;
-          colliders.set(id, {
-            id,
-            bodyId,
-            // Tilemap-local; the caller bakes the component transform and scale.
-            shape: { kind: "chain", points: chain.points, loop: chain.loop },
-            friction: 0.5,
-            restitution: 0,
-            isTrigger: false,
-            layer: 1,
-            mask: 0xffffffff,
-          });
-          index += 1;
-        }
+        index += 1;
       }
     }
   }

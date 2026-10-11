@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene, createDefaultSceneLayer } from "@babylonslate/core";
+import { createActor, createDefaultScene, createDefaultSceneLayer, type SaveGameStorage } from "@babylonslate/core";
 import {
   readSnapshotHeader,
   snapshotFloatCount,
@@ -125,9 +125,11 @@ describe("worker entry snapshot transport", () => {
     | { kind: "snapshot"; frameId: number; buffer: ArrayBuffer }
     | { kind: "command"; command: CommandMessage };
   let send: ((control: ControlMessage) => void) | undefined;
-  afterEach(() => {
+  afterEach(async () => {
     send?.({ type: "stop" });
     send = undefined;
+    // The stopped worker reports it a task later; let that land before the stubs go.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     vi.unstubAllGlobals();
   });
 
@@ -162,8 +164,10 @@ describe("worker entry snapshot transport", () => {
     });
     const emitted: CommandMessage[] = [];
     let runtime!: RuntimeDriver;
+    let saveStorage!: SaveGameStorage;
     const hud = { ...createDefaultSceneLayer(), actors: [createActor("badge", "Badge", { classId: "SceneLayerActor" })] };
-    vi.mocked(createRuntimeFromLoad).mockImplementation((control, onCommand) => {
+    vi.mocked(createRuntimeFromLoad).mockImplementation((control, onCommand, storage) => {
+      saveStorage = storage!;
       runtime = createInProcessRuntime({
         ...runtimeOptionsFromLoadControl(control),
         preferSoftwarePhysics: true,
@@ -182,7 +186,7 @@ describe("worker entry snapshot transport", () => {
     send({ type: "play" });
     await vi.waitFor(() => expect(frames.length).toBeGreaterThan(0));
     return {
-      deliver, posts, emitted, runtime,
+      deliver, posts, emitted, runtime, saveStorage: () => saveStorage,
       runFrames(count: number) {
         for (let i = 0; i < count; i++) {
           now += 1000 / 60;
@@ -246,6 +250,22 @@ describe("worker entry snapshot transport", () => {
     expect(() => send!({ type: "step" })).toThrow("tick failed");
     runFrames(3);
     expect(runtime.getWorld().clock.tickIndex).toBe(tickIndex);
+  });
+
+  it("reports the stop only after the host answers the save writes still in flight", async () => {
+    const { deliver, posts, saveStorage } = await bootWorker({ type: "load", sceneAssetGuid: "main", scene: createDefaultScene() });
+    const commands = () => posts.flatMap((post) => post.kind === "command" ? [post.command] : []);
+    // An End Play save write the host has not answered yet.
+    const written = saveStorage().write("slot", "end of play");
+    const request = commands().find((command) => command.type === "saveStorageRequest");
+    if (request?.type !== "saveStorageRequest") throw new Error("No save request");
+    send!({ type: "stop" });
+    send = undefined;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(commands().some((command) => command.type === "runtimeStopped")).toBe(false);
+    deliver({ channel: "control", payload: { type: "saveStorageResponse", response: { id: request.request.id } } });
+    await written;
+    await vi.waitFor(() => expect(commands().some((command) => command.type === "runtimeStopped")).toBe(true));
   });
 
   it("ends a final capture with a failed result when stop supersedes it between chunks", async () => {

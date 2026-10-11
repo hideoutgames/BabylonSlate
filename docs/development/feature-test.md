@@ -87,7 +87,7 @@ Zones sit on a 32 m grid (`layout.ts`); each has an Outliner folder and a 3D Tex
 - **Game Instance** `FT_GameInstance` (Project Settings): logs on init (Output Log); on the first scene it prints the scene name, spawns `FT_ScriptSpawned` when the Scripting zone exists, and runs `ft_stats`. **Subsystems**: `FT_GameScoreSubsystem` (GameSubsystem) and `FT_GameSceneWatcher` (SceneSubsystem).
 - **Editor**: `FT_EditorProbe` (EditorUtilityObject, registered) logs editor events; `FT_EditorMath` (EditorFunctionLibrary) is authored only.
 - **Types and data**: `FT_ScriptSpeedMode` (Enum), `FT_ScriptSpinConfig` (Structure), `FT_ScriptDescribable` (ScriptInterface), `FT_DataItemStats` / `FT_DataItems` (Data Definition and Data Tree), `FT_DataProgress` (SaveGame, `wipeOnPlay` on).
-- **Input**: Basic 3D actions plus `FT_ScriptPulse` (P) and `FT_ScriptNudge` (arrow keys); the HUD joystick adds touch bindings to Move.
+- **Input**: Basic 3D actions plus `FT_ScriptPulse` (P or pad button 3; every press also rumbles pad 0 through Set Gamepad Rumble) and `FT_ScriptNudge` (arrow keys); the HUD joystick adds touch bindings to Move.
 - **Project settings**: Feature Test tags, collision layers Default, Dynamic, Trigger, Water, Ghost; PBR with Scene Linear and ACES, bloom, vignette, white balance, FXAA, FSR at render scale 0.8, ambient occlusion, reflections and volumetrics at 0.5 scale; shadows on; render path Auto; WebGL2; dynamic resolution off; Geist as the default font.
 
 ### Console commands

@@ -210,26 +210,20 @@ function flattenStructFieldRows(
 }
 
 /**
- * Prefer catalog `typeClassIds` (Mesh+Model) over the pin's single asset type.
- * The empty asset type accepts any asset, so it lists them all (no type filter).
+ * Content Browser types an asset pin's picker offers: the pin's asset type
+ * plus the types that stand in for it. The empty asset type accepts any
+ * asset, so it lists them all (no type filter).
  */
-export function assetPickerAllowedTypes(
-  pinAssetType: string,
-  typeClassIds: unknown,
-): string[] {
-  const compatibleTypes = (types: string[]) => [...new Set(types.flatMap((type) =>
-    type === "Texture" ? [type, "RenderTargetTexture"] : type === "Material" ? [type, "MaterialInstance"] : [type]))];
-  const ids = (Array.isArray(typeClassIds) ? typeClassIds : [])
-    .filter((id): id is string => typeof id === "string")
-    .map((id) => id.trim())
-    .filter(Boolean);
-  return compatibleTypes(ids.length > 0 ? ids : [pinAssetType.trim()].filter(Boolean));
+export function assetPickerAllowedTypes(pinAssetType: string): string[] {
+  const type = pinAssetType.trim();
+  if (!type) return [];
+  return type === "Texture" ? [type, "RenderTargetTexture"] : type === "Material" ? [type, "MaterialInstance"] : [type];
 }
 
 /** Asset Variable Default picker kinds: the pre-cast Asset Type, or the catalog list. */
 export function variableAssetPickerAllowedTypes(typeClassId?: string): string[] {
   const trimmed = typeClassId?.trim();
-  if (trimmed) return assetPickerAllowedTypes(trimmed, undefined);
+  if (trimmed) return assetPickerAllowedTypes(trimmed);
   return [...ASSET_REF_PICKER_TYPES];
 }
 

@@ -67,7 +67,7 @@ export function DataValueEditor({ field, value, defaultValue, onChange, label, p
   const options = {
     typeClassId: field.typeClassId, schemas: catalog.schemas, enumMembers: catalog.enumMembers,
     label, pinId: path, assetEntries: catalog.propertyAssets, classEntries: catalog.classEntries,
-    onPickAsset: (rowId: string, type: string) => setAssetPicker({ rowId, allowedTypes: assetPickerAllowedTypes(type, undefined) }),
+    onPickAsset: (rowId: string, type: string) => setAssetPicker({ rowId, allowedTypes: assetPickerAllowedTypes(type) }),
     onPickClass: (rowId: string, base: string) => setClassPicker({ rowId, base }),
   };
   const generated = variableDefaultPropertyRows(field.typeId, value, change, options);

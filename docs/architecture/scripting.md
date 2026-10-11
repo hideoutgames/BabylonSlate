@@ -21,10 +21,10 @@ behaviour trees, the crowd) uses that same step for the whole tick, so a `slomo`
 or script dilation change made during a tick takes effect from the next tick.
 Engine delays, tween completion, ready-scene lifecycle, audio completion and
 scalability callbacks wait for game-owner admission while paused. Stop cancels
-waiting engine continuations. Destroying an actor while its Delay counts ends
-that graph without a diagnostic, like a cancelled tween; a continuation that
-Pause or a blocking load already holds reports the owner cancellation. Asset
-I/O and readiness may finish during a pause.
+waiting engine continuations. Destroying an actor while its Delay counts, or
+while Pause or a blocking load holds its continuation, ends that graph without
+a diagnostic, like a cancelled tween. Asset I/O and readiness may finish during
+a pause.
 Custom JavaScript timers, promises and external effects remain cooperative and
 are not a suspended-process transaction. Simulation sessions refuse snapshot
 recording at the recorder command boundary; use Play or Preview Build.
@@ -600,7 +600,7 @@ Engine classes expose an optional script catalog in `@babylonslate/object-model`
 | Component | Variables | Functions | Events |
 | --- | --- | --- | --- |
 | `Scene` | Scene Name, Asset Guid (Get-only), Gravity (`vec3`) | — | — |
-| `MeshComponent` | Mesh Kind, Mesh (`assetGuid`; picker `typeClassIds` Mesh **and** Model), Material asset, Material Object (Get-only live reference) | — | — |
+| `MeshComponent` | Mesh Kind, Mesh (`assetGuid`; a Model asset), Material asset, Material Object (Get-only live reference) | — | — |
 | `SpriteComponent` | Sprite, Sorting Layer, Order In Layer | — | — |
 | `TilemapComponent` | Tilemap, Sorting Layer, Order In Layer | — | — |
 | `SkyboxComponent` | Size | — | — |
@@ -638,7 +638,7 @@ Compiled Get/Set of catalog variables uses `ctx.getVariableFrom` / `ctx.setVaria
 - `RigidBodyComponent` / `ColliderComponent`: `PhysicsWorldSync.applyComponent` → `updateBody` / `applyColliderChanges` (see [physics.md](physics.md)). `MeshComponent` / `RagdollComponent`: `PhysicsWorldSync.syncActor` reconciles only the owner's body, which a collision or ragdoll change can create or retire.
 - `NavAgentComponent`: `updateAgent` on the live Recast crowd (radius / height / max speed / max acceleration). Call **Move To** / actor `navigation.moveTo` adds the crowd agent if Begin Play ran before the batch register.
 
-`setVariableOn` / Set Text on a text component also fires `onTextChanged` for entries bound to that component id when the text changes, so a handler that writes the same text again does not re-enter itself. Set Text applies while the owner is still loading; its event waits for admission. Native calls on a destroyed component do nothing, and Play / Stop, particle, Possess, Add Impulse and navigation calls need an admitted owner.
+`setVariableOn` / Set Text on a text component also fires `onTextChanged` for entries bound to that component id when the text changes, so a handler that writes the same text again does not re-enter itself. A different text written from inside that component's own handler applies without firing the event again, so a handler that rewrites its text cannot recurse. Set Text applies while the owner is still loading; its event waits for admission. Native calls on a destroyed component do nothing, and Play / Stop, particle, Possess, Add Impulse and navigation calls need an admitted owner.
 
 ### Runtime material parameters
 

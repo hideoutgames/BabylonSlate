@@ -310,9 +310,10 @@ export interface PlaySessionResult {
   droppedDiagnostics: number;
   textureCountBefore: number;
   /**
-   * Settles after the shared-Engine teardown confirms actual release, then
-   * measures the texture cache. `quarantined` is true when release never
-   * confirmed; the promise never rejects.
+   * Settles after the shared-Engine teardown confirms actual release and a
+   * stopped worker was terminated, then measures the texture cache.
+   * `quarantined` is true when release never confirmed; the promise never
+   * rejects.
    */
   released: Promise<{
     textureCountAfter: number;
@@ -465,6 +466,8 @@ export function applyPlayFpsSample(
 }
 
 const FIXTURE_ASSET = "preview-fixture";
+/** How long a stopped worker may take to run End Play and finish its save writes. */
+const WORKER_STOP_TIMEOUT_MS = 3000;
 const FIXTURE_NODE = "throw-node";
 
 /** When Play injects a fixture throw and a tree is loaded, navigate to the task. */
@@ -657,6 +660,8 @@ export function startPlaySession(options: {
   // Declared before any runtime callback can read them.
   let stopped = false;
   let stopResult: PlaySessionResult | null = null;
+  /** Terminates the stopped worker; set while its stop phase runs. */
+  let finishWorkerStop: (() => void) | null = null;
   let gameInputMode: "game" | "edit" = "game";
   let inputTransition = 0;
   let inputTransitionPending = false;
@@ -1334,8 +1339,11 @@ export function startPlaySession(options: {
     }
     // Stop released the presentation, preparation and every correlated client.
     // Output that was already queued, or the stop phase's own, only reaches the log.
+    // The worker's stop phase may still write saves, then reports it is done.
     if (stopped) {
-      if (command.type === "log") options.onLog?.(command.message, command.severity ?? "log");
+      if (command.type === "saveStorageRequest") saveServer.receive(command.request);
+      else if (command.type === "runtimeStopped") finishWorkerStop?.();
+      else if (command.type === "log") options.onLog?.(command.message, command.severity ?? "log");
       else if (command.type === "diagnostic") options.onLog?.(command.message, command.severity ?? "error");
       return;
     }
@@ -1907,9 +1915,26 @@ export function startPlaySession(options: {
       }
       sessionDiagnostics.push(...hostDiagnostics.entries());
       droppedDiagnostics += hostDiagnostics.droppedCount();
-      worker?.postControl({ type: "stop" });
-      saveServer.dispose();
-      worker?.terminate();
+      // Settles once no stopped worker can still write saves.
+      let workerStopped: Promise<void> = Promise.resolve();
+      if (worker) {
+        // End Play and On Game End run in the worker's stop phase and may write
+        // saves: keep the worker and its save server until it reports stopped.
+        const stopping = worker;
+        stopping.postControl({ type: "stop" });
+        workerStopped = new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => finishWorkerStop?.(), WORKER_STOP_TIMEOUT_MS);
+          finishWorkerStop = () => {
+            finishWorkerStop = null;
+            clearTimeout(timeout);
+            saveServer.dispose();
+            stopping.terminate();
+            resolve();
+          };
+        });
+      } else {
+        saveServer.dispose();
+      }
       for (const request of sourceRequests.values()) request.reject(new Error("Play stopped during script preparation."));
       sourceRequests.clear();
       sceneSources?.dispose();
@@ -1928,14 +1953,16 @@ export function startPlaySession(options: {
       // Shared-Engine teardown defers Scene/library release until actual
       // native release confirms; measure the texture cache only then. A
       // rejected release quarantines the owners — retained textures are not a
-      // leak, and the render layer already warns.
-      const released = handle
-        .whenReleased()
-        .then(
+      // leak, and the render layer already warns. The next session also waits
+      // for the stopped worker, so its End Play saves cannot land in it.
+      const released = Promise.all([
+        handle.whenReleased().then(
           () => false,
           () => true,
-        )
-        .then((quarantined) => {
+        ),
+        workerStopped,
+      ])
+        .then(([quarantined]) => {
           const textureCountAfter =
             sharedEngine.getLoadedTexturesCache().length;
           const textureLeak = textureCountAfter > textureCountBefore;

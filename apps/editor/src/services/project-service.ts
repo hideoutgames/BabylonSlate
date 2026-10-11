@@ -2030,7 +2030,6 @@ export class ProjectService {
     } else {
       document.graphs = [];
     }
-    document.settings.input = { actions: [], axes: [] };
     document.settings.startupSceneGuid = await this.guidForAsset(MAIN_SCENE_FILE);
     await this.saveProject(document, createEmptyLayouts());
     const stored = JSON.parse(

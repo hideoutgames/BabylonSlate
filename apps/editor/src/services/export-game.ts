@@ -138,7 +138,6 @@ export type CollectExportGameParams = {
   physicsWorld: "2d" | "3d";
   infiniteLoopDetection?: boolean;
   loopCount?: number;
-  inputMappings?: import("@babylonslate/core").ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   tagRegistry?: TagRegistry;
   playerFiles: Map<string, Uint8Array>;
@@ -567,7 +566,6 @@ export async function collectAndExportGame(
     infiniteLoopDetection: params.infiniteLoopDetection,
     loopCount: params.loopCount,
     inputAssets,
-    inputMappings: params.inputMappings,
     focusNavigation: params.focusNavigation,
     scripts,
     assets: exportAssets,

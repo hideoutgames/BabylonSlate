@@ -1,6 +1,5 @@
 import type {
   RenderProjectSettings,
-  ProjectInputSettings,
   SerializedGraph,
   SerializedScene,
   ConsoleCommandMetadata,
@@ -125,7 +124,6 @@ export type GameManifest = {
   /** Authored build identity; every export writes it. Editor Play's in-memory catalog has none. */
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
-  inputMappings?: ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   startupSceneGuid: string;
   gameInstanceClass?: string;
@@ -158,7 +156,6 @@ export type ExportGameOptions = {
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
-  inputMappings?: ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   bundleDebugger: boolean;
   startupSceneGuid: string;

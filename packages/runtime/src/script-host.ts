@@ -69,7 +69,7 @@ import type { InputBindingControls } from "@babylonslate/input";
 import type { TweenValueType } from "@babylonslate/core";
 import type { TweenReference, TweenRequest } from "./tween-runtime";
 import { tweenOwnerAlive } from "./tween-runtime";
-import { DelayOwnerDestroyed } from "./latent-delays";
+import { RuntimeContinuationCancelled } from "./simulation-waits";
 import { isReadOnlyTweenProperty, propertyTweenReference, tweenStorageValue } from "./tween-targets";
 import { cloneSaveGameValue, SaveGameError, type SaveGameService, type SaveGameValue,
   type SaveGameOptions, type SaveGameResult, type SaveGameInfo, type SaveGameMigration,
@@ -752,6 +752,8 @@ export class ScriptHost {
   private readonly materialReplacements = new WeakMap<BObject, Map<string, number>>();
   private readonly materialPreloads = new WeakMap<BObject, Map<string, string>>();
   private readonly boundInterfaceKeys = new WeakMap<BObject, Set<string>>();
+  /** Text components whose On Text Changed handlers are running now. */
+  private readonly textChangeDispatches = new Set<ActorComponent>();
   private readonly byClassId = new Map<string, LoadedScript[]>();
   private sourceGeneration = 0;
   /**
@@ -1008,11 +1010,12 @@ export class ScriptHost {
   }
 
   /**
-   * Report a latent script failure. A Delay cancelled because `owner` was
-   * destroyed ends that owner's graph quietly, like a cancelled tween.
+   * Report a latent script failure. A continuation cancelled because `owner`
+   * was destroyed (a counting Delay, or one Pause or a blocking load held)
+   * ends that owner's graph quietly, like a cancelled tween.
    */
   private reportLatentError(error: unknown, owner: BObject | null): void {
-    if (error instanceof DelayOwnerDestroyed && owner?.destroyed) return;
+    if (owner?.destroyed && error instanceof RuntimeContinuationCancelled && error.reason === "ownerDestroyed") return;
     this.services.reportError(error);
   }
 
@@ -2312,12 +2315,19 @@ export class ScriptHost {
     previous?: unknown,
   ): void {
     this.services.refreshComponent?.(component, name);
-    // On Text Changed fires only on a change, so a handler that writes the
-    // same text again does not re-enter itself.
-    if (name === "text" && isTextComponent(component) && value !== previous) {
-      this.fireComponentOwnerEvent(component, "onTextChanged", {
-        text: value,
-      });
+    // On Text Changed fires only on a change, and a text write from inside
+    // that component's own handler applies without firing it again, so a
+    // handler that rewrites the text cannot recurse.
+    if (name === "text" && isTextComponent(component) && value !== previous &&
+      !this.textChangeDispatches.has(component)) {
+      this.textChangeDispatches.add(component);
+      try {
+        this.fireComponentOwnerEvent(component, "onTextChanged", {
+          text: value,
+        });
+      } finally {
+        this.textChangeDispatches.delete(component);
+      }
     }
   }
 

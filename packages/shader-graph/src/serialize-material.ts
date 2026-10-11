@@ -153,7 +153,6 @@ function propertiesFromNodeData(
 
 function newNodeDefaults(type: string): Record<string, unknown> {
   if (type === "custom.glsl") return newCustomGlslProperties();
-  if (type === "input.time") return { timeMode: "seconds" };
   return {};
 }
 

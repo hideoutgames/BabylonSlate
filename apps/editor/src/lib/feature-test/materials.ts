@@ -345,7 +345,7 @@ function pulseFunction(name: string): MaterialFunctionDocument {
     [{ id: "out_value", name: "Result", type: "vec3" }],
     6,
   );
-  node(fn, "time", "input.time", 0, 1, { timeMode: "seconds" });
+  node(fn, "time", "input.time", 0, 1);
   node(fn, "rate", "math.multiply", 1, 1);
   node(fn, "wave", "math.sin", 2, 1);
   node(fn, "range", "math.remap", 3, 1, {
@@ -401,7 +401,7 @@ function surfaceMaterial(name: string, albedoGuid: string, tintGuid: string, pul
 /** Dark lit base with color bands scrolling up the mesh (UV V + time) as emissive light. */
 function emissiveMaterial(name: string): MaterialDocument {
   const doc = blankMaterial(name, "surface");
-  node(doc, "time", "input.time", 0, 0, { timeMode: "seconds" });
+  node(doc, "time", "input.time", 0, 0);
   node(doc, "speed", "param.float", 0, 1, { name: "Scroll Speed", value: [0.35] });
   node(doc, "uv", "input.uv", 0, 2);
   node(doc, "base", "param.color", 0, 4, { name: "Base Color", value: [0.05, 0.05, 0.07, 1] });
@@ -449,7 +449,7 @@ function glassMaterial(name: string): MaterialDocument {
     preview: { mesh: "sphere", customMeshGuid: null },
   });
   node(doc, "worldPosition", "input.worldPosition", 0, 0);
-  node(doc, "time", "input.time", 0, 1, { timeMode: "seconds" });
+  node(doc, "time", "input.time", 0, 1);
   node(doc, "base", "param.color", 0, 3, { name: "Base Color", value: [0.35, 0.65, 0.95, 1] });
   node(doc, "opacity", "param.float", 0, 4, { name: "Opacity", value: [0.45] });
   node(doc, "roughness", "param.float", 0, 5, { name: "Roughness", value: [0.08] });
@@ -490,7 +490,7 @@ function noiseMaskedMaterial(name: string): MaterialDocument {
     twoSided: true,
     preview: { mesh: "plane", customMeshGuid: null },
   });
-  node(doc, "time", "input.time", 0, 0, { timeMode: "seconds" });
+  node(doc, "time", "input.time", 0, 0);
   node(doc, "density", "param.float", 0, 1, { name: "Cell Density", value: [6] });
   node(doc, "cells", "noise.voronoi", 1, 0);
   node(doc, "ramp", "color.gradient", 2, 0, {
@@ -518,7 +518,7 @@ function overlayUnlitMaterial(name: string): MaterialDocument {
     preview: { mesh: "plane", customMeshGuid: null },
   });
   node(doc, "uv", "input.uv", 0, 0);
-  node(doc, "time", "input.time", 0, 1, { timeMode: "seconds" });
+  node(doc, "time", "input.time", 0, 1);
   node(doc, "speed", "param.float", 0, 2, { name: "Scroll Speed", value: [0.2] });
   node(doc, "tintColor", "param.color", 0, 3, { name: "Tint", value: [1, 1, 1, 1] });
   node(doc, "opacity", "param.float", 0, 4, { name: "Opacity", value: [0.9] });
@@ -715,7 +715,7 @@ function particleGlowMaterial(name: string): MaterialDocument {
 function textMaterial(name: string): MaterialDocument {
   const doc = blankMaterial(name, "text");
   node(doc, "uv", "input.uv", 0, 0);
-  node(doc, "time", "input.time", 0, 1, { timeMode: "seconds" });
+  node(doc, "time", "input.time", 0, 1);
   node(doc, "split", "vector.split", 1, 0);
   node(doc, "scroll", "math.multiply", 1, 1, { "default:b": [0.3] });
   node(doc, "phase", "math.add", 2, 0);
