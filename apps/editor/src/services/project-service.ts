@@ -1896,6 +1896,7 @@ export class ProjectService {
   /**
    * Set remaining writable assets' references to deleted guids to None.
    * Does not delete files — call after `deleteAsset` / `deleteFolder`.
+   * Returns the referrers whose rewrite failed; the others are repaired regardless.
    */
   async clearDeletedAssetReferences(
     deletedGuids: ReadonlySet<string>,
@@ -1903,12 +1904,13 @@ export class ProjectService {
       deletedClassNames?: ReadonlySet<string>;
       onProgress?: (path: string) => Promise<void>;
     } = {},
-  ): Promise<void> {
+  ): Promise<Array<{ path: string; error: unknown }>> {
     const registry = this.assetRegistry;
     const deletedClassNames = options.deletedClassNames ?? new Set();
-    if (!registry) return;
-    if (deletedGuids.size === 0 && deletedClassNames.size === 0) return;
+    if (!registry) return [];
+    if (deletedGuids.size === 0 && deletedClassNames.size === 0) return [];
 
+    const failed: Array<{ path: string; error: unknown }> = [];
     for (const asset of registry.list()) {
       if (deletedGuids.has(asset.header.guid)) continue;
       const root = registry.getRoot(asset.rootId);
@@ -1953,10 +1955,12 @@ export class ProjectService {
           walked.value,
           parentChanged ? { parentClass: nextParent } : undefined,
         );
-      } catch {
-        /* read-only or unreadable referrer — leave on disk */
+      } catch (error) {
+        // A pending migration or a write error keeps the dangling reference.
+        failed.push({ path: asset.path, error });
       }
     }
+    return failed;
   }
 
   private async keepExisting(paths: string[]): Promise<string[]> {

@@ -2540,7 +2540,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ) => {
       const schemas = collectGraphTypeSchemas();
       const definitionFields = (guid: string) => schemas.structs?.[guid]?.fields;
-      await projectService.clearDeletedAssetReferences(deletedGuids, {
+      const unrepaired = await projectService.clearDeletedAssetReferences(deletedGuids, {
         deletedClassNames,
         onProgress,
       });
@@ -2590,6 +2590,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         projectSaveState.current.complete(projectSave);
       }
       bump();
+      // Everything else is repaired first; the delete then reports what was not.
+      if (unrepaired.length > 0) {
+        const cause = unrepaired[0]!.error;
+        throw new Error(
+          `References to the deleted assets remain in ${unrepaired.map((entry) => entry.path).join(", ")}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          { cause },
+        );
+      }
     },
     [
       bump,

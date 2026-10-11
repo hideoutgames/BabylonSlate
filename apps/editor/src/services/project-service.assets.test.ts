@@ -1921,6 +1921,33 @@ describe("project documents as .babasset", () => {
     ).toEqual([]);
   });
 
+  it("reports a referrer it could not rewrite and still repairs the others", async () => {
+    const { storage, service } = await scaffolded();
+    await storage.writeBinary("assets/wall.babasset", await encodeAssetDocument({
+      type: "Texture", name: "wall", guid: "tex-1", version: 1, payload: { usage: "albedo" },
+    }));
+    const sprite = (name: string) => encodeAssetDocument(
+      { type: "Sprite", name, guid: `${name}-1`, version: 1, payload: { textureGuid: "tex-1", pixelsPerUnit: 100, frames: [], clips: [] } },
+      { dependencies: ["tex-1"] },
+    );
+    await storage.writeBinary("assets/stuck.sprite.babasset", await sprite("stuck"));
+    await storage.writeBinary("assets/hero.sprite.babasset", await sprite("hero"));
+    await service.remountRegistry();
+    await service.registry!.deleteAsset("tex-1");
+    const write = storage.writeBinary.bind(storage);
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      if (path.startsWith("assets/stuck")) throw new Error("Disk full");
+      return write(path, bytes);
+    });
+
+    const failed = await service.clearDeletedAssetReferences(new Set(["tex-1"]));
+    expect(failed.map((entry) => [entry.path, String(entry.error)])).toEqual([
+      ["assets/stuck.sprite.babasset", "Error: Disk full"],
+    ]);
+    expect((await service.loadDocument("sprite", "assets/hero.sprite.babasset") as { textureGuid: string | null }).textureGuid).toBeNull();
+    expect((await service.loadDocument("sprite", "assets/stuck.sprite.babasset") as { textureGuid: string | null }).textureGuid).toBe("tex-1");
+  });
+
   it("resets a Class parentClass to BObject when the parent Class is deleted", async () => {
     const { storage, service } = await scaffolded();
     const parentPath = "assets/Hero.class.babasset";
