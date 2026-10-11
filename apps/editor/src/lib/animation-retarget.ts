@@ -85,6 +85,10 @@ export async function writeRetargetedAnimations(options: {
 }): Promise<{ created: number; skipped: string[] }> {
   const skipped: string[] = [];
   const names = [...options.existingNames];
+  // Distinct names can sanitize to one file name (`Walk!` and `Walk?`), and
+  // asset paths compare without case, so each new file stem is reserved too.
+  const fileStem = (name: string) => sanitizeFileName(name).toLowerCase();
+  const usedStems = new Set(names.map(fileStem));
   let created = 0;
   const targetBytes = await options.readModelBytes(options.targetModelGuid);
   for (const source of options.sources) {
@@ -99,12 +103,17 @@ export async function writeRetargetedAnimations(options: {
       skipped.push(source.name);
       continue;
     }
-    const name = retargetedAnimationName(
+    let name = retargetedAnimationName(
       source.name,
       options.targetSkeletonName,
       names,
     );
+    while (usedStems.has(fileStem(name))) {
+      names.push(name);
+      name = retargetedAnimationName(source.name, options.targetSkeletonName, names);
+    }
     names.push(name);
+    usedStems.add(fileStem(name));
     const payload = retargetedAnimationPayload({
       source: source.payload,
       sourceGuid: source.guid,

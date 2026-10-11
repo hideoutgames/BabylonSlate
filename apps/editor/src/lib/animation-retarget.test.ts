@@ -136,4 +136,31 @@ describe("writeRetargetedAnimations", () => {
     expect(result.skipped).toEqual([]);
     expect(result.created).toBe(1);
   });
+
+  it("gives names that sanitize to the same file distinct paths", async () => {
+    const created: Array<{ path: string; name: string }> = [];
+    const source = (guid: string, name: string) => ({
+      guid,
+      name,
+      payload: normalizeAnimationPayload({ clipName: "Walk", modelGuid: "src-model", skeletonGuid: "src-skel" }),
+    });
+    await writeRetargetedAnimations({
+      sources: [source("walk-a", "Walk!"), source("walk-b", "Walk?")],
+      targetSkeletonGuid: "dst-skel",
+      targetSkeletonName: "Hero",
+      targetModelGuid: "dst-model",
+      existingNames: ["walk__hero"],
+      folderRelative: "assets",
+      rootId: "project",
+      readModelBytes: async () => new Uint8Array([1]),
+      probeMatches: async () => true,
+      createAsset: async (_rootId, relativePath, importResult) => {
+        created.push({ path: relativePath, name: importResult.name });
+      },
+    });
+    expect(created).toEqual([
+      { path: "assets/Walk__Hero_1.babasset", name: "Walk!_Hero_1" },
+      { path: "assets/Walk__Hero_2.babasset", name: "Walk?_Hero_2" },
+    ]);
+  });
 });
