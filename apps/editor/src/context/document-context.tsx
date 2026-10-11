@@ -1375,10 +1375,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     noteAssetsCreated();
   }, [noteAssetsCreated, projectService]);
 
+  /** Returns the paths whose file could not be read; their tabs keep their content. */
   const reloadDocumentsFromDisk = useCallback(
-    async (paths: string[]) => {
+    async (paths: string[]): Promise<string[]> => {
       const authoring = documentService.getAuthoringLock();
-      if (authoring.readOnly) return;
+      const failed: string[] = [];
+      if (authoring.readOnly) return failed;
       for (const path of paths) {
         const doc = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.path === path,
@@ -1389,17 +1391,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             doc.ref.kind,
             doc.ref.path,
           );
-          if (documentService.getAuthoringLock() !== authoring) return;
+          if (documentService.getAuthoringLock() !== authoring) return failed;
           documentService.replaceLoadedContent(
             doc.id,
             editorTabContentForKind(doc.ref.kind, loaded) as NonNullable<typeof doc.content>,
           );
           editSessionRef.current.dropDocument(doc.id);
-        } catch {
+        } catch (error) {
           // Deleted or unreadable on disk.
+          console.warn(`[editor] Could not reload ${path} from disk`, error);
+          failed.push(path);
         }
       }
       bump();
+      return failed;
     },
     [bump, documentService, projectService],
   );
@@ -1469,8 +1474,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const confirmExternalChangeReloadDocs = useCallback(
     async (paths: string[]) => {
       if (documentService.getAuthoringLock().readOnly) return;
-      await reloadDocumentsFromDisk(paths);
-      setExternalChangePrompt(null);
+      const failed = await reloadDocumentsFromDisk(paths);
+      // The next rescan will not report these files again, so the prompt
+      // keeps offering the ones that could not be read.
+      const keep = (list: string[]) => list.filter((path) => failed.includes(path));
+      setExternalChangePrompt((current) => !current || failed.length === 0 ? null : {
+        ...current,
+        changedPaths: keep(current.changedPaths),
+        dirtyChangedPaths: keep(current.dirtyChangedPaths),
+        cleanChangedPaths: keep(current.cleanChangedPaths),
+      });
     },
     [documentService, reloadDocumentsFromDisk],
   );
