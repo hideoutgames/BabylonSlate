@@ -104,10 +104,13 @@ export function sanitizeInspectValue(value: unknown): unknown {
 
 function visitActor(
   actor: Actor,
+  parentId: string | null,
   children: Map<string, Actor[]>,
+  visited: Set<Actor>,
   nodes: DebugInspectNode[],
   world: World,
 ): void {
+  visited.add(actor);
   const variables = sortedSanitizedVariables(actor.variables);
   nodes.push({
     id: actor.guid,
@@ -115,7 +118,7 @@ function visitActor(
     label: inspectLabel(actor.variables, actor.classId),
     classId: actor.classId,
     ancestry: world.classRegistry.ancestry(actor.classId),
-    parentId: actorParentId(actor),
+    parentId,
     transform: serializeTransform(actor.transform),
     variables,
     variableTypes: classVariableTypes(world, actor.classId, variables),
@@ -139,8 +142,32 @@ function visitActor(
     });
   }
   for (const child of children.get(actor.guid) ?? []) {
-    visitActor(child, children, nodes, world);
+    if (!visited.has(child)) visitActor(child, actorParentId(child), children, visited, nodes, world);
   }
+}
+
+/** Follows parent links from `start` until they loop; the loop's first-spawned member. */
+function firstSpawnedCycleMember(
+  start: Actor,
+  byGuid: ReadonlyMap<string, Actor>,
+  spawnOrder: ReadonlyMap<Actor, number>,
+): Actor {
+  const path: Actor[] = [];
+  const position = new Map<Actor, number>();
+  let actor = start;
+  while (!position.has(actor)) {
+    position.set(actor, path.length);
+    path.push(actor);
+    const parent = byGuid.get(actorParentId(actor) ?? "");
+    // An actor without a live parent is a root, so this never happens here.
+    if (!parent) return start;
+    actor = parent;
+  }
+  let first = actor;
+  for (const member of path.slice(position.get(actor))) {
+    if (spawnOrder.get(member)! < spawnOrder.get(first)!) first = member;
+  }
+  return first;
 }
 
 function rootObjectNode(
@@ -188,7 +215,16 @@ export function createDebugInspectSnapshot(world: World): DebugInspectSnapshot {
       roots.push(actor);
     }
   }
-  for (const root of roots) visitActor(root, children, nodes, world);
+  const visited = new Set<Actor>();
+  for (const root of roots) visitActor(root, actorParentId(root), children, visited, nodes, world);
+  // Every actor left is in, or hangs off, a parent cycle, which has no root:
+  // the cycle's first member in spawn order is listed at the top level (its
+  // parent link cut) and everything else nests under it.
+  const spawnOrder = new Map(actors.map((actor, index) => [actor, index]));
+  for (const actor of actors) {
+    if (visited.has(actor)) continue;
+    visitActor(firstSpawnedCycleMember(actor, byGuid, spawnOrder), null, children, visited, nodes, world);
+  }
 
   return {
     tickIndex: world.clock.tickIndex,

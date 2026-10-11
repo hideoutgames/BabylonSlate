@@ -55,7 +55,7 @@ Change Scene retires departing actors before replacing the main physics backend 
 
 ## Tick integration
 
-Order (from P3): `gameInstance` → `actors` → `components` → **`physics`** → `postPhysics`.
+Order (`TICK_PHASES`): `gameInstance` → `sceneSubsystems` → `actors` → `components` → **`physics`** → `postPhysics`.
 
 1. Script phases may call sync queries on the live backend.
 2. `physics` phase: `backend.step(dt)`, then write body transforms back to Actors, then `pollContacts()` (see Contact events).
