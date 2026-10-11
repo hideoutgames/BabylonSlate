@@ -310,7 +310,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     const classTab = page.locator(
       '[data-testid="document-tab"][data-document-kind="graph"]',
     );
-    // The Mannequin prefab has only its mesh row until a component is added.
+    // The scaffolded Mannequin rows use fixed ids; no prefab-component-* row exists until a component is added.
     const addedComponents = page
       .getByTestId("prefab-tree")
       .locator('[data-testid^="tree-row-prefab-component-"]');
