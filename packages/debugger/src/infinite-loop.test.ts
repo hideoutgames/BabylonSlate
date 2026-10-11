@@ -90,4 +90,93 @@ describe("instrumentJsLoops", () => {
     const out = instrumentJsLoops(source, check);
     expect(out).toBe(source);
   });
+
+  it("leaves regex literals, including ones after return, and property names alone", () => {
+    const source = [
+      `const key = Symbol.for("k");`,
+      `const looksLikeLoop = (s) => { return /while (x) {/.test(s); };`,
+      `const slashes = /[/)]while (y) {/;`,
+    ].join("\n");
+    expect(instrumentJsLoops(source, check)).toBe(source);
+  });
+
+  function run(body: string): { result: unknown; checks: number } {
+    let checks = 0;
+    const ctx = { checkInfiniteLoop: () => void (checks += 1) };
+    const result = new Function("ctx", instrumentJsLoops(body, check))(ctx) as unknown;
+    return { result, checks };
+  }
+
+  it.each([
+    {
+      name: "a loop after a postfix increment and division",
+      body: "let n = 0; n++ / 2; while (n < 4) n++; return n;",
+      result: 4,
+      checks: 3,
+    },
+    {
+      name: "a header regex whose character class holds / and )",
+      body: "let n = 0; while (/[/)]/.test('a)') && n < 2) n++; return n;",
+      result: 2,
+      checks: 2,
+    },
+    {
+      name: "an unbraced if body followed by another statement",
+      body: [
+        "let used = 0, cleaned = 0;",
+        "for (const ok of [true, false, true]) if (ok) { used++; } cleaned++;",
+        "return [used, cleaned];",
+      ].join("\n"),
+      result: [2, 1],
+      checks: 3,
+    },
+    {
+      name: "an unbraced body ended by a line break",
+      body: "let n = 3, after = 0\nwhile (n) n--\nafter++\nreturn [n, after]",
+      result: [0, 1],
+      checks: 3,
+    },
+    {
+      name: "an unbraced body before an outer else",
+      body: "let n = 2, other = 0; if (n > 5) while (n) n--; else other = 1; return [n, other];",
+      result: [2, 1],
+      checks: 0,
+    },
+    {
+      name: "a loop inside another loop's header",
+      body: [
+        "let total = 0;",
+        "for (const x of [3].map((n) => { while (n > 1) n--; return n; })) total += x;",
+        "return total;",
+      ].join("\n"),
+      result: 1,
+      checks: 3,
+    },
+    {
+      name: "do-while with a template substitution or an unbraced if/else body",
+      body: [
+        "let n = 3, s = '', odd = 0, even = 0;",
+        "do { s += `${n}`; } while (--n);",
+        "n = 3;",
+        "do if (n % 2) odd++; else even++; while (--n);",
+        "return [s, odd, even];",
+      ].join("\n"),
+      result: ["321", 2, 1],
+      checks: 6,
+    },
+  ])("guards $name without changing what runs", ({ body, result, checks }) => {
+    expect(run(body)).toEqual({ result, checks });
+  });
+
+  it("guards for await bodies", async () => {
+    let checks = 0;
+    const ctx = { checkInfiniteLoop: () => void (checks += 1) };
+    const body =
+      "return (async () => { let t = 0; for await (const x of [1, 2]) t += x; return t; })();";
+    const start = new Function("ctx", instrumentJsLoops(body, check)) as (
+      context: typeof ctx,
+    ) => Promise<number>;
+    await expect(start(ctx)).resolves.toBe(3);
+    expect(checks).toBe(2);
+  });
 });

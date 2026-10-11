@@ -51,228 +51,266 @@ export function createInfiniteLoopGuard(options: {
   };
 }
 
-const KEYWORDS = ["while", "for", "do"] as const;
+const LOOP_KEYWORDS = new Set(["while", "for", "do"]);
+
+/** Words after which `/` starts a regular expression rather than a division. */
+const REGEX_PREFIX_WORDS = new Set([
+  "await",
+  "case",
+  "delete",
+  "do",
+  "else",
+  "in",
+  "instanceof",
+  "new",
+  "return",
+  "throw",
+  "typeof",
+  "void",
+  "yield",
+]);
 
 /**
- * Insert `checkCall` at the start of every `while` / `for` / `do` body.
- * Empty `while (true);` becomes a braced body so the check still runs.
- * Strings, comments, and regex literals are left alone.
+ * Reserved words that cannot appear inside an expression, so one at bracket
+ * depth zero starts a new statement (automatic semicolon insertion).
+ */
+const STATEMENT_WORDS = new Set([
+  "break",
+  "case",
+  "catch",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "do",
+  "else",
+  "finally",
+  "for",
+  "if",
+  "return",
+  "switch",
+  "throw",
+  "try",
+  "var",
+  "while",
+  "with",
+]);
+
+type Edit = { start: number; end: number; text: string };
+
+/**
+ * Insert `checkCall` at the start of every `while` / `for` / `for await` / `do`
+ * body, including loops written inside another loop's header.
+ * A braced body gets the check after `{`, and an empty `while (true);` becomes
+ * a braced body. Any other single-statement body is prefixed with
+ * `if (check, false); else`, which runs the check every iteration without
+ * having to find where the statement ends: semicolon insertion and a following
+ * `else` keep their meaning.
+ * Strings, comments, template text, and regex literals are left alone.
  */
 export function instrumentJsLoops(source: string, checkCall: string): string {
-  const check = checkCall.trim().endsWith(";")
-    ? checkCall.trim()
-    : `${checkCall.trim()};`;
+  const call = checkCall.trim().replace(/[\s;]+$/, "");
+  const check = `${call};`;
   const code = classifyCode(source);
-  const skipWhileAt = new Set<number>();
-  const edits: Array<{ start: number; end: number; text: string }> = [];
+  const doTrailers = new Set<number>();
+  const edits: Edit[] = [];
 
   let i = 0;
   while (i < source.length) {
-    if (!code[i]) {
+    const word = wordAt(source, code, i);
+    if (!word) {
       i += 1;
       continue;
     }
-    const keyword = matchKeywordAt(source, code, i);
-    if (!keyword) {
-      i += 1;
-      continue;
-    }
-    if (keyword === "while" && skipWhileAt.has(i)) {
-      i += keyword.length;
-      continue;
-    }
-
-    if (keyword === "do") {
-      const afterDo = skipWs(source, code, i + 2);
-      const body = parseStatement(source, code, afterDo, check, edits);
-      if (!body) {
-        i += 2;
-        continue;
+    if (LOOP_KEYWORDS.has(word) && !isPropertyName(source, code, i)) {
+      if (word === "do") {
+        const bodyStart = skipWs(source, code, i + 2);
+        if (source[bodyStart] !== ":") {
+          guardBody(source, bodyStart, call, check, edits);
+          const trailer = skipWs(
+            source,
+            code,
+            statementEnd(source, code, bodyStart),
+          );
+          if (wordAt(source, code, trailer) === "while") doTrailers.add(trailer);
+        }
+      } else if (!doTrailers.has(i)) {
+        const close = loopHeaderClose(source, code, i, word);
+        if (close >= 0) {
+          guardBody(source, skipWs(source, code, close + 1), call, check, edits);
+        }
       }
-      const afterBody = skipWs(source, code, body.end);
-      if (matchKeywordAt(source, code, afterBody) === "while") {
-        skipWhileAt.add(afterBody);
-      }
-      i = afterDo;
-      continue;
     }
-
-    const afterKw = skipWs(source, code, i + keyword.length);
-    if (source[afterKw] !== "(") {
-      i += keyword.length;
-      continue;
-    }
-    const closeParen = matchDelim(source, code, afterKw, "(", ")");
-    if (closeParen < 0) {
-      i += keyword.length;
-      continue;
-    }
-    const bodyStart = skipWs(source, code, closeParen + 1);
-    const body = parseStatement(source, code, bodyStart, check, edits);
-    i = body ? bodyStart : i + keyword.length;
+    // Keep scanning through the header and body so nested loops are guarded.
+    i += word.length;
   }
 
   return applyEdits(source, edits);
 }
 
-function parseStatement(
+function guardBody(
   source: string,
-  code: boolean[],
   start: number,
+  call: string,
   check: string,
-  edits: Array<{ start: number; end: number; text: string }>,
-): { end: number } | null {
-  if (start >= source.length) return null;
+  edits: Edit[],
+): void {
+  if (start >= source.length) return;
   if (source[start] === "{") {
     edits.push({ start: start + 1, end: start + 1, text: ` ${check} ` });
-    const close = matchDelim(source, code, start, "{", "}");
-    return close >= 0 ? { end: close + 1 } : { end: start + 1 };
-  }
-  if (source[start] === ";") {
+  } else if (source[start] === ";") {
     edits.push({ start, end: start + 1, text: `{ ${check} }` });
-    return { end: start + 1 };
+  } else {
+    edits.push({ start, end: start, text: `if (${call}, false); else ` });
   }
-  const nested = matchKeywordAt(source, code, start);
-  if (nested === "while" || nested === "for" || nested === "do") {
-    edits.push({ start, end: start, text: `{ ${check} ` });
-    const nestedEnd = skipNestedStatement(source, code, start);
-    if (nestedEnd > start) {
-      edits.push({ start: nestedEnd, end: nestedEnd, text: " }" });
-      return { end: nestedEnd };
-    }
-  }
-  const end = scanSimpleStatement(source, code, start);
-  if (end <= start) return { end: start };
-  edits.push({
-    start,
-    end,
-    text: `{ ${check} ${source.slice(start, end)} }`,
-  });
-  return { end };
 }
 
-function skipNestedStatement(
+/** Index of the `)` closing a `while (` / `for (` / `for await (` header, or -1. */
+function loopHeaderClose(
   source: string,
   code: boolean[],
   start: number,
+  keyword: string,
 ): number {
-  const keyword = matchKeywordAt(source, code, start);
-  if (keyword === "do") {
-    const afterDo = skipWs(source, code, start + 2);
-    const bodyEnd = statementExtent(source, code, afterDo);
-    const afterBody = skipWs(source, code, bodyEnd);
-    if (matchKeywordAt(source, code, afterBody) === "while") {
-      const afterWhile = skipWs(source, code, afterBody + 5);
-      if (source[afterWhile] === "(") {
-        const close = matchDelim(source, code, afterWhile, "(", ")");
-        if (close >= 0) {
-          const semi = skipWs(source, code, close + 1);
-          return source[semi] === ";" ? semi + 1 : close + 1;
+  let open = skipWs(source, code, start + keyword.length);
+  if (keyword === "for" && wordAt(source, code, open) === "await") {
+    open = skipWs(source, code, open + 5);
+  }
+  return matchDelim(source, code, open, "(", ")");
+}
+
+/**
+ * Index just past the statement that starts at `start`; used to find the
+ * `while` that ends a `do` body. An expression statement ends at `;`, before
+ * the enclosing `}`, or before a reserved word that only starts statements.
+ */
+function statementEnd(source: string, code: boolean[], start: number): number {
+  if (start >= source.length) return source.length;
+  const after = (index: number) => skipWs(source, code, index);
+  const parenEnd = (index: number) => {
+    const close = matchDelim(source, code, after(index), "(", ")");
+    return close < 0 ? -1 : close + 1;
+  };
+  const blockEnd = (index: number) => {
+    const close = matchDelim(source, code, after(index), "{", "}");
+    return close < 0 ? source.length : close + 1;
+  };
+  if (source[start] === "{") return blockEnd(start);
+  if (source[start] === ";") return start + 1;
+  const word = wordAt(source, code, start);
+  switch (word) {
+    case "if": {
+      const header = parenEnd(start + 2);
+      if (header < 0) break;
+      const thenEnd = statementEnd(source, code, after(header));
+      const next = after(thenEnd);
+      return wordAt(source, code, next) === "else"
+        ? statementEnd(source, code, after(next + 4))
+        : thenEnd;
+    }
+    case "for":
+    case "while": {
+      const close = loopHeaderClose(source, code, start, word);
+      if (close < 0) break;
+      return statementEnd(source, code, after(close + 1));
+    }
+    case "do": {
+      const bodyEnd = statementEnd(source, code, after(start + 2));
+      const trailer = after(bodyEnd);
+      if (wordAt(source, code, trailer) !== "while") return bodyEnd;
+      const header = parenEnd(trailer + 5);
+      if (header < 0) return bodyEnd;
+      const semicolon = after(header);
+      return source[semicolon] === ";" ? semicolon + 1 : header;
+    }
+    case "switch": {
+      const header = parenEnd(start + 6);
+      if (header < 0) break;
+      return blockEnd(header);
+    }
+    case "try": {
+      let end = blockEnd(start + 3);
+      let next = after(end);
+      if (wordAt(source, code, next) === "catch") {
+        const param = parenEnd(next + 5);
+        end = blockEnd(param < 0 ? next + 5 : param);
+        next = after(end);
+      }
+      if (wordAt(source, code, next) === "finally") end = blockEnd(next + 7);
+      return end;
+    }
+    default: {
+      if (word && !STATEMENT_WORDS.has(word)) {
+        const colon = after(start + word.length);
+        if (source[colon] === ":") {
+          return statementEnd(source, code, after(colon + 1));
         }
       }
     }
-    return bodyEnd;
   }
-  if (keyword === "while" || keyword === "for") {
-    const afterKw = skipWs(source, code, start + keyword.length);
-    if (source[afterKw] !== "(") return start;
-    const close = matchDelim(source, code, afterKw, "(", ")");
-    if (close < 0) return start;
-    return statementExtent(source, code, skipWs(source, code, close + 1));
-  }
-  return start;
+  return simpleStatementEnd(source, code, start);
 }
 
-function statementExtent(
+function simpleStatementEnd(
   source: string,
   code: boolean[],
   start: number,
 ): number {
-  if (source[start] === "{") {
-    const close = matchDelim(source, code, start, "{", "}");
-    return close >= 0 ? close + 1 : start + 1;
-  }
-  if (source[start] === ";") return start + 1;
-  const nested = matchKeywordAt(source, code, start);
-  if (nested === "while" || nested === "for" || nested === "do") {
-    return skipNestedStatement(source, code, start);
-  }
-  return scanSimpleStatement(source, code, start);
-}
-
-function scanSimpleStatement(
-  source: string,
-  code: boolean[],
-  start: number,
-): number {
-  let i = start;
-  let paren = 0;
-  let brace = 0;
-  let bracket = 0;
-  while (i < source.length) {
-    if (!code[i]) {
-      i += 1;
-      continue;
-    }
+  let depth = 0;
+  for (let i = start; i < source.length; i++) {
+    if (!code[i]) continue;
     const ch = source[i]!;
-    if (ch === "(") paren += 1;
-    else if (ch === ")" && paren > 0) paren -= 1;
-    else if (ch === "{") brace += 1;
-    else if (ch === "}" && brace > 0) brace -= 1;
-    else if (ch === "[") bracket += 1;
-    else if (ch === "]" && bracket > 0) bracket -= 1;
-    else if (
-      ch === ";" &&
-      paren === 0 &&
-      brace === 0 &&
-      bracket === 0
-    ) {
-      return i + 1;
+    if (ch === "(" || ch === "[" || ch === "{") {
+      depth += 1;
+    } else if (ch === ")" || ch === "]" || ch === "}") {
+      if (depth === 0) return i;
+      depth -= 1;
+    } else if (depth === 0) {
+      if (ch === ";") return i + 1;
+      if (i > start) {
+        const word = wordAt(source, code, i);
+        if (
+          word &&
+          STATEMENT_WORDS.has(word) &&
+          !isPropertyName(source, code, i)
+        ) {
+          return i;
+        }
+      }
     }
-    i += 1;
   }
   return source.length;
 }
 
-function matchKeywordAt(
-  source: string,
-  code: boolean[],
-  i: number,
-): (typeof KEYWORDS)[number] | null {
-  if (!code[i]) return null;
+/** The identifier or keyword that starts at `i`, or null mid-word / outside code. */
+function wordAt(source: string, code: boolean[], i: number): string | null {
+  if (!code[i] || !isIdentChar(source[i]!)) return null;
   if (i > 0 && code[i - 1] && isIdentChar(source[i - 1]!)) return null;
-  for (const keyword of KEYWORDS) {
-    if (!source.startsWith(keyword, i)) continue;
-    const end = i + keyword.length;
-    if (end < source.length && code[end] && isIdentChar(source[end]!)) {
-      continue;
-    }
-    for (let k = 0; k < keyword.length; k++) {
-      if (!code[i + k]) return null;
-    }
-    return keyword;
+  let end = i + 1;
+  while (end < source.length && code[end] && isIdentChar(source[end]!)) {
+    end += 1;
   }
-  return null;
+  return source.slice(i, end);
+}
+
+/** `x.for(...)` / `obs.do(...)`: a word after `.` names a property. */
+function isPropertyName(source: string, code: boolean[], i: number): boolean {
+  let p = i - 1;
+  while (p >= 0 && (!code[p] || isSpace(source[p]!))) p -= 1;
+  return p >= 0 && source[p] === ".";
 }
 
 function isIdentChar(ch: string): boolean {
-  return /[A-Za-z0-9_$]/.test(ch);
+  return /[\p{ID_Continue}$]/u.test(ch);
+}
+
+function isSpace(ch: string): boolean {
+  return /\s/.test(ch);
 }
 
 function skipWs(source: string, code: boolean[], i: number): number {
   let n = i;
-  while (n < source.length) {
-    if (!code[n]) {
-      n += 1;
-      continue;
-    }
-    const ch = source[n]!;
-    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
-      n += 1;
-      continue;
-    }
-    break;
-  }
+  while (n < source.length && (!code[n] || isSpace(source[n]!))) n += 1;
   return n;
 }
 
@@ -283,7 +321,7 @@ function matchDelim(
   open: string,
   close: string,
 ): number {
-  if (source[openIndex] !== open) return -1;
+  if (source[openIndex] !== open || !code[openIndex]) return -1;
   let depth = 0;
   for (let i = openIndex; i < source.length; i++) {
     if (!code[i]) continue;
@@ -296,10 +334,7 @@ function matchDelim(
   return -1;
 }
 
-function applyEdits(
-  source: string,
-  edits: Array<{ start: number; end: number; text: string }>,
-): string {
+function applyEdits(source: string, edits: Edit[]): string {
   if (edits.length === 0) return source;
   const ordered = [...edits].sort((a, b) => b.start - a.start || b.end - a.end);
   let out = source;
@@ -316,12 +351,19 @@ type Mode =
   | { k: "sq" }
   | { k: "dq" }
   | { k: "template" }
-  | { k: "regex" };
+  | { k: "regex"; inClass: boolean };
 
+/**
+ * Marks the characters that are code: not inside a string, comment, template
+ * text, or regex literal. `/` divides after an operand (a name or literal other
+ * than a keyword such as `return`, `)`, `]`, `}`, or postfix `++` / `--`) and
+ * starts a regex anywhere else.
+ */
 function classifyCode(source: string): boolean[] {
   const code = Array<boolean>(source.length).fill(false);
   const stack: Mode[] = [{ k: "code", braces: 0 }];
   let lastOperand = false;
+  let afterDot = false;
   let i = 0;
   while (i < source.length) {
     const mode = stack[stack.length - 1]!;
@@ -342,21 +384,12 @@ function classifyCode(source: string): boolean[] {
       i += 1;
       continue;
     }
-    if (mode.k === "sq") {
+    if (mode.k === "sq" || mode.k === "dq") {
       if (ch === "\\") {
         i += 2;
         continue;
       }
-      if (ch === "'") stack.pop();
-      i += 1;
-      continue;
-    }
-    if (mode.k === "dq") {
-      if (ch === "\\") {
-        i += 2;
-        continue;
-      }
-      if (ch === '"') stack.pop();
+      if (ch === (mode.k === "sq" ? "'" : '"')) stack.pop();
       i += 1;
       continue;
     }
@@ -371,7 +404,11 @@ function classifyCode(source: string): boolean[] {
         continue;
       }
       if (ch === "$" && next === "{") {
+        // The `{` is code so it balances the `}` that ends the substitution.
+        code[i + 1] = true;
         stack.push({ k: "code", braces: 1 });
+        lastOperand = false;
+        afterDot = false;
         i += 2;
         continue;
       }
@@ -383,71 +420,76 @@ function classifyCode(source: string): boolean[] {
         i += 2;
         continue;
       }
-      if (ch === "/") stack.pop();
+      // A regex literal cannot span lines; recover from a misread division.
+      if (ch === "\n" || ch === "\r") {
+        stack.pop();
+        continue;
+      }
+      if (ch === "[") mode.inClass = true;
+      else if (ch === "]") mode.inClass = false;
+      else if (ch === "/" && !mode.inClass) stack.pop();
       i += 1;
       continue;
     }
 
+    if (ch === "/" && (next === "/" || next === "*")) {
+      stack.push({ k: next === "/" ? "line" : "block" });
+      i += 2;
+      continue;
+    }
     code[i] = true;
-    if (ch === "/" && next === "/") {
-      code[i] = false;
-      stack.push({ k: "line" });
-      i += 1;
-      continue;
-    }
-    if (ch === "/" && next === "*") {
-      code[i] = false;
-      stack.push({ k: "block" });
-      i += 1;
-      continue;
-    }
     if (ch === "/" && !lastOperand) {
-      stack.push({ k: "regex" });
+      stack.push({ k: "regex", inClass: false });
       lastOperand = true;
+      afterDot = false;
       i += 1;
       continue;
     }
-    if (ch === "'") {
-      stack.push({ k: "sq" });
+    if (ch === "'" || ch === '"' || ch === "`") {
+      stack.push({ k: ch === "'" ? "sq" : ch === '"' ? "dq" : "template" });
       lastOperand = true;
+      afterDot = false;
       i += 1;
       continue;
     }
-    if (ch === '"') {
-      stack.push({ k: "dq" });
-      lastOperand = true;
-      i += 1;
-      continue;
-    }
-    if (ch === "`") {
-      stack.push({ k: "template" });
-      lastOperand = true;
-      i += 1;
+    if (isIdentChar(ch)) {
+      let end = i + 1;
+      while (end < source.length && isIdentChar(source[end]!)) end += 1;
+      code.fill(true, i, end);
+      lastOperand = afterDot || !REGEX_PREFIX_WORDS.has(source.slice(i, end));
+      afterDot = false;
+      i = end;
       continue;
     }
     if (ch === "{") {
       mode.braces += 1;
       lastOperand = false;
+      afterDot = false;
       i += 1;
       continue;
     }
     if (ch === "}") {
       if (mode.braces > 0) mode.braces -= 1;
-      if (mode.braces === 0 && stack.length > 1) {
-        stack.pop();
-        lastOperand = true;
-        i += 1;
-        continue;
-      }
+      if (mode.braces === 0 && stack.length > 1) stack.pop();
       lastOperand = true;
+      afterDot = false;
       i += 1;
       continue;
     }
-    if (/\s/.test(ch)) {
+    if (isSpace(ch)) {
       i += 1;
       continue;
     }
-    lastOperand = /[A-Za-z0-9_$)\]']/.test(ch);
+    if ((ch === "+" || ch === "-") && next === ch) {
+      // Postfix `++` / `--` ends an operand; a prefix one precedes an operand.
+      code[i + 1] = true;
+      lastOperand = true;
+      afterDot = false;
+      i += 2;
+      continue;
+    }
+    lastOperand = ch === ")" || ch === "]";
+    afterDot = ch === ".";
     i += 1;
   }
   return code;
