@@ -24,7 +24,7 @@ The asset registry is **header-only** ([asset-registry.md](asset-registry.md)): 
 
 Out of v1: ExecuteJavaScript `body` text, binary payloads, on-disk search cache.
 
-`ProjectSearchIndex` reads document chunks from the asset’s **root** storage (`registry.storageFor(rootId)`), so enabled plugin Scene/Class documents are searchable. Disabled plugins are unmounted and absent from the index.
+`ProjectSearchIndex` reads document chunks from the asset’s **root** storage (`registry.storageFor(rootId)`), so enabled plugin Scene/Class documents are searchable. Disabled plugins are unmounted and absent from the index. `readStoredAssetDocument` range-reads only the header and the `document` chunk, so a Scene's navmesh or reverb bake is never read, and nothing is charged to the registry's payload account.
 
 ## Lifecycle
 

@@ -47,7 +47,7 @@ Scenes and Class logic graphs are `.babasset` files under `assets/` (`assets/mai
 
 Projects authored before this move still load: `ProjectService` reads a `.json` document as an unversioned-or-versioned payload and writes it back in the same format. Nothing rewrites a legacy file into a container behind the user's back.
 
-Scene payloads use schema version 4 for automatic versus manual local-shadow capacity. New Scene headers and migrated legacy JSON saves carry that version; legacy saves retain the existing explicit migration approval flow.
+Scene payloads are at schema version 4. Older Scene versions step up without payload changes (`normalizeScene` fills current defaults), still through the explicit migration approval flow.
 
 ### Modes
 
@@ -93,7 +93,7 @@ App-private storage keyed by project guid: compiled scripts, thumbnails, import 
 ## Schema migration
 
 - Each asset type owns ordered migrations `N → N+1`, applied on load.
-- Future (unknown) versions refuse with a clear message **when a chain is registered**. Types with no chain (Font / Sprite / AnimationGraph / Shader) pass through so a version-1 document is not treated as “newer than current 0”.
+- Future (unknown) versions refuse with a clear message **when a chain is registered**. Types with no chain (Font / Sprite / AnimationGraph) pass through so a version-1 document is not treated as “newer than current 0”.
 - Opening a project that needs migration prompts once; migrate-on-save; never silently rewrite untouched files. `ProjectService.saveDocument` / `saveProject` refuse a pending path until `approveMigrateOnSave()`. Pending migrations list each path once; loading an unmigrated asset again replaces its entry.
 - Golden fixtures: one committed `.babasset` per historical version per type — `graph-v0.babasset` (payload in header), `scene-v0.babasset` (payload in the document chunk, the shape the editor writes), `graph-v1.babasset` at current.
 - The project manifest (`project.json`) migrates as type `Project` on load and is gated by the same approval.

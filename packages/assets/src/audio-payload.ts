@@ -245,8 +245,10 @@ export function pickWeightedAudioClip(
 ): AudioClipPayload {
   const list = clips.length > 0 ? clips : [defaultAudioClip()];
   const total = list.reduce((sum, clip) => sum + Math.max(0, clip.weight), 0);
-  if (total <= 0) return list[0]!;
-  const sample = Math.min(0.999999, Math.max(0, random())) * total;
+  const unit = Math.min(0.999999, Math.max(0, random()));
+  // All-zero weights are equal weights.
+  if (total <= 0) return list[Math.floor(unit * list.length)]!;
+  const sample = unit * total;
   let cursor = 0;
   for (const clip of list) {
     cursor += Math.max(0, clip.weight);
@@ -524,14 +526,19 @@ export function validateAudioMixer(
   return { ok: diagnostics.length === 0, diagnostics };
 }
 
+/**
+ * True when `start` lies on a parent cycle: its parent chain returns to it.
+ * A channel whose chain only leads into a cycle is not on it, and keeps its
+ * own parent.
+ */
 export function audioChannelHasParentCycle(
   parents: ReadonlyMap<string, string | null>,
   start: string,
 ): boolean {
   const seen = new Set<string>();
-  let current: string | null | undefined = start;
-  while (current) {
-    if (seen.has(current)) return true;
+  let current: string | null | undefined = parents.get(start) ?? null;
+  while (current && !seen.has(current)) {
+    if (current === start) return true;
     seen.add(current);
     current = parents.get(current) ?? null;
   }
@@ -799,41 +806,6 @@ export function attenuationPlotPoints(
     });
   }
   return points;
-}
-
-export function remapAudioPayloadGuids(
-  assetType: string,
-  payload: Record<string, unknown>,
-  remap: ReadonlyMap<string, string>,
-): Record<string, unknown> {
-  const rewrite = (guid: string | null): string | null =>
-    guid ? (remap.get(guid) ?? guid) : null;
-  if (assetType === "Audio") {
-    const audio = normalizeAudioPayload(payload);
-    return {
-      ...audio,
-      audioChannelGuid: rewrite(audio.audioChannelGuid),
-      soundAttenuationGuid: rewrite(audio.soundAttenuationGuid),
-    };
-  }
-  if (assetType === "AudioMixer") {
-    const mixer = normalizeAudioMixerPayload(payload);
-    return {
-      ...mixer,
-      channels: mixer.channels.map((entry) => ({
-        ...entry,
-        channelGuid: rewrite(entry.channelGuid) ?? entry.channelGuid,
-      })),
-    };
-  }
-  if (assetType === "AudioChannel") {
-    const channel = normalizeAudioChannelPayload(payload);
-    return {
-      ...channel,
-      parentChannelGuid: rewrite(channel.parentChannelGuid),
-    };
-  }
-  return payload;
 }
 
 const PACKED_AUDIO_MAGIC = new Uint8Array([0x42, 0x53, 0x41, 0x55]); // BSAU

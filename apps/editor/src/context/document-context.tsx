@@ -2195,11 +2195,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       const list = await projectService.listExportAssets(
         new Set(pluginGraph.order.map((plugin) => plugin.pluginGuid)),
-        Object.fromEntries(pluginGraph.order.map((plugin) => [plugin.pluginGuid, {
-          ...projectPluginOverrides[plugin.pluginGuid],
-          ...preset.pluginOverrides[plugin.pluginGuid],
-          enabled: true,
-        }])),
       );
       const playerFiles = options?.playerFiles ?? (await loadPlayerDistFiles());
       const loaded = await loadExportDocuments({

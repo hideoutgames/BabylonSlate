@@ -32,19 +32,6 @@ export function normalizeSkeletonPayload(value: unknown): SkeletonPayload {
   };
 }
 
-export function remapSkeletonPayloadGuids(
-  assetType: string,
-  payload: Record<string, unknown>,
-  remap: ReadonlyMap<string, string>,
-): Record<string, unknown> {
-  if (assetType !== "Skeleton") return payload;
-  const skeleton = normalizeSkeletonPayload(payload);
-  return {
-    ...skeleton,
-    modelGuid: remap.get(skeleton.modelGuid) ?? skeleton.modelGuid,
-  };
-}
-
 export function skeletonAssetGuids(payload: unknown): string[] {
   const guid = normalizeSkeletonPayload(payload).modelGuid;
   return guid ? [guid] : [];

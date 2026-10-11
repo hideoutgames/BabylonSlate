@@ -1258,7 +1258,7 @@ describe("createPlayMesh", () => {
     const binding = createSnapshotSceneBinding();
     binding.pixelPerfect = true;
     binding.pixelsPerUnit = 100;
-    const map = setTile({ ...createDefaultTilemapPayload(), tilesetGuid: "atlas" }, "layer-1", 0, 0, 1);
+    const map = setTile({ ...createDefaultTilemapPayload(), tilesets: [{ guid: "atlas", firstGid: 1, tileCount: 1 }] }, "layer-1", 0, 0, 1);
     // Parallax 0 is screen-locked: the layer offset equals the camera position.
     binding.tilemaps = new Map([["map", { ...map, layers: map.layers.map((layer) => ({ ...layer, parallax: { x: 0, y: 0 } })) }]]);
     binding.tilesets = new Map([["atlas", normalizeTilesetPayload({})]]);

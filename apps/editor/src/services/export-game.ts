@@ -159,13 +159,7 @@ export function resolveExportPluginGraph(
       preset.pluginOverrides[plugin.pluginGuid]?.enabled,
     ),
   );
-  const graph = resolvePluginGraph(enabled, undefined, Object.fromEntries(
-    enabled.map((plugin) => [plugin.pluginGuid, {
-      ...projectOverrides[plugin.pluginGuid],
-      ...preset.pluginOverrides[plugin.pluginGuid],
-      enabled: true,
-    }]),
-  ));
+  const graph = resolvePluginGraph(enabled);
   const name = (guid: string | undefined) =>
     plugins.find((plugin) => plugin.pluginGuid === guid)?.settings
       .displayName ??

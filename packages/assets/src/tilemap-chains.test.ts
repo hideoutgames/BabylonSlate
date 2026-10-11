@@ -135,12 +135,13 @@ describe("tilemapChunkChains", () => {
 });
 
 describe("tilemapCollisionChains", () => {
-  it("collects collision-layer chunks across a tilemap", () => {
+  it("merges a collision layer's floor across chunk borders and skips other layers", () => {
     const tileset = fullTileset();
-    const tiles = emptyChunkTiles(2);
-    tiles[0] = 1;
+    // The bottom row of two side-by-side 2x2 chunks.
+    const floor = emptyChunkTiles(2);
+    floor[0] = 1;
+    floor[1] = 1;
     const map = normalizeTilemapPayload({
-      tilesetGuid: "set",
       tileWidth: 1,
       tileHeight: 1,
       chunkSize: 2,
@@ -149,18 +150,23 @@ describe("tilemapCollisionChains", () => {
           id: "ground",
           name: "Ground",
           collision: true,
-          chunks: [{ cx: 0, cy: 0, tiles }],
+          chunks: [{ cx: 0, cy: 0, tiles: floor }, { cx: 1, cy: 0, tiles: floor }],
         },
         {
           id: "deco",
           name: "Deco",
           collision: false,
-          chunks: [{ cx: 0, cy: 0, tiles }],
+          chunks: [{ cx: 0, cy: 3, tiles: floor }],
         },
       ],
     });
-    const chains = tilemapCollisionChains(map, tileset, 1, 1);
-    expect(chains.length).toBeGreaterThan(0);
+    const chains = tilemapCollisionChains(map, tileset, 0.5, 0.5);
+    expect(chains).toHaveLength(1);
+    expect(chains[0]!.loop).toBe(true);
+    expect(chains[0]!.points).toHaveLength(4);
+    const xs = chains[0]!.points.map((point) => point.x);
+    const ys = chains[0]!.points.map((point) => point.y);
+    expect([Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]).toEqual([0, 2, 0, 0.5]);
   });
 
   it("resolves collision from the tileset that owns each GID", () => {

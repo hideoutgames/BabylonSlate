@@ -6,18 +6,18 @@ import { projectContentRoot } from "./content-root";
 import { AssetRegistry, type IndexedAsset } from "./registry";
 import { ProjectSearchIndex } from "./search-index";
 
-const decodeAssetDocument = vi.hoisted(() => vi.fn());
+const readStoredAssetDocument = vi.hoisted(() => vi.fn());
 
 vi.mock("./asset-document", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./asset-document")>();
-  decodeAssetDocument.mockImplementation((...args: unknown[]) =>
+  readStoredAssetDocument.mockImplementation((...args: unknown[]) =>
     (
-      actual.decodeAssetDocument as (
+      actual.readStoredAssetDocument as (
         ...inner: unknown[]
-      ) => ReturnType<typeof actual.decodeAssetDocument>
+      ) => ReturnType<typeof actual.readStoredAssetDocument>
     )(...args),
   );
-  return { ...actual, decodeAssetDocument };
+  return { ...actual, readStoredAssetDocument };
 });
 
 async function createStorage(): Promise<MemoryStorageAdapter> {
@@ -380,6 +380,30 @@ describe("ProjectSearchIndex", () => {
     expect(hits.some((hit) => hit.label === "StarterActor")).toBe(true);
   });
 
+  it("reads a Scene's header and document chunk, never its bakes", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    const bake = new Uint8Array(256 * 1024);
+    await storage.writeBinary("assets/baked.scene.babasset", await encodeAssetDocument(
+      {
+        type: "Scene", name: "Baked", guid: "baked", version: 1,
+        payload: { actors: [{ id: "actor-1", name: "BakedHero", classId: "Actor", components: [] }] },
+      },
+      { extraChunks: [{ id: "audioReverb", kind: "audioReverb", mime: "application/octet-stream", data: bake }] },
+    ));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const whole = vi.spyOn(storage, "readBinary");
+    const ranges = vi.spyOn(storage, "readBinaryRange");
+    const index = new ProjectSearchIndex(storage);
+    await index.rebuild(registry);
+    expect(index.query("BakedHero").some((hit) => hit.kind === "actor")).toBe(true);
+    expect(whole).not.toHaveBeenCalled();
+    const requested = ranges.mock.calls.reduce((sum, call) => sum + (call[2] as number), 0);
+    expect(requested).toBeLessThan(bake.byteLength);
+    expect(registry.accountedPayloadBytes).toBe(0);
+  });
+
   it("does not decode Scene or Class chunks until rebuild", async () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
@@ -415,16 +439,16 @@ describe("ProjectSearchIndex", () => {
     }
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
-    expect(decodeAssetDocument).not.toHaveBeenCalled();
+    expect(readStoredAssetDocument).not.toHaveBeenCalled();
 
     const index = new ProjectSearchIndex(storage);
     expect(index.size).toBe(0);
     expect(index.query("hero0")).toEqual([]);
     expect(index.query("node1")).toEqual([]);
-    expect(decodeAssetDocument).not.toHaveBeenCalled();
+    expect(readStoredAssetDocument).not.toHaveBeenCalled();
 
     await index.rebuild(registry);
-    expect(decodeAssetDocument.mock.calls.length).toBe(2);
+    expect(readStoredAssetDocument.mock.calls.length).toBe(2);
     expect(
       index.query("hero0").some((hit) => hit.kind === "actor"),
     ).toBe(true);
@@ -549,11 +573,11 @@ describe("ProjectSearchIndex", () => {
     let finishRead!: () => void;
     const started = new Promise<void>((resolve) => { startRead = resolve; });
     const held = new Promise<void>((resolve) => { finishRead = resolve; });
-    const read = storage.readBinary.bind(storage);
-    vi.spyOn(storage, "readBinary").mockImplementationOnce(async (file) => {
+    const read = storage.readBinaryRange.bind(storage);
+    vi.spyOn(storage, "readBinaryRange").mockImplementationOnce(async (...args) => {
       startRead();
       await held;
-      return read(file);
+      return read(...args);
     });
     const controller = new AbortController();
     const older = index.rebuild(registry, { signal: controller.signal });
@@ -609,7 +633,7 @@ describe("ProjectSearchIndex", () => {
 });
 
 afterEach(() => {
-  decodeAssetDocument.mockClear();
+  readStoredAssetDocument.mockClear();
 });
 
 describe("ProjectSearchIndex ranking", () => {

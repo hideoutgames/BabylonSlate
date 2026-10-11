@@ -401,29 +401,26 @@ export function fitSourceIntoSkyboxNet(
   const destY = destPlacement.y * netHeight;
   const scaleX = destWidth / sourceWidth;
   const scaleY = destHeight / sourceHeight;
-  const net = new Uint8Array(netWidth * netHeight * 4);
-
-  for (let ny = 0; ny < netHeight; ny++) {
-    for (let nx = 0; nx < netWidth; nx++) {
-      const destIndex = (ny * netWidth + nx) * 4;
-      const inside =
-        nx >= destX &&
-        nx < destX + destWidth &&
-        ny >= destY &&
-        ny < destY + destHeight;
-      if (!inside || scaleX <= 0 || scaleY <= 0) {
-        fillPixel(net, destIndex, LETTERBOX);
-        continue;
-      }
-      const sx = Math.floor((nx - destX) / scaleX);
-      const sy = Math.floor((ny - destY) / scaleY);
-      if (sx < 0 || sy < 0 || sx >= sourceWidth || sy >= sourceHeight) {
-        fillPixel(net, destIndex, LETTERBOX);
-        continue;
-      }
-      copyPixel(net, destIndex, rgba, (sy * sourceWidth + sx) * 4);
+  // Sample each face's cells straight from the source: the net's other six
+  // cells are never read, so the full 4 x 3 net is not built.
+  const sampleNet = (target: Uint8Array, targetIndex: number, nx: number, ny: number) => {
+    const inside =
+      nx >= destX &&
+      nx < destX + destWidth &&
+      ny >= destY &&
+      ny < destY + destHeight;
+    if (!inside || scaleX <= 0 || scaleY <= 0) {
+      fillPixel(target, targetIndex, LETTERBOX);
+      return;
     }
-  }
+    const sx = Math.floor((nx - destX) / scaleX);
+    const sy = Math.floor((ny - destY) / scaleY);
+    if (sx < 0 || sy < 0 || sx >= sourceWidth || sy >= sourceHeight) {
+      fillPixel(target, targetIndex, LETTERBOX);
+      return;
+    }
+    copyPixel(target, targetIndex, rgba, (sy * sourceWidth + sx) * 4);
+  };
 
   const faces = emptySkyboxFaces() as unknown as Record<
     SkyboxFaceKey,
@@ -437,12 +434,7 @@ export function fitSourceIntoSkyboxNet(
     const originY = cell.row * faceSize;
     for (let y = 0; y < faceSize; y++) {
       for (let x = 0; x < faceSize; x++) {
-        copyPixel(
-          face,
-          (y * faceSize + x) * 4,
-          net,
-          ((originY + y) * netWidth + (originX + x)) * 4,
-        );
+        sampleNet(face, (y * faceSize + x) * 4, originX + x, originY + y);
       }
     }
     faces[key] = { key, compass, size: faceSize, rgba: face };

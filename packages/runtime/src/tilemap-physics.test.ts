@@ -16,7 +16,7 @@ describe("tilemap chain colliders", () => {
     let tilemap = createDefaultTilemapPayload();
     tilemap = {
       ...tilemap,
-      tilesetGuid: "tileset-1",
+      tilesets: [{ guid: "tileset-1", firstGid: 1, tileCount: 1 }],
       tileWidth: 16,
       tileHeight: 16,
     };
@@ -96,7 +96,7 @@ describe("tilemap chain colliders", () => {
     let tilemap = createDefaultTilemapPayload();
     tilemap = {
       ...tilemap,
-      tilesetGuid: "tileset-1",
+      tilesets: [{ guid: "tileset-1", firstGid: 1, tileCount: 1 }],
       tileWidth: 16,
       tileHeight: 16,
     };

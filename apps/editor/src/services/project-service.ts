@@ -407,8 +407,6 @@ export class ProjectService {
   private readonly sessionEncodes = new Map<string, string>();
   /** Committed KTX2 (and sniffed source) sizes by chunk sha256, kept across registry remounts. */
   private readonly ktx2SizeCache = new Map<string, ImageSize | null>();
-  /** Textures decoded legacy atlas referrers sample, by content, kept across registry remounts. */
-  private readonly legacyAtlasCache = new Map<string, readonly string[]>();
   /** Textures an alignment check is requeuing, shared by remounts as the encode queue is. */
   private readonly alignmentRequeues = new Set<string>();
   /** Change counter shared by every project registry, so remounts never rewind it. */
@@ -954,14 +952,12 @@ export class ProjectService {
   /** Export presets scan their selected plugin roots without changing editor mounts. */
   async listExportAssets(
     enabledPluginGuids: ReadonlySet<string>,
-    overrides: Record<string, PluginEnableOverride> = this.pluginOverrides,
   ): Promise<IndexedAsset[]> {
     const exportRegistry = new AssetRegistry(this.storage, {
       blobs: this.blobs,
     });
     await mountEnabledPlugins(exportRegistry, this.pluginDescriptors, {
       enabledGuids: enabledPluginGuids,
-      overrides,
       storageFor: (plugin) =>
         plugin.source === "engine"
           ? (this.enginePluginStorage ?? undefined)
@@ -1503,7 +1499,6 @@ export class ProjectService {
       DEFAULT_TEXTURE_ENCODE_SETTINGS.maxDimension;
     const registry = new AssetRegistry(this.storage, {
       blobs: this.blobs,
-      legacyAtlasCache: this.legacyAtlasCache,
       alignmentRequeues: this.alignmentRequeues,
       generationClock: this.registryClock,
     });
@@ -1570,7 +1565,6 @@ export class ProjectService {
     }
     await mountEnabledPlugins(registry, this.pluginDescriptors, {
       enabledGuids,
-      overrides: this.pluginOverrides,
       storageFor: (plugin) =>
         plugin.source === "engine"
           ? (this.enginePluginStorage ?? undefined)
@@ -1578,8 +1572,6 @@ export class ProjectService {
     });
     const { diagnostics } = resolvePluginGraph(
       this.pluginDescriptors.filter((plugin) => enabledGuids.has(plugin.pluginGuid)),
-      undefined,
-      this.pluginOverrides,
     );
     this.pluginDiagnostics = diagnostics;
     const discoveredGuids = new Set(
@@ -1663,14 +1655,10 @@ export class ProjectService {
     decision?: "keep" | "replace",
   ): Promise<PluginImportResult> {
     const incoming = await inspectBabplugin(bytes);
-    const occupiedGuids = new Set<string>([
-      ...this.pluginDescriptors.map((plugin) => plugin.pluginGuid),
-      ...(this.assetRegistry?.list().map((asset) => asset.header.guid) ?? []),
-    ]);
     const plan = planPluginImport({
       incoming,
       existingPlugins: this.pluginDescriptors,
-      occupiedGuids,
+      indexedAssets: this.assetRegistry?.list() ?? [],
       existingFolderNames: this.pluginDescriptors.map(
         (plugin) => plugin.folderName,
       ),

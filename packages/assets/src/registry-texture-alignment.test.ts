@@ -229,6 +229,48 @@ describe("texture encode alignment", () => {
     expect(await storage.readBinary(path)).toEqual(pulled);
   });
 
+  it("writes nothing from the user's own re-encode once its source pixels were replaced on disk", async () => {
+    const storage = await storageWithProject("replaced-source-retry");
+    const path = "assets/retried.babasset";
+    await writeTexture(storage, path, "retried", { source: [4, 4], committed: { id: KEY_MAX_1, size: [4, 4] } });
+    const { registry, jobs, queue } = await mount(storage);
+    queue.pause();
+    expect(await registry.retryTextureEncoding("retried", { force: true })).toBe(true);
+    // A git pull replaces the source while the re-encode waits, and nothing rescans.
+    await writeTexture(storage, path, "retried", { source: [8, 8], committed: { id: KEY_MAX_1, size: [4, 4] } });
+    const pulled = await storage.readBinary(path);
+
+    queue.resume();
+    await vi.waitFor(() => {
+      expect(queue.depth).toBe(0);
+      expect(jobs).toHaveLength(1);
+    });
+    expect(await storage.readBinary(path)).toEqual(pulled);
+  });
+
+  it("never requeues or rewrites a Texture in a read-only root", async () => {
+    const storage = await storageWithProject("read-only-retry");
+    const path = "plugin/assets/locked.babasset";
+    await storage.mkdir("plugin/assets", true);
+    await storage.writeBinary(path, await encodeBabasset({
+      header: {
+        guid: "locked", type: "Texture", name: "locked", engineVersion: "0.0.0", version: 1, mode: "thin",
+        dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "fallback_uncompressed" },
+      },
+      chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: png(4, 4) }],
+    }));
+    const before = await storage.readBinary(path);
+    const { registry, queue } = await mount(storage, [
+      { id: "plugin:locked", kind: "plugin", pathPrefix: "plugin/assets", readOnly: true },
+    ]);
+
+    expect(await registry.requeueUncompressedTextures()).toBe(0);
+    expect(await registry.retryTextureEncoding("locked", { force: true })).toBe(false);
+    await registry.setCompressionState("locked", "encode_failed", { error: "boom" });
+    expect(queue.depth).toBe(0);
+    expect(await storage.readBinary(path)).toEqual(before);
+  });
+
   it("requeues on open only compressed textures committed off the grid that are not atlases", async () => {
     const storage = await storageWithProject("open");
     await writeTexture(storage, "assets/legacy-odd.babasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
@@ -255,7 +297,7 @@ describe("texture encode alignment", () => {
     await writeTexture(storage, "assets/sourceless-odd.babasset", "sourceless-odd", {
       source: [1, 1], pixels: false, committed: { id: KEY_MAX_1, size: [1, 1] },
     });
-    // A Tileset saved before atlas meta existed: only its document names the texture.
+    // A Tileset document lists the texture it samples in its header.
     await storage.writeBinary("assets/ground.tileset.babasset", await encodeAssetDocument({
       guid: "ground", type: "Tileset", name: "Ground", version: 1,
       payload: { ...createDefaultTilesetPayload(), textureGuid: "atlas-odd" } as unknown as Record<string, unknown>,

@@ -11,7 +11,7 @@ import { compareAlphaTestDraws, resolveSortingLayer } from "./sorting";
 const layers = ["Background", "Default", "Decals", "Props", "Foreground", "UI"];
 function assets() {
   const base = setTile(createDefaultTilemapPayload(), "layer-1", 0, 0, 1);
-  const map = { ...base, tilesetGuid: "atlas", layers: [
+  const map = { ...base, tilesets: [{ guid: "atlas", firstGid: 1, tileCount: 1 }], layers: [
     { ...base.layers[0]!, id: "front", sortingLayer: "Props", orderInLayer: -2 },
     { ...base.layers[0]!, id: "back", sortingLayer: "Decals", orderInLayer: 10 },
   ] };

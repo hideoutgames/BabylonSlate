@@ -160,7 +160,8 @@ describe("animClipCatalogFromAssets", () => {
             type: "SpriteAnimation",
             name: "Walk",
             payload: {
-              frames: [{ durationMs: 100 }, { durationMs: 150 }],
+              frameDurationMs: 100,
+              frames: [{ durationMs: 100 }, { durationMs: 150, durationMsOverride: true }],
             },
           },
         },

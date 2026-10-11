@@ -179,7 +179,6 @@ describe("createTilemapMeshes", () => {
     tilemap = {
       ...tilemap,
       chunkSize: 2,
-      tilesetGuid: "ground",
       tilesets: [
         { guid: "ground", firstGid: 1, tileCount: 1 },
         { guid: "deco", firstGid: 2, tileCount: 1 },

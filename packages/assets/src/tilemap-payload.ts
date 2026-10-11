@@ -41,7 +41,6 @@ export interface TileGidHit {
 }
 
 export interface TilemapPayload {
-  tilesetGuid: string | null;
   tilesets: TilemapTilesetRef[];
   tileWidth: number;
   tileHeight: number;
@@ -59,7 +58,6 @@ export function emptyChunkTiles(chunkSize: number): number[] {
 
 export function createDefaultTilemapPayload(): TilemapPayload {
   return {
-    tilesetGuid: null,
     tilesets: [],
     tileWidth: 16,
     tileHeight: 16,
@@ -129,9 +127,6 @@ export function tilemapTilesetGuids(map: TilemapPayload): string[] {
     seen.add(ref.guid);
     guids.push(ref.guid);
   }
-  if (map.tilesetGuid && !seen.has(map.tilesetGuid)) {
-    guids.unshift(map.tilesetGuid);
-  }
   return guids;
 }
 
@@ -153,14 +148,9 @@ export function tilemapTileIdentity(
       chosen = ref;
     }
   }
-  if (!chosen) {
-    if (map.tilesets.length > 0) return null;
-    const fallbackGuid = map.tilesetGuid;
-    if (!fallbackGuid) return null;
-    return { guid: fallbackGuid, localId: gid };
-  }
+  if (!chosen) return null;
   const localId = gid - chosen.firstGid + 1;
-  if (chosen.tileCount > 0 && localId > chosen.tileCount) return null;
+  if (localId > chosen.tileCount) return null;
   return { guid: chosen.guid, localId };
 }
 
@@ -198,24 +188,18 @@ export function reconcileTilemapTilesets(
   map: TilemapPayload,
   knownTilesets: ReadonlyMap<string, TilesetPayload>,
 ): TilemapPayload {
-  const refs = map.tilesets.length > 0 ? map.tilesets : map.tilesetGuid
-    ? [{ guid: map.tilesetGuid, firstGid: 1, tileCount: 0 }] : [];
+  const refs = map.tilesets;
   if (refs.length === 0) return map;
   const ordered = [...refs].sort((a, b) => a.firstGid - b.firstGid);
   // Pointer/selection redraws normally keep the same capacities. Scan painted
-  // cells only when a legacy reservation, atlas growth or overlap needs repair.
-  if (map.tilesets.length > 0 && ordered.every((ref, index) => {
+  // cells only when atlas growth or overlap needs repair.
+  if (ordered.every((ref, index) => {
     const atlas = knownTilesets.get(ref.guid);
-    return ref.tileCount > 0
-      && ref.tileCount >= (atlas ? atlasTileCount(atlas) : 0)
+    return ref.tileCount >= (atlas ? atlasTileCount(atlas) : 0)
       && ref.firstGid + ref.tileCount <= (ordered[index + 1]?.firstGid ?? Infinity);
   })) return map;
-  const highest = highestPaintedGid(map);
-  const nextRefs = new Map(ordered.map((ref, index) => {
-    const nextFirst = ordered[index + 1]?.firstGid ?? Math.max(ref.firstGid + 1, highest + 1);
-    return [ref.guid, { ...ref, tileCount: ref.tileCount || Math.max(1, nextFirst - ref.firstGid) }];
-  }));
-  let nextFree = highest + 1;
+  const nextRefs = new Map(ordered.map((ref) => [ref.guid, { ...ref }]));
+  let nextFree = highestPaintedGid(map) + 1;
   for (const ref of nextRefs.values()) nextFree = Math.max(nextFree, ref.firstGid + ref.tileCount);
   const unowned = new Set<number>();
   for (const layer of map.layers) {
@@ -239,7 +223,7 @@ export function reconcileTilemapTilesets(
     nextFree = Math.max(nextFree, ref.firstGid + count);
   }
   const tilesets = refs.map((ref) => nextRefs.get(ref.guid)!);
-  if (map.tilesets.length === tilesets.length && refs.every((ref, index) =>
+  if (refs.every((ref, index) =>
     ref.firstGid === tilesets[index]!.firstGid && ref.tileCount === tilesets[index]!.tileCount)) return map;
   const relocated = refs.some((ref) => nextRefs.get(ref.guid)!.firstGid !== ref.firstGid);
   const layers = !relocated ? map.layers : map.layers.map((layer) => ({
@@ -252,7 +236,7 @@ export function reconcileTilemapTilesets(
       }),
     })),
   }));
-  return { ...map, tilesets, tilesetGuid: tilesets[0]?.guid ?? null, layers };
+  return { ...map, tilesets, layers };
 }
 
 export function addTilemapTileset(
@@ -266,8 +250,7 @@ export function addTilemapTileset(
   const reconciled = reconcileTilemapTilesets(map, knownTilesets ?? new Map());
   const count = Math.max(1, atlasTileCount(tileset));
   const firstGid = nextTilesetFirstGid(reconciled);
-  const tilesets = [...reconciled.tilesets, { guid, firstGid, tileCount: count }];
-  return { ...reconciled, tilesets, tilesetGuid: tilesets[0]?.guid ?? null };
+  return { ...reconciled, tilesets: [...reconciled.tilesets, { guid, firstGid, tileCount: count }] };
 }
 
 export function removeTilemapTileset(
@@ -275,15 +258,12 @@ export function removeTilemapTileset(
   guid: string,
 ): TilemapPayload {
   const removed = map.tilesets.find((ref) => ref.guid === guid);
-  const legacy = map.tilesets.length === 0 && map.tilesetGuid === guid;
-  if (!removed && !legacy) return map;
-  const firstGid = removed?.firstGid ?? 1;
+  if (!removed) return map;
+  const firstGid = removed.firstGid;
   const nextFirstGid = Math.min(
     ...map.tilesets.filter((ref) => ref.firstGid > firstGid).map((ref) => ref.firstGid),
   );
-  const endGid = removed && removed.tileCount > 0
-    ? Math.min(nextFirstGid, firstGid + removed.tileCount)
-    : nextFirstGid;
+  const endGid = Math.min(nextFirstGid, firstGid + removed.tileCount);
   const layers = map.layers.map((layer) => ({
     ...layer,
     chunks: layer.chunks.flatMap((chunk) => {
@@ -292,8 +272,7 @@ export function removeTilemapTileset(
       return tiles.some((gid) => gid > 0) ? [{ ...chunk, tiles }] : [];
     }),
   }));
-  const tilesets = map.tilesets.filter((ref) => ref.guid !== guid);
-  return { ...map, layers, tilesets, tilesetGuid: tilesets[0]?.guid ?? null };
+  return { ...map, layers, tilesets: map.tilesets.filter((ref) => ref.guid !== guid) };
 }
 
 function nextTilesetFirstGid(
@@ -301,7 +280,7 @@ function nextTilesetFirstGid(
 ): number {
   let next = highestPaintedGid(map) + 1;
   for (const ref of map.tilesets) {
-    next = Math.max(next, ref.firstGid + Math.max(1, ref.tileCount));
+    next = Math.max(next, ref.firstGid + ref.tileCount);
   }
   return next;
 }
@@ -311,12 +290,11 @@ export function normalizeTilemapPayload(value: unknown): TilemapPayload {
     value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   const chunkSize = positiveInt(source.chunkSize, DEFAULT_TILEMAP_CHUNK_SIZE);
   const layers = normalizeLayers(source.layers, chunkSize);
-  const tilesets = normalizeTilesetRefs(source.tilesets, source.tilesetGuid);
+  const tilesets = normalizeTilesetRefs(source.tilesets);
   const resolvedLayers =
     layers.length > 0 ? layers : createDefaultTilemapPayload().layers;
   const extent = occupiedTileExtent(resolvedLayers, chunkSize);
   return {
-    tilesetGuid: tilesets[0]?.guid ?? null,
     tilesets,
     tileWidth: positiveInt(source.tileWidth, 16),
     tileHeight: positiveInt(source.tileHeight, 16),
@@ -327,10 +305,7 @@ export function normalizeTilemapPayload(value: unknown): TilemapPayload {
   };
 }
 
-function normalizeTilesetRefs(
-  value: unknown,
-  legacyGuid: unknown,
-): TilemapTilesetRef[] {
+function normalizeTilesetRefs(value: unknown): TilemapTilesetRef[] {
   const refs: TilemapTilesetRef[] = [];
   const seen = new Set<string>();
   if (Array.isArray(value)) {
@@ -343,13 +318,10 @@ function normalizeTilesetRefs(
       refs.push({
         guid,
         firstGid: positiveInt(row.firstGid, 1),
-        tileCount: nonNegativeInt(row.tileCount, 0),
+        // Every saved range reserves at least one tile; the next edit grows it to the atlas.
+        tileCount: Math.max(1, positiveInt(row.tileCount, 1)),
       });
     }
-  }
-  const fallback = stringOrNull(legacyGuid);
-  if (refs.length === 0 && fallback) {
-    refs.push({ guid: fallback, firstGid: 1, tileCount: 0 });
   }
   return refs;
 }
@@ -401,29 +373,63 @@ export function setTile(
   gy: number,
   tileId: number,
 ): TilemapPayload {
-  if (!tileInBounds(map, gx, gy)) return map;
-  const id = Number.isInteger(tileId) && tileId > 0 ? tileId : 0;
-  return {
-    ...map,
-    layers: map.layers.map((layer) => {
-      if (layer.id !== layerId) return layer;
-      const { cx, cy, lx, ly } = chunkCoordForTile(gx, gy, map.chunkSize);
-      const index = localIndex(lx, ly, map.chunkSize);
-      const existing = layer.chunks.find(
-        (entry) => entry.cx === cx && entry.cy === cy,
-      );
-      const tiles = existing
-        ? [...existing.tiles]
-        : emptyChunkTiles(map.chunkSize);
-      tiles[index] = id;
-      const chunks = existing
-        ? layer.chunks.map((entry) =>
-            entry.cx === cx && entry.cy === cy ? { ...entry, tiles } : entry,
-          )
-        : [...layer.chunks, { cx, cy, tiles }];
-      return { ...layer, chunks };
-    }),
-  };
+  return setTiles(map, layerId, [{ x: gx, y: gy, id: tileId }]);
+}
+
+export interface TileWrite {
+  x: number;
+  y: number;
+  id: number;
+}
+
+/**
+ * Write many cells, copying each touched chunk once. Cells outside the map are
+ * skipped. Storage stays sparse: erasing never allocates a chunk, and a chunk
+ * left with no tiles is dropped. Returns `map` itself when nothing changed.
+ */
+export function setTiles(
+  map: TilemapPayload,
+  layerId: string,
+  writes: Iterable<TileWrite>,
+): TilemapPayload {
+  const layerIndex = map.layers.findIndex((entry) => entry.id === layerId);
+  const layer = map.layers[layerIndex];
+  if (!layer) return map;
+  const size = Math.max(1, map.chunkSize);
+  const existing = new Map(layer.chunks.map((chunk) => [`${chunk.cx},${chunk.cy}`, chunk]));
+  const edited = new Map<string, TilemapChunk>();
+  for (const write of writes) {
+    if (!tileInBounds(map, write.x, write.y)) continue;
+    const id = Number.isInteger(write.id) && write.id > 0 ? write.id : 0;
+    const { cx, cy, lx, ly } = chunkCoordForTile(write.x, write.y, size);
+    const key = `${cx},${cy}`;
+    const index = localIndex(lx, ly, size);
+    let chunk = edited.get(key);
+    if (!chunk) {
+      const current = existing.get(key);
+      if ((current?.tiles[index] ?? 0) === id) continue;
+      chunk = { cx, cy, tiles: current ? [...current.tiles] : emptyChunkTiles(size) };
+      edited.set(key, chunk);
+    }
+    chunk.tiles[index] = id;
+  }
+  if (edited.size === 0) return map;
+  const occupied = (chunk: TilemapChunk) => chunk.tiles.some((gid) => gid > 0);
+  const chunks: TilemapChunk[] = [];
+  for (const chunk of layer.chunks) {
+    const key = `${chunk.cx},${chunk.cy}`;
+    const next = edited.get(key);
+    if (!next) {
+      chunks.push(chunk);
+      continue;
+    }
+    edited.delete(key);
+    if (occupied(next)) chunks.push({ ...chunk, tiles: next.tiles });
+  }
+  for (const chunk of edited.values()) if (occupied(chunk)) chunks.push(chunk);
+  const layers = [...map.layers];
+  layers[layerIndex] = { ...layer, chunks };
+  return { ...map, layers };
 }
 
 function normalizeLayers(value: unknown, chunkSize: number): TilemapLayer[] {
@@ -553,12 +559,6 @@ function stringOrNull(value: unknown): string | null {
 
 function positiveInt(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? Math.floor(value)
-    : fallback;
-}
-
-function nonNegativeInt(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? Math.floor(value)
     : fallback;
 }

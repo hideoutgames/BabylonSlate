@@ -89,7 +89,7 @@ describe("authored mesh content", () => {
       tileHeight: 16,
     });
     let tilemap = createDefaultTilemapPayload();
-    tilemap = { ...tilemap, tilesetGuid: "tileset-1", chunkSize: 2 };
+    tilemap = { ...tilemap, tilesets: [{ guid: "tileset-1", firstGid: 1, tileCount: 1 }], chunkSize: 2 };
     tilemap = setTile(tilemap, "layer-1", 0, 0, 1);
     const assets: MeshAssetContext = {
       resourceCache: cache,

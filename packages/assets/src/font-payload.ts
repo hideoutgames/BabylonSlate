@@ -60,12 +60,6 @@ export function normalizeFontPayload(
     typeof source.family === "string" && source.family.trim() !== ""
       ? source.family.trim()
       : familyFallback;
-  const hasExplicitMsdfParts =
-    "msdfJson" in representations || "msdfPng" in representations;
-  const msdfJson = hasExplicitMsdfParts
-    ? representations.msdfJson === true
-    : representations.msdf === true;
-  const msdfPng = representations.msdfPng === true;
   return createFontPayload(family, {
     weight:
       typeof source.weight === "number" || typeof source.weight === "string"
@@ -76,8 +70,8 @@ export function normalizeFontPayload(
     representations: {
       source: representations.source === true,
       facetype: representations.facetype === true,
-      msdfJson,
-      msdfPng,
+      msdfJson: representations.msdfJson === true,
+      msdfPng: representations.msdfPng === true,
     },
   });
 }

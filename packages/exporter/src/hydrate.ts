@@ -10,7 +10,6 @@ import {
 import {
   materialParameterTextureAssetGuids,
   hydrateSpriteAnimationPixelSizes,
-  resolveModelAnimationDurations,
   modelClipAnimationGuidsFromAnimations,
   normalizeAnimationPayload,
   retargetAnimationLoadsFromAnimations,
@@ -307,7 +306,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     game.textureBytes,
   );
 
-  const clipCatalog = resolveModelAnimationDurations<AnimClipCatalogEntry>([
+  const clipCatalog: AnimClipCatalogEntry[] = [
     ...[...animationPayloads.entries()].map(([guid, payload]) => ({
       guid,
       type: "Animation",
@@ -323,9 +322,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       name: guid,
       durationMs: spriteAnimationDurationMs(payload),
     })),
-  ], game.modelBytes, retargetAnimationLoadsFromAnimations(
-    [...animationPayloads].map(([guid, payload]) => ({ guid, payload })),
-  ), game.modelAnimationDurations);
+  ];
   const resolvedAnimGraphs = animGraphs.map((entry) => {
     const document = parseAnimGraphDocument(entry.document);
     if (!document) return entry;

@@ -21,7 +21,7 @@ import {
 describe("tilemap payload", () => {
   it("defaults to one collision layer, 32-tile chunks, and a 64×64 map", () => {
     const payload = createDefaultTilemapPayload();
-    expect(payload.tilesetGuid).toBeNull();
+    expect(payload.tilesets).toEqual([]);
     expect(payload.tileWidth).toBe(16);
     expect(payload.tileHeight).toBe(16);
     expect(payload.width).toBe(64);
@@ -178,25 +178,14 @@ describe("tilemap payload", () => {
     expect(getTile(map, "layer-1", 0, 0)).toBe(3);
   });
 
-  it("migrates a legacy tilesetGuid into a firstGid-1 tileset list", () => {
-    const payload = normalizeTilemapPayload({
-      tilesetGuid: "ground",
-    });
-    expect(payload.tilesetGuid).toBe("ground");
-    expect(payload.tilesets).toEqual([
-      { guid: "ground", firstGid: 1, tileCount: 0 },
-    ]);
-    expect(tilemapTilesetGuids(payload)).toEqual(["ground"]);
-  });
-
-  it("keeps tilesetGuid as an alias of the first listed tileset", () => {
+  it("lists each tileset of the tileset list once", () => {
     const payload = normalizeTilemapPayload({
       tilesets: [
         { guid: "a", firstGid: 1, tileCount: 8 },
         { guid: "b", firstGid: 9, tileCount: 4 },
+        { guid: "a", firstGid: 13, tileCount: 2 },
       ],
     });
-    expect(payload.tilesetGuid).toBe("a");
     expect(tilemapTilesetGuids(payload)).toEqual(["a", "b"]);
   });
 
@@ -241,7 +230,6 @@ describe("tilemap payload", () => {
     });
     map = removeTilemapTileset(map, "ground");
     expect(map.tilesets).toEqual([{ guid: "deco", firstGid: 3, tileCount: 1 }]);
-    expect(map.tilesetGuid).toBe("deco");
     expect(decodeTileGid(map, 3, payloads)?.guid).toBe("deco");
     expect(decodeTileGid(map, 1, payloads)).toBeNull();
   });
@@ -269,13 +257,8 @@ describe("tilemap payload", () => {
     expect(getTile(replacement, "layer-1", 1, 0)).toBe(0);
   });
 
-  it("clears legacy tiles with an unknown tile count on removal", () => {
-    let map = normalizeTilemapPayload({ tilesetGuid: "legacy" });
-    map = setTile(map, "layer-1", 0, 0, 256);
-    const next = removeTilemapTileset(map, "legacy");
-    expect(next.tilesets).toEqual([]);
-    expect(next.tilesetGuid).toBeNull();
-    expect(next.layers[0]?.chunks).toEqual([]);
+  it("leaves a map unchanged when the removed tileset is not listed", () => {
+    const map = setTile(createDefaultTilemapPayload(), "layer-1", 0, 0, 1);
     expect(removeTilemapTileset(map, "missing")).toBe(map);
   });
 });

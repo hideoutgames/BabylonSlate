@@ -29,9 +29,12 @@ describe("babproject codec", () => {
   it("round-trips directory ↔ zip byte-identically for sorted trees", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("Demo.babproject");
+    // Pinned so the golden bytes do not change with each engine release.
+    const engineVersion = "0.0.0";
     const files = createEmptyProjectFiles({
       guid: "proj-1",
       name: "Demo",
+      engineVersion,
     });
     files.push({
       path: "assets/readme.txt",
@@ -47,7 +50,7 @@ describe("babproject codec", () => {
         guid: "00000000-0000-4000-8000-00000000scene".slice(0, 36),
         version: 1,
         payload: { name: "Main", meshes: [] },
-      }),
+      }, { engineVersion }),
     });
     await writeProjectTree(storage, files);
 

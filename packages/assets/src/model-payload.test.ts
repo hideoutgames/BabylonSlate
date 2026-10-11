@@ -5,7 +5,6 @@ import {
   extractPackedModelAsset,
   normalizeModelPayload,
   peekPackedModelPayload,
-  remapModelPayloadGuids,
   shouldSlimModelEmbeddedTextures,
 } from "./model-payload";
 
@@ -61,29 +60,12 @@ describe("normalizeModelPayload", () => {
     ]);
   });
 
-  it("rewrites slot material guids through remapModelPayloadGuids", () => {
-    const remapped = remapModelPayloadGuids("Model", {
-      clipNames: ["Idle"],
-      materialSlots: [{ index: 0, name: "Body", materialGuid: "mat-old" }],
-    }, new Map([["mat-old", "mat-new"]]));
-    expect(remapped.materialSlots).toEqual([
-      { index: 0, name: "Body", materialGuid: "mat-new" },
-    ]);
-    expect(remapped.skeletonGuid).toBeNull();
-  });
-
-  it("keeps skeletonGuid and remaps it", () => {
+  it("keeps a trimmed skeletonGuid", () => {
     const payload = normalizeModelPayload({
       clipNames: ["Idle"],
       skeletonGuid: "  skel-1  ",
     });
     expect(payload.skeletonGuid).toBe("skel-1");
-    const remapped = remapModelPayloadGuids(
-      "Model",
-      { ...payload },
-      new Map([["skel-1", "skel-2"]]),
-    );
-    expect(remapped.skeletonGuid).toBe("skel-2");
   });
 
   it("coerces missing skeletonGuid to null", () => {

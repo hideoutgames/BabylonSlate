@@ -53,14 +53,6 @@ export function derivedDataRoot(projectGuid: string): string {
   return `derived/${projectGuid}`;
 }
 
-/**
- * Single-file journal written before segments existed. It is still read first
- * and cleared with the segments, so an older session's unsaved edits recover.
- */
-export function journalPath(projectGuid: string): string {
-  return `${derivedDataRoot(projectGuid)}/journal.jsonl`;
-}
-
 /** Directory of ordered journal segments (`00000000.jsonl`, `00000001.jsonl`, …). */
 export function journalSegmentsPath(projectGuid: string): string {
   return `${derivedDataRoot(projectGuid)}/journal`;
@@ -94,25 +86,13 @@ async function segmentIndices(
   return indices.sort((a, b) => a - b);
 }
 
-async function existingLayouts(
-  storage: ProjectStorage,
-  projectGuid: string,
-): Promise<{ legacy: boolean; segments: boolean }> {
-  const [legacy, segments] = await Promise.all([
-    storage.exists(journalPath(projectGuid)),
-    storage.exists(journalSegmentsPath(projectGuid)),
-  ]);
-  return { legacy, segments };
-}
-
 async function removeJournalFiles(
   storage: ProjectStorage,
   projectGuid: string,
-  existing: { legacy: boolean; segments: boolean },
+  exists: boolean,
 ): Promise<void> {
   tailsFor(storage).delete(projectGuid);
-  if (existing.legacy) await storage.remove(journalPath(projectGuid));
-  if (existing.segments) await storage.remove(journalSegmentsPath(projectGuid));
+  if (exists) await storage.remove(journalSegmentsPath(projectGuid));
 }
 
 /**
@@ -148,20 +128,19 @@ async function writeSegments(
   await write(index, text);
 }
 
-/** True when either journal layout exists (an empty stub counts). */
+/** True when a journal segment exists (an empty stub counts). */
 export async function hasJournal(
   derivedStorage: ProjectStorage,
   projectGuid: string,
 ): Promise<boolean> {
-  return journalOperation(derivedStorage, projectGuid, async () => {
-    if (await derivedStorage.exists(journalPath(projectGuid))) return true;
-    return (await segmentIndices(derivedStorage, projectGuid)).length > 0;
-  });
+  return journalOperation(derivedStorage, projectGuid, async () =>
+    (await segmentIndices(derivedStorage, projectGuid)).length > 0,
+  );
 }
 
 /**
- * Remove the journal in both layouts when `canClear()` still holds once every
- * append queued before this call has landed. Resolves false when it did not.
+ * Remove the journal when `canClear()` still holds once every append queued
+ * before this call has landed. Resolves false when it did not.
  */
 export async function truncateJournal(
   derivedStorage: ProjectStorage,
@@ -169,9 +148,9 @@ export async function truncateJournal(
   canClear: () => boolean = () => true,
 ): Promise<boolean> {
   return journalOperation(derivedStorage, projectGuid, async () => {
-    const existing = await existingLayouts(derivedStorage, projectGuid);
+    const exists = await derivedStorage.exists(journalSegmentsPath(projectGuid));
     if (!canClear()) return false;
-    await removeJournalFiles(derivedStorage, projectGuid, existing);
+    await removeJournalFiles(derivedStorage, projectGuid, exists);
     return true;
   });
 }
@@ -186,7 +165,7 @@ export async function writeJournalStub(
     await removeJournalFiles(
       derivedStorage,
       projectGuid,
-      await existingLayouts(derivedStorage, projectGuid),
+      await derivedStorage.exists(journalSegmentsPath(projectGuid)),
     );
     await derivedStorage.mkdir(journalSegmentsPath(projectGuid), true);
     await writeSegments(derivedStorage, projectGuid, 0, "", lines);
@@ -236,17 +215,13 @@ export async function appendJournalLine(
   return appendJournalLines(derivedStorage, projectGuid, [line]);
 }
 
-/** Read non-empty journal lines in order: the legacy file, then each segment. */
+/** Read non-empty journal lines in segment order. */
 export async function readJournalLines(
   derivedStorage: ProjectStorage,
   projectGuid: string,
 ): Promise<string[]> {
   return journalOperation(derivedStorage, projectGuid, async () => {
     const texts: string[] = [];
-    const legacy = journalPath(projectGuid);
-    if (await derivedStorage.exists(legacy)) {
-      texts.push(await derivedStorage.readText(legacy));
-    }
     for (const index of await segmentIndices(derivedStorage, projectGuid)) {
       texts.push(await derivedStorage.readText(segmentPath(projectGuid, index)));
     }

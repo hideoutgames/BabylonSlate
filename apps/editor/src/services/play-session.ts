@@ -25,7 +25,7 @@ import {
   type SessionReportEntry,
 } from "@babylonslate/runtime";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
-import { materialParameterTextureAssetGuids, resolveModelAnimationDurations } from "@babylonslate/assets";
+import { materialParameterTextureAssetGuids } from "@babylonslate/assets";
 import {
   DEFAULT_PLAY_FRAME_CAP,
   printHudCssColor,
@@ -1426,9 +1426,7 @@ export function startPlaySession(options: {
     physicsWorld: "3d" as const,
     gravity: [0, -9.81, 0] as [number, number, number],
   };
-  const animClipCatalog = options.animClipCatalog
-    ? resolveModelAnimationDurations(options.animClipCatalog, options.modelBytes ?? new Map(), options.retargetAnimationLoads)
-    : undefined;
+  const animClipCatalog = options.animClipCatalog && [...options.animClipCatalog];
   const animGraphs = options.animGraphs?.map((entry) => {
     const document = parseAnimGraphDocument(entry.document);
     return document && animClipCatalog

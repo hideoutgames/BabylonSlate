@@ -78,6 +78,39 @@ describe("babasset codec", () => {
     expect(bytesEqual(decoded.chunks.get("pixels")!, big)).toBe(true);
   });
 
+  it("rejects a truncated inline chunk and a torn blob instead of returning short bytes", async () => {
+    const header = {
+      guid: "g4",
+      type: "Texture",
+      name: "Torn",
+      engineVersion: "0.0.0",
+      version: 1,
+      mode: "thin" as const,
+      dependencies: [],
+      payload: {},
+    };
+    const inline = await encodeBabasset({
+      header,
+      chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3, 4]) }],
+      blobThreshold: 1024,
+    });
+    await expect(decodeBabasset(inline.subarray(0, inline.byteLength - 2))).rejects.toThrow(/pixels/);
+
+    const big = new Uint8Array(70 * 1024).map((_, i) => i % 251);
+    const blobs = new Map<string, Uint8Array>();
+    const thin = await encodeBabasset({
+      header,
+      chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: big }],
+      writeBlob: async (hash, data) => { blobs.set(hash, data); },
+    });
+    const [hash] = [...blobs.keys()];
+    const torn = big.slice();
+    torn.fill(0, 1024);
+    await expect(decodeBabasset(thin, async () => big.subarray(0, 1024))).rejects.toThrow(/Length mismatch/);
+    await expect(decodeBabasset(thin, async () => torn)).rejects.toThrow(/Hash mismatch/);
+    expect(hash).toBe(await sha256Hex(big));
+  });
+
   it("header-only read does not require chunk payload access", async () => {
     const bytes = await encodeBabasset({
       header: {

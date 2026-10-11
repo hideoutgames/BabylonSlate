@@ -82,6 +82,20 @@ describe("embedGltfImportBatch missing BIN", () => {
     expect(out[0]).toBe(gltf);
   });
 
+  it("still imports the images a .gltf references when its .bin is missing", () => {
+    const gltf = {
+      name: "Hero.gltf",
+      bytes: new TextEncoder().encode(JSON.stringify({
+        asset: { version: "2.0" },
+        buffers: [{ uri: "Hero.bin", byteLength: 4 }],
+        images: [{ uri: "Hero_albedo.png" }],
+      })),
+    };
+    const albedo = { name: "Hero_albedo.png", bytes: ONE_BY_ONE_PNG };
+    const out = embedGltfImportBatch([gltf, albedo]);
+    expect(out).toEqual([gltf, albedo]);
+  });
+
   it("does not consume an unrelated picker .bin when the glTF BIN is still missing", () => {
     const gltf = sidecarGltf("Hero.gltf", "Hero.bin");
     const other = { name: "other.bin", bytes: new Uint8Array([1, 2, 3, 4]) };

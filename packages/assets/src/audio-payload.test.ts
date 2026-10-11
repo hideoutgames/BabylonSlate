@@ -6,7 +6,6 @@ import {
   AUDIO_SPEED_OF_SOUND,
   audioAssetDependencies,
   fillEmptySourceClipName,
-  remapAudioPayloadGuids,
   computeAttenuationGain,
   computeDopplerPlaybackRate,
   audioChannelHasParentCycle,
@@ -99,6 +98,10 @@ describe("audio payloads", () => {
     expect(pickWeightedAudioClip(clips, () => 0.24).chunkId).toBe("source");
     expect(pickWeightedAudioClip(clips, () => 0.25).chunkId).toBe("source:2");
     expect(pickWeightedAudioClip(clips, () => 0.99).chunkId).toBe("source:2");
+    // All-zero weights are equal weights, not always the first clip.
+    const silent = clips.map((clip) => ({ ...clip, weight: 0 }));
+    expect(pickWeightedAudioClip(silent, () => 0.49).chunkId).toBe("source");
+    expect(pickWeightedAudioClip(silent, () => 0.5).chunkId).toBe("source:2");
     expect(
       resolveAudioPitch(
         {
@@ -278,6 +281,16 @@ describe("audio payloads", () => {
     );
     expect(cycle.resolvedParents.a).toBeNull();
     expect(cycle.resolvedParents.b).toBeNull();
+
+    // A channel that only leads into the cycle keeps its parent.
+    const lead = validateAudioChannelGraph({
+      a: { parentChannelGuid: "b" },
+      b: { parentChannelGuid: "a" },
+      sfx: { parentChannelGuid: "a" },
+    });
+    expect(lead.ok).toBe(false);
+    expect(lead.resolvedParents).toEqual({ a: null, b: null, sfx: "a" });
+    expect(audioChannelHasParentCycle(new Map([["a", "b"], ["b", "a"], ["sfx", "a"]]), "sfx")).toBe(false);
   });
 
   it("sanitizes missing Audio refs and cyclic channel parents for Play", () => {
@@ -366,51 +379,6 @@ describe("audio payloads", () => {
     expect(audioAssetDependencies("Class", { audioChannelGuid: "ch-1" })).toEqual(
       [],
     );
-  });
-
-  it("remaps Audio, mixer, and channel guids in payloads", () => {
-    const remap = new Map([
-      ["ch-old", "ch-new"],
-      ["att-old", "att-new"],
-    ]);
-    expect(
-      remapAudioPayloadGuids(
-        "Audio",
-        {
-          volume: 1,
-          audioChannelGuid: "ch-old",
-          soundAttenuationGuid: "att-old",
-        },
-        remap,
-      ),
-    ).toEqual({
-      volume: 1,
-      audioChannelGuid: "ch-new",
-      soundAttenuationGuid: "att-new",
-      clips: [{ chunkId: "source", name: "", weight: 1 }],
-      pitch: 1,
-      pitchRandom: false,
-      pitchMin: 1,
-      pitchMax: 1,
-      loop: false,
-    });
-    expect(
-      remapAudioPayloadGuids(
-        "AudioMixer",
-        { globalVolume: 1, channels: [{ channelGuid: "ch-old", volume: 0.5 }] },
-        remap,
-      ),
-    ).toEqual({
-      globalVolume: 1,
-      channels: [{ channelGuid: "ch-new", volume: 0.5 }],
-    });
-    expect(
-      remapAudioPayloadGuids(
-        "AudioChannel",
-        { parentChannelGuid: "ch-old", effects: [] },
-        remap,
-      ),
-    ).toMatchObject({ parentChannelGuid: "ch-new" });
   });
 
   it("resolves session playback gain without inventing mixer or channel factors", () => {

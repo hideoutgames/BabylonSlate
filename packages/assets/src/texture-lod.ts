@@ -17,44 +17,10 @@ export function normalizeTextureDownsample(value: unknown): TextureDownsample {
   return 1;
 }
 
-export function migrateMaxDimensionToDownsample(
-  maxDimension: unknown,
-  sourceEdge: number,
-): TextureDownsample {
-  if (
-    typeof maxDimension !== "number" ||
-    !Number.isFinite(maxDimension) ||
-    maxDimension <= 0 ||
-    !Number.isFinite(sourceEdge) ||
-    sourceEdge <= 0
-  ) {
-    return 1;
-  }
-  if (maxDimension >= sourceEdge) return 1;
-  const ratio = sourceEdge / maxDimension;
-  let best: TextureDownsample = 1;
-  let bestDelta = Math.abs(ratio - 1);
-  for (const option of TEXTURE_DOWNSAMPLE_OPTIONS) {
-    const delta = Math.abs(ratio - option);
-    if (delta < bestDelta) {
-      best = option;
-      bestDelta = delta;
-    }
-  }
-  return best;
-}
-
 export function textureDownsampleFromPayload(
   payload: Record<string, unknown>,
-  sourceEdge?: number,
 ): TextureDownsample {
-  if (payload.downsample !== undefined && payload.downsample !== null) {
-    return normalizeTextureDownsample(payload.downsample);
-  }
-  if (typeof sourceEdge === "number" && Number.isFinite(sourceEdge)) {
-    return migrateMaxDimensionToDownsample(payload.maxDimension, sourceEdge);
-  }
-  return 1;
+  return normalizeTextureDownsample(payload.downsample);
 }
 
 export function authoredTextureMaxDimension(options: {

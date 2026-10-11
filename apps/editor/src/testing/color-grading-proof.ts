@@ -291,7 +291,6 @@ export async function runDisplayColorProof(backend: "webgl2" | "webgpu") {
     };
     const tilemap = setTile({
       ...createDefaultTilemapPayload(),
-      tilesetGuid: "tileset",
       tilesets: [{ guid: "tileset", firstGid: 1, tileCount: 1 }],
     }, "layer-1", 0, 0, 1);
     const tileSize = worldTileSize(tilemap, DISPLAY_PIXELS_PER_UNIT);

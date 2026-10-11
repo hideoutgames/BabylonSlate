@@ -4,6 +4,7 @@ import {
   buildMinimalGlbFixture,
   embedGlbExternalImages,
   encodeGlbJsonBin,
+  gltfAnimationClips,
   ingestGltfForImport,
   parseGlbForBrowse,
   parseGltfJsonForBrowse,
@@ -146,6 +147,21 @@ describe("parseGlbForBrowse", () => {
     expect(browse!.rigKind).toBe("skin");
     expect(browse!.boneNames).toEqual(["Hips", "Spine"]);
     expect(browse!.animations[0]).toEqual({ name: "Walk", durationMs: 1250 });
+  });
+
+  it("starts a take at a channel keyed only at t = 0", () => {
+    const clips = gltfAnimationClips({
+      animations: [
+        { name: "Wave", samplers: [{ input: 0, output: 2 }, { input: 1, output: 2 }] },
+        { name: "Pose", samplers: [{ input: 0, output: 2 }] },
+      ],
+      accessors: [
+        { componentType: 5126, type: "SCALAR", count: 1, min: [0], max: [0] },
+        { componentType: 5126, type: "SCALAR", count: 2, min: [0.5], max: [1.5] },
+        { componentType: 5126, type: "VEC4", count: 1 },
+      ],
+    });
+    expect(clips).toEqual([{ name: "Wave", durationMs: 1500 }, { name: "Pose" }]);
   });
 
   it("classifies a hierarchy rig when clips target parented meshes and there is no skin", () => {
@@ -620,6 +636,18 @@ describe("ingestGltfForImport missing BIN", () => {
     expect(split!.bin?.byteLength).toBe(12);
     const buffer0 = (split!.json.buffers as Array<{ uri?: string }>)[0];
     expect(buffer0?.uri).toBeUndefined();
+  });
+
+  it("decodes a data-URI buffer into the BIN chunk and refuses a remote buffer URL", () => {
+    const withUri = (uri: string) => new TextEncoder().encode(JSON.stringify({
+      asset: { version: "2.0" },
+      buffers: [{ uri, byteLength: 4 }],
+    }));
+    const ingested = ingestGltfForImport("Hero.gltf", withUri("data:application/octet-stream;base64,AQIDBA=="));
+    const split = splitGlbJsonBin(ingested.bytes)!;
+    expect(split.bin).toEqual(new Uint8Array([1, 2, 3, 4]));
+    expect((split.json.buffers as Array<{ uri?: string; byteLength: number }>)[0]).toEqual({ byteLength: 4 });
+    expect(() => ingestGltfForImport("Hero.gltf", withUri("https://example.com/Hero.bin"))).toThrow(/not a URL/);
   });
 });
 

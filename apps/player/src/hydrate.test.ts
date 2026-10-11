@@ -23,7 +23,6 @@ import {
   createDefaultParticleEmitterPayload,
   createDefaultParticleSystemPayload,
   createDefaultSpriteAnimationPayload,
-  encodeGlbJsonBin,
   normalizeAudioPayload,
 } from "@babylonslate/assets";
 import { exportGame as buildExport, type ExportGameOptions, navmeshExportGuid } from "@babylonslate/exporter";
@@ -145,7 +144,7 @@ describe("packedContentFromGame", () => {
       clips: [{ name: "Idle", frames: ["idle"] }],
     };
     const tilemap = {
-      tilesetGuid: "tileset-1",
+      tilesets: [{ guid: "tileset-1", firstGid: 1, tileCount: 1 }],
       tileWidth: 16,
       tileHeight: 16,
       chunkSize: 32,
@@ -262,7 +261,7 @@ describe("packedContentFromGame", () => {
       width: 200,
       height: 100,
     });
-    expect(content.tilemapPayloads.get("tilemap-1")?.tilesetGuid).toBe("tileset-1");
+    expect(content.tilemapPayloads.get("tilemap-1")?.tilesets[0]?.guid).toBe("tileset-1");
     expect(content.tilesetPayloads.get("tileset-1")?.textureGuid).toBe("tex-1");
     expect(content.navmeshBytes).toEqual(new Uint8Array([4, 5, 6]));
     expect(content.navmeshByScene.get("scene-2")).toEqual(new Uint8Array([7, 8]));
@@ -387,16 +386,6 @@ describe("packedContentFromGame", () => {
     expect(content.modelClipAnimationGuids.get("hero-model")?.get("Idle")).toBe(
       "hero-idle-anim",
     );
-    const legacyGame = await loadGameFromFiles(packed.value.files);
-    legacyGame.modelBytes.set("hero-model", encodeGlbJsonBin({
-      animations: [{ name: "Idle", samplers: [{ input: 0 }] }],
-      accessors: [{ min: [47], max: [48] }],
-    }, new Uint8Array()));
-    const repaired = packedContentFromGame(legacyGame);
-    expect(repaired.animClipCatalog.find((clip) => clip.guid === "hero-idle-anim")?.durationMs).toBe(1000);
-    expect(repaired.animGraphs.find((entry) => entry.guid === "anim-1")?.document).toMatchObject({
-      clips: [{ clipName: "Idle", durationMs: 1000 }],
-    });
   });
 
   it("includes BT Play Animation clips in the packed worker clip catalog", async () => {

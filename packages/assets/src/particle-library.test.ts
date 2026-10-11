@@ -7,7 +7,6 @@ import {
 } from "./particle-library";
 import {
   particleAssetDependencies,
-  remapParticlePayloadGuids,
 } from "./particle-payload";
 
 describe("particle library", () => {
@@ -101,15 +100,8 @@ describe("particle library graph entries", () => {
     expect(keyOf(graph((doc) => (doc.materialGuid = "mat-other")))).not.toBe(key);
   });
 
-  it("indexes and remaps a Particle Graph's Material", () => {
+  it("indexes a Particle Graph's Material", () => {
     const payload = graph().payload as unknown as Record<string, unknown>;
     expect(particleAssetDependencies("ParticleGraph", payload)).toEqual(["mat-graph"]);
-    const remapped = remapParticlePayloadGuids(
-      "ParticleGraph",
-      payload,
-      new Map([["mat-graph", "mat-new"]]),
-    );
-    expect(remapped.materialGuid).toBe("mat-new");
-    expect(remapped.nodes).toEqual(graph().payload.nodes);
   });
 });

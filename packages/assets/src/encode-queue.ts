@@ -31,7 +31,7 @@ export interface EncodeJob {
   /** Usage the job encodes for, which an unsaved Details edit may override. */
   usage?: string;
   guard?: EncodeJobGuard;
-  /** sha256 of `source`, set on a guarded job: it writes only while the file's `pixels` chunk still has it. */
+  /** sha256 of `source`: the job writes only while the file's `pixels` chunk still has it. */
   sourceSha256?: string;
 }
 
@@ -47,25 +47,30 @@ export interface EncodeJobResult {
 }
 
 /**
- * Whether a guarded job may make a write to its Texture's file as it is on
- * disk now (`current`): its guard allows it, and the file's source pixels are
- * still the ones it encoded, so an encode of replaced pixels never lands.
- * An unguarded job (the user's own encode) always may.
+ * Whether a job may make a write to its Texture's file as it is on disk now
+ * (`current`): its guard, if any, allows it, and the file's source pixels are
+ * still the ones it encoded (`sourceSha256`), so an encode of replaced pixels
+ * never lands, whether it is a background or the user's own encode.
  */
 export function encodeJobMayWrite(
   job: Pick<EncodeJob, "assetGuid" | "guard" | "sourceSha256">,
   current: BabassetHeader,
 ): boolean {
-  if (!job.guard) return true;
-  if (!job.guard.canWrite(job.assetGuid, current)) return false;
+  if (job.guard && !job.guard.canWrite(job.assetGuid, current)) return false;
   if (job.sourceSha256 === undefined) return true;
   return current.chunks.find((chunk) => chunk.kind === "pixels")?.sha256 === job.sourceSha256;
 }
 
+/**
+ * Encode one source. `signal` aborts when the queue gives up on the job (its
+ * timeout): an encoder that can stop should, so a hung encode does not hold
+ * the next job behind it.
+ */
 export type EncodeFn = (
   source: Uint8Array,
   settings: TextureEncodeSettings,
   mime?: string,
+  signal?: AbortSignal,
 ) => Promise<{ ktx2: Uint8Array; wallMs: number }>;
 
 export const DEFAULT_ENCODE_JOB_TIMEOUT_MS = 120_000;
@@ -190,17 +195,19 @@ export class EncodeQueue {
     ktx2: Uint8Array;
     wallMs: number;
   }> {
-    const encodePromise = this.encode(job.source, job.settings, job.mime);
     const timeoutMs = this.jobTimeoutMs;
-    if (!timeoutMs || timeoutMs <= 0) return encodePromise;
+    if (!timeoutMs || timeoutMs <= 0) return this.encode(job.source, job.settings, job.mime);
+    const controller = new AbortController();
+    const encodePromise = this.encode(job.source, job.settings, job.mime, controller.signal);
     return new Promise((resolve, reject) => {
       let settled = false;
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
-        reject(
-          new Error(`texture encode timed out for ${job.assetGuid}`),
-        );
+        const error = new Error(`texture encode timed out for ${job.assetGuid}`);
+        // Stop the hung encoder too, so the next job does not queue behind it.
+        controller.abort(error);
+        reject(error);
       }, timeoutMs);
       encodePromise.then(
         (value) => {

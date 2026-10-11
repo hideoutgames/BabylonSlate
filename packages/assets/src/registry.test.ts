@@ -10,7 +10,8 @@ import {
 import { EncodeQueue } from "./encode-queue";
 import { AssetRegistry, RegistryGenerationClock } from "./registry";
 import { ThumbnailDecodeLru } from "./thumbnails";
-import type { ProjectStorageReader } from "@babylonslate/core";
+import { ENGINE_VERSION, SourceRevisionChangedError, type ProjectStorageReader, type StorageReadOptions } from "@babylonslate/core";
+import { createFontPayload } from "./font-payload";
 
 async function createStorage(): Promise<MemoryStorageAdapter> {
   const storage = new MemoryStorageAdapter("documents");
@@ -727,6 +728,120 @@ describe("AssetRegistry", () => {
     expect(registry.getByGuid("mat-1")?.path).toBe("assets/fx-extra/material.babasset");
   });
 
+  it("fails the mount, leaving nothing of the root, when a folder cannot be listed", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/top.babasset", { guid: "top", type: "Material", name: "Top" });
+    await writeAsset(storage, "assets/fx/spark.babasset", { guid: "spark-1", type: "Texture", name: "Spark" });
+    const readdir = storage.readdir.bind(storage);
+    vi.spyOn(storage, "readdir").mockImplementation(async (path) => {
+      if (path === "assets/fx") throw new Error("Permission denied");
+      return readdir(path);
+    });
+    const registry = new AssetRegistry(storage);
+
+    await expect(registry.mountRoot(projectContentRoot())).rejects.toThrow("Permission denied");
+    expect(registry.listRoots()).toEqual([]);
+    expect(registry.list()).toEqual([]);
+    await expect(registry.deleteFolder("project", "fx")).rejects.toThrow(/Unknown content root/);
+    expect(await storage.exists("assets/fx/spark.babasset")).toBe(true);
+  });
+
+  it("keeps the first file indexed when a copy made outside the editor has its guid, and will not delete the copy unseen", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/a/hero.babasset", { guid: "hero", type: "Material", name: "Hero" });
+    await storage.mkdir("assets/b", true);
+    await storage.writeBinary("assets/b/hero.babasset", await storage.readBinary("assets/a/hero.babasset"));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+
+    expect(registry.getByGuid("hero")?.path).toBe("assets/a/hero.babasset");
+    expect(registry.getByPath("assets/a/hero.babasset")?.header.guid).toBe("hero");
+    expect(registry.listGuidConflicts()).toEqual([
+      { rootId: "project", path: "assets/b/hero.babasset", guid: "hero", indexedPath: "assets/a/hero.babasset" },
+    ]);
+    await expect(registry.deleteFolder("project", "b")).rejects.toThrow(/assets\/b\/hero\.babasset/);
+    expect(await storage.exists("assets/b/hero.babasset")).toBe(true);
+
+    await registry.moveFolder("project", "b", "", "copies");
+    expect(registry.listGuidConflicts().map((conflict) => conflict.path)).toEqual(["assets/copies/hero.babasset"]);
+    await expect(registry.deleteFolder("project", "copies")).rejects.toThrow(/copies\/hero\.babasset/);
+  });
+
+  it("reads a moved asset's chunks from its new path on storage whose revisions follow content", async () => {
+    class ContentRevisionStorage extends MemoryStorageAdapter {
+      override async readBinaryRange(path: string, offset: number, length: number, revision?: string, options?: StorageReadOptions) {
+        const read = await super.readBinaryRange(path, offset, length, undefined, options);
+        const contentRevision = `size:${read.totalSize}`;
+        if (revision !== undefined && revision !== contentRevision) throw new SourceRevisionChangedError(`Changed: ${path}`);
+        return { ...read, revision: contentRevision };
+      }
+    }
+    const storage = new ContentRevisionStorage("documents");
+    await storage.openDocumentsProject("MoveLocator");
+    const payload = new Uint8Array([4, 3, 2, 1]);
+    await writeAsset(storage, "assets/tex.babasset", { guid: "tex", type: "Texture", name: "tex", payloadBytes: payload });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    expect(await registry.readChunk("tex", "payload")).toEqual(payload);
+
+    await registry.moveAsset("tex", "project", "moved/tex.babasset");
+    expect(await registry.readChunk("tex", "payload")).toEqual(payload);
+    await registry.moveFolder("project", "moved", "", "again");
+    expect(await registry.readChunk("tex", "payload")).toEqual(payload);
+  });
+
+  it("copies a folder past a destination name already on disk but not indexed", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/fx/spark.babasset", { guid: "spark", type: "Material", name: "spark" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await storage.mkdir("assets/fx_1", true);
+
+    const copied = await registry.copyFolder("project", "fx", "");
+    expect(copied).toBe("fx_2");
+    expect(registry.list().some((asset) => asset.path === "assets/fx_2/spark.babasset")).toBe(true);
+  });
+
+  it("does not index a Texture rewrite that finishes after its root was unmounted", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "plugin/assets/tex.babasset", { guid: "plugin-tex", type: "Texture", name: "tex" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.mountRoot({ id: "plugin:p", kind: "plugin", pathPrefix: "plugin/assets" });
+    let entered!: () => void;
+    let release!: () => void;
+    const reading = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const read = storage.readBinary.bind(storage);
+    vi.spyOn(storage, "readBinary").mockImplementation(async (path, options) => {
+      if (path === "plugin/assets/tex.babasset") { entered(); await gate; }
+      return read(path, options);
+    });
+    const write = registry.setCompressionState("plugin-tex", "encode_failed", { error: "boom" });
+    await reading;
+    registry.unmountRoot("plugin:p");
+    release();
+    await write;
+
+    expect(registry.getByGuid("plugin-tex")).toBeUndefined();
+    expect(registry.list()).toEqual([]);
+  });
+
+  it("refuses to attach a representation to a Font in a read-only root", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    await writeAsset(storage, "plugin/assets/ui.babasset", { guid: "font-ui", type: "Font", name: "Ui" });
+    const before = await storage.readBinary("plugin/assets/ui.babasset");
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.mountRoot({ id: "plugin:fonts", kind: "plugin", pathPrefix: "plugin/assets", readOnly: true });
+
+    await expect(registry.importFile("project", "", "Ui.facetype.json", new TextEncoder().encode("{\"glyphs\":{}}"), {
+      attachToGuid: "font-ui",
+    })).rejects.toThrow(/read-only/i);
+    expect(await storage.readBinary("plugin/assets/ui.babasset")).toEqual(before);
+  });
+
   it("builds a folder tree with nested assets", async () => {
     const storage = await createStorage();
     await writeAsset(storage, "assets/root.babasset", {
@@ -1145,6 +1260,108 @@ describe("AssetRegistry", () => {
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     expect(registry.getByGuid("tex-mtime")?.mtime).toBe(expected);
+  });
+
+  it("records the written file's mtime after a rename, a duplicate and a Font attach", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/tex.babasset", { guid: "tex", type: "Texture", name: "tex" });
+    await writeAsset(storage, "assets/Ui.babasset", { guid: "font", type: "Font", name: "Ui" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.renameAsset("tex", "Renamed");
+    const copy = await registry.duplicateAsset("tex", "project");
+    await registry.importFile("project", "", "Ui.facetype.json", new TextEncoder().encode('{"glyphs":{}}'));
+    expect(registry.getByGuid("font")!.header.chunks.some((chunk) => chunk.id === "facetype-glyphs")).toBe(true);
+    for (const guid of ["tex", copy.header.guid, "font"]) {
+      const asset = registry.getByGuid(guid)!;
+      expect(asset.mtime).not.toBeNull();
+      expect(asset.mtime).toBe((await storage.stat(asset.path)).mtime);
+    }
+  });
+
+  it("attaches a representation to the Font of its name in the import folder, and to no Font when the name is ambiguous", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/a/Ui.babasset", { guid: "font-a", type: "Font", name: "Ui" });
+    await writeAsset(storage, "assets/b/Ui.babasset", { guid: "font-b", type: "Font", name: "Ui" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const glyphs = () => new TextEncoder().encode('{"glyphs":{}}');
+    const hasGlyphs = (guid: string) => registry.getByGuid(guid)!.header.chunks.some((chunk) => chunk.id === "facetype-glyphs");
+
+    expect(await registry.importFile("project", "a", "Ui.facetype.json", glyphs())).toEqual([]);
+    expect([hasGlyphs("font-a"), hasGlyphs("font-b")]).toEqual([true, false]);
+    // Two Fonts named Ui and neither in this folder: the import makes its own.
+    const created = await registry.importFile("project", "c", "Ui.facetype.json", glyphs());
+    expect(created.map((asset) => [asset.header.type, asset.path])).toEqual([["Font", "assets/c/Ui.babasset"]]);
+    expect(hasGlyphs("font-b")).toBe(false);
+  });
+
+  it("attaches MSDF into a saved Font's document, keeping its source and fallbacks", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    // Saved from the Font editor: the payload lives in the document chunk.
+    await storage.writeBinary("assets/Ui.babasset", await encodeAssetDocument({
+      type: "Font", name: "Ui", guid: "font", version: 1,
+      payload: createFontPayload("Ui", { fallbackGuids: ["fallback"], representations: { source: true } }) as unknown as Record<string, unknown>,
+    }, { extraChunks: [{ id: "source", kind: "font", mime: "font/ttf", data: new Uint8Array([1, 2, 3]) }] }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+
+    const json = new TextEncoder().encode(JSON.stringify({ pages: ["Ui-msdf.png"], chars: [] }));
+    await registry.importFile("project", "", "Ui-msdf.json", json, { sidecars: { "Ui-msdf.png": new Uint8Array([9]) } });
+    const expected = {
+      family: "Ui",
+      fallbackGuids: ["fallback"],
+      representations: { source: true, facetype: false, msdfJson: true, msdfPng: true, msdf: true },
+    };
+    expect((await decodeAssetDocument(await storage.readBinary("assets/Ui.babasset"))).payload).toMatchObject(expected);
+    expect(registry.getByGuid("font")!.header.payload).toMatchObject(expected);
+  });
+
+  it("fails a pending Texture's encode that has no source pixels instead of leaving it pending", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    await storage.writeBinary("assets/tex.babasset", await encodeBabasset({
+      header: {
+        guid: "tex", type: "Texture", name: "tex", engineVersion: "0.0.0", version: 1, mode: "thin",
+        dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "pending" },
+      },
+      chunks: [],
+    }));
+    const registry = new AssetRegistry(storage);
+    registry.setEncodePipeline(new EncodeQueue({ onComplete: async () => {} }));
+    await registry.mountRoot(projectContentRoot());
+
+    expect(await registry.requeueUncompressedTextures()).toBe(0);
+    expect(registry.getByGuid("tex")!.header.payload).toMatchObject({
+      compressionState: "encode_failed",
+      encodeError: "The Texture has no source pixels to encode.",
+    });
+  });
+
+  it("gives overlapping copies of one folder different names", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/fx/spark.babasset", { guid: "spark", type: "Texture", name: "spark" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+
+    const copies = await Promise.all([registry.duplicateFolder("project", "fx"), registry.duplicateFolder("project", "fx")]);
+    expect(copies.sort()).toEqual(["fx_1", "fx_2"]);
+    for (const copy of copies) expect(registry.getByPath(`assets/${copy}/spark.babasset`)).toBeDefined();
+  });
+
+  it("knows a created Tileset's atlas from its header payload without reading a document", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const tileset = await registry.createAsset("project", "Ground.tileset.babasset", {
+      type: "Tileset", name: "Ground", guid: "ground", version: 1, dependencies: [], parentClass: null,
+      payload: { textureGuid: "atlas", tileWidth: 16, tileHeight: 16 }, chunks: [],
+    });
+    expect(tileset.header.engineVersion).toBe(ENGINE_VERSION);
+    expect(registry.isAtlasTexture("atlas")).toBe(true);
+    expect(registry.payloadLoader.snapshot().recentRequests).toEqual([]);
   });
 });
 

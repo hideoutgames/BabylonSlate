@@ -142,7 +142,8 @@ describe("asset documents", () => {
     );
     const header = readAssetDocumentHeader(bytes);
     expect(header.type).toBe("Sprite");
-    expect(header.payload).toEqual({ name: "Hero" });
+    // A Sprite header also lists the atlases it samples.
+    expect(header.payload).toEqual({ name: "Hero", atlasTextures: [] });
     expect(header.chunks.map((chunk) => chunk.id)).toEqual([DOCUMENT_CHUNK_ID]);
     const decoded = await decodeAssetDocument(bytes);
     expect(decoded.payload.name).toBe("Hero");
