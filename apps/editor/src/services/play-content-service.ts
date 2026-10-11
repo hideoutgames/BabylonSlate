@@ -4,7 +4,6 @@ import {
   normalizeInputAssetPayload,
   normalizeRenderTargetPayload,
   normalizeRenderTargetTexturePayload,
-  normalizeScene,
   normalizeWaterDefinition,
   type InputAssetDefinition,
   type ProjectDocument,
@@ -12,7 +11,6 @@ import {
   type RenderTargetTexturePayload,
   type SerializedGraph,
   type SerializedScene,
-  type SerializedSceneLayer,
   type WaterDefinition,
 } from "@babylonslate/core";
 import {
@@ -38,7 +36,6 @@ import {
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 import { createAppSettingsStore } from "@babylonslate/vfs";
-import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import { collectAreaEmissions } from "../lib/collect-area-emissions";
 import { collectGpuTextureBytes, texturePixelSizesFromHeaders } from "../lib/collect-gpu-texture-bytes";
 import { classParentLookup, materialDomainsFromAssets } from "../lib/content-browser-helpers";
@@ -54,45 +51,23 @@ import {
 } from "../lib/logic-graph-document";
 import { createPlayAudioSourceLoader, playAudioLibraryFromAssets } from "../lib/play-audio";
 import {
-  animationGraphGuidsFromScene,
-  behaviourTreeGuidsFromScene,
-  blackboardGuidsFromScene,
   collectAnimGraphCompileDocuments,
   collectPlayScriptDocuments,
   materialClosureFromGuids,
-  materialGuidsFromGraphs,
-  mergePlayAnimGraphs,
-  mergePlayBehaviourTrees,
-  mergePlayBlackboards,
   modelAssetGuidsFromScene,
   modelGuidsForPlayRetarget,
-  overlayEditorScenesFromLayers,
-  playAnimGraphsFromGuids,
-  playAnimGraphsFromOpenDocuments,
-  playBehaviourTreesFromGuids,
-  playBehaviourTreesFromOpenDocuments,
-  playBlackboardsFromGuids,
-  playBlackboardsFromOpenDocuments,
   playMaterialGuidsFromSources,
-  playSpriteAnimationPayloadsFromGuids,
   playSpritePayloadsFromGuids,
   playTilemapPayloadsFromGuids,
   playTilesetPayloadsFromGuids,
-  sceneLayerGuidsFromGraphs,
-  sceneLayerGuidsFromScenes,
-  spriteAnimationGuidsFromAnimGraphs,
-  spriteAnimationGuidsFromBehaviourTrees,
   spriteAssetGuidsFromScene,
   textureGuidsFromPlayPayloads,
   tilemapAssetGuidsFromScene,
   tilesetGuidsFromTilemaps,
   type PlayAnimGraphEntry,
-  type PlayBehaviourTreeEntry,
-  type PlayBlackboardEntry,
 } from "../lib/play-content";
 import { collectFontAssetEntries, collectFontCssStacks, collectFontFacetypeBytes, collectFontMsdfPair, fontGuidsForSceneRepresentation } from "../lib/play-fonts";
-import { loadPlayParticleLibrary } from "../lib/play-particles";
-import { classAssetPaths, mergePluginEditorUtilityObjects, playSceneLibraryPaths } from "../lib/plugin-ui";
+import { classAssetPaths, mergePluginEditorUtilityObjects } from "../lib/plugin-ui";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
 import type { DocumentService, OpenDocument } from "./document-service";
 import {
@@ -101,7 +76,6 @@ import {
   knownClassIdSet,
   validateSerializedGraph,
 } from "./graph-validation";
-import { collectPlayDataCatalog } from "./play-data-assets";
 import type { ProjectService } from "./project-service";
 import {
   classIdForGraphPath,
@@ -496,111 +470,8 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     }
   };
 
-  const collectPlayAnimGraphs = async (
-    scene?: SerializedScene | null,
-    extraScenes: readonly SerializedScene[] = [],
-  ): Promise<PlayAnimGraphEntry[]> => {
-    const assets = projectService.registry?.list() ?? [];
-    const clipCatalog = animClipCatalogFromAssets(assets);
-    const byGuid = new Map(
-      assets
-        .filter((asset) => asset.header.type === "AnimationGraph")
-        .map((asset) => [asset.header.guid, asset]),
-    );
-    const openEntries = playAnimGraphsFromOpenDocuments(
-      [...documentService.getState().openDocuments.values()],
-      (path) =>
-        assets.find((asset) => asset.path === path)?.header.guid ?? null,
-      clipCatalog,
-    );
-    const needed = new Set([
-      ...animationGraphGuidsFromScene(scene),
-      ...extraScenes.flatMap((entry) => animationGraphGuidsFromScene(entry)),
-    ]);
-    const loaded = new Map<string, unknown>();
-    for (const guid of needed) {
-      const asset = byGuid.get(guid);
-      if (!asset) continue;
-      const content = await loadPlayAssetContent("anim-graph", asset.path);
-      if (content) loaded.set(guid, content);
-    }
-    return mergePlayAnimGraphs(
-      openEntries.filter((entry) => needed.has(entry.guid)),
-      playAnimGraphsFromGuids(
-        [...needed],
-        (guid) => loaded.get(guid) ?? null,
-        clipCatalog,
-      ),
-    );
-  };
-
-  const collectPlayBehaviourTrees = async (
-    scene?: SerializedScene | null,
-    extraScenes: readonly SerializedScene[] = [],
-  ): Promise<PlayBehaviourTreeEntry[]> => {
-    const assets = projectService.registry?.list() ?? [];
-    const byGuid = new Map(
-      assets
-        .filter((asset) => asset.header.type === "BehaviourTree")
-        .map((asset) => [asset.header.guid, asset]),
-    );
-    const openEntries = playBehaviourTreesFromOpenDocuments(
-      [...documentService.getState().openDocuments.values()],
-      (path) =>
-        assets.find((asset) => asset.path === path)?.header.guid ?? null,
-    );
-    const needed = new Set([
-      ...behaviourTreeGuidsFromScene(scene),
-      ...extraScenes.flatMap((entry) => behaviourTreeGuidsFromScene(entry)),
-    ]);
-    const loaded = new Map<string, unknown>();
-    for (const guid of needed) {
-      const asset = byGuid.get(guid);
-      if (!asset) continue;
-      const content = await loadPlayAssetContent("behaviour-tree", asset.path);
-      if (content) loaded.set(guid, content);
-    }
-    return mergePlayBehaviourTrees(
-      openEntries.filter((entry) => needed.has(entry.guid)),
-      playBehaviourTreesFromGuids([...needed], (guid) => loaded.get(guid) ?? null),
-    );
-  };
-
-  const collectPlayBlackboards = async (
-    scene?: SerializedScene | null,
-    extraScenes: readonly SerializedScene[] = [],
-  ): Promise<PlayBlackboardEntry[]> => {
-    const assets = projectService.registry?.list() ?? [];
-    const byGuid = new Map(
-      assets
-        .filter((asset) => asset.header.type === "Blackboard")
-        .map((asset) => [asset.header.guid, asset]),
-    );
-    const openEntries = playBlackboardsFromOpenDocuments(
-      [...documentService.getState().openDocuments.values()],
-      (path) =>
-        assets.find((asset) => asset.path === path)?.header.guid ?? null,
-    );
-    const needed = new Set([
-      ...blackboardGuidsFromScene(scene),
-      ...extraScenes.flatMap((entry) => blackboardGuidsFromScene(entry)),
-    ]);
-    const loaded = new Map<string, unknown>();
-    for (const guid of needed) {
-      const asset = byGuid.get(guid);
-      if (!asset) continue;
-      const content = await loadPlayAssetContent("blackboard", asset.path);
-      if (content) loaded.set(guid, content);
-    }
-    return mergePlayBlackboards(
-      openEntries.filter((entry) => needed.has(entry.guid)),
-      playBlackboardsFromGuids([...needed], (guid) => loaded.get(guid) ?? null),
-    );
-  };
-
   const collectPlaySpritePayloads = async (
     scene?: SerializedScene | null,
-    graphs: readonly PlayAnimGraphEntry[] = [],
     extraScenes: readonly SerializedScene[] = [],
   ): Promise<Map<string, SpritePayload>> => {
     const assets = projectService.registry?.list() ?? [];
@@ -613,7 +484,6 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     const needed = new Set([
       ...spriteAssetGuidsFromScene(scene),
       ...extraScenes.flatMap((entry) => spriteAssetGuidsFromScene(entry)),
-      ...spriteAnimationGuidsFromAnimGraphs(graphs),
     ]);
     for (const guid of needed) {
       const asset = byGuid.get(guid);
@@ -622,36 +492,6 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       if (content) loaded.set(guid, content);
     }
     return playSpritePayloadsFromGuids(
-      [...loaded.keys()],
-      (guid) => loaded.get(guid) ?? null,
-    );
-  };
-
-  const collectPlaySpriteAnimationPayloads = async (
-    graphs: readonly PlayAnimGraphEntry[],
-    trees: readonly PlayBehaviourTreeEntry[] = [],
-  ): Promise<Map<string, SpriteAnimationPayload>> => {
-    const assets = projectService.registry?.list() ?? [];
-    const byGuid = new Map(
-      assets
-        .filter((asset) => asset.header.type === "SpriteAnimation")
-        .map((asset) => [asset.header.guid, asset]),
-    );
-    const loaded = new Map<string, unknown>();
-    const needed = new Set([
-      ...spriteAnimationGuidsFromAnimGraphs(graphs),
-      ...spriteAnimationGuidsFromBehaviourTrees(trees),
-    ]);
-    for (const guid of needed) {
-      const asset = byGuid.get(guid);
-      if (!asset) continue;
-      const content = await loadPlayAssetContent(
-        "sprite-animation",
-        asset.path,
-      );
-      if (content) loaded.set(guid, content);
-    }
-    return playSpriteAnimationPayloadsFromGuids(
       [...loaded.keys()],
       (guid) => loaded.get(guid) ?? null,
     );
@@ -666,12 +506,6 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     }
     return waters;
   };
-
-  const collectPlayDataAssets = (requiredGuids?: ReadonlySet<string>) => collectPlayDataCatalog(
-    (projectService.registry?.list() ?? []).filter((asset) => !requiredGuids || requiredGuids.has(asset.header.guid)),
-    documentService.getOpenDocumentsOrdered(),
-    loadPlayAssetContent,
-  );
 
   const collectPlayRenderTargets = async (requiredGuids?: ReadonlySet<string>) => {
     const renderTargets = new Map<string, RenderTargetPayload>();
@@ -967,12 +801,6 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     };
   };
 
-  const collectPlayParticles = (requiredGuids?: ReadonlySet<string>) =>
-    loadPlayParticleLibrary({
-      assets: (projectService.registry?.list() ?? []).filter((asset) => !requiredGuids || requiredGuids.has(asset.header.guid)),
-      loadDocument: loadPlayAssetContent,
-    });
-
   const collectPlayMaterialLibrary = async (
     scene?: SerializedScene | null,
     extraScenes: readonly SerializedScene[] = [],
@@ -1048,78 +876,6 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     return { documents, functions, textureGuids: closure.textures };
   };
 
-  const collectPlaySceneLibrary = async (requiredGuids?: ReadonlySet<string>): Promise<
-    Array<{ guid: string; scene: SerializedScene }>
-  > => {
-    const paths = playSceneLibraryPaths(
-      options.projectDocument()?.scenes ?? [],
-      projectService.registry?.list() ?? [],
-    );
-    const open = documentService.getState().openDocuments;
-    const scenes: Array<{ guid: string; scene: SerializedScene }> = [];
-    for (const path of paths) {
-      if (requiredGuids && !requiredGuids.has(projectService.guidForPath(path) ?? documentId({ kind: "scene", path }))) continue;
-      const id = documentId({ kind: "scene", path });
-      const openDoc = open.get(id);
-      try {
-        const content =
-          openDoc?.content ?? (await projectService.loadDocument("scene", path));
-        scenes.push({
-          guid: projectService.guidForPath(path) ?? id,
-          scene: normalizeScene(content),
-        });
-      } catch (error) {
-        reportLoadFailure("Scene", path, error, requiredGuids !== undefined);
-      }
-    }
-    return scenes;
-  };
-
-  const collectPlaySceneLayers = async (
-    scenes: readonly SerializedScene[],
-    includeGraphReferences = false,
-  ): Promise<{
-    layers: Array<{ guid: string; layer: SerializedSceneLayer }>;
-    overlayScenes: SerializedScene[];
-    graphMaterialGuids: string[];
-  }> => {
-    const graphs = includeGraphReferences
-      ? (await loadProjectGraphDocuments()).map((entry) => entry.content)
-      : [];
-    const needed = [
-      ...sceneLayerGuidsFromScenes(scenes),
-      ...sceneLayerGuidsFromGraphs(graphs),
-    ];
-    const assets = projectService.registry?.list() ?? [];
-    const byGuid = new Map(
-      assets
-        .filter((asset) => asset.header.type === "SceneLayer")
-        .map((asset) => [asset.header.guid, asset]),
-    );
-    const open = documentService.getState().openDocuments;
-    const layers: Array<{ guid: string; layer: SerializedSceneLayer }> = [];
-    for (const guid of needed) {
-      const asset = byGuid.get(guid);
-      if (!asset) continue;
-      const openDoc = open.get(
-        documentId({ kind: "scene-layer", path: asset.path }),
-      );
-      const raw =
-        openDoc?.content ??
-        (await loadPlayAssetContent("scene-layer", asset.path));
-      if (!raw) continue;
-      const layer = persistableDocumentContent(
-        "scene-layer",
-        raw,
-      ) as SerializedSceneLayer;
-      layers.push({ guid, layer });
-    }
-    return {
-      layers,
-      overlayScenes: overlayEditorScenesFromLayers(layers),
-      graphMaterialGuids: materialGuidsFromGraphs(graphs),
-    };
-  };
   return {
     collectGraphTypeSchemas,
     graphSignature,
@@ -1128,13 +884,8 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     clearCompileCache: () => compileCache.clear(),
     collectPlayPreviewScripts,
     collectEditorUtilityScripts,
-    collectPlayAnimGraphs,
-    collectPlayBehaviourTrees,
-    collectPlayBlackboards,
     collectPlaySpritePayloads,
-    collectPlaySpriteAnimationPayloads,
     collectPlayWaterContent,
-    collectPlayDataAssets,
     collectPlayRenderTargets,
     collectPlayTilemapContent,
     collectPlayAreaEmissions,
@@ -1148,9 +899,6 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     collectPlayModelPayloads,
     collectPlayInputAssets,
     collectPlayAudio,
-    collectPlayParticles,
     collectPlayMaterialLibrary,
-    collectPlaySceneLibrary,
-    collectPlaySceneLayers,
   };
 }

@@ -1,15 +1,7 @@
-import { parseAnimGraphDocument, resolveAnimGraphClips } from "@babylonslate/anim-graph";
-import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
 import type { ControlMessage } from "@babylonslate/bridge";
-import {
-  parseBehaviourTreeDocument,
-  parseBlackboardDocument,
-  builtinClassId,
-} from "@babylonslate/behaviour-tree";
 import {
   modelMaterialGuids,
   normalizeAnimationPayload,
-  parseSpriteAnimationPayload,
   retargetAnimationLoadsFromAnimations,
   spriteAnimationTextureGuids,
   type ModelPayload,
@@ -28,7 +20,6 @@ import {
   UI_CONTROL_2D_CLASS_IDS,
   isEditorOnlyAsset,
   parseSkyboxFaces,
-  sceneLayerToEditorScene,
   skyboxFaceGuids,
   text2dFontGuidsFromScene,
   text2dImageGuidsFromScene,
@@ -36,7 +27,6 @@ import {
   type CollisionTriangleMesh,
   type SerializedGraph,
   type SerializedScene,
-  type SerializedSceneLayer,
 } from "@babylonslate/core";
 import {
   isMaterialInstanceContent,
@@ -47,12 +37,6 @@ import {
   normalizeMaterialInstanceDocument,
 } from "@babylonslate/shader-graph";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
-
-export interface PlayContentDocument {
-  id: string;
-  ref: { kind: string; path: string };
-  content: unknown;
-}
 
 export function filterPlayScriptDocuments<
   T extends { path: string; content: SerializedGraph },
@@ -90,26 +74,6 @@ export type PlayAnimGraphEntry = { guid: string; document: unknown };
 export type PlayBehaviourTreeEntry = { guid: string; document: unknown };
 export type PlayBlackboardEntry = { guid: string; document: unknown };
 
-/**
- * Open AnimationGraph documents for the worker `loadAnimGraphs` control.
- * `guidForPath` maps the asset path to the registry guid (graphGuid).
- */
-export function playAnimGraphsFromOpenDocuments(
-  documents: readonly PlayContentDocument[],
-  guidForPath: (path: string) => string | null,
-  catalog: readonly AnimClipCatalogEntry[] = [],
-): PlayAnimGraphEntry[] {
-  const graphs: PlayAnimGraphEntry[] = [];
-  for (const entry of documents) {
-    if (entry.ref.kind !== "anim-graph" || !entry.content) continue;
-    const parsed = parseAnimGraphDocument(entry.content);
-    if (!parsed) continue;
-    const guid = guidForPath(entry.ref.path) ?? entry.ref.path;
-    graphs.push({ guid, document: resolveAnimGraphClips(parsed, catalog) });
-  }
-  return graphs;
-}
-
 function stringGuid(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
@@ -135,129 +99,11 @@ function componentGuidsFromScene(
   return found;
 }
 
-/** AnimationGraph guids referenced by scene components (not only open tabs). */
-export function animationGraphGuidsFromScene(
-  scene: SerializedScene | null | undefined,
-): string[] {
-  return componentGuidsFromScene(scene, "AnimationGraphComponent", [
-    "graphGuid",
-    "assetGuid",
-  ]);
-}
-
-export function behaviourTreeGuidsFromScene(
-  scene: SerializedScene | null | undefined,
-): string[] {
-  return componentGuidsFromScene(scene, "BehaviourTreeComponent", [
-    "treeGuid",
-    "assetGuid",
-  ]);
-}
-
-export function blackboardGuidsFromScene(
-  scene: SerializedScene | null | undefined,
-): string[] {
-  return componentGuidsFromScene(scene, "BehaviourTreeComponent", [
-    "blackboardGuid",
-  ]);
-}
-
 /** Sprite asset guids referenced by scene SpriteComponents. */
 export function spriteAssetGuidsFromScene(
   scene: SerializedScene | null | undefined,
 ): string[] {
   return componentGuidsFromScene(scene, "SpriteComponent", ["assetGuid"]);
-}
-
-function pinDefaultFromNodeData(
-  data: Record<string, unknown> | undefined,
-  pinName: string,
-): string | null {
-  if (!data) return null;
-  const properties =
-    data.properties && typeof data.properties === "object"
-      ? (data.properties as Record<string, unknown>)
-      : data;
-  const raw = properties[`default:${pinName}`] ?? properties[pinName];
-  return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
-}
-
-function serializedGraphNodes(
-  graph: SerializedGraph,
-): SerializedGraph["nodes"] {
-  const nodes = [...graph.nodes];
-  for (const nested of Object.values(graph.functionGraphs ?? {})) {
-    nodes.push(...nested.nodes);
-  }
-  return nodes;
-}
-
-/** SceneLayer asset guids authored on world Scene Options. */
-export function sceneLayerGuidsFromScenes(
-  scenes: readonly (SerializedScene | null | undefined)[],
-): string[] {
-  const guids: string[] = [];
-  const seen = new Set<string>();
-  for (const scene of scenes) {
-    for (const entry of scene?.settings.sceneLayers ?? []) {
-      if (!entry.assetGuid || seen.has(entry.assetGuid)) continue;
-      seen.add(entry.assetGuid);
-      guids.push(entry.assetGuid);
-    }
-  }
-  return guids;
-}
-
-/** SceneLayer asset guids on Create Scene Layer pin defaults. */
-export function sceneLayerGuidsFromGraphs(
-  graphs: readonly SerializedGraph[],
-): string[] {
-  const guids: string[] = [];
-  const seen = new Set<string>();
-  for (const graph of graphs) {
-    for (const node of serializedGraphNodes(graph)) {
-      if (node.type !== "scene-layer.create") continue;
-      const guid = pinDefaultFromNodeData(node.data, "asset");
-      if (!guid || seen.has(guid)) continue;
-      seen.add(guid);
-      guids.push(guid);
-    }
-  }
-  return guids;
-}
-
-const GRAPH_MATERIAL_PINS: Readonly<Record<string, string>> = {
-  "scene-layer.registerPostProcess": "material",
-  "scene-layer.unregisterPostProcess": "material",
-  "material.setMaterialInstance": "instance",
-};
-
-/**
- * Material guids that only graphs reference: post-process Materials on
- * SceneLayer Register/Unregister nodes and Set Material Instance assets.
- */
-export function materialGuidsFromGraphs(
-  graphs: readonly SerializedGraph[],
-): string[] {
-  const guids: string[] = [];
-  const seen = new Set<string>();
-  for (const graph of graphs) {
-    for (const node of serializedGraphNodes(graph)) {
-      const pinId = GRAPH_MATERIAL_PINS[node.type];
-      if (!pinId) continue;
-      const guid = pinDefaultFromNodeData(node.data, pinId);
-      if (!guid || seen.has(guid)) continue;
-      seen.add(guid);
-      guids.push(guid);
-    }
-  }
-  return guids;
-}
-
-export function overlayEditorScenesFromLayers(
-  layers: ReadonlyArray<{ guid: string; layer: SerializedSceneLayer }>,
-): SerializedScene[] {
-  return layers.map((entry) => sceneLayerToEditorScene(entry.layer));
 }
 
 /** Texture guids on overlay 2DTexture components and RichText `[img]` tags. */
@@ -320,32 +166,6 @@ export function tilemapAssetGuidsFromScene(
   return componentGuidsFromScene(scene, "TilemapComponent", ["assetGuid"]);
 }
 
-export function playAnimGraphsFromGuids(
-  guids: readonly string[],
-  documentForGuid: (guid: string) => unknown | null,
-  catalog: readonly AnimClipCatalogEntry[] = [],
-): PlayAnimGraphEntry[] {
-  const graphs: PlayAnimGraphEntry[] = [];
-  for (const guid of guids) {
-    const content = documentForGuid(guid);
-    if (!content) continue;
-    const parsed = parseAnimGraphDocument(content);
-    if (!parsed) continue;
-    graphs.push({ guid, document: resolveAnimGraphClips(parsed, catalog) });
-  }
-  return graphs;
-}
-
-export function mergePlayAnimGraphs(
-  ...groups: readonly PlayAnimGraphEntry[][]
-): PlayAnimGraphEntry[] {
-  const byGuid = new Map<string, PlayAnimGraphEntry>();
-  for (const group of groups) {
-    for (const entry of group) byGuid.set(entry.guid, entry);
-  }
-  return [...byGuid.values()];
-}
-
 /** Compile inputs for Animation Object + transition-rule scripts. */
 export function collectAnimGraphCompileDocuments(
   entries: readonly PlayAnimGraphEntry[],
@@ -358,98 +178,11 @@ export function collectAnimGraphCompileDocuments(
   }));
 }
 
-export function playBehaviourTreesFromOpenDocuments(
-  documents: readonly PlayContentDocument[],
-  guidForPath: (path: string) => string | null,
-): PlayBehaviourTreeEntry[] {
-  const trees: PlayBehaviourTreeEntry[] = [];
-  for (const entry of documents) {
-    if (entry.ref.kind !== "behaviour-tree" || !entry.content) continue;
-    const parsed = parseBehaviourTreeDocument(entry.content);
-    if (!parsed) continue;
-    const guid = guidForPath(entry.ref.path) ?? entry.ref.path;
-    trees.push({ guid, document: parsed });
-  }
-  return trees;
-}
-
-export function playBehaviourTreesFromGuids(
-  guids: readonly string[],
-  documentForGuid: (guid: string) => unknown | null,
-): PlayBehaviourTreeEntry[] {
-  const trees: PlayBehaviourTreeEntry[] = [];
-  for (const guid of guids) {
-    const content = documentForGuid(guid);
-    if (!content) continue;
-    const parsed = parseBehaviourTreeDocument(content);
-    if (!parsed) continue;
-    trees.push({ guid, document: parsed });
-  }
-  return trees;
-}
-
-export function mergePlayBehaviourTrees(
-  ...groups: readonly PlayBehaviourTreeEntry[][]
-): PlayBehaviourTreeEntry[] {
-  const byGuid = new Map<string, PlayBehaviourTreeEntry>();
-  for (const group of groups) {
-    for (const entry of group) byGuid.set(entry.guid, entry);
-  }
-  return [...byGuid.values()];
-}
-
-export function playBlackboardsFromOpenDocuments(
-  documents: readonly PlayContentDocument[],
-  guidForPath: (path: string) => string | null,
-): PlayBlackboardEntry[] {
-  const boards: PlayBlackboardEntry[] = [];
-  for (const entry of documents) {
-    if (entry.ref.kind !== "blackboard" || !entry.content) continue;
-    const parsed = parseBlackboardDocument(entry.content);
-    if (!parsed) continue;
-    const guid = guidForPath(entry.ref.path) ?? entry.ref.path;
-    boards.push({ guid, document: parsed });
-  }
-  return boards;
-}
-
-export function playBlackboardsFromGuids(
-  guids: readonly string[],
-  documentForGuid: (guid: string) => unknown | null,
-): PlayBlackboardEntry[] {
-  const boards: PlayBlackboardEntry[] = [];
-  for (const guid of guids) {
-    const content = documentForGuid(guid);
-    if (!content) continue;
-    const parsed = parseBlackboardDocument(content);
-    if (!parsed) continue;
-    boards.push({ guid, document: parsed });
-  }
-  return boards;
-}
-
-export function mergePlayBlackboards(
-  ...groups: readonly PlayBlackboardEntry[][]
-): PlayBlackboardEntry[] {
-  const byGuid = new Map<string, PlayBlackboardEntry>();
-  for (const group of groups) {
-    for (const entry of group) byGuid.set(entry.guid, entry);
-  }
-  return [...byGuid.values()];
-}
-
 function asSpritePayload(value: unknown): SpritePayload | null {
   if (!value || typeof value !== "object") return null;
   const record = value as { frames?: unknown; clips?: unknown };
   if (!Array.isArray(record.frames) || !Array.isArray(record.clips)) return null;
   return value as SpritePayload;
-}
-
-function asSpriteAnimationPayload(value: unknown): SpriteAnimationPayload | null {
-  if (!value || typeof value !== "object") return null;
-  const record = value as { frames?: unknown; clips?: unknown };
-  if (!Array.isArray(record.frames) || Array.isArray(record.clips)) return null;
-  return parseSpriteAnimationPayload(value);
 }
 
 export function playSpritePayloadsFromGuids(
@@ -462,62 +195,6 @@ export function playSpritePayloadsFromGuids(
     if (payload) map.set(guid, payload);
   }
   return map;
-}
-
-export function playSpriteAnimationPayloadsFromGuids(
-  guids: readonly string[],
-  payloadForGuid: (guid: string) => unknown | null,
-): Map<string, SpriteAnimationPayload> {
-  const map = new Map<string, SpriteAnimationPayload>();
-  for (const guid of guids) {
-    const payload = asSpriteAnimationPayload(payloadForGuid(guid));
-    if (payload) map.set(guid, payload);
-  }
-  return map;
-}
-
-/** Sprite Animation asset guids referenced by loaded Animation Graphs. */
-export function spriteAnimationGuidsFromAnimGraphs(
-  graphs: readonly PlayAnimGraphEntry[],
-): string[] {
-  const guids: string[] = [];
-  const seen = new Set<string>();
-  for (const entry of graphs) {
-    const document = parseAnimGraphDocument(entry.document);
-    if (!document) continue;
-    for (const clip of document.clips) {
-      if (clip.kind !== "sprite" || !clip.assetGuid || seen.has(clip.assetGuid)) {
-        continue;
-      }
-      seen.add(clip.assetGuid);
-      guids.push(clip.assetGuid);
-    }
-  }
-  return guids;
-}
-
-/** Sprite Animation asset guids referenced by BT Play Animation tasks. */
-export function spriteAnimationGuidsFromBehaviourTrees(
-  trees: readonly PlayBehaviourTreeEntry[],
-): string[] {
-  const guids: string[] = [];
-  const seen = new Set<string>();
-  for (const entry of trees) {
-    const document = parseBehaviourTreeDocument(entry.document);
-    if (!document) continue;
-    for (const node of document.nodes) {
-      if (builtinClassId(node.classId) !== "bt.task.playAnimation") continue;
-      if (node.properties.clipKind !== "sprite") continue;
-      const guid =
-        typeof node.properties.clipAssetGuid === "string"
-          ? node.properties.clipAssetGuid.trim()
-          : "";
-      if (!guid || seen.has(guid)) continue;
-      seen.add(guid);
-      guids.push(guid);
-    }
-  }
-  return guids;
 }
 
 export function playTilemapPayloadsFromGuids(

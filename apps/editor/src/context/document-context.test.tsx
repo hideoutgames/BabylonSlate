@@ -624,10 +624,8 @@ describe("DocumentProvider actions and route", () => {
     const storage = registry.storageFor("project");
     const before = storage.getReadMetrics!().actualBytesRead;
     const required = new Set<string>();
-    expect(await actions.collectPlaySceneLibrary(required)).toEqual([]);
     expect(await actions.collectPlayPreviewScripts(required)).toEqual({ bundles: [], diagnostics: [] });
     expect(await actions.collectEditorUtilityScripts()).toEqual([]);
-    expect(await actions.collectPlayDataAssets(required)).toEqual([]);
     expect(await actions.collectPlayInputAssets(required)).toEqual([]);
     expect(await actions.collectPlayFontFaceEntries(required)).toEqual([]);
     expect((await actions.collectPlayWaterContent(required)).size).toBe(0);
@@ -635,7 +633,6 @@ describe("DocumentProvider actions and route", () => {
     expect(targets.renderTargets.size).toBe(0);
     expect(targets.renderTargetTextures.size).toBe(0);
     await actions.collectPlayAudio(required);
-    await actions.collectPlayParticles(required);
     const thumbnails = vi.fn();
     const unsubscribe = subscribeModelThumbnailJobs(thumbnails);
     try {

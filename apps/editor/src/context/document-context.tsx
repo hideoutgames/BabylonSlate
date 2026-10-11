@@ -66,7 +66,6 @@ import {
   type TilesetPayload,
   newAssetGuid,
   playerFilesHaveKtx2Transcoder,
-  type ParticleLibrary,
 } from "@babylonslate/assets";
 import {
   DEFAULT_EDIT_BYTE_BUDGET,
@@ -207,11 +206,6 @@ import {
   EDITOR_UTILITY_EVENTS,
   emitEditorUtilityLifecycle,
 } from "../lib/editor-utility-scripts";
-import type {
-  PlayAnimGraphEntry,
-  PlayBehaviourTreeEntry,
-  PlayBlackboardEntry,
-} from "../lib/play-content";
 import {
   beginSaveAllProgress,
   clearDocumentDirtyTrace,
@@ -524,32 +518,12 @@ interface DocumentContextValue {
     kind: AssetDocumentKind,
     path: string,
   ) => Promise<unknown | null>;
-  /** AnimationGraphs referenced by the Play scene; open tabs override only required graphs. */
-  collectPlayAnimGraphs: (
-    scene?: SerializedScene | null,
-    extraScenes?: readonly SerializedScene[],
-  ) => Promise<PlayAnimGraphEntry[]>;
-  collectPlayBehaviourTrees: (
-    scene?: SerializedScene | null,
-    extraScenes?: readonly SerializedScene[],
-  ) => Promise<PlayBehaviourTreeEntry[]>;
-  collectPlayBlackboards: (
-    scene?: SerializedScene | null,
-    extraScenes?: readonly SerializedScene[],
-  ) => Promise<PlayBlackboardEntry[]>;
   /** Sprite payloads referenced by the Play scene for clip UV seeks. */
   collectPlaySpritePayloads: (
     scene?: SerializedScene | null,
-    graphs?: readonly PlayAnimGraphEntry[],
     extraScenes?: readonly SerializedScene[],
   ) => Promise<Map<string, SpritePayload>>;
-  /** Sprite Animation clips referenced by loaded Animation Graphs and behaviour trees. */
-  collectPlaySpriteAnimationPayloads: (
-    graphs: readonly PlayAnimGraphEntry[],
-    trees?: readonly PlayBehaviourTreeEntry[],
-  ) => Promise<Map<string, SpriteAnimationPayload>>;
   collectPlayWaterContent: (requiredGuids?: ReadonlySet<string>) => Promise<Map<string, WaterDefinition>>;
-  collectPlayDataAssets: (requiredGuids?: ReadonlySet<string>) => Promise<import("@babylonslate/core").DataAssetCatalogEntry[]>;
   collectPlayRenderTargets: (requiredGuids?: ReadonlySet<string>) => Promise<{ renderTargets: Map<string, RenderTargetPayload>; renderTargetTextures: Map<string, RenderTargetTexturePayload> }>;
   collectPlayTilemapContent: (
     scene?: SerializedScene | null,
@@ -618,20 +592,6 @@ interface DocumentContextValue {
     documents: Map<string, MaterialDocument>;
     functions: Map<string, MaterialFunctionDocument>;
     textureGuids: string[];
-  }>;
-  collectPlayParticles: (requiredGuids?: ReadonlySet<string>) => Promise<ParticleLibrary>;
-  /** Requested Scene documents; omitted selection is for explicit whole-project operations. */
-  collectPlaySceneLibrary: (requiredGuids?: ReadonlySet<string>) => Promise<
-    Array<{ guid: string; scene: SerializedScene }>
-  >;
-  /** Active SceneLayers; graph-reference traversal is an explicit opt-in operation. */
-  collectPlaySceneLayers: (
-    scenes: readonly SerializedScene[],
-    includeGraphReferences?: boolean,
-  ) => Promise<{
-    layers: Array<{ guid: string; layer: SerializedSceneLayer }>;
-    overlayScenes: SerializedScene[];
-    graphMaterialGuids: string[];
   }>;
   /** Class graph payload from an open tab or disk. */
   loadGraphDocument: (path: string) => Promise<SerializedGraph | null>;
@@ -1021,13 +981,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     collectGraphTypeSchemas,
     collectPlayPreviewScripts,
     collectEditorUtilityScripts,
-    collectPlayAnimGraphs,
-    collectPlayBehaviourTrees,
-    collectPlayBlackboards,
     collectPlaySpritePayloads,
-    collectPlaySpriteAnimationPayloads,
     collectPlayWaterContent,
-    collectPlayDataAssets,
     collectPlayRenderTargets,
     collectPlayTilemapContent,
     collectPlayAreaEmissions,
@@ -1041,10 +996,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     collectPlayModelPayloads,
     collectPlayInputAssets,
     collectPlayAudio,
-    collectPlayParticles,
     collectPlayMaterialLibrary,
-    collectPlaySceneLibrary,
-    collectPlaySceneLayers,
   } = playContent;
   const clearPlayPreviewScripts = useCallback(() => {
     setPlayLoadedSignature(null);
@@ -3816,15 +3768,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayPreviewScripts,
       collectEditorUtilityScripts,
       loadAssetDocument,
-      collectPlayAnimGraphs,
-      collectPlayBehaviourTrees,
-      collectPlayBlackboards,
-      collectPlaySpritePayloads,
-      collectPlaySpriteAnimationPayloads,
-      collectPlayWaterContent,
+            collectPlaySpritePayloads,
+        collectPlayWaterContent,
       collectPlayRenderTargets,
-      collectPlayDataAssets,
-      collectPlayTilemapContent,
+        collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
       collectPlayFontFacetypeBytes,
@@ -3835,11 +3782,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayModelPayloads,
       collectPlayInputAssets,
       collectPlayAudio,
-      collectPlayParticles,
-      collectPlayMaterialLibrary,
-      collectPlaySceneLibrary,
-      collectPlaySceneLayers,
-      loadGraphDocument,
+        collectPlayMaterialLibrary,
+          loadGraphDocument,
     }),
     [
       lockAuthoring,
@@ -3936,15 +3880,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayPreviewScripts,
       collectEditorUtilityScripts,
       loadAssetDocument,
-      collectPlayAnimGraphs,
-      collectPlayBehaviourTrees,
-      collectPlayBlackboards,
-      collectPlaySpritePayloads,
-      collectPlaySpriteAnimationPayloads,
-      collectPlayWaterContent,
+            collectPlaySpritePayloads,
+        collectPlayWaterContent,
       collectPlayRenderTargets,
-      collectPlayDataAssets,
-      collectPlayTilemapContent,
+        collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
       collectPlayFontFacetypeBytes,
@@ -3955,11 +3894,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayModelPayloads,
       collectPlayInputAssets,
       collectPlayAudio,
-      collectPlayParticles,
-      collectPlayMaterialLibrary,
-      collectPlaySceneLibrary,
-      collectPlaySceneLayers,
-      loadGraphDocument,
+        collectPlayMaterialLibrary,
+          loadGraphDocument,
     ],
   );
 
