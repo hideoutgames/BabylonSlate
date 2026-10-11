@@ -7,9 +7,12 @@ import type {
   ProjectStorage,
 } from "@babylonslate/core";
 import {
+  getElectronLibraryBridge,
   getElectronProjectBridge,
+  type ElectronLibraryBridge,
   type ElectronProjectBridge,
 } from "./platform";
+import type { LibraryFolder } from "./library-folders";
 
 function toBuffer(data: Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(data.byteLength);
@@ -139,5 +142,46 @@ export class ElectronStorageAdapter implements ProjectStorage {
   async stat(path: string): Promise<FileStat> {
     const bridge = this.requireBridge();
     return remote(path, () => bridge.stat(path));
+  }
+}
+
+/**
+ * The project bridge surface of one user library: file operations carry the
+ * library scope, it opens only under its own name, and picking, listing or
+ * reopening project folders is refused in the renderer as well as in main.
+ */
+function libraryProjectBridge(folder: LibraryFolder, library: ElectronLibraryBridge): ElectronProjectBridge {
+  const handle: ProjectFolderHandle = { id: `library:${folder}`, name: folder, tier: "documents" };
+  const projectOnly = async (): Promise<never> => {
+    throw new Error(`Library storage ${folder} cannot open or list project folders`);
+  };
+  return {
+    pickProjectFolder: projectOnly,
+    openKnownFolder: projectOnly,
+    listProjects: projectOnly,
+    openDocumentsProject: async (name) => {
+      if (name !== folder) return projectOnly();
+      return handle;
+    },
+    releaseFolder: async () => {},
+    readBinary: (path) => library.readBinary(folder, path),
+    readBinaryRange: (path, offset, length, revision) => library.readBinaryRange(folder, path, offset, length, revision),
+    writeBinary: (path, data) => library.writeBinary(folder, path, data),
+    exists: (path) => library.exists(folder, path),
+    readdir: (path) => library.readdir(folder, path),
+    mkdir: (path, recursive) => library.mkdir(folder, path, recursive),
+    remove: (path) => library.remove(folder, path),
+    stat: (path) => library.stat(folder, path),
+  };
+}
+
+/**
+ * Renderer storage for one app-owned user library on desktop. The main
+ * process binds each allowlisted folder to `userData/libraries/<folder>` per
+ * editor document; only file operations cross the `library:*` IPC channels.
+ */
+export class ElectronLibraryStorageAdapter extends ElectronStorageAdapter {
+  constructor(folder: LibraryFolder, library: ElectronLibraryBridge | null = getElectronLibraryBridge()) {
+    super(library && libraryProjectBridge(folder, library));
   }
 }

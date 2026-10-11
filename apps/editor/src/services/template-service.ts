@@ -5,10 +5,10 @@ import {
   type ProjectTemplateCatalogEntry,
   type ProjectTreeFile,
 } from "@babylonslate/assets";
-import { createTemplateStorage } from "@babylonslate/vfs";
+import { createTemplateStorage, TEMPLATE_LIBRARY_FOLDER } from "@babylonslate/vfs";
 import { readProjectArchive } from "./project-import";
 
-const LIBRARY_ROOT = "__slate_templates__";
+const LIBRARY_ROOT = TEMPLATE_LIBRARY_FOLDER;
 
 export async function importTemplateArchive(
   name: string,

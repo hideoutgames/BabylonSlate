@@ -1,5 +1,6 @@
 import { realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { isLibraryFolder } from "@babylonslate/vfs/library-folders";
 
 /** Largest payload one project IPC call may move through the main process. */
 export const MAX_IPC_BYTES = 512 * 1024 * 1024;
@@ -78,7 +79,25 @@ function projectPath(value: unknown, allowRoot = true): void {
   if (!allowRoot) requireValue(value !== "" && value !== ".");
 }
 
+/**
+ * File operations a user library scope may perform. `library:*` mirrors these
+ * `project:*` channels with the scope as an extra first argument; the
+ * project-only channels (picker, Documents, reopen, list, release) have no
+ * library counterpart, so a library can never be pointed at another folder.
+ */
+export const LIBRARY_FILE_OPERATIONS = [
+  "readBinary", "readBinaryRange", "writeBinary", "exists", "readdir", "mkdir", "remove", "stat",
+] as const;
+
 export function validateIpcArguments(channel: string, args: unknown[]): void {
+  const operation = channel.startsWith("library:") ? channel.slice("library:".length) : null;
+  if (operation !== null) {
+    requireValue((LIBRARY_FILE_OPERATIONS as readonly string[]).includes(operation));
+    // Exactly the shared allowlist: no other folder name, path or object.
+    requireValue(isLibraryFolder(args[0]));
+    validateIpcArguments(`project:${operation}`, args.slice(1));
+    return;
+  }
   const counts: Record<string, number> = {
     "save-games:read": 1, "save-games:write": 2, "save-games:remove": 1,
     "save-games:list": 1, "save-games:acquire-lock": 1, "save-games:release-lock": 1,

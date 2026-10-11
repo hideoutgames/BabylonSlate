@@ -13,11 +13,12 @@ import {
   createMountedProjectStorage,
   type ProjectStorageMount,
   createTemplateStorage,
+  ENGINE_PLUGIN_LIBRARY_FOLDER,
   MemoryStorageAdapter,
 } from "@babylonslate/vfs";
 import { ensureEnginePluginStorage } from "./engine-plugins";
 
-export const ENGINE_PLUGIN_LIBRARY_ROOT = "__slate_engine_plugins__";
+export const ENGINE_PLUGIN_LIBRARY_ROOT = ENGINE_PLUGIN_LIBRARY_FOLDER;
 const DEFAULTS_FILE = "defaults.json";
 const CATALOG_FILE = "catalog.json";
 const CATALOG_VERSION = 1;

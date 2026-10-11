@@ -4,12 +4,14 @@ import type {
   FileStat,
   ProjectFolderHandle,
 } from "@babylonslate/core";
+import type { LibraryFolder } from "./library-folders";
 
 export type HostPlatform = "ios" | "android" | "electron" | "web";
 
 /**
  * Preload bridges the Electron host installs on `globalThis.babylonslate`.
- * `userData` persists Engine Settings; `project` is the Node VFS IPC surface.
+ * `userData` persists Engine Settings; `project` is the Node VFS IPC surface;
+ * `library` reaches the app-owned user libraries under `userData/libraries`.
  */
 export interface ElectronUserDataBridge {
   readSettings(): Promise<string | null>;
@@ -68,6 +70,23 @@ export interface ElectronProjectBridge {
   mkdir(path: string, recursive?: boolean): Promise<void>;
   remove(path: string): Promise<void>;
   stat(path: string): Promise<FileStat>;
+}
+
+/**
+ * File operations on one app-owned user library (see `library-folders.ts`).
+ * The first argument is the library scope; the desktop main process refuses
+ * any other folder and offers no picker, listing or reopen for libraries.
+ */
+export type ElectronLibraryBridge = {
+  [K in "readBinary" | "readBinaryRange" | "writeBinary" | "exists" | "readdir" | "mkdir" | "remove" | "stat"]:
+    (scope: LibraryFolder, ...args: Parameters<ElectronProjectBridge[K]>) => ReturnType<ElectronProjectBridge[K]>;
+};
+
+export function getElectronLibraryBridge(): ElectronLibraryBridge | null {
+  const host = globalThis as {
+    babylonslate?: { library?: ElectronLibraryBridge };
+  };
+  return host.babylonslate?.library ?? null;
 }
 
 export function getElectronUserDataBridge(): ElectronUserDataBridge | null {

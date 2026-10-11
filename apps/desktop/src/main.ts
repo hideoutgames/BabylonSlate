@@ -14,7 +14,6 @@ import {
   type IpcMainInvokeEvent,
 } from "electron";
 import { NodeStorageAdapter } from "@babylonslate/vfs/node";
-import { isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
 import { NodeSaveGameStorage } from "@babylonslate/vfs/save-game-node";
 import { DesktopSaveGames } from "./desktop-save-games";
 import type { ProjectFolderHandle } from "@babylonslate/core";
@@ -26,11 +25,11 @@ import {
   isEditorSender,
   isPreviewFrameUrl,
   knownProjectFolder,
-  MAX_IPC_BYTES,
   rendererFile,
   validateIpcArguments,
 } from "./packaged-security";
 import { automaticUpdatesEnabled, createDesktopUpdates, updatesSupported } from "./desktop-updates";
+import { DesktopLibraries, libraryIpcHandlers, STORAGE_OPERATIONS } from "./desktop-storage-ipc";
 
 const rootDir = join(app.getAppPath(), "host");
 const rendererRoot = join(app.getAppPath(), "renderer");
@@ -39,6 +38,8 @@ const editorWindows = new Set<number>();
 const projectStorage = new Map<number, NodeStorageAdapter>();
 let updates: ReturnType<typeof createDesktopUpdates> | undefined;
 let saveGames: DesktopSaveGames | undefined;
+/** Each editor document's user library folders, keyed by allowlisted scope. */
+let libraries: DesktopLibraries | undefined;
 /** Set once the primary instance has registered IPC and may open editor windows. */
 let windowsAllowed = false;
 const primaryInstance = app.requestSingleInstanceLock();
@@ -85,9 +86,10 @@ function serialized(): <T>(task: () => Promise<T>) => Promise<T> {
   };
 }
 
-/** A gone document's project folder and save leases end with it. */
+/** A gone document's project folder, library binds and save leases end with it. */
 function releaseOwner(owner: number): void {
   projectStorage.delete(owner);
+  libraries?.releaseOwner(owner);
   void saveGames?.releaseOwner(owner);
 }
 
@@ -233,50 +235,18 @@ async function registerIpc(): Promise<void> {
   });
   handle("project:list", async event => projects(event).listProjects());
   handle("project:release", async event => projects(event).releaseFolder());
-  handle("project:readBinary", async (event, path) => {
-    const storage = projects(event);
-    // Whole-file reads share the ranged-read and write cap; larger files use ranges.
-    const { size } = await storage.stat(String(path));
-    if (size !== null && size > MAX_IPC_BYTES) throw new Error(`File is too large to read at once: ${String(path)}`);
-    const bytes = await storage.readBinary(String(path));
-    return bytes.buffer.slice(
-      bytes.byteOffset,
-      bytes.byteOffset + bytes.byteLength,
-    );
-  });
-  handle("project:readBinaryRange", async (event, path, offset, length, revision) => {
-    try {
-      const result = await projects(event).readBinaryRange(String(path), Number(offset), Number(length), revision as string | undefined);
-      return { ...result, bytes: result.bytes.buffer.slice(result.bytes.byteOffset, result.bytes.byteOffset + result.bytes.byteLength) };
-    } catch (error) {
-      // Electron only transports Error.message for rejected invokes. Return a
-      // structured failure so reads discarded by revision checks remain visible.
-      return { bytes: new ArrayBuffer(0), totalSize: 0, revision: "", error: error instanceof Error ? error.message : String(error),
-        ...(error instanceof SourceRevisionChangedError || isStorageNotFound(error) ? { errorCode: error.code } : {}),
-        actualBytesRead: (error as { actualBytesRead?: number } | null)?.actualBytesRead ?? 0 };
-    }
-  });
-  handle("project:writeBinary", async (event, path, data) => {
-    await projects(event).writeBinary(
-      String(path),
-      new Uint8Array(data as ArrayBuffer),
-    );
-  });
-  handle("project:exists", async (event, path) =>
-    projects(event).exists(String(path)),
-  );
-  handle("project:readdir", async (event, path) =>
-    projects(event).readdir(String(path)),
-  );
-  handle("project:mkdir", async (event, path, recursive) =>
-    projects(event).mkdir(String(path), recursive !== false),
-  );
-  handle("project:remove", async (event, path) =>
-    projects(event).remove(String(path)),
-  );
-  handle("project:stat", async (event, path) =>
-    projects(event).stat(String(path)),
-  );
+  for (const [operation, run] of Object.entries(STORAGE_OPERATIONS)) {
+    handle(`project:${operation}`, (event, ...args) => run(projects(event), ...args));
+  }
+
+  // User libraries are real folders beside `projects`, never inside it, so the
+  // project list and project reopen checks never reach them.
+  const librariesRoot = join(app.getPath("userData"), "libraries");
+  await mkdir(librariesRoot, { recursive: true });
+  libraries = new DesktopLibraries(await realpath(librariesRoot));
+  for (const [channel, listener] of Object.entries(libraryIpcHandlers(libraries))) {
+    handle(channel, (event, scope, ...args) => listener(event.sender.id, scope, ...args));
+  }
 }
 
 void app.whenReady().then(async () => {

@@ -2,7 +2,7 @@ import { createDefaultInputAssets, SourceRevisionChangedError } from "@babylonsl
 import { isLockedEngineClassId } from "@babylonslate/object-model";
 import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@babylonslate/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
-import { DERIVED_STORAGE_ROOT, getHostPlatform, pickImportFiles } from "@babylonslate/vfs";
+import { DERIVED_STORAGE_ROOT, getHostPlatform, pickImportFiles, TEMPLATE_LIBRARY_FOLDER } from "@babylonslate/vfs";
 import type { DockviewApi } from "dockview-react";
 import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@babylonslate/shader-graph";
@@ -1088,7 +1088,7 @@ export class ProjectService {
   async listProjects(): Promise<ProjectFolderHandle[]> {
     return (await this.storage.listProjects()).filter(
       (folder) => folder.name !== ENGINE_PLUGIN_LIBRARY_ROOT && folder.name !== ENGINE_EXTENSION_LIBRARY_ROOT &&
-        folder.name !== "__slate_templates__" && folder.name !== DERIVED_STORAGE_ROOT,
+        folder.name !== TEMPLATE_LIBRARY_FOLDER && folder.name !== DERIVED_STORAGE_ROOT,
     );
   }
 
