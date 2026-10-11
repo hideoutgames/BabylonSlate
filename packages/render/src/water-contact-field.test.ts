@@ -232,12 +232,20 @@ describe("Water contact field", () => {
     field.update(150);
     expect(Math.abs(contactAt(field, 5.52, 0, 0))).toBeLessThan(0.1);
     // ...until an instance moves.
-    posts.thinInstanceSetMatrixAt(1, Matrix.Translation(9, 0, 0));
+    const placement = Matrix.Translation(9, 0, 0);
+    posts.thinInstanceSetMatrixAt(1, placement);
     frame();
     field.update(300);
     expect(Math.abs(contactAt(field, 9.52, 0, 0))).toBeLessThan(0.1);
     expect(contactAt(field, 5.52, 0, 0)).toBeGreaterThan(1.9);
     expect(Math.abs(contactAt(field, -4.48, 0, 0))).toBeLessThan(0.1);
+    // Babylon keeps the Matrix it was given: one reused for the next placement still moves the instance.
+    Matrix.TranslationToRef(13, 0, 0, placement);
+    posts.thinInstanceSetMatrixAt(1, placement);
+    frame();
+    field.update(450);
+    expect(Math.abs(contactAt(field, 13.52, 0, 0))).toBeLessThan(0.1);
+    expect(contactAt(field, 9.52, 0, 0)).toBeGreaterThan(1.9);
     field.dispose();
   });
 
