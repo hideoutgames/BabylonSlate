@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createDefaultSkyboxCreatorPayload } from "@babylonslate/assets";
 import {
   SkyboxCreatorCubemap,
@@ -51,8 +51,10 @@ vi.mock("@babylonslate/assets", async (importOriginal) => {
   };
 });
 
+const encodePngRgba = vi.hoisted(() => vi.fn(() => Uint8Array.of(9)));
+
 vi.mock("@babylonslate/render", () => ({
-  encodePngRgba: () => Uint8Array.of(9),
+  encodePngRgba,
   createMaterialPreviewScene: () => null,
   createMaterialPreviewPresenter: () => null,
   createSkyboxMeshForFaces: () => null,
@@ -425,5 +427,25 @@ describe("SkyboxCreatorCubemap", () => {
     );
     await screen.findByTestId("skybox-creator-preview-canvas");
     expect(decodeSourceToRgba).toHaveBeenCalledTimes(callsAfterLoad);
+  });
+
+  it("encodes the six preview faces once after a placement drag settles", async () => {
+    const payload = (x: number) => ({
+      ...createDefaultSkyboxCreatorPayload(),
+      sourceTextureGuid: "tex-1",
+      sourcePlacement: { x, y: 0, width: 1, height: 1 },
+    }) as unknown as Record<string, unknown>;
+    const { rerender } = render(<SkyboxCreatorCubemap payload={payload(0)} />);
+    await screen.findByTestId("skybox-creator-preview-canvas");
+    encodePngRgba.mockClear();
+    vi.useFakeTimers();
+    try {
+      for (const x of [0.01, 0.02, 0.03]) rerender(<SkyboxCreatorCubemap payload={payload(x)} />);
+      expect(encodePngRgba).not.toHaveBeenCalled();
+      act(() => { vi.runAllTimers(); });
+      expect(encodePngRgba).toHaveBeenCalledTimes(6);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

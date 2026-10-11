@@ -585,6 +585,9 @@ export function SkyboxCreatorPreview({
   );
 }
 
+/** Quiet time after a placement change before the Cubemap preview rebuilds. */
+const CUBEMAP_PLACEMENT_SETTLE_MS = 150;
+
 export function SkyboxCreatorCubemap({
   payload,
 }: {
@@ -599,23 +602,38 @@ export function SkyboxCreatorCubemap({
     ? `${helper.sourcePlacement.x},${helper.sourcePlacement.y},${helper.sourcePlacement.width},${helper.sourcePlacement.height}`
     : "";
 
+  const slicedSourceRef = useRef<typeof decoded>(null);
+
   useEffect(() => {
     if (!decoded) {
+      slicedSourceRef.current = null;
       setFacePngs(null);
       return;
     }
-    const sliced = fitSourceIntoSkyboxNet(
-      decoded.rgba,
-      decoded.width,
-      decoded.height,
-      placementFromKey(placementKey),
-    );
-    const pngs = {} as SkyboxCreatorPreviewFacePngs;
-    for (const key of SKYBOX_FACE_KEYS) {
-      const face = sliced.faces[key];
-      pngs[key] = encodePngRgba(face.size, face.size, face.rgba);
+    const slice = () => {
+      const sliced = fitSourceIntoSkyboxNet(
+        decoded.rgba,
+        decoded.width,
+        decoded.height,
+        placementFromKey(placementKey),
+      );
+      const pngs = {} as SkyboxCreatorPreviewFacePngs;
+      for (const key of SKYBOX_FACE_KEYS) {
+        const face = sliced.faces[key];
+        pngs[key] = encodePngRgba(face.size, face.size, face.rgba);
+      }
+      setFacePngs(pngs);
+    };
+    // A new source shows at once. A placement drag edits on every pointer
+    // move, so re-encoding six faces and rebuilding the preview waits for it
+    // to settle.
+    if (slicedSourceRef.current !== decoded) {
+      slicedSourceRef.current = decoded;
+      slice();
+      return;
     }
-    setFacePngs(pngs);
+    const timer = window.setTimeout(slice, CUBEMAP_PLACEMENT_SETTLE_MS);
+    return () => window.clearTimeout(timer);
   }, [decoded, placementKey]);
 
   return (
