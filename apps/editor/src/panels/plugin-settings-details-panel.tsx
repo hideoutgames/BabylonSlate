@@ -1,6 +1,6 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { useState } from "react";
-import { ChevronDownIcon, PuzzleIcon } from "lucide-react";
+import { ChevronDownIcon, PuzzleIcon, Trash2Icon } from "lucide-react";
 import {
   ClassPicker,
   MultilineTextField,
@@ -29,6 +29,7 @@ import {
   useOpenDocument,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { IconActionButton } from "../components/icon-action-button";
 import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import { PLUGIN_ICON_OPTIONS, resolvePluginIcon } from "../lib/plugin-icons";
 import {
@@ -175,8 +176,22 @@ export function PluginSettingsDetailsPanel(_props: IDockviewPanelProps) {
         <div className="flex flex-col gap-2">
           <div className="text-sm font-medium">Editor Utility Objects</div>
           {settings.editorUtilityObjects.map((classId) => (
-            <div key={classId} className="text-sm">
-              {classId}
+            <div key={classId} className="flex items-center gap-1 text-sm">
+              <span className="min-w-0 flex-1 truncate">{classId}</span>
+              <IconActionButton
+                label={`Remove ${classId}`}
+                variant="ghost"
+                disabled={readOnly}
+                onClick={() =>
+                  commit({
+                    editorUtilityObjects: settings.editorUtilityObjects.filter(
+                      (entry) => entry !== classId,
+                    ),
+                  })
+                }
+              >
+                <Trash2Icon />
+              </IconActionButton>
             </div>
           ))}
           <Button
