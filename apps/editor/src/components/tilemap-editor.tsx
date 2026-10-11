@@ -1381,7 +1381,18 @@ function drawTilemapCanvas(
   for (const layer of orderedTilemapLayers(tilemap, sortingLayers)) {
     if (!layer.visible) continue;
     const size = tilemap.chunkSize;
+    const chunkPixels = size * cellSize;
     for (const chunk of layer.chunks) {
+      const chunkLeft = chunk.cx * chunkPixels + pan.x;
+      const chunkBottom = cssHeight - chunk.cy * chunkPixels - pan.y;
+      if (
+        chunkLeft + chunkPixels < 0 ||
+        chunkLeft > cssWidth ||
+        chunkBottom < 0 ||
+        chunkBottom - chunkPixels > cssHeight
+      ) {
+        continue;
+      }
       for (let ly = 0; ly < size; ly++) {
         for (let lx = 0; lx < size; lx++) {
           const gid = chunk.tiles[ly * size + lx] ?? 0;
@@ -1433,24 +1444,38 @@ function drawTilemapCanvas(
   const mapPixelH = mapH * cellSize;
   const mapTop = mapBottom - mapPixelH;
   const mapRight = mapLeft + mapPixelW;
+  // Only grid lines inside the viewport are submitted, each set as one path,
+  // so a large map costs no more to redraw than the visible part of it.
+  const firstColumn = Math.max(0, Math.floor(-mapLeft / cellSize));
+  const lastColumn = Math.min(mapW, Math.ceil((cssWidth - mapLeft) / cellSize));
+  const firstRow = Math.max(0, Math.floor((mapBottom - cssHeight) / cellSize));
+  const lastRow = Math.min(mapH, Math.ceil(mapBottom / cellSize));
+  const lineTop = Math.max(mapTop, 0);
+  const lineBottom = Math.min(mapBottom, cssHeight);
+  const lineLeft = Math.max(mapLeft, 0);
+  const lineRight = Math.min(mapRight, cssWidth);
   ctx.save();
   ctx.beginPath();
   ctx.rect(mapLeft, mapTop, mapPixelW, mapPixelH);
   ctx.clip();
   ctx.strokeStyle = "oklch(0.4 0 0 / 0.4)";
   ctx.lineWidth = 1;
-  for (let gx = 0; gx <= mapW; gx++) {
-    const x = mapLeft + gx * cellSize;
+  if (firstColumn <= lastColumn) {
     ctx.beginPath();
-    ctx.moveTo(x, mapTop);
-    ctx.lineTo(x, mapBottom);
+    for (let gx = firstColumn; gx <= lastColumn; gx++) {
+      const x = mapLeft + gx * cellSize;
+      ctx.moveTo(x, lineTop);
+      ctx.lineTo(x, lineBottom);
+    }
     ctx.stroke();
   }
-  for (let gy = 0; gy <= mapH; gy++) {
-    const y = mapBottom - gy * cellSize;
+  if (firstRow <= lastRow) {
     ctx.beginPath();
-    ctx.moveTo(mapLeft, y);
-    ctx.lineTo(mapRight, y);
+    for (let gy = firstRow; gy <= lastRow; gy++) {
+      const y = mapBottom - gy * cellSize;
+      ctx.moveTo(lineLeft, y);
+      ctx.lineTo(lineRight, y);
+    }
     ctx.stroke();
   }
   ctx.restore();
