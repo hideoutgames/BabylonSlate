@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createDockview, type DockviewApi } from "dockview-react";
+import { createDockview, Orientation, type DockviewApi } from "dockview-react";
 import {
   captureAdaptiveDockviewLayout,
   enterPhoneDockLayout,
@@ -141,8 +141,8 @@ describe("phone Dockview presentation", () => {
     type Layout = ReturnType<DockviewApi["toJSON"]>;
     type GridNode = Layout["grid"]["root"];
     for (const [orientation, stacked] of [
-      ["VERTICAL", true],
-      ["HORIZONTAL", false],
+      [Orientation.VERTICAL, true],
+      [Orientation.HORIZONTAL, false],
     ] as const) {
       const api = createLayout();
       const docked = api.toJSON();
