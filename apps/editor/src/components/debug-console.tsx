@@ -315,7 +315,8 @@ export function DebugConsole({
         side="bottom"
         showCloseButton={false}
         showOverlay={false}
-        className="w-full gap-0 overflow-hidden rounded-none border-t-border bg-background/92 font-mono text-xs shadow-none backdrop-blur-sm data-[side=bottom]:h-[min(40dvh,22rem)] pointer-coarse:data-[side=bottom]:h-[min(50dvh,26rem)]"
+        className="w-full rounded-none border-t-border bg-background/92 font-mono text-xs shadow-none backdrop-blur-sm data-[side=bottom]:h-[min(40dvh,22rem)] pointer-coarse:data-[side=bottom]:h-[min(50dvh,26rem)]"
+        bodyClassName="gap-0 overflow-hidden"
         data-testid="debug-console"
         initialFocus={(interaction) =>
           interaction === "keyboard" ? inputRef.current : bodyRef.current

@@ -91,7 +91,8 @@ export function GlobalSearchDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         initialFocus={inputRef}
-        className="flex h-[min(90svh,52rem)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+        className="h-[min(90svh,52rem)] w-full sm:max-w-2xl"
+        bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
         data-testid="global-search-dialog"
       >
         <DialogHeader className="shrink-0 border-b px-4 py-3 pr-12">

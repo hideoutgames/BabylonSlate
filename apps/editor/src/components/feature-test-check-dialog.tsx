@@ -161,7 +161,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
   const passed = report?.scenes.filter((scene) => scene.passed).length ?? 0;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(40rem,85vh)] w-full flex-col gap-3 sm:max-w-xl" data-testid="feature-test-check-dialog">
+      <DialogContent className="max-h-[min(40rem,85vh)] w-full sm:max-w-xl" bodyClassName="flex flex-col gap-3" data-testid="feature-test-check-dialog">
         <DialogHeader>
           <DialogTitle>Feature Test Check</DialogTitle>
           <DialogDescription>
