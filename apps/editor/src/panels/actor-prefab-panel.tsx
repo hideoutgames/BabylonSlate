@@ -206,7 +206,9 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
               range: options?.range,
             });
             setSelectedIds(next);
-            if (next.some((entry) => entry !== PREFAB_ROOT_ID)) {
+            // Prefab Root Details replace a graph node's, so picking the root
+            // also leaves the canvas and Class member selection.
+            if (next.length > 0) {
               setSelectedMemberId(null);
               setSelectedNodeIds([]);
             }

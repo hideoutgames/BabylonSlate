@@ -21,6 +21,8 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 const frameActor = vi.hoisted(() => vi.fn());
 const setSelectedIds = vi.hoisted(() => vi.fn());
 const renameComponent = vi.hoisted(() => vi.fn());
+const setSelectedMemberId = vi.hoisted(() => vi.fn());
+const setSelectedNodeIds = vi.hoisted(() => vi.fn());
 const harness = vi.hoisted(() => ({
   components: [] as Array<{ id: string; classId: string; name?: string; parentId?: string | null; properties?: Record<string, unknown> }>,
   selectedId: "prefab-root" as string | null,
@@ -43,8 +45,8 @@ vi.mock("../context/prefab-editing-context", () => ({
 
 vi.mock("../context/graph-editing-context", () => ({
   useGraphEditing: () => ({
-    setSelectedMemberId: vi.fn(),
-    setSelectedNodeIds: vi.fn(),
+    setSelectedMemberId,
+    setSelectedNodeIds,
   }),
 }));
 
@@ -91,6 +93,8 @@ afterEach(() => {
   frameActor.mockClear();
   setSelectedIds.mockClear();
   renameComponent.mockClear();
+  setSelectedMemberId.mockClear();
+  setSelectedNodeIds.mockClear();
   harness.assets = [];
 });
 
@@ -129,6 +133,19 @@ describe("ActorPrefabPanel", () => {
     render(<ActorPrefabPanel {...({} as IDockviewPanelProps)} />);
     doubleTap(PREFAB_ROOT_ID);
     expect(frameActor).toHaveBeenCalledWith(PREFAB_ROOT_ID);
+  });
+
+  it("leaves the graph node and member selection when Prefab Root is picked", () => {
+    harness.components = [createMeshComponent("mesh-1", "box")];
+    harness.selectedId = "mesh-1";
+    harness.selectedIds = ["mesh-1"];
+    render(<ActorPrefabPanel {...({} as IDockviewPanelProps)} />);
+    const root = screen.getByTestId(`tree-row-${PREFAB_ROOT_ID}`);
+    dispatchPointerEvent(root, "pointerdown");
+    dispatchPointerEvent(root, "pointerup");
+    expect(setSelectedIds).toHaveBeenLastCalledWith([PREFAB_ROOT_ID]);
+    expect(setSelectedNodeIds).toHaveBeenCalledWith([]);
+    expect(setSelectedMemberId).toHaveBeenCalledWith(null);
   });
 
   it("frames a component on double-tap", () => {
