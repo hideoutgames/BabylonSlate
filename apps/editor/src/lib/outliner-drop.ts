@@ -113,9 +113,11 @@ function ancestorFolderSelected(
   folderId: string,
   selected: ReadonlySet<string>,
 ): boolean {
+  const seen = new Set<string>();
   let parent = findFolder(scene, folderId)?.parentFolderId ?? null;
-  while (parent) {
+  while (parent && !seen.has(parent)) {
     if (selected.has(parent)) return true;
+    seen.add(parent);
     parent = findFolder(scene, parent)?.parentFolderId ?? null;
   }
   return false;
@@ -126,9 +128,12 @@ function ancestorActorSelected(
   actorId: string,
   selected: ReadonlySet<string>,
 ): boolean {
+  // A parent cycle (a damaged scene) ends the walk instead of looping forever.
+  const seen = new Set<string>();
   let parent = findActor(scene, actorId)?.parentId ?? null;
-  while (parent) {
+  while (parent && !seen.has(parent)) {
     if (selected.has(parent)) return true;
+    seen.add(parent);
     parent = findActor(scene, parent)?.parentId ?? null;
   }
   return false;
