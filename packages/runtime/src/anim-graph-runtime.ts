@@ -9,7 +9,6 @@ import {
   evaluateAnimGraph,
   type AnimEvalState,
   type AnimGraphDocument,
-  type AnimGraphInputs,
 } from "@babylonslate/anim-graph";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { AnimGraphControl, ScriptHost } from "./script-host";
@@ -171,19 +170,6 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     return component.assetGuid;
   }
 
-  private inputsFromComponent(component: {
-    getVariable(name: string): unknown;
-  }): AnimGraphInputs {
-    const conditions: Record<string, boolean> = {};
-    const raw = component.getVariable("conditions");
-    if (raw && typeof raw === "object") {
-      for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-        conditions[key] = value === true;
-      }
-    }
-    return { conditions };
-  }
-
   private seedVariables(
     component: ActorComponent,
     document: AnimGraphDocument,
@@ -198,20 +184,6 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
           : defaultAnimVariableValue(variable.typeId, variable.typeClassId),
       );
     }
-  }
-
-  private variablesFromComponent(
-    component: ActorComponent,
-    document: AnimGraphDocument,
-  ): Record<string, unknown> {
-    const variables: Record<string, unknown> = {
-      ...this.inputsFromComponent(component).conditions,
-    };
-    for (const variable of document.variables) {
-      const value = component.getVariable(variable.name);
-      if (value !== undefined) variables[variable.name] = value;
-    }
-    return variables;
   }
 
   /** One tick; `dtSeconds` is the tick's captured step, fixed for the whole tick. */
@@ -304,8 +276,6 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
           this.evalByComponent.get(evalKey) ?? null,
           dtSeconds,
           {
-            variables: this.variablesFromComponent(component, document),
-            ...this.inputsFromComponent(component),
             decideTransition: (transition, facts) =>
               this.host.scripts().invokeAnimRule(
                 animRuleScriptClassId(guid, transition.id),
