@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createMemoryOpfsRoot } from "../../../../packages/vfs/src/test-support/memory-opfs";
+import { createMemoryOpfsRoot, opfsProjectFolder } from "../../../../packages/vfs/src/test-support/memory-opfs";
 import { createEmptyProject, MAIN_SCENE_FILE, PROJECT_FILE, SourceRevisionChangedError, type SerializedScene, type ProjectStorage } from "@babylonslate/core";
 import { MemoryStorageAdapter, OpfsStorageAdapter } from "@babylonslate/vfs";
 import { encodeAssetDocument, encodeBabasset, decodeBabasset } from "@babylonslate/assets";
@@ -644,8 +644,7 @@ describe("project round-trip", () => {
     const scene = await storage.readBinary(MAIN_SCENE_FILE);
     const manifest = await storage.readText(PROJECT_FILE);
     const root = await navigator.storage.getDirectory();
-    const meta = JSON.parse(localStorage.getItem("babylonslate:opfs-meta")!);
-    const directory = await root.getDirectoryHandle(meta.projects[0].directory);
+    const directory = await opfsProjectFolder(root, storage.getCurrentFolder()!.id);
     const getFileHandle = directory.getFileHandle.bind(directory);
     const failure = new DOMException("Handle state changed", "InvalidStateError");
     const spy = vi.spyOn(directory, "getFileHandle").mockImplementation(async (name, options) => {

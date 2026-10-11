@@ -3,7 +3,7 @@ import { isErr, isOk } from "@babylonslate/core";
 import { FakeLockProvider } from "./fake-lock-provider";
 
 describe("FakeLockProvider", () => {
-  it("creates a lock as ours and lists it", async () => {
+  it("creates a lock as ours and records it", async () => {
     const provider = new FakeLockProvider({ selfName: "Ada" });
     const created = await provider.create("assets/hero.scene.babasset");
     expect(isOk(created)).toBe(true);
@@ -12,8 +12,7 @@ describe("FakeLockProvider", () => {
     expect(created.value.ownerName).toBe("Ada");
     expect(created.value.path).toBe("assets/hero.scene.babasset");
 
-    const listed = await provider.list();
-    expect(isOk(listed) && listed.value).toHaveLength(1);
+    expect(provider.snapshot()).toEqual([created.value]);
   });
 
   it("returns 409-style conflict when another holder already locked the path", async () => {
@@ -55,16 +54,12 @@ describe("FakeLockProvider", () => {
     const provider = new FakeLockProvider({ selfName: "Ada" });
     const mine = await provider.create("assets/mine.babasset");
     if (!isOk(mine)) throw new Error("expected create");
-    provider.addTheirs("assets/theirs.babasset", "Bob");
-    const theirs = (await provider.list());
-    if (!isOk(theirs)) throw new Error("expected list");
-    const theirLock = theirs.value.find((lock) => !lock.ours)!;
+    const theirLock = provider.addTheirs("assets/theirs.babasset", "Bob");
 
     expect(isOk(await provider.unlock(mine.value.id))).toBe(true);
     const refused = await provider.unlock(theirLock.id);
     expect(isErr(refused) && refused.error.kind).toBe("http");
     expect(isOk(await provider.unlock(theirLock.id, { force: true }))).toBe(true);
-    const listed = await provider.list();
-    expect(isOk(listed) && listed.value).toHaveLength(0);
+    expect(provider.snapshot()).toHaveLength(0);
   });
 });

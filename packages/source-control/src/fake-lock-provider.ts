@@ -60,10 +60,6 @@ export class FakeLockProvider implements LockProvider {
     return ok(lock);
   }
 
-  async list(): Promise<LockResult<FileLock[]>> {
-    return ok(this.snapshot());
-  }
-
   async verify(): Promise<LockResult<{ ours: FileLock[]; theirs: FileLock[] }>> {
     const ours: FileLock[] = [];
     const theirs: FileLock[] = [];

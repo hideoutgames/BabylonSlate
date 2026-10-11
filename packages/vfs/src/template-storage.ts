@@ -5,15 +5,15 @@ import { OpfsStorageAdapter } from "./web-adapter";
 
 /**
  * Bind storage to an app-owned library folder (templates, engine plugins and
- * extensions). Libraries live beside projects in the same tier, so directory
- * and zip entries both read through the ordinary project backends.
+ * extensions). Mobile libraries live beside projects in the Documents tier;
+ * web and Electron use an OPFS library bind, which is not listed as a project.
  */
 export async function createTemplateStorage(
   folder: string,
 ): Promise<ProjectStorage> {
   const storage = isMobilePlatform()
     ? new DocumentsStorageAdapter()
-    : new OpfsStorageAdapter();
+    : new OpfsStorageAdapter({ library: true });
   await storage.openDocumentsProject(folder);
   return storage;
 }

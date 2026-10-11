@@ -50,7 +50,7 @@ export class GitLfsLockProvider implements LockProvider {
     if (status === 409) {
       const ours = await this.oursLockForPath(path);
       if (ours) return ok(ours);
-      const lock = parseLock(json.lock, false);
+      const lock = parseLock(json?.lock, false);
       return err({
         kind: "conflict",
         message: messageOf(json, "already created lock"),
@@ -59,7 +59,7 @@ export class GitLfsLockProvider implements LockProvider {
       });
     }
     if (status === 201 || status === 200) {
-      const lock = parseLock(json.lock, true);
+      const lock = parseLock(json?.lock, true);
       if (!lock) {
         return err({ kind: "http", message: "create response missing lock", status });
       }
@@ -68,33 +68,10 @@ export class GitLfsLockProvider implements LockProvider {
     return this.httpError(status, json);
   }
 
-  async list(): Promise<LockResult<FileLock[]>> {
-    const locks: FileLock[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const url = this.listUrl(cursor);
-      const response = await this.request({ method: "GET", url });
-      if (!isOk(response)) return response;
-      const { status, json } = response.value;
-      if (status !== 200) return this.httpError(status, json);
-      const page = Array.isArray(json.locks) ? json.locks : [];
-      for (const raw of page) {
-        const lock = parseLock(raw, false);
-        if (lock) locks.push(lock);
-      }
-      const next =
-        typeof json.next_cursor === "string" && json.next_cursor !== ""
-          ? json.next_cursor
-          : undefined;
-      if (!next) break;
-      cursor = next;
-    }
-    return ok(locks);
-  }
-
   async verify(): Promise<LockResult<{ ours: FileLock[]; theirs: FileLock[] }>> {
     const ours: FileLock[] = [];
     const theirs: FileLock[] = [];
+    const cursors = new Set<string>();
     let cursor: string | undefined;
     for (;;) {
       const body: Record<string, unknown> = { ref: this.ref };
@@ -107,13 +84,19 @@ export class GitLfsLockProvider implements LockProvider {
       if (!isOk(response)) return response;
       const { status, json } = response.value;
       if (status !== 200) return this.httpError(status, json);
-      appendLocks(ours, json.ours, true);
-      appendLocks(theirs, json.theirs, false);
+      // An unreadable 200 must not read as "no locks": a refresh would clear them.
+      if (!json || !appendLocks(ours, json.ours, true) || !appendLocks(theirs, json.theirs, false)) {
+        return err({ kind: "http", message: "Invalid lock verify response", status });
+      }
       const next =
         typeof json.next_cursor === "string" && json.next_cursor !== ""
           ? json.next_cursor
           : undefined;
       if (!next) break;
+      if (cursors.has(next)) {
+        return err({ kind: "http", message: "Lock verify pagination repeated a cursor", status });
+      }
+      cursors.add(next);
       cursor = next;
     }
     return ok({ ours, theirs });
@@ -137,18 +120,11 @@ export class GitLfsLockProvider implements LockProvider {
     return verified.value.ours.find((lock) => lock.path === path) ?? null;
   }
 
-  private listUrl(cursor?: string): string {
-    const params = new URLSearchParams();
-    params.set("refspec", this.ref.name);
-    if (cursor) params.set("cursor", cursor);
-    return `${this.locksUrl}?${params.toString()}`;
-  }
-
   private async request(input: {
-    method: "GET" | "POST";
+    method: "POST";
     url: string;
     body?: unknown;
-  }): Promise<LockResult<{ status: number; json: Record<string, unknown> }>> {
+  }): Promise<LockResult<{ status: number; json: Record<string, unknown> | null }>> {
     const token = await this.getToken();
     if (!token) {
       return err({
@@ -191,7 +167,7 @@ export class GitLfsLockProvider implements LockProvider {
 
   private httpError(
     status: number,
-    json: Record<string, unknown>,
+    json: Record<string, unknown> | null,
   ): LockResult<never> {
     return err({
       kind: "http",
@@ -205,35 +181,38 @@ function basicAuth(token: string): string {
   return `Basic ${btoa(`x-access-token:${token}`)}`;
 }
 
-function parseJson(text: string): Record<string, unknown> {
-  if (!text) return {};
+/** The response object, or null when the body is empty, invalid JSON, or not an object. */
+function parseJson(text: string): Record<string, unknown> | null {
+  if (!text) return null;
   try {
     const parsed: unknown = JSON.parse(text);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-    return {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
   } catch {
-    return {};
+    return null;
   }
 }
 
-function messageOf(json: Record<string, unknown>, fallback: string): string {
-  return typeof json.message === "string" && json.message !== ""
+function messageOf(json: Record<string, unknown> | null, fallback: string): string {
+  return typeof json?.message === "string" && json.message !== ""
     ? json.message
     : fallback;
 }
 
+/** False when the list is present but not an array; servers may omit or null an empty list. */
 function appendLocks(
   target: FileLock[],
   raw: unknown,
   ours: boolean,
-): void {
-  if (!Array.isArray(raw)) return;
+): boolean {
+  if (raw === undefined || raw === null) return true;
+  if (!Array.isArray(raw)) return false;
   for (const entry of raw) {
     const lock = parseLock(entry, ours);
     if (lock) target.push(lock);
   }
+  return true;
 }
 
 function parseLock(raw: unknown, ours: boolean): FileLock | null {
@@ -243,15 +222,12 @@ function parseLock(raw: unknown, ours: boolean): FileLock | null {
   if (typeof lock.path !== "string" || lock.path === "") return null;
   const ownerName =
     lock.owner && typeof lock.owner.name === "string" ? lock.owner.name : "";
-  const lockedAt =
-    typeof lock.locked_at === "string" && lock.locked_at !== ""
-      ? lock.locked_at
-      : new Date(0).toISOString();
   return {
     id: lock.id,
     path: lock.path,
     ownerName,
-    lockedAt,
+    // Unknown stays empty (shown as an unknown age), never a 1970 timestamp.
+    lockedAt: typeof lock.locked_at === "string" ? lock.locked_at : "",
     ours,
   };
 }

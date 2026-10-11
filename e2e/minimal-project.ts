@@ -25,8 +25,12 @@ export async function openMinimalTestProject(
   ];
   await page.evaluate(
     async ({ entries, settings }) => {
+      const id = "opfs:TestProject";
+      // The OPFS adapter's folder for this id: `project-v2-` + SHA-256 of the JSON id.
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(id)));
+      const projectDirectory = `project-v2-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
       const root = await navigator.storage.getDirectory();
-      const project = await root.getDirectoryHandle("opfs:TestProject", {
+      const project = await root.getDirectoryHandle(projectDirectory, {
         create: true,
       });
       for (const [path, bytes] of entries) {
@@ -51,7 +55,7 @@ export async function openMinimalTestProject(
         "babylonslate:opfs-meta",
         JSON.stringify({
           currentId: null,
-          projects: [{ id: "opfs:TestProject", name: "TestProject" }],
+          projects: [{ id, name: "TestProject" }],
         }),
       );
     },

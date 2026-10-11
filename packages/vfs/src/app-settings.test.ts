@@ -137,13 +137,11 @@ describe("app settings", () => {
     );
   });
 
-  it("migrates the old movement increment once and persists independent grid and snap values", () => {
-    const legacy = engineSettingsSchema.parse({ viewportGridSize: 4 });
-    expect(legacy.viewportSnapTranslate).toBe(4);
-    const changed = engineSettingsSchema.parse({ ...legacy, viewportGridSize: 8 });
-    expect(changed.viewportSnapTranslate).toBe(4);
+  it("persists independent grid and movement snap values", () => {
+    const settings = engineSettingsSchema.parse({ viewportGridSize: 4 });
+    expect(settings.viewportSnapTranslate).toBe(1);
     const reopened = engineSettingsSchema.parse(JSON.parse(JSON.stringify({
-      ...changed, viewportSnapTranslate: 0.5,
+      ...settings, viewportGridSize: 8, viewportSnapTranslate: 0.5,
     })));
     expect([reopened.viewportGridSize, reopened.viewportSnapTranslate]).toEqual([8, 0.5]);
     for (const value of [0, -1, Infinity, NaN])

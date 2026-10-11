@@ -27,7 +27,6 @@ export interface UnlockOptions {
 
 export interface LockProvider {
   create(path: string): Promise<LockResult<FileLock>>;
-  list(): Promise<LockResult<FileLock[]>>;
   verify(): Promise<LockResult<{ ours: FileLock[]; theirs: FileLock[] }>>;
   unlock(id: string, options?: UnlockOptions): Promise<LockResult<void>>;
 }

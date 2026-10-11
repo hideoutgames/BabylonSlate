@@ -33,7 +33,7 @@ function lookupError(error: unknown, path: string, action: string, directory: bo
   return new Error(`Could not ${action} ${path}: ${String(error)}`, { cause: error });
 }
 
-/** Serialize migration/binding across adapters and, with Web Locks, browser tabs. */
+/** Serialize binding and deletion across adapters and, with Web Locks, browser tabs. */
 function withProjectLifecycle<T>(id: string, work: () => Promise<T>): Promise<T> {
   const previous = lifecycleQueues.get(id) ?? Promise.resolve();
   const next = previous.then(() => {
@@ -50,7 +50,7 @@ function withProjectLifecycle<T>(id: string, work: () => Promise<T>): Promise<T>
 
 interface OpfsMeta {
   currentId: string | null;
-  projects: Array<{ id: string; name: string; directory?: string }>;
+  projects: Array<{ id: string; name: string }>;
 }
 
 function loadMeta(): OpfsMeta {
@@ -78,6 +78,14 @@ function updateMeta(mutate: (meta: OpfsMeta) => void): Promise<void> {
   return locks ? locks.request("babylonslate:opfs-meta", update) : Promise.resolve().then(update);
 }
 
+export interface OpfsStorageOptions {
+  /**
+   * App-owned libraries and derived data bind without joining the project
+   * list or becoming the project a new adapter restores.
+   */
+  library?: boolean;
+}
+
 /** Durable browser storage. Hosts without OPFS must report the failure to the caller. */
 export class OpfsStorageAdapter implements ProjectStorage {
   private readonly reads = new StorageReadCounter();
@@ -86,6 +94,11 @@ export class OpfsStorageAdapter implements ProjectStorage {
 
   private folder: ProjectFolderHandle | null = null;
   private root: FileSystemDirectoryHandle | null = null;
+  private readonly library: boolean;
+
+  constructor(options: OpfsStorageOptions = {}) {
+    this.library = options.library === true;
+  }
 
   private async getOpfsRoot(): Promise<FileSystemDirectoryHandle> {
     if (this.root) return this.root;
@@ -97,48 +110,25 @@ export class OpfsStorageAdapter implements ProjectStorage {
     return this.root;
   }
 
-  private async remember(handle: ProjectFolderHandle, directory: string): Promise<ProjectFolderHandle> {
+  private async remember(handle: ProjectFolderHandle): Promise<ProjectFolderHandle> {
     await updateMeta((meta) => {
-      const existing = meta.projects.find((project) => project.id === handle.id);
-      if (existing) existing.directory = directory;
-      else meta.projects.push({ id: handle.id, name: handle.name, directory });
+      if (!meta.projects.some((project) => project.id === handle.id)) {
+        meta.projects.push({ id: handle.id, name: handle.name });
+      }
       meta.currentId = handle.id;
     });
     this.folder = handle;
     return handle;
   }
 
-  private async directoryFor(handle: ProjectFolderHandle): Promise<string> {
-    const projects = loadMeta().projects;
-    const known = projects.find((project) => project.id === handle.id);
-    if (known?.directory) return known.directory;
-    if (known) {
-      const legacy = legacyDirectoryName(known.id);
-      const owner = projects.find((project) => (project.directory ?? legacyDirectoryName(project.id)) === legacy);
-      if (owner?.id === known.id) return legacy;
-      // Older releases could remember two names for one physical directory.
-      // Opening the alias gives it an independent copy; the original stays untouched.
-      const root = await this.getOpfsRoot();
-      const source = await root.getDirectoryHandle(legacy);
-      const destinationName = await directoryName(handle.id);
-      const destination = await root.getDirectoryHandle(destinationName, { create: true });
-      try { await copyDirectory(source, destination); }
-      catch (error) {
-        try { await root.removeEntry(destinationName, { recursive: true }); } catch { /* Source remains intact. */ }
-        throw error;
-      }
-      return destinationName;
-    }
-    return directoryName(handle.id);
-  }
-
   private async bind(name: string): Promise<ProjectFolderHandle> {
     const handle: ProjectFolderHandle = { id: `opfs:${name}`, name, tier: "opfs" };
     return withProjectLifecycle(handle.id, async () => {
       const opfs = await this.getOpfsRoot();
-      const directory = await this.directoryFor(handle);
-      await opfs.getDirectoryHandle(directory, { create: true });
-      return this.remember(handle, directory);
+      await opfs.getDirectoryHandle(await directoryName(handle.id), { create: true });
+      if (!this.library) return this.remember(handle);
+      this.folder = handle;
+      return handle;
     });
   }
 
@@ -180,7 +170,7 @@ export class OpfsStorageAdapter implements ProjectStorage {
   }
 
   getCurrentFolder(): ProjectFolderHandle | null {
-    if (this.folder) return this.folder;
+    if (this.folder || this.library) return this.folder;
     const meta = loadMeta();
     if (!meta.currentId) return null;
     const found = meta.projects.find((p) => p.id === meta.currentId);
@@ -192,6 +182,7 @@ export class OpfsStorageAdapter implements ProjectStorage {
   async releaseFolder(): Promise<void> {
     const folder = this.getCurrentFolder();
     this.folder = null;
+    if (this.library) return;
     await updateMeta((meta) => {
       if (meta.currentId === folder?.id) meta.currentId = null;
     });
@@ -205,21 +196,14 @@ export class OpfsStorageAdapter implements ProjectStorage {
     if (handle.tier !== "opfs") {
       throw new Error(`OPFS adapter cannot delete tier ${handle.tier}`);
     }
-    const meta = loadMeta();
-    const known = meta.projects.find((project) => project.id === handle.id);
-    if (!known) return;
-    const dirName = known.directory ?? legacyDirectoryName(known.id);
-    const shared = meta.projects.some((project) => project.id !== handle.id &&
-      (project.directory ?? legacyDirectoryName(project.id)) === dirName);
+    if (!loadMeta().projects.some((project) => project.id === handle.id)) return;
     for (const cached of [...this.rangeHandles.keys()]) {
       if (cached.startsWith(`${handle.id}/`)) this.rangeHandles.delete(cached);
     }
     const opfs = await this.getOpfsRoot();
-    if (!shared) {
-      try { await opfs.removeEntry(dirName, { recursive: true }); }
-      catch (error) {
-        if (!(error instanceof DOMException && error.name === "NotFoundError")) throw error;
-      }
+    try { await opfs.removeEntry(await directoryName(handle.id), { recursive: true }); }
+    catch (error) {
+      if (!(error instanceof DOMException && error.name === "NotFoundError")) throw error;
     }
     // Another adapter may have registered or selected a project during disk I/O.
     await updateMeta((latest) => {
@@ -240,24 +224,30 @@ export class OpfsStorageAdapter implements ProjectStorage {
   }
 
   private split(path: string): string[] {
-    return path
+    const parts = path
       .replace(/^\.\/+/, "")
       .replace(/^\/+/, "")
       .split("/")
       .filter((s) => s.length > 0 && s !== ".");
+    if (parts.includes("..")) throw new Error(`Path escapes project root: ${path}`);
+    return parts;
   }
 
+  /**
+   * Binding creates the project folder. Later file operations never recreate
+   * it, so a save racing a deletion fails instead of resurrecting the project.
+   */
   private async projectDir(): Promise<FileSystemDirectoryHandle> {
     const folder = this.assertFolder();
     const opfs = await this.getOpfsRoot();
-    const directory = loadMeta().projects.find((project) => project.id === folder.id)?.directory;
-    if (directory) return opfs.getDirectoryHandle(directory, { create: true });
-    return withProjectLifecycle(folder.id, async () => {
-      const directory = await this.directoryFor(folder);
-      const result = await opfs.getDirectoryHandle(directory, { create: true });
-      await this.remember(folder, directory);
-      return result;
-    });
+    try {
+      return await opfs.getDirectoryHandle(await directoryName(folder.id));
+    } catch (error) {
+      if (domErrorName(error) === "NotFoundError") {
+        throw new StorageNotFoundError(folder.name, { cause: error, message: `Project folder not found: ${folder.name}` });
+      }
+      throw new Error(`Could not open project ${folder.name}: ${String(error)}`, { cause: error });
+    }
   }
 
   private async resolveHandle(
@@ -381,7 +371,9 @@ export class OpfsStorageAdapter implements ProjectStorage {
     const writable = await (
       await parent.getFileHandle(name, { create: true })
     ).createWritable();
-    writeRevisions.set(key, (writeRevisions.get(key) ?? 0) + 1);
+    // Ranges read while the write is staged see a changed revision.
+    const before = writeRevisions.get(key) ?? 0;
+    writeRevisions.set(key, before + 1);
     try {
       // Storage bytes are never SharedArrayBuffer-backed; DOM BufferSource
       // requires an ArrayBuffer-backed view.
@@ -389,10 +381,11 @@ export class OpfsStorageAdapter implements ProjectStorage {
       await writable.close();
     } catch (error) {
       await writable.abort().catch(() => {});
+      // The committed bytes are unchanged, so readers holding their revision stay valid.
+      if (writeRevisions.get(key) === before + 1) writeRevisions.set(key, before);
       throw error;
-    } finally {
-      writeRevisions.set(key, (writeRevisions.get(key) ?? 0) + 1);
     }
+    writeRevisions.set(key, (writeRevisions.get(key) ?? 0) + 1);
   }
 
   async readText(path: string): Promise<string> {
@@ -419,34 +412,32 @@ export class OpfsStorageAdapter implements ProjectStorage {
     const parts = this.split(path === "." ? "" : path);
     const dir = await this.descend(root, parts, path, "list");
     const out: DirEntry[] = [];
-    // FileSystemDirectoryHandle async iterator (entries may be missing from older DOM libs).
+    // The DOM lib in use does not declare the directory async iterator.
     const dirHandle = dir as FileSystemDirectoryHandle & {
       entries?: () => AsyncIterableIterator<[string, FileSystemHandle]>;
-      values?: () => AsyncIterableIterator<FileSystemHandle>;
-      keys?: () => AsyncIterableIterator<string>;
     };
-    if (dirHandle.entries) {
-      for await (const [name, handle] of dirHandle.entries()) {
-        if (handle.kind === "directory") {
-          out.push({ name, isDir: true, size: null, mtime: null });
-        } else {
-          // Chromium lists a write's `<name>.crswap` swap file until the writable closes.
-          if (name.endsWith(".crswap")) continue;
-          let file: File;
-          try {
-            file = await (handle as FileSystemFileHandle).getFile();
-          } catch (error) {
-            // Removed (or its swap renamed away) after it was listed.
-            if (error instanceof DOMException && error.name === "NotFoundError") continue;
-            throw error;
-          }
-          out.push({
-            name,
-            isDir: false,
-            size: file.size,
-            mtime: file.lastModified,
-          });
+    // An empty listing would let callers treat a full folder as empty.
+    if (!dirHandle.entries) throw new Error(`Could not list ${path}: directory iteration is unavailable`);
+    for await (const [name, handle] of dirHandle.entries()) {
+      if (handle.kind === "directory") {
+        out.push({ name, isDir: true, size: null, mtime: null });
+      } else {
+        // Chromium lists a write's `<name>.crswap` swap file until the writable closes.
+        if (name.endsWith(".crswap")) continue;
+        let file: File;
+        try {
+          file = await (handle as FileSystemFileHandle).getFile();
+        } catch (error) {
+          // Removed (or its swap renamed away) after it was listed.
+          if (error instanceof DOMException && error.name === "NotFoundError") continue;
+          throw error;
         }
+        out.push({
+          name,
+          isDir: false,
+          size: file.size,
+          mtime: file.lastModified,
+        });
       }
     }
     return out;
@@ -498,26 +489,8 @@ export class OpfsStorageAdapter implements ProjectStorage {
   }
 }
 
-function legacyDirectoryName(id: string): string {
-  return id.replace(/[^a-zA-Z0-9._:-]/g, "_");
-}
-
 /** Fixed-length, Unicode-safe identity independent of filesystem filename folding. */
 async function directoryName(id: string): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(id)));
   return `project-v2-${Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
-}
-
-async function copyDirectory(source: FileSystemDirectoryHandle, destination: FileSystemDirectoryHandle): Promise<void> {
-  const entries = source as FileSystemDirectoryHandle & { entries(): AsyncIterableIterator<[string, FileSystemHandle]> };
-  for await (const [name, handle] of entries.entries()) {
-    if (handle.kind === "directory") {
-      await copyDirectory(await source.getDirectoryHandle(name), await destination.getDirectoryHandle(name, { create: true }));
-    } else {
-      const file = await (handle as FileSystemFileHandle).getFile();
-      const writable = await (await destination.getFileHandle(name, { create: true })).createWritable();
-      try { await writable.write(await file.arrayBuffer()); await writable.close(); }
-      catch (error) { await writable.abort().catch(() => {}); throw error; }
-    }
-  }
 }
