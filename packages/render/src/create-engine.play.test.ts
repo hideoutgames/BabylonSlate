@@ -4244,6 +4244,22 @@ describe("Play createEngine view", () => {
     expect(events.filter(event => event === "onClick")).toHaveLength(1);
   });
 
+  it("scrolls a horizontal overlay box with a trackpad swipe and with a vertical wheel", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas();
+    const scrolls: Array<{ deltaX: number }> = [];
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true, onSceneLayerScroll: event => scrolls.push(event) });
+    handles.push(handle);
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    handle.applyCommand({ type: "sceneLayerLayout", layerId: "hud", entries: [{ actorId: "strip", componentId: "viewport", slotId: 2, rect: { x: 0, y: 0, width: 9, height: 9 }, clip: null, scrollAncestors: [], scroll: { x: 0, y: 0, maxX: 20, maxY: 0, axis: "horizontal", viewport: { x: 0, y: 0, width: 9, height: 9 }, scaleX: 2, scaleY: 2 } }] });
+    canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 32, deltaY: 0, deltaMode: 0 });
+    canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 0, deltaY: 32, deltaMode: 0 });
+    expect(scrolls.map(scroll => scroll.deltaX)).toEqual([expect.closeTo(0.5625), expect.closeTo(0.5625)]);
+  });
+
   it("scrolls nested overlay content with wheel and cancels button activation after touch dragging", () => {
     const engine = sharedEngine();
     vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);

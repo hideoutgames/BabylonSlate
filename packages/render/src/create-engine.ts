@@ -2802,7 +2802,11 @@ function initializeEngine(
     if (!hit) return;
     event.preventDefault();
     const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1;
-    options.onSceneLayerScroll?.({ layerId: hit.layer.layerId, actorId: hit.target.actorId, componentId: hit.target.componentId!, deltaX: (event.shiftKey || hit.target.scroll?.axis === "horizontal" ? event.deltaY : event.deltaX) * factor * hit.scaleX, deltaY: event.shiftKey ? 0 : event.deltaY * factor * hit.scaleY });
+    // A vertical wheel scrolls a horizontal box or Shift+wheel sideways, but a
+    // native horizontal delta (trackpad swipe, platform Shift+wheel) wins.
+    const sideways = event.shiftKey || hit.target.scroll?.axis === "horizontal";
+    const deltaX = sideways && event.deltaX === 0 ? event.deltaY : event.deltaX;
+    options.onSceneLayerScroll?.({ layerId: hit.layer.layerId, actorId: hit.target.actorId, componentId: hit.target.componentId!, deltaX: deltaX * factor * hit.scaleX, deltaY: event.shiftKey ? 0 : event.deltaY * factor * hit.scaleY });
   };
   const onPointerDown = (event: PointerEvent) => {
     if (!acceptsGameInput()) return;
