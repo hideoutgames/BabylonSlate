@@ -1682,7 +1682,7 @@ The continuation authorized a bounded shared extension after reproducing the
 pinned native failure. The design below is now the production path for editor,
 component and global CEL outlines. Its revision-scoped native pixels, Computer
 Use routes, desktop cost and deferred hosts are recorded in
-[renderer qualification](../design/renderer-qualification.md#current-continuation-status-—-23-september-2026);
+[renderer qualification](../design/renderer-qualification.md#current-continuation-status--23-september-2026);
 that evidence is separate from PR CI and merge approval.
 The stock fixture again reproduced removal of another consumer's regular-instance
 buffer on both APIs and loss of its pixels on effective WebGPU. Stock layers also

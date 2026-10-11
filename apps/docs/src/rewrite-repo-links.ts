@@ -13,6 +13,21 @@ const REPO_ROOT_PREFIXES = [
 
 const SOURCE_FILE = /\.(?:ts|tsx|js|jsx|mjs|cjs|css|mdc|vue)$/i;
 
+// GitHub keeps letters, marks, digits, connector punctuation, spaces and
+// hyphens in a heading id, then turns each space into a hyphen.
+const NON_HEADING_ID_CHARACTER = /[^\p{Alphabetic}\p{M}\p{Nd}\p{Pc} -]/gu;
+
+/**
+ * Heading id as GitHub renders it. The site uses the same ids so one
+ * `page.md#fragment` link works on GitHub and on the site.
+ */
+export function githubHeadingSlug(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(NON_HEADING_ID_CHARACTER, "")
+    .replace(/ /g, "-");
+}
+
 export function rewriteRepoSourceHref(href: string, fromDocPath: string): string {
   const hashIndex = href.indexOf("#");
   const queryIndex = href.indexOf("?");

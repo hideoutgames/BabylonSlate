@@ -1,6 +1,6 @@
 # BabylonSlate documentation
 
-Live site: **[https://hideoutgames.github.io/BabylonSlate/docs/](https://hideoutgames.github.io/BabylonSlate/docs/)** (VitePress, deployed next to the editor preview). Markdown in `docs/` is the source for both GitHub and that site.
+Live site: **[https://hideoutgames.github.io/BabylonSlate/docs/](https://hideoutgames.github.io/BabylonSlate/docs/)** (VitePress, deployed next to the editor preview). Markdown in `docs/` is the source for both GitHub and that site. The site uses GitHub's heading ids, so write `page.md#heading` fragments as GitHub renders them.
 
 Local preview: `pnpm docs:dev`.
 
