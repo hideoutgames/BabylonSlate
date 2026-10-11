@@ -19,6 +19,8 @@ const validId = (id: unknown): id is string => typeof id === "string" && id.leng
 const validSequence = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 const MAX_TRANSFER_BYTES = 64 * 1024 * 1024;
 const MAX_CHUNK_BYTES = 32 * 1024;
+/** A profile transfer fails after this long without a chunk, not this long after it started. */
+const PROFILE_IDLE_TIMEOUT_MS = 10_000;
 function trusted(event: Incoming, endpoint: PreviewDiagnosticEndpoint): Message | null {
   if (!endpoint.source() || event.source !== endpoint.source() || event.origin !== endpoint.origin()) return null;
   const value = event.data as Partial<Message> | null;
@@ -49,6 +51,7 @@ export function createPreviewDiagnosticClient(endpoint: PreviewDiagnosticEndpoin
     capture = undefined;
     if (reason) options.onError?.(reason);
   };
+  const idleTimer = () => setTimeout(() => clearCapture("Preview profile transfer timed out."), PROFILE_IDLE_TIMEOUT_MS);
   const connect = (): Promise<void> => {
     if (closed) return Promise.reject(new Error("Preview diagnostics closed."));
     if (session) return Promise.resolve();
@@ -96,8 +99,7 @@ export function createPreviewDiagnosticClient(endpoint: PreviewDiagnosticEndpoin
         const metadata = message.metadata;
         const limit = metadata?.byteBudget;
         if (!metadata || !validSequence(limit) || limit < 1024 || limit > MAX_TRANSFER_BYTES) { options.onError?.("Invalid Preview profile budget."); return; }
-        capture = { id: message.profileId, metadata, frames: [], ticks: [], gpu: [], bytes: 0, limit, sequence: 0,
-          timer: setTimeout(() => clearCapture("Preview profile transfer timed out."), 10_000) };
+        capture = { id: message.profileId, metadata, frames: [], ticks: [], gpu: [], bytes: 0, limit, sequence: 0, timer: idleTimer() };
       } else if (message.action === "profile-chunk" && capture && message.profileId === capture.id) {
         if (message.sequence !== capture.sequence || (message.stream !== "frames" && message.stream !== "ticks" && message.stream !== "gpu") ||
           !(message.rows instanceof Float64Array) || !message.rows.byteLength || message.rows.byteLength > MAX_CHUNK_BYTES ||
@@ -107,12 +109,16 @@ export function createPreviewDiagnosticClient(endpoint: PreviewDiagnosticEndpoin
         capture.sequence++;
         capture.bytes += message.rows.byteLength;
         capture[message.stream].push(message.rows);
+        clearTimeout(capture.timer);
+        capture.timer = idleTimer();
       } else if (message.action === "profile-end" && capture && message.profileId === capture.id) {
         const complete = capture;
         clearCapture();
         if (message.sequence !== complete.sequence) { options.onError?.("Preview profile transfer lost chunks."); return; }
         options.onProfile({ metadata: complete.metadata, frames: complete.frames, ticks: complete.ticks, gpu: complete.gpu });
-      } else if (message.action === "profile-error") clearCapture(message.reason ?? "Preview profile transfer failed.");
+      } else if (message.action === "profile-error" && capture && message.profileId === capture.id) {
+        clearCapture(message.reason ?? "Preview profile transfer failed.");
+      }
     },
     dispose(): void {
       if (closed) return;

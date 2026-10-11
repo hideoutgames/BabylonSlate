@@ -283,7 +283,9 @@ shared diagnostic results surface. Opening the surface does not record. Stop
 settles an already-requested recording start and receives its final bounded
 transfer before detaching the iframe; a Preview with no diagnostic request does
 not load the diagnostics entry merely to stop. Transfer failures leave an
-explicit error and never substitute a partial profile.
+explicit error and never substitute a partial profile. A transfer times out
+after 10 seconds without a chunk, however long the whole profile takes, and an
+error from an earlier profile does not abort the current transfer.
 
 Preview's Profiler, Console and behaviour-tree surfaces share the exclusive DOM
 input owner. Opening one neutralizes keyboard, pointer, touch, virtual-stick and

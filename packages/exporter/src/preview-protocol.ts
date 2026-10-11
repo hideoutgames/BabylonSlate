@@ -85,11 +85,24 @@ export function isPreviewPackMessage(
   );
 }
 
+const isOptionalString = (value: unknown): boolean => value === undefined || typeof value === "string";
+
+function isPreviewDiagnostic(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Record<string, unknown>;
+  return typeof entry.message === "string" && typeof entry.severity === "string" &&
+    isOptionalString(entry.code) && isOptionalString(entry.assetGuid) && isOptionalString(entry.graphId) &&
+    isOptionalString(entry.nodeId) && isOptionalString(entry.btNodeId) &&
+    (entry.bodyLine === undefined || typeof entry.bodyLine === "number");
+}
+
 export function isPreviewDiagnosticsMessage(
   value: unknown,
 ): value is PreviewDiagnosticsMessage {
   if (!value || typeof value !== "object") return false;
-  return (value as { type?: unknown }).type === PREVIEW_DIAGNOSTICS_MESSAGE;
+  const record = value as { type?: unknown; diagnostics?: unknown };
+  return record.type === PREVIEW_DIAGNOSTICS_MESSAGE && Array.isArray(record.diagnostics) &&
+    record.diagnostics.every(isPreviewDiagnostic);
 }
 
 export function isPreviewRequestPackMessage(
