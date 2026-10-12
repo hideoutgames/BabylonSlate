@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createDefaultScene, createDefaultSceneLayer, SCENE_SCHEMA_VERSION } from "@babylonslate/core";
 import { createDefaultParticleGraphDocument } from "@babylonslate/particle-graph";
 import type { IndexedAsset } from "@babylonslate/assets";
-import { loadExportDocuments } from "./export-game-inputs";
+import { loadFixtureExportDocuments } from "../testing/export-document-fixtures";
 import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
 import { importEnvironmentTexture, AREA_EMISSION_EDGE, areaEmissionChunkId, encodeAreaEmission } from "@babylonslate/assets";
 import { assetHeaderDependencies, assetReferencesIncludingOpenDocuments } from "../lib/content-browser-helpers";
@@ -54,7 +54,7 @@ describe("loadExportDocuments", () => {
       ...textureAsset(), path: index === 0 ? "definition" : "tree",
       header: { ...textureAsset().header, guid: index === 0 ? "definition" : "tree", type, payload: {}, chunks: [] },
     }));
-    const loaded = await loadExportDocuments({ assets, loadDocument: async (kind, path) => {
+    const loaded = await loadFixtureExportDocuments({ assets, loadDocument: async (kind, path) => {
       expect(kind).toBe(path === "definition" ? "data-definition" : "data-tree");
       return documents.get(path);
     }, readAssetChunk: async () => null });
@@ -71,7 +71,7 @@ describe("loadExportDocuments", () => {
         { id: "document", kind: "document", mime: "application/json", sha256: "aa", byteLength: 1, locator: { inline: { offset: 0, length: 1 } } },
       ],
     } };
-    const loaded = await loadExportDocuments({ assets: [asset], loadDocument: async (_kind, path) => path === asset.path ? document : null,
+    const loaded = await loadFixtureExportDocuments({ assets: [asset], loadDocument: async (_kind, path) => path === asset.path ? document : null,
       readAssetChunk: async () => null });
     expect(loaded.payloadByGuid("capture")).toEqual(document);
     expect(JSON.parse(new TextDecoder().decode(loaded.bytesByGuid("capture")!))).toEqual(document);
@@ -80,7 +80,7 @@ describe("loadExportDocuments", () => {
     const asset: IndexedAsset = { ...textureAsset(), path: "assets/Hero.class.babasset", header: {
       ...textureAsset().header, guid: "hero", type: "Class", payload: {}, chunks: [],
     } };
-    const loaded = await loadExportDocuments({ assets: [asset], loadDocument: async () => { throw new Error("Storage unavailable"); },
+    const loaded = await loadFixtureExportDocuments({ assets: [asset], loadDocument: async () => { throw new Error("Storage unavailable"); },
       readAssetChunk: async () => null });
     expect(() => loaded.bytesByGuid("hero")).toThrow("Storage unavailable");
     expect(loaded.graphByGuid("hero")).toBeNull();
@@ -93,7 +93,7 @@ describe("loadExportDocuments", () => {
     const id = areaEmissionChunkId(sourceHash);
     asset.header.chunks.push({ id, kind: "area-emission", mime: "application/x-babylonslate-area-emission", sha256: "b".repeat(64), byteLength: 1, locator: { inline: { offset: 0, length: 1 } } });
     const prepared = await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(190), sourceHash);
-    const load = () => loadExportDocuments({ assets: [asset], loadDocument: async () => null, readAssetChunk: async (_path, chunk) => chunk === id ? prepared : new Uint8Array([7]) });
+    const load = () => loadFixtureExportDocuments({ assets: [asset], loadDocument: async () => null, readAssetChunk: async (_path, chunk) => chunk === id ? prepared : new Uint8Array([7]) });
     const loaded = await load();
     expect(loaded.bytesByGuid("tex-1")).toEqual(new Uint8Array([7]));
     expect(loaded.areaEmissionBytesByGuid("tex-1")).toBe(prepared);
@@ -109,7 +109,7 @@ describe("loadExportDocuments", () => {
     asset.header.guid = imported!.guid;
     asset.header.payload = imported!.payload;
     asset.header.chunks = [{ ...asset.header.chunks[0]!, id: "source", kind: "source", mime: "image/vnd-ms.dds" }, asset.header.chunks[1]!];
-    const loaded = await loadExportDocuments({ assets: [asset], loadDocument: async () => null, transcoderAvailable: true,
+    const loaded = await loadFixtureExportDocuments({ assets: [asset], loadDocument: async () => null, transcoderAvailable: true,
       readAssetChunk: async (_path, id) => id === "source" ? source : new Uint8Array([9]) });
     expect(loaded.bytesByGuid(imported!.guid)).toEqual(source);
     expect(loaded.payloadByGuid(imported!.guid)).toMatchObject({ dimension: "cube", container: "dds", encoding: "linearFloat32", width: 2, mipLevels: 2 });
@@ -124,7 +124,7 @@ describe("loadExportDocuments", () => {
     expect(assetHeaderDependencies("Scene", payload)).not.toContain(imported!.guid);
   });
   it("exposes authored Texture payload size for overlay 2DTexture layout", async () => {
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           ...textureAsset(),
@@ -146,7 +146,7 @@ describe("loadExportDocuments", () => {
 
   it("serializes scenes as JSON and packs the KTX2 texture chunk", async () => {
     const scene = createDefaultScene();
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
@@ -184,7 +184,7 @@ describe("loadExportDocuments", () => {
   });
 
   it("packs PNG pixels when the player transcoder is unavailable", async () => {
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [textureAsset()],
       loadDocument: async () => null,
       readAssetChunk: async (_path, chunkId) => {
@@ -198,7 +198,7 @@ describe("loadExportDocuments", () => {
   });
 
   it("packs the authored ktx2 hash, not the first ktx2 chunk", async () => {
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
@@ -260,7 +260,7 @@ describe("loadExportDocuments", () => {
     };
     const exported = async (usage: string, width: number, height: number) => {
       const encoded = ktx2(width, height);
-      const loaded = await loadExportDocuments({
+      const loaded = await loadFixtureExportDocuments({
         assets: [
           {
             rootId: "project",
@@ -301,7 +301,7 @@ describe("loadExportDocuments", () => {
   });
 
   it("exposes sprite document payloads for the export closure", async () => {
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
@@ -328,7 +328,7 @@ describe("loadExportDocuments", () => {
 
   it("reads the Scene navmesh extra chunk for packed Play", async () => {
     const scene = createDefaultScene();
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
@@ -364,7 +364,7 @@ describe("loadExportDocuments", () => {
 
   it("reads the Scene audioReverb extra chunk for packed Play", async () => {
     const scene = createDefaultScene();
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
@@ -399,7 +399,7 @@ describe("loadExportDocuments", () => {
   });
 
   it("loads Font documents into payloads without replacing source bytes", async () => {
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
@@ -440,7 +440,7 @@ describe("loadExportDocuments", () => {
   it("packs Audio source with payload so the player can route gain", async () => {
     const { decodePackedAudioAsset } = await import("@babylonslate/assets");
     const kinds: string[] = [];
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
@@ -496,7 +496,7 @@ describe("loadExportDocuments", () => {
 
   it("packs every Audio clip blob, not only the default source chunk", async () => {
     const { decodePackedAudioAsset } = await import("@babylonslate/assets");
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
@@ -562,7 +562,7 @@ describe("loadExportDocuments", () => {
       skeletonGuid: "hero-skel",
       durationMs: 1800,
     };
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
@@ -596,7 +596,7 @@ describe("loadExportDocuments", () => {
   it("packs Particle Graph documents as JSON for packed Play", async () => {
     const document = { ...createDefaultParticleGraphDocument("Embers"), materialGuid: "sparks-mat" };
     const loadedKinds: string[] = [];
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
@@ -626,7 +626,7 @@ describe("loadExportDocuments", () => {
   });
 
   it("exposes Font facetype-glyphs chunks separately from Font source bytes", async () => {
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
@@ -672,7 +672,7 @@ describe("loadExportDocuments", () => {
   });
 
   it("exposes Font MSDF JSON and atlas PNG chunks separately from Font source bytes", async () => {
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
@@ -729,7 +729,7 @@ describe("loadExportDocuments", () => {
     const { decodePackedModelAsset } = await import("@babylonslate/assets");
     const kinds: string[] = [];
     const glb = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 9, 8]);
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",
@@ -789,7 +789,7 @@ describe("loadExportDocuments", () => {
     const layer = createDefaultSceneLayer();
     layer.name = "HUD";
     const kinds: string[] = [];
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: [
         {
           rootId: "project",

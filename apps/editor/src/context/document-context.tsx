@@ -2222,6 +2222,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             kind as Parameters<ProjectService["loadDocument"]>[0],
             path,
           ),
+        loadDocumentWithChunks: (kind, path, chunkIds) =>
+          projectService.loadDocumentWithChunks(
+            kind as Parameters<ProjectService["loadDocumentWithChunks"]>[0],
+            path,
+            chunkIds,
+          ),
         readAssetChunk: (path, chunkId) =>
           projectService.readAssetChunk(path, chunkId),
         transcoderAvailable:
