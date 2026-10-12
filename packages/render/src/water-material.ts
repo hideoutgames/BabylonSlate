@@ -1956,7 +1956,7 @@ float swStreakD = swStreak * 0.8;`, `
 float swStreakD = 0.0;`)}
 ${fromTier(1, `
 float swDensity = clamp(max(swCap, max(swTrail * mix(0.6, 0.85, swStorm), swStreakD)), 0.0, 1.0);`, `
-float swDensity = clamp(max(max(swWash, swCap), max(max(swTrail * mix(0.6, 0.85, swStorm), swStreakD), swSurfFoam)), 0.0, 1.0);`)}
+float swDensity = clamp(max(max(swWash, swCap), max(max(swTrail * mix(0.6, 0.85, swStorm), swStreakD), swSurfFoam)), 0.0, 1.0) * min(swSwashCover * 4.0, 1.0);`)}
 // Thinning foam softens: its holes open gradually, over at least a couple of pixels.
 float swFoamSoft = 0.07 + 0.15 * (1.0 - swDensity) + fwidth(swFoamTex) * 1.5;
 // Even the densest foam keeps a few bubble holes.
@@ -2012,7 +2012,10 @@ if (swShoreD > 0.02) {
   swShoreVar = swNoise(swWorld * 0.45 + vec2(2.7, 9.1));
   vec2 swShoreUv = swWorld * 3.2 + vec2(0.0, swTime * 0.03) + (swShoreBend - vec2(0.5)) * 1.6;${fromTier(2, `
   swShoreTex = clamp((swWeb(swShoreUv).x * 0.7 + swWeb(swShoreUv * 3.1 + vec2(5.3, 1.7)).x * 0.3 - 0.05) * 1.2, 0.0, 1.0);`, `
-  swShoreTex = clamp(swWeb(swShoreUv).x * 1.15 - 0.05, 0.0, 1.0);`)}
+  // Medium's single web would leave regular round holes of one size: a bend about two cells across stretches them into
+  // blobs, and pulling the pattern toward its mean keeps dense foam from opening as many holes as High's two webs average out.
+  vec2 swShoreWarp = vec2(swNoise(swShoreUv * 0.5 + vec2(6.2, 2.9)), swNoise(swShoreUv * 0.5 + vec2(1.7, 8.3))) - vec2(0.5);
+  swShoreTex = clamp(mix(swWeb(swShoreUv + swShoreWarp).x * 1.15 - 0.05, 0.55, 0.3), 0.0, 1.0);`)}
   swShoreTex = clamp(swShoreTex + (swNoise(swWorld * 5.3 + vec2(3.3, 8.1)) - 0.5) * 0.25, 0.0, 1.0);
 }
 // A pixel spans swFoot * 3.2 cells: past about a third of a cell the pattern is averaged out into the density's coverage.
