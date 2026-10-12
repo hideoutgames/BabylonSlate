@@ -61,9 +61,23 @@ const JSON_TYPES = new Set<string>([
 const encoder = new TextEncoder();
 const assetFormats = createDefaultMigrationRegistry();
 
+/** Scene chunks packed with the Scene JSON, so all three must come from one saved version. */
+const SCENE_EXPORT_CHUNK_IDS = [NAVMESH_CHUNK_ID, AUDIO_REVERB_CHUNK_ID] as const;
+
 export type ExportDocumentLoaders = {
   assets: readonly IndexedAsset[];
   loadDocument: (kind: string, path: string) => Promise<unknown>;
+  /**
+   * A document with the named chunks its file holds, all from one saved version
+   * (`ProjectService.loadDocumentWithChunks`). Scenes load through it, so a
+   * Save landing between reads cannot pair one version's JSON with another's
+   * `navmesh` or `audioReverb` chunk.
+   */
+  loadDocumentWithChunks: (
+    kind: string,
+    path: string,
+    chunkIds: readonly string[],
+  ) => Promise<{ document: unknown; chunks: ReadonlyMap<string, Uint8Array> }>;
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
   /** When false, pack Texture `pixels` instead of KTX2. */
   transcoderAvailable?: boolean;
@@ -196,6 +210,7 @@ export async function loadExportDocuments(
     }
     const kind = documentKindForAssetType(asset.header.type);
     let document: unknown = null;
+    let sceneChunks: ReadonlyMap<string, Uint8Array> | null = null;
     if (
       kind &&
       kind !== "texture" &&
@@ -207,7 +222,13 @@ export async function loadExportDocuments(
         asset.header.type === "Model")
     ) {
       try {
-        document = await loaders.loadDocument(kind, asset.path);
+        if (asset.header.type === "Scene") {
+          const snapshot = await loaders.loadDocumentWithChunks(kind, asset.path, SCENE_EXPORT_CHUNK_IDS);
+          document = snapshot.document;
+          sceneChunks = snapshot.chunks;
+        } else {
+          document = await loaders.loadDocument(kind, asset.path);
+        }
       } catch (error) {
         // Audio and Model keep their settings in the header; anything else
         // reached by the game fails the export rather than shipping without it.
@@ -260,20 +281,13 @@ export async function loadExportDocuments(
     );
     if (msdfPng) fontMsdfPng.set(asset.header.guid, msdfPng);
     if (asset.header.type === "Scene") {
-      try {
-        const nav = await loaders.readAssetChunk(asset.path, NAVMESH_CHUNK_ID);
-        if (nav && nav.byteLength > 0) {
-          navmeshes.set(asset.header.guid, nav);
-        }
-      } catch {
-        // Scene JSON still packs when the extra chunk is missing.
+      // Read with the Scene JSON; a Scene whose read failed is already
+      // recorded in byteErrors. Scene JSON still packs without either chunk.
+      const nav = sceneChunks?.get(NAVMESH_CHUNK_ID);
+      if (nav && nav.byteLength > 0) {
+        navmeshes.set(asset.header.guid, nav);
       }
-      let field: Uint8Array | null = null;
-      try {
-        field = await loaders.readAssetChunk(asset.path, AUDIO_REVERB_CHUNK_ID);
-      } catch {
-        // Scene JSON still packs when the extra chunk is missing.
-      }
+      const field = sceneChunks?.get(AUDIO_REVERB_CHUNK_ID) ?? null;
       // A chunk the bake could not refresh may be stale; never pack it, unless
       // it already equals the fresh result the bake could not save.
       if (loaders.audioReverbBakeFailures?.has(asset.path)) {

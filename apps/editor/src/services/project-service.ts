@@ -50,6 +50,7 @@ import type { ProjectFolderHandle, ProjectStorage } from "@babylonslate/core";
 import {
   AssetRegistry,
   createRegistryAssetLoadingService,
+  registryAssetRepresentation,
   type AssetLoadingService,
   type AssetLoadScope,
   type AssetLoadPriority,
@@ -304,6 +305,10 @@ export type PluginImportResult =
  * Save, and the saved geometry's, with room to spare. Each is at most a few KB.
  */
 const SCENE_AUDIO_REVERB_RESULTS = 4;
+
+function fallbackDocumentType(kind: Exclude<DocumentKind, "content-browser">): string {
+  return isAssetDocumentKind(kind) ? assetTypeForDocumentKind(kind) : "Class";
+}
 
 /** Navmesh bake for scaffolds: the bake worker in the app, Recast directly in unit tests. */
 async function generateFeatureTestNavMesh(input: NavMeshGenerateInput): Promise<Uint8Array> {
@@ -2175,12 +2180,89 @@ export class ProjectService {
       }
       return decoded.payload;
     }
-    const fallbackType = isAssetDocumentKind(kind)
-      ? assetTypeForDocumentKind(kind)
-      : "Class";
     if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .babasset document.`);
-    const raw = await this.readAssetDocument(path, fallbackType, options);
+    const raw = await this.readAssetDocument(path, fallbackDocumentType(kind), options);
+    return this.documentContent(kind, path, raw);
+  }
 
+  /**
+   * A document and the named chunks its file holds, all from one saved
+   * version: a write landing between the reads retries the whole read, so one
+   * version's JSON is never paired with another's chunks. Chunks the file does
+   * not hold are absent from `chunks`.
+   */
+  async loadDocumentWithChunks(
+    kind: Exclude<DocumentKind, "content-browser" | "trace">,
+    path: string,
+    chunkIds: readonly string[],
+    options: { signal?: AbortSignal } = {},
+  ): Promise<{
+    document: Awaited<ReturnType<ProjectService["loadDocument"]>>;
+    chunks: ReadonlyMap<string, Uint8Array>;
+  }> {
+    if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .babasset document.`);
+    const { document, chunks } = await this.readSourceSnapshot(`Document ${path}`, options.signal,
+      () => this.readAssetDocumentWithChunksAttempt(path, chunkIds, options.signal));
+    this.assetGuids.set(path, document.guid);
+    return {
+      document: this.documentContent(kind, path, {
+        type: document.type || fallbackDocumentType(kind),
+        version: document.version,
+        payload: document.payload,
+      }),
+      chunks,
+    };
+  }
+
+  private async readAssetDocumentWithChunksAttempt(
+    path: string,
+    chunkIds: readonly string[],
+    signal: AbortSignal | undefined,
+  ): Promise<{ document: AssetDocument; chunks: Map<string, Uint8Array> }> {
+    const registry = this.assetRegistry;
+    const indexed = registry?.getByPath(path);
+    if (!registry || !indexed) {
+      // One read of the whole container is one version.
+      const blobs = this.blobsForPath(path);
+      const decoded = await decodeBabasset(await this.storageForPath(path).readBinary(path), (hash) => blobs.readBlob(hash));
+      const { header } = decoded;
+      const body = decoded.chunks.get(DOCUMENT_CHUNK_ID);
+      return {
+        document: {
+          guid: header.guid, type: header.type, name: header.name, version: header.version,
+          payload: body ? JSON.parse(new TextDecoder().decode(body)) as Record<string, unknown> : header.payload,
+        },
+        chunks: new Map(chunkIds.flatMap((id) => {
+          const bytes = decoded.chunks.get(id);
+          return bytes ? [[id, bytes] as const] : [];
+        })),
+      };
+    }
+    const guid = indexed.header.guid;
+    // The representation reads its document and chunks at the revision it
+    // resolved, and fails with SourceRevisionChangedError if the file changes.
+    const representation = await registryAssetRepresentation(registry, guid, {
+      selectChunks: (asset) => chunkIds.filter((id) => asset.header.chunks.some((chunk) => chunk.id === id)),
+      representationKey: "document-with-chunks",
+    }, { signal });
+    const scope = this.createAssetLoadScope(`Document Snapshot: ${path}`);
+    try {
+      const loaded = await scope.acquire<RegistryLoadedAsset>(guid, representation, { dependencies: "none", signal });
+      return {
+        // Working copies, as for loadDocument: the cached value can be evicted.
+        document: structuredClone(loaded.document),
+        chunks: new Map([...loaded.chunks].filter(([id]) => chunkIds.includes(id))),
+      };
+    } finally {
+      scope.dispose();
+    }
+  }
+
+  private documentContent(
+    kind: Exclude<DocumentKind, "content-browser">,
+    path: string,
+    raw: { type: string; version: number; payload: Record<string, unknown> },
+  ): Awaited<ReturnType<ProjectService["loadDocument"]>> {
     const migrated = loadPayloadWithMigration(this.migrations, {
       type: raw.type,
       version: raw.version,

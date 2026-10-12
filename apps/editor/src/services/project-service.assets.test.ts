@@ -1593,6 +1593,44 @@ describe("project documents as .babasset", () => {
     controller.dispose();
   });
 
+  it("packs a Scene's JSON, navmesh and reverb from one saved version when a Save lands between export's reads", async () => {
+    const { service } = await scaffolded();
+    const scene = { ...createDefaultScene(), actors: [createActor("wall", "Wall", {
+      components: [createMeshComponent("wall-mesh", "box")],
+    })] };
+    await service.saveDocument("scene", MAIN_SCENE_FILE, scene);
+    await service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([10]), scene as unknown as Record<string, unknown>);
+    await service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, new Uint8Array([1]), scene as unknown as Record<string, unknown>);
+    const edited = structuredClone(scene);
+    edited.actors[0]!.transform.position[0] = 50;
+    const registry = service.registry!;
+    const readChunk = registry.readChunk.bind(registry);
+    let saved = false;
+    vi.spyOn(registry, "readChunk").mockImplementation(async (guid, chunkId, ...rest) => {
+      if (!saved && (chunkId === NAVMESH_CHUNK_ID || chunkId === AUDIO_REVERB_CHUNK_ID)) {
+        saved = true;
+        // Save writes the edited geometry with its reverb and navmesh once
+        // export has read the Scene JSON, before it reads the derived chunks.
+        await service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, new Uint8Array([2]), edited as unknown as Record<string, unknown>);
+        await service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([20]), edited as unknown as Record<string, unknown>);
+      }
+      return readChunk(guid, chunkId, ...rest);
+    });
+    const loaded = await loadExportDocuments({
+      assets: registry.list().filter((asset) => asset.header.type === "Scene"),
+      loadDocument: (_kind, path) => service.loadDocument("scene", path),
+      loadDocumentWithChunks: (_kind, path, chunkIds) => service.loadDocumentWithChunks("scene", path, chunkIds),
+      readAssetChunk: (path, chunkId) => service.readAssetChunk(path, chunkId),
+    });
+    expect(saved).toBe(true);
+    const guid = service.guidForPath(MAIN_SCENE_FILE)!;
+    expect({
+      position: loaded.sceneByGuid(guid)!.actors[0]!.transform.position[0],
+      navmesh: loaded.navmeshByGuid(guid),
+      reverb: loaded.audioReverbByGuid(guid),
+    }).toEqual({ position: 50, navmesh: new Uint8Array([20]), reverb: new Uint8Array([2]) });
+  });
+
   it.each([
     ["writes are locked", "Read-only during Simulation Play"],
     ["the write fails", "disk full"],
@@ -1621,6 +1659,7 @@ describe("project documents as .babasset", () => {
     const loaded = await loadExportDocuments({
       assets: service.registry!.list().filter((asset) => asset.header.type === "Scene"),
       loadDocument: (_kind, path) => service.loadDocument("scene", path),
+      loadDocumentWithChunks: (_kind, path, chunkIds) => service.loadDocumentWithChunks("scene", path, chunkIds),
       readAssetChunk: (path, chunkId) => service.readAssetChunk(path, chunkId),
       audioReverbBakeFailures: unsaved,
     });
@@ -1668,6 +1707,7 @@ describe("project documents as .babasset", () => {
       const loaded = await loadExportDocuments({
         assets: service.registry!.list().filter((asset) => asset.header.type === "Scene"),
         loadDocument: (_kind, path) => service.loadDocument("scene", path),
+        loadDocumentWithChunks: (_kind, path, chunkIds) => service.loadDocumentWithChunks("scene", path, chunkIds),
         readAssetChunk: (path, chunkId) => service.readAssetChunk(path, chunkId),
         audioReverbBakeFailures: new Map(await flushed),
       });
