@@ -1153,7 +1153,7 @@ export class ForwardSceneFrameGraph {
       }
       return ready;
     } finally {
-      // The mask renderers disable shadows around readiness without a finally.
+      // Same guard as isReady: readiness hooks must not leak camera or light state.
       this.scene.activeCameras = cameras;
       for (let index = 0; index < probeLights.length; index += 1)
         probeLights[index]!.shadowEnabled = probeFlags[index]!;
