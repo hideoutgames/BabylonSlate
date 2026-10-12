@@ -7,7 +7,7 @@ import {
   AssetFormatVersionError, AssetRegistry, buildBoxGlbFixture, createDefaultMigrationRegistry, createRegistryAssetLoadingService, encodeBabasset,
   FONT_FACETYPE_CHUNK_ID, MATERIAL_PAYLOAD_VERSION, projectContentRoot, type ChunkInput,
 } from "@babylonslate/assets";
-import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets } from "./play-asset-sources";
+import { acquirePlayAssetSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets } from "./play-asset-sources";
 import type { OpenDocument } from "./document-service";
 
 const formats = createDefaultMigrationRegistry();
@@ -594,5 +594,46 @@ describe("Play source ownership", () => {
     expect(content?.type === "loadSceneContent" ? content.audioAssetGuids : null).toEqual(["audio"]);
     expect(systems.game.manifest.assets.map((entry) => entry.guid)).toEqual(["system"]);
     systems.release(); scene.release(); loading.dispose();
+  });
+
+  it("merges overlapping acquisitions once per GUID and rebuilds controls only when the live sets change", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const write = async (guid: string, type: string, payload: Record<string, unknown>, chunks: ChunkInput[], required: string[] = []) =>
+      storage.writeBinary(`assets/${guid}.babasset`, await encodeBabasset({
+        header: { guid, name: guid, type, version: currentFormat(type), engineVersion: "0.0.0", mode: "thin", payload,
+          dependencies: required, requiredDependencies: required, dependencyMetadataVersion: 1, requiredVariableNames: [] },
+        chunks,
+      }));
+    await write("system", "Class", { nodes: [], edges: [] }, []);
+    await write("scene", "Scene", { actors: [] }, [], ["audio"]);
+    await write("audio", "Audio", { clips: [{ chunkId: "source", name: "One", weight: 1 }] },
+      [{ id: "source", kind: "audio", mime: "audio/wav", data: new Uint8Array([1, 2]) }]);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "play" });
+    const host = { registry, project: createEmptyProject("Play"), createScope: (owner: string) => loading.createScope(owner),
+      compile: async () => ({ bundles: [], diagnostics: [] }) };
+    const acquire = (guids: string[]) => acquirePlayAssetSources(host, guids, { consumer: guids.join(), signal: new AbortController().signal });
+    const sets = [await acquire(["system"]), await acquire(["scene"]), await acquire(["audio", "system"])];
+    const guidsOf = (set: (typeof sets)[number]) => set.game.manifest.assets.map((entry) => entry.guid);
+    const merged = mergePreparedPlaySources(sets)!;
+    // Each GUID appears once, at the position of its first appearance across the sets.
+    expect(merged.game.manifest.assets.map((entry) => entry.guid)).toEqual([...new Set(sets.flatMap(guidsOf))]);
+    expect(merged.game.manifest.assets.map((entry) => entry.guid)).toEqual(expect.arrayContaining(["system", "scene", "audio"]));
+
+    const live = new Set(sets);
+    const controls = createMergedPlaySourceControls(() => live);
+    const first = controls();
+    expect(controls()).toBe(first);
+    live.delete(sets[2]);
+    const afterRelease = controls();
+    expect(afterRelease).not.toBe(first);
+    expect(controls()).toBe(afterRelease);
+    live.clear();
+    expect(controls()).toEqual(emptyPlaySourceControls());
+    for (const set of sets) set.release();
+    loading.dispose();
   });
 });

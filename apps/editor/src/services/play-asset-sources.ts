@@ -520,15 +520,36 @@ export function mergePreparedPlaySources(entries: Iterable<PreparedPlaySources>)
   const content = copyContainers(first.content);
   content.audioLibrary = copyContainers(first.content.audioLibrary);
   content.particleLibrary = copyContainers(first.content.particleLibrary);
-  for (const next of prepared.slice(1)) {
-    mergeContainers(game, next.game);
-    mergeContainers(game.manifest, next.game.manifest);
-    mergeContainers(content, next.content);
-    mergeContainers(content.audioLibrary, next.content.audioLibrary);
-    mergeContainers(content.particleLibrary, next.content.particleLibrary);
-  }
+  const rest = prepared.slice(1);
+  mergeContainers(game, rest.map((next) => next.game));
+  mergeContainers(game.manifest, rest.map((next) => next.game.manifest));
+  mergeContainers(content, rest.map((next) => next.content));
+  mergeContainers(content.audioLibrary, rest.map((next) => next.content.audioLibrary));
+  mergeContainers(content.particleLibrary, rest.map((next) => next.content.particleLibrary));
   const controls = packedSourceControls(game, content);
   return { game, content, controls };
+}
+
+/**
+ * Merged source controls for the live preparations, rebuilt only when the set of
+ * preparations changes. Prepared content is immutable once acquired, so membership
+ * identifies the result. `reset` drops the retained union at session end.
+ */
+export function createMergedPlaySourceControls(entries: () => Iterable<PreparedPlaySources>): {
+  (): ControlMessage[];
+  reset(): void;
+} {
+  let members: PreparedPlaySources[] = [];
+  let merged: ControlMessage[] | null = null;
+  const get = () => {
+    const current = [...entries()];
+    if (merged && current.length === members.length && current.every((entry, index) => entry === members[index])) return merged;
+    members = current;
+    merged = mergePreparedPlaySources(current)?.controls ?? emptyPlaySourceControls();
+    return merged;
+  };
+  get.reset = () => { members = []; merged = null; };
+  return get;
 }
 
 export function emptyPlaySourceControls(): ControlMessage[] {
@@ -550,15 +571,29 @@ function copyContainers<T extends object>(source: T): T {
   ])) as T;
 }
 
-function mergeContainers(target: object, source: object): void {
+/**
+ * Union `sources` into `target` in one pass. Maps take the last value per id; GUID- or
+ * class-keyed arrays take the last entry per key at the key's first position.
+ */
+function mergeContainers(target: object, sources: readonly object[]): void {
   const merged = target as Record<string, unknown>;
-  for (const [key, value] of Object.entries(source)) {
-    const current = merged[key];
-    if (current instanceof Map && value instanceof Map) {
-      for (const [id, entry] of value) current.set(id, entry);
-    } else if (Array.isArray(current) && Array.isArray(value) && value.length
-      && typeof value[0] === "object" && value[0] !== null && ("guid" in value[0] || "classId" in value[0])) {
-      merged[key] = [...new Map([...current, ...value].map((entry: { guid?: string; classId?: string }) => [entry.guid ?? entry.classId, entry])).values()];
+  const keyed = new Map<string, Map<unknown, unknown>>();
+  for (const source of sources) {
+    for (const [key, value] of Object.entries(source)) {
+      const current = merged[key];
+      if (current instanceof Map && value instanceof Map) {
+        for (const [id, entry] of value) current.set(id, entry);
+      } else if (Array.isArray(current) && Array.isArray(value) && value.length
+        && typeof value[0] === "object" && value[0] !== null && ("guid" in value[0] || "classId" in value[0])) {
+        let entries = keyed.get(key);
+        if (!entries) keyed.set(key, entries = new Map(current.map(keyedEntry)));
+        for (const entry of value) { const [id, item] = keyedEntry(entry); entries.set(id, item); }
+      }
     }
   }
+  for (const [key, entries] of keyed) merged[key] = [...entries.values()];
+}
+
+function keyedEntry(entry: { guid?: string; classId?: string }): [unknown, unknown] {
+  return [entry.guid ?? entry.classId, entry];
 }
