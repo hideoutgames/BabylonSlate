@@ -175,6 +175,30 @@ describe("audio reverb bake controller", () => {
     controller.dispose();
   });
 
+  it("reports the fresh result when a flush joins a background bake that writes refused", async () => {
+    let refuse!: (error: Error) => void;
+    // The first admission (the background bake) is refused asynchronously; later ones at once.
+    const locked = new Error("Read-only during Simulation Play");
+    const withWrite = vi.fn<(work: (write: (entry: AudioReverbBakeWrite) => Promise<void>) => Promise<void>) => Promise<void>>()
+      .mockImplementationOnce(() => new Promise((_, reject) => { refuse = reject; }))
+      .mockImplementation(() => Promise.reject(locked));
+    const controller = createAudioReverbBakeController({
+      debounceMs: 0,
+      bake: async () => new Uint8Array([2]),
+      write: async () => { throw new Error("bakes write through withWrite"); },
+      withWrite,
+    });
+    const scene = sceneWith([boxActor("wall", [0, 0, 0])]);
+    controller.schedule("assets/Main.scene.babasset", scene);
+    await vi.waitFor(() => expect(withWrite).toHaveBeenCalledOnce());
+    const flushed = controller.flushAll([{ path: "assets/Main.scene.babasset", scene: structuredClone(scene) }]);
+    refuse(locked);
+    const unsaved = (await flushed).get("assets/Main.scene.babasset");
+    expect(unsaved?.reason).toBe(locked);
+    expect(unsaved?.bytes).toEqual(new Uint8Array([2]));
+    controller.dispose();
+  });
+
   it("reuses a geometry hash for material edits while publishing the new Scene snapshot", async () => {
     const writes: AudioReverbBakeWrite[] = [];
     const bake = vi.fn(async () => new Uint8Array([1, 2, 3]));
