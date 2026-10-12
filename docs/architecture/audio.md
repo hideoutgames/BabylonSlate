@@ -123,6 +123,8 @@ If a geometry edit reaches Save before its matching bake, Save removes the older
 
 Export flushes bakes against the persisted Scene snapshots it packages, so an open dirty tab cannot substitute different geometry. Material-only changes reuse cached bake bytes and associate them with the new authored snapshot without repeating the geometry bake. Manual navmesh writes share the Scene write queue and preserve the other derived chunks.
 
+A flush still bakes while project writes are locked (Simulation Play), and reports each Scene whose fresh result it could not save, because writes were locked or the write failed, as `AudioReverbBakeUnsavedError` with that result (`flushAll`, `flushAudioReverbForSave`). Export never packs an in-memory result: the game must match the saved project. A saved chunk equal to the fresh result is current and packs; otherwise a reached Scene fails with `<Scene>'s audio reverb bake could not be saved: …`, and an unreached one does not block. A write failure no longer triggers a second, dry-fallback write; the dry fallback is only for a failed bake.
+
 Both Save and manual navmesh baking reconcile reverb with the Scene geometry they write: they attach a matching staged result or remove probes belonging to the previous geometry. A later export can safely join an already completed bake.
 
 Overlay Play applies the activated Scene's baked field on every scene change. A Scene prepared on demand carries its own `audioReverb` chunk, and the field is dropped with that Scene's last owner, so a later Scene, or a return to the startup Scene, keeps its reverb.

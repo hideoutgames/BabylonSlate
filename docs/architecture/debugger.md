@@ -186,7 +186,8 @@ Logic, Class, prefab and asset editors show **Read-only During Simulation Play**
 navigation, copying and source-linked errors remain useful. Authoring commands,
 global Undo/Redo, file writes and engine-managed utilities obey central locks.
 Already-admitted safe saves finish before the baseline is taken; later authoring
-saves defer. Save Game reads see selected Preview data through a copy-on-write
+saves defer. Export Game and Preview Build still bake Scene reverb; only a reached
+Scene whose changed result cannot be saved fails ([audio](audio.md#reverb-bake)). Save Game reads see selected Preview data through a copy-on-write
 overlay; writes/deletes, including wipe-on-start, are dropped on Stop even with
 Keep on. Arbitrary custom JavaScript timers and external network/file effects are
 outside this scene rollback and cooperative game-clock boundary.

@@ -40,6 +40,7 @@ import { createDefaultLogicGraphSerialized } from "./graph-validation";
 import { MANNEQUIN_CLASS_FILE } from "../lib/scaffold-empty-3d";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { collectAudioReverbFlushScenes, createAudioReverbBakeController } from "../lib/audio-reverb-bake";
+import { loadExportDocuments } from "./export-game-inputs";
 
 const DEFAULT_3D_CLASS_FILE = `assets/${MANNEQUIN_CLASS_FILE}`;
 
@@ -1552,6 +1553,42 @@ describe("project documents as .babasset", () => {
     const saved = await decodeAssetDocument(await storage.readBinary(MAIN_SCENE_FILE));
     expect((saved.payload as unknown as SerializedScene).actors[0]!.transform.position[0]).toBe(0);
     expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(new Uint8Array([2]));
+    controller.dispose();
+  });
+
+  it.each([
+    ["writes are locked", "Read-only during Simulation Play"],
+    ["the write fails", "disk full"],
+  ] as const)("fails export only on a Scene whose changed reverb could not be saved because %s", async (cause, reason) => {
+    const { storage, service } = await scaffolded();
+    const scene = createDefaultScene();
+    const unchanged = "assets/Unchanged.scene.babasset";
+    await service.saveDocument("scene", MAIN_SCENE_FILE, scene);
+    await service.saveDocument("scene", unchanged, scene);
+    // Main holds an earlier result; Unchanged already holds the one the bake produces.
+    await service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, new Uint8Array([1]), scene as unknown as Record<string, unknown>);
+    await service.writeSceneAudioReverbChunk(unchanged, new Uint8Array([2]), scene as unknown as Record<string, unknown>);
+    // Wired as AudioReverbBakeProvider wires export's flush.
+    const controller = createAudioReverbBakeController({
+      bake: async () => new Uint8Array([2]),
+      write: async () => { throw new Error("export flushes through withWrite"); },
+      withWrite: (work) => service.withSceneWrite((writer) =>
+        work((entry) => writer.writeSceneAudioReverbChunk(entry.path, entry.bytes, entry.payload))),
+    });
+    if (cause === "writes are locked") service.lockAuthoringWrites(reason);
+    else vi.spyOn(storage, "writeBinary").mockRejectedValue(new Error(reason));
+    const collected = await collectAudioReverbFlushScenes({
+      paths: [MAIN_SCENE_FILE, unchanged], load: (path) => service.loadDocument("scene", path),
+    });
+    const unsaved = await controller.flushAll(collected.scenes);
+    const loaded = await loadExportDocuments({
+      assets: service.registry!.list().filter((asset) => asset.header.type === "Scene"),
+      loadDocument: (_kind, path) => service.loadDocument("scene", path),
+      readAssetChunk: (path, chunkId) => service.readAssetChunk(path, chunkId),
+      audioReverbBakeFailures: unsaved,
+    });
+    expect(() => loaded.audioReverbByGuid(service.guidForPath(MAIN_SCENE_FILE)!)).toThrow(reason);
+    expect(loaded.audioReverbByGuid(service.guidForPath(unchanged)!)).toEqual(new Uint8Array([2]));
     controller.dispose();
   });
 

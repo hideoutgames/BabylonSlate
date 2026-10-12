@@ -28,13 +28,42 @@ export type AudioReverbBakeScene = {
 
 export type AudioReverbBakeSceneEntry = { path: string; scene: AudioReverbBakeScene };
 
+/**
+ * A flush whose result did not reach its Scene's `audioReverb` chunk, for
+ * example while project writes are locked. `bytes` is the fresh result, or null
+ * when none is known; the saved chunk is current only if it equals `bytes`.
+ */
+export class AudioReverbBakeUnsavedError extends Error {
+  readonly bytes: Uint8Array | null;
+  readonly reason: unknown;
+
+  constructor(bytes: Uint8Array | null, reason: unknown) {
+    super(reason instanceof Error ? reason.message : String(reason));
+    this.name = "AudioReverbBakeUnsavedError";
+    this.bytes = bytes;
+    this.reason = reason;
+  }
+
+  /** True when `saved` already holds this fresh result, so nothing is stale. */
+  matches(saved: Uint8Array | null | undefined): boolean {
+    const bytes = this.bytes;
+    return !!bytes && !!saved && saved.byteLength === bytes.byteLength &&
+      saved.every((value, index) => value === bytes[index]);
+  }
+}
+
+/** Scenes whose flushed result was not saved, by path. */
+export type AudioReverbUnsavedResults = ReadonlyMap<string, AudioReverbBakeUnsavedError>;
+
 export type AudioReverbBakeController = {
   schedule(path: string, scene: AudioReverbBakeScene): void;
+  /** Rejects with `AudioReverbBakeUnsavedError` when the result cannot be saved. */
   flush(path: string, scene: AudioReverbBakeScene, write?: AudioReverbWrite): Promise<void>;
+  /** Settles every Scene and reports the ones whose result was not saved. */
   flushAll(
     scenes: readonly AudioReverbBakeSceneEntry[],
     write?: AudioReverbWrite,
-  ): Promise<void>;
+  ): Promise<AudioReverbUnsavedResults>;
   drain(): Promise<void>;
   dispose(): void;
 };
@@ -139,7 +168,7 @@ export function createAudioReverbBakeController(options: {
     return next;
   };
 
-  const run = (path: string, scene: AudioReverbBakeScene, write?: AudioReverbWrite): Promise<void> => {
+  const run = (path: string, scene: AudioReverbBakeScene, write?: AudioReverbWrite, flushing = false): Promise<void> => {
     const fingerprint = staticAudioGeometryFingerprint(scene);
     const existing = inflight.get(path);
     // Save must join the background bake through chunk persistence, not start
@@ -147,7 +176,21 @@ export function createAudioReverbBakeController(options: {
     if (existing?.fingerprint === fingerprint) return existing.work;
     const gen = bump(path);
     const bakeWith = (writer: AudioReverbWrite) => bakePath(path, scene, gen, fingerprint, writer);
-    const work = write ? bakeWith(write) : options.withWrite ? options.withWrite(bakeWith) : bakeWith(options.write);
+    let work: Promise<void>;
+    if (write) work = bakeWith(write);
+    else if (!options.withWrite) work = bakeWith(options.write);
+    else {
+      let admitted = false;
+      work = options.withWrite((writer) => { admitted = true; return bakeWith(writer); });
+      // While writes are locked (Simulation Play), a flush still bakes so export
+      // learns whether the saved chunk already matches; a changed result is reported.
+      if (flushing) {
+        work = work.catch((error: unknown) => {
+          if (admitted) throw error;
+          return bakeWith(() => Promise.reject(error));
+        });
+      }
+    }
     const entry = { fingerprint, work };
     inflight.set(path, entry);
     return work.finally(() => {
@@ -162,23 +205,36 @@ export function createAudioReverbBakeController(options: {
     fingerprint: string,
     write: AudioReverbWrite,
   ): Promise<void> {
+    const fresh = await bakeFresh(path, scene, gen, fingerprint);
+    if (!fresh) return;
+    try {
+      await write({ path, bytes: fresh.bytes, payload: scene as Record<string, unknown> });
+    } catch (error) {
+      throw new AudioReverbBakeUnsavedError(fresh.bytes, error);
+    }
+    completed.set(path, { hash: fresh.hash, fingerprint, bytes: fresh.bytes });
+  }
+
+  /** The result to write for this snapshot, or null when superseded or already written. */
+  async function bakeFresh(
+    path: string,
+    scene: AudioReverbBakeScene,
+    gen: number,
+    fingerprint: string,
+  ): Promise<{ hash: string; bytes: Uint8Array } | null> {
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let hash = completed.get(path)?.hash ?? "0";
     try {
       const geometry = await collect(scene);
-      if (generation.get(path) !== gen) return;
+      if (generation.get(path) !== gen) return null;
       hash = geometryHashForAudioBake(geometry);
       const cached = completed.get(path);
       if (cached?.hash === hash) {
         // A material or other non-geometric mesh edit may change the cheap
         // fingerprint without changing triangles. Reuse the bake, but associate
         // it with this snapshot so its later Save can persist the matching chunk.
-        if (cached.fingerprint !== fingerprint) {
-          await write({ path, bytes: cached.bytes, payload: scene });
-          completed.set(path, { ...cached, fingerprint });
-        }
-        return;
+        return cached.fingerprint === fingerprint ? null : { hash, bytes: cached.bytes };
       }
       const timeout = new Promise<Uint8Array>((_, reject) => {
         timer = setTimeout(() => {
@@ -188,27 +244,16 @@ export function createAudioReverbBakeController(options: {
       });
       void timeout.catch(() => undefined);
       const bytes = await Promise.race([bake(geometry, abort.signal), timeout]);
-      if (generation.get(path) !== gen) return;
-      await write({
-        path,
-        bytes,
-        payload: scene as Record<string, unknown>,
-      });
-      completed.set(path, { hash, fingerprint, bytes });
+      if (generation.get(path) !== gen) return null;
+      return { hash, bytes };
     } catch {
-      if (generation.get(path) !== gen) return;
+      if (generation.get(path) !== gen) return null;
       options.onDiagnostic?.({
         code: "audio.reverb_bake_failed",
         message:
           "Audio reverb bake failed; writing a marked dry fallback so Save and export can continue.",
       });
-      const bytes = dryAudioReverbFallbackBytes(hash);
-      await write({
-        path,
-        bytes,
-        payload: scene as Record<string, unknown>,
-      });
-      completed.set(path, { hash, fingerprint, bytes });
+      return { hash, bytes: dryAudioReverbFallbackBytes(hash) };
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
@@ -233,12 +278,21 @@ export function createAudioReverbBakeController(options: {
         clearTimeout(existing);
         pending.delete(path);
       }
-      await run(path, scene, write);
+      await run(path, scene, write, true);
     },
     async flushAll(scenes, write) {
-      await Promise.all(
+      const settled = await Promise.allSettled(
         scenes.map((entry) => this.flush(entry.path, entry.scene, write)),
       );
+      const unsaved = new Map<string, AudioReverbBakeUnsavedError>();
+      settled.forEach((result, index) => {
+        if (result.status === "fulfilled") return;
+        const { reason } = result;
+        unsaved.set(scenes[index]!.path, reason instanceof AudioReverbBakeUnsavedError
+          ? reason
+          : new AudioReverbBakeUnsavedError(null, reason));
+      });
+      return unsaved;
     },
     drain() {
       return Promise.all([...inflight.values()].map((entry) => entry.work)).then(() => undefined);
@@ -251,7 +305,7 @@ export function createAudioReverbBakeController(options: {
   };
 }
 
-let saveFlush: ((scenes?: readonly AudioReverbBakeSceneEntry[], writer?: ProjectSceneWriter) => Promise<void>) | null = null;
+let saveFlush: ((scenes?: readonly AudioReverbBakeSceneEntry[], writer?: ProjectSceneWriter) => Promise<AudioReverbUnsavedResults>) | null = null;
 
 export function registerAudioReverbSaveFlush(
   flush: typeof saveFlush,
@@ -259,12 +313,16 @@ export function registerAudioReverbSaveFlush(
   saveFlush = flush;
 }
 
-/** Save/export await the current bake or a dry fallback. Never throws. */
-export async function flushAudioReverbForSave(scenes?: readonly AudioReverbBakeSceneEntry[], writer?: ProjectSceneWriter): Promise<void> {
+/**
+ * Save/export await the current bake or a dry fallback. Never throws; reports
+ * the Scenes whose result could not be saved so export can refuse stale chunks.
+ */
+export async function flushAudioReverbForSave(scenes?: readonly AudioReverbBakeSceneEntry[], writer?: ProjectSceneWriter): Promise<AudioReverbUnsavedResults> {
   try {
-    await saveFlush?.(scenes, writer);
+    return (await saveFlush?.(scenes, writer)) ?? new Map();
   } catch {
     // Dry fallback is written by the controller; Save must not hang or fail.
+    return new Map();
   }
 }
 

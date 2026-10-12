@@ -24,6 +24,7 @@ import {
   type IndexedAsset,
 } from "@babylonslate/assets";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
+import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
 
 const JSON_TYPES = new Set<string>([
   "InputAction", "InputAxis", "SaveGame",
@@ -66,7 +67,11 @@ export type ExportDocumentLoaders = {
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
   /** When false, pack Texture `pixels` instead of KTX2. */
   transcoderAvailable?: boolean;
-  /** Scenes the audio reverb bake could not read, by path: a reached one fails the export. */
+  /**
+   * Scenes the audio reverb bake could not read, or whose fresh result it could
+   * not save (`AudioReverbBakeUnsavedError`), by path: a reached one fails the
+   * export unless its saved chunk already equals the fresh result.
+   */
   audioReverbBakeFailures?: ReadonlyMap<string, unknown>;
 };
 
@@ -81,7 +86,7 @@ export type LoadedExportDocuments = {
   fontMsdfJsonByGuid: (guid: string) => Uint8Array | null;
   fontMsdfPngByGuid: (guid: string) => Uint8Array | null;
   navmeshByGuid: (guid: string) => Uint8Array | null;
-  /** Throws for a Scene the reverb bake could not read, so its chunk may be stale. */
+  /** Throws for a Scene the reverb bake could not read or save, so its chunk may be stale. */
   audioReverbByGuid: (guid: string) => Uint8Array | null;
 };
 
@@ -263,21 +268,23 @@ export async function loadExportDocuments(
       } catch {
         // Scene JSON still packs when the extra chunk is missing.
       }
-      // A chunk the bake could not refresh may be stale; never pack it.
-      if (loaders.audioReverbBakeFailures?.has(asset.path)) {
-        audioReverbErrors.set(asset.header.guid, loaders.audioReverbBakeFailures.get(asset.path));
-        continue;
-      }
+      let field: Uint8Array | null = null;
       try {
-        const field = await loaders.readAssetChunk(
-          asset.path,
-          AUDIO_REVERB_CHUNK_ID,
-        );
-        if (field && field.byteLength > 0) {
-          audioReverbs.set(asset.header.guid, field);
-        }
+        field = await loaders.readAssetChunk(asset.path, AUDIO_REVERB_CHUNK_ID);
       } catch {
         // Scene JSON still packs when the extra chunk is missing.
+      }
+      // A chunk the bake could not refresh may be stale; never pack it, unless
+      // it already equals the fresh result the bake could not save.
+      if (loaders.audioReverbBakeFailures?.has(asset.path)) {
+        const failure = loaders.audioReverbBakeFailures.get(asset.path);
+        if (!(failure instanceof AudioReverbBakeUnsavedError && failure.matches(field))) {
+          audioReverbErrors.set(asset.header.guid, failure);
+          continue;
+        }
+      }
+      if (field && field.byteLength > 0) {
+        audioReverbs.set(asset.header.guid, field);
       }
     }
   }

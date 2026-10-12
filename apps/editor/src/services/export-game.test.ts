@@ -19,6 +19,7 @@ import { AUDIO_REVERB_CHUNK_ID, collectAssetDependencyMetadata, createDefaultPlu
 import { MISSING_STARTUP_SCENE_MESSAGE } from "@babylonslate/exporter";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { assetsFromIndexed, collectAndExportGame, resolveExportPluginGraph } from "./export-game";
+import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
 import { loadExportDocuments } from "./export-game-inputs";
 import type { ExportIndexedAsset, ExportArtifact } from "@babylonslate/exporter";
 // Collect the real compiler with the suite so cold transforms are not timed as export work.
@@ -136,20 +137,20 @@ describe("collectAndExportGame", () => {
     });
   });
 
-  it("fails once the game reaches a Scene the reverb bake could not read", async () => {
+  it("fails once the game reaches a Scene the reverb bake could not read or save", async () => {
     const scene = createDefaultScene();
     const sceneAsset = (guid: string, name: string): IndexedAsset => ({ rootId: "project", path: `assets/${name}.scene.babasset`, header: {
       guid, type: "Scene", name, engineVersion: "0.0.0", version: SCENE_SCHEMA_VERSION, mode: "thin",
       payload: scene as unknown as Record<string, unknown>, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, chunks: [],
     } });
     const indexed = [sceneAsset("main", "Main"), sceneAsset("unused", "Unused")];
-    const exportAfterBakeFailed = async (path: string) => {
+    const exportAfterBakeFailed = async (path: string, failure: unknown = new Error("read failed")) => {
       const loaded = await loadExportDocuments({
         assets: indexed,
         // Export's own reads succeed, and each Scene still holds an earlier reverb chunk.
         loadDocument: async (_kind, assetPath) => indexed.find(entry => entry.path === assetPath)?.header.payload ?? null,
         readAssetChunk: async (_path, chunk) => chunk === AUDIO_REVERB_CHUNK_ID ? new Uint8Array([1]) : null,
-        audioReverbBakeFailures: new Map([[path, new Error("read failed")]]),
+        audioReverbBakeFailures: new Map([[path, failure]]),
       });
       return collectAndExportGame({
         startupSceneGuid: "main", assets: assetsFromIndexed(indexed),
@@ -162,6 +163,13 @@ describe("collectAndExportGame", () => {
       ok: false,
       error: "Main could not be read for its audio reverb bake: read failed",
     });
+    // A fresh result that writes refused to save fails only when it differs from the saved chunk.
+    const locked = new Error("Read-only during Simulation Play");
+    expect(await exportAfterBakeFailed("assets/Main.scene.babasset", new AudioReverbBakeUnsavedError(new Uint8Array([2]), locked))).toEqual({
+      ok: false,
+      error: "Main's audio reverb bake could not be saved: Read-only during Simulation Play",
+    });
+    expect(isOk(await exportAfterBakeFailed("assets/Main.scene.babasset", new AudioReverbBakeUnsavedError(new Uint8Array([1]), locked)))).toBe(true);
   });
 
   it.each([true, false])("retains project focus navigation in editor exports with preview=%s", async (previewBuild) => {
