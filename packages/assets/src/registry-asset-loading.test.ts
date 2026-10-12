@@ -1,13 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMountedProjectStorage, createReadOnlyProjectStorage, HttpCatalogStorageAdapter, MemoryStorageAdapter, type HttpStorageCatalog } from "@babylonslate/vfs";
-import { MAIN_CLASS_FILE, MAIN_SCENE_FILE } from "@babylonslate/core";
+import { MAIN_CLASS_FILE, MAIN_SCENE_FILE, SourceRevisionChangedError, type StorageReadOptions } from "@babylonslate/core";
 import { BABASSET_PREFIX_BYTES, encodeBabasset, readBabassetHeaderLength } from "./babasset";
+import { isAssetSourceRevisionChanged } from "./asset-loading-service";
+import { createVfsBlobStore } from "./blob-store";
 import { sha256Hex } from "./bytes";
 import { collectAssetDependencyMetadata } from "./asset-dependencies";
 import { projectContentRoot } from "./content-root";
 import { AssetRegistry } from "./registry";
 import { createRegistryAssetLoadingService, registryAssetRepresentation, type RegistryLoadedAsset } from "./registry-asset-loading";
 import { installMinimalProject } from "./test-support/minimal-project";
+
+/** Models external same-size saves on a filesystem with a coarse timestamp. */
+class WeakRevisionStorage extends MemoryStorageAdapter {
+  override readonly hasStrongSourceRevisions = false;
+
+  override async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string, options?: StorageReadOptions) {
+    if (expectedRevision !== undefined && expectedRevision !== "coarse") throw new SourceRevisionChangedError(`Changed: ${path}`);
+    return { ...await super.readBinaryRange(path, offset, length, undefined, options), revision: "coarse" };
+  }
+}
 
 describe("registry source loading", () => {
   it.each([
@@ -98,6 +110,42 @@ describe("registry source loading", () => {
       expect(retry.chunks.get("source")).toEqual(source);
       expect(fetchContent.mock.calls.filter(([url]) => String(url).endsWith("/source"))).toHaveLength(2);
       expect(transport.getReadMetrics().actualBytesRead - beforeBytes).toBe(discarded + source.byteLength);
+    } finally { loader.dispose(); }
+  });
+
+  it.each(["strong", "weak"] as const)("rejects a multi-chunk load whose asset is saved between chunks on %s storage and loads the saved revision on retry", async (revisions) => {
+    const storage = revisions === "weak" ? new WeakRevisionStorage() : new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const blobs = createVfsBlobStore(storage);
+    const chunks = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6])];
+    // Same size on every save, so a weak adapter's metadata revision never moves.
+    const save = async (saved: number) => storage.writeBinary("assets/model.babasset", await encodeBabasset({
+      header: { guid: "model", name: "Model", type: "Model", version: 1, engineVersion: "0.0.0", mode: "thin",
+        dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, payload: { saved } },
+      chunks: chunks.map((data, index) => ({ id: `part-${index}`, kind: "model", mime: "application/octet-stream", data })),
+      blobThreshold: 1, writeBlob: (hash, data) => blobs.writeBlob(hash, data),
+    }));
+    await save(1);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const original = registry.getByGuid("model")!.locator!.revision;
+    const loader = createRegistryAssetLoadingService(registry, {
+      projectId: "saved-between-chunks", includeDocument: false, selectChunks: () => ["part-0", "part-1"],
+    });
+    const scope = loader.createScope("scene");
+    try {
+      const secondBlob = `assets/.blobs/${await sha256Hex(chunks[1]!)}`;
+      const read = storage.readBinary.bind(storage);
+      const reads = vi.spyOn(storage, "readBinary").mockImplementation(async (path, options) => {
+        if (path === secondBlob) await save(2);
+        return read(path, options);
+      });
+      expect(isAssetSourceRevisionChanged(await scope.acquire("model").catch((error: unknown) => error))).toBe(true);
+      reads.mockRestore();
+      const retry = await scope.acquire<RegistryLoadedAsset>("model");
+      expect(retry.revision).not.toBe(original);
+      expect([...retry.chunks.values()]).toEqual(chunks);
     } finally { loader.dispose(); }
   });
 

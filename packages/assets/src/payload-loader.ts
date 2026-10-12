@@ -174,7 +174,6 @@ export class AccountedPayloadLoader {
       if (result.bytes.byteLength !== length) throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
       data = result.bytes;
     } else {
-      await validateAssetSourceLocator(storage, asset, options);
       if (blobs.blobByteLength &&
         await blobs.blobByteLength(entry.locator.blob, options) !== entry.byteLength) {
         throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
@@ -192,6 +191,7 @@ export class AccountedPayloadLoader {
     if (hash !== entry.sha256) {
       throw new Error(`Hash mismatch for chunk ${entry.id} in ${asset.path}`);
     }
+    // Blobs are content-addressed and hash-verified, so only this check after the read can show the locator went stale.
     await validateAssetSourceLocator(storage, asset, options);
     this.accounted += data.byteLength;
     return data;

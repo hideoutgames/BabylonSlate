@@ -350,6 +350,23 @@ export class AssetRegistry {
   async readChunk(guid: string, chunkId: string, expectedRevision?: string, options: StorageReadOptions = {}): Promise<Uint8Array> {
     const locator = await this.getAssetLocator(guid, options);
     options.signal?.throwIfAborted();
+    return this.readResolvedChunk(guid, chunkId, locator, expectedRevision, options);
+  }
+
+  /**
+   * Read a chunk of a catalog snapshot the caller resolved earlier, without
+   * resolving it again. A load of several chunks resolves once: every read is
+   * still followed by a storage check against `locator`, so a save between two
+   * chunks fails the read after it.
+   */
+  async readLocatedChunk(guid: string, chunkId: string, locator: AssetSourceLocator, expectedRevision?: string, options: StorageReadOptions = {}): Promise<Uint8Array> {
+    options.signal?.throwIfAborted();
+    const asset = this.byGuid.get(guid);
+    if (!asset || asset.placeholder) throw new Error(`Asset is unavailable: ${guid}`);
+    return this.readResolvedChunk(guid, chunkId, locator, expectedRevision, options);
+  }
+
+  private async readResolvedChunk(guid: string, chunkId: string, locator: AssetSourceLocator, expectedRevision: string | undefined, options: StorageReadOptions): Promise<Uint8Array> {
     if (expectedRevision !== undefined && locator.revision !== expectedRevision) throw new SourceRevisionChangedError(`Asset changed before reading chunk ${chunkId}: ${guid}`);
     const asset = this.byGuid.get(guid);
     if (!asset || asset.locator !== locator) throw new SourceRevisionChangedError(`Asset changed while preparing chunk ${chunkId}: ${guid}`);
