@@ -1331,7 +1331,14 @@ export function compileGraph(
   const finalLines = [...preamble];
   const anchors: CompileAnchor[] = [];
 
-  for (const chunk of hoisted) {
+  // Chunks without body anchors (math helpers) go first. A stack frame inside
+  // one then has no preceding anchor, so error mapping falls through to the
+  // calling statement instead of landing on an earlier ExecuteJavaScript body.
+  const hasBodyAnchors = (chunk: HoistChunk) => (chunk.bodyAnchors?.length ?? 0) > 0;
+  for (const chunk of [
+    ...hoisted.filter((entry) => !hasBodyAnchors(entry)),
+    ...hoisted.filter(hasBodyAnchors),
+  ]) {
     const lines = chunk.source.split("\n");
     for (let i = 0; i < lines.length; i++) {
       finalLines.push(lines[i]!);

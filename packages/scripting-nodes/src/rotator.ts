@@ -6,6 +6,7 @@ import {
   ROTATOR,
   VEC3,
 } from "@babylonslate/scripting";
+import { hoistedCall } from "./hoisted-helper";
 
 export const rotatorNodes: NodeDefinition[] = [
   {
@@ -130,8 +131,17 @@ export const rotatorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", BOOL),
     ],
     // Each axis difference wraps to [-180, 180), so 0 and 360 are equal.
-    codegen: (ctx) => ({
-      out: `((a, b) => { const d = (x) => Math.abs((((x % 360) + 540) % 360) - 180); return d(a?.pitch - b?.pitch) < 1e-3 && d(a?.yaw - b?.yaw) < 1e-3 && d(a?.roll - b?.roll) < 1e-3; })(${ctx.input("a")}, ${ctx.input("b")})`,
-    }),
+    codegen: (ctx) => {
+      ctx.hoist("var __rot_axisDelta = (x) => Math.abs((((x % 360) + 540) % 360) - 180);");
+      return {
+        out: hoistedCall(
+          ctx,
+          "__rot_nearlyEqual",
+          "a, b",
+          "__rot_axisDelta(a?.pitch - b?.pitch) < 1e-3 && __rot_axisDelta(a?.yaw - b?.yaw) < 1e-3 && __rot_axisDelta(a?.roll - b?.roll) < 1e-3",
+          [ctx.input("a"), ctx.input("b")],
+        ),
+      };
+    },
   },
 ];

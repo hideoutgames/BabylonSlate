@@ -6,14 +6,26 @@ import {
   BOOL,
 } from "@babylonslate/scripting";
 import { ARITHMETIC_SEARCH_ALIASES } from "./arithmetic-search-aliases";
+import { hoistedCall } from "./hoisted-helper";
 
 /**
  * Divide Int truncates toward zero and Modulo Int keeps the dividend's sign.
  * A zero divisor yields 0, so an Int pin never carries Infinity or NaN.
  */
-function intDivisionExpr(a: string, b: string, op: "/" | "%"): string {
+function intDivisionExpr(
+  ctx: Parameters<NodeDefinition["codegen"]>[0],
+  a: string,
+  b: string,
+  op: "/" | "%",
+): string {
   const result = op === "/" ? "Math.trunc(a / b)" : "a % b";
-  return `((a, b) => (b === 0 ? 0 : ${result}))(${a}, ${b})`;
+  return hoistedCall(
+    ctx,
+    op === "/" ? "__math_divInt" : "__math_modInt",
+    "a, b",
+    `(b === 0 ? 0 : ${result})`,
+    [a, b],
+  );
 }
 
 function binary(
@@ -36,7 +48,7 @@ function binary(
     ],
     codegen: (ctx) => ({
       out: type === INT && (op === "/" || op === "%")
-        ? intDivisionExpr(ctx.input("a"), ctx.input("b"), op)
+        ? intDivisionExpr(ctx, ctx.input("a"), ctx.input("b"), op)
         : `(${ctx.input("a")} ${op} ${ctx.input("b")})`,
     }),
   };
@@ -233,7 +245,11 @@ export const mathNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: `((a, b, t) => a + (b - a) * t)(${ctx.input("a")}, ${ctx.input("b")}, ${ctx.input("alpha")})`,
+      out: hoistedCall(ctx, "__math_lerp", "a, b, t", "a + (b - a) * t", [
+        ctx.input("a"),
+        ctx.input("b"),
+        ctx.input("alpha"),
+      ]),
     }),
   },
   {
