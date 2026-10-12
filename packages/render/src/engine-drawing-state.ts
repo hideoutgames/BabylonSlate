@@ -100,8 +100,10 @@ export function restoreEngineDrawingState(engine: AbstractEngine, state: EngineD
   depth.depthMask = state.depthMask;
   depth.depthFunc = state.depthFunc;
   depth.cull = state.cull;
-  depth.cullFace = state.cullFace;
-  depth.frontFace = state.frontFace;
+  // Babylon holds null until the first draw sets a face; assigning null over a set value would mark it dirty and
+  // `apply` would pass null to gl.cullFace / gl.frontFace (GL_INVALID_ENUM). Unset is left as is.
+  if (state.cullFace !== null) depth.cullFace = state.cullFace;
+  if (state.frontFace !== null) depth.frontFace = state.frontFace;
   depth.zOffset = state.zOffset;
   depth.zOffsetUnits = state.zOffsetUnits;
   engine.stencilState.stencilTest = state.stencilTest;

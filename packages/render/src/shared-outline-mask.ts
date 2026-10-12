@@ -250,7 +250,7 @@ export class SharedOutlineMaskRenderer {
       BindBonesParameters(mesh, effect); BindMorphTargetParameters(mesh, effect);
       if (mesh.morphTargetManager?.isUsingTextureForTargets) mesh.morphTargetManager._bind(effect);
       mesh.bakedVertexAnimationManager?.bind(effect, hardware);
-      gpuWaterWaves(original, mesh)?.bindVertexWaves(effect, this.view.scene);
+      gpuWaterWaves(original, mesh)?.bindVertexWaves(effect, this.view.scene, mesh);
       BindClipPlane(effect, original, this.view.scene);
     }
     effect.setFloat("coverageAlpha", original.alpha * effective.visibility);

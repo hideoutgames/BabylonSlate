@@ -144,6 +144,27 @@ describe("Water field", () => {
     } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
   });
 
+  it("keeps a bounded body's rim clear of the border cells where the shader hands the field over to open water", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    let field: WaterField | undefined;
+    try {
+      // A river-sized body over a wide landscape: its cells are well over a metre, so a fixed 1 m margin would leave the
+      // rim of the water inside the field's last three cells (where terrain depth fades out, drawing the rim as pale water).
+      const surface = MeshBuilder.CreateGround("water", { width: 700, height: 60 }, scene);
+      surface.metadata = { slateWater: true };
+      createLandscapeMesh(scene, "floor", { width: 800, depth: 200, subdivisions: 4, heights: Array(25).fill(-3) });
+      field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
+      field.update();
+      const view = field as unknown as FieldView;
+      const cell = 1 / (view.bounds[2]! * view.width);
+      expect(cell).toBeGreaterThan(1);
+      const box = surface.getBoundingInfo().boundingBox;
+      expect(box.minimumWorld.x - view.bounds[0]!).toBeGreaterThanOrEqual(3 * cell);
+      expect(view.bounds[0]! + view.width * cell - box.maximumWorld.x).toBeGreaterThanOrEqual(3 * cell);
+      expect(box.minimumWorld.z - view.bounds[1]!).toBeGreaterThanOrEqual(3 * cell);
+    } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
+  });
+
   it("keeps fine depth across every displaced waterline of storm waves on a steep shore", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     let field: WaterField | undefined;

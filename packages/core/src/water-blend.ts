@@ -1,7 +1,7 @@
 import type { Transform, Vec3 } from "./math-rng";
 import { inverseQuat, quatRotateVector, type QuatObject } from "./euler";
 import {
-  createWaterWaveOutput, emptyWaterSample, evaluateWaterWaves, invertWaterWaves, sampleWaterSurface, waterBankDistance, waterBankFadeLength, waterBankGain,
+  createWaterWaveOutput, emptyWaterSample, invertWaterWaves, sampleWaterSurface, waterBankDistance, waterBankFadeLength, waterBankGain,
   waterEulerianGradient, waterHorizontalEnvelope, waterRestBase, waterRiverCentreline, waterWaveDrift, waterWaveQ, waterWaveSet,
   type WaterBodyProperties, type WaterDefinition, type WaterKind, type WaterSample, type WaterWaveGain,
 } from "./water";
@@ -418,52 +418,122 @@ function outranks(bodies: readonly PreparedWaterBlendBody[], a: number, b: numbe
   return ca !== cb ? ca > cb : a < b;
 }
 
-/**
- * The Gerstner offset's gain on the blended surface at a rest point (`WaterWaveGain`): the bank fade of the union
- * shoreline over the blended fade length, times `offsetScale`. Its rest-space gradient is a central difference, taken
- * only with `gradient` (the inversion's Newton steps go without it, which costs a few more steps at most).
- */
-class BlendGain implements WaterWaveGain {
-  index: WaterBlendIndex | null = null;
-  self = 0;
-  y = 0;
-  gradient = true;
-  private readonly point = createWaterBlendSample();
-  private readonly fade = new Float64Array(2);
-  private value(x0: number, z0: number): number {
-    const index = this.index!, me = index.bodies[this.self]!, s = this.point;
-    if (!evaluateWaterBlend(index, this.self, x0, this.y, z0, s)) return 0;
-    waterBankGain(s.union, me.fadeLength * s.offsetScale, this.fade);
-    return this.fade[0]! * s.offsetScale;
-  }
-  sample(x0: number, z0: number, out: Float64Array): void {
-    const h = BLEND_DERIVATIVE_STEP;
-    out[0] = this.value(x0, z0);
-    if (!this.gradient) { out[1] = 0; out[2] = 0; return; }
-    out[1] = (this.value(x0 + h, z0) - this.value(x0 - h, z0)) / (2 * h);
-    out[2] = (this.value(x0, z0 + h) - this.value(x0, z0 - h)) / (2 * h);
-  }
-}
-
 /** Rest-space step (metres) of the central differences blended queries take for slopes and the offset gain. */
 export const BLEND_DERIVATIVE_STEP = 0.05;
 
-const blendGain = new BlendGain(), blendSample = createWaterBlendSample(), sideSample = createWaterBlendSample();
-const waveScratch = createWaterWaveOutput(), gainOut = new Float64Array(3), slopeScratch = new Float64Array(2), driftScratch = { x: 0, z: 0 }, fadeScratch = new Float64Array(2);
+/** The most stencils (`BlendStencil`) one blended query builds: its rest point is solved against each in turn. */
+const BLEND_MAX_STENCILS = 2;
+/** A rest point that moved more than this (metres) from the point its stencil was built at is solved against a fresh stencil. */
+const BLEND_RESTENCIL_DISTANCE = 2e-3;
+/** A rest point that moved more than this (metres) from its stencil's centre has the kernel read there afresh. */
+const BLEND_REEVALUATE_DISTANCE = 1e-4;
+
+/**
+ * How far below zero a body's `margin` must be, at the rest point its first stencil is built at, for another body to
+ * own the point beyond doubt: the rest point settles within about a centimetre of it and a share changes by at most a
+ * few times 1/R per metre, so only the hairline either side of a hand-over still takes the full evaluation.
+ */
+const blendOwnerSlack = (distance: number) => 0.05 + 0.1 / Math.max(distance, 0.5);
+
+/**
+ * The kernel (`evaluateWaterBlend`) at a rest point and at its four neighbours ±`BLEND_DERIVATIVE_STEP` along X and Z:
+ * everything a blended query reads from the blend besides the point itself. Slot 0 is the centre, then +X, −X, +Z, −Z.
+ * The Gerstner offset's gain (the bank fade of the union shoreline over the blended fade length, times `offsetScale`)
+ * and the slopes of the rest height and swell scale all come from these five evaluations, so a query evaluates the
+ * kernel a handful of times instead of at every inversion step.
+ */
+class BlendStencil {
+  /** Whether the last `evaluate` found water at the centre (and so evaluated the four neighbours too). */
+  valid = false;
+  /** Whether it stopped at the centre because another body clearly owns the point. */
+  declined = false;
+  readonly found = new Uint8Array(5);
+  readonly gain = new Float64Array(5);
+  readonly rest = new Float64Array(5);
+  readonly scale = new Float64Array(5);
+  private readonly side = createWaterBlendSample();
+  private readonly fade = new Float64Array(2);
+
+  /** The gain of the blended surface at one evaluated point. */
+  gainOf(me: PreparedWaterBlendBody, s: WaterBlendSample): number {
+    waterBankGain(s.union, me.fadeLength * s.offsetScale, this.fade);
+    return this.fade[0]! * s.offsetScale;
+  }
+
+  private record(k: number, found: boolean, me: PreparedWaterBlendBody, s: WaterBlendSample): void {
+    this.found[k] = found ? 1 : 0;
+    this.gain[k] = found ? this.gainOf(me, s) : 0;
+    this.rest[k] = found ? s.restHeight : 0;
+    this.scale[k] = found ? s.heightScale : 0;
+  }
+
+  /**
+   * Evaluates the stencil around (x0, z0); `s` receives the centre's sample. Returns whether the centre has water. A
+   * centre whose `margin` is below `declineBelow` ends the evaluation there (`declined`), without the neighbours.
+   */
+  evaluate(
+    index: WaterBlendIndex, self: number, x0: number, y: number, z0: number, s: WaterBlendSample, declineBelow = -Infinity,
+  ): boolean {
+    const me = index.bodies[self]!, h = BLEND_DERIVATIVE_STEP, side = this.side;
+    this.valid = false;
+    const found = evaluateWaterBlend(index, self, x0, y, z0, s);
+    this.record(0, found, me, s);
+    this.declined = found && s.margin < declineBelow;
+    if (!found || this.declined) return false;
+    for (let k = 1; k <= 4; k++) {
+      const dx = k === 1 ? h : k === 2 ? -h : 0, dz = k === 3 ? h : k === 4 ? -h : 0;
+      this.record(k, evaluateWaterBlend(index, self, x0 + dx, y, z0 + dz, side), me, side);
+    }
+    this.valid = true;
+    return true;
+  }
+
+  /**
+   * Central difference of the gain along X (`axis` 0) or Z (1). A neighbour without water gives way to the centre, with
+   * the span shortened to match, so the edge of a body's reach never reads as a cliff.
+   */
+  private difference(values: Float64Array, axis: 0 | 1): number {
+    const hi = axis === 0 ? 1 : 3, lo = hi + 1, h = BLEND_DERIVATIVE_STEP;
+    const high = this.found[hi] ? hi : 0, low = this.found[lo] ? lo : 0;
+    const span = (this.found[hi] ? h : 0) + (this.found[lo] ? h : 0);
+    return span > 0 ? (values[high]! - values[low]!) / span : 0;
+  }
+
+  /** Rest-space gradient of the gain: x to out[0], z to out[1]. */
+  gainGradient(out: Float64Array): void {
+    out[0] = this.difference(this.gain, 0);
+    out[1] = this.difference(this.gain, 1);
+  }
+
+  /** Slopes of the rest height and swell scale along X (`axis` 0) or Z (1), into `out[at]`, `out[at + 1]`. */
+  slope(axis: 0 | 1, out: Float64Array, at: number): void {
+    out[at] = this.difference(this.rest, axis);
+    out[at + 1] = this.difference(this.scale, axis);
+  }
+}
+
+/** The gain as a plane through a stencil's centre: what the inversion iterates against, with no kernel call per step. */
+class PlanarGain implements WaterWaveGain {
+  private cx = 0;
+  private cz = 0;
+  private value = 0;
+  private gx = 0;
+  private gz = 0;
+  constant(value: number): void { this.cx = 0; this.cz = 0; this.value = value; this.gx = 0; this.gz = 0; }
+  plane(centre: number, cx: number, cz: number, gx: number, gz: number): void {
+    this.cx = cx; this.cz = cz; this.value = centre; this.gx = gx; this.gz = gz;
+  }
+  sample(x0: number, z0: number, out: Float64Array): void {
+    const v = this.value + this.gx * (x0 - this.cx) + this.gz * (z0 - this.cz);
+    // A bank fade never reverses the offset (it is 0 at and beyond the shore), so neither does its plane.
+    if (v > 0) { out[0] = v; out[1] = this.gx; out[2] = this.gz; } else { out[0] = 0; out[1] = 0; out[2] = 0; }
+  }
+}
+
+const blendStencil = new BlendStencil(), planarGain = new PlanarGain(), blendSample = createWaterBlendSample(), restStart = { x: 0, z: 0 };
+const waveScratch = createWaterWaveOutput(), gradientOut = new Float64Array(2), slopeScratch = new Float64Array(2), driftScratch = { x: 0, z: 0 }, fadeScratch = new Float64Array(2);
 
 const restSlope = new Float64Array(4);
-
-/** Central difference of the blended rest height and swell scale along (dx, dz), written to `out[at]`, `out[at + 1]`. */
-function blendSlope(
-  index: WaterBlendIndex, self: number, x0: number, y: number, z0: number, s: WaterBlendSample, dx: number, dz: number, out: Float64Array, at: number,
-): void {
-  const side = sideSample, h = BLEND_DERIVATIVE_STEP;
-  let restHigh = s.restHeight, scaleHigh = s.heightScale, restLow = s.restHeight, scaleLow = s.heightScale, span = 0;
-  if (evaluateWaterBlend(index, self, x0 + dx, y, z0 + dz, side)) { restHigh = side.restHeight; scaleHigh = side.heightScale; span += h; }
-  if (evaluateWaterBlend(index, self, x0 - dx, y, z0 - dz, side)) { restLow = side.restHeight; scaleLow = side.heightScale; span += h; }
-  out[at] = span > 0 ? (restHigh - restLow) / span : 0;
-  out[at + 1] = span > 0 ? (scaleHigh - scaleLow) / span : 0;
-}
 
 /** Optional detail of a blended query: the offset scale its drift correction carries (1 off the blend). */
 export interface WaterBlendQueryInfo { offsetScale: number; fade: number }
@@ -476,6 +546,16 @@ export interface WaterBlendQueryInfo { offsetScale: number; fade: number }
  * rest height and swell scale by central differences). With `owned`, only the body with the largest share answers
  * (`margin` ≥ 0), so the world finds exactly one surface at a seam; a query filtered to one water actor passes false.
  * `edgeDistance` is the union shoreline distance.
+ *
+ * The blend changes over metres while the inversion moves the rest point by at most the horizontal wave envelope, so
+ * the kernel is not evaluated per inversion step. The first rest point comes from the gain at the query point held
+ * constant; the kernel is then evaluated at a `BlendStencil` there, and the inversion solves against the gain's plane
+ * through it, which is exact for the surface to second order. A rest point that lands more than
+ * `BLEND_RESTENCIL_DISTANCE` from its stencil is solved again against a fresh one, and the kernel is read once more
+ * at a rest point that moved more than `BLEND_REEVALUATE_DISTANCE`. With `owned`, a body whose share is clearly below
+ * another's at the first stencil's centre (`blendOwnerSlack`) answers nothing without evaluating the rest of it. A
+ * query takes six or seven kernel evaluations (two when it gives up) where inverting against the kernel at every step
+ * took about fifteen, and agrees with that to better than 0.02 mm in height.
  */
 export function sampleWaterBlend(
   index: WaterBlendIndex, self: number, position: Vec3, time: number, owned = true, info?: WaterBlendQueryInfo,
@@ -494,22 +574,39 @@ export function sampleWaterBlend(
   }
   if (!near) return sampleWaterSurface(me.definition, me.body, position, time, me.transform);
   const set = waterWaveSet(me.definition), scale = me.referenceScale, gerstner = waterWaveQ(set, scale) > 0, wave = waveScratch;
-  blendGain.index = index; blendGain.self = self; blendGain.y = position.y;
-  blendGain.gradient = false;
-  invertWaterWaves(set, position.x, position.z, time, 0, wave, scale, gerstner ? blendGain : undefined);
-  const x0 = wave[11]!, z0 = wave[12]!, s = blendSample;
+  const stencil = blendStencil, s = blendSample, y = position.y;
+  let found: boolean;
   if (gerstner) {
-    // The rest point's Jacobian with the gain's gradient, for the Eulerian slope.
-    blendGain.gradient = true;
-    blendGain.sample(x0, z0, gainOut);
-    evaluateWaterWaves(set, x0, z0, time, 0, wave, scale, gainOut[0]!, gainOut[1]!, gainOut[2]!);
-    wave[11] = x0; wave[12] = z0;
+    planarGain.constant(evaluateWaterBlend(index, self, position.x, y, position.z, s) ? stencil.gainOf(me, s) : 0);
+    restStart.x = position.x; restStart.z = position.z;
+    invertWaterWaves(set, position.x, position.z, time, 0, wave, scale, planarGain, restStart);
+    let moved = Infinity;
+    const decline = owned ? -blendOwnerSlack(index.distance) : -Infinity;
+    for (let pass = 0; pass < BLEND_MAX_STENCILS && moved > BLEND_RESTENCIL_DISTANCE; pass++) {
+      const centreX = wave[11]!, centreZ = wave[12]!;
+      if (stencil.evaluate(index, self, centreX, y, centreZ, s, decline)) {
+        stencil.gainGradient(gradientOut);
+        planarGain.plane(stencil.gain[0]!, centreX, centreZ, gradientOut[0]!, gradientOut[1]!);
+      } else if (stencil.declined) {
+        return emptyWaterSample();
+      } else {
+        planarGain.constant(0);
+      }
+      restStart.x = centreX; restStart.z = centreZ;
+      invertWaterWaves(set, position.x, position.z, time, 0, wave, scale, planarGain, restStart);
+      moved = Math.hypot(wave[11]! - centreX, wave[12]! - centreZ);
+    }
+    // The inversion ends at the plane's rest point; the kernel there is read afresh unless it hardly moved.
+    found = stencil.valid ? moved <= BLEND_REEVALUATE_DISTANCE || evaluateWaterBlend(index, self, wave[11]!, y, wave[12]!, s)
+      : stencil.evaluate(index, self, wave[11]!, y, wave[12]!, s);
+  } else {
+    invertWaterWaves(set, position.x, position.z, time, 0, wave, scale);
+    found = stencil.evaluate(index, self, position.x, y, position.z, s);
   }
-  blendGain.index = null;
-  if (!evaluateWaterBlend(index, self, x0, position.y, z0, s) || s.union < 0 || (owned && s.margin < 0)) return emptyWaterSample();
+  if (!found || s.union < 0 || (owned && s.margin < 0)) return emptyWaterSample();
   // Rest-space slopes of the blended rest height and swell scale (central differences into `restSlope`: x, z pairs).
-  blendSlope(index, self, x0, position.y, z0, s, BLEND_DERIVATIVE_STEP, 0, restSlope, 0);
-  blendSlope(index, self, x0, position.y, z0, s, 0, BLEND_DERIVATIVE_STEP, restSlope, 2);
+  stencil.slope(0, restSlope, 0);
+  stencil.slope(1, restSlope, 2);
   const restX = restSlope[0]!, scaleX = restSlope[1]!, restZ = restSlope[2]!, scaleZ = restSlope[3]!;
   const height = wave[0]!;
   const gx = restX + s.heightScale * wave[3]! + height * scaleX, gz = restZ + s.heightScale * wave[4]! + height * scaleZ;

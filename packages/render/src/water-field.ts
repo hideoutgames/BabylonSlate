@@ -23,6 +23,8 @@ export const WATER_FIELD_DEPTH_RANGE: readonly [number, number] = [-8, 32];
 export const WATER_FIELD_FINE_DEPTH_SPAN = 5;
 const MAX_CELLS = 512;
 const MIN_CELL = 0.2;
+/** Cells at the field's border across which the shader hands it over to the open-water defaults (`swFieldEdge`). */
+const WATER_FIELD_EDGE_CELLS = 3;
 
 const INF = 1e20;
 /**
@@ -311,7 +313,12 @@ export class WaterField {
     } else {
       if (landscapes.length === 0) return null;
       const box = this.surface.mesh.getBoundingInfo().boundingBox;
-      rect = { minX: box.minimumWorld.x - 1, minZ: box.minimumWorld.z - 1, maxX: box.maximumWorld.x + 1, maxZ: box.maximumWorld.z + 1 };
+      // The shader hands the field over to the open-water defaults across its last three cells (`swFieldOn`): the body's
+      // own edge must lie beyond them, or its rim (where a river meets the sea over a beach) loses its terrain depth and
+      // draws as an opaque pale strip above the sand.
+      const extent = Math.max(box.maximumWorld.x - box.minimumWorld.x, box.maximumWorld.z - box.minimumWorld.z) + 2;
+      const pad = Math.max(1, (Math.max(MIN_CELL, extent / MAX_CELLS) * (WATER_FIELD_EDGE_CELLS + 1)));
+      rect = { minX: box.minimumWorld.x - pad, minZ: box.minimumWorld.z - pad, maxX: box.maximumWorld.x + pad, maxZ: box.maximumWorld.z + pad };
     }
     const r = rect as Rect;
     // Snap to whole cells so small terrain moves reuse the allocation.

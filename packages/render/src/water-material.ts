@@ -21,10 +21,11 @@ import { WATER_SCENE_COPY_SKY_DEPTH, WATER_SCENE_COPY_SKY_THRESHOLD, isMainWater
 
 /**
  * Wind-chop octaves: [heading offset (radians), wavenumber multiplier, slope, speed, phase].
- * Sharp-crested `exp(sin - 1)` waves with a little domain drag read as wind chop rather than
+ * Sharp-crested `exp(sin - 1)` waves (Stylized adds a little domain drag) read as wind chop rather than
  * the regular interference of plain sines. All are world-space and advect with the current.
- * Realistic evaluates `CHOP_TIER`'s share of them plus `CAPILLARY_OCTAVES`; Stylized up to three (`STYLIZED_CHOP_TIER`).
- * Their directions, wavenumbers and clock phases are uniforms (`detailConstants`).
+ * Realistic evaluates `CHOP_TIER`'s share of them plus `CAPILLARY_OCTAVES`, heading `REAL_CHOP_TURNS` off the wind instead of
+ * the offsets here; Stylized up to three (`STYLIZED_CHOP_TIER`).
+ * Their directions, wavenumbers and clock phases are uniforms (`octaveConstants`).
  */
 const DETAIL_OCTAVES = [
   [0.0, 1.0, 0.22, 1.0, 0.0], [0.9, 1.61, 0.2, 0.93, 1.7], [-0.7, 2.59, 0.17, 1.07, 4.1],
@@ -37,7 +38,7 @@ const DETAIL_OCTAVES = [
  * resolves only within a few metres of the camera.
  */
 const CAPILLARY_OCTAVES = [
-  [1.25, 17.4, 0.18, 1.0, 3.3], [-2.45, 28.1, 0.17, 0.96, 0.4], [2.75, 45.3, 0.15, 1.04, 2.2], [-0.55, 73.9, 0.13, 0.98, 5.1],
+  [1.25, 17.4, 0.225, 1.0, 3.3], [-2.45, 28.1, 0.21, 0.96, 0.4], [2.75, 45.3, 0.19, 1.04, 2.2], [-0.55, 73.9, 0.165, 0.98, 5.1],
 ] as const;
 /** Slope variance an octave carries when fully resolved (see `swLostDetail`). */
 const octaveVariance = (slope: number) => 0.07 * slope * slope;
@@ -49,6 +50,15 @@ const octaveVariance = (slope: number) => 0.07 * slope * slope;
  * between frames, so the sun's glints on them strobe instead of travelling. Uniform-only arithmetic, every tier.
  */
 const TEMPORAL_FADE = [0.6, 1.3] as const;
+/**
+ * A swell component fades by the phase it advances over one sample: radians per pixel footprint (the fragment, along its
+ * own heading) and per vertex spacing (`swvF`, whose 4/Wave Length constant makes `spacing * w` 0.64 k · spacing). The
+ * fragment's geometry terms (height, offset, resolved share) fade between `SWELL_GEOMETRY_FADE` per pixel, as the mesh
+ * drops it by 1.56 to π per vertex; Realistic shades only the slope it can still draw cleanly (`SWELL_SLOPE_FADE`, about
+ * 25 down to 6 pixels a cycle), the rest going to roughness, so a long swell row at a grazing angle never prints a stripe.
+ */
+const SWELL_GEOMETRY_FADE = [0.6, 2.2] as const;
+const SWELL_SLOPE_FADE = [0.25, 1.0] as const;
 const TEMPORAL_FRAME = 1 / 30;
 
 /**
@@ -58,6 +68,21 @@ const TEMPORAL_FRAME = 1 / 30;
 const OPEN_EDGE_FADE = 6;
 /** Metres over which a body's edge over water-covered terrain (short of the terrain's shoreline) fades out. */
 const OPEN_EDGE_FADE_TERRAIN = 2.5;
+/** The surf zone's depth range in Wave Heights (full breaking at the first, none past the second) and the wake's decay in cycles⁻¹. */
+const SURF_DEPTH = [1.3, 3.4] as const;
+const SURF_WAKE = 3.8;
+/** Furthest metres the swash runs up a beach (the run-up's width on a gentle slope). */
+const SWASH_REACH_MAX = 10;
+/** Metres of depth over which water thins to nothing at a gentle shore (`swShoreSoft`). */
+const SOFT_SHORE_DEPTH = 0.4;
+/**
+ * Refraction bends by the swell and the first chop octaves only (Realistic, Stylized): the finer chop, the capillaries and the FFT
+ * band move the bed at a frequency the eye reads as jelly, and stay in the shading normal alone.
+ */
+const REFRACTION_OCTAVES = [3, 2] as const;
+/** Largest refracted screen shift (pixels of the scene copy) near the camera, and far away, over `REFRACTION_FAR` metres of view depth. */
+const REFRACTION_SHIFT_PX = [28, 3] as const;
+const REFRACTION_FAR = [6, 60] as const;
 /** Compile-time style switch: each material compiles only its own style's shading. */
 const WATER_STYLIZED_DEFINE = "SLATE_WATER_STYLIZED";
 /** Within Stylized, the Stylized Look switch: Toon when set, Painted otherwise (`paintedSource`, `toonSource`). */
@@ -139,9 +164,8 @@ const EMPTY_TEXTURE = new ThinTexture(null);
 const PLANAR_REACH = 1;
 /** Refraction: screen offset per unit of view-space tilt, per metre of water behind the surface, at Refraction 1. */
 const REFRACTION_SHIFT = 1.2;
-/** Water thickness (metres) beyond which the refracted shift stops growing, and the largest shift (uv). */
+/** Water thickness (metres) beyond which the refracted shift stops growing. */
 const REFRACTION_DEPTH_CAP = 3;
-const REFRACTION_SHIFT_CAP = 0.06;
 /**
  * FFT ocean detail (`waterFftForSurface`), compiled where device-effective FFT Ocean Detail is on and the asset's
  * Detail Waves is above 0: the number of cascades sampled (`#if SLATE_WATER_FFT >= c`), 0 compiling every FFT term out.
@@ -190,10 +214,35 @@ const CHOP_TIER = [0, 0, 1, 1, 2, 2] as const;
 const CAPILLARY_TIER = [1, 2, 2, 2] as const;
 const STYLIZED_CHOP_TIER = [0, 1, 2] as const;
 /**
- * Radians each chop octave's phase (Realistic's, and Stylized's first three) drifts across the large and the medium
- * anti-tiling noise: its crests wander instead of running straight, so crossing octaves never form a regular lattice.
+ * Radians each Stylized chop octave's phase (the first three) drifts across the large and the medium anti-tiling noise:
+ * its crests wander instead of running straight, so crossing octaves never form a regular lattice.
  */
 const CHOP_PHASE_DRIFT = [[3.1, 2.2], [-4.3, -2.5], [5.2, 1.8], [-6.1, -2.0], [7.4, 1.4], [-8.2, -1.6]] as const;
+/**
+ * Realistic chop and capillaries are sums of travelling directional waves on the straight world domain; no noise bends
+ * it (a smooth noise displacing ripples by metres curls their crests along its closed isolines into eddies and rings,
+ * and the old self-drag moved the finest ripples by several of their own wavelengths). Each octave heads off the wind by
+ * `REAL_CHOP_TURNS` / `REAL_CAPILLARY_TURNS` (radians, within about 25 and 15 degrees: a wind sea is directional, and
+ * crossings stay narrow so they read as beats rather than a lattice; the wavenumbers stay incommensurate steps). The
+ * noises only jitter each octave's phase (`REAL_CHOP_JITTER`, radians across the noise's range: at most about a tenth of
+ * the octave's wavelength) and modulate its amplitude.
+ */
+const REAL_CHOP_TURNS = [0.0, 0.4, -0.34, 0.22, -0.43, -0.12] as const;
+const REAL_CAPILLARY_TURNS = [0.09, -0.11, 0.04, -0.07] as const;
+const REAL_CHOP_JITTER = [[0.9, 0.5], [-1.0, -0.5], [0.9, 0.45], [-1.0, -0.5], [0.9, 0.5], [-1.0, -0.45]] as const;
+/** Realistic: the share of the slow chop shift (`CHOP_SHIFT`) kept, and the capillaries' amplitude where the FFT band is drawing the fine detail. */
+const REAL_CHOP_SHIFT_SHARE = 0.5;
+const REAL_CAPILLARY_FFT = 0.8;
+/**
+ * Realistic capillaries fade by the pixel footprint (radians per pixel, `footprintFade`) sooner than the chop does: ripples
+ * a few pixels long are drawn as roughness instead, so they never print a regular hatch across mid-distance water.
+ */
+const CAPILLARY_FADE = [0.25, 0.9] as const;
+/**
+ * Each capillary's patch field (GLSL over the shared noises, the fine one first): a different mix per ripple, so the four
+ * never fade in step, crests are short dashes and two crossing ripples overlap only in part of the sea.
+ */
+const CAPILLARY_PATCH = ["(swFine * 0.8 + swMedium * 0.2)", "(1.0 - swFine * 0.8 - swLarge * 0.2)", "(swMedium * 0.3 + (1.0 - swFine) * 0.7)", "(swLarge * 0.3 + swFine * 0.7)"] as const;
 /**
  * The chop's slow phase shift: each octave's phase also gains `CHOP_SHIFT[i]` radians times a rotating mix of the
  * centred large and gust noises, (cos θ · (large − ½) + sin θ · (gust − ½)), θ = `CHOP_SHIFT_RATE` × the first octave's
@@ -242,15 +291,27 @@ const CHOP_FM_TURNS = [[0, 1], [1, 1], [2, 1], [1, 2], [3, 1], [2, 2]] as const;
  * sine per octave.
  */
 const CHOP_FM_SLOW_TURNS = [[-1, 1], [2, -1], [-5, 4], [5, -3], [-4, 3], [3, -2]] as const;
-function chopFm(i: number): string {
+/** `spatial` scales how fast the modulation's world phase varies across the noises (Realistic keeps it small: no spatial bend). */
+function chopFm(i: number, spatial = 1): string {
   const depth = `${f(CHOP_FM_DEPTH)} * (0.4 + 0.75 * swGust + 0.45 * swLarge)`;
-  return ` + ${depth} * (sin(dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_FM_TURNS[i]![0])}, ${f(CHOP_FM_TURNS[i]![1])})) + swGust * 4.0 + ${f(0.9 + i * 1.7)})`
-    + ` + sin(dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_FM_SLOW_TURNS[i]![0])}, ${f(CHOP_FM_SLOW_TURNS[i]![1])})) + swLarge * 6.0 + ${f(2.0 + i * 2.3)}))`;
+  return ` + ${depth} * (sin(dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_FM_TURNS[i]![0])}, ${f(CHOP_FM_TURNS[i]![1])})) + swGust * ${f(4 * spatial)} + ${f(0.9 + i * 1.7)})`
+    + ` + sin(dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_FM_SLOW_TURNS[i]![0])}, ${f(CHOP_FM_SLOW_TURNS[i]![1])})) + swLarge * ${f(6 * spatial)} + ${f(2.0 + i * 2.3)}))`;
 }
-/** The short-crest envelope (a factor) of the chop octave whose uniform vec4 (dir.x, dir.z, k, phase) is `octave`. */
-function chopCrests(octave: string, i: number): string {
+/**
+ * Painted shades the chop by a rounded copy of its octaves (a sine profile, `swDetailSoft`) at this share of the sharp
+ * crests' slope: broad soft lumps instead of narrow ridges. Its ripples are brush strokes: the first two capillary
+ * families at `PAINTED_STROKE_K` of their wavenumber (about two thirds of a metre and a third), shown only where a noise
+ * gate stretched along the wind is high (patches about a metre long and a third as wide), at `PAINTED_STROKE_SLOPE`
+ * of their slope.
+ */
+const PAINTED_LUMP_SLOPE = 0.8;
+const PAINTED_LUMP_WEIGHT = [1, 0.5, 0.25] as const;
+const PAINTED_STROKE_K = 0.55;
+const PAINTED_STROKE_SLOPE = 0.45;
+/** The short-crest envelope (a factor) of the chop octave whose uniform vec4 (dir.x, dir.z, k, phase) is `octave`; `bend` is added to its phase. */
+function chopCrests(octave: string, i: number, bend = ""): string {
   const turn = i % 2 ? CHOP_CREST_TURN : -CHOP_CREST_TURN, c = Math.cos(turn), s = Math.sin(turn);
-  return `(0.55 + 0.9 * (0.5 - 0.5 * cos(${octave}.z * ${f(CHOP_CREST_K)} * dot(vec2(${f(c)} * ${octave}.x - ${f(s)} * ${octave}.y, ${f(s)} * ${octave}.x + ${f(c)} * ${octave}.y), swChop) + ${f(1.3 + i * 2.1)} - dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_GROUP_TURNS[i]![0])}, ${f(CHOP_GROUP_TURNS[i]![1])})))))`;
+  return `(0.55 + 0.9 * (0.5 - 0.5 * cos(${octave}.z * ${f(CHOP_CREST_K)} * dot(vec2(${f(c)} * ${octave}.x - ${f(s)} * ${octave}.y, ${f(s)} * ${octave}.x + ${f(c)} * ${octave}.y), swChop)${bend} + ${f(1.3 + i * 2.1)} - dot(U.slateWaterChopShift.zw, vec2(${f(CHOP_GROUP_TURNS[i]![0])}, ${f(CHOP_GROUP_TURNS[i]![1])})))))`;
 }
 /**
  * Toon's crest lines seed each crest of the dominant swell component by its index, counted modulo this many crests
@@ -266,8 +327,25 @@ const LARGE_NOISE = 0.07, GUST_NOISE = 0.013;
  * from the facet glint term (`swGlint`), not from this lobe. Ripple Strength 0 keeps a mirror.
  */
 const OCEAN_SUB_CAPILLARY_VARIANCE = 0.003;
-/** Realistic aerial perspective: how fast (per metre) grazing far water fades to a pure mirror of the horizon sky. */
-const OCEAN_HAZE_PER_METRE = 1 / 800;
+/**
+ * Aerial perspective (every look), scaled from the view's far plane so the editor's shorter one and Play's longer one
+ * haze alike: water is half hazed (toward the horizon sky) at `WATER_HAZE_HALF` of the range, and a ramp from
+ * `WATER_HAZE_EDGE[0]` to `WATER_HAZE_EDGE[1]` of it takes it fully there, so the far clip (and Global Water's own
+ * edge, which lies beyond it) never shows as a line. The range is capped at `WATER_HAZE_MAX_RANGE` metres, so a very
+ * long far plane still hazes at atmospheric distances.
+ */
+const WATER_HAZE_HALF = 0.4;
+const WATER_HAZE_EDGE = [0.75, 0.97] as const;
+const WATER_HAZE_MAX_RANGE = 8000;
+/** `slateWaterHaze` for a far plane: (per-metre rate of the exponential haze, ramp start, ramp end, 0) in metres. */
+export function waterHazeConstants(far: number, out: Float64Array = new Float64Array(4)): Float64Array {
+  const range = Math.min(WATER_HAZE_MAX_RANGE, far > 0 ? far : 1000);
+  out[0] = Math.LN2 / (WATER_HAZE_HALF * range);
+  out[1] = range * WATER_HAZE_EDGE[0];
+  out[2] = range * WATER_HAZE_EDGE[1];
+  out[3] = 0;
+  return out;
+}
 /** Realistic: wavelength-neutral scattering per absorption path unit, on top of each channel's absorption. */
 const TURBIDITY = 1.6;
 /**
@@ -281,6 +359,10 @@ const TURBIDITY = 1.6;
 const UNDERWATER_COOL = 0.68;
 const UNDERWATER_TINT = [0.9, 1.0, 1.1] as const;
 const UNDERWATER_WET = 0.78;
+/** Realistic: what the wet band's film (the thinnest water at a waterline) keeps of the sand's colour: darker and warmer-grey than dry sand. */
+const WET_BAND_DARK = [0.56, 0.52, 0.48] as const;
+/** Realistic: how fast the cooling of the bed's light follows depth (per metre; `UNDERWATER_COOL` is its limit). */
+const UNDERWATER_COOL_RATE = 1.7;
 /**
  * Realistic Low: the floor colour its own bed light assumes (linear albedo: wet sand, cooled as above and a little
  * bluer, since the real bed it passes at one transmittance keeps its own yellow), and the share of the real bed it keeps
@@ -364,10 +446,13 @@ const FOAM_WEB_CELLS = [-1, 0, 1].flatMap((j) => [-1, 0, 1].map((i) => [i, j] as
  * `toWgsl`); each iteration advances at its own speed. Its input is radians of a 2π tile, wrapped first: the field also
  * depends on the point's magnitude.
  */
-const CAUSTIC_ITERATIONS = [0, 1, 2, 3].map((n) => `
+const causticIterations = (count: number) => [0, 1, 2, 3].slice(0, count).map((n) => `
   t = tm * ${(1 - 3.5 / (n + 1)).toFixed(6)};
   i = p + vec2(cos(t - i.x) + sin(t + i.y), sin(t - i.y) + cos(t + i.x));
   c += 1.0 / max(length(vec2(p.x / max(abs(sin(i.x + t)), 0.002), p.y / max(abs(cos(i.y + t)), 0.002))) * 0.005, 0.0001);`).join("");
+const CAUSTIC_ITERATIONS = causticIterations(4);
+/** `swCausticLite` (Medium): the same field with two iterations, about half the cost and a softer net. */
+const CAUSTIC_ITERATIONS_LITE = causticIterations(2);
 
 /**
  * Realistic sun glitter (`swGlitter`): one glint per cell of a world grid in rest (Lagrangian) space, so glints ride
@@ -400,6 +485,17 @@ const GLITTER_NORM = 1 / ((Math.PI * 4 / 5) * GLITTER_SIGMA * GLITTER_SIGMA * GL
  */
 const GLITTER_BASE = 0.18;
 const GLITTER_MAX = 12;
+/**
+ * Realistic upper-column in-scatter (`swColumn`): the sunlit top metre of the water, which still shows its blue-green at
+ * grazing angles where the Fresnel mirror would take the whole body. `REAL_COLUMN_GAIN` scales the body colour's own light,
+ * `REAL_COLUMN_TEAL` the share of Shallow Color's teal (blue held to green) added over shallows and in deep water, the facet's Fresnel
+ * only removes `REAL_COLUMN_FRESNEL` of it.
+ */
+const REAL_COLUMN_GAIN = 0.75;
+const REAL_COLUMN_TEAL = [0.14, 0.03] as const;
+const REAL_COLUMN_FRESNEL = 0.5;
+/** Realistic foam: how far the thin dark wet edge along a foam boundary darkens the water body there. */
+const REAL_FOAM_EDGE = 0.55;
 /**
  * Specular antialiasing: a lobe drawn on a normal that varies across the pixel widens by that variation, the per-axis
  * slope variance a Gaussian pixel filter of this variance (pixels²) sees through the slope's screen derivatives
@@ -495,6 +591,16 @@ float swCaustic(vec2 uv, float tm) {
   c = c * c;
   return c * c;
 }
+float swCausticLite(vec2 uv, float tm) {
+  vec2 p = fract(uv * 0.159155) * 6.283185 - vec2(250.0);
+  vec2 i = p;
+  float c = 1.0;
+  float t = 0.0;${CAUSTIC_ITERATIONS_LITE}
+  c = 1.17 - pow(c * 0.4, 1.4);
+  c = c * c;
+  c = c * c;
+  return c * c;
+}
 `;
 
 /** Realistic, or a Stylized look: Painted (`SLATE_WATER_TOON` off) or Toon. */
@@ -504,11 +610,11 @@ type WaterShaderStyle = "realistic" | "painted" | "toon";
  * One realistic chop octave or capillary: the footprint along its own direction from High up, isotropic below, times
  * its temporal fade (`TEMPORAL_FADE`).
  */
-function footprintFade(prefix: string, i: number, k: string, dir: string, speed: number): string {
+function footprintFade(prefix: string, i: number, k: string, dir: string, speed: number, edge: readonly [number, number] = [0.4, 1.4]): string {
   const temporal = `(1.0 - smoothstep(${f(TEMPORAL_FADE[0])}, ${f(TEMPORAL_FADE[1])}, sqrt(9.81 * ${k}) * ${f(speed * TEMPORAL_FRAME)} * U.slateWaterWaves.z))`;
   return fromTier(2, `
-float ${prefix}${i} = (1.0 - smoothstep(0.4, 1.4, ${k} * (abs(dot(${dir}, swFootX)) + abs(dot(${dir}, swFootY))))) * ${temporal};`, `
-float ${prefix}${i} = (1.0 - smoothstep(0.4, 1.4, ${k} * swFoot * 0.64)) * ${temporal};`);
+float ${prefix}${i} = (1.0 - smoothstep(${f(edge[0])}, ${f(edge[1])}, ${k} * (abs(dot(${dir}, swFootX)) + abs(dot(${dir}, swFootY))))) * ${temporal};`, `
+float ${prefix}${i} = (1.0 - smoothstep(${f(edge[0])}, ${f(edge[1])}, ${k} * swFoot * 0.64)) * ${temporal};`);
 }
 
 /**
@@ -527,11 +633,12 @@ function refractionSource(scale = 1): string {
 vec2 swScreenUv = SW_FRAG_COORD.xy * U.slateWaterScreen.xy;
 float swWaterZ = abs((S.view * vec4(IN.vPositionW, 1.0)).z);
 float swSceneZ0 = swSceneDepth(swScreenUv);
-vec2 swTiltV = (S.view * vec4(-swSlope.x, 0.0, -swSlope.y, 0.0)).xy;
+vec2 swRefrSlope = swGradient + swDetailMid * swChopGain;
+vec2 swTiltV = (S.view * vec4(-swRefrSlope.x, 0.0, -swRefrSlope.y, 0.0)).xy;
 float swRefrDepth = min(max(swSceneZ0 - swWaterZ, 0.0), ${f(REFRACTION_DEPTH_CAP)});
 float swOrtho = S.projection[3][3];
 vec2 swRefrShift = swTiltV * vec2(S.projection[0][0], S.projection[1][1]) * (U.slateWaterScreen.z * ${f(REFRACTION_SHIFT * scale)} * swRefrDepth * mix(1.0 / max(swWaterZ, 0.05), 1.0, swOrtho));
-swRefrShift = swRefrShift * min(1.0, ${f(REFRACTION_SHIFT_CAP * scale)} / max(length(swRefrShift), 0.000001));
+swRefrShift = swRefrShift * min(1.0, mix(${f(REFRACTION_SHIFT_PX[0] * scale)}, ${f(REFRACTION_SHIFT_PX[1] * scale)}, smoothstep(${f(REFRACTION_FAR[0])}, ${f(REFRACTION_FAR[1])}, swWaterZ)) * U.slateWaterScreen.x / max(length(swRefrShift), 0.000001));
 vec2 swRefrUv = swScreenUv + swRefrShift;
 float swSceneZ1 = swSceneDepth(swRefrUv);
 float swLeak = step(swSceneZ1, swWaterZ);
@@ -939,7 +1046,7 @@ vec4 swMarch(vec3 swOrigin, vec3 swRay) {
  * also gathers the primary swell and bends its chop domain finer.
  */
 function surfaceSource(style: WaterShaderStyle): string {
-  const realistic = style === "realistic", painted = style === "painted";
+  const realistic = style === "realistic", painted = style === "painted", toon = style === "toon";
   // The shared kernel's components (`waterWaveShaderConstants`) at this fragment's warped rest point (`swRestW`): the
   // same swell, crest profile and Gerstner offset the mesh, queries and buoyancy use. Phases arrive reduced on the CPU
   // relative to the floating origin, so no large-argument trigonometry runs here. Slots hold the components by
@@ -954,7 +1061,9 @@ vec2 swD${i} = swWD${i}.xy;
 vec2 swDm${i} = swD${i} + vec2(dot(swSwellWarpG.xy, swD${i}), dot(swSwellWarpG.yz, swD${i}));
 float swP${i} = swK${i} * dot(swD${i}, swRestW) + swWA${i}.y;
 float swA${i} = swWA${i}.x * swBlendH;
-float swFd${i} = 1.0 - smoothstep(0.6, 2.2, swK${i} * (abs(dot(swDm${i}, swFootX)) + abs(dot(swDm${i}, swFootY))));
+float swPh${i} = swK${i} * (abs(dot(swDm${i}, swFootX)) + abs(dot(swDm${i}, swFootY)));
+float swFd${i} = 1.0 - smoothstep(${f(SWELL_GEOMETRY_FADE[0])}, ${f(SWELL_GEOMETRY_FADE[1])}, swPh${i});${realistic ? `
+float swFs${i} = 1.0 - smoothstep(${f(SWELL_SLOPE_FADE[0])}, ${f(SWELL_SLOPE_FADE[1])}, swPh${i});` : ""}
 // The component's wave group (\`waterWaveGroups\`): its height envelope, which the Gerstner offset below does not carry.
 float swGn${i} = (1.0 / sqrt(1.0 + 0.5 * swWG${i}.w * swWG${i}.w));
 float swGq${i} = dot(swWG${i}.xy, swRestW) + swWG${i}.z;
@@ -965,17 +1074,24 @@ float swC${i} = cos(swP${i});
 float swE${i} = exp(swS${i} - 1.0);
 float swHv${i} = mix(swS${i}, (swE${i} - ${f(WATER_CREST_MEAN)}) / ${f(WATER_CREST_RANGE)}, swChopShape);
 swHeight += swHv${i} * swF${i};
-swGradient += swD${i} * (mix(swC${i}, swE${i} * swC${i} / ${f(WATER_CREST_RANGE)}, swChopShape) * swK${i} * swF${i});${fromTier(2, `
+swGradient += swD${i} * (mix(swC${i}, swE${i} * swC${i} / ${f(WATER_CREST_RANGE)}, swChopShape) * swK${i} * ${realistic ? `swFs${i} * swA${i} * swG${i}` : `swF${i}`});${fromTier(2, `
 // The envelope's own slope (High up; about a sixteenth of the crest's, so lower tiers leave it out).
 swGradient -= swWG${i}.xy * (swWG${i}.w * swGn${i} * sin(swGq${i}) * swHv${i} * swFd${i} * swA${i});`)}
 swFold += swK${i} * swF${i} * mix(swS${i}, swE${i} * (swS${i} - swC${i} * swC${i}) / ${f(WATER_CREST_RANGE)}, swChopShape);
 swResolved += swK${i} * swFd${i} * swA${i};${realistic ? `
-swLost += swK${i} * swA${i} * swK${i} * swA${i} * (1.0 - swFd${i} * swFd${i});` : painted ? `
+swLost += swK${i} * swA${i} * swK${i} * swA${i} * (1.0 - swFs${i} * swFs${i});` : painted ? `
 // The primary swell: components near the dominant wavelength, which Painted shades as the big readable waves.
 float swPw${i} = 1.0 - smoothstep(1.3, 2.2, swK${i} * swPrimLen);
 swPrimH += mix(swS${i}, (swE${i} - ${f(WATER_CREST_MEAN)}) / ${f(WATER_CREST_RANGE)}, swChopShape) * swF${i} * swPw${i};
 swPrimG += swD${i} * (mix(swC${i}, swE${i} * swC${i} / ${f(WATER_CREST_RANGE)}, swChopShape) * swK${i} * swF${i} * swPw${i});
-swPrimAmp += swA${i} * swA${i} * swPw${i} * swPw${i};` : ""}
+swPrimAmp += swA${i} * swA${i} * swPw${i} * swPw${i};` : toon ? (i === 0 ? `
+// Toon's primary swell (its bands and crest lines follow it): the steepest slot, with from Medium the components near
+// its wavelength.
+swPrimH += swHv${i} * swF${i};${fromTier(1, `
+swPrimAmp += swA${i} * swA${i};`)}` : fromTier(1, `
+float swPw${i} = 1.0 - smoothstep(1.3, 2.2, swK${i} * swPrimLen);
+swPrimH += swHv${i} * swF${i} * swPw${i};
+swPrimAmp += swA${i} * swA${i} * swPw${i} * swPw${i};`)) : ""}
 float swQ${i} = swWA${i}.z * swFd${i} * swBlendD;
 swOffset += swD${i} * (swQ${i} * swC${i});
 swShear += vec3(swD${i}.x * swD${i}.x, swD${i}.x * swD${i}.y, swD${i}.y * swD${i}.y) * (swQ${i} * swK${i} * swS${i});`)).join("");
@@ -988,23 +1104,24 @@ swLost += U.slateWaterSea.z * swBlendH * swBlendH;` : ""}`;
   const lowSwell = fromTier(2, "", fromTier(1, skipped(MEDIUM_SWELL_COMPONENTS - 1), skipped(LOW_SWELL_COMPONENTS - 1)));
   const detail = realistic
     ? DETAIL_OCTAVES.map(([, , slope, speed], i) => fromTier(CHOP_TIER[i]!, `
+// The octave is a straight travelling wave: its uniform direction already heads \`REAL_CHOP_TURNS\` off the wind
+// (\`octaveConstants\`). The noises only jitter its phase by a fraction of a wavelength (\`REAL_CHOP_JITTER\`), and the
+// slow shift and modulation stay spatially gentle: crests stay straight over metres and never curl.
 vec4 swOC${i} = U.${CHOP_UNIFORMS[i]};
-// The large noise drifts each octave's phase by its own amount, so crossing octaves never lock into a lattice; the
-// medium one bends it harder, so its crests curve within a few metres.
-float swOX${i} = swOC${i}.z * dot(swOC${i}.xy, swChop) + swOC${i}.w + swLarge * ${f(CHOP_PHASE_DRIFT[i]![0])} + swMedium * ${f(CHOP_PHASE_DRIFT[i]![1] * 1.6)} + swChopShift * ${f(CHOP_SHIFT[i]!)}${chopFm(i)};
+float swOX${i} = swOC${i}.z * dot(swOC${i}.xy, swChop) + swOC${i}.w + (swLarge - 0.5) * ${f(REAL_CHOP_JITTER[i]![0])} + (swMedium - 0.5) * ${f(REAL_CHOP_JITTER[i]![1])} + swChopShift * ${f(CHOP_SHIFT[i]! * REAL_CHOP_SHIFT_SHARE)}${chopFm(i, 0.25)};
 float swOW${i} = exp(sin(swOX${i}) - 1.0);
 float swOCs${i} = cos(swOX${i});${footprintFade("swOFd", i, `swOC${i}.z`, `swOC${i}.xy`, speed)}
 // Anti-tiling: each octave's strength drifts with the shared noises (in patches a few metres wide, the longer octaves
 // wider), and the two octaves of each pair drift in opposition, so where one crossing direction dominates the other
 // fades: no lattice. Short crests: an oblique envelope (\`CHOP_CREST_TURN\` off the octave's heading, static in the
 // chop's domain, so crests grow and fade as they travel through it) breaks every crest into lengths of about one and a
-// half wavelengths, so no octave runs in even parallel rows (corduroy).
+// half wavelengths, so no octave runs in even parallel rows (corduroy). The medium and large noises bend the envelope's
+// phase, so envelopes never line up in a grid.
 float swOA${i} = ${f(slope)} * swOFd${i} * (0.25 + 1.5 * ${i % 2 === 0 ? "" : "(1.0 - "}smoothstep(0.3, 0.7, mix(swMedium, swLarge, ${f(0.5 - Math.floor(i / 2) * 0.2)}))${i % 2 === 0 ? "" : ")"})
-  * ${chopCrests(`swOC${i}`, i)};
+  * ${chopCrests(`swOC${i}`, i, " + (swMedium - 0.5) * 2.4 + (swLarge - 0.5) * 3.0")};
 swDetail += swOC${i}.xy * (swOW${i} * swOCs${i} * swOA${i});
 swChopH += (swOW${i} - 0.37) * swOA${i};
-swChop -= swOC${i}.xy * (swOW${i} * swOCs${i} * 0.3 / swOC${i}.z);
-swLostDetail += ${f(octaveVariance(slope))} * (1.0 - swOFd${i} * swOFd${i});`, `
+swLostDetail += ${f(octaveVariance(slope))} * (1.0 - swOFd${i} * swOFd${i});${i === REFRACTION_OCTAVES[0] - 1 ? "\nswDetailMid = swDetail;" : ""}`, `
 swLostDetail += ${f(octaveVariance(slope))};`)).join("")
     : DETAIL_OCTAVES.slice(0, STYLIZED_CHOP_TIER.length).map(([, , slope], i) => fromTier(STYLIZED_CHOP_TIER[i]!, `
 vec4 swOC${i} = U.${CHOP_UNIFORMS[i]};${painted ? `
@@ -1016,19 +1133,27 @@ float swOX${i} = swOC${i}.z * dot(swOC${i}.xy, swChop) + swOC${i}.w + (swLarge *
 // As Realistic's: the shared noises drift each octave's phase and, in opposition between neighbours, its strength, so
 // crossing octaves never lock into ribs or a dimple lattice.
 float swOX${i} = swOC${i}.z * dot(swOC${i}.xy, swChop) + swOC${i}.w + swLarge * ${f(CHOP_PHASE_DRIFT[i]![0])} + swMedium * ${f(CHOP_PHASE_DRIFT[i]![1])} + swChopShift * ${f(CHOP_SHIFT[i]!)}${chopFm(i)};`}
-float swOW${i} = exp(sin(swOX${i}) - 1.0);
+${painted ? `float swOS${i} = sin(swOX${i});
+float swOW${i} = exp(swOS${i} - 1.0);` : `float swOW${i} = exp(sin(swOX${i}) - 1.0);`}
 float swOCs${i} = cos(swOX${i});
 float swOA${i} = ${f(slope * (1 - Math.min(0.85, i * 0.14)))} * (1.0 - smoothstep(0.3, 1.1, swOC${i}.z * swFoot)) * ${painted
     ? `(0.25 + 1.5 * ${i % 2 === 0 ? "" : "(1.0 - "}smoothstep(0.3, 0.7, mix(swMedium, swLarge, 0.35))${i % 2 === 0 ? "" : ")"})`
     : `(0.35 + 1.3 * ${i % 2 === 0 ? "" : "(1.0 - "}smoothstep(0.3, 0.7, mix(swMedium, swLarge, 0.6))${i % 2 === 0 ? "" : ")"})`}
   * ${chopCrests(`swOC${i}`, i)};
 swDetail += swOC${i}.xy * (swOW${i} * swOCs${i} * swOA${i});
-swChopH += (swOW${i} - 0.37) * swOA${i};
-swChop -= swOC${i}.xy * (swOW${i} * swOCs${i} * 0.3 / swOC${i}.z);`)).join("");
+swChopH += (swOW${i} - 0.37) * swOA${i};${painted ? `
+float swOSf${i} = 1.0 - smoothstep(${f(0.06 + 0.06 * i)}, ${f(0.3 + 0.1 * i)}, swOC${i}.z * swFoot);
+swDetailSoft += swOC${i}.xy * (swOCs${i} * swOA${i} * swOSf${i} * ${f(PAINTED_LUMP_SLOPE * PAINTED_LUMP_WEIGHT[i]!)});
+swChopHs += swOS${i} * swOA${i} * swOSf${i} * ${f(PAINTED_LUMP_WEIGHT[i]!)};` : ""}
+swChop -= swOC${i}.xy * (swOW${i} * swOCs${i} * 0.3 / swOC${i}.z);${i === REFRACTION_OCTAVES[1] - 1 ? "\nswDetailMid = swDetail;" : ""}`)).join("");
   const capillaries = realistic ? CAPILLARY_OCTAVES.map(([, , slope, speed], i) => fromTier(CAPILLARY_TIER[i]!, `
+// A directional wind ripple (its uniform direction heads \`REAL_CAPILLARY_TURNS\`, within about 15 degrees, off the wind) on
+// the straight world domain. Each ripple gathers in its own patches (a different mix of the shared noises, so the four
+// never fade in step: crests are short dashes and two crossing ripples overlap only in part of the sea, never in a regular
+// quilt); its phase jitters by a fraction of a wavelength only.
 vec4 swCC${i} = U.${CAPILLARY_UNIFORMS[i]};
-float swCX${i} = swCC${i}.z * dot(swCC${i}.xy, swRippleDomain) + swCC${i}.w;${footprintFade("swCFd", i, `swCC${i}.z`, `swCC${i}.xy`, speed)}
-swDetail += swCC${i}.xy * (exp(sin(swCX${i}) - 1.0) * cos(swCX${i}) * ${f(slope)} * swCFd${i} * swRipplePatch);
+float swCX${i} = swCC${i}.z * dot(swCC${i}.xy, swChop) + swCC${i}.w + (swFine - 0.5) * ${f(i % 2 ? -0.9 : 0.9)};${footprintFade("swCFd", i, `swCC${i}.z`, `swCC${i}.xy`, speed, CAPILLARY_FADE)}
+swDetail += swCC${i}.xy * (exp(sin(swCX${i}) - 1.0) * cos(swCX${i}) * ${f(slope)} * swCFd${i} * swRipplePatch * (0.2 + 1.6 * smoothstep(0.3, 0.7, ${CAPILLARY_PATCH[i]})));
 swLostDetail += ${f(octaveVariance(slope))} * (1.0 - swCFd${i} * swCFd${i});`, `
 swLostDetail += ${f(octaveVariance(slope))};`)).join("") : "";
   return `
@@ -1050,6 +1175,18 @@ vec2 swRestXZ = viewDirectionW.xz * (swEyeAbove / max(abs(viewDirectionW.y), 0.0
 vec2 swFootX = dFdx(swRestXZ);
 vec2 swFootY = dFdy(swRestXZ);
 float swFoot = length(swFootX) + length(swFootY);
+// Aerial perspective (every look; \`slateWaterHaze\`): the share of the view's light that the air has replaced with the
+// horizon's by this distance: an exponential, plus a ramp that makes the last stretch before the far plane fully hazed,
+// so no look ever ends in an edge. Scene fog takes precedence: the exponential only acts on what fog leaves (the ramp
+// stays, its horizon colour being the fog's). Orthographic views have no eye distance to haze by.
+float swEyeDist = length(S.vEyePosition.xyz - IN.vPositionW);
+#ifdef FOG
+float swAirKeep = max(toLinearSpace(CalcFogFactor()), 0.0);
+#else
+float swAirKeep = 1.0;
+#endif
+float swAirOn = 1.0 - S.projection[3][3];
+float swAir = 1.0 - (1.0 - (1.0 - exp(-swEyeDist * U.slateWaterHaze.x)) * swAirKeep * swAirOn) * (1.0 - smoothstep(U.slateWaterHaze.y, U.slateWaterHaze.z, swEyeDist) * swAirOn);
 vec2 swFlowed = swWorld - IN.vSlateWaterFlow.xy * swTime;
 // Rest (Lagrangian) point of this fragment relative to the floating origin: the interpolated Gerstner offset is
 // exact for the displaced triangle, since the mesh adds it to a planar rest grid.
@@ -1068,6 +1205,12 @@ float swLostDetail = 0.0;` : painted ? `
 float swPrimLen = U.slateWaterWaves.y * 0.159155;
 float swPrimH = 0.0;
 vec2 swPrimG = vec2(0.0);
+float swPrimAmp = 0.0;
+// The chop's rounded copy (sine profile, no sharp crest) that Painted shades its lumps by: slope and height.
+vec2 swDetailSoft = vec2(0.0);
+float swChopHs = 0.0;` : toon ? `
+float swPrimLen = U.slateWaterWaves.y * 0.159155;
+float swPrimH = 0.0;
 float swPrimAmp = 0.0;` : ""}
 float swChopShape = U.slateWaterShape.x;
 // Unfaded Gerstner offset and S = sum(q*a*k*sin(p) * d d^T) (xx, xz, zz) at the warped rest point, filtered like the swell.
@@ -1081,7 +1224,9 @@ swGradient = vec2(dot(swSwellWarpM.xy, swGradient), dot(swSwellWarpM.yz, swGradi
 swPrimG = vec2(dot(swSwellWarpM.xy, swPrimG), dot(swSwellWarpM.yz, swPrimG));
 // The primary swell's height scale: its components' root-sum-square, not their sum, so a crest reads as tall whether one
 // component carries the swell or several share it (${f(PRIMARY_RMS)} keeps a single dominant train's scale).
-swPrimAmp = ${f(PRIMARY_RMS)} * sqrt(swPrimAmp);` : ""}
+swPrimAmp = ${f(PRIMARY_RMS)} * sqrt(swPrimAmp);` : toon ? `${fromTier(1, `
+swPrimAmp = ${f(PRIMARY_RMS)} * sqrt(swPrimAmp);`, `
+swPrimAmp = ${f(PRIMARY_RMS)} * swA0;`)}` : ""}
 vec3 swBaseNormal = normalize(IN.vSlateWaterBaseNormal);
 float swBaseX = swBaseNormal.x / max(0.001, swBaseNormal.y);
 float swBaseZ = swBaseNormal.z / max(0.001, swBaseNormal.y);
@@ -1122,36 +1267,45 @@ float swFine = swNoise(swFlowed * 2.9 - vec2(0.0, swTime * 0.09));
 float swGust = swNoise(vec2(dot(swWorld, vec2(0.479426, 0.877583)), dot(swWorld, vec2(-0.877583, 0.479426))) * ${f(GUST_NOISE)} + vec2(swTime * 0.004, 0.0));`, `
 float swFine = swMedium;
 float swGust = swLarge;`)}${fftFragmentSource()}
-// Anti-tiling: a bounded warp bends the chop domain, so crests curve and cross differently across the sea. (A rotation
-// about the world origin would compress the chop without limit far from it.) Each component's amplitude suits its
-// noise's frequency, so the warp never stretches the chop much; Low's gust is its large noise, so that one shrinks.${fromTier(1, `
-vec2 swChop = swFlowed + vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, 9.0);`, `
-vec2 swChop = swFlowed + vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, ${f(9 * GUST_NOISE / LARGE_NOISE)});`)}
+// Anti-tiling (Stylized): a bounded warp bends the chop domain, so crests curve and cross differently across the sea. (A
+// rotation about the world origin would compress the chop without limit far from it.) Each component's amplitude suits its
+// noise's frequency, so the warp never stretches the chop much; Low's gust is its large noise, so that one shrinks.
+// Realistic's octaves stay straight: its domain is the flowed world position itself.${fromTier(1, `
+vec2 swChop = swFlowed${realistic ? "" : " + vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, 9.0)"};`, `
+vec2 swChop = swFlowed${realistic ? "" : ` + vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, ${f(9 * GUST_NOISE / LARGE_NOISE)})`};`)}
 // Colour Variation's drifts: the two wide noises mixed, with edges bent by the medium one. Either wide noise alone shows
 // its cell grid as soft-edged rectangles (the gust's cells are about 77 m); mixed with each other and the medium noise
 // (six times finer than the large one) their edges curve and their cells no longer line up.
-float swDrift = swLarge * 0.5 + swGust * 0.3 + swMedium * 0.2;${realistic || painted ? fromTier(1, `
+float swDrift = swLarge * 0.5 + swGust * 0.3 + swMedium * 0.2;${realistic ? fromTier(1, `
+// Wind gusts (Realistic, Medium up): wide patches of the sea are glassy and others rippled, so capillaries, chop gain and the
+// roughness they add (the sub-capillary and filtered variance scale with the chop gain) come and go together.
+float swWindPatch = smoothstep(0.28, 0.72, swGust * 0.45 + swLarge * 0.4 + swMedium * 0.15);
+float swWindGain = mix(0.5, 1.35, swWindPatch);`, `
+float swWindGain = 0.7 + 0.6 * swGust;`) : ""}${painted ? fromTier(1, `
 // Bend it at a finer scale too, so crossing octaves never settle into a regular quilt in the sun's reflection; the
 // fine part fades before its noise would alias.
-swChop += vec2(swMedium - 0.5, (swFine - 0.5) * (1.0 - smoothstep(0.3, 1.0, swFoot))${realistic ? "" : " * 0.35"}) * 0.6;`) : ""}
+swChop += vec2(swMedium - 0.5, (swFine - 0.5) * (1.0 - smoothstep(0.3, 1.0, swFoot)) * 0.35) * 0.6;`) : ""}
 vec2 swDetail = vec2(0.0);
+// The chop octaves refraction bends by (\`REFRACTION_OCTAVES\`): the medium-frequency part of \`swDetail\`, kept apart from the fine
+// octaves, whose high-frequency wobble would make the bed under the water shimmer like jelly.
+vec2 swDetailMid = vec2(0.0);
 float swChopH = 0.0;
 // The chop's slow phase shift (\`CHOP_SHIFT\`): a rotating mix of the two wide noises.
 float swChopShift = U.slateWaterChopShift.x * (swLarge - 0.5) + U.slateWaterChopShift.y * (swGust - 0.5);${painted ? fromTier(1, `
 float swDriftK = 1.0;`, `
 // Low's single octave would bend into swirls under the full drift.
 float swDriftK = 0.5;`) : ""}
-${detail}${realistic ? fromTier(1, `
-// Capillaries ride a noise-bent domain and gather in drifting patches, so they never form a regular lattice.
-vec2 swRippleDomain = swChop + (vec2(swFine, swMedium) - vec2(0.5)) * 0.45;${fromTier(3, `
-float swRipplePatch = (0.6 + 0.8 * swMedium) * (0.55 + 0.9 * swFine);`, `
-float swRipplePatch = 0.6 + 0.8 * swMedium;`)}`) : ""}${capillaries}
+${detail}${fromTier(1, "", `
+swDetailMid = swDetail;`)}${realistic ? fromTier(1, `
+// Capillaries are directional wind ripples that gather in drifting gust patches (glassy water between them); once the FFT
+// band is drawing (its gain is 0 until it is ready) they are fainter, so the two never double-count the fine detail.
+float swRipplePatch = (0.6 + 0.8 * swMedium) * mix(0.2, 1.55, swWindPatch);${fromTier(3, `
+swRipplePatch *= 0.55 + 0.9 * swFine;`)}${ifFft(`
+swRipplePatch *= mix(1.0, ${f(REAL_CAPILLARY_FFT)}, clamp(swFft.x, 0.0, 1.0));`)}`) : ""}${capillaries}
 // What meets the water: terrain shoreline and true depth, and objects crossing the surface.
 // Values stay continuous at the field's edges and range limits, so derivative-based antialiasing never spikes.
 float swFieldShore = mix(${f(SHORE[1])}, swTerrainShore, swFieldOn);
-float swKnown = swField.a * swFieldOn;${realistic ? `
-// Toward the field's outer edge its depth hands over smoothly to the open-water estimate, so no seam marks the edge.
-swKnown *= smoothstep(0.0, 0.06, min(min(swFieldUv.x, 1.0 - swFieldUv.x), min(swFieldUv.y, 1.0 - swFieldUv.y)));` : ""}
+float swKnown = swField.a * swFieldOn;
 // Distance to the object waterline at this fragment's rendered height (metres; contacts sampled in the cut code).
 float swObject = abs(swContactSigned);
 // Open-water edges: where a terrain field is bound but holds no terrain under this point, the mesh's own bank is no
@@ -1168,6 +1322,10 @@ float swOpenAny = max(swOpenEdge, swKnown * smoothstep(0.5, 2.5, swFieldShore - 
 float swOpenW = mix(${f(OPEN_EDGE_FADE_TERRAIN)}, ${f(OPEN_EDGE_FADE)}, swOpenEdge);`}
 float swBankV = mix(IN.vSlateWater.y, max(IN.vSlateWater.y, ${f(SHORE[1])}), swOpenAny);
 float swOpenFade = mix(1.0, smoothstep(0.0, swOpenW, IN.vSlateWater.y), swOpenAny);
+// Soft waterline (every look but Toon, whose banks are drawn lines): over known terrain the water thins to nothing over its
+// last \`SOFT_SHORE_DEPTH\` metres of depth instead of ending in a cut, and over a few centimetres where the bed drops away fast
+// (a wall, a cliff: the terrain slope \`swShoreSlope\` near 1), so it stays crisp there.
+float swShoreSoft = mix(1.0, smoothstep(0.0, mix(${f(SOFT_SHORE_DEPTH)}, 0.06, smoothstep(0.35, 1.0, swShoreSlope)), swTerrainDepth), swKnown);
 float swBank = min(min(max(0.0, swBankV), max(0.0, swFieldShore)), ${f(SHORE[1])});
 float swBodyDepth = max(0.01, IN.vSlateWater.z);
 float swFoamWidth = max(0.001, U.slateWaterMotion.w);
@@ -1186,11 +1344,16 @@ float swShoreRest = max(0.0, min(max(0.0, swBankV), mix(${f(SHORE[1])}, mix(${f(
 // Rest depth for breaking: the terrain's where known, else a shelving bank's estimate.
 float swBreakDepth = mix(swBodyDepth * (1.0 - exp(-swShoreRest * 0.3 / swBodyDepth)), max(0.0, swTerrainDepth - IN.vSlateWater.x), swKnown);
 float swSwashZone = swKnown * step(0.000001, U.slateWaterSwash.w);
-float swSwashX = min(U.slateWaterSwash.w / max(swShoreSlope, 0.02), 6.0);
-float swSurfW = clamp(swSwashX * 2.5 + swFoamWidth * 4.0, 2.0, 14.0);
+float swSwashX = min(U.slateWaterSwash.w / max(swShoreSlope, 0.02), ${f(SWASH_REACH_MAX)});
+float swSurfW = clamp(swSwashX * 2.5 + swFoamWidth * 4.0, 2.0, 22.0);
 float swShoreHere = max(swFieldShore, 0.0);
 float swSwashCover = 1.0;
-float swSwashWet = 0.0;
+float swSwashWet = 0.0;${toon ? `
+float swFilmCur = 0.0;
+float swFilmOld = 0.0;
+float swFilmG0 = -1.0;
+float swFilmG1 = -1.0;
+float swFilmG2 = -1.0;` : ""}
 float swSwashFoam = 0.0;
 float swSwashRun = 0.0;
 float swSwashBack = 0.0;
@@ -1214,16 +1377,17 @@ if (U.slateWaterSwash.w > 0.0 && swShoreRest < swSurfW && (swSwashZone > 0.0 || 
   float swEdgeX = swSwashX * (1.0 - swSwashRun);
   float swAAX = swFoot * 0.7 + 0.02;
   // The water thins to nothing over the last eighth of the excursion toward the edge (a thin sheet, not a cut).
-  swSwashCover = mix(1.0, smoothstep(swEdgeX - 2.0 * swAAX, swEdgeX + swSwashX * 0.12, swShoreHere), swSwashZone);
+  swSwashCover = mix(1.0, smoothstep(swEdgeX - 2.0 * swAAX, swEdgeX + swSwashX * 0.22, swShoreHere), swSwashZone);
   swSwashEdgeS = mix(1000.0, swShoreHere - swEdgeX, swSwashZone);
   // The bore's foamy front on the water side of the edge, thinning as it drains.
-  float swFrontW = swSwashX * 0.2 + swFoamWidth * 0.3 + swAAX;
+  float swFrontW = swSwashX * 0.26 + swFoamWidth * 0.3 + swAAX;
   float swFrontS = swShoreHere - swEdgeX;
   float swFront = smoothstep(-swAAX, swAAX * 0.5, swFrontS) * (1.0 - smoothstep(swFrontW * 0.25, swFrontW, swFrontS)) * mix(1.0, exp(-swDn * 3.0), swSwashBack) * (0.6 + 0.4 * swReach);${fromTier(1, `
-  // Its furthest reach leaves a stranded line that fades as the water drains.
+  // Its furthest reach leaves a stranded line that fades as the water drains (Toon leaves it out: it lay as a pale strip on
+  // the sand beyond the wet film, and that film darkens the sand to mark the furthest reach instead).
   float swStrandW = swFoamWidth * 0.12 + swAAX;
   float swStrand = (1.0 - smoothstep(swStrandW * 0.4, swStrandW, abs(swShoreHere - swSwashX * (1.0 - swReach)))) * swSwashBack * exp(-swDn * 2.0) * 0.8;
-  swSwashFoam = max(swFront, swStrand) * swSwashZone;
+  swSwashFoam = ${toon ? "swFront" : "max(swFront, swStrand)"} * swSwashZone;
   // Wet film: time since the backwash uncovered this point (this cycle's, else the last cycle's), so the wet band lags
   // the swash and dries where only the larger waves reach.
   float swNeed = 1.0 - swShoreHere / max(swSwashX, 0.001);
@@ -1235,7 +1399,14 @@ if (U.slateWaterSwash.w > 0.0 && swShoreRest < swSurfW && (swSwashZone > 0.0 || 
   float swPassC = 0.3 + 0.7 * pow(max(1.0 - swNeedC, 0.000001), 0.6667);
   float swPassP = 0.3 + 0.7 * pow(max(1.0 - swNeedP, 0.000001), 0.6667);
   float swSince = mix(swSwU + 1.0 - swPassP + step(1.0, swNeedP) * 3.0, swSwU - swPassC, step(swNeedC, 1.0) * step(swPassC, swSwU));
-  swSwashWet = exp(-swSince * 1.4) * step(0.0, swNeed) * swSwashZone;
+  ${toon ? `// Toon cannot antialias the film's hard switches (the swash's furthest reach, this cycle's reach, the moment the backwash
+  // uncovered the point) from inside this branch, which has no derivatives: it exports the two ages and the continuous
+  // quantities the switches test, and blends them outside (\`swSwashWet\` below).
+  swFilmCur = exp(-(swSwU - swPassC) * 1.4);
+  swFilmOld = exp(-(swSwU + 1.0 - swPassP + step(1.0, swNeedP) * 3.0) * 1.4);
+  swFilmG0 = swNeed * swSwashX;
+  swFilmG1 = 1.0 - swNeedC;
+  swFilmG2 = swSwU - swPassC;` : `swSwashWet = exp(-swSince * 1.4) * step(0.0, swNeed) * swSwashZone;`}
   // Bores: cycles behind the nearest front travelling shoreward through the surf, each as strong as the run-up it brings.
   float swPsiB = swPsi + U.slateWaterSwash.z * swShoreRest * 0.159155;
   float swBoreC = floor(swPsiB);
@@ -1257,6 +1428,32 @@ if (U.slateWaterSwash.w > 0.0 && swShoreRest < swSurfW && (swSwashZone > 0.0 || 
   // Low: the front alone, and a film that dries through the backwash.
   swSwashFoam = swFront * swSwashZone * 0.75;
   swSwashWet = (1.0 - swSwashCover) * (0.3 + 0.5 * (1.0 - swDn));`)}
+}
+// Surf zone (every look, ALU; \`swSurfGate\` is 0 in open water, on calm water and past a landscape's edge, which skip it): the
+// waves break where the water is under about two Wave Heights deep (so a gentle beach breaks over a wide band, a steep one
+// over a narrow one), and the breaking is the swell's own. White water stands on each crest of the steepest slot's phase
+// (\`swBrkG\`: cycles from the crest, ahead positive) and trails seaward behind it, patchy along the crest (a noise per wave),
+// so foam patches advance shoreward with the crests; between them long streaks, stretched along the seaward direction (the
+// terrain's gradient where measured, else the bank's), trail out from the swash and drift slowly back to sea. \`swSurfBreak\` is
+// the density (0-1) every look's foam composite takes; Toon thresholds it into its hard-edged shapes.
+float swSurfGate = (1.0 - smoothstep(${f(SURF_DEPTH[0])} * U.slateWaterWaves.x, ${f(SURF_DEPTH[1])} * U.slateWaterWaves.x, swBreakDepth)) * smoothstep(0.02, 0.1, U.slateWaterWaves.x)
+  * (1.0 - swOpenAny) * smoothstep(0.0, swSwashX * 0.5 + 0.5, swShoreRest);
+float swSurfBreak = 0.0;
+float swBrkG = 0.0;
+if (swSurfGate > 0.0) {
+  vec2 swBrkBank = swBankGrad / max(length(swBankGrad), 0.000001);
+  vec2 swBrkN = mix(swBrkBank, swShoreNormal / max(length(swShoreNormal), 0.0001), step(0.5, length(swShoreNormal)));
+  float swBrkA = dot(swWorld, vec2(-swBrkN.y, swBrkN.x));
+  float swBrkB = dot(swWorld, swBrkN);
+  float swBrkQ = (swP0 - 1.570796) * 0.159155;
+  swBrkG = fract(swBrkQ + 0.5) - 0.5;
+  float swBrkWake = mix(exp(swBrkG * ${f(SURF_WAKE)}) * smoothstep(-0.5, -0.3, swBrkG), 1.0 - smoothstep(0.0, 0.07, swBrkG), step(0.0, swBrkG));${fromTier(1, `
+  float swBrkPatch = swNoise(vec2(swBrkA * 0.4 + 11.0 * floor(swBrkQ + 0.5), 3.7));
+  float swBrkStreak = swNoise(vec2(swBrkA * 0.55 + swMedium * 1.5, swBrkB * 0.08 - swTime * 0.015) + vec2(5.3, 1.7));`, `
+  float swBrkPatch = swMedium;
+  float swBrkStreak = swLarge;`)}
+  float swBrkTrail = smoothstep(0.4, 0.75, swBrkStreak) * exp(-max(swShoreRest - swSwashX * 0.5, 0.0) / (6.0 + swFoamWidth * 3.0));
+  swSurfBreak = swSurfGate * clamp(swBrkWake * (0.4 + 0.9 * swBrkPatch) * 1.2 + swBrkTrail * 0.7 + 0.16, 0.0, 1.0);
 }
 // Small waves around objects that cut the surface: they travel outward at the deep-water speed of their
 // wavelength (wavenumber and clock phase from the CPU), fade with distance, and a drifting noise bends and breaks
@@ -1301,7 +1498,7 @@ float swAgitate = exp(-swObject / swContactW) * swRippleAA * swNearContact;`, `
 float swAgitate = 0.0;`)}
 vec2 swRipple = swContactDir * (cos(swRipplePhase) * swRippleFade * (0.1 + 0.3 * U.slateWaterMotion.z) * (0.45 + 0.55 * swRippleNoise));
 // Rougher seas carry steeper chop (CPU factor in slateWaterTerms.w).
-float swChopGain = U.slateWaterMotion.z * (0.35 + 0.65 * swCalm + swAgitate) * ${realistic ? "(0.7 + 0.6 * swGust) * U.slateWaterTerms.w" : "(0.5 + swGust)"};
+float swChopGain = U.slateWaterMotion.z * (0.35 + 0.65 * swCalm + swAgitate) * ${realistic ? "swWindGain * U.slateWaterTerms.w" : "(0.5 + swGust)"};
 vec2 swSlope = swGradient + swDetail * swChopGain + swRipple;${ifFft(`
 swSlope += swFftSlope;`)}
 normalW = normalize(vec3(swBaseX - swSlope.x, 1.0, swBaseZ - swSlope.y));
@@ -1365,6 +1562,8 @@ float swSparkBase = 0.0;`) : ""}
  *   sky, and distance haze takes the far sea to a pure reflection of the horizon.
  * - Colour: water absorbs red first (per channel from Shallow Color, Medium up), so what shows through takes the
  *   water's hue with depth; Shallow Color only tints the body over shallows and under foam.
+ * - Upper column (`swColumn`): the sunlit top metre keeps its blue-green at grazing views, under the mirror rather than
+ *   replaced by it; wind-gust patches (`swWindPatch`) make some water glassy and some rippled and roughen its highlight.
  * - Crests: thin crest tops glow green-teal with sunlight through them (Subsurface: a translucency lobe toward the sun,
  *   the sun's colour after the water's absorption), fading with the Fresnel like the body (light the surface reflects
  *   never enters the crest), and every crest glows a little with skylight, so crests separate from the troughs under any
@@ -1402,32 +1601,46 @@ float swGraze8 = swGraze4 * swGraze4;
 // Pixel footprint on the water (metres).${fromTier(1, `
 float swPxM = sqrt(length(swFootX) * length(swFootY));`, `
 float swPxM = swFoot * 0.5;`)}
-// Far away a pixel averages many facets: its reflection and Fresnel follow the mean surface (half the swell, toward
-// level) rather than one facet, so the far sea reads as a soft gradient instead of ruler-straight bands, and the slope
-// it averages away roughens it. Toward the horizon the chop flattens into the swell as well.
-float swFar = smoothstep(0.04, 0.6, swPxM);
+// Far away a pixel averages many facets, and the chop, capillaries and FFT band are filtered away by their own footprint
+// fades: the swell is not, so mid-distance water keeps its slope (banding and shading under the sun) and only a part
+// (\`swFar\`, a third of the way to the mean surface: half the swell, toward level) is averaged, which softens ruler-straight
+// bands; the slope it averages away roughens it. Toward the horizon the chop flattens into the swell as well. Hazed water
+// is level (see \`swHaze\`): its mirror is the horizon band itself.
+float swFar = smoothstep(0.1, 1.5, swPxM);
 vec3 swMeanN = normalize(swSwellNormal + vec3(0.0, 1.0, 0.0));
-normalW = normalize(mix(mix(normalW, swSwellNormal, swGraze8 * swGraze4 * 0.6), swMeanN, swFar * 0.75));
+float swHaze = 1.0 - (1.0 - swAir * smoothstep(0.3, 0.85, swGraze)) * (1.0 - smoothstep(0.98, 0.9985, swGraze));
+normalW = normalize(mix(mix(normalW, swSwellNormal, swGraze8 * swGraze4 * 0.6), swMeanN, swFar * 0.45));
+normalW = normalize(mix(normalW, swBaseNormal, swHaze * swHaze));
+swSharp = 1.0 - swHaze;
+#if ${SAMPLES_COPY}
+// From Medium the last half degree above the horizon takes the sky actually drawn there (the scene copy: a damped
+// average of the row just above the horizon around this pixel's azimuth, \`horizonCopySource\`; applied in
+// \`beforeFogSource\`), so the sea never ends in a line whatever the environment mirrors there.${horizonCopySource()}
+vec3 swHorC = swHorLocal;
+float swHorW = swHorOn * swHorHave * smoothstep(0.9905, 0.999, swGraze);
+#endif
 // Fresnel sees this facet normal; the shading normal below only steers the reflected sky lookup.
 vec3 swFresN = normalW;
 // Detail filtered away at a distance still roughens the surface, bounded by a sea-state cap (CPU): reflections blur
 // more with distance, so cloud detail melts into sky colour toward the horizon. Wide wind slicks and rougher patches
 // (the shared wide noises) vary it.
 float swSlick = 0.6 + 0.8 * smoothstep(0.2, 0.8, swGust * 0.55 + swLarge * 0.45);
-// Aerial perspective: toward the horizon the far sea becomes a pure mirror of the horizon sky and melts into it. In that
-// haze the blur relaxes and the lifted ray drops back toward the horizon, so the farthest water mirrors the sky's own
-// horizon band (the colour drawn right above it) rather than a blurred average of the clouds higher up: no seam.
-float swEyeDist = length(S.vEyePosition.xyz - IN.vPositionW);
-float swHaze = (1.0 - exp(-swEyeDist * ${f(OCEAN_HAZE_PER_METRE)})) * smoothstep(0.6, 0.98, swGraze);
-float swHazeSharp = 1.0 - 0.75 * swHaze;
+// Aerial perspective (\`swHaze\`: the shared \`swAir\`, at grazing views): toward the horizon the far sea becomes a pure
+// mirror of the horizon sky and melts into it. In that haze the blur relaxes and the lifted ray drops back toward the
+// horizon, so the farthest water mirrors the sky's own horizon band (the colour drawn right above it) rather than a
+// blurred average of the clouds higher up: no seam.
+float swHazeSharp = 1.0 - 0.97 * swHaze;
 swSlopeVariance = min((swLost + swLostDetail * swChopGain * swChopGain * 0.85) * swSlick + swFar * 0.008, U.slateWaterTerms.z) * swHazeSharp;
 // Keep reflected rays above the horizon, a little higher for rougher water so its blurred lobe stays in the sky: below it
 // the water would reflect only more water. A smooth maximum leaves no plateau of identical directions on wave backs.
 // The shading normal becomes the half vector toward the lifted reflection; the Fresnel stays the facet's own.
 vec3 swRefl = reflect(-swV, normalW);
-float swReflFloor = mix(0.02 + sqrt(swSlopeVariance) * 1.2, 0.004, swHaze);
+float swHorizonMirror = max(swHaze, smoothstep(0.94, 0.9985, swGraze));
+float swReflFloor = mix(0.02 + sqrt(swSlopeVariance) * 1.2, 0.004, swHorizonMirror);
 float swReflRawY = swRefl.y;
-float swReflLift = swRefl.y + log(1.0 + exp(30.0 * (swReflFloor - swRefl.y))) / 30.0;
+float swLiftK = mix(30.0, 400.0, swHorizonMirror);
+float swLiftA = swLiftK * (swReflFloor - swRefl.y);
+float swReflLift = swRefl.y + (max(swLiftA, 0.0) + log(1.0 + exp(-abs(swLiftA)))) / swLiftK;
 swRefl.y = mix(swRefl.y, swReflLift, step(0.0, swV.y));
 normalW = normalize(swV + normalize(swRefl));
 // Wind ripples below the smallest capillary octave (centimetres) tilt every facet a little; calm water stays a mirror.
@@ -1440,7 +1653,7 @@ vec2 swShadeSlope = normalW.xz / max(normalW.y, 0.1);
 vec2 swShadeDx = dFdx(swShadeSlope);
 vec2 swShadeDy = dFdy(swShadeSlope);
 float swShadeVar = min((dot(swShadeDx, swShadeDx) + dot(swShadeDy, swShadeDy)) * ${f(PIXEL_SLOPE_FILTER / 2)}, ${f(PIXEL_SLOPE_CAP)});
-swSlopeVariance += swShadeVar;
+swSlopeVariance += swShadeVar * swHazeSharp;
 float swNdotV = clamp(dot(swFresN, swV), 0.0, 1.0);
 // Facets turned nearly edge-on to the eye are mostly hidden behind the waves in front of them (masking): the eye sees
 // those instead, so no visible facet reflects as if seen at a lower angle than about half the view's own.
@@ -1491,24 +1704,27 @@ swRefracts = smoothstep(-0.03, 0.03 + swWaterZ * 0.004, swSceneZ - swWaterZ);
 // Where the terrain field knows the bed lies under this water, the copy's texel holds that bed (unless something stands
 // well in front of the surface): the refracted path stands, so the copy's nearest-texel depth never flips shallows
 // between the two paths from texel to texel.
-swRefracts = max(swRefracts, swKnown * smoothstep(0.02, 0.12, swFieldDepth) * smoothstep(-0.6, -0.2, swSceneZ - swWaterZ));`)}${fromTier(2, `
-// Sun caustics on the bed (High up, ALU only): the surface focuses sunlight into a soft, slowly morphing shimmer of
+swRefracts = max(swRefracts, swKnown * smoothstep(0.02, 0.12, swFieldDepth) * smoothstep(-0.6, -0.2, swSceneZ - swWaterZ));`)}${fromTier(1, `
+// Sun caustics on the bed (ALU only): the surface focuses sunlight into a soft, slowly morphing shimmer of
 // bright filaments on shallow floors, over darker cells (\`swCaustic\`, evaluated where the refracted view ray meets the
 // floor and bent by a slow noise). The lines blur toward their mean with depth and before they would alias, weaken with
-// depth, and need a clear sun some way up. \`swCaustics\` is the floor's light factor less one.
+// depth, and need a clear sun some way up. \`swCaustics\` is the floor's light factor less one. Medium runs a lighter
+// field (\`swCausticLite\`, two iterations, no bending noises); High up the full one.
 // Natural caustics are a soft shimmer, not a pool's hard net: modest contrast, falling off as 1 / (1 + depth), with a
-// sun some way up (its incidence) and a clear sun; none where no floor shows, so open ocean, overcast skies and distant
-// water skip the field (it reads no derivatives, so the branch is legal in any control flow).
+// sun some way up (the root of its incidence: the water bends the sun's rays toward the vertical) and a clear sun; none
+// where no floor shows, so open ocean, overcast skies and distant water skip the field (it reads no derivatives, so the
+// branch is legal in any control flow).
 float swCauFade = (1.0 - smoothstep(0.08, 0.3, swFoot * 1.6)) / (1.0 + 0.45 * swDepth) * smoothstep(0.0, 0.25, swDepth)
-  * smoothstep(0.1, 0.45, swL.y) * swL.y * U.slateWaterSky.w * min(U.slateWaterSun.w, 1.5) * swVisible;
+  * smoothstep(0.1, 0.45, swL.y) * sqrt(max(swL.y, 0.0)) * U.slateWaterSky.w * min(U.slateWaterSun.w, 1.5) * swVisible;
 float swCaustics = 0.0;
 if (swCauFade > 0.0) {
   vec3 swRefrDir = refract(-swV, swWaveN, 0.75);
-  vec2 swBedXZ = swWorld + swRefrDir.xz * (swDepth / max(-swRefrDir.y, 0.3));
+  vec2 swBedXZ = swWorld + swRefrDir.xz * (swDepth / max(-swRefrDir.y, 0.3));${fromTier(2, `
   // About 4 m per tile; a slow, wide bend keeps the tile from repeating.
   vec2 swBedP = swBedXZ * 1.6 + (vec2(swNoise(swBedXZ * 0.11 + vec2(3.1, swTime * 0.02)), swNoise(swBedXZ * 0.11 + vec2(swTime * -0.015, 7.7))) - vec2(0.5)) * 1.6;
   float swCauField = mix(swCaustic(swBedP, swTime * 0.45 + 23.0), 0.12, smoothstep(0.0, 1.0, swDepth * 0.15 + swFoot * 2.5))
-    * (0.55 + 0.9 * swNoise(swBedXZ * 0.3 + vec2(swTime * -0.04, 1.7)));
+    * (0.55 + 0.9 * swNoise(swBedXZ * 0.3 + vec2(swTime * -0.04, 1.7)));`, `
+  float swCauField = mix(swCausticLite(swBedXZ * 1.6, swTime * 0.45 + 23.0), 0.12, smoothstep(0.0, 1.0, swDepth * 0.15 + swFoot * 2.5));`)}
   swCaustics = (swCauField * 1.25 - 0.15) * swCauFade;
 }`, `
 float swCaustics = 0.0;`)}
@@ -1555,6 +1771,18 @@ swGlow = (U.slateWaterThrough.rgb * (0.1 + 2.6 * swSssView) + vec3(U.slateWaterS
 // Open-water crests glow a muted sea green, not the saturated cyan of a shallow lagoon: part of the way to grey.
 swGlow = mix(swGlow, vec3(dot(swGlow, vec3(0.3, 0.59, 0.11))) * vec3(0.8, 1.05, 1.1), 0.4);
 swScatter += U.slateWaterThrough.rgb * (smoothstep(0.2, 0.9, swFoldN) * swRough * 0.07 * U.slateWaterLook.w);`)}
+// Upper-column in-scatter: the sunlit top metre keeps its blue-green at grazing views, where the facet's Fresnel would
+// hand the whole body to the mirror (it removes only \`REAL_COLUMN_FRESNEL\` of this term, and none of it hazes in: the far
+// sea is a pure mirror of the horizon). From Medium, facets turned toward the sun are lit through the water (Low takes the body light); troughs hold more of it;
+// Shallow Color's teal (blue held to green) lifts the body's hue. It leaves the bed alone over shallows (one minus the
+// transmittance); it takes the overcast-greyed body colour, so it greys with the sky.
+float swColumnTeal = ${f(REAL_COLUMN_TEAL[1] * 2)};${fromTier(1, `
+swColumnTeal = mix(${f(REAL_COLUMN_TEAL[0])}, ${f(REAL_COLUMN_TEAL[1])}, swTone);`)}
+vec3 swColumnTint = swScatterCol + vec3(U.slateWaterShallow.r, U.slateWaterShallow.g, min(U.slateWaterShallow.b, U.slateWaterShallow.g * 1.15)) * swColumnTeal;
+vec3 swColumnLight = swBodyLight;${fromTier(1, `
+float swFlankLit = smoothstep(-0.25, 0.85, dot(swWaveN, swL));
+swColumnLight = swAmb * 0.55 + swSun * (swSunShape.w * (0.1 + 0.9 * swFlankLit));`)}
+vec3 swColumn = swColumnTint * swColumnLight * (${f(REAL_COLUMN_GAIN)} * (0.65 + 0.35 * (1.0 - swCrestPhase)));
 
 // Foam: a bubble web (Medium up) and clumpy noise, thresholded by a foam density (Crest-style), so dense foam is solid,
 // then opens round holes, thins into lace and breaks into scattered fragments as it decays. From High a finer web
@@ -1616,6 +1844,7 @@ float swSurfFoam = swSurf * max(smoothstep(0.0, 0.6, swCrest + swChopH * 0.6), 0
 // Each bore leaves thinner foam behind it that decays over a few Foam Widths.
 float swBoreTrail = exp(-swBorePhase * 6.283185 / max(U.slateWaterSwash.z, 0.001) / (swFoamWidth * 4.0));
 swSurfFoam = max(swSurfFoam, min(max(swBore * 1.5, swBoreOn * 0.5 * swBoreTrail), 1.0) * (0.7 + 0.3 * swSurf));
+swSurfFoam = max(swSurfFoam, swSurfBreak * 0.95);
 vec2 swWindUv = vec2(dot(swFlowed, swWindDir), dot(swFlowed, vec2(-swWindDir.y, swWindDir.x)));
 float swCap = 0.0;
 float swCapCore = 0.0;
@@ -1752,7 +1981,8 @@ if (swContactOn > 0.5) {
 }`)}
 // The collar pulses with the swell at the hull: it pushes out and thickens as the water climbs, and as it drops a wider,
 // thinner ring of foam clings briefly before it drains (\`swHullPulse\`, \`swHullCling\`).
-float swHullW = swContactW * (0.55 + 0.8 * swHullPulse);
+float swHullW = swContactW * (0.55 + 0.8 * swHullPulse);${fromTier(2, `
+swHullW *= 1.35;`)}
 float swHullRing = swHullCling * exp(-abs(swObjectW - swContactW * 0.22) / (swContactW * 0.12)) * 0.55;${fromTier(1, `
 // Lee puffs: foam shed downstream with each rise drifts away in clumps, within about a Contact Foam Width (over two,
 // small floats trailed long marbled ribbons several times their own size).
@@ -1768,7 +1998,9 @@ float swHugCut = 1.0 - swHug * 0.9;
 // brightest borders would otherwise pass the cut there and net the whole open sea in a faint, regular crackle.
 float swRealContact = smoothstep(swHugCut - swHugSoft * 0.5, swHugCut + swHugSoft, swPatchTex) * (0.15 + 0.75 * swHug) * mix(0.45 + 0.55 * swLace, 1.0, swHug * swHug)
   * smoothstep(0.0, 0.08, swHug);
-swRealContact = max(swRealContact, swContactLine * (0.65 + 0.3 * smoothstep(0.2, 0.6, swPatchTex)));`, `
+swRealContact = max(swRealContact, swContactLine * (0.65 + 0.3 * smoothstep(0.2, 0.6, swPatchTex)));${fromTier(2, `
+// High up the collar reads a little denser and wider at a distance (the ring and wake were faint beside the swell).
+swRealContact = min(swRealContact * 1.25, 1.0);`)}`, `
 float swHug = clamp(exp(-swObjectW / swHullW * 8.0) * (0.4 + 1.1 * swClump) * (0.7 + 0.5 * swHullPulse), 0.0, 1.0);
 float swRealContact = max(smoothstep(0.35, 0.85, swHug) * (0.25 + 0.6 * swHug) * (0.6 + 0.4 * swLace), swContactLine * 0.8);`)}
 // Aerial perspective fades distant foam into the horizon sky with the water, so far breakers never pile into a bright
@@ -1803,11 +2035,13 @@ swWet = max(swWet * swSwashCover, swFilm * (1.0 - smoothstep(0.4, 0.9, swFoam)))
 // glints over a dimmer path; perspective stretches them into horizontal dashes. Low draws water unlit and carries one
 // smooth analytic lobe instead.
 float swFarSun = smoothstep(0.01, 0.08, swPxM);
+// Far out (a pixel spans metres) the path compresses into a line of light: the lobe is squashed harder, the glints fade back.
+float swFarLine = smoothstep(0.4, 2.5, swPxM);
 ${fromTier(1, `
-float swSpecSquash = 0.35 + 0.9 * swFarSun;
+float swSpecSquash = 0.35 + 0.9 * swFarSun + 4.0 * swFarLine;
 float swSpecKeep = 0.35 + 0.65 * swFarSun;`, `
 // Low's single analytic lobe has no glints to break it up: it is compressed harder, so it never reads as a chrome slab.
-float swSpecSquash = 1.2 + 1.6 * swFarSun;
+float swSpecSquash = 1.2 + 1.6 * swFarSun + 2.0 * swFarLine;
 float swSpecKeep = 1.0;`)}
 float swSpecMod = 1.0;
 float swSpecModW = 0.0;
@@ -1818,7 +2052,7 @@ float swSunFres = 0.02 + 0.98 * swSunX2 * swSunX2 * swSunX;
 // Sea slopes fall off like a Gaussian, not like GGX's long tail: a glint that needs a facet tilted far from the swell
 // (a sun behind or high above the eye) is rare, so steep chop crests never light up as rows of white scratches.
 float swHalfCos = max(dot(swSwellNormal, swHalf), 0.05);
-float swSunReach = mix(1.0, exp(-(1.0 - swHalfCos * swHalfCos) / (swHalfCos * swHalfCos * 0.12)), step(0.0001, U.slateWaterSun.w));
+float swSunReach = mix(1.0, exp(-(1.0 - swHalfCos * swHalfCos) / (swHalfCos * swHalfCos * 0.085)), step(0.0001, U.slateWaterSun.w));
 // Glitter (\`swGlitter\`, every tier): glints anchored to the water's rest surface (they ride the waves) on a world grid
 // whose cells are at least \`GLITTER_CELL_PX\` pixels across in their most compressed direction (perspective draws far
 // glints out into horizontal dashes), two nested levels crossfaded by the footprint. Each glint is filtered by the pixel
@@ -1848,7 +2082,7 @@ float swGlintNear = 1.0 - smoothstep(0.03, 0.2, swPxM);
 vec3 swGlint = min(swSun * vec3(1.0, 0.96, 0.88) * (swSunFres * step(0.0, swL.y) * 30.0 * swGlintKeep * swGlintKeep * exp(-swGlintX / swGlintS2) * swGlintNear * swSunReach * U.slateWaterSky.w), vec3(6.0));
 float swGlitterFar = smoothstep(0.025, 0.09, swPxM);
 // The broad lobe gathers into glints at every distance: close by the same unresolved capillaries break it.
-swSpecModW = U.slateWaterSky.w;
+swSpecModW = U.slateWaterSky.w * (1.0 - 0.55 * swFarLine);
 swSpecMod = swGlitterMod;
 // Close by, the capillaries no tier resolves break each facet's mirror image of the sun into small glints (the same
 // stable, surface-riding glitter), so sun-facing chop faces sparkle instead of shining as smooth chrome blobs.
@@ -1917,25 +2151,35 @@ swSkyRefl *= U.slateWaterDeep.w;
 
 // Foam is matte and lit: PBR shades it as albedo, and its roughness and coverage remove the mirror.
 // Over known terrain the water also thins out over its last few centimetres of depth, so a bank never shows a hard lip.
-float swEdgeFade = smoothstep(0.0, 0.2, swBank + 0.02) * mix(1.0, smoothstep(0.0, 0.25, swTerrainDepth), swKnown);
+float swEdgeFade = smoothstep(0.0, 0.2, swBank + 0.02) * swShoreSoft;
 // Uncovered by the backwash, only the wet film is left: no water body, a faint sheen of sky and sun on the wet sand.
 float swWaterFade = swEdgeFade * swSwashCover;
-float swSheen = swSwashCover + swFilm * 0.4;
+float swSheen = swSwashCover + swFilm * 0.75;
 float swGloss = (1.0 - swFoam) * swEdgeFade * swSheen;
 float swBodyGloss = (1.0 - swFoam) * swWaterFade;
 // Foam is a neutral white scatterer: thick fresh foam is a little brighter than its fraying lace, which reads thinner
 // through its lower coverage rather than through a grey colour.
 // Its bubbles shade one another, so foam keeps an inner texture under any light instead of reading as flat paint.
-surfaceAlbedo = U.slateWaterFoam.rgb * ((0.82 + 0.18 * swFoamThick) * (0.72 + 0.28 * smoothstep(0.15, 0.75, swFoamTex)) * swFoam * swEdgeFade);
+// Lit look: foam turned toward the sun is bright and warm, its shadowed side takes the cool sky; its dense core is
+// brighter than its fraying lace; and a thin dark wet edge (\`swEdgeDark\`: the outer fringe where coverage is partial,
+// \`REAL_FOAM_EDGE\`) darkens the water body and the bed seen through it along the foam's boundary.
+${fromTier(1, `
+float swFoamSun = clamp(dot(swWaveN, swL) * 0.6 + 0.4, 0.0, 1.0);
+vec3 swFoamTint = mix(vec3(0.8, 0.91, 1.0), vec3(1.08, 1.03, 0.95), swFoamSun);`, `
+vec3 swFoamTint = vec3(1.0);`)}
+surfaceAlbedo = U.slateWaterFoam.rgb * swFoamTint * ((0.78 + 0.26 * swFoamThick) * (0.66 + 0.34 * smoothstep(0.15, 0.75, swFoamTex)) * swFoam * swEdgeFade);
 swMatte = swFoam;${fromTier(1, `
 // PBR lights the foam on the shading normal, which above is the half vector toward the lifted reflection: under foam
 // it returns to the facet's own normal (the one the Fresnel sees), so foam is lit by the faces it lies on, as Low's
 // unlit foam and the body are.
 normalW = normalize(mix(normalW, swFresN, swFoam));`)}
+float swEdgeDark = 1.0;${fromTier(1, `
+swEdgeDark = 1.0 - ${f(REAL_FOAM_EDGE)} * smoothstep(0.06, 0.3, swFoam) * (1.0 - smoothstep(0.35, 0.75, swFoam));`)}
 // The water's own light covers, per channel, what the transmittance leaves: over a bright bed its colour is the bed's
 // light through the absorption, never a glow of its own.
-vec3 swEmissive = swScatter * (vec3(1.0) - swScatterT) * ((1.0 - swFres) * swBodyGloss)
-  + swGlow * ((1.0 - swFres) * swBodyGloss)
+vec3 swEmissive = swScatter * (vec3(1.0) - swScatterT) * ((1.0 - swFres) * swBodyGloss * swEdgeDark)
+  + swColumn * (vec3(1.0) - swScatterT) * ((1.0 - ${f(REAL_COLUMN_FRESNEL)} * swFres) * (1.0 - swHaze) * swBodyGloss * swEdgeDark)
+  + swGlow * ((1.0 - swFres) * swBodyGloss * swEdgeDark)
   + (swGlint + vec3(swSpark) * swSun) * swGloss;${fromTier(1, "", `
 // The floor is not one even colour: wide, soft patches (the medium noise) keep its shallows from reading as a glow.
 swEmissive += vec3(${LOW_BED.map(f).join(", ")}) * swLowBedT * (swAmb * 0.6 + swSun * max(swL.y, 0.0)) * ((1.0 - swFres) * (1.0 - swFoam) * swBodyGloss * (0.75 + 0.5 * swMedium));`)}
@@ -1944,23 +2188,23 @@ swEmissive += vec3(${LOW_BED.map(f).join(", ")}) * swLowBedT * (swAmb * 0.6 + sw
 swEmissive += swSun * swTransmitRgb * (max(swCaustics, 0.0) * 0.15 * swKnown * (1.0 - swFres) * swBodyGloss);
 #endif${fromTier(1, `
 // Foam scatters skylight from every side: a little fill keeps it the brightest thing on the sea even under a dull sky.
-swEmissive += surfaceAlbedo * swAmb * 0.25;`, `
+swEmissive += surfaceAlbedo * (swAmb * 0.25 + swSun * (max(dot(swWaveN, swL), 0.0) * 0.22));`, `
 // Low is unlit: the sun and sky light the foam here, as bright as Medium's lit foam (the environment adds its own).
 swEmissive += surfaceAlbedo * (swSun * max(dot(swWaveN, swL), 0.0) * 0.4 + swAmb * 0.85);`)}
 alpha = (1.0 - (1.0 - swFres * swSheen) * mix(1.0, swTransmit, swSwashCover) * (1.0 - swFoam)) * swEdgeFade;
 // The wet band darkens what blends under it: coverage without light.
-alpha = max(alpha, swWet * mix(0.35, 0.5, 1.0 - swSwashCover) * swEdgeFade);${ifDefined(REFRACTION, `
+alpha = max(alpha, swWet * mix(0.45, 0.62, 1.0 - swSwashCover) * swEdgeFade);${ifDefined(REFRACTION, `
 // The refracted scene replaces the blended background: the light transmitted through the water is the copy behind
 // this point, tinted by the per-channel absorption and darkened under the wet band, so coverage keeps only the shore
 // fade. It stays apart from the water's own light (\`swRefracted\`, see CUSTOM_FRAGMENT_BEFORE_FOG).
 // Underwater daylight (\`UNDERWATER_COOL\`, \`UNDERWATER_WET\`): the bed's light cools toward a neutral blue-grey and
 // darkens as wet sand does within the first half metre.
-float swUnder = 1.0 - exp(-swDepth * 5.0);
+float swUnder = 1.0 - exp(-swDepth * ${f(UNDERWATER_COOL_RATE)});
 swBackground = mix(swBackground, vec3(dot(swBackground, vec3(0.3, 0.59, 0.11))) * vec3(${UNDERWATER_TINT.map(f).join(", ")}), ${f(UNDERWATER_COOL)} * swUnder) * (1.0 - ${f(1 - UNDERWATER_WET)} * swUnder);
 // Caustics concentrate the sunlight that reaches the floor into bright lines over dimmer cells.
 swBackground *= 1.0 + swCaustics;
 float swRefractedWeight = (1.0 - swFres) * swTransmit * (1.0 - swFoam) * swWaterFade * swRefracts;
-vec3 swRefracted = swBackground * swTransmitRgb * mix(vec3(1.0), vec3(0.72, 0.68, 0.62), swWet) * ((1.0 - swFres) * (1.0 - swFoam) * swWaterFade * swRefracts);
+vec3 swRefracted = swBackground * swTransmitRgb * mix(vec3(1.0), vec3(${WET_BAND_DARK.map(f).join(", ")}), swWet) * ((1.0 - swFres) * (1.0 - swFoam) * swWaterFade * swRefracts * swEdgeDark);
 // Uncovered shallows blend their film over the scene instead (the darkening above).
 alpha = mix(alpha, max(alpha, swWaterFade), swRefracts);`)}
 ${objectReflectionSource("normalize(mix(reflect(-swV, swSwellNormal), normalize(swRefl), 0.25))", "sqrt(sqrt(U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w + 2.0 * swSlopeVariance))")}
@@ -2005,7 +2249,26 @@ float swHorY = clamp(swHorRaw, 0.002, 0.998);${skyTap("swHorT0", 0.25, "swHorY")
 vec3 swHorSum = swHorT0.rgb * ${skyHit("swHorT0")} + swHorT1.rgb * ${skyHit("swHorT1")};
 float swHorN = ${skyHit("swHorT0")} + ${skyHit("swHorT1")};${fromTier(2, `${skyTap("swHorT2", 0.06, "swHorY")}${skyTap("swHorT3", 0.94, "swHorY")}
 swHorSum += swHorT2.rgb * ${skyHit("swHorT2")} + swHorT3.rgb * ${skyHit("swHorT3")};
-swHorN += ${skyHit("swHorT2")} + ${skyHit("swHorT3")};`)}`;
+swHorN += ${skyHit("swHorT2")} + ${skyHit("swHorT3")};`)}
+vec3 swHorAvg = swHorSum / max(swHorN, 0.001);
+vec2 swHorAz = -viewDirectionW.xz / max(length(viewDirectionW.xz), 0.0001);
+vec4 swHorLC = S.viewProjection * vec4(swHorAz.x, 0.004, swHorAz.y, 0.0);
+vec2 swHorUv = clamp(swHorLC.xy / max(swHorLC.w, 0.0001) * 0.5 + 0.5, vec2(0.002), vec2(0.998));
+vec4 swHorL0 = swSceneTexel(vec2(clamp(swHorUv.x - 0.035, 0.002, 0.998), swHorUv.y));
+vec4 swHorL1 = swSceneTexel(swHorUv);
+vec4 swHorL2 = swSceneTexel(vec2(clamp(swHorUv.x + 0.035, 0.002, 0.998), swHorUv.y));
+vec3 swLocSum = swHorL0.rgb * ${skyHit("swHorL0")} + swHorL1.rgb * ${skyHit("swHorL1")} + swHorL2.rgb * ${skyHit("swHorL2")};
+float swLocN = ${skyHit("swHorL0")} + ${skyHit("swHorL1")} + ${skyHit("swHorL2")};${fromTier(2, `
+vec4 swHorL3 = swSceneTexel(vec2(clamp(swHorUv.x - 0.07, 0.002, 0.998), swHorUv.y));
+vec4 swHorL4 = swSceneTexel(vec2(clamp(swHorUv.x + 0.07, 0.002, 0.998), swHorUv.y));
+swLocSum += swHorL3.rgb * ${skyHit("swHorL3")} + swHorL4.rgb * ${skyHit("swHorL4")};
+swLocN += ${skyHit("swHorL3")} + ${skyHit("swHorL4")};`)}
+// The sky's colour at the horizon below this pixel: a horizontal average of the row just above the horizon (taps behind
+// geometry drop out), damped by the fixed-point average so the clouds' texture never streaks across columns. \`swHorHave\`
+// is 0 where no tap read sky (the average is then empty too).
+float swLocK = min(swLocN, 1.0) * step(0.0001, swHorLC.w) * step(abs(swHorUv.y - 0.5), 0.49);
+vec3 swHorLocal = mix(swHorAvg, swLocSum / max(swLocN, 0.001), swLocK * mix(1.0, 0.5, min(swHorN, 1.0)));
+float swHorHave = max(min(swHorN, 1.0), swLocK);`;
 }
 
 /**
@@ -2035,7 +2298,9 @@ function paintedSource(): string {
   const swellDrift = ["swLarge", "1.0 - swLarge", "swGust", "1.0 - swGust", "swLarge * 0.5 + swMedium * 0.5", "1.0 - swGust * 0.5 - swMedium * 0.5", "swGust * 0.5 + swMedium * 0.5", "1.0 - swLarge * 0.5 - swMedium * 0.5"];
   const swellBend = [[2.6, 1.7], [-3.1, -2.4], [3.7, -1.3], [-2.2, 2.8], [4.1, -1.9], [-3.5, 1.5], [2.9, -2.6], [-4.4, 2.1]];
   const visualSwell = Array.from({ length: WATER_WAVE_MAX_COMPONENTS }, (_, i) => fromTier(swellTier(i), `
-float swVm${i} = ${i === 0 ? "0.7 + 0.6" : "0.1 + 0.6"} * smoothstep(0.3, 0.7, ${swellDrift[i]});
+// Components shorter than the primary swell fade out of the shading by footprint sooner than the geometry drops them: seen a
+// few pixels a cycle they would print their rows across the mid field.
+float swVm${i} = ${i === 0 ? "0.7 + 0.6" : "0.1 + 0.6"} * smoothstep(0.3, 0.7, ${swellDrift[i]}) * mix(1.0 - smoothstep(0.08, 0.4, swPh${i}), 1.0, swPw${i});
 float swVp${i} = swP${i} + (swLarge - 0.5) * ${f(swellBend[i]![0]!)} + (swGust - 0.5) * ${f(swellBend[i]![1]!)};
 float swVs${i} = sin(swVp${i});
 float swVc${i} = cos(swVp${i});
@@ -2102,63 +2367,68 @@ vec3 swBody = mix(swShallowC * vec3(0.1, 0.24, 0.42), swOpenC, swBedTone);
 vec3 swBody = mix(swShallowC * vec3(0.16, 0.5, 0.82), swOpenC, swBedTone);
 #endif
 
-// Wave form. Close up, short wind ripples shade the water as well: from Medium two crossing families (the first two
-// capillary octaves), both everywhere, whose strengths drift in opposition across patches a few metres wide, and from
-// High a third at a wide angle to both; their phases drift across the shared noises. (One dominant family drew even,
-// parallel ridges close up, like sand ripples or ribbed fabric.) Low draws two crossing families as smoothed triangle
-// waves (ALU only, no transcendentals).
+// Wave form. The swell and the chop's rounded lumps (\`swDetailSoft\`) shade the water; close up its ripples are sparse brush
+// strokes, never continuous ridges: the first two capillary families' crests show only where a drifting noise gate,
+// stretched along the wind, is high (patches about a metre long and a third as wide, with gaps between). The two families
+// take opposite halves of the one gate, so neither lies on the other and no pattern repeats in rows. They shade as a
+// small tilt (soft tone steps, below) and as thin bright lines (\`swStroke\`). Low draws its two families as smoothed
+// triangle waves under the same gate (ALU only, no transcendentals).
 float swNearSwell = 1.0 - smoothstep(0.25, 1.2, swFoot);
-vec2 swRippleUv = swChop + (vec2(swFine, swMedium) - vec2(0.5)) * 0.45;
+vec2 swWindUv = vec2(dot(swFlowed, swWindDir), dot(swFlowed, vec2(-swWindDir.y, swWindDir.x)));
+vec2 swRippleUv = swFlowed + vec2(swMedium - 0.5, 0.0) * 0.6;${fromTier(1, `
+swRippleUv += vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, 9.0);`, `
+swRippleUv += vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, ${f(9 * GUST_NOISE / LARGE_NOISE)});`)}
+${fromTier(1, `
+float swStrokeN = swNoise(swWindUv * (vec2(0.7, 2.2) * U.slateWaterMotion.y) + vec2(swMedium - 0.5, swLarge - 0.5) * 1.5 - vec2(swTime * 0.1, 0.0));
+float swGate0 = smoothstep(0.68, 0.82, swStrokeN);
+float swGate1 = smoothstep(0.68, 0.82, 1.0 - swStrokeN);`, `
+// Low gates its strokes by the two shared noises it already has (patches about a metre wide), so no noise of its own.
+float swStrokeN = swMedium;
+float swGate0 = smoothstep(0.62, 0.76, swMedium);
+float swGate1 = smoothstep(0.62, 0.76, swLarge);`)}
 vec4 swCC0 = U.${CAPILLARY_UNIFORMS[0]};
-float swCX0 = swCC0.z * dot(swCC0.xy, swRippleUv) + swCC0.w + swMedium * 2.5 - swLarge * 1.5;
-// Low's triangle ripples fade sooner, before their regular creases read as stripes.${fromTier(1, `
-vec2 swCapRange = vec2(0.25, 0.8);`, `
-vec2 swCapRange = vec2(0.08, 0.35);`)}
-float swCFd0 = (1.0 - smoothstep(swCapRange.x, swCapRange.y, swCC0.z * swFoot * 0.64)) * (0.2 + 1.2 * swMedium * swFine);${fromTier(1, `
-// The two families' strengths in opposition across patches (the medium and large noises). All families fade together
-// where the finer one would alias: the longer one alone would draw even rows of lines across mid-distance water.
-float swRA = smoothstep(0.25, 0.75, swMedium * 0.7 + swLarge * 0.3);
 vec4 swCC1 = U.${CAPILLARY_UNIFORMS[1]};
-float swCFdR = 1.0 - smoothstep(swCapRange.x, swCapRange.y, swCC1.z * swFoot * 0.64);
+float swCK0 = swCC0.z * ${f(PAINTED_STROKE_K)};
+float swCK1 = swCC1.z * ${f(PAINTED_STROKE_K)};
+// The families run along the wind (their crests within about fifteen degrees of it, to either side), so every stroke
+// follows it; they slide slowly across it, and the gate drifts downwind.
+vec2 swSD0 = vec2(0.2079 * swWindDir.x - 0.9781 * swWindDir.y, 0.9781 * swWindDir.x + 0.2079 * swWindDir.y);
+vec2 swSD1 = vec2(0.309 * swWindDir.x + 0.9511 * swWindDir.y, -0.9511 * swWindDir.x + 0.309 * swWindDir.y);
+float swStrokeT = swTime * 2.0 * U.slateWaterWaves.z;
+float swCX0 = swCK0 * dot(swSD0, swRippleUv) - swStrokeT + swMedium * 1.6 - swLarge * 1.0 + swStrokeN * 1.2;
+// Low's triangle ripples fade sooner, before their regular creases read as stripes.${fromTier(1, `
+vec2 swCapRange = vec2(0.12, 0.45);`, `
+vec2 swCapRange = vec2(0.1, 0.4);`)}
+// Strokes exist only in the near water (about 25 m): past it they would stack into rows.
+float swStrokeNear = 1.0 - smoothstep(12.0, 26.0, swEyeDist);
+float swCFd0 = (1.0 - smoothstep(swCapRange.x, swCapRange.y, swCK0 * swFoot * 0.64)) * swStrokeNear;
+float swCFdR = (1.0 - smoothstep(swCapRange.x, swCapRange.y, swCK1 * swFoot * 0.64)) * swStrokeNear;${fromTier(1, `
 float swCE0 = exp(sin(swCX0) - 1.0);
-float swCA0 = swCFdR * (0.45 + 0.6 * swRA) * (0.6 + 0.8 * swFine);
-vec2 swRipples = swCC0.xy * (swCE0 * cos(swCX0) * swCA0);
-float swCX1 = swCC1.z * dot(swCC1.xy, swRippleUv) + swCC1.w - swMedium * 2.0 + swLarge * 1.8;
+float swCA0 = swCFd0 * swGate0 * (0.6 + 0.8 * swFine);
+vec2 swRipples = swSD0 * (swCE0 * cos(swCX0) * swCA0 * ${f(PAINTED_STROKE_SLOPE)});
+float swCX1 = swCK1 * dot(swSD1, swRippleUv) - swStrokeT * 0.8 - swMedium * 1.4 + swLarge * 1.2 - swStrokeN * 1.2;
 float swCE1 = exp(sin(swCX1) - 1.0);
-float swCA1 = swCFdR * (0.45 + 0.6 * (1.0 - swRA)) * (1.4 - 0.8 * swFine);
-swRipples += swCC1.xy * (swCE1 * cos(swCX1) * swCA1);${fromTier(2, `
-// High: a third family, about 70 degrees from the first, between the two in wavelength, on the third capillary's clock.
-vec4 swCC2 = U.${CAPILLARY_UNIFORMS[2]};
-vec2 swCD2 = vec2(swCC0.x * 0.34 - swCC0.y * 0.94, swCC0.x * 0.94 + swCC0.y * 0.34);
-float swCX2 = swCC0.z * 1.31 * dot(swCD2, swRippleUv) + swCC2.w + swMedium * 1.7 + swLarge * 2.3;
-float swCE2 = exp(sin(swCX2) - 1.0);
-float swCA2 = 0.55 * swCFdR * (0.5 + 0.7 * swMedium);
-swRipples += swCD2 * (swCE2 * cos(swCX2) * swCA2);`, `
-float swCE2 = 0.0;
-float swCA2 = 0.0;`)}`, `
-// The triangle families bend along a shared slow sine (one transcendental), so they curve like High's families instead
-// of running as straight, evenly spaced lines that converge toward the horizon like a rake.
-float swLowBend = sin(dot(swRippleUv, vec2(0.83, 0.55)) * swCC0.z * 0.29 + swLarge * 4.0);
+float swCA1 = swCFdR * swGate1 * (1.4 - 0.8 * swFine);
+swRipples += swSD1 * (swCE1 * cos(swCX1) * swCA1 * ${f(PAINTED_STROKE_SLOPE)});
+// The strokes: thin crest lines inside the gate, thinning toward its ends (the gate scales the crest before the cut).
+float swStroke = max(smoothstep(0.66, 0.92, swCE0 * swCFd0 * swGate0), smoothstep(0.66, 0.92, swCE1 * swCFdR * swGate1));`, `
+// The triangle families bend along a shared slow sine (one transcendental), so they curve instead of running as straight,
+// evenly spaced lines that converge toward the horizon like a rake.
+float swLowBend = sin(dot(swRippleUv, vec2(0.83, 0.55)) * swCK0 * 0.29 + swLarge * 4.0);
 float swRw = fract(swCX0 * ${f(1 / (2 * Math.PI))} + swMedium * 0.6 + swLowBend * 0.24);
 float swTri = abs(swRw * 2.0 - 1.0);
-// A second family across the first, the two fading in opposition across drifting patches (no regular stripes).
-vec4 swCC1 = U.${CAPILLARY_UNIFORMS[1]};
-float swRw1 = fract((swCC1.z * dot(swCC1.xy, swRippleUv) + swCC1.w) * ${f(1 / (2 * Math.PI))} - swMedium * 0.9 + swLarge * 0.5 - swLowBend * 0.19);
+float swRw1 = fract((swCK1 * dot(swSD1, swRippleUv) - swStrokeT * 0.8) * ${f(1 / (2 * Math.PI))} - swMedium * 0.9 + swLarge * 0.5 - swLowBend * 0.19);
 float swTri1 = abs(swRw1 * 2.0 - 1.0);
-float swRA = smoothstep(0.3, 0.7, swMedium);
-vec2 swRipples = swCC0.xy * (sign(swRw - 0.5) * swTri * (1.0 - swTri) * (1.4 * swRA) * swCFd0)
-  + swCC1.xy * (sign(swRw1 - 0.5) * swTri1 * (1.0 - swTri1) * (1.3 - 1.3 * swRA) * (1.0 - smoothstep(0.08, 0.35, swCC1.z * swFoot * 0.64)));
-// Low evaluates one chop octave, which close up reads as regular stripes: a crossing wavelet along the second octave's
-// direction, its phase bent by the shared noises, breaks them up.
+vec2 swRipples = swSD0 * (sign(swRw - 0.5) * swTri * (1.0 - swTri) * (1.6 * swGate0 * swCFd0 * ${f(PAINTED_STROKE_SLOPE / 0.45)}))
+  + swSD1 * (sign(swRw1 - 0.5) * swTri1 * (1.0 - swTri1) * (1.5 * swGate1 * swCFdR * ${f(PAINTED_STROKE_SLOPE / 0.45)}));
+// Low evaluates one chop octave, which close up reads as regular stripes: a broad crossing wavelet along the second
+// octave's direction, its phase bent by the shared noises, breaks them up.
 vec4 swOCb = U.${CHOP_UNIFORMS[1]};
 float swLw = fract((swOCb.z * dot(swOCb.xy, swChop) + swOCb.w + swChopShift * ${f(CHOP_SHIFT[1])}${chopFm(1)}) * ${f(1 / (2 * Math.PI))} + swMedium * 1.3 - swLarge * 0.7 + swLowBend * 0.16);
 float swLt = abs(swLw * 2.0 - 1.0);
-swRipples += swOCb.xy * (sign(swLw - 0.5) * swLt * (1.0 - swLt) * 1.0 * (1.0 - smoothstep(0.06, 0.2, swOCb.z * swFoot)) * (0.4 + 0.9 * swMedium));`)}
-float swCloseUp = 1.0 - smoothstep(0.01, 0.06, swFoot);${fromTier(1, `
-// The families' crests together (each 0 to 1): highest only where their crests meet, so crest lights fall in short,
-// scattered pieces rather than along one family's even rows.
-float swRippleCrest = (swCE0 * swCA0 + swCE1 * swCA1 + swCE2 * swCA2) / max(swCA0 + swCA1 + swCA2, 0.0001);`, `
-float swRippleCrest = (1.0 - swTri) * (1.0 - swTri);`)}
+swRipples += swOCb.xy * (sign(swLw - 0.5) * swLt * (1.0 - swLt) * 0.8 * (1.0 - smoothstep(0.06, 0.2, swOCb.z * swFoot)) * (0.4 + 0.9 * swMedium));
+float swStroke = max(smoothstep(0.55, 0.9, 1.0 - swTri) * swGate0 * swCFd0, smoothstep(0.55, 0.9, 1.0 - swTri1) * swGate1 * swCFdR);`)}
+float swCloseUp = 1.0 - smoothstep(0.01, 0.06, swFoot);
 // Seen from above the swell's crossing components print a regular pattern: their shading drifts in strength across
 // wide patches there.
 float swMacro = smoothstep(0.2, 0.8, swLarge * 0.55 + swGust * 0.25 + swMedium * 0.2);
@@ -2176,7 +2446,11 @@ vec2 swSwellShadeG = mix(swGradient, swVisG, swVisMix);
 // Low's single chop octave would draw regular satin ribbons: it shades less, unevenly.${fromTier(1, `
 float swChopShade = 1.0 + 0.4 * swCloseUp;`, `
 float swChopShade = 0.15 + 0.35 * swMedium;`)}
-vec2 swShadeSlope = swSwellShadeG * ((1.0 + 0.5 * swNearSwell) * swPatch) + swDetail * (swChopGain * swChopShade) + swRipples * (U.slateWaterMotion.z * (0.7 + 0.4 * swCloseUp)) + swRipple * 2.0;
+// The rounded lumps are a near-water form (no crest sparsity to hide rows, so mid-field they would print a lattice): out to
+// about ten metres they shade the water, past thirty the sharp-crested chop does again.
+float swLumpNear = 1.0 - smoothstep(10.0, 32.0, swEyeDist);
+vec2 swChopSlope = mix(swDetail, swDetailSoft, swLumpNear);
+vec2 swShadeSlope = swSwellShadeG * ((1.0 + 0.5 * swNearSwell) * swPatch) + swChopSlope * (swChopGain * swChopShade) + swRipples * (U.slateWaterMotion.z * (0.7 + 0.4 * swCloseUp)) + swRipple * 2.0;
 vec3 swShadeN = normalize(vec3(swBaseX - swShadeSlope.x, 1.0, swBaseZ - swShadeSlope.y));
 float swNL = dot(swShadeN, swL);
 float swFacing = clamp(0.5 + (swNL - swL.y) * 1.8, 0.0, 1.0);
@@ -2191,7 +2465,7 @@ float swWaveT = clamp(swSwellT + swChopH * 0.3, 0.0, 1.0);
 // the gust and large noises (tens of metres, along the crests as much as across them), so far crest rows fade in and
 // out in patches instead of banding the whole sea into even stripes.
 float swHeightK = mix(1.0, 0.15 + 0.85 * swMacro, swTopDown)
-  * mix(1.0, 0.3 + 0.7 * smoothstep(0.3, 0.7, swGust * 0.6 + swLarge * 0.4), smoothstep(0.35, 1.6, swFoot));
+  * mix(1.0, 0.3 + 0.7 * smoothstep(0.3, 0.7, swGust * 0.6 + swLarge * 0.4), smoothstep(0.02, 0.25, swFoot));
 // The face rising toward a crest away from the eye, relative to the primary swell's own slope: the water under the crest
 // is thin there and light passes through it toward the viewer.
 float swRise = dot(swPrimG, -swEyeH) * swPrimLen / max(swPrimAmp, 0.0001);
@@ -2200,29 +2474,47 @@ float swRise = dot(swPrimG, -swEyeH) * swPrimLen / max(swPrimAmp, 0.0001);
 float swThin = smoothstep(0.0, 0.6, swRise) * smoothstep(0.55, 0.85, swGraze);${fromTier(2, `
 float swGlowH = clamp(0.5 + 0.5 * swPrimN + swChopH * 0.5, 0.0, 1.2);`, `
 float swGlowH = clamp(0.5 + 0.5 * swPrimN + swChopH * 0.3, 0.0, 1.2);`)}
-float swUnder = smoothstep(0.55, 0.85, swGlowH) * (1.0 - 0.7 * smoothstep(0.97, 1.12, swGlowH));
+// A thin band just under each crest line: wide enough to read near the eye, a few pixels only farther out (fading by footprint).
+// Measured in metres from the crest line (the height difference over the primary swell's slope), so a broad flat swell,
+// whose height barely changes, gets no wide band: a highlight about half a metre wide on steep crests only.
+float swPrimSlope = length(swPrimG);
+float swCrestDist = abs(swGlowH - 0.86) * swPrimAmp * 2.0 / max(swPrimSlope, 0.002);
+float swUnder = (1.0 - smoothstep(0.1, 0.45, swCrestDist)) * smoothstep(0.06, 0.18, swPrimSlope);
 float swCrestFace = swUnder * swThin * mix(1.0, swHeightK, 0.8);
-// Three tones by height: navy troughs, blue-teal flanks and turquoise tops (Shallow Color in part). Seen from above the
-// swell's interference would print a dimple lattice, so the height contrast eases toward steep views, unevenly; over
-// shallows the bed's colour dominates instead.
-float swHeightT = clamp(0.5 + (swSwellT - 0.5) * swHeightK + swChopH * (0.25 + 0.5 * swCloseUp) * min(swChopShade, 1.0), 0.0, 1.0);
-vec3 swTroughC = swBody * vec3(0.5, 0.56, 0.68);
-vec3 swFlankC = swBody * vec3(0.92, 1.12, 1.08) * 1.25;
-vec3 swTopC = mix(swBody * vec3(1.0, 1.3, 1.18), swShallowC * 0.5, 0.25 * swBedTone) * 1.35;
-vec3 swBodyLit = mix(swTroughC, swFlankC, smoothstep(0.1, 0.55, swHeightT));
-swBodyLit = mix(swBodyLit, swTopC, smoothstep(0.55, 0.95, swHeightT) * 0.9);
-// Faces turned to the sun lean a little lighter and greener; close up the ripples shade it too.
-swBodyLit = mix(swBodyLit, swBodyLit * vec3(0.9, 1.12, 1.0), swShade * 0.5);
-// Close up the light falls on the ripples in two soft painted steps rather than a smooth satin gradient, gently: hard
-// terraces on every ripple's lit and shaded side read as sand dunes.
-float swShadeClose = clamp(0.5 + (swNL - swL.y) * 3.0, 0.0, 1.0);
-swShadeClose = smoothstep(0.2, 0.45, swShadeClose) * 0.5 + smoothstep(0.55, 0.8, swShadeClose) * 0.5;
-swBodyLit = mix(swBodyLit, mix(swBodyLit * vec3(0.8, 0.86, 0.93), swBodyLit * vec3(1.0, 1.2, 1.15), swShadeClose), swCloseUp * 0.45);
-// The chop's sharp crests near the eye are painted ridges of lighter, greener water over darker hollows.
-float swRidge = smoothstep(0.72, 0.93, swOW0) * (1.0 - smoothstep(0.15, 0.5, swOC0.z * swFoot)) * smoothstep(0.1, 0.4, swChopGain);
-swBodyLit = mix(swBodyLit, swBodyLit * vec3(1.05, 1.3, 1.25), swRidge * 0.55);
-// Ripple crests close up are crisp painted touches of light where the families' crests meet.
-swBodyLit = mix(swBodyLit, swBodyLit * vec3(1.1, 1.55, 1.48), smoothstep(0.62, 0.85, swRippleCrest) * clamp(swCFd0 * 1.6, 0.0, 1.0) * swCloseUp * 0.7);
+// Four broad tones by the primary swell's height, with soft edges: ultramarine troughs, deep cyan flanks, bright cyan-teal
+// backs and pale turquoise tops (Shallow Color in part). The edges' width follows the pixel's change of height, so far
+// water blurs into a gradient instead of aliasing. Seen from above the swell's interference would print a dimple
+// lattice, so the height contrast eases toward steep views, unevenly; over shallows the bed's colour dominates instead.
+// The chop only lifts the tones by its rounded lumps (\`swChopHs\`), never by its ridges.
+float swHeightT = clamp(0.5 + (swSwellT - 0.5) * swHeightK + swChopHs * swLumpNear * (0.3 + 0.35 * swCloseUp) * min(swChopShade, 1.0), 0.0, 1.0);
+float swToneW = 0.05 + min(fwidth(swHeightT) * 1.2, 0.2) + 0.2 * smoothstep(0.05, 0.6, swFoot);
+float swTones = smoothstep(0.3 - swToneW, 0.3 + swToneW, swHeightT) + smoothstep(0.5 - swToneW, 0.5 + swToneW, swHeightT) + smoothstep(0.76 - swToneW, 0.76 + swToneW, swHeightT);
+vec3 swTone0 = swBody * vec3(0.34, 0.5, 0.9);
+vec3 swTone1 = swBody * vec3(0.8, 1.04, 1.12) * 1.1;
+vec3 swTone2 = swBody * vec3(1.0, 1.3, 1.26) * 1.25;
+vec3 swTone3 = mix(swBody * vec3(1.0, 1.3, 1.3), swShallowC * 0.5, 0.25 * swBedTone) * 1.3;
+vec3 swBodyLit = mix(swTone0, swTone1, clamp(swTones, 0.0, 1.0));
+swBodyLit = mix(swBodyLit, swTone2, clamp(swTones - 1.0, 0.0, 1.0));
+swBodyLit = mix(swBodyLit, swTone3, clamp(swTones - 2.0, 0.0, 1.0));
+swBodyLit = max(mix(vec3(dot(swBodyLit, swLumW)), swBodyLit, 1.3), vec3(0.0));
+// Light through the thin tops toward the sun turns them yellow-green.
+float swToSun = clamp(dot(-swEyeH, swSunH) * 0.5 + 0.5, 0.0, 1.0);
+swToSun *= swToSun;
+${fromTier(1, `
+swBodyLit = mix(swBodyLit, swBodyLit * vec3(1.15, 1.08, 0.55), clamp(swTones - 2.0, 0.0, 1.0) * swToSun * swSunUp * smoothstep(0.3, 0.7, swGraze) * 0.2);`)}
+// Faces turned to the sun lean lighter and greener, in three soft steps (their edges widen with the pixel's change of
+// facing) rather than a smooth satin gradient. The facing comes from the swell and the chop's rounded lumps; the strokes
+// below only tilt it a little, so no ripple draws a step of its own. Low keeps the smooth gradient.${fromTier(1, `
+float swFaceW = 0.06 + min(fwidth(swFacing) * 1.2, 0.2) + 0.3 * smoothstep(0.05, 0.5, swFoot);
+float swLitSteps = (smoothstep(0.32 - swFaceW, 0.32 + swFaceW, swFacing) + smoothstep(0.5 - swFaceW, 0.5 + swFaceW, swFacing) + smoothstep(0.68 - swFaceW, 0.68 + swFaceW, swFacing)) * 0.333333;
+swBodyLit = mix(swBodyLit, mix(swBodyLit * vec3(0.8, 0.88, 1.0), swBodyLit * vec3(1.02, 1.2, 1.1), swLitSteps), 0.6 * (1.0 - 0.7 * smoothstep(0.05, 0.5, swFoot)));`, `
+float swLitSteps = swShade;
+swBodyLit = mix(swBodyLit, swBodyLit * vec3(0.9, 1.12, 1.0), swShade * 0.5);`)}
+// The chop's crests near the eye lighten the water in broad patches only (not along every ridge).
+float swRidge = smoothstep(0.72, 0.93, swOW0) * (1.0 - smoothstep(0.15, 0.5, swOC0.z * swFoot)) * smoothstep(0.1, 0.4, swChopGain) * smoothstep(0.35, 0.75, swMedium);
+swBodyLit = mix(swBodyLit, swBodyLit * vec3(1.05, 1.3, 1.25), swRidge * 0.35);
+// Ripple strokes: thin bright cyan lines (the ripples' crests inside their gate), brightest on the faces that catch the light.
+swBodyLit = mix(swBodyLit, swBodyLit * vec3(1.15, 1.6, 1.5), swStroke * (0.3 + 0.7 * swLitSteps) * 0.8);
 // Sky light (its hue in part) and the sun; a floor keeps the colours readable lit only by an environment.
 vec3 swAmbTint = mix(vec3(1.0), swAmbHue, 0.45);
 vec3 swKeyTint = mix(vec3(1.0), swKeyHue, 0.6);
@@ -2238,14 +2530,18 @@ float swGlow = 0.0;${ifDefined(subsurface, `
 // lobe around the light's own direction bent by the swell), weaker from other sides with the sky's light. A sun on the
 // horizon is dim and red and the water absorbs it, so a warm low sun glows less.
 float swSss = U.slateWaterLook.w;
-float swToSun = clamp(dot(-swEyeH, swSunH) * 0.5 + 0.5, 0.0, 1.0);
-swToSun *= swToSun;
 vec3 swSssDir = normalize(swL + swPrimNormal * 0.5);
 float swBack = clamp(dot(swV, -swSssDir), 0.0, 1.0);
 swBack *= swBack;
 swBack *= swBack;
 float swGlowSun = swKeyLum * smoothstep(0.02, 0.15, swL.y) * (1.0 - 0.6 * swWarm * swLowSun);
-swGlow = min(swCrestFace * (swGlowSun * (0.2 + 0.8 * swToSun + 1.2 * swBack) + swAmbLum * 0.25) * swSss, 1.0);
+// Thin faces glow where the water is thin and the crest is near and in the foreground: the glow fades with the pixel
+// footprint and the distance (a crest a few pixels thick would otherwise be a neon line across the whole view), and
+// varies along each crest by the wide noises, so a long crest glows in patches instead of one unbroken band.
+float swGlowNear = (1.0 - smoothstep(0.06, 0.3, swFoot)) * exp(-swEyeDist * 0.07);
+float swGlowAlong = 0.1 + 0.9 * smoothstep(0.3, 0.7, swMedium * 0.5 + swLarge * 0.3 + swGust * 0.2);
+swGlow = min(swCrestFace * (swGlowSun * (0.2 + 0.8 * swToSun + 1.2 * swBack) + swAmbLum * 0.25) * swSss, 1.0) * swGlowAlong * swGlowNear;
+swGlow = min(swGlow, 0.35);
 swLit += swGlowC * swGlow;`)}
 
 // Sky: the scene's background (or fog) colour, deeper overhead and brighter at the horizon, tinted by the sky light's
@@ -2279,11 +2575,11 @@ swZenith = mix(swZenith, swTopCopy, swHorOn * min(swTopN, 1.0) * 0.25);
 // to the eye: faces turned toward the eye show the water's body, crests and the backs of waves mirror the sky, so each
 // wave reads as a silhouette. Under an overcast sky the mirror is flatter and softer.
 float swFar = smoothstep(0.12, 1.0, swFoot);
-vec2 swReflSlope = (swSwellShadeG + swDetail * (swChopGain * 0.3 * (1.0 - swFar) * min(swChopShade, 1.0))) * mix(1.0, swPatch, 0.6) * (1.0 - 0.6 * swGrey);
+vec2 swReflSlope = (swSwellShadeG + swChopSlope * (swChopGain * 0.3 * (1.0 - swFar) * min(swChopShade, 1.0))) * mix(1.0, swPatch, 0.6) * (1.0 - 0.6 * swGrey) * (1.0 - 0.55 * smoothstep(0.03, 0.2, swFoot) * (1.0 - smoothstep(0.6, 2.0, swFoot)));
 // Close up the ripples and some more of the chop tilt it too, so near water reads glassy; the full chop would mirror
 // the bright horizon in streaks that read as foam.
 float swReflNear = 1.0 - smoothstep(0.03, 0.3, swFoot);
-swReflSlope += (swDetail * (swChopGain * 0.3 * min(swChopShade, 1.0)) + swRipples * (U.slateWaterMotion.z * 0.8)) * swReflNear;
+swReflSlope += (swChopSlope * (swChopGain * 0.3 * min(swChopShade, 1.0)) + swRipples * (U.slateWaterMotion.z * 0.8)) * swReflNear;
 vec3 swReflN = normalize(vec3(swBaseX - swReflSlope.x, 1.0, swBaseZ - swReflSlope.y));
 float swNdotV = clamp(dot(swReflN, swV), 0.0, 1.0);
 float swFx = 1.0 - swNdotV;
@@ -2348,14 +2644,19 @@ float swSheen8 = swSheen2 * swSheen2;
 swSheen8 *= swSheen8;
 float swSheen64 = swSheen8 * swSheen8;
 swSheen64 *= swSheen64;
-float swSheen = swSheen64 * 0.1 * swSunVis * (1.0 - 0.6 * swGrey);
+float swPathFar0 = smoothstep(0.15, 3.0, swFoot);
+float swSheen = swSheen64 * 0.1 * swSunVis * (1.0 - 0.6 * swGrey) * (1.0 - 0.5 * swPathFar0);
 // Marks and sparkles need a sun that stands out (none under an overcast or storm sky, where only the sheen and halo
 // stay), and only where the sun's reflection falls on the swell's broad shape (a wide lobe on the low-frequency normal):
 // close water looked down into off the sun's line never sparkles.
 float swGlintVis = swSunVis * smoothstep(0.15, 0.6, swClear);
 vec2 swGateSlope = swGradient + swDetail * (swChopGain * 0.3);
 float swGateA = dot(reflect(-swV, normalize(vec3(swBaseX - swGateSlope.x, 1.0, swBaseZ - swGateSlope.y))), swL);
-float swSunGate = smoothstep(1.0 - swLobeW0 * 4.0, 1.0 - swLobeW0 * 1.2, swGateA);
+// A real sun path narrows and dims with distance (the reflection's lobe is compressed by the foreshortening, as
+// Realistic's \`swFarSun\`): past a few tens of metres its gate closes to about half its width and its energy falls, so
+// the far path never washes the whole sea to white.
+float swPathFar = smoothstep(0.15, 3.0, swFoot);
+float swSunGate = smoothstep(1.0 - swLobeW0 * 4.0 * (1.0 - 0.5 * swPathFar), 1.0 - swLobeW0 * 1.2 * (1.0 - 0.5 * swPathFar), swGateA);
 // Marks (\`swMark\`): streaks drawn out across the view (perspective lengthens them further), anchored to the water's
 // rest surface so they ride the waves instead of sliding over them, each lit for a fixed share of a slow cycle and
 // brightening and fading smoothly over it, so none switches on or off between frames; the facets set how bright a lit
@@ -2369,7 +2670,17 @@ vec2 swDashUx = dFdx(swDashUv);
 vec2 swDashUy = dFdy(swDashUv);
 vec2 swDashAcross = vec2(-swEyeH.y, swEyeH.x);
 float swDashP = 0.2 + 0.6 * swFacet;
-float swDashLevel = clamp(log2(max(length(swDashUx), length(swDashUy)) * 14.0), -3.0, 5.0);
+// The sun's column: the path narrows into a column toward the sun with a bright core: wide near the eye, a few degrees
+// across far away (the angle between the view's heading and the sun's azimuth; \`swColEdge\` is 1 - cos of its half width).
+// Near the eye the marks are also larger and sparser (their cells at least about 22 pixels deep instead of 14).
+float swColCos = 1.0 - dot(-swEyeH, swSunH);
+float swColEdge = mix(0.08, 0.006, smoothstep(0.1, 1.5, swFoot));
+float swCol = 1.0 - smoothstep(swColEdge * 0.2, swColEdge, swColCos);
+${fromTier(1, `
+float swColCore = 1.0 - smoothstep(0.0, swColEdge * 0.25, swColCos);`, `
+float swColCore = 0.0;`)}
+float swDashCell = mix(22.0, 14.0, swPathFar0);
+float swDashLevel = clamp(log2(max(length(swDashUx), length(swDashUy)) * swDashCell), -3.0, 5.0);
 float swDashL0 = floor(swDashLevel);
 float swDashS0 = exp2(-swDashL0);
 float swDashA = swMark(swDashUv * swDashS0, swDashUx * swDashS0, swDashUy * swDashS0, swDashAcross, vec2(0.42, 0.11), 0.5, swTime, vec2(41.0, 13.0) + vec2(7.13, 3.71) * swDashL0);
@@ -2377,8 +2688,8 @@ float swDashB = swMark(swDashUv * (swDashS0 * 0.5), swDashUx * (swDashS0 * 0.5),
 float swDash = mix(swDashA, swDashB, fract(swDashLevel));
 // Past the coarsest octave (about a hundred metres per cell's depth, at the horizon) an even share.
 swDash = mix(swDash * (0.6 + 1.6 * swFacet), swDashP * 0.2, smoothstep(4.0, 5.0, log2(max(length(swDashUx), length(swDashUy)) * 14.0)));
-float swPath = (0.2 + 0.8 * swFacet) * swSunGate * swDash * 1.5 * swGlintVis * (1.0 + 0.6 * swLowSun);
-swPath = 0.95 * (1.0 - exp(-swPath * 1.6));
+float swPath = (0.2 + 0.8 * swFacet) * swSunGate * swDash * 1.5 * swGlintVis * (1.0 + 0.6 * swLowSun) * swCol * (0.35 + 0.65 * swCol) * (1.0 + 0.6 * swColCore);
+swPath = 0.95 * (1.0 - exp(-swPath * 1.6)) * (1.0 - 0.45 * swPathFar);
 float swHaloA = max(dot(swRefl, swL), 0.0);
 float swHalo2 = swHaloA * swHaloA;
 float swHalo8 = swHalo2 * swHalo2;
@@ -2387,7 +2698,7 @@ float swHalo64 = swHalo8 * swHalo8;
 swHalo64 *= swHalo64;
 swHalo64 *= swHalo64;
 // The soft glow lies on far water, where many facets average into it; close up the dashes carry the sun alone.
-float swHalo = (swHalo8 * swHalo8 * 0.05 + swHalo64 * 0.22) * swSunVis * smoothstep(0.82, 0.97, swGraze);
+float swHalo = (swHalo8 * swHalo8 * 0.05 + swHalo64 * 0.22) * swSunVis * smoothstep(0.82, 0.97, swGraze) * (1.0 - 0.5 * swPathFar);
 float swSpark = 0.0;${ifDefined(sparkles, fromTier(1, `
 vec2 swSparkUv = swFlowed * (1.1 * U.slateWaterMotion.y);
 vec2 swSparkId = floor(swSparkUv);
@@ -2400,11 +2711,15 @@ float swArms = 1.0 - smoothstep(0.02, 0.05, swSparkPx);
 vec2 swSparkA = abs(swSparkD);
 float swStar = max(0.0, 1.0 - length(swSparkD) * 9.0);
 swStar = swStar * swStar + (max(0.0, 1.0 - swSparkA.x * 45.0) * max(0.0, 1.0 - swSparkA.y * 5.0) + max(0.0, 1.0 - swSparkA.y * 45.0) * max(0.0, 1.0 - swSparkA.x * 5.0)) * swArms * 0.8;
-float swSparkOn = step(1.0 - 0.7 * U.slateWaterLook.z, swSparkRnd) * (0.3 + 0.7 * swTwinkle);
+float swSparkOn = step(1.0 - 0.25 * U.slateWaterLook.z, swSparkRnd) * (0.3 + 0.7 * swTwinkle);
 float swSparkFade = smoothstep(0.03, 0.08, swSparkPx);
-float swSparkLobe = smoothstep(1.0 - swLobeW * 4.0, 1.0 - swLobeW * 0.5, swLobeA) * (swLobeW0 / swLobeW) * swGlintVis * swSunGate;
+float swSparkLobe = smoothstep(1.0 - swLobeW * 4.0, 1.0 - swLobeW * 0.5, swLobeA) * (swLobeW0 / swLobeW) * swGlintVis * swSunGate * swCol * swCol;
 swSpark = mix(swStar * swSparkOn, 0.05 * U.slateWaterLook.z, swSparkFade) * swSparkLobe;`))}
 vec3 swSpec = swKey * mix(vec3(1.0), swKeyHue, 0.55) * (swPath + swSpark * 2.2 + swSheen) + swKey * swKeyTint * swHalo;
+// Far away the marks, sheen and halo add up: a soft maximum keeps the far path's luminance below white (its share of the sun's
+// light, compressed more the farther it lies), so only the near core reaches white.
+float swSpecN = dot(swSpec, swLumW) / max(swKeyLum, 0.001);
+swSpec *= 1.0 / (1.0 + 0.9 * smoothstep(0.1, 1.5, swFoot) * swSpecN);
 
 // Shallow clarity: the water column's transmittance (Opacity caps it): what lies below shows through, Shallow Color
 // fills what it absorbs. It is per channel (from Shallow Color, CPU): red goes within a metre or two, green and blue
@@ -2417,11 +2732,12 @@ swTransRgb *= mix(vec3(1.0), vec3(0.45, 0.84, 0.95), smoothstep(0.0, 0.35, swDep
 float swTrans = dot(swTransRgb, vec3(0.2, 0.45, 0.35));
 // Caustics: a drifting network of light on the bed under shallow water (the iso-lines of two drifting noises at the
 // point the view ray reaches the bed), faded with depth and before the lines would alias.
-vec2 swBedXZ = swWorld - swV.xz / max(swUp, 0.25) * swDepth;
+// The swell bends it: the network is carried by the primary swell's slope, so it breathes with the waves.
+vec2 swBedXZ = swWorld - swV.xz / max(swUp, 0.25) * swDepth + swPrimG * 5.0;
 float swCa = swNoise(swBedXZ * 0.85 + vec2(swTime * 0.11, swTime * 0.07));
 float swCb = swNoise(swBedXZ * 1.25 + vec2(swCa * 1.2 - swTime * 0.09, 0.4 - swTime * 0.05));
-float swCaustic = clamp(1.0 - abs(swCa + swCb - 1.0) * 7.0, 0.0, 1.0);
-swCaustic = swCaustic * swCaustic * smoothstep(0.05, 0.4, swDepth) * (1.0 - smoothstep(1.5, 5.0, swDepth)) * (1.0 - smoothstep(0.15, 0.5, swFoot)) * swSunVis;${ifDefined(REFRACTION, `
+float swCaustic = clamp(1.0 - abs(swCa + swCb - 1.0) * 5.5, 0.0, 1.0);
+swCaustic = swCaustic * swCaustic * 1.25 * smoothstep(0.05, 0.4, swDepth) * (1.0 - smoothstep(0.8, 2.6, swDepth)) * (1.0 - smoothstep(0.15, 0.5, swFoot)) * swSunVis;${ifDefined(REFRACTION, `
 // As Realistic: where the copy holds no geometry behind the water (its sky depth) there is no bed, so open water
 // transmits no background and lights no caustics there; its own light fills in.
 float swVoid = step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swSceneZ);
@@ -2441,7 +2757,6 @@ swTrans *= 0.32;
 float swFoamScale = 0.55 * U.slateWaterMotion.y;
 float swNearFoam = 1.0 - smoothstep(0.4, 1.2, swFoot * 0.43);
 float swEdgeWobble = (swMedium - 0.5) * 0.6 * swNearFoam + (swLarge - 0.5) * 0.5;
-vec2 swWindUv = vec2(dot(swFlowed, swWindDir), dot(swFlowed, vec2(-swWindDir.y, swWindDir.x)));
 float swCrestNoise = swNoise(swWindUv * vec2(0.8, 0.3) * U.slateWaterMotion.y + vec2(swMedium - 0.5, swLarge - 0.5) * 1.3);
 // Shore: the band follows the waves where the depth (as if the bed shelved 1:10) is nearer, but reaches at most one and
 // a half foam widths beyond the rest shoreline's band, so a flat shallow bar far from the shore stays clear.
@@ -2453,7 +2768,21 @@ float swShoreUnit = min(min(swRestShore, max(swDepthShore, swRestShore - swFoamW
 // Over terrain the band starts at the swash's edge instead of the waterline (it rides the run-up and the backwash);
 // elsewhere it breathes with the swash.
 float swShoreSw = mix(swShoreUnit, max(swSwashEdgeS, 0.0) / swFoamWidth, swSwashZone);
-float swShoreD = (1.0 - smoothstep(0.0, mix(0.9 + 0.9 * swSwashRun, 1.5, swSwashZone), swShoreSw + swEdgeWobble * 0.5)) * (0.55 + 0.45 * (1.0 - smoothstep(0.0, 0.35, swShoreSw)));
+// Scallops: the band's seaward edge bulges in rounded lobes along the shore (arches of a sine, a few metres across, their
+// phase drifting with the noises), and long thin lines trail seaward from the surf (a noise high across the shore and
+// low along it); both along the shore's own direction.
+float swAlong = 0.0;
+float swScallop = 0.5;
+float swSurfLines = 0.0;
+if (swRestShore < ${f(SHORE[1] - 0.001)}) {
+  vec2 swScN = mix(swBankGrad / max(length(swBankGrad), 0.000001), swShoreNormal / max(length(swShoreNormal), 0.0001), step(0.5, length(swShoreNormal)));
+  swAlong = dot(swWorld, vec2(-swScN.y, swScN.x));
+  swScallop = abs(sin(swAlong * 0.55 + swMedium * 2.5 + swLarge * 3.0));
+  if (swSurfBreak > 0.1) {
+    swSurfLines = smoothstep(0.64, 0.82, swNoise(vec2(swAlong * 1.8 + swMedium * 2.0, swRestShore * 0.09 - swTime * 0.02 + swLarge))) * smoothstep(0.1, 0.5, swSurfBreak) * 0.95 * (1.0 - smoothstep(0.05, 0.25, swFoot));
+  }
+}
+float swShoreD = (1.0 - smoothstep(0.0, mix(0.9 + 0.9 * swSwashRun, 1.5, swSwashZone), swShoreSw + swEdgeWobble * 0.5 - (swScallop - 0.5) * 0.9 * swNearFoam)) * (0.55 + 0.45 * (1.0 - smoothstep(0.0, 0.35, swShoreSw)));
 swShoreD = max(swShoreD * swSwashCover, swSwashFoam * 0.85);
 // Waves washing in: soft lace lines riding each bore toward the shore (\`swBorePhase\`), thinning as they arrive, each
 // trailing fading lace. Low draws the swash front alone.
@@ -2518,7 +2847,7 @@ vec2 swStreakUv = swWindUv * vec2(0.12, 0.6) + vec2(swMedium - 0.5, swGust - 0.5
 float swStreakN = mix(swNoise(swStreakUv), 0.5, smoothstep(0.25, 0.7, swFoot)) * 0.8 + swGust * 0.2;
 float swOpenCut = 0.85 - 0.3 * U.slateWaterSunColor.w;
 swStreakD = smoothstep(swOpenCut, swOpenCut + 0.2, swStreakN) * clamp(0.45 + swTrailD + swCapD - max(swCrest, 0.0) * 0.2, 0.0, 1.0) * 0.72 * smoothstep(0.0, 0.3, U.slateWaterSunColor.w) * swCalm * (1.0 - smoothstep(0.25, 0.7, swFoot));`))}
-float swDensity = max(max(clamp(max(max(swShoreD, swWash), swCapD) * swFoamAmount, 0.0, 1.0), clamp(swContactD * swContactStrength, 0.0, 1.0)), clamp(max(swTrailD, swStreakD) * swFoamAmount, 0.0, 1.0));
+float swDensity = max(max(clamp(max(max(swShoreD, swWash), max(max(swCapD, swSurfBreak), swSurfLines)) * swFoamAmount, 0.0, 1.0), clamp(swContactD * swContactStrength, 0.0, 1.0)), clamp(max(swTrailD, swStreakD) * swFoamAmount, 0.0, 1.0));
 // The lace pattern: low along curved strands (a noise's mid iso-lines), so thinning foam keeps strands and opens holes.
 vec2 swFoamUv = swFlowed * swFoamScale + swWindDir * (swTime * 0.05) + vec2(swMedium, swLarge) * 0.6;${fromTier(1, `
 float swLaceA = swNoise(swFoamUv * 1.6 + vec2(swFine - 0.5, swMedium - 0.5) * 0.3);
@@ -2526,14 +2855,13 @@ float swLaceB = swNoise(swFoamUv * 3.7 + vec2(swLaceA * 1.6, 3.1 - swTime * 0.04
 float swFoamP = swLaceA * 0.45 + swLaceB * 0.35 + abs(swLaceA * 2.0 - 1.0) * 0.2;${fromTier(2, `
 // High up thinning foam also opens round holes (a jittered cell pattern bent by the lace), so it reads as bubbly lace
 // rather than veins; finer lace nibbles the edges up close. Both fade before they would alias.
-// Stretched along the wind and sized by the lace noise, so the holes vary and streak instead of punching even rounds
-// (a Dalmatian or Swiss-cheese print).
-vec2 swBubble = swWeb(vec2(dot(swFoamUv, swWindDir) * 0.4, dot(swFoamUv, vec2(-swWindDir.y, swWindDir.x))) * 2.6 + vec2(swLaceA, swLaceB) * 0.8);
-float swHoleR = 0.06 + 0.32 * swLaceB;
-float swHole = 1.0 - smoothstep(swHoleR, swHoleR + 0.3, swBubble.x);
-swFoamP = mix(swFoamP, swHole * 0.75 + swFoamP * 0.35, 0.6 * (1.0 - smoothstep(0.25, 0.7, swFoot * swFoamScale * 2.6)));
+// Few, large and round, sized by the lace noise so they vary (many small holes read as a Dalmatian or Swiss-cheese print).
+vec2 swBubble = swWeb(vec2(dot(swFoamUv, swWindDir) * 0.7, dot(swFoamUv, vec2(-swWindDir.y, swWindDir.x))) * 1.7 + vec2(swLaceA, swLaceB) * 0.6);
+float swHoleR = 0.14 + 0.3 * swLaceB;
+float swHole = 1.0 - smoothstep(swHoleR, swHoleR + 0.14, swBubble.x);
+swFoamP = mix(swFoamP, swHole * 0.85 + swFoamP * 0.3, 0.85 * (1.0 - smoothstep(0.25, 0.7, swFoot * swFoamScale * 1.7)));
 float swLaceC = swNoise(swFoamUv * 8.3 + vec2(swLaceB * 1.3, swTime * 0.06));
-swFoamP = mix(swFoamP, swFoamP * 0.8 + swLaceC * 0.2, 1.0 - smoothstep(0.2, 0.6, swFoot * swFoamScale * 8.0));`)}
+swFoamP = mix(swFoamP, swFoamP * 0.9 + swLaceC * 0.1, 1.0 - smoothstep(0.2, 0.6, swFoot * swFoamScale * 8.0));`)}
 float swPatFade = smoothstep(0.12, 0.45, swFoot * swFoamScale * 3.7);
 float swFoamSoft = 0.06 + min(swFoot * swFoamScale * 0.8, 0.3);
 // Past where the fine lace would alias a coarse octave carries the pattern, so mid-distance foam stays lace (not flat
@@ -2559,8 +2887,9 @@ float swFoamThick = mix(clamp((swFoamLevel - swFoamP) * 1.6, 0.0, 1.0), swDensit
 float swChurn = clamp(max(max(swDensity * (1.0 - swFoam) * 0.3, swSurfBand * swFoamAmount * 0.6), swContactChurn * swContactStrength * 0.2), 0.0, 1.0);
 vec3 swFoamLight = swAmbTint * max(swAmbLum * 1.1, 0.45) + swKeyTint * (swKeyLum * (0.3 + 0.5 * swShade));
 swFoamLight = swFoamLight / (1.0 + dot(swFoamLight, swLumW) * 0.25) * 1.15;
-vec3 swFoamTop = U.slateWaterFoam.rgb * min(swFoamLight, vec3(1.1));
-vec3 swFoamUnder = swFoamTop * mix(vec3(0.66, 0.78, 0.84), vec3(0.82, 0.72, 0.7), swDuskWarm);
+// Cream where the sun lights it, cool blue-grey in the wave's shade.
+vec3 swFoamTop = U.slateWaterFoam.rgb * min(swFoamLight, vec3(1.1)) * mix(vec3(0.98, 1.0, 1.02), vec3(1.04, 1.0, 0.9), swShade * swSunUp);
+vec3 swFoamUnder = swFoamTop * mix(vec3(0.58, 0.72, 0.86), vec3(0.82, 0.72, 0.7), swDuskWarm);
 // Foam in the wave's shade (facing away from the sun) is cool blue-grey, lit foam bright.
 vec3 swFoamC = mix(swFoamUnder, swFoamTop, smoothstep(0.0, 0.8, swFoamThick) * (0.45 + 0.55 * swShade));
 swFoamC *= mix(mix(vec3(0.8, 0.88, 0.95), vec3(0.95, 0.86, 0.8), swDuskWarm), vec3(1.0), 0.4 + 0.6 * swShade);
@@ -2570,7 +2899,7 @@ swFoamC *= mix(mix(vec3(0.8, 0.88, 0.95), vec3(0.95, 0.86, 0.8), swDuskWarm), ve
 // the horizon's hue at its own brightness (aerial perspective), so a sky of the complementary hue (a gold sunset over
 // navy water) never mixes into grey.
 swLit = mix(swLit, swLit + swGlowC * swLight * 0.6 + swFoamTop * 0.03, swChurn * 0.6);
-swLit = mix(swLit, swHorizonSky * (dot(swLit, swLumW) / max(dot(swHorizonSky, swLumW), 0.001)), smoothstep(0.2, 2.0, swFoot) * 0.6);
+swLit = mix(swLit, swHorizonSky * (dot(swLit, swLumW) / max(dot(swHorizonSky, swLumW), 0.001)), smoothstep(0.2, 2.0, swFoot) * 0.4);
 vec3 swPremul = swLit * ((1.0 - swReflAmt) * (1.0 - swTrans)) + swSky * swReflAmt + swSpec * (1.0 - swFoam);
 #ifndef ${REFRACTION}
 swPremul += (swShallowC * 0.5 + vec3(0.25)) * swKey * (swCaustic * swTrans * 0.6 * (1.0 - swReflAmt));
@@ -2579,6 +2908,21 @@ float swCover = 1.0 - (1.0 - swReflAmt) * swTrans;
 float swSpecLum = dot(swSpec, swLumW) * (1.0 - swFoam);
 alpha = clamp(max(swCover, min(swSpecLum, 1.0)), 0.001, 1.0);
 vec3 swEmissive = swPremul / alpha;
+// Aerial perspective (the shared \`swAir\` at grazing views, and the last degrees above the horizon whatever the distance):
+// far water takes the painted horizon colour (the real sky read just above the horizon from Medium up), fully opaque, and
+// its foam thins, so the sea never ends in a seam against the sky.
+float swPaintHaze = 1.0 - (1.0 - swAir * smoothstep(0.3, 0.85, swGraze)) * (1.0 - smoothstep(0.98, 0.9985, swGraze));
+vec3 swPaintTarget = swHorizonSky;
+#if ${SAMPLES_COPY}
+swPaintTarget = mix(mix(swHorizonSky, swHorAvg, swHorOn * min(swHorN, 1.0)), swHorLocal, swHorOn * swHorHave * smoothstep(0.991, 0.999, swGraze));
+#endif
+swEmissive = mix(swEmissive, swPaintTarget, swPaintHaze);
+alpha = mix(alpha, 1.0, swPaintHaze);
+swFoam *= 1.0 - 0.7 * swPaintHaze;
+// A thin darker wet edge just outside the lace, where the water is churned and soaked.
+${fromTier(1, `
+float swWetEdge = smoothstep(swFoamP - swFoamSoft * 4.0, swFoamP - swFoamSoft, swFoamLevel) * (1.0 - swFoamShape) * smoothstep(0.1, 0.4, swDensity) * (1.0 - swPatFade);
+swEmissive = mix(swEmissive, swEmissive * vec3(0.72, 0.84, 0.95), swWetEdge * 0.6);`)}
 swEmissive = mix(swEmissive, swFoamC, swFoam);
 alpha = max(alpha, swFoam);
 // Backwash: uncovered shallows keep their foam and a wet film that darkens the sand under a faint sky sheen, drying
@@ -2598,8 +2942,8 @@ alpha = max(alpha, swReflWeight);
 // With the copy the water is opaque and adds what lies below: the refracted scene through the per-channel
 // transmittance, lit by the caustics, outside the reflection and foam. It joins the output after the water's own fog
 // (\`swRefracted\`, see CUSTOM_FRAGMENT_BEFORE_FOG). Uncovered shallows blend their film instead.
-swRefracts *= swSwashCover;
-vec3 swRefracted = swBackground * (1.0 + swCaustic * 0.6 * min(swKeyLum, 1.5)) * swTransRgb * ((1.0 - swReflAmt) * (1.0 - swFoam) * swRefracts);
+swRefracts *= swSwashCover * (1.0 - swPaintHaze);
+vec3 swRefracted = swBackground * (1.0 + swCaustic * 0.9 * min(swKeyLum, 1.5)) * swTransRgb * ((1.0 - swReflAmt) * (1.0 - swFoam) * swRefracts);
 float swRefractedWeight = (1.0 - alpha) * swRefracts;
 swEmissive = swEmissive * mix(1.0, alpha, swRefracts);
 alpha = mix(alpha, 1.0, swRefracts);`)}
@@ -2676,15 +3020,34 @@ float swBedTone = 1.0 - exp(-swBedDepth * 2.0 / swAbsorb);
 float swBedTone = swTone;
 #endif
 float swBandCount = max(1.0, U.slateWaterLook.x);
-// The wide noises bend the band edges into lobes, so a bed's straight contours never read as a box around an island.
-// Only the edge into deep water bends (by at most about half a band), so gentle shallows keep wide, clean bands
-// rather than breaking into pools, and open water (at least about two thirds of a band deeper) never shoals.
+// The primary swell's height (-1 trough to 1 crest) and the large noise bend the band edges, so a bed's straight contours
+// never read as a box around an island and the deep tone settles into the swell's troughs as smooth, rounded shapes
+// running along the waves (the medium and fine noises stay out: their edges read as stains). Only the edge into deep
+// water bends (by at most about three quarters of a band), so gentle shallows keep wide, clean bands rather than
+// breaking into pools, and open water (at least about a band deeper) never shoals.
+float swPrimN = swPrimH / max(swPrimAmp, 0.0001);${fromTier(1, `
+// A noise along each crest (about fourteen metres across), in a frame that travels with the swell (the primary phase counts
+// whole crests, so the pattern never jumps as the clock wraps), gates where the swell bends the edge, so the deep water's
+// tongues break into rounded lobes about as long as they are wide instead of running the whole crest as fingers.
+float swBandPh = swP0 * 0.159155 + U.slateWaterLight.w;
+swBandPh -= ${f(CREST_COUNT_PERIOD)} * floor(swBandPh / ${f(CREST_COUNT_PERIOD)});
+float swBandAlong = smoothstep(0.2, 0.8, swNoise(vec2(dot(swFlowed, vec2(-swD0.y, swD0.x)) * 0.07, swBandPh) + vec2(4.1, 8.3)));`, `
+float swBandAlong = 0.5;`)}
 float swBandRaw = swBedTone * swBandCount;
-float swBandWarp = ((swLarge - 0.5) * 0.9 + (swMedium - 0.5) * 0.3 * (1.0 - smoothstep(0.3, 1.2, swFoot))) * step(1.5, swBandCount)
+float swBandWarp = ((swLarge - 0.5) * 0.6 - swPrimN * (0.04 + 0.26 * swBandAlong)) * step(1.5, swBandCount)
   * smoothstep(swBandCount - 1.8, swBandCount - 1.3, swBandRaw);
 float swBand = max(swBandRaw + swBandWarp, 0.0);
 float swBandAA = min(fwidth(swBand), 0.5);
-float swBanded = min((floor(swBand) + smoothstep(1.0 - swBandAA * 1.5, 1.0, fract(swBand))) / max(swBandCount - 1.0, 1.0), 1.0);
+float swBandF = fract(swBand);
+float swBanded = min((floor(swBand) + smoothstep(1.0 - swBandAA * 1.5, 1.0, swBandF)) / max(swBandCount - 1.0, 1.0), 1.0);${fromTier(1, `
+// From Medium each band edge carries a thin, slightly lighter rim (Wind Waker's band outline), about a pixel and a half
+// wide close up and culled with the footprint. Only the edge into the deepest band carries one, and not near the shore,
+// where foam and surf lines dominate and a pale hairline across the shallows would read as a scratch.
+float swBandPx = min(swBandF, 1.0 - swBandF) / max(fwidth(swBand), 0.00001);
+float swRimHalf = 1.5 * (1.0 - smoothstep(0.3, 1.2, swFoot));
+float swBandRim = (1.0 - smoothstep(swRimHalf - 0.6, swRimHalf + 0.6, swBandPx)) * smoothstep(0.3, 0.8, swRimHalf)
+  * step(1.5, swBandCount) * step(max(1.0, swBandCount - 1.0), swBand) * (1.0 - step(swBandCount - 0.5, swBand))
+  * smoothstep(swFoamWidth * 4.0, swFoamWidth * 8.0, swShoreRest);`)}
 float swDepthTone = mix(swBedTone, swBanded, step(1.5, swBandCount));
 // Inside the shallow bands the open sea's wave tones and dapples recede, so the lagoon reads as flat colour.
 float swOpenSea = clamp(swDepthTone * 2.0 - 0.6, 0.0, 1.0);
@@ -2740,6 +3103,8 @@ swLit = mix(swLit, vec3(swLit.r * 0.5 + swLit.b * 0.14, swLit.g * 0.4, swLit.b *
 float swDesat = clamp(max(swGrey, swGloom * 0.85), 0.0, 0.85);
 swLit = mix(swLit, vec3(dot(swLit, swLuma)) * vec3(0.5, 1.05, 2.0), swDesat);
 swLit *= 1.0 - 0.25 * swGloom * smoothstep(0.15, 0.5, swSeaState);
+${fromTier(1, `
+swLit = mix(swLit, swLit * 1.15 + swShallowC * (0.18 * swExpo), swBandRim);`)}
 // Foam and line work: opaque white in the scene's light (never below 90%), gold-tinted at dusk, a little greyer under
 // a drowned sun, and a cool white on shaded wave faces.
 vec3 swFoamLit = U.slateWaterFoam.rgb * clamp(swExpo * 1.05, 0.9, 1.05) * mix(vec3(1.0), swTint, 0.25);
@@ -2761,6 +3126,10 @@ float swColQuiet = smoothstep(0.1, 0.6, swColQ) + 0.25 * smoothstep(0.0, 0.3, sw
 // triplets. Each keeps at least about a pixel and a half; where its natural width would be thinner, and toward the
 // distance, its dashes thin out instead of fading.
 float swNearFoamL = 1.0 - smoothstep(0.1, 0.5, swFoot);
+// The mid-field (past a few metres from the eye) keeps fewer strokes, about half the dapples and fewer flecks than the
+// near water (Medium up).${fromTier(1, `
+float swMidField = smoothstep(0.1, 0.5, swFoot);`, `
+float swMidField = 0.0;`)}
 // The crest's index counts whole periods of the component's world phase: the CPU reduces the phase uniform mod 2π (it
 // wraps once a period as time runs) and passes how many periods it removed (\`slateWaterLight.w\`, mod
 // \`CREST_COUNT_PERIOD\`), so a crest keeps its index, and its dashes, for as long as it travels. (Without the count
@@ -2770,13 +3139,25 @@ swCrestId -= ${f(CREST_COUNT_PERIOD)} * floor(swCrestId / ${f(CREST_COUNT_PERIOD
 vec2 swCrestSeed = swHash2(vec2(swCrestId, 17.0));
 float swCrestAlong = dot(swFlowed, vec2(-swD0.y, swD0.x));
 vec2 swCrestUv = vec2(swCrestAlong + swCrestSeed.x * 37.0, swCrestSeed.y * 13.0);
-float swLineN = swNoise(swCrestUv * vec2(1.15, 1.0) + vec2(2.9, 5.3));${fromTier(1, `
-float swLineWig = swNoise(swCrestUv * vec2(0.3, 1.0) + vec2(7.3, 1.1));`, `
+float swLineN = swNoise(swCrestUv * vec2(0.34, 1.0) + vec2(2.9, 5.3));${fromTier(1, `
+float swLineWig = swNoise(swCrestUv * vec2(0.17, 1.0) + vec2(7.3, 1.1));`, `
 float swLineWig = swLineN;`)}
-float swLineH = swCrest + (swLineWig - 0.5) * 0.15 * swNearFoamL;
+// Each line meanders: its height is bent by the primary swell's slope across the crest (the cosine of its phase) times a
+// slow noise along the crest, which slides the line sideways by up to about a tenth of a wavelength (more where the slope is
+// steep, so the shift is the same in metres on every flank and dies away at the flat crest and trough), and a faster one a
+// little. Without it the isolines of a single swell train run as straight, parallel speed lines.
+float swLineSlope = swC0;
+${fromTier(1, `
+// Far out the meander (a few pixels at most there) fades, so a grazing line never breaks into aliased steps.
+float swLineBend = ((swLineWig - 0.5) * 1.2 + (swLineN - 0.5) * 0.35) * (1.0 - 0.7 * smoothstep(0.08, 0.4, swFoot));`, `
+float swLineBend = (swLineN - 0.5) * 0.7;`)}
+float swLineH = swPrimN - swLineSlope * swLineBend;
+// The flank line stands on one face of each crest (where the swell's slope across it is negative), the top and trough lines
+// on the other, so a crest never draws a closed racetrack of parallel lines, which read as a ring from a grazing view.
+float swLineSide = smoothstep(-0.1, 0.1, swLineSlope);
 float swLineFw = max(fwidth(swLineH), 0.00001);
 float swLineDash = swLineN * 0.65 + swLineWig * 0.35;
-float swLineDashT = swNoise(swCrestUv * vec2(1.15, 1.0) + vec2(11.7, 2.3)) * 0.65 + swLineWig * 0.35;
+float swLineDashT = swNoise(swCrestUv * vec2(0.34, 1.0) + vec2(11.7, 2.3)) * 0.65 + swLineWig * 0.35;
 // A low sea state draws one isoline only: the top one thins out as its crests flatten, the trough one goes.
 float swLowSea = 1.0 - smoothstep(0.15, 0.45, swSeaState);
 // Where the crest field is too steep for its isoline to keep a width (more than about 0.07 per pixel), and toward the
@@ -2789,7 +3170,20 @@ float swLinePx = sqrt(1.5613 * max(U.slateWaterWaves.y, 0.1)) * U.slateWaterWave
 // into a whole ring that pops in at full size as the bump's peak crosses its level; there its dashes shorten and vanish
 // instead, and grow back as the slope steepens.
 float swLineFlat = 1.0 - smoothstep(0.05, 0.16, abs(dot(swGradient, swD0)) / max(U.slateWaterWaves.x * swK0, 0.0001));
-float swLineCut = 0.55 + 0.3 * smoothstep(0.05, 0.1, swLineFw) + 0.4 * smoothstep(0.06, 0.4, swFoot) + 0.6 * smoothstep(10.0, 22.0, swLinePx) + 0.8 * swColQuiet + 0.6 * swLineFlat;
+// Beyond the near field the crest lines are also broken into short strokes along the crest, each cell of about a metre
+// (its size and phase seeded by the crest, bent by the slow noise) holding a stroke of its own length at its own place or,
+// for about two cells in five, none, so neighbouring lines never share a rhythm (evenly spaced, equal dashes in parallel
+// rows read as road markings). Low (no budget for the breaks) simply thins its lines out sooner.${fromTier(1, `
+float swLineT = swCrestAlong * (0.8 + 0.5 * swCrestSeed.y) + (swLineWig - 0.5) * 6.0 + swCrestSeed.x * 31.0;
+float swLineCell = floor(swLineT);
+vec2 swLineH2 = swHash2(vec2(swLineCell, swCrestId + 3.0));
+float swLineLen = 0.3 + 0.45 * swLineH2.y;
+float swLineStart = (1.0 - swLineLen) * fract(swLineH2.x * 7.13);
+float swLineF = fract(swLineT);
+float swLineIn = smoothstep(swLineStart - 0.06, swLineStart + 0.06, swLineF) * (1.0 - smoothstep(swLineStart + swLineLen - 0.06, swLineStart + swLineLen + 0.06, swLineF)) * step(0.4, swLineH2.x);
+float swLineFar = 1.2 * smoothstep(0.05, 0.12, swFoot) * (1.0 - swLineIn) + 0.5 * smoothstep(0.05, 0.4, swFoot);`, `
+float swLineFar = 0.9 * smoothstep(0.05, 0.4, swFoot);`)}
+float swLineCut = 0.5 + 0.3 * smoothstep(0.05, 0.1, swLineFw) + swLineFar + 0.6 * smoothstep(10.0, 22.0, swLinePx) + 0.8 * swColQuiet + 0.6 * swLineFlat;
 // Brush strokes: each dash swells from about a third of its width at its ends to its full width (about two to four
 // pixels); dashes too short to swell past half their width are dropped, so none shrinks to a speck.
 float swLineTaper = clamp((swLineDash - swLineCut) * 9.0, 0.0, 1.0);
@@ -2799,15 +3193,15 @@ float swLineHalf = mix(1.0, 1.9, swNearFoamL) * (0.35 + 0.65 * swLineTaper);
 // along the dominant heading): arcs, never whole rings.
 float swLineLv0 = 0.18 + 0.06 * sin(swCrestAlong * 0.37 + swCrestSeed.x * 6.283);
 float swLineLvT = 0.5 + 0.06 * sin(swCrestAlong * 0.29 + swCrestSeed.y * 6.283);
-float swLines = (1.0 - smoothstep(swLineHalf - 0.6, swLineHalf + 0.6, abs(swLineH - swLineLv0) / swLineFw)) * smoothstep(0.25, 0.45, swLineTaper);
+float swLines = (1.0 - smoothstep(swLineHalf - 0.6, swLineHalf + 0.6, abs(swLineH - swLineLv0) / swLineFw)) * smoothstep(0.25, 0.45, swLineTaper) * (1.0 - swLineSide);
 float swLineTopTaper = clamp((swLineDashT - swLineCut - 0.1 - 0.3 * swLowSea) * 9.0, 0.0, 1.0);
 float swLineAlongCrest = smoothstep(0.35, 0.65, abs(dot(swGradient, swD0)) / max(length(swGradient), 0.000001));
-swLines = max(swLines, (1.0 - smoothstep(swLineHalf * 0.75 - 0.6, swLineHalf * 0.75 + 0.6, abs(swLineH - swLineLvT) / swLineFw)) * smoothstep(0.25, 0.45, swLineTopTaper) * swLineAlongCrest);
+swLines = max(swLines, (1.0 - smoothstep(swLineHalf * 0.75 - 0.6, swLineHalf * 0.75 + 0.6, abs(swLineH - swLineLvT) / swLineFw)) * smoothstep(0.25, 0.45, swLineTopTaper) * swLineAlongCrest * swLineSide);
 float swLinePxD = min(abs(swLineH - swLineLv0), abs(swLineH - swLineLvT));${fromTier(1, `
 float swLineLvB = -0.22 + 0.06 * sin(swCrestAlong * 0.43 + swCrestSeed.x * 3.1 + swCrestSeed.y * 2.0);
-float swLineDashB = swNoise(swCrestUv * vec2(1.15, 1.0) + vec2(5.1, 19.3)) * 0.65 + swLineWig * 0.35;
+float swLineDashB = swNoise(swCrestUv * vec2(0.34, 1.0) + vec2(5.1, 19.3)) * 0.65 + swLineWig * 0.35;
 float swLineTaperB = clamp((swLineDashB - swLineCut) * 9.0, 0.0, 1.0);
-swLines = max(swLines, (1.0 - smoothstep(swLineHalf * 0.8 - 0.6, swLineHalf * 0.8 + 0.6, abs(swLineH - swLineLvB) / swLineFw)) * smoothstep(0.25, 0.45, swLineTaperB) * (1.0 - swLowSea));
+swLines = max(swLines, (1.0 - smoothstep(swLineHalf * 0.8 - 0.6, swLineHalf * 0.8 + 0.6, abs(swLineH - swLineLvB) / swLineFw)) * smoothstep(0.25, 0.45, swLineTaperB) * swLineSide * (1.0 - swLowSea));
 swLinePxD = min(swLinePxD, abs(swLineH - swLineLvB));`)}
 // Strokes keep clear of the isolines (about six pixels), so they never cross a crest line into X and V shapes.
 float swClearOfLines = smoothstep(4.0, 8.0, swLinePxD / swLineFw);
@@ -2831,11 +3225,12 @@ float swSqN1 = swNoise(swSqP1);
 float swSqD0 = swNoise(swSqP0 * 1.3 + vec2(3.1, 7.7));
 float swSqD1 = swNoise(swSqP1 * 1.3 + vec2(3.1, 7.7));
 float swSqBase = 0.54 - 0.06 * swClose;
-float swSqCut0 = swSqBase + (1.0 - swSqBase) * smoothstep(0.3, 1.0, swSqT) + swSqLife + 0.6 * swColQuiet;
-float swSqCut1 = 1.0 - (1.0 - swSqBase) * smoothstep(0.0, 0.7, swSqT) + 0.45 * clamp(swSqT - 1.0, 0.0, 1.0) + swSqLife + 0.6 * swColQuiet;
-// Dapples: a lighter flat tone on the same noise's highs, shrinking away by octave like the strokes.
-float swDapCut0 = 0.64 + 0.36 * clamp(swSqT, 0.0, 1.0);
-float swDapCut1 = 1.0 - 0.36 * clamp(swSqT, 0.0, 1.0) + 0.36 * clamp(swSqT - 1.0, 0.0, 1.0);
+float swSqCut0 = swSqBase + (1.0 - swSqBase) * smoothstep(0.3, 1.0, swSqT) + swSqLife + 0.6 * swColQuiet + 0.1 * swMidField;
+float swSqCut1 = 1.0 - (1.0 - swSqBase) * smoothstep(0.0, 0.7, swSqT) + 0.45 * clamp(swSqT - 1.0, 0.0, 1.0) + swSqLife + 0.6 * swColQuiet + 0.1 * swMidField;
+// Dapples: a lighter flat tone on the same noise's highs, shrinking away by octave like the strokes. Past a few metres
+// from the eye the strokes keep fewer of their dashes and the dapples about half.
+float swDapCut0 = 0.64 + 0.36 * clamp(swSqT, 0.0, 1.0) + 0.1 * swMidField;
+float swDapCut1 = 1.0 - 0.36 * clamp(swSqT, 0.0, 1.0) + 0.36 * clamp(swSqT - 1.0, 0.0, 1.0) + 0.1 * swMidField;
 float swDapple = max(smoothstep(swDapCut0 - fwidth(swSqN0), swDapCut0 + fwidth(swSqN0), swSqN0), smoothstep(swDapCut1 - fwidth(swSqN1), swDapCut1 + fwidth(swSqN1), swSqN1));
 // Brush strokes, like the crest lines: each swells to its full width (three to five pixels close up).
 float swSqHalf = mix(1.3, 2.3, swClose);
@@ -2868,7 +3263,7 @@ float swFlRndA = swHash(swFlIdA + vec2(3.0, 11.0));
 vec2 swFlDA = (fract(swFlP / 3.0) - vec2(0.5) - (swHash2(swFlIdA) - vec2(0.5)) * 0.5) * 3.0;
 // Close to the eye a fleck stays small on screen (about a dozen pixels tall at most).
 float swFlMaxA = min(0.22, swFoot * 6.0);
-float swFlCutA = mix(1.05, 0.66 - 0.2 * swClose, smoothstep(2.5, 4.5, 1.8 * swFlMaxA / max(swFoot, 0.00001))) + 0.5 * swColQuiet;
+float swFlCutA = mix(1.05, 0.66 - 0.2 * swClose, smoothstep(2.5, 4.5, 1.8 * swFlMaxA / max(swFoot, 0.00001))) + 0.5 * swColQuiet + 0.14 * swMidField;
 float swFlLifeA = sin(min(fract(swFlRndA * 5.0 + swTime * (0.2 + 0.25 * fract(swFlRndA * 7.31))) * 1.3, 1.0) * 3.141593);
 float swFlRA = swFlMaxA * sqrt(swFlLifeA) * smoothstep(swFlCutA, swFlCutA + 0.05, swFlRndA);
 float swFlSA = length(swFlDA * vec2(2.2, 1.0)) - swFlRA;
@@ -2879,7 +3274,7 @@ vec2 swFlIdC = floor(swFlP / 0.9 + vec2(0.71, 0.23));
 float swFlRndC = swHash(swFlIdC + vec2(13.0, 19.0));
 vec2 swFlDC = (fract(swFlP / 0.9 + vec2(0.71, 0.23)) - vec2(0.5) - (swHash2(swFlIdC + vec2(4.0, 8.0)) - vec2(0.5)) * 0.5) * 0.9;
 float swFlMaxC = min(0.07, swFoot * 5.0);
-float swFlCutC = mix(1.05, 0.76, smoothstep(2.5, 4.5, 1.8 * swFlMaxC / max(swFoot, 0.00001))) + 0.5 * swColQuiet;
+float swFlCutC = mix(1.05, 0.76, smoothstep(2.5, 4.5, 1.8 * swFlMaxC / max(swFoot, 0.00001))) + 0.5 * swColQuiet + 0.08 * swMidField;
 float swFlLifeC = sin(min(fract(swFlRndC * 3.0 + swTime * (0.3 + 0.3 * fract(swFlRndC * 5.17))) * 1.3, 1.0) * 3.141593);
 float swFlRC = swFlMaxC * sqrt(swFlLifeC) * smoothstep(swFlCutC, swFlCutC + 0.05, swFlRndC);
 float swFlSC = length(swFlDC * vec2(2.2, 1.0)) - swFlRC;
@@ -2904,6 +3299,9 @@ vec2 swColDy = dFdy(swColSlope);
 float swColW = (0.007 + 0.03 * U.slateWaterOrigin.w) * (1.0 - 0.4 * swLowSun);${fromTier(1, "", `
 // Low's smoother normal (fewer swell and chop terms) would spread the column into one broad blob.
 swColW *= 0.7;`)}
+// Far out the column narrows and its dashes thin (they would merge into one white smear): the way Painted bounds its path.
+float swColFar = clamp(swFoot * 0.45 - 0.13, 0.0, 1.0);
+swColW *= 1.0 - 0.3 * swColFar;
 swColW += min((dot(swColDx, swColDx) + dot(swColDy, swColDy)) * ${f(PIXEL_SLOPE_FILTER / 2)}, ${f(PIXEL_SLOPE_CAP)});
 float swCol = clamp((swColAlign - 1.0 + swColW) / swColW, 0.0, 1.0) * smoothstep(0.05, 0.4, swSunSeen);
 vec2 swSunSide = vec2(-swSunH.y, swSunH.x);
@@ -2937,10 +3335,14 @@ float swDashLen = 0.35 * exp2(swDashL);
 float swAlong = dot(swWorld, swSunSide) + swTime * 0.05;
 float swDashN0 = swNoise(vec2(swAlong / swDashLen, swRowK * 1.37 + swDashL * 5.3));
 float swDashN1 = swNoise(vec2(swAlong / (swDashLen * 2.0), swRowK * 1.37 + swDashL * 5.3 + 5.3));
-float swDashCut = 0.92 + 0.14 * swNearSwell - swCol * 0.95;
-float swDashMax = 0.32 - 0.12 * swNearSwell;
+float swDashCut = 0.92 + 0.14 * swNearSwell - swCol * 0.95 + 0.12 * swColFar;
+float swDashMax = (0.32 - 0.12 * swNearSwell) * (1.0 - 0.5 * swColFar);
+${fromTier(1, `
+// The thickness grows as a square root of how far the noise stands above the cut, so each dash ends in a rounded tip.
+float swDashHalf = swDashMax * max(sqrt(clamp((swDashN0 - swDashCut - 1.1 * smoothstep(0.35, 1.0, swDashT)) * 4.0, 0.0, 1.0)),
+  sqrt(clamp((swDashN1 - swDashCut - 1.1 + 1.1 * smoothstep(0.0, 0.65, swDashT)) * 4.0, 0.0, 1.0)));`, `
 float swDashHalf = max(clamp((swDashN0 - swDashCut - 1.1 * smoothstep(0.35, 1.0, swDashT)) * 1.3, 0.0, swDashMax),
-  clamp((swDashN1 - swDashCut - 1.1 + 1.1 * smoothstep(0.0, 0.65, swDashT)) * 1.3, 0.0, swDashMax));
+  clamp((swDashN1 - swDashCut - 1.1 + 1.1 * smoothstep(0.0, 0.65, swDashT)) * 1.3, 0.0, swDashMax));`)}
 // Half thickness in pixels: a share of the row spacing near the eye, of about ten pixels farther out.
 float swDashHalfPx = swDashHalf * max(0.15 / max(swFootS, 0.00001), 10.0) * swRowCull;
 float swRowAA = min(fwidth(swRowV) * 0.7 + 0.01, 0.2) * swRowPx;
@@ -2992,9 +3394,26 @@ swFarC = mix(swFarC, vec3(dot(swFarC, swLuma) * 1.15) * vec3(0.78, 0.92, 1.12), 
 // at dusk), otherwise the far tone. (A flat strip of far tone used to lie between the far water and the sky.)
 float swHaze = 1.0 - smoothstep(0.0, 0.05 + 0.02 * swEve, swUp);
 swHaze *= swHaze;
+// Aerial perspective in flat bands (the shared \`swAir\`, at grazing views, over deep water only so shores keep their
+// tones): four hard steps (about 40, 110, 270 and 600 m for a 2 km far plane) take the whole sea a share of the way to
+// the horizon's tone, the last one all of it, so the dark swell islands dissolve with distance, the sea's far edge never
+// shows as a line and the bands run along distance, not along the mesh. Each edge is antialiased by how fast the haze
+// changes per pixel.
+float swAirD = 1.0 - swAir;
+float swAirT = (1.0 - swAirD * swAirD * swAirD) * smoothstep(0.3, 0.85, 1.0 - swUp);
+// The nearer steps bend with the large noise (the last one, all of the haze, does not, and the bend fades where the noise
+// would alias), so a step never draws the straight, view-aligned edge of an eye-distance contour, which met a band's edge
+// at a right angle in views from above.
+float swAirBend = (swLarge - 0.5) * 0.3 * smoothstep(0.0, 0.06, swAirT) * (1.0 - swAirT);${fromTier(1, `
+swAirBend *= 1.0 - smoothstep(0.15, 0.6, swFoot);`)}
+swAirT += swAirBend;
+float swAirAA = fwidth(swAirT) * 0.75 + 0.002;
+float swAirBand = 0.35 * smoothstep(0.1 - swAirAA, 0.1 + swAirAA, swAirT) + 0.3 * smoothstep(0.25 - swAirAA, 0.25 + swAirAA, swAirT) + 0.25 * smoothstep(0.5 - swAirAA, 0.5 + swAirAA, swAirT) + 0.1 * smoothstep(0.8 - swAirAA, 0.8 + swAirAA, swAirT);
+swAirBand *= smoothstep(0.6, 0.95, swDepthTone);
+swHaze = max(swHaze, swAirBand);
 vec3 swHazeC = swFarC;
 #if ${SAMPLES_COPY}${horizonCopySource()}
-swHazeC = mix(swFarC, swHorSum / max(swHorN, 0.001), swHorOn * min(swHorN, 1.0) * (0.7 - 0.45 * swEve));
+swHazeC = mix(mix(swFarC, swHorAvg, swHorOn * min(swHorN, 1.0) * (0.7 - 0.45 * swEve)), swHorLocal, swHorOn * swHorHave * (1.0 - smoothstep(0.0, 0.009, swUp)));
 #endif
 
 // Foam: opaque white shapes antialiased by the footprint. Shore: a thick scalloped band on the waterline and a thinner
@@ -3021,14 +3440,20 @@ float swShoreLobes = (abs(swScallop * 2.0 - 1.0) - 0.3) * 1.3 * swNearFoam + (sw
 // A body's own edge over open water (a lake's bank, no terrain shoreline near) keeps a narrower band than a beach.
 float swBodyEdge = smoothstep(0.5, 3.0, swFieldShore - max(0.0, swBankV));
 // The band's edge runs in and out with the swash (\`swSwashRun\`): wider as each bore runs up, narrower as it drains.
-float swSurfEdge = mix(2.3, 1.2, swBodyEdge) * swFoamAmt * (0.72 + 0.45 * swSwashRun);
+float swSurfEdge = mix(3.3, 1.3, swBodyEdge) * swFoamAmt * (0.72 + 0.45 * swSwashRun);
 float swShoreX = swShoreUnit - swShoreLobes * 0.9;
 float swAAU = min(fwidth(swShoreX) * 0.7 + 0.002, 0.5);
 // Over terrain the band gives way where the backwash has uncovered the shallows (a hard cut, the swash's own edge), and
 // the bore's front runs up the beach as a bold line that thins as it drains (\`swSwashFoam\` cut at half).
 float swToonAA = min(fwidth(swSwashEdgeS) * 0.7 + 0.002, 0.3);
 float swToonCover = smoothstep(-swToonAA, swToonAA, swSwashEdgeS);
-float swFoam = (1.0 - smoothstep(swSurfEdge - swAAU, swSurfEdge + swAAU, swShoreX)) * swToonCover;
+// The band is a surf zone, not a bank outline: it reaches only over water as shallow as a few Wave Heights (and about
+// half a Foam Width), so a steep-banked body (a narrow river or canal, a quay) keeps a thin edge instead of foaming across
+// its whole width. A gentle beach never reaches this depth inside its band.
+float swBandCap = swFoamWidth * 0.4 + 2.0 * U.slateWaterWaves.x;
+float swBandCapAA = fwidth(swTerrainDepth) * 0.7 + 0.002;
+float swBandShallow = mix(1.0, 1.0 - smoothstep(swBandCap - swBandCapAA, swBandCap + swBandCapAA, swTerrainDepth), swKnown);
+float swFoam = (1.0 - smoothstep(swSurfEdge - swAAU, swSurfEdge + swAAU, swShoreX)) * swToonCover * swBandShallow;
 float swFrontAA = min(fwidth(swSwashFoam) * 0.7 + 0.01, 0.3);
 swFoam = max(swFoam, smoothstep(0.5 - swFrontAA, 0.5 + swFrontAA, swSwashFoam) * step(0.01, swFoamAmt));
 // The ring: from Medium a bold line on each bore (\`swBorePhase\`) rolling in toward the band, thinning (never fading)
@@ -3042,11 +3467,26 @@ float swBoreD = (min(swBorePhase, 1.0 - swBorePhase) * 6.283185 / max(U.slateWat
 float swBoreAAC = min(fwidth(swBoreD) * 0.7 + 0.002, 0.5);
 // At least about a pixel and a half wide (the line thins, never fades), while its bore is strong enough.
 float swBoreHalf = max(0.16 * swFoamWidth * swBoreOn, swBoreAAC * 1.1 * smoothstep(0.15, 0.35, swBoreOn)) * step(0.01, swFoamAmt);
-swFoam = max(swFoam, (1.0 - smoothstep(swBoreHalf - swBoreAAC, swBoreHalf + swBoreAAC, swBoreD)) * step(0.000001, swBoreHalf) * (1.0 - smoothstep(5.0, 6.0, swWashUnit)));`, `
+// A bore whose own width would be under about a pixel is culled, not drawn as a scratchy hairline.
+float swBoreWide = smoothstep(0.7, 1.4, 0.16 * swFoamWidth * swBoreOn / swBoreAAC);
+swFoam = max(swFoam, (1.0 - smoothstep(swBoreHalf - swBoreAAC, swBoreHalf + swBoreAAC, swBoreD)) * step(0.000001, swBoreHalf) * swBoreWide * (1.0 - smoothstep(5.0, 6.0, swWashUnit)));`, `
 float swWashPhase = sin(swTime * 0.8 + swLarge * 5.0);
 float swWashAA = min(fwidth(swWashUnit) * 0.7 + 0.002, 0.5);
 float swWashHalf = max((0.26 + 0.06 * swWashPhase) * mix(1.0, 0.6, swBodyEdge) * swFoamAmt, swWashAA * 1.1) * step(0.01, swFoamAmt);
 swFoam = max(swFoam, (1.0 - smoothstep(swWashHalf - swWashAA, swWashHalf + swWashAA, abs(swWashUnit - swSurfEdge - 1.0 - 0.3 * swWashPhase))) * (1.0 - smoothstep(5.0, 6.0, swWashUnit)));`)}
+// Surf (\`swSurfBreak\`, \`swSurfGate\`): the breaking patches that advance with the swell's crests as hard shapes, and two
+// thinner scalloped lines stepping seaward behind the band, each swinging in and out with the swash and the waves.
+float swBrkAA = min(fwidth(swSurfBreak) * 0.7 + 0.01, 0.3);
+swFoam = max(swFoam, smoothstep(0.42 - swBrkAA, 0.42 + swBrkAA, swSurfBreak) * step(0.01, swFoamAmt) * swToonCover);
+// The lines stand on every beach (about half of them where the surf's breaking depth would not reach), stronger where
+// it does, but only over water within about six Wave Heights of depth.
+float swSurfLineOn = (0.55 + 0.45 * smoothstep(0.15, 0.4, swSurfGate)) * (1.0 - step(U.slateWaterWaves.x * 6.0, swBreakDepth)) * step(0.01, swFoamAmt) * (1.0 - swOpenAny) * (1.0 - smoothstep(7.0, 9.0, swWashUnit));
+float swSurfLineAA = min(fwidth(swWashUnit) * 0.7 + 0.002, 0.5);
+float swSurfLineU = swWashUnit - swSurfEdge - swShoreLobes * 0.5;
+float swSurfLineHalf = max(0.24, swSurfLineAA * 1.6);
+float swSurfLine1 = 1.0 - smoothstep(swSurfLineHalf - swSurfLineAA, swSurfLineHalf + swSurfLineAA, abs(swSurfLineU - 1.5 - 1.0 * swSwashRun - 0.5 * swBrkG));
+float swSurfLine2 = 1.0 - smoothstep(swSurfLineHalf * 0.8 - swSurfLineAA, swSurfLineHalf * 0.8 + swSurfLineAA, abs(swSurfLineU - 3.4 - 1.6 * swSwashRun - 0.9 * swBrkG));
+swFoam = max(swFoam, max(swSurfLine1, swSurfLine2 * step(0.0, swShoreLobes + 0.25)) * swSurfLineOn * swToonCover);
 // Object contacts, in contact widths from the waterline: a collar whose radius swells and shrinks with a noise scaled
 // to the width (so it never opens holes at the waterline) and pulses with the swell at the hull (\`swHullPulse\`: out as
 // the water climbs, clinging a moment as it drops), one bold ring breathing with it close outside, a thinner ring sent
@@ -3132,11 +3572,47 @@ surfaceAlbedo = vec3(0.0);
 alpha = clamp(max(U.slateWaterShallow.a * mix(0.65, 1.0, clamp(swDepthTone * 2.0, 0.0, 1.0)), max(max(swFoam, swStrokes), max(swSunShape, swHaze))), 0.0, 1.0);
 // Backwash: uncovered shallows keep their foam and one flat wet tone with a hard edge where the film is still wet
 // (darker water over the sand), which shrinks back as the sand dries behind the swash.
+${fromTier(1, `
+// The film's switches, each blended over about a pixel and a half of its own continuous quantity (metres for the furthest reach,
+// cycles for the others), so the wet sand's edge is antialiased instead of a stair-stepped hard cut.
+float swFilmA0 = fwidth(swFilmG0) * 1.1 + 0.002;
+float swFilmA1 = fwidth(swFilmG1) * 1.1 + 0.002;
+float swFilmA2 = fwidth(swFilmG2) * 1.1 + 0.002;
+swSwashWet = mix(swFilmOld, swFilmCur, smoothstep(-swFilmA1, swFilmA1, swFilmG1) * smoothstep(-swFilmA2, swFilmA2, swFilmG2))
+  * smoothstep(-swFilmA0, swFilmA0, swFilmG0) * swSwashZone;`)}
 float swFilm = (1.0 - swToonCover) * swSwashWet;
 float swFilmAA = min(fwidth(swFilm) * 0.7 + 0.01, 0.2);
-float swFilmA = max(swFoam, smoothstep(0.32 - swFilmAA, 0.32 + swFilmAA, swFilm) * 0.34);
-swEmissive = mix(mix(swFoamLit * vec3(0.2, 0.17, 0.15), swFoamLit, clamp(swFoam / max(swFilmA, 0.001), 0.0, 1.0)), swEmissive, swToonCover);
+float swFilmA = max(swFoam, smoothstep(0.32 - swFilmAA, 0.32 + swFilmAA, swFilm) * 0.4);
+swEmissive = mix(mix(vec3(0.07, 0.04, 0.015) * swExpo, swFoamLit, clamp(swFoam / max(swFilmA, 0.001), 0.0, 1.0)), swEmissive, swToonCover);
 alpha = mix(swFilmA, alpha, swToonCover);
+${fromTier(1, `
+// The wet line (Medium up): wet sand along the outermost edge of everything the water leaves on the beach, so nothing
+// water-coloured lies beyond it. That edge is the outer boundary of the union of the swash's covered water and the drying
+// film behind it (wet sand, below). Where the film stands, the line is the film's own outer ramp (its switches are
+// blended over about a pixel and a half, so the ramp is continuous and antialiased by construction), darkest on the
+// ramp's lower part and about two pixels wide at most; where it does not, the line stands just beyond the swash's edge.
+// Both fade out in the far field (a line would outline every shoreline from above). Where the union reaches the body's own
+// edge (the mesh ends at the waterline) it is drawn there instead. It is the scene behind the water darkened (a warm dark
+// at partial coverage, so sand reads as wet sand, not ink); nothing refracts under it.
+float swWetIn = swSwashEdgeS / clamp(fwidth(swSwashEdgeS), swFoot * 0.3, swFoot * 1.2);
+float swWetHw = 2.4 * (1.0 - smoothstep(0.03, 0.2, swFoot));
+float swWetFilm = smoothstep(0.02, 0.2, swFilm) * (1.0 - smoothstep(0.3, 0.6, swFilm));
+float swWetSwash = smoothstep(-0.8, 0.8, -swWetIn) * (1.0 - smoothstep(swWetHw - 0.8, swWetHw + 0.8, -swWetIn)) * (1.0 - smoothstep(0.1, 0.3, swFilm));
+float swWetBand = max(swWetFilm, swWetSwash);
+float swWetOut = -swWetIn;
+// Only real terrain draws it (or, with no terrain field bound at all, a body's own bank): a field's last texels, where its
+// known share ramps down, and a body's edge over open water are no shore, and would draw a dashed line along them.
+float swWetTerrain = step(${f(WATER_FIELD_TERRAIN_ALPHA)}, swKnown);
+float swWetD = mix(IN.vSlateWater.y, swTerrainDepth, swWetTerrain);
+float swWetEdge = (1.0 - smoothstep(swWetHw - 0.8, swWetHw + 0.8, swWetD / max(fwidth(swWetD), 0.00001))) * swToonCover
+  * (1.0 - smoothstep(0.0, 2.0, swWetOut));
+// A waterline is shallow: past a metre or two of depth the field's own edge rows (where its distances blend toward zero)
+// would draw one.
+float swWetLine = max(swWetBand, swWetEdge) * smoothstep(0.4, 1.2, swWetHw);
+swWetLine *= max(swWetTerrain, 1.0 - U.slateWaterFieldInfo.x) * mix(1.0, 1.0 - smoothstep(1.0, 2.0, swTerrainDepth), swWetTerrain) * (1.0 - swOpenAny) * (1.0 - swHaze);
+swEmissive = mix(swEmissive, vec3(0.07, 0.04, 0.015) * swExpo, swWetLine);
+alpha = max(alpha, 0.55 * swWetLine);`, `
+float swWetLine = 0.0;`)}
 // Fresnel for object reflections: they replace the water by it, never over foam.
 float swNdotV = clamp(dot(normalize(mix(swSwellNormal, normalW, 0.5)), swV), 0.0, 1.0);
 float swFx = 1.0 - swNdotV;
@@ -3144,11 +3620,11 @@ float swFres = 0.03 + 0.97 * swFx * swFx * swFx * swFx * swFx;
 vec3 swRefl = reflect(-swV, normalize(mix(swSwellNormal, normalW, 0.5)));
 ${objectReflectionSource("swRefl", "U.slateWaterOrigin.w")}
 #if ${REFLECTS_OBJECTS}
-float swReflWeight = clamp(swObjRefl.a * swFres * U.slateWaterDeep.w * (1.0 - swFoam) * swToonCover, 0.0, 1.0);
+float swReflWeight = clamp(swObjRefl.a * swFres * U.slateWaterDeep.w * (1.0 - swFoam) * (1.0 - swWetLine) * swToonCover, 0.0, 1.0);
 swEmissive = mix(swEmissive, swObjRefl.rgb, swReflWeight);
 alpha = max(alpha, swReflWeight);
 #endif${ifDefined(REFRACTION, `
-swRefracts *= swToonCover;
+swRefracts *= swToonCover * (1.0 - swWetLine);
 // Refraction-tinted shallows: what shows through takes the water's hue (a gain of at most 1) and fades toward the
 // water's own colour with the refracted depth, so nothing below glows brighter than above.
 vec3 swTintHue = swShallowC / max(max(swShallowC.r, max(swShallowC.g, swShallowC.b)), 0.001);
@@ -3190,6 +3666,12 @@ export const WATER_REMOVAL_SLOTS = 4;
 /**
  * Runs at CUSTOM_FRAGMENT_UPDATE_ALPHA: still before the depth pre-pass, so removed water leaves no
  * depth behind, but after WebGPU has copied the fragment inputs (MAIN_BEGIN would see zeros there).
+ *
+ * Computes the contact derivatives and whether this fragment is removed (`swRemoved`: a removal volume, a blend partner's
+ * share, or land above the water), then discards at once only in the depth pre-pass (`DEPTHPREPASS`, set by Babylon from the
+ * colour-write state: nothing after it reads a derivative and removed water must write no depth). The colour pass
+ * discards in `beforeFogSource`, after every look's derivatives (foam, normals, footprints, line work) were taken with the
+ * whole 2x2 quad running: a derivative taken after a neighbour's discard is undefined on some GPUs.
  */
 function cutSource(wgsl: boolean): string {
   const sample = wgsl
@@ -3213,9 +3695,13 @@ vec3 swPosW = IN.vPositionW + U.slateWaterOrigin.xyz;
 #ifdef ${WATER_BLEND_DEFINE}
 float swBlendShare = IN.vSlateWaterBlend.w;
 #ifdef ${WATER_TOON_DEFINE}
-// Toon hands the colours over in three flat cels (soft-edged steps) rather than an airbrushed gradient.
-float swBlendCel = swBlendShare * 3.0;
-swBlendShare = (floor(swBlendCel) + smoothstep(0.4, 0.6, fract(swBlendCel))) / 3.0;
+// Toon hands the colours over in flat cels (the share rounded to quarters: a two-body owner's share is at most 0.5, so
+// three flat tones, and a fourth only where several bodies meet) with crisp edges, each antialiased over about a pixel by
+// the share's screen derivative, not an airbrushed gradient. The share, not the ownership margin, places the steps: both
+// bodies mix by complementary shares, while each fits its own approximate margin, so margin steps would not meet.
+float swBlendCel = swBlendShare * 4.0;
+float swBlendAA = max(fwidth(swBlendCel) * 0.75, 0.0002);
+swBlendShare = (smoothstep(0.5 - swBlendAA, 0.5 + swBlendAA, swBlendCel) + smoothstep(1.5 - swBlendAA, 1.5 + swBlendAA, swBlendCel) + smoothstep(2.5 - swBlendAA, 2.5 + swBlendAA, swBlendCel)) * 0.25;
 #endif
 ${colors(true)}
 float swBlendKeep = min(IN.vSlateWater.y, IN.vSlateWaterBlend.z + 0.015);
@@ -3246,7 +3732,7 @@ float swLayer = (clamp(IN.vSlateWater.x / max(0.001, U.slateWaterContactInfo.z),
 vec4 swLayerW = max(vec4(0.0), vec4(1.0) - abs(vec4(0.0, 1.0, 2.0, 3.0) - vec4(swLayer)));
 float swContactSigned = mix(1.0, dot(swContactTex, swLayerW) * 2.0 - 1.0, swContactOn) * U.slateWaterContactInfo.y;
 vec2 swContactDerivative = vec2(dFdx(swContactSigned), dFdy(swContactSigned));
-// Derivatives before discard.
+// Derivatives before any discard.
 vec2 swDx = dFdx(swPosW.xz);
 vec2 swDy = dFdy(swPosW.xz);
 float swDet = swDx.x * swDy.y - swDx.y * swDy.x;
@@ -3282,7 +3768,10 @@ if (U.slateWaterWaves.x > 0.0 && swField.a > ${f(WATER_FIELD_TERRAIN_ALPHA)}) {
 }
 float swCut = min(min(${removals[0]}, ${removals[1]}), min(${removals[2]}, ${removals[3]}));
 // Only real terrain removes water; cells extended past a landscape's edge (alpha ramp) never do.
-if (swCut < 0.0 || swBlendKeep < 0.0 || (swField.a * swFieldOn > ${f(WATER_FIELD_TERRAIN_ALPHA)} && swTerrainDepth <= 0.0)) { discard; }
+${wgsl ? "var swRemoved: bool" : "bool swRemoved"} = swCut < 0.0 || swBlendKeep < 0.0 || (swField.a * swFieldOn > ${f(WATER_FIELD_TERRAIN_ALPHA)} && swTerrainDepth <= 0.0);
+#ifdef DEPTHPREPASS
+if (swRemoved) { discard; }
+#endif
 `;
 }
 
@@ -3294,7 +3783,9 @@ if (swCut < 0.0 || swBlendKeep < 0.0 || (swField.a * swFieldOn > ${f(WATER_FIELD
  * `worldPos` needs no large-argument trigonometry. Writes the displaced world position (the clip position, fog,
  * shadows and clip planes follow it) and leaves the height and offset for the varyings in `swvH` / `swvD`, so the
  * fragment finds its rest point and contacts see the rendered height. With `SLATE_WATER_FFT_VERTEX`, the FFT detail
- * band (`fftVertexSource`) adds its displacement before the bank fade.
+ * band (`fftVertexSource`) adds its displacement before the bank fade. `slateWaterGridOffset` (xyz) is the world-space
+ * translation of the rest grid since its positions were uploaded (Global Water's recentre, `waterGridOffset`): it is
+ * added before the rest point is taken, so the swell, bank terms and `vPositionW` all see the translated grid.
  * GLSL-shaped: `A.` attributes, `U.` uniforms, `S.` the view matrix's owner and `O.` outputs are bound per language,
  * then `toWgsl` translates it. Other passes that draw built-in water with their own vertex shader (the shared outline
  * mask) include the same displacement through `waterOutlineVertexSource`, without the material's `vPositionW` output.
@@ -3322,6 +3813,7 @@ vec3 swvWarpM = vec3(1.0 + swvWarpG.x, swvWarpG.y, 1.0 + swvWarpG.z);`, 1, FFT_V
 #ifdef ${WATER_GPU_WAVES_DEFINE}
 float swvSpacing = A.slateWaterData.x;
 float swvChop = U.slateWaterShape.x;
+worldPos = vec4(worldPos.xyz + U.slateWaterGridOffset.xyz, worldPos.w);
 vec2 swvRest = worldPos.xz;
 float swvH = 0.0;
 vec2 swvD = vec2(0.0);${ifFft(`
@@ -3389,7 +3881,7 @@ export function waterVertexSource(language: ShaderLanguage): { definitions: stri
  * on another pass's effect, with `WATER_FFT_SAMPLER`).
  */
 export const WATER_VERTEX_WAVE_UNIFORMS: readonly string[] = [
-  "slateWaterShape", "slateWaterSwellInfo", ...SWELL_DIRECTION, ...SWELL_AMPLITUDE, ...SWELL_GROUP, ...SWELL_WARP, "slateWaterFft", ...FFT_CASCADE_UNIFORMS,
+  "slateWaterShape", "slateWaterSwellInfo", "slateWaterGridOffset", ...SWELL_DIRECTION, ...SWELL_AMPLITUDE, ...SWELL_GROUP, ...SWELL_WARP, "slateWaterFft", ...FFT_CASCADE_UNIFORMS,
 ];
 /** `vertexWaveDefines` per blend state (off, on) and cascades the vertex samples (0-3): built once. */
 const VERTEX_WAVE_DEFINES: ReadonlyArray<ReadonlyArray<readonly string[]>> = [false, true].map((blend) =>
@@ -3426,6 +3918,31 @@ export function gpuWaterWaves(material: Material | null | undefined, mesh: Abstr
   return plugin instanceof WaterMaterialPlugin && plugin.gpuWaves && mesh.isVerticesDataPresent("slateWaterData") ? plugin : null;
 }
 
+const gridOffsets = new WeakMap<AbstractMesh, Float64Array>();
+const gridWorld = new Float64Array(3);
+
+/**
+ * Registers `offset` (local X, Z; read live) as the translation of `mesh`'s uploaded rest positions: Global Water
+ * recentres by moving this instead of re-uploading its grid. It is per mesh, not per material, and `slateWaterGridOffset`
+ * carries it to the vertex shaders of the material and of other passes (`bindVertexWaves`).
+ */
+export function setWaterGridOffsetSource(mesh: AbstractMesh, offset: Float64Array): void {
+  gridOffsets.set(mesh, offset);
+}
+
+/**
+ * The mesh's registered grid offset as a world-space vector (into a shared scratch): the linear part of its current
+ * world matrix applied to (x, 0, z). Taking it at bind time keeps it right under any rotation, scale or tilt, and a
+ * floating origin (which only changes the matrix's translation) never reaches it.
+ */
+export function waterGridOffset(mesh: AbstractMesh | null | undefined): Float64Array {
+  const offset = mesh ? gridOffsets.get(mesh) : undefined;
+  if (!offset || (offset[0] === 0 && offset[1] === 0)) return gridWorld.fill(0);
+  const m = mesh!.getWorldMatrix().m, x = offset[0]!, z = offset[1]!;
+  gridWorld[0] = x * m[0]! + z * m[8]!; gridWorld[1] = x * m[1]! + z * m[9]!; gridWorld[2] = x * m[2]! + z * m[10]!;
+  return gridWorld;
+}
+
 /** Translate the restricted GLSL-shaped source above. Only the constructs it uses are supported. */
 export function toWgsl(source: string): string {
   const type = (t: string) => ({ float: "f32", vec2: "vec2f", vec3: "vec3f", vec4: "vec4f", mat4: "mat4x4f" })[t] ?? t;
@@ -3438,7 +3955,10 @@ export function toWgsl(source: string): string {
 }
 
 /**
- * CUSTOM_FRAGMENT_BEFORE_FOG. Realistic colour is premultiplied by coverage: undo it for Babylon's non-premultiplied
+ * CUSTOM_FRAGMENT_BEFORE_FOG. The colour pass first discards removed water (`swRemoved`, see `cutSource`): the look's
+ * derivatives ran with every fragment of the quad alive, and nothing from here on takes one.
+ *
+ * Realistic colour is premultiplied by coverage: undo it for Babylon's non-premultiplied
  * blend, fog and image processing. Bright glints and reflections raise coverage instead of clipping in 8-bit targets.
  *
  * The refracted scene (`swRefracted`; `SLATE_WATER_REFRACTION`) is light from behind the surface, already fogged by its
@@ -3458,6 +3978,10 @@ function beforeFogSource(wgsl: boolean): string {
   const declare = (type: string, name: string, value: string) => (wgsl ? `var ${name}: ${type} = ${value};` : `${type} ${name} = ${value};`);
   const brightest = (c: string) => `max(${c}.r, max(${c}.g, ${c}.b))`;
   return [
+    // Removed water leaves the colour pass here, after every derivative of the look (the depth pre-pass left in `cutSource`).
+    "#ifndef DEPTHPREPASS",
+    "if (swRemoved) { discard; }",
+    "#endif",
     `#ifdef ${REFRACTION}`,
     declare(v3, "swRefractedOut", "swRefracted"),
     "#ifdef FOG",
@@ -3468,6 +3992,9 @@ function beforeFogSource(wgsl: boolean): string {
     `#ifdef ${WATER_STYLIZED_DEFINE}`,
     `#ifdef ${REFRACTION}`,
     `finalColor = ${v4}(finalColor.rgb + swRefractedOut, finalColor.a);`,
+    "#endif",
+    `#ifndef ${WATER_TOON_DEFINE}`,
+    "finalColor.a *= swShoreSoft;",
     "#endif",
     "#else",
     `#if defined(${REFRACTION}) && !defined(IMAGEPROCESSINGPOSTPROCESS)`,
@@ -3480,6 +4007,9 @@ function beforeFogSource(wgsl: boolean): string {
     `finalColor = ${v4}(finalColor.rgb + swRefractedOut, finalColor.a);`,
     "#endif",
     `finalColor = ${v4}(finalColor.rgb / swCover, swCover);`,
+    `#if ${SAMPLES_COPY}`,
+    `finalColor = ${v4}(mix(finalColor.rgb, swHorC, swHorW), mix(finalColor.a, 1.0, swHorW));`,
+    "#endif",
     "#endif",
     // Open-water edges fade out (`swOpenFade`, every look).
     "finalColor.a *= swOpenFade;",
@@ -3519,8 +4049,8 @@ export function waterShaderSource(language: ShaderLanguage): { helpers: string; 
     : "uniform sampler2D slateWaterFieldSampler;\nuniform sampler2D slateWaterContactSampler;\n";
   // Written by the realistic main code and read inside Babylon's reflectivity block (a separate function).
   const roughnessGlobals = wgsl
-    ? "var<private> swSlopeVariance: f32 = 0.0;\nvar<private> swMatte: f32 = 0.0;\n"
-    : "float swSlopeVariance = 0.0;\nfloat swMatte = 0.0;\n";
+    ? "var<private> swSlopeVariance: f32 = 0.0;\nvar<private> swMatte: f32 = 0.0;\nvar<private> swSharp: f32 = 1.0;\n"
+    : "float swSlopeVariance = 0.0;\nfloat swMatte = 0.0;\nfloat swSharp = 1.0;\n";
   return wgsl
     ? {
       helpers: samplerDeclaration + roughnessGlobals + toWgsl(HELPERS + REMOVAL_HELPER) + CONTACT_TAP_WGSL + objectHelpers(true) + fftHelpers(true),
@@ -3595,7 +4125,7 @@ const FRAME_UNIFORMS: readonly string[] = [
   "slateWaterOrigin", "slateWaterLight",
   ...SWELL_DIRECTION.flatMap((direction, i) => [direction, SWELL_AMPLITUDE[i]!, SWELL_GROUP[i]!]), ...SWELL_WARP,
   "slateWaterSea", "slateWaterSwellInfo", "slateWaterShape", ...CHOP_UNIFORMS, ...CAPILLARY_UNIFORMS,
-  "slateWaterRipple", "slateWaterChopShift", "slateWaterTerms", "slateWaterSwash",
+  "slateWaterRipple", "slateWaterChopShift", "slateWaterTerms", "slateWaterSwash", "slateWaterHaze",
   ...BLEND_COLOR_UNIFORMS,
 ];
 const FRAME_BLEND_START = FRAME_UNIFORMS.length - BLEND_COLOR_UNIFORMS.length;
@@ -3645,6 +4175,8 @@ type WaterLighting = {
    */
   stylizedHorizon: Float64Array;
   stylizedGlitter: number;
+  /** `waterHazeConstants` of the active camera's far plane (`slateWaterHaze`). */
+  haze: Float64Array;
 };
 
 const linearScratch = new Color3(), gammaScratch = new Color3();
@@ -3731,6 +4263,7 @@ function sceneWaterLighting(scene: Scene, out: WaterLighting): void {
   out.overcast = hemispheres > 0 ? 1 - out.sunGlitter : 0;
   const ambientLight = 0.3 * ambient[0]! + 0.59 * ambient[1]! + 0.11 * ambient[2]!;
   out.stylizedGlitter = smoothstep(0.8, 1.6, toSun[3]! / Math.max(ambientLight, 0.05));
+  waterHazeConstants(scene.activeCamera?.maxZ ?? 0, out.haze);
 }
 
 /** Each material's ambient: the scene's, plus its environment's share and a low-light floor. Writes `waterAmbient`. */
@@ -3772,7 +4305,7 @@ function sceneWaterBindingData(scene: Scene): WaterBindingData {
       frame, render, removals: NO_REMOVALS,
       lighting: {
         ambient: new Float64Array(3), sun: new Float64Array(4), sunColor: new Float64Array(3), sky: new Float64Array(3), horizon: new Float64Array(3),
-        sunShape: new Float64Array(4), subsurfaceLift: 0, sunGlitter: 0, overcast: 0, stylizedHorizon: new Float64Array(3), stylizedGlitter: 0,
+        sunShape: new Float64Array(4), subsurfaceLift: 0, sunGlitter: 0, overcast: 0, stylizedHorizon: new Float64Array(3), stylizedGlitter: 0, haze: new Float64Array(4),
       },
     };
     waterBindings.set(scene, data);
@@ -3829,6 +4362,8 @@ const smoothstep = (edge0: number, edge1: number, x: number) => {
 };
 /** Chop octaves then capillaries: the CPU side of `CHOP_UNIFORMS` and `CAPILLARY_UNIFORMS`. */
 const ALL_OCTAVES = [...DETAIL_OCTAVES, ...CAPILLARY_OCTAVES];
+/** Realistic's heading of each octave off the wind, in `ALL_OCTAVES` order. */
+const REAL_OCTAVE_TURNS = [...REAL_CHOP_TURNS, ...REAL_CAPILLARY_TURNS];
 /** Swell slots by descending slope (k·a), cached per wave set: Low and Medium evaluate the first few (`swellTier`). */
 const slopeOrders = new WeakMap<WaterWaveSet, Uint8Array>();
 function slopeOrder(set: WaterWaveSet): Uint8Array {
@@ -4165,7 +4700,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     const vectors = [
       "slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterMotion", "slateWaterLook", "slateWaterWaves", "slateWaterSun", "slateWaterSunColor",
       "slateWaterLight", "slateWaterShape", "slateWaterFieldBounds", "slateWaterFieldInfo", "slateWaterFieldStep", "slateWaterContactBounds", "slateWaterContactInfo",
-      "slateWaterOrigin", "slateWaterSwellInfo", "slateWaterSea", "slateWaterRipple", "slateWaterTerms", "slateWaterChopShift", "slateWaterSwash",
+      "slateWaterOrigin", "slateWaterGridOffset", "slateWaterSwellInfo", "slateWaterSea", "slateWaterRipple", "slateWaterTerms", "slateWaterChopShift", "slateWaterSwash", "slateWaterHaze",
       // Realistic: the analytic sky's zenith and horizon (scene background and fog colours), the per-channel
       // absorption from Shallow Color (w: Low's single coefficient), the uniform-only sun terms and the light through
       // thin crests (Subsurface).
@@ -4283,6 +4818,9 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   override hardBindForSubMesh(buffer: UniformBuffer, scene: Scene, _engine?: AbstractEngine, subMesh?: SubMesh): void {
     this.bindObjectFeatures(buffer, scene, subMesh);
     this.bindFft(buffer, scene, subMesh);
+    // Per mesh, every draw: surfaces that share this material recentre independently, so it is not a frame constant.
+    const grid = waterGridOffset(subMesh?.getRenderingMesh() ?? this.mesh);
+    buffer.updateFloat4("slateWaterGridOffset", grid[0]!, grid[1]!, grid[2]!, 0);
     const data = sceneWaterBindingData(scene);
     // Packed without allocation (the swell kernel shared between bodies and draws), then uploaded.
     const values = this.frameConstants(scene, data), count = this._blend ? FRAME_UNIFORMS.length : FRAME_BLEND_START;
@@ -4435,6 +4973,8 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
       smoothstep(0, 0.05, w.crestFoam), 0.004 + 0.016 * smoothstep(0.05, 0.4, this.seaState), 1 + 0.9 * smoothstep(0.25, 0.6, this.seaState));
     const swash = this.swash;
     o = put4(v, o, swash[0]!, swash[1]!, swash[2]!, swash[3]!);
+    const haze = lighting.haze;
+    o = put4(v, o, haze[0]!, haze[1]!, haze[2]!, haze[3]!);
     if (partner) {
       // The partner's colours, through the same conversions as the asset's own (its own again without a partner).
       o = putLinear(v, o, partner.shallowColor, partner.opacity, exact);
@@ -4471,9 +5011,11 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   }
   /** Chop octaves and capillaries: (dir.x, dir.z, k, clock phase), the phase reduced in float64. Allocation-free. */
   private octaveConstants(): Float64Array {
-    const w = this.water, out = this.octaves, base = TAU * w.rippleScale / 6, heading = w.waveDirection * Math.PI / 180;
+    const w = this.water, out = this.octaves, base = TAU * w.rippleScale / 6, heading = w.waveDirection * Math.PI / 180, realistic = w.style !== "stylized";
     for (let i = 0; i < ALL_OCTAVES.length; i++) {
-      const [turn, multiplier, , speed, phase] = ALL_OCTAVES[i]!, k = base * multiplier, o = i * 4;
+      const [offset, multiplier, , speed, phase] = ALL_OCTAVES[i]!, k = base * multiplier, o = i * 4;
+      // Realistic's octaves head within a few tens of degrees of the wind (`REAL_OCTAVE_TURNS`); Stylized's fan out by `DETAIL_OCTAVES`.
+      const turn = realistic ? REAL_OCTAVE_TURNS[i]! : offset;
       out[o] = Math.cos(heading + turn); out[o + 1] = Math.sin(heading + turn); out[o + 2] = k;
       out[o + 3] = wrapPhase(phase - Math.sqrt(9.81 * k) * speed * w.waveSpeed * this.time);
     }
@@ -4520,9 +5062,12 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   }
   /**
    * Sets `WATER_VERTEX_WAVE_UNIFORMS` and the band's sampler on another pass's effect for this frame, as
-   * `hardBindForSubMesh` and `bindForSubMesh` do (the band's footprint follows that pass's projection and target).
+   * `hardBindForSubMesh` and `bindForSubMesh` do (the band's footprint follows that pass's projection and target), and
+   * the drawn `mesh`'s grid offset.
    */
-  bindVertexWaves(effect: Effect, scene: Scene): void {
+  bindVertexWaves(effect: Effect, scene: Scene, mesh: AbstractMesh): void {
+    const grid = waterGridOffset(mesh);
+    effect.setFloat4("slateWaterGridOffset", grid[0]!, grid[1]!, grid[2]!, 0);
     const swell = this.swellConstants(scene), warp = this.warp;
     for (let i = 0; i < WATER_WAVE_MAX_COMPONENTS; i++) {
       const o = i * WATER_WAVE_SHADER_STRIDE;
@@ -4572,7 +5117,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
       CUSTOM_FRAGMENT_BEFORE_LIGHTS: source.main,
       // Realistic: filtered chop widens the GGX lobe with distance, and foam is fully rough.
       CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS:
-        "metallicRoughness.g = mix(sqrt(sqrt(metallicRoughness.g * metallicRoughness.g * metallicRoughness.g * metallicRoughness.g + 2.0 * swSlopeVariance)), 1.0, swMatte);",
+        "metallicRoughness.g = mix(sqrt(sqrt(metallicRoughness.g * metallicRoughness.g * metallicRoughness.g * metallicRoughness.g * swSharp + 2.0 * swSlopeVariance)), 1.0, swMatte);",
       // Foam and the mesh edge hide the mirror; without an environment, the analytic scene sky (`swSkyRefl`) stands in.
       // Reflected objects (screen-space or planar) replace the sky or environment where found, with the water's own
       // Fresnel and Reflection Strength.
@@ -4599,7 +5144,8 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
         // broken into glitter (see the sun in `realisticSource`).
         "finalSpecularScaled *= swGloss * swSunReach * swSpecKeep;",
         `finalSpecularScaled *= log(1.0 + dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) * swSpecSquash + 0.0001) / (dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) * swSpecSquash + 0.0001);`,
-        `finalSpecularScaled *= mix(1.0, swSpecMod, swSpecModW * smoothstep(0.05, 0.4, dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11))));`,
+        // The glitter's weight rises smoothly with the lobe's luminance (a threshold on it drew an outline around every contour of the slope).
+        `finalSpecularScaled *= mix(1.0, swSpecMod, swSpecModW * 0.6 * dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) / (dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) + 0.15));`,
         "#endif",
         "#endif",
       ].join("\n"),
