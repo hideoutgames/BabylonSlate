@@ -257,6 +257,8 @@ export class SceneShadowController {
   private readonly refresh = new ShadowMapRefresh((mesh) =>
     this.spatial.invalidate(mesh),
   );
+  /** A native camera pass began since the last before-render-targets notification. */
+  private cameraPass = false;
   private drawCalls = 0;
   private triangles = 0;
   shadowDrawCalls(): number {
@@ -299,11 +301,22 @@ export class SceneShadowController {
     scene.onBeforeRenderObservable.add(() => {
       this.drawCalls = 0;
       this.triangles = 0;
-      this.sync();
+      // Admission only: a caster walk here would be redone before any map renders.
+      this.cameraPass = false;
+      this.sync("admission");
     });
-    // Per-camera target rendering follows active-mesh/world-matrix evaluation.
-    // Catch those updates before Babylon decides whether each shadow map renders.
+    scene.onBeforeCameraRenderObservable.add(() => {
+      this.cameraPass = true;
+    });
+    // Babylon's native path notifies this once per frame before any camera
+    // renders, then again per camera after its active-mesh/world-matrix
+    // evaluation and just before it gathers and renders the shadow maps. Only the
+    // latter decides a map, so only it walks. A frame graph draws the maps from
+    // ManagedShadowsTask, whose pass refreshes after Babylon's world-matrix
+    // update, so it never walks here.
     scene.onBeforeRenderTargetsRenderObservable.add(() => {
+      if (scene.frameGraph || !this.cameraPass) return;
+      this.cameraPass = false;
       this.refreshShadowMaps();
     });
     scene.onDisposeObservable.addOnce(() => {
@@ -386,12 +399,26 @@ export class SceneShadowController {
   effectiveBias(light: Light): readonly EffectiveShadowBias[] {
     return this.entries.get(light)?.effectiveBias ?? [];
   }
-  /** Refreshes admitted maps after the owning renderer updates caster transforms. */
+  /**
+   * Refreshes admitted maps after the owning renderer updates caster transforms.
+   * This is the one caster walk of a rendered frame: it runs immediately before
+   * Babylon's render-once gate consumes each map, so no later change is missed.
+   */
   refreshShadowMaps(): void {
     if (!this.holdsGenerator()) return;
     this.refresh.syncCasters(this.scene, this.meshes);
+    // A sync("admission") skips the walk, so frozen cascade caster bounds follow it here.
+    let casterBounds: ReturnType<ShadowSpatialIndex["bounds"]>;
     for (const entry of this.entries.values())
       if (entry.generator && !entry.standby) {
+        if (entry.generator instanceof CascadedShadowGenerator) {
+          casterBounds ??= this.spatial.bounds();
+          if (casterBounds)
+            entry.generator.shadowCastersBoundingInfo.reConstruct(
+              casterBounds.min,
+              casterBounds.max,
+            );
+        }
         fitLocalShadowDepth(entry.generator.getLight(), this.scene.activeCamera);
         this.refresh.apply(entry.generator);
       }
@@ -442,7 +469,13 @@ export class SceneShadowController {
   diagnostics(lights: readonly Light[] = this.scene.lights) {
     return lights.map((light) => shadowLightRow(light, this.entries.get(light)));
   }
-  sync(): void {
+  /**
+   * "full" also walks every caster and re-applies each map's refresh policy.
+   * "admission" leaves both to refreshShadowMaps(), which runs before every map
+   * render; it still walks when it must read caster state itself (a new map or
+   * a changed directional distance).
+   */
+  sync(mode: "full" | "admission" = "full"): void {
     const scene = this.scene;
     if (scene.isDisposed) return;
     syncDirectionalLightPolicy(scene);
@@ -495,10 +528,17 @@ export class SceneShadowController {
     if (hadPending) markSceneReadinessDirty(scene);
     // Without a map nothing reads caster state, so the walk waits for the first
     // allocation; kept snapshots make the late walk report only real changes.
-    let castersCurrent = this.holdsGenerator();
+    const holding = this.holdsGenerator();
+    let castersCurrent = holding && mode === "full";
     if (castersCurrent) this.refresh.syncCasters(scene, this.meshes);
-    else this.refresh.dropRemovedCasters(this.meshes);
+    else if (!holding) this.refresh.dropRemovedCasters(this.meshes);
     let casterBounds = castersCurrent ? this.spatial.bounds() : undefined;
+    const currentCasters = () => {
+      if (castersCurrent) return;
+      castersCurrent = true;
+      this.refresh.syncCasters(scene, this.meshes);
+      casterBounds = this.spatial.bounds();
+    };
     const state = sceneRenderingSettings(scene);
     const requested = state.shadows;
     const engineSupportsCascades = scene.getEngine()._features.supportCSM;
@@ -854,7 +894,8 @@ export class SceneShadowController {
           entry.light instanceof DirectionalLight &&
           !(entry.generator instanceof CascadedShadowGenerator)
         ) {
-          if (previousSettings?.distance !== settings.distance)
+          if (previousSettings?.distance !== settings.distance) {
+            currentCasters();
             configureDirectionalShadowProjection(
               entry.light,
               scene,
@@ -862,16 +903,13 @@ export class SceneShadowController {
               mapSize,
               this.spatial,
             );
+          }
           entry.light.forceProjectionMatrixCompute();
         }
         continue;
       }
       // The first map reads caster state, bounds and spatial queries from here on.
-      if (!castersCurrent) {
-        castersCurrent = true;
-        this.refresh.syncCasters(scene, this.meshes);
-        casterBounds = this.spatial.bounds();
-      }
+      currentCasters();
       // Halving is bounded by the normalized 4096 maximum and 256 floor. Failed
       // attempts are fully released before smaller maps reuse the reservation.
       while (mapSize >= 256) {
@@ -1139,7 +1177,8 @@ export class SceneShadowController {
     for (const entry of this.entries.values())
       if (entry.generator && !entry.standby) {
         fitLocalShadowDepth(entry.generator.getLight(), scene.activeCamera);
-        this.refresh.apply(entry.generator);
+        // Without a walk this sync, apply() would compare stale caster state.
+        if (castersCurrent) this.refresh.apply(entry.generator);
       }
   }
   /** Caster state only drives allocated maps (admitted or standby) and their spatial queries. */

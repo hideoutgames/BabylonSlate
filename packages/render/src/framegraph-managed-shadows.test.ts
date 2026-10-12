@@ -16,6 +16,7 @@ import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/R
 import { afterEach, expect, it, vi } from "vitest";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { sceneShadowController } from "./shadow-controller";
+import { ShadowMapRefresh } from "./shadow-map-refresh";
 import { captureShadowDiagnostics } from "./shadow-diagnostics";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { createColliderVisualMesh } from "./collider-visual";
@@ -168,6 +169,35 @@ it.each(["point", "spot", "sun"] as const)(
     const previous = faces();
     scene.render(false);
     expect(faces() - previous).toBe(count);
+  },
+);
+
+it.each(["point", "spot"] as const)(
+  "walks %s casters once per graph frame and refreshes edits made after any earlier hook",
+  async (kind) => {
+    const { scene, camera, mesh, graph, render } = await fixture(kind);
+    const count = kind === "point" ? 6 : 1;
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(render()).toBe(count);
+    const walk = vi.spyOn(ShadowMapRefresh.prototype, "syncCasters");
+    expect(render()).toBe(0);
+    expect(walk).toHaveBeenCalledTimes(1);
+    // Babylon recomputes world matrices after the target observable, so a move
+    // made by a hook that follows the controller's own must still redraw the map.
+    scene.onBeforeRenderObservable.addOnce(() => {
+      mesh.position.x += 0.4;
+    });
+    expect(render()).toBe(count);
+    scene.onBeforeRenderTargetsRenderObservable.addOnce(() => {
+      mesh.position.x += 0.4;
+    });
+    expect(render()).toBe(count);
+    scene.onBeforeRenderTargetsRenderObservable.addOnce(() => {
+      mesh.isVisible = false;
+    });
+    expect(render()).toBe(count);
+    expect(render()).toBe(0);
+    graph.dispose();
   },
 );
 
