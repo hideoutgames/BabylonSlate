@@ -4,7 +4,7 @@ import { SimulationInspectionProvider } from "./simulation-inspection-context";
 import { playAssetCatalog } from "../services/asset-catalog";
 import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
 import { createSaveGameStorage, isTestModeEnabled } from "@babylonslate/vfs";
-import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
+import { acquirePlayAssetSources, createMergedPlaySourceControls, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
 import {
   createContext,
   useCallback,
@@ -367,6 +367,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const playSourceHostRef = useRef<PlayAssetSourceHost | null>(null);
   const playSourceLifetimeRef = useRef<AbortController | null>(null);
   const playSourceSetsRef = useRef(new Set<Awaited<ReturnType<typeof acquirePlayAssetSources>>>());
+  /** Merged Play source controls, rebuilt only when the live source sets change. */
+  const mergedSourceControls = useMemo(() => createMergedPlaySourceControls(() => playSourceSetsRef.current), []);
   const initialPlaySourceRef = useRef<Awaited<ReturnType<typeof acquirePlayAssetSources>> | null>(null);
   const [sessionSources, setSessionSources] = useState<SceneSourceAssets>();
   const acquireAssetSources = useCallback(async (
@@ -384,12 +386,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     playSourceSetsRef.current.add(prepared);
     return {
       ...prepared,
-      controls: mergePreparedPlaySources(playSourceSetsRef.current)?.controls ?? emptyPlaySourceControls(),
-      getControls: () => mergePreparedPlaySources(playSourceSetsRef.current)?.controls ?? emptyPlaySourceControls(),
+      getControls: mergedSourceControls,
       release: () => { playSourceSetsRef.current.delete(prepared); prepared.release(); },
-      controlsAfterRelease: () => mergePreparedPlaySources(playSourceSetsRef.current)?.controls ?? emptyPlaySourceControls(),
+      controlsAfterRelease: mergedSourceControls,
     };
-  }, []);
+  }, [mergedSourceControls]);
   const acquireSceneSources = useCallback(async (guid: string, options: { consumer: string; signal: AbortSignal }) => {
     const prepared = await acquireAssetSources([guid], options);
     const scene = prepared.game.scenes.get(guid);
@@ -452,6 +453,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     releaseInitialSources();
     for (const sources of playSourceSetsRef.current) sources.release();
     playSourceSetsRef.current.clear();
+    mergedSourceControls.reset();
     setSessionSources(undefined);
     setPlayInputAssets([]);
     setPlayAudioSourceLoader(undefined);
@@ -1648,7 +1650,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             }] : [])}
             audioAssetGuids={(assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Audio").map((asset) => asset.header.guid)}
             getAssetLoadState={documents.getAssetLoadState}
-            getSourceControls={() => mergePreparedPlaySources(playSourceSetsRef.current)?.controls ?? emptyPlaySourceControls()}
+            getSourceControls={mergedSourceControls}
             acquireSceneSources={acquireSceneSources}
             acquireAssetSources={acquireAssetSources}
             releaseInitialSources={releaseInitialSources}

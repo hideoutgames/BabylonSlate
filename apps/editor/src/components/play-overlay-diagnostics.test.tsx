@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { Engine } from "@babylonjs/core";
 import type { RenderDiagnostics } from "@babylonslate/render";
 import { startPlaySession, type PlaySession } from "../services/play-session";
+import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
 import { PlayOverlay } from "./play-overlay";
 
 vi.mock("../services/play-session", () => ({ startPlaySession: vi.fn() }));
@@ -34,7 +35,7 @@ beforeEach(() => {
     return 0 as unknown as ReturnType<typeof globalThis.setInterval>;
   });
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); window.history.replaceState(null, "", "/"); });
 
 function diagnostics(lights: boolean): RenderDiagnostics {
   return {
@@ -44,22 +45,30 @@ function diagnostics(lights: boolean): RenderDiagnostics {
   } as unknown as RenderDiagnostics;
 }
 
-async function openPlay(onRender?: () => void) {
+/** `testMode` mirrors a test build: the e2e data attributes only exist and update there. */
+async function openPlay(onRender?: () => void, testMode = true) {
+  window.history.replaceState(null, "", testMode ? "/?test=1" : "/");
   const state = { lights: false, guids: ["actor-a"], ys: [1], passes: 0, materials: [] as string[] };
   const renderDiagnostics = vi.fn(() => diagnostics(state.lights));
+  const testHooks = {
+    postProcessPassCount: vi.fn(() => state.passes),
+    assignedMaterialGuids: vi.fn(() => [...state.materials]),
+    spawnedActorGuids: vi.fn(() => [...state.guids]),
+    lastActorPositions: vi.fn(() => state.ys.map((y) => ({ slotId: 0, x: 0, y, z: 0 }))),
+  };
   vi.mocked(startPlaySession).mockReturnValue({
     handle: {
       resize() {}, setSize() {}, scheduler: { setResizing() {} },
       renderDiagnostics,
       lightsDebugEnabled: () => state.lights,
-      postProcessPassCount: () => state.passes,
-      assignedMaterialGuids: () => [...state.materials],
+      postProcessPassCount: testHooks.postProcessPassCount,
+      assignedMaterialGuids: testHooks.assignedMaterialGuids,
       isFreeCamEnabled: () => false,
       accountedGeometryBytes: () => 0,
     },
     lastMoveX: () => null,
-    spawnedActorGuids: () => [...state.guids],
-    lastActorPositions: () => state.ys.map((y) => ({ slotId: 0, x: 0, y, z: 0 })),
+    spawnedActorGuids: testHooks.spawnedActorGuids,
+    lastActorPositions: testHooks.lastActorPositions,
     accountedBytes: () => 0,
     liveObjectCounts: () => ({ meshes: 0, textures: 0 }),
     drawCalls: () => 0,
@@ -70,7 +79,7 @@ async function openPlay(onRender?: () => void) {
   const overlay = <PlayOverlay sharedEngine={{} as Engine} onClose={() => {}} />;
   render(onRender ? <Profiler id="play" onRender={onRender}>{overlay}</Profiler> : overlay);
   await act(async () => {});
-  return { state, renderDiagnostics, callbacks: vi.mocked(startPlaySession).mock.lastCall![0] };
+  return { state, renderDiagnostics, testHooks, callbacks: vi.mocked(startPlaySession).mock.lastCall![0] };
 }
 
 const poll = () => act(() => { polls[0]!(); });
@@ -112,6 +121,35 @@ it("shows the lights overlay while lights debug is on, with Stats closed, and dr
   await poll();
   expect(screen.queryByTestId("lights-debug-overlay")).toBeNull();
   expect(renderDiagnostics).not.toHaveBeenCalled();
+});
+
+it("leaves the e2e data attributes out and skips their reads outside a test build", async () => {
+  const { state, testHooks } = await openPlay(undefined, false);
+  state.guids = ["actor-a", "actor-b"];
+  state.passes = 2;
+  await poll();
+  const overlay = screen.getByTestId("play-overlay");
+  expect(overlay.dataset.postProcessPasses).toBeUndefined();
+  expect(overlay.dataset.assignedMaterials).toBeUndefined();
+  expect(screen.queryByTestId("play-move-x")).toBeNull();
+  expect(screen.queryByTestId("play-actor-guids")).toBeNull();
+  expect(screen.queryByTestId("play-actor-y")).toBeNull();
+  for (const read of Object.values(testHooks)) expect(read).not.toHaveBeenCalled();
+});
+
+it("updates the Stats HUD state only while it is visible, yet keeps the FeatureTest FPS probe current", async () => {
+  const onRender = vi.fn();
+  const { callbacks } = await openPlay(onRender, false);
+  const stats = (fps: number) => ({ fps, scriptMs: 1, physicsMs: 2, publishMs: 3, frameId: 1 });
+  onRender.mockClear();
+  act(() => callbacks.onStats?.(stats(58)));
+  expect(onRender).not.toHaveBeenCalled();
+  expect(playProbes.get(PLAY_PROBE_KEY)?.runtimeFps()).toBe(58);
+
+  act(() => callbacks.onStatHighlight?.("draws", true));
+  act(() => callbacks.onStats?.(stats(61)));
+  expect(screen.getByTestId("play-fps").dataset.fps).toBe("61");
+  expect(playProbes.get(PLAY_PROBE_KEY)?.runtimeFps()).toBe(61);
 });
 
 it("does not re-render the overlay when a poll finds nothing new", async () => {

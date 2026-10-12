@@ -131,6 +131,47 @@ describe("cold command source preparation", () => {
     preparation.dispose();
   });
 
+  it("applies a re-emitted assignment in place when the slot already holds its sources", async () => {
+    const loads: string[][] = [];
+    const released: string[] = [];
+    const applied: Array<string | null | undefined> = [];
+    const preparation = new CommandSourcePreparation();
+    preparation.setLoader(async (guids) => { loads.push([...guids]); return () => { released.push(guids.join()); }; });
+    const apply = (command: CommandMessage) => { if (command.type === "assignMesh") applied.push(command.hasButton ? "button" : command.meshAssetGuid); };
+    preparation.receive(mesh("model"), apply);
+    await preparation.whenReady([7]);
+    // A property write re-emits the whole assignment; same sources need no reload and no readiness wait.
+    preparation.receive({ ...mesh("model"), hasButton: true }, apply);
+    expect(applied).toEqual(["model", "button"]);
+    expect(preparation.pendingSlotIds()).toEqual([]);
+    expect(loads).toEqual([["model"]]);
+    expect(released).toEqual([]);
+    // A different source set still prepares cold and releases the held sources afterwards.
+    preparation.receive(mesh("other"), apply);
+    await preparation.whenReady([7]);
+    expect(loads).toEqual([["model"], ["other"]]);
+    expect(released).toEqual(["model"]);
+    preparation.dispose();
+    expect(released).toEqual(["model", "other"]);
+  });
+
+  it("keeps queue order for a same-source re-emission while the slot is still preparing", async () => {
+    const material = deferred<() => void>();
+    const preparation = new CommandSourcePreparation();
+    preparation.setLoader(async ([guid]) => guid === "material" ? material.promise : () => undefined);
+    const applied: string[] = [];
+    const apply = (command: CommandMessage) => { applied.push(command.type); };
+    preparation.receive(mesh("model"), apply);
+    await preparation.whenReady([7]);
+    preparation.receive({ type: "assignMaterial", slotId: 7, materialAssetGuid: "material" }, apply);
+    preparation.receive(mesh("model"), apply);
+    expect(applied).toEqual(["assignMesh"]);
+    material.resolve(() => undefined);
+    await preparation.whenReady([7]);
+    expect(applied).toEqual(["assignMesh", "assignMaterial", "assignMesh"]);
+    preparation.dispose();
+  });
+
   it("passes exact font modes for cold commands and supersedes an incompatible mode for the same font", async () => {
     const first = deferred<() => void>();
     const received: Array<{ modes: string[]; signal: AbortSignal }> = [];
