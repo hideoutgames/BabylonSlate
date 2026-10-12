@@ -19,6 +19,20 @@ describe("AudioBufferCache", () => {
     cache.dispose();
   });
 
+  it("evicts least recently used entries for a decode only as far as it needs, and none when it fits", () => {
+    const evicted: string[] = [];
+    const cache = new AudioBufferCache({ byteCeiling: 100, onEvict: (guid, reason) => evicted.push(`${guid}:${reason}`) });
+    for (const guid of ["a", "b", "c"]) cache.put(guid, new Uint8Array(30));
+    cache.get("a");
+    cache.reserveDecode(10);
+    expect(evicted).toEqual([]);
+    cache.reserveDecode(25);
+    expect(evicted).toEqual(["b:decode-admission"]);
+    expect(cache.get("a")).toBeDefined();
+    expect(cache.get("c")).toBeDefined();
+    cache.dispose();
+  });
+
   it("accounts decoded PCM separately from the texture cache ceiling", () => {
     const cache = new AudioBufferCache({ byteCeiling: 64 });
     cache.put("a", new Uint8Array(40), 40);

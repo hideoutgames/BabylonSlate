@@ -14,7 +14,7 @@ const scratchInverse = new Matrix();
 export class Joystick2DInput {
   private readonly captures = new Map<number, Capture>();
   private readonly ignoredPointers = new Set<number>();
-  private readonly emitted = new Map<string, number>();
+  private emitted = new Map<string, number>();
   private readonly layerFor: (id: string) => SceneLayerView | undefined;
   private readonly size: () => { width: number; height: number };
   private readonly emit: (controlId: string, value: number) => void;
@@ -111,20 +111,31 @@ export class Joystick2DInput {
     return visual.properties.enabled && !visual.mesh.isDisposed() && visual.mesh.isEnabled() && visual.mesh.isVisible && visual.mesh.visibility > 0;
   }
 
+  /** Strongest value per control for the pointers currently captured; rebuilt in place by each publish. */
+  private values = new Map<string, number>();
+
+  private contribute(control: string, value: number): void {
+    if (!this.values.has(control) || Math.abs(value) > Math.abs(this.values.get(control)!)) this.values.set(control, value);
+  }
+
+  /** Emits only changes. `emit` must not re-enter the input: the maps below are reused. */
   private publish(): void {
-    const values = new Map<string, number>();
-    const contribute = (control: string, value: number) => {
-      if (!values.has(control) || Math.abs(value) > Math.abs(values.get(control)!)) values.set(control, value);
-    };
+    const values = this.values;
+    values.clear();
     for (const { visual, x, y } of this.captures.values()) {
-      contribute(visual.properties.horizontalControl, x);
-      contribute(visual.properties.verticalControl, y);
+      this.contribute(visual.properties.horizontalControl, x);
+      this.contribute(visual.properties.verticalControl, y);
     }
-    for (const control of new Set([...this.emitted.keys(), ...values.keys()])) {
+    // Previously emitted controls first, then newly active ones, as one pass over their union.
+    for (const [control, previous] of this.emitted) {
       const value = values.get(control) ?? 0;
-      if (value !== (this.emitted.get(control) ?? 0)) this.emit(control, value);
+      if (value !== previous) this.emit(control, value);
     }
-    this.emitted.clear();
-    for (const [control, value] of values) this.emitted.set(control, value);
+    for (const [control, value] of values) {
+      if (!this.emitted.has(control) && value !== 0) this.emit(control, value);
+    }
+    // Swap rather than copy; the old emitted map is cleared by the next publish.
+    this.values = this.emitted;
+    this.emitted = values;
   }
 }

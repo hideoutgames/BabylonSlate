@@ -68,6 +68,19 @@ export type DistanceRegion = { x0: number; z0: number; x1: number; z1: number; c
 let edtF = new Float64Array(0), edtD = new Float64Array(0), edtV = new Int32Array(0), edtZ = new Float64Array(1);
 
 /**
+ * Per-cell scratch of `fillTerrain`, grown on demand and shared: a refill runs every `WATER_FIELD_MOVE_MS` while inputs
+ * change and is synchronous, so one set serves every field. Views are exactly `count` long, as fresh arrays were.
+ */
+let fillDepth = new Float64Array(0), fillKnown = new Uint8Array(0), fillToLand = new Float64Array(0), fillToWater = new Float64Array(0);
+let fillRing = new Uint16Array(0), fillQueue = new Int32Array(0);
+function growFillScratch(count: number): void {
+  if (fillDepth.length >= count) return;
+  fillDepth = new Float64Array(count); fillKnown = new Uint8Array(count);
+  fillToLand = new Float64Array(count); fillToWater = new Float64Array(count);
+  fillRing = new Uint16Array(count); fillQueue = new Int32Array(count);
+}
+
+/**
  * One line of the transform: the lower envelope of parabolas rooted at `edtF`'s first `n` values, evaluated into
  * `edtD` for positions [from, to).
  */
@@ -343,7 +356,8 @@ export class WaterField {
     const depthRange = this.depthRange, fineMin = this.fineDepthMin;
     const fineRange = [fineMin, fineMin + this.fineDepthSpan] as const;
     const transforms = landscapes.map(({ root, data }) => ({ data, transform: toTransform(root.computeWorldMatrix(true)) }));
-    const depth = new Float64Array(count), known = new Uint8Array(count);
+    growFillScratch(count);
+    const depth = fillDepth.subarray(0, count).fill(0), known = fillKnown.subarray(0, count).fill(0);
     // The water's rest height is exact every `LEVEL_STRIDE` cells and interpolated between where all four samples
     // around a cell hold water (a blending body's rest height runs the blend kernel, smooth over metres); cells near
     // the water's own edge, where only some samples have water, evaluate it exactly, and cells with no sample holding
@@ -375,7 +389,7 @@ export class WaterField {
       if (level !== null && ground > -Infinity) { depth[i] = level - ground; known[i] = 1; }
     }
     // Signed distance to the shoreline: positive over water, negative inland.
-    const toLand = new Float64Array(count), toWater = new Float64Array(count);
+    const toLand = fillToLand.subarray(0, count), toWater = fillToWater.subarray(0, count);
     for (let i = 0; i < count; i++) {
       const land = known[i] === 1 && depth[i]! <= 0;
       toLand[i] = land ? 0 : INF;
@@ -433,7 +447,7 @@ const UNREACHED = 0xffff;
  * Returns each unknown cell's ring (1 outward) or `UNREACHED`; known cells read 0.
  */
 function extendTerrainDepth(depth: Float64Array, known: Uint8Array, width: number, height: number, rings: number): Uint16Array {
-  const count = width * height, ring = new Uint16Array(count).fill(UNREACHED), queue = new Int32Array(count);
+  const count = width * height, ring = fillRing.subarray(0, count).fill(UNREACHED), queue = fillQueue.subarray(0, count);
   // Underwater terrain seeds and feeds the extension (ring 0); dry terrain is known but never reached or averaged.
   const dry = UNREACHED - 1;
   for (let i = 0; i < count; i++) if (known[i]) ring[i] = depth[i]! > 0 ? 0 : dry;

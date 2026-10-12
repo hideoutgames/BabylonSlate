@@ -893,6 +893,34 @@ describe("createPlayMesh", () => {
     expect(scene.cameras.filter(camera => camera.name.startsWith("authoredCamera:"))).toEqual([]);
   });
 
+  it("keeps the working visual for a light property write but rebuilds it for any other part change", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const part = (componentId: string, meshKind: string, x: number) => ({ componentId, meshKind,
+      position: [x, 0, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [1, 1, 1] as [number, number, number] });
+    const command: AssignMeshCommand = { type: "assignMesh", slotId: 0, meshKind: "box", meshAssetGuid: null, parts: [
+      part("body", "box", 0),
+      { ...part("lamp", "light:point", 1), light: { color: [1, 0, 0], intensity: 2, enabled: true } },
+    ] };
+    const withPart = (componentId: string, change: Record<string, unknown>): AssignMeshCommand =>
+      ({ ...command, parts: command.parts!.map(p => p.componentId === componentId ? { ...p, ...change } : p) });
+    applyAssignMesh(scene, binding, command);
+    const visual = binding.meshes.get(0);
+
+    applyAssignMesh(scene, binding, withPart("lamp", { light: { color: [1, 0, 0], intensity: 4, enabled: true } }));
+    expect(binding.meshes.get(0)).toBe(visual);
+    expect((scene.getLightByName("authoredLight:0") as PointLight).intensity).toBe(4);
+
+    applyAssignMesh(scene, binding, withPart("body", { scale: [2, 1, 1] }));
+    expect(binding.meshes.get(0)).not.toBe(visual);
+    expect(visual!.isDisposed()).toBe(true);
+    const rebuilt = binding.meshes.get(0);
+    applyAssignMesh(scene, binding, withPart("lamp", { position: [3, 0, 0] }));
+    expect(binding.meshes.get(0)).not.toBe(rebuilt);
+  });
+
   it("does not steal activeCamera for a camera that is not the Default Camera", () => {
     const handle = createTestEngine();
     handles.push(handle);

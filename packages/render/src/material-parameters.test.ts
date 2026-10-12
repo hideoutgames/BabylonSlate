@@ -368,6 +368,35 @@ describe("runtime material parameters", () => {
     expect(binding.materialParameters.size).toBe(0);
   });
 
+  it("retires only the despawned slot's assignments and private instances, not a slot whose id starts the same", () => {
+    const { scene, binding } = setup();
+    for (const slotId of [1, 12])
+      for (const componentId of ["body", "hat"]) {
+        snapshots.applyAssignMaterial(scene, binding, { type: "assignMaterial", slotId, componentId, materialAssetGuid: "mat" });
+        snapshots.applySetMaterialParameter(binding, {
+          type: "setMaterialParameter", slotId, componentId, materialAssetGuid: "mat",
+          parameterName: "Roughness", parameter: { kind: "float", value: 0.2 },
+        });
+      }
+    // Reassigning drops one private instance and re-adds the assignment under the same key.
+    snapshots.applyAssignMaterial(scene, binding, { type: "assignMaterial", slotId: 1, componentId: "body", materialAssetGuid: "other" });
+    const released: string[] = [];
+    const release = binding.releaseMaterialInstance!;
+    binding.releaseMaterialInstance = (key, guid) => { released.push(key); release(key, guid); };
+
+    snapshots.retirePlaySlot(binding, 1);
+    expect(released).toEqual(["1|hat"]);
+    expect([...binding.materialParameters.keys()]).toEqual(["12|body", "12|hat"]);
+    expect([...binding.componentMaterialGuids.keys()]).toEqual(["12|body", "12|hat"]);
+    // A slot reusing the id starts clean, then retires cleanly again.
+    snapshots.applyAssignMaterial(scene, binding, { type: "assignMaterial", slotId: 1, componentId: "hat", materialAssetGuid: "mat" });
+    snapshots.retirePlaySlot(binding, 1);
+    expect([...binding.componentMaterialGuids.keys()]).toEqual(["12|body", "12|hat"]);
+    snapshots.retirePlaySlot(binding, 12);
+    expect(binding.componentMaterialGuids.size).toBe(0);
+    expect(binding.materialParameters.size).toBe(0);
+  });
+
   it("targets imported descendants of one component and discards updates for replaced materials", () => {
     const { scene, binding, library } = setup();
     const root = new Mesh("actor-1", scene);
