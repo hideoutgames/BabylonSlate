@@ -20,7 +20,7 @@ import { MISSING_STARTUP_SCENE_MESSAGE } from "@babylonslate/exporter";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { assetsFromIndexed, collectAndExportGame, resolveExportPluginGraph } from "./export-game";
 import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
-import { loadExportDocuments } from "./export-game-inputs";
+import { loadFixtureExportDocuments } from "../testing/export-document-fixtures";
 import type { ExportIndexedAsset, ExportArtifact } from "@babylonslate/exporter";
 // Collect the real compiler with the suite so cold transforms are not timed as export work.
 import "./script-compiler";
@@ -78,7 +78,7 @@ describe("collectAndExportGame", () => {
         }] : [],
       },
     }));
-    const loaded = await loadExportDocuments({
+    const loaded = await loadFixtureExportDocuments({
       assets: indexed,
       loadDocument: async (_kind, path) => indexed.find(entry => entry.path === path)?.header.payload ?? null,
       readAssetChunk: async (path, chunk) => path === "assets/hero-model.babasset" && chunk === "source"
@@ -118,7 +118,7 @@ describe("collectAndExportGame", () => {
     ];
     const exportReaching = async (dependencies: string[]) => {
       indexed[0]!.header.dependencies = indexed[0]!.header.requiredDependencies = dependencies;
-      const loaded = await loadExportDocuments({
+      const loaded = await loadFixtureExportDocuments({
         assets: indexed,
         loadDocument: async (_kind, path) => indexed.find(entry => entry.path === path)?.header.payload ?? null,
         readAssetChunk: async () => null,
@@ -145,7 +145,7 @@ describe("collectAndExportGame", () => {
     } });
     const indexed = [sceneAsset("main", "Main"), sceneAsset("unused", "Unused")];
     const exportAfterBakeFailed = async (path: string, failure: unknown = new Error("read failed")) => {
-      const loaded = await loadExportDocuments({
+      const loaded = await loadFixtureExportDocuments({
         assets: indexed,
         // Export's own reads succeed, and each Scene still holds an earlier reverb chunk.
         loadDocument: async (_kind, assetPath) => indexed.find(entry => entry.path === assetPath)?.header.payload ?? null,
