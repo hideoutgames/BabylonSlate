@@ -3441,10 +3441,11 @@ float swShoreLobes = (abs(swScallop * 2.0 - 1.0) - 0.3) * 1.3 * swNearFoam + (sw
 float swBodyEdge = smoothstep(0.5, 3.0, swFieldShore - max(0.0, swBankV));
 // The band's edge runs in and out with the swash (\`swSwashRun\`): wider as each bore runs up, narrower as it drains.
 // Over known terrain with waves the band is the swash's own: a white band riding the water's edge (measured from the edge,
-// not from the rest shoreline), about one Foam Width wide (a third less close to the eye, and never under about six pixels, so it stays a line from far away), so at every moment of
-// the cycle it is a bounded band with turquoise water seaward of it. (Measured from the rest shoreline it was up to four Foam Widths wide at the run-up's
-// peak and, with the swash front and the surf patches beside it, ran together into one sheet over the shallows.)
-float swSurfEdge = mix(mix(3.3, 1.3, swBodyEdge) * swFoamAmt * (0.72 + 0.45 * swSwashRun), min(max((0.8 + 0.25 * swSwashRun) * (1.0 - 0.3 * swClose), swFoot * 6.0 / swFoamWidth), 3.0) * swFoamAmt, swSwashZone);
+// not from the rest shoreline), about one Foam Width wide (a third less close to the eye, and never under about eight
+// pixels, so it stays a line from far away), so at every moment of the cycle it is a bounded band with turquoise water
+// seaward of it. (Measured from the rest shoreline it was up to four Foam Widths wide at the run-up's peak and, with the
+// swash front and the surf patches beside it, ran together into one sheet over the shallows.)
+float swSurfEdge = mix(mix(3.3, 1.3, swBodyEdge) * swFoamAmt * (0.72 + 0.45 * swSwashRun), min(max((0.8 + 0.25 * swSwashRun) * (1.0 - 0.3 * swClose), swFoot * 8.0 / swFoamWidth), 3.0) * swFoamAmt, swSwashZone);
 float swShoreX = mix(swShoreUnit, max(swSwashEdgeS, 0.0) / swFoamWidth, swSwashZone) - swShoreLobes * mix(0.9, 0.5, swSwashZone);
 float swAAU = min(fwidth(swShoreX) * 0.7 + 0.002, 0.5);
 // Over terrain the band gives way where the backwash has uncovered the shallows (a hard cut, the swash's own edge). The
@@ -3459,9 +3460,10 @@ float swBandCapAA = fwidth(swTerrainDepth) * 0.7 + 0.002;
 float swBandShallow = mix(1.0, 1.0 - smoothstep(swBandCap - swBandCapAA, swBandCap + swBandCapAA, swTerrainDepth), swKnown);
 float swFoam = (1.0 - smoothstep(swSurfEdge - swAAU, swSurfEdge + swAAU, swShoreX)) * swToonCover * swBandShallow;
 // The ring: from Medium a bold line on each bore (\`swBorePhase\`) rolling in toward the band, thinning (never fading)
-// as it arrives and far out; Low keeps one ring breathing beyond the band. Both follow the rest shoreline (a distance
-// field that grows toward open water everywhere, so they never flash across a flat bar), at least about a pixel and a
-// half wide.
+// as it arrives and far out; Low keeps one ring breathing beyond the band. Both follow the swash's edge over known
+// terrain with waves (so they step seaward from the band wherever the swash stands) and the rest shoreline elsewhere (a
+// distance field that grows toward open water everywhere, so they never flash across a flat bar), at least about a pixel
+// and a half wide.
 float swWashUnit = mix(swRestShore / swFoamWidth, max(swSwashEdgeS, 0.0) / swFoamWidth, swSwashZone) - swShoreLobes * 0.6;${fromTier(1, `
 // Distances in metres from the bore front (bores are tens of metres apart for long swell, so a share of a cycle
 // would draw metre-wide bands up close).
@@ -3588,11 +3590,13 @@ float swFilmA1 = fwidth(swFilmG1) * 1.1 + 0.002;
 float swFilmA2 = fwidth(swFilmG2) * 1.1 + 0.002;
 swSwashWet = mix(swFilmOld, swFilmCur, smoothstep(-swFilmA1, swFilmA1, swFilmG1) * smoothstep(-swFilmA2, swFilmA2, swFilmG2))
   * smoothstep(-swFilmA0, swFilmA0, swFilmG0) * swSwashZone;`)}
-// The wet strip is bounded: behind the water's edge it reaches one and three fifths Foam Widths up the beach and no further, so
-// a long run-up on a gentle slope leaves a strip beside the swash, never a dark field close to the camera. Its outer edge
-// is antialiased by the edge distance's own screen derivative, and the wet line (below) follows it.
+// The wet strip is bounded: behind the water's edge it reaches one and three fifths Foam Widths up the beach (one and a
+// tenth close to the eye) and no further, so a long run-up on a gentle slope leaves a strip beside the swash, never a dark
+// field close to the camera. Its outer edge is antialiased by the edge distance's own screen derivative, and the wet line
+// (below) follows it.
 float swFilmBackAA = fwidth(swSwashEdgeS) * 1.1 + 0.002;
-swSwashWet *= 1.0 - smoothstep(swFoamWidth * 1.6 - swFilmBackAA, swFoamWidth * 1.6 + swFilmBackAA, -swSwashEdgeS);
+float swFilmReach = swFoamWidth * (1.6 - 0.5 * swClose);
+swSwashWet *= 1.0 - smoothstep(swFilmReach - swFilmBackAA, swFilmReach + swFilmBackAA, -swSwashEdgeS);
 float swFilm = (1.0 - swToonCover) * swSwashWet;
 float swFilmAA = min(fwidth(swFilm) * 0.7 + 0.01, 0.2);
 float swFilmA = max(swFoam, smoothstep(0.32 - swFilmAA, 0.32 + swFilmAA, swFilm) * 0.4);
@@ -3603,7 +3607,8 @@ ${fromTier(1, `
 // water-coloured lies beyond it. That edge is the outer boundary of the union of the swash's covered water and the drying
 // film behind it (wet sand, below). Where the film stands, the line is the film's own outer ramp (its switches are
 // blended over about a pixel and a half, so the ramp is continuous and antialiased by construction), darkest on the
-// ramp's lower part and about two pixels wide at most; where it does not, the line stands just beyond the swash's edge.
+// ramp's lower part and narrow (its film range is a tight window around the tone's edge, so it stays a line beside the
+// wet strip); where it does not, the line stands just beyond the swash's edge.
 // Both fade out in the far field (a line would outline every shoreline from above). Where the union reaches the body's own
 // edge (the mesh ends at the waterline) it is drawn there instead. It is the scene behind the water darkened (a warm dark
 // at partial coverage, so sand reads as wet sand, not ink); nothing refracts under it.
