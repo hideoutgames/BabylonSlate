@@ -17,12 +17,19 @@ import { syncSceneLighting } from "./scene-lighting";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { withSceneReadinessState } from "./scene-readiness-signal";
 import { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { DriverCompileWatch } from "./driver-compile";
 import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } from "./scene-stream-admission";
 // Kept on the ./scene-perf subpath. Modules in scene-perf's transitive import
 // graph must import these from the leaves, or they close an import cycle back
 // through this file.
 export { markSceneReadinessDirty, onSceneReadinessDirty, withSceneReadinessState } from "./scene-readiness-signal";
-export { createStallDeadline, SCENE_FIRST_FRAME_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS, type StallDeadline } from "./stall-deadline";
+export {
+  createStallDeadline,
+  SCENE_DRIVER_COMPILE_TIMEOUT_MS,
+  SCENE_FIRST_FRAME_TIMEOUT_MS,
+  SCENE_SHADER_WARM_TIMEOUT_MS,
+  type StallDeadline,
+} from "./stall-deadline";
 
 /** Fast large-scene lookups (§2.4). Babylon 9 defaults these on; pass them explicitly. */
 export const SCENE_LOOKUP_MAPS: SceneOptions = {
@@ -83,7 +90,9 @@ export async function prewarmMeshMaterials(
   };
   check();
   syncSceneLighting(scene);
-  const deadline = createStallDeadline(describeShaderStall, SCENE_SHADER_WARM_TIMEOUT_MS);
+  // The driver reports a parallel compile's completion only; a pending one is not a stall.
+  const compiles = new DriverCompileWatch(scene.getEngine());
+  const deadline = createStallDeadline(describeShaderStall, SCENE_SHADER_WARM_TIMEOUT_MS, () => compiles.renew());
   try {
     await deadline.race((async () => {
       for (const mesh of meshes) {

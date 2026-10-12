@@ -28,6 +28,7 @@ import {
   materialLibraryAssetGuid,
   onSceneReadinessDirty,
   prewarmSceneMaterials,
+  SCENE_DRIVER_COMPILE_TIMEOUT_MS,
   SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
 
@@ -379,6 +380,57 @@ describe("prewarmSceneMaterials", () => {
     scene.dispose();
     engine.dispose();
     vi.useRealTimers();
+  });
+
+  describe("a compile in flight on the driver", () => {
+    /** One unit whose effect stays pending on the driver until `finish()`. */
+    function pendingUnit(parallel: boolean) {
+      vi.useFakeTimers();
+      const engine = new NullEngine();
+      if (parallel) engine.getCaps().parallelShaderCompile = { COMPLETION_STATUS_KHR: 0x91b1 };
+      const scene = new Scene(engine);
+      const mesh = new Mesh("water-mesh", scene);
+      const material = new PBRMaterial("water-material", scene);
+      mesh.material = material;
+      let compiled = false;
+      (engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects["water-effect"] =
+        { isReady: () => compiled, getCompilationError: () => "" };
+      let finish!: () => void;
+      vi.spyOn(material, "forceCompilationAsync").mockImplementation(
+        () => new Promise<void>((resolve) => { finish = () => { compiled = true; resolve(); }; }),
+      );
+      const settled: { value: "ready" | Error | null } = { value: null };
+      const done = prewarmSceneMaterials(scene).then(() => { settled.value = "ready"; }, (error: Error) => { settled.value = error; });
+      return { settled, done, finish: () => finish(), dispose: () => { scene.dispose(); engine.dispose(); vi.useRealTimers(); } };
+    }
+
+    it("outlasts the stall budget while the driver compiles in parallel", async () => {
+      const unit = pendingUnit(true);
+      await vi.advanceTimersByTimeAsync(SCENE_SHADER_WARM_TIMEOUT_MS * 3);
+      expect(unit.settled.value).toBeNull();
+      unit.finish();
+      await unit.done;
+      expect(unit.settled.value).toBe("ready");
+      unit.dispose();
+    });
+
+    it("still fails a driver compile that never completes", async () => {
+      const unit = pendingUnit(true);
+      await vi.advanceTimersByTimeAsync(SCENE_DRIVER_COMPILE_TIMEOUT_MS + SCENE_SHADER_WARM_TIMEOUT_MS * 2);
+      await unit.done;
+      expect(unit.settled.value).toEqual(expect.objectContaining({
+        message: expect.stringContaining('Stalled compiling "water-material" for "water-mesh" after 0 compiled variants.'),
+      }));
+      unit.dispose();
+    });
+
+    it("fails at the stall budget on a driver without parallel compile", async () => {
+      const unit = pendingUnit(false);
+      await vi.advanceTimersByTimeAsync(SCENE_SHADER_WARM_TIMEOUT_MS);
+      await unit.done;
+      expect(unit.settled.value).toBeInstanceOf(Error);
+      unit.dispose();
+    });
   });
 
   it("names the stalled variant after earlier variants completed", async () => {
