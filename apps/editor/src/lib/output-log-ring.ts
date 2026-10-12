@@ -1,9 +1,9 @@
 export const OUTPUT_LOG_RING_CAP = 500;
 
-/** Keep the Output Log ring at {@link OUTPUT_LOG_RING_CAP} lines. */
-export function appendOutputLogLine(
+/** Keep the Output Log ring at {@link OUTPUT_LOG_RING_CAP} lines, `lines` in arrival order. */
+export function appendOutputLogLines(
   prev: readonly string[],
-  line: string,
+  lines: readonly string[],
 ): string[] {
-  return [...prev, line].slice(-OUTPUT_LOG_RING_CAP);
+  return [...prev, ...lines].slice(-OUTPUT_LOG_RING_CAP);
 }

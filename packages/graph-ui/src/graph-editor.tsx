@@ -732,6 +732,8 @@ function GraphEditorCanvas({
   );
 
   const lastEmittedRef = useRef<GraphDocument | null>(null);
+  // Signature of `lastEmittedRef.current`, so an emit hashes only its new graph.
+  const lastEmittedSignatureRef = useRef<{ graph: GraphDocument; signature: string } | null>(null);
   const dragTransactionRef = useRef<string | null>(null);
 
   const emitChange = useCallback(
@@ -752,12 +754,16 @@ function GraphEditorCanvas({
         })),
         { members: membersRef.current, components: componentsRef.current },
       );
-      if (
-        lastEmittedRef.current &&
-        canonicalGraphSignature(graph) ===
-          canonicalGraphSignature(lastEmittedRef.current)
-      ) {
-        return;
+      const last = lastEmittedRef.current;
+      if (last) {
+        const signature = canonicalGraphSignature(graph);
+        let previous = lastEmittedSignatureRef.current;
+        if (previous?.graph !== last) {
+          previous = { graph: last, signature: canonicalGraphSignature(last) };
+          lastEmittedSignatureRef.current = previous;
+        }
+        if (signature === previous.signature) return;
+        lastEmittedSignatureRef.current = { graph, signature };
       }
       lastEmittedRef.current = graph;
       onChange?.(graph, meta);

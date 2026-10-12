@@ -318,8 +318,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     }
   }, [playing, preparing]);
 
-  const previewLoadKey = prefabPreviewLoadKey(previewComponents);
-  const previewTransformKey = prefabPreviewTransformKey(previewComponents);
+  const previewLoadKey = useMemo(() => prefabPreviewLoadKey(previewComponents), [previewComponents]);
+  const previewTransformKey = useMemo(() => prefabPreviewTransformKey(previewComponents), [previewComponents]);
   const materialLibraryKey = useMemo(() => {
     void registryEpoch;
     return savedMaterialLibraryKey(assetRegistry?.list() ?? []);

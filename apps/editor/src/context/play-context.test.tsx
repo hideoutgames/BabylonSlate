@@ -51,7 +51,7 @@ afterEach(() => {
   host.documents = host.noProject;
 });
 
-it("delivers logs and BT snapshots only to their subscribers while Play controls stay live", () => {
+it("delivers logs and BT snapshots only to their subscribers while Play controls stay live", async () => {
   const renders = { play: 0, optional: 0, log: 0, bt: 0 };
   let controls!: ReturnType<typeof usePlay>;
   function PlayConsumer() {
@@ -107,10 +107,11 @@ it("delivers logs and BT snapshots only to their subscribers while Play controls
     for (const listener of host.diagnostics) listener("Session Line");
   });
   act(() => controls.appendLog("Utility Line"));
-  expect(screen.getByTestId("logs").textContent).toBe(
+  // Lines from separate events within one frame commit together, in arrival order.
+  await waitFor(() => expect(screen.getByTestId("logs").textContent).toBe(
     "[Engine] Engine Line\nSession Line\nUtility Line",
-  );
-  expect(renders.log).toBeGreaterThan(initial.log);
+  ));
+  expect(renders.log).toBe(initial.log + 1);
   expect(renders.play).toBe(initial.play);
   expect(renders.optional).toBe(initial.optional);
   expect(renders.bt).toBe(initial.bt);
@@ -234,7 +235,7 @@ it("keeps Play stopped and the preparation error visible even with fixture injec
   expect(controls.playing).toBe(false);
   expect(controls.preparing).toBe(false);
   expect(screen.queryByTestId("play-prepare-dialog")).toBeNull();
-  expect(screen.getByTestId("logs").textContent).toBe("Play preparation failed: No project catalog is available.");
+  await waitFor(() => expect(screen.getByTestId("logs").textContent).toBe("Play preparation failed: No project catalog is available."));
 });
 
 const MAIN_SCENE_ID = "scene:assets/Main.scene.babasset";
@@ -295,7 +296,7 @@ it.each([
 
   await act(async () => { await controls.requestPlay(); });
   expect(controls.playing).toBe(false);
-  expect(screen.getByTestId("logs").textContent).toBe("Play preparation failed: No project catalog is available.");
+  await waitFor(() => expect(screen.getByTestId("logs").textContent).toBe("Play preparation failed: No project catalog is available."));
   if (!dialog) {
     expect(screen.queryByRole("dialog")).toBeNull();
     return;
