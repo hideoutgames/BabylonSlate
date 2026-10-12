@@ -244,6 +244,7 @@ The narrow Babylon 9.29 particle binder adapter preserves current particle defin
 | `framegraph-borrowed-draw`, `engine-drawing-state`, `editor-debug-overlay`, `gizmo-host` | `engine._currentRenderTarget`, `_currentFramebuffer`, `_rttRenderPassWrapper`, `_bindUnboundFramebuffer`; `RTT._disableEngineStages`; `scene._intermediateRendering`; `camera._scene`; `gizmo._rootMesh` | Exact caller target/state restore when 9.29 draws lack `finally` | `framegraph-managed-shadows`, `environment-base-radiance`, `water-fft`, `editor-debug-overlay`, `gizmo-host` |
 | `transparent-depth-pre-pass` | `SubMesh._alphaIndex`, `_distanceToCamera`; `RenderingGroup._transparentSortCompareFn`; `scene._activeMeshesFrozenButKeepClipping`, `_frustumPlanes` | Reproduce `RenderingGroup._RenderSorted` order and clipping | `framegraph-forward-scene` |
 | `framegraph-logical-buffers`, `framegraph-post-process`, `shared-outline-task` | Task subclass hooks: `_frameGraph`, `_prepareRendering`, `_checkTextureCompatibility`, `_textureWidth/Height`, `_renderer` | FrameGraph task extension surface | `scene-post-process-graph`, `framegraph-post-process`, `e2e/shared-outline.spec.ts` |
+| `light-neutral-tasks` (used by `shared-outline-task`, `framegraph-logical-buffers`, `water-scene-copy`), `framegraph-managed-shadows` | Protected `_setLightsForShadow`, `_onBefore/AfterRenderObservable` | Light-neutral passes override the hook with a no-op: 9.29 otherwise writes `light.shadowEnabled` around every pass and readiness probe, and each changed write walks all meshes to mark their light defines dirty, so every material rebuilds them on its next draw. The managed object pass keeps its own narrowed toggle | `light-neutral-tasks`, `framegraph-managed-shadows` |
 | `shared-outline-mask`, `render-target-capture`, `shared-outline`, `webgpu-node-material-rebind` | `Mesh._getInstancesRenderList`, `_processRendering`, `_bind`, `_userInstancedBuffersStorage`, `_invalidateInstanceVertexArrayObject`; `SubMesh._getDrawWrapper`, `_removeDrawWrapper`, `_drawWrapper(s)`, `_id`; `DrawWrapper._forceRebindOnNextCall`; `Effect._uniformBuffersNames`; `Geometry._releaseVertexArrayObject`; `ImageProcessingConfiguration._applyByPostProcess`; material `_alphaCutOff` etc. | Draw meshes with native instancing/morph/skin binding into owned passes and release per-pass wrappers | sibling tests, `e2e/shared-outline.spec.ts`, `e2e/render-targets.spec.ts` |
 | `clustered-light-order` †, `clustered-camera-bounds` †, `clustered-resource-cost` †, `clustered-scene-lights`, `clustered-allocation` † | `ClusteredLightContainer._sortedLights`, `_lightDataBuffer/Texture`, `_sliceRanges`, `_proxyMaterial`, `_tileMask*`, `_updateBatches`; `light._proxyMesh`; `material._indexInSceneMaterialArray` | Authored CEL order, conservative physical bounds, resource accounting, membership | `clustered-scene-lights`, `clustered-resource-cost`, `e2e/clustered-lights.spec.ts` |
 | `shadow-controller`, `reusable-shadow-generator`, `area-rect-light`, `area-light-resources`, `allocation-checkpoint`, `shadow-allocation-validation`, `shadow-material-policy`, `clustered-material-policy`, `shadow-map-refresh` | `light._shadowGenerators`, `_markMeshesAsLightDirty`; generator `_light`, `_currentRenderId`, `_cached*`; `engine._features.supportCSM`, `_renderTargetWrapperCache`, `_gl`; `scene._ltcTextures`; `pluginManager._plugins`; target `_framebuffer`, `_depthStencilBuffer`; `Reflect.get(geometry, "_indexBufferIsUpdatable")` † | Move maps between lights, shared LTC lookup, allocation validation and accounting | sibling tests, `shadow-controller` |
@@ -831,7 +832,11 @@ unsupported depth/MRT capabilities and exhausted reservations return a visible
 fallback reason before construction. SceneColor and pass outputs preserve legacy
 RGBA8 encoding; normalized depth uses a renderable float/half-float target (see
 Geometry view depth below) and world normals use RGBA8. Only demanded channels share one geometry task, with its
-own Z attachment independent of the surface pass. The caller orders geometry
+own Z attachment independent of the surface pass. Geometry attachments (and the
+GPU object-ID pick and spatial-effects geometry passes) never depend on lighting,
+so `LogicalGeometryTask` does not toggle `light.shadowEnabled`; materials compile
+the same light and shadow defines as for the surface pass, and only the
+attachments differ. The caller orders geometry
 after culling and before surfaces, then the authored pass chain and final copy.
 Actual graph-owned InternalTextures reconcile the declared replacement peak after
 build, including every scaled pass output and aliased attachment. Entry-ID setters,
@@ -1742,6 +1747,12 @@ These properties do not meet independent styles and strict CEL visibility.
   Built-in water with GPU waves is qualified: its mask program compiles the
   water vertex displacement and binds the material's swell (and FFT detail band,
   when compiled in) each draw (see [Water](#water)).
+- **Light state:** mask draws use pass-owned programs or authored `outlineMask`
+  variants whose shading is replaced by identity/output blocks, so the three mask
+  tasks are light-neutral (see the `light-neutral-tasks` row under Internal member access):
+  they never toggle `light.shadowEnabled`. Native 9.29 toggles flipped every
+  shadow-capable light twice per mask pass, dirtying every material's light
+  defines (42 walks per frame with seven lights).
 - **Pass budget:** at most three geometry-mask passes and one fullscreen compose
   per view, independent of actor/style count; separate clears make at most seven
   FrameGraph render records. Geometry submissions and pixels still scale with
