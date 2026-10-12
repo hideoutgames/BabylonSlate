@@ -1613,7 +1613,7 @@ describe("project documents as .babasset", () => {
       });
       const debounced = () => new Promise((resolve) => setTimeout(resolve, 0));
       if (start === "joins a background bake of it") {
-        controller.schedule(MAIN_SCENE_FILE, structuredClone(scene));
+        controller.schedule(MAIN_SCENE_FILE, structuredClone(scene) as unknown as Record<string, unknown>);
         await debounced();
       }
       const collected = await collectAudioReverbFlushScenes({
@@ -1624,7 +1624,7 @@ describe("project documents as .babasset", () => {
       // The user moves the wall in the open tab while export's bake runs.
       const edited = structuredClone(scene);
       edited.actors[0]!.transform.position[0] = 30;
-      controller.schedule(MAIN_SCENE_FILE, edited);
+      controller.schedule(MAIN_SCENE_FILE, edited as unknown as Record<string, unknown>);
       await debounced();
       bakes[0]!(new Uint8Array([2]));
       expect((await flushed).size).toBe(0);
