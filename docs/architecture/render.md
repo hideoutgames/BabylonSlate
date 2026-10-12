@@ -1006,7 +1006,10 @@ cutoff, so a light still reaches slightly past its range; there, objects beyond 
 cast no shadow from it. On the FeatureTest main scene (10 m shadowed point light, camera
 far plane 1000 m) the point cube fell from 302 to 16 draws per frame.
 The policy scans before allocation/projection and again before per-camera targets,
-after active-mesh evaluation. It uses Babylon render-once counters and explicit resets;
+after active-mesh evaluation. While no light holds a map (shadows disabled, nothing
+requested or admitted) the scan, spatial refit and caster bounds are skipped; only removed
+casters are released. Snapshots are kept, so the scan that runs before the first map is
+allocated reports real changes only. It uses Babylon render-once counters and explicit resets;
 readiness probes do not count as a completed render. Unready caster shaders retain
 Babylon's automatic retry. Geometry observers preserve and restore existing callbacks.
 Empty model and tilemap roots may have no submesh list yet; they remain valid during
