@@ -184,6 +184,8 @@ export type ControlMessage =
       sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
       /** When false, debug-tier console commands are stripped in the player. */
       includeDebugCommands?: boolean;
+      /** False strips the debug lines of Line Trace and Project Cursor To Scene, even for an explicit `drawDebug: true`. True when omitted; release players send false. */
+      traceDebugDraw?: boolean;
       infiniteLoopDetection?: boolean;
       loopCount?: number;
       /** Audio asset guids in the Play library (BT PlaySound fail-on-missing). */

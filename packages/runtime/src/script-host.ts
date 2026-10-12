@@ -184,6 +184,8 @@ export interface ScriptHostServices {
     color: ScriptColor,
   ): void;
   drawDebug?(payload: Record<string, unknown>): void;
+  /** False strips Line Trace's debug lines whatever `drawDebug` says; true when omitted. */
+  traceDebugDraw?: boolean;
   setCursorVisible?(visible: boolean): void;
   destroyActor(actor: Actor | null | undefined): void;
   executeConsoleCommand(command: string): { success: boolean; output: string };
@@ -2051,7 +2053,7 @@ export class ScriptHost {
           distance: 0,
           bodyId: null,
         };
-        if (options?.drawDebug !== false) {
+        if (services.traceDebugDraw !== false && options?.drawDebug !== false) {
           const location = hit.hit === true ? hit.location : null;
           services.drawDebug?.({
             kind: "line",

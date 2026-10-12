@@ -26,6 +26,8 @@ interface RuntimeCameraHost {
   cursor(): ResolvedInputTick["cursor"];
   overlay(): Pick<SceneLayerOverlay, "canvasSize">;
   physics(): Pick<RuntimePhysicsWorlds, "main" | "layer">;
+  /** False strips Project Cursor To Scene's debug lines whatever `drawDebug` says; true when omitted. */
+  traceDebugDraw?: boolean;
   emit(command: CommandMessage): void;
 }
 
@@ -172,7 +174,7 @@ export class RuntimeCamera implements RuntimeSubsystem {
     // reparented earlier this tick reach the ray after the next step, so a
     // script aiming every tick does not pay a whole-world pass per call.
     const hit = this.host.physics().main.lineTrace(ray.origin, ray.end, { channel });
-    const drawDebug = options?.drawDebug !== false;
+    const drawDebug = this.host.traceDebugDraw !== false && options?.drawDebug !== false;
     if (drawDebug) {
       const duration =
         typeof options?.duration === "number" && Number.isFinite(options.duration)

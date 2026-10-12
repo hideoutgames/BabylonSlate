@@ -70,6 +70,12 @@ describe("runtimeOptionsFromLoadControl", () => {
     });
   });
 
+  it("forwards the release player's trace debug draw switch and leaves Play's unset", () => {
+    expect(runtimeOptionsFromLoadControl({ type: "load", sceneAssetGuid: "play-scene", traceDebugDraw: false }))
+      .toMatchObject({ traceDebugDraw: false });
+    expect(runtimeOptionsFromLoadControl({ type: "load", sceneAssetGuid: "play-scene" })).not.toHaveProperty("traceDebugDraw");
+  });
+
   it("forwards audioAssetGuids onto the runtime", () => {
     expect(
       runtimeOptionsFromLoadControl({

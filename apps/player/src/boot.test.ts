@@ -390,6 +390,19 @@ describe("player startup and Stop ownership", () => {
     expect(load?.classAssetGuids).toEqual({ Actor: "actor-class", Hero: "hero-class", Door: "door-class" });
   });
 
+  it.each([
+    { name: "a release export", bundleDebugger: false, previewDiagnostics: false, traceDebugDraw: false },
+    { name: "a debugger export", bundleDebugger: true, previewDiagnostics: false, traceDebugDraw: true },
+    { name: "Preview Build", bundleDebugger: true, previewDiagnostics: true, traceDebugDraw: true },
+  ])("tells the runtime whether $name keeps Line Trace and Project Cursor debug lines", async ({ bundleDebugger, previewDiagnostics, traceDebugDraw }) => {
+    const { game, canvas } = await fixture();
+    game.manifest.bundleDebugger = bundleDebugger;
+    sessions.push(startPlayer({ game, canvas, previewDiagnostics }));
+    const load = TestWorker.instances[0]!.messages.flatMap((message) =>
+      message.channel === "control" && message.payload.type === "load" ? [message.payload] : [])[0];
+    expect(load?.traceDebugDraw).toBe(traceDebugDraw);
+  });
+
   it("counts HUD ticks from the worker stats even when snapshots were dropped", async () => {
     const { game, canvas, handle } = await fixture();
     Object.assign(handle, { drawCalls: () => 0, accountedGeometryBytes: () => 0 });
