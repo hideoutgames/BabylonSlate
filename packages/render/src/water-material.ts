@@ -2791,15 +2791,18 @@ if (swRestShore < ${f(SHORE[1] - 0.001)}) {
 // there is no swash): it widens as the bore runs up and narrows as it drains, and its depth follows the arches (never to
 // nothing at a cusp). Past a few pixels per arch the arches fade to their mean. Its landward end is the swash edge itself.
 float swBandW = mix(0.4 + 0.25 * swSwashRun, 0.5 + 0.4 * swSwashRun, swSwashZone);
+${fromTier(1, `
 float swScallopK = mix(0.93, 0.35 + 0.9 * swScallop, 1.0 - smoothstep(0.2, 0.8, swFoot));
 float swBandE = swShoreSw + swEdgeWobble * 0.3 - swBandW * swScallopK;
-${fromTier(1, `
 float swShoreAA = min(fwidth(swBandE) * 0.65, 0.3) + 0.004;
-float swEdgeAA = min(fwidth(swSwashEdgeS) * 0.65, 0.3) + 0.003;`, `
-// Low filters by the pixel footprint instead of derivatives of the edge.
+float swEdgeAA = min(fwidth(swSwashEdgeS) * 0.65, 0.3) + 0.003;
+float swShoreD = (1.0 - smoothstep(-swShoreAA, swShoreAA, swBandE)) * smoothstep(-swEdgeAA, swEdgeAA, swSwashEdgeS);`, `
+// Low fades the arches by the existing near-foam factor and filters its two edges by the pixel footprint with linear ramps.
+float swScallopK = mix(0.93, 0.35 + 0.9 * swScallop, swNearFoam);
+float swBandE = swShoreSw + swEdgeWobble * 0.3 - swBandW * swScallopK;
 float swShoreAA = swFoot * 0.35 / swFoamWidth + 0.004;
-float swEdgeAA = swFoot * 0.35 + 0.003;`)}
-float swShoreD = (1.0 - smoothstep(-swShoreAA, swShoreAA, swBandE)) * smoothstep(-swEdgeAA, swEdgeAA, swSwashEdgeS);${fromTier(1, `
+float swEdgeAA = swFoot * 0.35 + 0.003;
+float swShoreD = clamp(0.5 - swBandE / (2.0 * swShoreAA), 0.0, 1.0) * clamp(0.5 + swSwashEdgeS / (2.0 * swEdgeAA), 0.0, 1.0);`)}${fromTier(1, `
 // The stranded line the swash leaves at its furthest reach (the front, which the band replaces, is masked out of
 // \`swSwashFoam\`; Low's swash leaves none): a thin crisp stroke that fades as the water drains.
 float swFrontM = min(U.slateWaterSwash.w / max(swShoreSlope, 0.02), ${f(SWASH_REACH_MAX)}) * 0.26 + swFoamWidth * 0.3 + swFoot * 0.7 + 0.02;
@@ -2911,7 +2914,9 @@ float swFoamThick = mix(clamp((swFoamLevel - swFoamP) * 1.6, 0.0, 1.0), swDensit
 // whose presence, length and thickness follow the surf's density, so dense surf fuses into a broken line and thin surf
 // leaves a few small dabs, and every stroke ends in a crisp, antialiased edge. From High a second set of small dabs spatters
 // the thin fringe. Strokes are not resolved past a few pixels across: they give way to a faint mean coverage.
-float swSurfD = smoothstep(0.35, 1.0, max(max(swWash, swSurfBreak * 0.8), swSurfLines) * swFoamAmount) * smoothstep(0.4, 0.9, swSwashCover);
+${fromTier(1, `
+float swSurfD = smoothstep(0.35, 1.0, max(max(swWash, swSurfBreak * 0.8), swSurfLines) * swFoamAmount) * smoothstep(0.4, 0.9, swSwashCover);`, `
+float swSurfD = clamp((max(swWash, swSurfBreak * 0.8) * swFoamAmount - 0.35) * 1.5, 0.0, 1.0) * swSwashCover * swSwashCover;`)}
 float swBrush = 0.0;${fromTier(1, `
 float swDabK = clamp(swFoamWidth, 0.4, 3.0) * 0.85;
 vec2 swDabP = vec2(swAlong / (1.7 * swDabK) + (swMedium - 0.5) * 1.2, swRestShore / (0.8 * swDabK) + (swLarge - 0.5) * 0.8);
@@ -2940,8 +2945,8 @@ float swSpatVal = swSpatR - length(swSpatQ);
 float swSpatAA = min(fwidth(swSpatVal) * 0.65, 0.2) + 0.003;
 swBrush = max(swBrush, smoothstep(-swSpatAA, swSpatAA, swSpatVal) * step(0.01, swSpatR));`)}
 swBrush = mix(swBrush, swSurfD * 0.3, smoothstep(0.35, 0.9, swFoot / (0.8 * swDabK)));`, `
-// Low: the one lace noise breaks the surf into a few crisp patches.
-swBrush = smoothstep(0.4, 0.6, swSurfD * 1.15 - swFoamP * 0.5);
+// Low: the one lace noise breaks the surf into patches with fixed, crisp edges (dense surf keeps about two thirds).
+swBrush = clamp((swSurfD - swFoamP - 0.42) * 12.0, 0.0, 1.0);
 swBrush = mix(swBrush, swSurfD * 0.3, swPatFade);`)}
 float swBrushAll = max(swShoreD, swBrush);
 swFoam = max(swFoam, swBrushAll);
@@ -2960,10 +2965,11 @@ vec3 swFoamUnder = swFoamTop * mix(vec3(0.58, 0.72, 0.86), vec3(0.82, 0.72, 0.7)
 // Foam in the wave's shade (facing away from the sun) is cool blue-grey, lit foam bright.
 vec3 swFoamC = mix(swFoamUnder, swFoamTop, smoothstep(0.0, 0.8, swFoamThick) * (0.45 + 0.55 * swShade));
 swFoamC *= mix(mix(vec3(0.8, 0.88, 0.95), vec3(0.95, 0.86, 0.8), swDuskWarm), vec3(1.0), 0.4 + 0.6 * swShade);
+${fromTier(1, `
 // Brush work is paint of one tone, lit more evenly than lace and not shaded by the wave under it (over sand there is no wave).
 vec3 swBrushC = mix(swFoamUnder, swFoamTop, smoothstep(0.0, 0.8, swFoamThick) * (0.8 + 0.2 * swShade));
 swBrushC *= mix(mix(vec3(0.9, 0.94, 0.98), vec3(0.97, 0.92, 0.88), swDuskWarm), vec3(1.0), 0.5 + 0.5 * swShade);
-swFoamC = mix(swFoamC, swBrushC, clamp(swBrushAll / max(swFoam, 0.001), 0.0, 1.0));
+swFoamC = mix(swFoamC, swBrushC, clamp(swBrushAll / max(swFoam, 0.001), 0.0, 1.0));`)}
 
 // Composition: in-scattered body (with the glow and churn) behind the surface, the sky reflection over it, and what
 // shows through. Premultiplied first, then divided by coverage for the blend; foam lies on top. Far away the body takes
@@ -3002,10 +3008,12 @@ float swFilm = (1.0 - swSwashCover) * swSwashWet;
 // Wet sand: coverage with little light of its own darkens the sand under it (the same sand, a darker tone), and a cool
 // tint takes the warmth off. Its edge is soft but clear: a short ramp of the film's own value, wider where it changes fast.
 ${fromTier(1, `
-float swFilmAA = min(fwidth(swFilm) * 3.0, 0.2) + 0.05;`, `
-float swFilmAA = 0.12;`)}
+float swFilmAA = min(fwidth(swFilm) * 3.0, 0.2) + 0.05;
 float swWetSand = smoothstep(0.12 - swFilmAA, 0.12 + swFilmAA, swFilm);
-float swFilmA = max(swFoam, swWetSand * mix(0.34, 0.44, swFilm));
+float swWetAlpha = mix(0.34, 0.44, swFilm);`, `
+float swWetSand = clamp((swFilm - 0.04) * 8.0, 0.0, 1.0);
+float swWetAlpha = 0.28;`)}
+float swFilmA = max(swFoam, swWetSand * swWetAlpha);
 vec3 swWetC = vec3(0.013, 0.016, 0.024);
 swEmissive = mix(mix(swWetC, swFoamC, clamp(swFoam / max(swFilmA, 0.001), 0.0, 1.0)), swEmissive, swSwashCover);
 alpha = mix(swFilmA, alpha, swSwashCover);
