@@ -1563,6 +1563,35 @@ describe("AssetRegistry generation", () => {
     await first.setCompressionState("tex-1", "pending");
     expect(second.generation).toBeGreaterThan(beforeLateWrite);
   });
+
+  it("resolves symbolic class references against the catalog as it is after a rename", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    const dependencyMetadata = { dependencyMetadataVersion: 1, dependencies: [], requiredDependencies: [], requiredVariableNames: [] };
+    await storage.writeBinary("assets/Goblin.class.babasset", await encodeAssetDocument(
+      { type: "Class", name: "Goblin", guid: "class-goblin", version: 1, payload: { members: [] } },
+      { parentClass: null, dependencyMetadata },
+    ));
+    await storage.writeBinary("assets/level.scene.babasset", await encodeAssetDocument(
+      { type: "Scene", name: "level", guid: "scene", version: 1, payload: { name: "level", actors: [{ id: "a", classId: "Goblin", components: [] }] } },
+      { parentClass: null, dependencyMetadata: { ...dependencyMetadata, classReferences: ["Goblin"], requiredClassReferences: ["Goblin"] } },
+    ));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    expect(registry.dependenciesFor("scene")).toEqual(["class-goblin"]);
+    expect(registry.requiredDependenciesFor("scene")).toEqual(["class-goblin"]);
+    expect(registry.showReferences("class-goblin").inbound).toEqual(["scene"]);
+
+    await registry.renameAsset("class-goblin", "Orc");
+    expect(registry.dependenciesFor("scene")).toEqual([]);
+    expect(() => registry.requiredDependenciesFor("scene")).toThrow("requires missing Class Goblin");
+    expect(() => registry.requiredDependenciesFor("scene")).toThrow("requires missing Class Goblin");
+    expect(registry.showReferences("class-goblin").inbound).toEqual([]);
+
+    await registry.renameAsset("class-goblin", "Goblin");
+    expect(registry.requiredDependenciesFor("scene")).toEqual(["class-goblin"]);
+    expect(registry.showReferences("class-goblin").inbound).toEqual(["scene"]);
+  });
 });
 
 describe("ThumbnailDecodeLru", () => {

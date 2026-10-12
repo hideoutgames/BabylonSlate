@@ -14,6 +14,7 @@ const OPFS_READ_ATTEMPTS = 4;
 const STALE_SNAPSHOT_ERRORS = new Set(["NotReadableError", "NotFoundError"]);
 const writeRevisions = new Map<string, number>();
 const lifecycleQueues = new Map<string, Promise<void>>();
+const directoryNames = new Map<string, Promise<string>>();
 
 function domErrorName(error: unknown): string {
   return String((error as { name?: unknown } | null)?.name ?? "");
@@ -489,8 +490,19 @@ export class OpfsStorageAdapter implements ProjectStorage {
   }
 }
 
+/** Every path resolution needs it, so the digest of a project id is computed once. */
+function directoryName(id: string): Promise<string> {
+  const cached = directoryNames.get(id);
+  if (cached) return cached;
+  const pending = digestDirectoryName(id);
+  directoryNames.set(id, pending);
+  // A failed digest is retried by the next call rather than remembered.
+  pending.catch(() => { if (directoryNames.get(id) === pending) directoryNames.delete(id); });
+  return pending;
+}
+
 /** Fixed-length, Unicode-safe identity independent of filesystem filename folding. */
-async function directoryName(id: string): Promise<string> {
+async function digestDirectoryName(id: string): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(id)));
   return `project-v2-${Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }

@@ -7,15 +7,10 @@ export interface AssetClassCatalogEntry {
   header: BabassetHeader;
 }
 
-/** Resolve symbolic authored class IDs from catalog headers without opening documents. */
-export function resolveAssetCatalogDependencies(
-  header: BabassetHeader,
-  assets: readonly AssetClassCatalogEntry[],
-  required = false,
-): string[] {
-  const dependencies = new Set(required ? header.requiredDependencies : header.dependencies);
-  const references = required ? header.requiredClassReferences : header.classReferences;
-  if (!references?.length) return [...dependencies].sort();
+/** Class alias (guid, path-derived id or authored `classId`) -> guids of the Class assets answering to it. */
+export type ClassAliasIndex = ReadonlyMap<string, ReadonlySet<string>>;
+
+export function buildClassAliasIndex(assets: Iterable<AssetClassCatalogEntry>): ClassAliasIndex {
   const classes = new Map<string, Set<string>>();
   for (const asset of assets) {
     if (asset.header.type !== "Class") continue;
@@ -27,6 +22,28 @@ export function resolveAssetCatalogDependencies(
       classes.set(alias, matches);
     }
   }
+  return classes;
+}
+
+/** Resolve symbolic authored class IDs from catalog headers without opening documents. */
+export function resolveAssetCatalogDependencies(
+  header: BabassetHeader,
+  assets: readonly AssetClassCatalogEntry[],
+  required = false,
+): string[] {
+  return resolveDependenciesWithClassAliases(header, () => buildClassAliasIndex(assets), required);
+}
+
+/** As `resolveAssetCatalogDependencies`, with the alias index supplied (and built only when the header needs it). */
+export function resolveDependenciesWithClassAliases(
+  header: BabassetHeader,
+  aliases: () => ClassAliasIndex,
+  required = false,
+): string[] {
+  const dependencies = new Set(required ? header.requiredDependencies : header.dependencies);
+  const references = required ? header.requiredClassReferences : header.classReferences;
+  if (!references?.length) return [...dependencies].sort();
+  const classes = aliases();
   for (const classId of references) {
     if (isLockedEngineClassId(classId) || classId.startsWith("engine:")
       || (header.type === "BehaviourTree" && isBuiltinBehaviourTreeClassId(classId))) continue;

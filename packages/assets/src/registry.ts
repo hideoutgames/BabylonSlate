@@ -50,7 +50,7 @@ import { AREA_EMISSION_CHUNK_KIND, areaEmissionChunkId, currentAreaEmissionChunk
 import { sha256Hex, stableStringify } from "./bytes";
 import { moveStorageFile, moveStorageTree, STORAGE_MOVE_BACKUP_PREFIX } from "./storage-move";
 import { collectAssetDependencyMetadata, type AssetDependencyClass } from "./asset-dependencies";
-import { resolveAssetCatalogDependencies } from "./catalog-class-dependencies";
+import { buildClassAliasIndex, resolveDependenciesWithClassAliases, type ClassAliasIndex } from "./catalog-class-dependencies";
 
 export type AreaEmissionProcessor = (request: { source: Uint8Array; sourceHash: string; mime?: string }, signal: AbortSignal, onProgress?: (progress: AreaEmissionProgress) => void) => Promise<Uint8Array>;
 
@@ -190,6 +190,8 @@ export class AssetRegistry {
    */
   private readonly alignmentRequeues: Set<string>;
   private readonly clock: RegistryGenerationClock;
+  /** Class alias index of the catalog as of `generation`; dropped when any index change advances it. */
+  private classAliasMemo: { generation: number; index: ClassAliasIndex } | null = null;
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
@@ -490,13 +492,21 @@ export class AssetRegistry {
 
   /** Full authored graph, including symbolic class references from old authoring contexts. */
   dependenciesFor(guid: string, header = this.byGuid.get(guid)?.header): string[] {
-    return header ? resolveAssetCatalogDependencies(header, this.list()) : [];
+    return header ? resolveDependenciesWithClassAliases(header, () => this.classAliases()) : [];
   }
 
   /** Required class identities resolve entirely from the mounted metadata catalog. */
   requiredDependenciesFor(guid: string, header = this.byGuid.get(guid)?.header): string[] {
     if (!header) throw new Error(`Required asset is missing: ${guid}`);
-    return resolveAssetCatalogDependencies(header, this.list(), true);
+    return resolveDependenciesWithClassAliases(header, () => this.classAliases(), true);
+  }
+
+  private classAliases(): ClassAliasIndex {
+    const generation = this.generation;
+    if (this.classAliasMemo?.generation !== generation) {
+      this.classAliasMemo = { generation, index: buildClassAliasIndex(this.byGuid.values()) };
+    }
+    return this.classAliasMemo.index;
   }
 
   getByPath(path: string): IndexedAsset | undefined {
@@ -565,10 +575,9 @@ export class AssetRegistry {
 
   /** Resolve symbolic classes alongside GUID edges without reading any payloads. */
   showReferences(guid: string): { outbound: string[]; inbound: string[] } {
-    const assets = this.list();
-    const symbolicInbound = this.byGuid.has(guid) ? assets.filter(asset =>
-      asset.header.classReferences?.length && resolveAssetCatalogDependencies(
-        { ...asset.header, dependencies: [] }, assets,
+    const symbolicInbound = this.byGuid.has(guid) ? this.list().filter(asset =>
+      asset.header.classReferences?.length && resolveDependenciesWithClassAliases(
+        { ...asset.header, dependencies: [] }, () => this.classAliases(),
       ).includes(guid),
     ).map(asset => asset.header.guid) : [];
     return {

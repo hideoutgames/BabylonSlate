@@ -41,6 +41,19 @@ describe("OPFS / web storage adapter", () => {
     expect(await storage.readText("project.json")).toBe('{"name":"test"}');
   });
 
+  it("retries the project folder digest after a failure instead of remembering it", async () => {
+    const digest = vi.spyOn(webcrypto.subtle, "digest").mockRejectedValueOnce(new Error("digest unavailable"));
+    try {
+      const storage = new OpfsStorageAdapter();
+      await expect(storage.openDocumentsProject("Digest.babproject")).rejects.toThrow("digest unavailable");
+      await expect(storage.openDocumentsProject("Digest.babproject")).resolves.toMatchObject({ name: "Digest.babproject" });
+      await storage.writeText("project.json", "{}");
+      expect(await storage.readText("project.json")).toBe("{}");
+    } finally {
+      digest.mockRestore();
+    }
+  });
+
   it("round-trips binary payloads", async () => {
     const storage = await openedAdapter();
     const bytes = new Uint8Array([0, 1, 2, 250]);
