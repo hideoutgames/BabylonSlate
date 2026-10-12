@@ -366,7 +366,8 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     transforms = actorWorldTransforms(this.host.world().getActors()),
   ): void {
     if (!this.nav) return;
-    for (const actor of this.host.world().getActors()) {
+    // Only a NavAgentComponent owner can register, and the index lists those in world order.
+    for (const actor of componentOwners(this.host.world(), "NavAgentComponent")) {
       this.registerAgent(actor, transforms);
     }
   }

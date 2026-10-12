@@ -204,6 +204,12 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly waterClock = new WaterClock();
   /** Frame index (live actor per guid) the BT and crowd ticks share. */
   private navFrameActors: Map<string, Actor> | null = null;
+  /**
+   * The guid index built at `revision`. The live actor behind a guid changes only when an actor spawns or is destroyed,
+   * both of which bump `structuralRevision`, so ticks without such a change reuse one index. Entries an actor joins
+   * the frame index with (`ActorRealization.realize`) follow a spawn, which already outdates it.
+   */
+  private guidIndexCache: { revision: number; index: Map<string, Actor> } | null = null;
 
   // Scene documents and render target sources.
   private playScene: SerializedScene | undefined;
@@ -1956,16 +1962,24 @@ class InProcessRuntime implements RuntimeDriver {
       this.tilemapAnimationTimeMs += simDt * 1000;
       if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: this.tilemapAnimationTimeMs });
       // Only behaviour trees and the crowd read the frame index.
-      this.navFrameActors = this.navigation.active || this.behaviourTrees.hasTrees ? actorGuidIndex(this.world.getActors()) : null;
+      this.navFrameActors = this.navigation.active || this.behaviourTrees.hasTrees ? this.liveActorGuidIndex() : null;
       try {
         this.behaviourTrees.tick(simDt);
         if (this.navigation.active && this.admission.canTickScene()) {
-          this.navigation.tickCrowd(this.navFrameActors ?? actorGuidIndex(this.world.getActors()), simDt);
+          this.navigation.tickCrowd(this.navFrameActors ?? this.liveActorGuidIndex(), simDt);
         }
       } finally {
         this.navFrameActors = null;
       }
     }
+  }
+
+  private liveActorGuidIndex(): Map<string, Actor> {
+    const revision = this.world.structuralRevision;
+    if (this.guidIndexCache?.revision !== revision) {
+      this.guidIndexCache = { revision, index: actorGuidIndex(this.world.getActors()) };
+    }
+    return this.guidIndexCache.index;
   }
 
   /** Tick phase 4. */
