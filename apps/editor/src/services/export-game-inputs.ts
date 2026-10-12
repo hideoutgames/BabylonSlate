@@ -4,11 +4,13 @@ import {
   type SerializedScene,
 } from "@babylonslate/core";
 import {
+  AUDIO_DEFAULT_SOURCE_CHUNK,
   AUDIO_REVERB_CHUNK_ID,
   currentAreaEmissionChunk,
   decodeAreaEmission,
   collectPackedAudioClipBlobs,
   createDefaultMigrationRegistry,
+  DOCUMENT_CHUNK_ID,
   encodePackedAudioAsset,
   encodePackedModelAsset,
   FONT_FACETYPE_CHUNK_ID,
@@ -21,6 +23,7 @@ import {
   selectTextureChunk,
   shouldCompressTexture,
   textureEncodeBlockAlign,
+  type BabassetHeader,
   type IndexedAsset,
 } from "@babylonslate/assets";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
@@ -64,20 +67,34 @@ const assetFormats = createDefaultMigrationRegistry();
 /** Scene chunks packed with the Scene JSON, so all three must come from one saved version. */
 const SCENE_EXPORT_CHUNK_IDS = [NAVMESH_CHUNK_ID, AUDIO_REVERB_CHUNK_ID] as const;
 
+/** Font chunks packed beside the Font source as their own assets. */
+const FONT_SIDECAR_CHUNK_IDS = [FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID] as const;
+
+/** Chunks to read with a document: fixed ids, or chosen from the header of the version being read. */
+export type ExportChunkSelection = readonly string[] | ((header: BabassetHeader) => readonly string[]);
+
+/** A document with its header and selected chunks, all from one saved version. */
+export type ExportDocumentSnapshot = {
+  document: unknown;
+  header: BabassetHeader;
+  chunks: ReadonlyMap<string, Uint8Array>;
+};
+
 export type ExportDocumentLoaders = {
   assets: readonly IndexedAsset[];
   loadDocument: (kind: string, path: string) => Promise<unknown>;
   /**
-   * A document with the named chunks its file holds, all from one saved version
-   * (`ProjectService.loadDocumentWithChunks`). Scenes load through it, so a
-   * Save landing between reads cannot pair one version's JSON with another's
-   * `navmesh` or `audioReverb` chunk.
+   * A document, its header and the selected chunks its file holds, all from
+   * one saved version (`ProjectService.loadDocumentWithChunks`). Every asset
+   * that packs a document or header with chunks (Scene, Audio, Model, Font,
+   * Texture) loads through it, so a Save landing between reads cannot pair one
+   * version's data with another's.
    */
   loadDocumentWithChunks: (
     kind: string,
     path: string,
-    chunkIds: readonly string[],
-  ) => Promise<{ document: unknown; chunks: ReadonlyMap<string, Uint8Array> }>;
+    chunks: ExportChunkSelection,
+  ) => Promise<ExportDocumentSnapshot>;
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
   /** When false, pack Texture `pixels` instead of KTX2. */
   transcoderAvailable?: boolean;
@@ -104,38 +121,113 @@ export type LoadedExportDocuments = {
   audioReverbByGuid: (guid: string) => Uint8Array | null;
 };
 
+/** Audio clip chunks: the clip importer allocates only `source` and `source:N`. */
+function isAudioClipChunkId(id: string): boolean {
+  return id === AUDIO_DEFAULT_SOURCE_CHUNK || id.startsWith(`${AUDIO_DEFAULT_SOURCE_CHUNK}:`);
+}
+
+/** A Font's source (woff/ttf): its first chunk that is neither the document nor a sidecar. */
+function fontSourceChunkId(header: BabassetHeader): string | undefined {
+  return header.chunks.find((chunk) => chunk.id !== DOCUMENT_CHUNK_ID &&
+    !(FONT_SIDECAR_CHUNK_IDS as readonly string[]).includes(chunk.id))?.id;
+}
+
+/** Chunks packed with a type's document, or null for a type that packs its document alone. */
+function exportChunkSelection(type: string): ExportChunkSelection | null {
+  switch (type) {
+    case "Scene": return SCENE_EXPORT_CHUNK_IDS;
+    case "Audio": return (header) => header.chunks.map((chunk) => chunk.id).filter(isAudioClipChunkId);
+    case "Model": return ["source"];
+    case "Font": return (header) => [fontSourceChunkId(header), ...FONT_SIDECAR_CHUNK_IDS].filter((id) => id !== undefined);
+    default: return null;
+  }
+}
+
+function texturePixelsChunk(header: BabassetHeader) {
+  return header.chunks.find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
+}
+
+function textureUsage(header: BabassetHeader): string {
+  return String(header.payload.usage ?? "albedo");
+}
+
+/**
+ * The selected variant, `pixels` where it replaces a KTX2 (always for an
+ * uncompressed Usage; for a stale Particle KTX2 once `withPixels`), and the
+ * current area emission.
+ */
+function textureChunkIds(header: BabassetHeader, transcoderAvailable: boolean, withPixels: boolean): string[] {
+  const selected = selectTextureChunk(header, { transcoderAvailable });
+  const pixels = texturePixelsChunk(header);
+  const ids = [selected.chunk.id];
+  if (pixels && selected.kind === "ktx2" && (withPixels || !shouldCompressTexture(textureUsage(header)))) {
+    ids.push(pixels.id);
+  }
+  const emission = currentAreaEmissionChunk(header);
+  if (emission) ids.push(emission.id);
+  return ids;
+}
+
+/** The Texture bytes to pack, or undefined when a stale KTX2 needs `pixels` this snapshot did not read. */
+function packedTextureBytes(
+  { header, chunks }: ExportDocumentSnapshot,
+  transcoderAvailable: boolean,
+  withPixels: boolean,
+): Uint8Array | null | undefined {
+  const selected = selectTextureChunk(header, { transcoderAvailable });
+  const bytes = chunks.get(selected.chunk.id) ?? null;
+  const usage = textureUsage(header);
+  const blockAlign = textureEncodeBlockAlign(usage);
+  if (
+    selected.kind !== "ktx2" ||
+    !bytes ||
+    (shouldCompressTexture(usage) && (!blockAlign || isKtx2BlockAligned(bytes, blockAlign)))
+  ) {
+    return bytes;
+  }
+  // A KTX2 retained from an earlier Usage: uncompressed Usages keep exact
+  // pixels, and Particle encodes block-aligned, so a misaligned Particle
+  // KTX2 is stale (its re-encode pending or failed). Ship the source pixels.
+  const pixels = texturePixelsChunk(header);
+  if (!pixels) return bytes;
+  if (!withPixels && shouldCompressTexture(usage)) return undefined;
+  return chunks.get(pixels.id) ?? bytes;
+}
+
+/**
+ * A Texture's header, packed bytes and area emission from one saved version.
+ * Whether a Particle KTX2 is stale shows only in its bytes; then the whole
+ * snapshot is read again with `pixels`, and that version decides.
+ */
+async function readTextureSnapshot(
+  loaders: ExportDocumentLoaders,
+  kind: string,
+  path: string,
+  transcoderAvailable: boolean,
+): Promise<{ snapshot: ExportDocumentSnapshot; bytes: Uint8Array | null }> {
+  const read = (withPixels: boolean) => loaders.loadDocumentWithChunks(kind, path,
+    (header) => textureChunkIds(header, transcoderAvailable, withPixels));
+  const snapshot = await read(false);
+  const bytes = packedTextureBytes(snapshot, transcoderAvailable, false);
+  if (bytes !== undefined) return { snapshot, bytes };
+  const withPixels = await read(true);
+  return { snapshot: withPixels, bytes: packedTextureBytes(withPixels, transcoderAvailable, true) ?? null };
+}
+
 async function bytesForAsset(
   asset: IndexedAsset,
   document: unknown,
+  snapshot: ExportDocumentSnapshot | null,
   readAssetChunk: ExportDocumentLoaders["readAssetChunk"],
-  transcoderAvailable: boolean,
 ): Promise<Uint8Array | null> {
   if (JSON_TYPES.has(asset.header.type) && document) {
     return encoder.encode(JSON.stringify(document));
   }
-  if (asset.header.type === "Texture") {
-    const selected = selectTextureChunk(asset.header, { transcoderAvailable });
-    const bytes = await readAssetChunk(asset.path, selected.chunk.id);
-    const usage = String(asset.header.payload.usage ?? "albedo");
-    const blockAlign = textureEncodeBlockAlign(usage);
-    if (
-      selected.kind !== "ktx2" ||
-      !bytes ||
-      (shouldCompressTexture(usage) && (!blockAlign || isKtx2BlockAligned(bytes, blockAlign)))
-    ) {
-      return bytes;
-    }
-    // A KTX2 retained from an earlier Usage: uncompressed Usages keep exact
-    // pixels, and Particle encodes block-aligned, so a misaligned Particle
-    // KTX2 is stale (its re-encode pending or failed). Ship the source pixels.
-    const pixels = asset.header.chunks.find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
-    return (pixels ? await readAssetChunk(asset.path, pixels.id) : null) ?? bytes;
-  }
-  if (asset.header.type === "Audio") {
-    const payload = normalizeAudioPayload(document ?? asset.header.payload);
+  if (asset.header.type === "Audio" && snapshot) {
+    const payload = normalizeAudioPayload(document ?? snapshot.header.payload);
     const blobs = await collectPackedAudioClipBlobs({
       payload,
-      readChunk: (chunkId) => readAssetChunk(asset.path, chunkId),
+      readChunk: async (chunkId) => snapshot.chunks.get(chunkId) ?? null,
     });
     if (!blobs) return null;
     return encodePackedAudioAsset(
@@ -143,13 +235,17 @@ async function bytesForAsset(
       blobs.length === 1 ? blobs[0]! : blobs,
     );
   }
-  if (asset.header.type === "Model") {
-    const source = await readAssetChunk(asset.path, "source");
+  if (asset.header.type === "Model" && snapshot) {
+    const source = snapshot.chunks.get("source");
     if (!source || source.byteLength === 0) return null;
     return encodePackedModelAsset(
-      normalizeModelPayload(document ?? asset.header.payload),
+      normalizeModelPayload(document ?? snapshot.header.payload),
       source,
     );
+  }
+  if (asset.header.type === "Font" && snapshot) {
+    const source = fontSourceChunkId(snapshot.header);
+    return source ? snapshot.chunks.get(source) ?? null : null;
   }
   for (const chunk of asset.header.chunks) {
     if (chunk.id === "document" || chunk.id === FONT_FACETYPE_CHUNK_ID) continue;
@@ -162,25 +258,10 @@ async function bytesForAsset(
   return null;
 }
 
-async function fontChunkBytesForAsset(
-  asset: IndexedAsset,
-  chunkId: string,
-  readAssetChunk: ExportDocumentLoaders["readAssetChunk"],
-): Promise<Uint8Array | null> {
-  if (asset.header.type !== "Font") return null;
-  try {
-    const bytes = await readAssetChunk(asset.path, chunkId);
-    return bytes && bytes.byteLength > 0 ? bytes : null;
-  } catch {
-    return null;
-  }
-}
-
-async function fontFacetypeBytesForAsset(
-  asset: IndexedAsset,
-  readAssetChunk: ExportDocumentLoaders["readAssetChunk"],
-): Promise<Uint8Array | null> {
-  return fontChunkBytesForAsset(asset, FONT_FACETYPE_CHUNK_ID, readAssetChunk);
+/** A Font sidecar packs only when its snapshot holds non-empty bytes. */
+function fontSidecarBytes(snapshot: ExportDocumentSnapshot | null, chunkId: string): Uint8Array | null {
+  const bytes = snapshot?.chunks.get(chunkId);
+  return bytes && bytes.byteLength > 0 ? bytes : null;
 }
 
 export async function loadExportDocuments(
@@ -209,37 +290,40 @@ export async function loadExportDocuments(
       continue;
     }
     const kind = documentKindForAssetType(asset.header.type);
+    const transcoderAvailable = loaders.transcoderAvailable !== false;
     let document: unknown = null;
-    let sceneChunks: ReadonlyMap<string, Uint8Array> | null = null;
+    // The document (or Texture header) with the chunks packed beside it, from one saved version.
+    let snapshot: ExportDocumentSnapshot | null = null;
+    let textureBytes: Uint8Array | null = null;
+    const selection = exportChunkSelection(asset.header.type);
     if (
       kind &&
-      kind !== "texture" &&
       (JSON_TYPES.has(asset.header.type) ||
         asset.header.type === "Class" ||
-        asset.header.type === "Scene" ||
-        asset.header.type === "Font" ||
-        asset.header.type === "Audio" ||
-        asset.header.type === "Model")
+        asset.header.type === "Texture" ||
+        selection)
     ) {
       try {
-        if (asset.header.type === "Scene") {
-          const snapshot = await loaders.loadDocumentWithChunks(kind, asset.path, SCENE_EXPORT_CHUNK_IDS);
+        if (asset.header.type === "Texture") {
+          ({ snapshot, bytes: textureBytes } = await readTextureSnapshot(loaders, kind, asset.path, transcoderAvailable));
+        } else if (selection) {
+          snapshot = await loaders.loadDocumentWithChunks(kind, asset.path, selection);
           document = snapshot.document;
-          sceneChunks = snapshot.chunks;
         } else {
           document = await loaders.loadDocument(kind, asset.path);
         }
       } catch (error) {
-        // Audio and Model keep their settings in the header; anything else
-        // reached by the game fails the export rather than shipping without it.
-        if (asset.header.type === "Audio" || asset.header.type === "Model") document = asset.header.payload;
-        else byteErrors.set(asset.header.guid, error);
+        // A reached asset fails the export rather than shipping without it, or
+        // with one version's settings and another's chunks.
+        byteErrors.set(asset.header.guid, error);
+        if (asset.header.type === "Texture") areaEmissionErrors.set(asset.header.guid, error);
       }
     }
-    if (document && typeof document === "object") {
+    if (asset.header.type === "Texture") {
+      // Texture settings live in the header read with its chunks.
+      payloads.set(asset.header.guid, (snapshot?.header ?? asset.header).payload);
+    } else if (document && typeof document === "object") {
       payloads.set(asset.header.guid, document);
-    } else if (asset.header.type === "Texture") {
-      payloads.set(asset.header.guid, asset.header.payload);
     }
     if (asset.header.type === "Scene" && document) {
       scenes.set(asset.header.guid, document as SerializedScene);
@@ -249,38 +333,34 @@ export async function loadExportDocuments(
     }
     if (!byteErrors.has(asset.header.guid)) {
       try {
-        const payload = await bytesForAsset(
-          asset, document, loaders.readAssetChunk, loaders.transcoderAvailable !== false,
-        );
+        const payload = asset.header.type === "Texture"
+          ? textureBytes
+          : await bytesForAsset(asset, document, snapshot, loaders.readAssetChunk);
         if (payload) bytes.set(asset.header.guid, payload);
       } catch (error) {
         byteErrors.set(asset.header.guid, error);
       }
     }
-    const emissionChunk = currentAreaEmissionChunk(asset.header);
-    if (emissionChunk) {
+    // Checked against the source hash of the header it was read with.
+    const emissionChunk = snapshot && currentAreaEmissionChunk(snapshot.header);
+    if (snapshot && emissionChunk) {
       try {
-        const data = await loaders.readAssetChunk(asset.path, emissionChunk.id);
+        const data = snapshot.chunks.get(emissionChunk.id);
         if (!data) throw new Error(`Prepared emission is missing for Texture ${asset.header.name}.`);
-        await decodeAreaEmission(data, asset.header.chunks.find((chunk) => chunk.kind === "pixels")?.sha256);
+        await decodeAreaEmission(data, texturePixelsChunk(snapshot.header)?.sha256);
         areaEmissions.set(asset.header.guid, data);
       } catch (error) { areaEmissionErrors.set(asset.header.guid, error); }
     }
-    const facetype = await fontFacetypeBytesForAsset(asset, loaders.readAssetChunk);
-    if (facetype) fontFacetypes.set(asset.header.guid, facetype);
-    const msdfJson = await fontChunkBytesForAsset(
-      asset,
-      FONT_MSDF_CHUNK_ID,
-      loaders.readAssetChunk,
-    );
-    if (msdfJson) fontMsdfJson.set(asset.header.guid, msdfJson);
-    const msdfPng = await fontChunkBytesForAsset(
-      asset,
-      FONT_MSDF_PNG_CHUNK_ID,
-      loaders.readAssetChunk,
-    );
-    if (msdfPng) fontMsdfPng.set(asset.header.guid, msdfPng);
+    if (asset.header.type === "Font") {
+      const facetype = fontSidecarBytes(snapshot, FONT_FACETYPE_CHUNK_ID);
+      if (facetype) fontFacetypes.set(asset.header.guid, facetype);
+      const msdfJson = fontSidecarBytes(snapshot, FONT_MSDF_CHUNK_ID);
+      if (msdfJson) fontMsdfJson.set(asset.header.guid, msdfJson);
+      const msdfPng = fontSidecarBytes(snapshot, FONT_MSDF_PNG_CHUNK_ID);
+      if (msdfPng) fontMsdfPng.set(asset.header.guid, msdfPng);
+    }
     if (asset.header.type === "Scene") {
+      const sceneChunks = snapshot?.chunks;
       // Read with the Scene JSON; a Scene whose read failed is already
       // recorded in byteErrors. Scene JSON still packs without either chunk.
       const nav = sceneChunks?.get(NAVMESH_CHUNK_ID);

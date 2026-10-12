@@ -111,7 +111,7 @@ Admission reserves retained source, decoded CPU and temporary bytes before expen
 
 Scoped Play compilation lives in the source service's owned decoded cache. Explicit editor and toolbar compilation uses a separate `GraphScriptCompileCache` LRU with configurable `maxBytes` and `maxEntries`, provisionally 16 MiB and 256 combined graph/animation entries. Its estimate includes retained key strings, serialized compiled results and entry overhead. Oversized results are returned without caching; eviction drops only cache references, preserving any caller's active result. These editor defaults also await physical-device measurement.
 
-A save or background bake can replace a Scene while Play prepares it. Typed source-revision invalidation retries the complete acquisition at most three times, releasing each failed scope before resolving the current catalog and selected chunks again. Ordinary editor document and chunk reads also retry their complete snapshot up to three times; `ProjectService.loadDocumentWithChunks` does the same for a document read together with selected chunks at one revision (one `registryAssetRepresentation`). Publication still validates the full revision set. Cancellation, superseded requests, project changes, corruption and budget failures do not trigger retries; repeatedly changing sources produce an actionable failure asking the developer to let saving or baking finish.
+A save or background bake can replace a Scene while Play prepares it. Typed source-revision invalidation retries the complete acquisition at most three times, releasing each failed scope before resolving the current catalog and selected chunks again. Ordinary editor document and chunk reads also retry their complete snapshot up to three times; `ProjectService.loadDocumentWithChunks` does the same for a document read together with selected chunks at one revision (one `registryAssetRepresentation`). Its selection may be a function of the header resolved for that revision; it returns that header, and a value cached at another revision is retried rather than paired with it. Publication still validates the full revision set. Cancellation, superseded requests, project changes, corruption and budget failures do not trigger retries; repeatedly changing sources produce an actionable failure asking the developer to let saving or baking finish.
 
 `snapshot()` exposes retained/reserved bytes, active/queued work, cache hits, revisions, representations and retaining owners. Storage metrics separately report actual read bytes, including failed range transports. Physical A16 iPad, Android and desktop peak-memory/frame-time qualification remains required; unit tests establish contracts, not device performance results.
 
@@ -285,7 +285,9 @@ saves, renames and derived commits share one per-asset write queue.
 
 Editor and Play consume validated prepared chunks. Export carries each reachable
 prepared Texture as an `AreaEmission` sidecar while retaining its independent
-visual representation. Missing required preparation blocks export with the
+visual representation. It reads the emission with the Texture's header and
+variant at one revision and validates it against that header's `pixels` hash
+([exporter](exporter.md)). Missing required preparation blocks export with the
 Texture GUID and the preparation action; an unreadable emission that no area
 light in the export uses is left out instead. The player validates the version and
 pixel hash before engine creation. Native GPU filter/orientation comparison and

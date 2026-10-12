@@ -306,6 +306,12 @@ export type PluginImportResult =
  */
 const SCENE_AUDIO_REVERB_RESULTS = 4;
 
+/**
+ * Chunks `loadDocumentWithChunks` reads with a document: fixed ids, or a choice
+ * made from the header of the version being read.
+ */
+export type DocumentChunkSelection = readonly string[] | ((header: BabassetHeader) => readonly string[]);
+
 function fallbackDocumentType(kind: Exclude<DocumentKind, "content-browser">): string {
   return isAssetDocumentKind(kind) ? assetTypeForDocumentKind(kind) : "Class";
 }
@@ -2186,23 +2192,27 @@ export class ProjectService {
   }
 
   /**
-   * A document and the named chunks its file holds, all from one saved
-   * version: a write landing between the reads retries the whole read, so one
-   * version's JSON is never paired with another's chunks. Chunks the file does
-   * not hold are absent from `chunks`.
+   * A document, its header and the selected chunks its file holds, all from
+   * one saved version: a write landing between the reads retries the whole
+   * read, so one version's JSON is never paired with another's chunks. A
+   * function selects from the header of the version being read, so a choice
+   * such as a Texture's variant follows that version. Chunks the file does not
+   * hold are absent from `chunks`.
    */
   async loadDocumentWithChunks(
     kind: Exclude<DocumentKind, "content-browser" | "trace">,
     path: string,
-    chunkIds: readonly string[],
+    chunks: DocumentChunkSelection,
     options: { signal?: AbortSignal } = {},
   ): Promise<{
     document: Awaited<ReturnType<ProjectService["loadDocument"]>>;
+    header: BabassetHeader;
     chunks: ReadonlyMap<string, Uint8Array>;
   }> {
     if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .babasset document.`);
-    const { document, chunks } = await this.readSourceSnapshot(`Document ${path}`, options.signal,
-      () => this.readAssetDocumentWithChunksAttempt(path, chunkIds, options.signal));
+    const snapshot = await this.readSourceSnapshot(`Document ${path}`, options.signal,
+      () => this.readAssetDocumentWithChunksAttempt(path, chunks, options.signal));
+    const { document } = snapshot;
     this.assetGuids.set(path, document.guid);
     return {
       document: this.documentContent(kind, path, {
@@ -2210,15 +2220,20 @@ export class ProjectService {
         version: document.version,
         payload: document.payload,
       }),
-      chunks,
+      header: snapshot.header,
+      chunks: snapshot.chunks,
     };
   }
 
   private async readAssetDocumentWithChunksAttempt(
     path: string,
-    chunkIds: readonly string[],
+    selection: DocumentChunkSelection,
     signal: AbortSignal | undefined,
-  ): Promise<{ document: AssetDocument; chunks: Map<string, Uint8Array> }> {
+  ): Promise<{ document: AssetDocument; header: BabassetHeader; chunks: Map<string, Uint8Array> }> {
+    const select = (header: BabassetHeader) => {
+      const ids = typeof selection === "function" ? selection(header) : selection;
+      return ids.filter((id) => header.chunks.some((chunk) => chunk.id === id));
+    };
     const registry = this.assetRegistry;
     const indexed = registry?.getByPath(path);
     if (!registry || !indexed) {
@@ -2232,26 +2247,36 @@ export class ProjectService {
           guid: header.guid, type: header.type, name: header.name, version: header.version,
           payload: body ? JSON.parse(new TextDecoder().decode(body)) as Record<string, unknown> : header.payload,
         },
-        chunks: new Map(chunkIds.flatMap((id) => {
+        header,
+        chunks: new Map(select(header).flatMap((id) => {
           const bytes = decoded.chunks.get(id);
           return bytes ? [[id, bytes] as const] : [];
         })),
       };
     }
     const guid = indexed.header.guid;
+    // Selection runs once, on the catalog header the representation resolved.
+    let selected: { header: BabassetHeader; revision: string | undefined; ids: readonly string[] } | undefined;
     // The representation reads its document and chunks at the revision it
     // resolved, and fails with SourceRevisionChangedError if the file changes.
     const representation = await registryAssetRepresentation(registry, guid, {
-      selectChunks: (asset) => chunkIds.filter((id) => asset.header.chunks.some((chunk) => chunk.id === id)),
+      selectChunks: (asset) => {
+        selected = { header: asset.header, revision: asset.locator?.revision, ids: select(asset.header) };
+        return selected.ids;
+      },
       representationKey: "document-with-chunks",
     }, { signal });
     const scope = this.createAssetLoadScope(`Document Snapshot: ${path}`);
     try {
       const loaded = await scope.acquire<RegistryLoadedAsset>(guid, representation, { dependencies: "none", signal });
+      const { header, revision, ids } = selected!;
+      // A value cached at another revision would pair this header with other chunks.
+      if (loaded.revision !== revision) throw new SourceRevisionChangedError(`Asset ${guid} changed after selecting its chunks; retry`);
       return {
         // Working copies, as for loadDocument: the cached value can be evicted.
         document: structuredClone(loaded.document),
-        chunks: new Map([...loaded.chunks].filter(([id]) => chunkIds.includes(id))),
+        header,
+        chunks: new Map([...loaded.chunks].filter(([id]) => ids.includes(id))),
       };
     } finally {
       scope.dispose();
