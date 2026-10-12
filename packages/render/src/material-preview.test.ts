@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  Animation,
   ArcRotateCamera,
   Matrix,
   MeshBuilder,
@@ -805,6 +806,123 @@ describe("material preview presenter", () => {
     canvas.clientHeight = 0;
     presenter.present();
     expect(render).not.toHaveBeenCalled();
+  });
+
+  describe("static content", () => {
+    /** A presenter whose clock advances past any frame interval on every call. */
+    async function staticPresenter(host: MaterialPreviewScene, canvas: FakeCanvas, extra: { suspended?: () => boolean } = {}) {
+      let now = 0;
+      const presenter = createMaterialPreviewPresenter(
+        host,
+        canvas as unknown as HTMLCanvasElement,
+        { maxFps: 30, now: () => (now += 100), staticContent: true, ...extra },
+      );
+      disposers.push(() => presenter.dispose());
+      await prime(presenter, host);
+      return presenter;
+    }
+
+    /** The NullEngine readback resolves on a later task; wait for it so the frame counts as presented. */
+    const readbackDone = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    it("stops drawing once a ready frame is on the canvas and draws again for a forced present or a resize", async () => {
+      const host = await previewHost();
+      const canvas = new FakeCanvas();
+      const render = vi.spyOn(host.scene, "render");
+      const presenter = await staticPresenter(host, canvas);
+
+      presenter.present();
+      expect(render).toHaveBeenCalledTimes(1);
+      await readbackDone();
+      presenter.present();
+      presenter.present();
+      expect(render).toHaveBeenCalledTimes(1);
+
+      presenter.present({ force: true });
+      expect(render).toHaveBeenCalledTimes(2);
+      await readbackDone();
+      presenter.present();
+      expect(render).toHaveBeenCalledTimes(2);
+
+      canvas.clientWidth = 200;
+      canvas.clientHeight = 120;
+      presenter.present();
+      // The resized output prepares its graph before the next frame can draw.
+      await host.renderer.prepare();
+      presenter.present();
+      expect(render).toHaveBeenCalledTimes(3);
+      await readbackDone();
+      presenter.present();
+      expect(render).toHaveBeenCalledTimes(3);
+    });
+
+    it("keeps drawing a preview that is not static", async () => {
+      const host = await previewHost();
+      let now = 0;
+      const presenter = createMaterialPreviewPresenter(
+        host,
+        new FakeCanvas() as unknown as HTMLCanvasElement,
+        { maxFps: 30, now: () => (now += 100) },
+      );
+      disposers.push(() => presenter.dispose());
+      await prime(presenter, host);
+      const render = vi.spyOn(host.scene, "render");
+      presenter.present();
+      await readbackDone();
+      presenter.present();
+      expect(render).toHaveBeenCalledTimes(2);
+    });
+
+    it("draws again when the Scene gains content after the frame settled", async () => {
+      const host = await previewHost();
+      const render = vi.spyOn(host.scene, "render");
+      const presenter = await staticPresenter(host, new FakeCanvas());
+      presenter.present();
+      await readbackDone();
+      presenter.present();
+      expect(render).toHaveBeenCalledTimes(1);
+
+      // A model or texture that finishes loading arrives as new Scene content.
+      MeshBuilder.CreateBox("late-arrival", { size: 1 }, host.scene);
+      presenter.present();
+      expect(render).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps drawing while an animation is running", async () => {
+      const host = await previewHost();
+      const spin = new Animation("spin", "rotation.y", 30, Animation.ANIMATIONTYPE_FLOAT, Animation.ANIMATIONLOOPMODE_CYCLE);
+      spin.setKeys([{ frame: 0, value: 0 }, { frame: 30, value: Math.PI }]);
+      host.scene.beginDirectAnimation(host.mesh, [spin], 0, 30, true);
+      const render = vi.spyOn(host.scene, "render");
+      const presenter = await staticPresenter(host, new FakeCanvas());
+      for (let frame = 0; frame < 3; frame += 1) {
+        presenter.present();
+        await readbackDone();
+      }
+      expect(render).toHaveBeenCalledTimes(3);
+    });
+
+    it("draws nothing while suspended and honours the forced redraw once it clears", async () => {
+      const host = await previewHost();
+      const render = vi.spyOn(host.scene, "render");
+      let suspended = true;
+      const presenter = createMaterialPreviewPresenter(
+        host,
+        new FakeCanvas() as unknown as HTMLCanvasElement,
+        { maxFps: 1, now: () => 0, suspended: () => suspended },
+      );
+      disposers.push(() => presenter.dispose());
+
+      presenter.present({ force: true });
+      presenter.present();
+      expect(render).not.toHaveBeenCalled();
+      suspended = false;
+      // The first unsuspended present binds the preview RTT, then its graph prepares.
+      presenter.present();
+      await host.renderer.prepare();
+      presenter.present();
+      expect(render).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("flips WebGL readPixels so the 2D canvas is not upside down", async () => {

@@ -9,7 +9,59 @@ import {
   canvasIsEditorVisible,
   dispatchEngineSettingsChanged,
   isBlockingEditorOverlayOpen,
+  watchBlockingEditorOverlay,
 } from "./viewport-render-gate";
+
+describe("watchBlockingEditorOverlay", () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  function overlayElement(): HTMLElement {
+    const overlay = document.createElement("div");
+    overlay.setAttribute("data-slot", "dialog-overlay");
+    overlay.setAttribute("data-open", "");
+    return overlay;
+  }
+
+  it("follows an overlay opening and closing", async () => {
+    const watcher = watchBlockingEditorOverlay();
+    try {
+      expect(watcher.isOpen()).toBe(false);
+      const overlay = overlayElement();
+      document.body.append(overlay);
+      await waitFor(() => expect(watcher.isOpen()).toBe(true));
+      overlay.removeAttribute("data-open");
+      overlay.setAttribute("data-closed", "");
+      await waitFor(() => expect(watcher.isOpen()).toBe(false));
+    } finally {
+      watcher.dispose();
+    }
+  });
+
+  it("starts from an overlay that is already open", () => {
+    document.body.append(overlayElement());
+    const watcher = watchBlockingEditorOverlay();
+    try {
+      expect(watcher.isOpen()).toBe(true);
+    } finally {
+      watcher.dispose();
+    }
+  });
+
+  it("keeps tracking for the remaining watcher after another one is disposed", async () => {
+    const first = watchBlockingEditorOverlay();
+    const second = watchBlockingEditorOverlay();
+    try {
+      first.dispose();
+      document.body.append(overlayElement());
+      await waitFor(() => expect(second.isOpen()).toBe(true));
+    } finally {
+      first.dispose();
+      second.dispose();
+    }
+  });
+});
 
 describe("isBlockingEditorOverlayOpen", () => {
   afterEach(() => {

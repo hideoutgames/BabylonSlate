@@ -319,6 +319,8 @@ export interface EngineHandle {
   /** Last rendered frame's Babylon draw-call count (`_drawCalls.current`). */
   drawCalls: () => number;
   renderDiagnostics: () => RenderDiagnostics;
+  /** Whether `lightsdebug` is on, so hosts read `renderDiagnostics().shadowLights` only while it is. */
+  lightsDebugEnabled: () => boolean;
   /** Explicit CPU timing only; host controls finite capture, session mode and result retention. */
   observePerformance: (onFrame: (sample: RenderPerformanceSample) => void) => () => void;
   /** Explicit unpaired engine-wide GPU queries; unavailable backends explain why. */
@@ -3653,6 +3655,7 @@ function initializeEngine(
     }),
     drawCalls: () => lastDrawCalls,
     renderDiagnostics,
+    lightsDebugEnabled: () => sceneRenderingSettings(scene).lightsDebug,
     observePerformance: (onFrame) => {
       if (frameReportFeed.active) throw new Error("Stop frame capture before recording performance.");
       return performanceFeed.subscribe(onFrame);

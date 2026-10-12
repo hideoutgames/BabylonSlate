@@ -15,6 +15,7 @@ import {
 } from "@babylonslate/render";
 import { useOptionalPlay } from "../context/play-context";
 import { useProjectState } from "../context/document-context";
+import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
 
 export function SkeletonPreviewCanvas({
   sourceBytes,
@@ -53,6 +54,7 @@ export function SkeletonPreviewCanvas({
     let gestures: { dispose: () => void } | null = null;
     let loaded: { dispose: () => void } | null = null;
     const raf = { id: 0 };
+    const overlay = watchBlockingEditorOverlay();
     void (async () => {
       try {
         host = createModelPreviewScene(engine);
@@ -63,7 +65,12 @@ export function SkeletonPreviewCanvas({
           loaded?.dispose();
           return;
         }
-        presenter = createMaterialPreviewPresenter(host, canvas, { maxFps: 30 });
+        // The rig is shown at rest: no animation runs here, so the frame only changes on the redraws requested below.
+        presenter = createMaterialPreviewPresenter(host, canvas, {
+          maxFps: 30,
+          staticContent: true,
+          suspended: overlay.isOpen,
+        });
         gestures = attachMaterialPreviewGestures(canvas, host.camera, {
           onChange: () => presenter?.present({ force: true }),
         });
@@ -107,6 +114,7 @@ export function SkeletonPreviewCanvas({
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(raf.id);
+      overlay.dispose();
       bonesRef.current?.dispose();
       bonesRef.current = null;
       gestures?.dispose();

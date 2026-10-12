@@ -35,6 +35,7 @@ const harness = vi.hoisted(() => ({
   registryEpoch: 0,
   /** Each scene's Material resolver options; `acquireTexture` returns the bound bytes. */
   resolvers: [] as Array<{ acquireTexture: (guid: string) => unknown }>,
+  presenterOptions: [] as Array<{ suspended?: () => boolean }>,
 }));
 
 vi.mock("@babylonslate/render", () => {
@@ -71,7 +72,10 @@ vi.mock("@babylonslate/render", () => {
   return {
     ParticleService,
     createParticlePreviewScene: harness.createScene,
-    createMaterialPreviewPresenter: () => ({ present: vi.fn(), dispose: vi.fn() }),
+    createMaterialPreviewPresenter: (_host: unknown, _canvas: unknown, options: { suspended?: () => boolean } = {}) => {
+      harness.presenterOptions.push(options);
+      return { present: vi.fn(), dispose: vi.fn() };
+    },
     createParticleMaterialResolver: (options: { acquireTexture: (guid: string) => unknown }) => {
       harness.resolvers.push(options);
       return { acquire: vi.fn(), dispose: vi.fn() };
@@ -114,6 +118,8 @@ afterEach(() => {
   harness.textureBytes.clear();
   harness.registryEpoch = 0;
   harness.resolvers.length = 0;
+  harness.presenterOptions.length = 0;
+  document.body.querySelectorAll('[data-slot="dialog-overlay"]').forEach((overlay) => overlay.remove());
 });
 
 const base = createDefaultParticleEmitterPayload();
@@ -179,6 +185,23 @@ function savedTexture(payload: Record<string, unknown>, ktx2ChunkIds: string[]):
 }
 
 describe("Particle preview recovery", () => {
+  it("stops presenting behind a blocking dialog and resumes when it closes", async () => {
+    render(preview());
+    await screen.findByTestId("particle-preview-restart");
+    const suspended = harness.presenterOptions.at(-1)!.suspended!;
+    expect(suspended()).toBe(false);
+
+    const overlay = document.createElement("div");
+    overlay.setAttribute("data-slot", "dialog-overlay");
+    overlay.setAttribute("data-open", "");
+    document.body.append(overlay);
+    await waitFor(() => expect(suspended()).toBe(true));
+
+    overlay.removeAttribute("data-open");
+    overlay.setAttribute("data-closed", "");
+    await waitFor(() => expect(suspended()).toBe(false));
+  });
+
   it("shows renderer failures and retries them into a running preview", async () => {
     harness.createScene.mockImplementationOnce(() => {
       throw new Error("Preview renderer unavailable");

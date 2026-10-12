@@ -13,6 +13,13 @@ export const BLOCKING_OVERLAY_SELECTOR = [
   '[data-slot="sheet-overlay"]',
 ].join(",");
 
+const OVERLAY_MUTATION_OPTIONS: MutationObserverInit = {
+  childList: true,
+  subtree: true,
+  attributes: true,
+  attributeFilter: ["data-open", "data-closed", "hidden", "data-slot"],
+};
+
 export type ViewportRenderTarget = {
   setVisible: (value: boolean) => void;
   setObstructed: (value: boolean) => void;
@@ -158,6 +165,38 @@ export function isBlockingEditorOverlayOpen(
   return false;
 }
 
+let overlayWatchers = 0;
+let overlayObserver: MutationObserver | null = null;
+let overlayOpen = false;
+
+/**
+ * A cached `isBlockingEditorOverlayOpen` for per-frame consumers such as the
+ * preview loops. One shared observer re-queries the document only when a
+ * mutation can open or close an overlay; `dispose` releases the observer with
+ * its last watcher.
+ */
+export function watchBlockingEditorOverlay(): { isOpen: () => boolean; dispose: () => void } {
+  if (overlayWatchers++ === 0) {
+    overlayOpen = isBlockingEditorOverlayOpen();
+    overlayObserver = new MutationObserver((records) => {
+      if (mutationsMayAffectOverlays(records)) overlayOpen = isBlockingEditorOverlayOpen();
+    });
+    overlayObserver.observe(document.body, OVERLAY_MUTATION_OPTIONS);
+  }
+  let released = false;
+  return {
+    isOpen: () => overlayOpen,
+    dispose: () => {
+      if (released) return;
+      released = true;
+      if (--overlayWatchers > 0) return;
+      overlayObserver?.disconnect();
+      overlayObserver = null;
+      overlayOpen = false;
+    },
+  };
+}
+
 function containsOverlay(nodes: NodeList): boolean {
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
@@ -280,12 +319,7 @@ export function attachViewportRenderGate(options: {
   const mutation = new MutationObserver((records) => {
     if (mutationsMayAffectOverlays(records)) applyObstructed();
   });
-  mutation.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ["data-open", "data-closed", "hidden", "data-slot"],
-  });
+  mutation.observe(document.body, OVERLAY_MUTATION_OPTIONS);
 
   let settingsVersion = -1;
   const unsubscribeSettings = subscribeAppSettings((snapshot) => {

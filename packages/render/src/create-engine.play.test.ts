@@ -349,6 +349,15 @@ describe("Play createEngine view", () => {
     expect(overlay.anisotropicFilteringLevel).toBe(2);
   });
 
+  it("reports the lightsdebug switch without reading diagnostics", () => {
+    const { handle } = playHandle(sharedEngine());
+    expect(handle.lightsDebugEnabled()).toBe(false);
+    handle.applyCommand({ type: "setLightsDebug", enabled: true });
+    expect(handle.lightsDebugEnabled()).toBe(true);
+    handle.applyCommand({ type: "setLightsDebug", enabled: false });
+    expect(handle.lightsDebugEnabled()).toBe(false);
+  });
+
   it("ignores commands and snapshots that arrive after the view stops", () => {
     const { handle } = playHandle(sharedEngine());
     const { scene } = handle;

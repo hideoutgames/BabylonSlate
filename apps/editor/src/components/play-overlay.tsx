@@ -202,6 +202,13 @@ export interface PlayOverlayProps {
   onClose: (result: PlaySessionResult, ticket?: GameSessionTicket) => void;
 }
 
+/** The previous array when a poll found nothing new, so identical values do not re-render the overlay. */
+function keepIfEqual<T>(previous: readonly T[], next: T[]): T[] {
+  return previous.length === next.length && previous.every((value, index) => Object.is(value, next[index]))
+    ? (previous as T[])
+    : next;
+}
+
 function emptyPlayResult(): PlaySessionResult {
   return {
     diagnostics: [],
@@ -347,8 +354,10 @@ export function PlayOverlay({
   const inputModeRef = useRef<"game" | "edit">("game");
   const inputSequenceRef = useRef(0);
   const [statsOpen, setStatsOpen] = useState(false);
+  const statsVisible = statsOpen && overlayStats;
   const statsVisibleRef = useRef(false);
-  statsVisibleRef.current = statsOpen && overlayStats;
+  statsVisibleRef.current = statsVisible;
+  const [lightsDebug, setLightsDebug] = useState(false);
   const [statGroups, setStatGroups] = useState<readonly StatGroup[]>([]);
   const inspectSelectionRef = useRef<string | null>(null);
   const hostMemoryInFlight = useRef(false);
@@ -931,13 +940,18 @@ export function PlayOverlay({
       const movePoll = window.setInterval(() => {
         const current = sessionRef.current;
         setMoveX(current?.lastMoveX() ?? null);
-        setActorGuids([...(current?.spawnedActorGuids() ?? [])]);
-        setActorYs((current?.lastActorPositions() ?? []).map((entry) => entry.y));
+        const nextGuids = [...(current?.spawnedActorGuids() ?? [])];
+        setActorGuids((previous) => keepIfEqual(previous, nextGuids));
+        const nextYs = (current?.lastActorPositions() ?? []).map((entry) => entry.y);
+        setActorYs((previous) => keepIfEqual(previous, nextYs));
         setAudioQueued(audioStats.queued);
         setAudioUnlocked(audioStats.unlocked);
         if (current) {
-          // The lights debug overlay also reads these diagnostics.
-          setRendering(current.handle.renderDiagnostics());
+          // Rendering diagnostics scan the Scene's meshes and lights, and the first read keeps
+          // frame-phase timing on. Only the Stats HUD and the lights debug overlay show them.
+          const lights = current.handle.lightsDebugEnabled();
+          setLightsDebug(lights);
+          if (statsVisibleRef.current || lights) setRendering(current.handle.renderDiagnostics());
           setPostProcessPasses(current.handle.postProcessPassCount());
           setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
           setFreeCamEnabled(current.handle.isFreeCamEnabled());
@@ -1140,6 +1154,7 @@ export function PlayOverlay({
             rendering={rendering}
             bridgeMessagesPerSec={bridgeRate}
             groups={statGroups}
+            visible={statsVisible}
           />
         }
         extras={
@@ -1193,7 +1208,7 @@ export function PlayOverlay({
         }
       />
       <PrintHud printRef={printRef} />
-      {rendering && lightsDebugText(rendering) ? (
+      {lightsDebug && rendering && lightsDebugText(rendering) ? (
         <pre className="pointer-events-none absolute top-12 right-3 m-0 max-h-64 max-w-xl overflow-hidden whitespace-pre-wrap rounded-md bg-background/80 p-2 font-mono text-xs text-foreground" data-testid="lights-debug-overlay">
           <SelectableText>{lightsDebugText(rendering)}</SelectableText>
         </pre>

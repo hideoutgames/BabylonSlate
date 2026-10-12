@@ -17,6 +17,7 @@ import {
 } from "@babylonslate/render";
 import { useOptionalPlay } from "../context/play-context";
 import { useProjectState } from "../context/document-context";
+import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
 
 const STOPPED_CLIP = { playing: false, looping: false };
 
@@ -69,6 +70,7 @@ export function AnimationPreviewCanvas({
     let sourceLoaded: { dispose: () => void; animationGroups: AnimationGroup[] } | null =
       null;
     const raf = { id: 0 };
+    const overlay = watchBlockingEditorOverlay();
     void (async () => {
       try {
         host = createModelPreviewScene(engine);
@@ -112,7 +114,7 @@ export function AnimationPreviewCanvas({
           if (!cancelled) setClip(STOPPED_CLIP);
         });
         playingRef.current = group;
-        presenter = createMaterialPreviewPresenter(host, canvas, { maxFps: 30 });
+        presenter = createMaterialPreviewPresenter(host, canvas, { maxFps: 30, suspended: overlay.isOpen });
         gestures = attachMaterialPreviewGestures(canvas, host.camera, {
           onChange: () => presenter?.present({ force: true }),
         });
@@ -158,6 +160,7 @@ export function AnimationPreviewCanvas({
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(raf.id);
+      overlay.dispose();
       playingRef.current?.stop();
       playingRef.current = null;
       setClip(STOPPED_CLIP);
