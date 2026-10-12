@@ -1993,7 +1993,7 @@ if (swSwashEdgeS < 12.0) {
   float swSR = swSwashEdgeS + (swRagA - 0.5) * 0.7 + (swRagB - 0.5) * 0.18;
   float swRimW = max((0.12 + 0.2 * swFoamWidth) * (0.5 + swRagA) * (0.7 + 0.6 * swRagB), swFoot * 1.5);
   float swTailW = max(0.8 + 0.12 * swSwashX, swFoot * 3.0);
-  float swAmp = (0.5 + 0.5 * swSwashReach) * mix(1.0, exp(-swSwashDn * 1.8) * (0.45 + 0.55 * swSwashReach), swSwashBack);
+  float swAmp = (0.65 + 0.35 * swSwashReach) * mix(1.0, exp(-swSwashDn * 1.4) * (0.55 + 0.45 * swSwashReach), swSwashBack);
   float swSeaward = smoothstep(-swShoreAA, swShoreAA, swSR);
   float swRim = (1.0 - smoothstep(swRimW * 0.3, swRimW, swSR)) * swSeaward;
   float swTail = exp(-max(swSR, 0.0) / swTailW) * 0.7 * swSeaward;
@@ -2010,15 +2010,15 @@ if (swShoreD > 0.02) {
   // nor one spacing.
   vec2 swShoreBend = vec2(swNoise(swWorld * 0.4 + vec2(4.1, 1.3)), swNoise(swWorld * 0.4 + vec2(9.7, 6.2)));
   swShoreVar = swNoise(swWorld * 0.45 + vec2(2.7, 9.1));
-  vec2 swShoreUv = swWorld * 2.6 + vec2(0.0, swTime * 0.03) + (swShoreBend - vec2(0.5)) * 1.6;${fromTier(2, `
+  vec2 swShoreUv = swWorld * 3.2 + vec2(0.0, swTime * 0.03) + (swShoreBend - vec2(0.5)) * 1.6;${fromTier(2, `
   swShoreTex = clamp((swWeb(swShoreUv).x * 0.7 + swWeb(swShoreUv * 3.1 + vec2(5.3, 1.7)).x * 0.3 - 0.05) * 1.2, 0.0, 1.0);`, `
   swShoreTex = clamp(swWeb(swShoreUv).x * 1.15 - 0.05, 0.0, 1.0);`)}
   swShoreTex = clamp(swShoreTex + (swNoise(swWorld * 5.3 + vec2(3.3, 8.1)) - 0.5) * 0.25, 0.0, 1.0);
 }
-// A pixel spans swFoot * 2.6 cells: past about a third of a cell the pattern is averaged out into the density's coverage.
-float swShoreFade = smoothstep(0.3, 0.9, swFoot * 4.2);
+// A pixel spans swFoot * 3.2 cells: past about a third of a cell the pattern is averaged out into the density's coverage.
+float swShoreFade = smoothstep(0.3, 0.9, swFoot * 5.1);
 float swShoreCut = 1.0 - 0.9 * swShoreD + (swShoreVar - 0.5) * 0.35;
-float swShoreSm = 0.05 + 0.1 * (1.0 - swShoreD) + min(swFoot * 2.0, 0.35);
+float swShoreSm = 0.05 + 0.1 * (1.0 - swShoreD) + min(swFoot * 2.4, 0.35);
 float swShoreFoam = mix(smoothstep(swShoreCut, swShoreCut + swShoreSm, swShoreTex), swShoreD * (2.0 - swShoreD) * 0.8, swShoreFade)
   * min((0.55 + 0.7 * swShoreD), 1.0) * smoothstep(0.0, 0.1, swShoreD);
 swRealFoam = max(swRealFoam, swShoreFoam);
