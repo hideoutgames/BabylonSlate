@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, createDefaultSceneLayer } from "@babylonslate/core";
 import { isPlayEngineCommandType, type CommandMessage } from "@babylonslate/bridge";
-import { Actor, ActorComponent } from "@babylonslate/object-model";
+import { Actor, ActorComponent, ClassRegistry, World } from "@babylonslate/object-model";
 import { createInProcessRuntime } from "./driver";
 import { Text2DAppearRuntime } from "./text2d-appear-runtime";
 
@@ -15,12 +15,19 @@ function text(variables: Record<string, unknown> = {}) {
   return { actor, component };
 }
 
+/** `advance` walks a world's actors, so the standalone fixtures spawn into one. */
+function worldOf(...actors: Actor[]): World {
+  const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+  for (const actor of actors) world.spawnActorNow(actor);
+  return world;
+}
+
 describe("2D rich text appearance runtime", () => {
   it("reverses from the current position and preserves it through text, timing, and style edits", () => {
-    const runtime = new Text2DAppearRuntime(), { actor, component } = text();
+    const runtime = new Text2DAppearRuntime(), { actor, component } = text(), world = worldOf(actor);
     expect(runtime.progress(component)).toBe(0);
     runtime.execute(component, "play");
-    runtime.advance([actor], 0.2, () => true);
+    runtime.advance(world, 0.2, () => true);
     // Three formatted characters: two 0.1-second intervals and a 0.3-second transition.
     expect(runtime.progress(component)).toBeCloseTo(0.4);
     component.setVariable("text", "ABCDE");
@@ -30,29 +37,30 @@ describe("2D rich text appearance runtime", () => {
     runtime.refresh(component);
     expect(runtime.progress(component)).toBeCloseTo(0.4);
     runtime.execute(component, "playReverse");
-    runtime.advance([actor], 0.1, () => true);
+    runtime.advance(world, 0.1, () => true);
     expect(runtime.progress(component)).toBeCloseTo(0.2);
-    runtime.advance([actor], 1, () => true);
+    runtime.advance(world, 1, () => true);
     expect(runtime.progress(component)).toBe(0);
     runtime.execute(component, "play");
-    runtime.advance([actor], 1, () => true);
+    runtime.advance(world, 1, () => true);
     expect(runtime.progress(component)).toBe(1);
     runtime.execute(component, "triggerAppear");
     expect(runtime.progress(component)).toBe(0);
-    runtime.advance([actor], 0.25, () => true);
+    runtime.advance(world, 0.25, () => true);
     expect(runtime.progress(component)).toBe(0.5);
   });
 
   it("advances auto-play only for ready owners and sends no update for destroyed components", () => {
     const runtime = new Text2DAppearRuntime(), ready = text({ appearStart: "play" }), waiting = text({ appearStart: "play" });
-    runtime.advance([ready.actor, waiting.actor], 0.25, (actor) => actor === ready.actor);
+    const world = worldOf(ready.actor, waiting.actor);
+    runtime.advance(world, 0.25, (actor) => actor === ready.actor);
     expect(runtime.progress(ready.component)).toBe(0.5);
     expect(runtime.progress(waiting.component)).toBe(0);
     ready.component.destroyed = true;
     const updates: number[] = [];
     runtime.flush((_component, progress) => updates.push(progress));
     expect(updates).toEqual([]);
-    runtime.advance([ready.actor, waiting.actor], 0.5, () => true);
+    runtime.advance(world, 0.5, () => true);
     expect(runtime.progress(waiting.component)).toBe(1);
   });
 

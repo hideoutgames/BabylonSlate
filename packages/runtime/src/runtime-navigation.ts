@@ -24,6 +24,7 @@ import {
 } from "./actor-world-transform";
 import { actorLocalPhysicsTransform, type PhysicsWorldSync } from "./physics-sync";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
+import { componentOwners } from "./world-component-index";
 
 interface RuntimeNavigationHost {
   world(): World;
@@ -344,10 +345,9 @@ export class RuntimeNavigation implements RuntimeSubsystem {
 
   /** Compose NavAgent actors and their ancestors, not the whole world. */
   private navAgentWorldTransforms(index: ReadonlyMap<string, Actor>): Map<string, Transform> {
-    const actors = this.host.world().getActors();
     const agents = this.navAgentActors;
     agents.length = 0;
-    for (const actor of actors) {
+    for (const actor of componentOwners(this.host.world(), "NavAgentComponent")) {
       for (const component of actor.components) {
         if (component.classId === "NavAgentComponent" && !component.destroyed) {
           agents.push(actor);
@@ -518,7 +518,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
   private syncNavCostVolumes(index: ReadonlyMap<string, Actor>): void {
     if (!this.nav) return;
     const moving: Array<{ actor: Actor; props: NavMeshBlockerProperties }> = [];
-    for (const actor of this.host.world().getActors()) {
+    for (const actor of componentOwners(this.host.world(), "NavMeshBlockerComponent")) {
       if (actor.destroyed || this.host.isStreamActor(actor)) continue;
       const props = this.blockerProperties(actor);
       if (props?.area === "cost" && props.dynamic) moving.push({ actor, props });

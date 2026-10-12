@@ -1,6 +1,7 @@
 import { PAINTER_MAX_COMMANDS, PAINTER_MAX_MASK_DEPTH, PAINTER_MAX_PATH_SEGMENTS, PAINTER_MAX_TOTAL_SEGMENTS, painterPoint, parsePainter2DProperties,
   type Painter2DProperties, type PainterCommand, type PainterPathSegment, type PainterPoint } from "@babylonslate/core";
-import type { Actor, ActorComponent } from "@babylonslate/object-model";
+import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
+import { componentOwners } from "./world-component-index";
 
 type State = { commands: PainterCommand[]; path: PainterPathSegment[]; maskDepth: number; segments: number };
 
@@ -100,12 +101,12 @@ export class Painter2DRuntime {
     return true;
   }
 
-  beginFrame(actors: readonly Actor[], canTick: (actor: Actor) => boolean): void {
+  beginFrame(world: World, canTick: (actor: Actor) => boolean): void {
     if (this.drawn.size === 0) return;
     for (const component of this.drawn) {
       if (component.destroyed || !component.owner || component.owner.destroyed) this.drawn.delete(component);
     }
-    for (const actor of actors) {
+    for (const actor of componentOwners(world, "2DPainterComponent")) {
       if (!actor.sceneLayerId || actor.destroyed || !canTick(actor)) continue;
       for (const component of actor.components) {
         if (component.classId !== "2DPainterComponent" || component.destroyed || component.getVariable("clearEachFrame") === false) continue;

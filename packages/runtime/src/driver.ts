@@ -656,7 +656,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private createAnimGraphs(): AnimGraphRuntime {
     return new AnimGraphRuntime({
-      actors: () => this.world.getActors(),
+      world: () => this.world,
       stopped: () => this.stopped,
       canTick: (actor) => this.admission.canTickActor(actor),
       slot: (actor) => this.actorSlot(actor),
@@ -1931,8 +1931,8 @@ class InProcessRuntime implements RuntimeDriver {
   private tickWorld(pending: readonly RawInputEvent[], simDt: number): void {
     this.loopGuard.reset();
     this.tweens.advance(simDt);
-    this.textAppear.advance(this.world.getActors(), simDt, (actor) => this.admission.canTickActor(actor));
-    this.painters.beginFrame(this.world.getActors(), (actor) => this.admission.canTickActor(actor));
+    this.textAppear.advance(this.world, simDt, (actor) => this.admission.canTickActor(actor));
+    this.painters.beginFrame(this.world, (actor) => this.admission.canTickActor(actor));
     try {
       this.overlay.tickFocus(pending, this.resolvedInput, simDt);
       this.world.tick();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Actor, ActorComponent } from "@babylonslate/object-model";
+import { Actor, ActorComponent, ClassRegistry, World } from "@babylonslate/object-model";
 import { createActor, createDefaultScene, createDefaultSceneLayer, PAINTER_MAX_MASK_DEPTH, type Painter2DProperties } from "@babylonslate/core";
 import { isPlayEngineCommandType, type CommandMessage } from "@babylonslate/bridge";
 import { Painter2DRuntime } from "./painter2d-runtime";
@@ -47,7 +47,9 @@ describe("2D Painter retained drawing", () => {
     for (const item of [a, b, sleeping]) runtime.execute(item.component, "painterDrawRectangle", { center: [2, 1], size: [4, 2] });
     expect(runtime.execute(b.component, "painterDrawPolyline", { points: [[0, 0], [NaN, 1]] })).toBe(false);
     expect(runtime.execute(b.component, "painterDrawCircle", { center: [0, 0], radius: -2 })).toBe(false);
-    runtime.beginFrame([a.actor, b.actor, sleeping.actor], (actor) => actor !== sleeping.actor);
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    for (const item of [a, b, sleeping]) world.spawnActorNow(item.actor);
+    runtime.beginFrame(world, (actor) => actor !== sleeping.actor);
     expect(runtime.payload(a.component).commands).toEqual([]);
     expect(runtime.payload(b.component).commands).toMatchObject([{ path: [{ point: [0, 0] }, { point: [4, 0] }, { point: [4, 2] }, { point: [0, 2] }, { kind: "close" }] }]);
     expect(runtime.payload(sleeping.component).commands).toHaveLength(1);

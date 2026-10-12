@@ -6,6 +6,7 @@ import { actorWorldTransforms } from "./actor-world-transform";
 import { actorLocalPhysicsTransform, type PhysicsWorldSync } from "./physics-sync";
 import { sameDescriptor } from "./physics-preparation";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
+import { componentOwners } from "./world-component-index";
 
 type CapturedPose = Extract<ControlMessage, { type: "ragdollPoseCaptured" }>;
 
@@ -47,7 +48,7 @@ export class RagdollWorldSync implements RuntimeSubsystem {
   sync(): void {
     const actors = this.host.world.getActors();
     const candidates = new Map<Actor, { component: ActorComponent; count: number }>();
-    for (const actor of actors) {
+    for (const actor of componentOwners(this.host.world, "RagdollComponent")) {
       if (actor.destroyed || !this.host.eligible(actor)) continue;
       let component: ActorComponent | undefined;
       let count = 0;
@@ -59,8 +60,8 @@ export class RagdollWorldSync implements RuntimeSubsystem {
       if (component) candidates.set(actor, { component, count });
     }
     for (const actor of this.states.keys()) if (!candidates.has(actor)) this.retireActor(actor);
-    // Component membership is mutable, so scan it each tick, but leave unrelated
-    // actor transforms alone. Disabled ragdolls need no hierarchy preparation.
+    // Only ragdoll owners are scanned, with enabled state read live, and unrelated actor
+    // transforms stay untouched. Disabled ragdolls need no hierarchy preparation.
     if (!candidates.size) return;
     const transforms = actorWorldTransforms(actors, candidates.keys());
     for (const [actor, { component, count }] of candidates) {
