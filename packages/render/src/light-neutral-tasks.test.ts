@@ -11,7 +11,6 @@ import {
   SpotLight,
   StandardMaterial,
   Vector3,
-  type Mesh,
 } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
