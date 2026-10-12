@@ -7,7 +7,22 @@ import {
 } from "./lattice-deformer";
 import { isComponentPropertyOnlySceneEdit } from "./scene-transform-edit";
 
-type Target = { mesh: AbstractMesh; key: string; binding: DeformerBinding };
+type Target = { mesh: AbstractMesh; binding: DeformerBinding };
+
+/** Structural equality of plain data, so a binding is compared without serializing it. */
+function sameData(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!sameData(a[i], b[i])) return false;
+    return true;
+  }
+  const left = a as Record<string, unknown>, right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  return keys.every((key) => key in right && sameData(left[key], right[key]));
+}
 
 /** Live cage controls retain the scene's assets, effects and geometry topology. */
 export function isDeformerOnlySceneEdit(previous: SerializedScene | null, next: SerializedScene): boolean {
@@ -37,14 +52,13 @@ export class SceneDeformerHost {
         if (!binding.enabled || next.has(binding.targetMeshComponentId)) continue;
         const mesh = resolve(binding.targetMeshComponentId);
         if (!mesh || mesh.isDisposed() || mesh.getScene() !== this.scene) continue;
-        const key = JSON.stringify(binding);
         const retained = previous.get(binding.targetMeshComponentId);
-        if (retained?.mesh !== mesh || retained.key !== key) {
+        if (retained?.mesh !== mesh || !sameData(retained.binding, binding)) {
           changed.add(mesh);
           setMeshLatticeDeformer(mesh, binding);
         }
         if (refreshGeometry) refreshMeshLatticeDeformer(mesh);
-        next.set(binding.targetMeshComponentId, { mesh, key, binding: structuredClone(binding) });
+        next.set(binding.targetMeshComponentId, { mesh, binding: structuredClone(binding) });
       }
     } catch (error) {
       // A rejected GPU allocation or material adapter must not leak a partial

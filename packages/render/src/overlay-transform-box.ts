@@ -1,3 +1,4 @@
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import {
   Matrix,
@@ -269,16 +270,29 @@ export function isText2DOverlayMesh(mesh: AbstractMesh): boolean {
   );
 }
 
-export function overlayBoxLocalBounds(
+function overlayBoxSources(
   origin: AbstractMesh,
-  visuals: readonly AbstractMesh[] = [],
-): OverlayBoxLocalBounds {
+  visuals: readonly AbstractMesh[],
+): AbstractMesh[] {
   const candidates = isText2DOverlayMesh(origin)
     ? [origin]
     : visuals.length > 0
       ? visuals
       : [origin];
-  const sources = candidates.filter((mesh) => !skipOverlayBoxVisual(mesh));
+  return candidates.filter((mesh) => !skipOverlayBoxVisual(mesh));
+}
+
+export function overlayBoxLocalBounds(
+  origin: AbstractMesh,
+  visuals: readonly AbstractMesh[] = [],
+): OverlayBoxLocalBounds {
+  return boundsOfSources(origin, overlayBoxSources(origin, visuals));
+}
+
+function boundsOfSources(
+  origin: AbstractMesh,
+  sources: readonly AbstractMesh[],
+): OverlayBoxLocalBounds {
   if (sources.length === 0) {
     return { minX: -0.5, maxX: 0.5, minY: -0.5, maxY: 0.5 };
   }
@@ -303,6 +317,70 @@ export function overlayBoxLocalBounds(
     return { minX: -0.5, maxX: 0.5, minY: -0.5, maxY: 0.5 };
   }
   return { minX, maxX, minY, maxY };
+}
+
+/**
+ * Everything `layout` reads from the scene. A frame whose snapshot matches the
+ * one taken after the last layout cannot change the box, so it skips the
+ * bounds refresh. Numbers are compared with `Object.is`, so a signed zero is a
+ * change and NaN is stable.
+ */
+interface LayoutInputs {
+  numbers: number[];
+  refs: unknown[];
+}
+
+function pushMatrix(numbers: number[], matrix: Matrix): void {
+  const m = matrix.m;
+  for (let i = 0; i < 16; i++) numbers.push(m[i]!);
+}
+
+function recordLayoutInputs(
+  into: LayoutInputs,
+  origin: AbstractMesh,
+  sources: readonly AbstractMesh[],
+  handleSize: number,
+): void {
+  const { numbers, refs } = into;
+  numbers.length = 0;
+  refs.length = 0;
+  numbers.push(handleSize);
+  pushMatrix(numbers, origin.computeWorldMatrix(true));
+  for (const source of sources) {
+    pushMatrix(numbers, source.computeWorldMatrix(true));
+    // The stored bounds are what Babylon updates when geometry is edited;
+    // swapped geometry or position data is caught by the references below.
+    const info = source.getBoundingInfo();
+    const { minimum, maximum } = info;
+    numbers.push(
+      minimum.x,
+      minimum.y,
+      minimum.z,
+      maximum.x,
+      maximum.y,
+      maximum.z,
+      info.isLocked ? 1 : 0,
+      source.getTotalVertices(),
+    );
+    refs.push(
+      source,
+      info,
+      source.getVertexBuffer(VertexBuffer.PositionKind)?.getData() ?? null,
+    );
+  }
+}
+
+function sameLayoutInputs(a: LayoutInputs, b: LayoutInputs): boolean {
+  if (a.numbers.length !== b.numbers.length || a.refs.length !== b.refs.length) {
+    return false;
+  }
+  for (let i = 0; i < a.numbers.length; i++) {
+    if (!Object.is(a.numbers[i], b.numbers[i])) return false;
+  }
+  for (let i = 0; i < a.refs.length; i++) {
+    if (a.refs[i] !== b.refs[i]) return false;
+  }
+  return true;
 }
 
 export function overlayTextWrapFromResize(
@@ -543,12 +621,35 @@ export function createOverlayTransformBox(
     return worldToParentXy(attached, world);
   };
 
-  const layout = () => {
+  const frameInputs: LayoutInputs = { numbers: [], refs: [] };
+  const laidOutInputs: LayoutInputs = { numbers: [], refs: [] };
+  let laidOut = false;
+
+  // Attach and drag always take the full path; the per-frame pass passes
+  // `skipIfUnchanged` and returns early while nothing layout reads has moved.
+  const layout = (skipIfUnchanged = false) => {
     const show = attached !== null;
     root.setEnabled(show);
-    if (!attached) return;
+    if (!attached) {
+      if (laidOut) {
+        // Do not keep the last selection's meshes and vertex data alive.
+        laidOut = false;
+        frameInputs.refs.length = 0;
+        laidOutInputs.refs.length = 0;
+      }
+      return;
+    }
+    const handleSize = overlayHandleWorldSize(
+      originalScene,
+      options.canvasCssHeight?.(),
+    );
+    const sources = overlayBoxSources(attached, visuals);
+    if (skipIfUnchanged && laidOut) {
+      recordLayoutInputs(frameInputs, attached, sources, handleSize);
+      if (sameLayoutInputs(frameInputs, laidOutInputs)) return;
+    }
     attached.computeWorldMatrix(true);
-    const bounds = overlayBoxLocalBounds(attached, visuals);
+    const bounds = boundsOfSources(attached, sources);
     attached.getWorldMatrix().decompose(
       scratchScale,
       scratchRotation,
@@ -585,10 +686,6 @@ export function createOverlayTransformBox(
     const halfH = Math.max(worldHeight / 2, 1e-4);
     boxScale.scaling.set(worldWidth || 1e-4, worldHeight || 1e-4, 1);
 
-    const handleSize = overlayHandleWorldSize(
-      originalScene,
-      options.canvasCssHeight?.(),
-    );
     const visualSize = handleSize * OVERLAY_HANDLE_VISUAL_SCALE;
     const stemLen = visualSize * ROTATE_STEM_HANDLES;
     for (const [id, handle] of handles) {
@@ -600,6 +697,9 @@ export function createOverlayTransformBox(
     stem.scaling.set(1, stemLen, 1);
     knob.position.set(0, halfH + stemLen, -visualSize * 1.5);
     knob.scaling.set(handleSize, handleSize, handleSize);
+    // Recorded after the bounds refresh, which may have corrected stale bounds.
+    recordLayoutInputs(laidOutInputs, attached, sources, handleSize);
+    laidOut = true;
   };
 
   const begin = (
@@ -660,7 +760,7 @@ export function createOverlayTransformBox(
   for (const [id, handle] of handles) bind(handle, id);
 
   const observer = util.onBeforeRenderObservable.add(() => {
-    if (!dragging) layout();
+    if (!dragging) layout(true);
   });
 
   root.setEnabled(false);

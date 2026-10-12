@@ -58,6 +58,32 @@ describe("scene deformer ownership", () => {
     expect(gpu.active.size).toBe(0);
   });
 
+  it("re-applies a cage only when one of its fields changes", () => {
+    const { scene, host } = setup();
+    const mesh = new Mesh("Model", scene);
+    const resolve = () => mesh;
+    host.setActor("actor", [binding("model")], resolve);
+    const applied = gpu.active.get(mesh);
+    host.setActor("actor", [binding("model")], resolve, true);
+    expect(gpu.active.get(mesh)).toBe(applied);
+    const edits: Array<(next: DeformerBinding) => void> = [
+      (next) => { next.strength = 0.5; },
+      (next) => { next.offsets[7] = 0.25; },
+      (next) => { next.boundsMax[2] = 2; },
+      (next) => { next.fitToMesh = false; },
+    ];
+    let current = binding("model");
+    for (const edit of edits) {
+      const before = gpu.active.get(mesh);
+      const next = structuredClone(current);
+      edit(next);
+      host.setActor("actor", [next], resolve);
+      expect(gpu.active.get(mesh)).not.toBe(before);
+      expect(gpu.active.get(mesh)).toEqual(next);
+      current = next;
+    }
+  });
+
   it("restores the previous actor snapshot when a later cage allocation fails", () => {
     const { scene, host } = setup();
     const first = new Mesh("First", scene), rejected = new Mesh("Rejected", scene);

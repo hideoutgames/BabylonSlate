@@ -371,6 +371,38 @@ describe("EditorDebugOverlay", () => {
     expect(scene.onBeforeRenderObservable.hasObservers()).toBe(hadObservers);
   });
 
+  it("still finds an emitter that arrives while other meshes leave, keeping the mesh count unchanged", () => {
+    const { scene } = createHandle();
+    const overlay = new EditorDebugOverlay(scene);
+    const actor = createActor("speaker", "Speaker", {
+      components: [{
+        id: "audio", classId: "AudioComponent",
+        transform: identitySerializedTransform(),
+        properties: { audioAssetGuid: "sound" },
+      }],
+    });
+    const audioLibrary = {
+      audio: new Map([["sound", { ...createDefaultAudioPayload(), soundAttenuationGuid: "near" }]]),
+      attenuations: new Map([["near", { ...createDefaultSoundAttenuationPayload(), innerRadius: 3, maxRadius: 12 }]]),
+    };
+    const fillers = [MeshBuilder.CreateBox("filler-a", {}, scene), MeshBuilder.CreateBox("filler-b", {}, scene)];
+    overlay.sync({ sceneData: sceneWith([actor]), selectedActorIds: [actor.id], audioLibrary });
+    const root = scene.getTransformNodeByName("debugAudio:speaker:audio")!;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(root.position.x).toBe(0);
+    // Babylon notifies added meshes after a deferral, so only the count and the
+    // removals can reveal this swap on the next frame.
+    for (const filler of fillers) filler.dispose();
+    const origin = MeshBuilder.CreateBox(editorMeshName(actor.id), {}, scene);
+    origin.position.x = 5;
+    const visual = MeshBuilder.CreateBox(editorComponentMeshName(actor.id, "audio"), {}, scene);
+    visual.parent = origin;
+    visual.position.x = 2;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(root.position.x).toBe(7);
+    overlay.dispose();
+  });
+
   it("only draws selected Audio Components whose attenuation asset resolves", () => {
     const { scene } = createHandle();
     const overlay = new EditorDebugOverlay(scene);

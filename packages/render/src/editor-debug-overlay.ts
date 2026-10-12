@@ -189,6 +189,12 @@ export class EditorDebugOverlay {
   private timer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private readonly audioPoseObserver: Observer<Scene> | null;
+  private readonly meshAddedObserver: Observer<AbstractMesh> | null;
+  private readonly meshRemovedObserver: Observer<AbstractMesh> | null;
+  /** Names `getMeshByName` missed since the scene's meshes last changed. */
+  private readonly missedMeshNames = new Set<string>();
+  private meshesChanged = false;
+  private missedMeshCount = 0;
   private readonly previewBlitter = createRttCanvasBlitter();
   // The shared blitter reuses one buffer: draw each readback before the next.
   private previewBlitInFlight = false;
@@ -206,6 +212,10 @@ export class EditorDebugOverlay {
     this.useExternalClock = Boolean(options?.now);
     this.renderTargets = options?.renderTargets;
     this.audioPoseObserver = scene.onBeforeRenderObservable.add(() => this.updateAudioDebugPoses());
+    // Additions notify after a deferral and removals immediately; the mesh
+    // count in `findMesh` covers an addition not yet notified.
+    this.meshAddedObserver = scene.onNewMeshAddedObservable.add(() => { this.meshesChanged = true; });
+    this.meshRemovedObserver = scene.onMeshRemovedObservable.add(() => { this.meshesChanged = true; });
   }
 
   setPreviewCanvas(canvas: HTMLCanvasElement | null): void {
@@ -330,6 +340,8 @@ export class EditorDebugOverlay {
   stop(): void {
     this.stopped = true;
     this.scene.onBeforeRenderObservable.remove(this.audioPoseObserver);
+    this.scene.onNewMeshAddedObservable.remove(this.meshAddedObserver);
+    this.scene.onMeshRemovedObservable.remove(this.meshRemovedObserver);
     this.clearTimer();
     this.previewCanvas = null;
   }
@@ -557,13 +569,28 @@ export class EditorDebugOverlay {
     this.lightDebugMesh = root;
   }
 
+  /** `getMeshByName` that rescans a missing name only after the scene's meshes change. */
+  private findMesh(name: string): AbstractMesh | null {
+    const count = this.scene.meshes.length;
+    if (this.meshesChanged || count !== this.missedMeshCount) {
+      this.missedMeshNames.clear();
+      this.meshesChanged = false;
+      this.missedMeshCount = count;
+    }
+    if (this.missedMeshNames.has(name)) return null;
+    const mesh = this.scene.getMeshByName(name);
+    if (!mesh) this.missedMeshNames.add(name);
+    return mesh;
+  }
+
   private updateAudioDebugPoses(): void {
     for (const entry of this.audioDebug) {
       const { root, actor, component } = entry;
       // Runs every frame: keep resolved meshes until they are disposed, and
-      // re-scan unresolved ones so an emitter realized later is still followed.
+      // re-resolve unresolved ones as meshes arrive so an emitter realized
+      // later is still followed.
       if (entry.visual?.isDisposed()) entry.visual = null;
-      entry.visual ??= this.scene.getMeshByName(editorComponentMeshName(actor.id, component.id));
+      entry.visual ??= this.findMesh(editorComponentMeshName(actor.id, component.id));
       const visual = entry.visual;
       if (visual) {
         visual.computeWorldMatrix(true);
@@ -571,7 +598,7 @@ export class EditorDebugOverlay {
         continue;
       }
       if (entry.origin?.isDisposed()) entry.origin = null;
-      entry.origin ??= this.scene.getMeshByName(editorMeshName(actor.id));
+      entry.origin ??= this.findMesh(editorMeshName(actor.id));
       const origin = entry.origin;
       if (origin) {
         origin.computeWorldMatrix(true);
