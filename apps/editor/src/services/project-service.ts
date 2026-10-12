@@ -299,6 +299,12 @@ export type PluginImportResult =
       plan: Extract<PluginImportPlan, { kind: "conflict" }>;
     };
 
+/**
+ * Reverb results kept per Scene: an edit's, a newer edit's baked during its
+ * Save, and the saved geometry's, with room to spare. Each is at most a few KB.
+ */
+const SCENE_AUDIO_REVERB_RESULTS = 4;
+
 /** Navmesh bake for scaffolds: the bake worker in the app, Recast directly in unit tests. */
 async function generateFeatureTestNavMesh(input: NavMeshGenerateInput): Promise<Uint8Array> {
   if (typeof Worker === "function" && import.meta.env.MODE !== "test") {
@@ -386,8 +392,13 @@ export class ProjectService {
   private readonly assetGuids = new Map<string, string>();
   /** Guids a scaffold embedded in other documents before writing these paths. */
   private readonly reservedAssetGuids = new Map<string, string>();
-  /** Unsaved geometry results become persistent only with the matching Scene. */
-  private readonly sceneAudioReverb = new Map<string, { fingerprint: string; bytes: Uint8Array }>();
+  /**
+   * Reverb results by Scene GUID, then by the static-geometry fingerprint each
+   * was baked from. An unsaved geometry's result becomes persistent only with
+   * the matching Scene, so a bake of other geometry (export's of the saved
+   * Scene) must not replace it before that Save.
+   */
+  private readonly sceneAudioReverb = new Map<string, Map<string, Uint8Array>>();
   private readonly registryListeners = new Set<() => void>();
   private readonly ownWriteListeners = new Set<(write: OwnAssetWrite) => void>();
   private readonly diagnostics: string[] = [];
@@ -2507,8 +2518,8 @@ export class ProjectService {
   ): Promise<ChunkInput[]> {
     const extra = await this.extraChunksFor(path);
     const fingerprint = staticAudioGeometryFingerprint(payload as SerializedScene);
-    const baked = this.sceneAudioReverb.get(guid);
-    if (baked?.fingerprint === fingerprint) return extraChunksWithAudioReverb(extra, baked.bytes);
+    const baked = this.sceneAudioReverb.get(guid)?.get(fingerprint);
+    if (baked) return extraChunksWithAudioReverb(extra, baked);
     if (extra.some((chunk) => chunk.id === AUDIO_REVERB_CHUNK_ID)) {
       const saved = await this.readAssetDocument(path, "Scene");
       if (staticAudioGeometryFingerprint(normalizeScene(saved.payload)) !== fingerprint) {
@@ -2584,7 +2595,7 @@ export class ProjectService {
       const body = decoded.chunks.get(DOCUMENT_CHUNK_ID);
       const persisted = body ? JSON.parse(new TextDecoder().decode(body)) : decoded.header.payload;
       if (decoded.header.type !== "Scene") throw new Error("Audio reverb requires a Scene asset");
-      this.sceneAudioReverb.set(decoded.header.guid, baked);
+      this.rememberSceneAudioReverb(decoded.header.guid, baked.fingerprint, baked.bytes);
       if (staticAudioGeometryFingerprint(normalizeScene(persisted)) !== baked.fingerprint) return;
       // Re-encode the persisted container under the same queue as Save. Preserve
       // authored JSON, schema/header metadata, dependencies, and every other chunk.
@@ -2601,6 +2612,18 @@ export class ProjectService {
     };
     if (asset) await registry!.withAssetWrite(asset.header.guid, write);
     else await write();
+  }
+
+  /** Keep a result for its own geometry; the oldest beyond the limit is dropped. */
+  private rememberSceneAudioReverb(guid: string, fingerprint: string, bytes: Uint8Array): void {
+    const results = this.sceneAudioReverb.get(guid) ?? new Map<string, Uint8Array>();
+    results.delete(fingerprint);
+    results.set(fingerprint, bytes);
+    for (const oldest of results.keys()) {
+      if (results.size <= SCENE_AUDIO_REVERB_RESULTS) break;
+      results.delete(oldest);
+    }
+    this.sceneAudioReverb.set(guid, results);
   }
 
   /** Add or replace an imported Audio clip chunk (`source` / `source:N`). */
