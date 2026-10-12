@@ -5096,6 +5096,37 @@ describe("inline pin editing", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("emits an edit equal to the last emitted graph once the host has replaced the graph", async () => {
+    const before = literalGraph();
+    const onChange = vi.fn();
+    let replaceSnapshot: (graph: GraphDocument) => void = () => {};
+    function ControlledHost() {
+      const [snapshot, setSnapshot] = useState(before);
+      useEffect(() => {
+        replaceSnapshot = setSnapshot;
+      }, []);
+      return <GraphEditor initialGraph={snapshot} onChange={(next, meta) => {
+        onChange(next, meta);
+        setSnapshot(next);
+      }} />;
+    }
+    render(<ControlledHost />);
+    const commit = (value: string) => {
+      const input = screen.getByTestId("pin-default-sink-value");
+      fireEvent.change(input, { target: { value } });
+      fireEvent.blur(input);
+    };
+    commit("After");
+    commit("Later");
+    expect(onChange).toHaveBeenCalledTimes(2);
+
+    act(() => replaceSnapshot(before));
+    await waitFor(() => expect(screen.getByTestId("pin-default-sink-value")).toHaveProperty("value", "Before"));
+    commit("Later");
+    expect(onChange).toHaveBeenCalledTimes(3);
+    expect(emittedDefault(onChange)).toBe("Later");
+  });
+
   it.each([
     ["bool", false, true],
     ["int", 2, 7],

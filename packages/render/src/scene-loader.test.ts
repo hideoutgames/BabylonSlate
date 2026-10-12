@@ -18,6 +18,8 @@ import {
   editorMeshKindOf,
   editorMeshName,
   helperBillboardIconOf,
+  needsOriginRoot,
+  SceneActorIndex,
 } from "./scene-loader";
 import { isEditorVolumeMesh } from "./editor-volume";
 import { isColliderVisualMesh } from "./collider-visual";
@@ -93,6 +95,68 @@ describe("scene-loader", () => {
     actor.components[0]!.properties.sceneName = "BBBBBBBB";
     applySceneToBabylonScene(scene, sceneWithActors([actor]));
     expect(scene.getMeshByName(editorComponentMeshName("stream", "label"))!.getBoundingInfo().boundingBox.extendSize.x).toBeGreaterThan(width);
+  });
+
+  it("resolves streaming labels and parent scene names across actors of a full load", () => {
+    const { scene } = createHandle();
+    const streaming = (id: string, sceneName: string) => createActor(id, id, {
+      classId: "SceneStreamingActor",
+      components: [{ id: "streaming", classId: "SceneStreamingComponent", properties: { sceneGuid: "other", sceneName } }],
+    });
+    const label = (parentId: string) => createActor(`${parentId}-label`, "Label", {
+      parentId,
+      components: [{ id: "text", classId: "Text3DComponent", properties: { text: "Stale label", editorOnly: true, size: 0.25 } }],
+    });
+    const actors = [streaming("bare", "A"), streaming("labelled", "A"), label("labelled"), streaming("later", "A"), label("later")];
+    applySceneToBabylonScene(scene, sceneWithActors(actors));
+    // Only a streaming actor without its own or a child actor's label gets a synthetic one.
+    expect(scene.getMeshByName(editorComponentMeshName("bare", "streaming:label"))).not.toBeNull();
+    for (const id of ["labelled", "later"]) {
+      expect(scene.getMeshByName(editorComponentMeshName(id, "streaming:label"))).toBeNull();
+    }
+    // A child label shows the parent's scene name, billboarded.
+    const child = scene.getMeshByName(editorMeshName("labelled-label"))!;
+    expect(child.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    const width = child.getBoundingInfo().boundingBox.extendSize.x;
+    actors[1] = streaming("labelled", "BBBBBBBB");
+    applySceneToBabylonScene(scene, sceneWithActors(actors));
+    expect(scene.getMeshByName(editorMeshName("labelled-label"))!.getBoundingInfo().boundingBox.extendSize.x).toBeGreaterThan(width);
+  });
+
+  it("answers actor-relative visual rules from an index exactly as from the raw actor list", () => {
+    const streaming = (id: string) => createActor(id, id, {
+      classId: "SceneStreamingActor",
+      components: [{ id: "streaming", classId: "SceneStreamingComponent", properties: { sceneGuid: "other", sceneName: "A" } }],
+    });
+    const label = (id: string, parentId: string) => createActor(id, id, {
+      parentId,
+      components: [{ id: "text", classId: "Text3DComponent", properties: { text: "Label", editorOnly: true } }],
+    });
+    const button = (id: string, parentId: string | null) => createActor(id, id, {
+      parentId,
+      components: [{ id: "btn", classId: "2DButtonComponent", properties: {} }],
+    });
+    const texture = (id: string) => createActor(id, id, {
+      components: [{ id: "tex", classId: "2DTextureComponent", properties: { textureGuid: "tex-1" } }],
+    });
+    const actors = [
+      streaming("bare"), streaming("labelled"), label("labelled-label", "labelled"),
+      texture("banner"), button("on-banner", "banner"), button("orphan", "missing"), button("root", null),
+      // The first actor with an id answers, as a list scan does.
+      texture("twin"), createActor("twin", "Later twin", {}), button("on-twin", "twin"),
+    ];
+    const index = new SceneActorIndex(actors);
+    for (const actor of actors) {
+      expect(actorVisualFingerprint(actor, undefined, index)).toBe(actorVisualFingerprint(actor, undefined, actors));
+      expect(editorMeshKindOf(actor, undefined, index)).toBe(editorMeshKindOf(actor, undefined, actors));
+      expect(needsOriginRoot(actor, index)).toBe(needsOriginRoot(actor, actors));
+    }
+    const [bare, labelled] = actors as [typeof actors[0], typeof actors[0]];
+    expect(actorVisualFingerprint(bare, undefined, index)).not.toBe(actorVisualFingerprint(labelled, undefined, index));
+    const kind = (id: string) => editorMeshKindOf(actors.find((actor) => actor.id === id)!, undefined, index);
+    expect(kind("on-banner")).not.toBe(kind("root"));
+    expect(kind("on-twin")).toBe(kind("on-banner"));
+    expect(kind("orphan")).toBe(kind("root"));
   });
 
   it("replaces meshes when loading a new scene", () => {

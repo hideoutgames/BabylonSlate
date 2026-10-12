@@ -77,8 +77,10 @@ import { classAssetReference, classDeletionCandidates, validateClassDeletionRepl
 import { openOrFocusAssetDocument } from "../lib/open-asset-document";
 import { resolvePluginIcon } from "../lib/plugin-icons";
 import {
+  ASSET_DOCUMENT_KINDS,
   documentKindForAssetType,
   CONTENT_BROWSER_ID,
+  type DocumentKind,
 } from "@babylonslate/core";
 import {
   createAppSettingsStore,
@@ -138,7 +140,17 @@ import {
   AlertDialogMedia,
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
-import { useDocuments } from "../context/document-context";
+import {
+  useActiveDocumentId,
+  useDocumentActions,
+  useDocumentKindsRevision,
+  useEditorShellState,
+  useProjectState,
+  useRegistryState,
+  useSourceControl,
+  useTabOrder,
+} from "../context/document-context";
+import type { OpenDocument } from "../services/document-service";
 import { useOptionalPlay } from "../context/play-context";
 import {
   applyLockTransfers,
@@ -286,15 +298,33 @@ function mountedTileLocksKey(
   return JSON.stringify(locks);
 }
 
+const ALL_DOCUMENT_KINDS: readonly DocumentKind[] = ["content-browser", ...ASSET_DOCUMENT_KINDS];
+const NO_DOCUMENT_KINDS: readonly DocumentKind[] = [];
+const NO_OPEN_DOCUMENTS: OpenDocument[] = [];
+
 type ContentBrowserWorkspaceBodyProps = {
   hidden: boolean;
-  documents: ReturnType<typeof useDocuments>;
+  actions: ReturnType<typeof useDocumentActions>;
+  registry: ReturnType<typeof useRegistryState>;
+  projectDocument: ReturnType<typeof useProjectState>["projectDocument"];
+  thumbnailVersions: ReturnType<typeof useEditorShellState>["thumbnailVersions"];
+  thumbnailsEnabled: boolean;
+  sourceControl: ReturnType<typeof useSourceControl>["sourceControl"];
+  activeDocumentId: string | null;
+  tabOrder: readonly string[];
   diagnostics: ReturnType<typeof useValidation>["diagnostics"];
 };
 
 function ContentBrowserWorkspaceBody({
   hidden,
-  documents,
+  actions,
+  registry,
+  projectDocument,
+  thumbnailVersions,
+  thumbnailsEnabled,
+  sourceControl,
+  activeDocumentId,
+  tabOrder,
   diagnostics,
 }: ContentBrowserWorkspaceBodyProps) {
   const phone = usePhoneLayout();
@@ -302,11 +332,8 @@ function ContentBrowserWorkspaceBody({
   useEffect(() => {
     if (hidden || !phone) setFoldersOpen(false);
   }, [hidden, phone]);
+  const { projectGuid, assetRegistry, registryEpoch, pluginDescriptors, showPluginContent } = registry;
   const {
-    projectGuid,
-    projectDocument,
-    assetRegistry,
-    registryEpoch,
     refreshAssetRegistry,
     renameAsset,
     repathDocument,
@@ -315,18 +342,11 @@ function ContentBrowserWorkspaceBody({
     closeDocumentsForPaths,
     repairAfterAssetDelete,
     replaceClassReferencesBeforeDelete,
-    openDocuments,
+    getOpenDocuments,
     setActiveDocument,
-    tabOrder,
     loadAssetThumbnail,
-    thumbnailVersions,
-    thumbnailsEnabled,
-    pluginDescriptors,
-    showPluginContent,
-    sourceControl,
-    activeDocumentId,
     readAssetChunk,
-  } = documents;
+  } = actions;
   const play = useOptionalPlay();
   const { pendingTarget, clearPendingTarget } = useProjectSearch();
   const compileErrorGuids = useMemo(() => {
@@ -387,6 +407,15 @@ function ContentBrowserWorkspaceBody({
   const [treeRenamingId, setTreeRenamingId] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
   const [referenceGuid, setReferenceGuid] = useState<string | null>(null);
+  // Open tabs mutate in place, so the dialogs that read their unsaved content
+  // follow the document revisions, but only while one of them is showing.
+  const dialogNeedsOpenDocuments = deleteTarget !== null || referenceGuid !== null ||
+    (newAssetOpen && (newAssetType === "DataDefinition" || newAssetType === "DataTree"));
+  const openDocumentsRevision = useDocumentKindsRevision(dialogNeedsOpenDocuments ? ALL_DOCUMENT_KINDS : NO_DOCUMENT_KINDS);
+  const openDocuments = useMemo(() => {
+    void openDocumentsRevision;
+    return dialogNeedsOpenDocuments ? getOpenDocuments() : NO_OPEN_DOCUMENTS;
+  }, [dialogNeedsOpenDocuments, openDocumentsRevision, getOpenDocuments]);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>(
     {},
   );
@@ -2337,7 +2366,7 @@ function ContentBrowserWorkspaceBody({
           type === "Class"
             ? collectClassGraphsForPalette({
                 assets: allAssets,
-                openDocuments,
+                openDocuments: getOpenDocuments(),
                 classIdForPath: classIdForGraphPath,
               })
             : undefined,
@@ -2364,7 +2393,7 @@ function ContentBrowserWorkspaceBody({
     newWaterStyle,
     newWaterLook,
     newAssetType,
-    openDocuments,
+    getOpenDocuments,
     openOrFocusDocument,
     refreshAssetRegistry,
     selectedRoot,
@@ -3418,12 +3447,25 @@ export function ContentBrowserWorkspace({
 }: {
   hidden?: boolean;
 } = {}) {
-  const documents = useDocuments();
+  const actions = useDocumentActions();
+  const registry = useRegistryState();
+  const { projectDocument } = useProjectState();
+  const { thumbnailVersions, thumbnailsEnabled } = useEditorShellState();
+  const { sourceControl } = useSourceControl();
+  const activeDocumentId = useActiveDocumentId();
+  const tabOrder = useTabOrder();
   const { diagnostics } = useValidation();
   return (
     <MemoContentBrowserWorkspaceBody
       hidden={hidden}
-      documents={documents}
+      actions={actions}
+      registry={registry}
+      projectDocument={projectDocument}
+      thumbnailVersions={thumbnailVersions}
+      thumbnailsEnabled={thumbnailsEnabled}
+      sourceControl={sourceControl}
+      activeDocumentId={activeDocumentId}
+      tabOrder={tabOrder}
       diagnostics={diagnostics}
     />
   );

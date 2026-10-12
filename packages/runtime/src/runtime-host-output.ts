@@ -63,14 +63,16 @@ export function createOutputHostBindings(deps: OutputHostDeps): Pick<ScriptHostS
         message,
         key,
         duration,
-        color,
+        // Copied at emit: a queued command must not see later edits to the script's color.
+        color: structuredClone(color),
         frameId: deps.frameId(),
       });
     },
     drawDebug: (payload) => {
       deps.emit({
         type: "debugDraw",
-        ...(payload as Record<string, unknown>),
+        // Vectors can alias live Actor transforms that the same pump keeps moving in place.
+        ...(structuredClone(payload) as Record<string, unknown>),
         frameId: deps.frameId(),
       } as CommandMessage);
     },

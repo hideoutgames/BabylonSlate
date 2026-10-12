@@ -45,6 +45,7 @@ export function runtimeOptionsFromLoadControl(
   | "sceneGuidByKey"
   | "sceneLayerLibrary"
   | "includeDebugCommands"
+  | "traceDebugDraw"
   | "infiniteLoopDetection"
   | "loopCount"
   | "materialParameterCatalog"
@@ -117,6 +118,7 @@ export function runtimeOptionsFromLoadControl(
     sceneGuidByKey: record(sceneGuidByKey),
     sceneLayerLibrary: record(sceneLayerLibrary),
     includeDebugCommands: msg.includeDebugCommands,
+    ...(msg.traceDebugDraw !== undefined ? { traceDebugDraw: msg.traceDebugDraw } : {}),
     infiniteLoopDetection: msg.infiniteLoopDetection,
     loopCount: msg.loopCount,
     ...(msg.audioAssetGuids && msg.audioAssetGuids.length > 0

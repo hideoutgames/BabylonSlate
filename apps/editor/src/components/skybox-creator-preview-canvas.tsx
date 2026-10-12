@@ -14,6 +14,7 @@ import {
   resourceCacheForEngine,
 } from "@babylonslate/render";
 import { useOptionalPlay } from "../context/play-context";
+import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
 
 export type SkyboxCreatorPreviewFacePngs = Record<SkyboxFaceKey, Uint8Array>;
 
@@ -51,16 +52,23 @@ export function SkyboxCreatorPreviewCanvas({
     let presenter: ReturnType<typeof createMaterialPreviewPresenter> | null =
       null;
     let frame = 0;
+    const overlay = watchBlockingEditorOverlay();
     try {
       host = createMaterialPreviewScene(engine);
       if (!host || cancelled) {
+        overlay.dispose();
         host?.dispose();
         return;
       }
       hideDefaultPreviewMesh(host);
       const cache = resourceCacheForEngine(engine);
-      presenter = createMaterialPreviewPresenter(host, canvas);
+      // A fixed camera on a skybox: the frame changes only when the faces do, which rebuilds this scene.
+      presenter = createMaterialPreviewPresenter(host, canvas, {
+        staticContent: true,
+        suspended: overlay.isOpen,
+      });
       if (!presenter) {
+        overlay.dispose();
         host.dispose();
         return;
       }
@@ -79,6 +87,7 @@ export function SkyboxCreatorPreviewCanvas({
         { textureBytes: installTextureBytes(textureBytes), resourceCache: cache },
       );
     } catch {
+      overlay.dispose();
       presenter?.dispose();
       host?.dispose();
       return;
@@ -91,6 +100,7 @@ export function SkyboxCreatorPreviewCanvas({
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(frame);
+      overlay.dispose();
       presenter?.dispose();
       host?.dispose();
     };

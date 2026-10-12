@@ -521,6 +521,8 @@ function initializePlayer(
     sceneLayers,
     sceneNavmeshBytes: Object.fromEntries(content.navmeshByScene),
     ...loopGuardLoadFields(manifest),
+    // Export compiles with stripDevelopmentOnly exactly when bundleDebugger is false: trace and cursor debug lines go with it.
+    traceDebugDraw: manifest.bundleDebugger,
     audioAssetGuids: manifest.assets.filter(entry => entry.type === "Audio").map(entry => entry.guid),
     materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions),
     materialTextureAssetGuids: materialParameterTextureAssetGuids(game.textureBytes, content.renderTargetTextures),

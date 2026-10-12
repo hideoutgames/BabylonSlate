@@ -6,6 +6,7 @@ import {
   type AssetLoadingBudgets,
   type AssetRepresentation,
 } from "./asset-loading-service";
+import type { AssetSourceLocator } from "./payload-loader";
 import type { AssetRegistry, IndexedAsset } from "./registry";
 
 export interface RegistryLoadedAsset {
@@ -118,12 +119,16 @@ function representationForRecord(
         throw new SourceRevisionChangedError(`Asset ${record.id} changed after estimating its source bytes`);
       }
       const chunks = new Map<string, Uint8Array>();
+      // Resolved once: every chunk read validates storage against this locator afterwards.
+      let locator: AssetSourceLocator | undefined;
       for (const chunkId of record.chunkIds) {
         signal.throwIfAborted();
-        chunks.set(chunkId, await registry.readChunk(record.id, chunkId, record.revision, { signal }));
+        locator ??= await registry.getAssetLocator(record.id, { signal });
+        chunks.set(chunkId, await registry.readLocatedChunk(record.id, chunkId, locator, record.revision, { signal }));
       }
       signal.throwIfAborted();
-      if ((await registry.getAssetLocator(record.id, { signal })).revision !== record.revision) {
+      // An asset without chunks has no read to validate it.
+      if (!locator && (await registry.getAssetLocator(record.id, { signal })).revision !== record.revision) {
         throw new SourceRevisionChangedError(`Asset ${record.id} changed during reading; retry the current revision`);
       }
       const header = record.indexed.header;

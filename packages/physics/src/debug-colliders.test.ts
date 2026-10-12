@@ -268,6 +268,49 @@ describe("SoftwarePhysicsBackend.listDebugColliders", () => {
   });
 });
 
+describe("SoftwarePhysicsBackend.listDebugColliders point shapes", () => {
+  const base = { friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 1 };
+  const hull = (scale: number) => ({
+    kind: "convex" as const,
+    points: [
+      { x: 0, y: 0, z: 0 }, { x: scale, y: 0, z: 0 }, { x: 0, y: scale, z: 0 }, { x: 0, y: 0, z: scale },
+    ],
+  });
+  const triangle = (size: number) => ({
+    kind: "mesh" as const,
+    positions: new Float32Array([0, 0, 0, size, 0, 0, 0, size, 0]),
+    indices: new Uint16Array([0, 1, 2]),
+  });
+
+  it("follows the body pose and a replaced shape without altering earlier listings", () => {
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    backend.createBody({
+      id: "body", actorId: "actor", motionType: "static", mass: 0, linearDamping: 0,
+      angularDamping: 0, gravityScale: 0, transform: identity,
+    });
+    backend.createCollider({ ...base, id: "hull", bodyId: "body", shape: hull(1) });
+    backend.createCollider({ ...base, id: "tri", bodyId: "body", shape: triangle(2) });
+    const before = backend.listDebugColliders();
+    expect(before.map((entry) => entry.points?.[1])).toEqual([{ x: 1, y: 0, z: 0 }, { x: 2, y: 0, z: 0 }]);
+
+    backend.teleportBody("body", { position: { x: 5, y: 0, z: 0 }, rotation: identity.rotation });
+    const moved = backend.listDebugColliders();
+    expect(moved.map((entry) => entry.position.x)).toEqual([5, 5]);
+    expect(moved.map((entry) => entry.points)).toEqual(before.map((entry) => entry.points));
+    expect(moved[1]?.indices).toEqual([0, 1, 2]);
+
+    backend.applyColliderChanges("body", {
+      upsert: [{ ...base, id: "hull", bodyId: "body", shape: hull(3) }, { ...base, id: "tri", bodyId: "body", shape: triangle(4) }],
+      remove: [],
+    });
+    const replaced = backend.listDebugColliders();
+    expect(replaced.map((entry) => entry.points?.[1])).toEqual([{ x: 3, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }]);
+    expect(replaced.map((entry) => entry.position.x)).toEqual([5, 5]);
+    expect(before.map((entry) => entry.points?.[1])).toEqual([{ x: 1, y: 0, z: 0 }, { x: 2, y: 0, z: 0 }]);
+    backend.dispose();
+  });
+});
+
 describe("debugColliderFromDesc world pose", () => {
   it("rotates the local collider offset by the body quaternion", () => {
     const yaw90 = Math.SQRT1_2;

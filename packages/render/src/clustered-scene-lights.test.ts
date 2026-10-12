@@ -836,6 +836,26 @@ describe("explicit clustered light ownership", () => {
     expect(block.updateUniformsAndSamples).toBe(original);
   });
 
+  it("restores a removed graph and binds its replacement when the material count is unchanged", () => {
+    const { scene, lights } = fixture();
+    const removed = new NodeMaterial("removed", scene);
+    const removedBlock = new LightBlock("lighting");
+    removed.attachedBlocks.push(removedBlock);
+    const removedOriginal = removedBlock.updateUniformsAndSamples;
+    const owner = new ClusteredSceneLights(scene, lights);
+    expect(removedBlock.updateUniformsAndSamples).not.toBe(removedOriginal);
+    const replacement = new NodeMaterial("replacement", scene);
+    const replacementBlock = new LightBlock("lighting");
+    replacement.attachedBlocks.push(replacementBlock);
+    const replacementOriginal = replacementBlock.updateUniformsAndSamples;
+    scene.removeMaterial(removed);
+    syncSceneLighting(scene);
+    expect(removedBlock.updateUniformsAndSamples).toBe(removedOriginal);
+    expect(replacementBlock.updateUniformsAndSamples).not.toBe(replacementOriginal);
+    owner.dispose();
+    expect(replacementBlock.updateUniformsAndSamples).toBe(replacementOriginal);
+  });
+
   it("uploads stable authored light rows when camera depth reverses, and honors explicit priority changes", () => {
     const { engine, scene, lights } = fixture();
     for (const light of lights.slice(2)) light.dispose();

@@ -5,6 +5,7 @@ import {
   COLOR,
   FLOAT,
 } from "@babylonslate/scripting";
+import { hoistedCall } from "./hoisted-helper";
 
 /**
  * Color channels. Each node binds its color inputs once, so an impure color
@@ -26,7 +27,13 @@ export const colorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", COLOR),
     ],
     codegen: (ctx) => ({
-      out: `((a, b, t) => ({ ${CHANNELS.map((c) => `${c}: a.${c} + (b.${c} - a.${c}) * t`).join(", ")} }))(${ctx.input("a")}, ${ctx.input("b")}, ${ctx.input("alpha")})`,
+      out: hoistedCall(
+        ctx,
+        "__color_lerp",
+        "a, b, t",
+        `({ ${CHANNELS.map((c) => `${c}: a.${c} + (b.${c} - a.${c}) * t`).join(", ")} })`,
+        [ctx.input("a"), ctx.input("b"), ctx.input("alpha")],
+      ),
     }),
   },
   {
@@ -41,7 +48,13 @@ export const colorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", COLOR),
     ],
     codegen: (ctx) => ({
-      out: `((a, b) => ({ ${CHANNELS.map((c) => `${c}: a.${c} * b.${c}`).join(", ")} }))(${ctx.input("a")}, ${ctx.input("b")})`,
+      out: hoistedCall(
+        ctx,
+        "__color_multiply",
+        "a, b",
+        `({ ${CHANNELS.map((c) => `${c}: a.${c} * b.${c}`).join(", ")} })`,
+        [ctx.input("a"), ctx.input("b")],
+      ),
     }),
   },
   {
@@ -56,7 +69,13 @@ export const colorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", BOOL),
     ],
     codegen: (ctx) => ({
-      out: `((a, b) => ${CHANNELS.map((c) => `Math.abs(a.${c} - b.${c}) < 1e-6`).join(" && ")})(${ctx.input("a")}, ${ctx.input("b")})`,
+      out: hoistedCall(
+        ctx,
+        "__color_nearlyEqual",
+        "a, b",
+        CHANNELS.map((c) => `Math.abs(a.${c} - b.${c}) < 1e-6`).join(" && "),
+        [ctx.input("a"), ctx.input("b")],
+      ),
     }),
   },
 ];

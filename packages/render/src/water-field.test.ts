@@ -165,6 +165,28 @@ describe("Water field", () => {
     } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
   });
 
+  it("fills a field beyond its landscape as unknown even after another field's fully known fill used the shared scratch", () => {
+    const fill = (waterSize: number, floorSize: number) => {
+      const engine = new NullEngine(), scene = new Scene(engine);
+      const surface = MeshBuilder.CreateGround("water", { width: waterSize, height: waterSize }, scene);
+      surface.metadata = { slateWater: true };
+      createLandscapeMesh(scene, "floor", { width: floorSize, depth: floorSize, subdivisions: 4, heights: Array(25).fill(-4) });
+      const field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
+      try {
+        field.update();
+        const view = field as unknown as FieldView;
+        return { data: view.data.slice(), corner: texel(view, view.bounds[0]! + 0.5, view.bounds[1]! + 0.5), middle: texel(view, 0, 0) };
+      } finally { field.dispose(); scene.dispose(); engine.dispose(); }
+    };
+    // The second field sits wholly on its landscape: every cell known, with depths the first must not inherit.
+    const partial = fill(30, 10);
+    fill(20, 400);
+    const again = fill(30, 10);
+    expect(again.corner.known).toBe(false);
+    expect(again.middle).toMatchObject({ known: true });
+    expect(again.data).toEqual(partial.data);
+  });
+
   it("keeps fine depth across every displaced waterline of storm waves on a steep shore", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     let field: WaterField | undefined;

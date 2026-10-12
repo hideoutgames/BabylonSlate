@@ -538,13 +538,7 @@ export const flowNodes: NodeDefinition[] = [
       const targetPin = ctx.node.pins.find(
         (entry) => entry.id === "target" && entry.direction === "in",
       );
-      const targetConnected =
-        !!targetPin &&
-        ctx.graph.edges.some(
-          (edge) =>
-            edge.targetNodeId === ctx.node.id &&
-            edge.targetPinId === targetPin.id,
-        );
+      const targetConnected = !!targetPin && ctx.isWired(targetPin.id);
       const targetExpr =
         !targetPin || (!targetConnected && ctx.node.properties.implicitSelf === true)
           ? "ctx.self"
@@ -590,14 +584,10 @@ export const flowNodes: NodeDefinition[] = [
           : "Custom";
       const eventName = catalogEvent ?? jsIdent(rawName);
       const args = callParentArgs(ctx.node.properties);
-      const wired = (pinId: string) =>
-        ctx.graph.edges.some(
-          (edge) => edge.targetNodeId === ctx.node.id && edge.targetPinId === pinId,
-        );
       // A catalog event forwards the running event's arguments; a wired
       // input replaces one. Custom events send exactly their inputs.
       const fields = args
-        .filter((arg) => !catalogEvent || wired(arg.inId))
+        .filter((arg) => !catalogEvent || ctx.isWired(arg.inId))
         .map((arg) => `${JSON.stringify(arg.key)}: ${ctx.input(arg.inId)}`);
       const sent = catalogEvent
         ? `{ ...ctx.args${fields.map((field) => `, ${field}`).join("")} }`

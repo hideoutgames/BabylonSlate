@@ -35,7 +35,8 @@ import type { SessionReportEntry } from "@babylonslate/runtime";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
 import { emptyPlayAudioLibrary, type PlayAudioLibrary, type PlayAudioSourceLoader } from "../lib/play-audio";
-import { appendOutputLogLine } from "../lib/output-log-ring";
+import { appendOutputLogLines, OUTPUT_LOG_RING_CAP } from "../lib/output-log-ring";
+import { createFrameFlush } from "../lib/use-debug-console-logs";
 import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { PlayFailedDialog, PlayPrepareDialog } from "../components/play-prepare-dialog";
 import { PlayUnsavedDialog, type PlayUnsavedChoice } from "../components/play-unsaved-dialog";
@@ -214,9 +215,30 @@ function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
   const [logLines, setLogLines] = useState<string[]>([]);
   const [liveBtState, setLiveBtState] = useState<LiveBtState | null>(null);
   const outputLogWindows = useRef(0);
-  const appendLog = useCallback((line: string) => {
-    setLogLines((previous) => appendOutputLogLine(previous, line));
-  }, []);
+  // A burst of lines (engine logs, session diagnostics) commits once per frame, in arrival order.
+  const [logFeed] = useState(() => {
+    let pending: string[] = [];
+    const commit = () => {
+      const batch = pending;
+      pending = [];
+      if (batch.length > 0) setLogLines((previous) => appendOutputLogLines(previous, batch));
+    };
+    const frame = createFrameFlush(commit);
+    return {
+      push(line: string) {
+        pending.push(line);
+        // Only the newest lines can show, and a hidden tab flushes slowly.
+        if (pending.length > OUTPUT_LOG_RING_CAP * 2) pending.splice(0, pending.length - OUTPUT_LOG_RING_CAP);
+        frame.schedule();
+      },
+      flush() {
+        frame.cancel();
+        commit();
+      },
+    };
+  });
+  useEffect(() => () => logFeed.flush(), [logFeed]);
+  const appendLog = logFeed.push;
   const actions = useMemo<PlayDiagnosticsActions>(
     () => ({
       appendLog,

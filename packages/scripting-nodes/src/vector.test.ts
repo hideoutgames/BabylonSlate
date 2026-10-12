@@ -234,6 +234,32 @@ describe("vector nodes", () => {
     expect({ reads, logs }).toEqual({ reads: 2, logs: ["110", "200"] });
   });
 
+  it("declares arithmetic helpers ahead of every anchor so a throw inside one maps to its calling statement", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "js", "debug.executeJavaScript", { body: "ctx.ran = true;" }),
+        node(registry, "add", "vector.add3"),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "js", "execIn"),
+        edge("e2", "js", "execOut", "log", "execIn"),
+        edge("e3", "add", "out", "log", "message"),
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const helperLine = compiled.source.split("\n").findIndex((line) => line.startsWith("var __vec_add")) + 1;
+    expect(helperLine).toBeGreaterThan(0);
+    // The runtime resolves a stack frame to the nearest preceding anchor, so
+    // a helper line must have none: the frame falls through to its caller.
+    expect(compiled.anchors.length).toBeGreaterThan(0);
+    expect(compiled.anchors.every((anchor) => anchor.line > helperLine)).toBe(true);
+  });
+
   it("For Loop reads a shared Last Index again after each iteration", () => {
     const registry = createDefaultNodeRegistry();
     // Break's X bounds the loop and its Y feeds the body, so both read Limit

@@ -159,6 +159,15 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   /** Bodies with a `mutationFailure`, so `flushMutations` scans `bodies` only when one exists. */
   private readonly failedBodies = new Set<BodyRecord>();
   private readonly colliders = new Map<string, ColliderRecord>();
+  /**
+   * Every live body's colliders by shape owner (`desc.actorId`, else the body's actor, so a hosted shape sits under the
+   * child it was hosted for) and the trigger subset. Mirrors each `BodyRecord.colliders`, so a filtered query masks only
+   * the shapes it excludes instead of scanning every shape.
+   */
+  private readonly collidersByOwner = new Map<string, Set<ColliderRecord>>();
+  private readonly triggerColliders = new Set<ColliderRecord>();
+  /** Shapes a running query filter masked and their memberships; empty between queries. */
+  private readonly queryMemberships = new Map<PhysicsShape, number>();
   private readonly characters = new Map<string, CharacterRecord>();
   private readonly sphereSweeps = new Set<SphereSweepQuery>();
   private readonly constraints = new Map<string, { desc: ConstraintDesc; constraint: Physics6DoFConstraint }>();
@@ -240,6 +249,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       this.disposeBodyRecord(record);
     }
     this.bodies.clear();
+    this.collidersByOwner.clear();
+    this.triggerColliders.clear();
     this.failedBodies.clear();
     this.bodyIdByPhysicsBody.clear();
     this.activeTriggerPairs.clear();
@@ -678,6 +689,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     const oldColliders = record.colliders,
       oldContainer = record.container;
     record.colliders = next;
+    for (const [id, collider] of oldColliders) if (next.get(id) !== collider) this.unindexCollider(record, collider);
+    for (const [id, collider] of next) if (oldColliders.get(id) !== collider) this.indexCollider(record, collider);
     record.hostsShapes = false;
     for (const child of next.values())
       if (child.desc.actorId !== undefined && child.desc.actorId !== record.desc.actorId) record.hostsShapes = true;
@@ -759,33 +772,54 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   }
 
   private withQueryFilter<T>(options: LineTraceOptions | undefined, query: () => T): T {
-    const ignored = new Set(options?.ignoreActorIds);
-    const memberships = new Map<PhysicsShape, number>();
+    const memberships = this.queryMemberships;
     // Havok exposes one ignoreBody, but the graph accepts multiple actors.
     // Mask all their shapes for this synchronous query, then restore them.
     // Filtering before raycast also avoids consuming a bounded hit collector.
-    const mask = (shape: PhysicsShape | null | undefined) => {
-      if (!shape || memberships.has(shape)) return;
-      memberships.set(shape, shape.filterMembershipMask);
-      shape.filterMembershipMask = 0;
-    };
     try {
-      if (ignored.size || options?.includeTriggers === false) {
-        for (const record of this.bodies.values()) {
-          // Hits name each shape's owner, so ignoring an actor excludes only
-          // its own shapes: a host's shapes, or the shapes hosted for a child.
-          for (const collider of record.colliders.values()) {
-            if (ignored.has(collider.desc.actorId ?? record.desc.actorId) ||
-              (options?.includeTriggers === false && collider.desc.isTrigger)) mask(collider.shape);
-          }
+      // Hits name each shape's owner, so ignoring an actor excludes only
+      // its own shapes: a host's shapes, or the shapes hosted for a child.
+      const ignored = options?.ignoreActorIds;
+      if (ignored) {
+        for (const actorId of ignored) {
+          const owned = this.collidersByOwner.get(actorId);
+          if (owned) for (const collider of owned) this.maskQueryShape(collider.shape);
         }
+      }
+      if (options?.includeTriggers === false) {
+        for (const collider of this.triggerColliders) this.maskQueryShape(collider.shape);
       }
       return query();
     } finally {
-      for (const [shape, membership] of memberships) {
-        shape.filterMembershipMask = membership;
+      try {
+        for (const [shape, membership] of memberships) {
+          shape.filterMembershipMask = membership;
+        }
+      } finally {
+        memberships.clear();
       }
     }
+  }
+
+  private maskQueryShape(shape: PhysicsShape): void {
+    if (this.queryMemberships.has(shape)) return;
+    this.queryMemberships.set(shape, shape.filterMembershipMask);
+    shape.filterMembershipMask = 0;
+  }
+
+  private indexCollider(record: BodyRecord, collider: ColliderRecord): void {
+    const owner = collider.desc.actorId ?? record.desc.actorId;
+    let owned = this.collidersByOwner.get(owner);
+    if (!owned) this.collidersByOwner.set(owner, (owned = new Set()));
+    owned.add(collider);
+    if (collider.desc.isTrigger) this.triggerColliders.add(collider);
+  }
+
+  private unindexCollider(record: BodyRecord, collider: ColliderRecord): void {
+    const owner = collider.desc.actorId ?? record.desc.actorId;
+    const owned = this.collidersByOwner.get(owner);
+    if (owned?.delete(collider) && !owned.size) this.collidersByOwner.delete(owner);
+    this.triggerColliders.delete(collider);
   }
 
   /**
@@ -1475,6 +1509,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     for (const collider of record.colliders.values()) collider.shape.dispose();
     for (const shape of record.uncertainShapes) shape.dispose();
     record.uncertainShapes.clear();
+    for (const collider of record.colliders.values()) this.unindexCollider(record, collider);
     record.colliders.clear();
     record.node.dispose();
   }

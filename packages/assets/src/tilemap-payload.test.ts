@@ -15,7 +15,10 @@ import {
   reorderTilemapLayers,
   resizeTilemap,
   setTile,
+  setTiles,
+  TilemapChunkIndex,
   tilemapTilesetGuids,
+  type TilemapPayload,
 } from "./tilemap-payload";
 
 describe("tilemap payload", () => {
@@ -260,5 +263,82 @@ describe("tilemap payload", () => {
   it("leaves a map unchanged when the removed tileset is not listed", () => {
     const map = setTile(createDefaultTilemapPayload(), "layer-1", 0, 0, 1);
     expect(removeTilemapTileset(map, "missing")).toBe(map);
+  });
+});
+
+describe("setTiles with a chunk index", () => {
+  const cells = (list: Array<[number, number, number]>) =>
+    list.map(([x, y, id]) => ({ x, y, id }));
+  const small = (): TilemapPayload => ({ ...createDefaultTilemapPayload(), chunkSize: 4 });
+  const order = (map: TilemapPayload) =>
+    map.layers[0]!.chunks.map((chunk) => `${chunk.cx},${chunk.cy}`);
+
+  it("follows a stroke's writes with the chunk order and no-op results of plain writes", () => {
+    const strokes: Array<Array<[number, number, number]>> = [
+      [[0, 0, 1], [5, 0, 2]],
+      [[9, 9, 3]],
+      [[0, 0, 1]],
+      [[5, 0, 0]],
+      [[6, 1, 4]],
+      [[0, 1, 5], [9, 9, 0]],
+    ];
+    const index = new TilemapChunkIndex(true);
+    let plain = small();
+    let indexed = small();
+    const orders: string[][] = [];
+    for (const stroke of strokes) {
+      const previous = indexed;
+      plain = setTiles(plain, "layer-1", cells(stroke));
+      indexed = setTiles(indexed, "layer-1", cells(stroke), index);
+      expect(indexed).toEqual(plain);
+      // A write that changes nothing hands back the map it was given.
+      if (stroke === strokes[2]) expect(indexed).toBe(previous);
+      orders.push(order(indexed));
+    }
+    // A dropped chunk that is painted again joins the end, as with plain writes.
+    expect(orders).toEqual([
+      ["0,0", "1,0"],
+      ["0,0", "1,0", "2,2"],
+      ["0,0", "1,0", "2,2"],
+      ["0,0", "2,2"],
+      ["0,0", "2,2", "1,0"],
+      ["0,0", "1,0"],
+    ]);
+  });
+
+  it("re-derives from one base without earlier calls leaking in", () => {
+    const base = setTiles(small(), "layer-1", cells([[0, 0, 1], [5, 0, 2]]));
+    const index = new TilemapChunkIndex();
+    for (const stroke of [
+      [[9, 9, 3]],
+      [[9, 9, 3], [5, 0, 0]],
+      [[1, 0, 7]],
+      [[9, 9, 3]],
+    ] as Array<Array<[number, number, number]>>) {
+      expect(setTiles(base, "layer-1", cells(stroke), index)).toEqual(
+        setTiles(base, "layer-1", cells(stroke)),
+      );
+    }
+    expect(order(base)).toEqual(["0,0", "1,0"]);
+    expect(getTile(base, "layer-1", 5, 0)).toBe(2);
+  });
+
+  it("rebuilds when handed a map other than the one it describes", () => {
+    const index = new TilemapChunkIndex(true);
+    setTiles(small(), "layer-1", cells([[0, 0, 1]]), index);
+    const other = setTiles(small(), "layer-1", cells([[9, 9, 2], [0, 5, 3]]));
+    const erase = cells([[9, 9, 0]]);
+    expect(setTiles(other, "layer-1", erase, index)).toEqual(setTiles(other, "layer-1", erase));
+    expect(setTiles(other, "layer-1", erase, index).layers[0]!.chunks).toHaveLength(1);
+  });
+
+  it("matches plain writes on a layer that repeats a chunk", () => {
+    const first = setTiles(small(), "layer-1", cells([[0, 0, 1]])).layers[0]!.chunks[0]!;
+    const repeated = { ...first, tiles: first.tiles.map((id) => (id > 0 ? 2 : id)) };
+    const map = { ...small(), layers: [{ ...small().layers[0]!, chunks: [first, repeated] }] };
+    const write = cells([[1, 0, 5]]);
+    expect(setTiles(map, "layer-1", write, new TilemapChunkIndex(true))).toEqual(
+      setTiles(map, "layer-1", write),
+    );
   });
 });

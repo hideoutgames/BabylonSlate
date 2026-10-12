@@ -1,8 +1,9 @@
-import type {
-  BridgeHostMessage,
-  BridgeWorkerMessage,
-  CommandMessage,
-  ControlMessage,
+import {
+  dispatchCommandBatch,
+  type BridgeHostMessage,
+  type BridgeWorkerMessage,
+  type CommandMessage,
+  type ControlMessage,
 } from "@babylonslate/bridge";
 import { encodeInputEvents } from "@babylonslate/input";
 import type { RawInputEvent } from "@babylonslate/input";
@@ -37,15 +38,22 @@ export function createPlayerWorkerHost(): PlayerWorkerHost {
     reportError(new Error(event.message || "The game worker failed to start or stopped unexpectedly."));
   };
   worker.onmessageerror = () => reportError(new Error("The game worker sent an unreadable message."));
+  const dispatchCommand = (command: CommandMessage) => {
+    if (command.type === "snapshotLayout") {
+      installedGeneration = command.generation;
+      post({ channel: "snapshotLayoutAck", generation: installedGeneration });
+    }
+    for (const handler of commandHandlers) handler(command);
+  };
   worker.onmessage = (event: MessageEvent<BridgeWorkerMessage>) => {
     if (stopped) return;
     const msg = event.data;
     if (msg.channel === "command") {
-      if (msg.payload.type === "snapshotLayout") {
-        installedGeneration = msg.payload.generation;
-        post({ channel: "snapshotLayoutAck", generation: installedGeneration });
-      }
-      for (const handler of commandHandlers) handler(msg.payload);
+      dispatchCommand(msg.payload);
+      return;
+    }
+    if (msg.channel === "commands") {
+      dispatchCommandBatch(msg.payload, dispatchCommand, () => stopped);
       return;
     }
     if (msg.channel === "snapshot") {

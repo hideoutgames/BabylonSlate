@@ -273,14 +273,18 @@ function releasedControl(event: RawInputEvent): string | undefined {
 export class InputRingBuffer {
   private readonly capacity: number;
   private readonly events: RawInputEvent[] = [];
+  /** `controlKey` of each queued event, kept aligned with `events` so a saturated push builds no strings per queued event. */
+  private readonly keys: (string | undefined)[] = [];
+  private readonly nextScratch = new Map<string, RawInputEvent>();
 
   constructor(capacity = 256) {
     this.capacity = capacity;
   }
 
   push(event: RawInputEvent): void {
+    const key = controlKey(event);
     if (this.events.length >= this.capacity) {
-      let victim = this.supersededIndex(event);
+      let victim = this.supersededIndex(event, key);
       if (victim < 0 && this.events.length >= this.capacity * 4) {
         victim = this.events.findIndex(queued => !isInputReleaseEvent(queued));
         if (victim < 0) {
@@ -288,12 +292,17 @@ export class InputRingBuffer {
           victim = this.repeatedReleaseIndex(event);
         }
       }
-      if (victim >= 0) this.events.splice(victim, 1);
+      if (victim >= 0) {
+        this.events.splice(victim, 1);
+        this.keys.splice(victim, 1);
+      }
     }
     this.events.push(event);
+    this.keys.push(key);
   }
 
   drain(): RawInputEvent[] {
+    this.keys.length = 0;
     return this.events.splice(0, this.events.length);
   }
 
@@ -313,15 +322,15 @@ export class InputRingBuffer {
   }
 
   /** Oldest queued sample made redundant by the next event for its control, or -1. */
-  private supersededIndex(incoming: RawInputEvent): number {
-    const next = new Map<string, RawInputEvent>();
-    const incomingKey = controlKey(incoming);
+  private supersededIndex(incoming: RawInputEvent, incomingKey: string | undefined): number {
+    const next = this.nextScratch;
+    next.clear();
     if (incomingKey) next.set(incomingKey, incoming);
     let victim = -1;
     for (let index = this.events.length - 1; index >= 0; index--) {
-      const event = this.events[index]!;
-      const key = controlKey(event);
+      const key = this.keys[index];
       if (!key) continue;
+      const event = this.events[index]!;
       const later = next.get(key);
       if (later && supersededBy(event, later)) victim = index;
       next.set(key, event);

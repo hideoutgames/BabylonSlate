@@ -113,6 +113,18 @@ describe("TraceRecorder", () => {
     },
   );
 
+  it("keeps evicting the oldest frames exactly across thousands of recorded frames", () => {
+    // 141 metadata bytes plus two 84-byte four-digit frames and their comma.
+    const byteBudget = 310;
+    const recorder = new TraceRecorder({ byteBudget });
+    recorder.start({ seed: 7, dt: 1 });
+    for (let tick = 1; tick <= 5000; tick++) recorder.recordFrame(frame(tick));
+    const payload = recorder.stop()!;
+    expect(payload.frames.map((entry) => entry.tickIndex)).toEqual([4999, 5000]);
+    expect(payload.retention).toEqual({ byteBudget, droppedFrames: 4998, complete: false, stopReason: "requested" });
+    expect(new TextEncoder().encode(JSON.stringify(payload)).byteLength).toBeLessThanOrEqual(byteBudget);
+  });
+
   it("accounts for UTF-8 snapshot bytes rather than JavaScript string length", () => {
     const recorder = new TraceRecorder({ byteBudget: 400 });
     recorder.start({ seed: 7, dt: 1 });

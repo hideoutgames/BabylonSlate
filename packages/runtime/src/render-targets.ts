@@ -69,5 +69,6 @@ export function captureLocalTransform(component: ActorComponent): Transform {
     result = composeParentChildTransform(parent.transform, result);
     parentId = parent.parentId;
   }
-  return result;
+  // The root capture's own transform is live and tweens move it in place; the command needs this tick's pose.
+  return result === component.transform ? structuredClone(result) : result;
 }

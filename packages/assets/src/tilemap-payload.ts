@@ -383,20 +383,58 @@ export interface TileWrite {
 }
 
 /**
- * Write many cells, copying each touched chunk once. Cells outside the map are
- * skipped. Storage stays sparse: erasing never allocates a chunk, and a chunk
- * left with no tiles is dropped. Returns `map` itself when nothing changed.
+ * Chunk positions of one layer, kept across the `setTiles` calls of a stroke so
+ * each call looks up only the chunks it touches instead of re-indexing the layer.
+ * It describes one `chunks` array; handing `setTiles` any other array rebuilds it.
+ * With `advance` it moves onto each result, for writes that accumulate on the
+ * previous one; without it, it keeps describing the map passed in, for writes
+ * re-derived from the same base on every call.
  */
-export function setTiles(
+export class TilemapChunkIndex {
+  private chunks: readonly TilemapChunk[] | null = null;
+  private positions = new Map<string, number>();
+  private unique = true;
+  private readonly advance: boolean;
+
+  constructor(advance = false) {
+    this.advance = advance;
+  }
+
+  /** Chunk positions by `cx,cy` key, or `null` when two chunks share a key. */
+  positionsOf(chunks: readonly TilemapChunk[]): ReadonlyMap<string, number> | null {
+    if (this.chunks !== chunks) {
+      const positions = new Map<string, number>();
+      for (let at = 0; at < chunks.length; at++) {
+        positions.set(`${chunks[at]!.cx},${chunks[at]!.cy}`, at);
+      }
+      this.chunks = chunks;
+      this.positions = positions;
+      this.unique = positions.size === chunks.length;
+    }
+    return this.unique ? this.positions : null;
+  }
+
+  /** Follow a write that kept every chunk's position and appended `added`. */
+  followAppend(next: readonly TilemapChunk[], added: readonly TilemapChunk[]): void {
+    if (!this.advance) return;
+    for (let i = 0; i < added.length; i++) {
+      this.positions.set(`${added[i]!.cx},${added[i]!.cy}`, next.length - added.length + i);
+    }
+    this.chunks = next;
+  }
+}
+
+function isOccupied(chunk: TilemapChunk): boolean {
+  return chunk.tiles.some((gid) => gid > 0);
+}
+
+/** Chunks changed by `writes`, as copies, keyed by `cx,cy` in the order they first changed. */
+function editedChunks(
   map: TilemapPayload,
-  layerId: string,
+  size: number,
   writes: Iterable<TileWrite>,
-): TilemapPayload {
-  const layerIndex = map.layers.findIndex((entry) => entry.id === layerId);
-  const layer = map.layers[layerIndex];
-  if (!layer) return map;
-  const size = Math.max(1, map.chunkSize);
-  const existing = new Map(layer.chunks.map((chunk) => [`${chunk.cx},${chunk.cy}`, chunk]));
+  existing: (key: string) => TilemapChunk | undefined,
+): Map<string, TilemapChunk> {
   const edited = new Map<string, TilemapChunk>();
   for (const write of writes) {
     if (!tileInBounds(map, write.x, write.y)) continue;
@@ -406,15 +444,63 @@ export function setTiles(
     const index = localIndex(lx, ly, size);
     let chunk = edited.get(key);
     if (!chunk) {
-      const current = existing.get(key);
+      const current = existing(key);
       if ((current?.tiles[index] ?? 0) === id) continue;
       chunk = { cx, cy, tiles: current ? [...current.tiles] : emptyChunkTiles(size) };
       edited.set(key, chunk);
     }
     chunk.tiles[index] = id;
   }
+  return edited;
+}
+
+/**
+ * Write many cells, copying each touched chunk once. Cells outside the map are
+ * skipped. Storage stays sparse: erasing never allocates a chunk, and a chunk
+ * left with no tiles is dropped. Returns `map` itself when nothing changed.
+ *
+ * A `TilemapChunkIndex` shared by the calls of one stroke keeps each call's
+ * lookups proportional to the chunks it touches; the result is the same without it.
+ */
+export function setTiles(
+  map: TilemapPayload,
+  layerId: string,
+  writes: Iterable<TileWrite>,
+  index?: TilemapChunkIndex,
+): TilemapPayload {
+  const layerIndex = map.layers.findIndex((entry) => entry.id === layerId);
+  const layer = map.layers[layerIndex];
+  if (!layer) return map;
+  const size = Math.max(1, map.chunkSize);
+  const positions = index?.positionsOf(layer.chunks);
+  if (index && positions) {
+    const edited = editedChunks(map, size, writes, (key) => {
+      const at = positions.get(key);
+      return at === undefined ? undefined : layer.chunks[at];
+    });
+    if (edited.size === 0) return map;
+    const chunks = [...layer.chunks];
+    const dropped = new Set<number>();
+    const added: TilemapChunk[] = [];
+    for (const [key, next] of edited) {
+      const at = positions.get(key);
+      if (at === undefined) {
+        if (isOccupied(next)) added.push(next);
+      } else if (isOccupied(next)) {
+        chunks[at] = { ...chunks[at]!, tiles: next.tiles };
+      } else {
+        dropped.add(at);
+      }
+    }
+    const kept = dropped.size === 0 ? chunks : chunks.filter((_, at) => !dropped.has(at));
+    for (const chunk of added) kept.push(chunk);
+    // Dropping a chunk shifts later positions; the index then rebuilds on its next use.
+    if (dropped.size === 0) index.followAppend(kept, added);
+    return withLayerChunks(map, layerIndex, layer, kept);
+  }
+  const existing = new Map(layer.chunks.map((chunk) => [`${chunk.cx},${chunk.cy}`, chunk]));
+  const edited = editedChunks(map, size, writes, (key) => existing.get(key));
   if (edited.size === 0) return map;
-  const occupied = (chunk: TilemapChunk) => chunk.tiles.some((gid) => gid > 0);
   const chunks: TilemapChunk[] = [];
   for (const chunk of layer.chunks) {
     const key = `${chunk.cx},${chunk.cy}`;
@@ -424,9 +510,18 @@ export function setTiles(
       continue;
     }
     edited.delete(key);
-    if (occupied(next)) chunks.push({ ...chunk, tiles: next.tiles });
+    if (isOccupied(next)) chunks.push({ ...chunk, tiles: next.tiles });
   }
-  for (const chunk of edited.values()) if (occupied(chunk)) chunks.push(chunk);
+  for (const chunk of edited.values()) if (isOccupied(chunk)) chunks.push(chunk);
+  return withLayerChunks(map, layerIndex, layer, chunks);
+}
+
+function withLayerChunks(
+  map: TilemapPayload,
+  layerIndex: number,
+  layer: TilemapLayer,
+  chunks: TilemapChunk[],
+): TilemapPayload {
   const layers = [...map.layers];
   layers[layerIndex] = { ...layer, chunks };
   return { ...map, layers };

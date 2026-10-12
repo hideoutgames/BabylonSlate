@@ -530,6 +530,13 @@ export function attachMaterialPreviewGestures(
 export interface MaterialPreviewPresenter {
   present: (options?: { force?: boolean }) => void;
   setFrozen: (frozen: boolean) => void;
+  /**
+   * Static content stops drawing once a complete frame has been read back and
+   * draws again only after a forced present, a resize or a scene change.
+   * Animated content (time-driven materials, playing animations, particles)
+   * keeps drawing every interval.
+   */
+  setStaticContent: (isStatic: boolean) => void;
   dispose: () => void;
 }
 
@@ -554,11 +561,27 @@ function previewBufferSize(
  * `registerView` or the default framebuffer — those overwrite Scene viewport
  * and Play overlay. A frame the renderer is still preparing stays pending and
  * is drawn on a later `present`.
+ *
+ * A static preview (`staticContent`) keeps presenting until a frame was drawn
+ * with the Scene fully ready and its pixels are on the canvas, then idles. A
+ * forced present, a canvas resize, a Scene membership or material change
+ * (the renderer's readiness-dirty signal, which covers models and textures
+ * that finish loading) or a running animation wakes it.
  */
 export function createMaterialPreviewPresenter(
   host: MaterialPreviewScene,
   canvas: HTMLCanvasElement,
-  options: { maxSize?: number; maxFps?: number; now?: () => number; onError?: (message: string | null) => void } = {},
+  options: {
+    maxSize?: number;
+    maxFps?: number;
+    now?: () => number;
+    onError?: (message: string | null) => void;
+    staticContent?: boolean;
+    /** A static preview settles only while this holds, for overlay layers that compile their own shaders. */
+    settleWhen?: () => boolean;
+    /** Polled by `present`: while true nothing draws and a forced redraw waits for it to clear. */
+    suspended?: () => boolean;
+  } = {},
 ): MaterialPreviewPresenter {
   const maxSize = options.maxSize ?? MATERIAL_PREVIEW_MAX_SIZE;
   const maxFps = options.maxFps ?? 30;
@@ -571,6 +594,10 @@ export function createMaterialPreviewPresenter(
   let lastPresentMs = Number.NEGATIVE_INFINITY;
   let pendingForce = false;
   let disposed = false;
+  let staticContent = options.staticContent === true;
+  // True once a ready frame's pixels reached the canvas; only a static preview settles.
+  let settled = false;
+  let settledSize = { width: 0, height: 0 };
   let renderError: string | null = null;
   let readbackError: string | null = null;
   const blitter = createRttCanvasBlitter();
@@ -603,7 +630,21 @@ export function createMaterialPreviewPresenter(
     return rtt;
   };
 
-  const blit = (texture: RenderTargetTexture) => {
+  const settle = (size: { width: number; height: number }) => {
+    if (!staticContent || pendingForce || options.settleWhen?.() === false) return;
+    settledSize = size;
+    settled = true;
+  };
+
+  const changedSinceSettled = (): boolean => {
+    if (pendingForce) return true;
+    const size = previewBufferSize(canvas, maxSize);
+    // A hidden canvas keeps its last frame.
+    if (size && (size.width !== settledSize.width || size.height !== settledSize.height)) return true;
+    return host.renderer.readinessDirty || host.scene.animatables.length > 0;
+  };
+
+  const blit = (texture: RenderTargetTexture, size: { width: number; height: number }) => {
     if (blitInFlight) return;
     blitInFlight = true;
     const generation = rttGeneration;
@@ -619,9 +660,8 @@ export function createMaterialPreviewPresenter(
         const { width, height } = texture.getSize();
         if (!buffer || buffer.byteLength < width * height * 4) {
           // NullEngine has no GPU readback; its null result is expected.
-          if (!(host.scene.getEngine() instanceof NullEngine)) {
-            reportReadback("The material preview readback returned no pixels.");
-          }
+          if (host.scene.getEngine() instanceof NullEngine) settle(size);
+          else reportReadback("The material preview readback returned no pixels.");
           return;
         }
         if (canvas.width !== width) canvas.width = width;
@@ -631,6 +671,7 @@ export function createMaterialPreviewPresenter(
           readbackError = null;
           options.onError?.(null);
         }
+        settle(size);
       } catch (error) {
         reportReadback(
           error instanceof Error ? error.message : String(error),
@@ -645,7 +686,11 @@ export function createMaterialPreviewPresenter(
     present: (presentOptions) => {
       if (disposed) return;
       pendingForce ||= presentOptions?.force === true;
-      if (frozen || blitInFlight) return;
+      if (frozen || blitInFlight || options.suspended?.()) return;
+      if (settled) {
+        if (!changedSinceSettled()) return;
+        settled = false;
+      }
       const at = now();
       if (!pendingForce && at - lastPresentMs < minIntervalMs) return;
       // e2e telemetry: refreshed per presentation attempt, not per requested frame.
@@ -666,7 +711,7 @@ export function createMaterialPreviewPresenter(
         }
         pendingForce = false;
         lastPresentMs = at;
-        blit(texture);
+        blit(texture, size);
         if (renderError) { renderError = null; options.onError?.(null); }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -676,6 +721,10 @@ export function createMaterialPreviewPresenter(
     },
     setFrozen: (value) => {
       frozen = value;
+    },
+    setStaticContent: (value) => {
+      staticContent = value;
+      settled = false;
     },
     dispose: () => {
       disposed = true;

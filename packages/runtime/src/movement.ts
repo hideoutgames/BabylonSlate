@@ -33,6 +33,10 @@ function vector(value: unknown): Vec3 {
   return { x: finite(v?.x), y: finite(v?.y), z: finite(v?.z) };
 }
 
+function publishValue(component: ActorComponent, name: string, value: number | boolean): void {
+  if (!Object.is(component.getVariable(name), value)) component.setVariable(name, value);
+}
+
 /** Fixed-tick intent, velocity and transitions; physics owns collision resolution. */
 export class MovementWorldSync {
   private readonly states = new Map<ActorComponent, MovementState>();
@@ -195,12 +199,21 @@ export class MovementWorldSync {
     this.transitions(component, state, grounded, moving, jumped);
   }
 
+  /**
+   * Writes only values that differ from the live variable: other writers may have
+   * changed it since, and readers retain the published velocity object, so it is
+   * replaced rather than mutated.
+   */
   private publish(component: ActorComponent, state: MovementState): void {
-    component.setVariable("velocity", { ...state.velocity });
-    component.setVariable("speed", Math.hypot(state.velocity.x, state.velocity.z));
-    component.setVariable("isGrounded", state.grounded);
-    component.setVariable("isInAir", !state.grounded);
-    component.setVariable("isMoving", state.moving);
+    const live = component.getVariable("velocity") as Partial<Vec3> | null | undefined;
+    const v = state.velocity;
+    if (typeof live !== "object" || live === null || !Object.is(live.x, v.x) || !Object.is(live.y, v.y) || !Object.is(live.z, v.z)) {
+      component.setVariable("velocity", { ...v });
+    }
+    publishValue(component, "speed", Math.hypot(v.x, v.z));
+    publishValue(component, "isGrounded", state.grounded);
+    publishValue(component, "isInAir", !state.grounded);
+    publishValue(component, "isMoving", state.moving);
   }
 
   private transitions(component: ActorComponent, state: MovementState, grounded: boolean, moving: boolean, jumped = false): void {

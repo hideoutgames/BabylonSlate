@@ -29,4 +29,4 @@ export * from "./enum-switch-pins";
 export * from "./flow-switch-pins";
 export * from "./structured-flow";
 export * from "./editor-data-api";
-export { tagCasesOf, tagCasePinId, tagOptionPinId } from "./tags";
+export { tagCasesConstant, tagCasesOf, tagCasePinId, tagOptionPinId } from "./tags";

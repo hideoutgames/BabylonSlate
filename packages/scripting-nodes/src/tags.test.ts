@@ -412,4 +412,30 @@ describe("compiled Tags", () => {
     expect(evaluate({ getVariable: () => 4 })).toEqual({ enter: true, exit: true });
     expect(evaluate({ getVariable: () => 0 })).toEqual({ enter: false, exit: false });
   });
+
+  it("selects by Tag case in animation transition rules and keeps the rule anchor on its entry", () => {
+    const f = fixture();
+    const input = f.add("input", "variables.get", { variableName: "CurrentTag", typeId: "tag", implicitSelf: true });
+    const enterSelect = f.add("enterSelect", "tags.select", {
+      cases: [2, 3], "default:exact": false,
+      "default:option:2": false, "default:option:3": true, "default:default": true,
+    });
+    const exitSelect = f.add("exitSelect", "tags.select", {
+      cases: [2, 3], "default:exact": true,
+      "default:option:2": true, "default:option:3": false, "default:default": false,
+    });
+    const enter = f.add("enter", "anim.rule.enterState");
+    const exit = f.add("exit", "anim.rule.exitState");
+    f.wire(input, "value", enterSelect, "index");
+    f.wire(input, "value", exitSelect, "index");
+    f.wire(enterSelect, "out", enter, "value");
+    f.wire(exitSelect, "out", exit, "value");
+    const compiled = compileTransitionRuleGraph(f.graph, { assetGuid: "tag-select-rule", registry: f.registry, tagRegistry });
+    const evaluate = loadEntry(compiled.source, "evaluate");
+
+    expect(evaluate({ getVariable: () => 3 })).toEqual({ enter: true, exit: false });
+    expect(evaluate({ getVariable: () => 2 })).toEqual({ enter: false, exit: true });
+    expect(evaluate({ getVariable: () => 4 })).toEqual({ enter: true, exit: false });
+    expect(compiled.source.split("\n")[compiled.anchors[0]!.line - 1]).toMatch(/^export function evaluate/);
+  });
 });

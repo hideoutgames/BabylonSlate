@@ -113,6 +113,29 @@ interface Frame {
   bindInput?: (pinId: string) => MaterialOperand;
 }
 
+/** Node and input-wire lookups for one graph; the first of duplicates wins, as `find` did. */
+interface GraphLookup {
+  node(nodeId: string): MaterialGraphNode | undefined;
+  incoming(nodeId: string, pinId: string): MaterialGraphEdge | undefined;
+}
+
+function lookupGraph(graph: Frame["graph"]): GraphLookup {
+  const nodes = new Map<string, MaterialGraphNode>();
+  for (const node of graph.nodes) {
+    if (!nodes.has(node.id)) nodes.set(node.id, node);
+  }
+  const incoming = new Map<string, Map<string, MaterialGraphEdge>>();
+  for (const edge of graph.edges) {
+    let pins = incoming.get(edge.targetNodeId);
+    if (!pins) incoming.set(edge.targetNodeId, (pins = new Map()));
+    if (!pins.has(edge.targetPinId)) pins.set(edge.targetPinId, edge);
+  }
+  return {
+    node: (nodeId) => nodes.get(nodeId),
+    incoming: (nodeId, pinId) => incoming.get(nodeId)?.get(pinId),
+  };
+}
+
 /** Widen a literal to the component count of `type`, splatting a scalar. */
 function constantOperand(
   type: MaterialValueType,
@@ -257,6 +280,14 @@ export function lowerMaterialDocument(
   /** Frames for call nodes, memoized so one call inlines its body once. */
   const callFrames = new Map<string, Frame>();
 
+  /** One lookup per graph document, shared by every frame that inlines it. */
+  const lookups = new Map<Frame["graph"], GraphLookup>();
+  function lookupOf(frame: Frame): GraphLookup {
+    let lookup = lookups.get(frame.graph);
+    if (!lookup) lookups.set(frame.graph, (lookup = lookupGraph(frame.graph)));
+    return lookup;
+  }
+
   function frameForCall(frame: Frame, callNode: MaterialGraphNode): Frame | null {
     const key = `${frame.prefix}${callNode.id}`;
     const cached = callFrames.get(key);
@@ -294,10 +325,7 @@ export function lowerMaterialDocument(
     const definition = frame.resolver.definitionOf(node.id);
     const pin = definition?.inputs.find((entry) => entry.id === pinId);
     const targetType = frame.resolver.inputType(node.id, pinId) ?? "float";
-    const edge = frame.graph.edges.find(
-      (candidate) =>
-        candidate.targetNodeId === node.id && candidate.targetPinId === pinId,
-    );
+    const edge = lookupOf(frame).incoming(node.id, pinId);
     if (!edge) {
       return pin
         ? pinDefault(node, pin, targetType)
@@ -335,7 +363,7 @@ export function lowerMaterialDocument(
     nodeId: string,
     pinId: string,
   ): MaterialOperand | null {
-    const node = frame.graph.nodes.find((entry) => entry.id === nodeId);
+    const node = lookupOf(frame).node(nodeId);
     if (!node) return null;
 
     if (node.type === "function.input") {
@@ -375,11 +403,9 @@ export function lowerMaterialDocument(
 
     emitting.add(id);
     const inputs: Record<string, MaterialOperand> = {};
+    const lookup = lookupOf(frame);
     for (const pin of definition.inputs) {
-      const wired = frame.graph.edges.some(
-        (edge) =>
-          edge.targetNodeId === node.id && edge.targetPinId === pin.id,
-      );
+      const wired = lookup.incoming(node.id, pin.id) !== undefined;
       if (!wired && resolveMaterialPinDefault(node, pin) === undefined) {
         continue;
       }
@@ -432,11 +458,9 @@ export function lowerMaterialDocument(
   const terminalDefinition = materialNodeDefinition(terminalType);
   const outputs: Record<string, MaterialOperand | null> = {};
   if (terminal && terminalDefinition) {
+    const lookup = lookupOf(rootFrame);
     for (const pin of terminalDefinition.inputs) {
-      const wired = doc.edges.some(
-        (edge) =>
-          edge.targetNodeId === terminal.id && edge.targetPinId === pin.id,
-      );
+      const wired = lookup.incoming(terminal.id, pin.id) !== undefined;
       if (!wired && resolveMaterialPinDefault(terminal, pin) === undefined) {
         outputs[pin.id] = null;
         continue;

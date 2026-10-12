@@ -82,14 +82,21 @@ export function TraceSnapshotView({
         : [],
     [previous, parsed],
   );
+  // The text a query matches is built once per comparison, not per keystroke.
+  const searchableChanges = useMemo(
+    () =>
+      changes.map((change) => ({
+        change,
+        text: `${change.path} ${change.label} ${change.kind} ${exactTraceValue(change.before)} ${exactTraceValue(change.after)}`.toLowerCase(),
+      })),
+    [changes],
+  );
   const filteredChanges = useMemo(() => {
     const q = state.query.trim().toLowerCase();
-    return changes.filter((change) =>
-      `${change.path} ${change.label} ${change.kind} ${exactTraceValue(change.before)} ${exactTraceValue(change.after)}`
-        .toLowerCase()
-        .includes(q),
-    );
-  }, [changes, state.query]);
+    return searchableChanges
+      .filter((entry) => entry.text.includes(q))
+      .map((entry) => entry.change);
+  }, [searchableChanges, state.query]);
   const change = changes.find((entry) => entry.id === state.changeId);
   const touch = useTraceTouch();
   const rowHeight = touch ? 44 : 28;

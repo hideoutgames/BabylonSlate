@@ -458,6 +458,74 @@ describe("ProjectSearchIndex", () => {
     ).toBe(true);
   });
 
+  describe("reading documents ahead", () => {
+    async function sixScenes() {
+      const storage = await createStorage();
+      await storage.mkdir("assets", true);
+      for (let i = 0; i < 6; i++) {
+        await writeDocument(storage, `assets/s${i}.scene.babasset`, {
+          guid: `scene-${i}`,
+          type: "Scene",
+          name: `Level${i}`,
+          payload: { actors: [{ id: `actor-${i}`, name: "Hero", classId: "Actor", components: [] }] },
+        });
+      }
+      const registry = new AssetRegistry(storage);
+      await registry.mountRoot(projectContentRoot());
+      return { storage, registry };
+    }
+    const heroActors = (index: ProjectSearchIndex) =>
+      index.query("hero").flatMap((hit) => (hit.target.kind === "scene-actor" ? [hit.target.actorId] : []));
+
+    it("indexes in registry order when reads overlap and finish in reverse, never more than four at once", async () => {
+      const { storage, registry } = await sixScenes();
+      const real = readStoredAssetDocument.getMockImplementation()!;
+      const held: Array<() => Promise<unknown>> = [];
+      let inFlight = 0;
+      let maxInFlight = 0;
+      readStoredAssetDocument.mockImplementation((...args: unknown[]) => {
+        maxInFlight = Math.max(maxInFlight, ++inFlight);
+        return new Promise((resolve, reject) => {
+          held.push(() => real(...args).then(resolve, reject).finally(() => { inFlight -= 1; }));
+        });
+      });
+      try {
+        const index = new ProjectSearchIndex(storage);
+        let settled = false;
+        const pending = index.rebuild(registry).finally(() => { settled = true; });
+        await vi.waitFor(() => expect(held.length).toBeGreaterThan(1));
+        while (!settled) {
+          for (const release of held.splice(0).reverse()) await release();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        await pending;
+        expect(maxInFlight).toBeGreaterThan(1);
+        expect(maxInFlight).toBeLessThanOrEqual(4);
+        const sceneOrder = registry.list().map((asset) => asset.header.guid.replace("scene-", "actor-"));
+        expect(heroActors(index)).toEqual(sceneOrder);
+      } finally {
+        readStoredAssetDocument.mockImplementation(real);
+      }
+    });
+
+    it("keeps a document whose read fails header-only and indexes the rest", async () => {
+      const { storage, registry } = await sixScenes();
+      const real = readStoredAssetDocument.getMockImplementation()!;
+      readStoredAssetDocument.mockImplementation(async (...args: unknown[]) => {
+        if ((args[1] as string).endsWith("s2.scene.babasset")) throw new Error("corrupt chunk");
+        return real(...args);
+      });
+      try {
+        const index = new ProjectSearchIndex(storage);
+        await index.rebuild(registry);
+        expect(heroActors(index).sort()).toEqual(["actor-0", "actor-1", "actor-3", "actor-4", "actor-5"]);
+        expect(index.query("Level2").some((hit) => hit.kind === "asset")).toBe(true);
+      } finally {
+        readStoredAssetDocument.mockImplementation(real);
+      }
+    });
+  });
+
   it("overlays open-document JSON so unsaved names win, then a second rebuild sees the new snapshot", async () => {
     const storage = await createStorage();
     await writeDocument(storage, "assets/main.scene.babasset", {

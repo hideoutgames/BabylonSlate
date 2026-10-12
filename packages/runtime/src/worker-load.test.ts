@@ -33,8 +33,8 @@ it("waits for the matching host paint before loading the authored world without 
   };
   vi.stubGlobal("self", host);
   const commands: CommandMessage[] = [];
-  vi.stubGlobal("postMessage", (message: { channel: string; payload: CommandMessage }) => {
-    if (message.channel === "command") commands.push(message.payload);
+  vi.stubGlobal("postMessage", (message: { channel: string; payload: CommandMessage | CommandMessage[] }) => {
+    if (message.channel === "command" || message.channel === "commands") commands.push(...[message.payload].flat());
   });
   let runtime!: RuntimeDriver;
   let finishBoot!: () => void;

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { Actor, ActorComponent, ClassRegistry, World } from "@babylonslate/object-model";
-import { createDefaultWaterDefinition, normalizeWaterBody } from "@babylonslate/core";
+import { createDefaultWaterDefinition, eulerDegreesToQuaternion, normalizeWaterBody } from "@babylonslate/core";
 import { composeActorWorldTransformsInto } from "./actor-world-transform";
 import { WaterWorld } from "./water-world";
 
@@ -44,6 +44,22 @@ describe("Water world caching", () => {
     expect(water.sample({ x: 4, y: -1, z: 0 }).found).toBe(true);
     expect(normalize).toHaveBeenCalledTimes(2);
     expect(compose.mock.calls.length).toBeGreaterThan(6);
+  });
+
+  it("samples the pose of the last evaluation until the next one picks up a rotated water", () => {
+    const lake = new Actor({ guid: "lake", classId: "Actor" });
+    lake.attachComponent(new ActorComponent({ classId: "WaterLakeComponent", variables: { assetGuid: "water", width: 10, length: 2 } }));
+    const actors = [lake], water = new WaterWorld(), point = { x: 4, y: -1, z: 0 };
+    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    water.update(actors, 0);
+    expect(water.sample(point).found).toBe(true);
+    // Turned a quarter, the long lake no longer reaches x = 4; the step keeps sampling what it evaluated.
+    const [x, y, z, w] = eulerDegreesToQuaternion([0, 90, 0]);
+    Object.assign(lake.transform.rotation, { x, y, z, w });
+    expect(water.sample(point).found).toBe(true);
+    water.update(actors, 1 / 60);
+    expect(water.sample(point).found).toBe(false);
+    expect(water.sample({ x: 0, y: -1, z: 4 }).found).toBe(true);
   });
 
   it("follows water attached to and destroyed in the world it is bound to", () => {

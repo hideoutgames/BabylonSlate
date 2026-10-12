@@ -80,13 +80,7 @@ export const componentNodes: NodeDefinition[] = [
       const targetPin = ctx.node.pins.find(
         (entry) => entry.name === "actor" && entry.direction === "in",
       );
-      const targetConnected =
-        !!targetPin &&
-        ctx.graph.edges.some(
-          (edge) =>
-            edge.targetNodeId === ctx.node.id &&
-            edge.targetPinId === targetPin.id,
-        );
+      const targetConnected = !!targetPin && ctx.isWired(targetPin.id);
       const actorExpr =
         !targetPin ||
         (!targetConnected && ctx.node.properties.implicitSelf === true)

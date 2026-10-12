@@ -120,12 +120,16 @@ export type TraceRecorderOptions = {
 };
 
 const encoder = new TextEncoder();
+/** Evicted frames stay in the arrays until this many are dead and they outnumber the live ones. */
+const COMPACT_EVICTED_FRAMES = 1024;
 
 export class TraceRecorder {
   private readonly byteBudget: number;
   private recording = false;
   private payload: TracePayload | null = null;
   private frameBytes: number[] = [];
+  /** Frames and sizes before this index were evicted; `stop` drops them. */
+  private head = 0;
   private encodedBytes = 0;
   private headerBytes = 0;
 
@@ -161,6 +165,7 @@ export class TraceRecorder {
     this.recording = true;
     this.payload = { seed: meta.seed, dt: meta.dt, frames: [], retention };
     this.frameBytes = [];
+    this.head = 0;
     this.headerBytes = headerBytes;
     this.encodedBytes = headerBytes;
     return true;
@@ -177,7 +182,7 @@ export class TraceRecorder {
       return;
     }
     // The empty payload already accounts for the header and array brackets.
-    this.encodedBytes += bytes + (this.payload.frames.length > 0 ? 1 : 0);
+    this.encodedBytes += bytes + (this.payload.frames.length > this.head ? 1 : 0);
     this.payload.frames.push(frame);
     this.frameBytes.push(bytes);
     this.trimToBudget();
@@ -188,8 +193,10 @@ export class TraceRecorder {
     if (this.recording) this.payload.retention.stopReason = reason;
     this.recording = false;
     const result = this.payload;
+    result.frames.splice(0, this.head);
     this.payload = null;
     this.frameBytes = [];
+    this.head = 0;
     this.encodedBytes = 0;
     this.headerBytes = 0;
     return result;
@@ -197,14 +204,19 @@ export class TraceRecorder {
 
   private trimToBudget(): void {
     if (!this.payload) return;
-    while (
-      this.payload.frames.length > 1 &&
-      this.encodedBytes > this.byteBudget
-    ) {
-      this.payload.frames.shift();
-      this.encodedBytes -= this.frameBytes.shift()! + 1;
+    const frames = this.payload.frames as Array<TraceFrame | undefined>;
+    // Evicting by index keeps each recorded frame O(1); the slot is cleared so the frame can be collected.
+    while (frames.length - this.head > 1 && this.encodedBytes > this.byteBudget) {
+      frames[this.head] = undefined;
+      this.encodedBytes -= this.frameBytes[this.head]! + 1;
+      this.head += 1;
       this.payload.retention.droppedFrames += 1;
       this.payload.retention.complete = false;
+    }
+    if (this.head >= COMPACT_EVICTED_FRAMES && this.head * 2 >= frames.length) {
+      frames.splice(0, this.head);
+      this.frameBytes.splice(0, this.head);
+      this.head = 0;
     }
   }
 }

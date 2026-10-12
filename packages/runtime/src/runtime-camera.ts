@@ -26,6 +26,8 @@ interface RuntimeCameraHost {
   cursor(): ResolvedInputTick["cursor"];
   overlay(): Pick<SceneLayerOverlay, "canvasSize">;
   physics(): Pick<RuntimePhysicsWorlds, "main" | "layer">;
+  /** False strips Project Cursor To Scene's debug lines whatever `drawDebug` says; true when omitted. */
+  traceDebugDraw?: boolean;
   emit(command: CommandMessage): void;
 }
 
@@ -172,7 +174,7 @@ export class RuntimeCamera implements RuntimeSubsystem {
     // reparented earlier this tick reach the ray after the next step, so a
     // script aiming every tick does not pay a whole-world pass per call.
     const hit = this.host.physics().main.lineTrace(ray.origin, ray.end, { channel });
-    const drawDebug = options?.drawDebug !== false;
+    const drawDebug = this.host.traceDebugDraw !== false && options?.drawDebug !== false;
     if (drawDebug) {
       const duration =
         typeof options?.duration === "number" && Number.isFinite(options.duration)
@@ -180,11 +182,13 @@ export class RuntimeCamera implements RuntimeSubsystem {
           : 0;
       const end =
         hit.hit === true && hit.location ? hit.location : ray.end;
+      // The script receives these vectors too; copy them so the queued command
+      // keeps this call's values (commands are cloned when the worker flushes).
       this.host.emit({
         type: "debugDraw",
         kind: "line",
-        start: ray.origin,
-        end,
+        start: { ...ray.origin },
+        end: { ...end },
         thickness: 1,
         color: { x: 1, y: 0, z: 0, w: 1 },
         duration,
@@ -194,7 +198,7 @@ export class RuntimeCamera implements RuntimeSubsystem {
         this.host.emit({
           type: "debugDraw",
           kind: "square",
-          center: hit.location,
+          center: { ...hit.location },
           size: 0.16,
           color: { x: 0, y: 1, z: 0, w: 1 },
           duration,

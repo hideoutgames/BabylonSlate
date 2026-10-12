@@ -361,7 +361,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.animGraphs = this.createAnimGraphs();
     this.behaviourTrees = this.createBehaviourTrees();
     this.actors = this.createActorRealization();
-    this.camera = this.createCamera();
+    this.camera = this.createCamera(options);
     this.waits = this.createWaits();
 
     // 2. Session identity, scripts and the inspector.
@@ -712,8 +712,9 @@ class InProcessRuntime implements RuntimeDriver {
     });
   }
 
-  private createCamera(): RuntimeCamera {
+  private createCamera(options: RuntimeDriverOptions): RuntimeCamera {
     return new RuntimeCamera({
+      traceDebugDraw: options.traceDebugDraw,
       world: () => this.world,
       playScene: () => this.playScene,
       frameId: () => this.frameId,
@@ -1090,6 +1091,7 @@ class InProcessRuntime implements RuntimeDriver {
       interfaceRegistry: this.world.interfaceRegistry,
       classRegistry: registry,
       checkInfiniteLoop: () => this.loopGuard.check(),
+      traceDebugDraw: options.traceDebugDraw,
       ...createOutputHostBindings({
         frameId,
         tickIndex: () => this.world.clock.tickIndex,

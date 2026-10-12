@@ -50,8 +50,24 @@ export function paint2DCommands(context: PaintContext, commands: readonly Painte
   }
 }
 
-type PainterVisual = { texture: DynamicTexture; properties: Painter2DProperties };
+type PainterVisual = {
+  texture: DynamicTexture;
+  properties: Painter2DProperties;
+  /** Inputs of the replay the canvas and its upload currently reflect; unset until one completes. */
+  painted?: { commands: readonly PainterCommand[]; width: number; height: number; textureWidth: number; textureHeight: number };
+};
 const visuals = new WeakMap<Mesh, PainterVisual>();
+
+/** Equality of parsed command data (numbers, strings, booleans, arrays and plain objects). */
+function samePainterData(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a)) return Array.isArray(b) && a.length === b.length && a.every((value, index) => samePainterData(value, b[index]));
+  if (Array.isArray(b)) return false;
+  const left = a as Record<string, unknown>, right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length && keys.every((key) => Object.hasOwn(right, key) && samePainterData(left[key], right[key]));
+}
 
 function textureSizeFor(scene: Scene, properties: Painter2DProperties): { width: number; height: number } {
   return painterTextureSize(properties.width, properties.height, properties.pixelsPerUnit, Math.min(4096, scene.getEngine().getCaps().maxTextureSize || 4096));
@@ -87,7 +103,8 @@ export function createPainter2DMesh(scene: Scene, name: string, value: unknown):
 /**
  * Drawing updates retain the plane, material and texture rather than rebuilding
  * the actor. A new world size reshapes the plane, and a new texel size resizes
- * the canvas texture, before the stream is replayed.
+ * the canvas texture, before the stream is replayed. A stream the canvas already
+ * shows at the same sizes is neither replayed nor uploaded again.
  */
 export function updatePainter2DMesh(mesh: Mesh, value: unknown): boolean {
   const visual = visuals.get(mesh);
@@ -100,8 +117,18 @@ export function updatePainter2DMesh(mesh: Mesh, value: unknown): boolean {
   const current = visual.texture.getSize();
   if (wanted.width !== current.width || wanted.height !== current.height) visual.texture.scaleTo(wanted.width, wanted.height);
   const size = visual.texture.getSize();
+  const painted = visual.painted;
+  if (painted && painted.width === properties.width && painted.height === properties.height &&
+    painted.textureWidth === size.width && painted.textureHeight === size.height &&
+    samePainterData(painted.commands, properties.commands)) {
+    visual.properties = properties;
+    return true;
+  }
+  // A replay that throws leaves the canvas partly drawn, so nothing counts as shown until the upload completes.
+  visual.painted = undefined;
   paint2DCommands(visual.texture.getContext() as PaintContext, properties.commands, size.width, size.height, properties.width, properties.height);
   visual.properties = properties;
   visual.texture.update();
+  visual.painted = { commands: properties.commands, width: properties.width, height: properties.height, textureWidth: size.width, textureHeight: size.height };
   return true;
 }

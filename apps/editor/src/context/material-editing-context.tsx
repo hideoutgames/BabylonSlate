@@ -57,8 +57,16 @@ import { useMaterialRenderControl } from "./material-render-control-context";
 import { useMaterialInstanceSources } from "./material-instance-sources";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { textureUploadSignature } from "../lib/texture-upload-signature";
+import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
 
 const FUNCTION_KINDS = ["material-function"] as const;
+
+/**
+ * Node types whose output follows the scene clock. Every other node is a pure
+ * function of mesh, camera, screen and parameter inputs, which redraw through
+ * gestures, resizes and edits.
+ */
+const TIME_DRIVEN_NODE_TYPES: ReadonlySet<string> = new Set(["input.time", "input.waterSurface"]);
 
 /** Trailing debounce: the last edit always compiles, unlike a rate limiter. */
 const IDLE_DEBOUNCE_MS = 220;
@@ -159,6 +167,12 @@ export function MaterialEditingProvider({
   const renderCooldownTimerRef = useRef<number | null>(null);
   const [previewSceneEpoch, setPreviewSceneEpoch] = useState(0);
   const frozen = !active || play.playing;
+  const frozenRef = useRef(frozen);
+  frozenRef.current = frozen;
+  /** A change the preview Scene cannot report itself; a frozen preview redraws once when it thaws. */
+  const redraw = useCallback(() => {
+    if (!frozenRef.current) presenterRef.current?.present({ force: true });
+  }, []);
   useEffect(() => {
     const host = hostRef.current;
     if (host) {
@@ -302,12 +316,14 @@ export function MaterialEditingProvider({
     let host: MaterialPreviewScene | null = null;
     let presenter: MaterialPreviewPresenter | null = null;
     let gestures: { dispose: () => void } | null = null;
+    const overlay = watchBlockingEditorOverlay();
     try {
       host = createMaterialPreviewScene(sharedEngine, {
         mesh: document?.preview.mesh ?? "cube",
       });
       installPreviewEnvironment(host.scene);
       presenter = createMaterialPreviewPresenter(host, canvas, {
+        suspended: overlay.isOpen,
         onError: (message) => {
           dispatch({ type: "previewError", error: message });
           if (message) {
@@ -316,8 +332,11 @@ export function MaterialEditingProvider({
         },
       });
       presenter.setFrozen(frozen);
-      gestures = attachMaterialPreviewGestures(canvas, host.camera);
+      gestures = attachMaterialPreviewGestures(canvas, host.camera, {
+        onChange: () => presenter?.present({ force: true }),
+      });
     } catch {
+      overlay.dispose();
       gestures?.dispose();
       presenter?.dispose();
       host?.dispose();
@@ -327,6 +346,7 @@ export function MaterialEditingProvider({
     presenterRef.current = presenter;
     setPreviewSceneEpoch((current) => current + 1);
     return () => {
+      overlay.dispose();
       gestures?.dispose();
       presenter?.dispose();
       if (host) libraryRef.current?.releaseScene(host.scene);
@@ -372,6 +392,7 @@ export function MaterialEditingProvider({
       }
       if (cancelled) return;
       await host.setMesh(mesh, bytes);
+      redraw();
     })();
     return () => {
       cancelled = true;
@@ -383,6 +404,7 @@ export function MaterialEditingProvider({
     document?.preview.customMeshGuid,
     document?.preview.mesh,
     readAssetChunk,
+    redraw,
   ]);
 
   // One lowering per document and function set feeds the cost class, texture
@@ -391,6 +413,20 @@ export function MaterialEditingProvider({
     () => (document ? lowerMaterialDocument(document, { functions }) : null),
     [document, functions],
   );
+
+  // Static previews redraw only on change. A Particle or Text preview animates itself, and a
+  // graph that failed to lower has no frame to judge, so those keep presenting.
+  const animates = useMemo(
+    () =>
+      !lowering?.ok ||
+      lowering.plan.domain === "particle" ||
+      lowering.plan.domain === "text" ||
+      lowering.plan.operations.some((operation) => TIME_DRIVEN_NODE_TYPES.has(operation.nodeType)),
+    [lowering],
+  );
+  useEffect(() => {
+    presenterRef.current?.setStaticContent(!animates);
+  }, [animates, previewSceneEpoch]);
 
   const costClass = useMemo(() => {
     if (!document || !lowering) return "cheap" as const;
@@ -504,8 +540,11 @@ export function MaterialEditingProvider({
   const applyInstanceParametersRef = useRef(applyInstanceParameters);
   applyInstanceParametersRef.current = applyInstanceParameters;
   useEffect(() => {
-    if (texturesReady) applyInstanceParameters();
-  }, [applyInstanceParameters, previewState.readyGeneration, texturesReady]);
+    if (!texturesReady) return;
+    applyInstanceParameters();
+    // Uniform writes change the image without touching the Scene.
+    if (instanceOverrides) redraw();
+  }, [applyInstanceParameters, instanceOverrides, previewState.readyGeneration, redraw, texturesReady]);
 
   useEffect(() => {
     const restored = sharedEngine?.onContextRestoredObservable;
@@ -529,7 +568,8 @@ export function MaterialEditingProvider({
   useEffect(() => {
     hostRef.current?.applyParticleMaterial?.(null);
     hostRef.current?.applyPostProcess(null);
-  }, [document?.domain]);
+    redraw();
+  }, [document?.domain, redraw]);
 
   // Trailing debounce so the final edit still compiles.
   useEffect(() => {
@@ -578,9 +618,10 @@ export function MaterialEditingProvider({
       }
       applyInstanceParametersRef.current();
       dispatch({ type: "result", generation, ok: true, durationMs });
+      redraw();
       finishManualRender();
     },
-    [document, documentId, finishManualRender],
+    [document, documentId, finishManualRender, redraw],
   );
 
   // Compile whatever the state machine queued, after Texture bytes are ready.

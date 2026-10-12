@@ -343,7 +343,7 @@ export function SettingsModal({
     prefillSourceControlFromGit,
   } = useDocumentActions();
   const { projectDocument: liveProjectDocument } = useProjectState();
-  const { projectGuid, assetRegistry } = useRegistryState();
+  const { projectGuid, assetRegistry, registryEpoch } = useRegistryState();
   const { sourceControl } = useSourceControl();
   const [draft, setDraft] = useState<RenderingDraft | null>(null);
   const draftOwner = useRef<{ guid: string | null; base: RenderingDraft } | null>(null);
@@ -554,6 +554,32 @@ export function SettingsModal({
   const twoD = projectDocument?.settings.twoD;
   const showProjectBody =
     scope === "project" && Boolean(projectDocument) && categories.length > 0;
+  // Registry headers mutate without replacing the registry, so key on the epoch.
+  const pickerLists = useMemo(() => {
+    void registryEpoch;
+    const listed = scope === "project" ? assetRegistry?.list() ?? [] : [];
+    const entriesOfType = (type: string) => listed
+      .filter((asset) => asset.header.type === type)
+      .map((asset) => ({
+        guid: asset.header.guid,
+        name: asset.header.name,
+        type: asset.header.type,
+        path: asset.path,
+      }));
+    return {
+      fonts: entriesOfType("Font"),
+      textures: entriesOfType("Texture"),
+      audioMixers: entriesOfType("AudioMixer"),
+      scenes: entriesOfType("Scene"),
+      gameInstanceClasses: gameInstanceClassEntries(listed),
+      editorUtilityClasses: editorUtilityObjectClassEntries(listed),
+    };
+  }, [scope, assetRegistry, registryEpoch]);
+  const focusNavigationAssets = useMemo(() => {
+    void registryEpoch;
+    if (scope !== "project" || activeCategoryId !== "focusNavigation") return [];
+    return (assetRegistry?.list() ?? []).map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path, valueType: asset.header.payload?.valueType }));
+  }, [scope, activeCategoryId, assetRegistry, registryEpoch]);
 
   return (
     <>
@@ -1038,7 +1064,7 @@ export function SettingsModal({
       {showProjectBody && projectDocument && activeCategoryId === "focusNavigation" ? <FocusNavigationFields
         value={projectDocument.settings.focusNavigation}
         onChange={(focusNavigation) => updateProjectSettings({ focusNavigation })}
-        assets={(assetRegistry?.list() ?? []).map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path, valueType: asset.header.payload?.valueType }))}
+        assets={focusNavigationAssets}
       /> : null}
 
       {showProjectBody && projectDocument && activeCategoryId === "audio" ? (
@@ -1725,14 +1751,7 @@ export function SettingsModal({
         <AssetPicker
           open={fontPickerOpen}
           onOpenChange={setFontPickerOpen}
-          assets={(assetRegistry?.list() ?? [])
-            .filter((asset) => asset.header.type === "Font")
-            .map((asset) => ({
-              guid: asset.header.guid,
-              name: asset.header.name,
-              type: asset.header.type,
-              path: asset.path,
-            }))}
+          assets={pickerLists.fonts}
           allowedTypes={["Font"]}
           title="Pick Font"
           allowNone
@@ -1753,14 +1772,7 @@ export function SettingsModal({
         <AssetPicker
           open={lutPickerOpen}
           onOpenChange={setLutPickerOpen}
-          assets={(assetRegistry?.list() ?? [])
-            .filter((asset) => asset.header.type === "Texture")
-            .map((asset) => ({
-              guid: asset.header.guid,
-              name: asset.header.name,
-              type: asset.header.type,
-              path: asset.path,
-            }))}
+          assets={pickerLists.textures}
           allowedTypes={["Texture"]}
           title="Pick LUT Texture"
           allowNone
@@ -1782,14 +1794,7 @@ export function SettingsModal({
         <AssetPicker
           open={mixerPickerOpen}
           onOpenChange={setMixerPickerOpen}
-          assets={(assetRegistry?.list() ?? [])
-            .filter((asset) => asset.header.type === "AudioMixer")
-            .map((asset) => ({
-              guid: asset.header.guid,
-              name: asset.header.name,
-              type: asset.header.type,
-              path: asset.path,
-            }))}
+          assets={pickerLists.audioMixers}
           allowedTypes={["AudioMixer"]}
           createOptions={PROJECT_ASSET_CREATE_OPTIONS}
           title="Pick Audio Mixer"
@@ -1811,14 +1816,7 @@ export function SettingsModal({
         <AssetPicker
           open={scenePickerOpen}
           onOpenChange={setScenePickerOpen}
-          assets={(assetRegistry?.list() ?? [])
-            .filter((asset) => asset.header.type === "Scene")
-            .map((asset) => ({
-              guid: asset.header.guid,
-              name: asset.header.name,
-              type: asset.header.type,
-              path: asset.path,
-            }))}
+          assets={pickerLists.scenes}
           allowedTypes={["Scene"]}
           createOptions={PROJECT_ASSET_CREATE_OPTIONS}
           title="Pick Scene"
@@ -1835,7 +1833,7 @@ export function SettingsModal({
         <ClassPicker
           open={gameInstancePickerOpen}
           onOpenChange={setGameInstancePickerOpen}
-          classes={gameInstanceClassEntries(assetRegistry?.list() ?? [])}
+          classes={pickerLists.gameInstanceClasses}
           title="Pick Game Instance"
           allowNone
           createBaseClass="GameInstance"
@@ -1854,7 +1852,7 @@ export function SettingsModal({
           onOpenChange={(next) => {
             if (!next) setUtilityPick(null);
           }}
-          classes={editorUtilityObjectClassEntries(assetRegistry?.list() ?? [])}
+          classes={pickerLists.editorUtilityClasses}
           title="Pick Editor Utility Object"
           allowNone={false}
           createBaseClass="EditorUtilityObject"

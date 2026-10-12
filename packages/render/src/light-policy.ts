@@ -23,6 +23,10 @@ const forwardExcluded = new WeakSet<Light>();
 const clusteredMembers = new WeakSet<Light>();
 const forwardSelections = new WeakMap<Scene, Set<Light>>();
 const scratchLightPosition = new Vector3();
+// Per-call scratch, emptied before each call returns so no light stays retained.
+const scratchCandidates: Light[] = [];
+const scratchCandidateSet = new Set<Light>();
+const scratchDistances = new Map<Light, number>();
 
 export function isAuthoredLightEnabled(light: Light): boolean {
   const current = light.isEnabled(false);
@@ -63,10 +67,18 @@ export function setClusteredLightMember(light: Light, member: boolean): void {
   applyEnabled(light, enabled);
 }
 
-/** Authored state stays separate from Babylon's effective illumination state. */
-export function setAuthoredLightEnabled(light: Light, enabled: boolean): void {
+/**
+ * Authored state stays separate from Babylon's effective illumination state.
+ * A batch caller passes `syncPolicy: false` and runs syncDirectionalLightPolicy
+ * once after its last change.
+ */
+export function setAuthoredLightEnabled(
+  light: Light,
+  enabled: boolean,
+  syncPolicy = true,
+): void {
   applyEnabled(light, enabled);
-  syncDirectionalLightPolicy(light.getScene());
+  if (syncPolicy) syncDirectionalLightPolicy(light.getScene());
 }
 
 export function isDirectionalLightExcluded(light: Light): boolean {
@@ -110,25 +122,23 @@ export function syncForwardLightPolicy(
 } {
   syncDirectionalLightPolicy(scene);
   const previous = forwardSelections.get(scene) ?? new Set<Light>();
-  const eligible = (light: Light) =>
-    isIlluminatingLight(light) && !excluded.has(light);
-  const global = isGlobalLight;
-  const local = (light: Light) =>
-    !global(light) && !isManagedClusteredLight(scene, light);
-  const candidates = scene.lights.filter(
-    (light) =>
-      eligible(light) &&
-      (!local(light) || isClusteredLocalAllowed(scene, light)),
-  );
+  const candidates = scratchCandidates;
+  candidates.length = 0;
+  for (const light of scene.lights)
+    if (
+      isForwardEligible(light) &&
+      (!isAuthoredLocal(scene, light) || isClusteredLocalAllowed(scene, light))
+    )
+      candidates.push(light);
   const capacity = Math.max(0, Math.floor(slots));
   const localCapacity = Math.max(0, Math.floor(localSlots));
   const samplerCapacity = lightingSamplerCapacity(scene);
   if (
     candidates.length > capacity ||
-    countLights(candidates, local) > localCapacity ||
+    countLocals(scene, candidates) > localCapacity ||
     lightSamplerCount(scene, candidates) > samplerCapacity
   )
-    candidates.sort(compareLightAdmission(scene, candidates, previous));
+    sortLightsByAdmission(scene, candidates, previous);
   const selected = previous;
   selected.clear();
   let selectedLocals = 0;
@@ -136,7 +146,7 @@ export function syncForwardLightPolicy(
   const limited: Light[] = [];
   const samplerLimited: Light[] = [];
   for (const light of candidates) {
-    const authoredLocal = local(light);
+    const authoredLocal = isAuthoredLocal(scene, light);
     const samplerCost = lightSamplerCost(scene, light, hasArea);
     if (
       selected.size >= capacity ||
@@ -155,17 +165,21 @@ export function syncForwardLightPolicy(
     }
   }
   // Test membership in the candidates snapshot rather than re-deriving it:
-  // applyEnabled can change a descendant light's eligibility mid-loop. Build
+  // applyEnabled can change a descendant light's eligibility mid-loop. Fill
   // the set once, and only when an eligible light went unselected.
-  let candidateSet: Set<Light> | undefined;
+  const candidateSet = scratchCandidateSet;
+  candidateSet.clear();
   for (const light of scene.lights) {
     const enabled = isAuthoredLightEnabled(light);
-    if (eligible(light) && !selected.has(light)) {
+    if (isForwardEligible(light) && !selected.has(light)) {
       forwardExcluded.add(light);
-      if (!(candidateSet ??= new Set(candidates)).has(light)) limited.push(light);
+      if (!candidateSet.size) for (const candidate of candidates) candidateSet.add(candidate);
+      if (!candidateSet.has(light)) limited.push(light);
     } else forwardExcluded.delete(light);
     applyEnabled(light, enabled);
   }
+  candidates.length = 0;
+  candidateSet.clear();
   forwardSelections.set(scene, selected);
   return {
     requested: selected.size + limited.length,
@@ -176,12 +190,17 @@ export function syncForwardLightPolicy(
   };
 }
 
-function countLights(
-  lights: readonly Light[],
-  predicate: (light: Light) => boolean,
-): number {
+function isForwardEligible(light: Light): boolean {
+  return isIlluminatingLight(light) && !excluded.has(light);
+}
+
+function isAuthoredLocal(scene: Scene, light: Light): boolean {
+  return !isGlobalLight(light) && !isManagedClusteredLight(scene, light);
+}
+
+function countLocals(scene: Scene, lights: readonly Light[]): number {
   let count = 0;
-  for (const light of lights) if (predicate(light)) count++;
+  for (const light of lights) if (isAuthoredLocal(scene, light)) count++;
   return count;
 }
 
@@ -206,42 +225,49 @@ function admissionPosition(light: Light): Vector3 {
 }
 
 /** Shared authored-local ordering before clustered and conventional resource admission. */
-export function compareLightAdmission(
+export function sortLightsByAdmission(
   scene: Scene,
-  candidates: readonly Light[],
+  lights: Light[],
   previous: ReadonlySet<Light>,
-): (a: Light, b: Light) => number {
+): void {
   const camera = scene.activeCamera;
   camera?.getViewMatrix();
-  const distances = new Map<Light, number>();
-  for (const light of candidates) {
-    if (
-      (light instanceof ShadowLight || light instanceof RectAreaLight) &&
-      !isGlobalLight(light)
-    ) {
-      // Excluded children never reach normal shader binding. Refresh parented
-      // positions before either quality or shader-capacity selection.
-      light.parent?.computeWorldMatrix(true);
-      if (light instanceof ShadowLight) light.computeTransformedInformation();
+  const distances = scratchDistances;
+  distances.clear();
+  try {
+    for (const light of lights) {
+      if (
+        (light instanceof ShadowLight || light instanceof RectAreaLight) &&
+        !isGlobalLight(light)
+      ) {
+        // Excluded children never reach normal shader binding. Refresh parented
+        // positions before either quality or shader-capacity selection.
+        light.parent?.computeWorldMatrix(true);
+        if (light instanceof ShadowLight) light.computeTransformedInformation();
+      }
+      const squared =
+        camera && !isGlobalLight(light)
+          ? Vector3.DistanceSquared(
+              admissionPosition(light),
+              camera.globalPosition,
+            )
+          : 0;
+      distances.set(
+        light,
+        Math.max(1, squared) / (previous.has(light) ? 1.15 : 1),
+      );
     }
-    const squared =
-      camera && !isGlobalLight(light)
-        ? Vector3.DistanceSquared(
-            admissionPosition(light),
-            camera.globalPosition,
-          )
-        : 0;
-    distances.set(
-      light,
-      Math.max(1, squared) / (previous.has(light) ? 1.15 : 1),
+    lights.sort(
+      (a, b) =>
+        Number(isGlobalLight(b)) - Number(isGlobalLight(a)) ||
+        Number(isManagedClusteredLight(scene, b)) -
+          Number(isManagedClusteredLight(scene, a)) ||
+        (Number.isFinite(b.renderPriority) ? b.renderPriority : 0) -
+          (Number.isFinite(a.renderPriority) ? a.renderPriority : 0) ||
+        distances.get(a)! - distances.get(b)! ||
+        a.uniqueId - b.uniqueId,
     );
+  } finally {
+    distances.clear();
   }
-  return (a, b) =>
-    Number(isGlobalLight(b)) - Number(isGlobalLight(a)) ||
-    Number(isManagedClusteredLight(scene, b)) -
-      Number(isManagedClusteredLight(scene, a)) ||
-    (Number.isFinite(b.renderPriority) ? b.renderPriority : 0) -
-      (Number.isFinite(a.renderPriority) ? a.renderPriority : 0) ||
-    distances.get(a)! - distances.get(b)! ||
-    a.uniqueId - b.uniqueId;
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createPhysicsBackend } from "./create-backend";
+import type { ColliderDesc, LineTraceOptions } from "./types";
 
 describe("Line Trace actor exclusions", () => {
   it.each([
@@ -56,6 +57,55 @@ describe("Line Trace actor exclusions", () => {
         ignoreActorIds: ["actor-0", "actor-1", "actor-2"],
       }).hit).toBe(false);
       expect(backend.lineTrace(start, end).actorId).toBe("actor-0");
+    } finally {
+      backend.dispose();
+    }
+  });
+});
+
+describe("Line Trace exclusions after collider changes", () => {
+  it.each([
+    { label: "software 3D", preferSoftware: true },
+    { label: "Havok 3D", preferSoftware: false },
+  ])("$label masks hosted, retyped and recreated shapes added after earlier queries", async (options) => {
+    const backend = await createPhysicsBackend({
+      ...options, kind: "3d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+    });
+    const body = (id: string, y: number) => backend.createBody({ id, actorId: `${id}-actor`, motionType: "static", mass: 0,
+      linearDamping: 0, angularDamping: 0, gravityScale: 0,
+      transform: { position: { x: 0, y, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } } });
+    const box = (id: string, bodyId: string, extra: Partial<ColliderDesc> = {}) => backend.createCollider({
+      id, bodyId, shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+      friction: 0.5, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff, ...extra });
+    const trace = (query?: LineTraceOptions) => {
+      backend.step(1 / 60);
+      return backend.lineTrace({ x: 0, y: 10, z: 0 }, { x: 0, y: 0, z: 0 }, query);
+    };
+    const ignoreTop = { ignoreActorIds: ["top-actor"] };
+    try {
+      body("top", 6);
+      box("top-box", "top");
+      body("low", 2);
+      box("low-box", "low");
+      expect(trace(ignoreTop).actorId).toBe("low-actor");
+      // A shape hosted on the low body for the ignored actor is excluded with the actor's own.
+      box("hosted", "low", { actorId: "top-actor", translation: { x: 0, y: 2, z: 0 } });
+      expect(trace().actorId).toBe("top-actor");
+      expect(trace(ignoreTop)).toMatchObject({ actorId: "low-actor", distance: expect.closeTo(7.5, 3) });
+      // The same shape turned into a trigger leaves solid-only queries and returns to them.
+      box("low-box", "low", { isTrigger: true });
+      expect(trace({ ...ignoreTop, includeTriggers: false }).hit).toBe(false);
+      expect(trace(ignoreTop).actorId).toBe("low-actor");
+      box("low-box", "low");
+      expect(trace({ ...ignoreTop, includeTriggers: false }).actorId).toBe("low-actor");
+      // A recreated body takes the same exclusions, and nothing stays masked afterwards.
+      backend.destroyBody("low");
+      expect(trace(ignoreTop).hit).toBe(false);
+      body("low", 2);
+      box("low-box", "low", { isTrigger: true });
+      expect(trace({ ...ignoreTop, includeTriggers: false }).hit).toBe(false);
+      expect(trace(ignoreTop).actorId).toBe("low-actor");
+      expect(trace().actorId).toBe("top-actor");
     } finally {
       backend.dispose();
     }

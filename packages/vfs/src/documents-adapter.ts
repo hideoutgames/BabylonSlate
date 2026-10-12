@@ -1,5 +1,5 @@
 import { BabylonSlateScopedStorage, decodeBase64, encodeBase64, type NativeRangeOptions, type NativeRangeRead } from "./capacitor-scoped-storage";
-import { rethrowNativeStorageRangeError, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
+import { rethrowNativeStorageRangeError, rethrowStorageReadFailure, StorageReadCounter, utf8ByteLength, validateStorageRange, validateStorageRangeResult } from "./storage-range";
 import { StorageNotFoundError } from "@babylonslate/core";
 import type {
   DirEntry,
@@ -169,7 +169,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
         directory: this.directory,
         encoding: "utf8",
       });
-      this.reads.record("full", new TextEncoder().encode(data).byteLength);
+      this.reads.record("full", utf8ByteLength(data));
       return data;
     } catch (error) {
       rethrowFilesystemError(error, path);

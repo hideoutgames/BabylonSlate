@@ -114,10 +114,13 @@ export class AudioBufferCache {
       if (!Number.isSafeInteger(next) || next < 0) throw new Error("Invalid Audio decode size.");
       if (this.budgetEnabled) {
         if (next > this.ceiling) throw new Error(`Audio decode needs ${next} bytes, exceeding the ${this.ceiling}-byte PCM budget.`);
-        const candidates = [...this.entries.values()].filter((entry) => entry.pins === 0).sort((a, b) => a.lastUsed - b.lastUsed);
-        for (const entry of candidates) {
-          if (this.totalBytes + this.reserved - held + next <= this.ceiling) break;
-          this.evictEntry(entry.assetGuid, "decode-admission");
+        // Admission that already fits evicts nothing, so only a shortfall pays for ranking the candidates.
+        if (this.totalBytes + this.reserved - held + next > this.ceiling) {
+          const candidates = [...this.entries.values()].filter((entry) => entry.pins === 0).sort((a, b) => a.lastUsed - b.lastUsed);
+          for (const entry of candidates) {
+            if (this.totalBytes + this.reserved - held + next <= this.ceiling) break;
+            this.evictEntry(entry.assetGuid, "decode-admission");
+          }
         }
         if (this.totalBytes + this.reserved - held + next > this.ceiling)
           throw new Error(`Audio decode needs ${next} bytes; active voices and pending decoding occupy the available PCM budget.`);

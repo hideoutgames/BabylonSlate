@@ -28,6 +28,7 @@ import {
 import { useDocumentActions, useRegistryState } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import { textureUploadSignature } from "../lib/texture-upload-signature";
+import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
 import {
   ParticlePreviewSurface,
   type ParticlePreviewState,
@@ -330,6 +331,7 @@ export function ParticlePreviewCanvas({
     let presenter: MaterialPreviewPresenter | null = null;
     let materials: ReturnType<typeof createParticleMaterialResolver> | null = null;
     let frame = 0;
+    const overlay = watchBlockingEditorOverlay();
     const disposePreview = () => {
       const applied = appliedRef.current;
       serviceRef.current?.dispose();
@@ -343,6 +345,7 @@ export function ParticlePreviewCanvas({
       materials = null;
       presenter?.dispose();
       presenter = null;
+      overlay.dispose();
       host?.dispose();
       host = null;
     };
@@ -369,7 +372,7 @@ export function ParticlePreviewCanvas({
       const sources = installTextureBytes(bytes) ?? new Map();
       const cache = resourceCacheForEngine(engine);
       host = createParticlePreviewScene(engine, { skybox: showSkybox });
-      presenter = createMaterialPreviewPresenter(host, canvas);
+      presenter = createMaterialPreviewPresenter(host, canvas, { suspended: overlay.isOpen });
       materials = createParticleMaterialResolver({
         scene: host.scene,
         documents: docs.documents,

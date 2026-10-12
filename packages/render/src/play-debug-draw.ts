@@ -4,6 +4,7 @@ import {
   Quaternion,
   Vector3,
   type AbstractMesh,
+  type LinesMesh,
   type Material,
   type Observer,
   type Scene,
@@ -25,6 +26,38 @@ const MAX_FRUSTUM_FOV_DEGREES = 179;
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
+
+/**
+ * Trig of one sphere size's rings and meridians, plus the points it fills in for each draw. CreateLineSystem copies
+ * the coordinates, so a build reuses the points instead of allocating a few hundred (thousands at 64 segments).
+ */
+type SphereTemplate = {
+  cosLon: Float64Array; sinLon: Float64Array; cosLat: Float64Array; sinLat: Float64Array;
+  parallels: Vector3[][]; meridians: Vector3[][];
+};
+const sphereTemplates = new Map<number, SphereTemplate>();
+
+function sphereTemplate(rings: number): SphereTemplate {
+  let template = sphereTemplates.get(rings);
+  if (template) return template;
+  const cosLon = new Float64Array(rings + 1), sinLon = new Float64Array(rings + 1);
+  const cosLat = new Float64Array(rings + 1), sinLat = new Float64Array(rings + 1);
+  for (let i = 0; i <= rings; i++) {
+    const lon = (i / rings) * Math.PI * 2;
+    cosLon[i] = Math.cos(lon);
+    sinLon[i] = Math.sin(lon);
+    const lat = (i / rings) * Math.PI - Math.PI / 2;
+    cosLat[i] = Math.cos(lat);
+    sinLat[i] = Math.sin(lat);
+  }
+  const grid = (lines: number) => Array.from({ length: lines }, () => Array.from({ length: rings + 1 }, () => new Vector3()));
+  template = { cosLon, sinLon, cosLat, sinLat, parallels: grid(rings - 1), meridians: grid(rings) };
+  sphereTemplates.set(rings, template);
+  return template;
+}
+
+/** Per-line vertex counts of the line systems a controller built, which fix whether a later draw can rewrite one in place. */
+const lineLayouts = new WeakMap<AbstractMesh, readonly number[]>();
 
 type DrawEntry = {
   meshes: AbstractMesh[];
@@ -126,17 +159,38 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
 
   // One line system (one mesh, material and draw) per color instead of per
   // segment: duration-0 draws are rebuilt every sim tick.
-  const flushLines = (lines: LineBatch, meshes: AbstractMesh[]): void => {
+  const flushLines = (lines: LineBatch, meshes: AbstractMesh[], replaced: readonly DrawEntry[]): void => {
     for (const group of lines.values()) {
-      const mesh = MeshBuilder.CreateLineSystem(
-        nextName(group.kind),
-        { lines: group.lines, updatable: false },
-        scene,
-      );
+      const name = nextName(group.kind);
+      const reused = takeLineSystem(replaced, group.lines);
+      let mesh: LinesMesh;
+      if (reused) {
+        // Same line and vertex counts as a draw about to be dropped: rewrite its positions
+        // instead of building a mesh, material and buffers for what the drop disposes.
+        mesh = MeshBuilder.CreateLineSystem(name, { lines: group.lines, instance: reused }, scene);
+        mesh.name = mesh.id = name;
+      } else {
+        mesh = MeshBuilder.CreateLineSystem(name, { lines: group.lines, updatable: true }, scene);
+        lineLayouts.set(mesh, group.lines.map((line) => line.length));
+      }
       mesh.color = group.color;
       markPlayDebugOverlay(mesh);
       meshes.push(mesh);
     }
+  };
+
+  // A line system of `replaced` whose layout matches `lines`, removed from its entry so dropping the entry keeps it.
+  const takeLineSystem = (replaced: readonly DrawEntry[], lines: readonly (readonly Vector3[])[]): LinesMesh | null => {
+    for (const entry of replaced) {
+      for (let i = 0; i < entry.meshes.length; i++) {
+        const mesh = entry.meshes[i]!;
+        const layout = lineLayouts.get(mesh);
+        if (!layout || mesh.isDisposed() || layout.length !== lines.length || layout.some((count, line) => count !== lines[line]!.length)) continue;
+        entry.meshes.splice(i, 1);
+        return mesh as LinesMesh;
+      }
+    }
+    return null;
   };
 
   const addClosed = (
@@ -222,37 +276,22 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
     lines: LineBatch,
   ): void => {
     const rings = clamp(Math.round(segments), 4, MAX_SPHERE_SEGMENTS);
+    const { cosLon, sinLon, cosLat, sinLat, parallels, meridians } = sphereTemplate(rings);
     for (let i = 1; i < rings; i++) {
-      const lat = (i / rings) * Math.PI - Math.PI / 2;
-      const y = Math.sin(lat) * radius;
-      const ringRadius = Math.cos(lat) * radius;
-      const points: Vector3[] = [];
+      const y = sinLat[i]! * radius;
+      const ringRadius = cosLat[i]! * radius;
+      const points = parallels[i - 1]!;
       for (let j = 0; j <= rings; j++) {
-        const lon = (j / rings) * Math.PI * 2;
-        points.push(
-          new Vector3(
-            center.x + Math.cos(lon) * ringRadius,
-            center.y + y,
-            center.z + Math.sin(lon) * ringRadius,
-          ),
-        );
+        points[j]!.set(center.x + cosLon[j]! * ringRadius, center.y + y, center.z + sinLon[j]! * ringRadius);
       }
       addPolyline("sphere", points, color, lines);
     }
     for (let i = 0; i < rings; i++) {
-      const lon = (i / rings) * Math.PI * 2;
-      const points: Vector3[] = [];
+      const points = meridians[i]!;
       for (let j = 0; j <= rings; j++) {
-        const lat = (j / rings) * Math.PI - Math.PI / 2;
-        const ringRadius = Math.cos(lat) * radius;
-        const y = Math.sin(lat) * radius;
-        points.push(
-          new Vector3(
-            center.x + Math.cos(lon) * ringRadius,
-            center.y + y,
-            center.z + Math.sin(lon) * ringRadius,
-          ),
-        );
+        const ringRadius = cosLat[j]! * radius;
+        const y = sinLat[j]! * radius;
+        points[j]!.set(center.x + cosLon[i]! * ringRadius, center.y + y, center.z + sinLon[i]! * ringRadius);
       }
       addPolyline("sphere", points, color, lines);
     }
@@ -462,6 +501,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
 
   const build = (
     command: DebugDrawCommand,
+    replaced: readonly DrawEntry[],
   ): { meshes: AbstractMesh[]; materials: Material[] } => {
     const meshes: AbstractMesh[] = [];
     const materials: Material[] = [];
@@ -547,7 +587,7 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
       default:
         break;
     }
-    flushLines(lines, meshes);
+    flushLines(lines, meshes, replaced);
     return { meshes, materials };
   };
 
@@ -591,15 +631,18 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
     applyCommand(command) {
       if (command.type !== "debugDraw") return false;
       const duration = asNumber(command.duration, 0);
-      const { meshes, materials } = build(command);
-      if (meshes.length === 0) return true;
       const frameId =
         typeof command.frameId === "number" && Number.isFinite(command.frameId)
           ? command.frameId
           : null;
+      // A new runtime tick replaces the previous duration-0 draws; draws from
+      // the same tick (e.g. a Line Trace line and its hit marker) accumulate.
+      const replaced = duration <= 0
+        ? entries.filter((entry) => entry.remainingMs == null && !(frameId != null && entry.frameId === frameId))
+        : [];
+      const { meshes, materials } = build(command, replaced);
+      if (meshes.length === 0) return true;
       if (duration <= 0) {
-        // A new runtime tick replaces the previous duration-0 draws; draws from
-        // the same tick (e.g. a Line Trace line and its hit marker) accumulate.
         for (let i = entries.length - 1; i >= 0; i--) {
           const entry = entries[i]!;
           if (entry.remainingMs != null) continue;

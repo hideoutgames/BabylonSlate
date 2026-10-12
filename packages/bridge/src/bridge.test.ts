@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   SNAPSHOT_ACTOR_STRIDE,
   SNAPSHOT_LAYOUT_VERSION,
@@ -19,6 +19,8 @@ import {
   SNAPSHOT_FLAG_VISIBLE,
   type ActorSlot,
 } from "./snapshot-buffer";
+import type { CommandMessage } from "./channels";
+import { dispatchCommandBatch } from "./command-batch";
 import { SeqLockSnapshotPair } from "./seq-lock";
 import { TransferablePingPong } from "./transferable";
 
@@ -225,5 +227,40 @@ describe("transferable ping-pong", () => {
     const reused = next.filter((buffer) => burst.includes(buffer)).length;
     expect(reused).toBeGreaterThan(0);
     expect(reused).toBeLessThanOrEqual(3);
+  });
+});
+
+describe("dispatchCommandBatch", () => {
+  const command = (message: string): CommandMessage => ({ type: "log", message, severity: "log", category: "console", frameId: 0 });
+  const names = (commands: CommandMessage[]) => commands.map((entry) => entry.type === "log" ? entry.message : entry.type);
+
+  it("dispatches every command in order and keeps going past a throwing one, rethrowing the first failure", () => {
+    const later = vi.fn();
+    vi.stubGlobal("queueMicrotask", later);
+    try {
+      const seen: CommandMessage[] = [];
+      const dispatch = (entry: CommandMessage) => {
+        seen.push(entry);
+        if (entry.type === "log" && entry.message.startsWith("bad")) throw new Error(entry.message);
+      };
+      expect(() => dispatchCommandBatch([command("a"), command("bad 1"), command("b"), command("bad 2"), command("c")], dispatch))
+        .toThrow("bad 1");
+      expect(names(seen)).toEqual(["a", "bad 1", "b", "bad 2", "c"]);
+      // The second failure is not swallowed: it surfaces as its own uncaught error.
+      expect(later).toHaveBeenCalledTimes(1);
+      expect(() => (later.mock.calls[0]![0] as () => void)()).toThrow("bad 2");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("stops handing out commands once the host reports it stopped", () => {
+    const seen: CommandMessage[] = [];
+    let stopped = false;
+    dispatchCommandBatch([command("a"), command("stop"), command("b")], (entry) => {
+      seen.push(entry);
+      if (entry.type === "log" && entry.message === "stop") stopped = true;
+    }, () => stopped);
+    expect(names(seen)).toEqual(["a", "stop"]);
   });
 });

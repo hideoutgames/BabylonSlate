@@ -249,6 +249,56 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   isOverlaySlot?: (slotId: number) => boolean;
 }
 
+/**
+ * Map keyed `${slotId}|...` that indexes its keys by slot, so retiring one slot
+ * visits only its own entries rather than scanning every slot's. Every write
+ * and delete goes through `set`/`delete`/`clear`, wherever it is made.
+ */
+class SlotKeyedMap<V> extends Map<string, V> {
+  private readonly slotKeys = new Map<string, Set<string>>();
+
+  override set(key: string, value: V): this {
+    super.set(key, value);
+    const end = key.indexOf("|");
+    if (end >= 0) {
+      const slot = key.slice(0, end);
+      let keys = this.slotKeys.get(slot);
+      if (!keys) this.slotKeys.set(slot, keys = new Set());
+      keys.add(key);
+    }
+    return this;
+  }
+
+  override delete(key: string): boolean {
+    const deleted = super.delete(key);
+    const end = key.indexOf("|");
+    if (deleted && end >= 0) {
+      const slot = key.slice(0, end);
+      const keys = this.slotKeys.get(slot);
+      keys?.delete(key);
+      if (keys && keys.size === 0) this.slotKeys.delete(slot);
+    }
+    return deleted;
+  }
+
+  override clear(): void {
+    super.clear();
+    this.slotKeys.clear();
+  }
+
+  /** Live, in insertion order: the same keys and order as filtering `keys()` by the slot prefix. */
+  keysOfSlot(slotId: number): Iterable<string> {
+    return this.slotKeys.get(String(slotId)) ?? [];
+  }
+}
+
+/** Keys of one slot; stores a caller swapped in for a plain Map fall back to the scan. */
+function slotKeysOf(store: Map<string, unknown>, slotId: number): Iterable<string> {
+  if (store instanceof SlotKeyedMap) return store.keysOfSlot(slotId);
+  const prefix = `${slotId}|`;
+  return [...store.keys()].filter((key) => key.startsWith(prefix));
+}
+
 export function createSnapshotSceneBinding(): SnapshotSceneBinding {
   return {
     outlines: new Map(),
@@ -281,9 +331,9 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     defaultCameraSlotId: null,
     possessedCameraSlotId: null,
     materialAssetGuids: new Map(),
-    componentMaterialGuids: new Map(),
+    componentMaterialGuids: new SlotKeyedMap(),
     primaryComponentIds: new Map(),
-    materialParameters: new Map(),
+    materialParameters: new SlotKeyedMap(),
   };
 }
 
@@ -1501,8 +1551,7 @@ export function retirePlaySlot(
   visualAssignments.get(binding)?.delete(slotId);
   binding.materialAssetGuids.delete(slotId);
   releaseRetainedMaterialOwners(binding, slotId, true);
-  for (const key of binding.materialParameters.keys()) {
-    if (!key.startsWith(`${slotId}|`)) continue;
+  for (const key of slotKeysOf(binding.materialParameters, slotId)) {
     binding.materialParameters.delete(key);
     binding.releaseMaterialInstance?.(key);
   }
@@ -1510,10 +1559,8 @@ export function retirePlaySlot(
   binding.spriteOverlays?.delete(slotId);
   invalidateSlotAnimLoad(binding, slotId);
   binding.pendingAnimState?.delete(slotId);
-  for (const key of [...binding.componentMaterialGuids.keys()]) {
-    if (key.startsWith(`${slotId}|`)) {
-      binding.componentMaterialGuids.delete(key);
-    }
+  for (const key of slotKeysOf(binding.componentMaterialGuids, slotId)) {
+    binding.componentMaterialGuids.delete(key);
   }
   binding.lightProps.delete(slotId);
   binding.cameraProps.delete(slotId);
@@ -1690,7 +1737,7 @@ const springArmStates = new WeakMap<SnapshotSceneBinding, SpringArmPlayState>();
 function springArmStateOf(binding: SnapshotSceneBinding): SpringArmPlayState {
   let state = springArmStates.get(binding);
   if (!state) {
-    state = { store: new Map(), slots: new Set(), lastMs: null };
+    state = { store: new SlotKeyedMap(), slots: new Set(), lastMs: null };
     springArmStates.set(binding, state);
   }
   return state;
@@ -1771,8 +1818,7 @@ function retireSpringArmLag(binding: SnapshotSceneBinding, slotId: number): void
   const state = springArmStates.get(binding);
   if (!state) return;
   state.slots.delete(slotId);
-  const prefix = `${slotId}|`;
-  for (const key of [...state.store.keys()]) if (key.startsWith(prefix)) state.store.delete(key);
+  for (const key of slotKeysOf(state.store, slotId)) state.store.delete(key);
 }
 
 export function createPlayMesh(
@@ -2069,9 +2115,52 @@ function sameComponentVisuals(previous: readonly AssignMeshPart[], next: readonl
   if (previous.length !== next.length) return false;
   // Illumination property writes must not replace an actor's working meshes or
   // reset its spring-arm lag. Every other part field still requires assignment.
-  return previous.every((part, index) =>
-    JSON.stringify({ ...part, light: undefined, camera: undefined }) ===
-    JSON.stringify({ ...next[index], light: undefined, camera: undefined }));
+  return previous.every((part, index) => sameJsonObject(part, next[index]!, illuminationFields));
+}
+
+const illuminationFields: ReadonlySet<string> = new Set(["light", "camera"]);
+
+const jsonOmitted = (value: unknown): boolean => value === undefined || typeof value === "function" || typeof value === "symbol";
+const jsonNull = (value: unknown): boolean => value === null || typeof value === "number" && !Number.isFinite(value);
+
+/** Whether JSON.stringify renders both values identically, key order included, without building the strings. */
+function sameJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  // As an array element JSON renders what it cannot represent as null, like NaN and Infinity.
+  if (jsonOmitted(a) || jsonNull(a)) return jsonOmitted(b) || jsonNull(b);
+  if (jsonOmitted(b) || jsonNull(b) || typeof a !== "object" || typeof b !== "object") return false;
+  if (typeof (a as { toJSON?: unknown }).toJSON === "function" || typeof (b as { toJSON?: unknown }).toJSON === "function")
+    return JSON.stringify(a) === JSON.stringify(b);
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    for (let index = 0; index < a.length; index++) if (!sameJson(a[index], b[index])) return false;
+    return true;
+  }
+  if (ArrayBuffer.isView(a) && ArrayBuffer.isView(b) && a.constructor === b.constructor && !(a instanceof DataView)) {
+    // Typed arrays render as objects keyed by index; compare the elements directly.
+    const left = a as unknown as ArrayLike<number>, right = b as unknown as ArrayLike<number>;
+    if (left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index++) {
+      const x = left[index]!, y = right[index]!;
+      if (x !== y && (Number.isFinite(x) || Number.isFinite(y))) return false;
+    }
+    return true;
+  }
+  return sameJsonObject(a as object, b as object);
+}
+
+/** Own enumerable keys in order, skipping `skip` and the values JSON leaves out of objects. */
+function sameJsonObject(a: object, b: object, skip?: ReadonlySet<string>): boolean {
+  const left = Object.keys(a), right = Object.keys(b);
+  const x = a as Record<string, unknown>, y = b as Record<string, unknown>;
+  let i = 0, j = 0;
+  for (;;) {
+    while (i < left.length && (skip?.has(left[i]!) || jsonOmitted(x[left[i]!]))) i++;
+    while (j < right.length && (skip?.has(right[j]!) || jsonOmitted(y[right[j]!]))) j++;
+    if (i === left.length || j === right.length) return i === left.length && j === right.length;
+    if (left[i] !== right[j] || !sameJson(x[left[i]!], y[right[j]!])) return false;
+    i++; j++;
+  }
 }
 
 function snapshotSlotWantsOverlay(

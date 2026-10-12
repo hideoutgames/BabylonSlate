@@ -410,6 +410,49 @@ describe("TilemapPaint", () => {
     }
   });
 
+  it("re-derives a rectangle from where it started on every move", async () => {
+    const onChange = vi.fn();
+    render(
+      <TilemapHarness
+        initial={mapWithGround() as unknown as Record<string, unknown>}
+        onChange={onChange}
+      />,
+    );
+    await screen.findByTestId("tilemap-palette-tile-2");
+    const canvas = screen.getByTestId("tilemap-paint-canvas");
+    const pointer = (
+      type: "pointerdown" | "pointermove" | "pointerup",
+      x: number,
+      y: number,
+    ) =>
+      dispatchPointerEvent(canvas, type, {
+        pointerId: 1,
+        clientX: x * 32 + 16,
+        clientY: 240 - y * 32,
+      });
+    const rows = (map: TilemapPayload) =>
+      [2, 1, 0].map((y) => [0, 1, 2, 3].map((x) => getTile(map, "layer-1", x, y)));
+    fireEvent.click(screen.getByTestId("tilemap-tool-rect"));
+    // Growing past the final shape must leave nothing behind once it shrinks.
+    pointer("pointerdown", 0, 0);
+    pointer("pointermove", 3, 2);
+    pointer("pointermove", 1, 0);
+    pointer("pointerup", 1, 0);
+    expect(rows(normalizeTilemapPayload(onChange.mock.calls.at(-1)![0]))).toEqual([
+      [0, 0, 0, 0],
+      [0, 0, 0, 0],
+      [1, 1, 0, 0],
+    ]);
+    pointer("pointerdown", 2, 1);
+    pointer("pointermove", 3, 2);
+    pointer("pointerup", 3, 2);
+    expect(rows(normalizeTilemapPayload(onChange.mock.calls.at(-1)![0]))).toEqual([
+      [0, 0, 1, 1],
+      [0, 0, 1, 1],
+      [1, 1, 0, 0],
+    ]);
+  });
+
   it("redraws layers in project sorting order when that order changes", async () => {
     const initial = mapWithGround();
     initial.layers = [
@@ -572,6 +615,47 @@ describe("TilemapPaint", () => {
       expect(Number(canvas.getAttribute("data-pan-x") ?? "0")).toBe(40);
     });
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("redraws a pan drag once per animation frame and lands the last position on release", async () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let lastFrame = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.set(++lastFrame, callback);
+      return lastFrame;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+      frames.delete(id);
+    });
+    try {
+      render(
+        <TilemapHarness
+          initial={mapWithGround() as unknown as Record<string, unknown>}
+          onChange={() => {}}
+        />,
+      );
+      const canvas = await waitFor(() => screen.getByTestId("tilemap-paint-canvas"));
+      const pointer = (type: "pointerdown" | "pointermove" | "pointerup", x: number) =>
+        dispatchPointerEvent(canvas, type, { pointerId: 1, clientX: x, clientY: 40 });
+      frames.clear();
+      pointer("pointerdown", 40);
+      pointer("pointermove", 60);
+      pointer("pointermove", 80);
+      expect(frames.size).toBe(1);
+      expect(canvas.getAttribute("data-pan-x")).toBe("0");
+      act(() => {
+        for (const callback of [...frames.values()]) callback(0);
+        frames.clear();
+      });
+      await waitFor(() => expect(canvas.getAttribute("data-pan-x")).toBe("40"));
+      pointer("pointermove", 120);
+      expect(frames.size).toBe(1);
+      pointer("pointerup", 120);
+      expect(frames.size).toBe(0);
+      await waitFor(() => expect(canvas.getAttribute("data-pan-x")).toBe("80"));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("maps pointer cells with a zoomed cell size", async () => {

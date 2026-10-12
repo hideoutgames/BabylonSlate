@@ -108,6 +108,13 @@ export interface RuntimeDriverOptions {
   sceneLayerLibrary?: Readonly<Record<string, SerializedSceneLayer>>;
   /** When false, debug-tier console commands are stripped (non-debug export stand-in). */
   includeDebugCommands?: boolean;
+  /**
+   * False strips the debug lines of Line Trace and Project Cursor To Scene,
+   * even for an explicit `drawDebug: true`; the release player sets it. True
+   * or omitted (Play, Preview Build) keeps their Draw Debug rules.
+   * `ctx.drawDebug` is unaffected.
+   */
+  traceDebugDraw?: boolean;
   /** Editor Play / bundled debugger: abort scripts that exceed `loopCount`. */
   infiniteLoopDetection?: boolean;
   /** Iterations in one tick that count as infinite when detection is on. */

@@ -7,6 +7,7 @@ import {
   SpotLight,
   Camera,
   type AbstractEngine,
+  type Material,
   type Node,
   type Observer,
   type Scene,
@@ -20,7 +21,7 @@ import {
   isGlobalLight,
   isIlluminatingLight,
   setClusteredLightMember,
-  compareLightAdmission,
+  sortLightsByAdmission,
 } from "./light-policy";
 import {
   findSceneShadowController,
@@ -55,6 +56,8 @@ export type ClusteredSceneLightStatus = {
   fallbackReason?: string;
 };
 
+const NO_PREVIOUS_SELECTION: ReadonlySet<Light> = new Set();
+
 /**
  * Explicit prototype owner. Callers supply their authored registry because
  * Babylon removes borrowed children from scene.lights. Removing/disabling this
@@ -63,6 +66,10 @@ export type ClusteredSceneLightStatus = {
 export class ClusteredSceneLights {
   private container: ClusteredLightContainer | undefined;
   private readonly materialBindings = new Map<NodeMaterial, () => void>();
+  /** Set by material add/remove events; the length check backstops deferred adds. */
+  private materialsDirty = true;
+  private scannedMaterialCount = -1;
+  private readonly materialObservers: [Observer<Material>, Observer<Material>];
   private registry: readonly Light[];
   private registryMembership = new Set<Light>();
   private authoredOrder: readonly Light[];
@@ -90,6 +97,12 @@ export class ClusteredSceneLights {
     estimatedBytes: 0,
     reasons: [],
   };
+  /** Per-sync scratch, emptied when sync returns so no light is retained. */
+  private readonly scratchRequested: Light[] = [];
+  private readonly scratchEligible: Light[] = [];
+  private readonly scratchSelected = new Set<Light>();
+  private readonly scratchBorrowed: Light[] = [];
+  private readonly scratchPrevious = new Set<Light>();
   private readonly unregister: () => void;
   private readonly onDispose: Observer<Scene>;
   private readonly restored: Observer<AbstractEngine>;
@@ -103,6 +116,13 @@ export class ClusteredSceneLights {
     this.authoredOrder = [...scene.lights];
     this.updateAuthoredOrder();
     this.unregister = registerClusteredLightPolicy(scene, this);
+    const materialsChanged = () => {
+      this.materialsDirty = true;
+    };
+    this.materialObservers = [
+      scene.onNewMaterialAddedObservable.add(materialsChanged),
+      scene.onMaterialRemovedObservable.add(materialsChanged),
+    ];
     this.onDispose = scene.onDisposeObservable.add(() => this.dispose());
     this.restored = scene.getEngine().onContextRestoredObservable.add(() => {
       this.allocationFailure = undefined;
@@ -172,22 +192,31 @@ export class ClusteredSceneLights {
     if (this.disposed || this.scene.isDisposed || this.syncing) return;
     this.syncing = true;
     try {
-      for (const [material, restore] of this.materialBindings) {
-        // Babylon 9.29 addMaterial/removeMaterial keep this index; -1 is absent.
-        if (material._indexInSceneMaterialArray === -1) {
-          restore();
-          this.materialBindings.delete(material);
+      // removeMaterial notifies synchronously; addMaterial's notification is
+      // deferred, so a changed material count catches adds made since the scan.
+      if (
+        this.materialsDirty ||
+        this.scannedMaterialCount !== this.scene.materials.length
+      ) {
+        for (const [material, restore] of this.materialBindings) {
+          // Babylon 9.29 addMaterial/removeMaterial keep this index; -1 is absent.
+          if (material._indexInSceneMaterialArray === -1) {
+            restore();
+            this.materialBindings.delete(material);
+          }
         }
-      }
-      for (const material of this.scene.materials) {
-        if (
-          material instanceof NodeMaterial &&
-          !this.materialBindings.has(material)
-        )
-          this.materialBindings.set(
-            material,
-            bindClusteredMaterialVariants(material),
-          );
+        for (const material of this.scene.materials) {
+          if (
+            material instanceof NodeMaterial &&
+            !this.materialBindings.has(material)
+          )
+            this.materialBindings.set(
+              material,
+              bindClusteredMaterialVariants(material),
+            );
+        }
+        this.materialsDirty = false;
+        this.scannedMaterialCount = this.scene.materials.length;
       }
       const capability = clusteredLightCapabilities(this.scene.getEngine());
       if (!capability.supported) {
@@ -202,20 +231,20 @@ export class ClusteredSceneLights {
       // Controller entries retain the authored registry even while clustered
       // children leave scene.lights. New admitted maps therefore promote them.
       findSceneShadowController(this.scene)?.sync();
-      const requestedLocals = this.registry.filter(
-        (light) =>
+      const requestedLocals = this.scratchRequested;
+      for (const light of this.registry)
+        if (
           !light.isDisposed() &&
           !isGlobalLight(light) &&
-          isIlluminatingLight(light),
-      );
+          isIlluminatingLight(light)
+        )
+          requestedLocals.push(light);
       const localBudget = sceneRenderingSettings(this.scene).localLightBudget;
       if (requestedLocals.length > localBudget)
-        requestedLocals.sort(
-          compareLightAdmission(
-            this.scene,
-            requestedLocals,
-            this.localSelection ?? new Set(),
-          ),
+        sortLightsByAdmission(
+          this.scene,
+          requestedLocals,
+          this.localSelection ?? NO_PREVIOUS_SELECTION,
         );
       const selection = this.localSelection ?? new Set<Light>();
       selection.clear();
@@ -226,9 +255,10 @@ export class ClusteredSceneLights {
       )
         selection.add(requestedLocals[index]!);
       this.localSelection = selection;
-      const eligible = requestedLocals.filter(
-        (light) => this.localSelection!.has(light) && this.eligible(light),
-      );
+      const eligible = this.scratchEligible;
+      for (const light of requestedLocals)
+        if (selection.has(light) && this.eligible(light))
+          eligible.push(light);
       // Bounded prototype resources: 256 children at most, and both physical
       // texture dimensions must fit before Babylon constructs/grows its batch.
       const maxBatches = Math.min(
@@ -275,14 +305,11 @@ export class ClusteredSceneLights {
         for (let index = eligible.length - 1; index >= 0; index--)
           if (!this.celCandidates.has(eligible[index]!))
             eligible.splice(index, 1);
-      if (eligible.length > limit)
-        eligible.sort(
-          compareLightAdmission(
-            this.scene,
-            eligible,
-            new Set(this.container?.lights),
-          ),
-        );
+      if (eligible.length > limit) {
+        const previous = this.scratchPrevious;
+        if (this.container) for (const light of this.container.lights) previous.add(light);
+        sortLightsByAdmission(this.scene, eligible, previous);
+      }
       const memoryLimited = eligible.length > limit && limit < storageLimit;
       if (
         memoryLimited &&
@@ -301,8 +328,14 @@ export class ClusteredSceneLights {
         };
         return;
       }
-      const selected = new Set(eligible.slice(0, limit));
-      for (const light of this.container?.lights.slice() ?? []) {
+      // limit is a non-negative integer: batch counts times a positive batch size.
+      const selected = this.scratchSelected;
+      for (let index = 0; index < eligible.length && index < limit; index++)
+        selected.add(eligible[index]!);
+      // returnLight edits container.lights, so walk a snapshot.
+      const borrowed = this.scratchBorrowed;
+      if (this.container) for (const light of this.container.lights) borrowed.push(light);
+      for (const light of borrowed) {
         if (!selected.has(light)) this.returnLight(light);
       }
       // Materials do not change within one sync; scan them at most once.
@@ -435,6 +468,11 @@ export class ClusteredSceneLights {
       };
     } finally {
       this.syncing = false;
+      this.scratchRequested.length = 0;
+      this.scratchEligible.length = 0;
+      this.scratchSelected.clear();
+      this.scratchBorrowed.length = 0;
+      this.scratchPrevious.clear();
     }
   }
 
@@ -443,6 +481,8 @@ export class ClusteredSceneLights {
     this.disposed = true;
     this.unregister();
     this.scene.onDisposeObservable.remove(this.onDispose);
+    this.scene.onNewMaterialAddedObservable.remove(this.materialObservers[0]);
+    this.scene.onMaterialRemovedObservable.remove(this.materialObservers[1]);
     this.scene.getEngine().onContextRestoredObservable.remove(this.restored);
     this.releaseContainer();
     for (const [light, observer] of this.childDisposals)
@@ -695,9 +735,9 @@ export class ClusteredSceneLights {
     if (this.allocationFailure) return this.allocationFailure;
     // The cluster itself requires one ordinary light UBO. Global sun/fill keep
     // their conventional priority; do not borrow children if no slot remains.
-    const globals = this.scene.lights.filter(
-      (light) => isGlobalLight(light) && isIlluminatingLight(light),
-    ).length;
+    let globals = 0;
+    for (const light of this.scene.lights)
+      if (isGlobalLight(light) && isIlluminatingLight(light)) globals++;
     if (globals >= forwardLightBudget(this.scene.getEngine()).slots)
       return "No conventional shader slot remains for the clustered light container.";
     if (!isClusterableCamera(this.scene, camera))

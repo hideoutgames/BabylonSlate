@@ -45,6 +45,20 @@ interface GraphLike {
   edges: readonly ParticleGraphEdge[];
 }
 
+/** The edge into an input pin; `undefined` when the pin is unwired. */
+export type ParticleIncomingEdges = (nodeId: string, pinId: string) => ParticleGraphEdge | undefined;
+
+/** First edge into each input pin, so duplicate wires resolve as `edges.find` did. */
+export function indexParticleIncomingEdges(graph: GraphLike): ParticleIncomingEdges {
+  const byNode = new Map<string, Map<string, ParticleGraphEdge>>();
+  for (const edge of graph.edges) {
+    let pins = byNode.get(edge.targetNodeId);
+    if (!pins) byNode.set(edge.targetNodeId, (pins = new Map()));
+    if (!pins.has(edge.targetPinId)) pins.set(edge.targetPinId, edge);
+  }
+  return (nodeId, pinId) => byNode.get(nodeId)?.get(pinId);
+}
+
 /** Depth-first cycle search over all edges. */
 export function findParticleGraphCycle(graph: GraphLike): string[] | null {
   const outgoing = new Map<string, string[]>();
@@ -85,15 +99,17 @@ export function findParticleGraphCycle(graph: GraphLike): string[] | null {
  * broken spine returns the part that still reaches the output.
  */
 export function particleSpine(graph: GraphLike): string[] {
+  return spineOf(graph, indexParticleIncomingEdges(graph));
+}
+
+function spineOf(graph: GraphLike, incoming: ParticleIncomingEdges): string[] {
   const output = graph.nodes.find((node) => node.type === PARTICLE_OUTPUT_NODE_TYPE);
   if (!output) return [];
   const ids = new Set(graph.nodes.map((node) => node.id));
   const chain = [output.id];
   let current = output.id;
   for (;;) {
-    const edge = graph.edges.find(
-      (candidate) => candidate.targetNodeId === current && candidate.targetPinId === "particle",
-    );
+    const edge = incoming(current, "particle");
     if (!edge || !ids.has(edge.sourceNodeId) || chain.includes(edge.sourceNodeId)) break;
     chain.push(edge.sourceNodeId);
     current = edge.sourceNodeId;
@@ -181,12 +197,16 @@ function upstreamTypes(graph: GraphLike, startNodeId: string): Set<string> {
  * Particle Color, so an update that reads neither discards it until a later
  * one reads Initial Color again.
  */
-function createColorOverwrittenBy(graph: GraphLike, spine: readonly string[]): string | null {
+function createColorOverwrittenBy(
+  graph: GraphLike,
+  incoming: ParticleIncomingEdges,
+  spine: readonly string[],
+): string | null {
   let overwrittenBy: string | null = null;
   for (const nodeId of spine) {
     const node = graph.nodes.find((entry) => entry.id === nodeId);
-    if (node?.type !== "update.color" || !isPinSet(graph, node, "color")) continue;
-    const edge = graph.edges.find((entry) => entry.targetNodeId === nodeId && entry.targetPinId === "color");
+    if (node?.type !== "update.color" || !isPinSet(incoming, node, "color")) continue;
+    const edge = incoming(nodeId, "color");
     const reads = edge ? upstreamTypes(graph, edge.sourceNodeId) : new Set<string>();
     if (reads.has("input.contextual.initialColor")) overwrittenBy = null;
     else if (!reads.has("input.contextual.color")) overwrittenBy = nodeId;
@@ -196,18 +216,18 @@ function createColorOverwrittenBy(graph: GraphLike, spine: readonly string[]): s
 
 /** Wired, or (for value pins) given an authored default. A Particle pin needs a wire. */
 function isPinSet(
-  graph: GraphLike,
+  incoming: ParticleIncomingEdges,
   node: ParticleGraphNode,
   pinId: string,
   particle = false,
 ): boolean {
   return (
-    graph.edges.some((edge) => edge.targetNodeId === node.id && edge.targetPinId === pinId) ||
+    incoming(node.id, pinId) !== undefined ||
     (!particle && readParticlePinDefault(node.properties, pinId) !== undefined)
   );
 }
 
-function validateGraph(graph: GraphLike): {
+function validateGraph(graph: GraphLike, incoming: ParticleIncomingEdges): {
   diagnostics: ParticleGraphDiagnostic[];
   definitions: Map<string, ParticleNodeDefinition>;
   /** Null when a cycle stopped the type checks. */
@@ -345,7 +365,7 @@ function validateGraph(graph: GraphLike): {
     const definition = definitions.get(node.id);
     if (!definition) continue;
     for (const pin of definition.inputs) {
-      if (!pin.required || isPinSet(graph, node, pin.id, pin.type.kind === "particle")) continue;
+      if (!pin.required || isPinSet(incoming, node, pin.id, pin.type.kind === "particle")) continue;
       diagnostics.push({
         code: "particle.missingInput",
         message: `"${definition.title}" needs a connection on "${pin.name}"`,
@@ -362,6 +382,7 @@ function validateGraph(graph: GraphLike): {
 function validateSpine(
   graph: GraphLike,
   definitions: ReadonlyMap<string, ParticleNodeDefinition>,
+  incoming: ParticleIncomingEdges,
 ): ParticleGraphDiagnostic[] {
   const diagnostics: ParticleGraphDiagnostic[] = [];
   const outputs = graph.nodes.filter((node) => node.type === PARTICLE_OUTPUT_NODE_TYPE);
@@ -402,12 +423,10 @@ function validateSpine(
 
   const output = outputs[0];
   if (!output) return diagnostics;
-  const spine = particleSpine(graph);
+  const spine = spineOf(graph, incoming);
   const onSpine = new Set(spine);
 
-  const emitRate = graph.edges.find(
-    (edge) => edge.targetNodeId === output.id && edge.targetPinId === "emitRate",
-  );
+  const emitRate = incoming(output.id, "emitRate");
   const hazard = emitRate
     ? particleContextHazard(graph, definitions, emitRate.sourceNodeId, true)
     : null;
@@ -436,9 +455,7 @@ function validateSpine(
     if (definition.role !== "update") continue;
     if (node.type === "force.attractor" && !sawContextUpdate) {
       for (const pinId of ["position", "strength"]) {
-        const edge = graph.edges.find(
-          (entry) => entry.targetNodeId === nodeId && entry.targetPinId === pinId,
-        );
+        const edge = incoming(nodeId, pinId);
         const found = edge ? particleContextHazard(graph, definitions, edge.sourceNodeId, false) : null;
         if (!found) continue;
         diagnostics.push({
@@ -461,7 +478,7 @@ function validateSpine(
     });
   }
   const first = spine[0] ? definitions.get(spine[0]) : undefined;
-  const overwrittenBy = first?.role === "create" ? createColorOverwrittenBy(graph, spine) : null;
+  const overwrittenBy = first?.role === "create" ? createColorOverwrittenBy(graph, incoming, spine) : null;
   if (overwrittenBy) {
     diagnostics.push({
       code: "particle.colorOverridden",
@@ -495,8 +512,8 @@ function validateSpine(
 
   for (const node of graph.nodes) {
     if (!RADIAL_SHAPES.has(node.type)) continue;
-    const first = isPinSet(graph, node, "direction1");
-    const second = isPinSet(graph, node, "direction2");
+    const first = isPinSet(incoming, node, "direction1");
+    const second = isPinSet(incoming, node, "direction2");
     if (first === second) continue;
     diagnostics.push({
       code: "particle.shapeDirectionPair",
@@ -549,8 +566,9 @@ export function checkParticleGraphDocument(
   doc: ParticleGraphDocument,
   context: ParticleGraphValidationContext = {},
 ): { diagnostics: ParticleGraphDiagnostic[]; resolver: ParticleTypeResolver | null } {
-  const { diagnostics, definitions, resolver } = validateGraph(doc);
-  diagnostics.push(...validateSpine(doc, definitions));
+  const incoming = indexParticleIncomingEdges(doc);
+  const { diagnostics, definitions, resolver } = validateGraph(doc, incoming);
+  diagnostics.push(...validateSpine(doc, definitions, incoming));
   diagnostics.push(...validateSettings(doc, context));
   return { diagnostics, resolver };
 }

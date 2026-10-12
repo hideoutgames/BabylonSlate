@@ -131,45 +131,84 @@ const consumersByScene = new WeakMap<Scene, SceneMaterialConsumers>();
 /** Cache assignments, not verdicts: Babylon exposes mutable material contracts without change events. */
 class SceneMaterialConsumers {
   private readonly scene: Scene;
-  private readonly watched = new Map<AbstractMesh, Observer<AbstractMesh>>();
+  /** Meshes whose material changes mark the groups stale: scene meshes and instance sources. */
+  private readonly watched = new Map<
+    AbstractMesh,
+    { observer: Observer<AbstractMesh>; refs: number }
+  >();
+  /** Scene meshes of the last scan, with the instance source each one retains. */
+  private readonly members = new Map<
+    AbstractMesh,
+    { source: AbstractMesh | null; scan: number }
+  >();
   private readonly groups: MaterialConsumers[] = [];
   private dirty = true;
   private meshCount = -1;
+  private scan = 0;
 
   constructor(scene: Scene) {
     this.scene = scene;
     const added = scene.onNewMeshAddedObservable.add((mesh) => {
       // Add notifications are deferred, including those for already-removed
       // cluster proxy meshes. Counts cover real additions before notification.
-      if (!this.watched.has(mesh) && scene.meshes.includes(mesh))
-        this.invalidate();
+      if (!this.members.has(mesh) && scene.meshes.includes(mesh))
+        this.markDirty();
     });
     const removed = scene.onMeshRemovedObservable.add((mesh) => {
-      if (this.watched.has(mesh)) this.invalidate();
+      if (!this.watched.has(mesh)) return;
+      this.markDirty();
+      this.removeMember(mesh);
     });
     scene.onDisposeObservable.addOnce(() => {
       scene.onNewMeshAddedObservable.remove(added);
       scene.onMeshRemovedObservable.remove(removed);
-      this.invalidate();
+      this.markDirty();
+      for (const [mesh, { observer }] of this.watched)
+        mesh.onMaterialChangedObservable.remove(observer);
+      this.watched.clear();
+      this.members.clear();
       consumersByScene.delete(scene);
     });
   }
 
-  private invalidate = (): void => {
+  private markDirty = (): void => {
     this.dirty = true;
     // Release removed/reassigned consumers even if the next request is Forward.
     this.groups.length = 0;
-    for (const [mesh, observer] of this.watched)
-      mesh.onMaterialChangedObservable.remove(observer);
-    this.watched.clear();
   };
 
-  private watch(mesh: AbstractMesh): void {
-    if (this.watched.has(mesh)) return;
-    this.watched.set(
-      mesh,
-      mesh.onMaterialChangedObservable.add(this.invalidate),
-    );
+  private retain(mesh: AbstractMesh): void {
+    const watch = this.watched.get(mesh);
+    if (watch) watch.refs++;
+    else
+      this.watched.set(mesh, {
+        observer: mesh.onMaterialChangedObservable.add(this.markDirty),
+        refs: 1,
+      });
+  }
+
+  private release(mesh: AbstractMesh): void {
+    const watch = this.watched.get(mesh);
+    if (!watch || --watch.refs > 0) return;
+    mesh.onMaterialChangedObservable.remove(watch.observer);
+    this.watched.delete(mesh);
+  }
+
+  private addMember(mesh: AbstractMesh): void {
+    // Instances inherit assignments from their source, even if it is detached
+    // from the scene. Their own material observable does not notify on edits.
+    const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : null;
+    this.retain(mesh);
+    if (source) this.retain(source);
+    this.members.set(mesh, { source, scan: this.scan });
+  }
+
+  private removeMember(mesh: AbstractMesh): void {
+    const member = this.members.get(mesh);
+    if (!member) return;
+    this.members.delete(mesh);
+    this.release(mesh);
+    if (member.source) this.release(member.source);
   }
 
   current(): readonly MaterialConsumers[] {
@@ -177,14 +216,14 @@ class SceneMaterialConsumers {
     if (!this.dirty && this.meshCount === scene.meshes.length)
       return this.groups;
 
-    this.invalidate();
+    this.markDirty();
+    const scan = ++this.scan;
     const byMaterial = new Map<Material | null, MaterialConsumers>();
     for (let index = 0; index < scene.meshes.length; index++) {
       const mesh = scene.meshes[index]!;
-      this.watch(mesh);
-      // Instances inherit assignments from their source, even if it is detached
-      // from the scene. Their own material observable does not notify on edits.
-      if (mesh instanceof InstancedMesh) this.watch(mesh.sourceMesh);
+      const member = this.members.get(mesh);
+      if (member) member.scan = scan;
+      else this.addMember(mesh);
       const material = mesh.material;
       let group = byMaterial.get(material);
       if (!group) {
@@ -194,6 +233,10 @@ class SceneMaterialConsumers {
       }
       group.meshes.push({ mesh, index });
     }
+    // Every scene mesh is now a member; a larger map holds meshes that left.
+    if (this.members.size !== scene.meshes.length)
+      for (const [mesh, member] of this.members)
+        if (member.scan !== scan) this.removeMember(mesh);
     this.meshCount = scene.meshes.length;
     this.dirty = false;
     return this.groups;

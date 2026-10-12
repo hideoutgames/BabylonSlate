@@ -258,6 +258,20 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     expect(content.actors).toEqual([{ classId: "Hero", components: [] }]);
   });
 
+  it("lists a usage added in an open tab while the delete dialog is showing", async () => {
+    const { actorClass, scene } = classAndScene();
+    installRegistry([actorClass, scene]);
+    const view = render(<ContentBrowserWorkspace />);
+    fireEvent.click(screen.getByTestId(`content-item-${actorClass.path}`));
+    fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+    await waitFor(() => expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.getByTestId("content-browser-delete-dialog").textContent).not.toContain("main");
+
+    docs.openDocuments = [{ ref: { path: scene.path }, content: { actors: [{ classId: "Hero", components: [] }] } }];
+    view.rerender(<ContentBrowserWorkspace />);
+    await waitFor(() => expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("main"));
+  });
+
   it("allows deleting a folder when its Class referrers are also selected for deletion", async () => {
     const { actorClass, scene } = classAndScene("assets/Actors");
     scene.path = "assets/Actors/main.scene.babasset";

@@ -189,6 +189,26 @@ describe("collectLatentFunctions", () => {
     expect(isLatentFunctionKey("Villain", "Wait", latent, (id) => (id === "Villain" ? "Actor" : null))).toBe(false);
   });
 
+  it("propagates latency through Calls only to classes in an owner's lineage", () => {
+    const registry = registryWithLatentCatalog();
+    const call = (classId: string) => [
+      { typeId: "functions.call", properties: { classId, functionName: "Wait" } },
+    ];
+    const delay = [{ typeId: "timers.delay", properties: {} }];
+    const latent = collectLatentFunctions(
+      [
+        // Callers precede the latent owners, so they resolve on a later pass.
+        { classId: "Hero", functionName: "Run", nodes: call("Hero") },
+        { classId: "Rock", functionName: "Idle", nodes: call("Rock") },
+        { classId: "Villain", functionName: "Wait", nodes: delay },
+        { classId: "Actor", functionName: "Wait", nodes: delay },
+      ],
+      registry,
+      (classId) => (classId === "Hero" ? "Actor" : null),
+    );
+    expect([...latent].sort()).toEqual(["Actor:Wait", "Hero:Run", "Villain:Wait"]);
+  });
+
   it("uses the same ident as Call codegen for odd function names", () => {
     expect(latentFunctionKey("Hero", "2 Jump!")).toBe("Hero:_2_Jump_");
   });

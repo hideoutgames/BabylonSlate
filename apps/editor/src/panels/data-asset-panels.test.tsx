@@ -408,3 +408,20 @@ it("rejects an edit queued for a closed and replaced tree document", async () =>
   expect(tree()).toEqual(afterFirst);
   expect(state.apply).toHaveBeenCalledTimes(1);
 });
+
+it("disables every row's entry menu while a tree change is in flight and re-enables it afterwards", async () => {
+  configureEntries(fields, [{ id: "sword", name: "Sword", values: { Damage: 25 } }, { id: "axe", name: "Axe", values: { Damage: 5 } }]);
+  let finish: (applied: boolean) => void = () => undefined;
+  state.apply.mockImplementationOnce(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+  render(<TreeViewFixture />);
+  fireEvent.click(screen.getByRole("button", { name: "Entry Menu For Sword" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate Subtree" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Add Root" }) as HTMLButtonElement).disabled).toBe(true));
+  fireEvent.click(screen.getByRole("button", { name: "Entry Menu For Axe" }));
+  expect(screen.getByRole("menuitem", { name: "Rename" }).hasAttribute("data-disabled")).toBe(true);
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  await act(async () => { finish(true); });
+  await waitFor(() => expect((screen.getByRole("button", { name: "Add Root" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Entry Menu For Axe" }));
+  expect(screen.getByRole("menuitem", { name: "Rename" }).hasAttribute("data-disabled")).toBe(false);
+});

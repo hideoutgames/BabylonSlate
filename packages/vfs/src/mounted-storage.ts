@@ -3,6 +3,8 @@ import { isStorageNotFound, StorageNotFoundError } from "@babylonslate/core";
 import { projectRelativePath } from "./project-path";
 import { StorageReadCounter, validateStorageRange } from "./storage-range";
 
+const textDecoder = new TextDecoder();
+
 export interface ProjectStorageMount {
   /** Virtual file or directory path. A deeper mount shadows an enclosing one. */
   path: string;
@@ -76,7 +78,7 @@ class MountedProjectStorage implements ProjectStorage {
     options?.signal?.throwIfAborted();
     return this.reads.full(stat.size ?? 0, () => target.storage.readBinary(target.path, options));
   }
-  async readText(path: string, options?: StorageReadOptions) { return new TextDecoder().decode(await this.readBinary(path, options)); }
+  async readText(path: string, options?: StorageReadOptions) { return textDecoder.decode(await this.readBinary(path, options)); }
   async readBinaryRange(path: string, offset: number, length: number, revision?: string, options?: StorageReadOptions) {
     validateStorageRange(offset, length);
     const target = this.file(path);

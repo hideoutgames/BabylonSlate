@@ -21,6 +21,8 @@ export type StatsHudProps = {
   bridgeMessagesPerSec?: number;
   /** Optional rows enabled with `stat <group>`, in display order. */
   groups?: readonly StatGroup[];
+  /** False while a parent keeps the HUD mounted but hidden; the `stat unit` graph stops sampling. */
+  visible?: boolean;
 };
 
 type Sample = { scriptMs: number; physicsMs: number };
@@ -75,6 +77,7 @@ export function StatsHud({
   rendering,
   bridgeMessagesPerSec,
   groups = [],
+  visible = true,
 }: StatsHudProps) {
   const latest = useRef({ scriptMs, physicsMs });
   latest.current = { scriptMs, physicsMs };
@@ -82,7 +85,7 @@ export function StatsHud({
   const showUnit = groups.includes("unit");
 
   useEffect(() => {
-    if (!showUnit) return;
+    if (!showUnit || !visible) return;
     const id = window.setInterval(() => {
       setSamples((prev) => {
         const next = [...prev, latest.current];
@@ -90,7 +93,7 @@ export function StatsHud({
       });
     }, SAMPLE_MS);
     return () => window.clearInterval(id);
-  }, [showUnit]);
+  }, [showUnit, visible]);
 
   const overBudget = isTickOverBudget(scriptMs, physicsMs);
   const drawsHigh = draws != null && drawCallCeilingWarning(draws) !== null;

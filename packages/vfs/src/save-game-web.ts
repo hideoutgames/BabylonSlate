@@ -2,6 +2,9 @@ import type { SaveGameStorage } from "@babylonslate/core";
 import { decodeSaveGameSegment, encodeSaveGameSegment, isSaveGameMissing, saveGameSegments } from "./save-game-path";
 import { withSaveGameWebLock } from "./save-game-web-lock";
 
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
 type DirectoryEntries = FileSystemDirectoryHandle & {
   entries(): AsyncIterableIterator<[string, FileSystemHandle]>;
 };
@@ -25,7 +28,7 @@ export class WebSaveGameStorage implements SaveGameStorage {
     try {
       const directory = await this.directory(parts.slice(0, -1), false);
       const handle = await directory.getFileHandle(encodeSaveGameSegment(parts.at(-1)!));
-      return new TextDecoder().decode(await (await handle.getFile()).arrayBuffer());
+      return textDecoder.decode(await (await handle.getFile()).arrayBuffer());
     } catch (error) {
       if (isSaveGameMissing(error)) return null;
       throw error;
@@ -38,7 +41,7 @@ export class WebSaveGameStorage implements SaveGameStorage {
     const handle = await directory.getFileHandle(encodeSaveGameSegment(parts.at(-1)!), { create: true });
     // createWritable stages changes; only close replaces the committed generation.
     const writable = await handle.createWritable();
-    try { await writable.write(new TextEncoder().encode(text)); await writable.close(); }
+    try { await writable.write(textEncoder.encode(text)); await writable.close(); }
     catch (error) { await writable.abort().catch(() => {}); throw error; }
   }
 

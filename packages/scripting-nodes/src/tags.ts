@@ -1,6 +1,6 @@
 import {
   BOOL, EXEC, INT, RESOLVING_WILDCARD, STRING, TAG, TAG_CONTAINER,
-  arrayOf, pin, tagCasePinId, tagCasesOf, tagOptionPinId,
+  arrayOf, pin, tagCasePinId, tagCasesConstant, tagCasesOf, tagOptionPinId,
   type NodeDefinition, type PinType,
 } from "@babylonslate/scripting";
 
@@ -157,7 +157,9 @@ export const tagNodes: NodeDefinition[] = [
       for (const tag of [...cases].reverse()) {
         expression = `(__case === ${tag} ? (${ctx.input(tagOptionPinId(tag))}) : (${expression}))`;
       }
-      return { out: `((__case) => ${expression})(__tags.select(${ctx.input("index")}, ${JSON.stringify(cases)}, ${ctx.input("exact")}))` };
+      const list = tagCasesConstant(cases);
+      ctx.hoist(list.declaration);
+      return { out: `((__case) => ${expression})(__tags.select(${ctx.input("index")}, ${list.name}, ${ctx.input("exact")}))` };
     },
   },
 ];

@@ -1,5 +1,4 @@
-import type { Transform, Vec3 } from "./math-rng";
-import { inverseQuat, quatRotateVector } from "./euler";
+import type { Quat, Transform, Vec3 } from "./math-rng";
 import type { LandscapeProperties } from "./landscape";
 
 export type WaterRemovalShape = "box" | "sphere" | "cylinder" | "capsule";
@@ -46,13 +45,34 @@ export function waterRemovalDistance(volume: WaterRemovalProperties, p: Vec3): n
   return Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0);
 }
 
-export function worldToLocal(transform: Transform, point: Vec3): Vec3 | null {
+/**
+ * `quatRotateVector(inverseQuat(rotation), (x, y, z))` written into `out`: the same arithmetic, including an
+ * all-zero quaternion reading as identity, without the intermediate objects.
+ */
+function rotateByInverseInto(rotation: Partial<Quat>, x: number, y: number, z: number, out: Vec3): void {
+  let qx = Number(rotation.x ?? 0), qy = Number(rotation.y ?? 0), qz = Number(rotation.z ?? 0), qw = Number(rotation.w ?? 1);
+  if (qx === 0 && qy === 0 && qz === 0 && qw === 0) { qx = qy = qz = 0; qw = 1; }
+  qx = -qx; qy = -qy; qz = -qz;
+  const tx = 2 * (qy * z - qz * y);
+  const ty = 2 * (qz * x - qx * z);
+  const tz = 2 * (qx * y - qy * x);
+  out.x = x + qw * tx + (qy * tz - qz * ty);
+  out.y = y + qw * ty + (qz * tx - qx * tz);
+  out.z = z + qw * tz + (qx * ty - qy * tx);
+}
+
+/** `worldToLocal` of (x, y, z) into `out`; false (leaving `out` unchanged) when a scale axis is degenerate. */
+function worldToLocalInto(transform: Transform, x: number, y: number, z: number, out: Vec3): boolean {
   const { x: sx, y: sy, z: sz } = transform.scale;
-  if (Math.min(Math.abs(sx), Math.abs(sy), Math.abs(sz)) < 1e-9) return null;
-  const local = quatRotateVector(inverseQuat(transform.rotation), {
-    x: point.x - transform.position.x, y: point.y - transform.position.y, z: point.z - transform.position.z,
-  });
-  return { x: local.x / sx, y: local.y / sy, z: local.z / sz };
+  if (Math.min(Math.abs(sx), Math.abs(sy), Math.abs(sz)) < 1e-9) return false;
+  rotateByInverseInto(transform.rotation, x - transform.position.x, y - transform.position.y, z - transform.position.z, out);
+  out.x /= sx; out.y /= sy; out.z /= sz;
+  return true;
+}
+
+export function worldToLocal(transform: Transform, point: Vec3): Vec3 | null {
+  const local: Vec3 = { x: 0, y: 0, z: 0 };
+  return worldToLocalInto(transform, point.x, point.y, point.z, local) ? local : null;
 }
 
 /** Terrain height in landscape-local space, matching the rendered and collision triangles. Null outside. */
@@ -70,23 +90,27 @@ export function landscapeHeightAt(data: LandscapeProperties, x: number, z: numbe
     : hb1 + (hb - hb1) * (1 - fx) + (h1 - hb1) * (1 - fz);
 }
 
+// Scratch for the queries below, which run per water sample and finish before returning.
+const baseScratch: Vec3 = { x: 0, y: 0, z: 0 }, upScratch: Vec3 = { x: 0, y: 0, z: 0 }, localScratch: Vec3 = { x: 0, y: 0, z: 0 };
+
 /** World-space terrain height below a point, or null when the point is outside the landscape. */
 export function landscapeWorldHeightAt(data: LandscapeProperties, transform: Transform, x: number, z: number): number | null {
   // The world vertical through (x, z) is the local line `base + s * step`, where
   // `s` is the world height above the actor. A pitched or rolled landscape
   // moves along local X/Z as `s` changes, so the crossing is solved for rather
   // than sampled at the local point level with the actor's origin.
-  const base = worldToLocal(transform, { x, y: transform.position.y, z });
-  if (!base) return null;
-  const up = quatRotateVector(inverseQuat(transform.rotation), { x: 0, y: 1, z: 0 });
+  const base = baseScratch;
+  if (!worldToLocalInto(transform, x, transform.position.y, z, base)) return null;
+  const up = upScratch;
+  rotateByInverseInto(transform.rotation, 0, 1, 0, up);
   const { x: sx, y: sy, z: sz } = transform.scale;
-  const step = { x: up.x / sx, y: up.y / sy, z: up.z / sz };
-  if (Math.abs(step.y) < 1e-9) return null;
+  const stepX = up.x / sx, stepY = up.y / sy, stepZ = up.z / sz;
+  if (Math.abs(stepY) < 1e-9) return null;
   let s = 0;
   for (let i = 0; i < 16; i++) {
-    const height = landscapeHeightAt(data, base.x + s * step.x, base.z + s * step.z);
+    const height = landscapeHeightAt(data, base.x + s * stepX, base.z + s * stepZ);
     if (height === null) return null;
-    const next = (height - base.y) / step.y;
+    const next = (height - base.y) / stepY;
     const settled = Math.abs(next - s) < 1e-6;
     s = next;
     if (settled) break;
@@ -103,8 +127,7 @@ export interface WaterCutters {
 export function waterCutAt(cutters: WaterCutters, point: Vec3): boolean {
   for (const { volume, transform } of cutters.removals) {
     if (!volume.enabled) continue;
-    const local = worldToLocal(transform, point);
-    if (local && waterRemovalDistance(volume, local) < 0) return true;
+    if (worldToLocalInto(transform, point.x, point.y, point.z, localScratch) && waterRemovalDistance(volume, localScratch) < 0) return true;
   }
   for (const { data, transform } of cutters.landscapes) {
     const ground = landscapeWorldHeightAt(data, transform, point.x, point.z);

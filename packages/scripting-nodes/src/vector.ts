@@ -8,6 +8,10 @@ import {
   type PinType,
 } from "@babylonslate/scripting";
 import { ARITHMETIC_SEARCH_ALIASES } from "./arithmetic-search-aliases";
+import { hoistedCall } from "./hoisted-helper";
+
+type Ctx = Parameters<NodeDefinition["codegen"]>[0];
+const OP_NAMES = { "+": "add", "-": "sub", "*": "mul", "/": "div" } as const;
 
 const AXES2 = ["x", "y"] as const;
 const AXES3 = ["x", "y", "z"] as const;
@@ -15,31 +19,64 @@ const AXES4 = ["x", "y", "z", "w"] as const;
 
 /**
  * Each helper binds its inputs once (`a`, `b`, `v`, `s`, `t`), so an impure
- * input such as Random Float is sampled once and every component sees it.
+ * input such as Random Float is sampled once and every component sees it. The
+ * helper is a module-scope function named for its operation and axes
+ * (`__vec_add_xyz`), so a node evaluates with one call.
  */
 function componentWise(
+  ctx: Ctx,
   a: string,
   b: string,
   op: "+" | "-" | "*" | "/",
   axes: readonly string[],
 ): string {
-  return `((a, b) => ({ ${axes.map((axis) => `${axis}: a.${axis} ${op} b.${axis}`).join(", ")} }))(${a}, ${b})`;
+  return hoistedCall(
+    ctx,
+    `__vec_${OP_NAMES[op]}_${axes.join("")}`,
+    "a, b",
+    `({ ${axes.map((axis) => `${axis}: a.${axis} ${op} b.${axis}`).join(", ")} })`,
+    [a, b],
+  );
 }
 
-function scaleExpr(v: string, s: string, axes: readonly string[]): string {
-  return `((v, s) => ({ ${axes.map((axis) => `${axis}: v.${axis} * s`).join(", ")} }))(${v}, ${s})`;
+function scaleExpr(ctx: Ctx, v: string, s: string, axes: readonly string[]): string {
+  return hoistedCall(
+    ctx,
+    `__vec_scale_${axes.join("")}`,
+    "v, s",
+    `({ ${axes.map((axis) => `${axis}: v.${axis} * s`).join(", ")} })`,
+    [v, s],
+  );
 }
 
-function lerpExpr(a: string, b: string, t: string, axes: readonly string[]): string {
-  return `((a, b, t) => ({ ${axes.map((axis) => `${axis}: a.${axis} + (b.${axis} - a.${axis}) * t`).join(", ")} }))(${a}, ${b}, ${t})`;
+function lerpExpr(ctx: Ctx, a: string, b: string, t: string, axes: readonly string[]): string {
+  return hoistedCall(
+    ctx,
+    `__vec_lerp_${axes.join("")}`,
+    "a, b, t",
+    `({ ${axes.map((axis) => `${axis}: a.${axis} + (b.${axis} - a.${axis}) * t`).join(", ")} })`,
+    [a, b, t],
+  );
 }
 
-function dotExpr(a: string, b: string, axes: readonly string[]): string {
-  return `((a, b) => ${axes.map((axis) => `a.${axis} * b.${axis}`).join(" + ")})(${a}, ${b})`;
+function dotExpr(ctx: Ctx, a: string, b: string, axes: readonly string[]): string {
+  return hoistedCall(
+    ctx,
+    `__vec_dot_${axes.join("")}`,
+    "a, b",
+    axes.map((axis) => `a.${axis} * b.${axis}`).join(" + "),
+    [a, b],
+  );
 }
 
-function distanceExpr(a: string, b: string, axes: readonly string[]): string {
-  return `((a, b) => Math.hypot(${axes.map((axis) => `a.${axis} - b.${axis}`).join(", ")}))(${a}, ${b})`;
+function distanceExpr(ctx: Ctx, a: string, b: string, axes: readonly string[]): string {
+  return hoistedCall(
+    ctx,
+    `__vec_distance_${axes.join("")}`,
+    "a, b",
+    `Math.hypot(${axes.map((axis) => `a.${axis} - b.${axis}`).join(", ")})`,
+    [a, b],
+  );
 }
 
 /** `Math.hypot` over the components of `v`, which must be a bound name. */
@@ -47,19 +84,31 @@ function hypotOf(v: string, axes: readonly string[]): string {
   return `Math.hypot(${axes.map((axis) => `${v}.${axis}`).join(", ")})`;
 }
 
-function lengthExpr(v: string, axes: readonly string[]): string {
-  return `((v) => ${hypotOf("v", axes)})(${v})`;
+function lengthExpr(ctx: Ctx, v: string, axes: readonly string[]): string {
+  return hoistedCall(ctx, `__vec_length_${axes.join("")}`, "v", hypotOf("v", axes), [v]);
 }
 
 /** Reads the vector once, so the length and every component see one value. */
-function normalizeExpr(v: string, axes: readonly string[]): string {
+function normalizeExpr(ctx: Ctx, v: string, axes: readonly string[]): string {
   const unit = axes.map((axis) => `${axis}: v.${axis} / l`).join(", ");
   const zero = axes.map((axis) => `${axis}: 0`).join(", ");
-  return `((v) => { const l = ${hypotOf("v", axes)}; return l > 1e-8 ? { ${unit} } : { ${zero} }; })(${v})`;
+  return hoistedCall(
+    ctx,
+    `__vec_normalize_${axes.join("")}`,
+    "v",
+    `{ const l = ${hypotOf("v", axes)}; return l > 1e-8 ? { ${unit} } : { ${zero} }; }`,
+    [v],
+  );
 }
 
-function lengthSquaredExpr(v: string, axes: readonly string[]): string {
-  return `((v) => ${axes.map((axis) => `v.${axis} * v.${axis}`).join(" + ")})(${v})`;
+function lengthSquaredExpr(ctx: Ctx, v: string, axes: readonly string[]): string {
+  return hoistedCall(
+    ctx,
+    `__vec_lengthSquared_${axes.join("")}`,
+    "v",
+    axes.map((axis) => `v.${axis} * v.${axis}`).join(" + "),
+    [v],
+  );
 }
 
 function binaryVec(
@@ -81,7 +130,7 @@ function binaryVec(
       pin("out", "Out", "out", type),
     ],
     codegen: (ctx) => ({
-      out: componentWise(ctx.input("a"), ctx.input("b"), op, axes),
+      out: componentWise(ctx, ctx.input("a"), ctx.input("b"), op, axes),
     }),
   };
 }
@@ -105,7 +154,7 @@ function scaleVec(
       pin("out", "Out", "out", type),
     ],
     codegen: (ctx) => ({
-      out: scaleExpr(ctx.input(vectorPinId), ctx.input("s"), axes),
+      out: scaleExpr(ctx, ctx.input(vectorPinId), ctx.input("s"), axes),
     }),
   };
 }
@@ -154,7 +203,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "out", "out", VEC3),
     ],
     codegen: (ctx) => ({
-      out: componentWise(ctx.input("a"), ctx.input("b"), "+", AXES3),
+      out: componentWise(ctx, ctx.input("a"), ctx.input("b"), "+", AXES3),
     }),
   },
   {
@@ -169,7 +218,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "out", "out", VEC3),
     ],
     codegen: (ctx) => ({
-      out: scaleExpr(ctx.input("v"), ctx.input("s"), AXES3),
+      out: scaleExpr(ctx, ctx.input("v"), ctx.input("s"), AXES3),
     }),
   },
   {
@@ -254,7 +303,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: dotExpr(ctx.input("a"), ctx.input("b"), AXES3),
+      out: dotExpr(ctx, ctx.input("a"), ctx.input("b"), AXES3),
     }),
   },
   {
@@ -269,7 +318,13 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
-      out: `((a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x }))(${ctx.input("a")}, ${ctx.input("b")})`,
+      out: hoistedCall(
+        ctx,
+        "__vec_cross_xyz",
+        "a, b",
+        "({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x })",
+        [ctx.input("a"), ctx.input("b")],
+      ),
     }),
   },
   {
@@ -282,7 +337,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC3),
       pin("out", "Out", "out", FLOAT),
     ],
-    codegen: (ctx) => ({ out: lengthExpr(ctx.input("v"), AXES3) }),
+    codegen: (ctx) => ({ out: lengthExpr(ctx, ctx.input("v"), AXES3) }),
   },
   {
     id: "vector.lengthSquared3",
@@ -294,7 +349,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC3),
       pin("out", "Out", "out", FLOAT),
     ],
-    codegen: (ctx) => ({ out: lengthSquaredExpr(ctx.input("v"), AXES3) }),
+    codegen: (ctx) => ({ out: lengthSquaredExpr(ctx, ctx.input("v"), AXES3) }),
   },
   {
     id: "vector.normalize3",
@@ -306,7 +361,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC3),
       pin("out", "Out", "out", VEC3),
     ],
-    codegen: (ctx) => ({ out: normalizeExpr(ctx.input("v"), AXES3) }),
+    codegen: (ctx) => ({ out: normalizeExpr(ctx, ctx.input("v"), AXES3) }),
   },
   {
     id: "vector.distance3",
@@ -320,7 +375,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: distanceExpr(ctx.input("a"), ctx.input("b"), AXES3),
+      out: distanceExpr(ctx, ctx.input("a"), ctx.input("b"), AXES3),
     }),
   },
   {
@@ -336,7 +391,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
-      out: lerpExpr(ctx.input("a"), ctx.input("b"), ctx.input("alpha"), AXES3),
+      out: lerpExpr(ctx, ctx.input("a"), ctx.input("b"), ctx.input("alpha"), AXES3),
     }),
   },
   binaryVec("vector.add2", "Add Vector2", VEC2, "+", AXES2),
@@ -356,7 +411,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: dotExpr(ctx.input("a"), ctx.input("b"), AXES2),
+      out: dotExpr(ctx, ctx.input("a"), ctx.input("b"), AXES2),
     }),
   },
   {
@@ -369,7 +424,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC2),
       pin("out", "Out", "out", FLOAT),
     ],
-    codegen: (ctx) => ({ out: lengthExpr(ctx.input("v"), AXES2) }),
+    codegen: (ctx) => ({ out: lengthExpr(ctx, ctx.input("v"), AXES2) }),
   },
   {
     id: "vector.lengthSquared2",
@@ -381,7 +436,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC2),
       pin("out", "Out", "out", FLOAT),
     ],
-    codegen: (ctx) => ({ out: lengthSquaredExpr(ctx.input("v"), AXES2) }),
+    codegen: (ctx) => ({ out: lengthSquaredExpr(ctx, ctx.input("v"), AXES2) }),
   },
   {
     id: "vector.normalize2",
@@ -393,7 +448,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC2),
       pin("out", "Out", "out", VEC2),
     ],
-    codegen: (ctx) => ({ out: normalizeExpr(ctx.input("v"), AXES2) }),
+    codegen: (ctx) => ({ out: normalizeExpr(ctx, ctx.input("v"), AXES2) }),
   },
   {
     id: "vector.distance2",
@@ -407,7 +462,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: distanceExpr(ctx.input("a"), ctx.input("b"), AXES2),
+      out: distanceExpr(ctx, ctx.input("a"), ctx.input("b"), AXES2),
     }),
   },
   {
@@ -423,7 +478,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", VEC2),
     ],
     codegen: (ctx) => ({
-      out: lerpExpr(ctx.input("a"), ctx.input("b"), ctx.input("alpha"), AXES2),
+      out: lerpExpr(ctx, ctx.input("a"), ctx.input("b"), ctx.input("alpha"), AXES2),
     }),
   },
   binaryVec("vector.add4", "Add Vector4", VEC4, "+", AXES4),
@@ -443,7 +498,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: dotExpr(ctx.input("a"), ctx.input("b"), AXES4),
+      out: dotExpr(ctx, ctx.input("a"), ctx.input("b"), AXES4),
     }),
   },
   {
@@ -456,7 +511,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC4),
       pin("out", "Out", "out", FLOAT),
     ],
-    codegen: (ctx) => ({ out: lengthExpr(ctx.input("v"), AXES4) }),
+    codegen: (ctx) => ({ out: lengthExpr(ctx, ctx.input("v"), AXES4) }),
   },
   {
     id: "vector.lengthSquared4",
@@ -468,7 +523,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC4),
       pin("out", "Out", "out", FLOAT),
     ],
-    codegen: (ctx) => ({ out: lengthSquaredExpr(ctx.input("v"), AXES4) }),
+    codegen: (ctx) => ({ out: lengthSquaredExpr(ctx, ctx.input("v"), AXES4) }),
   },
   {
     id: "vector.normalize4",
@@ -480,7 +535,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC4),
       pin("out", "Out", "out", VEC4),
     ],
-    codegen: (ctx) => ({ out: normalizeExpr(ctx.input("v"), AXES4) }),
+    codegen: (ctx) => ({ out: normalizeExpr(ctx, ctx.input("v"), AXES4) }),
   },
   {
     id: "vector.distance4",
@@ -494,7 +549,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: distanceExpr(ctx.input("a"), ctx.input("b"), AXES4),
+      out: distanceExpr(ctx, ctx.input("a"), ctx.input("b"), AXES4),
     }),
   },
   {
@@ -510,7 +565,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", VEC4),
     ],
     codegen: (ctx) => ({
-      out: lerpExpr(ctx.input("a"), ctx.input("b"), ctx.input("alpha"), AXES4),
+      out: lerpExpr(ctx, ctx.input("a"), ctx.input("b"), ctx.input("alpha"), AXES4),
     }),
   },
 ];

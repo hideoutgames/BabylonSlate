@@ -151,6 +151,9 @@ export class ForwardSceneFrameGraph {
   // render()'s per-frame scratch; probeReadiness keeps its own snapshot.
   private readonly shadowLights: Light[] = [];
   private readonly shadowFlags: boolean[] = [];
+  /** Readiness probe scratch; taken while a probe runs so a nested one never shares it. */
+  private probeLights: Light[] | undefined = [];
+  private probeFlags: boolean[] | undefined = [];
   private readonly sceneObjects: FrameGraphObjectList = { meshes: null, particleSystems: null };
   private graphRender: Scene["customRenderFunction"];
   // Scene.render already updates the selected camera. The pinned graph
@@ -1011,14 +1014,20 @@ export class ForwardSceneFrameGraph {
   private isReady(): boolean {
     this.strictChecks += 1;
     const cameras = this.scene.activeCameras;
-    const shadowFlags = this.scene.lights.map(
-      (light) => [light, light.shadowEnabled] as const,
-    );
     const objectList = this.objects!.objectList;
     const geometry = this.postProcessGraph?.geometryTask;
     const geometryObjects = geometry?.objectList;
     const spatial = this.effectsGraph?.spatial?.geometry;
     const spatialObjects = spatial?.objectList;
+    const lights = this.scene.lights;
+    const probeLights = this.probeLights ?? [];
+    const probeFlags = this.probeFlags ?? [];
+    this.probeLights = this.probeFlags = undefined;
+    for (let index = 0; index < lights.length; index += 1) {
+      probeLights[index] = lights[index]!;
+      probeFlags[index] = lights[index]!.shadowEnabled;
+    }
+    probeLights.length = probeFlags.length = lights.length;
     try {
       // The previous frame's culled list may omit a newly visible mesh. Probe
       // all current candidates before presenting; culling itself never draws.
@@ -1043,7 +1052,11 @@ export class ForwardSceneFrameGraph {
       // ObjectRenderer's shadow toggles also lack finally around readiness
       // hooks. The common guard owns camera/matrices/UBO/Engine state.
       this.scene.activeCameras = cameras;
-      for (const [light, enabled] of shadowFlags) light.shadowEnabled = enabled;
+      for (let index = 0; index < probeLights.length; index += 1)
+        probeLights[index]!.shadowEnabled = probeFlags[index]!;
+      probeLights.length = probeFlags.length = 0;
+      this.probeLights = probeLights;
+      this.probeFlags = probeFlags;
     }
   }
 

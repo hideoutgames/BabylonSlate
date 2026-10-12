@@ -322,4 +322,45 @@ describe("play debug draw", () => {
     overlay.dispose();
     engine.dispose();
   });
+
+  it("rewrites the previous tick's sphere in place when its layout matches, matching a fresh build", () => {
+    const { engine, scene } = createTestEngine();
+    const fresh = createTestEngine();
+    const overlay = createPlayDebugDraw(scene);
+    const freshOverlay = createPlayDebugDraw(fresh.scene);
+    const sphere = (frameId: number, center: { x: number; y: number; z: number }, segments: number) =>
+      draw({ kind: "sphere", duration: 0, frameId, center, radius: 2, segments });
+    const sphereMeshes = (target: typeof scene) =>
+      target.meshes.filter((mesh): mesh is LinesMesh => mesh.name.startsWith(`${PLAY_DEBUG_DRAW_PREFIX}sphere:`));
+    const geometry = (mesh: LinesMesh) => ({ positions: [...mesh.getVerticesData("position")!], indices: [...mesh.getIndices()!] });
+
+    overlay.applyCommand(sphere(1, { x: 0, y: 0, z: 0 }, 8));
+    const [first] = sphereMeshes(scene);
+    const centered = { x: 5, y: 1, z: -3 };
+    overlay.applyCommand(sphere(2, centered, 8));
+    freshOverlay.applyCommand(sphere(1, centered, 8));
+    const [reused] = sphereMeshes(scene);
+    expect(sphereMeshes(scene)).toHaveLength(1);
+    expect(reused).toBe(first);
+    expect(reused!.name).toMatch(new RegExp(`^${PLAY_DEBUG_DRAW_PREFIX}sphere:\\d+$`));
+    expect(geometry(reused!)).toEqual(geometry(sphereMeshes(fresh.scene)[0]!));
+    // 7 parallels and 8 meridians of 9 points, every one on the sphere.
+    expect(reused!.getTotalVertices()).toBe((7 + 8) * 9);
+    const positions = geometry(reused!).positions;
+    for (let i = 0; i < positions.length; i += 3) {
+      expect(Math.hypot(positions[i]! - centered.x, positions[i + 1]! - centered.y, positions[i + 2]! - centered.z)).toBeCloseTo(2, 5);
+    }
+
+    // A different segment count changes the layout: a new mesh replaces it.
+    overlay.applyCommand(sphere(3, centered, 12));
+    const [resized] = sphereMeshes(scene);
+    expect(sphereMeshes(scene)).toHaveLength(1);
+    expect(resized).not.toBe(first);
+    expect(resized!.getTotalVertices()).toBe((11 + 12) * 13);
+    overlay.dispose();
+    freshOverlay.dispose();
+    engine.dispose();
+    fresh.engine.dispose();
+  });
 });
+

@@ -22,6 +22,7 @@ function emitCtx(typeId: string): { ctx: CodegenContext; emits: string[] } {
       },
       indent: "  ",
       input: (name) => name,
+      isWired: () => false,
       output: (name) => `_out_${name}`,
       emit: (s) => {
         emits.push(s);

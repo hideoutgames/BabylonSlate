@@ -56,6 +56,7 @@ import { useOptionalPlay } from "../context/play-context";
 import { useModelColliderSession } from "../context/model-collider-session";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
 import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
+import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
 
 const MODEL_PREVIEW_SHADING: { value: ViewportShadingMode; label: string }[] = [
   { value: "pbr", label: "PBR" },
@@ -142,12 +143,21 @@ export function ModelPreviewCanvas({
     let loaded: { dispose: () => void } | null = null;
     const raf = { id: 0 };
     const visuals = colliderVisualsRef.current;
+    const overlay = watchBlockingEditorOverlay();
     void (async () => {
       try {
         setLoadError(null);
         host = createModelPreviewScene(engine);
         installPreviewEnvironment(host.scene);
-        presenter = createMaterialPreviewPresenter(host, canvas, { maxFps: 1, onError: setLoadError });
+        // Nothing here plays an animation, so the frame only changes on the redraws requested below.
+        presenter = createMaterialPreviewPresenter(host, canvas, {
+          maxFps: 1,
+          onError: setLoadError,
+          staticContent: true,
+          // Gizmo handles draw on their own utility layer, whose shaders the Scene's readiness does not cover.
+          settleWhen: () => !gizmoHostRef.current?.attachedMesh(),
+          suspended: overlay.isOpen,
+        });
         const gizmos = createGizmoHost(host.scene, {
           tool: "translate",
           onDrag: () => presenter?.present({ force: true }),
@@ -194,6 +204,8 @@ export function ModelPreviewCanvas({
             gizmos.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
           onPointer: (type, x, y, pointerId) => {
             gizmos.forwardPointer(type, x, y, { ...pointerCanvas(), pointerId });
+            // Handle highlights change on press and release, before any drag redraws.
+            if (type !== "move") presenter?.present({ force: true });
           },
           onTap: (x, y) => {
             const pick = host?.scene.pick(x, y);
@@ -271,6 +283,7 @@ export function ModelPreviewCanvas({
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(raf.id);
+      overlay.dispose();
       materialOwnerRef.current?.();
       materialOwnerRef.current = null;
       gestures?.dispose();

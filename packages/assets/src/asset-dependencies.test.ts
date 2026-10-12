@@ -104,6 +104,27 @@ describe("typed asset dependencies", () => {
     expect(metadata.requiredDependencies).toEqual(["inventory-module", "item-schema", "items", "move"]);
   });
 
+  it("follows data inputs across several hops and edge spellings, in function graphs too, but not through exec wires", () => {
+    const literal = (id: string, asset: string) => ({ id, type: "literal.makeAsset", data: { "default:in": asset } });
+    const metadata = collectAssetDependencyMetadata("Class", {
+      nodes: [
+        literal("far", "far-asset"), { id: "mid", type: "math.add", data: {} }, { id: "input", type: "input.axisEvent", data: {} },
+        literal("flow", "flow-asset"), literal("loose", "loose-asset"),
+      ],
+      edges: [
+        { sourceNodeId: "far", targetNodeId: "mid", targetPinId: "a" },
+        { source: "mid", target: "input", targetHandle: "binding" },
+        { source: "flow", target: "input", targetHandle: "execIn" },
+      ],
+      functionGraphs: { run: {
+        nodes: [literal("inner", "inner-asset"), { id: "innerInput", type: "input.axisEvent", data: {} }],
+        edges: [{ source: "inner", target: "innerInput", targetHandle: "binding" }],
+      } },
+    });
+    expect(metadata.dependencies).toEqual(["far-asset", "flow-asset", "inner-asset", "loose-asset"]);
+    expect(metadata.requiredDependencies).toEqual(["far-asset", "inner-asset"]);
+  });
+
   it("requires nested data schemas while keeping asset values reachable without loading their sources", () => {
     const metadata = collectAssetDependencyMetadata("DataTree", {
       kind: "dataTree", defaultDefinitionGuid: "items",

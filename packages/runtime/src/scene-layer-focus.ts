@@ -27,6 +27,11 @@ interface FocusTargets {
   entries: Array<{ actor: Actor; components: ActorComponent[] }>;
 }
 
+/** Parsed focus properties and the variable values they were parsed from. */
+interface ParsedFocusProperties { values: unknown[]; properties: FocusTargetProperties }
+/** The parser reads exactly the keys it returns, so `focused` and other writes never invalidate. */
+const FOCUS_PROPERTY_KEYS = Object.keys(parseFocusTargetProperties());
+
 function fallbackResolver(): InputResolver {
   const directions: AxisBinding[] = [
     ...["ArrowLeft", "KeyA"].map((code): AxisBinding => ({ device: "key", code, component: "x", digitalValue: -1 })),
@@ -74,6 +79,7 @@ export class SceneLayerFocusNavigation {
   private repeatRemaining = 0;
   private initialLayer: string | null = null;
   private targets: FocusTargets | null = null;
+  private readonly parsed = new WeakMap<ActorComponent, ParsedFocusProperties>();
 
   constructor(world: World, settings: Partial<FocusNavigationSettings> | undefined, host: FocusNavigationHost) {
     this.world = world;
@@ -101,6 +107,22 @@ export class SceneLayerFocusNavigation {
     return this.targets;
   }
 
+  /** Reparsed only when a variable the parser reads (booleans and strings) holds a different value. */
+  private focusProperties(component: ActorComponent): FocusTargetProperties {
+    const variables = component.variables;
+    const entry = this.parsed.get(component);
+    if (entry) {
+      let same = true;
+      for (let i = 0; i < FOCUS_PROPERTY_KEYS.length; i++) {
+        if (entry.values[i] !== variables.get(FOCUS_PROPERTY_KEYS[i]!)) { same = false; break; }
+      }
+      if (same) return entry.properties;
+    }
+    const properties = parseFocusTargetProperties(Object.fromEntries(variables));
+    this.parsed.set(component, { values: FOCUS_PROPERTY_KEYS.map((key) => variables.get(key)), properties });
+    return properties;
+  }
+
   private candidates(): Candidate[] {
     if (!this.settings.enabled) return [];
     // Focus targets live only on Scene Layer actors; a world without a live layer has none to walk.
@@ -124,7 +146,7 @@ export class SceneLayerFocusNavigation {
       if (!actorTransform) continue;
       for (const component of components) {
         if (!available(component)) continue;
-        const properties = parseFocusTargetProperties(Object.fromEntries(component.variables));
+        const properties = this.focusProperties(component);
         if (!properties.focusEnabled) continue;
         if (component.getVariable("focused") === undefined) component.setVariable("focused", false);
         const chain = [component.transform];

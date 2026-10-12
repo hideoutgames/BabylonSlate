@@ -7,6 +7,7 @@ import {
   Scene,
   UtilityLayerRenderer,
   Vector3,
+  VertexBuffer,
   type AbstractMesh,
 } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
@@ -321,6 +322,93 @@ describe("createOverlayTransformBox", () => {
     expect(expectStemFromBoxTopToKnob()).toBeLessThan(before);
     box.dispose();
     layer.dispose();
+  });
+
+  describe("per-frame layout", () => {
+    const boxOf = (layer: UtilityLayerRenderer) => {
+      const util = layer.utilityLayerScene;
+      const frame = () => util.onBeforeRenderObservable.notifyObservers(util);
+      const boxScale = util.getTransformNodeByName("overlay-box-scale")!;
+      return { frame, boxScale, util };
+    };
+
+    it("follows a visual's scale and geometry that change while the attached mesh stays put", () => {
+      const { scene } = createHandle();
+      const layer = new UtilityLayerRenderer(scene);
+      const origin = MeshBuilder.CreatePlane("origin", { size: 1 }, scene);
+      origin.metadata = { editorPickProxy: true };
+      const visual = MeshBuilder.CreatePlane("visual", { size: 1 }, scene);
+      visual.parent = origin;
+      const box = createOverlayTransformBox(layer, scene);
+      box.attachTo(origin, [visual]);
+      const { frame, boxScale } = boxOf(layer);
+      frame();
+      expect(boxScale.scaling.asArray()).toEqual([1, 1, 1]);
+
+      visual.scaling.x = 3;
+      frame();
+      expect(boxScale.scaling.x).toBeCloseTo(3);
+
+      visual.markVerticesDataAsUpdatable(VertexBuffer.PositionKind, true);
+      visual.updateVerticesData(
+        VertexBuffer.PositionKind,
+        [-1, -0.25, 0, 1, -0.25, 0, 1, 0.25, 0, -1, 0.25, 0],
+        true,
+        false,
+      );
+      visual.refreshBoundingInfo();
+      frame();
+      expect(boxScale.scaling.x).toBeCloseTo(6);
+      expect(boxScale.scaling.y).toBeCloseTo(0.5);
+      box.dispose();
+      layer.dispose();
+    });
+
+    it("re-lays out a 2D text wrap plane that is rebuilt without moving", () => {
+      const { scene } = createHandle();
+      const layer = new UtilityLayerRenderer(scene);
+      const text = MeshBuilder.CreatePlane("text", { width: 2, height: 0.64 }, scene);
+      text.metadata = { text2d: true, text2dWrapWidth: 200, text2dWrapHeight: 64 };
+      const box = createOverlayTransformBox(layer, scene);
+      box.attachTo(text, [text]);
+      const { frame, boxScale } = boxOf(layer);
+      frame();
+      expect(boxScale.scaling.x).toBeCloseTo(2);
+      text.setVerticesData(
+        VertexBuffer.PositionKind,
+        [-2, -0.32, 0, 2, -0.32, 0, 2, 0.32, 0, -2, 0.32, 0],
+        true,
+      );
+      frame();
+      expect(boxScale.scaling.x).toBeCloseTo(4);
+      box.dispose();
+      layer.dispose();
+    });
+
+    it("resizes the handles to a zoom change on a later frame", () => {
+      const { scene, engine } = createHandle();
+      const camera = new FreeCamera("cam", new Vector3(0, 0, -10), scene);
+      camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+      camera.orthoTop = 4.5;
+      camera.orthoBottom = -4.5;
+      scene.activeCamera = camera;
+      vi.spyOn(engine, "getRenderingCanvas").mockReturnValue({
+        clientHeight: 100,
+      } as HTMLCanvasElement);
+      const layer = new UtilityLayerRenderer(scene);
+      const mesh = MeshBuilder.CreatePlane("actor", { size: 1 }, scene);
+      const box = createOverlayTransformBox(layer, scene);
+      box.attachTo(mesh);
+      const { frame, util } = boxOf(layer);
+      const handle = util.getMeshByName("overlay-box-handle-e")!;
+      const before = handle.scaling.x;
+      camera.orthoTop = 9;
+      camera.orthoBottom = -9;
+      frame();
+      expect(handle.scaling.x).toBeCloseTo(before * 2);
+      box.dispose();
+      layer.dispose();
+    });
   });
 
   it("moves the attached mesh when the interior is dragged", () => {

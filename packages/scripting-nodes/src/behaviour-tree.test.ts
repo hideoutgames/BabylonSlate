@@ -16,6 +16,7 @@ function mockCtx(overrides?: Partial<CodegenContext>): CodegenContext {
     },
     indent: "  ",
     input: () => "0",
+    isWired: () => false,
     output: (name) => `_out_${name}`,
     emit: (s) => {
       emits.push(s);

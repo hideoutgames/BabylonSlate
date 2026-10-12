@@ -80,6 +80,7 @@ import {
   removeTilemapTileset,
   reorderTilemapLayers,
   resizeTilemap,
+  TilemapChunkIndex,
   tilemapStrokeMergeKey,
   tilemapTilesetGuids,
   tilesetTileRect,
@@ -670,13 +671,45 @@ export function TilemapPaint({
     last: { x: number; y: number };
     cells: Array<{ x: number; y: number }>;
     seen: Set<string>;
+    /** Chunk lookups reused across moves; brush and eraser add to `painted`. */
+    paintedChunks: TilemapChunkIndex;
+    /** Shape tools re-derive from `base` on every move. */
+    baseChunks: TilemapChunkIndex;
   } | null>(null);
   // The stroke in progress draws from local state, so only this canvas
   // re-renders per cell; the document receives one edit when it ends.
   const [strokePreview, setStrokePreview] = useState<TilemapPayload | null>(null);
   const shown = strokePreview ?? tilemap;
+  // Gestures move the view here per pointer event; the state that draws it
+  // follows once per animation frame, or at once on release or wheel.
   const viewRef = useRef({ pan, cellSize });
-  viewRef.current = { pan, cellSize };
+  const viewFrameRef = useRef<number | null>(null);
+  const flushView = () => {
+    if (viewFrameRef.current !== null) {
+      cancelAnimationFrame(viewFrameRef.current);
+      viewFrameRef.current = null;
+    }
+    setPan(viewRef.current.pan);
+    setCellSize(viewRef.current.cellSize);
+  };
+  const moveView = (next: { pan: { x: number; y: number }; cellSize: number }) => {
+    viewRef.current = next;
+    if (viewFrameRef.current !== null) return;
+    if (typeof requestAnimationFrame !== "function") {
+      flushView();
+      return;
+    }
+    viewFrameRef.current = requestAnimationFrame(() => {
+      viewFrameRef.current = null;
+      flushView();
+    });
+  };
+  useEffect(
+    () => () => {
+      if (viewFrameRef.current !== null) cancelAnimationFrame(viewFrameRef.current);
+    },
+    [],
+  );
   const atlases = useTilesetAtlases(payloads);
   const layer =
     tilemap.layers.find((entry) => entry.id === layerId) ?? tilemap.layers[0];
@@ -741,9 +774,9 @@ export function TilemapPaint({
       localX: clientX - rect.left,
       localY: clientY - rect.top,
       canvasHeight: height,
-      panX: pan.x,
-      panY: pan.y,
-      cellSize,
+      panX: viewRef.current.pan.x,
+      panY: viewRef.current.pan.y,
+      cellSize: viewRef.current.cellSize,
     });
   };
 
@@ -786,6 +819,8 @@ export function TilemapPaint({
         last: cell,
         cells: [cell],
         seen: new Set([`${cell.x},${cell.y}`]),
+        paintedChunks: new TilemapChunkIndex(true),
+        baseChunks: new TilemapChunkIndex(),
       };
     }
     const stroke = strokeRef.current;
@@ -812,7 +847,7 @@ export function TilemapPaint({
         start: stroke.start,
         end: stroke.last,
         cells: fresh,
-      });
+      }, stroke.paintedChunks);
     } else {
       stroke.last = cell;
       if ((tool === "bucket" || tool === "stamp") && pointerType !== "down") return;
@@ -827,7 +862,7 @@ export function TilemapPaint({
           tool === "stamp"
             ? { width: 2, height: 2, tiles: [stroke.gid, stroke.gid, stroke.gid, stroke.gid] }
             : undefined,
-      });
+      }, stroke.baseChunks);
     }
     stroke.painted = painted;
     latestRef.current = painted;
@@ -997,8 +1032,8 @@ export function TilemapPaint({
               canvasHeight: rect.height || cssSize.height,
               deltaY: event.deltaY,
             });
-            setPan({ x: view.panX, y: view.panY });
-            setCellSize(view.cellSize);
+            viewRef.current = { pan: { x: view.panX, y: view.panY }, cellSize: view.cellSize };
+            flushView();
           }}
           onPointerDown={(event) => {
             event.preventDefault();
@@ -1082,8 +1117,7 @@ export function TilemapPaint({
                 // Screen Y points down; the tilemap pan is in +Y-up space.
                 translationY: start.midY - midY,
               });
-              setPan({ x: view.panX, y: view.panY });
-              setCellSize(view.cellSize);
+              moveView({ pan: { x: view.panX, y: view.panY }, cellSize: view.cellSize });
               return;
             }
             if (pinchActiveRef.current) return;
@@ -1099,7 +1133,10 @@ export function TilemapPaint({
                 dx,
                 dy: -dy,
               });
-              setPan({ x: next.panX, y: next.panY });
+              moveView({
+                pan: { x: next.panX, y: next.panY },
+                cellSize: viewRef.current.cellSize,
+              });
               return;
             }
             const cell = cellAt(event.clientX, event.clientY);
@@ -1108,6 +1145,7 @@ export function TilemapPaint({
           }}
           onPointerUp={(event) => {
             const pointerId = pointerIdOf(event);
+            if (viewFrameRef.current !== null) flushView();
             pointersRef.current.delete(pointerId);
             if (panDragRef.current?.pointerId === pointerId) {
               panDragRef.current = null;
@@ -1132,6 +1170,7 @@ export function TilemapPaint({
           }}
           onPointerCancel={(event) => {
             const pointerId = pointerIdOf(event);
+            if (viewFrameRef.current !== null) flushView();
             pointersRef.current.delete(pointerId);
             if (panDragRef.current?.pointerId === pointerId) {
               panDragRef.current = null;

@@ -85,7 +85,8 @@ export class UIControls2DRuntime {
   }
 
   private store(component: ActorComponent, properties: UIControl2DProperties): void {
-    for (const [key, value] of Object.entries(properties)) component.setVariable(key, value);
+    // Array values (`options`, `tint`) are copied so a script editing the variable in place cannot reach the properties already emitted.
+    for (const [key, value] of Object.entries(properties)) component.setVariable(key, Array.isArray(value) ? [...value] : value);
     this.previous.set(component, properties);
   }
 

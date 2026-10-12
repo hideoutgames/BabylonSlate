@@ -16,7 +16,7 @@ import { isWritableVariableOutput } from "./variable-references";
 import { enumSwitchMemberNameFromPinId } from "./enum-switch-pins";
 import { flowSwitchCaseValueFromPinId } from "./flow-switch-pins";
 import { normalizeTag, normalizeTagContainer, type TagRegistry } from "@babylonslate/core";
-import { tagCasesOf, tagCasePinId, tagRuntimeSource } from "./tags";
+import { tagCasesConstant, tagCasesOf, tagCasePinId, tagRuntimeSource } from "./tags";
 import {
   isFlowSwitchMeta,
   isLoopMeta,
@@ -539,6 +539,7 @@ export function compileGraph(
         }
         return memoExpression(`in:${node.id}:${p.id}`, expression);
       },
+      isWired(pinId) { return index.incoming(node.id, pinId) !== undefined; },
       reference(pinName) { return referenceExpr(node, pinName); },
       shared(expression) {
         // With one wired output there is nothing to share.
@@ -1087,7 +1088,9 @@ export function compileGraph(
         const anchor = { column: 1, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id };
         const cases = tagCasesOf(node.properties);
         emitBody(`  {`, anchor);
-        emitBody(`  const __tagCase = __tags.select(${ctx.input("value")}, ${JSON.stringify(cases)}, ${ctx.input("exact")});`, anchor);
+        const list = tagCasesConstant(cases);
+        ctx.hoist(list.declaration);
+        emitBody(`  const __tagCase = __tags.select(${ctx.input("value")}, ${list.name}, ${ctx.input("exact")});`, anchor);
         for (let i = 0; i < cases.length; i++) {
           const tag = cases[i]!;
           emitBody(`  ${i === 0 ? "if" : "} else if"} (__tagCase === ${tag}) {`, anchor);
@@ -1328,7 +1331,14 @@ export function compileGraph(
   const finalLines = [...preamble];
   const anchors: CompileAnchor[] = [];
 
-  for (const chunk of hoisted) {
+  // Chunks without body anchors (math helpers) go first. A stack frame inside
+  // one then has no preceding anchor, so error mapping falls through to the
+  // calling statement instead of landing on an earlier ExecuteJavaScript body.
+  const hasBodyAnchors = (chunk: HoistChunk) => (chunk.bodyAnchors?.length ?? 0) > 0;
+  for (const chunk of [
+    ...hoisted.filter((entry) => !hasBodyAnchors(entry)),
+    ...hoisted.filter(hasBodyAnchors),
+  ]) {
     const lines = chunk.source.split("\n");
     for (let i = 0; i < lines.length; i++) {
       finalLines.push(lines[i]!);
@@ -1419,6 +1429,8 @@ export function compileTransitionRuleGraph(
   const exprCache = new Map<string, string>();
   const pureInProgress = new Set<string>();
   const pureExpressions = createPureExpressions(graph, options.registry);
+  /** Module-scope declarations pure nodes share across the rule expressions. */
+  const hoisted: string[] = [];
   const shouldStrip = (node: GraphNode) =>
     options.stripDevelopmentOnly === true && isDevelopmentOnlyNode(node);
 
@@ -1473,6 +1485,7 @@ export function compileTransitionRuleGraph(
         const p = pinForCodegen(node, pinName, "in");
         return p ? wiredSourceType(index, node, p.id, shouldStrip) : undefined;
       },
+      isWired(pinId) { return index.incoming(node.id, pinId) !== undefined; },
       output(pinName) {
         const p = pinForCodegen(node, pinName, "out");
         const slotKey = p?.id ?? pinName;
@@ -1483,8 +1496,8 @@ export function compileTransitionRuleGraph(
       emit() {
         /* pure transition rules do not emit statements */
       },
-      hoist() {
-        /* unused */
+      hoist(source) {
+        if (!hoisted.includes(source)) hoisted.push(source);
       },
       requestAsync() {
         /* unused */
@@ -1541,9 +1554,11 @@ export function compileTransitionRuleGraph(
 
   const tagPreamble = graph.nodes.some((node) => node.typeId.startsWith("tags."))
     ? tagRuntimeSource(options.tagRegistry).split("\n") : [];
+  const hoistedLines = hoisted.flatMap((chunk) => chunk.split("\n"));
   const source = [
     `//# sourceURL=babylonslate:///${options.assetGuid}.js`,
     ...tagPreamble,
+    ...hoistedLines,
     `export function evaluate(ctx) {`,
     ...pureExpressions.declarations,
     `  return { enter: (${results.enter}), exit: (${results.exit}) };`,
@@ -1555,7 +1570,7 @@ export function compileTransitionRuleGraph(
     source,
     anchors: [
       {
-        line: 2 + tagPreamble.length,
+        line: 2 + tagPreamble.length + hoistedLines.length,
         column: 1,
         assetGuid: options.assetGuid,
         graphId: graph.id,

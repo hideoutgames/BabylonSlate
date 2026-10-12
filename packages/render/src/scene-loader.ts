@@ -315,30 +315,81 @@ function overlayActorHasSurfaceVisual(actor: SerializedActor): boolean {
   );
 }
 
+function isEditorOnlyText3D(component: SerializedComponent): boolean {
+  return component.classId === "Text3DComponent" && component.properties.editorOnly === true;
+}
+
+/**
+ * First-match actor lookups behind the per-actor visual rules. A streaming
+ * actor, an editor label and a 2D button each ask about other actors, so a full
+ * load builds one index instead of scanning the scene per question. Built
+ * lazily: scenes without those actors never pay for it.
+ */
+export class SceneActorIndex {
+  private readonly actors: readonly SerializedActor[];
+  private byId: Map<string, SerializedActor> | undefined;
+  private labelParents: Set<string> | undefined;
+
+  constructor(actors: readonly SerializedActor[]) {
+    this.actors = actors;
+  }
+
+  /** The first actor with this id, as `Array.find` answers. */
+  find(id: string): SerializedActor | undefined {
+    if (!this.byId) {
+      this.byId = new Map();
+      for (const actor of this.actors) if (!this.byId.has(actor.id)) this.byId.set(actor.id, actor);
+    }
+    return this.byId.get(id);
+  }
+
+  /** Whether an actor parented to `parentId` carries an editor-only Text3D label. */
+  hasEditorLabelChild(parentId: string): boolean {
+    if (!this.labelParents) {
+      this.labelParents = new Set();
+      for (const actor of this.actors) {
+        if (actor.parentId != null && actor.components.some(isEditorOnlyText3D)) this.labelParents.add(actor.parentId);
+      }
+    }
+    return this.labelParents.has(parentId);
+  }
+}
+
+/** The scene's actors: a raw list is scanned per question, an index answers directly. */
+export type SceneActorSource = readonly SerializedActor[] | SceneActorIndex;
+
+function findSceneActor(actors: SceneActorSource | undefined, id: string): SerializedActor | undefined {
+  if (!actors) return undefined;
+  return actors instanceof SceneActorIndex ? actors.find(id) : actors.find((entry) => entry.id === id);
+}
+
+function hasEditorLabelChild(actors: SceneActorSource | undefined, parentId: string): boolean {
+  if (!actors) return false;
+  return actors instanceof SceneActorIndex
+    ? actors.hasEditorLabelChild(parentId)
+    : actors.some((entry) => entry.parentId === parentId && entry.components.some(isEditorOnlyText3D));
+}
+
 function skipOverlayButtonVisual(
   actor: SerializedActor,
-  allActors?: readonly SerializedActor[],
+  allActors?: SceneActorSource,
 ): boolean {
   if (overlayActorHasSurfaceVisual(actor)) return true;
-  const parent = actor.parentId
-    ? allActors?.find((entry) => entry.id === actor.parentId)
-    : undefined;
+  const parent = actor.parentId ? findSceneActor(allActors, actor.parentId) : undefined;
   return parent ? overlayActorHasSurfaceVisual(parent) : false;
 }
 
 function visualComponentsOf(
   actor: SerializedActor,
-  allActors?: readonly SerializedActor[],
+  allActors?: SceneActorSource,
 ): SerializedComponent[] {
   const streaming = actor.components.find((component) => component.classId === "SceneStreamingComponent");
   if (streaming) {
-    const text = actor.components.find((component) => component.classId === "Text3DComponent" && component.properties.editorOnly === true);
+    const text = actor.components.find(isEditorOnlyText3D);
     const marker = { ...streaming, parentId: null, transform: authoredComponentActorTransform(actor, streaming) };
     // Prefab previews represent each component as an actor. Its authored label
     // already exists on a child actor, so it must not gain a synthetic sibling.
-    const childLabel = !text && allActors?.some((entry) => entry.parentId === actor.id && entry.components.some(
-      (component) => component.classId === "Text3DComponent" && component.properties.editorOnly === true,
-    ));
+    const childLabel = !text && hasEditorLabelChild(allActors, actor.id);
     if (childLabel) return [marker];
     return [marker, {
       ...(text ?? { id: `${streaming.id}:label`, classId: "Text3DComponent",
@@ -365,10 +416,10 @@ function visualComponentsOf(
 
 function parentStreamingComponentOf(
   actor: SerializedActor,
-  allActors?: readonly SerializedActor[],
+  allActors?: SceneActorSource,
 ): SerializedComponent | undefined {
-  if (!actor.parentId || !actor.components.some((component) => component.classId === "Text3DComponent" && component.properties.editorOnly === true)) return undefined;
-  return allActors?.find((entry) => entry.id === actor.parentId)?.components.find(
+  if (!actor.parentId || !actor.components.some(isEditorOnlyText3D)) return undefined;
+  return findSceneActor(allActors, actor.parentId)?.components.find(
     (component) => component.classId === "SceneStreamingComponent",
   );
 }
@@ -445,7 +496,7 @@ export function helperBillboardIconOf(
 
 export function needsOriginRoot(
   actor: SerializedActor,
-  allActors?: readonly SerializedActor[],
+  allActors?: SceneActorSource,
 ): boolean {
   const visuals = visualComponentsOf(actor, allActors);
   return (
@@ -599,7 +650,7 @@ function componentVisualKind(
 export function actorVisualFingerprint(
   actor: SerializedActor,
   assets?: MeshAssetContext,
-  allActors?: readonly SerializedActor[],
+  allActors?: SceneActorSource,
 ): string {
   const visuals = visualComponentsOf(actor, allActors);
   const mode = needsOriginRoot(actor, allActors) ? "origin" : "single";
@@ -658,7 +709,7 @@ function createTilemapComponentMesh(
 export function editorMeshKindOf(
   actor: SerializedActor,
   assets?: MeshAssetContext,
-  allActors?: readonly SerializedActor[],
+  allActors?: SceneActorSource,
 ): string | null {
   const cable = actor.components.find((component) => component.classId === "CableComponent");
   if (cable) return componentVisualKind(cable);
@@ -758,7 +809,7 @@ export function createMeshForComponent(
   actor: SerializedActor,
   component: SerializedComponent,
   assets?: MeshAssetContext,
-  allActors?: readonly SerializedActor[],
+  allActors?: SceneActorSource,
 ): Mesh {
   const mesh = createComponentMesh(scene, name, actor, component, assets, allActors);
   if (supportsOverlayVisualStyle(component.classId)) applyOverlayVisualStyle(mesh, component.properties);
@@ -771,7 +822,7 @@ function createComponentMesh(
   actor: SerializedActor,
   component: SerializedComponent,
   assets?: MeshAssetContext,
-  allActors?: readonly SerializedActor[],
+  allActors?: SceneActorSource,
 ): Mesh {
   if (isOverlayLayoutClass(component.classId)) {
     const props = parseOverlayLayoutProperties(component.properties, component.classId);
@@ -1092,7 +1143,7 @@ function createActorOriginHierarchy(
   scene: Scene,
   actor: SerializedActor,
   assets?: MeshAssetContext,
-  allActors?: readonly SerializedActor[],
+  allActors?: SceneActorSource,
 ): Mesh {
   const root = createOriginRootMesh(scene, actor);
   const visuals = visualComponentsOf(actor, allActors);
@@ -1161,7 +1212,7 @@ export function createActorMesh(
   scene: Scene,
   actor: SerializedActor,
   assets?: MeshAssetContext,
-  allActors?: readonly SerializedActor[],
+  allActors?: SceneActorSource,
 ): Mesh {
   const mesh = createUnboundActorMesh(scene, actor, assets, allActors);
   try {
@@ -1197,7 +1248,7 @@ function createUnboundActorMesh(
   scene: Scene,
   actor: SerializedActor,
   assets?: MeshAssetContext,
-  allActors?: readonly SerializedActor[],
+  allActors?: SceneActorSource,
 ): Mesh {
   if (isSceneLayerAnchorActor(actor)) {
     const root = new Mesh(editorMeshName(actor.id), scene);
@@ -1587,9 +1638,10 @@ export function applySceneToBabylonScene(
     materialTextureGuids: meshAssets.materialTextureGuids,
   };
   let loadSlot = 0;
+  const actorIndex = new SceneActorIndex(sceneData.actors);
   for (const actor of sceneData.actors) {
     if (isSceneLayerAnchorActor(actor)) continue;
-    const mesh = createActorMesh(scene, actor, meshAssets, sceneData.actors);
+    const mesh = createActorMesh(scene, actor, meshAssets, actorIndex);
     applyActorTransform(mesh, actor);
     applyActorComponentSorting(mesh, actor, assets?.sortingLayers ?? ["Background", "Default", "Foreground", "UI"]);
     meshes.set(actor.id, mesh);

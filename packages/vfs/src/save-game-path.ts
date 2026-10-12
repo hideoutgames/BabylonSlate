@@ -1,16 +1,18 @@
+const textEncoder = new TextEncoder();
+
 /** Filesystem-neutral keys retain case and Unicode identity on every host. */
 export function saveGameSegments(key: string, allowRoot = false): string[] {
   if (typeof key !== "string" || key.includes("\\") || key.includes("\0")) throw new Error("Invalid save storage key");
   if (key === "" && allowRoot) return [];
   const parts = key.replace(/\/$/, "").split("/");
-  if (parts.some(part => !part || part === "." || part === ".." || new TextEncoder().encode(part).length > 120)) {
+  if (parts.some(part => !part || part === "." || part === ".." || textEncoder.encode(part).length > 120)) {
     throw new Error("Invalid save storage key");
   }
   return parts;
 }
 
 export function encodeSaveGameSegment(segment: string): string {
-  return `k${Array.from(new TextEncoder().encode(segment), byte => byte.toString(16).padStart(2, "0")).join("")}`;
+  return `k${Array.from(textEncoder.encode(segment), byte => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 export function decodeSaveGameSegment(segment: string): string | null {

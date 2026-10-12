@@ -34,6 +34,7 @@ function emitCtx(
           : name === "translation"
             ? "delta"
             : "0.01",
+      isWired: () => false,
       output: (name) => `_out_${name}`,
       emit: (s) => {
         emits.push(s);

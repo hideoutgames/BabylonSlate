@@ -328,15 +328,17 @@ export class SharedOutlineView {
   /** Publish a complete host snapshot or retain the previous accepted snapshot. */
   replaceContributions(entries: ReadonlyMap<string, SharedOutlineContribution>, occluders: readonly AbstractMesh[] | null): void {
     if (this.isDisposed) throw new Error("Shared outline view is disposed.");
-    const next = new Map([...entries].map(([key, entry]) => [key, normalizedContribution(key, entry)]));
+    // An unchanged snapshot, the common case, validates and normalizes nothing.
+    const next = this.matchesContributions(entries) ? null
+      : new Map([...entries].map(([key, entry]) => [key, normalizedContribution(key, entry)]));
     const nextOccluders = occluders ? [...new Set(occluders)] : null;
-    const contributionsChanged = next.size !== this.contributions.size || [...next].some(([key, value]) => {
+    const contributionsChanged = !!next && (next.size !== this.contributions.size || [...next].some(([key, value]) => {
       const previous = this.contributions.get(key); return !previous || !sameContribution(previous, value);
-    });
+    }));
     const occludersChanged = nextOccluders === null ? this.occluders !== null : this.occluders === null ||
       !sameMeshes(nextOccluders, this.occluders);
     if (!contributionsChanged && !occludersChanged) return;
-    if (contributionsChanged) {
+    if (next && contributionsChanged) {
       const previous = new Map(this.contributions);
       const membershipChanged = previous.size !== next.size || [...next].some(([key, value]) => {
         const before = previous.get(key); return !before || !sameTargets(before, value);
@@ -353,6 +355,18 @@ export class SharedOutlineView {
     this.occluders = nextOccluders;
     this.revision++;
     if (!this.active) this.releaseStyles();
+  }
+  /**
+   * True when every entry already equals its stored, validated contribution, so normalizing the snapshot would
+   * change nothing and cannot throw. False only means "not provably equal": the caller normalizes and compares.
+   */
+  private matchesContributions(entries: ReadonlyMap<string, SharedOutlineContribution>): boolean {
+    if (entries.size !== this.contributions.size) return false;
+    for (const [key, entry] of entries) {
+      const stored = this.contributions.get(key);
+      if (!stored || !matchesStored(stored, entry)) return false;
+    }
+    return true;
   }
   removeContribution(key: string): void {
     if (!this.contributions.delete(key)) return;
@@ -498,6 +512,24 @@ function sameContribution(a: SharedOutlineContribution, b: SharedOutlineContribu
     a.distanceFade?.start === b.distanceFade?.start && a.distanceFade?.end === b.distanceFade?.end &&
     a.color.every((value, index) => value === b.color[index]) && sameTargets(a, b);
 }
+/** For each normalized (sorted) target, the index it had in the input, so an input in the same order can be compared in place. */
+const inputOrders = new WeakMap<SharedOutlineContribution, readonly number[]>();
+/**
+ * Whether `input` equals `stored` in every field normalization validates and compares, with targets in the order
+ * they arrived when `stored` was built. Same key sequence, same sort: the normalized form would match `stored`.
+ */
+function matchesStored(stored: SharedOutlineContribution, input: SharedOutlineContribution): boolean {
+  const order = inputOrders.get(stored);
+  if (!order || input.kind !== stored.kind || input.width !== stored.width || !!input.throughMeshes !== !!stored.throughMeshes ||
+    !!input.distanceFade !== !!stored.distanceFade || input.targets.length !== order.length || input.color.length !== stored.color.length) return false;
+  if (input.distanceFade && (input.distanceFade.start !== stored.distanceFade!.start || input.distanceFade.end !== stored.distanceFade!.end)) return false;
+  for (let index = 0; index < stored.color.length; index++) if (input.color[index] !== stored.color[index]) return false;
+  for (let index = 0; index < order.length; index++) {
+    const target = input.targets[order[index]!]!, before = stored.targets[index]!;
+    if (target.key !== before.key || !sameMeshes(before.meshes, target.meshes)) return false;
+  }
+  return true;
+}
 function normalizedContribution(key: string, input: SharedOutlineContribution): SharedOutlineContribution {
   if (!key || !["global", "component", "selection"].includes(input.kind) ||
     !Number.isFinite(input.width) || input.width < 0.25 || input.width > SHARED_OUTLINE_MAX_WIDTH ||
@@ -509,9 +541,12 @@ function normalizedContribution(key: string, input: SharedOutlineContribution): 
     input.distanceFade.start < 0 || !Number.isFinite(Math.fround(input.distanceFade.end)) ||
     Math.fround(input.distanceFade.end) <= Math.fround(input.distanceFade.start)))
     throw new Error("Only global outlines accept a finite increasing distance fade range.");
-  return { ...input, distanceFade: input.distanceFade ? { ...input.distanceFade } : undefined,
-    color: [...input.color], targets: [...input.targets]
-    .map((target) => ({ key: target.key, meshes: [...target.meshes] })).sort((a, b) => a.key.localeCompare(b.key)) };
+  const copies = input.targets.map((target, index) => ({ target: { key: target.key, meshes: [...target.meshes] }, index }));
+  copies.sort((a, b) => a.target.key.localeCompare(b.target.key));
+  const normalized: SharedOutlineContribution = { ...input, distanceFade: input.distanceFade ? { ...input.distanceFade } : undefined,
+    color: [...input.color], targets: copies.map((copy) => copy.target) };
+  inputOrders.set(normalized, copies.map((copy) => copy.index));
+  return normalized;
 }
 function sameTargets(a: SharedOutlineContribution, b: SharedOutlineContribution): boolean {
   return a.targets.length === b.targets.length &&

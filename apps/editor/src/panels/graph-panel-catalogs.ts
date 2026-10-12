@@ -72,9 +72,12 @@ export function useGraphPanelCatalogs() {
     });
     return () => { canceled = true; };
   }, [saveGameGuid, saveGameAssets, saveGameDocuments, openSaveDefinition, loadAssetDocument]);
-  const saveGameDefinition = openSaveDefinition
-    ? defaultSaveGameDefinition(saveGameGuid, saveGameAssets, saveGameDocuments)
-    : loadedSaveDefinition?.assets === saveGameAssets && loadedSaveDefinition.documents === saveGameDocuments ? loadedSaveDefinition.definition : undefined;
+  const saveGameDefinition = useMemo(
+    () => openSaveDefinition
+      ? defaultSaveGameDefinition(saveGameGuid, saveGameAssets, saveGameDocuments)
+      : loadedSaveDefinition?.assets === saveGameAssets && loadedSaveDefinition.documents === saveGameDocuments ? loadedSaveDefinition.definition : undefined,
+    [openSaveDefinition, saveGameGuid, saveGameAssets, saveGameDocuments, loadedSaveDefinition],
+  );
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
 
   const parentOf = useMemo(() => {

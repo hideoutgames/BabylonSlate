@@ -100,6 +100,7 @@ const harness = vi.hoisted(() => ({
   presenter: {
     present: vi.fn(),
     setFrozen: vi.fn(),
+    setStaticContent: vi.fn(),
     dispose: vi.fn(),
   },
   installPreviewEnvironment: vi.fn(),
@@ -289,6 +290,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.host.camera.attachControl.mockReset();
     harness.presenter.present.mockReset();
     harness.presenter.setFrozen.mockReset();
+    harness.presenter.setStaticContent.mockReset();
     harness.presenter.dispose.mockReset();
     harness.installPreviewEnvironment.mockReset();
     harness.gestures.dispose.mockReset();
@@ -406,6 +408,45 @@ describe("MaterialEditingProvider preview isolation", () => {
     await waitFor(() => {
       expect(harness.presenter.setFrozen).toHaveBeenCalledWith(true);
     });
+  });
+
+  it("redraws the preview when a gesture moves its camera", async () => {
+    mount();
+    await waitFor(() => expect(harness.attachGestures).toHaveBeenCalled());
+    const options = harness.attachGestures.mock.lastCall![2] as { onChange: () => void };
+    harness.presenter.present.mockClear();
+    options.onChange();
+    expect(harness.presenter.present).toHaveBeenCalledWith({ force: true });
+  });
+
+  it("presents a plain Material only on change", async () => {
+    mount();
+    await waitFor(() => expect(harness.presenter.setStaticContent).toHaveBeenCalled());
+    expect(harness.presenter.setStaticContent).toHaveBeenLastCalledWith(true);
+  });
+
+  it("keeps presenting a Material whose output follows the Time node", async () => {
+    harness.content!.nodes.push({ id: "clock", type: "input.time", position: { x: 0, y: 0 }, properties: {} });
+    harness.content!.edges.push({
+      id: "e-clock", sourceNodeId: "clock", sourcePinId: "time", targetNodeId: "output", targetPinId: "roughness",
+    });
+    mount();
+    await waitFor(() => expect(harness.presenter.setStaticContent).toHaveBeenCalled());
+    expect(harness.presenter.setStaticContent).toHaveBeenLastCalledWith(false);
+  });
+
+  it("does not treat a Time node that reaches no output as animation", async () => {
+    harness.content!.nodes.push({ id: "clock", type: "input.time", position: { x: 0, y: 0 }, properties: {} });
+    mount();
+    await waitFor(() => expect(harness.presenter.setStaticContent).toHaveBeenCalled());
+    expect(harness.presenter.setStaticContent).toHaveBeenLastCalledWith(true);
+  });
+
+  it("keeps presenting a Particle Material", async () => {
+    harness.content = createDefaultMaterialDocument("Sparks", "particle");
+    mount();
+    await waitFor(() => expect(harness.presenter.setStaticContent).toHaveBeenCalled());
+    expect(harness.presenter.setStaticContent).toHaveBeenLastCalledWith(false);
   });
 
   it("does not keep a present rAF running while the document is frozen", async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { buildDataTreeIndex, type DataTreeEntry } from "@babylonslate/core";
 import { createDataEntryForDefinition, reconcileDataEntry, type StructField } from "@babylonslate/scripting";
@@ -152,12 +152,12 @@ function useTreeActions(state: TreeState) {
     for (const siblings of state.index?.childrenByParentId.values() ?? []) siblings.forEach((entry, position) => positions.set(entry.id, position));
     return positions;
   }, [state.index]);
-  const run = async (action: () => Promise<unknown>) => {
+  const run = useCallback(async (action: () => Promise<unknown>) => {
     pending.current++; setBusy(true); setError(null);
     try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { pending.current--; setBusy(pending.current > 0); }
-  };
-  const menuItems = (id: string): NestedMenuItem[] => {
+  }, []);
+  const menuItems = useCallback((id: string): NestedMenuItem[] => {
     const entry = state.index?.byId.get(id);
     const siblings = state.index?.childrenByParentId.get(entry?.parentId ?? null) ?? [];
     const position = siblingPositions.get(id) ?? -1;
@@ -172,7 +172,7 @@ function useTreeActions(state: TreeState) {
       { id: "duplicate-entry", label: "Duplicate Subtree", disabled, onSelect: () => void run(() => state.duplicateEntry(id)) },
       { id: "remove-entry", label: "Remove Subtree", disabled, variant: "destructive", onSelect: () => setRemoveId(id) },
     ];
-  };
+  }, [state, busy, siblingPositions, run]);
   const movePath = moveId ? state.index?.pathById.get(moveId) : undefined;
   const destinations = useMemo(() => moveId ? pickerEntries(state.index).filter((entry) => entry.id !== moveId && (!movePath || !entry.path.startsWith(`${movePath}/`))) : [], [state.index, moveId, movePath]);
   const removedPath = removeId ? state.index?.pathById.get(removeId) : undefined;
@@ -222,14 +222,15 @@ export function DataTreeHierarchyPanel(_props: IDockviewPanelProps) {
       return true;
     });
   }, [index, query, collapsedIds]);
-  const nodes: TreeViewNode[] = visible.map((entry) => {
+  const { menuItems } = actions;
+  const nodes = useMemo<TreeViewNode[]>(() => visible.map((entry) => {
     const children = index!.childrenByParentId.get(entry.id)?.length ?? 0;
     return { id: entry.id, label: entry.name, depth: index!.pathById.get(entry.id)!.split("/").length - 1, hasChildren: children > 0, expanded: Boolean(query.trim()) || !collapsedIds.has(entry.id),
       icon: <BetweenHorizontalStartIcon className="size-3.5" />, renamable: !readOnly,
       preview: children ? <span className="text-xs tabular-nums text-muted-foreground">{children}</span> : undefined,
-      trailing: <NestedMenu size="chrome" items={actions.menuItems(entry.id)} trigger={<Button variant="ghost" size="icon-xs" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" aria-label={`Entry Menu For ${entry.name}`}><MoreHorizontalIcon className="size-3.5" /></Button>} />,
+      trailing: <NestedMenu size="chrome" items={menuItems(entry.id)} trigger={<Button variant="ghost" size="icon-xs" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" aria-label={`Entry Menu For ${entry.name}`}><MoreHorizontalIcon className="size-3.5" /></Button>} />,
     };
-  });
+  }), [visible, index, collapsedIds, query, readOnly, menuItems]);
   if (!tree) return <PanelFrame><DataEmpty title="Data Tree Unavailable">Reopen the asset to reload its data.</DataEmpty></PanelFrame>;
   const definition = tree.defaultDefinitionGuid ? state.definitions.get(tree.defaultDefinitionGuid) : null;
   return <PanelFrame data-testid="data-tree-hierarchy-panel">

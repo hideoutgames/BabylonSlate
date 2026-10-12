@@ -87,6 +87,16 @@ describe("SceneLayer control state", () => {
     ]);
   });
 
+  it("publishes option and tint arrays that a script editing the variables in place cannot change afterwards", () => {
+    const f = fixture(), dropdown = f.add("2DDropdownComponent", { options: ["Low", "High"] });
+    dropdown.setVariable("selectedIndex", 1); f.runtime.refresh(dropdown);
+    const sent = f.updates.at(-1)!.properties;
+    (dropdown.getVariable("options") as string[]).push("Max");
+    (dropdown.getVariable("tint") as number[])[0] = 0;
+    expect(sent.options).toEqual(["Low", "High"]);
+    expect(sent.tint[0]).toBe(1);
+  });
+
   it("ignores disabled, read-only, hidden, destroyed, and world-scene input while allowing authored meter updates", () => {
     const f = fixture();
     const disabled = f.add("2DCheckboxComponent", { enabled: false });

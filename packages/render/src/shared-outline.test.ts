@@ -59,6 +59,31 @@ describe("shared outline admission", () => {
     expect(view.revision).toBe(revision);
     expect(view.contributions.get("global")?.distanceFade).toEqual({ start: 50, end: 100 });
   });
+  it("treats an equal host snapshot as unchanged in any target order, applies any difference, and still rejects an invalid one", () => {
+    const { scene, view } = setup();
+    const [a, b, c] = ["a", "b", "c"].map((name) => MeshBuilder.CreateBox(name, {}, scene));
+    const snapshot = (targets: SharedOutlineContribution["targets"], overrides: Partial<SharedOutlineContribution> = {}) =>
+      new Map<string, SharedOutlineContribution>([["global", { ...style, kind: "global", targets, ...overrides }]]);
+    const targets = [{ key: "b", meshes: [b!] }, { key: "a", meshes: [a!] }];
+    view.replaceContributions(snapshot(targets), null);
+    const revision = view.revision;
+
+    // Fresh objects, as a host rebuilds them each sync: same order, then reversed.
+    view.replaceContributions(snapshot(targets.map((target) => ({ key: target.key, meshes: [...target.meshes] }))), null);
+    view.replaceContributions(snapshot([...targets].reverse()), null);
+    expect(view.revision).toBe(revision);
+
+    view.replaceContributions(snapshot([targets[0]!, { key: "a", meshes: [a!, c!] }]), null);
+    expect(view.revision).toBe(revision + 1);
+    view.replaceContributions(snapshot([targets[0]!, { key: "a", meshes: [a!, c!] }], { width: 3 }), null);
+    expect(view.contributions.get("global")?.width).toBe(3);
+    expect(view.revision).toBe(revision + 2);
+
+    // An invalid entry is rejected even when everything else matches what is stored.
+    expect(() => view.replaceContributions(snapshot([targets[0]!, { key: "a", meshes: [a!, c!] }], { width: 3, color: [2, 0, 0] }), null)).toThrow(/invalid/i);
+    expect(view.contributions.get("global")?.color).toEqual([1, 0, 0]);
+    expect(view.revision).toBe(revision + 2);
+  });
   it("rejects identity overflow without replacing the accepted contribution", () => {
     const { owner, view } = setup();
     const accepted: SharedOutlineContribution = {

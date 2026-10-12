@@ -218,4 +218,19 @@ describe("recorded snapshot values", () => {
       { path: "/snapshot/a~0b", kind: "Added" },
     ]);
   });
+
+  it.each([
+    ["NaN and an infinity, both written as null", Number.NaN, Number.POSITIVE_INFINITY, false],
+    ["null and NaN", null, Number.NaN, false],
+    ["0 and -0", 0, -0, false],
+    ["NaN and 0", Number.NaN, 0, true],
+    ["a number and its digits as text", 1, "1", true],
+    ["true and the text true", true, "true", true],
+    ["null and the text null", null, "null", true],
+    ["undefined and null", undefined, null, true],
+    ["two different numbers", 1.5, 2.5, true],
+    ["a number and an object", 1, { a: 1 }, true],
+  ])("compares leaves as their JSON text does: %s", (_name, before, after, changed) => {
+    expect(compareTraceSnapshots({ value: before }, { value: after })).toHaveLength(changed ? 1 : 0);
+  });
 });

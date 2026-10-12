@@ -196,7 +196,7 @@ Open documents are mutated in place (content replaced per edit; dirty, layout an
 
 ### Document subscriptions
 
-`useDocuments()` changes after every edit, tab switch and save, so each caller re-renders with it; it is deprecated and only `PlayProvider` and the Content Browser still read it. Components read the narrowest source that covers what they render (all from `context/document-context.tsx` unless noted):
+`useDocuments()` changes after every edit, tab switch and save, so each caller re-renders with it; it is deprecated and only `PlayProvider` still reads it. Components read the narrowest source that covers what they render (all from `context/document-context.tsx` unless noted):
 
 | Need | Hook | Re-renders when |
 | --- | --- | --- |

@@ -2121,6 +2121,46 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
+  it.each([
+    { name: "a release player draws no unset trace", traceDebugDraw: false, options: "undefined", drawn: false },
+    { name: "a release player draws no explicit trace", traceDebugDraw: false, options: "{ drawDebug: true }", drawn: false },
+    { name: "Play draws an unset trace", traceDebugDraw: undefined, options: "undefined", drawn: true },
+    { name: "Play draws an explicit trace", traceDebugDraw: true, options: "{ drawDebug: true }", drawn: true },
+    { name: "Play honors drawDebug false", traceDebugDraw: true, options: "{ drawDebug: false }", drawn: false },
+  ])("$name", async ({ traceDebugDraw, options, drawn }) => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 11, seedDemoActors: false, preferSoftwarePhysics: true, traceDebugDraw,
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      const world = runtime.getWorld();
+      const camera = world.createActor({ classId: "Actor" });
+      camera.attachComponent(world.createComponent({ classId: "CameraComponent", variables: { projectionMode: "perspective" } }));
+      world.spawnActorNow(camera);
+      await runtime.loadScripts([{
+        assetGuid: "aim-script",
+        classId: "Aim",
+        parentClassId: "Actor",
+        source: `export function onTick(ctx) {
+          ctx.lineTrace({ x: 0, y: 5, z: 0 }, { x: 0, y: -5, z: 0 }, undefined, ${options});
+          ctx.projectCursorToScene(undefined, ${options});
+          ctx.drawDebug({ kind: "point", position: { x: 0, y: 0, z: 0 }, color: { x: 1, y: 1, z: 1, w: 1 }, duration: 0 });
+        }`,
+        anchors: [],
+        entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }],
+      }]);
+      runtime.spawnScriptedActor({ classId: "Aim" });
+      runtime.start();
+      runtime.tick();
+      expect(commands.filter((command) => command.type === "debugDraw").map((command) => (command as { kind: string }).kind))
+        // ctx.drawDebug (the Draw Debug nodes) is never gated by the switch.
+        .toEqual(drawn ? ["line", "line", "point"] : ["point"]);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("Project Cursor To Scene casts from a parented Play camera's world pose", async () => {
     const runtime = createInProcessRuntime({
       seed: 11,
