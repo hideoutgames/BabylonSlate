@@ -1785,6 +1785,17 @@ These properties do not meet independent styles and strict CEL visibility.
   readiness. Dispose tasks before graph storage and release reservations only
   after native retirement (WebGPU's next end-frame drain). With every consumer
   inactive, retire all outline-only allocations and execute no outline passes.
+- **Readiness cost:** a membership or style change (a selection click) marks only
+  the outline task dirty, not the whole graph. The graph then probes that task
+  alone (`outlineReadinessChecks`, never `strictReadinessChecks`), skipping any
+  mask group whose mesh list was already probed ready, so the cost follows the
+  newly selected meshes and the frame is still held until their mask programs
+  are ready. Every other invalidation (scene membership, material, light,
+  settings) keeps the whole-scene strict probe. So does a change that gains or
+  loses an instance source's identity stream, since that dirties the source's
+  attributes in the scene's own draw. Sources a mask draw admits late (occluder
+  instances, LOD levels) are retained across membership changes while any
+  outline is active, so selecting does not churn them.
 
 The first slice qualified three independently removable same-source instance
 consumers, overlapping membership and order changes on native WebGL2 and WebGPU.
