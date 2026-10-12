@@ -140,7 +140,7 @@ it("leaves the e2e data attributes out and skips their reads outside a test buil
 it("updates the Stats HUD state only while it is visible, yet keeps the FeatureTest FPS probe current", async () => {
   const onRender = vi.fn();
   const { callbacks } = await openPlay(onRender, false);
-  const stats = (fps: number) => ({ fps, scriptMs: 1, physicsMs: 2, publishMs: 3 });
+  const stats = (fps: number) => ({ fps, scriptMs: 1, physicsMs: 2, publishMs: 3, frameId: 1 });
   onRender.mockClear();
   act(() => callbacks.onStats?.(stats(58)));
   expect(onRender).not.toHaveBeenCalled();
