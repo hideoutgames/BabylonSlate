@@ -1,6 +1,24 @@
 import type { StorageRangeRead, StorageReadMetrics } from "@babylonslate/core";
 import { SourceRevisionChangedError } from "@babylonslate/core";
 
+/**
+ * UTF-8 size of `text` as `TextEncoder` would produce it, without allocating the
+ * bytes: a surrogate pair is 4 bytes, and a lone surrogate encodes as U+FFFD (3).
+ */
+export function utf8ByteLength(text: string): number {
+  let bytes = 0;
+  for (let i = 0; i < text.length; i++) {
+    const unit = text.charCodeAt(i);
+    if (unit < 0x80) bytes += 1;
+    else if (unit < 0x800) bytes += 2;
+    else if (unit >= 0xd800 && unit < 0xdc00 && (text.charCodeAt(i + 1) & 0xfc00) === 0xdc00) {
+      bytes += 4;
+      i++;
+    } else bytes += 3;
+  }
+  return bytes;
+}
+
 /** Shared validation only; adapters must perform their own bounded I/O. */
 export function validateStorageRange(offset: number, length: number, totalSize?: number): void {
   if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0 ||

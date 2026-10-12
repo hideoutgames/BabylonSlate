@@ -14,6 +14,9 @@ import {
 } from "./platform";
 import type { LibraryFolder } from "./library-folders";
 
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
 function toBuffer(data: Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(data.byteLength);
   copy.set(data);
@@ -114,11 +117,11 @@ export class ElectronStorageAdapter implements ProjectStorage {
   }
 
   async readText(path: string): Promise<string> {
-    return new TextDecoder().decode(await this.readBinary(path));
+    return textDecoder.decode(await this.readBinary(path));
   }
 
   async writeText(path: string, data: string): Promise<void> {
-    await this.writeBinary(path, new TextEncoder().encode(data));
+    await this.writeBinary(path, textEncoder.encode(data));
   }
 
   async exists(path: string): Promise<boolean> {

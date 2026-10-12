@@ -3,6 +3,8 @@ import { StorageNotFoundError } from "@babylonslate/core";
 import { projectRelativePath } from "./project-path";
 import { checkStorageRevision, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange } from "./storage-range";
 
+const textDecoder = new TextDecoder();
+
 export interface HttpStoragePart {
   offset: number;
   length: number;
@@ -98,7 +100,7 @@ export class HttpCatalogStorageAdapter implements ProjectStorage {
     }
     return entries.sort((a, b) => a.name.localeCompare(b.name));
   }
-  async readText(path: string, options?: StorageReadOptions) { return new TextDecoder().decode(await this.readBinary(path, options)); }
+  async readText(path: string, options?: StorageReadOptions) { return textDecoder.decode(await this.readBinary(path, options)); }
   async readBinary(path: string, options?: StorageReadOptions) {
     const file = this.file(path);
     const result = await this.read(file, 0, file.size, "full", options?.signal);

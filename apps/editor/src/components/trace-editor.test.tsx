@@ -236,6 +236,24 @@ describe("Trace document panels", () => {
     expect(screen.getByText("No Previous Recorded Frame")).toBeTruthy();
   });
 
+  it("filters changes by kind, path and the recorded before and after values", () => {
+    renderTrace(payload);
+    fireEvent.click(screen.getByRole("button", { name: "Changes" }));
+    const search = screen.getByRole("textbox", { name: "Search Snapshot" });
+    const changes = () => screen.getByTestId("trace-snapshot-changes").textContent ?? "";
+    fireEvent.change(search, { target: { value: "removed" } });
+    expect(changes()).toContain("Removed");
+    expect(changes()).not.toContain("Added");
+    expect(changes()).not.toContain("Health");
+    fireEvent.change(search, { target: { value: " 75 " } });
+    expect(changes()).toContain("Health");
+    expect(changes()).not.toContain("Removed");
+    fireEvent.change(search, { target: { value: "no such change" } });
+    expect(screen.getByText("No Matching Changes")).toBeTruthy();
+    fireEvent.change(search, { target: { value: "" } });
+    expect(changes()).toContain("Added");
+  });
+
   it("shows recorded inputs and behaviour trees even without a world snapshot", () => {
     renderTrace({
       ...payload,

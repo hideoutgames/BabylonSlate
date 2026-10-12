@@ -26,13 +26,8 @@ function now(): number {
   return Date.now();
 }
 
-function textEncoder(): TextEncoder {
-  return new TextEncoder();
-}
-
-function textDecoder(): TextDecoder {
-  return new TextDecoder();
-}
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
 
 /**
  * Explicit in-memory ProjectStorage for tests and transient engine content.
@@ -196,11 +191,11 @@ export class MemoryStorageAdapter implements ProjectStorage {
   }
 
   async readText(path: string, options?: StorageReadOptions): Promise<string> {
-    return textDecoder().decode(await this.readBinary(path, options));
+    return textDecoder.decode(await this.readBinary(path, options));
   }
 
   async writeText(path: string, data: string): Promise<void> {
-    await this.writeBinary(path, textEncoder().encode(data));
+    await this.writeBinary(path, textEncoder.encode(data));
   }
 
   async exists(path: string): Promise<boolean> {

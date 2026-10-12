@@ -1,4 +1,12 @@
-import { chunkCoordForTile, getTile, localIndex, setTiles, type TilemapPayload, type TileWrite } from "./tilemap-payload";
+import {
+  chunkCoordForTile,
+  getTile,
+  localIndex,
+  setTiles,
+  type TilemapChunkIndex,
+  type TilemapPayload,
+  type TileWrite,
+} from "./tilemap-payload";
 
 export const MIN_PAINT_CELL_SIZE = 8;
 export const MAX_PAINT_CELL_SIZE = 96;
@@ -185,9 +193,14 @@ export function pickTileId(
   return getTile(map, layerId, gx, gy);
 }
 
+/**
+ * Apply one stroke to `map`. The moves of a pointer gesture can share a
+ * `TilemapChunkIndex` so each call looks up only the chunks it touches.
+ */
 export function applyTilemapPaint(
   map: TilemapPayload,
   stroke: TilemapPaintStroke,
+  index?: TilemapChunkIndex,
 ): TilemapPayload {
   switch (stroke.tool) {
     case "brush":
@@ -196,6 +209,7 @@ export function applyTilemapPaint(
         stroke.layerId,
         stroke.cells ?? cellsAlongSegment(stroke.start, stroke.end),
         stroke.tileId,
+        index,
       );
     case "eraser":
       return paintCells(
@@ -203,6 +217,7 @@ export function applyTilemapPaint(
         stroke.layerId,
         stroke.cells ?? cellsAlongSegment(stroke.start, stroke.end),
         0,
+        index,
       );
     case "rect":
       return paintCells(
@@ -210,11 +225,12 @@ export function applyTilemapPaint(
         stroke.layerId,
         rectCells(stroke.start, stroke.end),
         stroke.tileId,
+        index,
       );
     case "bucket":
-      return floodFill(map, stroke.layerId, stroke.start, stroke.tileId);
+      return floodFill(map, stroke.layerId, stroke.start, stroke.tileId, index);
     case "stamp":
-      return stampTiles(map, stroke.layerId, stroke.start, stroke.stamp);
+      return stampTiles(map, stroke.layerId, stroke.start, stroke.stamp, index);
   }
 }
 
@@ -223,8 +239,14 @@ function paintCells(
   layerId: string,
   cells: readonly TileCell[],
   tileId: number,
+  index?: TilemapChunkIndex,
 ): TilemapPayload {
-  return setTiles(map, layerId, cells.map((cell) => ({ x: cell.x, y: cell.y, id: tileId })));
+  return setTiles(
+    map,
+    layerId,
+    cells.map((cell) => ({ x: cell.x, y: cell.y, id: tileId })),
+    index,
+  );
 }
 
 function rectCells(start: TileCell, end: TileCell): TileCell[] {
@@ -246,6 +268,7 @@ function stampTiles(
   layerId: string,
   origin: TileCell,
   stamp: TileStamp | undefined,
+  index?: TilemapChunkIndex,
 ): TilemapPayload {
   if (!stamp || stamp.width < 1 || stamp.height < 1) return map;
   const writes: TileWrite[] = [];
@@ -255,7 +278,7 @@ function stampTiles(
       writes.push({ x: origin.x + lx, y: origin.y + ly, id });
     }
   }
-  return setTiles(map, layerId, writes);
+  return setTiles(map, layerId, writes, index);
 }
 
 function floodFill(
@@ -263,6 +286,7 @@ function floodFill(
   layerId: string,
   start: TileCell,
   tileId: number,
+  index?: TilemapChunkIndex,
 ): TilemapPayload {
   const tileAt = layerTileReader(map, layerId);
   const source = tileAt(start.x, start.y);
@@ -293,7 +317,7 @@ function floodFill(
       { x: cell.x, y: cell.y - 1 },
     );
   }
-  return paintCells(map, layerId, cells, tileId);
+  return paintCells(map, layerId, cells, tileId, index);
 }
 
 /** One layer's tiles by cell, with its chunks indexed once for a per-cell scan. */

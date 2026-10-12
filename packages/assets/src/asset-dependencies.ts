@@ -169,6 +169,23 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
     else if ((id as string).startsWith("scene:")) add((id as string).slice(6), needed);
   };
 
+  // Members a Class inherits through `context.parentClass`, read once for every `variables.get` node.
+  let inheritedMembers: Row[] | undefined;
+  const inheritedMemberRows = (): Row[] => {
+    if (inheritedMembers) return inheritedMembers;
+    const inherited: Row[] = [];
+    const visited = new Set<string>();
+    let parent = context.parentClass;
+    while (parent && !visited.has(parent)) {
+      visited.add(parent);
+      const definition = classMap.get(parent);
+      inherited.push(...(definition?.members ?? []).map(member => member as unknown as Row));
+      parent = definition?.parentClassId;
+    }
+    inheritedMembers = inherited;
+    return inherited;
+  };
+
   const typeValue = (type: unknown, value: unknown, needed = false, seen = new Set<string>(), schemaNeeded = true): void => {
     const spec = row(type);
     // The declaring slot may require its own reference on top of what the consumer inherits.
@@ -296,6 +313,7 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         requiredVariableNames.add(String(member.propertyKey ?? member.name));
       }
     }
+    let variableCandidates: Row[] | undefined;
     for (const slice of [source, ...Object.values(row(source.functionGraphs)).map(row)]) {
       const nodes = rows(slice.nodes).map(node => {
         const data = row(node.data);
@@ -306,11 +324,25 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
       });
       const requiredNodes = new Set<string>();
       const byId = new Map(nodes.map(node => [String(node.node.id), node]));
-      const incoming = rows(slice.edges);
+      // Edges by target node, in edge order, built when the first input node asks.
+      let incomingByTarget: Map<string, Row[]> | undefined;
+      const incomingEdges = (id: string): readonly Row[] => {
+        if (!incomingByTarget) {
+          incomingByTarget = new Map();
+          for (const edge of rows(slice.edges)) {
+            const target = edge.target ?? edge.targetNodeId;
+            if (typeof target !== "string") continue;
+            const list = incomingByTarget.get(target);
+            if (list) list.push(edge);
+            else incomingByTarget.set(target, [edge]);
+          }
+        }
+        return incomingByTarget.get(id) ?? [];
+      };
       const requireInputs = (id: string): void => {
         if (requiredNodes.has(id)) return;
         requiredNodes.add(id);
-        for (const edge of incoming) if ((edge.target ?? edge.targetNodeId) === id) {
+        for (const edge of incomingEdges(id)) {
           const handle = String(edge.targetHandle ?? edge.targetPinId ?? "");
           const pin = byId.get(id)?.pins.find(pin => pin.id === handle || pin.name === handle);
           if (row(pin?.type).kind === "exec" || /^exec/i.test(handle)) continue;
@@ -339,16 +371,8 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
           for (const field of rows(properties.dataSchema)) memberValue(field, undefined, false, undefined, schemaNeeded);
         }
         if (nodeType === "variables.get" && needed) {
-          const inherited: Row[] = [];
-          const visited = new Set<string>();
-          let parent = context.parentClass;
-          while (parent && !visited.has(parent)) {
-            visited.add(parent);
-            const definition = classMap.get(parent);
-            inherited.push(...(definition?.members ?? []).map(member => member as unknown as Row));
-            parent = definition?.parentClassId;
-          }
-          const member = [...rows(source.members), ...inherited].find(member =>
+          variableCandidates ??= [...rows(source.members), ...inheritedMemberRows()];
+          const member = variableCandidates.find(member =>
             (properties.memberId !== undefined && member.id === properties.memberId) ||
             (properties.propertyKey !== undefined && (member.propertyKey ?? member.name) === properties.propertyKey) ||
             (properties.variableName !== undefined && member.name === properties.variableName));

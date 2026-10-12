@@ -12,6 +12,9 @@ import type {
   ProjectStorage,
 } from "@babylonslate/core";
 
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
 /** Staged writes are renamed over their file; listings hide one a crash left behind. */
 const STAGED_WRITE = /^\.babylonslate-[0-9a-f-]{36}\.tmp$/;
 
@@ -228,11 +231,11 @@ export class NodeStorageAdapter implements ProjectStorage {
   }
 
   async readText(path: string): Promise<string> {
-    return new TextDecoder().decode(await this.readBinary(path));
+    return textDecoder.decode(await this.readBinary(path));
   }
 
   async writeText(path: string, data: string): Promise<void> {
-    await this.writeBinary(path, new TextEncoder().encode(data));
+    await this.writeBinary(path, textEncoder.encode(data));
   }
 
   async exists(path: string): Promise<boolean> {

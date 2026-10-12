@@ -308,6 +308,31 @@ export type TraceChange = {
   after: unknown;
 };
 
+type JsonPrimitive = string | number | boolean | null | undefined;
+
+function isJsonPrimitive(value: unknown): value is JsonPrimitive {
+  return (
+    value === null ||
+    value === undefined ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
+/** `JSON.stringify(left) === JSON.stringify(right)`; primitives compare without serializing. */
+function sameJson(left: unknown, right: unknown): boolean {
+  if (isJsonPrimitive(left) && isJsonPrimitive(right)) {
+    // JSON writes null, NaN and the infinities alike, and -0 as 0.
+    const writesNull = (value: JsonPrimitive) =>
+      value === null || (typeof value === "number" && !Number.isFinite(value));
+    if (writesNull(left) || writesNull(right))
+      return writesNull(left) && writesNull(right);
+    return left === right;
+  }
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 /** Compare recorded world values; GUID collections retain identity when reordered. */
 export function compareTraceSnapshots(
   before: unknown,
@@ -354,7 +379,7 @@ export function compareTraceSnapshots(
           depth + 1,
         );
       }
-    } else if (JSON.stringify(left) !== JSON.stringify(right)) {
+    } else if (!sameJson(left, right)) {
       changes.push({
         id: path,
         path,

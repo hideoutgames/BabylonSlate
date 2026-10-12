@@ -2,6 +2,8 @@ import { encodeGlbJsonBin, splitGlbJsonBin } from "./importers/glb-parse";
 import type { CollisionTriangleMesh } from "@babylonslate/core";
 import type { HullVec3 } from "./convex-hull";
 
+const textDecoder = new TextDecoder();
+
 const FLOAT = 5126;
 const UNSIGNED_SHORT = 5123;
 const UNSIGNED_INT = 5125;
@@ -248,7 +250,7 @@ function parseGltfJsonBin(
   const split = splitGlbJsonBin(bytes);
   if (split) return split;
   try {
-    const json = JSON.parse(new TextDecoder().decode(bytes)) as Record<
+    const json = JSON.parse(textDecoder.decode(bytes)) as Record<
       string,
       unknown
     >;

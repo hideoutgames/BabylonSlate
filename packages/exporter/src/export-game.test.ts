@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   createDefaultSceneLayer,
@@ -366,6 +367,43 @@ describe("exportGame", () => {
     expect(result.value.manifest.assets).toHaveLength(2);
     expect(result.value.files.get(result.value.manifest.assets[0]!.path!)).toEqual(new Uint8Array([1]));
     expect(result.value.files.get(result.value.manifest.assets[1]!.path!)).toEqual(new Uint8Array([2]));
+  });
+
+  it("records each asset's own content hash and size, in asset order, whatever the asset sizes", async () => {
+    const sizes = [200_000, 1, 0, 70_000, 3, 150_000, 2, 9, 40_000, 5, 1_000];
+    const assets = sizes.map((size, index) => ({
+      guid: `asset-${index}`, type: "Texture", sceneGuid: "scene-1",
+      bytes: Uint8Array.from({ length: size }, (_, at) => (at * 7 + index) % 256),
+    }));
+    const result = await exportGame({
+      bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [], playerFiles: stubPlayer(), assets,
+    });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.manifest.assets.map(entry => entry.guid)).toEqual(assets.map(asset => asset.guid));
+    for (const [index, entry] of result.value.manifest.assets.entries()) {
+      expect(entry.byteLength).toBe(sizes[index]);
+      expect(entry.revision).toBe(createHash("sha256").update(assets[index]!.bytes).digest("hex"));
+      expect(result.value.files.get(entry.path!)).toEqual(assets[index]!.bytes);
+    }
+  });
+
+  it("resolves a Class reference to the first exported Class naming it by guid or class id", async () => {
+    const json = new TextEncoder().encode("{}");
+    const result = await exportGame({
+      bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [], playerFiles: stubPlayer(),
+      assets: [
+        { guid: "x1", type: "Class", sceneGuid: "scene", classId: "Shared", bytes: json },
+        { guid: "Shared", type: "Class", sceneGuid: "scene", classId: "Other", bytes: json },
+        { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: json, dependencies: [], requiredDependencies: [],
+          classReferences: ["Shared", "Other", "Missing"], requiredClassReferences: ["Other"] },
+      ],
+    });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.manifest.assets.find(entry => entry.guid === "scene")).toMatchObject({
+      dependencies: ["x1", "Shared"], requiredDependencies: ["Shared"],
+    });
   });
 
   it("exports namespaced sidecars to portable loose files without merging distinct asset IDs", async () => {

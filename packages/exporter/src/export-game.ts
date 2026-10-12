@@ -149,17 +149,29 @@ function inlineCssIntoIndex(files: Map<string, Uint8Array>): void {
   files.set("index.html", encoder.encode(html));
 }
 
+/** Asset hashes in flight ahead of the asset being written. */
+const HASH_CONCURRENCY = 4;
+
 async function writeAssetFiles(
   files: Map<string, Uint8Array>,
   assets: readonly ExportAssetBytes[],
 ): Promise<GameAssetIndexEntry[]> {
   const index: GameAssetIndexEntry[] = [];
+  // Hashes overlap, but each entry is still written and awaited in asset order,
+  // so the first failing asset is the one that fails the export.
+  const hashes: Promise<string>[] = [];
   for (const [indexInExport, asset] of assets.entries()) {
+    while (hashes.length < Math.min(assets.length, indexInExport + HASH_CONCURRENCY)) {
+      const hash = sha256Hex(assets[hashes.length]!.bytes);
+      // An abandoned hash must not surface as an unhandled rejection.
+      hash.catch(() => {});
+      hashes.push(hash);
+    }
     // Asset IDs include namespaced sidecars (for example area-emission:guid).
     // Keep IDs in the manifest and use portable, collision-free file names.
     const path = `assets/data-${indexInExport}.bin`;
     files.set(path, asset.bytes);
-    index.push({ ...indexEntry(asset, { path }), byteLength: asset.bytes.byteLength, revision: await sha256Hex(asset.bytes),
+    index.push({ ...indexEntry(asset, { path }), byteLength: asset.bytes.byteLength, revision: await hashes[indexInExport]!,
       dependencies: [...(asset.dependencies ?? [])], requiredDependencies: [...(asset.requiredDependencies ?? [])],
       ...(asset.startupRequired ? { startupRequired: true } : {}),
     });
@@ -222,6 +234,9 @@ function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetByte
     list.push(asset.guid);
     sidecars.set(owner, list);
   }
+  // The first Class naming a ref by guid or class id, as a front-to-back search would find it.
+  const classByRef = new Map<string, AssetDependencyClass>();
+  for (const entry of classes) for (const ref of [entry.guid, entry.classId]) if (!classByRef.has(ref)) classByRef.set(ref, entry);
   return assets.map(asset => {
     let required = asset.requiredDependencies;
     let dependencies = asset.dependencies;
@@ -244,7 +259,7 @@ function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetByte
     }
     const unique = (refs: readonly string[]) => [...new Set(refs)];
     const resolveClasses = (refs: readonly string[] = []) => refs.flatMap(ref => {
-      const match = classes.find(entry => entry.guid === ref || entry.classId === ref);
+      const match = classByRef.get(ref);
       return match ? [match.guid] : [];
     });
     const consoleCommand = asset.consoleCommand ?? (asset.type === "Class" ? consoleCommandMetadataFromGraph(document(asset)) : undefined);

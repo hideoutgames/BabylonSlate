@@ -1,4 +1,4 @@
-import { rethrowNativeStorageRangeError, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
+import { rethrowNativeStorageRangeError, rethrowStorageReadFailure, StorageReadCounter, utf8ByteLength, validateStorageRange, validateStorageRangeResult } from "./storage-range";
 import { isStorageNotFound, StorageNotFoundError } from "@babylonslate/core";
 import type {
   DirEntry,
@@ -216,7 +216,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
         }),
       { path },
     );
-    this.reads.record("full", new TextEncoder().encode(data).byteLength);
+    this.reads.record("full", utf8ByteLength(data));
     return data;
   }
 

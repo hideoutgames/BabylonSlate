@@ -1,10 +1,12 @@
 import type { ProjectStorage } from "@babylonslate/core";
-import { readStoredAssetDocument } from "./asset-document";
+import { readStoredAssetDocument, type AssetDocument } from "./asset-document";
 import type { BlobStore } from "./blob-store";
 import type { AssetRegistry, IndexedAsset } from "./registry";
 
 export const DEFAULT_SEARCH_LIMIT = 80;
 const MAX_INDEXED_STRING = 200;
+/** Document reads a rebuild keeps in flight ahead of the asset it is indexing. */
+const REBUILD_READ_CONCURRENCY = 4;
 const SKIP_PAYLOAD_KEYS = new Set(["body", "code", "source", "__pins"]);
 const DOCUMENT_TYPES = new Set(["Scene", "Class"]);
 const VARIABLE_NODE_TYPES = new Set([
@@ -120,15 +122,35 @@ export class ProjectSearchIndex {
     await yieldSearchSlice();
     checkCurrent();
     let sliceStarted = performance.now();
-    for (const asset of registry.list()) {
+    const assets = registry.list();
+    // Reads run ahead of the asset being indexed, but entries are still added
+    // one asset at a time in registry order.
+    const reads = new Map<IndexedAsset, Promise<AssetDocument>>();
+    let readFrom = 0;
+    const startReads = (current: number) => {
+      readFrom = Math.max(readFrom, current);
+      while (reads.size < REBUILD_READ_CONCURRENCY && readFrom < assets.length) {
+        const upcoming = assets[readFrom++]!;
+        if (overlays.get(upcoming.path) || !readsDocument(upcoming)) continue;
+        const read = snapshot.readDocument(upcoming, registry);
+        // A read abandoned by an abort or supersede is never awaited.
+        read.catch(() => {});
+        reads.set(upcoming, read);
+      }
+    };
+    for (let index = 0; index < assets.length; index++) {
+      const asset = assets[index]!;
       checkCurrent();
+      startReads(index);
       const overlay = overlays.get(asset.path);
       if (overlay) {
         snapshot.addHeaderEntries(asset);
         snapshot.addDocumentEntries(asset, overlay);
       } else {
+        const read = reads.get(asset);
+        reads.delete(asset);
         // Registry entries are unique; a fresh snapshot needs no repeated removal scan.
-        await snapshot.indexAsset(asset, registry, false);
+        await snapshot.indexAsset(asset, registry, false, read);
       }
       checkCurrent();
       if (performance.now() - sliceStarted >= 8) {
@@ -193,19 +215,26 @@ export class ProjectSearchIndex {
     asset: IndexedAsset,
     registry?: AssetRegistry,
     replaceExisting = true,
+    read?: Promise<AssetDocument>,
   ): Promise<void> {
     if (replaceExisting) this.removeBySource(asset.header.guid, asset.path);
     this.addHeaderEntries(asset);
-    if (asset.placeholder || asset.header.type === "Unresolved") return;
-    if (!DOCUMENT_TYPES.has(asset.header.type)) return;
+    if (!readsDocument(asset)) return;
     try {
-      const storage = registry?.storageFor(asset.rootId) ?? this.storage;
-      const blobs = registry?.blobsFor(asset.rootId) ?? this.blobs;
-      const document = await readStoredAssetDocument(storage, asset.path, { blobs });
+      const document = await (read ?? this.readDocument(asset, registry));
       this.addDocumentEntries(asset, document.payload);
     } catch {
       // Header-only fallback when the document chunk is missing or corrupt.
     }
+  }
+
+  private async readDocument(
+    asset: IndexedAsset,
+    registry?: AssetRegistry,
+  ): Promise<AssetDocument> {
+    const storage = registry?.storageFor(asset.rootId) ?? this.storage;
+    const blobs = registry?.blobsFor(asset.rootId) ?? this.blobs;
+    return readStoredAssetDocument(storage, asset.path, { blobs });
   }
 
   private addHeaderEntries(asset: IndexedAsset): void {
@@ -399,6 +428,12 @@ export class ProjectSearchIndex {
       ({ entry }) => entry.sourceGuid !== guid && entry.sourcePath !== path,
     );
   }
+}
+
+/** Header-only assets (placeholders, unresolved, non-document types) have no chunk to read. */
+function readsDocument(asset: IndexedAsset): boolean {
+  if (asset.placeholder || asset.header.type === "Unresolved") return false;
+  return DOCUMENT_TYPES.has(asset.header.type);
 }
 
 function yieldSearchSlice(): Promise<void> {

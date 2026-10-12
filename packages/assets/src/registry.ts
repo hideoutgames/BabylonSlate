@@ -52,6 +52,9 @@ import { moveStorageFile, moveStorageTree, STORAGE_MOVE_BACKUP_PREFIX } from "./
 import { collectAssetDependencyMetadata, type AssetDependencyClass } from "./asset-dependencies";
 import { buildClassAliasIndex, resolveDependenciesWithClassAliases, type ClassAliasIndex } from "./catalog-class-dependencies";
 
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
 export type AreaEmissionProcessor = (request: { source: Uint8Array; sourceHash: string; mime?: string }, signal: AbortSignal, onProgress?: (progress: AreaEmissionProgress) => void) => Promise<Uint8Array>;
 
 /** Index entry: header-only, never a decoded payload (engineplan §2.4). */
@@ -401,7 +404,7 @@ export class AssetRegistry {
     const { header } = asset;
     const body = header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
     const payload = body
-      ? JSON.parse(new TextDecoder().decode(await this.readChunk(guid, body.id, locator.revision, options))) as Record<string, unknown>
+      ? JSON.parse(textDecoder.decode(await this.readChunk(guid, body.id, locator.revision, options))) as Record<string, unknown>
       : header.payload;
     if (!body) await validateAssetSourceLocator(this.storageForAsset(asset), locator, options);
     options.signal?.throwIfAborted();
@@ -632,7 +635,7 @@ export class AssetRegistry {
 
     const body = result.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
     const dependencyPayload = body
-      ? JSON.parse(new TextDecoder().decode(body.data)) as Record<string, unknown>
+      ? JSON.parse(textDecoder.decode(body.data)) as Record<string, unknown>
       : result.payload;
     const classes: AssetDependencyClass[] = this.list()
       .filter((asset) => asset.header.type === "Class")
@@ -1163,12 +1166,12 @@ export class AssetRegistry {
     const nextChunks = result.chunks.map((chunk, index) => {
       if (chunk.id !== DOCUMENT_CHUNK_ID) return chunk;
       const original = chunks[index]!;
-      const decode = (data: Uint8Array): unknown => JSON.parse(new TextDecoder().decode(data));
+      const decode = (data: Uint8Array): unknown => JSON.parse(textDecoder.decode(data));
       const document = replaceClasses(decode(chunk.data));
       // Keep the copied bytes when nothing in the document named the folder's assets.
       if (stableStringify(document) === stableStringify(decode(original.data))) return original;
       changed = true;
-      return { ...chunk, data: new TextEncoder().encode(JSON.stringify(document)) };
+      return { ...chunk, data: textEncoder.encode(JSON.stringify(document)) };
     });
     if (!changed) return asset;
     const encoded = await encodeBabasset({
@@ -1964,7 +1967,7 @@ export class AssetRegistry {
     // which readers prefer: merge into that payload and store it there too.
     const documentChunk = chunksById.get(DOCUMENT_CHUNK_ID);
     const current = documentChunk
-      ? JSON.parse(new TextDecoder().decode(documentChunk.data)) as Record<string, unknown>
+      ? JSON.parse(textDecoder.decode(documentChunk.data)) as Record<string, unknown>
       : headerRest.payload;
     const familyFallback = typeof current.family === "string" ? current.family : asset.header.name;
     const merged =
@@ -1972,7 +1975,7 @@ export class AssetRegistry {
         ? (mergeFontAttachPayload(current, result.payload, familyFallback) as unknown as Record<string, unknown>)
         : { ...current, ...result.payload };
     if (documentChunk) {
-      chunksById.set(DOCUMENT_CHUNK_ID, { ...documentChunk, data: new TextEncoder().encode(stableStringify(merged)) });
+      chunksById.set(DOCUMENT_CHUNK_ID, { ...documentChunk, data: textEncoder.encode(stableStringify(merged)) });
     }
     const bytes = await encodeBabasset({
       // Header readers (font stacks, an open Font editor) see the same payload.
