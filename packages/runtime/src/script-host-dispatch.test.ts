@@ -106,6 +106,27 @@ describe("ScriptHost nested dispatch", () => {
     expect(result).toEqual({ value: 2 });
   });
 
+  it("lets hooks held across a script reload run the new scripts, and offers none once the class loses them", async () => {
+    const host = new ScriptHost(services());
+    const beginPlay = { name: "onBeginPlay", event: "onBeginPlay", isAsync: false };
+    const onTick = { name: "onTick", event: "onTick", isAsync: false };
+    await host.replaceScripts([script("Hero", "export function onBeginPlay(ctx) { ctx.self.setVariable('began', 1); }", { entryPoints: [beginPlay] })]);
+    const hero = new Actor({ classId: "Hero" });
+    const held = host.hooksFor("Hero")!;
+    held.onTick!(hero, tick);
+    expect(hero.getVariable("ticked")).toBeUndefined();
+
+    await host.replaceScripts([script("Hero", "export function onTick(ctx) { ctx.self.setVariable('ticked', 2); }", { entryPoints: [onTick] })]);
+    held.onTick!(hero, tick);
+    expect(hero.getVariable("ticked")).toBe(2);
+
+    await host.replaceScripts([]);
+    hero.setVariable("ticked", 0);
+    held.onTick!(hero, tick);
+    expect(hero.getVariable("ticked")).toBe(0);
+    expect(host.hooksFor("Hero")).toBeUndefined();
+  });
+
   it("keeps a static library's Do Once state per calling object", async () => {
     const host = new ScriptHost(services());
     await host.load(script("FlowLib", [

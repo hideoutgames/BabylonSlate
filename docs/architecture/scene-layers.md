@@ -9,6 +9,12 @@ indexes mesh names when layout or scene membership changes; unchanged frames
 preserve cached component transforms without repeating name searches. Clip
 inheritance still follows reparented descendants before drawing.
 
+`SceneLayerOverlay` indexes World actors by Scene Layer and guid, rebuilt only when
+`World.structuralRevision` changes. Each layer's layout reads its own actors and
+virtualization its guid index, so a publishing tick without spawns or destroys
+does no world-wide grouping. Layout inputs are still rebuilt and compared every
+tick: transforms and component variables are not covered by the revision.
+
 ## One world Scene, overlay stack
 
 Play still loads **one world Scene** at a time (`changeScene` / `changescene` swap that world). Overlay instances live on a session **SceneLayer Viewport** owned by Play/runtime, drawn **after** the world camera (and its post-process) so world PP never hits overlays.
