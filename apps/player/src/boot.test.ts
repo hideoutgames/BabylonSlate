@@ -291,6 +291,24 @@ describe("player startup and Stop ownership", () => {
     expect(owner.dispose).toHaveBeenCalledOnce();
   });
 
+  it("reports every worker diagnostic but retains a bounded list that keeps the first and newest", async () => {
+    const { game, canvas } = await backendFixture();
+    const onDiagnostic = vi.fn();
+    const session = await startPlayerWithBackend({ game, canvas, onDiagnostic });
+    sessions.push(session);
+    const worker = TestWorker.instances[0]!;
+    const total = 5000;
+    for (let i = 0; i < total; i++) {
+      worker.command({ channel: "command", payload: { type: "diagnostic", code: "runtime.uncaught", message: `tick ${i}`, frameId: i, severity: "error" } });
+    }
+    expect(onDiagnostic).toHaveBeenCalledTimes(total);
+    const retained = session.stop().diagnostics.map((entry) => Number(entry.message.slice(5)));
+    expect(retained.length).toBeLessThan(total);
+    expect(retained[0]).toBe(0);
+    expect(retained.at(-1)).toBe(total - 1);
+    expect(retained).toEqual([...retained].sort((a, b) => a - b));
+  });
+
   it.each(["confirmed", "quarantined"] as const)("keeps the backend Engine until a %s view release settles", async (outcome) => {
     const { game, canvas, handle, owner } = await backendFixture();
     let settle!: () => void;

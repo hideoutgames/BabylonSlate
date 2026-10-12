@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createDefaultInputMappings,
   normalizeInputMappings,
+  type ActionBinding,
   type InputMappings,
 } from "./mappings";
 import { InputResolver } from "./resolver";
@@ -124,6 +125,37 @@ describe("InputResolver event transitions", () => {
       pressed: false,
       released: false,
     });
+  });
+  it.each<[string, ActionBinding, RawInputEvent[]]>([
+    ["mouse", { device: "mouseButton", code: "0" }, [
+      { kind: "pointer", tick: 0, pointerId: 1, phase: "down", x: 1, y: 1, button: 0 },
+      { kind: "pointer", tick: 0, pointerId: 1, phase: "move", x: 2, y: 2, button: 0 },
+      { kind: "pointer", tick: 0, pointerId: 1, phase: "up", x: 2, y: 2, button: 0 },
+    ]],
+    ["gamepad button", { device: "gamepadButton", code: "0:0" }, [
+      { kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [], buttons: [1] },
+      { kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [], buttons: [1] },
+      { kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [], buttons: [0] },
+    ]],
+    ["gamepad stick", { device: "gamepadAxis", code: "0:0" }, [
+      { kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [1], buttons: [] },
+      { kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [1], buttons: [] },
+      { kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [0], buttons: [] },
+    ]],
+    ["touch control", { device: "touch", code: "fire" }, [
+      { kind: "touchAxis", tick: 0, controlId: "fire", value: 1 },
+      { kind: "touchAxis", tick: 0, controlId: "fire", value: 1 },
+      { kind: "touchAxis", tick: 0, controlId: "fire", value: 0 },
+    ]],
+    ["gamepad disconnect", { device: "gamepadButton", code: "0:0" }, [
+      { kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [], buttons: [1] },
+      { kind: "gamepadDisconnect", tick: 0, gamepadIndex: 0 },
+      { kind: "gamepadDisconnect", tick: 0, gamepadIndex: 0 },
+    ]],
+  ])("keeps a complete %s tap received between two simulation ticks", (_device, binding, events) => {
+    const resolver = new InputResolver({ actions: [{ name: "Fire", bindings: [binding] }], axes: [] });
+    expect(resolver.resolve(events).actions.Fire).toEqual({ held: false, pressed: true, released: true });
+    expect(resolver.resolve([]).actions.Fire).toEqual({ held: false, pressed: false, released: false });
   });
   it("does not release an action while another binding is held or retrigger on key repeat", () => {
     const resolver = new InputResolver({

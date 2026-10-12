@@ -49,8 +49,12 @@ const KIND = {
 const PHASE = { down: 1, move: 2, up: 3, cancel: 4 } as const;
 const PHASE_NAME = ["", "down", "move", "up", "cancel"] as const;
 
+// Whole-buffer, non-streaming use only: neither keeps state between calls.
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
 function writeString(view: DataView, offset: number, value: string): number {
-  const bytes = new TextEncoder().encode(value);
+  const bytes = textEncoder.encode(value);
   view.setUint16(offset, bytes.length, true);
   new Uint8Array(view.buffer, view.byteOffset + offset + 2, bytes.length).set(
     bytes,
@@ -64,7 +68,7 @@ function readString(
 ): { value: string; size: number } {
   const len = view.getUint16(offset, true);
   const bytes = new Uint8Array(view.buffer, view.byteOffset + offset + 2, len);
-  return { value: new TextDecoder().decode(bytes), size: 2 + len };
+  return { value: textDecoder.decode(bytes), size: 2 + len };
 }
 
 /** Encode a batch of raw input events into a transferable ArrayBuffer. */
@@ -72,14 +76,13 @@ export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer
   // Samples may contain more controls than a standard gamepad, and identifiers
   // are UTF-8 strings. Size the actual wire payload rather than an event average.
   let size = 4;
-  const encoder = new TextEncoder();
   for (const event of events) {
     size += 5;
     switch (event.kind) {
       case "pointer": size += 14; break;
-      case "key": size += 3 + encoder.encode(event.code).length; break;
+      case "key": size += 3 + textEncoder.encode(event.code).length; break;
       case "gamepad": size += 3 + 4 * (event.axes.length + event.buttons.length); break;
-      case "touchAxis": size += 6 + encoder.encode(event.controlId).length; break;
+      case "touchAxis": size += 6 + textEncoder.encode(event.controlId).length; break;
       case "gamepadDisconnect": size += 1; break;
     }
   }
