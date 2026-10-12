@@ -661,11 +661,13 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     for (const key of this.blockingKeys) {
       const parsed = parseContactKey(key);
       if (!parsed) continue;
+      const a = this.colliderTranslation(parsed.colliderAId);
+      const b = this.colliderTranslation(parsed.colliderBId);
       events.push({
         kind: "hit",
         ...parsed,
-        location: this.contactLocation(parsed.colliderAId, parsed.colliderBId),
-        normal: this.contactNormal(parsed.colliderAId, parsed.colliderBId),
+        location: contactLocation(a, b),
+        normal: contactNormal(a, b),
       });
     }
     return events;
@@ -832,10 +834,14 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const bodyRecord = this.bodies.get(character.desc.bodyId);
     if (!bodyRecord) return null;
     // The controller's own shape, never a child shape that the body hosts.
-    const collider = [...this.colliders.values()].find(
-      (c) => c.desc.bodyId === bodyRecord.desc.id && !c.desc.isTrigger &&
-        (c.desc.actorId ?? bodyRecord.desc.actorId) === bodyRecord.desc.actorId,
-    );
+    let collider: ColliderRecord | undefined;
+    for (const c of this.colliders.values()) {
+      if (c.desc.bodyId === bodyRecord.desc.id && !c.desc.isTrigger &&
+        (c.desc.actorId ?? bodyRecord.desc.actorId) === bodyRecord.desc.actorId) {
+        collider = c;
+        break;
+      }
+    }
     if (!collider) return null;
     const current = bodyRecord.body.translation();
     const currentRotation = bodyRecord.body.rotation();
@@ -1101,37 +1107,33 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     else this.blockingKeys.delete(key);
   }
 
-  private contactLocation(
-    colliderAId: string,
-    colliderBId: string,
-  ): { x: number; y: number; z: number } {
-    const a = this.colliderTranslation(colliderAId);
-    const b = this.colliderTranslation(colliderBId);
-    return {
-      x: (a.x + b.x) * 0.5,
-      y: (a.y + b.y) * 0.5,
-      z: 0,
-    };
-  }
-
-  private contactNormal(
-    colliderAId: string,
-    colliderBId: string,
-  ): { x: number; y: number; z: number } {
-    const a = this.colliderTranslation(colliderAId);
-    const b = this.colliderTranslation(colliderBId);
-    const x = b.x - a.x;
-    const y = b.y - a.y;
-    const length = Math.hypot(x, y);
-    if (length < 1e-8) return { x: 0, y: 1, z: 0 };
-    return { x: x / length, y: y / length, z: 0 };
-  }
-
   private colliderTranslation(colliderId: string): { x: number; y: number } {
     const record = this.colliders.get(colliderId);
     if (!record) return { x: 0, y: 0 };
     return record.collider.translation();
   }
+}
+
+function contactLocation(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): { x: number; y: number; z: number } {
+  return {
+    x: (a.x + b.x) * 0.5,
+    y: (a.y + b.y) * 0.5,
+    z: 0,
+  };
+}
+
+function contactNormal(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): { x: number; y: number; z: number } {
+  const x = b.x - a.x;
+  const y = b.y - a.y;
+  const length = Math.hypot(x, y);
+  if (length < 1e-8) return { x: 0, y: 1, z: 0 };
+  return { x: x / length, y: y / length, z: 0 };
 }
 
 function flatPoints(points: readonly { x: number; y: number }[]): Float32Array {
