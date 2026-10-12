@@ -158,9 +158,10 @@ export function createAudioReverbBakeController(options: {
       }));
 
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
-  const inflight = new Map<string, { fingerprint: string; work: Promise<void> }>();
+  const inflight = new Map<string, { fingerprint: string; flushing: boolean; work: Promise<void> }>();
   const completed = new Map<string, { hash: string; fingerprint: string; bytes: Uint8Array }>();
   const generation = new Map<string, number>();
+  let disposed = false;
 
   const bump = (path: string) => {
     const next = (generation.get(path) ?? 0) + 1;
@@ -173,29 +174,41 @@ export function createAudioReverbBakeController(options: {
     const existing = inflight.get(path);
     // Save must join the background bake through chunk persistence, not start
     // another rewrite while that job's hash has yet to enter the completed cache.
-    if (existing?.fingerprint === fingerprint) return existing.work;
+    // A joining flush makes the bake its own: not superseded, and still baked
+    // if admission refuses its write.
+    if (existing?.fingerprint === fingerprint) {
+      if (flushing) existing.flushing = true;
+      return existing.work;
+    }
+    // A flush is never superseded: export packs the saved Scene it flushed, so
+    // that snapshot's result must be saved or reported. Later work waits for it.
+    if (existing?.flushing) {
+      return existing.work.catch(() => undefined)
+        .then(() => (disposed ? undefined : run(path, scene, write, flushing)));
+    }
     const gen = bump(path);
     const bakeWith = (writer: AudioReverbWrite) => bakePath(path, scene, gen, fingerprint, writer);
-    let work: Promise<void>;
-    if (write) work = bakeWith(write);
-    else if (!options.withWrite) work = bakeWith(options.write);
-    else {
-      let admitted = false;
-      work = options.withWrite((writer) => { admitted = true; return bakeWith(writer); });
+    let admitted = !!write || !options.withWrite;
+    const started = write ? bakeWith(write)
+      : !options.withWrite ? bakeWith(options.write)
+      : options.withWrite((writer) => { admitted = true; return bakeWith(writer); });
+    const entry = { fingerprint, flushing, work: started };
+    // Settled within the work itself, so a flush can join only while the
+    // refusal fallback below is still possible.
+    const settle = () => {
+      if (inflight.get(path) === entry) inflight.delete(path);
+    };
+    entry.work = started.then(settle, (error: unknown) => {
       // While writes are locked (Simulation Play), a flush still bakes so export
       // learns whether the saved chunk already matches; a changed result is reported.
-      if (flushing) {
-        work = work.catch((error: unknown) => {
-          if (admitted) throw error;
-          return bakeWith(() => Promise.reject(error));
-        });
+      if (admitted || !entry.flushing) {
+        settle();
+        throw error;
       }
-    }
-    const entry = { fingerprint, work };
-    inflight.set(path, entry);
-    return work.finally(() => {
-      if (inflight.get(path) === entry) inflight.delete(path);
+      return bakeWith(() => Promise.reject(error)).finally(settle);
     });
+    inflight.set(path, entry);
+    return entry.work;
   };
 
   async function bakePath(
@@ -298,6 +311,7 @@ export function createAudioReverbBakeController(options: {
       return Promise.all([...inflight.values()].map((entry) => entry.work)).then(() => undefined);
     },
     dispose() {
+      disposed = true;
       for (const timer of pending.values()) clearTimeout(timer);
       pending.clear();
       for (const path of generation.keys()) bump(path);
