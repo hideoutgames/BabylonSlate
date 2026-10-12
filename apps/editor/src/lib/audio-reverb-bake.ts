@@ -1,5 +1,4 @@
 import {
-  AssetFormatVersionError,
   AUDIO_BAKE_DEBOUNCE_MS,
   AUDIO_BAKE_WORKER_TIMEOUT_MS,
   bakeAudioReverb,
@@ -278,26 +277,31 @@ export function sceneFromDocument(
   return scene as AudioReverbBakeScene;
 }
 
+export type AudioReverbFlushScenes = {
+  scenes: AudioReverbBakeSceneEntry[];
+  /** Scenes the bake could not load, by path, with the reason. */
+  unreadable: Map<string, unknown>;
+};
+
 /**
- * Load Scene documents (open or closed) and keep those with a Scene payload.
- * A Scene stored in an unsupported format is skipped: export's own read fails
- * on it only when the game reaches it.
+ * Load Scene documents (open or closed) for the bake. A Scene that cannot be
+ * loaded, whatever the reason, is reported rather than thrown: export fails on
+ * it only when the game reaches it, and Save still bakes the others.
  */
 export async function collectAudioReverbFlushScenes(options: {
   paths: readonly string[];
   load: (path: string) => Promise<unknown | null>;
-}): Promise<AudioReverbBakeSceneEntry[]> {
+}): Promise<AudioReverbFlushScenes> {
   const scenes: AudioReverbBakeSceneEntry[] = [];
+  const unreadable = new Map<string, unknown>();
   for (const path of options.paths) {
-    let document: unknown;
     try {
-      document = await options.load(path);
+      const scene = sceneFromDocument(await options.load(path));
+      if (!scene) throw new Error(`${path} has no Scene document.`);
+      scenes.push({ path, scene });
     } catch (error) {
-      if (error instanceof AssetFormatVersionError) continue;
-      throw error;
+      unreadable.set(path, error);
     }
-    const scene = sceneFromDocument(document);
-    if (scene) scenes.push({ path, scene });
   }
-  return scenes;
+  return { scenes, unreadable };
 }

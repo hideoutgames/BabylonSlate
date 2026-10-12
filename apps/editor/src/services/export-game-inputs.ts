@@ -66,6 +66,8 @@ export type ExportDocumentLoaders = {
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
   /** When false, pack Texture `pixels` instead of KTX2. */
   transcoderAvailable?: boolean;
+  /** Scenes the audio reverb bake could not read, by path: a reached one fails the export. */
+  audioReverbBakeFailures?: ReadonlyMap<string, unknown>;
 };
 
 export type LoadedExportDocuments = {
@@ -79,6 +81,7 @@ export type LoadedExportDocuments = {
   fontMsdfJsonByGuid: (guid: string) => Uint8Array | null;
   fontMsdfPngByGuid: (guid: string) => Uint8Array | null;
   navmeshByGuid: (guid: string) => Uint8Array | null;
+  /** Throws for a Scene the reverb bake could not read, so its chunk may be stale. */
   audioReverbByGuid: (guid: string) => Uint8Array | null;
 };
 
@@ -176,6 +179,7 @@ export async function loadExportDocuments(
   const fontMsdfPng = new Map<string, Uint8Array>();
   const navmeshes = new Map<string, Uint8Array>();
   const audioReverbs = new Map<string, Uint8Array>();
+  const audioReverbErrors = new Map<string, unknown>();
   for (const asset of loaders.assets) {
     // Payloads are packed without migration. An unsupported format fails the
     // export once the game reaches the asset; an unreached one does not.
@@ -259,6 +263,11 @@ export async function loadExportDocuments(
       } catch {
         // Scene JSON still packs when the extra chunk is missing.
       }
+      // A chunk the bake could not refresh may be stale; never pack it.
+      if (loaders.audioReverbBakeFailures?.has(asset.path)) {
+        audioReverbErrors.set(asset.header.guid, loaders.audioReverbBakeFailures.get(asset.path));
+        continue;
+      }
       try {
         const field = await loaders.readAssetChunk(
           asset.path,
@@ -288,6 +297,9 @@ export async function loadExportDocuments(
     fontMsdfJsonByGuid: (guid) => fontMsdfJson.get(guid) ?? null,
     fontMsdfPngByGuid: (guid) => fontMsdfPng.get(guid) ?? null,
     navmeshByGuid: (guid) => navmeshes.get(guid) ?? null,
-    audioReverbByGuid: (guid) => audioReverbs.get(guid) ?? null,
+    audioReverbByGuid: (guid) => {
+      if (audioReverbErrors.has(guid)) throw audioReverbErrors.get(guid);
+      return audioReverbs.get(guid) ?? null;
+    },
   };
 }

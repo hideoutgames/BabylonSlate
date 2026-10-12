@@ -288,11 +288,27 @@ describe("collectAudioReverbFlushScenes", () => {
         return sceneWith([boxActor("open", [0, 0, 0])]);
       },
     });
-    expect(loaded.map((entry) => entry.path)).toEqual([
+    expect(loaded.scenes.map((entry) => entry.path)).toEqual([
       "assets/Open.scene.babasset",
       "assets/Closed.scene.babasset",
     ]);
-    expect(loaded[1]?.scene.actors?.[0]?.id).toBe("wall");
+    expect(loaded.scenes[1]?.scene.actors?.[0]?.id).toBe("wall");
+    expect(loaded.unreadable.size).toBe(0);
+  });
+
+  it("reports each Scene it cannot load and still collects the rest", async () => {
+    const failure = new Error("read failed");
+    const loaded = await collectAudioReverbFlushScenes({
+      paths: ["assets/Broken.scene.babasset", "assets/Empty.scene.babasset", "assets/Main.scene.babasset"],
+      load: async (path) => {
+        if (path.includes("Broken")) throw failure;
+        if (path.includes("Empty")) return null;
+        return sceneWith([boxActor("wall", [0, 0, 0])]);
+      },
+    });
+    expect(loaded.scenes.map((entry) => entry.path)).toEqual(["assets/Main.scene.babasset"]);
+    expect(loaded.unreadable.get("assets/Broken.scene.babasset")).toBe(failure);
+    expect(loaded.unreadable.get("assets/Empty.scene.babasset")).toBeInstanceOf(Error);
   });
 });
 
