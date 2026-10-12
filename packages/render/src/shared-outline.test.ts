@@ -183,4 +183,27 @@ describe("shared outline admission", () => {
     owner.prepareRenderSource(lod);
     expect(owner.diagnostics().sourceCount).toBe(sources);
   });
+
+  it("keeps a source admitted by a mask draw across membership changes until the last outline leaves", () => {
+    const { scene, owner, view } = setup();
+    const mesh = MeshBuilder.CreateBox("source", {}, scene);
+    const instance = mesh.createInstance("instance");
+    const other = MeshBuilder.CreateBox("other", {}, scene);
+    const occluder = mesh.createInstance("occluder");
+    view.setContribution("selection", { ...style, kind: "selection", targets: [{ key: "a", meshes: [other] }] });
+    // An occluder's source is admitted when its mask draw first needs it.
+    owner.prepareRenderSource(mesh);
+    const revision = owner.sourceRevision;
+    expect(owner.diagnostics().sourceCount).toBe(1);
+    // Selecting and deselecting an instance must not release and re-admit the source, which dirties its attributes each time.
+    view.setContribution("selection", { ...style, kind: "selection", targets: [{ key: "b", meshes: [instance] }] });
+    expect(occluder.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE]).toBe(0);
+    expect(instance.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE]).toBe(owner.identityForKey("b"));
+    view.setContribution("selection", { ...style, kind: "selection", targets: [{ key: "a", meshes: [other] }] });
+    expect(owner.sourceRevision).toBe(revision);
+    expect(owner.diagnostics().sourceCount).toBe(1);
+    expect(instance.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE]).toBe(0);
+    view.removeContribution("selection");
+    expect(owner.diagnostics().sourceCount).toBe(0);
+  });
 });
