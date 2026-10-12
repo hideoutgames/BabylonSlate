@@ -412,10 +412,16 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     ? (doc.content as SerializedScene)
     : null;
   const overlay = doc?.ref.kind === "scene-layer";
-  const postProcessEntries = normalizeScenePostProcessStack(scene?.settings.postProcessStack);
+  const postProcessEntries = useMemo(
+    () => normalizeScenePostProcessStack(scene?.settings.postProcessStack),
+    [scene?.settings.postProcessStack],
+  );
   const actorId = selectedActorIds[0] ?? null;
   const actor = scene && actorId ? (findActor(scene, actorId) ?? null) : null;
-  const actorDisplayNames = scene ? sceneActorDisplayNames(scene) : new Map<string, string>();
+  const actorDisplayNames = useMemo(
+    () => scene ? sceneActorDisplayNames(scene) : new Map<string, string>(),
+    [scene],
+  );
   const pickingCableTarget = actor?.components.find((component) => component.id === constraintTargetPick?.componentId)?.classId === "CableComponent";
   const classSaveGraphs = useMemo(() => {
     void registryEpoch;

@@ -217,10 +217,9 @@ function hasDefault(row: PropertyRow): boolean {
 function isAtDefault(row: PropertyRow): boolean {
   if (row.mixed) return false;
   if (!hasDefault(row)) return true;
-  return (
-    JSON.stringify(row.value) ===
-    JSON.stringify((row as { defaultValue: unknown }).defaultValue)
-  );
+  const defaultValue = (row as { defaultValue: unknown }).defaultValue;
+  if (Object.is(row.value, defaultValue)) return true;
+  return JSON.stringify(row.value) === JSON.stringify(defaultValue);
 }
 
 function resetRow(row: PropertyRow): void {

@@ -1,11 +1,15 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { Position, useStoreApi, type Node } from "@xyflow/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { GraphEditor, type GraphEditorProps } from "./graph-editor";
 import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
 import type { GraphDocument, SerializedPin } from "./graph-types";
+import * as wildcardDisplay from "./wildcard-display";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 const floatOutput: SerializedPin = {
   id: "value",
@@ -347,6 +351,16 @@ describe("GraphEditor proximity dragging", () => {
     expect(graph.previews()).toHaveLength(0);
     graph.stop();
     expect(graph.emitted).toEqual([]);
+  });
+
+  it("previews a suggestion from the rendered pin resolution without solving again", () => {
+    const solve = vi.spyOn(wildcardDisplay, "displayPinTypesForGraph");
+    const graph = renderDragGraph();
+    graph.start();
+    const solves = solve.mock.calls.length;
+    graph.move();
+    expect(graph.previews()).toHaveLength(1);
+    expect(solve.mock.calls.length).toBe(solves);
   });
 
   it("previews and saves only mutually compatible wildcard connections", () => {

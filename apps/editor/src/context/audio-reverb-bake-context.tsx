@@ -65,6 +65,9 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
   });
 
   const fingerprints = useRef(new Map<string, string>());
+  // Scene edits replace the document content, so an unchanged Scene keeps its
+  // object and its fingerprint while other open Scenes change.
+  const fingerprintByContent = useRef(new WeakMap<object, string>());
 
   useEffect(() => {
     const controller = createAudioReverbBakeController({
@@ -106,7 +109,11 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
     for (const doc of sceneDocuments) {
       const scene = sceneFromDocument(doc.content);
       if (!scene) continue;
-      const fingerprint = staticAudioGeometryFingerprint(scene);
+      let fingerprint = fingerprintByContent.current.get(scene);
+      if (fingerprint === undefined) {
+        fingerprint = staticAudioGeometryFingerprint(scene);
+        fingerprintByContent.current.set(scene, fingerprint);
+      }
       if (fingerprints.current.get(doc.ref.path) === fingerprint) continue;
       fingerprints.current.set(doc.ref.path, fingerprint);
       controller.schedule(doc.ref.path, scene);

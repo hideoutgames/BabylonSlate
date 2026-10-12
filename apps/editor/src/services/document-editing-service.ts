@@ -34,7 +34,6 @@ import {
   prefabAssetTemplateKey,
   prefabAssetTemplates,
   prefabTemplatesByClassId,
-  scenesEqualForPrefabSync,
   stampUserComponentOverrides,
   syncSceneActorsFromPrefabs,
 } from "../lib/prefab-instance-sync";
@@ -338,7 +337,7 @@ export class DocumentEditingService {
     };
     const scene = sceneDoc.content as SerializedScene;
     const next = syncSceneActorsFromPrefabs(scene, templates);
-    if (scenesEqualForPrefabSync(scene, next)) return;
+    if (next === scene) return;
     if (options?.quiet) {
       // The open-time sync rewrites instances without a command, so history
       // recorded before it (such as history kept from a closed tab) no longer

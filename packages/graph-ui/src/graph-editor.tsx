@@ -681,8 +681,12 @@ function GraphEditorCanvas({
     [edges, pinNodes],
   );
   const pinDisplayTypesRef = useRef(pinDisplayTypes);
+  // The graph the memo above resolved; commitGraph can advance graphStateRef
+  // before the next commit, so reuse requires both to match by identity.
+  const pinDisplaySourceRef = useRef({ nodes, edges, types: pinDisplayTypes });
   useLayoutEffect(() => {
     pinDisplayTypesRef.current = pinDisplayTypes;
+    pinDisplaySourceRef.current = { nodes, edges, types: pinDisplayTypes };
   });
   const paneMenu = useContextMenu({
     items: [],
@@ -1122,10 +1126,15 @@ function GraphEditorCanvas({
       try {
         for (const connection of connections) {
           if (resolvedEdges !== proposedEdges) {
-            pinDisplayTypesRef.current = displayPinTypesForGraph(
-              graphStateRef.current.nodes,
-              proposedEdges,
-            );
+            const rendered = pinDisplaySourceRef.current;
+            pinDisplayTypesRef.current =
+              rendered.nodes === graphStateRef.current.nodes &&
+              rendered.edges === proposedEdges
+                ? rendered.types
+                : displayPinTypesForGraph(
+                    graphStateRef.current.nodes,
+                    proposedEdges,
+                  );
             resolvedEdges = proposedEdges;
           }
           if (!isValidConnection(connection)) continue;

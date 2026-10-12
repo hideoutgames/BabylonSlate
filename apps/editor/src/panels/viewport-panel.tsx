@@ -711,19 +711,20 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
   const effectsAssetGuidsKey = JSON.stringify(renderEffectsAssetGuids(projectDocument?.settings.render.effects));
-  const { materialLibraryKey, viewportAssetsKey } = useMemo(() => {
+  // Depends on the registry alone, so Scene edits do not rebuild it.
+  const materialLibraryKey = useMemo(() => {
     void registryEpoch;
-    const assets = assetRegistry?.list() ?? [];
-    return {
-      materialLibraryKey: savedMaterialLibraryKey(assets),
-      viewportAssetsKey: JSON.stringify([
-        sceneViewportAssetKey(scene, assets),
-        textureLodKey,
-        effectsAssetGuidsKey,
-        projectDocument?.settings.twoD,
-        projectDocument?.settings.fonts,
-      ]),
-    };
+    return savedMaterialLibraryKey(assetRegistry?.list() ?? []);
+  }, [assetRegistry, registryEpoch]);
+  const viewportAssetsKey = useMemo(() => {
+    void registryEpoch;
+    return JSON.stringify([
+      sceneViewportAssetKey(scene, assetRegistry?.list() ?? []),
+      textureLodKey,
+      effectsAssetGuidsKey,
+      projectDocument?.settings.twoD,
+      projectDocument?.settings.fonts,
+    ]);
   }, [
     assetRegistry,
     registryEpoch,

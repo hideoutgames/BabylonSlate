@@ -129,7 +129,7 @@ function btFieldMergeKey(
 function useBehaviourTreeDocument() {
   const { documentId: workspaceDocumentId } = useDocumentWorkspace();
   const { openDocument, applyAssetDocumentChange, loadAssetDocument } = useDocumentActions();
-  const { assetRegistry } = useRegistryState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const play = usePlay();
   const liveBtState = useLiveBtState();
   const entry = useOpenDocument(workspaceDocumentId);
@@ -161,78 +161,84 @@ function useBehaviourTreeDocument() {
     () => hydrateBehaviourTreeForEditor(behaviourTreeToSerialized(doc, overlay)),
     [doc, overlay],
   );
-  const assets = (assetRegistry?.list() ?? []).map((asset) => {
-    const payload =
-      asset.header.payload && typeof asset.header.payload === "object"
-        ? (asset.header.payload as Record<string, unknown>)
-        : {};
-    return {
-      guid: asset.header.guid,
-      name: asset.header.name,
-      type: asset.header.type,
-      path: asset.path,
-      parentClass: asset.header.parentClass,
-      clipName: typeof payload.clipName === "string" ? payload.clipName : "",
-    };
-  });
-  const parentOf = classParentLookup(assetRegistry?.list() ?? []);
-  const customEntries = (
-    kind: "BTTask" | "BTDecorator" | "BTService" | "BTComposite",
-  ) =>
-    assets.filter((asset) => {
-      if (asset.type !== "Class") return false;
-      const chain = walkAncestry(asset.parentClass ?? asset.name, parentOf);
-      return chain.includes(kind) || asset.parentClass === kind || asset.name === kind;
-    });
-  const paletteNodes: PaletteNode[] = [
-    ...catalogPalette(BT_COMPOSITE_CATALOG),
-    ...catalogPalette(BT_TASK_CATALOG),
-    ...customEntries("BTComposite").map((asset) => {
-      const kind = kindForCatalogClassId(asset.name, parentOf);
+  // Registry headers mutate without replacing the registry; the epoch tracks them.
+  const { assets, parentOf, paletteNodes, decoratorCatalog, serviceCatalog } = useMemo(() => {
+    void registryEpoch;
+    const list = assetRegistry?.list() ?? [];
+    const assets = list.map((asset) => {
+      const payload =
+        asset.header.payload && typeof asset.header.payload === "object"
+          ? (asset.header.payload as Record<string, unknown>)
+          : {};
       return {
+        guid: asset.header.guid,
+        name: asset.header.name,
+        type: asset.header.type,
+        path: asset.path,
+        parentClass: asset.header.parentClass,
+        clipName: typeof payload.clipName === "string" ? payload.clipName : "",
+      };
+    });
+    const parentOf = classParentLookup(list);
+    const customEntries = (
+      kind: "BTTask" | "BTDecorator" | "BTService" | "BTComposite",
+    ) =>
+      assets.filter((asset) => {
+        if (asset.type !== "Class") return false;
+        const chain = walkAncestry(asset.parentClass ?? asset.name, parentOf);
+        return chain.includes(kind) || asset.parentClass === kind || asset.name === kind;
+      });
+    const paletteNodes: PaletteNode[] = [
+      ...catalogPalette(BT_COMPOSITE_CATALOG),
+      ...catalogPalette(BT_TASK_CATALOG),
+      ...customEntries("BTComposite").map((asset) => {
+        const kind = kindForCatalogClassId(asset.name, parentOf);
+        return {
+          id: asset.name,
+          title: titleForBtClassId(asset.name),
+          category: "Composites",
+          nodeType: BT_NODE_TYPE,
+          pins: pinsForBtKind(kind),
+          defaultData: {
+            title: titleForBtClassId(asset.name),
+            classId: asset.name,
+            kind,
+          },
+        };
+      }),
+      ...customEntries("BTTask").map((asset) => ({
         id: asset.name,
         title: titleForBtClassId(asset.name),
-        category: "Composites",
+        category: "Tasks",
         nodeType: BT_NODE_TYPE,
-        pins: pinsForBtKind(kind),
+        pins: pinsForBtKind("task"),
         defaultData: {
           title: titleForBtClassId(asset.name),
           classId: asset.name,
-          kind,
+          kind: "task" as const,
         },
-      };
-    }),
-    ...customEntries("BTTask").map((asset) => ({
-      id: asset.name,
-      title: titleForBtClassId(asset.name),
-      category: "Tasks",
-      nodeType: BT_NODE_TYPE,
-      pins: pinsForBtKind("task"),
-      defaultData: {
-        title: titleForBtClassId(asset.name),
+      })),
+    ];
+    const decoratorCatalog: BtCatalogEntry[] = [
+      ...BT_DECORATOR_CATALOG,
+      ...customEntries("BTDecorator").map((asset) => ({
         classId: asset.name,
-        kind: "task" as const,
-      },
-    })),
-  ];
-  const decoratorCatalog: BtCatalogEntry[] = [
-    ...BT_DECORATOR_CATALOG,
-    ...customEntries("BTDecorator").map((asset) => ({
-      classId: asset.name,
-      title: titleForBtClassId(asset.name),
-      category: "Decorators" as const,
-      kind: "decorator" as const,
-    })),
-  ];
-  const serviceCatalog: BtCatalogEntry[] = [
-    ...BT_SERVICE_CATALOG,
-    ...customEntries("BTService").map((asset) => ({
-      classId: asset.name,
-      title: titleForBtClassId(asset.name),
-      category: "Services" as const,
-      kind: "service" as const,
-    })),
-  ];
+        title: titleForBtClassId(asset.name),
+        category: "Decorators" as const,
+        kind: "decorator" as const,
+      })),
+    ];
+    const serviceCatalog: BtCatalogEntry[] = [
+      ...BT_SERVICE_CATALOG,
+      ...customEntries("BTService").map((asset) => ({
+        classId: asset.name,
+        title: titleForBtClassId(asset.name),
+        category: "Services" as const,
+        kind: "service" as const,
+      })),
+    ];
+    return { assets, parentOf, paletteNodes, decoratorCatalog, serviceCatalog };
+  }, [assetRegistry, registryEpoch]);
   const blackboardAsset = doc.blackboardGuid
     ? assetRegistry?.getByGuid(doc.blackboardGuid)
     : undefined;

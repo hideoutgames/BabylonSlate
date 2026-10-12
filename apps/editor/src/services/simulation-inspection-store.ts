@@ -160,7 +160,8 @@ export class SimulationInspectionStore {
       if (!result.success) patch.identityError = result.reason ?? "Runtime identities are unavailable.";
       else if (result.payload?.kind === "identities") {
         const payload = result.payload;
-        patch.identityError = null;
+        // An unchanged poll with no selection then publishes nothing at all.
+        if (this.state.identityError !== null) patch.identityError = null;
         if (!payload.unchanged) {
           const rows = extending ? [...this.state.rows] : [];
           let bytes = extending ? this.identityBytes : 0;
