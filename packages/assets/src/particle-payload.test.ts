@@ -1,18 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   PARTICLE_SYSTEM_MAX_EMITTERS,
-  createDefaultParticleSystemPayload,
   normalizeParticleSystemPayload,
   particleAssetDependencies,
-  remapParticlePayloadGuids,
 } from "./particle-payload";
 import {
   createDefaultParticleEmitterPayload,
   normalizeParticleEmitterPayload,
 } from "./particle-basic-emitter";
 import { encodeAssetDocument, decodeAssetDocument } from "./asset-document";
-import { loadPayloadWithMigration } from "./migrate-on-load";
-import { createDefaultMigrationRegistry } from "./migration";
 
 describe("particle payloads", () => {
   it("treats a missing Preview Skybox field as on and keeps an explicit off", () => {
@@ -58,30 +54,6 @@ describe("particle payloads", () => {
     expect(particleAssetDependencies("Audio", {})).toEqual([]);
   });
 
-  it("remaps the Emitter Material and System emitters on import collision", () => {
-    const remap = new Map([
-      ["mat-old", "mat-new"],
-      ["em-old", "em-new"],
-    ]);
-    const emitter = remapParticlePayloadGuids(
-      "ParticleEmitter",
-      { render: { materialGuid: "mat-old", blendMode: "multiply" } },
-      remap,
-    );
-    expect(normalizeParticleEmitterPayload(emitter).render).toEqual({
-      materialGuid: "mat-new",
-      blendMode: "multiply",
-      billboard: "all",
-    });
-    expect(
-      remapParticlePayloadGuids(
-        "ParticleSystem",
-        { emitterGuids: ["em-old", "em-keep"] },
-        remap,
-      ),
-    ).toMatchObject({ emitterGuids: ["em-new", "em-keep"] });
-  });
-
   it("round-trips Emitter and System documents", async () => {
     const emitter = createDefaultParticleEmitterPayload();
     emitter.render.materialGuid = "mat-1";
@@ -117,37 +89,5 @@ describe("particle payloads", () => {
     expect(normalizeParticleSystemPayload(decodedSystem.payload)).toEqual(
       system,
     );
-  });
-
-  it("loads v0 payloads to defaults and v1 payloads without a pending save", () => {
-    const registry = createDefaultMigrationRegistry();
-    const emitter = loadPayloadWithMigration(registry, {
-      type: "ParticleEmitter",
-      version: 0,
-      payload: {},
-      path: "assets/Sparks.emitter.babasset",
-    });
-    expect(emitter.version).toBe(1);
-    expect(normalizeParticleEmitterPayload(emitter.payload)).toEqual(
-      createDefaultParticleEmitterPayload(),
-    );
-    const system = loadPayloadWithMigration(registry, {
-      type: "ParticleSystem",
-      version: 0,
-      payload: {},
-      path: "assets/Fire.particles.babasset",
-    });
-    expect(system.pending).not.toBeNull();
-    expect(normalizeParticleSystemPayload(system.payload)).toEqual(
-      createDefaultParticleSystemPayload(),
-    );
-    // A P17 file is already header v1: it loads with new defaults and no save prompt.
-    const p17 = loadPayloadWithMigration(registry, {
-      type: "ParticleEmitter",
-      version: 1,
-      payload: { textureGuid: "tex-1", emitRate: 30, blendMode: "standard" },
-      path: "assets/Old.emitter.babasset",
-    });
-    expect(p17.pending).toBeNull();
   });
 });

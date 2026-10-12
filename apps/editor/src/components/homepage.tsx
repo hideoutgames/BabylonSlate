@@ -76,6 +76,7 @@ import {
 } from "../lib/listed-projects";
 import {
   createProjectNameIssue,
+  isBuiltInStarterKind,
   randomProjectName,
   normalizeProjectFolderName,
   type CreateProjectOptions,
@@ -98,6 +99,7 @@ import {
   recordTemplateUse,
 } from "./homepage-template-browser";
 import { importTemplateArchive } from "../services/template-service";
+import { useDebugMode } from "../context/app-settings-context";
 import { useLauncherTransition } from "./launcher-transition";
 import homepageStyles from "./homepage.css?inline";
 
@@ -225,6 +227,7 @@ export function Homepage({
     }
   };
 
+  const debugMode = useDebugMode();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<HomepageProjectSortMode>("last-opened-desc");
   const [error, setError] = useState<string | null>(null);
@@ -272,7 +275,7 @@ export function Homepage({
       ),
     [projects, search, sort],
   );
-  const templateCount = homepageTemplates(templates).length;
+  const templateCount = homepageTemplates(templates, { debugMode }).length;
   const LayoutIcon =
     PROJECT_LAYOUT_OPTIONS.find((option) => option.value === layout)?.icon ??
     Grid2x2Icon;
@@ -321,7 +324,7 @@ export function Homepage({
   const importTemplate = () =>
     void run(async () => {
       const files = await pickImportFiles({
-        accept: ".zip,.babproject",
+        accept: ".zip",
         multiple: false,
       });
       if (!files[0]) return;
@@ -673,7 +676,7 @@ export function Homepage({
                           onClick={() => create()}
                         >
                           <PlusIcon data-icon="inline-start" />
-                          Create Project
+                          New Project
                         </Button>
                         <Button
                           variant="outline"
@@ -768,11 +771,7 @@ export function Homepage({
                   };
                   const folderName = normalizeProjectFolderName(createName);
                   if (!folderName) return;
-                  if (
-                    templateId === "blank" ||
-                    templateId === "empty" ||
-                    templateId === "2d"
-                  )
+                  if (isBuiltInStarterKind(templateId))
                     await onCreateEmpty(folderName, {
                       ...options,
                       kind: templateId,

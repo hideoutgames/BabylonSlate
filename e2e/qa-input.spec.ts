@@ -8,7 +8,7 @@ import {
   selectContentBrowserAssetsFolder,
 } from "./open-test-project";
 import { guidForPath } from "./material-graph";
-import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
+import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 
 const inputGraph = (guids: Record<string, string>): SerializedGraph => ({
@@ -26,7 +26,7 @@ const inputGraph = (guids: Record<string, string>): SerializedGraph => ({
       id: `${action}-print`,
       type: "debug.print",
       position: { x: 360, y: index * 160 },
-      data: { value: action, key: action, duration: 1 },
+      data: { "default:value": action, "default:key": action, "default:duration": 1 },
     },
   ]),
   edges: ["Jump", "Fire", "Confirm"].map((action) => ({
@@ -38,8 +38,9 @@ const inputGraph = (guids: Record<string, string>): SerializedGraph => ({
   })),
 });
 
-for (const preview of [false]) {
-  test(`H13: authored keys survive reload and dispatch in ${preview ? "Preview Build" : "Normal Play"}`, async ({
+// Preview Build key dispatch is not part of this CI journey.
+for (const mode of ["Normal Play"] as const) {
+  test(`H13: authored keys survive reload and dispatch in ${mode}`, async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -115,26 +116,14 @@ for (const preview of [false]) {
     ).toContainText("F");
     await openMainScene(page);
 
-    if (preview) {
-      await page.getByTestId("debug-menu").click();
-      await page.getByTestId("preview-build-toggle").click();
-      await page.getByTestId("play-preview").click();
-      await waitForPreviewBuildBoot(page);
-    } else {
-      await clickPlayAndWaitForOverlay(page);
-      await expect(page.getByTestId("play-actor-guids")).toHaveAttribute(
-        "data-guids",
-        /.+/,
-        { timeout: 30_000 },
-      );
-    }
-    const frame = page.frameLocator('[data-testid="preview-build-iframe"]');
-    const canvas = preview
-      ? frame.locator("canvas#game")
-      : page.getByTestId("play-canvas");
-    const prints = preview
-      ? frame.getByTestId("print-overlay")
-      : page.getByTestId("print-overlay");
+    await clickPlayAndWaitForOverlay(page);
+    await expect(page.getByTestId("play-actor-guids")).toHaveAttribute(
+      "data-guids",
+      /.+/,
+      { timeout: 30_000 },
+    );
+    const canvas = page.getByTestId("play-canvas");
+    const prints = page.getByTestId("print-overlay");
     await canvas.click();
     await expect(canvas).toBeFocused();
     await page.keyboard.press("Enter");
@@ -148,8 +137,6 @@ for (const preview of [false]) {
     await expect(prints.getByText("Jump", { exact: true })).toHaveCount(0);
     await page.keyboard.press("g");
     await expect(prints).toContainText("Jump");
-    await page
-      .getByTestId(preview ? "preview-build-close" : "play-overlay-close")
-      .click();
+    await page.getByTestId("play-overlay-close").click();
   });
 }

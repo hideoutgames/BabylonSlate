@@ -8,6 +8,7 @@ import {
   currentAreaEmissionChunk,
   decodeAreaEmission,
   collectPackedAudioClipBlobs,
+  createDefaultMigrationRegistry,
   encodePackedAudioAsset,
   encodePackedModelAsset,
   FONT_FACETYPE_CHUNK_ID,
@@ -28,7 +29,6 @@ const JSON_TYPES = new Set<string>([
   "InputAction", "InputAxis", "SaveGame",
   "Scene",
   "Class",
-  "Graph",
   "AnimationGraph",
   "BehaviourTree",
   "Blackboard",
@@ -58,6 +58,7 @@ const JSON_TYPES = new Set<string>([
 ]);
 
 const encoder = new TextEncoder();
+const assetFormats = createDefaultMigrationRegistry();
 
 export type ExportDocumentLoaders = {
   assets: readonly IndexedAsset[];
@@ -65,18 +66,22 @@ export type ExportDocumentLoaders = {
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
   /** When false, pack Texture `pixels` instead of KTX2. */
   transcoderAvailable?: boolean;
+  /** Scenes the audio reverb bake could not read, by path: a reached one fails the export. */
+  audioReverbBakeFailures?: ReadonlyMap<string, unknown>;
 };
 
 export type LoadedExportDocuments = {
   sceneByGuid: (guid: string) => SerializedScene | null;
   graphByGuid: (guid: string) => SerializedGraph | null;
   payloadByGuid: (guid: string) => unknown | null;
+  /** Throws the read error of an asset whose format is unsupported or whose document or packed bytes failed to load. */
   bytesByGuid: (guid: string) => Uint8Array | null;
   fontFacetypeBytesByGuid: (guid: string) => Uint8Array | null;
   areaEmissionBytesByGuid: (guid: string) => Uint8Array | null;
   fontMsdfJsonByGuid: (guid: string) => Uint8Array | null;
   fontMsdfPngByGuid: (guid: string) => Uint8Array | null;
   navmeshByGuid: (guid: string) => Uint8Array | null;
+  /** Throws for a Scene the reverb bake could not read, so its chunk may be stale. */
   audioReverbByGuid: (guid: string) => Uint8Array | null;
 };
 
@@ -90,26 +95,22 @@ async function bytesForAsset(
     return encoder.encode(JSON.stringify(document));
   }
   if (asset.header.type === "Texture") {
-    try {
-      const selected = selectTextureChunk(asset.header, { transcoderAvailable });
-      const bytes = await readAssetChunk(asset.path, selected.chunk.id);
-      const usage = String(asset.header.payload.usage ?? "albedo");
-      const blockAlign = textureEncodeBlockAlign(usage);
-      if (
-        selected.kind !== "ktx2" ||
-        !bytes ||
-        (shouldCompressTexture(usage) && (!blockAlign || isKtx2BlockAligned(bytes, blockAlign)))
-      ) {
-        return bytes;
-      }
-      // A KTX2 retained from an earlier Usage: uncompressed Usages keep exact
-      // pixels, and Particle encodes block-aligned, so a misaligned Particle
-      // KTX2 is stale (its re-encode pending or failed). Ship the source pixels.
-      const pixels = asset.header.chunks.find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
-      return (pixels ? await readAssetChunk(asset.path, pixels.id) : null) ?? bytes;
-    } catch {
-      return null;
+    const selected = selectTextureChunk(asset.header, { transcoderAvailable });
+    const bytes = await readAssetChunk(asset.path, selected.chunk.id);
+    const usage = String(asset.header.payload.usage ?? "albedo");
+    const blockAlign = textureEncodeBlockAlign(usage);
+    if (
+      selected.kind !== "ktx2" ||
+      !bytes ||
+      (shouldCompressTexture(usage) && (!blockAlign || isKtx2BlockAligned(bytes, blockAlign)))
+    ) {
+      return bytes;
     }
+    // A KTX2 retained from an earlier Usage: uncompressed Usages keep exact
+    // pixels, and Particle encodes block-aligned, so a misaligned Particle
+    // KTX2 is stale (its re-encode pending or failed). Ship the source pixels.
+    const pixels = asset.header.chunks.find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
+    return (pixels ? await readAssetChunk(asset.path, pixels.id) : null) ?? bytes;
   }
   if (asset.header.type === "Audio") {
     const payload = normalizeAudioPayload(document ?? asset.header.payload);
@@ -171,22 +172,30 @@ export async function loadExportDocuments(
   const payloads = new Map<string, unknown>();
   const bytes = new Map<string, Uint8Array>();
   const fontFacetypes = new Map<string, Uint8Array>();
+  const byteErrors = new Map<string, unknown>();
   const areaEmissions = new Map<string, Uint8Array>();
   const areaEmissionErrors = new Map<string, unknown>();
   const fontMsdfJson = new Map<string, Uint8Array>();
   const fontMsdfPng = new Map<string, Uint8Array>();
   const navmeshes = new Map<string, Uint8Array>();
   const audioReverbs = new Map<string, Uint8Array>();
+  const audioReverbErrors = new Map<string, unknown>();
   for (const asset of loaders.assets) {
+    // Payloads are packed without migration. An unsupported format fails the
+    // export once the game reaches the asset; an unreached one does not.
+    try {
+      assetFormats.requireCurrent(asset.header.type, asset.header.version);
+    } catch (error) {
+      byteErrors.set(asset.header.guid, error);
+      continue;
+    }
     const kind = documentKindForAssetType(asset.header.type);
     let document: unknown = null;
     if (
       kind &&
-      kind !== "asset-settings" &&
       kind !== "texture" &&
       (JSON_TYPES.has(asset.header.type) ||
         asset.header.type === "Class" ||
-        asset.header.type === "Graph" ||
         asset.header.type === "Scene" ||
         asset.header.type === "Font" ||
         asset.header.type === "Audio" ||
@@ -194,10 +203,11 @@ export async function loadExportDocuments(
     ) {
       try {
         document = await loaders.loadDocument(kind, asset.path);
-      } catch {
-        document = asset.header.type === "Audio" || asset.header.type === "Model"
-          ? asset.header.payload
-          : null;
+      } catch (error) {
+        // Audio and Model keep their settings in the header; anything else
+        // reached by the game fails the export rather than shipping without it.
+        if (asset.header.type === "Audio" || asset.header.type === "Model") document = asset.header.payload;
+        else byteErrors.set(asset.header.guid, error);
       }
     }
     if (document && typeof document === "object") {
@@ -208,16 +218,19 @@ export async function loadExportDocuments(
     if (asset.header.type === "Scene" && document) {
       scenes.set(asset.header.guid, document as SerializedScene);
     }
-    if (
-      (asset.header.type === "Class" || asset.header.type === "Graph") &&
-      document
-    ) {
+    if (asset.header.type === "Class" && document) {
       graphs.set(asset.header.guid, document as SerializedGraph);
     }
-    const payload = await bytesForAsset(
-      asset, document, loaders.readAssetChunk, loaders.transcoderAvailable !== false,
-    );
-    if (payload) bytes.set(asset.header.guid, payload);
+    if (!byteErrors.has(asset.header.guid)) {
+      try {
+        const payload = await bytesForAsset(
+          asset, document, loaders.readAssetChunk, loaders.transcoderAvailable !== false,
+        );
+        if (payload) bytes.set(asset.header.guid, payload);
+      } catch (error) {
+        byteErrors.set(asset.header.guid, error);
+      }
+    }
     const emissionChunk = currentAreaEmissionChunk(asset.header);
     if (emissionChunk) {
       try {
@@ -250,6 +263,11 @@ export async function loadExportDocuments(
       } catch {
         // Scene JSON still packs when the extra chunk is missing.
       }
+      // A chunk the bake could not refresh may be stale; never pack it.
+      if (loaders.audioReverbBakeFailures?.has(asset.path)) {
+        audioReverbErrors.set(asset.header.guid, loaders.audioReverbBakeFailures.get(asset.path));
+        continue;
+      }
       try {
         const field = await loaders.readAssetChunk(
           asset.path,
@@ -268,6 +286,7 @@ export async function loadExportDocuments(
     graphByGuid: (guid) => graphs.get(guid) ?? null,
     payloadByGuid: (guid) => payloads.get(guid) ?? null,
     bytesByGuid: (guid) => {
+      if (byteErrors.has(guid)) throw byteErrors.get(guid);
       return bytes.get(guid) ?? null;
     },
     fontFacetypeBytesByGuid: (guid) => fontFacetypes.get(guid) ?? null,
@@ -278,6 +297,9 @@ export async function loadExportDocuments(
     fontMsdfJsonByGuid: (guid) => fontMsdfJson.get(guid) ?? null,
     fontMsdfPngByGuid: (guid) => fontMsdfPng.get(guid) ?? null,
     navmeshByGuid: (guid) => navmeshes.get(guid) ?? null,
-    audioReverbByGuid: (guid) => audioReverbs.get(guid) ?? null,
+    audioReverbByGuid: (guid) => {
+      if (audioReverbErrors.has(guid)) throw audioReverbErrors.get(guid);
+      return audioReverbs.get(guid) ?? null;
+    },
   };
 }

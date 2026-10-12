@@ -6,6 +6,12 @@ import {
   FLOAT,
 } from "@babylonslate/scripting";
 
+/**
+ * Color channels. Each node binds its color inputs once, so an impure color
+ * is read once and every channel comes from the same value.
+ */
+const CHANNELS = ["x", "y", "z", "w"] as const;
+
 export const colorNodes: NodeDefinition[] = [
   {
     id: "color.lerp",
@@ -19,14 +25,9 @@ export const colorNodes: NodeDefinition[] = [
       pin("alpha", "Alpha", "in", FLOAT),
       pin("out", "Out", "out", COLOR),
     ],
-    codegen: (ctx) => {
-      const a = ctx.input("a");
-      const b = ctx.input("b");
-      const t = ctx.input("alpha");
-      return {
-        out: `{ x: (${a}).x + ((${b}).x - (${a}).x) * (${t}), y: (${a}).y + ((${b}).y - (${a}).y) * (${t}), z: (${a}).z + ((${b}).z - (${a}).z) * (${t}), w: (${a}).w + ((${b}).w - (${a}).w) * (${t}) }`,
-      };
-    },
+    codegen: (ctx) => ({
+      out: `((a, b, t) => ({ ${CHANNELS.map((c) => `${c}: a.${c} + (b.${c} - a.${c}) * t`).join(", ")} }))(${ctx.input("a")}, ${ctx.input("b")}, ${ctx.input("alpha")})`,
+    }),
   },
   {
     id: "color.multiply",
@@ -39,13 +40,9 @@ export const colorNodes: NodeDefinition[] = [
       pin("b", "B", "in", COLOR),
       pin("out", "Out", "out", COLOR),
     ],
-    codegen: (ctx) => {
-      const a = ctx.input("a");
-      const b = ctx.input("b");
-      return {
-        out: `{ x: (${a}).x * (${b}).x, y: (${a}).y * (${b}).y, z: (${a}).z * (${b}).z, w: (${a}).w * (${b}).w }`,
-      };
-    },
+    codegen: (ctx) => ({
+      out: `((a, b) => ({ ${CHANNELS.map((c) => `${c}: a.${c} * b.${c}`).join(", ")} }))(${ctx.input("a")}, ${ctx.input("b")})`,
+    }),
   },
   {
     id: "color.nearlyEqual",
@@ -58,12 +55,8 @@ export const colorNodes: NodeDefinition[] = [
       pin("b", "B", "in", COLOR),
       pin("out", "Out", "out", BOOL),
     ],
-    codegen: (ctx) => {
-      const a = ctx.input("a");
-      const b = ctx.input("b");
-      return {
-        out: `(Math.abs((${a}).x - (${b}).x) < 1e-6 && Math.abs((${a}).y - (${b}).y) < 1e-6 && Math.abs((${a}).z - (${b}).z) < 1e-6 && Math.abs((${a}).w - (${b}).w) < 1e-6)`,
-      };
-    },
+    codegen: (ctx) => ({
+      out: `((a, b) => ${CHANNELS.map((c) => `Math.abs(a.${c} - b.${c}) < 1e-6`).join(" && ")})(${ctx.input("a")}, ${ctx.input("b")})`,
+    }),
   },
 ];

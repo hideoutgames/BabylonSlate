@@ -4,8 +4,9 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
+// CI runs the WebGL2 backbuffer proof (renderer-qualification coverage matrix).
 for (const backend of ["webgl2"] as const) {
-for (const output of ["backbuffer"] as ("backbuffer" | "texture")[]) {
+for (const output of ["backbuffer"] as const) {
 test(`Forward FrameGraph preserves surface pixels and scene ownership on ${backend} ${output}`, async ({
   page,
 }, testInfo) => {
@@ -43,7 +44,7 @@ test(`Forward FrameGraph preserves surface pixels and scene ownership on ${backe
   expect(externalRequests).toEqual([]);
   expect(result.backend).toBe(backend);
   expect(result.output).toBe(output);
-  expect(result.webGLVersion).toBe(backend === "webgl2" ? 2 : null);
+  expect(result.webGLVersion).toBe(2);
   expect(result.captures).toHaveLength(12);
   for (const capture of result.captures) {
     expect(capture.prepared, capture.name).toEqual({ path: "frameGraph" });
@@ -82,14 +83,6 @@ test(`Forward FrameGraph preserves surface pixels and scene ownership on ${backe
     expect(entry.retainedRenderers, entry.mode).toBe(0);
     expect(entry.retainedGraphs, entry.mode).toBe(0);
     expect(entry.siblingAfter, entry.mode).toEqual(entry.siblingBefore);
-    if (output === "texture") {
-      const expectedSibling = [153, 51, 179, 255];
-      for (let channel = 0; channel < 4; channel++)
-        expect(Math.abs(entry.siblingBefore[channel]! - expectedSibling[channel]!)).toBeLessThanOrEqual(1);
-      expect(entry.siblingPreservedDuringTarget, entry.mode).toEqual(entry.siblingBefore);
-      expect(entry.targetReferencesAfter, entry.mode).toEqual([1, 1]);
-      expect(entry.referenceAfterDispose, entry.mode).toEqual(entry.targetAfterDispose);
-    }
   }
 });
 }

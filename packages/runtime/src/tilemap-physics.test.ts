@@ -16,7 +16,7 @@ describe("tilemap chain colliders", () => {
     let tilemap = createDefaultTilemapPayload();
     tilemap = {
       ...tilemap,
-      tilesetGuid: "tileset-1",
+      tilesets: [{ guid: "tileset-1", firstGid: 1, tileCount: 1 }],
       tileWidth: 16,
       tileHeight: 16,
     };
@@ -87,6 +87,33 @@ describe("tilemap chain colliders", () => {
     runtime.stop();
   });
 
+  it("merges a collision floor that crosses a chunk border into one chain", () => {
+    const tileset = normalizeTilesetPayload({ tileWidth: 16, tileHeight: 16, tiles: [{ id: 1, collision: "full" }] });
+    let tilemap = {
+      ...createDefaultTilemapPayload(),
+      tilesets: [{ guid: "tileset-1", firstGid: 1, tileCount: 1 }],
+      tileWidth: 16,
+      tileHeight: 16,
+    };
+    const border = tilemap.chunkSize;
+    for (let x = border - 2; x < border + 2; x++) tilemap = setTile(tilemap, "layer-1", x, 0, 1);
+    const runtime = createInProcessRuntime({
+      seed: 4, maxActors: 8, preferSoftwarePhysics: true, physicsWorld: "2d", seedDemoActors: false,
+      pixelsPerUnit: 16, tilemaps: { "map-1": tilemap }, tilesets: { "tileset-1": tileset },
+    });
+    const world = runtime.getWorld();
+    const ground = world.createActor({ guid: "ground", classId: "Actor" });
+    ground.attachComponent(world.createComponent({ classId: "TilemapComponent", assetGuid: "map-1", variables: { assetGuid: "map-1" } }));
+    world.spawnActorNow(ground);
+    runtime.start();
+    runtime.tick();
+    const chains = runtime.getPhysicsSync()!.getBackend().listDebugColliders()
+      .filter((collider) => collider.id.startsWith("tilemap:"));
+    // A chain per chunk would leave an edge at the border for bodies to catch on.
+    expect(chains).toHaveLength(1);
+    runtime.stop();
+  });
+
   it("Rapier 2D chain colliders catch a falling actor", async () => {
     const tileset = normalizeTilesetPayload({
       tileWidth: 16,
@@ -96,7 +123,7 @@ describe("tilemap chain colliders", () => {
     let tilemap = createDefaultTilemapPayload();
     tilemap = {
       ...tilemap,
-      tilesetGuid: "tileset-1",
+      tilesets: [{ guid: "tileset-1", firstGid: 1, tileCount: 1 }],
       tileWidth: 16,
       tileHeight: 16,
     };

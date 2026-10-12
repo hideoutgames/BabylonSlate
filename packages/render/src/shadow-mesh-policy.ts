@@ -1,4 +1,4 @@
-import { LinesMesh, type AbstractMesh } from "@babylonjs/core";
+import { LinesMesh, Vector3, type AbstractMesh } from "@babylonjs/core";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { isSkyboxMesh } from "./skybox";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
@@ -49,4 +49,15 @@ export function hasDeformingShadowBounds(mesh: AbstractMesh): boolean {
     !!mesh.morphTargetManager ||
     Number(mesh.material?.metadata?.boundsPadding ?? 0) > 0
   );
+}
+
+/**
+ * Whether a caster can reach a local light's range. Skinned, morphed and
+ * lattice-deformed geometry can leave its bind-pose bounds, so it gets twice
+ * its bounding radius.
+ */
+export function casterWithinShadowRange(mesh: AbstractMesh, position: Vector3, range: number): boolean {
+  const sphere = mesh.getBoundingInfo().boundingSphere;
+  const radius = sphere.radiusWorld * (hasDeformingShadowBounds(mesh) ? 2 : 1);
+  return Vector3.Distance(sphere.centerWorld, position) <= range + radius;
 }

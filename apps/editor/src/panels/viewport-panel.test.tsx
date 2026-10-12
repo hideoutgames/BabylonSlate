@@ -12,6 +12,7 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { playAudioLibraryFromAssets } from "../lib/play-audio";
 import type { SceneShapeEditTarget } from "../context/scene-editing-context";
 
+const navmeshOverlaySync = vi.hoisted(() => vi.fn(async () => {}));
 const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() => {
   const handle = {
     engine: {
@@ -120,6 +121,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
       sharedEngineGeneration: 1,
       playing: false,
       preparing: false,
+      reportSceneViewportLoading: vi.fn(),
     },
   };
 });
@@ -132,6 +134,7 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
     NavMeshDebugOverlay: class {
       clear(): void {}
       dispose(): void {}
+      sync = navmeshOverlaySync;
     },
     syncEditorPlayState: vi.fn(),
   };
@@ -241,6 +244,7 @@ describe("ViewportPanel engine", () => {
     handle.editor.setGridSettings.mockClear();
     handle.editor.gizmos.setSnap.mockClear();
     play.registerSharedEngine.mockClear();
+    play.reportSceneViewportLoading.mockClear();
     play.playing = false;
     play.preparing = false;
     documents.openDocuments = [];
@@ -475,6 +479,30 @@ describe("ViewportPanel engine", () => {
     },
   );
 
+  it("keeps Retry in the viewport after closing a failed load and holds Play only while loading", async () => {
+    documents.openDocuments = [{
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: createDefaultScene(),
+    }];
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    handle.loadSceneAsync.mockRejectedValueOnce(new Error("Unavailable scene resource"));
+    try {
+      renderViewport();
+      await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("Scene Loading Failed"));
+      expect(play.reportSceneViewportLoading).toHaveBeenCalledWith("scene:S", true);
+      expect(play.reportSceneViewportLoading).toHaveBeenLastCalledWith("scene:S", false);
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      fireEvent.click(screen.getByTestId("viewport-load-retry"));
+      await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+      expect(screen.queryByTestId("viewport-load-failed")).toBeNull();
+      expect(createEngineMock).toHaveBeenCalledTimes(2);
+      expect(play.reportSceneViewportLoading).toHaveBeenLastCalledWith("scene:S", false);
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
   it("applies compatible settings behind blocking progress without replacing the scene or camera", async () => {
     const scene = createDefaultScene();
     const document = {
@@ -646,6 +674,26 @@ describe("ViewportPanel engine", () => {
     play.playing = true;
     view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
     expect((screen.getByRole("button", { name: "Drop" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("reads the stored navmesh once while scene edits redraw its overlay", async () => {
+    const scene = createDefaultScene();
+    const document = {
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: { ...scene, settings: { ...scene.settings, showNavmesh: true } },
+    };
+    const stored = new Uint8Array([1, 2, 3]);
+    documents.readAssetChunk.mockReset().mockResolvedValue(stored);
+    navmeshOverlaySync.mockClear();
+    documents.openDocuments = [document];
+    const view = renderViewport();
+    await waitFor(() => expect(navmeshOverlaySync).toHaveBeenCalledWith(stored, [], "3d"));
+    const syncs = navmeshOverlaySync.mock.calls.length;
+    documents.openDocuments = [{ ...document, content: { ...document.content, actors: [createActor("box", "Box")] } }];
+    view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
+    await waitFor(() => expect(navmeshOverlaySync.mock.calls.length).toBeGreaterThan(syncs));
+    expect(navmeshOverlaySync).toHaveBeenLastCalledWith(stored, [], "3d");
+    expect(documents.readAssetChunk).toHaveBeenCalledOnce();
   });
 
   it("disables Drop while changed scene models are loading", async () => {
@@ -898,12 +946,15 @@ describe("ViewportPanel engine", () => {
 
   it("refreshes a prepared emission asset without rebuilding the scene or reacting to unchanged registry content", async () => {
     const sourceHash = "a".repeat(64);
-    const asset = {
-      rootId: "project", path: "assets/Emitter.texture.babasset",
-      header: readAssetDocumentHeader(await encodeAssetDocument({ type: "Texture", guid: "emission", name: "Emitter", version: 1, payload: {} })),
-    };
-    asset.header.chunks.push({ id: "pixels", kind: "pixels", mime: "image/png", sha256: sourceHash, locator: { inline: { offset: 0, length: 4 } } });
+    const header = readAssetDocumentHeader(await encodeAssetDocument({ type: "Texture", guid: "emission", name: "Emitter", version: 1, payload: {} }));
+    header.chunks.push({ id: "pixels", kind: "pixels", mime: "image/png", sha256: sourceHash, byteLength: 4, locator: { inline: { offset: 0, length: 4 } } });
+    let asset = { rootId: "project", path: "assets/Emitter.texture.babasset", header };
     documents.assetRegistry = { list: () => [asset], getByGuid: (guid) => guid === "emission" ? asset : undefined };
+    // The registry re-indexes a rewritten Texture with a new header; it never edits one in place.
+    const reindex = (chunks: typeof header.chunks) => {
+      asset = { ...asset, header: { ...asset.header, chunks } };
+      documents.registryEpoch += 1;
+    };
     const scene = createDefaultScene();
     scene.actors = [createActor("emitter", "Emitter", { components: [{ id: "area", classId: "AreaRectLightComponent", properties: { textureGuid: "emission" } }] })];
     documents.openDocuments = [{ id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" }, content: scene }];
@@ -912,8 +963,7 @@ describe("ViewportPanel engine", () => {
     const loads = handle.loadScene.mock.calls.length;
     const collects = documents.collectPlayAreaEmissions.mock.calls.length;
     const refresh = () => view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
-    asset.header.chunks.push({ id: areaEmissionChunkId(sourceHash), kind: "area-emission", mime: "application/octet-stream", sha256: "b".repeat(64), locator: { inline: { offset: 4, length: 8 } } });
-    documents.registryEpoch += 1;
+    reindex([...asset.header.chunks, { id: areaEmissionChunkId(sourceHash), kind: "area-emission", mime: "application/octet-stream", sha256: "b".repeat(64), byteLength: 8, locator: { inline: { offset: 4, length: 8 } } }]);
     refresh();
     await waitFor(() => expect(documents.collectPlayAreaEmissions).toHaveBeenCalledTimes(collects + 1));
     await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
@@ -922,8 +972,7 @@ describe("ViewportPanel engine", () => {
     await act(async () => {});
     expect(documents.collectPlayAreaEmissions).toHaveBeenCalledTimes(collects + 1);
     // Replacing the source invalidates the old prepared representation.
-    asset.header.chunks.find((chunk) => chunk.id === "pixels")!.sha256 = "c".repeat(64);
-    documents.registryEpoch += 1;
+    reindex(asset.header.chunks.map((chunk) => chunk.id === "pixels" ? { ...chunk, sha256: "c".repeat(64) } : chunk));
     refresh();
     await waitFor(() => expect(documents.collectPlayAreaEmissions).toHaveBeenCalledTimes(collects + 2));
   });

@@ -1,6 +1,6 @@
 import {
   Camera, Color3, CreateLineSystem, CreateSphere, Matrix, Mesh, PointerDragBehavior,
-  StandardMaterial, Vector3,
+  Quaternion, StandardMaterial, Vector3,
   type LinesMesh, type Scene, type UtilityLayerRenderer,
 } from "@babylonjs/core";
 import type { RenderScheduler } from "./render-scheduler";
@@ -23,11 +23,20 @@ export interface ShapeHandlesOptions {
   handleScale?: number;
   onDragStart?: () => void;
   onCommit?: (edit: ComponentShapeEdit) => void;
+  /** The selected handle or its world placement node changed; re-attach the transform gizmo. */
+  onSelectionChange?: () => void;
 }
 export interface ShapeHandlesHost<Target extends ShapeHandleTarget> {
   attach: (target: Target | null) => void;
   isDragging: () => boolean;
   handleIds: () => string[];
+  /** Invisible node at the selected handle for the transform gizmo, or null. */
+  selectedNode: () => Mesh | null;
+  clearSelection: () => void;
+  /** Gizmo drags of `selectedNode` preview like handle drags and commit once on end. */
+  beginSelectionDrag: () => boolean;
+  dragSelection: () => void;
+  endSelectionDrag: () => void;
   dispose: () => void;
 }
 export interface ShapeHandlesAdapter<Body extends object, Handle extends ShapeHandle, Target extends ShapeHandleTarget> {
@@ -42,6 +51,8 @@ export interface ShapeHandlesAdapter<Body extends object, Handle extends ShapeHa
   remove: (body: Body, handle: Handle) => Record<string, unknown> | null;
   constraint: (handle: Handle, world: Matrix, camera: Camera | null) => { dragAxis: Vector3 } | { dragPlaneNormal: Vector3 };
   color: (handle: Handle) => Color3;
+  /** Handles that a click selects for the transform gizmo. */
+  selectable?: (handle: Handle) => boolean;
 }
 
 const OUTLINE_COLOR = new Color3(0.42, 0.78, 1);
@@ -66,7 +77,9 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
   let constraintWorld: Matrix | null = null;
   let constraintView: Matrix | null = null;
   let constraintsDirty = true;
-  let drag: { handle: Handle; meshId: string; start: Body; properties: Record<string, unknown>; removed: boolean } | null = null;
+  let drag: { handle: Handle; meshId: string; start: Body; properties: Record<string, unknown>; removed: boolean; gizmo?: boolean } | null = null;
+  let selectedId: string | null = null;
+  let selection: Mesh | null = null;
   let release: (() => void) | null = null;
   const lastTap = { id: "", time: -Infinity };
   const sourceMesh = (): Mesh | null => {
@@ -86,9 +99,51 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
     if (mesh) adapter.update(mesh, body);
     options.scheduler?.invalidate("gizmo");
   };
+  const select = (id: string | null) => {
+    if (id === selectedId) return;
+    selectedId = id;
+    if (id) {
+      selection ??= new Mesh(`${adapter.name}-handle-selection`, util);
+      selection.isPickable = false;
+      selection.rotationQuaternion ??= Quaternion.Identity();
+      place();
+    } else { selection?.dispose(); selection = null; }
+    options.onSelectionChange?.();
+    options.scheduler?.invalidate("gizmo");
+  };
+  const place = () => {
+    const handle = selectedId ? handles.find((entry) => entry.id === selectedId) : null;
+    const source = sourceMesh();
+    if (!selection || !handle || !source || drag?.gizmo) return;
+    const matrix = source.computeWorldMatrix(true);
+    Vector3.TransformCoordinatesFromFloatsToRef(handle.position[0], handle.position[1], handle.position[2], matrix, selection.position);
+    matrix.decompose(undefined, selection.rotationQuaternion!);
+    selection.computeWorldMatrix(true);
+  };
+  const moveTo = (world: Vector3) => {
+    if (!drag || !body || drag.removed) return;
+    const matrix = sourceMesh()?.computeWorldMatrix(true);
+    if (!matrix || Math.abs(matrix.determinant()) < 1e-12) return;
+    const local = Vector3.TransformCoordinates(world, matrix.clone().invert()).asArray() as ShapePoint;
+    if (drag.handle.kind === "insert") {
+      const inserted = adapter.insert(body, drag.handle, local);
+      if (!inserted) return;
+      drag.handle = inserted.handle;
+      drag.properties = { ...drag.properties, ...inserted.properties };
+      apply(inserted.properties);
+    } else {
+      const properties = adapter.drag(body, drag.handle, local);
+      drag.properties = { ...drag.properties, ...properties };
+      apply(properties);
+    }
+  };
   const finish = (cancelled = false) => {
     const current = drag;
     drag = null;
+    if (current && !cancelled && !current.gizmo) {
+      if (current.removed) select(null);
+      else if (adapter.selectable?.(current.handle)) select(current.handle.id);
+    }
     meshesDirty = true;
     release?.(); release = null;
     if (cancelled && current) {
@@ -122,22 +177,9 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
       }
     });
     behavior.onDragObservable.add((event) => {
-      if (!drag || !body || drag.removed) return;
+      if (!drag || drag.gizmo) return;
       lastTap.id = "";
-      const matrix = sourceMesh()?.computeWorldMatrix(true);
-      if (!matrix || Math.abs(matrix.determinant()) < 1e-12) return;
-      const local = Vector3.TransformCoordinates(event.dragPlanePoint, matrix.clone().invert()).asArray() as ShapePoint;
-      if (drag.handle.kind === "insert") {
-        const inserted = adapter.insert(body, drag.handle, local);
-        if (!inserted) return;
-        drag.handle = inserted.handle;
-        drag.properties = { ...drag.properties, ...inserted.properties };
-        apply(inserted.properties);
-      } else {
-        const properties = adapter.drag(body, drag.handle, local);
-        drag.properties = { ...drag.properties, ...properties };
-        apply(properties);
-      }
+      moveTo(event.dragPlanePoint);
     });
     behavior.onDragEndObservable.add(() => finish());
   };
@@ -182,6 +224,8 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
       handlesBody = body;
       meshesDirty = true;
       constraintsDirty = true;
+      // Undo or a Details edit can remove the selected point.
+      if (selectedId && !drag && !handles.some((handle) => handle.id === selectedId)) select(null);
     }
     if (meshesDirty) { syncMeshes(); meshesDirty = false; }
     const matrix = source.computeWorldMatrix(true), camera = layer.getRenderCamera();
@@ -214,6 +258,7 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
       else outlineWorld = matrix.clone();
     }
     outline?.setEnabled(true);
+    place();
   };
   const observer = util.onBeforeRenderObservable.add(layout);
   return {
@@ -222,15 +267,32 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
       if (drag && same) { target = next; return; }
       if (drag) finish(true);
       target = next; body = next ? adapter.parse(next.properties, next) : null;
-      if (!same) { handles = []; clear(); lastTap.id = ""; constraintsDirty = true; }
+      if (!same) { handles = []; clear(); lastTap.id = ""; constraintsDirty = true; select(null); }
       if (next) layout();
       options.scheduler?.invalidate("gizmo");
     },
     isDragging: () => drag !== null,
     handleIds: () => handles.map((handle) => handle.id),
+    selectedNode: () => selection,
+    clearSelection: () => select(null),
+    beginSelectionDrag: () => {
+      const handle = handles.find((entry) => entry.id === selectedId);
+      if (drag || !handle || !body || !target || !selection) return false;
+      release ??= options.scheduler?.acquireContinuous(`${adapter.name}-handles`) ?? null;
+      options.onDragStart?.();
+      drag = { handle, meshId: handle.id, start: adapter.parse({ ...body }, target), properties: {}, removed: false, gizmo: true };
+      return true;
+    },
+    dragSelection: () => {
+      if (drag?.gizmo && selection) moveTo(selection.getAbsolutePosition());
+    },
+    endSelectionDrag: () => {
+      if (drag?.gizmo) finish();
+    },
     dispose: () => {
       util.onBeforeRenderObservable.remove(observer);
       if (drag) finish(true);
+      selection?.dispose(); selection = null; selectedId = null;
       clear();
       for (const material of materials.values()) material.dispose();
     },

@@ -125,8 +125,8 @@ export function materialPaletteNodes(
     title: definition.title,
     category: definition.category,
     searchAliases: definition.searchAliases,
-    pins: pinsForMaterialNode(definition.type, { properties: newNodeDefaults(definition.type, {}) }),
-    defaultData: { ...newNodeDefaults(definition.type, {}), __material: true },
+    pins: pinsForMaterialNode(definition.type, { properties: newNodeDefaults(definition.type) }),
+    defaultData: { ...newNodeDefaults(definition.type), __material: true },
   }));
 }
 
@@ -151,11 +151,8 @@ function propertiesFromNodeData(
   return properties;
 }
 
-function newNodeDefaults(type: string, data: Record<string, unknown>): Record<string, unknown> {
-  if (type === "custom.glsl" && typeof data.body !== "string" && typeof data.glsl !== "string") return newCustomGlslProperties();
-  if (type === "input.time") return { timeMode: "seconds", ...data };
-  if (type === "math.divide" || type === "math.mod") return { "default:b": [1], ...data };
-  if (type === "math.pow") return { "default:exponent": [1], ...data };
+function newNodeDefaults(type: string): Record<string, unknown> {
+  if (type === "custom.glsl") return newCustomGlslProperties();
   return {};
 }
 
@@ -203,8 +200,8 @@ export function serializedToMaterialGraph(
       id: edge.id,
       sourceNodeId: edge.source,
       targetNodeId: edge.target,
-      sourcePinId: edge.sourceHandle ?? "out",
-      targetPinId: edge.targetHandle ?? "in",
+      sourcePinId: edge.sourceHandle,
+      targetPinId: edge.targetHandle,
     })),
   });
 }
@@ -224,13 +221,17 @@ export function serializedToMaterialFunctionGraph(
         ...(isMaterialParameterNode(node.type) && !previous.nodes.some((entry) => entry.id === node.id) ? { name: "" } : {}),
       },
     })),
-    edges: graph.edges.map((edge) => ({
-      id: edge.id,
-      sourceNodeId: edge.source,
-      targetNodeId: edge.target,
-      sourcePinId: edge.sourceHandle ?? "out",
-      targetPinId: edge.targetHandle ?? "in",
-    })),
+    edges: graph.edges.flatMap((edge) =>
+      edge.sourceHandle && edge.targetHandle
+        ? [{
+            id: edge.id,
+            sourceNodeId: edge.source,
+            targetNodeId: edge.target,
+            sourcePinId: edge.sourceHandle,
+            targetPinId: edge.targetHandle,
+          }]
+        : [],
+    ),
   };
 }
 
@@ -241,7 +242,7 @@ export function hydrateMaterialGraphForEditor(
 ): SerializedGraph {
   const resolver = createTypeResolver({
     nodes: graph.nodes.map((node) => ({ ...node, properties: propertiesFromNodeData(node.data) })),
-    edges: graph.edges.map((edge) => ({ id: edge.id, sourceNodeId: edge.source, sourcePinId: edge.sourceHandle ?? "out", targetNodeId: edge.target, targetPinId: edge.targetHandle ?? "in" })),
+    edges: graph.edges.map((edge) => ({ id: edge.id, sourceNodeId: edge.source, sourcePinId: edge.sourceHandle ?? "", targetNodeId: edge.target, targetPinId: edge.targetHandle ?? "" })),
   }, context);
   return {
     ...graph,

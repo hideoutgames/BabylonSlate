@@ -83,21 +83,31 @@ function useSkyboxCreatorDecodedSource(sourceTextureGuid: string | null) {
   );
   const [decoded, setDecoded] = useState<DecodedSkyboxSource | null>(null);
   const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     let objectUrl: string | null = null;
     setDecoded(null);
     setUrl(null);
-    if (!sourceTextureGuid || !texturePath || !readAssetChunk) return;
+    setError(null);
+    if (!sourceTextureGuid) return;
+    if (!texturePath || !readAssetChunk) {
+      setError("The source Texture is missing.");
+      return;
+    }
     void (async () => {
-      const image = await readTextureImageBytes(readAssetChunk, texturePath);
-      if (!image || cancelled) return;
-      objectUrl = URL.createObjectURL(
-        new Blob([image.bytes as Uint8Array<ArrayBuffer>], image.mime ? { type: image.mime } : undefined),
-      );
-      if (!cancelled) setUrl(objectUrl);
       try {
+        const image = await readTextureImageBytes(readAssetChunk, texturePath);
+        if (cancelled) return;
+        if (!image) {
+          setError("The source Texture has no image data.");
+          return;
+        }
+        objectUrl = URL.createObjectURL(
+          new Blob([image.bytes as Uint8Array<ArrayBuffer>], image.mime ? { type: image.mime } : undefined),
+        );
+        setUrl(objectUrl);
         const result = await decodeSourceToRgba(
           image.bytes,
           SOURCE_DECODE_MAX,
@@ -110,8 +120,10 @@ function useSkyboxCreatorDecodedSource(sourceTextureGuid: string | null) {
             height: result.height,
           });
         }
-      } catch {
-        if (!cancelled) setDecoded(null);
+      } catch (reason) {
+        if (cancelled) return;
+        const message = reason instanceof Error ? reason.message.trim() : "";
+        setError(message || "The source Texture could not be decoded.");
       }
     })();
     return () => {
@@ -120,7 +132,7 @@ function useSkyboxCreatorDecodedSource(sourceTextureGuid: string | null) {
     };
   }, [readAssetChunk, sourceTextureGuid, texturePath]);
 
-  return { decoded, url };
+  return { decoded, url, error };
 }
 
 const COMPASS_LABEL: Record<SkyboxCreatorCompassFace, string> = {
@@ -254,6 +266,10 @@ function useSkyboxCreatorCreate(
   const [busy, setBusy] = useState(false);
   const { readAssetChunk, refreshAssetRegistry } = useDocumentActions();
   const { assetRegistry } = useRegistryState();
+  // Create awaits the image read and the face writes; its commit must start
+  // from the document as it is then, not from the render that was clicked.
+  const payloadRef = useRef(payload);
+  payloadRef.current = payload;
 
   const create = async () => {
     const helper = normalizeSkyboxCreatorPayload(payload);
@@ -310,7 +326,7 @@ function useSkyboxCreatorCreate(
           assetRegistry.createAsset(id, relativePath, result),
         deleteAsset: (guid) => assetRegistry.deleteAsset(guid),
       });
-      onChange({ ...helper, generatedFaces });
+      onChange({ ...normalizeSkyboxCreatorPayload(payloadRef.current), generatedFaces });
       await refreshAssetRegistry?.();
     } catch (error) {
       const message = error instanceof Error ? error.message.trim() : "";
@@ -585,13 +601,16 @@ export function SkyboxCreatorPreview({
   );
 }
 
+/** Quiet time after a placement change before the Cubemap preview rebuilds. */
+const CUBEMAP_PLACEMENT_SETTLE_MS = 150;
+
 export function SkyboxCreatorCubemap({
   payload,
 }: {
   payload: Record<string, unknown>;
 }) {
   const helper = normalizeSkyboxCreatorPayload(payload);
-  const { decoded } = useSkyboxCreatorDecodedSource(helper.sourceTextureGuid);
+  const { decoded, error } = useSkyboxCreatorDecodedSource(helper.sourceTextureGuid);
   const [facePngs, setFacePngs] = useState<SkyboxCreatorPreviewFacePngs | null>(
     null,
   );
@@ -599,23 +618,38 @@ export function SkyboxCreatorCubemap({
     ? `${helper.sourcePlacement.x},${helper.sourcePlacement.y},${helper.sourcePlacement.width},${helper.sourcePlacement.height}`
     : "";
 
+  const slicedSourceRef = useRef<typeof decoded>(null);
+
   useEffect(() => {
     if (!decoded) {
+      slicedSourceRef.current = null;
       setFacePngs(null);
       return;
     }
-    const sliced = fitSourceIntoSkyboxNet(
-      decoded.rgba,
-      decoded.width,
-      decoded.height,
-      placementFromKey(placementKey),
-    );
-    const pngs = {} as SkyboxCreatorPreviewFacePngs;
-    for (const key of SKYBOX_FACE_KEYS) {
-      const face = sliced.faces[key];
-      pngs[key] = encodePngRgba(face.size, face.size, face.rgba);
+    const slice = () => {
+      const sliced = fitSourceIntoSkyboxNet(
+        decoded.rgba,
+        decoded.width,
+        decoded.height,
+        placementFromKey(placementKey),
+      );
+      const pngs = {} as SkyboxCreatorPreviewFacePngs;
+      for (const key of SKYBOX_FACE_KEYS) {
+        const face = sliced.faces[key];
+        pngs[key] = encodePngRgba(face.size, face.size, face.rgba);
+      }
+      setFacePngs(pngs);
+    };
+    // A new source shows at once. A placement drag edits on every pointer
+    // move, so re-encoding six faces and rebuilding the preview waits for it
+    // to settle.
+    if (slicedSourceRef.current !== decoded) {
+      slicedSourceRef.current = decoded;
+      slice();
+      return;
     }
-    setFacePngs(pngs);
+    const timer = window.setTimeout(slice, CUBEMAP_PLACEMENT_SETTLE_MS);
+    return () => window.clearTimeout(timer);
   }, [decoded, placementKey]);
 
   return (
@@ -633,7 +667,9 @@ export function SkyboxCreatorCubemap({
             </EmptyMedia>
             <EmptyTitle>No Cubemap</EmptyTitle>
             <EmptyDescription>
-              {helper.sourceTextureGuid ? "Decoding the Texture…" : "Pick a Texture to look around the skybox here."}
+              {!helper.sourceTextureGuid
+                ? "Pick a Texture to look around the skybox here."
+                : (error ?? "Decoding the Texture…")}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

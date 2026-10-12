@@ -69,7 +69,8 @@ export interface GizmoHost {
   setMode: (mode: ViewportMode) => void;
   setSpace: (space: GizmoSpace) => void;
   setSnap: (snap: GizmoSnapSettings) => void;
-  attachTo: (mesh: AbstractMesh | null, visuals?: AbstractMesh[]) => void;
+  /** `tool` overrides the active tool for this attachment (a spline point always translates). */
+  attachTo: (mesh: AbstractMesh | null, visuals?: AbstractMesh[], attach?: { tool?: GizmoTool }) => void;
   attachedMesh: () => AbstractMesh | null;
   /** True while a gizmo handle drag is in progress. */
   isDragging: () => boolean;
@@ -210,22 +211,26 @@ export function clampGizmoScreenScale(
   return currentScale;
 }
 
+/** World axes a translate handle moves: an axis arrow one, a plane square two. */
+export type TranslateDragAxes = { x: boolean; y: boolean; z: boolean };
+
 /**
- * Move snap is grid-absolute: each axis the drag moved lands on a multiple of
- * `step` in world space, while untouched axes keep their start value.
+ * Move snap is grid-absolute: each axis the handle drags lands on a multiple
+ * of `step` in world space, while the other axes keep their exact start value
+ * (float drift from repeated world/local conversion never snaps them).
  */
 export function snapDraggedPositionToGrid(
   free: { x: number; y: number; z: number },
   start: { x: number; y: number; z: number },
   step: number,
-): { x: number; y: number; z: number } {
-  const axis = (value: number, origin: number) =>
-    Math.abs(value - origin) < 1e-9 ? origin : Math.round(value / step) * step;
-  return {
-    x: axis(free.x, start.x),
-    y: axis(free.y, start.y),
-    z: axis(free.z, start.z),
-  };
+  axes: TranslateDragAxes,
+  result: Vector3,
+): Vector3 {
+  return result.set(
+    axes.x ? Math.round(free.x / step) * step : start.x,
+    axes.y ? Math.round(free.y / step) * step : start.y,
+    axes.z ? Math.round(free.z / step) * step : start.z,
+  );
 }
 
 function brighten(color: Color3, amount = 0.38): Color3 {
@@ -438,37 +443,46 @@ export function createGizmoHost(
   const manipulator = options.manipulator ?? "trs";
   let attached: AbstractMesh | null = null;
   let overlayVisuals: AbstractMesh[] = [];
+  let forcedTool: GizmoTool | null = null;
+  const activeTool = () => forcedTool ?? tool;
+  const overlay = () => manipulator === "overlay-box" && !forcedTool;
   let releaseLease: (() => void) | null = null;
   let dragging = false;
   let translateSnap = 0;
+  // World axes each translate handle moves; rotate and scale handles never snap here.
+  const translateAxes = new Map<object, TranslateDragAxes>([
+    [position.xGizmo, { x: true, y: false, z: false }],
+    [position.yGizmo, { x: false, y: true, z: false }],
+    [position.zGizmo, { x: false, y: false, z: true }],
+    [position.xPlaneGizmo, { x: false, y: true, z: true }],
+    [position.yPlaneGizmo, { x: true, y: false, z: true }],
+    [position.zPlaneGizmo, { x: true, y: true, z: false }],
+  ]);
   // Unsnapped world position the pointer has dragged to, plus the last
   // snapped position written back (Babylon adds each delta to the mesh).
-  let snapDrag: { start: Vector3; free: Vector3; last: Vector3 } | null = null;
+  let snapDrag: { start: Vector3; free: Vector3; last: Vector3; axes: TranslateDragAxes } | null = null;
+  const dragTranslation = new Vector3();
 
   const snapTranslateDrag = () => {
     const mesh = position.attachedMesh;
     if (!snapDrag || !mesh) return;
-    const current = mesh.computeWorldMatrix(true).getTranslation();
-    snapDrag.free.addInPlace(current.subtract(snapDrag.last));
-    const snapped = snapDraggedPositionToGrid(
-      snapDrag.free,
-      snapDrag.start,
-      translateSnap,
-    );
-    const next = new Vector3(snapped.x, snapped.y, snapped.z);
-    mesh.setAbsolutePosition(next);
+    mesh.computeWorldMatrix(true).getTranslationToRef(dragTranslation);
+    snapDrag.free.addInPlace(dragTranslation).subtractInPlace(snapDrag.last);
+    snapDraggedPositionToGrid(snapDrag.free, snapDrag.start, translateSnap, snapDrag.axes, snapDrag.last);
+    mesh.setAbsolutePosition(snapDrag.last);
     mesh.computeWorldMatrix(true);
-    snapDrag.last = next;
   };
 
-  const startDrag = () => {
+  // `handle` is the axis or plane gizmo dragged; the overlay box passes null.
+  const startDrag = (handle: object | null) => {
     dragging = true;
     const mesh = position.attachedMesh;
+    const axes = handle ? translateAxes.get(handle) : undefined;
     snapDrag =
-      translateSnap > 0 && mesh
+      translateSnap > 0 && mesh && axes
         ? (() => {
             const start = mesh.computeWorldMatrix(true).getTranslation();
-            return { start, free: start.clone(), last: start.clone() };
+            return { start, free: start.clone(), last: start.clone(), axes };
           })()
         : null;
     releaseLease ??= options.scheduler?.acquireContinuous("gizmo") ?? null;
@@ -507,7 +521,7 @@ export function createGizmoHost(
   ];
   for (const axis of axisHandles) {
     enlargeGizmoTouchTargets(axis._rootMesh);
-    axis.dragBehavior.onDragStartObservable.add(startDrag);
+    axis.dragBehavior.onDragStartObservable.add(() => startDrag(axis));
     axis.dragBehavior.onDragObservable.add(drag);
     axis.dragBehavior.onDragEndObservable.add(endDrag);
   }
@@ -527,7 +541,7 @@ export function createGizmoHost(
   );
 
   const applyAxisVisibility = () => {
-    if (manipulator === "overlay-box") {
+    if (overlay()) {
       position.xGizmo.isEnabled = false;
       position.yGizmo.isEnabled = false;
       position.zGizmo.isEnabled = false;
@@ -543,7 +557,7 @@ export function createGizmoHost(
       scale.uniformScaleGizmo.isEnabled = false;
       return;
     }
-    const flags = gizmoAxisEnabledFlags(mode, tool);
+    const flags = gizmoAxisEnabledFlags(mode, activeTool());
     position.xGizmo.isEnabled = flags.position.x;
     position.yGizmo.isEnabled = flags.position.y;
     position.zGizmo.isEnabled = flags.position.z;
@@ -589,22 +603,23 @@ export function createGizmoHost(
       ? createOverlayTransformBox(layer, scene, {
           scheduler: options.scheduler,
           canvasCssHeight: options.canvasCssHeight,
-          onDragStart: startDrag,
+          onDragStart: () => startDrag(null),
           onDrag: drag,
           onDragEnd: endDrag,
         })
       : null;
 
   const applyAttachment = () => {
-    if (manipulator === "overlay-box") {
+    const current = activeTool();
+    if (overlay()) {
       position.attachedMesh = null;
       rotation.attachedMesh = null;
       scale.attachedMesh = null;
       overlayBox?.attachTo(attached, overlayVisuals);
     } else {
-      position.attachedMesh = tool === "translate" ? attached : null;
-      rotation.attachedMesh = tool === "rotate" ? attached : null;
-      scale.attachedMesh = tool === "scale" ? attached : null;
+      position.attachedMesh = current === "translate" ? attached : null;
+      rotation.attachedMesh = current === "rotate" ? attached : null;
+      scale.attachedMesh = current === "scale" ? attached : null;
       overlayBox?.attachTo(null);
     }
     applyAxisVisibility();
@@ -677,9 +692,10 @@ export function createGizmoHost(
       applySnap();
       overlayBox?.setSnap(snap);
     },
-    attachTo: (mesh: AbstractMesh | null, visuals?: AbstractMesh[]) => {
+    attachTo: (mesh, visuals, attach) => {
       attached = mesh;
       overlayVisuals = visuals ? [...visuals] : [];
+      forcedTool = mesh ? attach?.tool ?? null : null;
       applyAttachment();
     },
     attachedMesh: () => attached,

@@ -1,0 +1,38 @@
+{
+  "id": "unknown-type",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 10400,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": [],
+  "context": {
+    "members": [
+      {
+        "id": "speed",
+        "name": "Speed",
+        "kind": "variable",
+        "classId": "Hero",
+        "typeId": "vector3"
+      }
+    ]
+  }
+}

@@ -64,7 +64,7 @@ export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostSer
       if (!id) return null;
       const guid = deps.classAssetGuids.get(id);
       if (deps.demandAssetCatalog && guid && deps.assetPreloads.getState(guid) !== "ready") {
-        throw new Error(`Class ${id} (${guid}) is not prepared; await ctx.spawnActorAsync or Preload Assets first`);
+        throw new Error(`Class ${id} (${guid}) is not prepared; use Spawn Actor (ctx.spawnActorAsync), or load the Class first with Async Load Class or Load Class Blocking`);
       }
       return deps.spawn({
         classId: id,
@@ -101,39 +101,15 @@ export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostSer
     attachToBone: (actor, target, boneName) => {
       const slotId = deps.slot(actor);
       const targetSlotId = target ? deps.slot(target) : null;
-      if (slotId === undefined || targetSlotId === undefined) return;
+      if (slotId === undefined || targetSlotId === undefined) return false;
       deps.emit({ type: "attachToBone", slotId, targetSlotId, boneName });
+      return true;
     },
     findActor: (actorId) => {
       const actor = deps.world().findActor(actorId);
       if (!actor || actor.destroyed) return undefined;
       return actor;
     },
-  };
-}
-
-interface AssetHostDeps {
-  world(): World;
-  demandAssetCatalog: boolean;
-  assetPreloads: Pick<RuntimeAssetPreloads, "prepare" | "release" | "getState">;
-  continueSimulation(owner: BObject | null): Promise<void> | undefined;
-}
-
-/** Script asset preparation: on-demand class assets and preload handles. */
-export function createAssetHostBindings(deps: AssetHostDeps): Pick<ScriptHostServices,
-  "prepareAssets" | "releasePreload" | "getAssetLoadState"> {
-  return {
-    prepareAssets: deps.demandAssetCatalog ? async (assets, owner) => {
-      try { await deps.assetPreloads.prepare(assets, owner?.guid ?? deps.world().currentScene?.guid ?? "session"); }
-      catch (error) {
-        const pending = deps.continueSimulation(owner ?? null);
-        if (pending) await pending;
-        throw error;
-      }
-      { const pending = deps.continueSimulation(owner ?? null); if (pending) await pending; }
-    } : undefined,
-    releasePreload: (preloadId) => deps.assetPreloads.release(preloadId),
-    getAssetLoadState: (assetGuid) => deps.assetPreloads.getState(assetGuid),
   };
 }
 

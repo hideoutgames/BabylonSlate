@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./node": "./src/node-adapter.ts",
-    "./save-game-node": "./src/save-game-node.ts"
+    "./save-game-node": "./src/save-game-node.ts",
+    "./library-folders": "./src/library-folders.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

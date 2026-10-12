@@ -1,4 +1,4 @@
-import { pngPixelSize } from "./bytes";
+import { sniffSourceImageSize } from "./image-size";
 import {
   DEFAULT_SPRITE_COLLISION,
   DEFAULT_SPRITE_PIVOT,
@@ -72,15 +72,6 @@ export function parseSpriteAnimationFrame(
   return frame;
 }
 
-function withoutDurationOverride(
-  frame: SpriteAnimationFrame,
-): SpriteAnimationFrame {
-  if (frame.durationMsOverride === undefined) return frame;
-  const next = { ...frame };
-  delete next.durationMsOverride;
-  return next;
-}
-
 export function parseSpriteAnimationPayload(
   value: unknown,
 ): SpriteAnimationPayload {
@@ -92,33 +83,15 @@ export function parseSpriteAnimationPayload(
     ? source.frames.map((frame) => parseSpriteAnimationFrame(frame))
     : [];
   if (frames.length === 0) return createDefaultSpriteAnimationPayload();
-  if ("frameDurationMs" in source) {
-    return {
-      frameDurationMs: Math.max(
-        1,
-        asFinitePositive(
-          source.frameDurationMs,
-          createDefaultSpriteAnimationPayload().frameDurationMs,
-        ),
-      ),
-      frames,
-    };
-  }
-  const firstDuration = frames[0]!.durationMs;
-  const uniform = frames.every((frame) => frame.durationMs === firstDuration);
-  if (uniform) {
-    return {
-      frameDurationMs: firstDuration,
-      frames: frames.map(withoutDurationOverride),
-    };
-  }
   return {
-    frameDurationMs: firstDuration,
-    frames: frames.map((frame) =>
-      frame.durationMs === firstDuration
-        ? withoutDurationOverride(frame)
-        : { ...frame, durationMsOverride: true },
+    frameDurationMs: Math.max(
+      1,
+      asFinitePositive(
+        source.frameDurationMs,
+        createDefaultSpriteAnimationPayload().frameDurationMs,
+      ),
     ),
+    frames,
   };
 }
 
@@ -240,7 +213,7 @@ export function applyTexturePixelSizesToSpriteAnimation(
   return changed ? { ...payload, frames } : payload;
 }
 
-/** Fill missing Sprite Animation frame sizes from PNG texture bytes. */
+/** Fill missing Sprite Animation frame sizes from texture source bytes (PNG, JPEG, WebP, GIF). */
 export function hydrateSpriteAnimationPixelSizes(
   animations: ReadonlyMap<string, SpriteAnimationPayload>,
   textureBytes: ReadonlyMap<string, Uint8Array>,
@@ -249,7 +222,7 @@ export function hydrateSpriteAnimationPixelSizes(
   const sizeForGuid = (guid: string): TexturePixelSize | null => {
     if (cache.has(guid)) return cache.get(guid) ?? null;
     const bytes = textureBytes.get(guid);
-    const size = bytes ? pngPixelSize(bytes) : null;
+    const size = bytes ? sniffSourceImageSize(bytes) : null;
     cache.set(guid, size);
     return size;
   };

@@ -1,10 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
-import { defaultExportPreset, MAIN_SCENE_FILE, PROJECT_FILE, type ProjectDocument } from "../packages/core/src/index";
+import { createDefaultScene, defaultExportPreset, MAIN_SCENE_FILE, PROJECT_FILE, SCENE_SCHEMA_VERSION, type ProjectDocument } from "../packages/core/src/index";
 import { decodeAssetDocument, encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { openMinimalTestProject } from "./minimal-project";
-import { openMainScene } from "./open-test-project";
-import { waitForPlayOverlay, waitForPreviewBuildBoot } from "./play";
+import { openAssetFromBrowser } from "./open-test-project";
+import { waitForPreviewBuildBoot } from "./play";
 
 async function enablePreviewBuild(page: Page) {
   await page.getByTestId("debug-menu").click();
@@ -38,34 +38,54 @@ test("Preview Build keeps export failures visible and can launch after correctio
   await expect(page.getByTestId("play-preview")).toBeEnabled();
 });
 
-for (const previewBuild of [false]) {
-  test(`${previewBuild ? "Preview Build" : "Play"} requests migration approval and launches after approval`, async ({ page }) => {
-    const files = await minimalProjectFiles();
-    const scene = await decodeAssetDocument(files.get(MAIN_SCENE_FILE)!);
-    files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ ...scene, version: 2 }));
-    await openMinimalTestProject(page, files);
-    await openMainScene(page);
-    // Migration approval is needed when Play saves authored changes.
-    expect(await page.evaluate(async () => {
-      const host = globalThis as unknown as {
-        __babylonslateTest: { nudgeActiveSceneActor(): Promise<boolean> };
-      };
-      return host.__babylonslateTest.nudgeActiveSceneActor();
-    })).toBe(true);
-    await expect(page.getByTestId("save-all-project")).toBeEnabled();
-    if (previewBuild) await enablePreviewBuild(page);
-    await page.getByTestId("play-preview").click();
-    const migration = page.getByTestId("migrate-on-save-dialog");
-    await expect(migration).toBeVisible();
-    await expect(page.getByTestId("preview-build-iframe")).toHaveCount(0);
-    await migration.getByTestId("migrate-approve").click();
-    if (previewBuild) {
-      await waitForPreviewBuildBoot(page);
-      await page.getByTestId("preview-build-close").click();
-    } else {
-      await waitForPlayOverlay(page);
-      await page.getByTestId("play-overlay-close").click();
-    }
-    await expect(page.getByTestId("play-preview")).toBeEnabled();
-  });
-}
+test("opening an older-format Scene shows the unsupported format reason", async ({ page }) => {
+  const files = await minimalProjectFiles();
+  const scene = await decodeAssetDocument(files.get(MAIN_SCENE_FILE)!);
+  files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ ...scene, version: SCENE_SCHEMA_VERSION - 1 }));
+  await openMinimalTestProject(page, files);
+  // The shipped registry has no migration steps, so Play's migration approval cannot occur;
+  // project-service.migration.test.ts covers it with an injected registry.
+  await openAssetFromBrowser(page, MAIN_SCENE_FILE);
+
+  const failure = page.getByTestId("scene-loading-dialog");
+  await expect(failure).toContainText("Scene Loading Failed");
+  await expect(failure).toContainText(/Asset type "Scene" version \d+ uses an unsupported old format/);
+  await expect(page.getByTestId("document-workspace-scene")).toHaveCount(0);
+  await failure.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(failure).toHaveCount(0);
+});
+
+test("Play, Preview Build and Export refuse an older-format startup Scene", async ({ page }) => {
+  const files = await minimalProjectFiles();
+  const scene = await decodeAssetDocument(files.get(MAIN_SCENE_FILE)!);
+  files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ ...scene, version: SCENE_SCHEMA_VERSION - 1 }));
+  // A current Scene hosts the Output Log while Play starts from the startup Scene.
+  const otherScene = "assets/other.scene.babasset";
+  files.set(otherScene, await encodeAssetDocument({ guid: "00000000-0000-4000-8000-0000000000aa", type: "Scene", name: "Other",
+    version: SCENE_SCHEMA_VERSION, payload: createDefaultScene() as unknown as Record<string, unknown> }));
+  await openMinimalTestProject(page, files);
+  const reason = `Asset type "Scene" version ${SCENE_SCHEMA_VERSION - 1} uses an unsupported old format. This engine reads version ${SCENE_SCHEMA_VERSION}; older files are not upgraded.`;
+
+  await openAssetFromBrowser(page, otherScene);
+  await page.getByRole("tab", { name: "Output Log" }).click();
+  await expect(page.getByTestId("output-log-panel")).toBeVisible();
+  await page.getByTestId("debug-menu").click();
+  await page.getByTestId("play-from-scene-toggle").click();
+  await page.keyboard.press("Escape");
+  await page.getByTestId("play-preview").click();
+  await expect(page.getByTestId("output-log-line").filter({ hasText: `Play preparation failed: ${reason}` })).toHaveCount(1);
+  await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+
+  await enablePreviewBuild(page);
+  await page.getByTestId("play-preview").click();
+  const previewFailure = page.getByRole("dialog", { name: "Preview Build Failed" });
+  await expect(previewFailure).toContainText(reason);
+  await expect(page.getByTestId("preview-build-iframe")).toHaveCount(0);
+  await previewFailure.getByRole("button", { name: "Close", exact: true }).click();
+
+  await page.getByTestId("settings-menu").click();
+  await page.getByTestId("project-settings").click();
+  await page.getByTestId("settings-modal-category-export").click();
+  await page.getByTestId("export-game").click();
+  await expect(page.getByTestId("export-game-error")).toContainText(reason);
+});

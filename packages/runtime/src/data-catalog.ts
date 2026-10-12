@@ -1,5 +1,5 @@
 import { buildDataTreeIndex, isDataDefinitionAsset, isDataTreeEntry, type DataAssetCatalogEntry, type DataTreeAsset } from "@babylonslate/core";
-import { dataTypeSchemas, resolveDataEntryValues, validateDataDefinition } from "@babylonslate/scripting";
+import { dataTypeSchemas, resolveDataEntryValues, validateDataDefinition, type TypeSchemas } from "@babylonslate/scripting";
 
 export { dataTypeSchemas } from "@babylonslate/scripting";
 
@@ -35,6 +35,10 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function withoutDefaults<F extends { defaultValue?: unknown }>(fields: readonly F[]): F[] {
+  return fields.map((field) => ({ ...field, defaultValue: undefined }));
+}
+
 /**
  * Builds hierarchy, exact-path lookups and contiguous descendant ranges once per
  * prepared source union. Reads only copy requested values or indexed path ranges;
@@ -48,11 +52,20 @@ export class RuntimeDataCatalog implements RuntimeDataApi {
   replace(catalog: readonly DataAssetCatalogEntry[]): void {
     this.trees.clear();
     const schemas = dataTypeSchemas(catalog);
+    // Only the schema gates reads. Entries resolve from their own values and never
+    // read Definition defaults, so a stale default (for example one missing a field
+    // added to a nested Definition) must not hide every entry at any nesting depth.
+    const gateSchemas: TypeSchemas = {
+      ...schemas,
+      dataDefinitions: Object.fromEntries(Object.entries(schemas.dataDefinitions ?? {})
+        .map(([guid, schema]) => [guid, { ...schema, fields: withoutDefaults(schema.fields) }])),
+    };
     const definitions = new Set<string>();
     for (const asset of catalog) {
       if (asset.type !== "DataDefinition" || !isDataDefinitionAsset(asset.payload)) continue;
       try {
-        if (!validateDataDefinition(asset.payload, schemas, asset.guid).some((issue) => issue.severity === "error")) {
+        const schema = { ...asset.payload, fields: withoutDefaults(asset.payload.fields) };
+        if (!validateDataDefinition(schema, gateSchemas, asset.guid).some((issue) => issue.severity === "error")) {
           definitions.add(asset.guid);
         }
       } catch {

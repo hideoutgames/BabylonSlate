@@ -22,7 +22,7 @@ const positionArb = fc.record({
 
 const nodeArb = fc.record({
   id: fc.string({ minLength: 1, maxLength: 12 }),
-  type: fc.constant("logMessage"),
+  type: fc.constant("debug.log"),
   position: positionArb,
   data: fc.dictionary(fc.string({ minLength: 1, maxLength: 8 }), fc.string()),
 });
@@ -38,7 +38,7 @@ function graphWithNode(node: SerializedGraph["nodes"][number]): SerializedGraph 
 }
 
 describe("graph commands", () => {
-  const largeNode = { id: "large", type: "logMessage", position: { x: 0, y: 0 }, data: { text: "x".repeat(2_048) } };
+  const largeNode = { id: "large", type: "debug.log", position: { x: 0, y: 0 }, data: { "default:message": "x".repeat(2_048) } };
   it.each([
     new AddNodeCommand(largeNode),
     new RemoveNodeCommand(largeNode),
@@ -124,8 +124,8 @@ describe("graph commands", () => {
 
   it("RemoveNodeCommand apply-then-invert restores the document", () => {
     fc.assert(
-      fc.property(nodeArb, (node) => {
-        const doc = graphWithNode(node);
+      fc.property(nodeArb, edgeArb, (node, edge) => {
+        const doc = { ...graphWithNode(node), edges: [{ ...edge, source: node.id }] };
         const command = new RemoveNodeCommand(node);
         const afterApply = command.apply(doc);
         expect(afterApply.nodes).toEqual([]);

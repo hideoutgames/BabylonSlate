@@ -7,7 +7,16 @@ import { EngineStore, Vector3 } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ContextMenuOverlay, useContextMenu } from "@babylonslate/editor-kit";
-import { FocusIcon, RefreshCwIcon } from "lucide-react";
+import { FocusIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import { Button } from "@babylonslate/ui/components/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@babylonslate/ui/components/empty";
 import {
   applyGizmoMultiSelectDrag,
   applyViewportJoystickSteer,
@@ -18,9 +27,9 @@ import {
   EDITOR_CANVAS_COLOR_SCHEME,
   NavMeshDebugOverlay,
   navDebugBlockersFromActors,
-  navmeshOverlayEnabled,
   selectionGizmoRoots,
   syncEditorPlayState,
+  engineAdapterInfo,
   type EngineHandle,
   type EditorSceneLoadOptions,
 } from "@babylonslate/render";
@@ -34,7 +43,7 @@ import {
   useOpenDocument,
 } from "../context/document-context";
 import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
-import { subscribeAppSettings } from "../context/app-settings-context";
+import { getAppSettingsSnapshot, subscribeAppSettings, useDebugMode } from "../context/app-settings-context";
 import {
   materialViewportTestSnapshot,
   type MaterialViewportTestSnapshot,
@@ -89,6 +98,9 @@ import {
   waitForSceneLoadingPaint,
   type SceneViewportLoadPhase,
 } from "../lib/scene-viewport-load";
+import { viewportProbes } from "../services/runtime-probes";
+import { clipText } from "../lib/diagnostic-info";
+import { formatSceneLoadReport } from "../lib/scene-load-report";
 
 export function ViewportPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -162,6 +174,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     preparing,
     ensureSharedEngine,
     sharedEngineGeneration,
+    reportSceneViewportLoading,
   } = usePlay();
   const [sharedEngine, setSharedEngine] = useState<AbstractEngine | null>(null);
   const [engineEpoch, setEngineEpoch] = useState(0);
@@ -199,8 +212,19 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     phase: SceneViewportLoadPhase;
     failed?: boolean;
     rendering?: boolean;
+    /** Kept for Debug Mode's Copy Error. */
+    error?: unknown;
+    /** The adapter at failure time; the Engine is released right after. */
+    gpu?: ReturnType<typeof engineAdapterInfo> | null;
   }>({ open: false, progress: 0, phase: "Preparing Scene" });
   const [sceneReady, setSceneReady] = useState(false);
+  // Play shares the project Engine; it waits for a blocking load to settle.
+  const sceneLoading = sceneLoad.open && sceneLoad.failed !== true;
+  useEffect(() => {
+    if (!sceneLoading || !documentId || !reportSceneViewportLoading) return;
+    reportSceneViewportLoading(documentId, true);
+    return () => reportSceneViewportLoading(documentId, false);
+  }, [documentId, reportSceneViewportLoading, sceneLoading]);
   const [dropReady, setDropReady] = useState<{
     scene: SerializedScene;
     handle: EngineHandle;
@@ -367,37 +391,52 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     return () => registerNavBakeCollector(null);
   }, [registerNavBakeCollector]);
 
+  const navmeshPath =
+    doc && isSceneWorkspaceKind(doc.ref.kind) ? doc.ref.path : null;
+  const navmeshOverlayOn = Boolean(
+    scene && (navmeshVisible || scene.settings.showNavmesh === true),
+  );
+  const lastBakedNavmesh = navBake?.lastBytes ?? null;
+  // The stored chunk changes only with the asset (a registry change), so scene
+  // edits redraw blockers from the bytes already read.
+  const [storedNavmesh, setStoredNavmesh] = useState<{
+    path: string;
+    bytes: Uint8Array | null;
+  } | null>(null);
   useEffect(() => {
-    const overlay = navDebugRef.current;
-    const path =
-      doc && isSceneWorkspaceKind(doc.ref.kind) ? doc.ref.path : null;
-    const enabled = Boolean(
-      scene && (navmeshVisible || navmeshOverlayEnabled(scene)),
-    );
-    if (!overlay || !enabled || !scene) {
-      overlay?.clear();
-      return;
-    }
-    const blockers = navDebugBlockersFromActors(scene.actors);
+    void registryEpoch;
+    if (!navmeshOverlayOn || !navmeshPath || lastBakedNavmesh) return;
     let cancelled = false;
     void (async () => {
-      const bytes =
-        navBake?.lastBytes ??
-        (path ? await readAssetChunk(path, NAVMESH_CHUNK_ID) : null);
-      if (cancelled) return;
-      await overlay.sync(bytes ?? null, blockers, scene.settings.physicsWorld);
+      const bytes = await readAssetChunk(navmeshPath, NAVMESH_CHUNK_ID);
+      if (!cancelled) setStoredNavmesh({ path: navmeshPath, bytes: bytes ?? null });
     })();
     return () => {
       cancelled = true;
     };
+  }, [lastBakedNavmesh, navmeshOverlayOn, navmeshPath, readAssetChunk, registryEpoch]);
+
+  useEffect(() => {
+    const overlay = navDebugRef.current;
+    if (!overlay || !navmeshOverlayOn || !scene) {
+      overlay?.clear();
+      return;
+    }
+    const stored = storedNavmesh?.path === navmeshPath ? storedNavmesh : null;
+    // Wait for this scene's stored chunk unless a bake supplies the bytes.
+    if (navmeshPath && !lastBakedNavmesh && !stored) return;
+    void overlay.sync(
+      lastBakedNavmesh ?? stored?.bytes ?? null,
+      navDebugBlockersFromActors(scene.actors),
+      scene.settings.physicsWorld,
+    );
   }, [
-    doc?.ref.kind,
-    doc?.ref.path,
-    navBake?.lastBytes,
+    lastBakedNavmesh,
     navOverlayGeneration,
-    navmeshVisible,
-    readAssetChunk,
+    navmeshOverlayOn,
+    navmeshPath,
     scene,
+    storedNavmesh,
   ]);
 
   /** Turn the mesh state a gizmo drag left behind into one scene command. */
@@ -602,7 +641,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         release();
         if (controller.signal.aborted) return;
         console.error("[viewport] failed to create scene", error);
-        setSceneLoad({ open: true, progress: 0, phase: "Realizing Scene", failed: true });
+        setSceneLoad({ open: true, progress: 0, phase: "Realizing Scene", failed: true, error });
       } finally {
         // Keep construction covered until the scene-loading effect takes over.
         if (blockingLoadRef.current === controller && (!engineRef.current || !sceneRef.current)) {
@@ -892,8 +931,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       } catch (error) {
         if (!isCurrent()) return;
         console.error("[viewport] failed to load scene", error);
+        const gpu = (() => {
+          const engine = engineRef.current?.engine;
+          try { return engine ? engineAdapterInfo(engine) : null; } catch { return null; }
+        })();
         releaseEngineRef.current?.();
-        setSceneLoad((current) => ({ ...current, open: true, failed: true }));
+        setSceneLoad((current) => ({ ...current, open: true, failed: true, error, gpu }));
       } finally {
         if (blockingLoadRef.current === controller) blockingLoadRef.current = null;
       }
@@ -1031,7 +1074,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       viewportMode === "2d" && twoD.pixelPerfect
         ? {
             pixelsPerUnit: twoD.pixelsPerUnit,
-            integerZoomSteps: twoD.integerZoomSteps,
           }
         : null,
     );
@@ -1422,6 +1464,47 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     };
   }, [engineEpoch, sceneReady, sceneLoad.open, requestedRenderSettingsKey, renderSettingsKey]);
 
+  const debugMode = useDebugMode();
+  const loadStartedRef = useRef<number | null>(null);
+  useEffect(() => {
+    loadStartedRef.current = sceneLoad.open ? (loadStartedRef.current ?? performance.now()) : null;
+  }, [sceneLoad.open]);
+  /** Read lazily: a failed or disposed Engine may no longer report its adapter. */
+  const viewportAdapter = () => {
+    const engine = engineRef.current?.engine;
+    try { return engine ? engineAdapterInfo(engine) : null; } catch { return null; }
+  };
+  const copyLoadDetails = () => {
+    const render = projectDocument?.settings.render;
+    const appSettings = getAppSettingsSnapshot().settings;
+    return formatSceneLoadReport({
+      surface: "Scene Viewport",
+      scene: doc?.ref.path ?? null,
+      phase: sceneLoad.phase,
+      progress: sceneLoad.failed ? null : sceneLoad.progress,
+      failed: sceneLoad.failed === true,
+      rendering: sceneLoad.rendering,
+      elapsedMs: loadStartedRef.current === null ? null : performance.now() - loadStartedRef.current,
+      error: sceneLoad.error,
+      gpu: sceneLoad.gpu ?? viewportAdapter(),
+      details: [
+        `Project rendering: path ${render?.renderPath ?? "default"} · backend ${render?.gpuBackend ?? "default"} · quality ${clipText(JSON.stringify(render?.quality ?? "default"), 160)} · mode ${render?.mode ?? "default"}`,
+        `Engine Settings: overrides ${appSettings.renderingOverridesEnabled ? "on" : "off"} · hardware scaling ${appSettings.hardwareScalingLevel} · viewport cap ${appSettings.viewportFrameCap} fps`,
+        `Scene: ${scene?.actors.length ?? 0} actors`,
+      ],
+    });
+  };
+
+  const probeStateRef = useRef({ sceneReady, sceneLoad });
+  probeStateRef.current = { sceneReady, sceneLoad };
+  useEffect(() => documentId ? viewportProbes.register(documentId, {
+    ready: () => probeStateRef.current.sceneReady && !probeStateRef.current.sceneLoad.open,
+    failed: () => probeStateRef.current.sceneLoad.failed === true,
+    phase: () => probeStateRef.current.sceneLoad.open ? probeStateRef.current.sceneLoad.phase : null,
+    error: () => probeStateRef.current.sceneLoad.error,
+    gpu: () => probeStateRef.current.sceneLoad.gpu ?? viewportAdapter(),
+  }) : undefined, [documentId]);
+
   return (
     <div
       ref={panelRef}
@@ -1449,6 +1532,37 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         className="h-full min-h-0 min-w-0 w-full flex-1 touch-none"
         data-testid="viewport-canvas"
       />
+      {sceneLoad.failed && !sceneLoad.open ? (
+        // The failed load released the Engine; keep Retry reachable after Close.
+        <Empty
+          className="absolute inset-0 rounded-none border-0 bg-background"
+          data-testid="viewport-load-failed"
+        >
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <TriangleAlertIcon />
+            </EmptyMedia>
+            <EmptyTitle>{sceneLoad.rendering ? "Rendering Update Failed" : "Scene Loading Failed"}</EmptyTitle>
+            <EmptyDescription>
+              {sceneLoad.phase === "Loading Document"
+                ? "The scene document could not be read."
+                : "The viewport could not finish loading. Adjust the scene or rendering settings, then retry."}
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+              data-testid="viewport-load-retry"
+              onClick={() => setReloadVersion((version) => version + 1)}
+            >
+              Retry
+            </Button>
+          </EmptyContent>
+        </Empty>
+      ) : null}
       {marqueeRect ? (
         <div
           data-testid="viewport-marquee"
@@ -1500,6 +1614,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         rendering={sceneLoad.rendering}
         onRetry={() => setReloadVersion((version) => version + 1)}
         onDismiss={() => setSceneLoad((current) => ({ ...current, open: false }))}
+        onCopyDetails={debugMode ? copyLoadDetails : undefined}
       />
     </div>
   );

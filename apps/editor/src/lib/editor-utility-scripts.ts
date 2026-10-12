@@ -23,22 +23,20 @@ export function emitEditorUtilityLifecycle(event: string): void {
 export function selectEditorUtilityGraphs(
   graphs: ReadonlyArray<{ path: string; content: SerializedGraph }>,
   options: {
-    headers: Record<string, { type: string; parentClass?: string | null; name?: string }>;
+    headers: Record<string, { type: string; parentClass?: string | null }>;
     parentOf: (id: string) => string | null | undefined;
     registeredClassIds: readonly string[];
-    classIdForPath?: (path: string) => string;
   },
 ): Array<{ path: string; content: SerializedGraph }> {
   const registered = new Set(
     options.registeredClassIds.map((id) => id.trim()).filter(Boolean),
   );
-  const classIdForPath = options.classIdForPath ?? classIdForGraphPath;
   return graphs.filter((graph) => {
     const header = options.headers[graph.path];
     if (!header) return false;
     if (!isEditorOnlyAsset(header, options.parentOf)) return false;
-    const classId = header.name?.trim() || classIdForPath(graph.path);
-    return registered.has(classId);
+    // Class pickers register path class ids, so a display name never matches.
+    return registered.has(classIdForGraphPath(graph.path));
   });
 }
 

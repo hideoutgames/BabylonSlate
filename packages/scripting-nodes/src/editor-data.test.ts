@@ -116,4 +116,29 @@ describe("Editor data nodes", () => {
     expect(calls).toEqual([["catalog", "Weapons", "Sword", expectedDefinition, expectedValues]]);
   });
 
+  it("reads a wired Move Data Subtree Index once", async () => {
+    const registry = createDefaultNodeRegistry();
+    const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode => ({
+      id, typeId, properties, pins: registry.get(typeId)!.pins(properties), position: { x: 0, y: 0 },
+    });
+    const graph: LogicGraph = { id: "move", kind: "event", nodes: [
+      node("start", "flow.event.editorStartup"),
+      node("roll", "math.randomInt", { "default:min": -1, "default:max": 3 }),
+      node("move", "editorData.moveEntry", { "default:tree": "shop", "default:entryPath": "Sword", "default:newParentPath": "Loot" }),
+    ], edges: [
+      { id: "exec", sourceNodeId: "start", sourcePinId: "execOut", targetNodeId: "move", targetPinId: "execIn" },
+      { id: "index", sourceNodeId: "roll", sourcePinId: "out", targetNodeId: "move", targetPinId: "index" },
+    ] };
+    const js = compileGraph(graph, { assetGuid: "tools", registry }).source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const execute = new Function(`${js}\nreturn onEditorStartup;`)() as (ctx: Record<string, unknown>) => Promise<void>;
+    const rolls = [2, -1];
+    const moves: unknown[] = [];
+    await execute({
+      random: { int: () => rolls.shift() },
+      editorData: { moveEntry: async (_tree: string, _path: string, _parent: string, index: unknown) => {
+        moves.push(index); return { success: true, value: "Loot/Sword", error: "" };
+      } },
+    });
+    expect({ moves, rolls }).toEqual({ moves: [2], rolls: [-1] });
+  });
 });

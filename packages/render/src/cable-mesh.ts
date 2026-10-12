@@ -7,22 +7,19 @@ import { CableSimulation, cablePropertiesEqual, parseCableProperties, writeCable
 import { updateDynamicMaterialBounds } from "./material-bounds";
 
 const HISTORY_SIZE = 16;
-type CableSnapshot = { frameId: number; previousFrameId: number; alpha: number };
 type CableHistory = {
   frames: Float64Array;
   points: Float32Array;
   anchors: Float64Array;
   cursor: number;
   latest: number;
-  previous: Float32Array;
-  next: Float32Array;
-  previousAnchors: Float64Array;
-  nextAnchors: Float64Array;
-  previousFrame: number;
-  nextFrame: number;
-  previousPacket: number;
-  nextPacket: number;
-  alpha: number;
+  /** The shape and anchors drawn for `frame`, kept while later packets wrap the history. */
+  shape: Float32Array;
+  shapeAnchors: Float64Array;
+  /** The sampled snapshot frame `shape` was selected for. */
+  frame: number;
+  /** The packet frame `shape` came from; -1 before the first. */
+  packet: number;
   pending: boolean;
 };
 
@@ -55,7 +52,7 @@ const sceneSurfaces = new WeakMap<Scene, Set<CableSurface>>();
 // A prepared visual can coexist with its predecessor until an asynchronous model
 // finishes. Both receive the same frame; disposal only removes that mesh.
 const runtimeSurfaces = new WeakMap<Scene, Map<number, Set<CableSurface>>>();
-const snapshots = new WeakMap<Scene, CableSnapshot>();
+const sampledFrames = new WeakMap<Scene, number>();
 // Editor (non-Play) cable meshes by name. Replacement visuals can briefly share
 // a name with their predecessor, so each name keeps every live candidate.
 const editorMeshes = new WeakMap<Scene, Map<string, Set<Mesh>>>();
@@ -69,20 +66,18 @@ export function hasRevisionTrackedCableGeometry(mesh: Mesh): boolean {
   return !!surface && mesh.getVerticesData(VertexBuffer.PositionKind) === surface.positions && mesh.getVerticesData(VertexBuffer.NormalKind) === surface.normals;
 }
 
-/** Pair with the actor snapshot, so future packets cannot pull anchors ahead. */
-export function sampleCableFrame(scene: Scene, frameId: number, previousFrameId: number, alpha: number): void {
-  let snapshot = snapshots.get(scene);
-  if (!snapshot) { snapshot = { frameId, previousFrameId, alpha }; snapshots.set(scene, snapshot); }
-  else { snapshot.frameId = frameId; snapshot.previousFrameId = previousFrameId; snapshot.alpha = alpha; }
+/** Pair with the applied actor snapshot frame, so future packets cannot pull anchors ahead. */
+export function sampleCableFrame(scene: Scene, frameId: number): void {
+  sampledFrames.set(scene, frameId);
 }
 
 /** Coalesce worker packets into one upload at actual render admission. */
 export function flushSceneCables(scene: Scene): void {
   const entries = sceneSurfaces.get(scene);
   if (!entries) return;
-  const snapshot = snapshots.get(scene);
+  const frameId = sampledFrames.get(scene);
   for (const surface of entries) if (surface.mesh.isEnabled()) {
-    selectCablePoints(surface, snapshot);
+    selectCablePoints(surface, frameId);
     pinCableEndpoints(surface);
     updateSurface(surface);
   }
@@ -97,71 +92,45 @@ function packetAtOrBefore(history: CableHistory, frameId: number): number {
   return selected;
 }
 
-function selectCablePoints(surface: CableSurface, snapshot: CableSnapshot | undefined): void {
+function selectCablePoints(surface: CableSurface, sampledFrame: number | undefined): void {
   const history = surface.history;
   if (!history || history.latest < 0) return;
-  const frameId = snapshot?.frameId ?? history.latest;
-  const previousFrameId = snapshot?.previousFrameId ?? frameId;
-  const alpha = Math.max(0, Math.min(1, snapshot?.alpha ?? 1));
-  const oldPrevious = history.previousPacket, oldNext = history.nextPacket;
-  const selectedChanged = history.previousFrame !== previousFrameId || history.nextFrame !== frameId;
-  if (history.pending || selectedChanged) {
+  const frameId = sampledFrame ?? history.latest;
+  if (!history.pending && history.frame === frameId) return;
+  const oldPacket = history.packet;
+  let index = packetAtOrBefore(history, frameId);
+  // A heavily delayed render may outlive the bounded history. Keep the shape
+  // already selected for this frame; otherwise display the nearest retained
+  // shape and correct its attached endpoints against the sampled actor transforms.
+  if (index < 0 && history.frame !== frameId) index = (history.cursor + HISTORY_SIZE - 1) % HISTORY_SIZE;
+  if (index >= 0 && (history.frame !== frameId || history.frames[index]! > history.packet)) {
     const width = surface.points.length;
-    // Keep both selected snapshot shapes pinned even if later packets wrap the
-    // bounded history while this renderer is still displaying an older pair.
-    const retainPrevious = history.previousFrame === previousFrameId || history.nextFrame === previousFrameId;
-    if (history.previousFrame !== previousFrameId && history.nextFrame === previousFrameId) {
-      history.previous.set(history.next);
-      history.previousAnchors.set(history.nextAnchors);
-      history.previousPacket = history.nextPacket;
-    }
-    let a = packetAtOrBefore(history, previousFrameId), b = packetAtOrBefore(history, frameId);
-    // A heavily delayed render may outlive the bounded history. Keep a pinned
-    // pair when available; otherwise display the nearest retained shape and
-    // correct its attached endpoints against the sampled actor transforms.
-    if (b < 0 && history.nextFrame !== frameId) b = (history.cursor + HISTORY_SIZE - 1) % HISTORY_SIZE;
-    if (a < 0 && !retainPrevious) a = b;
-    if (a >= 0 && (!retainPrevious || history.frames[a]! > history.previousPacket)) {
-      for (let i = 0; i < width; i++) history.previous[i] = history.points[a * width + i]!;
-      for (let i = 0; i < 8; i++) history.previousAnchors[i] = history.anchors[a * 8 + i]!;
-      history.previousPacket = history.frames[a]!;
-    }
-    if (b >= 0 && (history.nextFrame !== frameId || history.frames[b]! > history.nextPacket)) {
-      for (let i = 0; i < width; i++) history.next[i] = history.points[b * width + i]!;
-      for (let i = 0; i < 8; i++) history.nextAnchors[i] = history.anchors[b * 8 + i]!;
-      history.nextPacket = history.frames[b]!;
-    }
-    if (history.nextPacket < 0) return; // Still waiting for this snapshot's first cable packet.
-    if (history.previousPacket < 0) {
-      history.previous.set(history.next);
-      history.previousAnchors.set(history.nextAnchors);
-      history.previousPacket = history.nextPacket;
-    }
-    history.previousFrame = previousFrameId;
-    history.nextFrame = frameId;
-    history.pending = false;
+    for (let i = 0; i < width; i++) history.shape[i] = history.points[index * width + i]!;
+    for (let i = 0; i < 8; i++) history.shapeAnchors[i] = history.anchors[index * 8 + i]!;
+    history.packet = history.frames[index]!;
   }
-  const effectiveAlpha = history.previousPacket === history.nextPacket ? 1 : alpha;
-  if (oldPrevious === history.previousPacket && oldNext === history.nextPacket && history.alpha === effectiveAlpha) return;
-  for (let i = 0; i < surface.points.length; i++) surface.points[i] = history.previous[i]! + (history.next[i]! - history.previous[i]!) * effectiveAlpha;
-  history.alpha = effectiveAlpha;
+  if (history.packet < 0) return; // Still waiting for this snapshot's first cable packet.
+  history.frame = frameId;
+  history.pending = false;
+  // A sleeping cable sends no packets, so later frames keep its last shape.
+  if (history.packet === oldPacket) return;
+  surface.points.set(history.shape);
   surface.worldSpace = true;
   surface.dirty = true;
 }
 
 function pinCableEndpoints(surface: CableSurface): void {
   const history = surface.history;
-  if (!history || history.nextPacket < 0 || !surface.actorForSlot) return;
+  if (!history || history.packet < 0 || !surface.actorForSlot) return;
   for (let endpoint = 0; endpoint < 2; endpoint++) {
     if (endpoint === 0 ? !surface.properties.attachStart : !surface.properties.attachEnd) continue;
-    const slotId = history.nextAnchors[endpoint]!;
+    const anchors = history.shapeAnchors;
+    const slotId = anchors[endpoint]!;
     if (slotId < 0) continue;
     const root = surface.actorForSlot(slotId);
     if (!root || root.isDisposed()) continue;
     const offset = 2 + endpoint * 3;
-    const alpha = history.previousAnchors[endpoint] === slotId ? history.alpha : 1;
-    const previous = history.previousAnchors, next = history.nextAnchors;
-    surface.point.set(previous[offset]! + (next[offset]! - previous[offset]!) * alpha, previous[offset + 1]! + (next[offset + 1]! - previous[offset + 1]!) * alpha, previous[offset + 2]! + (next[offset + 2]! - previous[offset + 2]!) * alpha);
+    surface.point.set(anchors[offset]!, anchors[offset + 1]!, anchors[offset + 2]!);
     Vector3.TransformCoordinatesToRef(surface.point, root.computeWorldMatrix(), surface.point);
     const particle = endpoint === 0 ? 0 : surface.points.length - 3;
     if (surface.points[particle] !== Math.fround(surface.point.x) || surface.points[particle + 1] !== Math.fround(surface.point.y) || surface.points[particle + 2] !== Math.fround(surface.point.z)) {
@@ -333,7 +302,7 @@ export function createCableMesh(scene: Scene, name: string, input: Partial<Cable
   updateCablePreview(mesh, properties.endPosition);
   if (simulationId === undefined || !Number.isSafeInteger(simulationId) || simulationId <= 0) registerEditorCableMesh(scene, mesh);
   else {
-    surface.history = { frames: new Float64Array(HISTORY_SIZE).fill(-1), points: new Float32Array(surface.points.length * HISTORY_SIZE), anchors: new Float64Array(HISTORY_SIZE * 8), cursor: 0, latest: -1, previous: new Float32Array(surface.points.length), next: new Float32Array(surface.points.length), previousAnchors: new Float64Array(8), nextAnchors: new Float64Array(8), previousFrame: -1, nextFrame: -1, previousPacket: -1, nextPacket: -1, alpha: -1, pending: false };
+    surface.history = { frames: new Float64Array(HISTORY_SIZE).fill(-1), points: new Float32Array(surface.points.length * HISTORY_SIZE), anchors: new Float64Array(HISTORY_SIZE * 8), cursor: 0, latest: -1, shape: new Float32Array(surface.points.length), shapeAnchors: new Float64Array(8), frame: -1, packet: -1, pending: false };
     let entries = sceneSurfaces.get(scene);
     if (!entries) {
       entries = new Set();
@@ -343,7 +312,7 @@ export function createCableMesh(scene: Scene, name: string, input: Partial<Cable
         scene.onBeforeRenderObservable.remove(observer);
         sceneSurfaces.delete(scene);
         runtimeSurfaces.delete(scene);
-        snapshots.delete(scene);
+        sampledFrames.delete(scene);
       });
     }
     entries.add(surface);

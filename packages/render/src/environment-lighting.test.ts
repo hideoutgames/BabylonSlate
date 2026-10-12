@@ -262,6 +262,8 @@ it("blocks pending uploads and exposes the current source failure without lettin
   expect(isEnvironmentLightingReady(a)).toBe(false);
   expect(isSceneFrameReady(a)).toBe(false);
   fail!("Invalid environment pixels");
+  // The frame observer records the failure without throwing out of the render.
+  expect(() => a.onBeforeRenderObservable.notifyObservers(a)).not.toThrow();
   expect(() => isEnvironmentLightingReady(a)).toThrow(
     "Invalid environment pixels",
   );

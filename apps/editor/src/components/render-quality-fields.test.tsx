@@ -159,3 +159,17 @@ it("edits Water quality within its tier and disables rows whose feature is off",
   expect(screen.getByLabelText("Water Mesh Density")).toHaveProperty("value", "0.5");
   expect(selected("Geometry Quality")).toBe("High");
 });
+
+it("allows screen-space effects per Post Processing tier and keeps a manual allowance Custom", async () => {
+  render(<Fields />);
+  const allowed = (name: string) => screen.getByRole("switch", { name }).getAttribute("aria-checked");
+  expect(selected("Post Processing Quality")).toBe("High");
+  expect(allowed("Allow Reflections")).toBe("true");
+  await select("Post Processing Quality", "Medium");
+  expect([allowed("Allow Ambient Occlusion"), allowed("Allow Reflections"), allowed("Allow Volumetric Lighting")])
+    .toEqual(["true", "false", "false"]);
+  fireEvent.click(screen.getByRole("switch", { name: "Allow Reflections" }));
+  expect(allowed("Allow Reflections")).toBe("true");
+  expect(selected("Post Processing Quality")).toBe("Custom");
+  expect(selected("Textures Quality")).toBe("High");
+});

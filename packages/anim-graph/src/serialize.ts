@@ -65,22 +65,19 @@ export function animPaletteNodes(): Array<{
   ];
 }
 
-export function migrateAnimHandle(
+const ANIM_STATE_HANDLE = /^(top|right|bottom|left)-(?:in|out)$/;
+
+/**
+ * The state handle on the same side facing `direction`. Loose connections can
+ * start or end on either plate of a side (`left-in` as a source becomes
+ * `left-out`). A missing or unknown id uses the default `right-out` / `left-in`.
+ */
+export function animStateHandle(
   handle: string | null | undefined,
   direction: "in" | "out",
 ): string {
-  if (!handle || handle === "in" || handle === "out") {
-    return direction === "out" ? "right-out" : "left-in";
-  }
-  const side = handle.split("-")[0];
-  if (
-    side === "top" ||
-    side === "right" ||
-    side === "bottom" ||
-    side === "left"
-  ) {
-    return `${side}-${direction}`;
-  }
+  const side = handle ? ANIM_STATE_HANDLE.exec(handle)?.[1] : undefined;
+  if (side) return `${side}-${direction}`;
   return direction === "out" ? "right-out" : "left-in";
 }
 
@@ -100,8 +97,8 @@ export function normalizeAnimConnection(connection: {
   return {
     source: connection.source,
     target: connection.target,
-    sourceHandle: migrateAnimHandle(connection.sourceHandle, "out"),
-    targetHandle: migrateAnimHandle(connection.targetHandle, "in"),
+    sourceHandle: animStateHandle(connection.sourceHandle, "out"),
+    targetHandle: animStateHandle(connection.targetHandle, "in"),
   };
 }
 
@@ -206,8 +203,8 @@ export function flipTransitionDirection(
             ...row,
             fromStateId: row.toStateId,
             toStateId: row.fromStateId,
-            sourceHandle: migrateAnimHandle(row.targetHandle, "out"),
-            targetHandle: migrateAnimHandle(row.sourceHandle, "in"),
+            sourceHandle: animStateHandle(row.targetHandle, "out"),
+            targetHandle: animStateHandle(row.sourceHandle, "in"),
           }
         : row,
     ),
@@ -258,14 +255,11 @@ function mergeTransitions(
       id: edge.id,
       fromStateId: edge.source,
       toStateId: edge.target,
-      condition: prev?.condition,
       blendSeconds: prev?.blendSeconds ?? 0.1,
-      hasExitTime: prev?.hasExitTime ?? false,
-      exitTime: prev?.exitTime ?? 0,
       priority: prev?.priority ?? 0,
       ruleGraph: prev?.ruleGraph ?? createDefaultTransitionRuleGraph(),
-      sourceHandle: migrateAnimHandle(edge.sourceHandle, "out"),
-      targetHandle: migrateAnimHandle(edge.targetHandle, "in"),
+      sourceHandle: animStateHandle(edge.sourceHandle, "out"),
+      targetHandle: animStateHandle(edge.targetHandle, "in"),
     };
   });
   const result = [...merged];
@@ -307,8 +301,8 @@ export function animGraphToSerialized(doc: AnimGraphDocument): SerializedGraph {
         id: transition.id,
         source: transition.fromStateId,
         target: transition.toStateId,
-        sourceHandle: migrateAnimHandle(transition.sourceHandle, "out"),
-        targetHandle: migrateAnimHandle(transition.targetHandle, "in"),
+        sourceHandle: animStateHandle(transition.sourceHandle, "out"),
+        targetHandle: animStateHandle(transition.targetHandle, "in"),
         type: reverse ? "animTransitionBoth" : "animTransition",
       };
     }),

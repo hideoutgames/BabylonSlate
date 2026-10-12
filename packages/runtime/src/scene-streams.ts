@@ -25,6 +25,7 @@ import type { RuntimeSubsystem } from "./runtime-subsystems";
 import { runSceneRealizationWork, sceneRealizationCancelled, waitForSceneWork, type CooperativeSceneLoadingOptions } from "./scene-realization-work";
 import type { AcquireRuntimeScene, RuntimeSceneSource } from "./scene-source";
 import type { ScriptHost, ScriptHostServices } from "./script-host";
+import type { SimulationBlocks } from "./simulation-blocks";
 
 interface SceneStream {
   actor: Actor;
@@ -77,8 +78,8 @@ interface SceneStreamsHost {
   releaseAssets(ownerGuid: string): void;
   /** Simulation Keep cannot retain this independent streamed Scene instance. */
   markUnsupportedInstance(sceneGuid: string): void;
-  /** A blocking load or unload has settled (the count is already decremented). */
-  blockSettled(): void;
+  /** Blocking loads and unloads hold the simulation here. */
+  blocks(): Pick<SimulationBlocks, "hold">;
   emit(command: CommandMessage): void;
 }
 
@@ -89,7 +90,6 @@ interface SceneStreamsHost {
  * the driver gates ticks and scripts on.
  */
 export class SceneStreams implements RuntimeSubsystem {
-  private blockingCount = 0;
   private loadId = 0;
   private readonly streams = new Map<string, SceneStream>();
   private readonly actorStream = new WeakMap<Actor, SceneStream>();
@@ -113,11 +113,6 @@ export class SceneStreams implements RuntimeSubsystem {
   retireActor(actor: Actor): void {
     const stream = this.streams.get(actor.guid);
     if (stream) this.retire(stream);
-  }
-
-  /** A blocking load or unload is in progress; the simulation waits. */
-  get blocking(): boolean {
-    return this.blockingCount > 0;
   }
 
   isStreamActor(actor: Actor): boolean {
@@ -285,7 +280,6 @@ export class SceneStreams implements RuntimeSubsystem {
       this.host.navigation().registerAgents();
       this.host.navigation().registerObstacles([...stream.actors], stream.navObstacles);
       stream.progress = 1;
-      stream.resolve();
       for (const pending of [...this.streams.values()]) this.publishRealized(pending);
       this.admission.flush();
       // After the streamed actors' Begin Play, as Scene Loaded follows the main
@@ -296,6 +290,8 @@ export class SceneStreams implements RuntimeSubsystem {
         this.announced.add(stream);
         this.host.world().notifyStreamedSceneLoaded(stream.actor, stream.scene);
       });
+      // Only a completed admission loads the stream; a throw above rejects the load instead.
+      stream.resolve();
     } catch (error) {
       this.retire(stream, error);
     }
@@ -317,7 +313,13 @@ export class SceneStreams implements RuntimeSubsystem {
     stream.controller.abort(sceneRealizationCancelled());
     const controller = new AbortController();
     const operation = Promise.resolve().then(async () => {
-      await runSceneRealizationWork(this.removeActors(stream), controller.signal, this.host.cooperativeLoading());
+      try {
+        await runSceneRealizationWork(this.removeActors(stream), controller.signal, this.host.cooperativeLoading());
+      } catch (error) {
+        // A failed despawn still retires the stream, so its actor can load again.
+        this.retire(stream, error);
+        throw error;
+      }
       this.retire(stream);
       if (!this.host.stopped()) this.host.publishSnapshot();
     });
@@ -380,14 +382,7 @@ export class SceneStreams implements RuntimeSubsystem {
   }
 
   private withBlock(operation: Promise<void>, blocking: boolean): Promise<void> {
-    if (!blocking) return operation;
-    this.blockingCount++;
-    if (this.blockingCount === 1) this.host.emit({ type: "sceneStreamBlocking", blocking: true });
-    return operation.finally(() => {
-      this.blockingCount--;
-      if (this.blockingCount === 0 && !this.host.stopped()) this.host.emit({ type: "sceneStreamBlocking", blocking: false });
-      this.host.blockSettled();
-    });
+    return blocking ? this.host.blocks().hold(operation) : operation;
   }
 
   private *realize(stream: SceneStream, document: SerializedScene, component: ActorComponent): Generator<void, void, unknown> {

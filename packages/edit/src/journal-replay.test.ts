@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MoveNodeCommand } from "./commands/graph";
+import { SetActorsTransformsCommand } from "./commands/scene";
 import { SetAssetDocumentCommand } from "./commands/asset-document";
 import type { EditCommand } from "./command";
 import {
@@ -84,6 +85,30 @@ describe("journal coalescing", () => {
       new SetAssetDocumentCommand({ ...initial, opacity: 0.5 }, { ...initial, waveHeight: 3, opacity: 0.5 }, "water:waveHeight"),
     ].map((command) => journalRecord(docId, command));
     expect(coalesceJournalLines(otherField[0]!, otherField[1]!)).toBeNull();
+  });
+
+  it("folds a multi-select transform drag into one record that recovers the same scene", () => {
+    const sceneId = "scene:assets/Main.scene.babasset";
+    const initial = createDefaultScene();
+    initial.actors.push(createActor("a", "A"), createActor("b", "B"));
+    const pose = (x: number) => ({ position: [x, 0, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [1, 1, 1] as [number, number, number] });
+    const step = (from: number, to: number) => new SetActorsTransformsCommand(
+      ["a", "b"].map((actorId) => ({ actorId, from: pose(from), to: pose(to) })),
+    );
+    const records = [step(0, 1), step(1, 4), step(4, 9)].map((command) => journalRecord(sceneId, command));
+    const folded = fold(records);
+    expect(folded).toHaveLength(1);
+    expect(folded[0]!.command.entries).toEqual(
+      ["a", "b"].map((actorId) => ({ actorId, from: pose(0), to: pose(9) })),
+    );
+    const replay = (lines: JournalLine[]) =>
+      replayJournalLines(lines.map(serializeJournalLine), new Map([[sceneId, initial]])).documents.get(sceneId);
+    expect(replay(folded)).toEqual(replay(records));
+
+    const otherActors = journalRecord(sceneId, new SetActorsTransformsCommand(
+      ["a", "c"].map((actorId) => ({ actorId, from: pose(9), to: pose(10) })),
+    ));
+    expect(coalesceJournalLines(records[2]!, otherActors)).toBeNull();
   });
 });
 
@@ -238,7 +263,7 @@ describe("journal replay", () => {
   });
 
   it("keeps a document later opened at a renamed path apart from the renamed one", () => {
-    const [a, b, c] = ["graph:assets/a.graph.babasset", "graph:assets/b.graph.babasset", "graph:assets/c.graph.babasset"];
+    const [a, b, c] = ["graph:assets/a.class.babasset", "graph:assets/b.class.babasset", "graph:assets/c.class.babasset"];
     const at = "2026-09-28T12:00:00Z";
     const move = (docId: string, x: number) => serializeJournalLine({
       v: 1, docId, at,
@@ -254,12 +279,12 @@ describe("journal replay", () => {
   });
 
   it("replays lines onto open graph documents", () => {
-    const docId = "graph:assets/main.graph.babasset";
+    const docId = "graph:assets/main.class.babasset";
     const graph = {
       nodes: [
         {
           id: "node-1",
-          type: "logMessage",
+          type: "debug.log",
           position: { x: 0, y: 0 },
           data: {},
         },
@@ -297,6 +322,40 @@ describe("journal replay", () => {
     const result = replayJournalLines([line], new Map());
     expect(result.skipped).toHaveLength(1);
     expect(result.documents.size).toBe(0);
+  });
+
+  it("reports lines that are not journal records while replaying the rest", () => {
+    const docId = "graph:assets/main.class.babasset";
+    const graph = { nodes: [{ id: "node-1", type: "print", position: { x: 0, y: 0 }, data: {} }], edges: [] };
+    const torn = '{"v":1,"docId":"graph:assets/main.class.babasset","at":"2026-';
+    const line = serializeJournalLine({
+      v: 1, docId, at: "2026-10-11T00:00:00Z",
+      command: commandToJournalPayload(new MoveNodeCommand("node-1", { x: 0, y: 0 }, { x: 5, y: 0 })),
+    });
+    const result = replayJournalLines([torn, line, "{}"], new Map([[docId, graph]]));
+    expect(result.malformed).toEqual([torn, "{}"]);
+    expect(result.skipped).toEqual([]);
+    expect(result.documents.get(docId)?.nodes[0]?.position).toEqual({ x: 5, y: 0 });
+  });
+
+  it("skips a record whose apply throws and still replays later documents", () => {
+    const sceneId = "scene:assets/Main.scene.babasset";
+    const graphId = "graph:assets/main.class.babasset";
+    const scene = createDefaultScene();
+    scene.actors.push(createActor("a", "A"));
+    const graph = { nodes: [{ id: "node-1", type: "print", position: { x: 0, y: 0 }, data: {} }], edges: [] };
+    const bad: JournalLine = {
+      v: 1, docId: sceneId, at: "2026-10-11T00:00:00Z",
+      command: { type: "scene.setActorsTransforms", mergeKey: "transforms:a", entries: [{ actorId: "a" }] },
+    };
+    const later = journalRecord(graphId, new MoveNodeCommand("node-1", { x: 0, y: 0 }, { x: 7, y: 0 }));
+    const result = replayJournalLines(
+      [serializeJournalLine(bad), serializeJournalLine(later)],
+      new Map<string, SerializedScene | SerializedGraph>([[sceneId, scene], [graphId, graph]]),
+    );
+    expect(result.skipped).toEqual([bad]);
+    expect(result.documents.get(sceneId)).toBe(scene);
+    expect((result.documents.get(graphId) as SerializedGraph).nodes[0]?.position).toEqual({ x: 7, y: 0 });
   });
 
   it("skips a whole batch when one child command cannot be recovered", () => {

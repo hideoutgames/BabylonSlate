@@ -11,6 +11,7 @@ function asset(
     rootId: "project",
     path: `assets/${guid}.babasset`,
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       guid,
       dependencies,
       type,

@@ -1,9 +1,6 @@
 import type { IndexedAsset } from "@babylonslate/assets";
 import type { GraphDocument } from "@babylonslate/graph-ui";
-import {
-  assetDependenciesIncludingOpenDocuments,
-  displayAssetTitle,
-} from "./content-browser-helpers";
+import { assetDependenciesIncludingOpenDocuments } from "./content-browser-helpers";
 
 /** Node footprint is 224x48 (`AssetReferenceNode`); gaps leave room for wire fans. */
 const COLUMN_GAP = 464;
@@ -164,7 +161,7 @@ export function buildAssetReferenceGraph(
           y: (row - (guids.length - 1) / 2) * ROW_GAP,
         },
         data: {
-          title: missing ? guid : displayAssetTitle(asset.header.name),
+          title: missing ? guid : asset.header.name,
           assetType: asset?.header.type ?? "Unresolved",
           parentClass: asset?.header.parentClass,
           path: asset?.path ?? guid,

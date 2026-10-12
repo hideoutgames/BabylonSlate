@@ -45,7 +45,12 @@ export const SCALABILITY_FIELD_OWNERS = {
     fftSize: "water",
     fftCascades: "water",
   },
-  postprocessing: { resolutionScale: "postprocessing" },
+  postprocessing: {
+    resolutionScale: "postprocessing",
+    ambientOcclusion: "postprocessing",
+    reflections: "postprocessing",
+    volumetricLighting: "postprocessing",
+  },
   lighting: { localLightMode: "lighting", maxLocalLights: "lighting" },
 } as const satisfies {
   [G in QualityGroup]: Record<
@@ -95,7 +100,6 @@ export const SCENE_RENDER_SETTING_OWNERS = {
   cameraBounds2D: "independent",
   gravity: "non-rendering",
   fixedTimestepMs: "non-rendering",
-  gameInstanceClass: "non-rendering",
   physicsWorld: "non-rendering",
   grid: "non-rendering",
   editorJoystickEnabled: "non-rendering",

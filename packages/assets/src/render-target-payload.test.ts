@@ -29,7 +29,7 @@ it("preserves the live sampler's target through save, load, and colliding cross-
 });
 
 
-it("remaps colliding captures across scenes, graph defaults and material samplers without rewriting text", async () => {
+it("remaps colliding captures across scenes, graph defaults and material samplers, keeping declared text", async () => {
   const targetGuid = "target-collision";
   const textureGuid = "image-collision";
   const capture = { id: "capture", classId: "RenderTargetCaptureComponent", properties: { renderTargetGuid: targetGuid, actorIds: ["subject"] } };
@@ -49,7 +49,7 @@ it("remaps colliding captures across scenes, graph defaults and material sampler
       { type: "render-target.getTextureTarget", data: { "default:texture": textureGuid } },
       { type: "material.setTextureParameter", data: { properties: { "default:value": textureGuid } } },
     ] } } } },
-    { type: "Material", guid: "material", payload: { nodes: [{ type: "texture.sample", properties: { textureGuid } }], label: textureGuid } },
+    { type: "Material", guid: "material", payload: { nodes: [{ type: "texture.sample", properties: { textureGuid } }], label: "image" } },
   ];
   const imports = [];
   for (const document of documents) {
@@ -75,6 +75,6 @@ it("remaps colliding captures across scenes, graph defaults and material sampler
   expect(graph.members.map((member: { defaultValue: unknown }) => member.defaultValue)).toEqual([target, [{ key: target, value: image }]]);
   expect(graph.functionGraphs.sample.nodes[0].data["default:texture"]).toBe(image);
   expect(graph.functionGraphs.sample.nodes[1].data.properties["default:value"]).toBe(image);
-  expect(body("Material")).toMatchObject({ nodes: [{ properties: { textureGuid: image } }], label: textureGuid });
+  expect(body("Material")).toMatchObject({ nodes: [{ properties: { textureGuid: image } }], label: "image" });
   expect(capture.properties.renderTargetGuid).toBe(targetGuid);
 });

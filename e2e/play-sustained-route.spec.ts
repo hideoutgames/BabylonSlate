@@ -39,7 +39,7 @@ const QUALITY = (QUALITY_LEVELS as readonly string[]).includes(process.env.BL_PE
   : "low";
 const MINUTES = Number(process.env.BL_PERF_SUSTAINED_MINUTES ?? 20);
 const WARMUP_MS = Number(process.env.BL_PERF_SUSTAINED_WARMUP_MS ?? 60_000);
-const SAMPLE_MS = Number(process.env.BL_PERF_SUSTAINED_SAMPLE_MS ?? 30_000);
+const SAMPLE_MS = Number(process.env.BL_PERF_SAMPLE_MS ?? 30_000);
 const BACKEND =
   process.env.BL_PERF_BACKEND === "webgl2" || process.env.BL_PERF_BACKEND === "webgpu"
     ? process.env.BL_PERF_BACKEND
@@ -77,7 +77,10 @@ async function sampleWindow(
           rendering?: () => unknown;
           tickIndex?: () => number;
         };
-        __babylonslatePlayerTest?: { rendering?: () => unknown };
+        __babylonslatePlayerTest?: {
+          rendering?: () => unknown;
+          tickIndex?: () => number;
+        };
       };
       const hooks =
         global.__babylonslatePlayTest ?? global.__babylonslatePlayerTest ?? null;
@@ -88,9 +91,7 @@ async function sampleWindow(
           return null;
         }
       };
-      const tickIndex = () =>
-        (hooks as { tickIndex?: () => number | null } | null)?.tickIndex?.() ??
-        null;
+      const tickIndex = () => hooks?.tickIndex?.() ?? null;
       const longTasks: number[] = [];
       let observer: PerformanceObserver | null;
       try {

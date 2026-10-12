@@ -17,6 +17,7 @@ async function fixture() {
 const header = {
   guid: "asset", type: "Model", name: "Asset", engineVersion: "0.0.0",
   version: 1, mode: "thin" as const, dependencies: [], payload: {},
+  dependencyMetadataVersion: 1, requiredDependencies: [],
 };
 
 const chunk = (id: string, data: Uint8Array) => ({ id, kind: id, mime: "application/octet-stream", data });

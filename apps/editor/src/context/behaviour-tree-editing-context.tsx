@@ -11,7 +11,7 @@ import {
   createDefaultBehaviourTree,
   parseBehaviourTreeDocument,
 } from "@babylonslate/behaviour-tree";
-import { useOpenDocument } from "./document-context";
+import { useDocumentActions } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 
 export type BehaviourTreeAttachmentCatalog = "decorator" | "service";
@@ -42,13 +42,17 @@ export function BehaviourTreeEditingProvider({
   children: ReactNode;
 }) {
   const { documentId } = useDocumentWorkspace();
-  const doc = useOpenDocument(documentId);
-  const tree = asTree(
-    (doc?.content && typeof doc.content === "object"
-      ? (doc.content as Record<string, unknown>)
-      : {}) as Record<string, unknown>,
-  );
-  const [selectedId, setSelectedId] = useState<string | null>(tree.rootId);
+  const { getOpenDocuments } = useDocumentActions();
+  // Only the first selection reads the tree, so read it once instead of
+  // subscribing to every edit of the document.
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    const content = getOpenDocuments().find((doc) => doc.id === documentId)?.content;
+    return asTree(
+      content && typeof content === "object"
+        ? (content as Record<string, unknown>)
+        : {},
+    ).rootId;
+  });
   const [attachmentId, setAttachmentId] = useState<string | null>(null);
   const [attachmentCatalog, setAttachmentCatalog] =
     useState<BehaviourTreeAttachmentCatalog | null>(null);

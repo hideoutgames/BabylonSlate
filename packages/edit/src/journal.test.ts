@@ -71,7 +71,7 @@ describe("journal", () => {
   it("serializes and parses journal lines", () => {
     const line: JournalLine = {
       v: 1,
-      docId: "graph:assets/main.graph.babasset",
+      docId: "graph:assets/main.class.babasset",
       at: "2026-08-11T17:00:00.000Z",
       command: {
         type: "graph.moveNode",
@@ -100,7 +100,7 @@ describe("journal", () => {
       nodes: [
         {
           id: "node-1",
-          type: "logMessage",
+          type: "debug.log",
           position: { x: 0, y: 0 },
           data: {},
         },
@@ -242,7 +242,7 @@ describe("journal", () => {
       "tilemap-stroke:abc",
     );
     // Undo history has already measured the command; its size stays out of the journal.
-    expect(command.byteSize).toBe(new TextEncoder().encode('{"from":{"n":1},"to":{"n":2}}').byteLength);
+    expect(command.byteSize).toBe(new TextEncoder().encode('{"n":1}{"n":2}').byteLength);
     const payload = commandToJournalPayload(command);
     expect(payload).toEqual({
       type: "asset.setDocument",

@@ -9,8 +9,6 @@ export interface FontFaceHost {
   create(family: string, source: BufferSource, descriptors?: FontFaceDescriptors): FontFaceLike;
   add(face: FontFaceLike): void;
   delete?(face: FontFaceLike): void;
-  load(font: string, text?: string): Promise<FontFaceLike[]>;
-  check?(font: string, text?: string): boolean;
 }
 
 export interface FontAssetEntry {
@@ -44,12 +42,6 @@ function defaultHost(): FontFaceHost | null {
       (
         document.fonts as unknown as { delete(font: FontFace): boolean }
       ).delete(face as FontFace);
-    },
-    load(font, text) {
-      return document.fonts.load(font, text);
-    },
-    check(font, text) {
-      return document.fonts.check(font, text);
     },
   };
 }
@@ -142,7 +134,9 @@ export class FontRegistry {
       face = host.create(family, entry.bytes, descriptors);
       host.add(face);
       this.added.add(face);
-      await host.load(`16px "${family}"`);
+      // Wait for this exact face: a family-wide document load matches only the
+      // regular face and would mark a bold or italic face ready before it loads.
+      await face.load();
       // Disposal or newer pending content for this guid supersedes this face.
       const latest = this.registrations.get(entry.guid);
       if (this.disposed || latest !== registration) {
@@ -193,6 +187,7 @@ export class FontRegistry {
     for (const face of [...this.added]) this.remove(face);
     this.faces.clear();
     this.registrations.clear();
+    this.loaded.clear();
   }
 
   private remove(face: FontFaceLike): void {

@@ -17,6 +17,7 @@ import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   lowerMaterialDocument,
+  newCustomGlslProperties,
   type MaterialDocument,
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
@@ -211,7 +212,7 @@ describe("shadow material cache policy", () => {
       id: "glsl",
       type: "custom.glsl",
       position: { x: 0, y: 0 },
-      properties: { body: "a + b" },
+      properties: newCustomGlslProperties(),
     });
     document.edges = document.edges.filter(
       (edge) => edge.id !== "e-color-output",

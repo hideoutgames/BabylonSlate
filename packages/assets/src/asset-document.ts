@@ -1,13 +1,17 @@
+import { ENGINE_VERSION, type ProjectStorage } from "@babylonslate/core";
 import {
-  decodeBabasset,
+  decodeBabassetChunk,
   encodeBabasset,
   readBabassetHeader,
+  type BabassetHeader,
   type ChunkInput,
   type DecodedBabasset,
 } from "./babasset";
 import type { BlobStore } from "./blob-store";
+import { AccountedPayloadLoader, readAssetCatalog } from "./payload-loader";
 import { stableStringify } from "./bytes";
 import { collectAssetDependencyMetadata, type AssetDependencyContext, type AssetDependencyMetadata } from "./asset-dependencies";
+import { ATLAS_REFERRER_TYPES, ATLAS_TEXTURES_META, atlasTextureGuids } from "./atlas-textures";
 
 /** Editor documents keep their JSON body in one chunk so headers stay cheap to scan. */
 export const DOCUMENT_CHUNK_ID = "document";
@@ -22,7 +26,8 @@ export interface AssetDocument {
 
 /**
  * Non-document chunks (font source, pixels, audio, …) to keep when an editor
- * document save rewrites the JSON body.
+ * document save rewrites the JSON body. Every one listed in the header must
+ * have its bytes: a save must never drop a chunk it could not load.
  */
 export function extraChunksFromDecoded(
   decoded: DecodedBabasset,
@@ -31,7 +36,7 @@ export function extraChunksFromDecoded(
   for (const entry of decoded.header.chunks) {
     if (entry.id === DOCUMENT_CHUNK_ID) continue;
     const data = decoded.chunks.get(entry.id);
-    if (!data) continue;
+    if (!data) throw new Error(`Chunk ${entry.id} was not loaded; refusing to drop it on save`);
     extra.push({
       id: entry.id,
       kind: entry.kind,
@@ -68,13 +73,17 @@ export async function encodeAssetDocument(
         parentClass: options.parentClass,
         dependencies: options.dependencies,
       })),
-      engineVersion: options.engineVersion ?? "0.0.0",
+      engineVersion: options.engineVersion ?? ENGINE_VERSION,
       guid: document.guid,
       mode: "thin",
       name: document.name,
       parentClass: options.parentClass ?? null,
       payload: {
         ...(options.headerPayload ?? {}),
+        // The registry reads a referrer's atlases from its header, never its document.
+        ...(ATLAS_REFERRER_TYPES.has(document.type)
+          ? { [ATLAS_TEXTURES_META]: atlasTextureGuids(document.type, document.payload) }
+          : {}),
         ...(options.headerMeta ?? {}),
       },
       type: document.type,
@@ -97,16 +106,46 @@ export async function encodeAssetDocument(
   });
 }
 
+/**
+ * The document of a `.babasset`: its `document` chunk, else its header
+ * payload. Only that chunk is read and verified; other chunks (source bytes,
+ * bakes, encodes) are neither loaded from blobs nor hashed.
+ */
 export async function decodeAssetDocument(
   bytes: Uint8Array,
   options: { blobs?: BlobStore } = {},
 ): Promise<AssetDocument> {
-  const decoded = await decodeBabasset(
+  const header = readBabassetHeader(bytes);
+  const body = await decodeBabassetChunk(
     bytes,
+    DOCUMENT_CHUNK_ID,
     options.blobs ? (sha256) => options.blobs!.readBlob(sha256) : undefined,
   );
-  const body = decoded.chunks.get(DOCUMENT_CHUNK_ID);
-  const headerPayload = decoded.header.payload;
+  return assetDocumentFrom(header, body);
+}
+
+/**
+ * {@link decodeAssetDocument} for a file in storage, reading only its header
+ * and `document` chunk, so a Scene's navmesh or reverb bake stays on disk.
+ * The read is not charged to any registry's payload account.
+ */
+export async function readStoredAssetDocument(
+  storage: ProjectStorage,
+  path: string,
+  options: { blobs?: BlobStore } = {},
+): Promise<AssetDocument> {
+  const { header, locator } = await readAssetCatalog(storage, path);
+  const entry = header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
+  const loader = new AccountedPayloadLoader(storage, { blobs: options.blobs });
+  const body = entry ? await loader.loadChunk(locator, entry) : null;
+  return assetDocumentFrom(header, body);
+}
+
+function assetDocumentFrom(
+  header: BabassetHeader,
+  body: Uint8Array | null,
+): AssetDocument {
+  const headerPayload = header.payload;
   let payload: Record<string, unknown>;
   if (body) {
     payload = JSON.parse(new TextDecoder().decode(body)) as Record<
@@ -115,7 +154,7 @@ export async function decodeAssetDocument(
     >;
   } else if (
     headerPayload &&
-    (Object.keys(headerPayload).length > 0 || decoded.header.type === "Audio")
+    (Object.keys(headerPayload).length > 0 || header.type === "Audio")
   ) {
     payload = headerPayload;
   } else {
@@ -124,10 +163,10 @@ export async function decodeAssetDocument(
     );
   }
   return {
-    type: decoded.header.type,
-    name: decoded.header.name,
-    guid: decoded.header.guid,
-    version: decoded.header.version,
+    type: header.type,
+    name: header.name,
+    guid: header.guid,
+    version: header.version,
     payload,
   };
 }

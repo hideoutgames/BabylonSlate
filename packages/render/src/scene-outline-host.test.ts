@@ -43,6 +43,35 @@ describe("authored scene outline host", () => {
     expect(host.view.contributions.get("global")?.distanceFade).toBeUndefined();
     expect(host.view.contributions.get("component:actor:ink")?.width).toBe(2);
   });
+  it("draws only the strict occluders that can cover an outlined actor or its stroke", () => {
+    const { scene, host } = setup();
+    const camera = new UniversalCamera("camera", new Vector3(0, 0, -10), scene);
+    camera.setTarget(Vector3.Zero());
+    const box = (name: string, x: number, z: number) => {
+      const mesh = MeshBuilder.CreateBox(name, {}, scene);
+      mesh.position.set(x, 0, z);
+      return mesh;
+    };
+    const outlined = box("outlined", 0, 0);
+    const front = box("in front", 0, -5);
+    const behind = box("behind", 0, 10);
+    const beside = box("beside on screen", 5, 0);
+    const behindCamera = box("behind camera", 0, -20);
+    // Spans the camera plane, so its screen bounds are unknown and it stays.
+    const floor = MeshBuilder.CreateGround("floor", { width: 40, height: 40 }, scene);
+    floor.position.y = -0.5;
+    for (const mesh of scene.meshes) mesh.computeWorldMatrix(true);
+    host.replaceActors([
+      { id: "outlined", meshes: [outlined], bindings: authored("outlined") },
+      ...[front, behind, beside, behindCamera, floor].map((mesh) => ({ id: mesh.name, meshes: [mesh], bindings: [] })),
+    ]);
+    expect(host.view.meshesForGroup("strict")).toHaveLength(6);
+    expect(host.view.strictOccludersFor(camera, 512, 256)).toEqual([outlined, front, floor]);
+    // Moving the camera to look at the other box changes what can cover the outline.
+    camera.position.set(5, 0, -10);
+    camera.setTarget(new Vector3(5, 0, 0));
+    expect(host.view.strictOccludersFor(camera, 512, 256)).toEqual([outlined, floor]);
+  });
   it("selects triangle visuals without admitting line or wireframe topology", () => {
     const { scene, host } = setup();
     const solid = MeshBuilder.CreateBox("solid", {}, scene);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Mesh, MeshBuilder, StandardMaterial, VertexBuffer } from "@babylonjs/core";
+import { Matrix, Mesh, MeshBuilder, Scene, StandardMaterial, VertexBuffer } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
 import {
   applyPlayShowBounds,
@@ -213,6 +213,28 @@ describe("play console visualization", () => {
     engine.dispose();
   });
 
+  it("redraws a collider whose shape returns after a rebuild produced no geometry", () => {
+    const { engine, scene } = createTestEngine();
+    const overlay = createPlayCollisionOverlay(scene);
+    const hull = (apexZ: number) => ({
+      id: "hull",
+      shape: "convex" as const,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      points: [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: apexZ }],
+    });
+    overlay.sync([hull(1)]);
+    expect(scene.getMeshByName("playConsoleViz:hull")).not.toBeNull();
+    // A flat hull has no edges to draw.
+    overlay.sync([hull(0)]);
+    expect(scene.getMeshByName("playConsoleViz:hull")).toBeNull();
+    overlay.sync([hull(1)]);
+    const redrawn = scene.getMeshByName("playConsoleViz:hull");
+    expect(redrawn?.isDisposed()).toBe(false);
+    overlay.dispose();
+    engine.dispose();
+  });
+
   it("keeps a triangle mesh collider across ticks until one of its vertices changes", () => {
     const { engine, scene } = createTestEngine();
     const overlay = createPlayCollisionOverlay(scene);
@@ -235,6 +257,41 @@ describe("play console visualization", () => {
     expect(rebuilt?.getVerticesData(VertexBuffer.PositionKind)).toEqual([0, 0, 0, 2, 0, 0, 0, 4, 0]);
     expect(rebuilt?.position.x).toBe(5);
     overlay.dispose();
+    engine.dispose();
+  });
+
+  it("draws each Scene Layer's colliders in that layer's scene and clears them with the layer or the toggle", () => {
+    const { engine, scene } = createTestEngine();
+    const hud = new Scene(engine);
+    const map = new Scene(engine);
+    const layers = new Map([["hud", hud], ["map", map]]);
+    const viz = createPlayConsoleViz(scene, { layerScene: (layerId) => layers.get(layerId) });
+    const box = (id: string, x: number) => ({
+      id, shape: "box" as const, position: { x, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 },
+      halfExtents: { x: 0.5, y: 0.5, z: 0.01 },
+    });
+    viz.applyCommand({ type: "debugColliders", colliders: [box("world", 1)] });
+    viz.applyCommand({ type: "debugColliders", layerId: "hud", colliders: [box("button", 2)] });
+    viz.applyCommand({ type: "debugColliders", layerId: "map", colliders: [box("pin", 3)] });
+    // A layer the compositor does not know draws nowhere.
+    viz.applyCommand({ type: "debugColliders", layerId: "gone", colliders: [box("stray", 4)] });
+    expect(scene.getMeshByName("playConsoleViz:world")).not.toBeNull();
+    expect(scene.getMeshByName("playConsoleViz:button")).toBeNull();
+    expect(hud.getMeshByName("playConsoleViz:button")?.position.x).toBeCloseTo(2);
+    expect(hud.getMeshByName("playConsoleViz:world")).toBeNull();
+    expect(map.getMeshByName("playConsoleViz:pin")).not.toBeNull();
+    expect([scene, hud, map].some((target) => target.getMeshByName("playConsoleViz:stray"))).toBe(false);
+
+    viz.applyCommand({ type: "sceneLayerRemove", layerId: "hud" });
+    expect(hud.meshes).toHaveLength(0);
+    expect(hud.materials).toHaveLength(0);
+    expect(map.getMeshByName("playConsoleViz:pin")).not.toBeNull();
+
+    viz.applyCommand({ type: "setShowCollision", enabled: false });
+    expect(scene.getMeshByName("playConsoleViz:world")).toBeNull();
+    expect(map.meshes).toHaveLength(0);
+    expect(map.materials).toHaveLength(0);
+    viz.dispose();
     engine.dispose();
   });
 
@@ -261,13 +318,7 @@ describe("play console visualization", () => {
     const { engine, scene } = createTestEngine();
     const viz = createPlayConsoleViz(scene, {
       navBlockers: [
-        {
-          id: "door",
-          kind: "box",
-          position: [1, 0, 2],
-          rotation: [0, 0, 0, 1],
-          scale: [2, 3, 4],
-        },
+        { id: "door", kind: "box", world: Matrix.Identity().asArray() },
       ],
     });
     expect(viz.applyCommand({ type: "setShowNav", enabled: true })).toBe(true);

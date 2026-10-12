@@ -206,7 +206,7 @@ describe("skeletal ragdoll pose handoff", () => {
     group.start(true);
     group.pause();
     binding.slotAnimationGroups = new Map([[1, [group]]]);
-    const host = sceneAnimHostFromBinding(binding, { animationGroups: [group] });
+    const host = sceneAnimHostFromBinding(binding);
     const command = { type: "animState" as const, slotId: 1, stateId: "walk", clipName: "Walk", normalisedTime: 0.5, blendWeights: { walk: 1 } };
     applyAnimStateToScene(host, command);
     expect(bone.position.x).toBe(5);
@@ -316,7 +316,7 @@ describe("skeletal ragdoll pose handoff", () => {
     group.start(true);
     group.pause();
     binding.slotAnimationGroups = new Map([[1, [group]]]);
-    applyAnimStateToScene(sceneAnimHostFromBinding(binding, { animationGroups: [group] }), {
+    applyAnimStateToScene(sceneAnimHostFromBinding(binding), {
       type: "animState", slotId: 1, stateId: "walk", clipName: "Walk", normalisedTime: 0.5, blendWeights: { walk: 1 },
     });
     expect(capture("partial", ["Arm"]).bones![0]!.position.x).toBe(6);

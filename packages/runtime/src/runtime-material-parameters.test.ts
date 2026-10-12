@@ -53,4 +53,29 @@ describe("RuntimeMaterialParameters authoring boundary", () => {
     expect(parameters.captureOverrides(material)).toBeNull();
     expect(parameters.captureOverrides(component.getVariable("materialObject") as MaterialObject)).toEqual({});
   });
+
+  it("keeps session values for an unchanged definition and rebuilds a changed one from the replacement catalog", () => {
+    const { material } = fixture();
+    const sibling = fixture().component;
+    sibling.materialInstance = undefined;
+    const other = sibling.getVariable("materialObject") as MaterialObject;
+    const parameters = new RuntimeMaterialParameters(catalog, ["texture"]);
+    parameters.set(material, "Tint", { kind: "color", value: [0, 1, 0, 1] });
+    parameters.set(other, "Tint", { kind: "color", value: [0, 0, 1, 1] });
+    const before = parameters.revision(other);
+
+    parameters.replaceCatalog(structuredClone(catalog), ["texture"]);
+    expect(parameters.get(material, "Tint", "color")).toEqual({ kind: "color", value: [0, 1, 0, 1] });
+
+    const changed: MaterialParameterCatalog = { surface: { ...catalog.surface!, parameters: {
+      ...catalog.surface!.parameters, Tint: { kind: "color", value: [1, 0, 0, 1] }, Gain: { kind: "float", value: 2 },
+    } } };
+    parameters.replaceCatalog(changed, ["texture"]);
+    expect(parameters.get(other, "Tint", "color")).toEqual({ kind: "color", value: [1, 0, 0, 1] });
+    expect(parameters.resetValue(other, "Gain", "float")).toEqual({ kind: "float", value: 2 });
+    expect(parameters.revision(other)).toBeGreaterThan(before);
+    // The authored instance override still applies over the new defaults.
+    expect(parameters.get(material, "Gain", "float")).toEqual({ kind: "float", value: 0.25 });
+    expect(parameters.get(material, "Tint", "color")).toEqual({ kind: "color", value: [1, 0, 0, 1] });
+  });
 });

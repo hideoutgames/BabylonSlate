@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createDockview, type DockviewApi } from "dockview-react";
+import { createDockview, Orientation, type DockviewApi } from "dockview-react";
 import {
   captureAdaptiveDockviewLayout,
   enterPhoneDockLayout,
@@ -96,6 +96,102 @@ describe("phone Dockview presentation", () => {
     expect(captureAdaptiveDockviewLayout(api)).toEqual(desktop);
     phone.restore();
     expect(api.getPanel("details")!.api.location.type).toBe("floating");
+  });
+
+  it("carries function graph tabs opened or renamed on the phone into the desktop layout", () => {
+    const api = createLayout();
+    api.addPanel({
+      id: "graph",
+      component: "graph",
+      title: "Event Graph",
+      position: { referencePanel: "viewport", direction: "below" },
+    });
+    api.addPanel({
+      id: "function-graph:fn-jump",
+      component: "function-graph",
+      title: "Jump",
+      params: { functionId: "fn-jump" },
+      position: { referencePanel: "graph", direction: "within" },
+    });
+    const phone = enterPhoneDockLayout(api);
+    cleanups.push(() => phone.dispose());
+    api.getPanel("function-graph:fn-jump")!.api.setTitle("Leap");
+    const land = api.addPanel({
+      id: "function-graph:fn-land",
+      component: "function-graph",
+      title: "Land",
+      params: { functionId: "fn-land" },
+    });
+    const saved = captureAdaptiveDockviewLayout(api) as unknown as ReturnType<
+      DockviewApi["toJSON"]
+    >;
+    expect(saved.panels["function-graph:fn-jump"]!.title).toBe("Leap");
+    expect(saved.panels["function-graph:fn-land"]).toMatchObject({
+      title: "Land",
+      params: { functionId: "fn-land" },
+    });
+    phone.restore();
+    expect(api.hasMaximizedGroup()).toBe(false);
+    expect(api.getPanel("function-graph:fn-land")).toBe(land);
+    expect(land.group.id).toBe(api.getPanel("graph")!.group.id);
+    expect(api.getPanel("function-graph:fn-jump")!.title).toBe("Leap");
+  });
+
+  it("keeps the splits inside a multi-group floating window when docking it", () => {
+    type Layout = ReturnType<DockviewApi["toJSON"]>;
+    type GridNode = Layout["grid"]["root"];
+    for (const [orientation, stacked] of [
+      [Orientation.VERTICAL, true],
+      [Orientation.HORIZONTAL, false],
+    ] as const) {
+      const api = createLayout();
+      const docked = api.toJSON();
+      const [viewport, details] = docked.grid.root.data as GridNode[];
+      // A floating window holding Details and Output Log in its own split.
+      const saved: Layout = {
+        ...docked,
+        grid: { ...docked.grid, root: { ...docked.grid.root, data: [viewport!] } },
+        panels: {
+          ...docked.panels,
+          output: { id: "output", contentComponent: "output", title: "Output Log" },
+        },
+        floatingGroups: [
+          {
+            grid: {
+              root: {
+                type: "branch",
+                data: [
+                  { ...details!, size: 200 },
+                  {
+                    type: "leaf",
+                    data: { id: "output-group", views: ["output"], activeView: "output" },
+                    size: 200,
+                  },
+                ],
+                size: 400,
+              },
+              width: 400,
+              height: 400,
+              orientation,
+            },
+            position: { left: 10, top: 10, width: 400, height: 400 },
+          },
+        ],
+      };
+      api.fromJSON(inlineDetachedDockviewLayout(saved));
+      const detailsPanel = api.getPanel("details")!;
+      const output = api.getPanel("output")!;
+      expect(detailsPanel.api.location.type).toBe("grid");
+      expect(output.api.location.type).toBe("grid");
+      expect(detailsPanel.group.id).not.toBe(output.group.id);
+      if (stacked) {
+        expect(output.api.width).toBe(detailsPanel.api.width);
+        expect(output.api.height + detailsPanel.api.height).toBeLessThanOrEqual(800);
+      } else {
+        expect(output.api.height).toBe(800);
+        expect(detailsPanel.api.height).toBe(800);
+      }
+    }
   });
 
   it("restores saved floating and popout windows inside the mobile host", () => {

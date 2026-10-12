@@ -33,6 +33,8 @@ export function ModelThumbnailCaptureHost() {
   const tail = useRef(Promise.resolve());
   const latest = useRef({ assetRegistry, play, readAssetChunk, createAssetLoadScope, writeAssetThumbnail, projectDocument });
   latest.current = { assetRegistry, play, readAssetChunk, createAssetLoadScope, writeAssetThumbnail, projectDocument };
+  const retryWaitingRef = useRef<(() => void) | null>(null);
+  const sharedEngineGeneration = play?.sharedEngineGeneration;
 
   useEffect(() => {
     let cancelled = false;
@@ -40,6 +42,8 @@ export function ModelThumbnailCaptureHost() {
     let activeKey: string | null = null;
     let activeWork: { guid: string; cancel: () => void } | null = null;
     const pending = new Map<string, ModelThumbnailJob>();
+    // Jobs that found no shared Engine; they run once one is registered.
+    const waitingForEngine = new Map<string, ModelThumbnailJob>();
     const attemptedMissing = new Set<string>();
     const jobKey = (job: ModelThumbnailJob) => job.cacheKey ?? JSON.stringify([job.guid, job.path, job.payload]);
     const unsubscribe = subscribeModelThumbnailJobs((jobs) => {
@@ -55,9 +59,22 @@ export function ModelThumbnailCaptureHost() {
         // Keep every explicitly selected descriptor; only the active job reads
         // payloads. A later save replaces queued work for the same asset.
         pending.delete(job.guid);
+        waitingForEngine.delete(job.guid);
         pending.set(job.guid, job);
         if (activeWork?.guid === job.guid) activeWork.cancel();
       }
+      drain();
+    });
+    retryWaitingRef.current = () => {
+      if (waitingForEngine.size === 0) return;
+      for (const [guid, job] of waitingForEngine) {
+        if (!pending.has(guid)) pending.set(guid, job);
+      }
+      waitingForEngine.clear();
+      drain();
+    };
+
+    function drain(): void {
       if (draining || pending.size === 0) return;
       draining = true;
       tail.current = tail.current.then(async () => {
@@ -84,7 +101,7 @@ export function ModelThumbnailCaptureHost() {
           draining = false;
         }
       });
-    });
+    }
 
     async function captureJob(job: ModelThumbnailJob): Promise<void> {
       if (cancelled) return;
@@ -119,7 +136,12 @@ export function ModelThumbnailCaptureHost() {
       if (!shouldContinue()) return;
       const { assetRegistry, play, writeAssetThumbnail, projectDocument } = latest.current;
       const engine = play?.ensureSharedEngine() ?? null;
-      if (!engine) return;
+      if (!engine) {
+        // Keep the job (and a backfill's right to retry) until an Engine exists.
+        waitingForEngine.set(job.guid, job);
+        attemptedMissing.delete(jobKey(job));
+        return;
+      }
       const write = async (png: Uint8Array | null) => {
         if (!png || !shouldContinue()) return;
         if (job.cacheKey && job.projectGuid) {
@@ -128,7 +150,7 @@ export function ModelThumbnailCaptureHost() {
           await writeAssetThumbnail(job.guid, png);
         }
       };
-      if (job.type === "Material" || job.type === "Class" || job.type === "Graph") {
+      if (job.type === "Material" || job.type === "Class") {
         const asset = assetRegistry?.getByGuid(job.guid);
         if (!asset || !assetRegistry) return;
         const input = await prepareAssetThumbnailInput({
@@ -191,9 +213,15 @@ export function ModelThumbnailCaptureHost() {
       cancelled = true;
       activeWork?.cancel();
       pending.clear();
+      waitingForEngine.clear();
+      retryWaitingRef.current = null;
       unsubscribe();
     };
   }, [projectGuid, thumbnailsEnabled]);
+
+  useEffect(() => {
+    retryWaitingRef.current?.();
+  }, [sharedEngineGeneration]);
 
   return null;
 }

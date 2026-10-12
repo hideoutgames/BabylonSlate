@@ -14,11 +14,12 @@ describe("assetVariableGuidsFromGraph", () => {
     expect(assetVariableGuidsFromGraph(graph).sort()).toEqual(["clip", "font", "material", "model"]);
   });
 
-  it("collects typed Set Variable literals in functions and respects cleared canonical defaults", () => {
-    const setter = (id: string, properties: Record<string, unknown>) => ({ id, type: "variables.set", position: { x: 0, y: 0 }, data: { properties } });
+  it("collects typed Set Variable Value pin literals in functions and ignores cleared ones", () => {
+    const setter = (id: string, data: Record<string, unknown>) => ({ id, type: "variables.set", position: { x: 0, y: 0 }, data });
     const graph: SerializedGraph = { nodes: [
-      setter("legacy", { typeId: "asset", typeClassId: "Audio", variableName: "Clip", "default:Clip": "clip" }),
-      setter("cleared", { typeId: "asset", "default:value": null, value: "unused" }),
+      setter("scalar", { typeId: "asset", typeClassId: "Audio", variableName: "Clip", "default:value": "clip" }),
+      setter("cleared", { typeId: "asset", "default:value": null }),
+      setter("other-key", { typeId: "asset", variableName: "Clip", value: "unused", "default:Clip": "unused" }),
       setter("string", { typeId: "string", "default:value": "unused" }),
     ], edges: [], functionGraphs: { paint: { nodes: [
       setter("map", { typeId: "asset", container: "map", keyTypeId: "string", "default:value": [{ key: "unused", value: "material" }] }),

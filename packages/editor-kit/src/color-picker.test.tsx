@@ -2,7 +2,7 @@ import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ColorPicker, type ColorPickerProps } from "./color-picker";
-import { dispatchPointerEvent } from "./test-support/pointer-events";
+import { dispatchPointerEvent, dispatchTouchEvent, stubPointerCapture } from "./test-support/pointer-events";
 
 afterEach(() => {
   cleanup();
@@ -98,6 +98,31 @@ describe("ColorPicker", () => {
     expect(screen.queryByRole("textbox", { name: "Alpha Value" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(onChange).toHaveBeenCalledExactlyOnceWith([0, 1, 0, 1]);
+  });
+
+  it("jumps the hue strip to a touch tap on its track", async () => {
+    // 100px strip with a 16px edge-aligned thumb at hue 0; x = 50 maps to 180°.
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return this.dataset.slot === "slider-thumb" ? new DOMRect(0, 2, 16, 16) : new DOMRect(0, 0, 100, 20);
+    });
+    const restorePointerCapture = stubPointerCapture();
+    try {
+      const onChange = vi.fn();
+      render(<ColorPicker value={[1, 0, 0, 1]} onChange={onChange} withAlpha={false} />);
+      openPicker();
+      await screen.findByRole("slider", { name: "Hue" });
+      const track = document.querySelector('[data-slot="slider-track"]')!;
+      act(() => {
+        dispatchPointerEvent(track, "pointerdown", { clientX: 50, clientY: 10, buttons: 1 });
+        dispatchTouchEvent(track, "touchstart", { clientX: 50, clientY: 10 });
+        dispatchPointerEvent(track, "pointerup", { clientX: 50, clientY: 10 });
+        dispatchTouchEvent(track, "touchend", { clientX: 50, clientY: 10 });
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Done" }));
+      expect(onChange).toHaveBeenCalledExactlyOnceWith([0, 1, 1, 1]);
+    } finally {
+      restorePointerCapture();
+    }
   });
 
   it("blocks invalid drafts and preserves RGB precision when changing alpha", () => {

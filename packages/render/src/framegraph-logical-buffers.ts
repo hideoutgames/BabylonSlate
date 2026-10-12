@@ -1,9 +1,22 @@
 import { FrameGraphGeometryRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/geometryRendererTask";
-import { Color4, Constants } from "@babylonjs/core";
+import { Color4, Constants, type EngineCapabilities } from "@babylonjs/core";
 import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
 import type { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPass";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
+
+/**
+ * Texture type for a geometry pass's view-depth attachment. Transparent meshes
+ * draw into the geometry targets with blending on, and blending into a 32-bit
+ * float target needs EXT_float_blend (WebGL) or float32-blendable (WebGPU).
+ * iPads lack both, so every such draw failed; half float always blends.
+ */
+export function geometryDepthTextureType(
+  caps: Pick<EngineCapabilities, "textureFloatRender" | "textureHalfFloatRender" | "blendFloat">,
+): number | undefined {
+  if (caps.textureFloatRender && (caps.blendFloat || !caps.textureHalfFloatRender)) return Constants.TEXTURETYPE_FLOAT;
+  return caps.textureHalfFloatRender ? Constants.TEXTURETYPE_HALF_FLOAT : undefined;
+}
 
 /** Pinned native task adapters; the caller's FrameGraph owns the attachments. */
 export class LogicalGeometryTask extends FrameGraphGeometryRendererTask {

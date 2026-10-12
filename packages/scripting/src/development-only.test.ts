@@ -114,8 +114,8 @@ function chainGraph(options: {
   const printDef = registry.get("debug.print")!;
   const logDef = registry.get("debug.log")!;
   const entryDef = registry.get("flow.entry")!;
-  const printProps = { value: "debug", ...options.printProperties };
-  const logProps = { message: "kept", ...options.logProperties };
+  const printProps = { "default:value": "debug", ...options.printProperties };
+  const logProps = { "default:message": "kept", ...options.logProperties };
   return {
     id: "g",
     kind: "event",
@@ -224,13 +224,13 @@ describe("compileGraph stripDevelopmentOnly", () => {
         node(
           "debug.executeJavaScript",
           "js",
-          { developmentOnly: true, value: 1 },
+          { developmentOnly: true, "default:in_value": 1 },
           jsDef.pins({}),
         ),
         node(
           "debug.log",
           "log",
-          { developmentOnly: true, message: "gone" },
+          { developmentOnly: true, "default:message": "gone" },
           logDef.pins({}),
         ),
       ],
@@ -275,14 +275,14 @@ describe("compileGraph stripDevelopmentOnly", () => {
         node(
           "debug.log",
           "logA",
-          { message: "a" },
-          logDef.pins({ message: "a" }),
+          { "default:message": "a" },
+          logDef.pins({ "default:message": "a" }),
         ),
         node(
           "debug.log",
           "logB",
-          { message: "b" },
-          logDef.pins({ message: "b" }),
+          { "default:message": "b" },
+          logDef.pins({ "default:message": "b" }),
         ),
       ],
       edges: [
@@ -336,14 +336,14 @@ describe("compileGraph stripDevelopmentOnly", () => {
         node(
           "debug.log",
           "logTrue",
-          { message: "true" },
-          logDef.pins({ message: "true" }),
+          { "default:message": "true" },
+          logDef.pins({ "default:message": "true" }),
         ),
         node(
           "debug.log",
           "logFalse",
-          { message: "false" },
-          logDef.pins({ message: "false" }),
+          { "default:message": "false" },
+          logDef.pins({ "default:message": "false" }),
         ),
       ],
       edges: [
@@ -388,13 +388,13 @@ describe("compileGraph stripDevelopmentOnly", () => {
       kind: "event",
       nodes: [
         node("flow.entry", "entry", {}, entryDef.pins({})),
-        node("debug.print", "print1", { value: "one" }, printDef.pins({})),
-        node("debug.print", "print2", { value: "two" }, printDef.pins({})),
+        node("debug.print", "print1", { "default:value": "one" }, printDef.pins({})),
+        node("debug.print", "print2", { "default:value": "two" }, printDef.pins({})),
         node(
           "debug.log",
           "log",
-          { message: "kept" },
-          logDef.pins({ message: "kept" }),
+          { "default:message": "kept" },
+          logDef.pins({ "default:message": "kept" }),
         ),
       ],
       edges: [
@@ -443,7 +443,7 @@ describe("compileGraph stripDevelopmentOnly", () => {
         node(
           "debug.executeJavaScript",
           "js",
-          { developmentOnly: true, value: 7 },
+          { developmentOnly: true, "default:in_value": 7 },
           jsDef.pins({}),
         ),
         node("debug.use", "use", {}, useDef.pins({})),
@@ -505,8 +505,8 @@ describe("compileGraph stripDevelopmentOnly", () => {
         node(
           "debug.log",
           "log",
-          { message: "tick" },
-          logDef.pins({ message: "tick" }),
+          { "default:message": "tick" },
+          logDef.pins({ "default:message": "tick" }),
         ),
       ],
       edges: [

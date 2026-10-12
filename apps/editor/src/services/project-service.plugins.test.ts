@@ -39,6 +39,7 @@ async function writeClassAsset(
     path,
     await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
         guid: options.guid,
         type: "Class",
         name: options.name,
@@ -81,6 +82,36 @@ describe("ProjectService plugin roots", () => {
     // A stale open settings tab must not undo the newer authoring stamp.
     await service.saveDocument("plugin-settings", "plugins/pack/pack.plugin.babasset", { ...settings, description: "Edited Description" });
     expect(service.plugins[0]!.settings.engineVersion).toBe(ENGINE_VERSION);
+  });
+
+  it("stamps plugin content saves without replacing a concurrent settings save", async () => {
+    const { storage, service } = await scaffolded();
+    const settings = createDefaultPluginSettings({ pluginGuid: "pack", displayName: "Pack" });
+    settings.engineVersion = "older";
+    await writeProjectPlugin(storage, "pack", settings);
+    const scene = createDefaultScene();
+    const path = "plugins/pack/assets/Scene.scene.babasset";
+    const settingsPath = "plugins/pack/pack.plugin.babasset";
+    await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Scene", guid: "scene", version: SCENE_SCHEMA_VERSION, payload: scene as unknown as Record<string, unknown> }));
+    await service.remountRegistry();
+    const write = storage.writeBinary.bind(storage);
+    let resumeStamp!: () => void;
+    const stampPaused = new Promise<void>((resolve) => { resumeStamp = resolve; });
+    let stampWriting!: () => void;
+    const stamping = new Promise<void>((resolve) => { stampWriting = resolve; });
+    let paused = false;
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (target, bytes) => {
+      if (target === settingsPath && !paused) { paused = true; stampWriting(); await stampPaused; }
+      return write(target, bytes);
+    });
+    const content = service.saveDocument("scene", path, { ...scene, name: "Changed Scene" });
+    await stamping;
+    // The content save has read the settings and is writing its stamp.
+    const renamed = service.saveDocument("plugin-settings", settingsPath, { ...settings, displayName: "Renamed" });
+    await Promise.race([renamed, new Promise((resolve) => setTimeout(resolve, 50))]);
+    resumeStamp();
+    await Promise.all([content, renamed]);
+    expect(service.plugins[0]!.settings).toMatchObject({ displayName: "Renamed", engineVersion: ENGINE_VERSION });
   });
 
   it("records the current environment when the author saves a new plugin version", async () => {
@@ -178,6 +209,7 @@ describe("ProjectService plugin roots", () => {
       `${folderPath}/assets/Texture.texture.babasset`,
       await encodeBabasset({
         header: {
+          dependencyMetadataVersion: 1, requiredDependencies: [],
           guid: "export-texture",
           type: "Texture",
           name: "Texture",
@@ -214,10 +246,11 @@ describe("ProjectService plugin roots", () => {
     expect(service.registry?.getByGuid("export-texture")).toBeUndefined();
   });
 
-  it("keeps app-owned Engine Plugin and template libraries out of the project list", async () => {
+  it("keeps app-owned Engine Plugin, template and derived-data libraries out of the project list", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("__slate_engine_plugins__");
     await storage.openDocumentsProject("__slate_templates__");
+    await storage.openDocumentsProject("__babylonslate_derived__");
     await storage.openDocumentsProject("My Project");
     expect((await new ProjectService(storage).listProjects()).map((folder) => folder.name))
       .toEqual(["My Project"]);

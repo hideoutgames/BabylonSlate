@@ -88,7 +88,7 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
         projectDocument?.scenes ?? [],
         assetRegistry?.list() ?? [],
       );
-      const scenes = await collectAudioReverbFlushScenes({
+      const { scenes } = await collectAudioReverbFlushScenes({
         paths,
         load: (path) => latestRef.current.loadAssetDocument("scene", path),
       });

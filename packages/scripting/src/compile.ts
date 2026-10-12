@@ -1,5 +1,5 @@
-import type { LogicGraph, GraphNode, GraphPin } from "./ir";
-import { findNode, findPin } from "./ir";
+import type { LogicGraph, GraphEdge, GraphNode, GraphPin } from "./ir";
+import { findPin } from "./ir";
 import type {
   NodeRegistry,
   CodegenContext,
@@ -109,9 +109,8 @@ export function eventNameForEntry(
   entry: GraphNode,
 ): ScriptEventName | undefined {
   if (entry.typeId === "flow.event.custom") {
-    const raw = entry.properties.name ?? entry.properties.title ?? "";
-    const ident = jsIdent(String(raw));
-    return ident.length > 0 ? ident : undefined;
+    const raw = entry.properties.name;
+    return typeof raw === "string" && raw.length > 0 ? jsIdent(raw) : undefined;
   }
   return EVENT_BY_TYPE_ID[entry.typeId];
 }
@@ -169,17 +168,65 @@ function jsIdent(name: string): string {
   return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`;
 }
 
-function edgeToInput(
-  graph: LogicGraph,
-  nodeId: string,
-  pinId: string,
-): { sourceNodeId: string; sourcePinId: string } | undefined {
-  const edge = graph.edges.find(
-    (e) => e.targetNodeId === nodeId && e.targetPinId === pinId,
-  );
-  return edge
-    ? { sourceNodeId: edge.sourceNodeId, sourcePinId: edge.sourcePinId }
-    : undefined;
+/** Words a strict-mode module cannot use as a function declaration name. */
+const RESERVED_WORDS = new Set([
+  "arguments", "await", "break", "case", "catch", "class", "const", "continue",
+  "debugger", "default", "delete", "do", "else", "enum", "eval", "export",
+  "extends", "false", "finally", "for", "function", "if", "implements",
+  "import", "in", "instanceof", "interface", "let", "new", "null", "package",
+  "private", "protected", "public", "return", "static", "super", "switch",
+  "this", "throw", "true", "try", "typeof", "var", "void", "while", "with",
+  "yield",
+]);
+
+/** The runtime dispatches events by `CompiledEntryPoint.event`, so only the export is renamed. */
+function exportIdent(name: string): string {
+  return RESERVED_WORDS.has(name) ? `${name}_` : name;
+}
+
+/** Node, incoming and outgoing edge lookups built once per compile. */
+type GraphIndex = {
+  node(nodeId: string): GraphNode | undefined;
+  /** First edge into an input pin, in authored edge order. */
+  incoming(nodeId: string, pinId: string): GraphEdge | undefined;
+  /** Edges leaving a node, in authored edge order. */
+  outgoing(nodeId: string): readonly GraphEdge[];
+};
+
+function indexGraph(graph: LogicGraph): GraphIndex {
+  const nodes = new Map<string, GraphNode>();
+  for (const node of graph.nodes) {
+    if (!nodes.has(node.id)) nodes.set(node.id, node);
+  }
+  const incoming = new Map<string, GraphEdge>();
+  const outgoing = new Map<string, GraphEdge[]>();
+  for (const edge of graph.edges) {
+    const key = `${edge.targetNodeId}\0${edge.targetPinId}`;
+    if (!incoming.has(key)) incoming.set(key, edge);
+    const leaving = outgoing.get(edge.sourceNodeId);
+    if (leaving) leaving.push(edge);
+    else outgoing.set(edge.sourceNodeId, [edge]);
+  }
+  return {
+    node: (nodeId) => nodes.get(nodeId),
+    incoming: (nodeId, pinId) => incoming.get(`${nodeId}\0${pinId}`),
+    outgoing: (nodeId) => outgoing.get(nodeId) ?? [],
+  };
+}
+
+/** Codegen sees concrete pin types; the authored graph keeps its wildcards. */
+function withResolvedPinTypes(graph: LogicGraph): LogicGraph {
+  const resolved = resolveWildcardPinTypes(graph).resolved;
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => ({
+      ...node,
+      pins: node.pins.map((pin) => ({
+        ...pin,
+        type: resolved.get(pinTypeKey(node.id, pin.id)) ?? pin.type,
+      })),
+    })),
+  };
 }
 
 function isPassthroughExecOut(pin: GraphPin): boolean {
@@ -195,45 +242,46 @@ function isPassthroughExecOut(pin: GraphPin): boolean {
  * Exclusive Branch true/false (and any other multi-out that is not `then`)
  * are not entered — the stripped node cannot choose an arm.
  */
-function stripExecSuccessors(graph: LogicGraph, node: GraphNode) {
+function stripExecSuccessors(index: GraphIndex, node: GraphNode) {
   const passthrough = node.pins.filter(isPassthroughExecOut);
   if (passthrough.length > 0) {
-    return passthrough.flatMap((out) => execSuccessorEdges(graph, node.id, out.name));
+    return passthrough.flatMap((out) => execSuccessorEdges(index, node.id, out.id));
   }
   const outs = node.pins.filter(
     (pin) => pin.kind === "exec" && pin.direction === "out",
   );
   if (outs.length === 1) {
-    return execSuccessorEdges(graph, node.id, outs[0]!.name);
+    return execSuccessorEdges(index, node.id, outs[0]!.id);
   }
   return [];
 }
 
-function execSuccessors(
-  graph: LogicGraph,
-  nodeId: string,
-  pinName?: string,
-): string[] {
-  return execSuccessorEdges(graph, nodeId, pinName).map((e) => e.targetNodeId);
+/**
+ * Exec outputs named by pin id, or by display name when no pin has that id
+ * (generic `then`, `ctx.branch` arms). Ids keep a case such as "Default" or a
+ * Title Case label from also matching another pin's name.
+ */
+function execOutPins(node: GraphNode, pinRef?: string): GraphPin[] {
+  const outs = node.pins.filter(
+    (pin) => pin.kind === "exec" && pin.direction === "out",
+  );
+  if (pinRef === undefined) return outs;
+  const byId = outs.filter((pin) => pin.id === pinRef);
+  return byId.length > 0 ? byId : outs.filter((pin) => pin.name === pinRef);
 }
 
 function execSuccessorEdges(
-  graph: LogicGraph,
+  index: GraphIndex,
   nodeId: string,
-  pinName?: string,
+  pinRef?: string,
 ): Array<{ targetNodeId: string; targetPinId: string }> {
-  const node = findNode(graph, nodeId);
+  const node = index.node(nodeId);
   if (!node) return [];
-  const outs = node.pins.filter(
-    (p) =>
-      p.kind === "exec" &&
-      p.direction === "out" &&
-      (pinName === undefined || p.name === pinName),
-  );
+  const leaving = index.outgoing(nodeId);
   const result: Array<{ targetNodeId: string; targetPinId: string }> = [];
-  for (const out of outs) {
-    for (const e of graph.edges) {
-      if (e.sourceNodeId === nodeId && e.sourcePinId === out.id) {
+  for (const out of execOutPins(node, pinRef)) {
+    for (const e of leaving) {
+      if (e.sourcePinId === out.id) {
         result.push({
           targetNodeId: e.targetNodeId,
           targetPinId: e.targetPinId,
@@ -264,14 +312,14 @@ function entryPinMatches(
 
 /** Static type of the pin wired into `pinId`, unless disconnected or stripped. */
 function wiredSourceType(
-  graph: LogicGraph,
+  index: GraphIndex,
   node: GraphNode,
   pinId: string,
   shouldStrip: (node: GraphNode) => boolean,
 ): PinType | undefined {
-  const incoming = edgeToInput(graph, node.id, pinId);
+  const incoming = index.incoming(node.id, pinId);
   if (!incoming) return undefined;
-  const srcNode = findNode(graph, incoming.sourceNodeId);
+  const srcNode = index.node(incoming.sourceNodeId);
   const srcPin = srcNode && findPin(srcNode, incoming.sourcePinId);
   if (!srcNode || !srcPin || shouldStrip(srcNode)) return undefined;
   return srcPin.type;
@@ -331,17 +379,8 @@ export function compileGraph(
   graph: LogicGraph,
   options: CompileOptions,
 ): CompileResult {
-  const resolved = resolveWildcardPinTypes(graph).resolved;
-  graph = {
-    ...graph,
-    nodes: graph.nodes.map((node) => ({
-      ...node,
-      pins: node.pins.map((pin) => ({
-        ...pin,
-        type: resolved.get(pinTypeKey(node.id, pin.id)) ?? pin.type,
-      })),
-    })),
-  };
+  graph = withResolvedPinTypes(graph);
+  const index = indexGraph(graph);
   const exportName = options.exportName ?? "run";
   const preamble = [`//# sourceURL=babylonslate:///${options.assetGuid}.js`];
   if (graph.nodes.some((node) => node.typeId.startsWith("tags."))) {
@@ -366,7 +405,47 @@ export function compileGraph(
     assetGuid: options.assetGuid, graphId: graph.id, nodeId,
   })});`;
   const exprCache = new Map<string, string>();
+  /** Pure nodes whose codegen is running; a re-entry is a pure cycle. */
+  const pureInProgress = new Set<string>();
   let pureExpressions = createPureExpressions(graph, options.registry);
+  /**
+   * Pure nodes with two or more wired data outputs. Each output expression
+   * reads the node's inputs, so a wired pure input is memoized per executing
+   * statement: outputs used by one statement see one evaluation of it.
+   */
+  const sharedInputNodes = new Set(
+    graph.nodes
+      .filter((node) => {
+        if (!options.registry.get(node.typeId)?.pure) return false;
+        const wired = new Set(
+          index.outgoing(node.id)
+            .filter((edge) => findPin(node, edge.sourcePinId)?.kind === "data")
+            .map((edge) => edge.sourcePinId),
+        );
+        return wired.size >= 2;
+      })
+      .map((node) => node.id),
+  );
+  /**
+   * Statement-scoped memos: each holds the value computed during the current
+   * `__stmt` epoch. Every emitted exec node, each While Loop condition check
+   * and each For Loop bound check after the first starts a new epoch.
+   * Declared per entry point.
+   */
+  let memoDecls: string[] = [];
+  const memoByKey = new Map<string, string>();
+  let useEpoch = false;
+  function memoExpression(key: string, expression: string): string {
+    const cached = memoByKey.get(key);
+    if (cached) return cached;
+    const name = `__memo_${memoDecls.length}`;
+    memoDecls.push(
+      `  let ${name}_at = -1, ${name}_v; const ${name} = () => (${name}_at === __stmt ? ${name}_v : (${name}_v = (${expression}), ${name}_at = __stmt, ${name}_v));`,
+    );
+    const call = `${name}()`;
+    memoByKey.set(key, call);
+    return call;
+  }
   /**
    * Impure output slots are declared once at the top of the entry point so a
    * node emitted under several exec branches neither redeclares them nor
@@ -385,11 +464,12 @@ export function compileGraph(
     const key = `${node.id}:${dataPin.id}`;
     const cached = exprCache.get(key);
     if (cached) return cached;
-    const incoming = edgeToInput(graph, node.id, dataPin.id);
+    const incoming = index.incoming(node.id, dataPin.id);
     if (incoming) {
-      const srcNode = findNode(graph, incoming.sourceNodeId)!;
-      const srcPin = findPin(srcNode, incoming.sourcePinId)!;
-      if (shouldStrip(srcNode)) {
+      const srcNode = index.node(incoming.sourceNodeId);
+      const srcPin = srcNode && findPin(srcNode, incoming.sourcePinId);
+      // A dangling wire (reported as ref.missing_*) reads like a stripped source.
+      if (!srcNode || !srcPin || shouldStrip(srcNode)) {
         const lit = defaultValueLiteral(dataPin.type);
         exprCache.set(key, lit);
         return lit;
@@ -420,8 +500,8 @@ export function compileGraph(
 
   function referenceExpr(node: GraphNode, pinName: string): string {
     const targetPin = pinForCodegen(node, pinName, "in");
-    const edge = targetPin && edgeToInput(graph, node.id, targetPin.id);
-    const source = edge && findNode(graph, edge.sourceNodeId);
+    const edge = targetPin && index.incoming(node.id, targetPin.id);
+    const source = edge && index.node(edge.sourceNodeId);
     const sourcePin = source && edge && findPin(source, edge.sourcePinId);
     if (!source || !sourcePin || !targetPin || shouldStrip(source) ||
         !pinTypeEquals(sourcePin.type, targetPin.type) || !isWritableVariableOutput(source, sourcePin)) return "null";
@@ -435,7 +515,7 @@ export function compileGraph(
     const property = typeof source.properties.propertyKey === "string" && source.properties.propertyKey
       ? source.properties.propertyKey : name;
     const ownerPin = pinForCodegen(source, "target", "in");
-    const connected = ownerPin && edgeToInput(graph, source.id, ownerPin.id);
+    const connected = ownerPin && index.incoming(source.id, ownerPin.id);
     const implicitSelf = !ownerPin || (!connected && source.properties.implicitSelf === true);
     const owner = implicitSelf ? "null" : pinExpr(source, ownerPin!);
     return `ctx.variableReference(${owner}, ${JSON.stringify(property)}, ${implicitSelf})`;
@@ -450,14 +530,26 @@ export function compileGraph(
       input(pinName) {
         const p = pinForCodegen(node, pinName, "in");
         if (!p) return "undefined";
-        return pinExpr(node, p);
+        const expression = pinExpr(node, p);
+        if (!sharedInputNodes.has(node.id)) return expression;
+        const edge = index.incoming(node.id, p.id);
+        const source = edge && index.node(edge.sourceNodeId);
+        if (!source || shouldStrip(source) || !options.registry.get(source.typeId)?.pure) {
+          return expression;
+        }
+        return memoExpression(`in:${node.id}:${p.id}`, expression);
       },
       reference(pinName) { return referenceExpr(node, pinName); },
+      shared(expression) {
+        // With one wired output there is nothing to share.
+        if (!sharedInputNodes.has(node.id)) return expression;
+        return memoExpression(`shared:${node.id}:${expression}`, expression);
+      },
       continueIf(expression) { continuation?.(expression); },
       branch(expression, truePin, falsePin) { branch?.(expression, truePin, falsePin); },
       inputType(pinName) {
         const p = pinForCodegen(node, pinName, "in");
-        return p ? wiredSourceType(graph, node, p.id, shouldStrip) : undefined;
+        return p ? wiredSourceType(index, node, p.id, shouldStrip) : undefined;
       },
       output(pinName) {
         const p = pinForCodegen(node, pinName, "out");
@@ -491,7 +583,7 @@ export function compileGraph(
   }
 
   function ensurePure(node: GraphNode) {
-    if (shouldStrip(node)) return;
+    if (shouldStrip(node) || pureInProgress.has(node.id)) return;
     const def = options.registry.get(node.typeId);
     if (!def?.pure) return;
     if (
@@ -504,7 +596,13 @@ export function compileGraph(
     ) {
       return;
     }
-    const result = def.codegen(makeCtx(node));
+    pureInProgress.add(node.id);
+    let result: ReturnType<typeof def.codegen>;
+    try {
+      result = def.codegen(makeCtx(node));
+    } finally {
+      pureInProgress.delete(node.id);
+    }
     if (result && typeof result === "object") {
       for (const [name, expr] of Object.entries(result)) {
         const outPin = pinForCodegen(node, name, "out");
@@ -513,12 +611,19 @@ export function compileGraph(
     }
   }
 
+  /**
+   * Several successor chains share one function scope, so each gets its own
+   * block: a node reached on two of them must not declare a local twice.
+   */
   function emitAlong(
     edges: Array<{ targetNodeId: string; targetPinId: string }>,
     visited: ExecPath,
   ) {
+    const scoped = edges.length > 1;
     for (const edge of edges) {
+      if (scoped) emitBody("  {");
       emitExecChain(edge.targetNodeId, new Map(visited), edge.targetPinId);
+      if (scoped) emitBody("  }");
     }
   }
 
@@ -555,9 +660,9 @@ export function compileGraph(
         flowSwitchCaseValueFromPinId(pin.id) !== undefined,
     );
     const wiredCases = cases.filter(
-      (pin) => execSuccessors(graph, node.id, pin.name).length > 0,
+      (pin) => execSuccessorEdges(index, node.id, pin.id).length > 0,
     );
-    const defaultTargets = execSuccessors(graph, node.id, "Default");
+    const defaultTargets = execSuccessorEdges(index, node.id, meta.defaultPin);
     if (wiredCases.length === 0 && defaultTargets.length === 0) {
       emitBody(`  /* ${node.typeId} ${node.id}: no exec outs */`, anchor);
       return true;
@@ -569,13 +674,13 @@ export function compileGraph(
         meta.kind === "switchOnInt" ? String(Number(raw)) : JSON.stringify(raw);
       const keyword = i === 0 ? "if" : "} else if";
       emitBody(`  ${keyword} (${valueExpr} === ${compare}) {`, anchor);
-      emitAlong(execSuccessorEdges(graph, node.id, pin.name), visited);
+      emitAlong(execSuccessorEdges(index, node.id, pin.id), visited);
     }
     if (defaultTargets.length > 0) {
       if (wiredCases.length > 0) {
         emitBody(`  } else {`, anchor);
       }
-      emitAlong(execSuccessorEdges(graph, node.id, "Default"), visited);
+      emitAlong(defaultTargets, visited);
       if (wiredCases.length > 0) {
         emitBody(`  }`, anchor);
       }
@@ -601,23 +706,31 @@ export function compileGraph(
 
     if (meta.kind === "break") {
       const loop = loopStack.at(-1);
-      if (loop && !loop.labeled) {
+      // Outside a loop the validator reports flow.break_outside_loop; a bare
+      // `break;` would stop the whole module from parsing.
+      if (!loop) {
+        emitBody(`  /* flow.break ${node.id}: not inside a loop */`, anchor);
+        return true;
+      }
+      if (!loop.labeled) {
         loop.opening.text = `  ${loop.label}: ${loop.opening.text.trimStart()}`;
         loop.labeled = true;
       }
-      emitBody(loop ? `  break ${loop.label};` : `  break;`, anchor);
+      emitBody(`  break ${loop.label};`, anchor);
       return true;
     }
 
     if (meta.kind === "whileLoop") {
       const conditionExpr = ctx.input(meta.conditionPin);
-      const opening = emitBody(`  while (${conditionExpr}) {`, anchor);
+      // Each condition check is a statement of its own.
+      const condition = useEpoch ? `(__stmt++, ${conditionExpr})` : conditionExpr;
+      const opening = emitBody(`  while (${condition}) {`, anchor);
       if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
       loopStack.push({ label: `__loop_${nextLabel++}`, opening });
-      emitAlong(execSuccessorEdges(graph, node.id, meta.loopBodyPin), visited);
+      emitAlong(execSuccessorEdges(index, node.id, meta.loopBodyPin), visited);
       loopStack.pop();
       emitBody(`  }`, anchor);
-      emitAlong(execSuccessorEdges(graph, node.id, meta.completedPin), visited);
+      emitAlong(execSuccessorEdges(index, node.id, meta.completedPin), visited);
       return true;
     }
 
@@ -628,16 +741,26 @@ export function compileGraph(
         const firstExpr = ctx.input(meta.firstIndexPin);
         const lastExpr = ctx.input(meta.lastIndexPin);
         const iter = `__i_${jsIdent(node.id)}`;
+        const bound = `__bound_${jsIdent(node.id)}`;
         emitBody(`  {`, anchor);
+        // Like `| 0` without the int32 wrap: Int pins carry safe integers.
+        // A non-finite bound (Int division by zero) is 0, not an endless loop.
+        emitBody(
+          `    const ${bound} = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.trunc(n) : 0; };`,
+          anchor,
+        );
+        // The first Last Index check shares the For Loop's statement with
+        // First Index; each later check is a statement of its own.
+        const update = useEpoch ? `${iter}++, __stmt++` : `${iter}++`;
         const opening = emitBody(
-          `    for (let ${iter} = (${firstExpr}) | 0; ${iter} <= ((${lastExpr}) | 0); ${iter}++) {`,
+          `    for (let ${iter} = ${bound}(${firstExpr}); ${iter} <= ${bound}(${lastExpr}); ${update}) {`,
           anchor,
         );
         if (instrumentLoops) emitBody(`      ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`      ${indexSlot} = ${iter};`, anchor);
         loopStack.push({ label: `__loop_${nextLabel++}`, opening });
         emitAlong(
-          execSuccessorEdges(graph, node.id, meta.loopBodyPin),
+          execSuccessorEdges(index, node.id, meta.loopBodyPin),
           visited,
         );
         loopStack.pop();
@@ -646,11 +769,13 @@ export function compileGraph(
       } else if (meta.kind === "forEach" || meta.kind === "forEachWithBreak") {
         const arrayExpr = ctx.input(meta.arrayPin);
         const elementSlot = ctx.output(meta.elementPin);
+        const source = `__src_${jsIdent(node.id)}`;
         const snap = `__snap_${jsIdent(node.id)}`;
         const iter = `__i_${jsIdent(node.id)}`;
         emitBody(`  {`, anchor);
+        emitBody(`    const ${source} = ${arrayExpr};`, anchor);
         emitBody(
-          `    const ${snap} = Array.isArray(${arrayExpr}) ? (${arrayExpr}).slice() : [];`,
+          `    const ${snap} = Array.isArray(${source}) ? ${source}.slice() : [];`,
           anchor,
         );
         const opening = emitBody(
@@ -662,7 +787,7 @@ export function compileGraph(
         emitBody(`      ${elementSlot} = ${snap}[${iter}];`, anchor);
         loopStack.push({ label: `__loop_${nextLabel++}`, opening });
         emitAlong(
-          execSuccessorEdges(graph, node.id, meta.loopBodyPin),
+          execSuccessorEdges(index, node.id, meta.loopBodyPin),
           visited,
         );
         loopStack.pop();
@@ -692,14 +817,14 @@ export function compileGraph(
         emitBody(`      ${valueSlot} = ${snap}[${iter}][1];`, anchor);
         loopStack.push({ label: `__loop_${nextLabel++}`, opening });
         emitAlong(
-          execSuccessorEdges(graph, node.id, meta.loopBodyPin),
+          execSuccessorEdges(index, node.id, meta.loopBodyPin),
           visited,
         );
         loopStack.pop();
         emitBody(`    }`, anchor);
         emitBody(`  }`, anchor);
       }
-      emitAlong(execSuccessorEdges(graph, node.id, meta.completedPin), visited);
+      emitAlong(execSuccessorEdges(index, node.id, meta.completedPin), visited);
       return true;
     }
 
@@ -718,7 +843,7 @@ export function compileGraph(
       );
       emitBody(`    if (!__st.done) {`, anchor);
       emitBody(`      __st.done = true;`, anchor);
-      emitAlong(execSuccessorEdges(graph, node.id, meta.thenPin), visited);
+      emitAlong(execSuccessorEdges(index, node.id, meta.thenPin), visited);
       emitBody(`    }`, anchor);
       emitBody(`  }`, anchor);
       return true;
@@ -744,7 +869,7 @@ export function compileGraph(
       emitBody(`    if ((__st.count | 0) < ((${nExpr}) | 0)) {`, anchor);
       emitBody(`      ${counterSlot} = __st.count | 0;`, anchor);
       emitBody(`      __st.count = (__st.count | 0) + 1;`, anchor);
-      emitAlong(execSuccessorEdges(graph, node.id, meta.thenPin), visited);
+      emitAlong(execSuccessorEdges(index, node.id, meta.thenPin), visited);
       emitBody(`    }`, anchor);
       emitBody(`  }`, anchor);
       return true;
@@ -762,9 +887,9 @@ export function compileGraph(
       emitBody(`    __st.nextIsB = __isA;`, anchor);
       emitBody(`    ${isASlot} = __isA;`, anchor);
       emitBody(`    if (__isA) {`, anchor);
-      emitAlong(execSuccessorEdges(graph, node.id, meta.aPin), visited);
+      emitAlong(execSuccessorEdges(index, node.id, meta.aPin), visited);
       emitBody(`    } else {`, anchor);
-      emitAlong(execSuccessorEdges(graph, node.id, meta.bPin), visited);
+      emitAlong(execSuccessorEdges(index, node.id, meta.bPin), visited);
       emitBody(`    }`, anchor);
       emitBody(`  }`, anchor);
       return true;
@@ -804,7 +929,7 @@ export function compileGraph(
       );
       emitBody(`    if (__st.open == null) __st.open = ${startOpen};`, anchor);
       emitBody(`    if (__st.open) {`, anchor);
-      emitAlong(execSuccessorEdges(graph, node.id, meta.exitPin), visited);
+      emitAlong(execSuccessorEdges(index, node.id, meta.exitPin), visited);
       emitBody(`    }`, anchor);
       emitBody(`  }`, anchor);
       return true;
@@ -822,7 +947,7 @@ export function compileGraph(
     let currentEntryPin = entryPinId;
     const scopes: ExecScope[] = [];
     while (current) {
-      const node = findNode(graph, current);
+      const node = index.node(current);
       if (!node) break;
       // Control inputs (Gate Open/Close, Do Once Reset) are distinct states.
       const input = currentEntryPin ?? node.pins.find(
@@ -853,7 +978,7 @@ export function compileGraph(
       visited.set(key, scope);
       scopes.push(scope);
       if (shouldStrip(node)) {
-        const targets = stripExecSuccessors(graph, node);
+        const targets = stripExecSuccessors(index, node);
         if (targets.length === 0) break;
         if (targets.length === 1) {
           current = targets[0]!.targetNodeId;
@@ -873,6 +998,7 @@ export function compileGraph(
         });
         break;
       }
+      if (useEpoch) emitBody("  __stmt++;");
 
       if (node.typeId === "flow.branch") {
         const ctx = makeCtx(node);
@@ -883,9 +1009,9 @@ export function compileGraph(
           nodeId: node.id,
         };
         emitBody(`  if (${ctx.input("condition")}) {`, anchor);
-        emitAlong(execSuccessorEdges(graph, node.id, "true"), visited);
+        emitAlong(execSuccessorEdges(index, node.id, "true"), visited);
         emitBody(`  } else {`, anchor);
-        emitAlong(execSuccessorEdges(graph, node.id, "false"), visited);
+        emitAlong(execSuccessorEdges(index, node.id, "false"), visited);
         emitBody(`  }`, anchor);
         break;
       }
@@ -902,9 +1028,9 @@ export function compileGraph(
         def.codegen(ctx);
         const value = ctx.output("value");
         emitBody(`  if (${value} != null) {`, anchor);
-        emitAlong(execSuccessorEdges(graph, node.id, "Is Valid"), visited);
+        emitAlong(execSuccessorEdges(index, node.id, "isValid"), visited);
         emitBody(`  } else {`, anchor);
-        emitAlong(execSuccessorEdges(graph, node.id, "Not Valid"), visited);
+        emitAlong(execSuccessorEdges(index, node.id, "notValid"), visited);
         emitBody(`  }`, anchor);
         break;
       }
@@ -925,9 +1051,9 @@ export function compileGraph(
             enumSwitchMemberNameFromPinId(pin.id) !== undefined,
         );
         const wiredCases = cases.filter(
-          (pin) => execSuccessors(graph, node.id, pin.name).length > 0,
+          (pin) => execSuccessorEdges(index, node.id, pin.id).length > 0,
         );
-        const defaultTargets = execSuccessorEdges(graph, node.id, "Default");
+        const defaultTargets = execSuccessorEdges(index, node.id, "default");
         if (wiredCases.length === 0 && defaultTargets.length === 0) {
           emitBody(`  /* enum.switch ${node.id}: no exec outs */`, anchor);
           break;
@@ -940,7 +1066,7 @@ export function compileGraph(
             `  ${keyword} (${valueExpr} === ${JSON.stringify(memberName)}) {`,
             anchor,
           );
-          emitAlong(execSuccessorEdges(graph, node.id, pin.name), visited);
+          emitAlong(execSuccessorEdges(index, node.id, pin.id), visited);
         }
         if (defaultTargets.length > 0) {
           if (wiredCases.length > 0) {
@@ -965,12 +1091,12 @@ export function compileGraph(
         for (let i = 0; i < cases.length; i++) {
           const tag = cases[i]!;
           emitBody(`  ${i === 0 ? "if" : "} else if"} (__tagCase === ${tag}) {`, anchor);
-          emitAlong(graph.edges.filter((edge) =>
-            edge.sourceNodeId === node.id && edge.sourcePinId === tagCasePinId(tag)), visited);
+          emitAlong(index.outgoing(node.id).filter((edge) =>
+            edge.sourcePinId === tagCasePinId(tag)), visited);
         }
         if (cases.length) emitBody(`  } else {`, anchor);
-        emitAlong(graph.edges.filter((edge) =>
-          edge.sourceNodeId === node.id && edge.sourcePinId === "default"), visited);
+        emitAlong(index.outgoing(node.id).filter((edge) =>
+          edge.sourcePinId === "default"), visited);
         if (cases.length) emitBody(`  }`, anchor);
         emitBody(`  }`, anchor);
         break;
@@ -1011,11 +1137,13 @@ export function compileGraph(
           `  const ${snapshot} = ${candidate}?.valueType === ${JSON.stringify(valueType)} ? ${candidate} : null;`,
           anchor,
         );
+        // Function-level declarations: a pure consumer may already have hoisted these slots.
+        declareDataOuts(node, ctx);
         for (const p of node.pins.filter(
           (p) => p.kind === "data" && p.direction === "out",
         )) {
           emitBody(
-            `  let ${ctx.output(p.id)} = ${snapshot}?.${p.id} ?? ${defaultValueLiteral(p.type)};`,
+            `  ${ctx.output(p.id)} = ${snapshot}?.${p.id} ?? ${defaultValueLiteral(p.type)};`,
             anchor,
           );
         }
@@ -1031,14 +1159,7 @@ export function compileGraph(
             `    if (__phase === "${phase}" && ${snapshot}?.${phase}) {`,
             anchor,
           );
-          emitAlong(
-            execSuccessorEdges(
-              graph,
-              node.id,
-              phase[0]!.toUpperCase() + phase.slice(1),
-            ),
-            new Map(visited),
-          );
+          emitAlong(execSuccessorEdges(index, node.id, phase), new Map(visited));
           emitBody("    }", anchor);
         }
         emitBody("  }", anchor);
@@ -1061,7 +1182,7 @@ export function compileGraph(
         );
         if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`    ${ctx.output("key")} = ${pressedKey};`, anchor);
-        emitAlong(execSuccessorEdges(graph, node.id, "Then"), visited);
+        emitAlong(execSuccessorEdges(index, node.id, "Then"), visited);
         emitBody("  }", anchor);
         break;
       }
@@ -1078,35 +1199,22 @@ export function compileGraph(
           graphId: graph.id,
           nodeId: node.id,
         };
-        for (const p of node.pins) {
-          if (p.kind === "data" && p.direction === "out") {
-            const name = ctx.output(p.id);
-            emitBody(`  let ${name} = ${defaultValueLiteral(p.type)};`, anchor);
-          }
-        }
+        declareDataOuts(node, ctx);
         const connected = node.typeId === "input.onGamepadConnected";
-        const index = ctx.output("index");
+        const padIndexSlot = ctx.output("index");
         emitBody(
           `  for (const __pad of (ctx.gamepadConnections ?? []).filter((c) => c.connected === ${connected})) {`,
           anchor,
         );
         if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
-        emitBody(`    ${index} = __pad.gamepadIndex;`, anchor);
-        emitAlong(execSuccessorEdges(graph, node.id, "then"), visited);
+        emitBody(`    ${padIndexSlot} = __pad.gamepadIndex;`, anchor);
+        emitAlong(execSuccessorEdges(index, node.id, "then"), visited);
         emitBody(`  }`, anchor);
         break;
       }
 
       if (node.typeId === "flow.sequence") {
-        for (const outPin of node.pins.filter(
-          (p) => p.kind === "exec" && p.direction === "out",
-        )) {
-          for (const e of graph.edges) {
-            if (e.sourceNodeId === node.id && e.sourcePinId === outPin.id) {
-              emitExecChain(e.targetNodeId, new Map(visited), e.targetPinId);
-            }
-          }
-        }
+        emitAlong(execSuccessorEdges(index, node.id), visited);
         break;
       }
 
@@ -1134,16 +1242,16 @@ export function compileGraph(
         const anchor = { column: 1, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id };
         if (instrumentLoops) emitBody(`  ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`  if (${branch.expression}) {`, anchor);
-        emitAlong(execSuccessorEdges(graph, node.id, branch.truePin), visited);
+        emitAlong(execSuccessorEdges(index, node.id, branch.truePin), visited);
         emitBody("  } else {", anchor);
-        emitAlong(execSuccessorEdges(graph, node.id, branch.falsePin), visited);
+        emitAlong(execSuccessorEdges(index, node.id, branch.falsePin), visited);
         emitBody("  }", anchor);
         break;
       }
 
-      const thenEdges = execSuccessorEdges(graph, node.id, "then");
+      const thenEdges = execSuccessorEdges(index, node.id, "then");
       const edges =
-        thenEdges.length > 0 ? thenEdges : execSuccessorEdges(graph, node.id);
+        thenEdges.length > 0 ? thenEdges : execSuccessorEdges(index, node.id);
       if (continuation !== undefined) {
         const anchor = { column: 1, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id };
         if (instrumentLoops) emitBody(`  ${loopCheck(anchor.nodeId)}`, anchor);
@@ -1183,12 +1291,15 @@ export function compileGraph(
     outputDecls.clear();
     exprCache.clear();
     pureExpressions = createPureExpressions(graph, options.registry);
+    memoDecls = [];
+    memoByKey.clear();
     isAsync = false;
 
     for (const node of graph.nodes) {
       if (shouldStrip(node)) continue;
       if (options.registry.get(node.typeId)?.pure) ensurePure(node);
     }
+    useEpoch = memoDecls.length > 0;
 
     if (entry) emitExecChain(entry.id);
     else emitBody(`  // empty graph`);
@@ -1205,7 +1316,11 @@ export function compileGraph(
         isAsync,
         ...(entry ? entryComponentId(entry) : {}),
       },
-      declLines: [...outputDecls.values(), ...pureExpressions.declarations],
+      declLines: [
+        ...outputDecls.values(),
+        ...pureExpressions.declarations,
+        ...(memoDecls.length > 0 ? ["  let __stmt = 0;", ...memoDecls] : []),
+      ],
       bodyLines: body.filter((line) => line.text !== ""),
     });
   }
@@ -1268,7 +1383,8 @@ function uniqueName(base: string, used: Set<string>): string {
 }
 
 function entryExportName(entry: GraphNode, fallback: string): string {
-  return eventNameForEntry(entry) ?? fallback;
+  const event = eventNameForEntry(entry);
+  return event === undefined ? fallback : exportIdent(event);
 }
 
 function entryComponentId(entry: GraphNode): { componentId?: string } {
@@ -1298,7 +1414,10 @@ export function compileTransitionRuleGraph(
   graph: LogicGraph,
   options: CompileOptions,
 ): CompileResult {
+  graph = withResolvedPinTypes(graph);
+  const index = indexGraph(graph);
   const exprCache = new Map<string, string>();
+  const pureInProgress = new Set<string>();
   const pureExpressions = createPureExpressions(graph, options.registry);
   const shouldStrip = (node: GraphNode) =>
     options.stripDevelopmentOnly === true && isDevelopmentOnlyNode(node);
@@ -1311,9 +1430,9 @@ export function compileTransitionRuleGraph(
     const key = `${node.id}:${dataPin.id}`;
     const cached = exprCache.get(key);
     if (cached) return cached;
-    const incoming = edgeToInput(graph, node.id, dataPin.id);
+    const incoming = index.incoming(node.id, dataPin.id);
     if (incoming) {
-      const srcNode = findNode(graph, incoming.sourceNodeId);
+      const srcNode = index.node(incoming.sourceNodeId);
       const srcPin = srcNode && findPin(srcNode, incoming.sourcePinId);
       if (!srcNode || !srcPin || shouldStrip(srcNode)) {
         const lit = disconnectedLiteral ?? defaultValueLiteral(dataPin.type);
@@ -1352,7 +1471,7 @@ export function compileTransitionRuleGraph(
       },
       inputType(pinName) {
         const p = pinForCodegen(node, pinName, "in");
-        return p ? wiredSourceType(graph, node, p.id, shouldStrip) : undefined;
+        return p ? wiredSourceType(index, node, p.id, shouldStrip) : undefined;
       },
       output(pinName) {
         const p = pinForCodegen(node, pinName, "out");
@@ -1375,7 +1494,7 @@ export function compileTransitionRuleGraph(
   }
 
   function ensurePure(node: GraphNode) {
-    if (shouldStrip(node)) return;
+    if (shouldStrip(node) || pureInProgress.has(node.id)) return;
     const def = options.registry.get(node.typeId);
     if (!def?.pure) return;
     if (
@@ -1388,7 +1507,13 @@ export function compileTransitionRuleGraph(
     ) {
       return;
     }
-    const result = def.codegen(makeCtx(node));
+    pureInProgress.add(node.id);
+    let result: ReturnType<typeof def.codegen>;
+    try {
+      result = def.codegen(makeCtx(node));
+    } finally {
+      pureInProgress.delete(node.id);
+    }
     if (result && typeof result === "object") {
       for (const [name, expr] of Object.entries(result)) {
         const outPin = pinForCodegen(node, name, "out");

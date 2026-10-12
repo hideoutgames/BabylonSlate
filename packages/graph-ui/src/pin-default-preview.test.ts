@@ -199,7 +199,7 @@ describe("pinDefaultPreview", () => {
     });
   });
 
-  it("shows the selected enum member with authored, legacy, and catalog default precedence", () => {
+  it("shows the selected enum member with authored and catalog default precedence", () => {
     const enumPin: SerializedPin = {
       id: "mode-id",
       name: "mode",
@@ -211,7 +211,7 @@ describe("pinDefaultPreview", () => {
     expect(pinDefaultPreview(enumPin, { "default:mode-id": "runFast", "default:mode": "Idle" }, false, { e1: "Movement Mode" }))
       .toEqual({ kind: "enumRef", text: "Run Fast" });
     expect(pinDefaultPreview(enumPin, { "default:mode": "Idle" }, false))
-      .toEqual({ kind: "enumRef", text: "Idle" });
+      .toEqual({ kind: "enumRef", text: "Walk" });
     expect(pinDefaultPreview(enumPin, {}, false))
       .toEqual({ kind: "enumRef", text: "Walk" });
     expect(pinDefaultPreview(enumPin, { "default:mode-id": "" }, false))
@@ -226,8 +226,6 @@ describe("pinDefaultPreview", () => {
       properties: { "default:classId": "Mannequin", classId: "Actor" },
       want: "Mannequin",
     },
-    { properties: { classId: "Mannequin" }, want: "Mannequin" },
-    { properties: { "default:Class ID": "Mannequin" }, want: "Mannequin" },
     { properties: { "default:classId": "" }, want: "" },
   ])(
     "shows the selected class with defaults $properties",
@@ -375,6 +373,19 @@ describe("pinDefaultPreview", () => {
     ).toEqual({ kind: "float", text: "1.5" });
   });
 
+  it("previews an unwired generic input as its host fallback type", () => {
+    const splitValue = pin({
+      id: "value",
+      name: "Value",
+      kind: "data",
+      direction: "in",
+      type: { kind: "generic", accepts: ["vec2", "vec3", "color"], fallback: "color" },
+    });
+    expect(
+      pinDefaultPreview(splitValue, { "default:value": [1, 0, 0, 1] }, false),
+    ).toEqual({ kind: "color", rgb: "rgb(255, 0, 0)" });
+  });
+
   it("uses catalog defaultValue number arrays when nothing is authored", () => {
     const roughness: SerializedPin = {
       id: "roughness",
@@ -436,6 +447,13 @@ describe("pinDefaultPreview", () => {
       kind: "vec2",
       text: "1, 1",
     });
+  });
+
+  it("previews implicit Self only on the Target pin, not on an argument named target", () => {
+    const target = pin({ id: "target", name: "target", kind: "data", direction: "in", type: { kind: "actorRef" } });
+    const argument = pin({ id: "target__arg", name: "target", kind: "data", direction: "in", type: { kind: "actorRef" } });
+    expect(pinDefaultPreview(target, { implicitSelf: true }, false)).toEqual({ kind: "actorRef", text: "Self" });
+    expect(pinDefaultPreview(argument, { implicitSelf: true }, false)).toEqual({ kind: "actorRef", text: "", placeholder: true });
   });
 
   it("returns null for texture pins", () => {

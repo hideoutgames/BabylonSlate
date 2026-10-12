@@ -170,7 +170,7 @@ describe("applyAlbedoTexture", () => {
       const animation = createDefaultSpriteAnimationPayload();
       animation.frames[0]!.textureGuid = "next";
       const host = sceneAnimHostFromBinding(f.binding, {
-        animationGroups: [], spritePayloads: new Map([["sprite", f.sprite]]),
+        spritePayloads: new Map([["sprite", f.sprite]]),
         spriteAnimations: new Map([["animation", animation]]),
         applyTexture: (mesh, guid) => applyAlbedoTexture(mesh, mesh.getScene(), guid, f.assets),
       });
@@ -234,7 +234,7 @@ describe("applyAlbedoTexture", () => {
       const materials = f.scene.materials.length;
       const acquisitions = f.acquire.mock.calls.length;
       const fade = (weight: number) => applyAnimStateToScene({
-        animationGroups: [], getSpriteSlot: () => ({ mesh: f.mesh, overlayMesh: overlay, payload: f.sprite }),
+        getAnimationGroups: () => [], getSpriteSlot: () => ({ mesh: f.mesh, overlayMesh: overlay, payload: f.sprite }),
       }, {
         type: "animState", slotId: 1, stateId: "idle", normalisedTime: 0, blendWeights: {},
         layers: [

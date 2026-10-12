@@ -649,7 +649,6 @@ function text3dAssignPayload(
   return parseText3DProperties({
     text: component.getVariable("text"),
     size: component.getVariable("size"),
-    depth: component.getVariable("depth"),
     color: component.getVariable("color"),
     fontAssetGuid: component.getVariable("fontAssetGuid"),
     alignment: component.getVariable("alignment"),

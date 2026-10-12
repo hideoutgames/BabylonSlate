@@ -8,6 +8,9 @@ import { useSimulationInspectionStore } from "../context/simulation-inspection-c
 import { useAppSettings } from "../context/app-settings-context";
 import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
+import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
+import { clipText } from "../lib/diagnostic-info";
+import { formatSceneLoadReport } from "../lib/scene-load-report";
 import { nextStatGroups, type StatGroup } from "@babylonslate/debugger";
 import type { SceneLoadProgress } from "@babylonslate/render";
 import type { RenderDiagnostics } from "@babylonslate/render";
@@ -18,7 +21,6 @@ import {
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   DEFAULT_RENDER_PROJECT_SETTINGS,
   type PlayPreviewProjectSettings,
-  type ProjectInputSettings,
   type RenderProjectSettings,
   type AudioProjectSettings,
   type SerializedScene,
@@ -135,7 +137,7 @@ export interface PlayOverlayProps {
   loopCount?: number;
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
-  inputMappings?: ProjectInputSettings;
+  assetCatalog?: import("@babylonslate/core").RuntimeAssetCatalogEntry[];
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   /** Project Play Preview letterbox; snapshotted when the session starts. */
   playPreview?: PlayPreviewProjectSettings;
@@ -248,7 +250,7 @@ export function PlayOverlay({
   loopCount,
   inputAssets,
   dataAssets,
-  inputMappings,
+  assetCatalog,
   focusNavigation,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   render = DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -345,6 +347,8 @@ export function PlayOverlay({
   const inputModeRef = useRef<"game" | "edit">("game");
   const inputSequenceRef = useRef(0);
   const [statsOpen, setStatsOpen] = useState(false);
+  const statsVisibleRef = useRef(false);
+  statsVisibleRef.current = statsOpen && overlayStats;
   const [statGroups, setStatGroups] = useState<readonly StatGroup[]>([]);
   const inspectSelectionRef = useRef<string | null>(null);
   const hostMemoryInFlight = useRef(false);
@@ -392,6 +396,8 @@ export function PlayOverlay({
     const session = sessionRef.current;
     if (!session || !simulating || closedRef.current) return;
     const sequence = ++inputSequenceRef.current;
+    const previousMode = inputModeRef.current;
+    const previousEditable = transformEditableRef.current;
     inputModeRef.current = mode;
     transformEditableRef.current = false;
     syncTransformVisibilityRef.current();
@@ -407,7 +413,12 @@ export function PlayOverlay({
       syncTransformVisibilityRef.current();
       session.requestPausedRedraw();
     }, (error: unknown) => {
-      if (sessionRef.current === session && inputSequenceRef.current === sequence) setControlError(String(error));
+      if (sessionRef.current !== session || inputSequenceRef.current !== sequence) return;
+      // The session keeps its previous mode after a failed reset; so do Escape, Tab and the transform tools.
+      inputModeRef.current = previousMode;
+      transformEditableRef.current = previousEditable;
+      syncTransformVisibilityRef.current();
+      setControlError(String(error));
     }).finally(() => {
       if (sessionRef.current === session && inputSequenceRef.current === sequence) setInputPending(false);
     });
@@ -588,7 +599,7 @@ export function PlayOverlay({
   const initialLoopCountRef = useRef(loopCount);
   const initialInputAssetsRef = useRef(inputAssets);
   const initialDataAssetsRef = useRef(dataAssets);
-  const initialInputMappingsRef = useRef(inputMappings);
+  const initialAssetCatalogRef = useRef(assetCatalog);
   const initialFocusNavigationRef = useRef(focusNavigation);
   const initialPlayPreviewRef = useRef(playPreview);
   const { settings: localEngineSettings } = useAppSettings();
@@ -719,7 +730,7 @@ export function PlayOverlay({
           loopCount: initialLoopCountRef.current,
           inputAssets: initialInputAssetsRef.current,
           dataAssets: initialDataAssetsRef.current,
-          inputMappings: initialInputMappingsRef.current,
+          assetCatalog: initialAssetCatalogRef.current,
           focusNavigation: initialFocusNavigationRef.current,
           animGraphs: animGraphsRef.current,
           behaviourTrees: behaviourTreesRef.current,
@@ -816,6 +827,8 @@ export function PlayOverlay({
           onFatalDiagnostic: () => finishSessionRef.current(),
         });
       } catch (error) {
+        // Closed here: a later Stop must not stop or close this session again.
+        closedRef.current = true;
         if (sessionOwner && sessionTicket) sessionOwner.fail(sessionTicket, error, true);
         pushLog("error", `Play startup failed: ${error instanceof Error ? error.message : String(error)}`);
         onCloseRef.current(emptyPlayResult(), sessionTicket);
@@ -923,26 +936,30 @@ export function PlayOverlay({
         setAudioQueued(audioStats.queued);
         setAudioUnlocked(audioStats.unlocked);
         if (current) {
-          setMemoryBytes(current.accountedBytes());
-          if (!hostMemoryInFlight.current) {
-            hostMemoryInFlight.current = true;
-            void getHostMemoryStats()
-              .then(setHostMemory)
-              .catch(() => setHostMemory(null))
-              .finally(() => {
-                hostMemoryInFlight.current = false;
-              });
-          }
-          setGeometryBytes(current.handle.accountedGeometryBytes());
-          const counts = current.liveObjectCounts();
-          setMeshCount(counts.meshes);
-          setTextureCount(counts.textures);
-          setDraws(current.drawCalls());
+          // The lights debug overlay also reads these diagnostics.
           setRendering(current.handle.renderDiagnostics());
-          setBridgeRate(current.bridgeMessagesPerSec());
           setPostProcessPasses(current.handle.postProcessPassCount());
           setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
           setFreeCamEnabled(current.handle.isFreeCamEnabled());
+          // Only the Stats HUD shows these; skip their reads while it is hidden.
+          if (statsVisibleRef.current) {
+            setMemoryBytes(current.accountedBytes());
+            if (!hostMemoryInFlight.current) {
+              hostMemoryInFlight.current = true;
+              void getHostMemoryStats()
+                .then(setHostMemory)
+                .catch(() => setHostMemory(null))
+                .finally(() => {
+                  hostMemoryInFlight.current = false;
+                });
+            }
+            setGeometryBytes(current.handle.accountedGeometryBytes());
+            const counts = current.liveObjectCounts();
+            setMeshCount(counts.meshes);
+            setTextureCount(counts.textures);
+            setDraws(current.drawCalls());
+            setBridgeRate(current.bridgeMessagesPerSec());
+          }
         }
       }, 200);
       const onSettings = (event: Event) => {
@@ -1015,6 +1032,53 @@ export function PlayOverlay({
     };
   }, []);
 
+  const playStartedRef = useRef(performance.now());
+  const copyLoadDetails = () => {
+    const session = sessionRef.current;
+    const rendering = (() => { try { return session?.handle.renderDiagnostics() ?? null; } catch { return null; } })();
+    const problems = logs.filter((entry) => entry.severity === "error" || entry.severity === "warning" || entry.severity === "warn").slice(-15);
+    return formatSceneLoadReport({
+      surface: "Play",
+      scene: sceneAssetGuid ? `${sceneCatalog?.find((entry) => entry.guid === sceneAssetGuid)?.name ?? "Scene"} (${sceneAssetGuid})` : null,
+      phase: sceneLoading?.phase ?? "Preparing Scene",
+      progress: sceneLoading?.progress ?? null,
+      failed: false,
+      elapsedMs: performance.now() - playStartedRef.current,
+      gpu: rendering?.adapter ?? null,
+      details: [
+        `Play: ${session ? `${session.runtimeMode} runtime · tick ${session.lastTickIndex()} · models loaded ${session.modelLoadCount()}` : "session not started"}`,
+        ...(rendering ? [`Render: ${rendering.pipeline.effective.gpuBackend} ${rendering.pipeline.effective.renderPath} · ${rendering.width}x${rendering.height} · draws ${rendering.drawCalls} · meshes ${rendering.resources.meshes} · textures ${rendering.resources.textures}${rendering.qualityLimits.length ? ` · limits ${clipText(rendering.qualityLimits.join("; "), 200)}` : ""}`] : []),
+        problems.length ? `Play log errors and warnings (last ${problems.length}):` : "Play log errors and warnings: none",
+        ...problems.map((entry) => `  [${entry.severity}] ${clipText(entry.message, 300)}`),
+      ],
+    });
+  };
+
+  const probeStateRef = useRef({ sceneLoading, fps: null as number | null, logs });
+  probeStateRef.current = { sceneLoading, fps: fps > 0 ? fps : probeStateRef.current.fps, logs };
+  useEffect(() => playProbes.register(PLAY_PROBE_KEY, {
+    loadingPhase: () => probeStateRef.current.sceneLoading,
+    tickIndex: () => sessionRef.current?.lastTickIndex() ?? 0,
+    runtimeFps: () => probeStateRef.current.fps,
+    snapshot: () => {
+      const session = sessionRef.current;
+      const counts = session?.liveObjectCounts();
+      return {
+        drawCalls: session?.drawCalls() ?? 0,
+        meshes: counts?.meshes ?? 0,
+        textures: counts?.textures ?? 0,
+        accountedBytes: session?.accountedBytes() ?? 0,
+        rendering: session?.handle.renderDiagnostics() ?? null,
+      };
+    },
+    problemLogs: () => probeStateRef.current.logs
+      .filter((entry) => entry.severity === "error" || entry.severity === "warning" || entry.severity === "warn")
+      .map(({ severity, message }) => ({ severity, message })),
+    executeConsoleCommand: (line) => sessionRef.current?.executeConsoleCommand(line)
+      ?? Promise.resolve({ success: false, output: "Play is not running." }),
+    stop: () => finishSessionRef.current(),
+  }), []);
+
   useEffect(() => {
     let raf = 0;
     const tick = () => {
@@ -1043,7 +1107,8 @@ export function PlayOverlay({
     >
       {simulationSession ? <SimulationRetentionDialog session={simulationSession} onStop={() => finishSessionRef.current()} /> : null}
       <SceneLoadingDialog open={sceneLoading !== null} progress={sceneLoading?.progress ?? 0}
-        phase={sceneLoading?.phase ?? "Preparing Scene"} onStop={() => finishSessionRef.current()} finalFocus={canvasRef} />
+        phase={sceneLoading?.phase ?? "Preparing Scene"} onStop={() => finishSessionRef.current()} finalFocus={canvasRef}
+        onCopyDetails={localEngineSettings.debugMode ? copyLoadDetails : undefined} />
       <PlayOverlayChrome
         paused={paused}
         statsOpen={statsOpen}

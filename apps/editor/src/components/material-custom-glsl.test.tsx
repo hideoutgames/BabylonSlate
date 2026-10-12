@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { createDefaultMaterialDocument, newCustomGlslProperties } from "@babylonslate/shader-graph";
+import { newCustomGlslProperties } from "@babylonslate/shader-graph";
 import { MaterialCustomGlsl } from "./material-custom-glsl";
 
 afterEach(cleanup);
@@ -10,7 +10,7 @@ describe("Custom GLSL sampler editor", () => {
   it("offers Texture for inputs and keeps output types numeric", async () => {
     function Host() {
       const [properties, setProperties] = useState(newCustomGlslProperties());
-      return <MaterialCustomGlsl document={createDefaultMaterialDocument()} node={{ id: "custom", type: "custom.glsl", position: { x: 0, y: 0 }, properties }} setProperties={(patch) => setProperties((previous) => ({ ...previous, ...patch }))} />;
+      return <MaterialCustomGlsl node={{ id: "custom", type: "custom.glsl", position: { x: 0, y: 0 }, properties }} setProperties={(patch) => setProperties((previous) => ({ ...previous, ...patch }))} />;
     }
     render(<Host />);
     fireEvent.click(screen.getByTestId("custom-glsl-input-a-type"));

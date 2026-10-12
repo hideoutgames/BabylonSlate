@@ -12,10 +12,9 @@ describe("formatBindingLabel", () => {
     ).toBe("Ctrl+Shift+W");
   });
 
-  it("formats mouse, pointer, gamepad, and touch codes", () => {
+  it("formats mouse, gamepad, and touch codes", () => {
     expect(formatBindingLabel("mouseButton", "0")).toBe("Mouse Left");
     expect(formatBindingLabel("mouseButton", "2")).toBe("Mouse Right");
-    expect(formatBindingLabel("pointer", "primary")).toBe("Primary Pointer");
     expect(formatBindingLabel("gamepadButton", "0:0")).toBe(
       "Gamepad 1 Face Button Down",
     );

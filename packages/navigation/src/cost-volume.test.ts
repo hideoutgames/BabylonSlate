@@ -76,10 +76,6 @@ function goesAroundWalls(path: NavPoint[]): boolean {
   return path.some((point) => Math.abs(point.z) > 6);
 }
 
-function crossesOrigin(path: NavPoint[]): boolean {
-  return path.some((point) => Math.abs(point.x) < 1 && Math.abs(point.z) < 1);
-}
-
 const from = { x: -8, y: 0, z: 0 };
 const to = { x: 8, y: 0, z: 0 };
 const corridorBox = {
@@ -123,17 +119,43 @@ describe("navmesh cost volumes vs unwalkable carve", () => {
     expect(through.length).toBeGreaterThan(1);
   });
 
-  it("removes the corridor when the same box is an unwalkable tile-cache carve", async () => {
+  it("restores the corridor when a cost volume is removed", async () => {
+    const nav = createNavigationBackend();
+    nav.importNavMesh(await generateNavMesh(corridorGenerateInput()));
+    try {
+      const openLength = pathLength(nav.findPath(from, to));
+      nav.applyCostVolume({ ...corridorBox, id: "mud", cost: 100 });
+      nav.applyCostVolume({ ...corridorBox, id: "overlap", cost: 50 });
+      expect(goesAroundWalls(nav.findPath(from, to))).toBe(true);
+      nav.removeCostVolume("mud");
+      expect(goesAroundWalls(nav.findPath(from, to))).toBe(true);
+      nav.removeCostVolume("overlap");
+      expect(pathLength(nav.findPath(from, to))).toBeCloseTo(openLength, 5);
+    } finally { nav.dispose(); }
+  });
+
+  it("leaves floors outside a volume's height alone", async () => {
+    const nav = createNavigationBackend();
+    nav.importNavMesh(await generateNavMesh(corridorGenerateInput()));
+    try {
+      // A volume spanning 3..5 above the corridor floor prices nothing on it.
+      nav.applyCostVolume({ ...corridorBox, pose: { x: 0, y: 4, z: 0 }, cost: 100 });
+      expect(staysOnShortCorridor(nav.findPath(from, to))).toBe(true);
+    } finally { nav.dispose(); }
+  });
+
+  it("removes the corridor when a box spanning the gap is an unwalkable tile-cache carve", async () => {
     const bytes = await generateNavMesh(corridorGenerateInput(true));
     const nav = createNavigationBackend();
     nav.importNavMesh(bytes);
     expect(staysOnShortCorridor(nav.findPath(from, to))).toBe(true);
 
-    nav.addObstacle("box", corridorBox.pose, corridorBox.size);
+    // The cost box is 3 deep; a carve must also cover the 4-wide gap's edges.
+    nav.addObstacle("box", corridorBox.pose, { ...corridorBox.size, z: 4.4 });
     nav.stepCrowd(0);
     const carved = nav.findPath(from, to);
-    expect(carved.length).toBeGreaterThan(1);
-    expect(crossesOrigin(carved)).toBe(false);
+    expect(carved.at(-1)?.x).toBeCloseTo(to.x, 1);
+    expect(goesAroundWalls(carved)).toBe(true);
   });
 
   it.each([false, true])("keeps volume costs independent across insertion and cost changes (reverse=%s)", async (reverse) => {

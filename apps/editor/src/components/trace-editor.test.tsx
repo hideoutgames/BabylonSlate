@@ -63,9 +63,11 @@ const actor = (guid: string, health: number) => ({
 const payload: TracePayload = {
   seed: 7,
   dt: 1 / 60,
+  retention: { byteBudget: 64 * 1024, droppedFrames: 0, complete: true, stopReason: "requested" },
   frames: [
     {
       tickIndex: 501,
+      timeDilation: 1,
       scriptMs: 1,
       physicsMs: 0.5,
       logs: [
@@ -81,6 +83,7 @@ const payload: TracePayload = {
     },
     {
       tickIndex: 502,
+      timeDilation: 1,
       scriptMs: 12,
       physicsMs: 2,
       logs: [
@@ -112,7 +115,7 @@ const payload: TracePayload = {
 describe("Trace document panels", () => {
   afterEach(cleanup);
 
-  it("explains incomplete retention and preserves unknown status for legacy traces", () => {
+  it("summarizes incomplete and complete retention", () => {
     const { rerenderTrace } = renderTrace({
       ...payload,
       frames: [],
@@ -129,7 +132,9 @@ describe("Trace document panels", () => {
     expect(summary.textContent).toContain("1 Dropped Frame");
     expect(summary.textContent).toContain("Frame Exceeded Budget");
     rerenderTrace(payload);
-    expect(summary.textContent).toBe("Retention Details Unavailable");
+    expect(summary.textContent).toBe(
+      "Complete · 65536 B Serialized Data Budget · 0 Dropped Frames · Stopped By Request",
+    );
   });
 
   it("expands and collapses the selected actor with the keyboard", () => {

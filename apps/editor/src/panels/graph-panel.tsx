@@ -7,7 +7,7 @@ import {
   type GraphCanvasDropApi,
   type PaletteNode,
 } from "@babylonslate/graph-ui";
-import { formatEventMemberName, NamePromptDialog, PanelFrame } from "@babylonslate/editor-kit";
+import { formatEventMemberName, NamePromptDialog, PanelFrame, walkAncestry } from "@babylonslate/editor-kit";
 import { isEditorGraphHost, type SerializedGraph } from "@babylonslate/core";
 import {
   Empty,
@@ -56,11 +56,7 @@ import {
   collectImplementedInterfaceContexts,
   collectParentFunctionSignatures,
 } from "../lib/overridable-functions";
-import {
-  EVENT_GRAPH_PANEL_ID,
-  type FunctionGraphPanelParams,
-} from "../shell/function-graph-panels";
-import { EVENT_GRAPH_TITLE } from "../shell/window-catalog";
+import type { FunctionGraphPanelParams } from "../shell/function-graph-panels";
 
 const registry = defaultNodeRegistry;
 const VALIDATION_DEBOUNCE_MS = 250;
@@ -238,17 +234,12 @@ export function GraphPanel(
     !graphContent.functionGraphs?.[functionId];
   useEffect(() => {
     if (!panelApi) return;
-    // A deleted function closes its tab; a rename retitles it. Layouts saved
-    // before function tabs existed still carry the old "Graph" title.
+    // A deleted function closes its tab; a rename retitles it.
     if (functionMissing) {
       panelApi.close();
       return;
     }
-    const title = functionId
-      ? functionMember?.name
-      : panelApi.id === EVENT_GRAPH_PANEL_ID
-        ? EVENT_GRAPH_TITLE
-        : undefined;
+    const title = functionId ? functionMember?.name : undefined;
     if (title && panelApi.title !== title) panelApi.setTitle(title);
   }, [functionId, functionMember?.name, functionMissing, panelApi]);
 
@@ -352,6 +343,8 @@ export function GraphPanel(
     classId,
     graph: graphContent ?? undefined,
     otherClassGraphs,
+    // Inherited prefab components become Get rows, as in hydrate and validation.
+    parentGraphs: otherClassGraphs,
     activeFunctionId,
     assetType: indexed?.header.type,
     functionLibraries,
@@ -366,7 +359,18 @@ export function GraphPanel(
   };
   const paletteInputRef = useRef(paletteInput);
   paletteInputRef.current = paletteInput;
-  const paletteKey = scriptPaletteInjectorKey(paletteInput);
+  // A closed palette holds only catalog rows, which follow the host's ancestry
+  // and graph slice. The injector key walks every class, asset and scene, so it
+  // is built only while Add Node is open.
+  const paletteKey = paletteOpen
+    ? scriptPaletteInjectorKey(paletteInput)
+    : JSON.stringify([
+        classId ?? null,
+        paletteInput.assetType ?? null,
+        paletteInput.animationGraphHost ?? null,
+        activeFunctionId ?? null,
+        walkAncestry(parentClass ?? "Actor", parentOf),
+      ]);
   const paletteNodes = useMemo(
     (): PaletteNode[] =>
       scriptPaletteNodes(registry, paletteInputRef.current, {

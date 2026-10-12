@@ -177,14 +177,16 @@ describe("EncodeQueue", () => {
     expect(completed).toEqual(["paused"]);
   });
 
-  it("fails a hung encode on timeout and pumps the next job", async () => {
+  it("fails a hung encode on timeout, aborts its encoder and pumps the next job", async () => {
     const states: string[] = [];
     const completed: string[] = [];
     const errors: string[] = [];
+    let hungSignal: AbortSignal | undefined;
     const queue = new EncodeQueue({
       jobTimeoutMs: 20,
-      encode: async (source, settings) => {
+      encode: async (source, settings, _mime, signal) => {
         if (source[0] === 1) {
+          hungSignal = signal;
           await new Promise(() => undefined);
         }
         return stubEncodeKtx2(source, settings);
@@ -224,6 +226,36 @@ describe("EncodeQueue", () => {
     expect(states).toContain("hang:encoding");
     expect(states).toContain("hang:encode_failed");
     expect(states).toContain("ok:compressed");
+    expect(hungSignal?.aborted).toBe(true);
+  });
+
+  it("drops waiting jobs and the running encode's result on clear", async () => {
+    const settings = { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } as const;
+    let finish: (() => void) | undefined;
+    const encoded: number[] = [];
+    const completed: string[] = [];
+    const dropped: string[] = [];
+    const queue = new EncodeQueue({
+      encode: async (source, encodeSettings) => {
+        encoded.push(source[0]!);
+        if (source[0] === 1) await new Promise<void>((resolve) => { finish = resolve; });
+        return stubEncodeKtx2(source, encodeSettings);
+      },
+      onComplete: (result) => { completed.push(result.assetGuid); },
+      onDrop: (job) => { dropped.push(job.assetGuid); },
+    });
+    queue.enqueue({ assetGuid: "running", source: new Uint8Array([1]), settings });
+    queue.enqueue({ assetGuid: "waiting", source: new Uint8Array([2]), settings });
+    const derived = queue.enqueueDerived(async () => "derived");
+    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+    queue.clear();
+    expect(queue.has("running")).toBe(false);
+    await expect(derived).rejects.toThrow("cancelled");
+    queue.enqueue({ assetGuid: "next", source: new Uint8Array([3]), settings });
+    finish!();
+    await vi.waitFor(() => expect(completed).toEqual(["next"]));
+    expect(dropped).toEqual(["running"]);
+    expect(encoded).toEqual([1, 3]);
   });
 });
 
@@ -231,6 +263,7 @@ describe("selectTextureChunk", () => {
   it("prefers KTX2 when transcoder is available", async () => {
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "t1",
         type: "Texture",
         name: "t",
@@ -320,6 +353,7 @@ async function mountSingleTexture(
     path,
     await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: `${name}-tex`,
         type: "Texture",
         name,
@@ -437,6 +471,7 @@ describe("registry encode pipeline", () => {
     await storage.mkdir("assets", true);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "fail-tex",
         type: "Texture",
         name: "Fail",
@@ -511,6 +546,7 @@ describe("registry encode pipeline", () => {
     ] as const) {
       const bytes = await encodeBabasset({
         header: {
+          dependencyMetadataVersion: 1, requiredDependencies: [],
           guid,
           type: "Texture",
           name,
@@ -560,6 +596,7 @@ describe("registry encode pipeline", () => {
     await storage.mkdir("assets", true);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "stuck-tex",
         type: "Texture",
         name: "Stuck",
@@ -604,6 +641,7 @@ describe("registry encode pipeline", () => {
     await storage.mkdir("assets", true);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "keep-tex",
         type: "Texture",
         name: "Keep",
@@ -655,6 +693,7 @@ describe("registry encode pipeline", () => {
     await storage.mkdir("assets", true);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "clear-tex",
         type: "Texture",
         name: "Clear",
@@ -706,6 +745,7 @@ describe("registry encode pipeline", () => {
     await storage.mkdir("assets", true);
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "race-tex",
         type: "Texture",
         name: "Race",

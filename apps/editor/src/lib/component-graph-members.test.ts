@@ -41,6 +41,17 @@ describe("componentGraphMembers", () => {
     expect(members.map((member) => member.name)).toEqual(["3D Text", "3D Text 2"]);
   });
 
+  it("does not give a duplicate the label a renamed component already shows", () => {
+    const members = componentGraphMembers({
+      components: [
+        createText3DComponent("text-a"),
+        createText3DComponent("text-b"),
+        { ...createText3DComponent("text-c"), name: "3D Text 2" },
+      ],
+    });
+    expect(members.map((member) => member.name)).toEqual(["3D Text", "3D Text 3", "3D Text 2"]);
+  });
+
   it("drops a variable when the component is removed", () => {
     const withText = componentGraphMembers({
       components: [

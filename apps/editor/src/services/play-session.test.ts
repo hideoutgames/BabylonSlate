@@ -23,7 +23,21 @@ import {
   previewFixtureThrowHint,
   resolvePlayFrameCap,
   applyPlayActiveScene,
+  texturesRetainedAfterPlay,
 } from "./play-session";
+
+describe("texturesRetainedAfterPlay", () => {
+  it("counts session textures still loaded, not engine placeholders or cache size", () => {
+    const kept = {}, released = {}, placeholder = {}, leaked = {};
+    const before = new Set([kept, released]);
+    // Same size as before: one texture released, one session texture retained.
+    const engine = { getLoadedTexturesCache: () => [kept, leaked], _emptyTexture3D: placeholder };
+    expect(texturesRetainedAfterPlay(engine as never, before)).toBe(1);
+    // Babylon's lazily created placeholder grows the cache without a leak.
+    engine.getLoadedTexturesCache = () => [kept, released, placeholder];
+    expect(texturesRetainedAfterPlay(engine as never, before)).toBe(0);
+  });
+});
 
 describe("diagnosticFromCommand", () => {
   it("maps a worker diagnostic command into a RuntimeDiagnostic", () => {
@@ -313,20 +327,6 @@ describe("shouldForwardPlayEngineCommand", () => {
   });
 });
 
-describe("overlayLogForCommand", () => {
-  it("does not emit an [audio] overlay line for playSound", async () => {
-    const { overlayLogForCommand } = await import("./play-session");
-    expect(
-      overlayLogForCommand({
-        type: "playSound",
-        assetGuid: "jump",
-        volume: 0.5,
-        frameId: 1,
-      }),
-    ).toBeNull();
-  });
-});
-
 describe("applyPlaySessionPausedCommand", () => {
   it("forwards sessionPaused to overlay chrome", () => {
     const onSessionPaused = vi.fn();
@@ -382,6 +382,17 @@ describe("applyPlaySessionStep", () => {
     expect(tick.mock.invocationCallOrder[0]).toBeLessThan(
       pause.mock.invocationCallOrder[0]!,
     );
+  });
+
+  it("pauses the in-process runtime again when the stepped tick throws", () => {
+    const pause = vi.fn();
+    const tick = vi.fn(() => {
+      throw new Error("script failed");
+    });
+    expect(() =>
+      applyPlaySessionStep({ worker: null, runtime: { resume: vi.fn(), tick, pause } }),
+    ).toThrow("script failed");
+    expect(pause).toHaveBeenCalledTimes(1);
   });
 
   it("posts step to the worker when present", () => {

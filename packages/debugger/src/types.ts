@@ -12,6 +12,8 @@ export type CommandParameter = {
   defaultValue?: unknown;
   enumValues?: readonly string[];
   complete?: ConsoleCompleteKind;
+  /** Last parameter only: also takes the remaining positional tokens, joined by spaces. */
+  rest?: boolean;
 };
 
 export type ConsoleCompletionContext = {

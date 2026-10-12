@@ -65,18 +65,39 @@ function isDynamicRigidBody(actor: SerializedActor): boolean {
 export function staticAudioGeometryFingerprint(
   scene: Pick<AudioReverbBakeScene, "actors">,
 ): string {
+  const actors = actorsOf(scene);
+  const byId = new Map(actors.map((actor) => [actor.id, actor]));
   const parts: string[] = [];
-  for (const actor of actorsOf(scene)) {
+  for (const actor of actors) {
     if (isDynamicRigidBody(actor)) continue;
-    for (const component of actor.components) {
-      if (component.classId !== "MeshComponent") continue;
+    const meshes = actor.components.filter((component) => component.classId === "MeshComponent");
+    if (meshes.length === 0) continue;
+    parts.push(actor.id, JSON.stringify(actor.transform ?? null));
+    // The bake places meshes through their actor attachments: every ancestor's
+    // pose, and a missing or cyclic link, moves them.
+    const seenActors = new Set([actor.id]);
+    for (let parentId = actor.parentId ?? null; parentId; ) {
+      if (seenActors.has(parentId)) { parts.push("cycle"); break; }
+      seenActors.add(parentId);
+      const parent = byId.get(parentId);
+      parts.push(parentId, parent ? JSON.stringify(parent.transform ?? null) : "missing");
+      parentId = parent?.parentId ?? null;
+    }
+    const components = new Map(actor.components.map((component) => [component.id, component]));
+    for (const component of meshes) {
       parts.push(
-        actor.id,
-        JSON.stringify(actor.transform ?? null),
         component.id,
         JSON.stringify(component.transform ?? null),
         JSON.stringify(component.properties ?? null),
       );
+      // Parent components (and Spring Arm sockets) compose into the mesh pose.
+      const seenComponents = new Set([component.id]);
+      for (let parentId = component.parentId ?? null; parentId && !seenComponents.has(parentId); ) {
+        seenComponents.add(parentId);
+        const parent = components.get(parentId);
+        parts.push(parentId, parent ? JSON.stringify([parent.transform ?? null, parent.properties ?? null]) : "missing");
+        parentId = parent?.parentId ?? null;
+      }
     }
   }
   return parts.join("\0");
@@ -256,15 +277,31 @@ export function sceneFromDocument(
   return scene as AudioReverbBakeScene;
 }
 
-/** Load Scene documents (open or closed) and keep those with a Scene payload. */
+export type AudioReverbFlushScenes = {
+  scenes: AudioReverbBakeSceneEntry[];
+  /** Scenes the bake could not load, by path, with the reason. */
+  unreadable: Map<string, unknown>;
+};
+
+/**
+ * Load Scene documents (open or closed) for the bake. A Scene that cannot be
+ * loaded, whatever the reason, is reported rather than thrown: export fails on
+ * it only when the game reaches it, and Save still bakes the others.
+ */
 export async function collectAudioReverbFlushScenes(options: {
   paths: readonly string[];
   load: (path: string) => Promise<unknown | null>;
-}): Promise<AudioReverbBakeSceneEntry[]> {
+}): Promise<AudioReverbFlushScenes> {
   const scenes: AudioReverbBakeSceneEntry[] = [];
+  const unreadable = new Map<string, unknown>();
   for (const path of options.paths) {
-    const scene = sceneFromDocument(await options.load(path));
-    if (scene) scenes.push({ path, scene });
+    try {
+      const scene = sceneFromDocument(await options.load(path));
+      if (!scene) throw new Error(`${path} has no Scene document.`);
+      scenes.push({ path, scene });
+    } catch (error) {
+      unreadable.set(path, error);
+    }
   }
-  return scenes;
+  return { scenes, unreadable };
 }

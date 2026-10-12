@@ -5,7 +5,6 @@ export type InputAssetType = (typeof INPUT_ASSET_TYPES)[number];
 export const INPUT_DEVICES = [
   "key",
   "mouseButton",
-  "pointer",
   "gamepadButton",
   "gamepadAxis",
   "touch",
@@ -92,22 +91,20 @@ export function normalizeInputAssetPayload(
       : {};
   const used = new Set<string>();
   const bindings: InputAssetPayload["bindings"] = [];
-  for (const [index, item] of (Array.isArray(source.bindings)
-    ? source.bindings
-    : []
-  ).entries()) {
+  for (const item of Array.isArray(source.bindings) ? source.bindings : []) {
     if (!item || typeof item !== "object") continue;
     const row = item as Record<string, unknown>;
+    const id = row.id;
+    // The id is the binding's identity for edits and rebinding, so a row
+    // without one, or repeating an earlier one, is not a binding.
     if (
       !(INPUT_DEVICES as readonly unknown[]).includes(row.device) ||
-      typeof row.code !== "string"
+      typeof row.code !== "string" ||
+      typeof id !== "string" ||
+      !id.trim() ||
+      used.has(id)
     )
       continue;
-    let id =
-      typeof row.id === "string" && row.id.trim()
-        ? row.id
-        : `binding-${index + 1}`;
-    while (used.has(id)) id += "-copy";
     used.add(id);
     const binding: AxisBinding & { id: string } = {
       id,

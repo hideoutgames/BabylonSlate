@@ -4,6 +4,7 @@ import {
   GameInstance,
   Scene,
   SceneStreamingActor,
+  type Actor,
   type GameSubsystem,
   type SceneSubsystemHooks,
   type Subsystem,
@@ -124,6 +125,87 @@ describe("World tick", () => {
     world.spawnActorNow(world.createActor({ classId: "Actor", hooks: { onTick: () => { order.push("sibling"); } } }));
     world.tick();
     expect(order).toEqual(initiator === "gi" ? ["gi"] : ["gi", "actor"]);
+  });
+
+  it("stops the rest of the tick when the session ends during it, without committing queued spawns", () => {
+    const order: string[] = [];
+    const world = new World({
+      seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry(),
+      onPhysics: () => { order.push("physics"); },
+    });
+    world.setGameInstance(new GameInstance({ classId: "GameInstance", hooks: {
+      onTick: () => { order.push("gi"); },
+      onGameEnd: () => { order.push("gi:end"); },
+    } }));
+    const first = world.createActor({ classId: "Actor", hooks: { onTick: () => {
+      order.push("actor");
+      world.spawnActorNow(world.createActor({ classId: "Actor", hooks: { onCreation: () => { order.push("late:init"); } } }));
+      world.end();
+    } } });
+    first.attachComponent(world.createComponent({ classId: "ActorComponent", hooks: { onTick: () => { order.push("component"); } } }));
+    world.spawnActorNow(first);
+    world.spawnActorNow(world.createActor({ classId: "Actor", hooks: { onTick: () => { order.push("sibling"); } } }));
+    world.tick();
+    expect(order).toEqual(["gi", "actor", "gi:end"]);
+    expect(world.getActors()).toHaveLength(2);
+  });
+
+  it("refuses a nested tick, which would advance the clock twice and commit spawns mid-phase", () => {
+    const world = createTestWorld();
+    let nested: unknown;
+    world.spawnActorNow(world.createActor({ classId: "Actor", hooks: { onTick: () => {
+      try {
+        world.tick();
+      } catch (error) {
+        nested = error;
+      }
+    } } }));
+    world.tick();
+    expect(String(nested)).toMatch(/not re-entrant/);
+    expect(world.clock.tickIndex).toBe(1);
+    expect(world.gameInstance?.getVariable("score")).toBe(1);
+    // The refused call left the World able to tick normally.
+    world.tick();
+    expect(world.clock.tickIndex).toBe(2);
+  });
+
+  it("refuses to attach a component to an actor being destroyed, which would never end it", () => {
+    const world = createTestWorld();
+    const began: string[] = [];
+    let refused: unknown;
+    const actor = world.createActor({ classId: "Actor", hooks: { onDestroyed: (self) => {
+      try {
+        self.attachComponent(world.createComponent({ classId: "ActorComponent", hooks: { onCreation: () => { began.push("late"); } } }));
+      } catch (error) {
+        refused = error;
+      }
+    } } });
+    world.spawnActorNow(actor);
+    world.destroyActorInstance(actor);
+    world.flushPending();
+    expect(String(refused)).toMatch(/destroyed actor/);
+    expect(began).toEqual([]);
+    expect(actor.components).toEqual([]);
+  });
+
+  it("cancels spawns still queued for a destroyed SceneLayer and keeps SceneLayer guids unique", () => {
+    const world = createTestWorld();
+    const began: string[] = [];
+    world.createSceneLayer({ guid: "hud", assetGuid: "overlay", zOrder: 0 });
+    expect(() => world.createSceneLayer({ guid: "hud", assetGuid: "overlay", zOrder: 1 })).toThrow(/already uses this guid/);
+    expect(world.getSceneLayers()).toHaveLength(1);
+    const queued = world.spawnActor(world.createActor({ classId: "Actor", guid: "queued", sceneLayerId: "hud", hooks: {
+      onCreation: () => { began.push("queued"); },
+    } }));
+    world.destroySceneLayer("hud");
+    world.flushPending();
+    expect(began).toEqual([]);
+    expect(queued.destroyed).toBe(true);
+    expect(world.getActors()).toEqual([]);
+    // The layer's guid and its cancelled actor's guid are free again.
+    world.createSceneLayer({ guid: "hud", assetGuid: "overlay", zOrder: 0 });
+    world.spawnActorNow(world.createActor({ classId: "Actor", guid: "queued", sceneLayerId: "hud" }));
+    expect(world.findActor("queued")?.destroyed).toBe(false);
   });
 
   it("cleans up only the owned actor when a later actor reuses its guid", () => {
@@ -420,6 +502,40 @@ describe("World tick", () => {
     ]);
     expect(events.filter((event) => event === "end")).toHaveLength(1);
     expect(events.filter((event) => event.startsWith("first:"))).toHaveLength(1);
+  });
+
+  it("ends a replaced Game Instance and starts its successor only while the session runs", () => {
+    const events: string[] = [];
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    const instance = (label: string) => new GameInstance({ classId: "GameInstance", guid: label, hooks: {
+      onCreation: () => events.push(`${label}:init`),
+      onGameEnd: () => events.push(`${label}:end`),
+    } });
+    world.setGameInstance(instance("unstarted"));
+    world.setGameInstance(instance("first"));
+    world.start();
+    world.setGameInstance(instance("second"));
+    world.end();
+    world.setGameInstance(instance("late"));
+    expect(events).toEqual(["first:init", "first:end", "second:init", "second:end"]);
+
+    // A GameSubsystem's On Init runs before start() reaches the Game Instance.
+    const startWith = (onInit: (session: World) => void) => {
+      events.length = 0;
+      const session = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+      session.setGameInstance(instance("installed"));
+      session.setGameSubsystems([
+        session.createGameSubsystem({ classId: "Boot", hooks: { onCreation: () => onInit(session) } }),
+      ]);
+      session.start();
+      return session;
+    };
+    // Its replacement is the instance start() inits, once.
+    startWith((session) => session.setGameInstance(instance("chosen"))).end();
+    expect(events).toEqual(["chosen:init", "chosen:end"]);
+    // Ending the session there leaves the Game Instance ended, never initialized after its On End.
+    startWith((session) => session.end());
+    expect(events).toEqual(["installed:end"]);
   });
 
   it("fires OnSceneExit for a scene that started loading but never finished", () => {
@@ -753,13 +869,23 @@ describe("World subsystems", () => {
       "gi:exit:L1", "Alpha:exit:L1", "Zeta:exit:L1",
       "gi:end", "Zeta:end", "Alpha:end",
     ]);
-    // Ended subsystems never tick or end again.
+    // An ended World never ticks or ends again: no Game Instance or subsystem hook runs.
     const before = events.length;
     world.end();
-    world.tick();
-    expect(
-      events.slice(before).filter((event) => /^(Alpha|Zeta|Music|Weather):/.test(event)),
-    ).toEqual([]);
+    expect(world.tick()).toBe(-1);
+    expect(events.slice(before)).toEqual([]);
+
+    // Ended before start() (Stop during loading): GameSubsystems hear On End like the Game Instance.
+    const unstarted: string[] = [];
+    const early = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    early.setGameInstance(recordingGameInstance(unstarted));
+    early.setGameSubsystems([
+      recordingGameSubsystem(early, "Zeta", unstarted),
+      recordingGameSubsystem(early, "Alpha", unstarted),
+    ]);
+    early.end();
+    early.start();
+    expect(unstarted).toEqual(["gi:end", "Zeta:end", "Alpha:end"]);
   });
 
   it("ends SceneSubsystems on every main-scene exit and creates fresh instances per Scene", () => {
@@ -806,8 +932,9 @@ describe("World subsystems", () => {
     expect(world.getSceneSubsystems()).toEqual([]);
   });
 
-  it("keeps the replacement scene when a SceneSubsystem's On End changes scene re-entrantly", () => {
+  it("keeps a scene a SceneSubsystem's On End opens on exit, but not over createScene's own replacement", () => {
     const events: string[] = [];
+    const opened: Scene[] = [];
     const world: World = new World({
       seed: 1,
       dt: 1 / 60,
@@ -816,9 +943,8 @@ describe("World subsystems", () => {
         onCreation: (self) => events.push(`init:${self.guid}`),
         onEnd: (self) => {
           events.push(`end:${self.guid}`);
-          if (self.scene.assetGuid === "scene-a") {
-            world.createScene({ assetGuid: "scene-b", sceneName: "B" });
-          }
+          // Every On End opens a scene; each teardown below must still terminate.
+          opened.push(world.createScene({ assetGuid: "scene-b", sceneName: "B" }));
         },
       }),
     });
@@ -826,22 +952,25 @@ describe("World subsystems", () => {
     world.createScene({ assetGuid: "scene-a", sceneName: "A" });
 
     world.exitActiveScene();
-    const replacement = world.currentScene;
-    expect(replacement?.assetGuid).toBe("scene-b");
-    expect(replacement?.destroyed).toBe(false);
+    expect(world.currentScene).toBe(opened[0]);
+    expect(opened[0]?.destroyed).toBe(false);
     expect(guids(world.findSubsystems("Weather"))).toEqual(["scene-subsystem:Weather:2"]);
 
-    // A re-entrant scene installed during createScene's own teardown is retired too.
-    world.createScene({ assetGuid: "scene-a", sceneName: "A" });
-    world.createScene({ assetGuid: "scene-c", sceneName: "C" });
-    expect(world.currentScene?.assetGuid).toBe("scene-c");
-    expect(guids(world.getSceneSubsystems())).toEqual(["scene-subsystem:Weather:5"]);
+    // While createScene retires the current scene, a scene its hooks request never becomes current.
+    const requested = world.createScene({ assetGuid: "scene-c", sceneName: "C" });
+    expect(world.currentScene).toBe(requested);
+    expect(opened[1]?.destroyed).toBe(true);
+    expect(guids(world.getSceneSubsystems())).toEqual(["scene-subsystem:Weather:3"]);
+
+    // Nor does one requested while the session ends.
+    world.end();
+    expect(world.currentScene).toBeNull();
+    expect(opened[2]?.destroyed).toBe(true);
     expect(events).toEqual([
       "init:scene-subsystem:Weather:1",
       "end:scene-subsystem:Weather:1", "init:scene-subsystem:Weather:2",
       "end:scene-subsystem:Weather:2", "init:scene-subsystem:Weather:3",
-      "end:scene-subsystem:Weather:3", "init:scene-subsystem:Weather:4",
-      "end:scene-subsystem:Weather:4", "init:scene-subsystem:Weather:5",
+      "end:scene-subsystem:Weather:3",
     ]);
   });
 
@@ -924,6 +1053,86 @@ describe("World subsystems", () => {
     world.flushPending();
 
     expect(events).toEqual(["Weather:spawned:held", "Weather:destroyed:held"]);
+  });
+
+  it("pairs Destroyed with the subsystems that heard Spawned when an earlier one ends the actor or its Scene", () => {
+    const events: string[] = [];
+    let onAlphaSpawned: ((actor: Actor) => void) | undefined;
+    const world: World = new World({
+      seed: 1,
+      dt: 1 / 60,
+      classRegistry: new ClassRegistry(),
+      sceneSubsystemHooksFor: (classId) => ({
+        ...recordingSceneSubsystemHooks(events)(classId),
+        onSceneActorSpawned: (_self, actor) => {
+          events.push(`${classId}:spawned:${actor.guid}`);
+          if (classId === "Alpha") onAlphaSpawned?.(actor);
+        },
+      }),
+    });
+    world.setSceneSubsystemClasses(["Alpha", "Beta"]);
+    world.createScene({ assetGuid: "scene-1", sceneName: "L1" });
+    const hooks = (guid: string) => ({
+      onCreation: () => { events.push(`${guid}:beginPlay`); },
+      onDestroyed: () => { events.push(`${guid}:destroyed`); },
+    });
+    events.length = 0;
+
+    // Alpha destroys the actor while hearing it spawn: Beta never hears it, and it never begins play.
+    onAlphaSpawned = (actor) => {
+      world.destroyActorInstance(actor);
+      world.flushPending();
+    };
+    world.spawnActorNow(world.createActor({ classId: "Actor", guid: "doomed", hooks: hooks("doomed") }));
+    // Alpha opens another main Scene: its fresh subsystems hear the actor before its Begin Play.
+    onAlphaSpawned = () => {
+      onAlphaSpawned = undefined;
+      world.createScene({ assetGuid: "scene-2", sceneName: "L2" });
+    };
+    world.spawnActorNow(world.createActor({ classId: "Actor", guid: "traveller", hooks: hooks("traveller") }));
+    world.destroyActor("traveller");
+    world.flushPending();
+    // A hook that always opens another Scene: the actor is re-announced once, so spawning terminates.
+    onAlphaSpawned = () => {
+      world.createScene({ assetGuid: "scene-3", sceneName: "L3" });
+    };
+    world.spawnActorNow(world.createActor({ classId: "Actor", guid: "restless", hooks: hooks("restless") }));
+    onAlphaSpawned = undefined;
+    world.destroyActor("restless");
+    world.flushPending();
+
+    expect(events).toEqual([
+      "Alpha:spawned:doomed", "Alpha:destroyed:doomed", "doomed:destroyed",
+      "Alpha:spawned:traveller", "Beta:end", "Alpha:end", "Alpha:init", "Beta:init",
+      "Alpha:spawned:traveller", "Beta:spawned:traveller", "traveller:beginPlay",
+      "Alpha:destroyed:traveller", "Beta:destroyed:traveller", "traveller:destroyed",
+      "Alpha:spawned:restless", "Beta:end", "Alpha:end", "Alpha:init", "Beta:init",
+      "Alpha:spawned:restless", "Beta:end", "Alpha:end", "Alpha:init", "Beta:init",
+      // The last Scene never heard it spawn, so it hears no Destroyed either.
+      "restless:beginPlay", "restless:destroyed",
+    ]);
+  });
+
+  it("never ends a SceneSubsystem whose Scene was replaced before its On Init", () => {
+    const events: string[] = [];
+    const world: World = new World({
+      seed: 1,
+      dt: 1 / 60,
+      classRegistry: new ClassRegistry(),
+      sceneSubsystemHooksFor: (classId) => ({
+        ...recordingSceneSubsystemHooks(events)(classId),
+        onCreation: (self) => {
+          events.push(`${classId}:init:${self.scene.assetGuid}`);
+          if (classId === "Alpha" && self.scene.assetGuid === "scene-1") {
+            world.createScene({ assetGuid: "scene-2", sceneName: "L2" });
+          }
+        },
+      }),
+    });
+    world.setSceneSubsystemClasses(["Alpha", "Beta"]);
+    world.createScene({ assetGuid: "scene-1", sceneName: "L1" });
+    expect(events).toEqual(["Alpha:init:scene-1", "Alpha:end", "Alpha:init:scene-2", "Beta:init:scene-2"]);
+    expect(world.getSceneSubsystems().map((subsystem) => subsystem.scene.assetGuid)).toEqual(["scene-2", "scene-2"]);
   });
 
   it("stops a scene's Finish Loading announcement once a handler loads another scene", () => {

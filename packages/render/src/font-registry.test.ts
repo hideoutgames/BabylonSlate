@@ -5,21 +5,28 @@ import {
   type FontFaceLike,
 } from "./font-registry";
 
-type MockFontHost = FontFaceHost & { faces: FontFaceLike[]; fail: boolean };
+type MockFontHost = FontFaceHost & {
+  faces: FontFaceLike[];
+  fail: boolean;
+  /** Settles a created face's own load; resolves immediately by default. */
+  settle?: (descriptors?: FontFaceDescriptors) => Promise<void>;
+};
 
 function mockHost(options: { fail?: boolean } = {}): MockFontHost {
   const faces: FontFaceLike[] = [];
   const host: MockFontHost = {
     faces,
     fail: options.fail === true,
-    create(family) {
-      return {
+    create(family, _source, descriptors) {
+      const face: FontFaceLike = {
         family,
         load: async () => {
+          await host.settle?.(descriptors);
           if (host.fail) throw new Error("decode failed");
-          return { family, load: async () => faces[0]! };
+          return face;
         },
       };
+      return face;
     },
     add(face) {
       faces.push(face);
@@ -28,10 +35,6 @@ function mockHost(options: { fail?: boolean } = {}): MockFontHost {
       const index = faces.indexOf(face);
       if (index >= 0) faces.splice(index, 1);
     },
-    async load() {
-      if (host.fail) throw new Error("decode failed");
-      return faces;
-    },
   };
   return host;
 }
@@ -39,12 +42,12 @@ function mockHost(options: { fail?: boolean } = {}): MockFontHost {
 describe("FontRegistry", () => {
   it("does not publish a pending face after its source owner is released", async () => {
     const host = mockHost();
-    let complete!: (faces: FontFaceLike[]) => void;
-    host.load = () => new Promise((resolve) => { complete = resolve; });
+    let complete!: () => void;
+    host.settle = () => new Promise((resolve) => { complete = resolve; });
     const registry = new FontRegistry(host);
     const loading = registry.register({ guid: "font", family: "Family", bytes: new Uint8Array([1]).buffer });
     registry.unregister("font");
-    complete(host.faces);
+    complete();
     expect(await loading).toBe(false);
     expect(registry.isReady("font")).toBe(false);
     expect(host.faces).toEqual([]);
@@ -62,6 +65,22 @@ describe("FontRegistry", () => {
     expect(registry.isReady("font-1")).toBe(true);
     expect(registry.consumeDirty()).toBe(true);
     expect(registry.getWarnings()).toEqual([]);
+  });
+
+  it("reports a bold face ready only after that face itself loads", async () => {
+    const host = mockHost();
+    let completeBold!: () => void;
+    host.settle = (descriptors) => descriptors?.weight === "700"
+      ? new Promise((resolve) => { completeBold = resolve; })
+      : Promise.resolve();
+    const registry = new FontRegistry(host);
+    expect(await registry.register({ guid: "regular", family: "Display", bytes: new Uint8Array([1]).buffer })).toBe(true);
+    const bold = registry.register({ guid: "bold", family: "Display", bytes: new Uint8Array([2]).buffer, weight: 700 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(registry.isReady("bold")).toBe(false);
+    completeBold();
+    expect(await bold).toBe(true);
+    expect(registry.isReady("bold")).toBe(true);
   });
 
   it("records a warning instead of substituting Arial", async () => {
@@ -154,6 +173,7 @@ describe("FontRegistry", () => {
     await registry.register(entry);
     const loading = registry.register({ ...entry, guid: "font-2" });
     registry.dispose();
+    expect(registry.isReady("font-1")).toBe(false);
     await loading;
     expect(await registry.register({ ...entry, guid: "font-3" })).toBe(false);
     expect(host.faces).toHaveLength(1);

@@ -179,6 +179,27 @@ describe("authored physics constraints", () => {
     } finally { sync.dispose(); }
   });
 
+  it("still releases other joints when an earlier constraint is invalid", async () => {
+    const world = worldFixture();
+    const bad = body(world, "bad", 0, true);
+    const badJoint = constrain(world, bad, "anchor");
+    const bob = body(world, "bob", 4, true);
+    const bobJoint = constrain(world, bob, "anchor");
+    body(world, "anchor", 2);
+    const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
+    const sync = new PhysicsWorldSync(backend);
+    try {
+      sync.syncFromWorld(world);
+      badJoint.setVariable("targetActorId", bad.guid);
+      bob.components.splice(bob.components.indexOf(bobJoint), 1);
+      expect(() => sync.syncFromWorld(world)).toThrow(/shared-joint on actor bad: A constraint must connect two different actors/);
+      for (let tick = 0; tick < 30; tick++) backend.step(1 / 60);
+      // The invalid edit keeps its usable joint; the removed one is released.
+      expect(backend.getBodyTransform("body:bad")!.position.y).toBeCloseTo(0, 2);
+      expect(backend.getBodyTransform("body:bob")!.position.y).toBeLessThan(-0.5);
+    } finally { sync.dispose(); }
+  });
+
   it("defers temporary boot software but rejects configured constraints in explicit software sessions", () => {
     const world = worldFixture();
     const owner = body(world, "owner", 0, true);

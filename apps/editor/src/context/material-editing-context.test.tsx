@@ -121,6 +121,8 @@ const harness = vi.hoisted(() => ({
     header: { guid: "tex-1", type: "Texture", name: "albedo", payload: {}, chunks: [{ id: "pixels", sha256: "original-pixels" }] },
   },
   cachedTextures: [] as Array<{ guid: string; bytes: Blob }>,
+  instanceContent: null as Record<string, unknown> | null,
+  rootMaterialAsset: null as { path: string; header: { guid: string; type: string; name: string; payload: unknown } } | null,
 }));
 
 const playValue = {
@@ -136,7 +138,8 @@ vi.mock("./play-context", () => ({
 
 const assetRegistry = {
   list: () => [harness.textureAsset, ...harness.functionAssets],
-  getByGuid: (guid: string) => guid === harness.textureAsset.header.guid ? harness.textureAsset : null,
+  getByGuid: (guid: string) => guid === harness.textureAsset.header.guid ? harness.textureAsset
+    : guid === harness.rootMaterialAsset?.header.guid ? harness.rootMaterialAsset : null,
 };
 
 vi.mock("./document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -146,6 +149,13 @@ vi.mock("./document-context", async () => (await import("../testing/document-con
       ref: { kind: "material", path: "assets/Rock.material.babasset" },
       get content() {
         return harness.content;
+      },
+    },
+    {
+      id: "material-instance:assets/RockInstance.material-instance.babasset",
+      ref: { kind: "material-instance", path: "assets/RockInstance.material-instance.babasset" },
+      get content() {
+        return harness.instanceContent;
       },
     },
   ],
@@ -288,6 +298,8 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.cacheDisposeCalls = 0;
     harness.contextRestored = null;
     harness.cachedTextures = [];
+    harness.instanceContent = null;
+    harness.rootMaterialAsset = null;
     harness.content = createDefaultMaterialDocument("Rock");
     harness.textureAsset = {
       path: "assets/albedo.babasset",
@@ -704,5 +716,30 @@ describe("MaterialEditingProvider preview isolation", () => {
     });
     view.unmount();
     expect(harness.cacheDisposeCalls).toBe(0);
+  });
+
+  it("reports a Material Instance whose parent Material does not compile as an error", async () => {
+    const broken = createDefaultMaterialDocument("Broken");
+    broken.edges.push({ id: "dangling", sourceNodeId: "missing", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "baseColor" });
+    harness.rootMaterialAsset = {
+      path: "assets/Broken.material.babasset",
+      header: { guid: "broken-root", type: "Material", name: "Broken", payload: broken },
+    };
+    harness.instanceContent = { kind: "materialInstance", name: "Rock Instance", parentGuid: "broken-root", overrides: {} };
+    function InstanceStatus() {
+      const { instance } = useMaterialEditing();
+      return <output data-testid="instance-status">{instance?.status}</output>;
+    }
+    render(
+      <MaterialRenderControlProvider>
+        <MaterialEditingProvider
+          documentId="material-instance:assets/RockInstance.material-instance.babasset"
+          active
+        >
+          <InstanceStatus />
+        </MaterialEditingProvider>
+      </MaterialRenderControlProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("instance-status").textContent).toBe("error"));
   });
 });

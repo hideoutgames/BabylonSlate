@@ -103,12 +103,12 @@ function parseKind(value: unknown): ModelSimpleColliderKind {
   return "box";
 }
 
+/** Center and half extents of the box around a point cloud. */
 export function boundsBoxFromPoints(points: readonly HullVec3[]): {
-  x: number;
-  y: number;
-  z: number;
+  center: [number, number, number];
+  halfExtents: { x: number; y: number; z: number };
 } {
-  if (points.length === 0) return { x: 0.5, y: 0.5, z: 0.5 };
+  if (points.length === 0) return { center: [0, 0, 0], halfExtents: { x: 0.5, y: 0.5, z: 0.5 } };
   let minX = Infinity;
   let minY = Infinity;
   let minZ = Infinity;
@@ -124,9 +124,12 @@ export function boundsBoxFromPoints(points: readonly HullVec3[]): {
     maxZ = Math.max(maxZ, point.z);
   }
   return {
-    x: Math.max(0.01, (maxX - minX) / 2),
-    y: Math.max(0.01, (maxY - minY) / 2),
-    z: Math.max(0.01, (maxZ - minZ) / 2),
+    center: [(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2],
+    halfExtents: {
+      x: Math.max(0.01, (maxX - minX) / 2),
+      y: Math.max(0.01, (maxY - minY) / 2),
+      z: Math.max(0.01, (maxZ - minZ) / 2),
+    },
   };
 }
 
@@ -231,12 +234,15 @@ export function generateSimpleCollisionFromPoints(
       points: hull,
     };
   }
+  // A flat or linear cloud has no hull volume: box it where the cloud is.
+  const bounds = boundsBoxFromPoints(points);
   return {
     ...createDefaultSimpleCollider("box", {
       id: options?.id,
       name: options?.name ?? SIMPLE_COLLIDER_KIND_LABELS.generated,
     }),
-    halfExtents: boundsBoxFromPoints(points),
+    position: bounds.center,
+    halfExtents: bounds.halfExtents,
   };
 }
 

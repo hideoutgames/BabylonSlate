@@ -188,7 +188,6 @@ describe("game instance nodes", () => {
           node("begin", "flow.event.beginPlay"),
           node("gi", "gameInstance.get"),
           node("cast", "casting.cast", {
-            defaultClassId: "MatchGameInstance",
             "default:class": "MatchGameInstance",
             resultKind: "objectRef",
           }),

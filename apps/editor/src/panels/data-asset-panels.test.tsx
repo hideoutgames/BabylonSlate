@@ -28,7 +28,7 @@ const fields: DataDefinitionField[] = [{ id: "damage", name: "Damage", typeId: "
 const treePath = "assets/Weapons.datatree.babasset";
 const treeId = `data-tree:${treePath}`;
 function indexed(guid: string, name: string, type: string, payload: Record<string, unknown>, path = `assets/${name}.babasset`): IndexedAsset {
-  return { rootId: "project", path, header: { guid, name, type, version: 1, engineVersion: "0.0.0", mode: "thin", dependencies: [], payload, chunks: [] } };
+  return { rootId: "project", path, header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid, name, type, version: 1, engineVersion: "0.0.0", mode: "thin", dependencies: [], payload, chunks: [] } };
 }
 function opened(kind: DocumentRef["kind"], path: string, content: Record<string, unknown>): OpenDocument {
   return { id: documentId({ kind, path }), ref: { kind, path, label: path }, content, layout: null, dirty: false };

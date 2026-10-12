@@ -1,6 +1,10 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { DockviewReact, type DockviewApi, type DockviewReadyEvent } from "dockview-react";
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
+import { OutputLogPanel } from "../panels/output-log-panel";
+import { enterPhoneDockLayout } from "../shell/phone-dock-layout";
+import { DocumentWorkspaceProvider } from "./document-workspace-context";
 import {
   PlayProvider,
   useLiveBtState,
@@ -233,6 +237,75 @@ it("keeps Play stopped and the preparation error visible even with fixture injec
   expect(screen.getByTestId("logs").textContent).toBe("Play preparation failed: No project catalog is available.");
 });
 
+const MAIN_SCENE_ID = "scene:assets/Main.scene.babasset";
+const OTHER_SCENE_ID = "scene:assets/Other.scene.babasset";
+
+it.each([
+  { where: "visible in the active Scene document", documentId: MAIN_SCENE_ID, dialog: false },
+  {
+    where: "behind another tab in its dock group", documentId: MAIN_SCENE_ID, dialog: true,
+    arrange: (api: DockviewApi) => api.getPanel("compiler-results")!.api.setActive(),
+  },
+  {
+    // The phone shows the Output Log as its one window, then the user picks the Viewport.
+    where: "outside the one window a phone shows", documentId: MAIN_SCENE_ID, dialog: true,
+    arrange: (api: DockviewApi) => {
+      enterPhoneDockLayout(api);
+      api.getPanel("viewport")!.api.setActive();
+    },
+  },
+  { where: "in a background Scene document tab", documentId: OTHER_SCENE_ID, dialog: true },
+  { where: "not open", documentId: null, dialog: true },
+])("shows a Play preparation failure in a dialog only when no Output Log is visible: $where", async ({ documentId, dialog, arrange }) => {
+  const scene = (id: string, label: string) => ({
+    id,
+    ref: { kind: "scene", path: id.slice("scene:".length), label },
+    content: createDefaultScene(),
+    dirty: false,
+  });
+  host.documents = {
+    ...host.noProject,
+    openDocuments: [scene(MAIN_SCENE_ID, "Main"), scene(OTHER_SCENE_ID, "Other")],
+    activeDocumentId: MAIN_SCENE_ID,
+  };
+  let controls!: ReturnType<typeof usePlay>;
+  function Controls() {
+    controls = usePlay();
+    const { lines } = useOutputLog();
+    return <output data-testid="logs">{lines.join("\n")}</output>;
+  }
+  const onReady = ({ api }: DockviewReadyEvent) => {
+    api.layout(1200, 800);
+    api.addPanel({ id: "viewport", component: "window", title: "Viewport" });
+    api.addPanel({ id: "output-log", component: "output-log", title: "Output Log", position: { referencePanel: "viewport", direction: "below" } });
+    api.addPanel({ id: "compiler-results", component: "window", title: "Compiler Results", position: { referencePanel: "output-log", direction: "within" } });
+    api.getPanel("output-log")!.api.setActive();
+    arrange?.(api);
+  };
+  render(
+    <PlayProvider>
+      <Controls />
+      {documentId ? (
+        <DocumentWorkspaceProvider documentId={documentId}>
+          <DockviewReact components={{ "output-log": OutputLogPanel, window: () => null }} onReady={onReady} />
+        </DocumentWorkspaceProvider>
+      ) : null}
+    </PlayProvider>,
+  );
+
+  await act(async () => { await controls.requestPlay(); });
+  expect(controls.playing).toBe(false);
+  expect(screen.getByTestId("logs").textContent).toBe("Play preparation failed: No project catalog is available.");
+  if (!dialog) {
+    expect(screen.queryByRole("dialog")).toBeNull();
+    return;
+  }
+  const failure = screen.getByRole("dialog", { name: "Play Failed" });
+  expect(failure.textContent).toContain("No project catalog is available.");
+  await act(async () => { fireEvent.click(within(failure).getByRole("button", { name: "Close" })); });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
 it("cancels or plays without saving from the Unsaved Changes prompt", async () => {
   const scene = {
     id: "scene:assets/Main.scene.babasset",
@@ -266,6 +339,8 @@ it("cancels or plays without saving from the Unsaved Changes prompt", async () =
   });
   // The dialog unmounts after its closing animation.
   await waitFor(() => expect(screen.queryByTestId("play-unsaved-dialog")).toBeNull());
+  // Cancel starts no Play session.
+  expect(controls.sessionState.generation).toBe(0);
   await act(async () => {
     void controls.requestPlay();
   });
@@ -273,6 +348,8 @@ it("cancels or plays without saving from the Unsaved Changes prompt", async () =
     fireEvent.click(screen.getByTestId("play-unsaved-skip"));
   });
   await waitFor(() => expect(screen.queryByTestId("play-unsaved-dialog")).toBeNull());
+  // Play Without Saving starts a session from the unsaved documents.
+  expect(controls.sessionState.generation).toBe(1);
   expect(saveAll).not.toHaveBeenCalled();
 });
 

@@ -19,7 +19,8 @@ let uploaded = false;
 const infoPath = join(editor, "ios/App/App/Info.plist");
 try {
   if (process.platform !== "darwin" || process.env.DEVELOPER_DIR !== "/Applications/Xcode_26.6.app/Contents/Developer") throw new Error("Pinned macOS toolchain required");
-  const identity = JSON.parse(await readFile(join(repo, "release/generated/ipados-manifest.json"), "utf8"));
+  const identityText = await readFile(join(repo, "release/generated/ipados-manifest.json"), "utf8");
+  const identity = JSON.parse(identityText);
   validateAppleConfiguration(process.env, identity);
   const privateDir = applePrivateDirectory();
   await mkdir(privateDir, { mode: 0o700 });
@@ -34,7 +35,10 @@ try {
   validateAppIcon(await readFile(join(iconsDir, icon.filename)));
   validatePrivacyManifest(await plist(join(editor, "ios/App/App/PrivacyInfo.xcprivacy"), "privacy-source"));
   const capacitor = JSON.parse(await readFile(join(editor, "ios/App/App/capacitor.config.json"), "utf8"));
-  if (!["BabylonSlateSecretsPlugin", "BabylonSlateScopedStoragePlugin", "BabylonSlateAudioLifecyclePlugin"].every(name => capacitor.packageClassList?.includes(name))) throw new Error("Custom Capacitor registration is missing; use ios:sync");
+  if (!["BabylonSlateSecretsPlugin", "BabylonSlateScopedStoragePlugin", "BabylonSlateAudioLifecyclePlugin", "BabylonSlateMemoryPlugin"].every(name => capacitor.packageClassList?.includes(name))) throw new Error("Custom Capacitor registration is missing; use ios:sync");
+  // Only a distribution build (which refuses test-mode storage) emits build-manifest.json.
+  const bundledIdentity = await readFile(join(editor, "ios/App/App/public/build-manifest.json"), "utf8").catch(() => null);
+  if (bundledIdentity !== identityText) throw new Error("Native web bundle is not this identity's distribution build; use ios:sync");
 
   stage = "apple-preflight";
   const api = appleClient();
@@ -117,9 +121,12 @@ try {
   await appendFile(process.env.GITHUB_STEP_SUMMARY, `\niPadOS ${identity.appleMarketingVersion} / ${identity.appleBuildNumber}: **uploaded**. Tester availability is not yet established.\n`);
 } catch (error) {
   if (["configuration", "asset-and-privacy-validation", "apple-preflight"].includes(stage) && error instanceof Error && !error.message.includes("ENOENT")) console.error(error.message);
-  else console.error(`Apple ${stage} failed. ${uploaded ? "Upload completed; preserve its identity." : "Check App Store Connect before retrying an uncertain upload."} Private diagnostics were not published.`);
+  else if (uploaded) console.error(`Apple ${stage} failed. Upload completed; preserve its identity. Private diagnostics were not published.`);
+  else if (stage === "upload") console.error("Apple upload failed. Check App Store Connect before retrying an uncertain upload. Private diagnostics were not published.");
+  else console.error(`Apple ${stage} failed before upload. Private diagnostics were not published.`);
   process.exitCode = 1;
 } finally {
-  if (originalInfo) await writeFile(infoPath, originalInfo);
+  // Credential cleanup must run even when the Info.plist restore fails.
+  try { if (originalInfo) await writeFile(infoPath, originalInfo); } catch { console.error("Info.plist restore failed"); process.exitCode = 1; }
   try { await cleanupApple(); } catch { console.error("Apple cleanup failed; inspect the ephemeral runner privately"); process.exitCode = 1; }
 }

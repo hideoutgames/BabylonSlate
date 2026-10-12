@@ -205,7 +205,7 @@ describe("script host runs compiled graphs", () => {
         node(registry, "tick", "flow.event.tick"),
         node(registry, "self", "actor.getSelf"),
         node(registry, "move", "physics.moveCharacter", {
-          translation: { x: 1, y: 0, z: 0 },
+          "default:translation": { x: 1, y: 0, z: 0 },
         }),
       ],
       edges: [
@@ -255,9 +255,9 @@ describe("script host runs compiled graphs", () => {
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "print", "debug.print", {
-          value: "ready",
-          key: "status",
-          duration: 2,
+          "default:value": "ready",
+          "default:key": "status",
+          "default:duration": 2,
         }),
       ],
       edges: [edge("e1", "begin", "execOut", "print", "execIn")],
@@ -337,9 +337,9 @@ describe("script host runs compiled graphs", () => {
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "print", "debug.print", {
-          value: "from-parent",
-          key: "parent",
-          duration: 1,
+          "default:value": "from-parent",
+          "default:key": "parent",
+          "default:duration": 1,
         }),
       ],
       edges: [edge("e1", "begin", "execOut", "print", "execIn")],
@@ -388,9 +388,9 @@ describe("script host runs compiled graphs", () => {
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "print", "debug.print", {
-          value: "from-parent",
-          key: "parent",
-          duration: 1,
+          "default:value": "from-parent",
+          "default:key": "parent",
+          "default:duration": 1,
         }),
       ],
       edges: [edge("e1", "begin", "execOut", "print", "execIn")],
@@ -432,7 +432,7 @@ describe("script host runs compiled graphs", () => {
         node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "log", "debug.log", {
           severity: "error",
-          message: "script failed",
+          "default:message": "script failed",
         }),
       ],
       edges: [edge("e1", "begin", "execOut", "log", "execIn")],
@@ -528,8 +528,8 @@ describe("script host runs compiled graphs", () => {
       kind: "event",
       nodes: [
         node(registry, "tick", "flow.event.tick"),
-        node(registry, "delay", "timers.delay", { duration: 0.25 }),
-        node(registry, "log", "debug.log", { message: "after delay" }),
+        node(registry, "delay", "timers.delay", { "default:duration": 0.25 }),
+        node(registry, "log", "debug.log", { "default:message": "after delay" }),
       ],
       edges: [
         edge("e1", "tick", "execOut", "delay", "execIn"),
@@ -573,8 +573,8 @@ describe("script host runs compiled graphs", () => {
           parameters: [{ name: "amount", type: "float" }],
         }),
         node(registry, "report", "debug.reportCommand", {
-          success: true,
-          output: "ok",
+          "default:success": true,
+          "default:output": "ok",
         }),
       ],
       edges: [edge("e1", "run", "execOut", "report", "execIn")],
@@ -610,7 +610,7 @@ describe("script host runs compiled graphs", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "change", "scene.change", { scene: "Level2" }),
+        node(registry, "change", "scene.change", { "default:scene": "Level2" }),
       ],
       edges: [edge("e1", "begin", "execOut", "change", "execIn")],
     };
@@ -666,7 +666,7 @@ describe("script host runs compiled graphs", () => {
       kind: "event",
       nodes: [
         node(registry, "hit", "flow.event.custom", { name: "On Hit" }),
-        node(registry, "log", "debug.log", { message: "hit" }),
+        node(registry, "log", "debug.log", { "default:message": "hit" }),
       ],
       edges: [edge("e1", "hit", "execOut", "log", "execIn")],
     };
@@ -693,7 +693,7 @@ describe("script host runs compiled graphs", () => {
       kind: "event",
       nodes: [
         node(registry, "destroyed", "flow.event.destroyed"),
-        node(registry, "log", "debug.log", { message: "gone" }),
+        node(registry, "log", "debug.log", { "default:message": "gone" }),
       ],
       edges: [edge("e1", "destroyed", "execOut", "log", "execIn")],
     };
@@ -813,7 +813,7 @@ describe("script host runs compiled graphs", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "spawn", "actor.spawn", { classId: "Guard" }),
+        node(registry, "spawn", "actor.spawn", { "default:classId": "Guard" }),
         node(registry, "call", "flow.event.call", {
           name: "On Alert",
           classId: "Guard",
@@ -918,7 +918,7 @@ describe("script host runs compiled graphs", () => {
       kind: "function",
       nodes: [
         node(registry, "in", "flow.function.input", { pins: alertPins }),
-        node(registry, "log", "debug.log", { message: "alert" }),
+        node(registry, "log", "debug.log", { "default:message": "alert" }),
         node(registry, "out", "flow.function.output", { pins: alertPins }),
       ],
       edges: [
@@ -931,7 +931,7 @@ describe("script host runs compiled graphs", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "spawn", "actor.spawn", { classId: "Guard" }),
+        node(registry, "spawn", "actor.spawn", { "default:classId": "Guard" }),
         node(registry, "call", "functions.call", {
           functionName: "Alert",
           classId: "Guard",
@@ -1169,9 +1169,9 @@ describe("script host runs compiled graphs", () => {
           "default:binding": { Input: { Name: "Jump", Asset: "jump" } },
         }),
         node(registry, "print", "debug.print", {
-          value: "jumped",
-          key: "jump",
-          duration: 1,
+          "default:value": "jumped",
+          "default:key": "jump",
+          "default:duration": 1,
         }),
       ],
       edges: [edge("e1", "onJump", "started", "print", "execIn")],
@@ -1218,8 +1218,8 @@ describe("script host runs compiled graphs", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "delay", "timers.delay", { duration: 0.25 }),
-        node(registry, "log", "debug.log", { message: "after delay" }),
+        node(registry, "delay", "timers.delay", { "default:duration": 0.25 }),
+        node(registry, "log", "debug.log", { "default:message": "after delay" }),
       ],
       edges: [
         edge("e1", "begin", "execOut", "delay", "execIn"),
@@ -1267,7 +1267,7 @@ describe("script host runs compiled graphs", () => {
       kind: "function",
       nodes: [
         node(registry, "in", "flow.function.input", { pins }),
-        node(registry, "delay", "timers.delay", { duration: 0.25 }),
+        node(registry, "delay", "timers.delay", { "default:duration": 0.25 }),
         node(registry, "out", "flow.function.output", {
           pins,
           "default:result": 7,
@@ -1344,7 +1344,7 @@ describe("script host runs compiled graphs", () => {
       kind: "function",
       nodes: [
         node(registry, "in", "flow.function.input", { pins }),
-        node(registry, "delay", "timers.delay", { duration: 5 }),
+        node(registry, "delay", "timers.delay", { "default:duration": 5 }),
         node(registry, "out", "flow.function.output", { pins }),
       ],
       edges: [
@@ -1363,7 +1363,7 @@ describe("script host runs compiled graphs", () => {
           implicitSelf: true,
           pins,
         }),
-        node(registry, "log", "debug.log", { message: "after delay" }),
+        node(registry, "log", "debug.log", { "default:message": "after delay" }),
       ],
       edges: [
         edge("e1", "tick", "execOut", "call", "exec"),
@@ -1407,7 +1407,7 @@ describe("script host runs compiled graphs", () => {
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "self", "actor.getSelf"),
-        node(registry, "add", "component.add", { classId: "MeshComponent" }),
+        node(registry, "add", "component.add", { "default:classId": "MeshComponent" }),
       ],
       edges: [
         edge("e1", "begin", "execOut", "add", "execIn"),
@@ -1442,7 +1442,7 @@ describe("script host runs compiled graphs", () => {
           "default:location": { x: 4, y: 5, z: 6 },
           "default:scale": { x: 1, y: 1, z: 1 },
         }),
-        node(registry, "add", "component.add", { classId: "MeshComponent" }),
+        node(registry, "add", "component.add", { "default:classId": "MeshComponent" }),
       ],
       edges: [
         edge("e1", "begin", "execOut", "add", "execIn"),
@@ -1473,9 +1473,9 @@ describe("script host runs compiled graphs", () => {
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "print", "debug.print", {
-          value: "spawned",
-          key: "child",
-          duration: 1,
+          "default:value": "spawned",
+          "default:key": "child",
+          "default:duration": 1,
         }),
       ],
       edges: [edge("e1", "begin", "execOut", "print", "execIn")],
@@ -1485,7 +1485,7 @@ describe("script host runs compiled graphs", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "spawn", "actor.spawn", { classId: "Child" }),
+        node(registry, "spawn", "actor.spawn", { "default:classId": "Child" }),
       ],
       edges: [edge("e1", "begin", "execOut", "spawn", "execIn")],
     };
@@ -1531,7 +1531,7 @@ describe("script host runs compiled graphs", () => {
           "default:location": { x: 10, y: 20, z: 30 },
           "default:scale": { x: 1, y: 1, z: 1 },
         }),
-        node(registry, "spawn", "actor.spawn", { classId: "Child" }),
+        node(registry, "spawn", "actor.spawn", { "default:classId": "Child" }),
       ],
       edges: [
         edge("e1", "begin", "execOut", "spawn", "execIn"),
@@ -1583,7 +1583,7 @@ describe("script host runs compiled graphs", () => {
       kind: "event",
       nodes: [
         node(registry, "tick", "flow.event.tick"),
-        node(registry, "spawn", "actor.spawn", { classId: "Child" }),
+        node(registry, "spawn", "actor.spawn", { "default:classId": "Child" }),
         node(registry, "completed", "debug.log", { "default:message": "spawn completed" }),
         node(registry, "pose", "struct.makeTransform", {
           "default:location": { x: 10, y: 20, z: 30 },
@@ -1720,7 +1720,7 @@ describe("script host runs compiled graphs", () => {
       kind: "function",
       nodes: [
         node(registry, "in", "flow.function.input", { pins }),
-        node(registry, "log", "debug.log", { message: "damaged" }),
+        node(registry, "log", "debug.log", { "default:message": "damaged" }),
         node(registry, "out", "flow.function.output", { pins }),
       ],
       edges: [
@@ -1802,7 +1802,7 @@ describe("script host runs compiled graphs", () => {
       kind: "function",
       nodes: [
         node(registry, "in", "flow.function.input", { pins }),
-        node(registry, "log", "debug.log", { message: "damaged" }),
+        node(registry, "log", "debug.log", { "default:message": "damaged" }),
         node(registry, "out", "flow.function.output", { pins }),
       ],
       edges: [
@@ -1868,8 +1868,8 @@ describe("script host runs compiled graphs", () => {
           ],
         }),
         node(registry, "print", "debug.print", {
-          key: "iface",
-          duration: 1,
+          "default:key": "iface",
+          "default:duration": 1,
         }),
       ],
       edges: [
@@ -1920,14 +1920,14 @@ describe("script host runs compiled graphs", () => {
       nodes: [
         node(registry, "tick", "flow.event.tick"),
         node(registry, "trace", "physics.lineTrace", {
-          start: { x: 0, y: 10, z: 0 },
-          end: { x: 0, y: -1, z: 0 },
+          "default:start": { x: 0, y: 10, z: 0 },
+          "default:end": { x: 0, y: -1, z: 0 },
         }),
         node(registry, "self", "actor.getSelf"),
         node(registry, "ignored", "array.make", { count: 1 }),
         node(registry, "print", "debug.print", {
-          key: "hit",
-          duration: 1,
+          "default:key": "hit",
+          "default:duration": 1,
         }),
       ],
       edges: [
@@ -2023,12 +2023,12 @@ describe("script host runs compiled graphs", () => {
       nodes: [
         node(registry, "tick", "flow.event.tick"),
         node(registry, "project", "input.projectCursorToScene", {
-          drawDebug: true,
-          duration: 0,
+          "default:drawDebug": true,
+          "default:duration": 0,
         }),
         node(registry, "print", "debug.print", {
-          key: "hit",
-          duration: 1,
+          "default:key": "hit",
+          "default:duration": 1,
         }),
       ],
       edges: [
@@ -2245,9 +2245,9 @@ describe("script host runs compiled graphs", () => {
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "print", "debug.print", {
-          value: "gi-ready",
-          key: "gi",
-          duration: 1,
+          "default:value": "gi-ready",
+          "default:key": "gi",
+          "default:duration": 1,
         }),
       ],
       edges: [edge("e1", "begin", "execOut", "print", "execIn")],
@@ -2279,8 +2279,8 @@ describe("script host runs compiled graphs", () => {
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "play", "audio.play", {
-          asset: "jump.wav",
-          volume: 0.5,
+          "default:asset": "jump.wav",
+          "default:volume": 0.5,
         }),
       ],
       edges: [edge("e1", "begin", "execOut", "play", "execIn")],
@@ -2395,16 +2395,16 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
-  it("requests session output settings when Begin Play runs render.setResolution", async () => {
+  it("requests session output settings when Begin Play runs Set Render Resolution", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "event-graph",
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "res", "render.setResolution", {
-          width: 800,
-          height: 600,
+        node(registry, "res", "scalability.setResolution", {
+          "default:width": 800,
+          "default:height": 600,
         }),
       ],
       edges: [edge("e1", "begin", "execOut", "res", "execIn")],
@@ -2497,7 +2497,7 @@ describe("script host runs compiled graphs", () => {
           variableName: "Health",
           typeId: "float",
           implicitSelf: true,
-          "default:Health": 7,
+          "default:value": 7,
         }),
         node(registry, "get", "variables.get", {
           variableName: "Health",
@@ -2538,13 +2538,13 @@ describe("script host runs compiled graphs", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "spawn", "actor.spawn", { classId: "Guard" }),
+        node(registry, "spawn", "actor.spawn", { "default:classId": "Guard" }),
         node(registry, "set", "variables.set", {
           variableName: "Health",
           typeId: "float",
           classId: "Guard",
           implicitSelf: false,
-          "default:Health": 11,
+          "default:value": 11,
         }),
         node(registry, "get", "variables.get", {
           variableName: "Health",

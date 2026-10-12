@@ -23,10 +23,20 @@ describe("Preview diagnostics transport", () => {
     const pair = linked();
     expect(await pair.client.request("frame")).toEqual({ success: true, result: "packaged frame", reason: undefined });
     const frames = new Float64Array([1, 2, 3]);
-    await pair.server.publishProfile({ metadata: { byteBudget: 4096 }, frames: [frames], ticks: [] });
+    expect(await pair.server.publishProfile({ metadata: { byteBudget: 4096 }, frames: [frames], ticks: [], gpu: [] })).toEqual({ success: true });
     expect(frames.byteLength).toBe(24);
     expect(pair.profiles[0]?.frames[0]).toEqual(frames);
     expect(pair.profiles[0]?.frames[0]?.buffer).not.toBe(frames.buffer);
+    pair.client.dispose(); pair.server.dispose();
+  });
+
+  it("reports a failed profile transfer to the publisher as well as the editor", async () => {
+    const pair = linked();
+    await pair.client.connect();
+    const published = await pair.server.publishProfile({ metadata: { byteBudget: 1 << 20 }, frames: [new Float64Array(8192)], ticks: [], gpu: [] });
+    expect(published).toMatchObject({ success: false, reason: expect.stringContaining("transport budget") });
+    expect(pair.errors).toEqual([published.reason]);
+    expect(pair.profiles).toEqual([]);
     pair.client.dispose(); pair.server.dispose();
   });
 
@@ -44,6 +54,27 @@ describe("Preview diagnostics transport", () => {
     pair.client.receive({ source: player, origin, data: { ...ready, action: "profile-chunk", profileId: 1,
       sequence: 2, stream: "frames", rows: new Float64Array([1]) } });
     expect(pair.errors).toEqual(["Preview profile transfer was incomplete or exceeded its data budget."]);
+    pair.client.dispose(); pair.server.dispose();
+  });
+
+  it("fails a profile transfer only after it goes idle and ignores an earlier profile's error", async () => {
+    const pair = linked();
+    await pair.client.connect();
+    vi.useFakeTimers();
+    const ready = pair.sent[0]!;
+    const deliver = (message: Record<string, unknown>) => pair.client.receive({ source: player, origin, data: { ...ready, ...message } });
+    deliver({ action: "profile-start", profileId: 2, metadata: { byteBudget: 4096 } });
+    for (let sequence = 0; sequence < 3; sequence++) {
+      await vi.advanceTimersByTimeAsync(6_000);
+      deliver({ action: "profile-chunk", profileId: 2, sequence, stream: "frames", rows: new Float64Array([sequence]) });
+    }
+    deliver({ action: "profile-error", profileId: 1, reason: "Earlier profile failed." });
+    deliver({ action: "profile-end", profileId: 2, sequence: 3 });
+    expect(pair.errors).toEqual([]);
+    expect(pair.profiles[0]?.frames).toHaveLength(3);
+    deliver({ action: "profile-start", profileId: 3, metadata: { byteBudget: 4096 } });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(pair.errors).toEqual(["Preview profile transfer timed out."]);
     pair.client.dispose(); pair.server.dispose();
   });
 

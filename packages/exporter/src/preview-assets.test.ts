@@ -6,13 +6,12 @@ describe("on-demand Preview files", () => {
   it("sends only the catalog at handoff and transfers the selected file on demand", async () => {
     const encoder = new TextEncoder();
     const files = new Map([
-      ["game.json", encoder.encode(JSON.stringify({ scriptsFile: "scripts.js" }))],
-      ["scripts.js", encoder.encode("void 0")],
+      ["game.json", encoder.encode("{}")],
       ["assets/a.bin", new Uint8Array([1, 2])],
       ["assets/b.bin", new Uint8Array([3, 4])],
     ]);
-    const handoff = previewPackFromFiles(files, { onDemand: true });
-    expect(Object.keys(handoff.files)).toEqual(["game.json", "scripts.js"]);
+    const handoff = previewPackFromFiles(files, 1024);
+    expect(Object.keys(handoff.files)).toEqual(["game.json"]);
     const transferred: number[] = [];
     const server = createPreviewAssetServer({ files, send: (message, transfer) => { transferred.push(...transfer.map(value => (value as ArrayBuffer).byteLength)); client.receive(message); } });
     const client = createPreviewAssetClient({ send: message => server.receive(message) });

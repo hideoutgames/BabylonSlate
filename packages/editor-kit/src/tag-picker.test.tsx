@@ -130,6 +130,21 @@ describe("TagPicker", () => {
     expect(screen.getByRole("tree", { name: "Tags" }).textContent).toContain("Fire");
   });
 
+  it("adds a created Tag to the value current when the create finishes", async () => {
+    let finish!: (tag: number) => void;
+    const onCreate = vi.fn(() => new Promise<number>((resolve) => { finish = resolve; }));
+    const onChange = vi.fn();
+    const picker = (value: TagContainer) =>
+      <TagPicker mode="multiple" value={value} onChange={onChange} entries={entries} onCreate={onCreate} />;
+    const { rerender } = render(picker({ Tags: [3] }));
+    fireEvent.click(screen.getByRole("button", { name: "Select Tags" }));
+    fireEvent.change(screen.getByPlaceholderText("Example.Tag"), { target: { value: "State.New" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    rerender(picker({ Tags: [3, 5] }));
+    await act(async () => finish(6));
+    expect(onChange).toHaveBeenLastCalledWith({ Tags: [3, 5, 6] });
+  });
+
   it("keeps invalid names and failed creation in the popup without changing selection", async () => {
     const onCreate = vi.fn(() => Promise.reject(new Error("Storage Unavailable")));
     const onChange = vi.fn();

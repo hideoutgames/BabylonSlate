@@ -1,7 +1,19 @@
 import { GITHUB_RELEASE_PLATFORMS, createIdentity, existingAppleIdentity, releaseDisposition, requestedPlatforms, validateChecks, validateSource } from "./contract.mjs";
 import { validateChangelog } from "./changelog.mjs";
+import { requiredVerifyJobs } from "../verification-policy.mjs";
 
-const VERIFY_JOBS = ["static", "unit", ...Array.from({ length: 4 }, (_, i) => `e2e (${i + 1})`)];
+const PAGE_SIZE = 100;
+
+/** Reads every page so a required context on a later page cannot fall back to an older status. */
+async function allPages(api, path, key) {
+  const items = [];
+  for (let page = 1; ; page++) {
+    if (page > 50) throw new Error("GitHub check pagination exceeded the audited limit");
+    const result = await api(`${path}${path.includes("?") ? "&" : "?"}per_page=${PAGE_SIZE}&page=${page}`);
+    items.push(...result[key]);
+    if (result[key].length < PAGE_SIZE || items.length >= result.total_count) return items;
+  }
+}
 
 export async function resolveTag(api, tag) {
   let reference = (await api(`/git/ref/tags/${encodeURIComponent(tag)}`, { optional: true }))?.object;
@@ -30,17 +42,17 @@ export async function preflight(request, { api, git }) {
   const run = runs.workflow_runs.filter(item => item.head_sha === identity.sourceSha && ["push", "pull_request"].includes(item.event)).sort((a, b) => b.id - a.id)[0];
   if (!run || run.status !== "completed" || run.conclusion !== "success") throw new Error("The latest Verify run for this exact source must succeed, for both test and release channels");
   const jobs = await api(`/actions/runs/${run.id}/jobs?per_page=100&filter=latest`);
-  validateChecks(identity.sourceSha, jobs.jobs, VERIFY_JOBS);
+  validateChecks(identity.sourceSha, jobs.jobs, requiredVerifyJobs);
   const rules = await api("/rules/branches/main");
   const required = new Set(main.protection?.required_status_checks?.contexts ?? []);
   for (const rule of rules) {
     if (rule.type === "required_status_checks") for (const check of rule.parameters.required_status_checks) required.add(check.context);
   }
   if (required.size) {
-    const checks = await api(`/commits/${identity.sourceSha}/check-runs?per_page=100&filter=latest`);
-    const statuses = await api(`/commits/${identity.sourceSha}/status?per_page=100`);
-    const combined = checks.check_runs.sort((a, b) => b.id - a.id);
-    for (const status of statuses.statuses) {
+    const checks = await allPages(api, `/commits/${identity.sourceSha}/check-runs?filter=latest`, "check_runs");
+    const statuses = await allPages(api, `/commits/${identity.sourceSha}/status`, "statuses");
+    const combined = checks.sort((a, b) => b.id - a.id);
+    for (const status of statuses) {
       if (!combined.some(check => check.name === status.context)) combined.push({ name: status.context, head_sha: identity.sourceSha, status: "completed", conclusion: status.state });
     }
     validateChecks(identity.sourceSha, combined, [...required]);

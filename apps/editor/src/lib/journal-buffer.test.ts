@@ -9,6 +9,7 @@ import {
   commandToJournalPayload,
   EditSession,
   replayJournalLines,
+  serializeJournalLine,
   SetAssetDocumentCommand,
   type EditCommand,
 } from "@babylonslate/edit";
@@ -93,30 +94,41 @@ describe("JournalBuffer", () => {
     );
     buffer.append(guid, record(new SetAssetDocumentCommand({ opacity: 1 }, { opacity: 0.5 })));
 
-    expect(await buffer.afterFlush(guid, () => truncateJournal(storage, guid))).toBe(true);
+    expect(await buffer.clearAfterFlush(guid, () => truncateJournal(storage, guid))).toBe(true);
     await vi.advanceTimersByTimeAsync(JOURNAL_FLUSH_DELAY_MS * 2);
     await buffer.flush();
     expect(await readJournalLines(storage, guid)).toEqual([]);
   });
 
-  it("reports a failed write and still journals later edits", async () => {
+  it("reports a failed write and retries its records ahead of later edits", async () => {
     const storage = await derivedStorage();
     const onError = vi.fn();
     const write = vi
       .fn((project: string, lines: string[]) => appendJournalLines(storage, project, lines))
       .mockRejectedValueOnce(new Error("storage unavailable"));
     const buffer = new JournalBuffer(write, { onError });
-    buffer.append(guid, record(new SetAssetDocumentCommand({ opacity: 1 }, { opacity: 0.5 })));
+    const failed = record(new SetAssetDocumentCommand({ opacity: 1 }, { opacity: 0.5 }));
+    buffer.append(guid, failed);
     await expect(buffer.flush()).resolves.toBeUndefined();
     expect(onError).toHaveBeenCalledOnce();
 
-    buffer.append(guid, record(new SetAssetDocumentCommand({ opacity: 0.5 }, { opacity: 0.2 })));
+    const later = record(new SetAssetDocumentCommand({ opacity: 0.5 }, { opacity: 0.2 }));
+    buffer.append(guid, later);
     await buffer.flush(guid);
-    const { documents } = replayJournalLines(
-      await readJournalLines(storage, guid),
-      new Map([[docId, { opacity: 1 }]]),
-    );
-    expect(documents.get(docId)).toEqual({ opacity: 0.2 });
+    expect(await readJournalLines(storage, guid)).toEqual([failed, later].map(serializeJournalLine));
+  });
+
+  it("drops records a failed write kept when their journal is cleared", async () => {
+    const storage = await derivedStorage();
+    const write = vi
+      .fn((project: string, lines: string[]) => appendJournalLines(storage, project, lines))
+      .mockRejectedValueOnce(new Error("storage unavailable"));
+    const buffer = new JournalBuffer(write, { onError: () => {} });
+    buffer.append(guid, record(new SetAssetDocumentCommand({ opacity: 1 }, { opacity: 0.5 })));
+
+    expect(await buffer.clearAfterFlush(guid, () => truncateJournal(storage, guid))).toBe(true);
+    await buffer.flush(guid);
+    expect(await readJournalLines(storage, guid)).toEqual([]);
   });
 
   it("rejects a required recovery write so a file operation can stop before mutating", async () => {

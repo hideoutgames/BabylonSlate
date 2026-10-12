@@ -1,6 +1,7 @@
 import { DiagnosticResultsProvider } from "./diagnostic-results-context";
 import { createPortal } from "react-dom";
 import { SimulationInspectionProvider } from "./simulation-inspection-context";
+import { playAssetCatalog } from "../services/asset-catalog";
 import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
 import { createSaveGameStorage, isTestModeEnabled } from "@babylonslate/vfs";
 import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
@@ -28,7 +29,6 @@ import {
   engineCommandBus,
   isErr,
   normalizeRenderingPipeline,
-  resolveGameInstanceClass,
   type CollisionTriangleMesh,
 } from "@babylonslate/core";
 import type { SessionReportEntry } from "@babylonslate/runtime";
@@ -37,7 +37,7 @@ import type { Diagnostic } from "@babylonslate/scripting";
 import { emptyPlayAudioLibrary, type PlayAudioLibrary, type PlayAudioSourceLoader } from "../lib/play-audio";
 import { appendOutputLogLine } from "../lib/output-log-ring";
 import { classIdFromClassAsset } from "../lib/content-browser-helpers";
-import { PlayPrepareDialog } from "../components/play-prepare-dialog";
+import { PlayFailedDialog, PlayPrepareDialog } from "../components/play-prepare-dialog";
 import { PlayUnsavedDialog, type PlayUnsavedChoice } from "../components/play-unsaved-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
 import { SimulationSessionBar } from "../components/simulation-session-bar";
@@ -85,10 +85,12 @@ import {
 import { useDocuments } from "./document-context";
 import { useValidation } from "./validation-context";
 import { PreviewSessionReport } from "../components/preview-session-report";
+import type { SessionReportLocationSources } from "../lib/session-report-locations";
 import type { PlaySessionResult } from "../services/play-session";
 import { SimulationSession } from "../services/simulation-session";
 import { simulationSceneDocument, type SimulationViewport } from "../services/simulation-viewport";
-import { GameSessionOwner, type GameSessionState, type GameSessionTicket } from "../services/game-session-owner";
+import { GameSessionOwner, transitionClosesSessionSource, type GameSessionState, type GameSessionTicket } from "../services/game-session-owner";
+import { automatedSessionReportingHeld, publishPlaySessionClosed } from "../services/runtime-probes";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
 import {
   canonicalPlaySceneGuid,
@@ -115,6 +117,7 @@ import {
   type TilesetPayload,
   type ModelPayload,
   type RetargetAnimationLoad,
+  readStoredAssetDocument,
 } from "@babylonslate/assets";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
@@ -187,6 +190,9 @@ interface PlayContextValue {
   ensureSharedEngine: () => AbstractEngine | null;
   sharedEngineGeneration: number;
   registerScheduler: (scheduler: EditorLoopHandle) => () => void;
+  /** A Scene viewport is in a blocking load; Play waits for it to finish. */
+  sceneViewportLoading: boolean;
+  reportSceneViewportLoading: (documentId: string, loading: boolean) => void;
   focusedNodeId: string | null;
   clearFocusedNode: () => void;
   appendLog: (line: string) => void;
@@ -196,19 +202,31 @@ interface PlayContextValue {
 const PlayContext = createContext<PlayContextValue | null>(null);
 const OutputLogContext = createContext<{ lines: string[] }>({ lines: [] });
 const LiveBtStateContext = createContext<LiveBtState | null>(null);
-const PlayDiagnosticsActionsContext = createContext<Pick<
-  PlayContextValue, "appendLog" | "reportBtState"
-> | null>(null);
+type PlayDiagnosticsActions = Pick<PlayContextValue, "appendLog" | "reportBtState"> & {
+  /** Counts a visible Output Log window until the returned release runs. */
+  showOutputLogWindow: () => () => void;
+  outputLogWindowVisible: () => boolean;
+};
+const PlayDiagnosticsActionsContext = createContext<PlayDiagnosticsActions | null>(null);
 
 /** High-frequency updates must not rerender the session owner or its overlays. */
 function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
   const [logLines, setLogLines] = useState<string[]>([]);
   const [liveBtState, setLiveBtState] = useState<LiveBtState | null>(null);
+  const outputLogWindows = useRef(0);
   const appendLog = useCallback((line: string) => {
     setLogLines((previous) => appendOutputLogLine(previous, line));
   }, []);
-  const actions = useMemo(
-    () => ({ appendLog, reportBtState: setLiveBtState }),
+  const actions = useMemo<PlayDiagnosticsActions>(
+    () => ({
+      appendLog,
+      reportBtState: setLiveBtState,
+      showOutputLogWindow: () => {
+        outputLogWindows.current += 1;
+        return () => { outputLogWindows.current -= 1; };
+      },
+      outputLogWindowVisible: () => outputLogWindows.current > 0,
+    }),
     [appendLog],
   );
   const outputLog = useMemo(() => ({ lines: logLines }), [logLines]);
@@ -234,7 +252,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
 }
 
 function PlaySessionProvider({ children }: { children: ReactNode }) {
-  const { appendLog, reportBtState } = useContext(PlayDiagnosticsActionsContext)!;
+  const { appendLog, reportBtState, outputLogWindowVisible } = useContext(PlayDiagnosticsActionsContext)!;
   const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
   const engineRef = useRef<AbstractEngine | null>(null);
   const providerMountRef = useRef(0);
@@ -249,6 +267,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [sessionOwner] = useState(() => new GameSessionOwner<PlaySessionResult>());
   const sessionState = useSyncExternalStore(sessionOwner.subscribe, sessionOwner.getSnapshot);
   const sessionTicketRef = useRef<GameSessionTicket | null>(null);
+  /** The open Scene document the current session was started from, if any. */
+  const sessionSourceDocumentRef = useRef<string | null>(null);
   const [playOpen, setPlayOpen] = useState(false);
   const simulationViewports = useRef(new Map<string, SimulationViewport>());
   const [simulationViewportRevision, setSimulationViewportRevision] = useState(0);
@@ -259,7 +279,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     sessionState.lifecycle === "stopping" || sessionState.quarantined;
   const [simulationAssetGuids, setSimulationAssetGuids] = useState<readonly string[] | undefined>();
   const [playSaveGame, setPlaySaveGame] = useState<import("@babylonslate/core").SaveGameConfiguration>();
-  const playingRef = useRef(false);
   const [preparing, setPreparing] = useState(false);
   const [playAwaitingMigration, setPlayAwaitingMigration] = useState(false);
   const [playResumeRequested, setPlayResumeRequested] = useState(false);
@@ -269,6 +288,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   } | null>(null);
   const [playBlockedOpen, setPlayBlockedOpen] = useState(false);
   const [blockedDiagnostics, setBlockedDiagnostics] = useState<Diagnostic[]>([]);
+  const [playFailure, setPlayFailure] = useState<{ simulating: boolean; reason: string } | null>(null);
   const [injectThrow, setInjectThrow] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportEntries, setReportEntries] = useState<SessionReportEntry[]>([]);
@@ -306,7 +326,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     options?: PlayOptions;
   } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const previewOpenRef = useRef(false);
   const initialPreviewTarget = useMemo(
     () => previewTargetFromSrc(playerPreviewSrc(0), window.location.href),
     [],
@@ -330,7 +349,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [sessionSources, setSessionSources] = useState<SceneSourceAssets>();
   const acquireAssetSources = useCallback(async (
     guids: readonly string[],
-    options: { consumer: string; signal: AbortSignal; onProgress?: (progress: number) => void; fontModes?: import("@babylonslate/render").CommandFontModes },
+    options: { consumer: string; signal: AbortSignal; priority?: import("@babylonslate/assets").AssetLoadPriority; onProgress?: (progress: number) => void; fontModes?: import("@babylonslate/render").CommandFontModes },
   ) => {
     const host = playSourceHostRef.current;
     const lifetime = playSourceLifetimeRef.current;
@@ -353,7 +372,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     const prepared = await acquireAssetSources([guid], options);
     const scene = prepared.game.scenes.get(guid);
     if (!scene) { prepared.release(); throw new Error(`Scene ${guid} could not be prepared.`); }
-    return { ...prepared, scene };
+    return { ...prepared, scene, audioReverb: prepared.game.audioReverbBytes.get(guid) ?? null };
   }, [acquireAssetSources]);
   const releaseInitialSources = useCallback(() => {
     const prepared = initialPlaySourceRef.current;
@@ -369,6 +388,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setPlayBehaviourTrees([]);
     setPlayBlackboards([]);
     setPlayDataAssets([]);
+    setPlayAssetCatalog([]);
     setPlaySpritePayloads(new Map());
     setPlaySpriteAnimationPayloads(new Map());
     setPlayTilemaps(new Map());
@@ -421,8 +441,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const previewRequestRef = useRef(0);
   const previewClosingRef = useRef(false);
   const previewDiagnosticsRef = useRef<SessionReportEntry[]>([]);
-  playingRef.current = playing;
-  previewOpenRef.current = previewOpen;
   const [playAnimGraphs, setPlayAnimGraphs] = useState<PlayAnimGraphEntry[]>(
     [],
   );
@@ -488,6 +506,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     useState<PlayAudioSourceLoader | undefined>(undefined);
   const [playInputAssets, setPlayInputAssets] = useState<import("@babylonslate/core").InputAssetDefinition[]>([]);
   const [playDataAssets, setPlayDataAssets] = useState<import("@babylonslate/core").DataAssetCatalogEntry[]>([]);
+  const [playCatalog, setPlayAssetCatalog] = useState<import("@babylonslate/core").RuntimeAssetCatalogEntry[]>([]);
   const [playAudioLibrary, setPlayAudioLibrary] = useState<PlayAudioLibrary>(
     () => emptyPlayAudioLibrary(),
   );
@@ -548,6 +567,31 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     return guids;
   }, [assetRegistry, registryEpoch]);
   const guidForPath = (path: string) => guidByPath.get(path) ?? null;
+  // Session report names: open tabs supply working content, closed assets are read on demand.
+  const reportLocationSources = useMemo<SessionReportLocationSources>(() => {
+    const indexed = (ref: string) => {
+      const asset = assetRegistry?.getByGuid(ref) ?? assetRegistry?.getByPath(ref);
+      return asset && !asset.placeholder ? asset : undefined;
+    };
+    return {
+      findAsset: (ref) => {
+        const asset = indexed(ref);
+        return asset
+          ? { guid: asset.header.guid, path: asset.path, name: asset.header.name, type: asset.header.type }
+          : undefined;
+      },
+      openContent: (asset) =>
+        openDocuments.find((doc) => doc.ref.path === asset.path)?.content ?? undefined,
+      readContent: async (asset) => {
+        const found = indexed(asset.guid);
+        if (!assetRegistry || !found) throw new Error(`Asset is unavailable: ${asset.guid}`);
+        const document = await readStoredAssetDocument(assetRegistry.storageFor(found.rootId), found.path, {
+          blobs: assetRegistry.blobsFor(found.rootId),
+        });
+        return document.payload;
+      },
+    };
+  }, [assetRegistry, openDocuments]);
   const openPlayScene = playSceneFromOpenDocuments(
     openDocuments,
     activeDocumentId,
@@ -585,13 +629,14 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => registerBeforeTransition?.((transition) => {
     if (sessionOwner.canStart()) return true;
-    const sourceId = simulationRef.current?.baseline.id ?? openDocuments.find(document => document.ref.kind === "scene" && document.ref.path === playScene?.path)?.id;
-    if ((transition.kind === "close-document" || transition.kind === "replace-document") && transition.documentId !== sourceId) return true;
+    // Keyed to the session's own source: the resolved Play scene follows the active tab once boot sources are released.
+    const sourceId = simulationRef.current?.baseline.id ?? sessionSourceDocumentRef.current;
+    if (!transitionClosesSessionSource(transition, sourceId)) return true;
     return sessionOwner.stop().then(async result => {
       if (result) await result.released;
       return sessionOwner.canStart();
     }).catch(error => { appendLog(`Could not release the game session before changing documents: ${String(error)}`); return false; });
-  }), [registerBeforeTransition, sessionOwner, playScene?.path, openDocuments, appendLog]);
+  }), [registerBeforeTransition, sessionOwner, appendLog]);
   void simulationViewportRevision;
   const playPhysics = playScene
     ? playPhysicsFromSceneSettings(playScene.scene.settings)
@@ -600,7 +645,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   // Play requests read documents, dirty state and collectors as they are when
   // Play is pressed. Keeping that per-edit state out of the callbacks'
   // dependencies keeps the Play context value stable while documents change.
-  const playRequestInputs = { documents, openPlaySceneGuid, hasStartupScene };
+  const playRequestInputs = { documents, openPlaySceneGuid, openPlaySceneDocumentId: openPlayScene?.sceneAssetGuid ?? null, hasStartupScene };
   const playRequestInputsRef = useRef(playRequestInputs);
   useLayoutEffect(() => {
     playRequestInputsRef.current = playRequestInputs;
@@ -710,7 +755,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       incoming: engine,
       previous,
       owned: ownedEngineRef.current,
-      overlayPlaying: playingRef.current && !previewOpenRef.current,
     });
     engineRef.current = isUsableEngine(next) ? next : null;
     setSharedEngineGeneration((current) =>
@@ -721,6 +765,18 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const registerScheduler = useCallback((scheduler: EditorLoopHandle) => {
     return schedulerRegistryRef.current.register(scheduler);
   }, []);
+
+  const [loadingSceneViewports, setLoadingSceneViewports] = useState<ReadonlySet<string>>(() => new Set());
+  const reportSceneViewportLoading = useCallback((documentId: string, loading: boolean) => {
+    setLoadingSceneViewports((current) => {
+      if (current.has(documentId) === loading) return current;
+      const next = new Set(current);
+      if (loading) next.add(documentId);
+      else next.delete(documentId);
+      return next;
+    });
+  }, []);
+  const sceneViewportLoading = loadingSceneViewports.size > 0;
 
   useEffect(() => {
     return attachLifecyclePause((paused) => {
@@ -900,8 +956,9 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const sendPreviewPack = useCallback(() => {
     const files = previewFilesRef.current;
     const frame = previewIframeRef.current?.contentWindow;
+    const traceByteBudget = previewTraceByteBudgetRef.current;
     const handoff = { files, closing: previewClosingRef.current };
-    if (!canSendPreviewPack(handoff) || !frame) {
+    if (!canSendPreviewPack(handoff) || !frame || traceByteBudget === undefined) {
       return;
     }
     try {
@@ -910,10 +967,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         files: handoff.files,
         send: (message, transfer) => frame.postMessage(message, previewOriginRef.current, transfer),
       });
-      frame.postMessage(previewPackFromFiles(handoff.files, {
-        traceByteBudget: previewTraceByteBudgetRef.current,
-        onDemand: true,
-      }), previewOriginRef.current);
+      frame.postMessage(previewPackFromFiles(handoff.files, traceByteBudget), previewOriginRef.current);
     } catch (error) {
       setPreviewError(
         `Preview Build could not send the game data: ${
@@ -990,6 +1044,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         saveAll,
       },
       openPlaySceneGuid,
+      openPlaySceneDocumentId,
     } = playRequestInputsRef.current;
     const effectiveStartup = resolvePreviewStartupGuid({
       playFromScene,
@@ -1022,6 +1077,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     const ticket = sessionOwner.begin("preview");
     if (!ticket) return;
     sessionTicketRef.current = ticket;
+    sessionSourceDocumentRef.current = playFromScene ? openPlaySceneDocumentId : null;
     const requestId = ++previewRequestRef.current;
     const traceByteBudget = appSettings.traceByteBudget;
     const isCurrentRequest = () => previewRequestRef.current === requestId && sessionOwner.isCurrent(ticket);
@@ -1146,6 +1202,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         },
         hasStartupScene,
         openPlaySceneGuid,
+        openPlaySceneDocumentId,
       } = playRequestInputsRef.current;
       const simulationTarget = simulating ? simulationSceneDocument(openDocuments, activeDocumentId) : null;
       const simulationViewport = simulationTarget ? simulationViewports.current.get(simulationTarget.id) : undefined;
@@ -1192,6 +1249,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       const ticket = sessionOwner.begin(simulating ? "simulate" : "play");
       if (!ticket) return;
       sessionTicketRef.current = ticket;
+      sessionSourceDocumentRef.current = simulating ? simulationTarget?.id ?? null : playFromScene ? openPlaySceneDocumentId : null;
       pendingScriptsRef.current = null;
       let presentationRequested = false;
       if (!simulating) setSimulationAssetGuids(undefined);
@@ -1290,6 +1348,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setScripts(nextScripts);
         setDiagnostics(nextDiagnostics);
         setPlayDataAssets(content.dataAssets);
+        setPlayAssetCatalog(playAssetCatalog({ registry: assetRegistry, settings: projectDocument.settings, sceneGuid: effectiveGuid }));
         setPlayAnimGraphs(content.animGraphs);
         setPlayBehaviourTrees(content.behaviourTrees);
         setPlayBlackboards(content.blackboards);
@@ -1363,9 +1422,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         launchPlay({ injectFixtureThrow: inject, scripts: nextScripts });
       } catch (error) {
         if (!sessionOwner.isCurrent(ticket)) return;
-        appendLog(
-          `Play preparation failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        const reason = error instanceof Error ? error.message : String(error);
+        appendLog(`Play preparation failed: ${reason}`);
+        // With no Output Log window visible, the log line alone would go unseen.
+        if (!outputLogWindowVisible()) setPlayFailure({ simulating, reason });
         setPrepareState(null);
         setScripts([]);
       } finally {
@@ -1378,6 +1438,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     },
     [
       appendLog,
+      outputLogWindowVisible,
       launchPlay,
       playFromScene,
       sessionOwner,
@@ -1432,12 +1493,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       setDropped(result.droppedDiagnostics);
       setReportEntries(result.diagnostics);
       setLastRuntimeMode(result.runtimeMode);
-      if (result.diagnostics.length > 0) {
+      if (result.diagnostics.length > 0 && !automatedSessionReportingHeld()) {
         setReportOpen(true);
       }
-      appendLog(
-        `Play ended (${result.runtimeMode}; textures ${result.textureCountBefore}→pending)`,
-      );
+      publishPlaySessionClosed(result);
+      appendLog(`Play ended (${result.runtimeMode})`);
       void result.released.then(({ textureCountAfter, textureLeak, quarantined }) => {
         if (quarantined) appendLog("Game resources did not confirm release. Reload the editor before starting another session.");
         appendLog(
@@ -1491,6 +1551,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       ensureSharedEngine: ensureEngine,
       sharedEngineGeneration,
       registerScheduler,
+      sceneViewportLoading,
+      reportSceneViewportLoading,
       focusedNodeId,
       clearFocusedNode: () => setFocusedNodeId(null),
       appendLog,
@@ -1530,6 +1592,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       ensureEngine,
       sharedEngineGeneration,
       registerScheduler,
+      sceneViewportLoading,
+      reportSceneViewportLoading,
       focusedNodeId,
       appendLog,
       reportBtState,
@@ -1552,10 +1616,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             scene={playScene?.scene}
             project={projectDocument?.metadata}
             saveGame={playSaveGame}
-            gameInstanceClass={resolveGameInstanceClass(
-              projectDocument?.settings,
-              playScene?.scene,
-            )}
+            gameInstanceClass={projectDocument?.settings.gameInstanceClass ?? undefined}
             scenes={playSceneLibrary}
             sceneCatalog={(assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Scene").map((asset) => ({ guid: asset.header.guid, name: asset.header.name }))}
             classAssetGuids={Object.fromEntries((assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Class").map((asset) => [classIdFromClassAsset(asset), asset.header.guid]))}
@@ -1612,7 +1673,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             audioProjectSettings={projectDocument?.settings.audio}
             inputAssets={playInputAssets}
             dataAssets={playDataAssets}
-            inputMappings={projectDocument?.settings.input}
+            assetCatalog={playCatalog}
             focusNavigation={projectDocument?.settings.focusNavigation}
             sortingLayers={projectDocument?.settings.twoD.sortingLayers}
             pixelsPerUnit={
@@ -1723,6 +1784,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             }}
           />
         ) : null}
+        {playFailure ? (
+          <PlayFailedDialog
+            title={playFailure.simulating ? "Simulation Failed" : "Play Failed"}
+            reason={playFailure.reason}
+            onClose={() => setPlayFailure(null)}
+          />
+        ) : null}
         <PlayBlockedDialog
           open={playBlockedOpen}
           diagnostics={blockedDiagnostics}
@@ -1765,7 +1833,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             error={previewError}
             onClose={closePreview}
             registerBeforeStop={registerPreviewBeforeStop}
-            onLoad={sendPreviewPack}
             onTrace={(trace) => void openRecordedTrace(trace)}
             showStats={overlayStats}
             showConsole={overlayConsole}
@@ -1777,9 +1844,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           entries={reportEntries}
           dropped={dropped}
           onOpenChange={setReportOpen}
+          locationSources={reportLocationSources}
           onNavigate={(entry) => {
             const nav = sessionReportNavigation(entry, {
               getByGuid: (guid) => assetRegistry?.getByGuid(guid),
+              getByPath: (path) => assetRegistry?.getByPath(path),
             });
             setFocusedNodeId(nav.focusedNodeId || PREVIEW_FIXTURE_NODE_ID);
             setFocusDiagnostic({
@@ -1853,6 +1922,16 @@ export function usePlayDiagnosticsActions(): Pick<
 
 export function useOutputLog(): { lines: string[] } {
   return useContext(OutputLogContext);
+}
+
+/**
+ * Marks an Output Log window as visible while the caller is mounted and
+ * `visible`. Play reports a preparation failure in a dialog only while no
+ * Output Log window is visible.
+ */
+export function useOutputLogWindow(visible: boolean): void {
+  const actions = useContext(PlayDiagnosticsActionsContext);
+  useEffect(() => (visible ? actions?.showOutputLogWindow() : undefined), [actions, visible]);
 }
 
 /** Subscribe only the behaviour-tree debugger to live snapshots. */

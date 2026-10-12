@@ -3,7 +3,11 @@ import {
   consoleCommandMetadataFromGraph,
   type ConsoleCommandMetadata,
   assetVariableGuidsFromGraph,
-  isLegacyMaterialAssetType,
+  buildDataTreeIndex,
+  carriesLoadingPolicy,
+  hardLoadingProperty,
+  isDataTreeAsset,
+  isHardLoading,
   materialParameterTextureGuidsFromGraph,
   normalizeMaterialInstanceOverrides,
   parseMapDefaultEntries,
@@ -21,15 +25,13 @@ import {
 } from "@babylonslate/shader-graph";
 import { animationAssetGuids } from "./animation-payload";
 import { audioAssetDependencies } from "./audio-payload";
-import type { BabassetHeader } from "./babasset";
+import { ASSET_DEPENDENCY_METADATA_VERSION } from "./babasset";
 import { dataAssetDependencies, dataGraphAssetDependencies, type DataDefinitionFieldsResolver } from "./data-asset-refs";
 import { modelAssetGuids } from "./model-payload";
 import { particleAssetDependencies } from "./particle-payload";
 import { skeletonAssetGuids } from "./skeleton-payload";
 import { skyboxCreatorAssetDependencies } from "./skybox-creator-payload";
 import { parseSpriteAnimationPayload, spriteAnimationTextureGuids } from "./sprite-animation-payload";
-
-export const ASSET_DEPENDENCY_METADATA_VERSION = 1;
 
 export interface AssetDependencyMetadata {
   dependencyMetadataVersion: number;
@@ -43,25 +45,6 @@ export interface AssetDependencyMetadata {
   consoleCommand?: ConsoleCommandMetadata;
   /** Class property keys required by synchronous graph consumers. */
   requiredVariableNames?: string[];
-}
-
-export class DependencyMetadataUpgradeRequiredError extends Error {
-  readonly code = "dependency-metadata-upgrade-required";
-  readonly assetGuid: string;
-  readonly metadataVersion?: number;
-  constructor(assetGuid: string, metadataVersion?: number) {
-    super(`Asset ${assetGuid} has dependency metadata version ${metadataVersion ?? "legacy"}; run the explicit dependency metadata upgrade before loading it.`);
-    this.name = "DependencyMetadataUpgradeRequiredError";
-    this.assetGuid = assetGuid;
-    this.metadataVersion = metadataVersion;
-  }
-}
-
-export function getRequiredDependencies(header: Pick<BabassetHeader, "guid" | "dependencyMetadataVersion" | "requiredDependencies">): readonly string[] {
-  if (header.dependencyMetadataVersion !== ASSET_DEPENDENCY_METADATA_VERSION || !header.requiredDependencies) {
-    throw new DependencyMetadataUpgradeRequiredError(header.guid, header.dependencyMetadataVersion);
-  }
-  return header.requiredDependencies;
 }
 
 export interface AssetDependencyClass {
@@ -95,21 +78,21 @@ const row = (value: unknown): Row => value && typeof value === "object" && !Arra
 const rows = (value: unknown): Row[] => Array.isArray(value) ? value.map(row) : [];
 const values = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 
-// Legacy graphs may omit canvas pin snapshots. Dynamic pins use host schemas.
-const BUILTIN_ASSET_PINS: Readonly<Record<string, readonly string[]>> = {
-  "literal.makeAsset": ["in", "In"],
-  "audio.play": ["asset", "asset"],
-  "audio.setChannelVolume": ["channel", "channel"],
-  "scene.change": ["scene", "scene"],
-  "scene-layer.create": ["asset", "Asset"],
-  "scene-layer.registerPostProcess": ["material", "Material"],
-  "scene-layer.unregisterPostProcess": ["material", "Material"],
-  "material.setMaterialInstance": ["instance", "Instance"],
-  "material.setTextureParameter": ["value", "Value"],
-  "render-target.getMode": ["target", "Render Target"],
-  "render-target.getTextureTarget": ["texture", "Texture"],
-  "render-target.setRenderTarget": ["value", "Render Target"],
-  "assets.getLoadState": ["asset", "Asset"],
+// Asset pin ids of built-in nodes, for a graph read without pin snapshots.
+// Dynamic pins use host schemas.
+const BUILTIN_ASSET_PINS: Readonly<Record<string, string>> = {
+  "literal.makeAsset": "in",
+  "audio.play": "asset",
+  "audio.setChannelVolume": "channel",
+  "scene.change": "scene",
+  "scene-layer.create": "asset",
+  "scene-layer.registerPostProcess": "material",
+  "scene-layer.unregisterPostProcess": "material",
+  "material.setMaterialInstance": "instance",
+  "material.setTextureParameter": "value",
+  "render-target.getMode": "target",
+  "render-target.getTextureTarget": "texture",
+  "render-target.setRenderTarget": "value",
 };
 
 /** Typed fields, never a recursive search for arbitrary strings resembling GUIDs. */
@@ -140,6 +123,21 @@ const COMPONENT_ASSET_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "2DRichTextComponent": ["fontAssetGuid", "materialGuid"],
   "2DJoystickComponent": ["backgroundMaterialGuid", "joystickMaterialGuid", "backgroundTextureGuid", "joystickTextureGuid"],
 };
+
+const fieldIdentity = (field: Row): string => String(field.id || `legacy:${field.name}`);
+
+/** Copy each stored field's Loading from the declaration with the same identity, when it still exists. */
+function declaredLoading(stored: Row[], declared: readonly unknown[] | undefined): Row[] {
+  if (!declared) return stored;
+  const current = new Map(declared.map(field => [fieldIdentity(row(field)), row(field)] as const));
+  return stored.map(field => {
+    const live = current.get(fieldIdentity(field));
+    if (!live) return field;
+    const next: Row = { ...field };
+    delete next.loading;
+    return { ...next, ...hardLoadingProperty(live) };
+  });
+}
 
 /**
  * Collect both graphs in the same pass. Required wins when a GUID occurs in both
@@ -173,8 +171,9 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
 
   const typeValue = (type: unknown, value: unknown, needed = false, seen = new Set<string>(), schemaNeeded = true): void => {
     const spec = row(type);
-    if (spec.kind === "assetRef") add(value, needed);
-    else if (spec.kind === "classRef") { addClass(spec.classId, false); addClass(value, needed); }
+    // The declaring slot may require its own reference on top of what the consumer inherits.
+    if (spec.kind === "assetRef") add(value, needed || isHardLoading(spec));
+    else if (spec.kind === "classRef") { addClass(spec.classId, false); addClass(value, needed || isHardLoading(spec)); }
     else if (spec.kind === "actorRef" || spec.kind === "objectRef") addClass(spec.classId, false);
     else if (spec.kind === "enumRef" || spec.kind === "structRef") {
       add(spec.guid, schemaNeeded);
@@ -202,8 +201,10 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   const memberType = (member: Row, key = false): Row => {
     const type = member[key ? "keyTypeId" : "typeId"];
     const id = member[key ? "keyTypeClassId" : "typeClassId"];
-    return type === "asset" ? { kind: "assetRef", assetType: id }
-      : type === "class" ? { kind: "classRef", classId: id }
+    // Loading policy belongs to the asset/Class slot, never to a record nested inside it.
+    const loading = hardLoadingProperty(member);
+    return type === "asset" ? { kind: "assetRef", assetType: id, ...loading }
+      : type === "class" ? { kind: "classRef", classId: id, ...loading }
         : type === "object" ? { kind: "objectRef", classId: id }
           : type === "struct" ? { kind: "structRef", guid: id }
             : type === "enum" ? { kind: "enumRef", guid: id } : { kind: type };
@@ -288,7 +289,13 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
     addMany(materialParameterTextureGuidsFromGraph({ ...serialized, nodes: serialized.nodes ?? [] }), false);
     addMany(renderTargetAssetGuidsFromGraph({ ...serialized, nodes: serialized.nodes ?? [] }), false);
     addMany(dataGraphAssetDependencies(source, classes, context.definitionFields), false);
-    for (const member of rows(source.members)) memberValue(member, member.defaultValue);
+    for (const member of rows(source.members)) {
+      memberValue(member, member.defaultValue);
+      // Overrides of a Hard property on placed actors and prefab components stay required.
+      if (member.kind === "variable" && !member.functionId && isHardLoading(member) && carriesLoadingPolicy(member)) {
+        requiredVariableNames.add(String(member.propertyKey ?? member.name));
+      }
+    }
     for (const slice of [source, ...Object.values(row(source.functionGraphs)).map(row)]) {
       const nodes = rows(slice.nodes).map(node => {
         const data = row(node.data);
@@ -316,19 +323,18 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         const needed = requiredNodes.has(String(node.id));
         const schemaNeeded = nodeType !== "data.readEntryAsync";
         for (const pin of pins) {
-          const explicit = [`default:${pin.id}`, pin.id, `default:${pin.name}`, pin.name].map(key => properties[key]).find(entry => entry !== undefined);
+          // Authored literals live only under `default:<pinId>`, where compile reads them.
+          const explicit = properties[`default:${pin.id}`];
           const value = explicit === undefined ? pin.defaultValue : explicit;
           typeValue(pin.type, pin.direction === "out" ? undefined : value, needed, undefined, schemaNeeded);
         }
         if (!pins.length) {
-          const names = BUILTIN_ASSET_PINS[nodeType];
-          if (names) add([`default:${names[0]}`, names[0]!, `default:${names[1]}`, names[1]!]
-            .map(key => properties[key]).find(value => value !== undefined), needed);
-          if (nodeType === "assets.preload") addMany(values(properties["default:assets"] ?? properties.assets ?? properties["default:Assets"]), false);
-          if (nodeType === "literal.makeClass") addClass(properties["default:in"] ?? properties.in ?? properties["default:In"], needed);
+          const pinId = BUILTIN_ASSET_PINS[nodeType];
+          if (pinId) add(properties[`default:${pinId}`], needed);
+          if (nodeType === "literal.makeClass") addClass(properties["default:in"], needed);
         }
         if (nodeType.startsWith("data.")) {
-          add(properties["default:tree"] ?? properties.tree ?? properties["default:Tree"], needed);
+          add(properties["default:tree"], needed);
           add(properties.definitionGuid, schemaNeeded);
           for (const field of rows(properties.dataSchema)) memberValue(field, undefined, false, undefined, schemaNeeded);
         }
@@ -363,7 +369,7 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
 
   addMany(audioAssetDependencies(assetType, payload));
   addMany(particleAssetDependencies(assetType, payload));
-  if (assetType === "Material" || isLegacyMaterialAssetType(assetType) || assetType === "MaterialFunction") {
+  if (assetType === "Material" || assetType === "MaterialFunction") {
     const document = assetType === "MaterialFunction" ? normalizeMaterialFunctionDocument(payload) : normalizeMaterialDocument(payload);
     const refs = materialDependencies(document);
     addMany(refs.textures); addMany(refs.functions); addMany(refs.meshes, false);
@@ -373,7 +379,7 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   else if (assetType === "Animation") addMany(animationAssetGuids(payload));
   else if (assetType === "SpriteAnimation") addMany(spriteAnimationTextureGuids(parseSpriteAnimationPayload(payload)));
   else if (assetType === "Sprite" || assetType === "Tileset") add(payload.textureGuid);
-  else if (assetType === "Tilemap") { add(payload.tilesetGuid); for (const tileset of rows(payload.tilesets)) add(tileset.guid); }
+  else if (assetType === "Tilemap") { for (const tileset of rows(payload.tilesets)) add(tileset.guid); }
   else if (assetType === "Font") addMany(values(payload.fallbackGuids));
   else if (assetType === "Water") add(payload.materialGuid);
   else if (assetType === "RenderTargetTexture") add(payload.renderTargetGuid);
@@ -384,15 +390,23 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
     for (const field of rows(payload.fields)) memberValue(field, field.defaultValue);
     if (assetType === "DataTree") {
       add(payload.defaultDefinitionGuid);
+      const hierarchy = isDataTreeAsset(payload) ? buildDataTreeIndex(payload).index : null;
       for (const entry of rows(payload.entries)) {
         add(entry.definitionGuid);
-        for (const field of rows(entry.schema)) memberValue(field, row(entry.values)[String(field.name)]);
+        const definition = typeof entry.definitionGuid === "string" ? entry.definitionGuid : hierarchy?.effectiveDefinitionById.get(String(entry.id));
+        const declared = definition ? context.definitionFields?.(definition) : undefined;
+        const stored = Array.isArray(entry.schema);
+        // Only the field's current declaration decides Loading; an entry's snapshot may predate it.
+        // Without a snapshot the Definition's fields type the values, as for reference tracking, and
+        // their nested schemas stay references (`schemaNeeded` false).
+        for (const field of stored ? declaredLoading(rows(entry.schema), declared) : rows(declared)) {
+          memberValue(field, row(entry.values)[String(field.name)], false, undefined, stored);
+        }
       }
     }
   } else if (assetType === "Scene" || assetType === "SceneLayer") {
     const settings = row(payload.settings);
     add(settings.environmentTextureGuid);
-    addClass(settings.gameInstanceClass);
     for (const pass of rows(settings.postProcessStack)) { add(pass.materialGuid, pass.enabled !== false); materialParameters(pass.parameters, pass.enabled !== false); }
     for (const layer of rows(settings.sceneLayers)) add(layer.assetGuid, layer.enabled !== false);
     for (const group of rows(settings.foliageGroups)) for (const model of rows(group.models)) { add(model.modelGuid, false); add(model.materialGuid, false); }
@@ -407,7 +421,7 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
       }
       components(actor.components);
     }
-  } else if (assetType === "Class" || assetType === "Graph") {
+  } else if (assetType === "Class") {
     addClass(context.parentClass);
     components(payload.components);
     graph(payload);
@@ -433,6 +447,5 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   else if (assetType === "PluginSettings") for (const dependency of rows(payload.pluginDependencies)) add(dependency.guid);
   return { dependencyMetadataVersion: ASSET_DEPENDENCY_METADATA_VERSION, dependencies: [...all].sort(), requiredDependencies: [...required].sort(),
     classReferences: [...classReferences].sort(), requiredClassReferences: [...requiredClassReferences].sort(),
-    ...(["Class", "Graph"].includes(assetType) ? { consoleCommand: consoleCommandMetadataFromGraph(payload) } : {}),
-    ...(["Class", "Graph"].includes(assetType) ? { requiredVariableNames: [...requiredVariableNames].sort() } : {}) };
+    ...(assetType === "Class" ? { consoleCommand: consoleCommandMetadataFromGraph(payload), requiredVariableNames: [...requiredVariableNames].sort() } : {}) };
 }

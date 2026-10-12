@@ -85,6 +85,7 @@ describe("Playwright iPad project filter", () => {
     // Performance and profiling routes run only through playwright.perf.config.ts.
     for (const file of [
       "editor-edit-profile.spec.ts",
+      "feature-test-perf-route.spec.ts",
       "play-performance-route.spec.ts",
       "play-sustained-route.spec.ts",
       "rendering-baseline.spec.ts",
@@ -93,19 +94,23 @@ describe("Playwright iPad project filter", () => {
 
     // Only touch-driven journeys are tagged for iPad; every iPad run is also a desktop run.
     expect(filesOf(landscape)).toEqual([
+      "component-gallery.spec.ts",
       "p10-tilemap.spec.ts",
       "scene-layer-joystick.spec.ts",
       "scene-modes.spec.ts",
+      "slider-touch.spec.ts",
       "touch-shell.spec.ts",
       "tree-view-touch.spec.ts",
     ]);
     expect(landscape.map((test) => test.title).sort()).toEqual([
       "@ipad SceneLayer joystick touch moves its custom material and resets on cancellation in Play",
-      "P10 tilemaps › 2D project paints tiles, plays an animated sprite, and reports physics",
+      "P10 tilemaps › 2D project paints tiles, binds a sprite and animation graph, and reports physics",
       "Scene modes › sculpts terrain and restores independent mode layouts, Focus, and saved content",
       "Touch shell UX › pointer context menus",
       "Touch shell UX › project long-press stays open after release and can edit",
       "TreeView native touch swipes scroll and a short hold reparents without scrolling",
+      "a touch swipe on a slider track scrolls the panel; only the thumb drags",
+      "tall overlays › dialog and sheet keep Close visible and usable after scrolling",
     ]);
     const desktopKeys = new Set(desktop.map((test) => `${test.file} › ${test.title}`));
     for (const test of landscape)

@@ -237,6 +237,64 @@ describe("PrefabEditingContext inherited components", () => {
     );
   });
 
+  it("follows an open ancestor Class edited in place", () => {
+    const heroGraph = {
+      id: "graph:assets/Hero.class.babasset",
+      ref: { kind: "graph", path: "assets/Hero.class.babasset" },
+      content: {
+        nodes: [],
+        edges: [],
+        members: [],
+        components: [createMeshComponent("prefab-mesh", "box")],
+      },
+    };
+    const base = { ...baseGraph };
+    documentOverrides.value = {
+      openDocuments: [heroGraph, base],
+      assetRegistry: {
+        list: () => [
+          {
+            path: "assets/Hero.class.babasset",
+            header: { type: "Class", name: "Hero", parentClass: "Base" },
+          },
+          {
+            path: "assets/Base.class.babasset",
+            header: { type: "Class", name: "Base", parentClass: "Actor" },
+          },
+        ],
+      },
+    };
+    const view = render(
+      <PrefabEditingProvider>
+        <ComponentsProbe seen={[]} />
+      </PrefabEditingProvider>,
+    );
+    expect(screen.getByTestId("prefab-component-ids").textContent).toBe(
+      "inherited-mesh,prefab-mesh",
+    );
+
+    // DocumentService stores an edit on the same open-document entry.
+    base.content = {
+      ...base.content,
+      components: [
+        ...base.content.components,
+        createMeshComponent("base-added", "sphere"),
+      ],
+    };
+    documentOverrides.value = {
+      ...documentOverrides.value,
+      openDocuments: [heroGraph, base],
+    };
+    view.rerender(
+      <PrefabEditingProvider>
+        <ComponentsProbe seen={[]} />
+      </PrefabEditingProvider>,
+    );
+    expect(screen.getByTestId("prefab-component-ids").textContent).toBe(
+      "inherited-mesh,base-added,prefab-mesh",
+    );
+  });
+
   it("keeps the published components when an unrelated edit re-renders the editor", () => {
     const heroGraph = {
       id: "graph:assets/Hero.class.babasset",

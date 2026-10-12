@@ -160,6 +160,7 @@ export function SaveGameDefinitionPanel(_props: IDockviewPanelProps) {
   const { assetRegistry } = useRegistryState();
   const { documentId } = useDocumentWorkspace();
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [nameError, setNameError] = useState<{ fieldId: string; message: string } | null>(null);
   const path = useOpenDocument(documentId)?.ref.path;
   const guid = path ? assetRegistry?.getByPath(path)?.header.guid : undefined;
   const settings = projectDocument?.settings.saveGame;
@@ -172,7 +173,17 @@ export function SaveGameDefinitionPanel(_props: IDockviewPanelProps) {
     {definition ? <>
       {selectedField ? <FieldSet key={selectedField.id} className="gap-3" data-testid={`save-field-${selectedField.id}`}>
         <FieldLegend>{selectedField.name}</FieldLegend>
-        <PropertyGrid rows={[{ id: `name-${selectedField.id}`, kind: "text", label: "Name", value: selectedField.name, onChange: (name) => patch({ name }) }]} />
+        <PropertyGrid rows={[{
+          id: `name-${selectedField.id}`, kind: "text", label: "Name", value: selectedField.name,
+          description: nameError?.fieldId === selectedField.id ? nameError.message : undefined,
+          // Checked like Add Field; a rejected name stays in the draft and the field keeps its last name.
+          onChange: (name) => {
+            const message = fieldNameError(definition, name, selectedField.id);
+            setNameError(message ? { fieldId: selectedField.id, message } : null);
+            if (!message) patch({ name });
+          },
+          onCommit: () => setNameError(null),
+        }]} />
         <Field><FieldLabel>Type</FieldLabel><PinTypePicker types={FIELD_TYPES} labels={FIELD_PICKER_LABELS} value={fieldPickerType(selectedField.type)} onChange={(value) => {
           const type = (value === "vec3" ? "vector3" : value) as SaveGameField["type"];
           if (type !== selectedField.type) patch({ type, defaultValue: selectedField.array ? [] : initialValue(type) });

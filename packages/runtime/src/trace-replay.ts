@@ -30,7 +30,7 @@ export function replayTracePayload(
 ): void {
   for (const frame of payload.frames) {
     runtime.pushInput(rawInputFromTraceEvents(frame.inputEvents));
-    runtime.setTimeDilation(frame.timeDilation ?? 1);
+    runtime.setTimeDilation(frame.timeDilation);
     runtime.tick();
   }
 }

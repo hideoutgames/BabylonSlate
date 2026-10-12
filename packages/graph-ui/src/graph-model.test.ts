@@ -3,7 +3,6 @@ import {
   allocateGraphDragTransaction,
   canonicalGraphSignature,
   createEdgeId,
-  DEFAULT_NODE_TYPE,
   deletableNodeIds,
   isDisabledNode,
   graphChangeKindFromNodeChanges,
@@ -22,7 +21,7 @@ describe("toSerializedGraph", () => {
         [
           {
             id: "n1",
-            type: "logMessage",
+            type: "debug.log",
             position: { x: 10, y: 20 },
             data: { message: "hi" },
           },
@@ -33,7 +32,7 @@ describe("toSerializedGraph", () => {
       nodes: [
         {
           id: "n1",
-          type: "logMessage",
+          type: "debug.log",
           position: { x: 10, y: 20 },
           data: { message: "hi" },
         },
@@ -42,17 +41,9 @@ describe("toSerializedGraph", () => {
     });
   });
 
-  it("falls back to the default node type when the canvas omits one", () => {
-    const graph = toSerializedGraph(
-      [{ id: "n1", position: { x: 0, y: 0 }, data: {} }],
-      [],
-    );
-    expect(graph.nodes[0].type).toBe(DEFAULT_NODE_TYPE);
-  });
-
   it("substitutes an empty object for missing node data", () => {
     const graph = toSerializedGraph(
-      [{ id: "n1", type: "logMessage", position: { x: 0, y: 0 }, data: null }],
+      [{ id: "n1", type: "debug.log", position: { x: 0, y: 0 }, data: null }],
       [],
     );
     expect(graph.nodes[0].data).toEqual({});

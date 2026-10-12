@@ -1,0 +1,155 @@
+{
+  "id": "pure-cycle",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 400,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "log",
+      "typeId": "debug.log",
+      "position": {
+        "x": 200,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "message",
+          "name": "message",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "int"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "addA",
+      "typeId": "math.add",
+      "position": {
+        "x": 600,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "a",
+          "name": "a",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "int"
+          }
+        },
+        {
+          "id": "out",
+          "name": "out",
+          "kind": "data",
+          "direction": "out",
+          "type": {
+            "kind": "int"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "addB",
+      "typeId": "math.add",
+      "position": {
+        "x": 800,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "a",
+          "name": "a",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "int"
+          }
+        },
+        {
+          "id": "out",
+          "name": "out",
+          "kind": "data",
+          "direction": "out",
+          "type": {
+            "kind": "int"
+          }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry.execOut->log.execIn",
+      "sourceNodeId": "entry",
+      "sourcePinId": "execOut",
+      "targetNodeId": "log",
+      "targetPinId": "execIn"
+    },
+    {
+      "id": "addB.out->log.message",
+      "sourceNodeId": "addB",
+      "sourcePinId": "out",
+      "targetNodeId": "log",
+      "targetPinId": "message"
+    },
+    {
+      "id": "addA.out->addB.a",
+      "sourceNodeId": "addA",
+      "sourcePinId": "out",
+      "targetNodeId": "addB",
+      "targetPinId": "a"
+    },
+    {
+      "id": "addB.out->addA.a",
+      "sourceNodeId": "addB",
+      "sourcePinId": "out",
+      "targetNodeId": "addA",
+      "targetPinId": "a"
+    }
+  ],
+  "pureTypeIds": [
+    "math.add"
+  ]
+}

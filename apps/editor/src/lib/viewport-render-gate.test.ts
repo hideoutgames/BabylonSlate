@@ -1,4 +1,7 @@
+import { createElement } from "react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Dialog, DialogContent, DialogTitle } from "@babylonslate/ui/components/dialog";
 import { RenderScheduler } from "@babylonslate/render/render-scheduler";
 import {
   attachViewportRenderGate,
@@ -128,13 +131,52 @@ describe("attachViewportRenderGate", () => {
     expect(scheduler.shouldRender(20)).toBe(false);
     expect(scheduler.shouldRender(34)).toBe(true);
 
+    const portal = document.createElement("div");
     const overlay = document.createElement("div");
     overlay.setAttribute("data-slot", "dialog-overlay");
     overlay.setAttribute("data-open", "");
-    document.body.append(overlay);
+    portal.append(overlay);
+    document.body.append(portal);
     await Promise.resolve();
 
     expect(scheduler.shouldRender(50)).toBe(false);
+    // Unrelated DOM churn keeps the freeze; the overlay's own changes lift and restore it.
+    document.body.append(document.createElement("p"));
+    await Promise.resolve();
+    expect(scheduler.shouldRender(50)).toBe(false);
+    overlay.setAttribute("data-closed", "");
+    await Promise.resolve();
+    expect(scheduler.shouldRender(50)).toBe(true);
+    overlay.removeAttribute("data-closed");
+    await Promise.resolve();
+    expect(scheduler.shouldRender(50)).toBe(false);
+    portal.remove();
+    await Promise.resolve();
+    expect(scheduler.shouldRender(50)).toBe(true);
+    detach();
+  });
+
+  it("freezes while an editor Dialog is open", async () => {
+    const canvas = document.createElement("canvas");
+    Object.defineProperty(canvas, "clientWidth", { value: 200 });
+    Object.defineProperty(canvas, "clientHeight", { value: 120 });
+    document.body.append(canvas);
+    const scheduler = new RenderScheduler();
+    scheduler.setAlwaysRender(true);
+    const detach = attachViewportRenderGate({ canvas, scheduler });
+    const dialog = (open: boolean) =>
+      createElement(Dialog, { open }, createElement(DialogContent, null, createElement(DialogTitle, null, "Project Settings")));
+
+    // A modal Dialog marks everything outside its popup, its own backdrop
+    // included, aria-hidden while it is open.
+    const view = render(dialog(true));
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(scheduler.shouldRender(0)).toBe(false);
+
+    view.rerender(dialog(false));
+    await waitFor(() => expect(scheduler.shouldRender(0)).toBe(true));
+    view.unmount();
     detach();
   });
 

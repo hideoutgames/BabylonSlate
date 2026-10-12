@@ -6,6 +6,7 @@ import {
   stableStringify,
   writeU32LE,
 } from "./bytes";
+import { AssetFormatVersionError } from "./migration";
 
 export const BABASSET_MAGIC = new TextEncoder().encode("BABA");
 export const BABASSET_FORMAT_VERSION = 1;
@@ -14,6 +15,8 @@ export const BABASSET_PREFIX_BYTES = 12;
 export const MAX_BABASSET_HEADER_BYTES = 16 * 1024 * 1024;
 /** Chunks at or above this size externalise to the blob store in thin mode. */
 export const DEFAULT_BLOB_THRESHOLD = 64 * 1024;
+/** Header dependency metadata layout this engine writes and reads. */
+export const ASSET_DEPENDENCY_METADATA_VERSION = 1;
 
 export const chunkLocatorSchema = z.union([
   z.object({
@@ -27,16 +30,15 @@ export const chunkEntrySchema = z.object({
   kind: z.string(),
   mime: z.string(),
   sha256: z.string(),
-  /** Older files omit this for blobs; hashes still verify their contents. */
-  byteLength: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  byteLength: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   locator: chunkLocatorSchema,
 });
 
 export const babassetHeaderSchema = z.object({
   chunks: z.array(chunkEntrySchema),
-  dependencies: z.array(z.string()).default([]),
+  dependencies: z.array(z.string()),
   /** Complete references above; only these edges prepare an immediate consumer. */
-  requiredDependencies: z.array(z.string()).optional(),
+  requiredDependencies: z.array(z.string()),
   /** Class properties consumed by synchronous graph readers; applies to instance overrides. */
   requiredVariableNames: z.array(z.string()).optional(),
   classReferences: z.array(z.string()).optional(),
@@ -46,8 +48,8 @@ export const babassetHeaderSchema = z.object({
     parameters: z.array(z.object({ name: z.string(), type: z.enum(["string", "float", "int", "bool", "enum"]),
       optional: z.boolean().optional(), defaultValue: z.unknown().optional(), enumValues: z.array(z.string()).optional() })),
   }).optional(),
-  /** Missing metadata requires an explicit upgrade, never a scan during open. */
-  dependencyMetadataVersion: z.number().int().nonnegative().optional(),
+  /** Always {@link ASSET_DEPENDENCY_METADATA_VERSION}; other values are refused. */
+  dependencyMetadataVersion: z.number().int().nonnegative(),
   engineVersion: z.string(),
   guid: z.string(),
   mode: z.enum(["thin", "bundled"]).default("thin"),
@@ -119,12 +121,49 @@ export function readBabassetHeaderLength(bytes: Uint8Array): number {
   return headerLen;
 }
 
+/**
+ * Refuse a header written before chunk lengths and dependency metadata
+ * version {@link ASSET_DEPENDENCY_METADATA_VERSION}. The engine is unreleased,
+ * so such files are not upgraded.
+ */
+function assertCurrentHeaderLayout(raw: unknown): void {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+  const header = raw as Record<string, unknown>;
+  const asset = typeof header.guid === "string" ? `Asset ${header.guid}` : ".babasset";
+  const version = header.dependencyMetadataVersion;
+  if (typeof version === "number" && version > ASSET_DEPENDENCY_METADATA_VERSION) {
+    throw new AssetFormatVersionError(
+      `${asset} dependency metadata version ${version} was made with a newer engine version (current ${ASSET_DEPENDENCY_METADATA_VERSION})`,
+    );
+  }
+  const missing: string[] = [];
+  if (version !== ASSET_DEPENDENCY_METADATA_VERSION) missing.push("dependencyMetadataVersion");
+  for (const field of ["dependencies", "requiredDependencies"]) {
+    if (!Array.isArray(header[field])) missing.push(field);
+  }
+  if (header.type === "Class" && !Array.isArray(header.requiredVariableNames)) missing.push("requiredVariableNames");
+  if (Array.isArray(header.chunks) && header.chunks.some((chunk) => !chunk || typeof chunk !== "object" || !("byteLength" in chunk))) {
+    missing.push("chunk byteLength");
+  }
+  if (missing.length) {
+    throw new AssetFormatVersionError(
+      `${asset} uses an unsupported old .babasset layout (missing ${missing.join(", ")}). This engine reads dependency metadata version ${ASSET_DEPENDENCY_METADATA_VERSION} with chunk lengths; older files are not upgraded.`,
+    );
+  }
+}
+
+/** Validate a header in the current layout; older layouts throw {@link AssetFormatVersionError}. */
+function parseBabassetHeader(raw: unknown): BabassetHeader {
+  assertCurrentHeaderLayout(raw);
+  return babassetHeaderSchema.parse(raw);
+}
+
 export function readBabassetHeader(bytes: Uint8Array): BabassetHeader {
   const headerLen = readBabassetHeaderLength(bytes);
   if (bytes.byteLength < BABASSET_PREFIX_BYTES + headerLen) throw new Error("Truncated .babasset header");
   const headerBytes = bytes.subarray(BABASSET_PREFIX_BYTES, BABASSET_PREFIX_BYTES + headerLen);
   const json = new TextDecoder().decode(headerBytes);
-  return babassetHeaderSchema.parse(JSON.parse(json));
+  return parseBabassetHeader(JSON.parse(json));
 }
 
 export async function encodeBabasset(
@@ -179,7 +218,8 @@ export async function encodeBabasset(
     }
   }
 
-  const header: BabassetHeader = babassetHeaderSchema.parse({
+  // A writer must never produce a file the reader refuses.
+  const header: BabassetHeader = parseBabassetHeader({
     ...options.header,
     mode,
     chunks: table,
@@ -197,29 +237,69 @@ export async function encodeBabasset(
   ]);
 }
 
+/** One chunk's bytes, checked against its recorded length and sha256. */
+async function readVerifiedChunk(
+  bytes: Uint8Array,
+  payloadStart: number,
+  entry: ChunkEntry,
+  readBlob?: (sha256: string) => Promise<Uint8Array>,
+): Promise<Uint8Array> {
+  let data: Uint8Array;
+  if ("inline" in entry.locator) {
+    const { offset, length } = entry.locator.inline;
+    const end = payloadStart + offset + length;
+    if (end > bytes.byteLength || entry.byteLength !== length) {
+      throw new Error(`Truncated or invalid chunk ${entry.id} in .babasset`);
+    }
+    data = bytes.subarray(payloadStart + offset, end);
+  } else {
+    if (!readBlob) {
+      throw new Error(
+        `Chunk ${entry.id} uses a blob locator but no readBlob was provided`,
+      );
+    }
+    data = await readBlob(entry.locator.blob);
+    if (data.byteLength !== entry.byteLength) {
+      throw new Error(`Length mismatch for chunk ${entry.id} in .babasset`);
+    }
+  }
+  if ((await sha256Hex(data)) !== entry.sha256) {
+    throw new Error(`Hash mismatch for chunk ${entry.id} in .babasset`);
+  }
+  return data;
+}
+
+/**
+ * Decode one chunk, verified like {@link decodeBabasset}, without reading or
+ * hashing the others. Null when the file has no chunk with that id.
+ */
+export async function decodeBabassetChunk(
+  bytes: Uint8Array,
+  chunkId: string,
+  readBlob?: (sha256: string) => Promise<Uint8Array>,
+): Promise<Uint8Array | null> {
+  const header = readBabassetHeader(bytes);
+  const entry = header.chunks.find((chunk) => chunk.id === chunkId);
+  if (!entry) return null;
+  return readVerifiedChunk(bytes, BABASSET_PREFIX_BYTES + readU32LE(bytes, 8), entry, readBlob);
+}
+
+/**
+ * Decode every chunk. Each one must have its recorded length and sha256, so a
+ * truncated file or a torn blob is rejected rather than returned as the chunk.
+ */
 export async function decodeBabasset(
   bytes: Uint8Array,
   readBlob?: (sha256: string) => Promise<Uint8Array>,
 ): Promise<DecodedBabasset> {
   const header = readBabassetHeader(bytes);
   const headerLen = readU32LE(bytes, 8);
-  const payloadStart = 12 + headerLen;
+  const payloadStart = BABASSET_PREFIX_BYTES + headerLen;
   const chunks = new Map<string, Uint8Array>();
   const nestedAssets = new Map<string, Uint8Array>();
 
   for (const entry of header.chunks) {
-    let data: Uint8Array;
-    if ("inline" in entry.locator) {
-      const { offset, length } = entry.locator.inline;
-      data = bytes.subarray(payloadStart + offset, payloadStart + offset + length);
-    } else {
-      if (!readBlob) {
-        throw new Error(
-          `Chunk ${entry.id} uses a blob locator but no readBlob was provided`,
-        );
-      }
-      data = await readBlob(entry.locator.blob);
-    }
+    const data = await readVerifiedChunk(bytes, payloadStart, entry, readBlob);
     chunks.set(entry.id, data);
     if (entry.kind === "asset" && entry.id.startsWith("nested:")) {
       nestedAssets.set(entry.id.slice("nested:".length), data);

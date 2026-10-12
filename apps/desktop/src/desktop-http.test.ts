@@ -34,4 +34,20 @@ describe("desktop native HTTP", () => {
       },
     );
   });
+
+  it("rejects a response body larger than the cap, declared or streamed", async () => {
+    const request = { url: "https://lfs.example.com/locks" };
+    await expect(
+      fetchDesktopHttp(request, async () => new Response("x".repeat(9), { headers: { "Content-Length": "9" } }), 8),
+    ).rejects.toThrow("too large");
+    const chunks = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(5));
+        controller.enqueue(new Uint8Array(5));
+        controller.close();
+      },
+    });
+    await expect(fetchDesktopHttp(request, async () => new Response(chunks), 8)).rejects.toThrow("too large");
+    expect((await fetchDesktopHttp(request, async () => new Response("é".repeat(4)), 8)).bodyText).toBe("éééé");
+  });
 });

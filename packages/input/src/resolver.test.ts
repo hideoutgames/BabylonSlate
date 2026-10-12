@@ -45,7 +45,7 @@ describe("InputResolver event transitions", () => {
     expect(resolver.resolve([]).pressedKeys).toEqual([]);
   });
 
-  it("lets a primary touch activate mouse bindings without a second finger releasing or moving it", () => {
+  it("lets a primary touch activate mouse bindings without a second finger releasing or moving it, and promotes a new finger", () => {
     const resolver = new InputResolver({ actions: [{ name: "Click", bindings: [{ device: "mouseButton", code: "0" }] }], axes: [] });
     const pointer = (pointerId: number, phase: "down" | "move" | "up" | "cancel", x: number): RawInputEvent => ({ kind: "pointer", tick: 0, pointerId, phase, x, y: 20, button: 0 });
     resolver.resolve([pointer(9, "move", 50)]);
@@ -58,9 +58,46 @@ describe("InputResolver event transitions", () => {
     const up = resolver.resolve([pointer(1, "up", 15), pointer(2, "move", 100)]);
     expect(up.actions.Click).toMatchObject({ released: true, held: false });
     expect(up.cursor).toEqual({ x: 15, y: 20, pressed: false });
-    resolver.resolve([pointer(2, "up", 100)]);
-    expect(resolver.resolve([pointer(3, "down", 30)]).pressedKeys).toEqual(["MouseLeft"]);
+    // Finger 2 stays secondary, but a new finger takes over while it is still down.
+    const next = resolver.resolve([pointer(3, "down", 30)]);
+    expect(next.pressedKeys).toEqual(["MouseLeft"]);
+    expect(next.actions.Click).toMatchObject({ pressed: true, held: true });
+    expect(next.cursor).toEqual({ x: 30, y: 20, pressed: true });
+    expect(resolver.resolve([pointer(2, "up", 100)]).actions.Click.held).toBe(true);
     expect(resolver.resolve([pointer(3, "cancel", 30)]).actions.Click.released).toBe(true);
+  });
+
+  it("combines assets that share a display name in name lookups", () => {
+    const resolver = new InputResolver({
+      actions: [
+        { id: "jump-a", name: "Jump", bindings: [{ device: "key", code: "KeyA" }] },
+        { id: "jump-b", name: "Jump", bindings: [{ device: "key", code: "KeyB" }] },
+      ],
+      axes: [
+        { id: "throttle-a", name: "Throttle", bindings: [{ device: "key", code: "KeyA" }] },
+        { id: "throttle-b", name: "Throttle", bindings: [{ device: "key", code: "KeyB" }] },
+      ],
+    });
+    const first = resolver.resolve([key(0, "KeyA", "down")]);
+    expect(first.actions.Jump).toEqual({ held: true, pressed: true, released: false });
+    expect(first.axes.Throttle).toBe(1);
+    expect(first.inputs["jump-b"]?.held).toBe(false);
+    expect(resolver.resolve([key(1, "KeyB", "down"), key(1, "KeyA", "up")]).actions.Jump)
+      .toEqual({ held: true, pressed: false, released: false });
+    expect(resolver.resolve([key(2, "KeyB", "up")]).actions.Jump)
+      .toEqual({ held: false, pressed: false, released: true });
+  });
+
+  it("releases gamepad controls a later sample omits", () => {
+    const resolver = new InputResolver({ actions: [{ name: "Menu", bindings: [{ device: "gamepadButton", code: "0:9" }] }],
+      axes: [{ name: "Look", bindings: [{ device: "gamepadAxis", code: "0:3" }] }] });
+    const pad = (buttons: number[], axes: number[] = []): RawInputEvent => ({ kind: "gamepad", tick: 0, gamepadIndex: 0, axes, buttons });
+    const full = resolver.resolve([pad([0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [0, 0, 0, 0.75])]);
+    expect(full.actions.Menu.held).toBe(true);
+    expect(full.axes.Look).toBe(0.75);
+    const short = resolver.resolve([pad([0, 0, 0, 0], [0, 0])]);
+    expect(short.actions.Menu).toEqual({ held: false, pressed: false, released: true });
+    expect(short.axes.Look).toBe(0);
   });
 
   it("releases a whole mouse contact when pointerup names a button whose chord edge was missed", () => {
@@ -125,7 +162,8 @@ describe("InputResolver event transitions", () => {
 });
 
 describe("normalizeInputMappings", () => {
-  it("H13: preserves explicit empty action and axis lists", () => {
+  it("H13: keeps explicit empty and missing action and axis lists empty", () => {
+    expect(normalizeInputMappings({})).toEqual({ actions: [], axes: [] });
     const resolver = new InputResolver(
       normalizeInputMappings({ actions: [], axes: [] }),
     );
@@ -135,11 +173,6 @@ describe("normalizeInputMappings", () => {
     ]);
     expect(resolved.actions).toEqual({});
     expect(resolved.axes2D).toEqual({});
-  });
-  it("falls back to defaults for an empty payload", () => {
-    const mappings = normalizeInputMappings({});
-    expect(mappings.actions.length).toBeGreaterThan(0);
-    expect(mappings.axes.some((axis) => axis.name === "Move")).toBe(true);
   });
 
   it("drops malformed bindings and keeps valid ones", () => {
@@ -161,7 +194,7 @@ describe("normalizeInputMappings", () => {
     ]);
   });
 
-  it("drops empty-code drafts by default", () => {
+  it("drops empty-code drafts", () => {
     const mappings = normalizeInputMappings({
       actions: [
         {
@@ -184,46 +217,6 @@ describe("normalizeInputMappings", () => {
       { name: "Jump", bindings: [{ device: "key", code: "Space" }] },
     ]);
     expect(mappings.axes).toEqual([{ name: "Look", kind: "1d", bindings: [] }]);
-  });
-
-  it("keeps empty-code drafts when allowIncomplete is set", () => {
-    const mappings = normalizeInputMappings(
-      {
-        actions: [
-          {
-            name: "Jump",
-            bindings: [
-              { device: "key", code: "Space" },
-              { device: "key", code: "" },
-            ],
-          },
-        ],
-        axes: [
-          {
-            name: "Look",
-            kind: "1d",
-            bindings: [{ device: "gamepadAxis", code: "" }],
-          },
-        ],
-      },
-      { allowIncomplete: true },
-    );
-    expect(mappings.actions).toEqual([
-      {
-        name: "Jump",
-        bindings: [
-          { device: "key", code: "Space" },
-          { device: "key", code: "" },
-        ],
-      },
-    ]);
-    expect(mappings.axes).toEqual([
-      {
-        name: "Look",
-        kind: "1d",
-        bindings: [{ device: "gamepadAxis", code: "" }],
-      },
-    ]);
   });
 });
 

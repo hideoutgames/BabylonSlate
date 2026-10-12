@@ -117,11 +117,14 @@ export function PinDefaultEditor(request: EditorProps) {
         className="max-w-[var(--graph-pin-default-max-width,12rem)]" aria-label={`${label} Tags`} data-testid={`pin-tags-${nodeId}-${pin.id}`} />;
       break;
     case "bool":
-      control = <Label htmlFor={checkboxId} className="graph-pin-default-boolean flex min-h-8 items-center gap-1.5">
-        <Checkbox id={checkboxId} className="size-5" checked={pinDefaultAsBoolean(value)} disabled={disabled} aria-label={label} data-testid={testId}
-          onCheckedChange={(checked) => { if (!disabled) onChange(checked === true); }} />
-        <span className="text-sm">{pinDefaultAsBoolean(value) ? "On" : "Off"}</span>
-      </Label>;
+      // Label dims under a disabled `group`; `peer-disabled` misses the checkbox it wraps.
+      control = <div className="group" data-disabled={disabled}>
+        <Label htmlFor={checkboxId} className="graph-pin-default-boolean flex min-h-8 items-center gap-1.5">
+          <Checkbox id={checkboxId} className="size-5" checked={pinDefaultAsBoolean(value)} disabled={disabled} aria-label={label} data-testid={testId}
+            onCheckedChange={(checked) => { if (!disabled) onChange(checked === true); }} />
+          <span className="text-sm">{pinDefaultAsBoolean(value) ? "On" : "Off"}</span>
+        </Label>
+      </div>;
       break;
     case "string":
       control = renderer?.(request) ?? <StringDefault key={draftKey()} value={value} disabled={disabled} onChange={onChange} label={label} testId={testId} />;

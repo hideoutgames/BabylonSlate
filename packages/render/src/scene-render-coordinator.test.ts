@@ -166,12 +166,25 @@ it("keeps the parent drawing after cancel while native import and detached textu
   // abortable promise. Texture GPU work can outlive that pending-data record.
   const nativeImport = {};
   scene.addPendingData(nativeImport);
+  // Babylon 9.29 cube image loads register a bare GUID string per face.
+  const cubeImage = "cube-image-token";
+  scene.addPendingData(cubeImage);
   const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene);
   vi.spyOn(texture, "isReady").mockReturnValue(false);
   admission.receive({ type: "sceneStreamRemoved", actorGuid: "cancelled", streamLoadId: 1 });
   admission.sync();
   expect(renderer.render().rendered).toBe(true);
+  // Named scene-level work, such as a water reflection's irradiance, is the
+  // parent's own and still holds it while the stream scope exists.
+  const parentWork = new (class ParentSceneWork {})();
+  scene.addPendingData(parentWork);
+  markSceneReadinessDirty(scene);
+  expect(renderer.render().rendered).toBe(false);
+  scene.removePendingData(parentWork);
+  markSceneReadinessDirty(scene);
+  expect(renderer.render().rendered).toBe(true);
   scene.removePendingData(nativeImport);
+  scene.removePendingData(cubeImage);
   admission.sync();
   expect(renderer.render().rendered).toBe(true);
   // Sharing that same pending resource with a live parent must still block it.
@@ -346,6 +359,20 @@ it("rejects a superseded owner while allowing its replacement to finish preparat
   await first;
   expect(await replacement).toEqual({ path: "frameGraph" });
   expect(scene.objectRenderers).toHaveLength(1);
+  expect(renderer.render()).toMatchObject({ path: "frameGraph", readyForPresentation: true });
+  renderer.dispose();
+});
+
+// Play loads invalidate the graph as assets arrive (for example an Area Light's emission texture).
+it("finishes a current owner's preparation when the graph is invalidated during it", async () => {
+  const { scene, renderer } = host();
+  let assetsReady = false;
+  scene.addIsReadyCheck({ isReady: () => assetsReady });
+  const preparing = renderer.prepare();
+  await vi.waitFor(() => expect(scene.objectRenderers).toHaveLength(1));
+  renderer.invalidate();
+  assetsReady = true;
+  expect(await preparing).toEqual({ path: "frameGraph" });
   expect(renderer.render()).toMatchObject({ path: "frameGraph", readyForPresentation: true });
   renderer.dispose();
 });

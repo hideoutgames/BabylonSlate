@@ -10,6 +10,7 @@ import {
   within,
 } from "@testing-library/react";
 import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
+import { BUILT_IN_STARTER_KINDS } from "../lib/create-project";
 import type { ListedProject } from "../lib/listed-projects";
 import { Homepage } from "./homepage";
 import { AppSettingsProvider } from "../context/app-settings-context";
@@ -123,8 +124,20 @@ describe("Slate project browser", () => {
     const onOpenExternal = vi.fn(async () => {});
     renderHomepage({ onOpenExternal });
     fireEvent.click(screen.getByTestId("open-project"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Import Folder" }));
+    await waitFor(() =>
+      expect(onOpenExternal).toHaveBeenLastCalledWith("folder"),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("open-project")).toHaveProperty(
+        "disabled",
+        false,
+      ),
+    );
+    fireEvent.click(screen.getByTestId("open-project"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Import ZIP" }));
-    await waitFor(() => expect(onOpenExternal).toHaveBeenCalledWith("zip"));
+    await waitFor(() => expect(onOpenExternal).toHaveBeenLastCalledWith("zip"));
+    expect(onOpenExternal).toHaveBeenCalledTimes(2);
   });
 
   it("locks actions while opening and exposes a recoverable failure", async () => {
@@ -198,12 +211,15 @@ describe("Slate project browser", () => {
     );
   });
 
-  it.each(["blank", "empty", "2d"])(
+  it.each([...BUILT_IN_STARTER_KINDS])(
     "creates a named %s project with the selected appearance",
     async (kind) => {
+      // Feature Test is listed only in the Debug Mode Engine Setting.
+      if (kind === "feature-test") localStorage.setItem("babylonslate:engine-settings", JSON.stringify({ debugMode: true }));
       const onCreateEmpty = vi.fn(async () => {});
       renderHomepage({ onCreateEmpty });
-      createDialog(kind);
+      fireEvent.click(screen.getByTestId("create-project"));
+      fireEvent.click(await screen.findByTestId(`create-project-${kind}`));
       fireEvent.change(screen.getByTestId("create-project-name"), {
         target: { value: "Orbit" },
       });

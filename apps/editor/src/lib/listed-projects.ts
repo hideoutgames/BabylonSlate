@@ -5,7 +5,6 @@ import type {
   StorageTier,
 } from "@babylonslate/core";
 import type { EngineSettings } from "@babylonslate/vfs";
-import { displayProjectName } from "./display-project-name";
 
 export type ListedProject = ProjectFolderHandle & {
   /** Display name from recents / metadata; folder `name` stays the I/O identity. */
@@ -118,12 +117,7 @@ function matchesListedProjectSearch(
 ): boolean {
   const query = search.trim().toLowerCase();
   if (!query) return true;
-  const haystacks = [
-    project.label,
-    project.name,
-    displayProjectName(project.label),
-    displayProjectName(project.name),
-  ];
+  const haystacks = [project.label, project.name];
   return haystacks.some((value) => value.toLowerCase().includes(query));
 }
 
@@ -149,14 +143,14 @@ export function filterListedProjects(
 const NAME_COMPARE: Intl.CollatorOptions = { sensitivity: "base" };
 
 function compareProjectNames(left: ListedProject, right: ListedProject): number {
-  const byLabel = displayProjectName(left.label).localeCompare(
-    displayProjectName(right.label),
+  const byLabel = left.label.localeCompare(
+    right.label,
     undefined,
     NAME_COMPARE,
   );
   if (byLabel !== 0) return byLabel;
-  const byName = displayProjectName(left.name).localeCompare(
-    displayProjectName(right.name),
+  const byName = left.name.localeCompare(
+    right.name,
     undefined,
     NAME_COMPARE,
   );

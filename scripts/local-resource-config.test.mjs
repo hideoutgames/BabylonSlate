@@ -103,6 +103,16 @@ test("missing settings serialize locally and CI=true cannot ignore machine setti
   const defaults = await readLocalResourceConfig(options.env);
   assert.equal(defaults.maxRoots, 1);
   assert.equal(defaults.capacity.reserveGiB, 2);
+  // An explicit standard profile still keeps the 2 GiB headroom floor.
+  const standard = await fixture(t, {
+    version: 1,
+    profile: "standard",
+    reserveGiB: 1,
+  });
+  assert.equal(
+    (await readLocalResourceConfig(standard.options.env)).capacity.reserveGiB,
+    2,
+  );
   await (await acquireResources(workloadFor("build", {}), options)).release();
   const { path } = await fixture(t, { version: 999 });
   await assert.rejects(

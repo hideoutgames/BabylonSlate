@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { zipSync } from "fflate";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { readGoldenBinary, writeGoldenBinary } from "@babylonslate/test-kit";
-import { decodeAssetDocument } from "./asset-document";
+import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
 import { encodeBabasset, readBabassetHeader } from "./babasset";
 import { decodeProjectZip, encodeProjectZip, readProjectTree } from "./babproject";
 import { bytesEqual } from "./bytes";
@@ -74,6 +74,7 @@ async function writeClass(
     path,
     await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
         guid: options.guid,
         type: "Class",
         name: options.name,
@@ -269,7 +270,7 @@ describe("importPluginZip", () => {
     const plan = planPluginImport({
       incoming: inspected,
       existingPlugins: [],
-      occupiedGuids: new Set(),
+      indexedAssets: [],
       existingFolderNames: [],
     });
     expect(plan.kind).toBe("install");
@@ -306,7 +307,7 @@ describe("importPluginZip", () => {
     const plan = planPluginImport({
       incoming: inspected,
       existingPlugins: existing,
-      occupiedGuids: new Set(["pack-guid"]),
+      indexedAssets: [],
       existingFolderNames: ["pack"],
     });
     expect(plan).toMatchObject({
@@ -351,7 +352,7 @@ describe("importPluginZip", () => {
     const plan = planPluginImport({
       incoming: inspected,
       existingPlugins: await discoverProjectPlugins(storage),
-      occupiedGuids: new Set(["pack-guid", "hero-1"]),
+      indexedAssets: [{ header: { guid: "hero-1" } }],
       existingFolderNames: ["pack"],
     });
     expect(plan.kind).toBe("update");
@@ -393,7 +394,7 @@ describe("importPluginZip", () => {
     const plan = planPluginImport({
       incoming: inspected,
       existingPlugins: await discoverProjectPlugins(storage),
-      occupiedGuids: new Set(["shared-guid"]),
+      indexedAssets: [{ header: { guid: "shared-guid" } }],
       existingFolderNames: [],
       createGuid: () => "remapped-guid",
     });
@@ -414,6 +415,51 @@ describe("importPluginZip", () => {
         ),
       ).guid,
     ).toBe("other-class");
+  });
+
+  it("gives a new plugin's assets that the project already has new guids, and keeps the guids of placeholders it fills", async () => {
+    const storage = await projectStorage();
+    await writeClass(storage, "assets/Taken.class.babasset", { guid: "tex-1", name: "Taken" });
+
+    const incomingStorage = await projectStorage();
+    const descriptor = await writeProjectPlugin(
+      incomingStorage,
+      "pack",
+      createDefaultPluginSettings({ pluginGuid: "pack-guid", displayName: "Pack" }),
+    );
+    await incomingStorage.writeBinary("plugins/pack/assets/Hero.babasset", await encodeBabasset({
+      header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
+        guid: "tex-1", type: "Texture", name: "Hero", engineVersion: "0.0.0", version: 1, mode: "thin",
+        dependencies: [], parentClass: null, payload: { usage: "pixelArt" },
+      },
+      chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
+    }));
+    await incomingStorage.writeBinary("plugins/pack/assets/Hero.sprite.babasset", await encodeAssetDocument({
+      type: "Sprite", name: "Hero", guid: "sprite-1", version: 1, payload: { textureGuid: "tex-1" },
+    }, { dependencies: ["tex-1"] }));
+    const inspected = await inspectBabplugin(await exportPluginZip(incomingStorage, descriptor));
+    const plan = planPluginImport({
+      incoming: inspected,
+      existingPlugins: [],
+      // Project content still references the sprite and the plugin, so both are Unresolved placeholders.
+      indexedAssets: [
+        { header: { guid: "tex-1" } },
+        { header: { guid: "sprite-1" }, placeholder: true },
+        { header: { guid: "pack-guid" }, placeholder: true },
+      ],
+      existingFolderNames: [],
+      createGuid: () => "tex-2",
+    });
+    expect(plan).toEqual({ kind: "install", folderName: "pack", assetGuids: { "tex-1": "tex-2" } });
+
+    const imported = await applyPluginImport(storage, inspected, plan);
+    expect(imported.pluginGuid).toBe("pack-guid");
+    expect(readBabassetHeader(await storage.readBinary("plugins/pack/assets/Hero.babasset")).guid).toBe("tex-2");
+    const sprite = await storage.readBinary("plugins/pack/assets/Hero.sprite.babasset");
+    expect(readBabassetHeader(sprite)).toMatchObject({ guid: "sprite-1", dependencies: ["tex-2"], payload: { atlasTextures: ["tex-2"] } });
+    expect((await decodeAssetDocument(sprite)).payload).toEqual({ textureGuid: "tex-2" });
+    expect(readBabassetHeader(await storage.readBinary("assets/Taken.class.babasset")).guid).toBe("tex-1");
   });
 });
 

@@ -174,12 +174,17 @@ export function HomepageCreateDialog({
     };
   }, [open]);
 
-  const changeAppearance = (next: ProjectAppearance) => {
+  // A picture import finishes after later edits, such as a color chosen while
+  // it encodes, so it adds the picture to the appearance as it is then.
+  const appearanceRef = useRef(appearance);
+  appearanceRef.current = appearance;
+
+  const removePicture = () => {
     importRequest.current?.abort();
     importRequest.current = null;
     setImageBusy(false);
     setImageIssue(null);
-    onAppearanceChange(next);
+    onAppearanceChange({ icon: appearance.icon, color: appearance.color });
   };
   const uploadPicture = async (file: File) => {
     importRequest.current?.abort();
@@ -189,7 +194,8 @@ export function HomepageCreateDialog({
     setImageIssue(null);
     try {
       const image = await prepareProjectPicture(file, request.signal);
-      if (!request.signal.aborted) onAppearanceChange({ ...appearance, image });
+      if (!request.signal.aborted)
+        onAppearanceChange({ ...appearanceRef.current, image });
     } catch (cause) {
       if (!request.signal.aborted)
         setImageIssue(
@@ -226,6 +232,7 @@ export function HomepageCreateDialog({
             : nameInput.current
         }
         className="homepage-theme homepage-composer"
+        bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
         data-testid={
           editing ? "homepage-rename-dialog" : "create-project-dialog"
         }
@@ -251,7 +258,7 @@ export function HomepageCreateDialog({
               ? "Edit Project"
               : step === "templates"
                 ? "Start With"
-                : `New ${homepageTemplates(templates).find((template) => template.id === templateId)?.name ?? "Project"}`}
+                : `New ${homepageTemplates(templates, { debugMode: true }).find((template) => template.id === templateId)?.name ?? "Project"}`}
           </DialogTitle>
           <DialogDescription className="sr-only">
             {editing
@@ -360,7 +367,7 @@ export function HomepageCreateDialog({
                             aria-label={label}
                             aria-pressed={appearance.color === id}
                             onClick={() =>
-                              changeAppearance({ ...appearance, color: id })
+                              onAppearanceChange({ ...appearance, color: id })
                             }
                           >
                             <span
@@ -413,12 +420,7 @@ export function HomepageCreateDialog({
                             size="icon-sm"
                             aria-label="Remove Picture"
                             disabled={busy || imageBusy}
-                            onClick={() =>
-                              changeAppearance({
-                                icon: appearance.icon,
-                                color: appearance.color,
-                              })
-                            }
+                            onClick={removePicture}
                           >
                             <XIcon />
                           </Button>

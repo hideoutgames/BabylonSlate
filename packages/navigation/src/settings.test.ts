@@ -18,7 +18,6 @@ describe("nav mesh settings", () => {
       bakeBoundsEnabled: false,
       bakeBoundsMin: { x: -50, y: -10, z: -50 },
       bakeBoundsMax: { x: 50, y: 10, z: 50 },
-      debugOverlay: false,
     });
   });
 
@@ -27,13 +26,11 @@ describe("nav mesh settings", () => {
       cellSize: 0.4,
       tiled: true,
       supportDynamicObstacles: true,
-      debugOverlay: true,
     });
     expect(parsed.cellSize).toBe(0.4);
     expect(parsed.walkableRadius).toBe(DEFAULT_NAV_MESH_SETTINGS.walkableRadius);
     expect(parsed.tiled).toBe(true);
     expect(parsed.supportDynamicObstacles).toBe(true);
-    expect(parsed.debugOverlay).toBe(true);
     expect(parsed.autoBakeOnSave).toBe(false);
   });
 

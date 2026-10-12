@@ -32,6 +32,7 @@ Desktop keyboard shortcuts for editor commands. Buttons and menus stay the prima
 | Viewport | Snap Grid, Show Grid, Drag Select | G; Shift+G; Q |
 | Viewport | Show Collisions, Show Navmesh, Game Camera | Alt+C; Shift+N; Shift+C |
 | Viewport | Switch 2D / 3D, Drop Selection | Alt+V; End |
+| Editing | Copy Actors, Paste Actors | Mod+C; Mod+V |
 | Editing | Duplicate, Rename, Delete | Mod+D; F2; Delete or Backspace |
 | Editing | Search Panel, New Folder, Place Actors | Mod+F; Alt+Shift+N; Alt+A |
 | Content Browser | New Asset, Import Assets, Show References | Alt+N; Alt+I; Alt+R |
@@ -39,6 +40,7 @@ Desktop keyboard shortcuts for editor commands. Buttons and menus stay the prima
 ## Dispatch rules
 
 - One window `keydown` listener. The newest enabled registration for the matched command runs and the event is `preventDefault`ed.
+- Save All's chord always suppresses the browser's Save Page action, even when nothing is dirty, a modal is open, or Play runs (`blocksBrowserDefault`).
 - Skipped while Play runs, during IME composition, with three or more pointers down, and while a modal dialog or alert dialog is open.
 - Text fields and `SelectableText` keep native editing. Only commands marked for text input (Save All, Search Project, Engine Settings, Search Panel) fire there.
 - Menus, listboxes, comboboxes, and selects keep their own key navigation.
@@ -48,6 +50,7 @@ Desktop keyboard shortcuts for editor commands. Buttons and menus stay the prima
 - Document navigation wraps through open documents, including the pinned Content Browser. Close commands use the same unsaved-change prompts as the menu; the Content Browser cannot be closed.
 - Viewport toggles use the same state and persistence paths as their buttons. Hidden or disabled controls do not register executable shortcuts.
 - Viewport fly keys ignore presses with Command, Control, or Option, so chords such as Mod+S never start flying.
+- Graph canvases (`GraphEditor`) handle their own delete key (Backspace by default): only the graph last pressed or focused deletes, never a hidden document tab or a graph behind another panel, and protected nodes (function Input/Output, Animation Graph events, particle terminals) stay. Selected wires are removed with it.
 
 ## Display
 

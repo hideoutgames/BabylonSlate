@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
+  link,
   mkdir,
-  open,
   readFile,
   readdir,
   rename,
@@ -110,48 +110,115 @@ export async function publish(path, value, replace = rename) {
   }
 }
 
-async function locked(directory, check, operation) {
+/** Removes the lock only while it still names this owner, never a successor's lock. */
+async function releaseLock(path, token) {
+  const deadline = Date.now() + 1000;
+  for (;;) {
+    try {
+      if ((await readJson(path))?.token === token)
+        await rm(path, { force: true });
+      return;
+    } catch (error) {
+      if (
+        !["EPERM", "EACCES", "EBUSY"].includes(error.code) ||
+        Date.now() >= deadline
+      )
+        throw error;
+      await delay(25);
+    }
+  }
+}
+
+/**
+ * Links a complete owner record into place, so `path` never exists without
+ * its owner. Returns the record's token, or null while another record holds it.
+ */
+async function linkOwner(path) {
+  const token = randomUUID();
+  const temporary = `${path}.${token}.tmp`;
+  try {
+    await writeFile(temporary, JSON.stringify({ pid: process.pid, token }));
+    await link(temporary, path);
+    return token;
+  } catch (error) {
+    if (error.code === "EEXIST") return null;
+    throw error;
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
+
+/** A killed owner may leave a record; an unreadable one gets a grace period. */
+async function abandoned(path) {
+  let age, owner;
+  try {
+    age = Date.now() - (await stat(path)).mtimeMs;
+    owner = JSON.parse(await readFile(path, "utf8"));
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    if (!(error instanceof SyntaxError)) throw error;
+  }
+  return owner ? !alive(owner.pid) : age > 10_000;
+}
+
+/**
+ * Removes the owner record at `path` only while it is still abandoned. Removers
+ * decide under an exclusive claim, so a waiter that read a killed owner earlier
+ * never deletes the live record that replaced it. A claim left by a killed
+ * remover is removed the same way.
+ */
+export async function removeAbandoned(path) {
+  const claim = `${path}.claim`;
+  const token = await linkOwner(claim);
+  if (!token) {
+    if (await abandoned(claim)) await removeAbandoned(claim);
+    return false;
+  }
+  let removed = false;
+  let failure;
+  try {
+    if (await abandoned(path)) {
+      await rm(path, { force: true });
+      removed = true;
+    }
+  } catch (error) {
+    failure = error;
+  }
+  await releaseLock(claim, token).catch((error) => {
+    // Report a retained claim instead of retrying behind it as a sharing denial.
+    throw new Error(`Admission lock claim was not released: ${claim}`, {
+      cause: error,
+    });
+  });
+  if (failure) throw failure;
+  return removed;
+}
+
+/** Serializes admission state changes across processes sharing `directory`. */
+export async function withAdmissionLock(directory, check, operation) {
   const path = join(directory, "lock");
   for (;;) {
     check();
-    let handle;
+    let token = null;
+    let removed = false;
     try {
-      handle = await open(path, "wx");
+      token = await linkOwner(path);
+      if (!token)
+        removed = (await abandoned(path)) && (await removeAbandoned(path));
     } catch (error) {
-      if (["EPERM", "EACCES", "EBUSY"].includes(error.code)) {
-        await delay(20);
-        continue;
-      }
-      if (error.code !== "EEXIST") throw error;
-      let owner;
-      try {
-        owner = await readJson(path);
-      } catch (readError) {
-        if (!["EPERM", "EACCES", "EBUSY"].includes(readError.code))
-          throw readError;
-        // A Windows sharing denial does not prove the lock is abandoned.
-        // Retry through the outer cancellation/deadline check before inspecting it.
-        await delay(20);
-        continue;
-      }
-      // A killed owner may leave a lock; an unpublished owner gets a grace period.
-      let age;
-      try {
-        age = Date.now() - (await stat(path)).mtimeMs;
-      } catch {
-        continue;
-      }
-      if ((owner && !alive(owner.pid)) || (!owner && age > 10_000))
-        await rm(path, { force: true });
-      else await delay(20);
+      if (!["EPERM", "EACCES", "EBUSY"].includes(error.code)) throw error;
+      // A Windows sharing denial does not prove the lock is abandoned.
+      // Retry through the outer cancellation/deadline check before inspecting it.
+    }
+    if (removed) continue;
+    if (!token) {
+      await delay(20);
       continue;
     }
     try {
-      await handle.writeFile(JSON.stringify({ pid: process.pid }));
       return await operation();
     } finally {
-      await handle.close();
-      await rm(path, { force: true });
+      await releaseLock(path, token);
     }
   }
 }
@@ -209,7 +276,7 @@ export async function acquireResources(request, options = {}) {
   await mkdir(queue, { recursive: true });
   const token = randomUUID();
   let ticket;
-  await locked(directory, check, async () => {
+  await withAdmissionLock(directory, check, async () => {
     // Sequence allocation shares the admission lock: stable age even within one millisecond.
     const counterPath = join(directory, "sequence.json");
     const sequence = ((await readJson(counterPath))?.value ?? 0) + 1;
@@ -229,7 +296,7 @@ export async function acquireResources(request, options = {}) {
   try {
     for (;;) {
       check();
-      const admitted = await locked(directory, check, async () => {
+      const admitted = await withAdmissionLock(directory, check, async () => {
         const rows = [];
         for (const name of (await readdir(queue))
           .filter((file) => file.endsWith(".json"))
@@ -386,7 +453,7 @@ export async function acquireResources(request, options = {}) {
       request,
       queueMs: Date.now() - started,
       async child(pid) {
-        await locked(directory, check, async () => {
+        await withAdmissionLock(directory, check, async () => {
           const row = await readJson(ticket);
           if (row?.token !== token)
             throw new Error(
@@ -397,7 +464,7 @@ export async function acquireResources(request, options = {}) {
       },
       async release() {
         const releaseDeadline = Date.now() + 10_000;
-        await locked(
+        await withAdmissionLock(
           directory,
           () => {
             if (Date.now() > releaseDeadline)
@@ -424,7 +491,7 @@ export async function acquireResources(request, options = {}) {
     // A queue scan must not lose a ticket between readdir and readJson.
     // Cleanup needs its own deadline because acquisition may already be cancelled.
     const cleanupDeadline = Date.now() + 10_000;
-    await locked(
+    await withAdmissionLock(
       directory,
       () => {
         if (Date.now() > cleanupDeadline)
@@ -452,7 +519,7 @@ export async function claimInheritedLease(value, request) {
         "Nested ownership lock deadline expired; reservation retained",
       );
   };
-  await locked(directory, check, async () => {
+  await withAdmissionLock(directory, check, async () => {
     const row = await readJson(ticket);
     if (!row?.active || row.token !== token || !alive(row.pid))
       throw new Error("Inherited resource ownership is stale or invalid");
@@ -485,7 +552,7 @@ export async function claimInheritedLease(value, request) {
     token,
     scope: id,
     async child(pid) {
-      await locked(directory, check, async () => {
+      await withAdmissionLock(directory, check, async () => {
         const row = await readJson(ticket);
         if (row?.token !== token)
           throw new Error("Inherited ownership disappeared");
@@ -499,7 +566,7 @@ export async function claimInheritedLease(value, request) {
     },
     async release() {
       const releaseDeadline = Date.now() + 10_000;
-      await locked(
+      await withAdmissionLock(
         directory,
         () => {
           if (Date.now() > releaseDeadline)

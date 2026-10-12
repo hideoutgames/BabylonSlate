@@ -174,9 +174,10 @@ export class CommandSourcePreparation {
         const error = new Error(`Assets ${request.guids.join(", ")} for actor slot ${request.slotId} failed: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
         this.failures.set(request.key, { slotId: request.slotId, error });
         for (const pending of [...this.pending.values()]) if (pending.slotId === request.slotId) this.cancel(pending);
-        this.followers.delete(request.slotId);
         request.reject(error);
         this.onError(error);
+        // The previous visual stays valid; commands queued behind it still apply.
+        this.flushFollowers(request.slotId);
       }
     } finally {
       try { if (release) this.release(release, request.slotId); }
@@ -195,8 +196,8 @@ export class CommandSourcePreparation {
         const error = new Error(`Prepared assignment for actor slot ${slotId} failed: ${String(cause)}`, { cause });
         this.failures.set(request.key, { slotId, error });
         for (const pending of [...this.pending.values()]) if (pending.slotId === slotId) this.cancel(pending);
-        this.followers.delete(slotId);
         this.onError(error);
+        this.flushFollowers(slotId);
         return;
       }
       const previous = this.retained.get(request.key);

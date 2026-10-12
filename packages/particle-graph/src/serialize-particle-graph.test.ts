@@ -85,6 +85,8 @@ describe("particle graph canvas adapter", () => {
     const value = pinOf("split", "value");
     for (const type of sources) expect(particlePinsAreCompatible(pinOf(type, "out"), value), type).toBe(true);
     expect(particlePinsAreCompatible(pinOf("create", "out"), value)).toBe(false);
+    // The canvas edits the unwired Value literal as the Color it lowers as, not as a Float.
+    expect(value.type.fallback).toBe("color");
   });
 
   it("connects Particle only to Particle and follows the value type rules", () => {

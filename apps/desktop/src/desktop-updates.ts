@@ -4,10 +4,13 @@ type Updater = Pick<AppUpdater, "autoDownload" | "autoInstallOnAppQuit" | "allow
   on(event: "error", listener: (error: Error) => void): unknown;
 };
 
-/** Read only this preference: an unrelated legacy setting must not reset opt-out. */
+/**
+ * Read only this preference: an unrelated setting must not reset opt-out.
+ * Missing settings default on; unreadable settings may hold an opt-out, so they stay off.
+ */
 export function automaticUpdatesEnabled(json: string | null): boolean {
   try { return JSON.parse(json ?? "{}")?.automaticUpdatesEnabled !== false; }
-  catch { return true; }
+  catch { return false; }
 }
 
 export function updatesSupported(

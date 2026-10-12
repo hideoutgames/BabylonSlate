@@ -6,8 +6,12 @@ import {
   type ActorEventTickMode,
   type SerializedGraph,
 } from "@babylonslate/core";
-import { useDocuments } from "../context/document-context";
+import { useDocumentActions, useRegistryState } from "../context/document-context";
 import { classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+
+/** Open Class tabs override saved ancestor Actor Defaults. */
+const CLASS_KINDS = ["graph"] as const;
 
 type ActorDefaultFlag = "generateHitEvents" | "generateOverlapEvents";
 
@@ -21,7 +25,9 @@ export function ActorDefaultsGrid({
   defaults: ActorDefaults;
   onChange: (next: ActorDefaults) => void;
 }) {
-  const { assetRegistry, registryEpoch, openDocuments, loadGraphDocument } = useDocuments();
+  const { loadGraphDocument } = useDocumentActions();
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const assets = useMemo(() => { void registryEpoch; return assetRegistry?.list() ?? []; }, [assetRegistry, registryEpoch]);
   const ancestors = useMemo(() => walkAncestry(parentClass, classParentLookup(assets)), [assets, parentClass]);
   const [ancestorDefaults, setAncestorDefaults] = useState<Record<string, ActorDefaults | undefined>>({});
@@ -29,12 +35,12 @@ export function ActorDefaultsGrid({
     let active = true;
     const ids = new Set(ancestors);
     void Promise.all(assets.filter(asset => asset.header.type === "Class" && ids.has(classIdFromClassAsset(asset))).map(async asset => {
-      const open = openDocuments.find(doc => doc.ref.path === asset.path && doc.ref.kind === "graph");
+      const open = classDocuments.find(doc => doc.ref.path === asset.path);
       const graph = open ? open.content as SerializedGraph | null : await loadGraphDocument(asset.path).catch(() => null);
       return [classIdFromClassAsset(asset), graph?.actorDefaults] as const;
     })).then(entries => { if (active) setAncestorDefaults(Object.fromEntries(entries)); });
     return () => { active = false; };
-  }, [ancestors, assets, loadGraphDocument, openDocuments]);
+  }, [ancestors, assets, classDocuments, loadGraphDocument]);
   const inherited = resolveActorDefaults(ancestors.map(id => ancestorDefaults[id]));
 
   const writeFlag = (key: ActorDefaultFlag, value: boolean) => {

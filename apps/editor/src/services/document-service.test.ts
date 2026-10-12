@@ -7,7 +7,6 @@ import {
   documentId,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
-  migrateLegacyLayout,
   type DocumentKind,
 } from "@babylonslate/core";
 import {
@@ -278,6 +277,19 @@ describe("DocumentService", () => {
     expect(service.getOpenDocumentsOrdered().map((doc) => doc.id)).toEqual([CONTENT_BROWSER_ID]);
   });
 
+  it("does not commit a pending asset read at the old id after the asset moves", async () => {
+    const service = new DocumentService();
+    let finishRead!: (value: { nodes: []; edges: [] }) => void;
+    const pending = service.openDocument(createMockProjectService({
+      loadDocument: vi.fn(() => new Promise<{ nodes: []; edges: [] }>((resolve) => { finishRead = resolve; })),
+    }), { kind: "graph", path: MAIN_CLASS_FILE, label: "Main" });
+    const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    service.repathDocument("graph", MAIN_CLASS_FILE, "assets/Moved.class.babasset");
+    finishRead({ nodes: [], edges: [] });
+    await rejected;
+    expect(service.getOpenDocumentsOrdered()).toEqual([]);
+  });
+
   it("waits for blocking UI before reading a scene and only closes the previous scene after success", async () => {
     const service = new DocumentService();
     const previous = { kind: "scene" as const, path: "assets/Previous.scene.babasset", label: "Previous" };
@@ -486,7 +498,7 @@ describe("DocumentService", () => {
     );
 
     service.updateGraph(graphId, {
-      nodes: [{ id: "n1", type: "logMessage", position: { x: 0, y: 0 }, data: {} }],
+      nodes: [{ id: "n1", type: "debug.log", position: { x: 0, y: 0 }, data: {} }],
       edges: [],
     });
 
@@ -901,88 +913,6 @@ describe("DocumentService", () => {
     expect((doc?.content as { members: unknown[] }).members).toHaveLength(2);
   });
 
-  it("reopens a saved asset-settings Model tab as the model document kind", async () => {
-    const service = new DocumentService();
-    const project = createEmptyProject("Test");
-    const loadDocument = vi.fn(async (kind: string) => {
-      if (kind === "scene") return createDefaultScene();
-      if (kind === "model") {
-        return {
-          clipNames: [],
-          materialSlots: [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }],
-        };
-      }
-      return { nodes: [], edges: [] };
-    });
-    const projectService = {
-      loadDocument,
-      registry: {
-        list: () => [
-          {
-            path: "assets/hero.babasset",
-            header: { type: "Model" },
-          },
-        ],
-      },
-    } as unknown as ProjectService;
-    const oldId = "asset-settings:assets/hero.babasset";
-    const modelId = documentId({ kind: "model", path: "assets/hero.babasset" });
-    await service.initializeFromProject(projectService, project, {
-      ...createEmptyLayouts(),
-      documents: { [oldId]: { preview: true } },
-      tabOrder: [oldId],
-    });
-    expect(service.getState().tabOrder).toContain(modelId);
-    expect(service.getState().tabOrder).not.toContain(oldId);
-    expect(loadDocument).not.toHaveBeenCalled();
-    expect(service.getDocument(modelId)?.layout).toEqual({ preview: true });
-    await service.openDocument(projectService, service.getDocument(modelId)!.ref);
-    expect(service.getDocument(modelId)?.content).not.toBeNull();
-    expect(loadDocument).toHaveBeenCalledWith("model", "assets/hero.babasset", expect.any(Object));
-  });
-
-  it("reopens a saved asset-settings Animation tab as the animation document kind", async () => {
-    const service = new DocumentService();
-    const project = createEmptyProject("Test");
-    const loadDocument = vi.fn(async (kind: string) => {
-      if (kind === "scene") return createDefaultScene();
-      if (kind === "animation") {
-        return { clipName: "idle", modelGuid: "model-1", skeletonGuid: null };
-      }
-      return { nodes: [], edges: [] };
-    });
-    const projectService = {
-      loadDocument,
-      registry: {
-        list: () => [
-          {
-            path: "assets/hero_idle.babasset",
-            header: { type: "Animation" },
-          },
-        ],
-      },
-    } as unknown as ProjectService;
-    const oldId = "asset-settings:assets/hero_idle.babasset";
-    const animationId = documentId({
-      kind: "animation",
-      path: "assets/hero_idle.babasset",
-    });
-    await service.initializeFromProject(projectService, project, {
-      ...createEmptyLayouts(),
-      documents: { [oldId]: { preview: true } },
-      tabOrder: [oldId],
-    });
-    expect(service.getState().tabOrder).toContain(animationId);
-    expect(service.getState().tabOrder).not.toContain(oldId);
-    expect(loadDocument).not.toHaveBeenCalled();
-    await service.openDocument(projectService, service.getDocument(animationId)!.ref);
-    expect(loadDocument).toHaveBeenCalledWith(
-      "animation",
-      "assets/hero_idle.babasset",
-      expect.any(Object),
-    );
-  });
-
   it("reloads document content from disk without marking dirty", async () => {
     const service = new DocumentService();
     const project = createEmptyProject("Test");
@@ -1074,12 +1004,12 @@ describe("DocumentService", () => {
       tabOrder: [graphId],
     });
     service.updateGraph(graphId, {
-      nodes: [{ id: "n1", type: "logMessage", position: { x: 0, y: 0 }, data: {} }],
+      nodes: [{ id: "n1", type: "debug.log", position: { x: 0, y: 0 }, data: {} }],
       edges: [],
     } as never);
     expect(service.getDocument(graphId)?.dirty).toBe(true);
     service.patchLoadedContent(graphId, {
-      nodes: [{ id: "n1", type: "logMessage", position: { x: 0, y: 0 }, data: { "default:asset": null } }],
+      nodes: [{ id: "n1", type: "debug.log", position: { x: 0, y: 0 }, data: { "default:asset": null } }],
       edges: [],
     } as never);
     expect(service.getDocument(graphId)?.dirty).toBe(true);
@@ -1267,15 +1197,5 @@ describe("DocumentService revisions", () => {
     // leak into this combination.
     service.updateScene(scene, { ...createDefaultScene(), name: "Edited Again" });
     expect(classesAndTypes()).toBe(afterClassEdit);
-  });
-});
-
-describe("layout migration", () => {
-  it("migrates legacy flat layout to per-document map", () => {
-    const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
-    const legacy = { grid: { root: { type: "branch" } } };
-    const migrated = migrateLegacyLayout(legacy, sceneId);
-    expect(migrated.documents[sceneId]).toEqual(legacy);
-    expect(migrated.tabOrder).toEqual([sceneId]);
   });
 });

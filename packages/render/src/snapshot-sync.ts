@@ -10,11 +10,8 @@ import type { AudioPose } from "./audio-playback-backend";
 
 export interface SampledSnapshot {
   frameId: number;
-  /** Source of the previous interpolation endpoint (may skip worker frames). */
-  previousFrameId?: number;
   tickIndex: number;
   actors: ActorSlot[];
-  alpha: number;
   actorCount: number;
 }
 
@@ -29,35 +26,25 @@ function emptySlot(): ActorSlot {
 }
 
 /**
- * Holds the two most recent snapshots and samples an interpolated view.
- * Reuses scratch ActorSlot objects — no per-actor allocation in sample().
+ * Holds the latest published snapshot and samples it into reused scratch
+ * ActorSlot objects — no per-actor allocation in sample().
  */
-export class SnapshotInterpolator {
-  private prev: Float32Array | null = null;
-  private next: Float32Array | null = null;
-  private write = 0;
-  private pair: [Float32Array, Float32Array];
+export class SnapshotSampler {
+  private latest: Float32Array | null = null;
+  private buffer: Float32Array;
   private maxActors: number;
   private scratch: ActorSlot[];
-  private prevIndexBySlot: Int32Array;
-  private readonly prevSlot = emptySlot();
-  private readonly nextSlot = emptySlot();
   private readonly sampled: SampledSnapshot;
   private generation = 0;
-  private resetFromFrame: number | null = null;
-  private resetThroughFrame = 0;
 
   constructor(maxActors: number) {
     this.maxActors = maxActors;
-    const floats = snapshotFloatCount(maxActors);
-    this.pair = [new Float32Array(floats), new Float32Array(floats)];
+    this.buffer = new Float32Array(snapshotFloatCount(maxActors));
     this.scratch = Array.from({ length: maxActors }, () => emptySlot());
-    this.prevIndexBySlot = new Int32Array(maxActors);
     this.sampled = {
       frameId: 0,
       tickIndex: 0,
       actors: this.scratch,
-      alpha: 1,
       actorCount: 0,
     };
   }
@@ -68,15 +55,12 @@ export class SnapshotInterpolator {
 
   installLayout(capacity: number, generation: number): boolean {
     if (generation <= this.generation || capacity < 1) return false;
-    const floats = snapshotFloatCount(capacity);
     this.maxActors = capacity;
     this.generation = generation;
-    this.pair = [new Float32Array(floats), new Float32Array(floats)];
+    this.buffer = new Float32Array(snapshotFloatCount(capacity));
     this.scratch = Array.from({ length: capacity }, () => emptySlot());
-    this.prevIndexBySlot = new Int32Array(capacity);
     this.sampled.actors = this.scratch;
     this.sampled.actorCount = 0;
-    this.write = 0;
     this.clear();
     return true;
   }
@@ -85,147 +69,32 @@ export class SnapshotInterpolator {
     if (!isPublishedSnapshot(buffer)) return;
     const header = readSnapshotHeader(buffer);
     if (header.layoutGeneration !== this.generation) return;
-    const dest = this.pair[this.write]!;
+    const dest = this.buffer;
     // Copy only the header and live rows; `sample` never reads past
     // `actorCount`, so a count the buffer cannot hold would expose stale rows.
     const span = snapshotActiveFloatCount(buffer);
     if (span > dest.length || snapshotFloatCount(header.actorCount) > buffer.length) return;
     dest.set(span === buffer.length ? buffer : buffer.subarray(0, span));
-    this.prev = this.next;
-    this.next = dest;
-    this.write = 1 - this.write;
-    this.applyInterpolationReset();
+    this.latest = dest;
   }
 
-  /** A teleport's authoritative snapshot also moves descendants in world space.
-   * Discard the old endpoint once that publication arrives, keeping its newest
-   * pose. Two numbers bound any number of coalesced edit publications. */
-  resetInterpolationFrom(frameId: number): void {
-    if (!Number.isSafeInteger(frameId) || frameId < 0) return;
-    this.resetFromFrame = Math.min(this.resetFromFrame ?? frameId, frameId);
-    this.resetThroughFrame = Math.max(this.resetThroughFrame, frameId);
-    this.applyInterpolationReset();
-  }
-
-  private applyInterpolationReset(): void {
-    if (this.resetFromFrame === null || !this.next) return;
-    const frameId = readSnapshotHeader(this.next).frameId;
-    if (frameId < this.resetFromFrame) return;
-    this.prev = null;
-    if (frameId >= this.resetThroughFrame) {
-      this.resetFromFrame = null;
-      this.resetThroughFrame = 0;
-    }
-  }
-
-  /** Drop buffered snapshots so the next sample is null until a fresh push. */
+  /** Drop the buffered snapshot so the next sample is null until a fresh push. */
   clear(): void {
-    this.prev = null;
-    this.next = null;
-    this.resetFromFrame = null;
-    this.resetThroughFrame = 0;
+    this.latest = null;
   }
 
-  sample(alpha: number): SampledSnapshot | null {
-    if (!this.next || !isPublishedSnapshot(this.next)) return null;
-    const t = Math.min(1, Math.max(0, alpha));
-    const nextHeader = readSnapshotHeader(this.next);
-    if (!this.prev || t >= 1 || !isPublishedSnapshot(this.prev)) {
-      const count = Math.min(nextHeader.actorCount, this.maxActors);
-      for (let i = 0; i < count; i++) {
-        readActorSlotInto(this.next, i, this.scratch[i]!);
-      }
-      this.sampled.frameId = nextHeader.frameId;
-      this.sampled.previousFrameId = nextHeader.frameId;
-      this.sampled.tickIndex = nextHeader.tickIndex;
-      this.sampled.alpha = 1;
-      this.sampled.actorCount = count;
-      return this.sampled;
-    }
-    const prevHeader = readSnapshotHeader(this.prev);
-    const prevCount = Math.min(prevHeader.actorCount, this.maxActors);
-    const count = Math.min(nextHeader.actorCount, this.maxActors);
-    this.prevIndexBySlot.fill(-1);
-    for (let i = 0; i < prevCount; i++) {
-      const slotId = readActorSlotInto(this.prev, i, this.prevSlot).slotId;
-      if (slotId >= 0 && slotId < this.maxActors) {
-        this.prevIndexBySlot[slotId] = i;
-      }
-    }
+  sample(): SampledSnapshot | null {
+    if (!this.latest || !isPublishedSnapshot(this.latest)) return null;
+    const header = readSnapshotHeader(this.latest);
+    const count = Math.min(header.actorCount, this.maxActors);
     for (let i = 0; i < count; i++) {
-      const b = readActorSlotInto(this.next, i, this.nextSlot);
-      const out = this.scratch[i]!;
-      const prevIndex =
-        b.slotId >= 0 && b.slotId < this.maxActors
-          ? this.prevIndexBySlot[b.slotId]
-          : -1;
-      if (prevIndex === undefined || prevIndex < 0) {
-        copySlot(b, out);
-        continue;
-      }
-      const a = readActorSlotInto(this.prev, prevIndex, this.prevSlot);
-      out.slotId = b.slotId;
-      out.position.x = a.position.x + (b.position.x - a.position.x) * t;
-      out.position.y = a.position.y + (b.position.y - a.position.y) * t;
-      out.position.z = a.position.z + (b.position.z - a.position.z) * t;
-      interpolateQuaternion(a, b, t, out);
-      out.scale.x = a.scale.x + (b.scale.x - a.scale.x) * t;
-      out.scale.y = a.scale.y + (b.scale.y - a.scale.y) * t;
-      out.scale.z = a.scale.z + (b.scale.z - a.scale.z) * t;
-      out.flags = b.flags;
+      readActorSlotInto(this.latest, i, this.scratch[i]!);
     }
-    this.sampled.frameId = nextHeader.frameId;
-    this.sampled.previousFrameId = prevHeader.frameId;
-    this.sampled.tickIndex = nextHeader.tickIndex;
-    this.sampled.alpha = t;
+    this.sampled.frameId = header.frameId;
+    this.sampled.tickIndex = header.tickIndex;
     this.sampled.actorCount = count;
     return this.sampled;
   }
-}
-
-function interpolateQuaternion(
-  a: ActorSlot,
-  b: ActorSlot,
-  t: number,
-  out: ActorSlot,
-): void {
-  const dot =
-    a.rotation.x * b.rotation.x +
-    a.rotation.y * b.rotation.y +
-    a.rotation.z * b.rotation.z +
-    a.rotation.w * b.rotation.w;
-  const sign = dot < 0 ? -1 : 1;
-  const x = a.rotation.x + (b.rotation.x * sign - a.rotation.x) * t;
-  const y = a.rotation.y + (b.rotation.y * sign - a.rotation.y) * t;
-  const z = a.rotation.z + (b.rotation.z * sign - a.rotation.z) * t;
-  const w = a.rotation.w + (b.rotation.w * sign - a.rotation.w) * t;
-  const length = Math.hypot(x, y, z, w);
-  if (length <= Number.EPSILON) {
-    out.rotation.x = 0;
-    out.rotation.y = 0;
-    out.rotation.z = 0;
-    out.rotation.w = 1;
-    return;
-  }
-  out.rotation.x = x / length;
-  out.rotation.y = y / length;
-  out.rotation.z = z / length;
-  out.rotation.w = w / length;
-}
-
-function copySlot(src: ActorSlot, dst: ActorSlot): void {
-  dst.slotId = src.slotId;
-  dst.position.x = src.position.x;
-  dst.position.y = src.position.y;
-  dst.position.z = src.position.z;
-  dst.rotation.x = src.rotation.x;
-  dst.rotation.y = src.rotation.y;
-  dst.rotation.z = src.rotation.z;
-  dst.rotation.w = src.rotation.w;
-  dst.scale.x = src.scale.x;
-  dst.scale.y = src.scale.y;
-  dst.scale.z = src.scale.z;
-  dst.flags = src.flags;
 }
 
 export type SampledAudioPose = {

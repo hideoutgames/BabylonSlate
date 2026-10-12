@@ -207,6 +207,33 @@ describe("runtime AnimationGraph scripts", () => {
     runtime.stop();
   });
 
+  it("ends the tick before its publish point when an Animation Object update quits", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      playScene: animScene(),
+      animGraphs: { "graph-1": createDefaultAnimGraph() },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([{
+      assetGuid: "assets/Loco.anim.babasset",
+      classId: animGraphScriptClassId("graph-1"),
+      parentClassId: "BObject",
+      anchors: [],
+      source: 'export function update(ctx) { ctx.executeConsoleCommand("quit"); }',
+      entryPoints: [{ name: "update", event: "onUpdateAnimation", isAsync: false }],
+    }]);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    expect(runtime.getWorld().clock.tickIndex).toBe(1);
+    // The tick's stats follow its publish point; a stopped session publishes nothing.
+    expect(commands.some((command) => command.type === "stats")).toBe(false);
+    runtime.stop();
+  });
+
   it("fires a compiled Exit Time Reached rule on the tick a looping clip wraps past it", async () => {
     const registry = createDefaultNodeRegistry();
     const doc = locoDocument();
@@ -219,7 +246,7 @@ describe("runtime AnimationGraph scripts", () => {
         node(registry, "enter-state", "anim.rule.enterState"),
         node(registry, "exit-state", "anim.rule.exitState"),
         node(registry, "exit-time", "anim.state.exitTimeReached", {
-          exitTime: 0.95,
+          "default:exitTime": 0.95,
         }),
       ],
       edges: [
@@ -262,7 +289,7 @@ describe("runtime AnimationGraph scripts", () => {
           variableName: "moving",
           typeId: "bool",
           implicitSelf: true,
-          moving: true,
+          "default:value": true,
         }),
         node(registry, "update", "anim.event.update"),
       ],
@@ -313,7 +340,7 @@ describe("runtime AnimationGraph scripts", () => {
         node(registry, "tick", "input.actionEvent", {
           "default:binding": { Input: { Name: "Jump", Asset: "jump" } },
         }),
-        node(registry, "jump", "anim.actor.jumpToState", { state: "Walk" }),
+        node(registry, "jump", "anim.actor.jumpToState", { "default:state": "Walk" }),
         node(registry, "graph", "component.getNamed", {
           componentClassId: "AnimationGraphComponent",
           implicitSelf: true,
@@ -417,7 +444,6 @@ describe("runtime AnimationGraph scripts", () => {
       toStateId: "run",
       blendSeconds: 0.2,
       priority: 0,
-      condition: "moving",
       ruleGraph: createDefaultTransitionRuleGraph(),
     });
     const commands: CommandMessage[] = [];
@@ -425,10 +451,7 @@ describe("runtime AnimationGraph scripts", () => {
       seed: 1,
       maxActors: 4,
       seedDemoActors: false,
-      playScene: animScene({
-        graphGuid: "graph-1",
-        conditions: { moving: true },
-      }),
+      playScene: animScene(),
       animGraphs: { "graph-1": doc },
       onCommand: (command) => commands.push(command),
     });
@@ -465,7 +488,6 @@ describe("runtime AnimationGraph scripts", () => {
       toStateId: "run",
       blendSeconds: 0.2,
       priority: 0,
-      condition: "moving",
       ruleGraph: createDefaultTransitionRuleGraph(),
     });
     const commands: CommandMessage[] = [];
@@ -473,7 +495,7 @@ describe("runtime AnimationGraph scripts", () => {
       seed: 1,
       maxActors: 4,
       seedDemoActors: false,
-      playScene: animScene({ graphGuid: "graph-1", conditions: { moving: true } }),
+      playScene: animScene(),
       playSceneGuid: "anim",
       animGraphs: { "graph-1": doc },
       onCommand: (command) => commands.push(command),
@@ -520,7 +542,7 @@ describe("runtime AnimationGraph scripts", () => {
       kind: "event",
       nodes: [
         node(registry, "tick", "flow.event.tick"),
-        node(registry, "jump", "anim.actor.jumpToState", { state: "Dash" }),
+        node(registry, "jump", "anim.actor.jumpToState", { "default:state": "Dash" }),
         node(registry, "graph", "variables.get", {
           variableName: "Second Graph",
           typeId: "object",

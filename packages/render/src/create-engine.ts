@@ -1,3 +1,4 @@
+import { applyGamepadRumble } from "./gamepad-rumble";
 import { acquireEngineGpuTiming, observeEngineGpuTiming, type EngineGpuTimingLease, type EngineGpuTimingObservation, type EngineGpuTimingSample } from "./engine-gpu-timing";
 import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest, type RuntimeMaterialCommitCommand } from "./runtime-material-edit";
 import { drainFinalAuthoringResources } from "./final-authoring-drain";
@@ -48,7 +49,7 @@ import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets
 import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { nativePreparationForEngine, type NativePreparationLimits, type NativePreparationPriority } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
-import type { AbstractEngine, BaseTexture, Camera } from "@babylonjs/core";
+import type { AbstractEngine, BaseTexture, Camera, EngineView } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution, type RenderDiagnostics } from "./render-diagnostics";
@@ -185,7 +186,7 @@ import {
   type PlayDebugDrawController,
 } from "./play-debug-draw";
 import {
-  SnapshotInterpolator,
+  SnapshotSampler,
   writeSampledAudioPoses,
   type SampledAudioPose,
 } from "./snapshot-sync";
@@ -253,6 +254,7 @@ import {
   pendingSceneTextures,
   prewarmSceneMaterials as warmSceneMaterials,
   SCENE_LOOKUP_MAPS,
+  SCENE_FIRST_FRAME_TIMEOUT_MS,
   SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
 
@@ -470,8 +472,6 @@ export interface CreateEngineOptions {
   onGizmoDragEnd?: () => void;
   /** A component shape handle was released; merge properties as one undoable change. */
   onComponentShapeEdit?: (edit: ComponentShapeEdit) => void;
-  /** Legacy water-only callback; used when onComponentShapeEdit is absent. */
-  onWaterShapeEdit?: (edit: ComponentShapeEdit) => void;
   /**
    * SceneLayer / overlay-prefab viewports: 2D transform box instead of
    * Position/Rotation/Scale gizmos. World 2D scenes stay on axis gizmos.
@@ -655,9 +655,7 @@ export interface EditorTools {
   /** Session MeshComponent collision dashes (default off). */
   setDrawMeshCollision: (enabled: boolean) => void;
   /** Project 2D unit settings; pass null to leave pixel-perfect framing off. */
-  setPixelPerfect: (
-    settings: { pixelsPerUnit: number; integerZoomSteps: boolean } | null,
-  ) => void;
+  setPixelPerfect: (settings: { pixelsPerUnit: number } | null) => void;
   /** Ordered sorting layers from project settings, back to front. */
   setSortingLayers: (layers: readonly string[]) => void;
   /** Tile grid, subdivision and 2D game camera bounds from scene settings. */
@@ -899,11 +897,10 @@ function initializeEngine(
     : null;
   const releaseOffscreenDispatch = presentRtt ? retainOffscreenFrameDispatch(engine) : null;
   onRollback(() => releaseOffscreenDispatch?.());
-  if (registeredView && options.playMode) {
-    // Scene tabs stay mounted; Babylon _renderViews still setSize+blit every
-    // enabled view. Disable them so overlay Play owns the framebuffer.
-    setOtherEngineViewsEnabled(engine, canvas, false);
-  }
+  // Scene tabs stay mounted; Babylon _renderViews still setSize+blit every
+  // enabled view. Disable them so overlay Play owns the framebuffer, and
+  // re-enable only those afterwards (a hidden tab's view stays disabled).
+  const heldEngineViews = registeredView && options.playMode ? holdOtherEngineViews(engine, canvas) : [];
 
   const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
   // Every view shares the same graph path for authored and selection outlines.
@@ -1017,6 +1014,11 @@ function initializeEngine(
   setupDefaultViewport(scene);
 
   const scheduler = new RenderScheduler();
+  // A handle without a registered view draws into the same Engine frame as the
+  // registered views; the sole-view gate counts it while its canvas is shown.
+  const viewlessShown = registeredView ? null : () => !disposed && scheduler.isShown();
+  const releaseViewless = viewlessShown ? retainViewlessRenderer(engine, viewlessShown) : null;
+  onRollback(() => releaseViewless?.());
   let frameCopyReady = false;
   let frameWasLoading = false;
   const presentationStats = {
@@ -1160,7 +1162,7 @@ function initializeEngine(
         ? 1000 / options.frameCap
         : 1000 / 60,
   });
-  const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
+  const snapshots = new SnapshotSampler(options.maxActors ?? 256);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
   let gameInputEnabled = true;
   let simulationEditMode = false;
@@ -1226,10 +1228,12 @@ function initializeEngine(
       })
     : null;
   onRollback(() => playFreeCam?.dispose());
+  // Assigned once SceneLayer picking exists; a HUD control keeps its drag.
+  let overlayBlocksPointer: (canvasX: number, canvasY: number) => boolean = () => false;
   const playFreeCamInput: PlayFreeCamInputHandle | null = playFreeCam
     ? attachPlayFreeCamInput(canvas, playFreeCam, {
         mode: options.viewportMode ?? "3d",
-        blockPointer: (x, y) => runtimeTransformTools?.blocksCameraPointer(x, y) ?? false,
+        blockPointer: (x, y) => (runtimeTransformTools?.blocksCameraPointer(x, y) ?? false) || overlayBlocksPointer(x, y),
       })
     : null;
   onRollback(() => playFreeCamInput?.dispose());
@@ -1238,6 +1242,7 @@ function initializeEngine(
         navmeshBytes: options.navmeshBytes,
         navBlockers: options.navBlockers,
         world: options.physicsWorld ?? options.viewportMode,
+        layerScene: (layerId) => sceneLayerCompositor?.layers().find((layer) => layer.layerId === layerId)?.scene,
       })
     : null;
   onRollback(() => playViz?.dispose());
@@ -1319,6 +1324,7 @@ function initializeEngine(
         },
         resolveEmitter: (slotId) => binding.meshes.get(slotId) ?? null,
         onDiagnostic: options.onParticleDiagnostic,
+        sortingLayers: () => binding.sortingLayers,
       })
     : null;
   onRollback(() => particleService?.dispose());
@@ -1330,7 +1336,6 @@ function initializeEngine(
       appliedSnapshotIdentity = null;
       const pending = binding.pendingAnimState?.get(slotId);
       if (pending) applyAnimStateToScene(sceneAnimHostFromBinding(binding, {
-        animationGroups: successor.getScene().animationGroups,
         spritePayloads: binding.spritePayloads ?? options.spritePayloads,
         spriteAnimations: binding.spriteAnimations ?? options.spriteAnimations,
         applyTexture: (mesh, guid) => applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
@@ -1401,8 +1406,7 @@ function initializeEngine(
     const anisotropy = appliedQuality?.textures.anisotropy ?? 4;
     applyMaterialTextureAnisotropy(texture, Math.min(anisotropy, engine.getCaps().maxAnisotropy ?? 1));
   };
-  const applyRenderingQuality = () => {
-    const state = sceneRenderingSettings(scene);
+  const applyQualitySettings = (state: ReturnType<typeof sceneRenderingSettings>) => {
     if (appliedRuntimeOverrides === state.runtimeOverrides && appliedProject === state.project && appliedSceneOverrides === state.shadowOverrides && appliedSessionOverrides === state.qualityOverrides && appliedLocalOverrides === state.localQualityOverrides) return;
     appliedRuntimeOverrides = state.runtimeOverrides;
     appliedProject = state.project;
@@ -1419,11 +1423,19 @@ function initializeEngine(
     if (JSON.stringify(previous?.textures) !== JSON.stringify(quality.textures)) {
       resourceCache.setByteCeiling(quality.textures.byteBudget);
       for (const texture of scene.textures) applyTextureAnisotropy(texture);
+      for (const layer of sceneLayerCompositor?.layers() ?? [])
+        for (const texture of layer.scene.textures) applyTextureAnisotropy(texture);
     }
     if (previous && previous.postprocessing.resolutionScale !== quality.postprocessing.resolutionScale) {
       rebuildPostProcessStack();
       sceneLayerCompositor?.refreshPostProcess();
     }
+  };
+  const applyRenderingQuality = () => {
+    const state = sceneRenderingSettings(scene);
+    applyQualitySettings(state);
+    // Fog Volume presence, a published LUT and the effects toggle replan the
+    // effects key without touching the quality inputs compared above.
     const effectsKey = state.effectsKey;
     if (appliedEffectsKey !== undefined && appliedEffectsKey !== effectsKey) {
       rebuildPostProcessStack();
@@ -1534,21 +1546,28 @@ function initializeEngine(
   };
   notifyOverlayResize();
 
+  const overlayPointerWalk = (canvasX: number, canvasY: number) => {
+    if (!sceneLayerCompositor || !acceptsGameInput()) return null;
+    const mapped = mapCanvasPointer(scene, canvasX, canvasY, pointerCanvas());
+    const canvasSize = pointerCanvas();
+    return walkOverlayPointerHits(
+      sceneLayerCompositor.pickHits(mapped.x, mapped.y, {
+        minTargetPx: options.touchMinTargetPx ?? 44,
+        canvasCssHeight: canvasSize.height,
+      }),
+    );
+  };
+  /** A blocking HUD hit owns the pointer, as it does for world input. */
+  overlayBlocksPointer = (canvasX, canvasY) => overlayPointerWalk(canvasX, canvasY)?.blocked ?? false;
+
   const dispatchOverlayPointer = (
     phase: OverlayPointerPhase,
     canvasX: number,
     canvasY: number,
     pointerId?: number,
   ): boolean => {
-    if (!sceneLayerCompositor || !acceptsGameInput()) return false;
-    const mapped = mapCanvasPointer(scene, canvasX, canvasY, pointerCanvas());
-    const canvasSize = pointerCanvas();
-    const walked = walkOverlayPointerHits(
-      sceneLayerCompositor.pickHits(mapped.x, mapped.y, {
-        minTargetPx: options.touchMinTargetPx ?? 44,
-        canvasCssHeight: canvasSize.height,
-      }),
-    );
+    const walked = overlayPointerWalk(canvasX, canvasY);
+    if (!walked) return false;
     if (phase === "down" && !binding.paused && pointerId !== undefined) {
       if (uiControls.down(pointerId, walked.targets, canvasX, canvasY)) return true;
       if (joysticks.down(pointerId, walked.targets, canvasX, canvasY)) return true;
@@ -1849,7 +1868,7 @@ function initializeEngine(
     }
     if (options.playMode) {
       disablePlayFreeCam(playFreeCam);
-      interpolator.clear();
+      snapshots.clear();
       appliedSnapshotIdentity = null;
       lastRenderedSnapshotFrame = null;
       retirePlayWorldSlots(binding);
@@ -1893,6 +1912,7 @@ function initializeEngine(
     const selection = outlineHost.selection;
     onRollback(() => selection.dispose());
     let multiSelectDrag: GizmoMultiSelectDrag | null = null;
+    let splinePointDrag = false;
     const parentIdOf = (id: string): string | null =>
       editorSync.serializedScene()?.actors.find((actor) => actor.id === id)
         ?.parentId ?? null;
@@ -1940,6 +1960,8 @@ function initializeEngine(
       canvasCssHeight: () => pointerCanvas().height,
       onDragStart: () => {
         const attached = gizmosRef.host?.attachedMesh() ?? null;
+        splinePointDrag = attached !== null && attached === splineHandles.selectedNode() && splineHandles.beginSelectionDrag();
+        if (splinePointDrag) return;
         const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
         const followers = roots
           .map((id) => editorSync.meshForActor(id))
@@ -1956,6 +1978,7 @@ function initializeEngine(
         options.onGizmoDragStart?.();
       },
       onDrag: () => {
+        if (splinePointDrag) { splineHandles.dragSelection(); return; }
         const attached = gizmosRef.host?.attachedMesh() ?? null;
         if (multiSelectDrag && attached) {
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
@@ -1970,6 +1993,7 @@ function initializeEngine(
         debugOverlayInstance.followLivePose();
       },
       onDragEnd: () => {
+        if (splinePointDrag) { splinePointDrag = false; splineHandles.endSelectionDrag(); return; }
         const attached = gizmosRef.host?.attachedMesh() ?? null;
         if (multiSelectDrag && attached) {
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
@@ -1988,13 +2012,39 @@ function initializeEngine(
     onRollback(() => gizmos.dispose());
     const waterHandles = createWaterHandles(gizmos.layer, scene, {
       scheduler,
-      onCommit: (edit) => (options.onComponentShapeEdit ?? options.onWaterShapeEdit)?.(edit),
+      onCommit: (edit) => options.onComponentShapeEdit?.(edit),
     });
     onRollback(() => waterHandles.dispose());
     const splineHandles = createSplineHandles(gizmos.layer, scene, {
       scheduler,
       onCommit: (edit) => options.onComponentShapeEdit?.(edit),
+      onSelectionChange: () => attachSelectionGizmo(),
     });
+    // A selected spline point takes the translate gizmo until a viewport tap
+    // outside the handles or a new selection returns it to the actor.
+    const attachSelectionGizmo = () => {
+      const point = splineHandles.selectedNode();
+      if (point) {
+        gizmos.attachTo(point, [], { tool: "translate" });
+        return;
+      }
+      // Locked actors are not pickable; keep the gizmo off them so lock is
+      // more than a pick filter. Attach to the first pickable selection root
+      // so a selected child is not the group handle when its parent is too.
+      const attachId = pickGizmoAttachActorId(lastSelectedActorIds, parentIdOf, (id) => {
+        const mesh = editorSync.meshForActor(id);
+        if (!mesh) return false;
+        const locked = editorSync
+          .serializedScene()
+          ?.actors.find((actor) => actor.id === id)?.locked;
+        if (locked) return false;
+        return mesh.isPickable || isEditorModelPlaceholder(mesh);
+      });
+      gizmos.attachTo(
+        attachId ? editorSync.meshForActor(attachId) : null,
+        attachId ? editorSync.visualMeshesForActor(attachId) : [],
+      );
+    };
     onRollback(() => splineHandles.dispose());
     const syncShapeHandles = (actorIds: readonly string[]) => {
       const selected = selectedShapeComponent(editorSync.serializedScene(), actorIds, lastSelectedComponentIds);
@@ -2028,6 +2078,7 @@ function initializeEngine(
             }
           : undefined,
       onTap: (x, y, tap) => {
+        splineHandles.clearSelection();
         const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
         const sequence = ++tapPickSequence;
         void pickActorMeshName(scene, mapped.x, mapped.y).then((meshName) => {
@@ -2114,23 +2165,8 @@ function initializeEngine(
         if (actorIds.length !== lastSelectedActorIds.length || actorIds.some((id, index) => id !== lastSelectedActorIds[index])) lastSelectedComponentIds = [];
         lastSelectedActorIds = [...actorIds];
         outlineHost.setSelection(actorIds);
-        // Locked actors are not pickable; keep the gizmo off them so lock is
-        // more than a pick filter. Attach to the first pickable selection root
-        // so a selected child is not the group handle when its parent is too.
-        const attachId = pickGizmoAttachActorId(actorIds, parentIdOf, (id) => {
-          const mesh = editorSync.meshForActor(id);
-          if (!mesh) return false;
-          const locked = editorSync
-            .serializedScene()
-            ?.actors.find((actor) => actor.id === id)?.locked;
-          if (locked) return false;
-          return mesh.isPickable || isEditorModelPlaceholder(mesh);
-        });
-        gizmos.attachTo(
-          attachId ? editorSync.meshForActor(attachId) : null,
-          attachId ? editorSync.visualMeshesForActor(attachId) : [],
-        );
         syncShapeHandles(actorIds);
+        attachSelectionGizmo();
         scheduler.invalidate("selection");
       },
       syncSelectionDebug: (options) => {
@@ -2266,10 +2302,9 @@ function initializeEngine(
       notifyOverlayResize();
     };
 
-  let interpAlpha = 1;
   // Registered-view admission and renderLoop both prepare the same frame; apply
   // only when the sampled identity changes or a command invalidated it.
-  let appliedSnapshotIdentity: { frameId: number; alpha: number; layoutGeneration: number } | null = null;
+  let appliedSnapshotIdentity: { frameId: number; layoutGeneration: number } | null = null;
   // renderLoop reuses admission's sample until end-frame unless a push or
   // command invalidated the applied identity in between.
   let admittedSnapshot: ReturnType<typeof prepareSnapshot> = null;
@@ -2293,6 +2328,7 @@ function initializeEngine(
     rendererGpuLease = null;
   });
   const soleRenderingView = () => {
+    if (hasShownViewlessSibling(engine, viewlessShown)) return false;
     let enabled = 0;
     for (const view of engine.views ?? []) {
       if (registeredViewIsEnabled(view)) enabled += 1;
@@ -2334,10 +2370,16 @@ function initializeEngine(
   };
   const loadingScope = (owner?: SceneLayerLoadIdentity) => {
     const generation = loadGeneration;
+    // A live Play scene change advances worldLoadId before the host reloads.
+    const sceneLoadId = worldLoadId;
     const layer = owner ? layerLoads.get(owner.layerId) : undefined;
     const target = owner ? sceneLayerCompositor?.layers().find((entry) => entry.layerId === owner.layerId)?.scene : scene;
     const assert = () => {
-      if (!owner) { assertCurrent(generation); return; }
+      if (!owner) {
+        assertCurrent(generation);
+        if (sceneLoadId !== worldLoadId) throw new Error("Scene loading was superseded or disposed.");
+        return;
+      }
       if (disposed || !target || target.isDisposed || layerLoads.get(owner.layerId) !== layer || layer?.loadId !== owner.layerLoadId) {
         throw new Error("SceneLayer loading was superseded or disposed.");
       }
@@ -2378,13 +2420,12 @@ function initializeEngine(
   }
   const tilemapPreviewStart = performance.now();
   function prepareSnapshot() {
-    const sampled = interpolator.sample(interpAlpha);
+    const sampled = snapshots.sample();
     if (!sampled) return null;
-    const layoutGeneration = interpolator.layoutGeneration;
+    const layoutGeneration = snapshots.layoutGeneration;
     if (
       appliedSnapshotIdentity &&
       appliedSnapshotIdentity.frameId === sampled.frameId &&
-      appliedSnapshotIdentity.alpha === sampled.alpha &&
       appliedSnapshotIdentity.layoutGeneration === layoutGeneration
     ) {
       return sampled;
@@ -2419,7 +2460,6 @@ function initializeEngine(
     }
     appliedSnapshotIdentity = {
       frameId: sampled.frameId,
-      alpha: sampled.alpha,
       layoutGeneration,
     };
     return sampled;
@@ -2689,7 +2729,10 @@ function initializeEngine(
         gpuMs: counter && counter.count > 0 ? counter.current / 1_000_000 : null,
       };
       lastPresentedAt = presentedAt;
-      scaling.noteFramePressure(lastPressureSample);
+      // The scaling level is Engine-wide: only the sole rendering view drives
+      // it, so sibling views on a shared Engine cannot ratchet it against
+      // each other.
+      if (sole) scaling.noteFramePressure(lastPressureSample);
       if (!registeredView) syncLockedViewSize();
     }
     previousFramePresented = framePresented;
@@ -2772,7 +2815,12 @@ function initializeEngine(
     if (!hit) return;
     event.preventDefault();
     const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1;
-    options.onSceneLayerScroll?.({ layerId: hit.layer.layerId, actorId: hit.target.actorId, componentId: hit.target.componentId!, deltaX: (event.shiftKey || hit.target.scroll?.axis === "horizontal" ? event.deltaY : event.deltaX) * factor * hit.scaleX, deltaY: event.shiftKey ? 0 : event.deltaY * factor * hit.scaleY });
+    // A horizontal box or Shift+wheel scrolls sideways by the dominant axis: a
+    // native horizontal swipe keeps deltaX, and a vertical wheel with a little
+    // horizontal jitter still scrolls by deltaY.
+    const sideways = event.shiftKey || hit.target.scroll?.axis === "horizontal";
+    const deltaX = sideways && Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+    options.onSceneLayerScroll?.({ layerId: hit.layer.layerId, actorId: hit.target.actorId, componentId: hit.target.componentId!, deltaX: deltaX * factor * hit.scaleX, deltaY: event.shiftKey ? 0 : event.deltaY * factor * hit.scaleY });
   };
   const onPointerDown = (event: PointerEvent) => {
     if (!acceptsGameInput()) return;
@@ -2784,18 +2832,13 @@ function initializeEngine(
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
-    const blocked = dispatchOverlayPointer("down", x, y, event.pointerId);
+    // Game views keep no world selection; a ray pick here changed nothing.
+    dispatchOverlayPointer("down", x, y, event.pointerId);
     if (joysticks.owns(event.pointerId)) return;
     const controlOwns = uiControls.owns(event.pointerId);
     if (controlOwns && !uiControls.allowsScroll(event.pointerId)) return;
     const scrollTarget = event.pointerType === "touch" || event.pointerType === "pen" ? scrollTargetAt(x, y) : undefined;
     if (scrollTarget) scrollDrag = { pointerId: event.pointerId, startX: x, startY: y, x, y, active: false, target: scrollTarget };
-    if (controlOwns) return;
-    if (blocked) { scheduler.invalidate("selection"); return; }
-    const hit = pickAtCanvas(scene, x, y);
-    if (hit) {
-      scheduler.invalidate("selection");
-    }
   };
   const onPointerMove = (event: PointerEvent) => {
     if (!acceptsGameInput() || ((event.pointerType === "touch" || event.buttons > 0) && !activeGamePointers.has(event.pointerId))) return;
@@ -2838,6 +2881,12 @@ function initializeEngine(
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("cancel", x, y);
   };
+  // A lifted or cancelled touch, and a mouse leaving the canvas, both end in
+  // pointerleave: nothing stays hovered, while up/cancel keep a mouse's hover.
+  const onPointerLeave = () => {
+    if (!acceptsGameInput()) return;
+    for (const event of applyOverlayPointer(overlayPointerState, "move", [])) options.onSceneLayerPointer?.(event);
+  };
   const resetJoysticks = () => {
     scrollDrag = null;
     joysticks.reset();
@@ -2877,6 +2926,7 @@ function initializeEngine(
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerCancel);
+      canvas.removeEventListener("pointerleave", onPointerLeave);
       canvas.removeEventListener("touchstart", onOverlayTouch);
       canvas.removeEventListener("touchmove", onOverlayTouch);
       canvas.removeEventListener("wheel", onOverlayWheel);
@@ -2892,6 +2942,7 @@ function initializeEngine(
       canvas.addEventListener("pointermove", onPointerMove);
       canvas.addEventListener("pointerup", onPointerUp);
       canvas.addEventListener("pointercancel", onPointerCancel);
+      canvas.addEventListener("pointerleave", onPointerLeave);
       canvas.addEventListener("touchstart", onOverlayTouch, { passive: false });
       canvas.addEventListener("touchmove", onOverlayTouch, { passive: false });
       canvas.addEventListener("wheel", onOverlayWheel, { passive: false });
@@ -2915,9 +2966,12 @@ function initializeEngine(
   onRollback(unsubscribeEditorDrop);
   // FontFace registration publishes to the document, so start it only after
   // the synchronous construction steps that can still roll back have succeeded.
-  if (options.fontFaceEntries && options.fontFaceEntries.length > 0) {
-    void fontRegistry.registerAll(options.fontFaceEntries);
-  }
+  // World readiness awaits it; a late face redraws like `registerFonts`.
+  const initialFonts = options.fontFaceEntries && options.fontFaceEntries.length > 0
+    ? fontRegistry.registerAll(options.fontFaceEntries).then(() => {
+      if (!disposed && fontRegistry.consumeDirty()) scheduler.invalidate("asset");
+    })
+    : Promise.resolve();
 
   let callerPaused = false;
   let sceneStreamingPaused = false;
@@ -2968,6 +3022,7 @@ function initializeEngine(
       engine.onEndFrameObservable.remove(presentationObserver);
       releaseViewAdmission?.();
       releaseOffscreenDispatch?.();
+      releaseViewless?.();
       unsubscribeEditorDrop();
       releasePlayLoop?.();
       releaseMainThreadDecoding?.();
@@ -3014,6 +3069,7 @@ function initializeEngine(
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerCancel);
+      canvas.removeEventListener("pointerleave", onPointerLeave);
       canvas.removeEventListener("touchstart", onOverlayTouch);
       canvas.removeEventListener("touchmove", onOverlayTouch);
       canvas.removeEventListener("wheel", onOverlayWheel);
@@ -3075,7 +3131,9 @@ function initializeEngine(
           if (engine.getHardwareScalingLevel() !== previousScaling) {
             engine.setHardwareScalingLevel(previousScaling);
           }
-          setOtherEngineViewsEnabled(engine, canvas, true);
+          for (const view of heldEngineViews) {
+            if (engine.views?.includes(view)) setRegisteredViewEnabled(view, true);
+          }
         }
       }
       if (ownsEngine) {
@@ -3132,10 +3190,11 @@ function initializeEngine(
       }
     },
     pushSnapshot: (buffer: Float32Array) => {
-      interpolator.push(buffer);
-      interpAlpha = 1;
+      // Deliveries already queued when the view stopped must not repose it.
+      if (disposed) return;
+      snapshots.push(buffer);
       appliedSnapshotIdentity = null;
-      const sampled = interpolator.sample(interpAlpha);
+      const sampled = snapshots.sample();
       if (sampled) positionsFromSample(sampled, lastPositions);
       if (sampled && sampled.frameId !== lastRenderedSnapshotFrame) scheduler.requestPausedFrame();
       if (isPublishedSnapshot(buffer)) {
@@ -3144,6 +3203,9 @@ function initializeEngine(
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
+      // A stopped view keeps its Scene until native release; queued commands
+      // must not spawn or rebind visuals in it.
+      if (disposed) return;
       if (!applyingPreparedCommand)
         finalAuthoringDrain?.abort(new Error(`Runtime render command ${command.type} arrived after the final capture fence.`));
       if (!applyingPreparedCommand && commandSources.receive(command, (prepared) => {
@@ -3153,16 +3215,9 @@ function initializeEngine(
       })) return;
       streamAdmission?.receive(command);
       if (command.type === "snapshotLayout") {
-        interpolator.installLayout(command.capacity, command.generation);
+        snapshots.installLayout(command.capacity, command.generation);
         appliedSnapshotIdentity = null;
         scheduler.invalidate("snapshot");
-        return;
-      }
-      if (command.type === "resetActorInterpolation") {
-        if (captureActorSlots.get(command.slotId) !== command.actorGuid) return;
-        interpolator.resetInterpolationFrom(command.frameId);
-        appliedSnapshotIdentity = null;
-        scheduler.requestPausedFrame();
         return;
       }
       if (!simulationEditMode || (command.type !== "possessCamera" && command.type !== "setFreeCam"))
@@ -3215,6 +3270,7 @@ function initializeEngine(
       if (command.type === "setCursorVisible") {
         playCursor?.setVisible(command.visible);
       }
+      if (command.type === "setGamepadRumble") applyGamepadRumble(command);
       if (command.type === "spawn") {
         captureActorSlots.set(command.slotId, command.actorGuid);
         runtimeComponentTokens.delete(command.slotId);
@@ -3249,6 +3305,7 @@ function initializeEngine(
         const actorGuid = captureActorSlots.get(command.slotId);
         if (actorGuid) runtimeTransformTools?.actorRemoved(actorGuid, command.slotId);
         if (actorGuid) renderTargetCaptures.removeActor(actorGuid);
+        audioService?.forgetActorSlot(command.actorGuid, command.slotId);
         captureActorSlots.delete(command.slotId);
         runtimeActorIdentities.delete(command.slotId);
         runtimeComponentTokens.delete(command.slotId);
@@ -3288,10 +3345,13 @@ function initializeEngine(
       }
       if (command.type === "sceneLayerCreate") {
         const layer = sceneLayerCompositor?.create(command);
-        // Layers resolve project quality (Geometry, Water) through the world view.
+        // Layers resolve project quality (Geometry, Water, texture anisotropy)
+        // through the world view.
         if (layer) {
           followSceneRenderSettings(layer.scene, scene);
           setSceneGameTimePaused(layer.scene, gameTimePaused);
+          for (const texture of layer.scene.textures) applyTextureAnisotropy(texture);
+          layer.scene.onNewTextureAddedObservable.add(applyTextureAnisotropy);
         }
         syncOverlayLayer(command.layerId);
         scheduler.invalidate("snapshot");
@@ -3425,7 +3485,6 @@ function initializeEngine(
         if (pending) {
           applyAnimStateToScene(
             sceneAnimHostFromBinding(binding, {
-              animationGroups: scene.animationGroups,
               spritePayloads: binding.spritePayloads ?? options.spritePayloads,
               spriteAnimations:
                 binding.spriteAnimations ?? options.spriteAnimations,
@@ -3459,7 +3518,6 @@ function initializeEngine(
         binding.ragdoll?.clear(command);
         const pending = binding.pendingAnimState?.get(command.slotId);
         if (pending) applyAnimStateToScene(sceneAnimHostFromBinding(binding, {
-          animationGroups: scene.animationGroups,
           spritePayloads: binding.spritePayloads ?? options.spritePayloads,
           spriteAnimations: binding.spriteAnimations ?? options.spriteAnimations,
           applyTexture: (mesh, guid) => applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
@@ -3519,7 +3577,6 @@ function initializeEngine(
         binding.pendingAnimState.set(command.slotId, command);
         applyAnimStateToScene(
           sceneAnimHostFromBinding(binding, {
-            animationGroups: scene.animationGroups,
             spritePayloads: binding.spritePayloads ?? options.spritePayloads,
             spriteAnimations:
               binding.spriteAnimations ?? options.spriteAnimations,
@@ -3995,7 +4052,7 @@ function initializeEngine(
       let resolve!: () => void;
       let reject!: (error: Error) => void;
       const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
-      const timer = setTimeout(() => expirePresentation(key), SCENE_SHADER_WARM_TIMEOUT_MS);
+      const timer = setTimeout(() => expirePresentation(key), SCENE_FIRST_FRAME_TIMEOUT_MS);
       pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false });
       return promise;
     },
@@ -4015,6 +4072,7 @@ function initializeEngine(
     },
     whenEditorModelsReady: async (owner) => {
       const scope = loadingScope(owner);
+      if (!owner) { await initialFonts; scope.assert(); }
       await commandSources.whenReady(commandSources.pendingSlotIds().filter((slotId) =>
         (sceneLayerCompositor?.layerIdForSlot(slotId) ?? undefined) === owner?.layerId));
       scope.assert();
@@ -4155,14 +4213,40 @@ function retainMainThreadDecoding(restoreWorkers: () => void): () => void {
   };
 }
 
-function setOtherEngineViewsEnabled(
+/** Disable every other enabled view; returns the views to re-enable later. */
+function holdOtherEngineViews(
   engine: AbstractEngine,
   except: HTMLCanvasElement,
-  enabled: boolean,
-): void {
+): EngineView[] {
+  const held: EngineView[] = [];
   for (const view of engine.views ?? []) {
-    if (view.target !== except) setRegisteredViewEnabled(view, enabled);
+    if (view.target === except || !registeredViewIsEnabled(view)) continue;
+    setRegisteredViewEnabled(view, false);
+    held.push(view);
   }
+  return held;
+}
+
+// Handles without a registered view (RTT previews) still draw into their
+// Engine's frame. Each entry reports whether that handle's canvas is shown.
+const viewlessRenderers = new WeakMap<AbstractEngine, Set<() => boolean>>();
+
+function retainViewlessRenderer(engine: AbstractEngine, shown: () => boolean): () => void {
+  let renderers = viewlessRenderers.get(engine);
+  if (!renderers) viewlessRenderers.set(engine, renderers = new Set());
+  renderers.add(shown);
+  return () => {
+    renderers.delete(shown);
+    if (!renderers.size && viewlessRenderers.get(engine) === renderers) viewlessRenderers.delete(engine);
+  };
+}
+
+/** Whether a viewless handle other than `except` may draw into this Engine's frame. */
+function hasShownViewlessSibling(engine: AbstractEngine, except: (() => boolean) | null): boolean {
+  for (const shown of viewlessRenderers.get(engine) ?? []) {
+    if (shown !== except && shown()) return true;
+  }
+  return false;
 }
 
 /** Create the project-lifetime Engine (no scene). */

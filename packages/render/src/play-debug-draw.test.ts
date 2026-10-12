@@ -301,4 +301,25 @@ describe("play debug draw", () => {
     expect(overlayMeshes(scene)).toHaveLength(0);
     engine.dispose();
   });
+
+  it("bounds script-supplied sphere segments, cone angle and frustum FOV", () => {
+    const { engine, scene } = createTestEngine();
+    const overlay = createPlayDebugDraw(scene);
+    const drawn = (kind: string) =>
+      scene.meshes.find((mesh): mesh is LinesMesh => mesh.name.startsWith(`${PLAY_DEBUG_DRAW_PREFIX}${kind}:`))!;
+    overlay.applyCommand(draw({ kind: "sphere", center: { x: 0, y: 0, z: 0 }, radius: 1, segments: 1e6 }));
+    // At most 64 rings and 64 meridians of 65 points each.
+    expect(drawn("sphere").getTotalVertices()).toBeLessThanOrEqual(2 * 64 * 65);
+    overlay.applyCommand(draw({ kind: "cone", origin: { x: 0, y: 0, z: 0 }, direction: { x: 0, y: 1, z: 0 }, length: 1, angle: 90 }));
+    overlay.applyCommand(draw({ kind: "frustum", origin: { x: 0, y: 0, z: 0 },
+      rotation: { pitch: 0, yaw: 0, roll: 0 }, fov: 180, aspect: 1, near: 0.1, far: 2 }));
+    for (const kind of ["cone", "frustum"]) {
+      const positions = [...(drawn(kind).getVerticesData("position") ?? [])];
+      expect(positions.length).toBeGreaterThan(0);
+      // An 89° cone is about 57 lengths wide; a 179° frustum about 229 far-planes.
+      expect(Math.max(...positions.map(Math.abs))).toBeLessThan(500);
+    }
+    overlay.dispose();
+    engine.dispose();
+  });
 });

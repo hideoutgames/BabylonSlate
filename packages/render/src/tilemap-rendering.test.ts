@@ -36,7 +36,6 @@ describe("tilemap rendering", () => {
     const tilemap = setTile({
       ...createDefaultTilemapPayload(),
       chunkSize: 2,
-      tilesetGuid: "tileset",
       tilesets: [{ guid: "tileset", firstGid: 1, tileCount: 2 }],
     }, "layer-1", 0, 0, 1);
     const assets: MeshAssetContext = {

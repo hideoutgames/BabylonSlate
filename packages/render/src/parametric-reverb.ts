@@ -87,14 +87,18 @@ export function connectParametricReverb(
 ): ParametricReverbGraph {
   const { combDelays, allpassDelays } = parametricReverbTopology();
   const nodes: AudioNode[] = [];
+  /** Edges from the caller's send bus; `node.disconnect()` cannot remove them. */
+  const sends: AudioNode[] = [];
   const wet = context.createGain();
   wet.gain.value = 0;
   input.connect(wet);
+  sends.push(wet);
   nodes.push(wet);
   if (options?.dryPassThrough !== false) {
     const dry = context.createGain();
     dry.gain.value = 1;
     input.connect(dry);
+    sends.push(dry);
     dry.connect(output);
     nodes.push(dry);
   }
@@ -137,6 +141,10 @@ export function connectParametricReverb(
       for (const node of combFilters) node.frequency.value = frequency;
     },
     dispose: () => {
+      // Remove only this graph's edges from the send bus; its other routes stay.
+      for (const node of sends) {
+        try { input.disconnect(node); } catch { /* Already disconnected. */ }
+      }
       for (const node of nodes) node.disconnect();
     },
   };

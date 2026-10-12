@@ -4,13 +4,12 @@ import {
   type ConnectionLineComponentProps,
   type Position,
 } from "@xyflow/react";
-import type { CSSProperties } from "react";
+import { useMemo, type CSSProperties } from "react";
 import { Badge } from "@babylonslate/ui/components/badge";
 import {
-  collectSafeConnectPins,
+  collectDisplayConnectPins,
   containerPointerToClient,
   isClientPointOverGraphNode,
-  nodePinLists,
   screenCentersForSafePins,
   shouldOpenAddNodeOnConnectEnd,
   type ConnectEndMode,
@@ -18,7 +17,7 @@ import {
 } from "./graph-connect";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { hasSerializedPins } from "./graph-types";
-import { edgeStyleForPin } from "./node-theme";
+import { edgeStyleForPin, type PinTypeRef } from "./node-theme";
 import { animTransitionPath } from "./anim-transition-path";
 
 export type GraphConnectionLineViewProps = {
@@ -34,6 +33,8 @@ export type GraphConnectionLineViewProps = {
   toHandle: { id?: string | null } | null;
   pointer: { x: number; y: number };
   nodes: Array<{ id: string; data?: Record<string, unknown> }>;
+  /** Resolved wildcard types, so the hint matches what a release connects. */
+  pinDisplayType?: (nodeId: string, pinId: string) => PinTypeRef | undefined;
   root?: ParentNode;
   connectEndMode?: ConnectEndMode;
   pinCompatibility?: PinCompatibilityRule;
@@ -47,6 +48,8 @@ function pinOnDraggedNode(
   if (!pinId || !hasSerializedPins(node.data)) return undefined;
   return node.data.__pins.find((pin) => pin.id === pinId);
 }
+
+const declaredType = () => undefined;
 
 function hintOffset(
   fromX: number,
@@ -76,13 +79,26 @@ export function GraphConnectionLineView({
   toHandle,
   pointer,
   nodes,
+  pinDisplayType = declaredType,
   root = document,
   connectEndMode = "default",
   pinCompatibility,
   connectionLineKind = "default",
 }: GraphConnectionLineViewProps) {
-  const pin = pinOnDraggedNode(fromNode, fromHandle.id);
-  const pinStyle = edgeStyleForPin(pin?.type);
+  const declaredPin = pinOnDraggedNode(fromNode, fromHandle.id);
+  const pinStyle = edgeStyleForPin(
+    declaredPin
+      ? (pinDisplayType(fromNode.id, declaredPin.id) ?? declaredPin.type)
+      : undefined,
+  );
+  // Pin compatibility only changes with the graph, not with each pointer move.
+  const safeRefs = useMemo(
+    () =>
+      declaredPin
+        ? collectDisplayConnectPins(nodes, fromNode.id, declaredPin, pinDisplayType, pinCompatibility)
+        : [],
+    [declaredPin, fromNode.id, nodes, pinCompatibility, pinDisplayType],
+  );
   const path =
     connectionLineKind === "animTransition"
       ? animTransitionPath({
@@ -101,22 +117,17 @@ export function GraphConnectionLineView({
           targetY: toY,
           targetPosition: toPosition,
         })[0];
-  const inAddZone = pin
-    ? shouldOpenAddNodeOnConnectEnd({
-        hasTargetHandle: Boolean(toHandle),
-        pointerOverNode: isClientPointOverGraphNode(pointer, root),
-        pointer,
-        safePins: screenCentersForSafePins(
-          root,
-          collectSafeConnectPins(nodePinLists(nodes), fromNode.id, pin, pinCompatibility),
-        ),
-      })
-    : false;
-  const showHint = pin
-    ? connectEndMode === "add-node"
-      ? !toHandle
-      : inAddZone
-    : false;
+  // Measure the DOM only when the zone decides the hint.
+  const showHint = !declaredPin || toHandle
+    ? false
+    : connectEndMode === "add-node" ||
+      (!isClientPointOverGraphNode(pointer, root) &&
+        shouldOpenAddNodeOnConnectEnd({
+          hasTargetHandle: false,
+          pointerOverNode: false,
+          pointer,
+          safePins: screenCentersForSafePins(root, safeRefs),
+        }));
   const badge = hintOffset(fromX, fromY, toX, toY);
   const hintLabel =
     connectEndMode === "zone-add-node" ? "Release to Add Node" : "Tap to Cancel";
@@ -155,7 +166,7 @@ export function GraphConnectionLineView({
 export function GraphConnectionLine(props: ConnectionLineComponentProps) {
   const nodes = useStore((state) => state.nodes);
   const flow = useStore((state) => state.domNode);
-  const { connectEndMode, connectionLineKind, pinCompatibility } = useGraphEditorContext();
+  const { connectEndMode, connectionLineKind, pinCompatibility, pinDisplayType } = useGraphEditorContext();
   const pointer = flow
     ? containerPointerToClient(props.pointer, flow)
     : props.pointer;
@@ -173,6 +184,7 @@ export function GraphConnectionLine(props: ConnectionLineComponentProps) {
       toHandle={props.toHandle}
       pointer={pointer}
       nodes={nodes}
+      pinDisplayType={pinDisplayType}
       root={flow ?? document}
       connectEndMode={connectEndMode}
       pinCompatibility={pinCompatibility}

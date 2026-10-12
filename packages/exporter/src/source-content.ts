@@ -6,10 +6,8 @@ import type { GameManifest } from "./types";
 /** Prepared sources shared by Play, Preview Build, and the standalone player. */
 export type GameSourceContent = {
   decodedPayloads?: ReadonlyMap<string, unknown>;
-  audioSourceRevisions?: ReadonlyMap<string, string>;
   /** Cooked Complex Collision meshes; omitted means "cook the scanned Models from `modelBytes`". */
   complexMeshes?: ReadonlyMap<string, CollisionTriangleMesh>;
-  modelAnimationDurations?: ReadonlyMap<string, ReadonlyMap<string, number | undefined>>;
   manifest: GameManifest;
   scripts: ScriptBundleEntry[];
   scenes: Map<string, SerializedScene>;
@@ -43,29 +41,41 @@ export function requiredGameAssets(manifest: GameManifest, roots: readonly strin
   return result;
 }
 
-/** Snapshot one owner's source maps, including sidecars keyed by their owner. */
+/**
+ * Snapshot the sources of `ids`, including sidecars keyed by their owner, with
+ * a catalog of only those entries.
+ */
 export function gameSourceSubset(game: GameSourceContent, ids: ReadonlySet<string>): GameSourceContent {
+  const owners = new Map<string, string>();
+  for (const entry of game.manifest.assets) if (entry.ownerGuid) owners.set(entry.guid, entry.ownerGuid);
   const keys = new Set(ids);
   for (const id of ids) {
-    const owner = game.manifest.assets.find(entry => entry.guid === id)?.ownerGuid;
-    const colon = id.indexOf(":");
+    // Prefixed sidecars (`navmesh:<scene>`) are keyed by the guid after the prefix.
+    const owner = owners.get(id) ?? (id.includes(":") ? id.slice(id.indexOf(":") + 1) : undefined);
     if (owner) keys.add(owner);
-    else if (colon >= 0) keys.add(id.slice(colon + 1));
   }
-  const select = <T>(map: ReadonlyMap<string, T>): Map<string, T> => new Map([...map].filter(([guid]) => keys.has(guid)));
+  const select = <T>(map: ReadonlyMap<string, T>): Map<string, T> => {
+    const selected = new Map<string, T>();
+    for (const key of keys) if (map.has(key)) selected.set(key, map.get(key)!);
+    return selected;
+  };
+  // Unpacked clips are keyed `assetGuid:chunkId` beside the default clip's plain guid.
+  const audioBytes = new Map([...game.audioBytes].filter(([key]) => {
+    const colon = key.indexOf(":");
+    return keys.has(key) || (colon > 0 && keys.has(key.slice(0, colon)));
+  }));
   return {
     ...game,
+    manifest: { ...game.manifest, assets: game.manifest.assets.filter(entry => keys.has(entry.guid)) },
     scripts: game.scripts.filter(script => keys.has(script.assetGuid)),
-    ...(game.audioSourceRevisions ? { audioSourceRevisions: select(game.audioSourceRevisions) } : {}),
     ...(game.decodedPayloads ? { decodedPayloads: select(game.decodedPayloads) } : {}),
     ...(game.complexMeshes ? { complexMeshes: select(game.complexMeshes) } : {}),
-    ...(game.modelAnimationDurations ? { modelAnimationDurations: select(game.modelAnimationDurations) } : {}),
     scenes: select(game.scenes), sceneLayers: select(game.sceneLayers),
     textureBytes: select(game.textureBytes), areaEmissions: select(game.areaEmissions),
     modelBytes: select(game.modelBytes), modelPayloads: select(game.modelPayloads),
     fontBytes: select(game.fontBytes), fontFamilies: select(game.fontFamilies),
     fontFacetypeBytes: select(game.fontFacetypeBytes), fontMsdfJson: select(game.fontMsdfJson), fontMsdfPng: select(game.fontMsdfPng),
-    audioBytes: select(game.audioBytes), audioPayloads: select(game.audioPayloads),
+    audioBytes, audioPayloads: select(game.audioPayloads),
     payloads: select(game.payloads), navmeshBytes: select(game.navmeshBytes), audioReverbBytes: select(game.audioReverbBytes),
   };
 }

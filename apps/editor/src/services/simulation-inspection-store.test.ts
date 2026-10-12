@@ -46,6 +46,23 @@ describe("SimulationInspectionStore", () => {
     expect(store.getSnapshot().selection).toBeNull();
   });
 
+  it("keeps identity rows read alongside a superseded selection read", async () => {
+    vi.useFakeTimers();
+    const pending = deferred<RuntimeInspectorResult>();
+    // Like the runtime, a known structural revision is answered without rows.
+    const transport = vi.fn((action: RuntimeInspectionAction) => action.kind !== "identities" ? pending.promise
+      : Promise.resolve(action.knownRevision === 1 ? result({ kind: "identities", rows: [], unchanged: true }) : identities()));
+    const store = new SimulationInspectionStore(); store.attach(transport); store.select(actor);
+    store.consume("identities"); store.consume("selection");
+    await vi.advanceTimersByTimeAsync(0);
+    store.select({ ...actor, actorToken: 2 });
+    pending.resolve(selection(actor));
+    await vi.advanceTimersByTimeAsync(200);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(transport.mock.calls.filter(([action]) => action.kind === "identities")).toHaveLength(2);
+    expect(store.getSnapshot().rows.map(row => row.identity)).toEqual([actor]);
+  });
+
   it("does not let an older poll overwrite an acknowledged mutation", async () => {
     vi.useFakeTimers();
     const oldPoll = deferred<RuntimeInspectorResult>(); let polls = 0;

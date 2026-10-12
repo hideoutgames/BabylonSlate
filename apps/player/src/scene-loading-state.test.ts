@@ -57,6 +57,9 @@ describe("player scene loading state", () => {
     expect(root.dataset.sceneLoadId).toBe("3");
     publishPlayerSceneLoading(root, null);
     expect(root.dataset.sceneLoading).toBe("false");
+    expect(root.dataset.sceneLoadPhase).toBeUndefined();
+    expect(root.dataset.sceneLoadProgress).toBeUndefined();
+    expect(root.dataset.sceneLoadId).toBe("3");
   });
 
   it("acknowledges paint after one engine end-frame", async () => {

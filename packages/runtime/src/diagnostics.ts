@@ -36,7 +36,6 @@ export class SessionDiagnosticAggregator {
     if (existing) {
       existing.count += 1;
       existing.lastFrameId = diag.frameId;
-      existing.message = diag.message;
       return;
     }
     if (this.map.size >= this.cap) {

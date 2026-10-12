@@ -1230,7 +1230,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
         componentPropertyRows(
           actor.id,
           component,
-          (property, value) => {
+          (property, value, alsoSet) => {
             if (component.classId === "SceneStreamingComponent" && property === "sceneGuid") {
               const guid = typeof value === "string" ? value : null;
               updateActor((entry) => ({ ...entry, components: setSceneStreamingTarget(entry.components, component.id, guid, assetLabel(guid) ?? "") }));
@@ -1242,11 +1242,14 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
                 candidate.id === component.id
                   ? {
                       ...candidate,
-                      properties: patchInspectorComponentProperty(
-                        candidate,
-                        property,
-                        value,
-                      ),
+                      properties: {
+                        ...patchInspectorComponentProperty(
+                          candidate,
+                          property,
+                          value,
+                        ),
+                        ...alsoSet,
+                      },
                     }
                   : candidate,
               ),

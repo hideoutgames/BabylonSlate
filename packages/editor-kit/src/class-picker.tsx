@@ -9,7 +9,6 @@ import {
   SearchDialog,
   type SearchDialogItem,
 } from "./search-dialog";
-import { displayPickerTitle } from "./picker-identity";
 import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
 import { useAssetCreate, type ClassCreateOptions } from "./asset-create-context";
 import { usePickerCreate } from "./use-picker-create";
@@ -74,7 +73,7 @@ export function ClassPicker({
   const items = useMemo<SearchDialogItem[]>(() => {
     const rows: SearchDialogItem[] = classes.map((entry) => ({
       id: entry.id,
-      label: displayPickerTitle(entry.name),
+      label: entry.name,
       description: "Class",
       group: [entry.group, entry.description].filter(Boolean).join(" "),
       leading: (
@@ -87,9 +86,7 @@ export function ClassPicker({
         />
       ),
     }));
-    const baseName = displayPickerTitle(
-      classes.find((entry) => entry.id === base)?.name ?? base,
-    );
+    const baseName = classes.find((entry) => entry.id === base)?.name ?? base;
     const createRows: SearchDialogItem[] = createClass
       ? [
           {

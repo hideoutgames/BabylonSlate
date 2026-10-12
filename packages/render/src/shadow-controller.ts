@@ -35,6 +35,7 @@ import {
 import { hasClusteredLightPolicy } from "./clustered-light-policy";
 import {
   authoredShadowParticipation,
+  casterWithinShadowRange,
   hasDeformingShadowBounds,
   neverCastsShadows,
   participatesInShadows,
@@ -145,6 +146,21 @@ function generatorPasses(generator: ShadowGenerator): number {
 }
 
 /** Illumination state and shadow allocation of one light; no entry is "unsupported". */
+/**
+ * A point/spot map's depth ends at the light's range, not the camera's far
+ * plane: casters beyond it have no light to block, and the shorter range both
+ * culls them per face and spends the depth precision where the light reaches.
+ * A range at or beyond the camera's far plane keeps Babylon's camera default.
+ */
+export function fitLocalShadowDepth(light: Light, camera: Camera | null): void {
+  if (!(light instanceof PointLight || light instanceof SpotLight)) return;
+  const far = camera?.maxZ || 10000;
+  const maxZ = Number.isFinite(light.range) && light.range > 0 && light.range < far ? light.range : undefined;
+  // Babylon 9.29 reads an unset (undefined) shadowMaxZ as the camera default.
+  const depth = light as { shadowMaxZ: number | undefined };
+  if (depth.shadowMaxZ !== maxZ) depth.shadowMaxZ = maxZ;
+}
+
 function shadowLightRow(light: Light, entry?: Entry) {
   const generator = entry?.standby ? null : entry?.generator;
   return {
@@ -348,7 +364,10 @@ export class SceneShadowController {
   refreshShadowMaps(): void {
     this.refresh.syncCasters(this.scene, this.meshes);
     for (const entry of this.entries.values())
-      if (entry.generator && !entry.standby) this.refresh.apply(entry.generator);
+      if (entry.generator && !entry.standby) {
+        fitLocalShadowDepth(entry.generator.getLight(), this.scene.activeCamera);
+        this.refresh.apply(entry.generator);
+      }
   }
   status(light: Light): ShadowLightStatus | undefined {
     return this.entries.get(light)?.status;
@@ -979,7 +998,18 @@ export class SceneShadowController {
                 directionalLight && slot.entry.settings!.filter === "pcf"
                   ? upstream
                   : planes;
-              return this.spatial.queryPlanes(activePlanes, casters);
+              this.spatial.queryPlanes(activePlanes, casters);
+              // The index never plane-culls deforming casters. A local map ends
+              // at its light's range, so anything that cannot reach it draws nothing.
+              const light = generator.getLight();
+              if (!directionalLight && "range" in light && Number.isFinite(light.range)) {
+                const position = (light as LocalShadowLight).getAbsolutePosition();
+                let kept = 0;
+                for (const mesh of casters)
+                  if (casterWithinShadowRange(mesh, position, light.range)) casters[kept++] = mesh;
+                casters.length = kept;
+              }
+              return casters;
             };
           generator.customAllowRendering = (part) => {
             if (hasDeformingShadowBounds(part.getMesh())) return true;
@@ -1068,7 +1098,10 @@ export class SceneShadowController {
     }
     reserveSceneShadows(scene, live);
     for (const entry of this.entries.values())
-      if (entry.generator && !entry.standby) this.refresh.apply(entry.generator);
+      if (entry.generator && !entry.standby) {
+        fitLocalShadowDepth(entry.generator.getLight(), scene.activeCamera);
+        this.refresh.apply(entry.generator);
+      }
   }
   /** Keep a moved or resumed map from sampling stale depth before it redraws. */
   private neutralUntilRendered(generator: ShadowGenerator): void {

@@ -55,7 +55,7 @@ export class HttpCatalogStorageAdapter implements ProjectStorage {
 
   private path(path: string): string {
     if (!this.active) throw new Error("No project folder selected");
-    return projectRelativePath(path === "." ? "" : path, true);
+    return projectRelativePath(path, true);
   }
   private file(path: string): HttpStorageFile {
     const file = this.files.get(this.path(path));

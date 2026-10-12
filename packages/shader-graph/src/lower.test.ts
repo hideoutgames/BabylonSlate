@@ -5,6 +5,7 @@ import {
   normalizeMaterialDocument,
   type MaterialDocument,
 } from "./document";
+import { newCustomGlslProperties } from "./custom-glsl";
 import { lowerMaterialDocument, materialCompileKey } from "./lower";
 
 function surfaceWithMultiply(): MaterialDocument {
@@ -71,16 +72,6 @@ describe("material lowering", () => {
     if (!plan.ok) return;
     expect(plan.plan.domain).toBe("surface");
     expect(plan.plan.outputs.baseColor).not.toBeNull();
-  });
-
-  it("lowers leftover interface domain strings as a surface material", () => {
-    const result = lowerMaterialDocument(
-      normalizeMaterialDocument({ name: "HudGlow", domain: "interface" }),
-    );
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.plan.domain).toBe("surface");
-    expect(result.plan.outputs.baseColor).not.toBeNull();
   });
 
   it("refuses to lower a graph with errors", () => {
@@ -220,7 +211,6 @@ describe("material lowering", () => {
   it("converts declared Custom GLSL inputs independently of its output width", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({ id: "custom", type: "custom.glsl", position: { x: 0, y: 0 }, properties: {
-      customVersion: 2,
       inputs: [{ id: "value", name: "Value", type: "vec2" }],
       outputs: [{ id: "out", name: "Out", type: "float" }],
       body: "return Value.x;",
@@ -304,6 +294,15 @@ describe("material lowering", () => {
     expect(materialCompileKey(a)).not.toBe(materialCompileKey(b));
   });
 
+  it("keys the exact alpha cutoff the compiler bakes", () => {
+    const masked = (alphaCutoff: number) => ({
+      ...createDefaultMaterialDocument(),
+      blendMode: "masked" as const,
+      alphaCutoff,
+    });
+    expect(materialCompileKey(masked(0.50001))).not.toBe(materialCompileKey(masked(0.50004)));
+  });
+
   it("changes the compile key when a Custom GLSL body changes", () => {
     const withBody = (body: string) => {
       const doc = createDefaultMaterialDocument();
@@ -311,7 +310,7 @@ describe("material lowering", () => {
         id: "glsl",
         type: "custom.glsl",
         position: { x: 0, y: 0 },
-        properties: { body },
+        properties: { ...newCustomGlslProperties(), body },
       });
       doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
       doc.edges.push(
@@ -332,8 +331,8 @@ describe("material lowering", () => {
       );
       return doc;
     };
-    expect(materialCompileKey(withBody("a + b"))).not.toBe(
-      materialCompileKey(withBody("a * b")),
+    expect(materialCompileKey(withBody("return A + B;"))).not.toBe(
+      materialCompileKey(withBody("return A * B;")),
     );
   });
 
@@ -595,6 +594,29 @@ describe("material lowering", () => {
     );
     expect(inlined?.source.callPath).toEqual(["call"]);
     expect(inlined?.source.functionGuid).toBe("fn-tint");
+  });
+
+  it("emits nothing for a function input the body never reads", () => {
+    const fn = createDefaultMaterialFunctionDocument("Passthrough");
+    fn.inputs.push({ id: "in_unused", name: "Unused", type: "float" });
+    const doc = createDefaultMaterialDocument("Fx", "postProcess");
+    doc.nodes.push(
+      { id: "depth", type: "input.sceneDepth", position: { x: 0, y: 0 }, properties: {} },
+      { id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "fn-pass" } },
+    );
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-scene-output");
+    doc.edges.push(
+      { id: "e-uv-depth", sourceNodeId: "screenUv", sourcePinId: "uv", targetNodeId: "depth", targetPinId: "uv" },
+      { id: "e-depth-call", sourceNodeId: "depth", sourcePinId: "depth", targetNodeId: "call", targetPinId: "in_unused" },
+      { id: "e-color-call", sourceNodeId: "sceneColor", sourcePinId: "color", targetNodeId: "call", targetPinId: "in_value" },
+      { id: "e-call-out", sourceNodeId: "call", sourcePinId: "out_value", targetNodeId: "output", targetPinId: "color" },
+    );
+    const result = lowerMaterialDocument(doc, { functions: { "fn-pass": fn } });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.operations.map((operation) => operation.nodeType)).not.toContain("input.sceneDepth");
+    expect(result.plan.bufferRequirements.sceneDepth).toBe(false);
+    expect(result.plan.cost.usesSceneDepth).toBe(false);
   });
 
   it("records scene color, depth, and normal buffer requirements", () => {

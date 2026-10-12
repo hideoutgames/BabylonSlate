@@ -160,7 +160,6 @@ describe("Capacitor 8 Android host", () => {
       ...java.matchAll(/@PluginMethod\s+public(?:\s+synchronized)?\s+void (\w+)\(/g),
     ].map((match) => match[1]).sort();
     expect(implemented).toEqual(methods);
-    expect(methods).not.toContain("importBookmark");
   });
 
   it("keeps tracked Android text sources free of credential material", () => {

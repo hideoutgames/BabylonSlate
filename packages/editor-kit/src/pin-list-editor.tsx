@@ -95,7 +95,10 @@ function patchRow(
     if (row.id !== id) return row;
     const resolved = patch.type === "tagContainer" ? { ...patch, type: "struct", typeClassId: "engine:TagContainer" } : patch;
     const next = { ...row, ...resolved };
-    if ("type" in resolved && (!pinPickerKeepsTypeClassId(String(resolved.type)) || (row.typeClassId === "engine:TagContainer" && patch.type !== "tagContainer" && patch.typeClassId === undefined))) {
+    const dropsClassId =
+      !("typeClassId" in resolved) &&
+      !pinPickerKeepsTypeClassId(row.type, String(resolved.type));
+    if ("type" in resolved && (dropsClassId || (row.typeClassId === "engine:TagContainer" && patch.type !== "tagContainer" && patch.typeClassId === undefined))) {
       delete next.typeClassId;
     }
     return next;

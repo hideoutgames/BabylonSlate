@@ -10,7 +10,7 @@ import {
 } from "@babylonslate/runtime";
 import { createEngine } from "@babylonslate/render";
 import { createGameWorkerHost } from "./game-worker-host";
-import { startPlaySession, type PlaySession } from "./play-session";
+import { startPlaySession, type PlaySceneSourceLoader, type PlaySession } from "./play-session";
 
 vi.mock("@babylonslate/render", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@babylonslate/render")>()),
@@ -23,8 +23,11 @@ vi.mock("@babylonslate/runtime", async (importOriginal) => ({
   createRuntimeFromLoad: vi.fn(),
 }));
 vi.mock("./game-worker-host", () => ({ createGameWorkerHost: vi.fn() }));
+const capture = vi.hoisted(() => ({ setSuppressed: vi.fn<(suppressed: boolean) => void>() }));
 vi.mock("./input-capture", () => ({
-  attachInputCapture: () => ({ dispose() {}, setSuppressed() {}, neutralize() {} }),
+  attachInputCapture: () => ({
+    dispose() {}, setSuppressed: capture.setSuppressed, neutralize() {}, setTick() {}, pollGamepads() {}, ring: { drain: () => [] },
+  }),
 }));
 
 const mainScript: ScriptBundleEntry = {
@@ -44,6 +47,7 @@ let session: PlaySession | undefined;
 afterEach(() => {
   session?.stop();
   session = undefined;
+  capture.setSuppressed.mockReset();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -61,12 +65,32 @@ describe.each(["worker", "in-process"] as const)(
         scenes?: Parameters<typeof startPlaySession>[0]["scenes"];
         prepareSceneStream?: () => Promise<void>;
         applyCommand?: (command: CommandMessage) => void;
+        pushSnapshot?: (buffer: Float32Array) => void;
         captureFrame?: () => Promise<unknown>;
         onGameTimePaused?: (paused: boolean) => void;
+        acquireAssetSources?: Parameters<typeof startPlaySession>[0]["acquireAssetSources"];
+        acquireSceneSources?: (sources: unknown, options: { prepare?: boolean; priority?: string }) => Promise<() => void>;
+        onSceneStreamingPaused?: (paused: boolean) => void;
+        /** Collects the host's animation-frame callbacks instead of dropping them. */
+        frames?: FrameRequestCallback[];
+        onRuntime?: (runtime: RuntimeDriver) => void;
+        /** In-process mode: a worker that starts but cannot accept its boot controls. */
+        failingWorkerTerminate?: () => void;
+        /** Worker mode: observes the host terminating the worker. */
+        workerTerminate?: () => void;
+        /** Worker mode: deliver output as the worker would, including after Stop. */
+        onWorker?: (worker: { command(command: CommandMessage): void; snapshot(buffer: Float32Array): void }) => void;
+        /** In-process mode: prepares Scenes for scene changes. */
+        sceneSources?: PlaySceneSourceLoader;
+        audioReverbByScene?: ReadonlyMap<string, Uint8Array>;
+        onAudioReverbField?: (field: Uint8Array | null) => void;
       } = {},
     ): Promise<RuntimeDriver> {
       vi.stubGlobal("window", new EventTarget());
-      vi.stubGlobal("requestAnimationFrame", () => 1);
+      vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+        options.frames?.push(callback);
+        return 1;
+      });
       vi.stubGlobal("cancelAnimationFrame", () => {});
       vi.mocked(createEngine).mockReturnValue({
         applySceneEnvironment() {},
@@ -75,10 +99,16 @@ describe.each(["worker", "in-process"] as const)(
         captureFrame: options.captureFrame,
         cancelFrameCapture() {},
         setGameTimePaused: options.onGameTimePaused ?? (() => {}),
-        scheduler: { invalidate() {}, acquireObstruction: () => () => {}, gateState: () => ({ frameCap: 60 }) },
+        scheduler: { invalidate() {}, acquireObstruction: () => () => {}, gateState: () => ({ frameCap: 60 }), stats: () => ({ renderedFps: 0 }) },
         liveObjectCounts: () => ({ meshes: 0, textures: 0 }),
         applyCommand: options.applyCommand ?? (() => {}),
-        pushSnapshot() {},
+        pushSnapshot: options.pushSnapshot ?? (() => {}),
+        setGameInputEnabled() {},
+        setSimulationEditMode() {},
+        loadScene() {},
+        resetAudioSession() {},
+        resetParticleSession() {},
+        setAudioReverbField: options.onAudioReverbField ?? (() => {}),
         renderPathStatus: () => ({
           requested: { renderPath: "forward", gpuBackend: "webgl2" },
           effective: { renderPath: "forward", gpuBackend: "webgl2" },
@@ -89,11 +119,11 @@ describe.each(["worker", "in-process"] as const)(
         prewarmSceneMaterials: () => Promise.resolve(),
         presentFirstFrame: options.presentFirstFrame ?? (() => Promise.resolve()),
         prepareSceneStream: options.prepareSceneStream ?? (() => Promise.resolve()),
-        acquireSceneSources: async () => () => {},
+        acquireSceneSources: options.acquireSceneSources ?? (async () => () => {}),
         releaseInitialSources() {},
         setSourceLibraries() {},
         setCommandSourceLoader() {},
-        setSceneStreamingPaused() {},
+        setSceneStreamingPaused: options.onSceneStreamingPaused ?? (() => {}),
         dispose() {},
         whenReleased: () => Promise.resolve(),
       } as unknown as ReturnType<typeof createEngine>);
@@ -105,12 +135,14 @@ describe.each(["worker", "in-process"] as const)(
         finishBoot = resolve;
         failBoot = reject;
       });
-      vi.mocked(createRuntimeFromLoad).mockImplementation((load, onCommand) => {
+      vi.mocked(createRuntimeFromLoad).mockImplementation((load, onCommand, _storage, sourceHost) => {
         runtime = createInProcessRuntime({
           ...runtimeOptionsFromLoadControl(load),
+          ...sourceHost,
           onCommand,
           preferSoftwarePhysics: true,
         });
+        options.onRuntime?.(runtime);
         const finishLoading = runtime.finishPlayLoading.bind(runtime);
         vi.spyOn(runtime, "finishPlayLoading").mockImplementation(() => {
           finishLoading();
@@ -124,20 +156,29 @@ describe.each(["worker", "in-process"] as const)(
         });
         return runtime;
       });
-      if (mode === "in-process") {
+      if (mode === "in-process" && options.failingWorkerTerminate) {
+        vi.mocked(createGameWorkerHost).mockReturnValue({
+          onCommand() {}, onSnapshot() {}, pushInput() {}, terminate: options.failingWorkerTerminate,
+          postControl() { throw new DOMException("The load could not be cloned.", "DataCloneError"); },
+        });
+      } else if (mode === "in-process") {
         vi.mocked(createGameWorkerHost).mockImplementation(() => {
           throw new Error("Worker unavailable");
         });
       } else {
         const boot = createPlayBootCoordinator();
         let onCommand: (command: CommandMessage) => void = () => {};
+        let onSnapshot: (buffer: Float32Array) => void = () => {};
+        options.onWorker?.({ command: (command) => onCommand(command), snapshot: (buffer) => onSnapshot(buffer) });
         vi.mocked(createGameWorkerHost).mockReturnValue({
           onCommand: (handler) => {
             onCommand = handler;
           },
-          onSnapshot() {},
+          onSnapshot: (handler) => {
+            onSnapshot = handler;
+          },
           pushInput() {},
-          terminate() {},
+          terminate: options.workerTerminate ?? (() => {}),
           postControl(control) {
             if (control.type === "load")
               runtime = createRuntimeFromLoad(control, onCommand);
@@ -151,6 +192,8 @@ describe.each(["worker", "in-process"] as const)(
             if (control.type === "sceneStreamReady") runtime.notifySceneStreamReady(control.actorGuid, control.streamLoadId);
             if (control.type === "sceneStreamProgress") runtime.notifySceneStreamProgress(control.actorGuid, control.streamLoadId, control.progress);
             if (control.type === "sceneStreamFailed") runtime.notifySceneStreamFailed(control.actorGuid, control.streamLoadId, control.message);
+            if (control.type === "assetPreloadResult") runtime.notifyAssetPreloadResult(control);
+            if (control.type === "assetLoadStates") runtime.setAssetLoadStates(control.states);
             if (control.type === "sessionBoundary") void runtime.requestSessionBoundary(control).then(result => onCommand({ type: "sessionBoundaryResult", ...result }));
             if (control.type === "diagnosticOperation") void runtime.requestDiagnosticOperation(control).then(result => onCommand({ type: "diagnosticOperationResult", ...result }));
             if (control.type === "stop") {
@@ -171,6 +214,9 @@ describe.each(["worker", "in-process"] as const)(
         scripts: [mainScript, ...(options.scripts ?? [])],
         gameInstanceClass: options.gameInstanceClass,
         onFatalDiagnostic: options.onFatalDiagnostic,
+        acquireAssetSources: options.acquireAssetSources,
+        acquireSceneSources: options.sceneSources,
+        audioReverbByScene: options.audioReverbByScene,
       });
       await booted;
       runtime.tick();
@@ -196,6 +242,111 @@ describe.each(["worker", "in-process"] as const)(
       expect(captureFrame).toHaveBeenCalledTimes(1);
       await session!.setPauseReason("lifecycle", false);
       expect(renderPaused).toBe(false);
+    });
+
+    it("returns keyboard, pointer and gamepad input to the game after a Play pause", async () => {
+      await play();
+      await session!.setPauseReason("user", true);
+      expect(capture.setSuppressed).toHaveBeenLastCalledWith(true);
+      await session!.setPauseReason("user", false);
+      expect(capture.setSuppressed).toHaveBeenLastCalledWith(false);
+    });
+
+    it("ends an editor input transition whose reset fails without holding game input", async () => {
+      let refuseReset = false;
+      await play({
+        onRuntime: (runtime) => {
+          const request = runtime.requestSessionBoundary.bind(runtime);
+          vi.spyOn(runtime, "requestSessionBoundary").mockImplementation(async (boundary) => {
+            const result = await request(boundary);
+            return refuseReset && boundary.action.kind === "resetInput" ? { ...result, success: false, reason: "Reset refused" } : result;
+          });
+        },
+      });
+      await session!.setEditorInputSuppressed(true);
+      expect(capture.setSuppressed).toHaveBeenLastCalledWith(true);
+      refuseReset = true;
+      await expect(session!.setEditorInputSuppressed(false)).rejects.toThrow("Reset refused");
+      expect(capture.setSuppressed).toHaveBeenLastCalledWith(false);
+    });
+
+    it.runIf(mode === "worker")("does not present worker output that arrives after Stop", async () => {
+      const applyCommand = vi.fn();
+      const pushSnapshot = vi.fn();
+      let worker!: { command(command: CommandMessage): void; snapshot(buffer: Float32Array): void };
+      await play({ applyCommand, pushSnapshot, onWorker: (output) => { worker = output; } });
+      session!.stop();
+      session = undefined;
+      applyCommand.mockClear();
+      pushSnapshot.mockClear();
+      worker.command({ type: "setFreeCam", enabled: true });
+      worker.snapshot(new Float32Array(16));
+      expect(applyCommand).not.toHaveBeenCalled();
+      expect(pushSnapshot).not.toHaveBeenCalled();
+    });
+
+    it.runIf(mode === "worker")("keeps a stopped worker running End Play until it reports the stop finished", async () => {
+      const terminate = vi.fn();
+      let worker!: { command(command: CommandMessage): void; snapshot(buffer: Float32Array): void };
+      await play({ workerTerminate: terminate, onWorker: (output) => { worker = output; } });
+      const { released } = session!.stop();
+      session = undefined;
+      let settled = false;
+      void released.then(() => { settled = true; });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(terminate).not.toHaveBeenCalled();
+      // The next session waits for release, so End Play saves cannot land in it.
+      expect(settled).toBe(false);
+      worker.command({ type: "runtimeStopped" });
+      expect(terminate).toHaveBeenCalledOnce();
+      await expect(released).resolves.toMatchObject({ quarantined: false });
+      worker.command({ type: "runtimeStopped" });
+      expect(terminate).toHaveBeenCalledOnce();
+    });
+
+    it.runIf(mode === "worker")("terminates a stopped worker that never reports the stop finished", async () => {
+      const terminate = vi.fn();
+      await play({ workerTerminate: terminate });
+      vi.useFakeTimers();
+      try {
+        const { released } = session!.stop();
+        session = undefined;
+        let settled = false;
+        void released.then(() => { settled = true; });
+        await vi.advanceTimersByTimeAsync(2999);
+        expect(terminate).not.toHaveBeenCalled();
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(terminate).toHaveBeenCalledOnce();
+        await expect(released).resolves.toMatchObject({ quarantined: false });
+      } finally { vi.useRealTimers(); }
+    });
+
+    it.runIf(mode === "in-process")("applies each Scene's baked reverb on every later scene change", async () => {
+      const reverbs: Record<string, Uint8Array> = { scene: new Uint8Array([1]), other: new Uint8Array([2]) };
+      const fields: Array<Uint8Array | null> = [];
+      const frames: FrameRequestCallback[] = [];
+      const runtime = await play({
+        frames,
+        audioReverbByScene: new Map([["scene", reverbs.scene!]]),
+        onAudioReverbField: (field) => fields.push(field),
+        sceneSources: async (guid) => ({
+          sources: {} as never, release() {}, scene: { ...createDefaultScene(), actors: [] }, audioReverb: reverbs[guid] ?? null,
+        }),
+      });
+      const change = async (guid: string) => {
+        let done = false;
+        const work = runtime.changeSceneAsync(guid).finally(() => { done = true; });
+        await vi.waitFor(() => {
+          frames.shift()?.(performance.now());
+          expect(done).toBe(true);
+        }, { timeout: 4000 });
+        await work;
+      };
+      await change("other");
+      await change("scene");
+      await change("other");
+      expect(fields).toEqual([reverbs.other, reverbs.scene, reverbs.other]);
     });
 
     it("does not create the default model actor when its class is merely loaded", async () => {
@@ -256,6 +407,47 @@ describe.each(["worker", "in-process"] as const)(
       expect(runtime.getWorld().getActors().map((actor) => actor.guid)).toEqual(["streamer"]);
     });
 
+    const loaderScript = (source: string): ScriptBundleEntry => ({
+      assetGuid: "loader", classId: "Loader", parentClassId: "Actor", anchors: [], source,
+      entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: source.includes("await") }],
+    });
+
+    it.each([["Low", "background"], ["Normal", "preload"], ["High", "gameplay"]] as const)(
+      "schedules a script's %s priority asset load as %s in source and renderer preparation",
+      async (priority, scheduled) => {
+        const acquireAssetSources = vi.fn(async () => ({ sources: {} as never, release() {} }));
+        const acquireSceneSources = vi.fn(async () => () => {});
+        await play({
+          actors: [createActor("loader", "Loader", { classId: "Loader" })],
+          scripts: [loaderScript(`export function onBeginPlay(ctx) { ctx.requestAssetLoad(["cold"], { priority: "${priority}" }); }`)],
+          acquireAssetSources, acquireSceneSources,
+        });
+        await vi.waitFor(() => expect(acquireAssetSources).toHaveBeenCalledOnce());
+        expect(acquireAssetSources).toHaveBeenCalledWith(["cold"], expect.objectContaining({ consumer: "loader", priority: scheduled }));
+        await vi.waitFor(() => expect(acquireSceneSources).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ prepare: true, priority: scheduled })));
+      },
+    );
+
+    it("pauses render game time while a blocking asset load holds the simulation", async () => {
+      let finish!: () => void;
+      const acquireAssetSources = vi.fn(() => new Promise<{ sources: never; release(): void }>((resolve) => {
+        finish = () => resolve({ sources: {} as never, release() {} });
+      }));
+      const onSceneStreamingPaused = vi.fn();
+      const runtime = await play({
+        actors: [createActor("loader", "Loader", { classId: "Loader" })],
+        scripts: [loaderScript('export async function onBeginPlay(ctx) { await ctx.waitForAssetLoad(ctx.requestAssetLoad(["cold"]), { blocking: true }); ctx.setVariable("done", true); }')],
+        acquireAssetSources, onSceneStreamingPaused,
+      });
+      await vi.waitFor(() => expect(onSceneStreamingPaused).toHaveBeenCalledWith(true));
+      const before = runtime.getWorld().clock.tickIndex;
+      runtime.tick();
+      expect(runtime.getWorld().clock.tickIndex).toBe(before);
+      finish();
+      await vi.waitFor(() => expect(onSceneStreamingPaused).toHaveBeenLastCalledWith(false));
+      await vi.waitFor(() => expect(runtime.getWorld().findActor("loader")!.getVariable("done")).toBe(true));
+    });
+
     it("keeps Game Instance ticking and withholds scene finish until the renderer presents", async () => {
       let present!: () => void;
       const presentFirstFrame = vi.fn(() => new Promise<void>((resolve) => { present = resolve; }));
@@ -312,6 +504,37 @@ describe.each(["worker", "in-process"] as const)(
       expect(actors[0]!.transform.position).toEqual({ x: 4, y: 5, z: 6 });
       // Authored Begin Play follows the renderer's completed first-frame ACK.
       await vi.waitFor(() => expect(actors[0]!.getVariable("began")).toBe(true));
+    });
+
+    it.runIf(mode === "in-process")("terminates a worker that could not take its boot controls before falling back", async () => {
+      const terminate = vi.fn();
+      await play({ failingWorkerTerminate: terminate });
+      expect(terminate).toHaveBeenCalledOnce();
+    });
+
+    it.runIf(mode === "in-process")("delivers a completed Scene with the next pumped snapshot when none was ready at realization", async () => {
+      const frames: FrameRequestCallback[] = [];
+      let refusedCopies = 0;
+      let settled = false;
+      const started = play({
+        frames,
+        onRuntime: (runtime) => {
+          const copy = runtime.copySnapshot.bind(runtime);
+          vi.spyOn(runtime, "copySnapshot").mockImplementation((out) => {
+            if (refusedCopies === 0) {
+              refusedCopies += 1;
+              return false;
+            }
+            return copy(out);
+          });
+        },
+      }).finally(() => { settled = true; });
+      await vi.waitFor(() => expect(refusedCopies).toBe(1));
+      await vi.waitFor(() => {
+        frames.shift()?.(performance.now());
+        expect(settled).toBe(true);
+      }, { timeout: 4000 });
+      await expect(started).resolves.toBeDefined();
     });
 
     it("allows the GameInstance to explicitly SpawnActor without an extra default instance", async () => {

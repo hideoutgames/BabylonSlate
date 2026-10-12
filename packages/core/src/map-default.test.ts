@@ -39,6 +39,14 @@ describe("mapFromDefaultEntries", () => {
     expect(map.get("a")).toBe(2);
     expect(map.size).toBe(1);
   });
+
+  it("gives every Map its own copy of struct values", () => {
+    const defaults = [{ key: "spawn", value: { x: 1, y: 2, z: 3 } }];
+    const first = mapFromDefaultEntries(defaults);
+    (first.get("spawn") as { x: number }).x = 99;
+    expect(mapFromDefaultEntries(defaults).get("spawn")).toEqual({ x: 1, y: 2, z: 3 });
+    expect(defaults[0]!.value.x).toBe(1);
+  });
 });
 
 describe("mapDefaultLiteral", () => {

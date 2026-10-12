@@ -1,4 +1,11 @@
-import { useId, useRef, useState, type ComponentProps } from "react";
+import {
+  useId,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ComponentProps,
+  type Ref,
+} from "react";
 import {
   FieldDescription,
   FieldError,
@@ -16,6 +23,13 @@ export interface NumberFieldProps extends Omit<
   onChange: (value: number) => void;
   /** Enter confirms only valid drafts, after clamping to the configured range. */
   onEnter?: (value: number) => void;
+  /**
+   * Receives a function that finishes the draft as Enter does: it returns the
+   * clamped value, or undefined after explaining an invalid draft and until
+   * the next edit. A host confirm button calls it instead of trusting the
+   * last live `onChange`.
+   */
+  finishRef?: Ref<() => number | undefined>;
   min?: number;
   max?: number;
   /** Reject a typed value outside the range instead of adjusting it on blur. */
@@ -49,6 +63,7 @@ export function NumberField({
   onBlur,
   onKeyDown,
   onEnter,
+  finishRef,
   ...props
 }: NumberFieldProps) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -63,6 +78,9 @@ export function NumberField({
     parseNumberInput(raw) ??
     evaluateNumericExpression(raw, baselineRef.current);
   const finishDraft = (): number | undefined => {
+    // A rejected draft stays rejected until the next edit, so a confirm button
+    // that blurred the field first cannot submit the restored value.
+    if (draft === null && feedback?.invalid) return undefined;
     const parsed = parseDraft(draft ?? String(value));
     setDraft(null);
     if (parsed === undefined) {
@@ -90,6 +108,7 @@ export function NumberField({
     if (next !== value) onChange(next);
     return next;
   };
+  useImperativeHandle(finishRef, () => finishDraft);
 
   return (
     <div

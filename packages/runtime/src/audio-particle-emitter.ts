@@ -33,10 +33,7 @@ export class AudioParticleEmitter {
     for (const component of actor.components) {
       if (component.destroyed || component.classId !== "AudioComponent") continue;
       const playOnStart = component.getVariable("playOnStart") !== false;
-      const assetGuid =
-        (typeof component.getVariable("audioAssetGuid") === "string"
-          ? component.getVariable("audioAssetGuid")
-          : null) ?? component.assetGuid;
+      const assetGuid = component.getVariable("audioAssetGuid");
       if (!playOnStart || typeof assetGuid !== "string" || !assetGuid) continue;
       const volume = Number(component.getVariable("volume") ?? 1);
       this.host.emit({
@@ -105,8 +102,10 @@ export class AudioParticleEmitter {
     }
   }
 
+  /** Clears the actor's particle systems; one without a render slot never had any assigned. */
   stopParticles(actor: Actor): void {
-    const slotId = this.host.slot(actor) ?? 0;
+    const slotId = this.host.slot(actor);
+    if (slotId === undefined) return;
     for (const component of actor.components) {
       if (component.classId !== "ParticleComponent") continue;
       this.host.emit({

@@ -1,3 +1,4 @@
+import type { MouseEvent } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   NumberField,
@@ -48,6 +49,17 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
   const commit = (next: Record<string, unknown>) => {
     void applyAssetDocumentChange(documentId, next);
   };
+  // Rows are selected by index, so a moved row takes the selection to its new
+  // slot. The click must not reach the row, which would select the old slot.
+  const moveRow = (
+    event: MouseEvent,
+    next: Record<string, unknown>,
+    index: number,
+  ) => {
+    event.stopPropagation();
+    commit(next);
+    setSelectedMemberId(memberKey(index));
+  };
 
   if (kind === "enum") {
     const asset = asEnumAsset(payload);
@@ -86,8 +98,10 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
           {asset.members.map((member, index) => {
             const selected = selectedIndex === index;
             return (
+              // The name commits on each keystroke, so a name-based key would
+              // remount the input and drop focus.
               <div
-                key={`${member.name}-${index}`}
+                key={index}
                 className={`flex min-h-[var(--chrome-row,28px)] items-center gap-1 px-2 ${
                   selected ? "bg-accent" : "hover:bg-accent/50"
                 }`}
@@ -120,7 +134,7 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
                   size="icon-sm"
                   aria-label={`Move ${member.name} up`}
                   disabled={index === 0}
-                  onClick={() => commit(moveEnumMember(asset, index, -1))}
+                  onClick={(event) => moveRow(event, moveEnumMember(asset, index, -1), index - 1)}
                 >
                   <ChevronUpIcon />
                 </Button>
@@ -130,7 +144,7 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
                   size="icon-sm"
                   aria-label={`Move ${member.name} down`}
                   disabled={index === asset.members.length - 1}
-                  onClick={() => commit(moveEnumMember(asset, index, 1))}
+                  onClick={(event) => moveRow(event, moveEnumMember(asset, index, 1), index + 1)}
                 >
                   <ChevronDownIcon />
                 </Button>
@@ -180,7 +194,7 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
             const selected = selectedIndex === index;
             return (
               <div
-                key={`${field.name}-${index}`}
+                key={field.id ?? `index:${index}`}
                 className={`flex min-h-[var(--chrome-row,28px)] items-center gap-1 px-2 ${
                   selected ? "bg-accent" : "hover:bg-accent/50"
                 }`}
@@ -209,7 +223,7 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
                   size="icon-sm"
                   aria-label={`Move ${field.name} up`}
                   disabled={index === 0}
-                  onClick={() => commit(moveStructureField(asset, index, -1))}
+                  onClick={(event) => moveRow(event, moveStructureField(asset, index, -1), index - 1)}
                 >
                   <ChevronUpIcon />
                 </Button>
@@ -219,7 +233,7 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
                   size="icon-sm"
                   aria-label={`Move ${field.name} down`}
                   disabled={index === asset.fields.length - 1}
-                  onClick={() => commit(moveStructureField(asset, index, 1))}
+                  onClick={(event) => moveRow(event, moveStructureField(asset, index, 1), index + 1)}
                 >
                   <ChevronDownIcon />
                 </Button>

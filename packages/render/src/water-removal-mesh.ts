@@ -19,6 +19,17 @@ export function waterRemovalShapeVector(volume: WaterRemovalProperties): [number
   return [code, volume.width / 2, volume.height / 2, volume.length / 2];
 }
 
+/**
+ * Full local extents (X, Y, Z) of the shape the water cuts: a sphere is Width across on every axis, and a capsule is at
+ * least Width tall (its height includes the caps, a sphere when it is not taller than it is wide).
+ */
+export function waterRemovalExtents(volume: WaterRemovalProperties): [number, number, number] {
+  if (volume.shape === "sphere") return [volume.width, volume.width, volume.width];
+  if (volume.shape === "cylinder") return [volume.width, volume.height, volume.width];
+  if (volume.shape === "capsule") return [volume.width, Math.max(volume.height, volume.width), volume.width];
+  return [volume.width, volume.height, volume.length];
+}
+
 /** Whether the scene holds any removal volume (enabled or not): water binds without a removal pass otherwise. O(1). */
 export function sceneHasWaterRemovals(scene: Scene): boolean {
   return (removals.get(scene)?.size ?? 0) > 0;
@@ -81,7 +92,8 @@ export function createWaterRemovalMesh(scene: Scene, name: string, properties: u
     outline.renderingGroupId = RENDERING_GROUP.world;
     outline.metadata = { editorVolume: true };
     // Invisible pick target sized to the primitive's bounds.
-    const pick = CreateBox(`${name}:pick`, { width: volume.width, height: volume.height, depth: volume.shape === "box" ? volume.length : volume.width }, scene);
+    const [width, height, depth] = waterRemovalExtents(volume);
+    const pick = CreateBox(`${name}:pick`, { width, height, depth }, scene);
     const material = new StandardMaterial(`${name}:pick`, scene);
     material.alpha = 0; material.disableLighting = true;
     pick.material = material;
@@ -101,6 +113,6 @@ export function createWaterRemovalMesh(scene: Scene, name: string, properties: u
 export function waterRemovalWorldRadius(mesh: Mesh, volume: WaterRemovalProperties): number {
   const m = mesh.getWorldMatrix().m;
   const scale = Math.max(Math.hypot(m[0]!, m[1]!, m[2]!), Math.hypot(m[4]!, m[5]!, m[6]!), Math.hypot(m[8]!, m[9]!, m[10]!));
-  return Math.hypot(volume.width, volume.height, volume.shape === "box" ? volume.length : volume.width) / 2 * scale;
+  return Math.hypot(...waterRemovalExtents(volume)) / 2 * scale;
 }
 

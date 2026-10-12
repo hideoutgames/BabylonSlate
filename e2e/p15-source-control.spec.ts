@@ -61,6 +61,24 @@ async function ensureLocksPanel(page: Page): Promise<void> {
   await expect(visibleLocksPanel(page)).toBeVisible();
 }
 
+function classReadOnly(page: Page): Promise<boolean | null> {
+  return page.evaluate((path) => {
+    const host = globalThis as {
+      __babylonslateSourceControl?: { isDocumentReadOnly: (path: string) => boolean };
+    };
+    return host.__babylonslateSourceControl?.isDocumentReadOnly(path) ?? null;
+  }, CLASS_PATH);
+}
+
+function dirtyKinds(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const host = globalThis as {
+      __babylonslateTest?: { dirtyDocuments: () => { kind: string }[] };
+    };
+    return host.__babylonslateTest?.dirtyDocuments().map((doc) => doc.kind) ?? [];
+  });
+}
+
 test.describe("P15 source-control locking", () => {
   test("enables Fake locks, auto-locks on edit, Edit Anyway, Release All, and mtime reload", async ({
     page,
@@ -122,16 +140,27 @@ test.describe("P15 source-control locking", () => {
     await expect(page.getByTestId("document-lock-banner")).toContainText(
       "Locked by Teammate",
     );
+    // Edit Anyway keeps the owner banner but lifts the read-only guard.
+    await expect.poll(() => classReadOnly(page)).toBe(true);
     await page.getByTestId("document-lock-edit-anyway").click();
-    await expect(page.getByTestId("document-lock-edit-anyway")).toBeVisible();
+    await expect.poll(() => classReadOnly(page)).toBe(false);
+    await expect(page.getByTestId("document-lock-banner")).toContainText(
+      "Locked by Teammate",
+    );
 
     await ensureLocksPanel(page);
     await visibleLocksPanel(page).getByTestId("locks-release-all").click();
     await expect(page.getByTestId("locks-release-all-confirm")).toContainText(
       "Unpushed work becomes editable by others.",
     );
-    await page.getByTestId("locks-release-all-cancel").click();
+    await page.getByTestId("locks-release-all-confirm-action").click();
     await expect(page.getByTestId("locks-release-all-confirm")).toHaveCount(0);
+    await expect(
+      visibleLocksPanel(page).getByTestId("locks-release-all"),
+    ).toHaveText("Release All My Locks (0)");
+    await expect(
+      visibleLocksPanel(page).getByTestId(`locks-row-${SCENE_PATH}`),
+    ).toHaveCount(0);
 
     await page.evaluate(async (path) => {
       const host = globalThis as {
@@ -150,7 +179,10 @@ test.describe("P15 source-control locking", () => {
     await expect(page.getByTestId("external-change-dirty-disk")).toContainText(
       SCENE_PATH,
     );
-    await page.getByTestId("external-change-keep-edits").click();
+    expect(await dirtyKinds(page)).toContain("scene");
+    await page.getByTestId("external-change-reload-from-disk").click();
     await expect(page.getByTestId("external-change-dirty-disk")).toHaveCount(0);
+    // Reloading discards the unsaved nudge in favor of the file on disk.
+    await expect.poll(() => dirtyKinds(page)).not.toContain("scene");
   });
 });

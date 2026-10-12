@@ -62,11 +62,15 @@ export class AppSettingsOwner {
     },
   ): void => {
     this.generation += 1;
-    const appearance = patch.theme
-      ? { ...this.snapshot.settings.appearance, theme: patch.theme }
-      : (patch.appearance ?? this.snapshot.settings.appearance);
+    // Store events carry the full appearance plus a top-level `theme`; a
+    // theme-only event keeps the rest of the current appearance.
+    const { theme, ...settings } = patch;
+    const appearance = {
+      ...(settings.appearance ?? this.snapshot.settings.appearance),
+      ...(theme ? { theme } : {}),
+    };
     this.publish(
-      { ...this.snapshot.settings, ...patch, appearance },
+      { ...this.snapshot.settings, ...settings, appearance },
       this.snapshot.hydrated,
     );
   };
@@ -96,6 +100,11 @@ let activeOwner = fallbackOwner;
 
 export function subscribeAppSettings(listener: Listener): () => void {
   return activeOwner.subscribe(listener);
+}
+
+/** Current settings outside React rendering, for event handlers. */
+export function getAppSettingsSnapshot(): AppSettingsSnapshot {
+  return getActiveAppSettingsSnapshot();
 }
 
 function getActiveAppSettingsSnapshot(): AppSettingsSnapshot {
@@ -131,6 +140,8 @@ type AppSettingsContextValue = AppSettingsSnapshot & {
 };
 
 const AppSettingsContext = createContext<AppSettingsContextValue | null>(null);
+/** Stable per provider: selector hooks subscribe to their own provider's owner. */
+const AppSettingsOwnerContext = createContext<AppSettingsOwner | null>(null);
 
 export function AppSettingsProvider({
   children,
@@ -188,11 +199,35 @@ export function AppSettingsProvider({
   );
   return (
     <AppSettingsContext.Provider value={value}>
+      <AppSettingsOwnerContext.Provider value={owner}>
       <GraphInteractionSettingsContext.Provider value={{ assistantEnabled: snapshot.settings.graphAssistantEnabled, assistantDistance: snapshot.settings.graphAssistantDistance, shakeEnabled: snapshot.settings.graphShakeEnabled, readOnlyPinDefaults: snapshot.settings.readOnlyPinDefaults }}>
         {children}
       </GraphInteractionSettingsContext.Provider>
+      </AppSettingsOwnerContext.Provider>
     </AppSettingsContext.Provider>
   );
+}
+
+/** Trace Graphics Errors, effective only in Debug Mode; re-renders only when it changes. */
+export function useGraphicsErrorTrace(): boolean {
+  return useSettingSelector((settings) => settings.debugMode && settings.traceGraphicsErrors);
+}
+
+/** Debug Mode Engine Setting; re-renders only when it changes. */
+export function useDebugMode(): boolean {
+  return useSettingSelector((settings) => settings.debugMode);
+}
+
+/**
+ * One primitive setting, re-rendering only when it changes. Inside a provider
+ * it subscribes to that provider's owner: a child's effects run before the
+ * provider's, so the module's active owner is still the fallback when a
+ * component mounted with the provider subscribes.
+ */
+function useSettingSelector<T extends string | number | boolean>(select: (settings: EngineSettings) => T): T {
+  const owner = useContext(AppSettingsOwnerContext);
+  const read = () => select((owner ?? activeOwner).getSnapshot().settings);
+  return useSyncExternalStore(owner?.subscribe ?? subscribeAppSettings, read, read);
 }
 
 export function useAppSettings(): AppSettingsContextValue {

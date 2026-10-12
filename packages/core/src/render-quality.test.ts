@@ -132,44 +132,23 @@ describe("rendering quality sessions", () => {
       qualityGroupLabel(resolveRenderingQuality(reapplied), "shadows"),
     ).toBe("high");
   });
-  it("gives projects saved before Geometry existed their shared tier instead of Custom", () => {
-    const saved = (level: "low" | "ultra") => {
-      const { geometry: _unsaved, ...quality } = normalizeRenderingQuality(qualityPresetPatch(level));
-      void _unsaved;
-      return quality;
-    };
-    const low = normalizeRenderingQuality(saved("low"));
-    expect(low.geometry).toMatchObject({ lodDistanceScale: 0.5, preset: "low" });
-    const mixed = normalizeRenderingQuality({ ...saved("ultra"), textures: saved("low").textures });
-    expect(mixed.geometry).toMatchObject({ autoLod: true, lodDistanceScale: 1, preset: "medium" });
-  });
-  it("gives projects saved before Water (and before Geometry) their shared tier instead of Custom", () => {
-    const saved = (level: "low" | "high" | "ultra", ...omit: ("geometry" | "water")[]) => {
-      const quality: Record<string, unknown> = { ...normalizeRenderingQuality(qualityPresetPatch(level)) };
-      for (const group of omit) delete quality[group];
-      return quality;
-    };
-    const overall = (quality: unknown) => {
-      const effective = resolveRenderingQuality({ quality: normalizeRenderingQuality(quality) });
-      return QUALITY_GROUPS.filter((group) => group !== "shadows").map((group) => qualityGroupLabel(effective, group));
-    };
-    const beforeWater = normalizeRenderingQuality(saved("ultra", "water"));
-    expect(beforeWater.water).toEqual({ ...RENDER_QUALITY_PROFILES.ultra.water, profile: "ultra", preset: "ultra" });
-    expect(new Set(overall(saved("ultra", "water")))).toEqual(new Set(["ultra"]));
-    const beforeGeometry = normalizeRenderingQuality(saved("low", "geometry", "water"));
-    expect(beforeGeometry.geometry.preset).toBe("low");
-    expect(beforeGeometry.water).toMatchObject({ shadingDetail: "low", refraction: false, preset: "low" });
-    expect(new Set(overall(saved("low", "geometry", "water")))).toEqual(new Set(["low"]));
-    // A saved Geometry group that targeted another tier means the project had no shared tier.
-    const mixed = normalizeRenderingQuality({ ...saved("high", "water"), geometry: saved("low").geometry });
-    expect(mixed.water).toMatchObject({ ...RENDER_QUALITY_PROFILES.medium.water, preset: "medium" });
-  });
   it("fills water fields added by later releases from the saved water tier, not Medium", () => {
     const { profile, preset, shadingDetail, refraction } = qualityPresetPatch("high").water!;
     const quality = normalizeRenderingQuality({ water: { profile, preset, shadingDetail, refraction, reflections: "mirror" } });
     expect(quality.water).toEqual({ ...RENDER_QUALITY_PROFILES.high.water, profile: "high", preset: "high" });
     const low = normalizeRenderingQuality({ water: { profile: "low", meshDensity: 9, fftSize: 100, reflectionSteps: 3.6, contactResolution: 300.4 } });
     expect(low.water).toMatchObject({ meshDensity: 1.5, fftSize: 128, reflectionSteps: 4, contactResolution: 300, refraction: false, preset: "custom" });
+  });
+  it("allows screen-space effects by the saved Post Processing tier and keeps explicit allowances", () => {
+    // Saved before allowances existed: the saved tier fills them, Medium without one.
+    const savedHigh = normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high", resolutionScale: 1 } });
+    expect(savedHigh.postprocessing).toMatchObject({ ambientOcclusion: true, reflections: true, volumetricLighting: true, preset: "high" });
+    const unprofiled = normalizeRenderingQuality({});
+    expect(unprofiled.postprocessing).toMatchObject({ ambientOcclusion: true, reflections: false, volumetricLighting: false, preset: "medium" });
+    const custom = resolveRenderingQuality({ quality: unprofiled }, {}, qualitySettingPatch("postprocessing", { reflections: true }));
+    expect(custom.postprocessing).toMatchObject({ reflections: true, preset: "custom" });
+    expect(resolveRenderingQuality({ quality: unprofiled }, {}, qualityPresetPatch("low")).postprocessing)
+      .toMatchObject({ ambientOcclusion: false, reflections: false, volumetricLighting: false, preset: "low" });
   });
   it("sets, rejects and resets individual water settings from the console", () => {
     const session = new RenderingQualitySession();

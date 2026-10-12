@@ -39,6 +39,31 @@ export function normalizedPhysicsPose(
   };
 }
 
+/**
+ * Shape sweeps are linear on every backend: the shape holds its start rotation
+ * along the whole path, so a different end rotation is rejected, not ignored.
+ * Non-finite poses return null, which sweeps report as a miss.
+ */
+export function linearSweepPoses(
+  start: PhysicsTransform,
+  end: PhysicsTransform,
+): { start: PhysicsTransform; end: Vec3 } | null {
+  let from: PhysicsTransform;
+  let to: PhysicsTransform;
+  try {
+    from = normalizedPhysicsPose(start);
+    to = normalizedPhysicsPose(end);
+  } catch {
+    return null;
+  }
+  const a = from.rotation;
+  const b = to.rotation;
+  // q and -q describe the same rotation.
+  if (Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w) < 1 - 1e-6)
+    throw new Error("A shape sweep keeps its start rotation; the end rotation must match it");
+  return { start: from, end: to.position };
+}
+
 const preparedShapes = new WeakSet<object>();
 
 /** Own immutable canonical geometry once; pose/tuning mutations may reuse it. */

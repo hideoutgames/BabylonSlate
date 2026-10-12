@@ -13,20 +13,17 @@ export function nextSharedEngineGeneration(
 }
 
 /**
- * Next Engine to keep on PlayProvider after a viewport register/unregister.
- * Overlay Play must not drop a still-usable Engine when the Scene viewport
- * unregisters — that remounts PlayOverlay at Tick 0.
+ * Next Engine to keep on PlayProvider after a viewport register/unregister:
+ * the project-owned Engine, else the incoming one, else the previous one.
+ * A still-usable Engine is never dropped when the Scene viewport unregisters,
+ * because that would remount overlay Play at Tick 0.
  */
 export function nextRegisteredSharedEngine<T extends { isDisposed?: boolean }>(options: {
   incoming: T | null;
   previous: T | null;
   owned: T | null;
-  overlayPlaying: boolean;
 }): T | null {
   if (isUsableEngine(options.owned)) return options.owned;
   if (isUsableEngine(options.incoming)) return options.incoming;
-  if (options.overlayPlaying && isUsableEngine(options.previous)) {
-    return options.previous;
-  }
   return isUsableEngine(options.previous) ? options.previous : null;
 }

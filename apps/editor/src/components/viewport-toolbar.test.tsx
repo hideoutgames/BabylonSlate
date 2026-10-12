@@ -574,6 +574,32 @@ describe("ViewportToolbar", () => {
     );
   });
 
+  it("finishes field drafts on Save, keeping the dialog open for an invalid one", () => {
+    renderToolbar();
+    fireEvent.click(screen.getByTestId("viewport-settings"));
+    fireEvent.click(screen.getByTestId("viewport-settings-submenu"));
+    fireEvent.click(screen.getByTestId("viewport-grid-size"));
+    fireEvent.change(screen.getByTestId("number-prompt-input"), {
+      target: { value: "40/" },
+    });
+    fireEvent.click(screen.getByTestId("number-prompt-confirm"));
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId("viewport-grid-size-dialog")).toBeTruthy();
+    // An out-of-range draft saves its adjusted value, as Enter does.
+    fireEvent.change(screen.getByTestId("number-prompt-input"), {
+      target: { value: "0" },
+    });
+    fireEvent.click(screen.getByTestId("number-prompt-confirm"));
+    expect(harness.applySceneChange).toHaveBeenCalledWith(
+      "scene:assets/Main.scene.babasset",
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          grid: expect.objectContaining({ tileSize: 0.0001 }),
+        }),
+      }),
+    );
+  });
+
   it("persists Show Navmesh onto the scene document", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
@@ -616,14 +642,16 @@ describe("ViewportToolbar", () => {
     expect(screen.getByTestId("viewport-settings")).toBeTruthy();
   });
 
-  it("hides the 3D / 2D toggle and fixed Unlit badge on SceneLayer viewports", () => {
+  it("hides the 3D / 2D toggle and fixed Unlit badge and locks Unlit shading on SceneLayer viewports", () => {
     harness.documentKind = "scene-layer";
     harness.viewportMode = "2d";
     harness.viewportShadingMode = "unlit";
     renderToolbar({ showViewportModeToggle: false });
     expect(screen.queryByTestId("viewport-mode-toggle")).toBeNull();
     expect(screen.queryByText("Unlit")).toBeNull();
-    expect(screen.getByTestId("viewport-settings")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("viewport-settings"));
+    expect(screen.getByTestId("viewport-show-grid-toggle")).toBeTruthy();
+    expect(screen.queryByTestId("viewport-shading-mode")).toBeNull();
   });
 
   it("hides Move / Rotate / Scale when showGizmoTools is false", () => {

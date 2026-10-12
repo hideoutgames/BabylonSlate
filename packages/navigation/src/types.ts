@@ -2,6 +2,7 @@ export type NavPoint = { x: number; y: number; z: number };
 
 export type NavObstacleKind = "box" | "cylinder";
 
+/** `pose` is the volume center; `size` is its full extent (a cylinder's X/Z are diameters). */
 export type NavCostVolume = {
   id?: string;
   kind: NavObstacleKind;
@@ -31,12 +32,22 @@ export type NavigationBackend = {
   /** Release native query, crowd, tile cache and imported allocation resources. Idempotent. */
   dispose(): void;
   importNavMesh(bytes: Uint8Array): void;
+  /** Straight path from start to goal; empty when the goal cannot be reached. */
   findPath(from: NavPoint, to: NavPoint): NavPoint[];
   closestPoint(point: NavPoint): NavPoint | null;
   randomPointInRadius(center: NavPoint, radius: number): NavPoint | null;
-  addObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint): string;
+  /**
+   * Carve a tile-cache obstacle centered on `pose`. `size` is the full extent
+   * (a cylinder uses the larger of X/Z as its diameter and Y as its height);
+   * `yaw` turns a box about +Y in radians. Returns "" when nothing was carved:
+   * a solo navmesh, or a tile cache already holding its maximum obstacles.
+   */
+  addObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint, yaw?: number): string;
   removeObstacle(id: string): void;
   applyCostVolume(volume: NavCostVolume): void;
+  /** Restore the polygons of a volume applied with this id. */
+  removeCostVolume(id: string): void;
+  /** Returns "" without a navmesh or when the crowd is full. */
   addAgent(position: NavPoint, params?: NavAgentParams): string;
   /** Apply live radius / height / maxSpeed / maxAcceleration to a crowd agent. */
   updateAgent(id: string, params: NavAgentParams): void;
@@ -53,7 +64,13 @@ export type NavigationBackend = {
   stepCrowd(dtSeconds: number): void;
 };
 
-/** Recast generator settings in world units (engineplan §14.2). */
+/**
+ * Recast generator settings in Recast's own units (engineplan §14.2): cell
+ * size / height in world units and the slope in degrees; walkable height and
+ * climb in cell heights; walkable radius, max edge length and simplification
+ * error in cells; region areas as a side length in cells; detail sample
+ * distance in cells and its max error in cell heights.
+ */
 export type NavMeshSettings = {
   cellSize: number;
   cellHeight: number;
@@ -71,6 +88,9 @@ export type NavMeshSettings = {
 };
 
 export type NavMeshGenerateSettings = Partial<NavMeshSettings> & {
+  /** Split a solo navmesh into tiles (ignored when the tile cache is on). */
+  tiled?: boolean;
+  /** Bake a tile cache, which runtime obstacles need; always tiled. */
   supportDynamicObstacles?: boolean;
 };
 

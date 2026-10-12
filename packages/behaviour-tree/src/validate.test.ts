@@ -36,6 +36,14 @@ describe("validateBehaviourTree", () => {
     expect(codes(doc)).toContain("bt.cycle");
   });
 
+  it("flags a node listed as a child more than once", () => {
+    const doc = createDefaultBehaviourTree();
+    const root = doc.nodes.find((node) => node.id === doc.rootId)!;
+    root.children.push("task");
+    expect(codes(doc)).toContain("bt.multiple_parents");
+    expect(codes(createDefaultBehaviourTree())).not.toContain("bt.multiple_parents");
+  });
+
   it("flags an empty composite", () => {
     const doc = createDefaultBehaviourTree();
     const root = doc.nodes.find((node) => node.id === doc.rootId)!;

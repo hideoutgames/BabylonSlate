@@ -36,6 +36,7 @@ import {
   SetViewportModeCommand,
   type SceneEditCommand,
 } from "./scene";
+import { ReorderFolderCommand } from "./scene-fields";
 import { diffSceneCommands, planSceneChange } from "./scene-diff";
 import { EditSession } from "../session";
 import { commandToJournalPayload, reviveCommand } from "../journal";
@@ -111,6 +112,24 @@ describe("scene commands", () => {
     const scene = baseScene();
     const command = new RemoveActorCommand(scene.actors[0]!, 0);
     expect(command.byteSize).toBeGreaterThan(0);
+  });
+
+  it("counts component property and scene setting payloads toward the Undo byte budget", () => {
+    const heights = Array.from({ length: 500 }, (_, index) => index);
+    const session = new EditSession({ maxBytes: 1000 });
+    const property = session.apply("scene", baseScene(), new SetComponentPropertyCommand("a", "c1", "heights", undefined, heights));
+    expect(property.history).toBe("cleared");
+    const stack = Array.from({ length: 100 }, (_, index) => ({ materialGuid: `material-${index}`, enabled: true }));
+    const setting = session.apply("scene", baseScene(), new SetSceneSettingCommand("postProcessStack", [], stack));
+    expect(setting.history).toBe("cleared");
+  });
+
+  it("records no Undo step for an add whose component id already exists", () => {
+    const session = new EditSession();
+    const scene = baseScene();
+    const duplicate = new AddComponentCommand("a", createMeshComponent("c1", "sphere"));
+    expect(session.apply("scene", scene, duplicate)).toMatchObject({ doc: scene, history: "unchanged" });
+    expect(session.canUndo("scene")).toBe(false);
   });
 
   it("SetActorTransformCommand apply-then-invert restores the document", () => {
@@ -200,6 +219,27 @@ describe("scene commands", () => {
     expectRoundTrip(scene, new ReorderActorCommand("a", 0, 1));
   });
 
+  it("reorders a row only while it is still at the recorded from index", () => {
+    const scene = baseScene();
+    scene.folders = [
+      { id: "f1", name: "One", parentFolderId: null },
+      { id: "f2", name: "Two", parentFolderId: null },
+    ];
+    scene.actors[0]!.components.push(createMeshComponent("c2", "sphere"));
+    const reorders = [
+      new ReorderActorCommand("a", 0, 1),
+      new ReorderFolderCommand("f1", 0, 1),
+      new ReorderComponentCommand("a", "c1", 0, 1),
+    ];
+    const moved = reorders.reduce((doc, command) => command.apply(doc), scene);
+    expect(moved.actors.map((actor) => actor.id)).toEqual(["b", "a"]);
+    expect(moved.folders.map((folder) => folder.id)).toEqual(["f2", "f1"]);
+    expect(moved.actors[1]!.components.map((component) => component.id)).toEqual(["c2", "c1"]);
+    // Replayed again (a journal over content that already holds it), each
+    // reorder leaves its row where the later edits put it.
+    for (const command of reorders) expect(command.apply(moved)).toBe(moved);
+  });
+
   it("SetActorFlagsCommand apply-then-invert restores the document", () => {
     const scene = baseScene();
     expectRoundTrip(
@@ -267,6 +307,32 @@ describe("scene commands", () => {
       scene,
       new SetComponentTransformCommand("a", "c1", from, to),
     );
+  });
+
+  it("keeps command snapshots apart from the edited document", () => {
+    const scene = baseScene();
+    const from = scene.actors[0]!.components[0]!.transform!;
+    const to: SerializedTransform = { ...from, position: [2, 0, 0] };
+    const property = new SetComponentPropertyCommand("a", "c1", "heights", undefined, [1, 2]);
+    const applied = property.apply(new SetComponentTransformCommand("a", "c1", from, to).apply(scene));
+    const component = applied.actors[0]!.components[0]!;
+    component.transform!.position[0] = 9;
+    (component.properties.heights as number[])[0] = 9;
+    expect(to.position).toEqual([2, 0, 0]);
+    expect(property.to).toEqual([1, 2]);
+
+    // Undo of a delete re-adds the removed rows from the Redo entry's snapshots.
+    const actor = createActor("c", "C", { components: [createMeshComponent("c3", "box")] });
+    const added = createMeshComponent("c2", "sphere");
+    const snapshots = structuredClone({ actor, added });
+    const restored = new RemoveComponentCommand("a", added).invert().apply(
+      new RemoveActorCommand(actor).invert().apply(scene),
+    );
+    const restoredActor = restored.actors.find((entry) => entry.id === "c")!;
+    restoredActor.transform.position[0] = 9;
+    restoredActor.components[0]!.properties.meshKind = "sphere";
+    restored.actors[0]!.components.find((entry) => entry.id === "c2")!.properties.meshKind = "box";
+    expect({ actor, added }).toEqual(snapshots);
   });
 
   it("SetSceneSettingCommand apply-then-invert restores the document", () => {
@@ -535,6 +601,30 @@ describe("diffSceneCommands", () => {
     expect(types).toContain("scene.addComponent");
     expect(types).toContain("scene.removeComponent");
     expect(types).toContain("scene.reparentComponent");
+  });
+
+  it("clears a component property without leaving an own undefined key", () => {
+    const before = baseScene();
+    before.actors[0]!.components[0]!.properties.speed = 3;
+    const after = structuredClone(before);
+    delete after.actors[0]!.components[0]!.properties.speed;
+    const commands = diffSceneCommands(before, after);
+    const applied = commands.reduce<SerializedScene>((doc, command) => command.apply(doc), before);
+    expect(applied).toStrictEqual(after);
+  });
+
+  it("restores a component transform when Undo turns a 2D anchor back into its earlier class", () => {
+    const before = baseScene();
+    const after = structuredClone(before);
+    const component = after.actors[0]!.components[0]!;
+    component.classId = "2DAnchorComponent";
+    delete component.transform;
+    for (const [from, to] of [[before, after], [after, before]] as const) {
+      const session = new EditSession();
+      const applied = session.applyBatch("scene", from, diffSceneCommands(from, to))!.doc;
+      expect(applied).toEqual(to);
+      expect(session.undo("scene", applied)!.doc).toEqual(from);
+    }
   });
 
   it("derives SetComponentTransformCommand when a component transform changes", () => {

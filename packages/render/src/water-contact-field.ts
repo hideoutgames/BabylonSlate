@@ -109,8 +109,11 @@ type ThinPlacements = {
   geometry: Geometry;
   revision: number;
   world: Float64Array;
-  /** Babylon replaces these matrix objects when instances are set or moved. */
-  matrices: readonly Matrix[];
+  /**
+   * The instance matrices' values (16 per instance) at the last walk. Babylon keeps the very object a caller passes to
+   * `thinInstanceSetMatrixAt`, so a caller reusing one Matrix moves an instance without replacing it: compare values.
+   */
+  matrices: Float64Array;
   /** Keys of the instances that reach the wave envelope. */
   keys: string[];
 };
@@ -372,7 +375,7 @@ export class WaterContactField {
         if (placements && placements.geometry !== geometry) { unwatchGeometry(placements.geometry); this.thin.delete(mesh); placements = undefined; }
         if (!placements) {
           watchGeometry(geometry);
-          placements = { scan, surface: NaN, geometry, revision: NaN, world: new Float64Array(16), matrices: [], keys: [] };
+          placements = { scan, surface: NaN, geometry, revision: NaN, world: new Float64Array(16), matrices: new Float64Array(), keys: [] };
           this.thin.set(mesh, placements);
         }
         placements.scan = scan;
@@ -399,7 +402,9 @@ export class WaterContactField {
           visit(key, mesh, i, m);
         }
         placements.surface = this.surfaceEpoch; placements.revision = revision;
-        placements.matrices = instances.slice(); placements.keys = keys;
+        if (placements.matrices.length !== instances.length * 16) placements.matrices = new Float64Array(instances.length * 16);
+        for (let i = 0; i < instances.length; i++) placements.matrices.set(instances[i]!.m, i * 16);
+        placements.keys = keys;
         placements.world.set(world.m);
         continue;
       }
@@ -786,10 +791,13 @@ function boxPass(values: Float32Array, count: number, lines: number, stride: num
   }
 }
 
-/** The same thin-instance matrix objects, in the same order. */
-function sameInstances(a: readonly Matrix[], b: readonly Matrix[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+/** The same thin-instance matrix values, in the same order. */
+function sameInstances(a: Float64Array, b: readonly Matrix[]): boolean {
+  if (a.length !== b.length * 16) return false;
+  for (let i = 0; i < b.length; i++) {
+    const m = b[i]!.m;
+    for (let j = 0; j < 16; j++) if (a[i * 16 + j] !== m[j]) return false;
+  }
   return true;
 }
 

@@ -205,8 +205,8 @@ const copyIntents = new WeakMap<Scene, { refracting: number; reflecting: number 
 /**
  * A scene's water clock. Without runtime times (editor viewport, asset previews) it follows real time and stops
  * while game time is paused. Play keeps the simulated water time the worker's physics step evaluated for each
- * snapshot frame (a short history) and draws the time interpolated between the two frames of the applied snapshot
- * sample, exactly as actor poses are: at a published frame the rendered water is the water physics saw.
+ * snapshot frame (a short history) and draws the time of the applied snapshot's frame, so the rendered water is the
+ * water physics saw for the drawn actor poses.
  */
 type SceneWaterClock = {
   time: number;
@@ -214,10 +214,8 @@ type SceneWaterClock = {
   /** Snapshot frame ids with runtime water times (ascending, newest last). */
   frames: number[];
   times: number[];
-  /** The applied snapshot sample (`sampleSceneWaterFrame`). */
+  /** The applied snapshot frame (`sampleSceneWaterFrame`). */
   frameId: number;
-  previousFrameId: number;
-  alpha: number;
 };
 /** Runtime water times retained per scene; a render delayed by more frames draws the oldest retained time. */
 const WATER_FRAME_HISTORY = 8;
@@ -232,7 +230,7 @@ export const WATER_RESTORES_PER_FRAME = 2;
 function sceneClock(scene: Scene): SceneWaterClock {
   let clock = clocks.get(scene);
   if (!clock) {
-    clock = { time: 0, runtime: false, frames: [], times: [], frameId: NaN, previousFrameId: NaN, alpha: 1 };
+    clock = { time: 0, runtime: false, frames: [], times: [], frameId: NaN };
     clocks.set(scene, clock);
   }
   return clock;
@@ -256,10 +254,9 @@ export function setSceneWaterTime(scene: Scene, seconds: number, frameId?: numbe
   if (frames.length > WATER_FRAME_HISTORY) { frames.shift(); times.shift(); }
 }
 
-/** Pairs the water with the applied actor snapshot sample: its frame, previous frame and interpolation alpha. */
-export function sampleSceneWaterFrame(scene: Scene, frameId: number, previousFrameId: number, alpha: number): void {
-  const clock = sceneClock(scene);
-  clock.frameId = frameId; clock.previousFrameId = previousFrameId; clock.alpha = alpha;
+/** Pairs the water with the applied actor snapshot frame. */
+export function sampleSceneWaterFrame(scene: Scene, frameId: number): void {
+  sceneClock(scene).frameId = frameId;
 }
 
 /** The newest runtime time sent for `frameId` or an earlier frame; the oldest retained one for an older frame. */
@@ -273,9 +270,7 @@ function sceneWaterTime(scene: Scene): number {
   const clock = clocks.get(scene);
   if (!clock) return 0;
   if (!clock.runtime || !clock.frames.length || !Number.isFinite(clock.frameId)) return clock.time;
-  const next = frameWaterTime(clock, clock.frameId);
-  const previous = Number.isFinite(clock.previousFrameId) ? frameWaterTime(clock, clock.previousFrameId) : next;
-  return previous + (next - previous) * Math.max(0, Math.min(1, clock.alpha));
+  return frameWaterTime(clock, clock.frameId);
 }
 
 /**

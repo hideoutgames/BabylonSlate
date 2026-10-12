@@ -21,7 +21,13 @@ export async function cleanupApple(env = process.env) {
     const original = JSON.parse(await readFile(originalPath, "utf8"));
     execFileSync("security", ["list-keychains", "-d", "user", "-s", ...original], { stdio: "ignore" });
   } catch (error) { if (error.code !== "ENOENT") failed = true; }
-  try { execFileSync("security", ["delete-keychain", join(directory, "distribution.keychain-db")], { stdio: "ignore" }); } catch { /* No keychain may have been imported. */ }
+  // Only an absent keychain (nothing was imported) is expected; any other deletion failure is reported.
+  const keychain = join(directory, "distribution.keychain-db");
+  let keychainExists = true;
+  try { await access(keychain); } catch { keychainExists = false; }
+  if (keychainExists) {
+    try { execFileSync("security", ["delete-keychain", keychain], { stdio: "ignore" }); } catch { failed = true; }
+  }
   try {
     const uuid = (await readFile(join(directory, "installed-profile-uuid"), "utf8")).trim();
     if (!/^[A-Fa-f0-9-]{36}$/.test(uuid)) throw new Error("Invalid profile cleanup identity");

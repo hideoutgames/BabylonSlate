@@ -1,0 +1,56 @@
+{
+  "id": "override-signature",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 10200,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": [],
+  "context": {
+    "classId": "Hero",
+    "members": [
+      {
+        "id": "jump",
+        "name": "Jump",
+        "kind": "function",
+        "classId": "Hero",
+        "pins": [],
+        "overrides": {
+          "classId": "Actor",
+          "name": "Jump"
+        }
+      }
+    ],
+    "parentFunctionSignatures": [
+      {
+        "classId": "Actor",
+        "name": "Jump",
+        "pins": [
+          {
+            "name": "Height",
+            "typeId": "float",
+            "direction": "in"
+          }
+        ]
+      }
+    ]
+  }
+}

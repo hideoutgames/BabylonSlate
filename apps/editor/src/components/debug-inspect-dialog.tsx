@@ -146,7 +146,8 @@ export function DebugInspectDialog({
       <DialogContent
         data-testid="debug-inspect"
         initialFocus={bodyRef}
-        className="flex h-[min(90vh,52rem)] w-[min(96vw,64rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
+        className="h-[min(90vh,52rem)] w-[min(96vw,64rem)] max-w-none sm:max-w-none"
+        bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
         <DialogHeader className="shrink-0 flex-row items-center justify-between gap-2 border-b px-3 py-3 pr-14">
           <DialogTitle>Inspector</DialogTitle>

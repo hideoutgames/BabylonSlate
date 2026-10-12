@@ -37,7 +37,6 @@ function spawn(
   applySnapshotToScene(scene, binding, {
     frameId: 1,
     tickIndex: 1,
-    alpha: 1,
     actorCount: slotIds.length,
     actors: slotIds.map((slotId) => ({
       slotId,

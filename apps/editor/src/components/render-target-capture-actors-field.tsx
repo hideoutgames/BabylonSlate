@@ -1,17 +1,20 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { EntryListEditor, PropertyGrid, SearchDialog, humanizePropertyLabel } from "@babylonslate/editor-kit";
 import { Field, FieldLabel } from "@babylonslate/ui/components/field";
 import type { SerializedActor } from "@babylonslate/core";
 
 /** Scene Actor references share one picker/list in scene and prefab Details. */
-export function RenderTargetCaptureActorsField({ actorIds, actors, onChange }: {
+export function RenderTargetCaptureActorsField({ actorIds, actors, onChange, source }: {
   actorIds: readonly string[];
   actors: readonly SerializedActor[];
   onChange: (actorIds: string[]) => void;
+  /** Control above the list that chooses where `actors` come from (Class Details' Scene). */
+  source?: ReactNode;
 }) {
   const [picking, setPicking] = useState<number | null>(null);
   return <Field className="p-2" data-testid="capture-actors-field">
     <FieldLabel>Capture Actors</FieldLabel>
+    {source}
     <EntryListEditor items={actorIds} onChange={onChange} onAdd={() => setPicking(actorIds.length)} addLabel="Add Actor" countNoun={{ one: "actor", other: "actors" }}
       renderItem={() => null}
       renderItemHeader={({ item: actorId, index, onChange: update }) => {

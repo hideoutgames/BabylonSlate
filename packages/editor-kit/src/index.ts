@@ -99,6 +99,10 @@ export {
   type VariableTypeFieldsValue,
 } from "./variable-type-fields";
 export {
+  AssetLoadingField,
+  type AssetLoadingFieldProps,
+} from "./asset-loading-field";
+export {
   PinListEditor,
   nextPinRowName,
   type PinListEditorProps,
@@ -190,7 +194,6 @@ export {
 } from "./windowed-list";
 export {
   PickerIdentity,
-  displayPickerTitle,
   assetRowIdentity,
   classRowIdentity,
   selectedPickerIdentity,

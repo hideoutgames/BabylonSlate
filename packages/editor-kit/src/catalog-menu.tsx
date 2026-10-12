@@ -325,11 +325,12 @@ export function CatalogMenu<T extends CatalogMenuItem>({
           coarse && interaction !== "keyboard" ? bodyRef.current : searchRef.current
         }
         className={cn(
-          "catalog-menu flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none",
+          "catalog-menu max-w-none sm:max-w-none",
           modal
             ? "catalog-menu-modal editor-dialog-large"
             : "catalog-menu-popup translate-x-0 translate-y-0 rounded-lg",
         )}
+        bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
         style={frame ?? undefined}
       >
         <div

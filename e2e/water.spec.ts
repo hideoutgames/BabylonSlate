@@ -21,7 +21,7 @@ async function centerColor(canvas: Locator): Promise<number[]> {
   });
 }
 
-for (const backend of ["webgl2"] as ("webgl2" | "webgpu")[]) {
+for (const backend of ["webgl2"] as const) {
   test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);
     const errors: string[] = [];

@@ -60,8 +60,27 @@ describe("ColorField", () => {
       <ColorField value={[0, 0, 1]} onChange={onChange} data-testid="tint" />,
     );
 
+    onChange.mockClear();
     fireEvent.change(hex(), { target: { value: "#0f0" } });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.blur(hex());
     expect(onChange).toHaveBeenLastCalledWith([0, 1, 0]);
+    onChange.mockClear();
+    fireEvent.change(hex(), { target: { value: "#f80" } });
+    fireEvent.keyDown(hex(), { key: "Enter" });
+    expect(onChange).toHaveBeenLastCalledWith([1, 136 / 255, 0]);
+  });
+
+  it("does not apply the three-digit prefix of a six-digit color being typed", () => {
+    const onChange = vi.fn();
+    render(
+      <ColorField value={[1, 0, 0]} onChange={onChange} data-testid="tint" />,
+    );
+    const hex = screen.getByTestId("tint-hex") as HTMLInputElement;
+    for (const typed of ["#00f", "#00ff", "#00ff0", "#00ff00"]) {
+      fireEvent.change(hex, { target: { value: typed } });
+    }
+    expect(onChange.mock.calls).toEqual([[[0, 1, 0]]]);
   });
 
   it("keeps a partial hex draft and restores on blur", () => {

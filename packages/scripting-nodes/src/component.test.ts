@@ -83,7 +83,7 @@ describe("component nodes", () => {
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "self", "actor.getSelf"),
-        node(registry, "add", "component.add", { classId: "MeshComponent" }),
+        node(registry, "add", "component.add", { "default:classId": "MeshComponent" }),
       ],
       edges: [
         {
@@ -137,7 +137,7 @@ describe("component nodes", () => {
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "self", "actor.getSelf"),
-        node(registry, "add", "component.add", { classId: "MeshComponent" }),
+        node(registry, "add", "component.add", { "default:classId": "MeshComponent" }),
       ],
       edges: [
         {

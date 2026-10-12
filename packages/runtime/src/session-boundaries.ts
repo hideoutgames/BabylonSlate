@@ -14,6 +14,7 @@ import { SaveGameWorld } from "./save-game-world";
 import type { SceneRealizer } from "./scene-realizer";
 import type { SceneStreams } from "./scene-streams";
 import type { ScriptHost } from "./script-host";
+import type { SimulationBlocks } from "./simulation-blocks";
 
 export type RuntimeSaveGameOptions = Omit<SaveGameServiceOptions,
   "atBoundary" | "captureState" | "stageState" | "applyState" | "resetState" | "onGameLoaded">;
@@ -27,7 +28,8 @@ interface SessionBoundariesHost {
   playSceneGuid(): string;
   sceneLibrary(): ReadonlyMap<string, SerializedScene>;
   scripts(): Pick<ScriptHost, "scriptsFor" | "classIds" | "hooksFor" | "bindInterfaceHandlers" | "invokeEvent" | "setSaveGameService">;
-  streams(): Pick<SceneStreams, "blocking" | "isStreamActor">;
+  streams(): Pick<SceneStreams, "isStreamActor">;
+  blocks(): Pick<SimulationBlocks, "active">;
   sceneRealizer(): Pick<SceneRealizer, "blocked" | "realizing" | "loadId">;
   physics(): Pick<RuntimePhysicsWorlds, "main">;
   actorHooks(): SceneActorHooks;
@@ -141,7 +143,7 @@ export class SessionBoundaries {
         // World's deferred spawn/destroy flush, even when called by a Tick graph.
         await Promise.resolve();
         if (this.host.stopped()) throw new SaveGameError("unavailable", "The game session has stopped.");
-        if (this.host.sceneRealizer().blocked || this.host.streams().blocking || this.host.sceneRealizer().realizing) {
+        if (this.host.sceneRealizer().blocked || this.host.blocks().active || this.host.sceneRealizer().realizing) {
           throw new SaveGameError("unavailable", "Wait for scene loading to finish before saving or loading.");
         }
         this.boundaryActive = true;
@@ -220,10 +222,10 @@ export class SessionBoundaries {
     return result;
   }
 
-  /** The boundary result: pause reasons (a blocking stream load adds `loading`) and the session's identity now. */
+  /** The boundary result: pause reasons (a blocking load adds `loading`) and the session's identity now. */
   result(request: SessionBoundaryRequest, reason?: string): SessionBoundaryResult {
     const pauseReasons = new Set(this.host.pauseReasons());
-    if (this.host.streams().blocking) pauseReasons.add("loading");
+    if (this.host.blocks().active) pauseReasons.add("loading");
     return { sessionGeneration: request.sessionGeneration, requestId: request.requestId, success: !reason,
       ...(reason ? { reason } : {}), paused: pauseReasons.size > 0, pauseReasons: [...pauseReasons],
       tickIndex: this.host.world().clock.tickIndex, sceneAssetGuid: this.host.playSceneGuid(),

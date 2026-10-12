@@ -22,8 +22,6 @@ vi.mock("../context/document-context", async () => {
       pluginDescriptors: harness.plugins,
       pluginDiagnostics: resolvePluginGraph(
         harness.plugins.filter((plugin) => project.settings.pluginOverrides[plugin.pluginGuid]?.enabled ?? plugin.settings.enabledByDefault),
-        undefined,
-        project.settings.pluginOverrides,
       ).diagnostics,
       assetRegistry: null,
       showPluginContent: false,
@@ -74,12 +72,12 @@ describe("Plugin version warnings", () => {
     const warning = screen.getByText(/Warning:.*old-engine/);
     expect(warning.textContent).toContain("Base Tools");
     expect(warning.textContent).toContain("2.7");
-    expect(resolvePluginGraph(harness.plugins, undefined, harness.overrides).order.map((entry) => entry.pluginGuid)).toEqual(["base", "pack"]);
+    expect(resolvePluginGraph(harness.plugins).order.map((entry) => entry.pluginGuid)).toEqual(["base", "pack"]);
     expect(screen.queryByRole("button", { name: "Review Pack Compatibility" })).toBeNull();
   });
 
-  it("keeps stale acknowledgements nonblocking and retains the separate Beta enable confirmation", async () => {
-    harness.overrides = { pack: { enabled: true, acceptedCompatibility: "previous-context" } };
+  it("keeps an enabled outdated plugin's warning nonblocking and retains the separate Beta enable confirmation", async () => {
+    harness.overrides = { pack: { enabled: true } };
     harness.plugins[0]!.settings.beta = true;
     render(<ProjectPluginsSettings />);
     expect(screen.getByText(/Warning:.*old-engine/)).toBeTruthy();

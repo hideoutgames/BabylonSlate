@@ -72,7 +72,7 @@ export function isEditorOnlyAsset(
   parentOf: (id: string) => string | null | undefined,
 ): boolean {
   if (isEditorOnlyAssetType(header.type)) return true;
-  if (header.type !== "Class" && header.type !== "Graph") return false;
+  if (header.type !== "Class") return false;
   return isEditorGraphClass(header.parentClass, parentOf);
 }
 
@@ -102,6 +102,7 @@ export type ClassHeaderVariable = {
   keyTypeId?: string;
   keyTypeClassId?: string;
   category?: string;
+  loading?: "hard";
 };
 
 export type ClassHeaderEvent = {
@@ -167,6 +168,7 @@ export function classHeaderMeta(graph: {
     implementsInterface?: { assetGuid: string; methodName: string };
     overrides?: { classId: string; name: string };
     category?: string;
+    loading?: "hard";
   }>;
   components?: Array<{
     id?: string;
@@ -221,6 +223,7 @@ export function classHeaderMeta(graph: {
       if (member.keyTypeClassId) variable.keyTypeClassId = member.keyTypeClassId;
       const variableCategory = normalizeClassMemberCategory(member.category);
       if (variableCategory) variable.category = variableCategory;
+      if (member.loading === "hard") variable.loading = "hard";
       variables.push(variable);
       continue;
     }

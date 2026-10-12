@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Dialog } from "@babylonslate/ui/components/dialog";
-import { ProgressDialogContent, ProgressDialogStatus } from "./progress-dialog-parts";
+import { SelectableText } from "@babylonslate/editor-kit";
+import { ProgressDialogContent, ProgressDialogFailure, ProgressDialogStatus } from "./progress-dialog-parts";
 
 export type PlayPreparePhase = "saving" | "compiling" | "releasing";
 
@@ -55,6 +56,35 @@ export function PlayPrepareDialog({
           {label}
         </p>
         {onCancel ? <div className="flex justify-end"><Button size="sm" variant="outline" onClick={onCancel}>Cancel</Button></div> : null}
+      </ProgressDialogContent>
+    </Dialog>
+  );
+}
+
+export type PlayFailedDialogProps = {
+  title: string;
+  reason: string;
+  onClose: () => void;
+};
+
+/** A Play or Simulate preparation failure, shown while no Output Log window is open. */
+export function PlayFailedDialog({ title, reason, onClose }: PlayFailedDialogProps) {
+  return (
+    <Dialog open onOpenChange={() => {}}>
+      <ProgressDialogContent failed data-testid="play-failed-dialog">
+        <ProgressDialogFailure
+          title={title}
+          description="The game could not be prepared."
+          actions={(
+            <Button type="button" size="sm" variant="outline" onClick={onClose}>
+              Close
+            </Button>
+          )}
+        >
+          <SelectableText className="block max-h-40 overflow-y-auto rounded-md bg-destructive/5 px-3 py-2 text-xs ring-1 ring-destructive/20">
+            {reason}
+          </SelectableText>
+        </ProgressDialogFailure>
       </ProgressDialogContent>
     </Dialog>
   );

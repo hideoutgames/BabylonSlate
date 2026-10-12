@@ -13,11 +13,12 @@ function ktx2Header(width: number, height: number): Uint8Array {
 }
 
 function chunk(id: string, kind: string): BabassetHeader["chunks"][number] {
-  return { id, kind, mime: kind === "ktx2" ? "image/ktx2" : "image/png", sha256: id, locator: { inline: { offset: 0, length: 1 } } };
+  return { id, kind, mime: kind === "ktx2" ? "image/ktx2" : "image/png", sha256: id, byteLength: 1, locator: { inline: { offset: 0, length: 1 } } };
 }
 
 function header(chunks: BabassetHeader["chunks"], payload: Record<string, unknown> = {}): BabassetHeader {
   return {
+    dependencyMetadataVersion: 1, requiredDependencies: [],
     guid: "tex-1",
     type: "Texture",
     name: "Hero",
@@ -44,14 +45,14 @@ describe("resolveGpuTexture", () => {
         kind: "pixels",
         mime: "image/png",
         sha256: "aa",
-        locator: { inline: { offset: 0, length: 1 } },
+        byteLength: 1, locator: { inline: { offset: 0, length: 1 } },
       },
       {
         id: "ktx2:stale",
         kind: "ktx2",
         mime: "image/ktx2",
         sha256: "old",
-        locator: { inline: { offset: 1, length: 1 } },
+        byteLength: 1, locator: { inline: { offset: 1, length: 1 } },
       },
     ];
     const asset = header(chunks, {
@@ -146,6 +147,15 @@ describe("resolveGpuTexture", () => {
     expect(resolved?.kind).toBe("ktx2");
     expect(resolved?.chunkId).toBe("ktx2:particle");
     expect(resolved?.missingPreferred).toBe(true);
+
+    // An older encode that happens to be on the grid too must not win.
+    byId["ktx2:albedo"] = ktx2Header(500, 376);
+    const aligned = await resolveGpuTexture({
+      header: particle,
+      readChunk: async (id) => byId[id] ?? null,
+      editorLod: { enabled: false, quality: 1 },
+    });
+    expect(aligned?.chunkId).toBe("ktx2:particle");
   });
 
   it("does not bind a full-size KTX2 when editor LOD wants a smaller variant", async () => {
@@ -157,14 +167,14 @@ describe("resolveGpuTexture", () => {
           kind: "pixels",
           mime: "image/png",
           sha256: "aa",
-          locator: { inline: { offset: 0, length: 4 } },
+          byteLength: 4, locator: { inline: { offset: 0, length: 4 } },
         },
         {
           id: "ktx2:full",
           kind: "ktx2",
           mime: "image/ktx2",
           sha256: "full",
-          locator: { inline: { offset: 1, length: 1 } },
+          byteLength: 1, locator: { inline: { offset: 1, length: 1 } },
         },
       ],
       {

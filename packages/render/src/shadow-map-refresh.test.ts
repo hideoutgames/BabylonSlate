@@ -13,6 +13,7 @@ import {
   Skeleton,
   StandardMaterial,
   TransformNode,
+  type SubMesh,
   UniversalCamera,
   Vector3,
   VertexBuffer,
@@ -378,6 +379,54 @@ describe("local shadow refresh", () => {
     camera.getViewMatrix(true);
     expect(scene.customLODSelector!(part, camera)).not.toBe(part);
     expect(render()).toBe(0);
+  });
+
+  it("ends a point map at its light's range and draws no casters beyond it", async () => {
+    const { scene, camera, light, generator, material, render } = await fixture();
+    light.range = 10;
+    // Straight down the +Z face, inside the camera's 1000 far plane.
+    const distant = MeshBuilder.CreateBox("distant caster", {}, scene);
+    distant.position.set(0, 3, 40);
+    distant.material = material;
+    const morphing = MeshBuilder.CreateBox("distant morphing caster", {}, scene);
+    morphing.position.set(0, 3, -40);
+    morphing.material = material;
+    morphing.morphTargetManager = new MorphTargetManager(scene);
+    const drawn = new Set<string>();
+    const shadowPass = generator as unknown as { _renderSubMeshForShadowMap: (subMesh: SubMesh) => void };
+    vi.spyOn(shadowPass, "_renderSubMeshForShadowMap").mockImplementation((subMesh) => {
+      drawn.add(subMesh.getMesh().name);
+    });
+    expect(render()).toBe(6);
+    expect(light.getDepthMaxZ(camera)).toBe(10);
+    expect([...drawn]).toEqual(["caster"]);
+  });
+
+  it("keeps a local map cached while casters outside its range move or animate", async () => {
+    const { scene, light, material, render } = await fixture();
+    light.range = 10;
+    const distant = MeshBuilder.CreateBox("distant caster", {}, scene);
+    distant.position.set(40, 0, 0);
+    distant.material = material;
+    // A per-frame render hook makes a caster's shadow uncacheable.
+    const animated = MeshBuilder.CreateBox("animated caster", {}, scene);
+    animated.position.set(-40, 0, 0);
+    animated.material = material;
+    animated.onBeforeRenderObservable.add(() => {});
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    distant.position.x += 1;
+    animated.position.x -= 1;
+    expect(render()).toBe(0);
+    distant.position.set(5, 0, 0);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    distant.position.set(40, 0, 0);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    animated.position.set(0, 0, 5);
+    expect(render()).toBe(6);
+    expect(render()).toBe(6);
   });
 
   it("refreshes local maps when the actual floating render origin moves", async () => {

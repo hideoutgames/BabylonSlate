@@ -194,6 +194,24 @@ describe("pinWithDisplayType", () => {
       resolvingElementOut,
     );
   });
+
+  it("keeps a wired boxed wildcard accepting every type", () => {
+    // A Print value wired to a Float displays Float, but still takes a String.
+    const wiredBoxed = pinWithDisplayType(boxedValueIn, { kind: "float" });
+    expect(wiredBoxed.type).toEqual({ kind: "boxedWildcard" });
+    expect(pinsAreCompatible(stringOut, wiredBoxed, assignable)).toBe(true);
+    const makeString: PaletteNode = {
+      id: "string.make",
+      title: "Make String",
+      category: "String",
+      pins: [stringOut],
+    };
+    expect(
+      filterPaletteForPin([makeString], wiredBoxed, assignable).map(
+        (node) => node.id,
+      ),
+    ).toEqual(["string.make"]);
+  });
 });
 
 describe("resolved ForEach Element connections", () => {
@@ -817,7 +835,7 @@ describe("filterPaletteForPin", () => {
       title: "Cast to Hero",
       category: "casting",
       pins: [execIn, objectIn, asHero],
-      defaultData: { defaultClassId: "Hero", classId: "Hero" },
+      defaultData: { "default:class": "Hero" },
     };
     expect(
       filterPaletteForPin(

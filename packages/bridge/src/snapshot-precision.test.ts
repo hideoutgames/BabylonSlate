@@ -44,4 +44,12 @@ describe("large-coordinate snapshot transport", () => {
     });
     expect(readActorSlot(buffer, 0).position).toEqual(actor.position);
   });
+
+  it("keeps consecutive frame and tick identities distinct past 2^24", () => {
+    const buffer = new Float32Array(snapshotFloatCount(0));
+    for (const id of [16_777_216, 16_777_217]) {
+      writeSnapshotHeader(buffer, { frameId: id, tickIndex: id + 1, actorCount: 0, scriptMs: 0, physicsMs: 0 });
+      expect(readSnapshotHeader(new Float32Array(buffer))).toMatchObject({ frameId: id, tickIndex: id + 1 });
+    }
+  });
 });

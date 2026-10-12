@@ -95,4 +95,27 @@ describe("useInspectWorldPoll", () => {
     });
     expect(inspectWorld).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps the last snapshot and polls again after a rejected inspect", async () => {
+    vi.useFakeTimers();
+    const inspectWorld = vi.fn<() => Promise<DebugInspectSnapshot>>()
+      .mockResolvedValueOnce({ tickIndex: 4, nodes: [] })
+      .mockRejectedValueOnce(new Error("Play session stopped"))
+      .mockResolvedValue({ tickIndex: 6, nodes: [] });
+
+    render(<Probe open inspectWorld={inspectWorld} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(inspectWorld).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("inspect-tick").getAttribute("data-tick")).toBe("4");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(screen.getByTestId("inspect-tick").getAttribute("data-tick")).toBe("6");
+  });
 });

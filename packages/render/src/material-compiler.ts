@@ -1031,7 +1031,9 @@ export function compileMaterialPlan(
   };
 }
 
-const sharedPrograms = new WeakMap<AbstractEngine, Map<string, { buildId: number; shaders: string }>>();
+/** Live materials on each program keep its entry; the last one to dispose drops it. */
+type SharedProgram = { buildId: number; shaders: string; users: Set<NodeMaterial> };
+const sharedPrograms = new WeakMap<AbstractEngine, Map<string, SharedProgram>>();
 
 function freshBuildId(): number {
   // Babylon's own build-id source, so an assigned id can never collide.
@@ -1067,11 +1069,16 @@ export function shareCompiledProgram(material: NodeMaterial, key: string): void 
     if (firstBuild && known?.shaders === shaders) {
       firstBuild = false;
       material.buildId = adopted = known.buildId;
+      known.users.add(material);
       return;
     }
     firstBuild = false;
-    registry.set(key, { buildId: material.buildId, shaders });
+    registry.set(key, { buildId: material.buildId, shaders, users: new Set([material]) });
   }, undefined, true);
+  material.onDisposeObservable.addOnce(() => {
+    const known = registry.get(key);
+    if (known?.users.delete(material) && known.users.size === 0) registry.delete(key);
+  });
 }
 
 /** Drop ResourceCache textures so NodeMaterial.dispose cannot free engine-owned GPU wrappers. */

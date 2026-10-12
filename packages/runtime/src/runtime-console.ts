@@ -13,6 +13,7 @@ import {
   matchCommandName,
   parseCommandArgs,
   tokenize,
+  tokenizeCommand,
   type CommandRegistry,
   type CommandResult,
   type ConsoleCommandHost,
@@ -115,7 +116,7 @@ export class RuntimeConsole {
 
   async executeAsync(command: string): Promise<CommandResult> {
     if (this.host.stopped()) return { success: false, output: SESSION_ENDED };
-    const { name, rest } = matchCommandName(tokenize(command.trim()), new Set(this.commands.list().map(entry => entry.name.toLowerCase())));
+    const { name, rest } = matchCommandName(tokenizeCommand(command.trim()), new Set(this.commands.list().map(entry => entry.name.toLowerCase())));
     const user = this.commandClasses.get(name);
     if (!user) return this.execute(command);
     const definition = this.commands.get(name);

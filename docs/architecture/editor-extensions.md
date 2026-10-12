@@ -60,7 +60,9 @@ Extensions execute as trusted editor code; the host is not a security sandbox.
 The project lifetime owns activation and registered commands. Disabling,
 replacing/reloading code or closing the project removes commands and runs cleanup.
 Old API references stop accepting calls after deactivation. Activation, command
-and cleanup failures surface as extension diagnostics. Command failures appear
+and cleanup failures surface as extension diagnostics. A refresh with unchanged
+packages and settings keeps running extensions active and retries only those
+that did not start (and their dependents). Command failures appear
 immediately; a successful retry clears the command error while retaining package
 diagnostics. The host drains outstanding
 API operations before releasing project storage. Cleanup failures remain visible

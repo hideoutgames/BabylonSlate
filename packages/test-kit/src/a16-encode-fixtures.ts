@@ -1,7 +1,7 @@
 /**
  * A16 encode benchmark fixtures and checked-in expected envelopes
- * (engineplan §3.5 Risk 1). Wall times are soft bands; CI asserts shape and
- * that settings remain UASTC defaults. Device A16 numbers gate policy.
+ * (engineplan §3.5 Risk 1). Wall times are soft bands; the CI smoke encodes the
+ * 512 fixture under its wall envelope at the default clamp.
  */
 
 export interface EncodeFixtureSpec {
@@ -24,10 +24,10 @@ export const A16_ENCODE_FIXTURES: EncodeFixtureSpec[] = [
   { size: 4096, format: "jpeg", a16WallMsMax: 30_000, a16HeapMbMax: 256 },
 ];
 
-/** Policy derived from A16 envelopes: reject native 4096 without confirm. */
+/**
+ * Policy derived from A16 envelopes: every import clamps to this edge unless
+ * the project raises `textures.maxTextureDimension`.
+ */
 export const A16_POLICY = {
   defaultMaxDimension: 2048,
-  requireConfirmAboveDimension: 4096,
-  defaultFormat: "uastc" as const,
-  mainThreadMedianMsMaxDuringEncode: 1,
 };

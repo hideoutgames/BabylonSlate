@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolve } from "node:path";
-import { rendererFile, isEditorSender, validateIpcArguments } from "./packaged-security";
+import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { allowsEditorPermission, knownProjectFolder, rendererFile, isEditorSender, isPreviewFrameUrl, validateIpcArguments } from "./packaged-security";
 
 describe("packaged renderer boundary", () => {
   it("resolves encoded asset filenames without treating filename characters as URL delimiters", () => {
@@ -10,7 +12,7 @@ describe("packaged renderer boundary", () => {
   it("resolves player and wasm resources only inside the renderer root", () => {
     expect(rendererFile("app://babylonslate/player/index.html", "renderer")).toBe(resolve("renderer/player/index.html"));
     expect(rendererFile("app://babylonslate/assets/physics.wasm", "renderer")).toBe(resolve("renderer/assets/physics.wasm"));
-    for (const url of ["file:///secret", "app://other/index.html", "app://babylonslate/%2e%2e/secret", "app://babylonslate/..%5csecret", "app://babylonslate/C:/secret", "app://babylonslate/%252e%252e/secret", "app://babylonslate/assets/key%00"]) {
+    for (const url of ["file:///secret", "app://other/index.html", "app://babylonslate/%2e%2e/secret", "app://babylonslate/..%5csecret", "app://babylonslate/C:/secret", "app://babylonslate/%252e%252e/secret", "app://babylonslate/assets/key%00", "app://babylonslate/..%20/secret", "app://babylonslate/assets/..%20./secret", "app://babylonslate/.../secret"]) {
       expect(() => rendererFile(url, "renderer")).toThrow();
     }
   });
@@ -20,6 +22,16 @@ describe("packaged renderer boundary", () => {
       expect(isEditorSender(url, true)).toBe(false);
     }
     expect(isEditorSender("app://babylonslate/index.html", false)).toBe(false);
+  });
+  it("limits subframes to the Preview player and grants the editor only clipboard writes", () => {
+    expect(isPreviewFrameUrl("app://babylonslate/player/index.html?preview=1&t=2")).toBe(true);
+    for (const url of ["https://example.com/", "app://babylonslate/index.html", "app://other/player/index.html", "about:blank"]) {
+      expect(isPreviewFrameUrl(url)).toBe(false);
+    }
+    expect(allowsEditorPermission("clipboard-sanitized-write", "app://babylonslate/index.html", true)).toBe(true);
+    expect(allowsEditorPermission("clipboard-sanitized-write", "app://babylonslate/player/index.html", false)).toBe(false);
+    expect(allowsEditorPermission("clipboard-read", "app://babylonslate/index.html", true)).toBe(false);
+    expect(allowsEditorPermission("media", "app://babylonslate/index.html", true)).toBe(false);
   });
   it("rejects malformed privileged arguments and filesystem escapes", () => {
     expect(() => validateIpcArguments("save-games:list", ["save-games/project/game/profile/"])).not.toThrow();
@@ -51,5 +63,31 @@ describe("packaged renderer boundary", () => {
       ["asset.babasset", 0, 1024 * 1024 * 1024, undefined], ["asset.babasset", Number.MAX_SAFE_INTEGER, 1, undefined],
       ["asset.babasset", 0, 1, {}],
     ]) expect(() => validateIpcArguments("project:readBinaryRange", args)).toThrow();
+  });
+});
+
+describe("known project folders", () => {
+  it("reopens projects-home folders and picker grants by the canonical path it opens", async () => {
+    const base = await realpath(await mkdtemp(join(tmpdir(), "babylonslate-known-")));
+    try {
+      const projects = join(base, "projects");
+      const game = join(projects, "Game");
+      const outside = join(base, "outside");
+      await mkdir(game, { recursive: true });
+      await mkdir(outside);
+      // Junctions need no privilege on Windows; other hosts create directory links.
+      await symlink(outside, join(projects, "Linked"), "junction");
+      const noGrants = async () => [];
+
+      expect(await knownProjectFolder(`node:${game}`, projects, noGrants)).toBe(game);
+      // A link inside the projects home opens its target, which needs a grant.
+      await expect(knownProjectFolder(`node:${join(projects, "Linked")}`, projects, noGrants)).rejects.toThrow("folder picker");
+      expect(await knownProjectFolder(`node:${join(projects, "Linked")}`, projects, async () => [outside])).toBe(outside);
+      await expect(knownProjectFolder(`node:${base}`, projects, noGrants)).rejects.toThrow("folder picker");
+      // Only host-issued node: ids reopen; a bare display name never opens a folder by name.
+      await expect(knownProjectFolder("Game", projects, async () => [game])).rejects.toThrow("folder picker");
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
   });
 });

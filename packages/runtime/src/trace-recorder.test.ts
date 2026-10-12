@@ -108,6 +108,19 @@ describe("runtime trace recorder", () => {
     recorded.stop();
   });
 
+  it("reports a repeated snapshot start and keeps the running recording", () => {
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true });
+    try {
+      runtime.start();
+      expect(runtime.executeConsoleCommand("snapshot start").success).toBe(true);
+      runtime.tick();
+      expect(runtime.executeConsoleCommand("snapshot start")).toMatchObject({ success: false, output: "snapshot already recording" });
+      runtime.tick();
+      runtime.executeConsoleCommand("snapshot stop");
+      expect(runtime.stopTrace()!.frames).toHaveLength(2);
+    } finally { runtime.stop(); }
+  });
+
   it("finalizes an in-flight recording when the session stops", () => {
     const commands: CommandMessage[] = [];
     const recorded = createInProcessRuntime({

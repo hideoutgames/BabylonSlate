@@ -173,7 +173,7 @@ describe("animation nodes", () => {
         node(registry, "enter-state", "anim.rule.enterState"),
         node(registry, "exit-state", "anim.rule.exitState"),
         node(registry, "time", "anim.state.normalisedTime"),
-        node(registry, "cmp", "math.greaterEqual", { b: 0.8 }),
+        node(registry, "cmp", "math.greaterEqual", { "default:b": 0.8 }),
       ],
       edges: [
         {
@@ -283,16 +283,16 @@ describe("animation nodes", () => {
       kind: "event",
       nodes: [
         node(registry, "tick", "flow.event.tick"),
-        node(registry, "jump", "anim.actor.jumpToState", { state: "Run" }),
+        node(registry, "jump", "anim.actor.jumpToState", { "default:state": "Run" }),
         node(registry, "get", "anim.actor.getCurrentState"),
         node(registry, "graph", "component.getNamed", {
           componentClassId: "AnimationGraphComponent",
           implicitSelf: true,
         }),
-        node(registry, "read", "anim.actor.getVariable", { name: "moving" }),
+        node(registry, "read", "anim.actor.getVariable", { "default:name": "moving" }),
         node(registry, "set", "anim.actor.setVariable", {
-          name: "moving",
-          value: true,
+          "default:name": "moving",
+          "default:value": true,
         }),
       ],
       edges: [

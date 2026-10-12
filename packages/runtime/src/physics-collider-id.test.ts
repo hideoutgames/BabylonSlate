@@ -22,17 +22,7 @@ describe("physics collider identities", () => {
     );
   });
 
-  it("keeps legacy collider and other backend contact identifiers compatible", () => {
-    expect(componentIdFromColliderPhysicsId("collider:prefab:sensor")).toBe(
-      "prefab:sensor",
-    );
-    expect(componentIdFromColliderPhysicsId("collider:[sensor")).toBe(
-      "[sensor",
-    );
-    expect(componentIdFromColliderPhysicsId("collider:[]")).toBe("[]");
-    expect(componentIdFromColliderPhysicsId("mesh-collider:mesh:hull")).toBe(
-      "mesh-collider:mesh:hull",
-    );
+  it("keeps the ID of a collider that no component owns", () => {
     expect(componentIdFromColliderPhysicsId("tilemap:actor:layer")).toBe(
       "tilemap:actor:layer",
     );

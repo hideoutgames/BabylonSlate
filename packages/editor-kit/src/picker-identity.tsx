@@ -33,11 +33,6 @@ export function PickerIdentity({
   );
 }
 
-/** Strip a trailing `.Type` suffix so the type line is not duplicated in the name. */
-export function displayPickerTitle(name: string): string {
-  return name.replace(/\.[A-Za-z][A-Za-z0-9]*$/, "");
-}
-
 export function assetRowIdentity(
   asset: { name: string; type: string } | undefined,
 ): {
@@ -47,7 +42,7 @@ export function assetRowIdentity(
 } {
   if (!asset) return {};
   return {
-    displayLabel: displayPickerTitle(asset.name),
+    displayLabel: asset.name,
     displayType: asset.type,
     visual: { assetType: asset.type },
   };
@@ -64,7 +59,7 @@ export function classRowIdentity(
   const id = entry?.id ?? fallbackId?.trim();
   if (!id) return {};
   return {
-    displayLabel: displayPickerTitle(entry?.name ?? id),
+    displayLabel: entry?.name ?? id,
     displayType: "Class",
     visual: { classId: id, family: "class" },
   };

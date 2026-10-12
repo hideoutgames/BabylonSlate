@@ -63,7 +63,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     },
   ],
   applyGraphChange,
-  projectDocument: { settings: { input: { actions: [], axes: [] } } },
+  projectDocument: { settings: {} },
   assetRegistry: { list: () => [] },
 })));
 

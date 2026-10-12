@@ -88,12 +88,14 @@ export function selectChecks(files, workspace, availableTests = []) {
     if (file.startsWith("docs/")) {
       docs = true;
       addTest("apps/docs/src/sidebar.test.ts");
+      addTest("apps/docs/src/heading-fragments.test.ts");
       continue;
     }
     if (file.startsWith("apps/docs/")) {
       docs = true;
       if (!SOURCE_FILE.test(file) && !file.endsWith("/package.json")) {
         addTest("apps/docs/src/sidebar.test.ts");
+        addTest("apps/docs/src/heading-fragments.test.ts");
         continue;
       }
     }

@@ -95,23 +95,7 @@ export function thumbnailMime(bytes: Uint8Array): string {
 
 export function isThumbnailableAssetType(type: string): boolean {
   return type === "Texture" || type === "Model" || type === "Animation" ||
-    type === "Material" || type === "Class" || type === "Graph";
-}
-
-/** Rebuild legacy JPEG thumbnails whose source may contain alpha, on demand. */
-export async function upgradeTextureThumbnail(
-  cached: Uint8Array | null,
-  sourceMime: string | undefined,
-  readSource: () => Promise<Uint8Array | null>,
-): Promise<Uint8Array | null> {
-  if (cached && (sourceMime === "image/jpeg" || thumbnailMime(cached) === "image/png")) return cached;
-  try {
-    const source = await readSource();
-    return source ? await generateThumbnailBytes(source, DEFAULT_THUMBNAIL_MAX_EDGE, sourceMime) ?? cached : cached;
-  } catch {
-    // A missing source or unavailable decoder should retain the existing tile.
-    return cached;
-  }
+    type === "Material" || type === "Class";
 }
 
 /**

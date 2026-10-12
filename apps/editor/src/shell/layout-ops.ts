@@ -71,72 +71,35 @@ export function resolveFocusKeepPanelIds(
   return keep;
 }
 
-export interface FocusablePanelApi<Group = unknown> {
-  maximize?: () => void;
-  close: () => void;
-  moveTo?: (options: { position?: "bottom"; group?: Group }) => void;
-}
-
-export interface FocusableDockApi<Group = unknown> {
-  getPanel: (
-    id: string,
-  ) => { api: FocusablePanelApi<Group>; group?: Group } | undefined;
+export interface FocusableDockApi {
+  getPanel: (id: string) => { api: { close: () => void } } | undefined;
   panels?: ReadonlyArray<{ id: string }>;
+  activePanel?: { id: string };
 }
 
-/** Collapse the dock to keep-listed panels that are already open. */
-export function applyFocusLayout<Group>(
+/**
+ * Collapse the dock to keep-listed panels that are already open. When none of
+ * them is open, the primary panel, or else the active one, stays so Focus
+ * never empties the dock.
+ */
+export function applyFocusLayout(
   kind: FocusDocumentKind,
-  api: FocusableDockApi<Group>,
+  api: FocusableDockApi,
   keepPanelIds?: readonly string[],
   options?: FocusKeepOptions,
 ): void {
   const keep = new Set(resolveFocusKeepPanelIds(kind, keepPanelIds, options));
   const openIds = (api.panels ?? []).map((panel) => panel.id);
+  if (!openIds.some((id) => keep.has(id))) {
+    const primary = primaryDockPanel(kind, options);
+    const fallback = openIds.includes(primary)
+      ? primary
+      : (api.activePanel?.id ?? openIds[0]);
+    if (fallback) keep.add(fallback);
+  }
   for (const id of openIds) {
     if (!keep.has(id)) {
       api.getPanel(id)?.api.close();
     }
-  }
-}
-
-export interface RestorableDockApi {
-  fromJSON: (layout: never) => void;
-}
-
-/**
- * Restore a saved DockView snapshot, or build the catalog default.
- * Older catalog JSON can throw from `fromJSON`; fall back rather than
- * unmounting the editor.
- */
-export function restoreDockviewLayout(
-  api: RestorableDockApi,
-  layout: Record<string, unknown> | null | undefined,
-  createDefault: () => void,
-): void {
-  if (layout) {
-    try {
-      api.fromJSON(layout as never);
-      return;
-    } catch {
-      // Stale layout.json from an older panel catalog.
-    }
-  }
-  createDefault();
-}
-
-/** Drop retired panels and restack Class under Components. */
-export function migrateRestoredLayout<Group>(api: FocusableDockApi<Group>): void {
-  api.getPanel("mini-asset-browser")?.api.close();
-  const myClass = api.getPanel("my-class");
-  const components = api.getPanel("actor-prefab");
-  if (
-    myClass &&
-    components &&
-    myClass.group &&
-    myClass.group === components.group &&
-    typeof myClass.api.moveTo === "function"
-  ) {
-    myClass.api.moveTo({ position: "bottom", group: components.group });
   }
 }

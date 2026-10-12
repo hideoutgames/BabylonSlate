@@ -7,8 +7,14 @@ export interface SafeStorage {
 }
 
 export interface SecretStoreFiles {
+  /** Rejects with an `ENOENT` code when no secret file exists yet. */
   read(): Promise<string>;
+  /** Replaces the whole file atomically, readable only by the current user. */
   write(contents: string): Promise<void>;
+}
+
+export function isMissingFile(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === "ENOENT";
 }
 
 type StoredSecret =
@@ -63,38 +69,55 @@ function parseSecrets(json: string): StoredSecrets {
 }
 
 export class DesktopSecretStore {
-  private mutationQueue: Promise<void> = Promise.resolve();
+  private queue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly files: SecretStoreFiles,
     private readonly safeStorage: SafeStorage,
   ) {}
 
+  /**
+   * Only a missing file is empty. Any other read failure rejects, so a later
+   * write never replaces every stored secret with a one-entry file.
+   */
   private async read(): Promise<StoredSecrets> {
+    let json: string;
     try {
-      return parseSecrets(await this.files.read());
+      json = await this.files.read();
+    } catch (error) {
+      if (isMissingFile(error)) return structuredClone(EMPTY_SECRETS);
+      throw error;
+    }
+    try {
+      return parseSecrets(json);
     } catch {
+      // Unparseable contents hold nothing recoverable.
       return structuredClone(EMPTY_SECRETS);
     }
   }
 
-  private enqueue(mutation: () => Promise<void>): Promise<void> {
-    const result = this.mutationQueue.then(mutation);
-    this.mutationQueue = result.catch(() => undefined);
+  /** Reads and writes share one queue, so a read observes every earlier call. */
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.queue.then(operation);
+    this.queue = result.then(
+      () => undefined,
+      () => undefined,
+    );
     return result;
   }
 
-  async get(key: string): Promise<string | null> {
-    await this.mutationQueue;
-    const secret = (await this.read()).secrets[key];
-    if (!secret) return null;
-    if (secret.storage === "plaintext") return secret.value;
-    if (!this.safeStorage.isEncryptionAvailable()) {
-      throw new SecretDecryptionUnavailableError();
-    }
-    return this.safeStorage.decryptString(
-      Buffer.from(secret.ciphertext, "base64"),
-    );
+  get(key: string): Promise<string | null> {
+    return this.enqueue(async () => {
+      const secret = (await this.read()).secrets[key];
+      if (!secret) return null;
+      if (secret.storage === "plaintext") return secret.value;
+      if (!this.safeStorage.isEncryptionAvailable()) {
+        throw new SecretDecryptionUnavailableError();
+      }
+      return this.safeStorage.decryptString(
+        Buffer.from(secret.ciphertext, "base64"),
+      );
+    });
   }
 
   set(key: string, value: string): Promise<void> {

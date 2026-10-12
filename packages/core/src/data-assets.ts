@@ -1,3 +1,4 @@
+import { hardLoadingProperty } from "./asset-loading-policy";
 import { newGuid } from "./guid-result";
 
 /** Persisted data assets. Identity and display names live in the .babasset header. */
@@ -14,6 +15,8 @@ export interface DataFieldSnapshot {
   fields?: DataFieldSnapshot[];
   /** Record schema for typed Map keys. Values use `fields` above. */
   keyFields?: DataFieldSnapshot[];
+  /** Asset and Class fields only: `"hard"` loads the reference with the asset that owns the value. Missing is Soft. */
+  loading?: "hard";
 }
 
 /** Independent authoring schema; no Structure asset is required. */
@@ -112,8 +115,8 @@ export function normalizeDataDefinitionAsset(value: unknown): DataDefinitionAsse
   if (!record(value) || (value.kind !== undefined && value.kind !== "dataDefinition") ||
     (value.fields !== undefined && !Array.isArray(value.fields))) throw new Error("Invalid Data Definition payload.");
   const fields = ((value.fields ?? []) as unknown[]).map((entry): DataDefinitionField => {
-    if (!record(entry) || typeof entry.name !== "string" || typeof entry.typeId !== "string") {
-      throw new Error("Data Definition fields need a name and type.");
+    if (!record(entry) || typeof entry.id !== "string" || !entry.id || typeof entry.name !== "string" || typeof entry.typeId !== "string") {
+      throw new Error("Data Definition fields need an id, name and type.");
     }
     if ((entry.required !== undefined && typeof entry.required !== "boolean") ||
       (entry.min !== undefined && typeof entry.min !== "number") || (entry.max !== undefined && typeof entry.max !== "number") ||
@@ -122,7 +125,7 @@ export function normalizeDataDefinitionAsset(value: unknown): DataDefinitionAsse
     }
     const snapshot = normalizeSnapshot([entry])[0]!;
     return {
-      ...snapshot, id: typeof entry.id === "string" && entry.id ? entry.id : `legacy:${entry.name}`,
+      ...snapshot, id: entry.id,
       ...(entry.defaultValue !== undefined ? { defaultValue: structuredClone(entry.defaultValue) } : {}),
       ...(typeof entry.category === "string" ? { category: entry.category } : {}),
       ...(typeof entry.description === "string" ? { description: entry.description } : {}),
@@ -152,14 +155,12 @@ function normalizeSnapshot(fields: unknown[], depth = 0): DataFieldSnapshot[] {
     ...(typeof field.keyTypeClassId === "string" ? { keyTypeClassId: field.keyTypeClassId } : {}),
     ...(Array.isArray(field.fields) ? { fields: normalizeSnapshot(field.fields, depth + 1) } : {}),
     ...(Array.isArray(field.keyFields) ? { keyFields: normalizeSnapshot(field.keyFields, depth + 1) } : {}),
+    ...hardLoadingProperty(field),
   }));
 }
 
 export function normalizeDataTreeAsset(value: unknown): DataTreeAsset {
-  if (!record(value) || (value.kind !== undefined && value.kind !== "dataTree")) throw new Error("Invalid Data Tree payload. Historical Data Sheets and Data Objects are unsupported.");
-  if ("rows" in value || "objectGuids" in value || "structureGuid" in value || "definitionGuid" in value) {
-    throw new Error("Historical Data Sheets and Data Objects cannot be opened as Data Trees; their stored data has not been changed.");
-  }
+  if (!record(value) || (value.kind !== undefined && value.kind !== "dataTree")) throw new Error("Invalid Data Tree payload.");
   if (value.entries !== undefined && !Array.isArray(value.entries)) throw new Error("Data Tree entries must be an array.");
   if (value.defaultDefinitionGuid !== undefined && value.defaultDefinitionGuid !== null && typeof value.defaultDefinitionGuid !== "string") throw new Error("Invalid Data Tree default Definition.");
   return createDataTreeAsset(

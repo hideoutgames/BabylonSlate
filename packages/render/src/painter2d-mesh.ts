@@ -1,4 +1,4 @@
-import { Color3, DynamicTexture, MeshBuilder, StandardMaterial, Texture, type Mesh, type Scene } from "@babylonjs/core";
+import { Color3, CreatePlaneVertexData, DynamicTexture, MeshBuilder, StandardMaterial, Texture, type Mesh, type Scene } from "@babylonjs/core";
 import { painterTextureSize, parsePainter2DProperties, type Painter2DProperties, type PainterColor, type PainterCommand, type PainterPathSegment } from "@babylonslate/core";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 
@@ -53,6 +53,10 @@ export function paint2DCommands(context: PaintContext, commands: readonly Painte
 type PainterVisual = { texture: DynamicTexture; properties: Painter2DProperties };
 const visuals = new WeakMap<Mesh, PainterVisual>();
 
+function textureSizeFor(scene: Scene, properties: Painter2DProperties): { width: number; height: number } {
+  return painterTextureSize(properties.width, properties.height, properties.pixelsPerUnit, Math.min(4096, scene.getEngine().getCaps().maxTextureSize || 4096));
+}
+
 export function createPainter2DMesh(scene: Scene, name: string, value: unknown): Mesh {
   const properties = parsePainter2DProperties(value);
   const mesh = MeshBuilder.CreatePlane(name, { width: properties.width, height: properties.height }, scene);
@@ -68,8 +72,7 @@ export function createPainter2DMesh(scene: Scene, name: string, value: unknown):
   let texture: DynamicTexture | undefined;
   mesh.onDisposeObservable.addOnce(() => { visuals.delete(mesh); material.dispose(); texture?.dispose(); });
   try {
-    const size = painterTextureSize(properties.width, properties.height, properties.pixelsPerUnit, Math.min(4096, scene.getEngine().getCaps().maxTextureSize || 4096));
-    texture = new DynamicTexture(`${name}-painter-canvas`, size, scene, false, Texture.BILINEAR_SAMPLINGMODE);
+    texture = new DynamicTexture(`${name}-painter-canvas`, textureSizeFor(scene, properties), scene, false, Texture.BILINEAR_SAMPLINGMODE);
     texture.hasAlpha = true;
     texture.wrapU = Texture.CLAMP_ADDRESSMODE;
     texture.wrapV = Texture.CLAMP_ADDRESSMODE;
@@ -81,11 +84,21 @@ export function createPainter2DMesh(scene: Scene, name: string, value: unknown):
   } catch (error) { mesh.dispose(); throw error; }
 }
 
-/** Drawing updates retain the plane, material and texture rather than rebuilding the actor. */
+/**
+ * Drawing updates retain the plane, material and texture rather than rebuilding
+ * the actor. A new world size reshapes the plane, and a new texel size resizes
+ * the canvas texture, before the stream is replayed.
+ */
 export function updatePainter2DMesh(mesh: Mesh, value: unknown): boolean {
   const visual = visuals.get(mesh);
   if (!visual || mesh.isDisposed()) return false;
   const properties = parsePainter2DProperties(value);
+  if (properties.width !== visual.properties.width || properties.height !== visual.properties.height) {
+    CreatePlaneVertexData({ width: properties.width, height: properties.height }).applyToMesh(mesh);
+  }
+  const wanted = textureSizeFor(mesh.getScene(), properties);
+  const current = visual.texture.getSize();
+  if (wanted.width !== current.width || wanted.height !== current.height) visual.texture.scaleTo(wanted.width, wanted.height);
   const size = visual.texture.getSize();
   paint2DCommands(visual.texture.getContext() as PaintContext, properties.commands, size.width, size.height, properties.width, properties.height);
   visual.properties = properties;

@@ -72,7 +72,7 @@ function validateChunkBounds(asset: AssetSourceLocator, entry: ChunkEntry): void
   if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(length) || length < 0 ||
     !Number.isSafeInteger(asset.payloadOffset + offset + length) ||
     asset.payloadOffset + offset + length > asset.totalSize ||
-    (entry.byteLength !== undefined && entry.byteLength !== length)) {
+    entry.byteLength !== length) {
     throw new Error(`Invalid bounds for chunk ${entry.id} in ${asset.path}`);
   }
 }
@@ -87,7 +87,7 @@ export interface PayloadChunkRequest {
   chunkId: string;
   revision: string;
   status: "loading" | "succeeded" | "failed";
-  requestedBytes: number | null;
+  requestedBytes: number;
   /** Bytes returned to this request, including bytes rejected by validation. */
   payloadBytes: number;
   error?: string;
@@ -136,7 +136,7 @@ export class AccountedPayloadLoader {
       chunkId: entry.id,
       revision: asset.revision,
       status: "loading",
-      requestedBytes: entry.byteLength ?? ("inline" in entry.locator ? entry.locator.inline.length : null),
+      requestedBytes: entry.byteLength,
       payloadBytes: 0,
     };
     this.recentRequests.push(request);
@@ -175,7 +175,7 @@ export class AccountedPayloadLoader {
       data = result.bytes;
     } else {
       await validateAssetSourceLocator(storage, asset, options);
-      if (entry.byteLength !== undefined && blobs.blobByteLength &&
+      if (blobs.blobByteLength &&
         await blobs.blobByteLength(entry.locator.blob, options) !== entry.byteLength) {
         throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
       }
@@ -184,7 +184,7 @@ export class AccountedPayloadLoader {
     }
     request.payloadBytes = data.byteLength;
     options.signal?.throwIfAborted();
-    if (entry.byteLength !== undefined && data.byteLength !== entry.byteLength) {
+    if (data.byteLength !== entry.byteLength) {
       throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
     }
     const hash = await sha256Hex(data);

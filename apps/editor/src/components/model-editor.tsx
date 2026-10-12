@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
@@ -40,6 +40,7 @@ import {
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useModelColliderSession } from "../context/model-collider-session";
+import { useModelSourceBytes } from "../lib/use-model-source-bytes";
 import { ModelPreviewCanvas } from "./model-preview-canvas";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -48,23 +49,16 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function useModelSourceBytes(path: string | undefined): Uint8Array | null {
-  const { readAssetChunk } = useDocumentActions();
-  const [sourceBytes, setSourceBytes] = useState<Uint8Array | null>(null);
-  useEffect(() => {
-    if (!path) {
-      setSourceBytes(null);
-      return;
-    }
-    let cancelled = false;
-    void readAssetChunk(path, "source").then((bytes) => {
-      if (!cancelled) setSourceBytes(bytes);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [path, readAssetChunk]);
-  return sourceBytes;
+/** Shown in place of a mesh preview when the Model source could not be read. */
+export function ModelSourceReadError({ error }: { error: string }) {
+  return (
+    <Empty>
+      <EmptyHeader>
+        <EmptyTitle>Failed to Read Mesh</EmptyTitle>
+        <EmptyDescription>{error}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
 }
 
 export function ModelPreviewPanel(_props: IDockviewPanelProps) {
@@ -72,12 +66,13 @@ export function ModelPreviewPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const { applyAssetDocumentChange } = useDocumentActions();
   const doc = useOpenDocument(documentId);
-  const sourceBytes = useModelSourceBytes(doc?.ref.path);
+  const source = useModelSourceBytes(doc?.ref.path);
   return (
     <PanelFrame data-testid="model-preview-panel">
       <ModelPreview
         payload={asRecord(doc?.content)}
-        sourceBytes={sourceBytes}
+        sourceBytes={source.bytes}
+        sourceError={source.error}
         onChange={(next) => {
           void applyAssetDocumentChange(documentId, next);
         }}
@@ -91,7 +86,7 @@ export function ModelCollidersPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const { applyAssetDocumentChange } = useDocumentActions();
   const doc = useOpenDocument(documentId);
-  const sourceBytes = useModelSourceBytes(doc?.ref.path);
+  const { bytes: sourceBytes } = useModelSourceBytes(doc?.ref.path);
   return (
     <PanelFrame data-testid="model-colliders-panel">
       <ModelColliders
@@ -125,12 +120,22 @@ export function ModelDetailsPanel(_props: IDockviewPanelProps) {
 export function ModelPreview({
   payload,
   sourceBytes = null,
+  sourceError = null,
   onChange,
 }: {
   payload: Record<string, unknown>;
   sourceBytes?: Uint8Array | null;
+  /** Why the Model source could not be read, shown instead of a mesh. */
+  sourceError?: string | null;
   onChange?: (next: Record<string, unknown>) => void;
 }) {
+  if (sourceError) {
+    return (
+      <div className="flex h-full flex-col p-3" data-testid="model-preview">
+        <ModelSourceReadError error={sourceError} />
+      </div>
+    );
+  }
   if (!sourceBytes || !isGltfModelBytes(sourceBytes)) {
     return (
       <div className="flex h-full flex-col p-3" data-testid="model-preview">

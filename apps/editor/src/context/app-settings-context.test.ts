@@ -36,4 +36,23 @@ describe("AppSettingsOwner", () => {
     expect(alsoSeen.at(-1)).toBe(12);
     expect(owner.getSnapshot().version).toBe(1);
   });
+
+  it("publishes a stored settings event's whole appearance with its theme", () => {
+    const store: AppSettingsStore = { load: vi.fn(), save: vi.fn(), update: vi.fn() };
+    const owner = new AppSettingsOwner(store);
+    const saved = defaultEngineSettings();
+    saved.appearance = { theme: "dark", coarsePointerTargetScale: 1.5 };
+    // Shape of the store's change event: every setting plus a top-level theme.
+    owner.receiveUpdate({ ...saved, theme: saved.appearance.theme });
+    expect(owner.getSnapshot().settings.appearance).toEqual({
+      theme: "dark",
+      coarsePointerTargetScale: 1.5,
+    });
+
+    owner.receiveUpdate({ theme: "light" });
+    expect(owner.getSnapshot().settings.appearance).toEqual({
+      theme: "light",
+      coarsePointerTargetScale: 1.5,
+    });
+  });
 });

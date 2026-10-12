@@ -7,7 +7,7 @@ export function classAssetReference(asset: IndexedAsset): ClassAssetReference {
 }
 
 export function isClassAsset(asset: IndexedAsset): boolean {
-  return asset.header.type === "Class" || asset.header.type === "Graph";
+  return asset.header.type === "Class";
 }
 
 /** Retained Classes in the same engine lineage, excluding inheritance cycles. */
@@ -17,10 +17,7 @@ export function classDeletionCandidates(
   deleting: ReadonlySet<string>,
 ): IndexedAsset[] {
   const classes = assets.filter(isClassAsset);
-  const parentOf = classParentLookup(classes.map((asset) => ({ ...asset,
-    header: { ...asset.header, type: "Class", parentClass: asset.header.parentClass ??
-      (asset.header.type === "Graph" ? "Actor" : "BObject") },
-  })));
+  const parentOf = classParentLookup(classes);
   const projectIds = new Set(classes.map(classIdFromClassAsset));
   const deletedIds = new Set(classes.filter((asset) => deleting.has(asset.header.guid)).map(classIdFromClassAsset));
   const base = walkAncestry(classIdFromClassAsset(source), parentOf)

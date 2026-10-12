@@ -13,8 +13,7 @@ function record(value: unknown): Record<string, unknown> | null {
 
 export function isDataAssetPayload(value: unknown): boolean {
   const kind = record(value)?.kind;
-  // Unsupported historical payloads are protected from generic string walkers.
-  return kind === "dataDefinition" || kind === "dataTree" || kind === "dataSheet" || kind === "dataObject";
+  return kind === "dataDefinition" || kind === "dataTree";
 }
 
 export function isDataGraphNodePayload(value: unknown): boolean {
@@ -211,7 +210,7 @@ export function dataAssetDependencies(
 
 export function remapDataPayloadGuids<T>(assetType: string, value: T, remap: ReadonlyMap<string, string>, definitionFields?: DataDefinitionFieldsResolver): T {
   const map = (reference: string) => remap.get(reference) ?? reference;
-  return assetType === "Class" || assetType === "Graph"
+  return assetType === "Class"
     ? mapDataGraphReferences(value, map, definitionFields) : mapDataTypeReferences(assetType, value, map, definitionFields);
 }
 
@@ -250,11 +249,11 @@ export function mapDataGraphReferences<T>(value: T, map: ReferenceMapper, defini
     const props = nested ?? data ?? record(next.properties);
     if (!props) return next;
     let mapped = props;
+    // Pin literals live only under `default:<pinId>`, where compile reads them.
     if (type === "variables.set") {
-      const name = typeof props.variableName === "string" ? props.variableName : "Value";
-      for (const key of ["default:value", "value", `default:${name}`]) if (Object.hasOwn(props, key)) mapped = withValue(mapped, key, variable(props, props[key]));
+      if (Object.hasOwn(props, "default:value")) mapped = withValue(mapped, "default:value", variable(props, props["default:value"]));
     } else {
-      for (const key of ["definitionGuid", "default:tree", "default:Tree"]) {
+      for (const key of ["definitionGuid", "default:tree"]) {
         if (Object.hasOwn(props, key)) mapped = withValue(mapped, key, guid(props[key]));
       }
       if (Array.isArray(props.dataSchema)) {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,7 +46,9 @@ export function NumberPromptDialog({
     if (open) setValue(initialValue);
   }
 
-  const submit = (next = value) => {
+  const finishRef = useRef<() => number | undefined>(null);
+
+  const submit = (next: number) => {
     if (!Number.isFinite(next) || next < min) return;
     onSubmit(next);
     onOpenChange(false);
@@ -71,6 +73,7 @@ export function NumberPromptDialog({
             value={value}
             onChange={setValue}
             onEnter={submit}
+            finishRef={finishRef}
           />
         </Field>
         <AlertDialogFooter>
@@ -81,7 +84,9 @@ export function NumberPromptDialog({
             data-testid="number-prompt-confirm"
             onClick={(event) => {
               event.preventDefault();
-              submit();
+              // Finish the draft like Enter: the live value skips out-of-range text.
+              const next = finishRef.current?.();
+              if (next !== undefined) submit(next);
             }}
           >
             {confirmLabel}

@@ -2,6 +2,7 @@ import { ImageProcessingConfiguration, type BaseTexture } from "@babylonjs/core"
 import {
   DEFAULT_RENDER_EFFECTS,
   normalizeRenderEffectsSettings,
+  RENDER_QUALITY_PROFILES,
   type RenderEffectsSettings,
 } from "@babylonslate/core";
 import { expect, it } from "vitest";
@@ -219,4 +220,20 @@ it("enables PBR ambient occlusion, scene reflections and scene-light fog indepen
   expect(planSceneEffects(occlusionOnly, "pbr")?.ambientOcclusion).toEqual(occlusionOnly.ambientOcclusion);
   expect(planSceneEffects(occlusionOnly, "cel")).toBeNull();
   expect(planSceneEffects(settings, "pbr", false)).toBeNull();
+});
+
+it("skips the screen-space effects a quality tier cannot afford but keeps authored Fog Volumes", () => {
+  const settings = effects({ reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
+    ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },
+    volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, density: 0.3 } });
+  const { low, medium, high } = RENDER_QUALITY_PROFILES;
+  expect(planSceneEffects(settings, "pbr", true, { allowed: medium.postprocessing })).toMatchObject({
+    ambientOcclusion: settings.ambientOcclusion, reflections: null, volumetricLighting: null });
+  expect(planSceneEffects(settings, "pbr", true, { allowed: low.postprocessing })).toBeNull();
+  expect(planSceneEffects(settings, "pbr", true, { allowed: low.postprocessing, fogVolumesPresent: true })?.volumetricLighting)
+    .toMatchObject({ enabled: true, density: 0 });
+  expect(planSceneEffects(settings, "pbr", true, { allowed: high.postprocessing })).toMatchObject({
+    ambientOcclusion: settings.ambientOcclusion, reflections: settings.reflections, volumetricLighting: settings.volumetricLighting });
+  expect(sceneEffectsKey(settings, "pbr", true, { allowed: medium.postprocessing }))
+    .not.toBe(sceneEffectsKey(settings, "pbr", true, { allowed: high.postprocessing }));
 });

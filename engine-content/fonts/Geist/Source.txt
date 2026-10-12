@@ -1,0 +1,7 @@
+Geist variable font, Latin subset (SIL Open Font License 1.1, see OFL.txt).
+
+Geist-Latin-Variable.woff2 = files/geist-latin-wght-normal.woff2 from the
+@fontsource-variable/geist 5.3.0 npm package (the editor UI font dependency of
+packages/ui), copied unmodified. OFL.txt is that package's LICENSE file.
+
+Projects and exports that ship this font must keep OFL.txt with it.

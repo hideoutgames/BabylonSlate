@@ -5,7 +5,8 @@ import { sortingLayerSortKey } from "@babylonslate/core";
  * Babylon supports four rendering groups, reserved here for coarse separation
  * so a UI sprite can never sort behind world geometry no matter what its
  * `orderInLayer` says. Fine ordering inside a group is the `alphaIndex` sort
- * key below.
+ * key below for meshes, and the position in `scene.particleSystems` for
+ * particle systems (`applySortingToParticleSystem`).
  */
 export const RENDERING_GROUP = {
   background: 0,
@@ -164,10 +165,40 @@ export function configureEditorRenderingGroups(scene: {
   }
 }
 
-/** Babylon particle systems expose `renderingGroupId`, not mesh `alphaIndex`. */
+const particleSortKeys = new WeakMap<object, number>();
+const particleOrderRevisions = new WeakMap<object, number>();
+
+/** Changes whenever `applySortingToParticleSystem` moves a system in the scene's list. */
+export function particleDrawOrderRevision(scene: object): number {
+  return particleOrderRevisions.get(scene) ?? 0;
+}
+
+/**
+ * Babylon particle systems have no `alphaIndex`: a rendering group draws its
+ * systems in `scene.particleSystems` order. The system moves before the first
+ * sorted system with a higher sort key, so sorted systems stay in key order
+ * (equal keys keep creation order) and unsorted systems keep their place.
+ */
 export function applySortingToParticleSystem(
-  system: { renderingGroupId: number },
+  system: { renderingGroupId: number; getScene(): { particleSystems: object[] } | null },
   resolution: SortingLayerResolution,
 ): void {
   system.renderingGroupId = resolution.renderingGroupId;
+  particleSortKeys.set(system, resolution.sortKey);
+  const scene = system.getScene();
+  const systems = scene?.particleSystems;
+  const from = systems?.indexOf(system) ?? -1;
+  if (!scene || !systems || from < 0) return;
+  systems.splice(from, 1);
+  let to = -1;
+  let afterLowerKeys = 0;
+  for (let index = 0; index < systems.length; index++) {
+    const key = particleSortKeys.get(systems[index]!);
+    if (key === undefined) continue;
+    if (key > resolution.sortKey) { to = index; break; }
+    afterLowerKeys = index + 1;
+  }
+  if (to < 0) to = Math.max(from, afterLowerKeys);
+  systems.splice(to, 0, system);
+  if (to !== from) particleOrderRevisions.set(scene, particleDrawOrderRevision(scene) + 1);
 }

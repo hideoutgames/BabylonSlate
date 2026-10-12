@@ -1,0 +1,80 @@
+{
+  "id": "missing-event",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "entry",
+      "typeId": "flow.entry",
+      "position": {
+        "x": 9600,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "call",
+      "typeId": "flow.event.call",
+      "position": {
+        "x": 9400,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {
+        "name": "Taunt",
+        "classId": "Hero",
+        "implicitSelf": true
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry.execOut->call.execIn",
+      "sourceNodeId": "entry",
+      "sourcePinId": "execOut",
+      "targetNodeId": "call",
+      "targetPinId": "execIn"
+    }
+  ],
+  "context": {
+    "classId": "Hero",
+    "members": [
+      {
+        "id": "health",
+        "name": "Health",
+        "kind": "variable",
+        "classId": "Hero",
+        "typeId": "float"
+      }
+    ]
+  }
+}

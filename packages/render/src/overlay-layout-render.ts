@@ -1,4 +1,4 @@
-import { Matrix, Mesh, Quaternion, Vector3, type AbstractMesh, type Node, type Observer, type Scene } from "@babylonjs/core";
+import { Matrix, Mesh, Quaternion, Vector3, Viewport, type AbstractMesh, type Node, type Observer, type Scene } from "@babylonjs/core";
 import { overlayRectContains, type OverlayLayoutEntry, type OverlayLayoutRect } from "@babylonslate/core";
 import type { CommandMessage } from "@babylonslate/bridge";
 
@@ -33,15 +33,20 @@ export function overlayClipAllowsPoint(mesh: AbstractMesh, x: number, y: number)
   const clip = inheritedClip(mesh);
   return !clip || overlayRectContains(clip, x, y);
 }
+// Clipped meshes bind every frame; project their corners through shared scratch.
+const scratchViewport = new Viewport(0, 0, 1, 1);
+const scratchCorner = new Vector3();
+const scratchMin = new Vector3();
+const scratchMax = new Vector3();
 function installClip(mesh: Mesh): () => void {
   let scissored = false;
   const beforeBind = mesh.onBeforeBindObservable.add(() => {
     const clip = inheritedClip(mesh), scene = mesh.getScene(), camera = scene.activeCamera;
     if (!clip || !camera) return;
     const engine = scene.getEngine(), width = engine.getRenderWidth(), height = engine.getRenderHeight();
-    const viewport = camera.viewport.toGlobal(width, height);
-    const min = Vector3.Project(new Vector3(clip.x - clip.width / 2, clip.y - clip.height / 2, 0), Matrix.IdentityReadOnly, scene.getTransformMatrix(), viewport);
-    const max = Vector3.Project(new Vector3(clip.x + clip.width / 2, clip.y + clip.height / 2, 0), Matrix.IdentityReadOnly, scene.getTransformMatrix(), viewport);
+    camera.viewport.toGlobalToRef(width, height, scratchViewport);
+    const min = Vector3.ProjectToRef(scratchCorner.set(clip.x - clip.width / 2, clip.y - clip.height / 2, 0), Matrix.IdentityReadOnly, scene.getTransformMatrix(), scratchViewport, scratchMin);
+    const max = Vector3.ProjectToRef(scratchCorner.set(clip.x + clip.width / 2, clip.y + clip.height / 2, 0), Matrix.IdentityReadOnly, scene.getTransformMatrix(), scratchViewport, scratchMax);
     const x = Math.max(0, Math.min(width, Math.floor(Math.min(min.x, max.x))));
     const top = Math.max(0, Math.min(height, Math.floor(Math.min(min.y, max.y))));
     const right = Math.max(x, Math.min(width, Math.ceil(Math.max(min.x, max.x))));

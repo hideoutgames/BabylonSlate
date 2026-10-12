@@ -3,6 +3,7 @@ import {
   normalizeClassMemberCategory,
   normalizeDataDefinitionAsset,
   normalizeScene,
+  type DataDefinitionField,
   type GraphClassMember,
   type GraphClassMemberPin,
   type SerializedGraph,
@@ -184,9 +185,7 @@ export function collectFunctionLibrariesForPalette(options: {
   };
 
   for (const asset of options.assets) {
-    if (asset.header.type !== "Class" && asset.header.type !== "Graph") {
-      continue;
-    }
+    if (asset.header.type !== "Class") continue;
     consider(
       options.classIdForPath(asset.path),
       asset.header.parentClass,
@@ -236,9 +235,7 @@ export function collectSubsystemClassesForPalette(options: {
     if (base) bases.set(classId, base);
   };
   for (const asset of options.assets) {
-    if (asset.header.type !== "Class" && asset.header.type !== "Graph") {
-      continue;
-    }
+    if (asset.header.type !== "Class") continue;
     consider(options.classIdForPath(asset.path), asset.header.parentClass);
   }
   for (const doc of options.openDocuments) {
@@ -251,10 +248,10 @@ export function collectSubsystemClassesForPalette(options: {
     .sort((a, b) => compareClassIds(a.classId, b.classId));
 }
 
-function headerMemberId(entry: { id?: unknown; name: string }): string {
-  return typeof entry.id === "string" && entry.id.trim()
-    ? entry.id.trim()
-    : entry.name;
+/** Header members always carry the member id (`classHeaderMeta`). */
+function headerMemberId(entry: object): string | undefined {
+  const id = (entry as { id?: unknown }).id;
+  return typeof id === "string" && id.trim() ? id.trim() : undefined;
 }
 
 /** Rebuild a lightweight SerializedGraph from closed Class header metadata. */
@@ -267,9 +264,10 @@ export function classGraphFromHeaderPayload(
     for (const entry of functions) {
       if (!entry || typeof entry !== "object") continue;
       const name = (entry as { name?: unknown }).name;
-      if (typeof name !== "string" || !name) continue;
+      const id = headerMemberId(entry);
+      if (typeof name !== "string" || !name || !id) continue;
       const fn: GraphClassMember = {
-        id: headerMemberId({ ...(entry as { id?: unknown }), name }),
+        id,
         kind: "function",
         name,
         pins: normalizeHeaderPins((entry as { pins?: unknown }).pins),
@@ -316,11 +314,12 @@ export function classGraphFromHeaderPayload(
     for (const entry of variables) {
       if (!entry || typeof entry !== "object") continue;
       const name = (entry as { name?: unknown }).name;
-      if (typeof name !== "string" || !name) continue;
-      const typeId = (entry as { typeId?: unknown }).typeId;
-      const typeClassId = (entry as { typeClassId?: unknown }).typeClassId;
+      const id = headerMemberId(entry);
+      if (typeof name !== "string" || !name || !id) continue;
+      const { typeId, typeClassId, container, keyTypeId, keyTypeClassId, loading } =
+        entry as Record<string, unknown>;
       const member: GraphClassMember = {
-        id: headerMemberId({ ...(entry as { id?: unknown }), name }),
+        id,
         kind: "variable",
         name,
         typeId: typeof typeId === "string" && typeId ? typeId : "float",
@@ -328,6 +327,14 @@ export function classGraphFromHeaderPayload(
       if (typeof typeClassId === "string" && typeClassId.trim()) {
         member.typeClassId = typeClassId.trim();
       }
+      // Array and Map variables keep their container, so a closed parent's
+      // inherited variable is not read back as a scalar.
+      if (container === "array" || container === "map") member.container = container;
+      if (typeof keyTypeId === "string" && keyTypeId) member.keyTypeId = keyTypeId;
+      if (typeof keyTypeClassId === "string" && keyTypeClassId.trim()) {
+        member.keyTypeClassId = keyTypeClassId.trim();
+      }
+      if (loading === "hard") member.loading = "hard";
       const variableCategory = normalizeClassMemberCategory(
         (entry as { category?: unknown }).category,
       );
@@ -340,9 +347,10 @@ export function classGraphFromHeaderPayload(
     for (const entry of events) {
       if (!entry || typeof entry !== "object") continue;
       const name = (entry as { name?: unknown }).name;
-      if (typeof name !== "string" || !name) continue;
+      const id = headerMemberId(entry);
+      if (typeof name !== "string" || !name || !id) continue;
       members.push({
-        id: headerMemberId({ ...(entry as { id?: unknown }), name }),
+        id,
         kind: "event",
         name,
         pins: normalizeHeaderPins((entry as { pins?: unknown }).pins),
@@ -354,10 +362,11 @@ export function classGraphFromHeaderPayload(
     for (const entry of interfaces) {
       if (!entry || typeof entry !== "object") continue;
       const name = (entry as { name?: unknown }).name;
-      if (typeof name !== "string" || !name) continue;
+      const id = headerMemberId(entry);
+      if (typeof name !== "string" || !name || !id) continue;
       const assetGuid = (entry as { assetGuid?: unknown }).assetGuid;
       members.push({
-        id: headerMemberId({ ...(entry as { id?: unknown }), name }),
+        id,
         kind: "interface",
         name,
         assetGuid: typeof assetGuid === "string" ? assetGuid : "",
@@ -493,13 +502,8 @@ export function collectClassGraphsForPalette(options: {
 }): Record<string, SerializedGraph> {
   const graphs: Record<string, SerializedGraph> = {};
   for (const asset of options.assets) {
-    if (asset.header.type !== "Class" && asset.header.type !== "Graph") {
-      continue;
-    }
-    const classId = options.classIdForPath(asset.path);
-    const graph = classGraphFromHeaderPayload(asset.header.payload);
-    graphs[classId] = graph;
-    if (asset.header.name !== classId) graphs[asset.header.name] = graph;
+    if (asset.header.type !== "Class") continue;
+    graphs[options.classIdForPath(asset.path)] = classGraphFromHeaderPayload(asset.header.payload);
   }
   for (const doc of options.openDocuments) {
     if (doc.ref.kind !== "graph") continue;
@@ -647,9 +651,16 @@ export type GraphEnumEntry = {
   members: EnumMember[];
 };
 
+/** A Data Definition's fields always carry their persisted id. */
+export type GraphDataDefinitionEntry = {
+  guid: string;
+  name: string;
+  fields: DataDefinitionField[];
+};
+
 export type GraphTypeAssetCatalog = {
   structures: GraphStructureEntry[];
-  dataDefinitions: GraphStructureEntry[];
+  dataDefinitions: GraphDataDefinitionEntry[];
   enums: GraphEnumEntry[];
 };
 
@@ -709,7 +720,7 @@ export function collectGraphTypeAssets(options: {
     content: unknown;
   }>;
 }): GraphTypeAssetCatalog {
-  const dataDefinitions = new Map<string, GraphStructureEntry>();
+  const dataDefinitions = new Map<string, GraphDataDefinitionEntry>();
   const structures = new Map<string, GraphStructureEntry>();
   const enums = new Map<string, GraphEnumEntry>();
   for (const entry of ENGINE_STRUCTS) {

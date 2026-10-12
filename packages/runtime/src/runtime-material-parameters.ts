@@ -10,7 +10,10 @@ import {
   type MaterialInstanceObject,
 } from "@babylonslate/object-model";
 
+type Definition = MaterialParameterCatalog[string];
 type State = {
+  /** The catalog definition the defaults came from; a replaced definition rebuilds the state. */
+  definition: Definition;
   revision: number;
   authoredNames?: Set<string>;
   defaults: ReadonlyMap<string, MaterialParameterValue>;
@@ -25,6 +28,13 @@ const equal = (left: MaterialParameterValue, right: MaterialParameterValue | und
   right?.kind === left.kind && (left.kind === "float" ? left.value === (right as typeof left).value
     : left.kind === "texture" ? left.textureAssetGuid === (right as typeof left).textureAssetGuid
       : left.value.every((channel, index) => channel === (right as typeof left).value[index]));
+
+const sameDefinition = (left: Definition, right: Definition): boolean => {
+  if (left.domain !== right.domain || left.planHash !== right.planHash) return false;
+  const names = Object.keys(left.parameters);
+  return names.length === Object.keys(right.parameters).length &&
+    names.every((name) => equal(left.parameters[name]!, right.parameters[name]));
+};
 
 /** Session-owned values for synchronous worker reads; assets and entry overrides remain immutable. */
 export class RuntimeMaterialParameters {
@@ -51,8 +61,17 @@ export class RuntimeMaterialParameters {
     return state ? Object.fromEntries([...state.values].map(([name, value]) => [name, copy(value)])) : null;
   }
 
+  /**
+   * An unchanged definition keeps its identity, so its materials keep their
+   * session values; a changed one rebuilds each material's defaults and values
+   * from the new definition on next use.
+   */
   replaceCatalog(catalog: MaterialParameterCatalog | undefined, textures: readonly string[] | undefined): void {
-    this.catalog = normalizeMaterialParameterCatalog(catalog);
+    const previous = this.catalog;
+    this.catalog = Object.fromEntries(Object.entries(normalizeMaterialParameterCatalog(catalog)).map(([guid, definition]) => {
+      const kept = Object.hasOwn(previous, guid) ? previous[guid]! : undefined;
+      return [guid, kept && sameDefinition(kept, definition) ? kept : definition];
+    }));
     this.textures = new Set(textures);
   }
 
@@ -157,7 +176,7 @@ export class RuntimeMaterialParameters {
     )
       return undefined;
     const previous = this.states.get(material);
-    if (previous) return previous;
+    if (previous?.definition === definition) return previous;
     const authored =
       material instanceof PostProcessMaterialObject
         ? normalizeMaterialParameterOverrides(material.entry.parameters)
@@ -180,7 +199,9 @@ export class RuntimeMaterialParameters {
       defaults.set(name, copy(value));
     }
     const state = {
-      revision: 0,
+      definition,
+      // A rebuilt state never reuses a revision an edit gate already recorded.
+      revision: previous ? previous.revision + 1 : 0,
       authoredNames,
       defaults,
       values: new Map(

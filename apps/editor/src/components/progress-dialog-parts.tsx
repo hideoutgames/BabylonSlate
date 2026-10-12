@@ -20,6 +20,7 @@ export type ProgressDialogContentProps = ComponentProps<typeof DialogContent> & 
 export function ProgressDialogContent({
   failed = false,
   className,
+  bodyClassName,
   overlayClassName,
   ...props
 }: ProgressDialogContentProps) {
@@ -33,8 +34,9 @@ export function ProgressDialogContent({
         "bg-popover/30 data-open:duration-250 data-open:delay-300 data-open:fill-mode-both data-closed:duration-150",
         overlayClassName,
       )}
+      bodyClassName={cn("gap-3 p-4", bodyClassName)}
       className={cn(
-        "gap-3 p-4 data-open:duration-250 data-open:delay-300 data-open:fill-mode-both data-closed:duration-150 data-open:zoom-in-[0.98]",
+        "data-open:duration-250 data-open:delay-300 data-open:fill-mode-both data-closed:duration-150 data-open:zoom-in-[0.98]",
         failed ? "sm:max-w-sm" : "sm:max-w-xs",
         className,
       )}
@@ -73,7 +75,7 @@ export function ProgressDialogStatus({
 }: ProgressDialogStatusProps) {
   return (
     <>
-      <DialogHeader className="min-h-0 flex-row items-baseline gap-3 pr-0">
+      <DialogHeader className="min-h-0 flex-row items-baseline gap-3">
         <DialogTitle className="min-w-0 flex-1 truncate text-sm leading-5">
           {title}
         </DialogTitle>
@@ -133,7 +135,7 @@ export function ProgressDialogFailure({
 }: ProgressDialogFailureProps) {
   return (
     <>
-      <DialogHeader className="min-h-0 flex-row items-start gap-2.5 pr-0">
+      <DialogHeader className="min-h-0 flex-row items-start gap-2.5">
         <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <DialogTitle className="text-sm leading-5">{title}</DialogTitle>

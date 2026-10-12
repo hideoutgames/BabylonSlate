@@ -52,6 +52,20 @@ describe("asStructureAsset", () => {
     ]);
   });
 
+  it("keeps a Hard Loading policy across reopening and drops any other value", () => {
+    const fields = asStructureAsset({ fields: [
+      { id: "mesh", name: "Mesh", typeId: "asset", typeClassId: "Model", loading: "hard" },
+      { id: "icon", name: "Icon", typeId: "asset", typeClassId: "Texture", loading: "soft" },
+      { id: "boss", name: "Boss", typeId: "class", loading: 1 },
+    ] }).fields;
+    expect(fields).toEqual([
+      { id: "mesh", name: "Mesh", typeId: "asset", typeClassId: "Model", loading: "hard" },
+      { id: "icon", name: "Icon", typeId: "asset", typeClassId: "Texture" },
+      { id: "boss", name: "Boss", typeId: "class" },
+    ]);
+    expect(asStructureAsset({ fields: JSON.parse(JSON.stringify(fields)) }).fields).toEqual(fields);
+  });
+
   it("defaults field types and preserves defaultValue when present", () => {
     expect(
       asStructureAsset({

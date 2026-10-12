@@ -78,7 +78,6 @@ export function PinTypePicker({
   disabled = false,
   "data-testid": testId = "pin-type-picker",
 }: PinTypePickerProps) {
-  const selected = types.includes(value) ? value : "float";
   return (
     <PinTypeMenu
       open={open}
@@ -102,9 +101,10 @@ export function PinTypePicker({
         data-testid={testId}
         aria-label="Pin type"
       >
+        {/* Names the stored type, even one this picker does not offer. */}
         <TypeColorMark
-          colorVar={pinPickerColorVar(selected)}
-          label={labels?.[selected] ?? pinPickerLabel(selected)}
+          colorVar={pinPickerColorVar(value)}
+          label={labels?.[value] ?? pinPickerLabel(value)}
         />
       </Button>
     </PinTypeMenu>

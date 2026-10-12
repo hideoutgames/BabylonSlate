@@ -1,8 +1,10 @@
+import { crc32, inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import {
   buildMinimalGlbFixture,
   embedGlbExternalImages,
   encodeGlbJsonBin,
+  gltfAnimationClips,
   ingestGltfForImport,
   parseGlbForBrowse,
   parseGltfJsonForBrowse,
@@ -13,13 +15,30 @@ import {
 import { importModel } from "./model";
 
 const ONE_BY_ONE_PNG = Uint8Array.from([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-  0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00,
-  0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
-  0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xfe, 0xd4, 0xef, 0x00, 0x00,
-  0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49,
+  0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02,
+  0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44,
+  0x41, 0x54, 0x78, 0xda, 0x63, 0xf8, 0xcf, 0xc0, 0x00, 0x00, 0x03, 0x01, 0x01,
+  0x00, 0xf7, 0x03, 0x41, 0x43, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
+  0xae, 0x42, 0x60, 0x82,
 ]);
+
+/** Verifies every chunk CRC and inflates the image data of a small PNG. */
+function decodePngChunks(bytes: Uint8Array): { types: string[]; pixels: number[] } {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const types: string[] = [];
+  const data: Uint8Array[] = [];
+  for (let offset = 8; offset < bytes.byteLength;) {
+    const length = view.getUint32(offset);
+    const typeAndData = bytes.subarray(offset + 4, offset + 8 + length);
+    const type = String.fromCharCode(...typeAndData.subarray(0, 4));
+    expect(view.getUint32(offset + 8 + length), `${type} CRC`).toBe(crc32(typeAndData));
+    types.push(type);
+    if (type === "IDAT") data.push(typeAndData.subarray(4));
+    offset += 12 + length;
+  }
+  return { types, pixels: [...inflateSync(Buffer.concat(data))] };
+}
 
 function kenneyStyleSidecarGlb(uri = "Textures/colormap.png"): Uint8Array {
   return encodeGlbJsonBin(
@@ -128,6 +147,21 @@ describe("parseGlbForBrowse", () => {
     expect(browse!.rigKind).toBe("skin");
     expect(browse!.boneNames).toEqual(["Hips", "Spine"]);
     expect(browse!.animations[0]).toEqual({ name: "Walk", durationMs: 1250 });
+  });
+
+  it("starts a take at a channel keyed only at t = 0", () => {
+    const clips = gltfAnimationClips({
+      animations: [
+        { name: "Wave", samplers: [{ input: 0, output: 2 }, { input: 1, output: 2 }] },
+        { name: "Pose", samplers: [{ input: 0, output: 2 }] },
+      ],
+      accessors: [
+        { componentType: 5126, type: "SCALAR", count: 1, min: [0], max: [0] },
+        { componentType: 5126, type: "SCALAR", count: 2, min: [0.5], max: [1.5] },
+        { componentType: 5126, type: "VEC4", count: 1 },
+      ],
+    });
+    expect(clips).toEqual([{ name: "Wave", durationMs: 1500 }, { name: "Pose" }]);
   });
 
   it("classifies a hierarchy rig when clips target parented meshes and there is no skin", () => {
@@ -603,6 +637,18 @@ describe("ingestGltfForImport missing BIN", () => {
     const buffer0 = (split!.json.buffers as Array<{ uri?: string }>)[0];
     expect(buffer0?.uri).toBeUndefined();
   });
+
+  it("decodes a data-URI buffer into the BIN chunk and refuses a remote buffer URL", () => {
+    const withUri = (uri: string) => new TextEncoder().encode(JSON.stringify({
+      asset: { version: "2.0" },
+      buffers: [{ uri, byteLength: 4 }],
+    }));
+    const ingested = ingestGltfForImport("Hero.gltf", withUri("data:application/octet-stream;base64,AQIDBA=="));
+    const split = splitGlbJsonBin(ingested.bytes)!;
+    expect(split.bin).toEqual(new Uint8Array([1, 2, 3, 4]));
+    expect((split.json.buffers as Array<{ uri?: string; byteLength: number }>)[0]).toEqual({ byteLength: 4 });
+    expect(() => ingestGltfForImport("Hero.gltf", withUri("https://example.com/Hero.bin"))).toThrow(/not a URL/);
+  });
 });
 
 describe("importModel sidecar GLB", () => {
@@ -707,6 +753,7 @@ describe("slimGlbEmbeddedImages", () => {
     expect([...stub!.subarray(0, 8)]).toEqual([
       0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
     ]);
-    expect(stub).toEqual(ONE_BY_ONE_PNG);
+    // Browsers reject an undecodable stub at upload ("bad image data"), so decode it fully.
+    expect(decodePngChunks(stub!)).toEqual({ types: ["IHDR", "IDAT", "IEND"], pixels: [0, 0xff, 0, 0] });
   });
 });

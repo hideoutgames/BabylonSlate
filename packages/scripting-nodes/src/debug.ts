@@ -48,11 +48,45 @@ const RESERVED = new Set([
   "yield",
   "enum",
   "await",
+  // Reserved in strict-mode code, which compiled modules are.
+  "implements",
+  "interface",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "static",
+  // Literals and strict-mode restricted bindings.
+  "null",
+  "true",
+  "false",
+  "eval",
+  "arguments",
   "ctx",
 ]);
 
+/**
+ * True when `name` can be an Execute JavaScript parameter or output `let`
+ * in the generated strict-mode function.
+ */
 export function isValidJsIdentifier(name: string): boolean {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) && !RESERVED.has(name);
+}
+
+/**
+ * The first input or output name the generated function cannot declare:
+ * an invalid identifier, or a name used twice across inputs and outputs.
+ */
+export function executeJavaScriptNameError(
+  names: readonly string[],
+): string | undefined {
+  const seen = new Set<string>();
+  for (const name of names) {
+    if (!isValidJsIdentifier(name)) return `Invalid JS identifier: ${name}`;
+    if (seen.has(name)) return `Duplicate JS identifier: ${name}`;
+    seen.add(name);
+  }
+  return undefined;
 }
 
 type PinRow = { name: string; type: PinType };
@@ -159,13 +193,12 @@ export const debugNodes: NodeDefinition[] = [
     codegen: (ctx) => {
       const inputs = readPinRows(ctx.node.properties, "inputs");
       const outputs = readPinRows(ctx.node.properties, "outputs");
-      for (const row of [...inputs, ...outputs]) {
-        if (!isValidJsIdentifier(row.name)) {
-          ctx.emit(
-            `throw new Error(${JSON.stringify(`Invalid JS identifier: ${row.name}`)});`,
-          );
-          return;
-        }
+      const nameError = executeJavaScriptNameError(
+        [...inputs, ...outputs].map((row) => row.name),
+      );
+      if (nameError) {
+        ctx.emit(`throw new Error(${JSON.stringify(nameError)});`);
+        return;
       }
       const fnName = `execJs_${ctx.node.id.replace(/[^A-Za-z0-9_$]/g, "_")}`;
       const isAsync = Boolean(ctx.node.properties.async);
@@ -188,7 +221,8 @@ export const debugNodes: NodeDefinition[] = [
           bodyLine: index + 1,
         })),
       );
-      const args = ["ctx", ...inputs.map((i) => ctx.input(i.name))].join(", ");
+      // Row names can equal the exec pins' names, so look up the prefixed ids.
+      const args = ["ctx", ...inputs.map((i) => ctx.input(`in_${i.name}`))].join(", ");
       if (isAsync) ctx.requestAsync();
       const call = isAsync ? `await ${fnName}(${args})` : `${fnName}(${args})`;
       if (outputs.length === 0) {
@@ -196,7 +230,7 @@ export const debugNodes: NodeDefinition[] = [
         return;
       }
       const bindings = outputs
-        .map((o) => `${o.name}: ${ctx.output(o.name)}`)
+        .map((o) => `${o.name}: ${ctx.output(`out_${o.name}`)}`)
         .join(", ");
       ctx.emit(`({ ${bindings} } = ${call});`);
     },

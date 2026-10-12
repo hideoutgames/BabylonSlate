@@ -76,10 +76,12 @@ describe("runtime session boundaries", () => {
   });
 
   it("resets every resolved input device while paused without ticking or accepting queued presses", async () => {
-    const runtime = makeRuntime({ inputMappings: {
-      actions: [{ name: "Fire", bindings: [{ device: "key", code: "KeyF" }, { device: "mouseButton", code: "0" }, { device: "gamepadButton", code: "0:0" }] }],
-      axes: [{ name: "Move", bindings: [{ device: "gamepadAxis", code: "0:0" }, { device: "touch", code: "move" }] }],
-    } });
+    const runtime = makeRuntime({ inputAssets: [
+      { guid: "Fire", type: "InputAction", name: "Fire", valueType: "button", bindings: [
+        { id: "key", device: "key", code: "KeyF" }, { id: "mouse", device: "mouseButton", code: "0" }, { id: "pad", device: "gamepadButton", code: "0:0" }] },
+      { guid: "Move", type: "InputAxis", name: "Move", valueType: "1d", bindings: [
+        { id: "stick", device: "gamepadAxis", code: "0:0" }, { id: "touch", device: "touch", code: "move" }] },
+    ] });
     try {
       runtime.realizePlayWorld(); runtime.start();
       runtime.pushInput([{ kind: "key", tick: 0, code: "KeyF", phase: "down" },
@@ -118,12 +120,15 @@ describe("runtime session boundaries", () => {
     } finally { runtime.stop(); }
   });
 
-  it("reports a held continuation whose owner was destroyed during Pause as an owner cancellation", async () => {
+  it("ends a held continuation whose owner was destroyed during Pause without a diagnostic", async () => {
     const commands: CommandMessage[] = [];
     const runtime = makeRuntime({ playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Delayed" })] },
       onCommand: command => commands.push(command) });
     await runtime.loadScripts([{ classId: "Delayed", parentClassId: "Actor", assetGuid: "delayed", anchors: [],
-      source: 'export async function begin(ctx) { await ctx.delay(0.01); ctx.log("log", "test", "continued"); }',
+      source: `export async function begin(ctx) {
+        try { await ctx.delay(0.01); } catch (error) { ctx.log("log", "test", "ended " + error.message); throw error; }
+        ctx.log("log", "test", "continued");
+      }`,
       entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }] }]);
     try {
       runtime.realizePlayWorld(); runtime.start(); runtime.tick();
@@ -133,38 +138,32 @@ describe("runtime session boundaries", () => {
       expect(runtime.executeConsoleCommand('destroyactor "actor"').success).toBe(true);
       runtime.resume();
       await flush();
-      const diagnostics = commands.flatMap(command => command.type === "diagnostic" ? [command.message] : []);
-      expect(diagnostics).toHaveLength(1);
-      expect(diagnostics[0]).toMatch(/owner was destroyed/);
-      expect(diagnostics[0]).not.toMatch(/Scene realization/);
-      expect(commands.some(command => command.type === "log" && command.message === "continued")).toBe(false);
+      const logs = commands.flatMap(command => command.type === "log" && command.category === "test" ? [command.message] : []);
+      expect(logs).toEqual(["ended Script continuation cancelled: its owner was destroyed."]);
+      expect(commands.filter(command => command.type === "diagnostic")).toEqual([]);
     } finally { runtime.stop(); }
   });
 
-  it.each(["resume", "stop"] as const)("gates on-demand preload progress and completion until %s", async finish => {
+  it.each(["resume", "stop"] as const)("holds a finished asset load's continuation until %s", async finish => {
     const commands: CommandMessage[] = [];
     const runtime = makeRuntime({ classAssetGuids: { Loading: "loading-class" },
       playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Loading" })] },
       onCommand: command => commands.push(command) });
     try {
       await runtime.loadScripts([{ classId: "Loading", parentClassId: "Actor", assetGuid: "loading-class", anchors: [],
-        source: 'export async function begin(ctx) { await ctx.preloadAssets(["cold"], { onProgress: value => ctx.setVariable("progress", value) }); ctx.setVariable("continued", true); }',
+        source: 'export async function begin(ctx) { const result = await ctx.waitForAssetLoad(ctx.requestAssetLoad(["cold"])); ctx.setVariable("continued", result.success); }',
         entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }] }]);
       runtime.realizePlayWorld(); runtime.start();
       const actor = runtime.getWorld().findActor("actor")!;
       const request = commands.find(command => command.type === "assetPreload");
-      if (request?.type !== "assetPreload") throw new Error("missing gameplay preload");
+      if (request?.type !== "assetPreload") throw new Error("missing asset load request");
       await runtime.requestSessionBoundary({ sessionGeneration: 7, requestId: 1, action: { kind: "pause", reason: "user", paused: true } });
-      runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success: true, progress: 0.2 });
-      runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success: true, progress: 0.8 });
       runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success: true });
       await flush();
       expect(actor.getVariable("continued")).toBeUndefined();
-      expect(actor.getVariable("progress")).toBe(0);
       if (finish === "resume") runtime.resume(); else runtime.stop();
       await flush();
       expect(actor.getVariable("continued")).toBe(finish === "resume" ? true : undefined);
-      expect(actor.getVariable("progress")).toBe(finish === "resume" ? 1 : 0);
       expect(runtime.getWorld().clock.tickIndex).toBe(0);
     } finally { runtime.stop(); }
   });

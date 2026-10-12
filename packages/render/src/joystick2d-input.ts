@@ -5,6 +5,11 @@ import type { SceneLayerView } from "./scene-layer-compositor";
 
 type Capture = { visual: Joystick2DMesh; layer: SceneLayerView; x: number; y: number };
 
+// Pointer moves arrive many times per frame; reuse the projection scratch.
+const scratchWorld = new Vector3();
+const scratchLocal = new Vector3();
+const scratchInverse = new Matrix();
+
 /** Pointer ownership and axis aggregation shared by editor Play and the player. */
 export class Joystick2DInput {
   private readonly captures = new Map<number, Capture>();
@@ -62,13 +67,14 @@ export class Joystick2DInput {
       return true;
     }
     const { width, height } = this.size();
-    const world = new Vector3((x / Math.max(1, width) - 0.5) * capture.layer.layerBounds.width,
-      (0.5 - y / Math.max(1, height)) * capture.layer.layerBounds.height, 0);
     const matrix = capture.visual.mesh.computeWorldMatrix(true);
     if (Math.abs(matrix.determinant()) < 1e-12) { this.release(pointerId); return true; }
     // Layer XY and component-local XY can differ through layout, parenting, rotation and scale.
-    world.z = Vector3.TransformCoordinates(Vector3.Zero(), matrix).z;
-    const local = Vector3.TransformCoordinates(world, Matrix.Invert(matrix));
+    Vector3.TransformCoordinatesFromFloatsToRef(0, 0, 0, matrix, scratchWorld);
+    scratchWorld.x = (x / Math.max(1, width) - 0.5) * capture.layer.layerBounds.width;
+    scratchWorld.y = (0.5 - y / Math.max(1, height)) * capture.layer.layerBounds.height;
+    matrix.invertToRef(scratchInverse);
+    const local = Vector3.TransformCoordinatesToRef(scratchWorld, scratchInverse, scratchLocal);
     const value = joystick2DValue(local.x, local.y, capture.visual.properties);
     capture.x = value.x; capture.y = value.y;
     capture.visual.thumb.position.x = value.offsetX;

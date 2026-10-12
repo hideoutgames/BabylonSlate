@@ -65,6 +65,18 @@ describe("playFramebufferSize", () => {
       ),
     ).toEqual({ width: 800, height: 600 });
   });
+
+  it("keeps a locked framebuffer within the 8192 side limit", () => {
+    expect(
+      playFramebufferSize({
+        customResolution: true,
+        width: 20_000,
+        height: 9000,
+        blackBars: true,
+      }),
+    ).toEqual({ width: 8192, height: 8192 });
+    expect(playFramebufferSize(null, { width: 16_384, height: 720 })).toEqual({ width: 8192, height: 720 });
+  });
 });
 
 describe("clampRenderResolution", () => {

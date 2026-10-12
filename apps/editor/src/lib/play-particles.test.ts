@@ -3,13 +3,11 @@ import {
   PREVIEW_SYSTEM_GUID,
   emitterPreviewLibrary,
   loadEmittersForPreview,
-  loadPlayParticleLibrary,
   systemPreviewLibrary,
 } from "./play-particles";
 import {
   createDefaultParticleEmitterPayload,
   createDefaultParticleSystemPayload,
-  particleLibraryMaterialGuids,
   type ParticleEmitterPayload,
   type ParticleLibraryEmitter,
 } from "@babylonslate/assets";
@@ -117,38 +115,5 @@ describe("loadEmittersForPreview", () => {
       "assets/Embers.particlegraph.babasset",
     );
     expect(graphDocument(emitters.get("pg-1")).materialGuid).toBe("mat-2");
-  });
-});
-
-describe("loadPlayParticleLibrary", () => {
-  it("loads every particle asset through its own kind, so open graph tabs reach Play", async () => {
-    const graph = graphWithMaterial("mat-graph");
-    graph.settings.capacity = 1024;
-    // Keyed like open document ids: a graph looked up under another kind misses its tab.
-    const openTabs = new Map<string, unknown>([
-      ["particle-graph:assets/Embers.particlegraph.babasset", graph],
-      [
-        "particle-system:assets/Fire.particles.babasset",
-        { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1", "pg-1"] },
-      ],
-      ["particle-emitter:assets/Sparks.emitter.babasset", withMaterial("mat-basic")],
-    ]);
-    const loadDocument = vi.fn(
-      async (kind: string, path: string) => openTabs.get(`${kind}:${path}`) ?? null,
-    );
-    const library = await loadPlayParticleLibrary({
-      assets: [
-        { header: { guid: "em-1", type: "ParticleEmitter" }, path: "assets/Sparks.emitter.babasset" },
-        { header: { guid: "pg-1", type: "ParticleGraph" }, path: "assets/Embers.particlegraph.babasset" },
-        { header: { guid: "ps-1", type: "ParticleSystem" }, path: "assets/Fire.particles.babasset" },
-        { header: { guid: "mat-graph", type: "Material" }, path: "assets/Ember.material.babasset" },
-      ],
-      loadDocument,
-    });
-    expect(graphDocument(library.emitters.get("pg-1")).settings.capacity).toBe(1024);
-    expect(basicPayload(library.emitters.get("em-1")).render.materialGuid).toBe("mat-basic");
-    expect(library.systems.get("ps-1")?.emitterGuids).toEqual(["em-1", "pg-1"]);
-    // Play loads the Materials of both kinds.
-    expect(particleLibraryMaterialGuids(library)).toEqual(["mat-basic", "mat-graph"]);
   });
 });

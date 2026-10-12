@@ -43,6 +43,9 @@ test.describe("P4 Play overlay and session report", () => {
       "data-mode",
       /^(worker|in-process)$/,
     );
+    // Groups start collapsed; the fixture names no project asset.
+    await expect(page.getByTestId("session-report-row")).toHaveCount(0);
+    await page.getByTestId("session-report-group-toggle").click();
     await page.getByTestId("session-report-row").click();
     await expect(page.getByTestId("focused-graph-node")).toHaveAttribute(
       "data-node-id",
@@ -100,12 +103,12 @@ test.describe("P4 Play overlay and session report", () => {
           };
         };
         await host.__babylonslatePlayTest?.whenModelsReady();
-        return host.__babylonslatePlayTest?.liveObjectCounts() ?? {
-          meshes: -1,
-          textures: -1,
-        };
+        return host.__babylonslatePlayTest?.liveObjectCounts() ?? null;
       });
-      samples.push(sample);
+      expect(sample, `cycle ${cycle} live object counts`).not.toBeNull();
+      expect(sample!.meshes).toBeGreaterThan(0);
+      expect(sample!.textures).toBeGreaterThan(0);
+      samples.push(sample!);
       await page.getByTestId("play-overlay-close").click();
       await expect(page.getByTestId("play-overlay")).toHaveCount(0);
     }

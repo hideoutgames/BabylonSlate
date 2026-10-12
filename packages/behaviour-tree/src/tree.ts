@@ -40,7 +40,8 @@ function parseProperties(value: unknown): Record<string, unknown> {
   return row ? { ...row } : {};
 }
 
-function parseDecorator(value: unknown, index: number): BtDecorator | null {
+/** Shared by the document parser and the editor canvas so both read attachments alike. */
+export function parseBtDecorator(value: unknown, index: number): BtDecorator | null {
   const row = asRecord(value);
   if (!row) return null;
   const id = typeof row.id === "string" && row.id !== "" ? row.id : `decorator-${index}`;
@@ -55,7 +56,7 @@ function parseDecorator(value: unknown, index: number): BtDecorator | null {
   };
 }
 
-function parseService(value: unknown, index: number): BtService | null {
+export function parseBtService(value: unknown, index: number): BtService | null {
   const row = asRecord(value);
   if (!row) return null;
   const id = typeof row.id === "string" && row.id !== "" ? row.id : `service-${index}`;
@@ -104,12 +105,12 @@ function parseNode(value: unknown): BtNode | null {
   const classId = typeof row.classId === "string" && row.classId !== "" ? row.classId : `bt.${kind}`;
   const decorators = Array.isArray(row.decorators)
     ? row.decorators
-        .map((entry, index) => parseDecorator(entry, index))
+        .map((entry, index) => parseBtDecorator(entry, index))
         .filter((entry): entry is BtDecorator => entry !== null)
     : [];
   const services = Array.isArray(row.services)
     ? row.services
-        .map((entry, index) => parseService(entry, index))
+        .map((entry, index) => parseBtService(entry, index))
         .filter((entry): entry is BtService => entry !== null)
     : [];
   return {

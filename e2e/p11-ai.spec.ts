@@ -125,11 +125,12 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     await page.getByTestId("bt-add-decorator").click();
     await expect(page.getByTestId("bt-attachment-catalog")).toBeVisible();
     await page.getByTestId("bt-attachment-item-bt.decorator.blackboardIsSet").click();
+    // Without a Blackboard asset the Key is a free-text field.
     const keyField = page.getByTestId("property-key");
     await expect(keyField).toBeVisible();
-    if ((await keyField.evaluate((el) => el.tagName)) === "INPUT") {
-      await keyField.fill("alert");
-    }
+    await keyField.fill("alert");
+    await keyField.blur();
+    await expect(keyField).toHaveValue("alert");
 
     await page.getByTestId("bt-remove-attachment").click();
     await expect(page.getByTestId("bt-remove-attachment")).toHaveCount(0);
@@ -166,11 +167,16 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
       await clickPlayAndWaitForOverlay(page);
       await page.getByTestId("play-overlay-close").click({ timeout: 5_000 });
       await expect(page.getByTestId("preview-session-report")).toBeVisible();
-      await expect(page.getByTestId("session-report-row")).toHaveAttribute(
-        "data-node-id",
-        "task",
+      const treeGroup = page.locator(
+        `[data-testid="session-report-group"][data-asset-ref="${treeGuid}"]`,
       );
-      await page.getByTestId("session-report-row").click();
+      const treeToggle = treeGroup.getByTestId("session-report-group-toggle");
+      await expect(treeToggle).toContainText("Patrol");
+      await treeToggle.click();
+      const taskRow = treeGroup.getByTestId("session-report-row");
+      await expect(taskRow).toHaveAttribute("data-node-id", "task");
+      await expect(taskRow).toContainText("Patrol › Succeed");
+      await taskRow.click();
       await expect(page.getByTestId("focused-graph-node")).toHaveAttribute(
         "data-node-id",
         "task",

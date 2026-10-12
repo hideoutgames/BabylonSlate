@@ -54,3 +54,49 @@ export function dispatchPointerEvent(
 
   target.dispatchEvent(event);
 }
+
+export interface TouchInit {
+  identifier?: number;
+  clientX?: number;
+  clientY?: number;
+}
+
+/**
+ * Dispatches a single-finger TouchEvent. Browsers fire these after the
+ * matching pointer event, and some widgets (Base UI Slider) act on them.
+ */
+export function dispatchTouchEvent(
+  target: Element,
+  type: "touchstart" | "touchmove" | "touchend",
+  init: TouchInit = {},
+): void {
+  const { identifier = 1, clientX = 0, clientY = 0 } = init;
+  const touch = { identifier, clientX, clientY, target } as unknown as Touch;
+  const active = type === "touchend" ? [] : [touch];
+  target.dispatchEvent(
+    new TouchEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      touches: active,
+      targetTouches: active,
+      changedTouches: [touch],
+    }),
+  );
+}
+
+/**
+ * jsdom implements no pointer capture, which Base UI Slider calls on press.
+ * Installs no-op capture methods and returns a function that removes them.
+ */
+export function stubPointerCapture(): () => void {
+  const proto = Element.prototype as unknown as Record<string, unknown>;
+  if (typeof proto.setPointerCapture === "function") return () => {};
+  proto.setPointerCapture = () => {};
+  proto.releasePointerCapture = () => {};
+  proto.hasPointerCapture = () => false;
+  return () => {
+    delete proto.setPointerCapture;
+    delete proto.releasePointerCapture;
+    delete proto.hasPointerCapture;
+  };
+}

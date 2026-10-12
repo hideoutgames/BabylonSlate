@@ -80,6 +80,22 @@ function cacheKey(
     : instanceKey === undefined ? key : JSON.stringify([key, instanceKey]);
 }
 
+/** Move every mesh, including nested MultiMaterial slots, from one generation to another. */
+function rebindMaterial(scene: Scene, from: Material, to: Material): void {
+  const replaceSubmaterials = (material: Material) => {
+    if (!(material instanceof MultiMaterial)) return;
+    material.subMaterials = material.subMaterials.map((child) => {
+      if (child === from) return to;
+      if (child) replaceSubmaterials(child);
+      return child;
+    });
+  };
+  for (const mesh of scene.meshes) {
+    if (mesh.material === from) { mesh.material = to; applyMaterialBounds(mesh); }
+    else if (mesh.material) replaceSubmaterials(mesh.material);
+  }
+}
+
 const NO_FUNCTIONS: Record<string, MaterialFunctionDocument> = Object.freeze({});
 
 type PlanSlot = { functions: Record<string, MaterialFunctionDocument>; content: string; result: MaterialLowerResult };
@@ -182,7 +198,10 @@ export class MaterialLibrary {
     doc: MaterialDocument,
     options?: MaterialAcquireOptions,
   ): boolean {
-    const lowered = this.planFor(doc, options?.unlit);
+    return this.isCompiledPlan(scene, assetGuid, this.planFor(doc, options?.unlit), options);
+  }
+
+  private isCompiledPlan(scene: Scene, assetGuid: string, lowered: MaterialLowerResult, options?: MaterialAcquireOptions): boolean {
     if (!lowered.ok || scene.isDisposed) return false;
     const entries = this.entriesFor(scene);
     const key = cacheKey(assetGuid, options?.unlit, options?.instanceKey, options?.logicalSceneBuffers);
@@ -204,8 +223,18 @@ export class MaterialLibrary {
     doc: MaterialDocument,
     options?: MaterialAcquireOptions,
   ): MaterialAcquireResult {
+    return this.acquirePlan(scene, assetGuid, doc, this.planFor(doc, options?.unlit === true), options);
+  }
+
+  /** `acquire` with the document's plan already resolved (`planFor` serializes the whole document). */
+  private acquirePlan(
+    scene: Scene,
+    assetGuid: string,
+    doc: MaterialDocument,
+    lowered: MaterialLowerResult,
+    options?: MaterialAcquireOptions,
+  ): MaterialAcquireResult {
     const unlit = options?.unlit === true;
-    const lowered = this.planFor(doc, unlit);
     if (!lowered.ok) {
       return { ok: false, diagnostics: lowered.diagnostics };
     }
@@ -218,17 +247,27 @@ export class MaterialLibrary {
     const existing = entries.get(key);
     const pending = this.pending.get(scene)!;
     const waiting = pending.get(key);
-    if (waiting?.hash === this.generationHash(lowered.plan) && !isDisposedNodeMaterial(waiting.material, scene)) {
+    const hash = this.generationHash(lowered.plan);
+    if (waiting?.hash === hash && !isDisposedNodeMaterial(waiting.material, scene)) {
       waiting.refCount += 1;
       return { ok: true, material: waiting.material, hash: waiting.hash, plan: lowered.plan, ready: waiting.ready };
     }
-    if (waiting) { pending.delete(key); waiting.dispose(); }
+    // An unpublished generation can already be bound (resolve() returns it) and
+    // its count covers every reference to this key. The generation that replaces
+    // it inherits both, so a superseded build never stays on a mesh disposed.
+    const supersede = (successor: CacheEntry) => {
+      if (!waiting) return;
+      pending.delete(key);
+      rebindMaterial(scene, waiting.material, successor.material);
+      waiting.dispose();
+    };
     if (
       existing &&
-      existing.hash === this.generationHash(lowered.plan) &&
+      existing.hash === hash &&
       !isDisposedNodeMaterial(existing.material, scene)
     ) {
-      existing.refCount += 1;
+      existing.refCount = (waiting?.refCount ?? existing.refCount) + 1;
+      supersede(existing);
       return { ok: true, material: existing.material, hash: existing.hash, plan: lowered.plan, ready: existing.ready };
     }
 
@@ -306,10 +345,12 @@ export class MaterialLibrary {
       }));
     const pendingParameters = new Map<string, { texture: Texture; guid: string; identity: string | undefined; ready: Promise<readonly MaterialDiagnostic[]>; cancel: () => void }>();
     const parameterFailures = new Map<string, readonly MaterialDiagnostic[]>();
-    const prepareParameters = () => {
-      const failures = [...parameterFailures.values()].flat();
-      return Promise.all([...pendingParameters.values()].map((request) => request.ready))
-        .then((results) => [...results.flat(), ...failures]);
+    // A parameter replaced while its texture prepares settles its request as cancelled: the replacement's request (and
+    // any later one) is awaited instead, and only the failures still current count, so replacing a texture never
+    // fails the generation.
+    const prepareParameters = async (): Promise<readonly MaterialDiagnostic[]> => {
+      while (pendingParameters.size) await Promise.all([...pendingParameters.values()].map((request) => request.ready));
+      return [...parameterFailures.values()].flat();
     };
     let preparingTextures = true;
     const pruneTextures = () => {
@@ -393,7 +434,7 @@ export class MaterialLibrary {
     const candidate: CacheEntry = {
       assetGuid,
       material: compiled.material,
-      hash: this.generationHash(lowered.plan),
+      hash,
       refCount: (waiting?.refCount ?? existing?.refCount ?? 0) + 1,
       dispose: () => { cancelPreparation(); for (const request of pendingParameters.values()) request.cancel(); pendingParameters.clear(); compiled.dispose(); textures.dispose(); },
       setParameter,
@@ -416,29 +457,22 @@ export class MaterialLibrary {
     const publish = () => {
       if (existing) {
         // Runtime assignments can already point at the previous generation.
-        const replaceSubmaterials = (material: Material) => {
-          if (!(material instanceof MultiMaterial)) return;
-          material.subMaterials = material.subMaterials.map((child) => {
-            if (child === existing.material) return candidate.material;
-            if (child) replaceSubmaterials(child);
-            return child;
-          });
-        };
-        for (const mesh of scene.meshes) {
-          if (mesh.material === existing.material) { mesh.material = candidate.material; applyMaterialBounds(mesh); }
-          else if (mesh.material) replaceSubmaterials(mesh.material);
-        }
+        rebindMaterial(scene, existing.material, candidate.material);
         existing.dispose();
       }
       entries.set(key, candidate);
     };
     {
+      supersede(candidate);
       pending.set(key, candidate);
       void ready.then((errors) => {
         if (pending.get(key) !== candidate) return;
         pending.delete(key);
         if (errors.length) {
-          if (existing) existing.refCount = candidate.refCount;
+          if (existing) {
+            existing.refCount = candidate.refCount;
+            rebindMaterial(scene, candidate.material, existing.material);
+          }
           candidate.dispose();
           for (const error of errors) this.options.onTextureError?.(error);
           return;
@@ -449,7 +483,7 @@ export class MaterialLibrary {
         this.options.onMaterialReady?.(scene, assetGuid);
       });
     }
-    return { ok: true, material: compiled.material, hash: this.generationHash(lowered.plan), plan: lowered.plan, ready };
+    return { ok: true, material: compiled.material, hash, plan: lowered.plan, ready };
   }
 
   release(
@@ -502,8 +536,9 @@ export class MaterialLibrary {
     options?: MaterialResolveOptions,
   ): NodeMaterial | null {
     let material = this.materialFor(scene, assetGuid, options);
-    if (!material || !this.isCompiled(scene, assetGuid, doc, options)) {
-      const acquired = this.acquire(scene, assetGuid, doc, options);
+    const lowered = this.planFor(doc, options?.unlit);
+    if (!material || !this.isCompiledPlan(scene, assetGuid, lowered, options)) {
+      const acquired = this.acquirePlan(scene, assetGuid, doc, lowered, options);
       if (materialAvailable(acquired)) {
         if (material) this.release(scene, assetGuid, options);
         material = this.materialFor(scene, assetGuid, options) ?? acquired.material;
@@ -633,14 +668,16 @@ export class MaterialLibrary {
     }
   }
 
+  /** Cancel every unpublished generation of an asset, whatever its variant or instance key. */
   cancelPending(scene: Scene, assetGuid: string): void {
     const pending = this.pending.get(scene);
-    const entry = pending?.get(assetGuid);
-    if (!entry) return;
-    pending!.delete(assetGuid);
-    const previous = this.scenes.get(scene)?.get(assetGuid);
-    if (previous) previous.refCount = entry.refCount;
-    entry.dispose();
+    for (const [key, entry] of pending ?? []) {
+      if (entry.assetGuid !== assetGuid) continue;
+      pending!.delete(key);
+      const previous = this.scenes.get(scene)?.get(key);
+      if (previous) previous.refCount = entry.refCount;
+      entry.dispose();
+    }
   }
 
   materialFor(

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import type { ControlMessage } from "@babylonslate/bridge";
-import { createDefaultSceneLayer } from "@babylonslate/core";
+import { createDefaultSceneLayer, type InputAssetDefinition } from "@babylonslate/core";
 import {
   loadedBackendModules,
   resetHavokModuleCache,
@@ -13,6 +13,17 @@ import {
   shouldSpawnScriptedActor,
   unmatchedScriptSpawns,
 } from "./play-load";
+
+/** An Input Action asset whose guid is its name, bound to keyboard keys. */
+function keyAction(name: string, codes: readonly string[]): InputAssetDefinition {
+  return {
+    guid: name,
+    type: "InputAction",
+    name,
+    valueType: "button",
+    bindings: codes.map((code, index) => ({ id: `${name}-${index}`, device: "key", code })),
+  };
+}
 
 describe("runtimeOptionsFromLoadControl", () => {
   it("maps a load control message onto runtime physics options", () => {
@@ -156,6 +167,27 @@ describe("runtimeOptionsFromLoadControl", () => {
     });
   });
 
+  it("keeps guid keys and the first Scene's display name when names collide", () => {
+    const first = { name: "Level", actors: [] };
+    const second = { name: "Level", actors: [] };
+    const namedLikeKey = { name: "first", actors: [] };
+    const options = runtimeOptionsFromLoadControl({
+      type: "load",
+      sceneAssetGuid: "play-scene",
+      scenes: [
+        { guid: "first", scene: first as never },
+        { guid: "second", scene: second as never },
+        { guid: "third", scene: namedLikeKey as never },
+      ],
+      sceneCatalog: [{ guid: "cold", name: "Cold" }, { guid: "cold-copy", name: "Cold" }],
+    });
+    expect(options.sceneGuidByKey).toEqual({
+      first: "first", second: "second", third: "third", cold: "cold", "cold-copy": "cold-copy",
+      Cold: "cold", Level: "first",
+    });
+    expect(options.sceneLibrary).toEqual({ first, second, third: namedLikeKey, Level: first });
+  });
+
   it("defaults to a 3d world when the load message omits physics fields", () => {
     expect(
       runtimeOptionsFromLoadControl({
@@ -211,13 +243,7 @@ describe("createRuntimeFromLoad", () => {
     const message = {
       type: "load" as const,
       sceneAssetGuid: "empty",
-      inputMappings: {
-        actions: [
-          { name: "Fire", bindings: [{ device: "key", code: "KeyF" }] },
-          { name: "Jump", bindings: [{ device: "key", code: "KeyH" }, { device: "key", code: "KeyG" }] },
-        ],
-        axes: [],
-      },
+      inputAssets: [keyAction("Fire", ["KeyF"]), keyAction("Jump", ["KeyH", "KeyG"])],
     };
     const runtime = createRuntimeFromLoad(message, () => {});
     try {
@@ -232,7 +258,7 @@ describe("createRuntimeFromLoad", () => {
   });
 
   it("H13: explicitly deleted mappings stay empty at runtime", () => {
-    const message = { type: "load" as const, sceneAssetGuid: "empty", inputMappings: { actions: [], axes: [] } };
+    const message = { type: "load" as const, sceneAssetGuid: "empty", inputAssets: [] };
     const runtime = createRuntimeFromLoad(message, () => {});
     try {
       runtime.start();

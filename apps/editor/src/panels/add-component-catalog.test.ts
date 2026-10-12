@@ -154,7 +154,6 @@ describe("Add Component catalog", () => {
     expect(defaultPropertiesFor("Text3DComponent")).toEqual({
       text: "Text",
       size: 1,
-      depth: 0.1,
       color: [1, 1, 1],
       fontAssetGuid: null,
       alignment: "left",
@@ -315,16 +314,6 @@ describe("projectAddComponentItems", () => {
     ]);
   });
 
-  it("binds a legacy Mesh type onto MeshComponent.assetGuid", () => {
-    const items = projectAddComponentItems([
-      asset({ guid: "rock", name: "Rock", type: "Mesh" }),
-    ]);
-    expect(items[0]).toMatchObject({
-      classId: "MeshComponent",
-      properties: { assetGuid: "rock" },
-    });
-  });
-
   it("includes user ActorComponent classes and excludes Actor classes", () => {
     const items = projectAddComponentItems([
       asset({
@@ -434,5 +423,12 @@ describe("physicsWorldFromOpenDocuments", () => {
         },
       ]),
     ).toBe("2d");
+  });
+
+  it("reads an open Scene before a Scene Layer and uses the layer only alone", () => {
+    const layer = { ref: { kind: "scene-layer" }, content: { settings: {} } };
+    const scene3d = { ref: { kind: "scene" }, content: { settings: { physicsWorld: "3d" } } };
+    expect(physicsWorldFromOpenDocuments([layer, scene3d])).toBe("3d");
+    expect(physicsWorldFromOpenDocuments([layer])).toBe("2d");
   });
 });

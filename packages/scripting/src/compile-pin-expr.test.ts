@@ -197,7 +197,7 @@ describe("compile pinExpr defaults", () => {
     expect(compiled.source).toContain('ctx.playSound("audio-1")');
   });
 
-  it("still compiles a boxedWildcard Print value stored on the node", () => {
+  it("still compiles a stored boxedWildcard Print value", () => {
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
@@ -218,7 +218,7 @@ describe("compile pinExpr defaults", () => {
             pin("execOut", "then", "out", EXEC),
             pin("value", "value", "in", BOXED_WILDCARD),
           ],
-          properties: { value: "jumped" },
+          properties: { "default:value": "jumped" },
         },
       ],
       edges: [
@@ -234,6 +234,26 @@ describe("compile pinExpr defaults", () => {
     const compiled = compileGraph(graph, { assetGuid: "a", registry: registry() });
     expect(compiled.source).toContain('ctx.print("jumped")');
     expect(compiled.source).not.toContain('tag: "null"');
+  });
+
+  it("compiles a wire from a missing node as the input's type default", () => {
+    const nodes = registry();
+    const compiled = compileGraph(
+      {
+        id: "g",
+        kind: "event",
+        nodes: [
+          { id: "begin", typeId: "flow.event.beginPlay", position: { x: 0, y: 0 }, pins: [pin("execOut", "then", "out", EXEC)], properties: {} },
+          { id: "spawn", typeId: "actor.spawn", position: { x: 200, y: 0 }, pins: nodes.get("actor.spawn")!.pins({}), properties: {} },
+        ],
+        edges: [
+          { id: "exec", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "spawn", targetPinId: "execIn" },
+          { id: "dangling", sourceNodeId: "deleted", sourcePinId: "out", targetNodeId: "spawn", targetPinId: "classId" },
+        ],
+      },
+      { assetGuid: "a", registry: nodes },
+    );
+    expect(compiled.source).toContain('ctx.spawnActor("Actor")');
   });
 
   it("uses catalog pin defaultValue when the serialized pin has none", () => {

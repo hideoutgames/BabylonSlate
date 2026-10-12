@@ -105,10 +105,12 @@ export function isFlowSwitchMeta(
   return meta.kind === "switchOnInt" || meta.kind === "switchOnString";
 }
 
+/** Loops whose body may contain Break: While Loop and the With Break variants. */
 export function isBreakableLoopKind(
   kind: StructuredFlowKind | undefined,
 ): boolean {
   return (
+    kind === "whileLoop" ||
     kind === "forLoopWithBreak" ||
     kind === "forEachWithBreak" ||
     kind === "forEachMapWithBreak"

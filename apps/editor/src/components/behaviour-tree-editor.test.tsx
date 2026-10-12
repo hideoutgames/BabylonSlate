@@ -164,6 +164,11 @@ vi.mock("../context/document-context", async () => {
                 header: { guid: "bb-1", name: "Guard", type: "Blackboard" },
                 path: BB_PATH,
               }
+            : guid === "bb-scout" || guid === "bb-missing"
+              ? {
+                  header: { guid, name: guid, type: "Blackboard" },
+                  path: `assets/${guid}.blackboard.babasset`,
+                }
             : guid === "audio-1"
               ? {
                   header: { guid: "audio-1", name: "Jump", type: "Audio" },
@@ -423,6 +428,21 @@ describe("BehaviourTreeEditor", () => {
     expect(screen.getByTestId("bt-blackboard-key-hp").textContent).toMatch(/Float/);
   });
 
+  it("drops the previous closed Blackboard's keys when the relinked one cannot load", async () => {
+    loadAssetDocument.mockImplementation(async (_kind: string, path: string) =>
+      path === "assets/bb-scout.blackboard.babasset"
+        ? { name: "Scout", keys: [{ name: "target", type: { kind: "vector3" } }] }
+        : null,
+    );
+    const doc = treeWithWait();
+    doc.blackboardGuid = "bb-scout";
+    renderTree(doc);
+    expect(await screen.findByTestId("bt-blackboard-key-target")).toBeTruthy();
+    act(() => store.reset({ ...doc, blackboardGuid: "bb-missing" } as unknown as Record<string, unknown>));
+    await waitFor(() => expect(loadAssetDocument).toHaveBeenCalledWith("blackboard", "assets/bb-missing.blackboard.babasset"));
+    await waitFor(() => expect(screen.queryByTestId("bt-blackboard-key-target")).toBeNull());
+  });
+
   it("lists compiler diagnostics and focuses the node when tapped", async () => {
     const doc = createDefaultBehaviourTree();
     const sequence = doc.nodes.find((node) => node.id === "sequence")!;
@@ -461,6 +481,15 @@ describe("BehaviourTreeEditor", () => {
     fireEvent.blur(duration);
     const task = lastCommit().nodes.find((node) => node.id === "task");
     expect(task?.properties.durationMs).toBe(250);
+  });
+
+  it("clears Details when the selected node is deselected on the canvas", async () => {
+    const { container } = renderTree(treeWithWait());
+    fireEvent.click(screen.getByTestId("bt-node-task"));
+    expect(screen.getByTestId("property-durationMs")).toBeTruthy();
+    fireEvent.click(container.querySelector(".react-flow__pane")!);
+    await waitFor(() => expect(screen.queryByTestId("property-durationMs")).toBeNull());
+    expect(screen.queryByTestId("bt-add-decorator")).toBeNull();
   });
 
   it("picks an Audio asset on Play Sound in Details", async () => {

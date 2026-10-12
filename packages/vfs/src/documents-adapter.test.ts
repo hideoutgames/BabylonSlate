@@ -27,6 +27,8 @@ describe("DocumentsStorageAdapter", () => {
     await storage.openDocumentsProject("Demo.babproject");
     await storage.writeText("project.json", '{"ok":true}');
     expect(await storage.readText("project.json")).toBe('{"ok":true}');
+    expect(await storage.exists(".")).toBe(true);
+    expect((await storage.stat(".")).isDir).toBe(true);
 
     const listed = await storage.listProjects();
     expect(listed).toEqual([
@@ -69,6 +71,13 @@ describe("DocumentsStorageAdapter", () => {
       );
     }
     expect(write).toHaveBeenCalledTimes(3);
+  });
+
+  it("round-trips a payload larger than one base64 encoding chunk", async () => {
+    await storage.openDocumentsProject("Large.babproject");
+    const bytes = Uint8Array.from({ length: 70_001 }, (_, index) => (index * 31) % 256);
+    await storage.writeBinary("large.bin", bytes);
+    expect(await storage.readBinary("large.bin")).toEqual(bytes);
   });
 
   it("uses native bounded reads and rejects unsupported hosts without reading the file", async () => {

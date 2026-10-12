@@ -27,6 +27,7 @@ const harness = vi.hoisted(() => ({
   applied: [] as Array<{ mesh: PreviewMesh; definition: WaterDefinition }>,
   projectDocument: null as { settings: { render: Record<string, unknown> } } | null,
   renderSettings: [] as Array<{ scene: unknown; settings: Record<string, unknown> }>,
+  presents: 0,
   loadLibrary: async (guid: string): Promise<MaterialLibraryResult> => ({ documents: new Map([[guid, {}]]), functions: new Map(), textureGuids: [] }),
 }));
 
@@ -40,7 +41,7 @@ vi.mock("@babylonslate/render", async () => {
       harness.hosts.push(host);
       return host;
     },
-    createMaterialPreviewPresenter: () => ({ present: () => {}, dispose: () => {} }),
+    createMaterialPreviewPresenter: () => ({ present: () => { harness.presents += 1; }, dispose: () => {} }),
     createWaterMesh: (scene: unknown, _name: string, _body: unknown, definition: WaterDefinition, material: unknown) => {
       const mesh = { host: harness.hosts.find((host) => host.scene === scene)!, definition: structuredClone(definition), material };
       harness.meshes.push(mesh);
@@ -77,10 +78,10 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
 })));
 
 function asset(guid: string, type: string, path: string, dependencies: string[] = [], payload: Record<string, unknown> = {}, chunkSha256s: string[] = []): IndexedAsset {
-  const chunks = chunkSha256s.map((sha256, index) => ({ id: `chunk-${index}`, kind: "image", mime: "image/png", sha256, locator: { blob: sha256 } }));
+  const chunks = chunkSha256s.map((sha256, index) => ({ id: `chunk-${index}`, kind: "image", mime: "image/png", sha256, byteLength: 1, locator: { blob: sha256 } }));
   return {
     rootId: "project", path,
-    header: { guid, type, name: guid, version: 1, engineVersion: "1", mode: "thin", parentClass: null, payload, dependencies, chunks },
+    header: { dependencyMetadataVersion: 1, requiredDependencies: [], guid, type, name: guid, version: 1, engineVersion: "1", mode: "thin", parentClass: null, payload, dependencies, chunks },
   };
 }
 
@@ -117,6 +118,9 @@ afterEach(() => {
   harness.applied.length = 0;
   harness.projectDocument = null;
   harness.renderSettings.length = 0;
+  harness.presents = 0;
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   harness.loadLibrary = async (guid) => ({ documents: new Map([[guid, {}]]), functions: new Map(), textureGuids: [] });
 });
 
@@ -137,6 +141,31 @@ describe("WaterPreviewPanel", () => {
     expect(harness.hosts).toHaveLength(1);
     expect(harness.hosts[0]!.scene.isDisposed).toBe(false);
     expect(harness.meshes).toHaveLength(1);
+  });
+
+  it("stops animating while its canvas has no size and starts again when it is resized", () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    let resized: (() => void) | null = null;
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: () => void) { resized = callback; }
+      observe() {}
+      disconnect() {}
+    });
+    let size = 0;
+    vi.spyOn(HTMLCanvasElement.prototype, "clientWidth", "get").mockImplementation(() => size);
+    vi.spyOn(HTMLCanvasElement.prototype, "clientHeight", "get").mockImplementation(() => size);
+    renderPreview();
+    const runFrames = () => { for (const callback of frames.splice(0)) callback(performance.now()); };
+    runFrames();
+    expect(frames).toHaveLength(0);
+    expect(harness.presents).toBe(0);
+    size = 120;
+    resized!();
+    runFrames();
+    expect(harness.presents).toBe(1);
+    expect(frames).toHaveLength(1);
   });
 
   it("applies project render settings, Water quality included, to the existing preview scene without its post-processing", () => {

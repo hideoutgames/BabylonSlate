@@ -37,6 +37,26 @@ describe("rasterizeBitmapGlyph", () => {
     expect(opaque).toBeLessThan(total);
   });
 
+  it("strokes the software outline Outline pixels past the glyph, not one dot", () => {
+    // Size 32 scales each 5x7 dot to 5px, so a one-dot outline would be 5px wide.
+    const outlineWidth = (outline: number) => {
+      const cell = rasterizeBitmapGlyph("I", { ...STYLE, outline });
+      let opaque = cell.width;
+      let ink = cell.width;
+      for (let y = 0; y < cell.height; y++) {
+        for (let x = 0; x < cell.width; x++) {
+          const i = (y * cell.width + x) * 4;
+          if (cell.pixels[i + 3] === 0) continue;
+          opaque = Math.min(opaque, x);
+          if (cell.pixels[i] === 255) ink = Math.min(ink, x);
+        }
+      }
+      return ink - opaque;
+    };
+    expect(outlineWidth(1)).toBe(1);
+    expect(outlineWidth(3)).toBe(3);
+  });
+
   function withMockCanvas(
     getImageData: (w: number, h: number) => Uint8ClampedArray,
     run: () => void,

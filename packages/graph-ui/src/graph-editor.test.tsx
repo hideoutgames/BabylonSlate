@@ -1,8 +1,7 @@
 import { act, fireEvent, render, cleanup, screen, waitFor } from "@testing-library/react";
 import { useStore } from "@xyflow/react";
-import { useEffect, useState } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultGraph } from "@babylonslate/core";
 import { DRAG_ARM_MS, EditorReadOnlyContext, TagProvider } from "@babylonslate/editor-kit";
 import {
   GRAPH_DEFAULT_ZOOM,
@@ -14,7 +13,7 @@ import type { GraphDocument } from "./graph-types";
 import { isAssignable, type PinType } from "@babylonslate/scripting";
 import { FORMAT_GAP_X, FORMAT_GAP_Y } from "./graph-format";
 import type { PinCompatibilityRule } from "./graph-connect";
-import { MARQUEE_FALLBACK_HEIGHT, MARQUEE_FALLBACK_WIDTH } from "./graph-marquee";
+import { estimateGraphNodeSize } from "./graph-virtualize";
 import { treeNodeTypes } from "./tree-node";
 import { animGraphEdgeTypes } from "./anim-graph-nodes";
 import { nodeRoleClass, type NodeVisualRole } from "./node-theme";
@@ -86,6 +85,21 @@ const debugLogPins = [
     type: { kind: "string" },
   },
 ];
+
+/** A one-node graph: a hydrated Log node with its pins. */
+function singleLogGraph(): GraphDocument {
+  return {
+    nodes: [
+      {
+        id: "log-1",
+        type: "debug.log",
+        position: { x: 120, y: 120 },
+        data: { title: "Log", message: "Hello", __pins: debugLogPins },
+      },
+    ],
+    edges: [],
+  };
+}
 
 function installImmediateGraphHostSize(
   width = 500,
@@ -566,7 +580,7 @@ describe("GraphEditor", () => {
   });
 
   it("renders a node for each node in the graph", () => {
-    const graph = createDefaultGraph();
+    const graph = singleLogGraph();
     const { container } = render(<GraphEditor initialGraph={graph} />);
 
     expect(container.querySelector(".react-flow")).not.toBeNull();
@@ -578,7 +592,7 @@ describe("GraphEditor", () => {
   it("marks a restored session viewport so remount can skip fitView", () => {
     render(
       <GraphEditor
-        initialGraph={createDefaultGraph()}
+        initialGraph={singleLogGraph()}
         sessionViewport={{ x: 24, y: -8, zoom: 0.8 }}
       />,
     );
@@ -681,6 +695,34 @@ describe("GraphEditor", () => {
       expect(mounted).toBeLessThan(80);
       expect(container.querySelector('[data-id="n199"]')).not.toBeNull();
       expect(getByTestId("graph-copy")).toHaveProperty("disabled", false);
+    } finally {
+      restore();
+    }
+  });
+
+  it("frames unmounted off-screen nodes with Size Graph To Fit", { timeout: 15_000 }, async () => {
+    const restore = installImmediateGraphHostSize();
+    const nodes = [
+      { id: "near", position: { x: 0, y: 0 } },
+      { id: "far", position: { x: 6000, y: 4000 } },
+    ].map((node) => ({
+      ...node,
+      type: "debug.log",
+      data: { message: node.id, __pins: debugLogPins },
+    }));
+    try {
+      const { container, getByRole } = render(
+        <GraphEditor
+          initialGraph={{ nodes, edges: [] }}
+          sessionViewport={{ x: 0, y: 0, zoom: 1 }}
+        />,
+      );
+      expect(container.querySelector('[data-id="far"]')).toBeNull();
+      fireEvent.click(getByRole("button", { name: "Size Graph To Fit" }));
+      await waitFor(() => {
+        expect(container.querySelector('[data-id="far"]')).not.toBeNull();
+      });
+      expect(container.querySelector('[data-id="near"]')).not.toBeNull();
     } finally {
       restore();
     }
@@ -802,15 +844,6 @@ describe("GraphEditor", () => {
     } finally {
       globalThis.ResizeObserver = previous;
     }
-  });
-
-  it("renders the log message body so authors can read it on the canvas", () => {
-    const graph = createDefaultGraph();
-    const message = String(graph.nodes[0]?.data.message ?? "");
-    const { getByText } = render(<GraphEditor initialGraph={graph} />);
-
-    expect(getByText("Log Message")).toBeTruthy();
-    expect(getByText(message)).toBeTruthy();
   });
 
   it("renders an empty canvas without nodes", () => {
@@ -1566,6 +1599,61 @@ describe("GraphEditor", () => {
     }
   });
 
+  it("ends a pin drag whose touch is cancelled, so a later release does nothing", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container, queryByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithWiredPins()}
+          paletteNodes={pinDragPalette}
+          onChange={onChange}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      onChange.mockClear();
+      const touches = (identifier: number, point: { x: number; y: number }) => [
+        { identifier, clientX: point.x, clientY: point.y } as Touch,
+      ];
+      act(() => {
+        source.dispatchEvent(
+          new TouchEvent("touchstart", {
+            bubbles: true,
+            cancelable: true,
+            touches: touches(7, { x: 22, y: 22 }),
+            changedTouches: touches(7, { x: 22, y: 22 }),
+          }),
+        );
+        document.dispatchEvent(
+          new TouchEvent("touchmove", {
+            bubbles: true,
+            cancelable: true,
+            touches: touches(7, farDrop),
+            changedTouches: touches(7, farDrop),
+          }),
+        );
+        document.dispatchEvent(
+          new TouchEvent("touchcancel", {
+            bubbles: true,
+            changedTouches: touches(7, farDrop),
+          }),
+        );
+        // The next, unrelated tap is XYFlow's first release since the drag.
+        document.dispatchEvent(
+          new TouchEvent("touchend", {
+            bubbles: true,
+            cancelable: true,
+            changedTouches: touches(8, farDrop),
+          }),
+        );
+      });
+      expect(queryByTestId("node-palette-body")).toBeNull();
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("spawns a picked node at the drag point and auto-connects the dragged pin", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {
@@ -1813,7 +1901,7 @@ describe("GraphEditor", () => {
   });
 
   it("shows an error badge on nodes referenced by diagnostics", () => {
-    const graph = createDefaultGraph();
+    const graph = singleLogGraph();
     const nodeId = graph.nodes[0]?.id ?? "";
     const { getByLabelText } = render(
       <GraphEditor
@@ -1832,7 +1920,7 @@ describe("GraphEditor", () => {
   });
 
   it("clips the title bar to the shell radius without clipping the error badge", () => {
-    const graph = createDefaultGraph();
+    const graph = singleLogGraph();
     const nodeId = graph.nodes[0]?.id ?? "";
     const { getByText, getByLabelText, container } = render(
       <GraphEditor
@@ -1851,7 +1939,7 @@ describe("GraphEditor", () => {
     expect(shell?.className).toMatch(/\boverflow-hidden\b/);
     expect(shell?.className).toMatch(/\brounded-lg\b/);
 
-    const title = getByText("Log Message");
+    const title = getByText("Log");
     expect(title.className).toMatch(/\brounded-t-lg\b/);
 
     const badge = getByLabelText("1 error");
@@ -3433,7 +3521,7 @@ describe("GraphEditor", () => {
       { x: 0, y: 40 },
     );
     expect(lastGraph.nodes.find((node) => node.id === "log-b")?.position).toEqual({
-      x: MARQUEE_FALLBACK_WIDTH + FORMAT_GAP_X,
+      x: estimateGraphNodeSize(debugLogPins).width + FORMAT_GAP_X,
       y: 40,
     });
   });
@@ -3497,10 +3585,10 @@ describe("GraphEditor", () => {
     const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
     expect(lastGraph.nodes.find((node) => node.id === "get")?.position).toEqual({
       x: 0,
-      y: 40 + MARQUEE_FALLBACK_HEIGHT + FORMAT_GAP_Y,
+      y: 40 + estimateGraphNodeSize(debugLogPins).height + FORMAT_GAP_Y,
     });
     expect(lastGraph.nodes.find((node) => node.id === "log-b")?.position).toEqual({
-      x: MARQUEE_FALLBACK_WIDTH + FORMAT_GAP_X,
+      x: estimateGraphNodeSize(debugLogPins).width + FORMAT_GAP_X,
       y: 40,
     });
   });
@@ -3765,6 +3853,166 @@ describe("GraphEditor", () => {
     expect(getByTestId("graph-delete").hasAttribute("disabled")).toBe(true);
     expect(getByTestId("graph-copy").hasAttribute("disabled")).toBe(true);
     expect(container.querySelector('[data-id="in-1"]')).not.toBeNull();
+  });
+
+  it("keeps protected nodes when the Backspace key deletes the selection", async () => {
+    const onChange = vi.fn();
+    const { container, getByTestId } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            {
+              id: "in-1",
+              type: "flow.function.input",
+              position: { x: 0, y: 0 },
+              data: { __protected: true, title: "Input" },
+            },
+            {
+              id: "log-a",
+              type: "debug.log",
+              position: { x: 200, y: 0 },
+              data: { message: "A", __pins: debugLogPins },
+            },
+          ],
+          edges: [],
+        }}
+        focusedNodeId="in-1"
+        onChange={onChange}
+      />,
+    );
+    const pressBackspace = async () => {
+      fireEvent.keyDown(document.body, { key: "Backspace", code: "Backspace" });
+      fireEvent.keyUp(document.body, { key: "Backspace", code: "Backspace" });
+      await act(async () => {});
+    };
+    await waitFor(() => {
+      expect(
+        container.querySelector('.react-flow__node.selected[data-id="in-1"]'),
+      ).not.toBeNull();
+    });
+    fireEvent.pointerDown(getByTestId("graph-editor"));
+    await pressBackspace();
+    expect(container.querySelector('[data-id="in-1"]')).not.toBeNull();
+
+    fireEvent.click(container.querySelector('[data-id="log-a"]')!);
+    await pressBackspace();
+    await waitFor(() => {
+      expect(container.querySelector('[data-id="log-a"]')).toBeNull();
+    });
+    expect(container.querySelector('[data-id="in-1"]')).not.toBeNull();
+    const last = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(last.nodes.map((node) => node.id)).toEqual(["in-1"]);
+  });
+
+  it("removes a wired node's links when the Backspace key deletes it", async () => {
+    const onChange = vi.fn();
+    const { container, getByTestId } = render(
+      <GraphEditor initialGraph={graphWithWiredPins()} onChange={onChange} />,
+    );
+    fireEvent.pointerDown(getByTestId("graph-editor"));
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="log-b"]')!);
+    fireEvent.keyDown(document.body, { key: "Backspace", code: "Backspace" });
+    fireEvent.keyUp(document.body, { key: "Backspace", code: "Backspace" });
+    await act(async () => {});
+    await waitFor(() => {
+      expect(container.querySelector('[data-id="log-b"]')).toBeNull();
+    });
+    const last = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(last.nodes.map((node) => node.id)).toEqual(["log-a", "log-c"]);
+    expect(last.edges.map((edge) => edge.id)).toEqual([
+      "e:log-a:execOut:log-c:execIn",
+    ]);
+  });
+
+  it("pastes each copied wire once under Strict Mode", () => {
+    const onChange = vi.fn();
+    const { container, getByTestId } = render(
+      <StrictMode>
+        <GraphEditor initialGraph={graphWithWiredPins()} onChange={onChange} />
+      </StrictMode>,
+    );
+    fireEvent.keyDown(document.body, { key: "Control", code: "ControlLeft" });
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="log-a"]')!);
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="log-b"]')!);
+    fireEvent.keyUp(document.body, { key: "Control", code: "ControlLeft" });
+    fireEvent.click(getByTestId("graph-copy"));
+    fireEvent.click(getByTestId("graph-paste"));
+    const last = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(last.nodes).toHaveLength(5);
+    expect(last.edges).toHaveLength(3);
+  });
+
+  it("gives every paste fresh node ids and its own offset", () => {
+    const onChange = vi.fn();
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    try {
+      const { container, getByTestId } = render(
+        <GraphEditor
+          initialGraph={{
+            nodes: [
+              {
+                id: "log-a",
+                type: "debug.log",
+                position: { x: 0, y: 0 },
+                data: { message: "A", __pins: debugLogPins },
+              },
+            ],
+            edges: [],
+          }}
+          onChange={onChange}
+        />,
+      );
+      fireEvent.click(container.querySelector('[data-id="log-a"]')!);
+      fireEvent.click(getByTestId("graph-copy"));
+      fireEvent.click(getByTestId("graph-paste"));
+      fireEvent.click(getByTestId("graph-paste"));
+      const last = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(new Set(last.nodes.map((node) => node.id)).size).toBe(3);
+      expect(last.nodes.map((node) => node.position)).toEqual([
+        { x: 0, y: 0 },
+        { x: 40, y: 40 },
+        { x: 80, y: 80 },
+      ]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("deletes the selection with Backspace only in the graph last pressed", async () => {
+    const onChange = vi.fn();
+    const { container, getByTestId, getByRole } = render(
+      <>
+        <button type="button">Outliner row</button>
+        <GraphEditor
+          initialGraph={{
+            nodes: [
+              { id: "in-1", type: "flow.function.input", position: { x: 0, y: 0 }, data: { __protected: true, title: "Input" } },
+              { id: "log-a", type: "debug.log", position: { x: 200, y: 0 }, data: { message: "A", __pins: debugLogPins } },
+            ],
+            edges: [],
+          }}
+          focusedNodeId="log-a"
+          onChange={onChange}
+        />
+      </>,
+    );
+    await waitFor(() => {
+      expect(container.querySelector('.react-flow__node.selected[data-id="log-a"]')).not.toBeNull();
+    });
+    const outside = getByRole("button", { name: "Outliner row" });
+
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    fireEvent.pointerDown(getByTestId("graph-editor"));
+    fireEvent.pointerDown(outside);
+    fireEvent.keyDown(outside, { key: "Backspace" });
+    // Let any asynchronous canvas deletion settle before asserting none ran.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(getByTestId("graph-editor"));
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    const emitted = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(emitted.nodes.map((node) => node.id)).toEqual(["in-1"]);
   });
 
   it("stamps XYFlow node.dragHandle from nodeDragHandle", async () => {
@@ -4288,7 +4536,7 @@ describe("GraphEditor", () => {
   it("exposes a canvas drop api for client-to-flow conversion", async () => {
     const onCanvasApi = vi.fn();
     const { getByTestId } = render(
-      <GraphEditor initialGraph={createDefaultGraph()} onCanvasApi={onCanvasApi} />,
+      <GraphEditor initialGraph={singleLogGraph()} onCanvasApi={onCanvasApi} />,
     );
     await waitFor(() => {
       expect(onCanvasApi).toHaveBeenCalled();
@@ -4315,6 +4563,14 @@ describe("GraphEditor", () => {
       }) as DOMRect;
     expect(api?.containsClientPoint(15, 25)).toBe(true);
     expect(api?.containsClientPoint(0, 0)).toBe(false);
+    // A drop over chrome drawn on the canvas would spawn hidden under it.
+    getByTestId("graph-toolbar").getBoundingClientRect = () =>
+      ({ left: 80, top: 28, right: 140, bottom: 60 }) as DOMRect;
+    getByTestId("graph-viewport-controls").getBoundingClientRect = () =>
+      ({ left: 18, top: 120, right: 50, bottom: 212 }) as DOMRect;
+    expect(api?.containsClientPoint(100, 40)).toBe(false);
+    expect(api?.containsClientPoint(30, 200)).toBe(false);
+    expect(api?.containsClientPoint(100, 100)).toBe(true);
     expect(api?.clientToFlow(15, 25)).toEqual(
       expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
     );
@@ -4524,6 +4780,102 @@ describe("GraphEditor", () => {
     } finally {
       restoreLayout();
     }
+  });
+
+  describe("selection that replaces the node selection", () => {
+    const transitionGraph = () => {
+      const graph = graphWithWiredPins();
+      graph.edges = graph.edges.map((edge) => ({ ...edge, type: "animTransition" }));
+      return graph;
+    };
+    const selectTransition = async (container: HTMLElement) => {
+      const badge = await waitFor(() => {
+        const found = container.querySelector(
+          '[data-testid="anim-transition-badge-e:log-a:execOut:log-b:execIn"]',
+        );
+        expect(found).not.toBeNull();
+        return found!;
+      });
+      fireEvent.click(badge);
+    };
+
+    it("clears a selected wire when a node is focused from search", async () => {
+      const restoreLayout = stubMeasuredGraphLayout();
+      try {
+        const onEdgeSelectionChange = vi.fn();
+        const graph = transitionGraph();
+        const view = (focusedNodeId?: string) => (
+          <GraphEditor
+            initialGraph={graph}
+            edgeTypes={animGraphEdgeTypes}
+            focusedNodeId={focusedNodeId}
+            onEdgeSelectionChange={onEdgeSelectionChange}
+          />
+        );
+        const { container, rerender } = render(view());
+        await selectTransition(container);
+        await waitFor(() => {
+          expect(onEdgeSelectionChange).toHaveBeenLastCalledWith([
+            "e:log-a:execOut:log-b:execIn",
+          ]);
+        });
+        rerender(view("log-c"));
+        await waitFor(() => {
+          expect(onEdgeSelectionChange).toHaveBeenLastCalledWith([]);
+        });
+      } finally {
+        restoreLayout();
+      }
+    });
+
+    it("pastes without leaving an earlier wire for Break Links", async () => {
+      const restoreLayout = stubMeasuredGraphLayout();
+      try {
+        const onChange = vi.fn();
+        const { container, getByTestId } = render(
+          <GraphEditor
+            initialGraph={transitionGraph()}
+            edgeTypes={animGraphEdgeTypes}
+            onChange={onChange}
+          />,
+        );
+        fireEvent.click(container.querySelector('.react-flow__node[data-id="log-c"]')!);
+        fireEvent.click(getByTestId("graph-copy"));
+        await selectTransition(container);
+        fireEvent.click(getByTestId("graph-paste"));
+        expect(getByTestId("graph-break-links")).toHaveProperty("disabled", true);
+        const last = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+        expect(last.edges).toHaveLength(2);
+      } finally {
+        restoreLayout();
+      }
+    });
+
+    it("selects wires on a read-only canvas without editing it", async () => {
+      const restoreLayout = stubMeasuredGraphLayout();
+      try {
+        const onChange = vi.fn();
+        const onEdgeSelectionChange = vi.fn();
+        const { container } = render(
+          <GraphEditor
+            initialGraph={transitionGraph()}
+            edgeTypes={animGraphEdgeTypes}
+            readOnly
+            onChange={onChange}
+            onEdgeSelectionChange={onEdgeSelectionChange}
+          />,
+        );
+        await selectTransition(container);
+        await waitFor(() => {
+          expect(onEdgeSelectionChange).toHaveBeenLastCalledWith([
+            "e:log-a:execOut:log-b:execIn",
+          ]);
+        });
+        expect(onChange).not.toHaveBeenCalled();
+      } finally {
+        restoreLayout();
+      }
+    });
   });
 });
 

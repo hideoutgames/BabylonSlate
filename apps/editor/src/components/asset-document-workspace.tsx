@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AssetPicker,
   AssetPickerControl,
@@ -9,7 +9,6 @@ import {
   assetRowIdentity,
   selectedPickerIdentity,
 } from "@babylonslate/editor-kit";
-import type { PropertyRow } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import {
@@ -32,6 +31,7 @@ import {
   fontFamilyFromRepresentationFileName,
   glyphsFallingToFallback,
   groupMsdfImportBatch,
+  mergeFontAttachPayload,
   msdfAtlasPickError,
   normalizeFontPayload,
 } from "@babylonslate/assets";
@@ -54,7 +54,6 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
   const { applyAssetDocumentChange } = useDocumentActions();
-  const { assetRegistry } = useRegistryState();
   const doc = useOpenDocument(documentId);
   if (!doc) return null;
   const payload = asRecord(doc.content);
@@ -72,19 +71,6 @@ export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
   }
   if (doc.ref.kind === "blackboard") {
     return <BlackboardEditor payload={payload} onChange={commit} />;
-  }
-  if (doc.ref.kind === "asset-settings") {
-    const indexed = assetRegistry
-      ?.list()
-      .find((asset) => asset.path === doc.ref.path);
-    return (
-      <AssetSettingsEditor
-        assetType={indexed?.header.type ?? "Asset"}
-        dependencies={indexed?.header.dependencies ?? []}
-        payload={payload}
-        onChange={commit}
-      />
-    );
   }
   return (
     <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
@@ -106,6 +92,10 @@ function FontEditor({
   const { projectDocument } = useProjectState();
   const { assetRegistry } = useRegistryState();
   const font = normalizeFontPayload(payload, "Custom Font");
+  // The attach awaits storage; its follow-up commit starts from the document
+  // as it is then, not from the render that started the import.
+  const payloadRef = useRef(payload);
+  payloadRef.current = payload;
   const [sample, setSample] = useState("The quick brown fox");
   const [fontsReady, setFontsReady] = useState(false);
   const [fontError, setFontError] = useState<string | null>(null);
@@ -145,11 +135,16 @@ function FontEditor({
     }
     const updated = assetRegistry.getByGuid(indexedFont.header.guid);
     if (updated) {
+      // A saved Font keeps its payload in the document chunk, so the header
+      // only reliably carries the newly attached representation flags. Merge
+      // those into the open document instead of replacing it with the header.
+      const attached = normalizeFontPayload(updated.header.payload, font.family);
       onChange(
-        normalizeFontPayload(updated.header.payload, font.family) as unknown as Record<
-          string,
-          unknown
-        >,
+        mergeFontAttachPayload(
+          payloadRef.current,
+          { representations: attached.representations },
+          font.family,
+        ) as unknown as Record<string, unknown>,
       );
     }
   };
@@ -432,66 +427,6 @@ function FontEditor({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </div>
-    </PanelFrame>
-  );
-}
-
-function AssetSettingsEditor({
-  assetType,
-  dependencies,
-  payload,
-  onChange,
-}: {
-  assetType: string;
-  dependencies: string[];
-  payload: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
-}) {
-  const rows: PropertyRow[] = [];
-  for (const [key, value] of Object.entries(payload)) {
-    if (typeof value === "number") {
-      rows.push({
-        id: key,
-        kind: "number",
-        label: key,
-        value,
-        onChange: (next) =>
-          onChange({ ...payload, [key]: next }, `asset-settings:${key}`),
-      });
-    } else if (typeof value === "boolean") {
-      rows.push({
-        id: key,
-        kind: "boolean",
-        label: key,
-        value,
-        onChange: (next) => onChange({ ...payload, [key]: next }),
-      });
-    } else if (typeof value === "string") {
-      rows.push({
-        id: key,
-        kind: "text",
-        label: key,
-        value,
-        onChange: (next) => onChange({ ...payload, [key]: next }),
-      });
-    }
-  }
-  if (dependencies.length > 0) {
-    rows.push({
-      id: "dependencies",
-      kind: "text",
-      label: "Dependencies",
-      value: String(dependencies.length),
-      disabled: true,
-      onChange: () => undefined,
-    });
-  }
-
-  return (
-    <PanelFrame className="flex-1" title={assetType}>
-      <div className="flex flex-col gap-3" data-testid="asset-settings">
-        <PropertyGrid rows={rows} />
       </div>
     </PanelFrame>
   );

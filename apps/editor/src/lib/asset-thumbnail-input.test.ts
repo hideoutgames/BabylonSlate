@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultSpritePayload, type IndexedAsset } from "@babylonslate/assets";
 import { createMeshComponent, identitySerializedTransform } from "@babylonslate/core";
-import { createDefaultMaterialDocument, createDefaultMaterialFunctionDocument } from "@babylonslate/shader-graph";
+import {
+  createDefaultMaterialDocument,
+  createDefaultMaterialFunctionDocument,
+  createDefaultMaterialInstanceDocument,
+} from "@babylonslate/shader-graph";
 import { prepareAssetThumbnailInput } from "./asset-thumbnail-input";
 
 function asset(guid: string, type: string, payload: Record<string, unknown> = {}, parentClass?: string): IndexedAsset {
@@ -9,6 +13,7 @@ function asset(guid: string, type: string, payload: Record<string, unknown> = {}
     rootId: "project",
     path: `Content/${guid}.${type.toLowerCase()}.babasset`,
     header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
       guid, type, name: guid, parentClass, payload,
       engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], chunks: [],
     },
@@ -16,11 +21,12 @@ function asset(guid: string, type: string, payload: Record<string, unknown> = {}
 }
 
 function saved(entry: IndexedAsset, content: unknown, bytes: Map<string, Uint8Array>): IndexedAsset {
+  const data = new TextEncoder().encode(JSON.stringify(content));
   entry.header.chunks.push({
     id: "document", kind: "document", mime: "application/json", sha256: `${entry.header.guid}-saved`,
-    locator: { blob: `${entry.header.guid}-saved` },
+    byteLength: data.byteLength, locator: { blob: `${entry.header.guid}-saved` },
   });
-  bytes.set(`${entry.path}/document`, new TextEncoder().encode(JSON.stringify(content)));
+  bytes.set(`${entry.path}/document`, data);
   return entry;
 }
 
@@ -98,7 +104,7 @@ describe("prepareAssetThumbnailInput", () => {
       materialSlots: [{ index: 0, name: "Surface", materialGuid: "slot-material" }],
       importScale: 0.5,
     });
-    model.header.chunks.push({ id: "source", kind: "source", mime: "model/gltf-binary", sha256: "model", locator: { blob: "model" } });
+    model.header.chunks.push({ id: "source", kind: "source", mime: "model/gltf-binary", sha256: "model", byteLength: 1, locator: { blob: "model" } });
     bytes.set(`${model.path}/source`, new Uint8Array([1, 2, 3]));
     const inputs = fixture([
       selected, parent, model,
@@ -141,13 +147,26 @@ describe("prepareAssetThumbnailInput", () => {
     expect(inputs.collectTextureBytes).not.toHaveBeenCalled();
   });
 
-  it("prepares legacy Graph prefabs with an omitted parent as Actor descendants", async () => {
-    const selected = asset("legacy", "Graph", { nodes: [], edges: [], components: [createMeshComponent("mesh", "sphere")] });
-    const result = await prepareAssetThumbnailInput({ asset: selected, ...fixture([selected]) });
+  it("renders a mesh Material Instance from its saved parent Material and texture overrides", async () => {
+    const bytes = new Map<string, Uint8Array>();
+    const component = createMeshComponent("mesh", "box");
+    component.properties.materialGuid = "instance";
+    const selected = asset("prefab", "Class", { components: [component] }, "Actor");
+    const instance = createDefaultMaterialInstanceDocument("Painted", "base");
+    instance.overrides = { Albedo: { kind: "texture", textureAssetGuid: "override" } };
+    const inputs = fixture([
+      selected,
+      saved(asset("instance", "MaterialInstance"), instance, bytes),
+      saved(asset("base", "Material"), createDefaultMaterialDocument("Base"), bytes),
+      asset("override", "Texture"),
+    ], bytes);
+
+    const result = await prepareAssetThumbnailInput({ asset: selected, ...inputs });
 
     expect(result?.kind).toBe("ActorPrefab");
-    if (result?.kind !== "ActorPrefab") throw new Error("Expected an Actor Prefab");
-    expect(result.prefab.actors.find((actor) => actor.id === "mesh")?.components[0]?.properties.meshKind).toBe("sphere");
+    expect([...result!.materials.keys()].sort()).toEqual(["base", "instance"]);
+    expect(result!.materials.get("instance")).toMatchObject({ name: "Painted", instanceOf: "base" });
+    expect(inputs.collectTextureBytes).toHaveBeenCalledWith(["override"]);
   });
 
   it("selects a front-facing capture for a sprite-only prefab", async () => {
@@ -168,7 +187,7 @@ describe("prepareAssetThumbnailInput", () => {
     component.properties.assetGuid = "model";
     const selected = asset("prefab", "Class", { components: [component] }, "Actor");
     const model = asset("model", "Model");
-    model.header.chunks.push({ id: "source", kind: "source", mime: "model/gltf-binary", sha256: "missing", locator: { blob: "missing" } });
+    model.header.chunks.push({ id: "source", kind: "source", mime: "model/gltf-binary", sha256: "missing", byteLength: 1, locator: { blob: "missing" } });
     const inputs = fixture([selected, model]);
 
     expect(await prepareAssetThumbnailInput({ asset: selected, ...inputs })).toBeNull();
@@ -178,7 +197,7 @@ describe("prepareAssetThumbnailInput", () => {
   it("does not read non-Actor classes or cyclic inheritance", async () => {
     const ordinary = asset("ordinary", "Class", {}, "BObject");
     const cycleA = asset("cycleA", "Class", {}, "cycleB");
-    const cycleB = asset("cycleB", "Graph", {}, "cycleA");
+    const cycleB = asset("cycleB", "Class", {}, "cycleA");
     const inputs = fixture([ordinary, cycleA, cycleB]);
 
     expect(await prepareAssetThumbnailInput({ asset: ordinary, ...inputs })).toBeNull();

@@ -15,6 +15,7 @@ describe("transcoder unavailable / export-omitted smoke", () => {
   it("selectTextureChunk uses source when transcoder URLs are unavailable", async () => {
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "tex-1",
         type: "Texture",
         name: "Tex",
@@ -69,6 +70,7 @@ describe("transcoder unavailable / export-omitted smoke", () => {
   it("loader prefers KTX2 only when transcoder is available", async () => {
     const bytes = await encodeBabasset({
       header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "tex-2",
         type: "Texture",
         name: "Tex",

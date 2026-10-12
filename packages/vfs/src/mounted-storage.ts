@@ -1,5 +1,5 @@
 import type { DirEntry, FileStat, ProjectFolderHandle, ProjectStorage, StorageReadOptions } from "@babylonslate/core";
-import { StorageNotFoundError } from "@babylonslate/core";
+import { isStorageNotFound, StorageNotFoundError } from "@babylonslate/core";
 import { projectRelativePath } from "./project-path";
 import { StorageReadCounter, validateStorageRange } from "./storage-range";
 
@@ -30,7 +30,7 @@ class MountedProjectStorage implements ProjectStorage {
 
   private path(path: string): string {
     if (!this.active) throw new Error("No project folder selected");
-    return projectRelativePath(path === "." ? "" : path, true);
+    return projectRelativePath(path, true);
   }
 
   private route(path: string): { storage: ProjectStorage; path: string } | null {
@@ -38,6 +38,11 @@ class MountedProjectStorage implements ProjectStorage {
     if (!mount) return null;
     const suffix = path.slice(mount.path.length).replace(/^\//, "");
     return { storage: mount.storage, path: [mount.sourcePath, suffix].filter(Boolean).join("/") };
+  }
+
+  /** A path with a deeper mount below it is a directory, whatever its own mount holds. */
+  private hasNestedMount(path: string): boolean {
+    return this.mounts.some(mount => mount.path.startsWith(`${path}/`));
   }
 
   private file(path: string): { storage: ProjectStorage; path: string } {
@@ -79,14 +84,14 @@ class MountedProjectStorage implements ProjectStorage {
   }
   async stat(path: string): Promise<FileStat> {
     const cleaned = this.path(path);
-    if (!cleaned || this.mounts.some(mount => mount.path.startsWith(`${cleaned}/`))) return { isDir: true, size: null, mtime: null };
+    if (!cleaned || this.hasNestedMount(cleaned)) return { isDir: true, size: null, mtime: null };
     const target = this.route(cleaned);
     if (!target) throw new StorageNotFoundError(path);
     return target.storage.stat(target.path);
   }
   async exists(path: string): Promise<boolean> {
     const cleaned = this.path(path);
-    if (!cleaned || this.mounts.some(mount => mount.path.startsWith(`${cleaned}/`))) return true;
+    if (!cleaned || this.hasNestedMount(cleaned)) return true;
     const target = this.route(cleaned);
     return target ? target.storage.exists(target.path) : false;
   }
@@ -94,17 +99,32 @@ class MountedProjectStorage implements ProjectStorage {
     const cleaned = this.path(path);
     const entries = new Map<string, DirEntry>();
     const target = this.route(cleaned);
-    if (target && await target.storage.exists(target.path)) for (const entry of await target.storage.readdir(target.path || ".")) entries.set(entry.name, entry);
+    const source = target ? await sourceKind(target) : "missing";
+    if (source === "directory") for (const entry of await target!.storage.readdir(target!.path || ".")) entries.set(entry.name, entry);
     const prefix = cleaned ? `${cleaned}/` : "";
     for (const mount of this.mounts) {
       if (!mount.path.startsWith(prefix) || mount.path === cleaned) continue;
       const rest = mount.path.slice(prefix.length);
       const childName = rest.split("/")[0]!;
       if (!childName) continue;
-      const stat = rest.includes("/") ? { isDir: true, size: null, mtime: null } : await mount.storage.stat(mount.sourcePath);
+      // Match stat(): a child with a deeper mount below it is a directory.
+      const stat = rest.includes("/") || this.hasNestedMount(mount.path)
+        ? { isDir: true, size: null, mtime: null }
+        : await mount.storage.stat(mount.sourcePath);
       entries.set(childName, { name: childName, ...stat });
     }
-    if (!target && !entries.size && cleaned) throw new StorageNotFoundError(path, { message: `Directory not found: ${path}` });
+    if ((!target || source === "file") && !entries.size && cleaned) throw new StorageNotFoundError(path, { message: `Directory not found: ${path}` });
     return [...entries.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+}
+
+/** Only a directory source is listed; a file mount's children come from deeper mounts. */
+async function sourceKind(target: { storage: ProjectStorage; path: string }): Promise<"directory" | "file" | "missing"> {
+  if (!target.path) return "directory";
+  try {
+    return (await target.storage.stat(target.path)).isDir ? "directory" : "file";
+  } catch (error) {
+    if (isStorageNotFound(error)) return "missing";
+    throw error;
   }
 }

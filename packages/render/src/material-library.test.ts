@@ -100,6 +100,25 @@ describe("material library", () => {
     expect(f.onTextureError).not.toHaveBeenCalled();
   });
 
+  it("waits for the replacement when a texture parameter is replaced while the build prepares it", async () => {
+    const f = textureLibrary();
+    const obsolete = deferredTextureSource();
+    f.sources.set("obsolete", obsolete.source);
+    f.sources.set("winner", new Uint8Array([8, 9, 10]));
+    const acquired = f.library.acquire(f.scene, "material", textureDocument("first"));
+    if (!acquired.ok) throw new Error("Material did not compile");
+    expect(f.library.setParameter(f.scene, "material", "Albedo", { kind: "texture", textureAssetGuid: "obsolete" })).toBe(true);
+    // Let the compile settle, so the build is waiting on the parameter's texture.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(f.library.setParameter(f.scene, "material", "Albedo", { kind: "texture", textureAssetGuid: "winner" })).toBe(true);
+    obsolete.finish();
+    expect(await acquired.ready).toEqual([]);
+    expect(f.library.materialFor(f.scene, "material")).toBe(acquired.material);
+    expect(f.scene.materials).toContain(acquired.material);
+    expect((acquired.material.getBlockByName("sample") as TextureBlock).texture).toBe(f.leases.get("winner")!.resource);
+    expect(f.onTextureError).not.toHaveBeenCalled();
+  });
+
   it("preserves the working texture parameter when native-ready replacement fails delayed admission", async () => {
     const f = textureLibrary();
     const deferred = deferredTextureSource();
@@ -350,6 +369,43 @@ describe("material library", () => {
     expect(first.ok && second.ok).toBe(true);
     if (!first.ok || !second.ok) return;
     expect(second.material).not.toBe(first.material);
+  });
+
+  it("moves meshes from a superseded unpublished build to its replacement", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const mesh = MeshBuilder.CreateBox("box", {}, scene);
+    const first = library.resolve(scene, "material", tinted(1));
+    if (!first) throw new Error("Expected a pending material");
+    mesh.material = first;
+    const second = library.resolve(scene, "material", tinted(0.25));
+    expect(second).not.toBe(first);
+    expect(mesh.material).toBe(second);
+    expect(scene.materials).not.toContain(first);
+    const ready = library.acquire(scene, "material", tinted(0.25));
+    if (!ready.ok) throw new Error("Expected the replacement material");
+    expect(await ready.ready).toEqual([]);
+    expect(library.materialFor(scene, "material")).toBe(second);
+    library.release(scene, "material");
+    library.release(scene, "material");
+    expect(scene.materials).not.toContain(second);
+  });
+
+  it("cancels pending builds for every variant of an asset", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const unlit = library.acquire(scene, "material", tinted(1), { unlit: true });
+    const instance = library.acquire(scene, "material", tinted(1), { instanceKey: "actor" });
+    const other = library.acquire(scene, "other", tinted(1), { unlit: true });
+    if (!unlit.ok || !instance.ok || !other.ok) throw new Error("Expected pending materials");
+    library.cancelPending(scene, "material");
+    expect(await unlit.ready).toEqual([expect.objectContaining({ code: "material.compile.cancelled" })]);
+    expect(await instance.ready).toEqual([expect.objectContaining({ code: "material.compile.cancelled" })]);
+    expect(scene.materials).not.toContain(unlit.material);
+    expect(scene.materials).not.toContain(instance.material);
+    expect(await other.ready).toEqual([]);
   });
 
   it("recompiles the same graph when its material functions change", () => {

@@ -96,6 +96,48 @@ describe("Spline shape handles", () => {
     } finally { handles.dispose(); layer.dispose(); scene.dispose(); engine.dispose(); }
   });
 
+  it("selects a clicked point for the gizmo and commits gizmo moves once", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    new FreeCamera("camera", new Vector3(0, 10, -20), scene);
+    const layer = new UtilityLayerRenderer(scene), commits: unknown[] = [];
+    let changes = 0;
+    const handles = createSplineHandles(layer, scene, { onCommit: (edit) => commits.push(edit), onSelectionChange: () => changes++ });
+    try {
+      const properties = { points: [[0, 0, 0], [0, 0, 10]], curvature: 0 };
+      const mesh = createSplineMesh(scene, "curve", properties);
+      mesh.position.set(5, 0, 0);
+      handles.attach({ actorId: "actor", componentId: "spline", meshName: "curve", properties });
+      layer.utilityLayerScene.render();
+      expect(handles.selectedNode()).toBeNull();
+      expect(handles.beginSelectionDrag()).toBe(false);
+      const pick = layer.utilityLayerScene.getMeshByName("spline-handle:point:1")!;
+      const drag = pick.getBehaviorByName("PointerDrag") as PointerDragBehavior;
+      drag.onDragStartObservable.notifyObservers(event(pick.position.clone()) as never);
+      drag.onDragEndObservable.notifyObservers(event(pick.position.clone()) as never);
+      const node = handles.selectedNode()!;
+      expect(changes).toBe(1);
+      expect(node.isPickable).toBe(false);
+      expect(node.getAbsolutePosition().equalsWithEpsilon(new Vector3(5, 0, 10))).toBe(true);
+      expect(commits).toEqual([]);
+
+      expect(handles.beginSelectionDrag()).toBe(true);
+      node.setAbsolutePosition(new Vector3(8, 4, 10));
+      handles.dragSelection();
+      expect(splineMeshBody(mesh)!.points[1]).toEqual([3, 4, 10]);
+      expect(commits).toEqual([]);
+      handles.endSelectionDrag();
+      expect(commits).toHaveLength(1);
+      expect(handles.selectedNode()).toBe(node);
+      layer.utilityLayerScene.render();
+      expect(node.getAbsolutePosition().equalsWithEpsilon(new Vector3(8, 4, 10))).toBe(true);
+
+      handles.clearSelection();
+      expect(handles.selectedNode()).toBeNull();
+      expect(node.isDisposed()).toBe(true);
+      expect(changes).toBe(2);
+    } finally { handles.dispose(); layer.dispose(); scene.dispose(); engine.dispose(); }
+  });
+
   it("edits the selected component and detaches for locked or ambiguous selections", () => {
     const actor = createActor("a", "Path", { components: [
       { id: "river", classId: "WaterRiverComponent", properties: {} },

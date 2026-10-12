@@ -1,6 +1,6 @@
 # BabylonSlate documentation
 
-Live site: **[https://hideoutgames.github.io/BabylonSlate/docs/](https://hideoutgames.github.io/BabylonSlate/docs/)** (VitePress, deployed next to the editor preview). Markdown in `docs/` is the source for both GitHub and that site.
+Live site: **[https://hideoutgames.github.io/BabylonSlate/docs/](https://hideoutgames.github.io/BabylonSlate/docs/)** (VitePress, deployed next to the editor preview). Markdown in `docs/` is the source for both GitHub and that site. The site uses GitHub's heading ids, so write `page.md#heading` fragments as GitHub renders them.
 
 Local preview: `pnpm docs:dev`.
 
@@ -46,13 +46,14 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/shader-graph.md](architecture/shader-graph.md) | Material and Material Function graphs, compiler, preview, runtime |
 | [architecture/theming.md](architecture/theming.md) | UI color palette and semantic tokens |
 | [architecture/components.md](architecture/components.md) | Reusable Editor UI primitives and composites |
-| [architecture/editor-extensions.md](architecture/editor-extensions.md) | EditorUtilityObject, editor-only graphs, Skybox Creator |
-| [architecture/exporter.md](architecture/exporter.md) | Itch zip, `.babpack`, Preview Build, `apps/player` |
+| [architecture/editor-extensions.md](architecture/editor-extensions.md) | Engine and Project Extensions, EditorUtilityObject graphs, Skybox Creator |
+| [architecture/exporter.md](architecture/exporter.md) | Itch zip, asset catalog, Preview Build, `apps/player` |
 | [architecture/source-control.md](architecture/source-control.md) | Git LFS locking, SecretStore, advisory UX, mtime rescan |
 | [architecture/testing.md](architecture/testing.md) | Vitest projects, coverage gates, Playwright |
 | [ci-performance.md](ci-performance.md) | CI baseline, independent browser build pilot and rollback |
 | [agents/issue-tracker.md](agents/issue-tracker.md) | Issue and spec workflow for agents |
 | [development/distribution.md](development/distribution.md) | Explicit native distribution, versioning, setup, and recovery |
+| [development/feature-test.md](development/feature-test.md) | Feature Test starter: what every scene and zone showcases, CC0 slots, and the performance route |
 | [agents/qa-2026-09-register.md](agents/qa-2026-09-register.md) | September exploratory QA dispositions, evidence and implementation results |
 | [agents/qa-2026-10-retest.md](agents/qa-2026-10-retest.md) | October QA retest dispositions and remaining verification boundaries |
 

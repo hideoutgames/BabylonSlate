@@ -418,12 +418,24 @@ function gltfJsonToGlb(
     : [];
   const buffer0 = buffers[0];
   const bufferUri = typeof buffer0?.uri === "string" ? buffer0.uri : "";
-  if (bufferUri && isRelativeResourceUri(bufferUri)) {
-    const sidecar = sidecarBytesForUri(bufferUri, sidecars);
-    if (!sidecar) {
-      throw new Error(MISSING_GLTF_BIN);
+  if (bufferUri) {
+    // The GLB's BIN chunk becomes buffer 0, so its bytes must come along: a
+    // sidecar file or a data URI. A remote URL would leave the BIN empty.
+    let bytes: Uint8Array | null;
+    if (isRelativeResourceUri(bufferUri)) {
+      bytes = sidecarBytesForUri(bufferUri, sidecars);
+      if (!bytes) throw new Error(MISSING_GLTF_BIN);
+    } else if (bufferUri.startsWith("data:")) {
+      try {
+        bytes = decodeDataUri(bufferUri)?.bytes ?? null;
+      } catch {
+        bytes = null;
+      }
+      if (!bytes) throw new Error("glTF buffer 0 has an unreadable data URI.");
+    } else {
+      throw new Error("glTF import needs buffer 0 as a .bin file or a data URI, not a URL.");
     }
-    bin = sidecar;
+    bin = bytes;
     const rest = { ...buffer0 };
     delete rest.uri;
     buffers[0] = { ...rest, byteLength: bin.byteLength };
@@ -628,7 +640,8 @@ function clipTimeRange(
     const accessor = accessors[row.input] as Record<string, unknown> | undefined;
     const max = Array.isArray(accessor?.max) ? accessor.max : [];
     const seconds = typeof max[0] === "number" ? max[0] : NaN;
-    if (!Number.isFinite(seconds) || seconds <= 0) continue;
+    // A channel keyed only at t = 0 still starts the take there.
+    if (!Number.isFinite(seconds) || seconds < 0) continue;
     found = true;
     const min = Array.isArray(accessor?.min) ? accessor.min : [];
     const start = typeof min[0] === "number" && Number.isFinite(min[0]) ? min[0] : 0;
@@ -840,7 +853,7 @@ const ONE_BY_ONE_PNG = Uint8Array.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49,
   0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02,
   0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44,
-  0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00, 0x00, 0x00, 0x03, 0x00,
-  0x01, 0x00, 0x05, 0xfe, 0xd4, 0xef, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
-  0x44, 0xae, 0x42, 0x60, 0x82,
+  0x41, 0x54, 0x78, 0xda, 0x63, 0xf8, 0xcf, 0xc0, 0x00, 0x00, 0x03, 0x01, 0x01,
+  0x00, 0xf7, 0x03, 0x41, 0x43, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
+  0xae, 0x42, 0x60, 0x82,
 ]);

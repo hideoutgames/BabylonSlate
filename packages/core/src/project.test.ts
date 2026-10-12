@@ -1,19 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  createDefaultGraph,
   createDefaultScene,
   createEmptyProject,
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   DEFAULT_SORTING_LAYERS,
   MAIN_CLASS_FILE,
-  MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
   PROJECT_FILE,
   normalizeProjectSettings,
   normalizeRenderProjectSettings,
-  migrateGameInstanceClassFromScenes,
-  resolveGameInstanceClass,
   type ProjectSettings,
 } from "./project";
 
@@ -43,34 +39,17 @@ describe("project schema", () => {
     expect(normalizeRenderProjectSettings(null)).toEqual(normalizeProjectSettings(undefined).render);
     expect(normalizeRenderProjectSettings({ width: 0.25, height: 1.9 })).toMatchObject({ width: 1, height: 2 });
   });
-  it("H13: keeps deliberately empty input mappings instead of restoring defaults", () => {
-    expect(normalizeProjectSettings({ input: { actions: [], axes: [] } }).input).toEqual({ actions: [], axes: [] });
-    expect(normalizeProjectSettings(undefined).input.actions.some((action) => action.name === "Jump")).toBe(true);
-  });
   it("creates an empty project with expected paths", () => {
     const project = createEmptyProject("Demo");
     expect(project.metadata.name).toBe("Demo");
     expect(project.scenes).toContain(MAIN_SCENE_FILE);
     expect(project.graphs).toContain(MAIN_CLASS_FILE);
-    expect(MAIN_GRAPH_FILE).toBe("assets/main.graph.babasset");
     expect(PROJECT_FILE).toBe("project.json");
     expect(project.settings.twoD.pixelsPerUnit).toBe(100);
     expect(project.settings.twoD.sortingLayers).toEqual([
       ...DEFAULT_SORTING_LAYERS,
     ]);
     expect(project.settings.physics.collisionLayers).toEqual(["Default"]);
-    expect(project.settings.input.actions.some((a) => a.name === "Jump")).toBe(
-      true,
-    );
-    const jumpPad = project.settings.input.actions
-      .find((a) => a.name === "Jump")
-      ?.bindings.find((b) => b.device === "gamepadButton")?.code;
-    const confirmPad = project.settings.input.actions
-      .find((a) => a.name === "Confirm")
-      ?.bindings.find((b) => b.device === "gamepadButton")?.code;
-    expect(jumpPad).toBe("0:0");
-    expect(confirmPad).toBe("0:1");
-    expect(jumpPad).not.toBe(confirmPad);
     expect(project.settings.fonts).toEqual({
       defaultFontGuid: null,
       globalFallback: "sans-serif",
@@ -96,11 +75,6 @@ describe("project schema", () => {
       height: 1080,
       blackBars: false,
     });
-  });
-
-  it("creates default scene and graph structures", () => {
-    expect(createDefaultScene().actors.length).toBeGreaterThan(0);
-    expect(createDefaultGraph().nodes.length).toBeGreaterThan(0);
   });
 
   it("seeds a 3D default scene with an empty Actor and a possessing Default Camera", () => {
@@ -141,7 +115,6 @@ describe("project schema", () => {
   it("creates a 2D project without a cube and with pixel-perfect units", () => {
     const project = createEmptyProject("SideScroller", { kind: "2d" });
     expect(project.settings.twoD.pixelPerfect).toBe(true);
-    expect(project.settings.twoD.integerZoomSteps).toBe(true);
     const scene = createDefaultScene("2d");
     expect(scene.viewportMode).toBe("2d");
     expect(scene.settings.physicsWorld).toBe("2d");
@@ -164,7 +137,6 @@ describe("project schema", () => {
       twoD: {
         pixelsPerUnit: 0,
         pixelPerfect: true,
-        integerZoomSteps: true,
         sortingLayers: ["Default", " Default ", "", "UI", "Default"],
       },
     });
@@ -343,37 +315,6 @@ describe("project schema", () => {
     ).toBe("MyGame");
   });
 
-  it("copies Game Instance from a scene when the project field is empty", () => {
-    const settings = normalizeProjectSettings({});
-    expect(
-      migrateGameInstanceClassFromScenes(settings, [
-        { settings: { gameInstanceClass: null } },
-        { settings: { gameInstanceClass: "MyGame" } },
-      ]).gameInstanceClass,
-    ).toBe("MyGame");
-    expect(
-      migrateGameInstanceClassFromScenes(
-        { ...settings, gameInstanceClass: "Keep" },
-        [{ settings: { gameInstanceClass: "MyGame" } }],
-      ).gameInstanceClass,
-    ).toBe("Keep");
-  });
-
-  it("prefers the project Game Instance over a scene value", () => {
-    expect(
-      resolveGameInstanceClass(
-        { gameInstanceClass: "ProjectGame" },
-        { settings: { gameInstanceClass: "SceneGame" } },
-      ),
-    ).toBe("ProjectGame");
-    expect(
-      resolveGameInstanceClass(
-        { gameInstanceClass: null },
-        { settings: { gameInstanceClass: "SceneGame" } },
-      ),
-    ).toBe("SceneGame");
-  });
-
   it("normalizes editorUtilityObjects to unique class ids", () => {
     expect(normalizeProjectSettings(undefined).editorUtilityObjects).toEqual([]);
     expect(normalizeProjectSettings({}).editorUtilityObjects).toEqual([]);
@@ -461,16 +402,6 @@ describe("project schema", () => {
     });
   });
 
-  it("persists accepted plugin compatibility only while the plugin is enabled", () => {
-    expect(normalizeProjectSettings({ pluginOverrides: {
-      on: { enabled: true, acceptedCompatibility: "reviewed-context" },
-      off: { enabled: false, acceptedCompatibility: "old-context" },
-    } }).pluginOverrides).toEqual({
-      on: { enabled: true, acceptedCompatibility: "reviewed-context" },
-      off: { enabled: false },
-    });
-  });
-
   it("normalizes export preset plugin overrides", () => {
     expect(
       normalizeProjectSettings({
@@ -493,7 +424,6 @@ describe("project schema", () => {
         id: "web",
         name: "Web",
         pluginOverrides: { "plug-1": { enabled: false } },
-        packed: true,
         bundleDebugger: false,
         fileCountWarn: 800,
         fileCountFail: 1000,
@@ -501,7 +431,7 @@ describe("project schema", () => {
     ]);
   });
 
-  it("defaults export preset packed on, bundleDebugger off, and file-count gates", () => {
+  it("defaults export preset bundleDebugger off and file-count gates", () => {
     expect(
       normalizeProjectSettings({
         exportPresets: [{ id: "itch", name: "Itch" }],
@@ -511,7 +441,6 @@ describe("project schema", () => {
         id: "itch",
         name: "Itch",
         pluginOverrides: {},
-        packed: true,
         bundleDebugger: false,
         fileCountWarn: 800,
         fileCountFail: 1000,
@@ -523,7 +452,6 @@ describe("project schema", () => {
           {
             id: "dev",
             name: "Dev",
-            packed: false,
             bundleDebugger: true,
             fileCountWarn: 10,
             fileCountFail: 20,
@@ -534,11 +462,19 @@ describe("project schema", () => {
       id: "dev",
       name: "Dev",
       pluginOverrides: {},
-      packed: false,
       bundleDebugger: true,
       fileCountWarn: 10,
       fileCountFail: 20,
     });
+  });
+
+  it("defaults Always Package Folders to none and keeps each saved folder once, normalized", () => {
+    expect(normalizeProjectSettings(undefined).alwaysPackageFolders).toEqual([]);
+    expect(
+      normalizeProjectSettings({
+        alwaysPackageFolders: ["/assets/Weapons/", "assets//Weapons", " assets/UI ", "", 7],
+      } as unknown as Partial<ProjectSettings>).alwaysPackageFolders,
+    ).toEqual(["assets/Weapons", "assets/UI"]);
   });
 
   it("keeps fill Play layout when custom resolution is missing or off", () => {

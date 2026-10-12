@@ -47,18 +47,41 @@ function nodeIsLatentSource(
   return isLatentCall(classId, functionName);
 }
 
+function inLineage(
+  classId: string,
+  ancestorId: string,
+  parentOf?: (classId: string) => string | null | undefined,
+): boolean {
+  let current: string | null | undefined = classId;
+  const seen = new Set<string>();
+  while (current && !seen.has(current)) {
+    if (current === ancestorId) return true;
+    seen.add(current);
+    current = parentOf?.(current) ?? null;
+  }
+  return false;
+}
+
+/**
+ * A Call naming `classId` runs the nearest implementation in the receiver's
+ * lineage: an inherited one, or a subclass override when the receiver is a
+ * subclass instance. It must await when any of those is latent.
+ */
 export function isLatentFunctionKey(
   classId: string,
   functionName: string,
   latent: ReadonlySet<string>,
   parentOf?: (classId: string) => string | null | undefined,
 ): boolean {
-  let current: string | null | undefined = classId;
-  const seen = new Set<string>();
-  while (current && !seen.has(current)) {
-    seen.add(current);
-    if (latent.has(latentFunctionKey(current, functionName))) return true;
-    current = parentOf?.(current) ?? null;
+  const ident = codegenJsIdent(functionName);
+  for (const key of latent) {
+    // Idents never contain ":", so the last one separates the class id.
+    const split = key.lastIndexOf(":");
+    if (key.slice(split + 1) !== ident) continue;
+    const owner = key.slice(0, split);
+    if (inLineage(classId, owner, parentOf) || inLineage(owner, classId, parentOf)) {
+      return true;
+    }
   }
   return false;
 }

@@ -48,4 +48,18 @@ contextBridge.exposeInMainWorld("babylonslate", {
     remove: (path: string) => ipcRenderer.invoke("project:remove", path),
     stat: (path: string) => ipcRenderer.invoke("project:stat", path),
   },
+  // App-owned user libraries; main accepts only its allowlisted scopes.
+  library: {
+    readBinary: (scope: string, path: string) => ipcRenderer.invoke("library:readBinary", scope, path),
+    readBinaryRange: (scope: string, path: string, offset: number, length: number, revision?: string) =>
+      ipcRenderer.invoke("library:readBinaryRange", scope, path, offset, length, revision),
+    writeBinary: (scope: string, path: string, data: ArrayBuffer) =>
+      ipcRenderer.invoke("library:writeBinary", scope, path, data),
+    exists: (scope: string, path: string) => ipcRenderer.invoke("library:exists", scope, path),
+    readdir: (scope: string, path: string) => ipcRenderer.invoke("library:readdir", scope, path),
+    mkdir: (scope: string, path: string, recursive?: boolean) =>
+      ipcRenderer.invoke("library:mkdir", scope, path, recursive),
+    remove: (scope: string, path: string) => ipcRenderer.invoke("library:remove", scope, path),
+    stat: (scope: string, path: string) => ipcRenderer.invoke("library:stat", scope, path),
+  },
 });

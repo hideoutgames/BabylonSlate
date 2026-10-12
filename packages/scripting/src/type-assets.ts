@@ -25,6 +25,8 @@ export type StructField = {
   /** Authored nested identities for a Data Definition field's stored default. */
   fields?: DataFieldSnapshot[];
   keyFields?: DataFieldSnapshot[];
+  /** Asset and Class fields only: `"hard"` loads the reference with the asset that owns the value. Missing is Soft. */
+  loading?: "hard";
 };
 
 export type StructureAsset = {

@@ -131,20 +131,29 @@ export function mannequinShadowSamples(geometry: MannequinGeometry, state: Shado
   return [...points.values()];
 }
 
-export function mannequinShadowMetrics(points: ReturnType<typeof mannequinShadowSamples>, authored: number[], modelOnly: number[], directOnly: number[], visible: boolean[] = points.map(() => true)) {
-  const regions: Record<string, { samples: number; changed: number; lit: number; falseDark: number; contacts: number; retained: number; edges: number; changedEdges: number }> = {};
+type ShadowRegion = { samples: number; lit: number; falseDark: number; contacts: number; retained: number; edges: number; changed?: number; changedEdges?: number };
+/** `modelOnly` is the helper-isolated draw; only then are `changed`/`changedEdges` counted. */
+export function mannequinShadowMetrics(points: ReturnType<typeof mannequinShadowSamples>, authored: number[], directOnly: number[], { modelOnly, visible = points.map(() => true) }: { modelOnly?: number[]; visible?: boolean[] } = {}) {
+  const regions: Record<string, ShadowRegion> = {};
   points.forEach((point, index) => {
-    const region = regions[point.region] ??= { samples: 0, changed: 0, lit: 0, falseDark: 0, contacts: 0, retained: 0, edges: 0, changedEdges: 0 };
+    const region = regions[point.region] ??= { samples: 0, lit: 0, falseDark: 0, contacts: 0, retained: 0, edges: 0, ...(modelOnly ? { changed: 0, changedEdges: 0 } : {}) };
     const at = index * 3;
     const reference = directOnly.slice(at, at + 3).reduce((a, b) => a + b, 0) / 3;
     const actual = authored.slice(at, at + 3).reduce((a, b) => a + b, 0) / 3;
-    const difference = [0, 1, 2].some(channel => Math.abs(authored[at + channel]! - modelOnly[at + channel]!) > 3);
+    const difference = modelOnly !== undefined && [0, 1, 2].some(channel => Math.abs(authored[at + channel]! - modelOnly[at + channel]!) > 3);
     region.samples++;
-    if (difference) region.changed++;
-    if (point.expected === "edge") { region.edges++; if (difference) region.changedEdges++; }
+    if (difference) region.changed = (region.changed ?? 0) + 1;
+    if (point.expected === "edge") { region.edges++; if (difference) region.changedEdges = (region.changedEdges ?? 0) + 1; }
     if (!visible[index] || reference < 25) return; // Foreground helpers and authored black texture pixels contain no surface shadow signal.
     if (point.expected === "lit") { region.lit++; if (actual < reference * 0.85) region.falseDark++; }
     if (point.expected === "contact") { region.contacts++; if (actual < reference * 0.7) region.retained++; }
   });
   return regions;
+}
+
+/** Contact samples and those still shadowed, summed over every region. */
+export function mannequinContactCoverage(regions: Record<string, ShadowRegion>) {
+  const contacts = Object.values(regions).reduce((sum, region) => sum + region.contacts, 0);
+  const retained = Object.values(regions).reduce((sum, region) => sum + region.retained, 0);
+  return { contacts, retained, coverage: contacts ? retained / contacts : 0 };
 }

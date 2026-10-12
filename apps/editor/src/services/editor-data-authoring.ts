@@ -162,7 +162,7 @@ export function createEditorDataAuthoringApi(
 
   function indexed(registry: AssetRegistry, reference: string): IndexedAsset {
     const asset = typeof reference === "string" ? registry.getByGuid(reference) : undefined;
-    if (!asset || asset.placeholder || asset.header.type !== "DataTree") throw new Error("The Data Tree reference is missing or has the wrong type. Legacy Data Sheets and Data Objects are unsupported.");
+    if (!asset || asset.placeholder || asset.header.type !== "DataTree") throw new Error("The Data Tree reference is missing or has the wrong type.");
     return asset;
   }
 

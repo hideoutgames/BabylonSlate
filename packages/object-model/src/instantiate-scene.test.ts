@@ -175,14 +175,22 @@ describe("createActorFromSerialized for SceneLayer rows", () => {
                 classId: "SkyboxComponent",
                 properties: {},
               },
+              {
+                id: "label",
+                classId: "SpriteComponent",
+                parentId: "cam",
+                properties: {},
+              },
             ],
           }),
         ],
       },
       layer.guid,
     );
-    expect(actors[0]?.components.map((component) => component.classId)).toEqual([
-      "SpriteComponent",
+    // A child of a dropped component attaches to the actor, never to an id that was not created.
+    expect(actors[0]?.components.map((component) => [component.classId, component.parentId])).toEqual([
+      ["SpriteComponent", null],
+      ["SpriteComponent", null],
     ]);
   });
 });
@@ -200,6 +208,19 @@ describe("createActorFromSerialized", () => {
     attachSerializedComponents(world, spawned, [removed, child], { freshIds: true });
     expect(spawned.components.map((component) => [component.guid, component.sourceId, component.parentId]))
       .toEqual([["spawned:child", "child", null]]);
+  });
+  it("binds a deformer to the realized mesh whose source id it names, past a suppressed exact match", () => {
+    const world = testWorld();
+    const placed = createActorFromSerialized(world, createActor("placed", "Placed", {
+      components: [
+        { ...createMeshComponent("body"), sourceId: "template-body" },
+        { ...createMeshComponent("replacement"), sourceId: "body" },
+        { id: "cage", classId: "DeformerComponent", properties: { enabled: true, targetMeshComponentId: "body" } },
+      ],
+      suppressedComponentSourceIds: ["template-body"],
+    }))!;
+    expect(placed.components.map((component) => component.guid)).toEqual(["replacement", "cage"]);
+    expect(placed.components[1]!.getVariable("targetMeshComponentId")).toBe("replacement");
   });
   it("instantiates the dedicated streaming actor identity and its authored scene target", () => {
     const world = testWorld();

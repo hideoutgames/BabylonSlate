@@ -243,6 +243,7 @@ export function commandToJournalPayload(
         type: functionGraphs.type,
         from: functionGraphs.from,
         to: functionGraphs.to,
+        ...(functionGraphs.mergeKey ? { mergeKey: functionGraphs.mergeKey } : {}),
       };
     }
     case "graph.setActorDefaults": {
@@ -278,6 +279,7 @@ const SUPERSEDING_COMMAND_TYPES = new Set([
   "asset.setDocument",
   "graph.moveNode",
   "graph.setNodeData",
+  "graph.setFunctionGraphs",
   "scene.setActorTransform",
   "scene.setActorProperties",
   "scene.setComponentProperty",
@@ -304,12 +306,15 @@ export function coalesceJournalLines(
     previous.v !== next.v ||
     previous.docId !== next.docId ||
     earlier.type !== later.type ||
-    !SUPERSEDING_COMMAND_TYPES.has(later.type) ||
     typeof later.mergeKey !== "string" ||
     later.mergeKey.length === 0
   ) {
     return null;
   }
+  if (later.type === "scene.setActorsTransforms") {
+    return coalesceActorsTransformsLines(previous, next);
+  }
+  if (!SUPERSEDING_COMMAND_TYPES.has(later.type)) return null;
   const { from, to: _earlierTo, ...earlierTarget } = earlier;
   const { from: _laterFrom, to: _laterTo, ...laterTarget } = later;
   void _earlierTo;
@@ -317,6 +322,42 @@ export function coalesceJournalLines(
   void _laterTo;
   if (JSON.stringify(earlierTarget) !== JSON.stringify(laterTarget)) return null;
   return { ...next, command: { ...later, from } };
+}
+
+/**
+ * A multi-select transform writes each entry's `to` onto its actor, so two
+ * records over the same actors fold into the later entries with the earlier
+ * `from` values.
+ */
+function coalesceActorsTransformsLines(
+  previous: JournalLine,
+  next: JournalLine,
+): JournalLine | null {
+  const earlier = previous.command.entries;
+  const later = next.command.entries;
+  if (
+    previous.command.mergeKey !== next.command.mergeKey ||
+    !Array.isArray(earlier) ||
+    !Array.isArray(later) ||
+    earlier.length !== later.length
+  ) {
+    return null;
+  }
+  const firstFrom = new Map<string, unknown>();
+  for (const entry of earlier as unknown[]) {
+    if (!entry || typeof entry !== "object") return null;
+    const { actorId, from } = entry as { actorId?: unknown; from?: unknown };
+    if (typeof actorId !== "string" || firstFrom.has(actorId)) return null;
+    firstFrom.set(actorId, from);
+  }
+  const entries: unknown[] = [];
+  for (const entry of later as unknown[]) {
+    if (!entry || typeof entry !== "object") return null;
+    const { actorId } = entry as { actorId?: unknown };
+    if (typeof actorId !== "string" || !firstFrom.has(actorId)) return null;
+    entries.push({ ...entry, from: firstFrom.get(actorId) });
+  }
+  return { ...next, command: { ...next.command, entries } };
 }
 
 export function registerGraphCommandRevivers(): void {

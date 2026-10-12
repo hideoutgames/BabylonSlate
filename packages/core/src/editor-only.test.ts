@@ -57,13 +57,10 @@ describe("editor-only assets", () => {
     ).toBe(false);
   });
 
-  it("treats EditorFunctionLibrary ancestry as editor-only on Class and Graph assets", () => {
+  it("treats EditorFunctionLibrary ancestry as editor-only on Class assets", () => {
     expect(isEditorFunctionLibraryClass("EditorMath", parentOf)).toBe(true);
     expect(
       isEditorOnlyAsset({ type: "Class", parentClass: "EditorMath" }, parentOf),
-    ).toBe(true);
-    expect(
-      isEditorOnlyAsset({ type: "Graph", parentClass: "EditorMath" }, parentOf),
     ).toBe(true);
   });
 
@@ -229,6 +226,20 @@ describe("editor-only assets", () => {
         name: "Health",
         typeId: "float",
       },
+    ]);
+  });
+
+  it("indexes a Hard Loading policy on Class header variables so closed assets keep the role", () => {
+    expect(
+      classHeaderMeta({
+        members: [
+          { id: "weapon", kind: "variable", name: "Weapon", typeId: "asset", typeClassId: "Model", loading: "hard" },
+          { id: "cue", kind: "variable", name: "Cue", typeId: "asset", typeClassId: "Audio" },
+        ],
+      }).variables,
+    ).toEqual([
+      { id: "weapon", name: "Weapon", typeId: "asset", typeClassId: "Model", loading: "hard" },
+      { id: "cue", name: "Cue", typeId: "asset", typeClassId: "Audio" },
     ]);
   });
 

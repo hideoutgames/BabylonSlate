@@ -27,7 +27,6 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "pickFolder", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openFolder", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "importBookmark", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "readFileRange", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "readDocumentsRange", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "readFile", returnType: CAPPluginReturnPromise),
@@ -41,6 +40,8 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     private var pendingPickCall: CAPPluginCall?
+    /// One bridge transfer, whole-file or ranged, never exceeds this.
+    private static let maxTransferBytes: Int64 = 512 * 1024 * 1024
 
     // MARK: - Folder handles
 
@@ -53,9 +54,14 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("Folder picker is unavailable", "UNREACHABLE")
                 return
             }
-            guard self.pendingPickCall == nil, presenter.presentedViewController == nil else {
+            guard presenter.presentedViewController == nil else {
                 call.reject("A native picker is already open", "UNREACHABLE")
                 return
+            }
+            if let stale = self.pendingPickCall {
+                // No picker is on screen, so its delegate callback will never arrive.
+                self.pendingPickCall = nil
+                stale.reject("Cancelled", "CANCELLED")
             }
             let picker = UIDocumentPickerViewController(forOpeningContentTypes: [UTType.folder], asCopy: false)
             picker.allowsMultipleSelection = false
@@ -81,35 +87,12 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    @objc func importBookmark(_ call: CAPPluginCall) {
-        guard let bookmark = call.getString("bookmark"), !bookmark.isEmpty,
-              let data = Data(base64Encoded: bookmark) else {
-            call.reject("bookmark is required", "NOT_FOUND")
-            return
-        }
-        do {
-            var isStale = false
-            let url = try URL(resolvingBookmarkData: data,
-                              options: [],
-                              relativeTo: nil,
-                              bookmarkDataIsStale: &isStale)
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            guard let folder = storeFolder(url: url, name: call.getString("name"), renewing: isStale) else {
-                call.reject("Bookmark is stale", "STALE")
-                return
-            }
-            call.resolve(["folder": ["id": folder.id, "name": folder.name]])
-        } catch {
-            call.reject("Invalid bookmark", "STALE", error)
-        }
-    }
-
     // MARK: - File operations
 
     @objc func readFileRange(_ call: CAPPluginCall) {
         guard let (folderUrl, path) = folderAndPath(call: call) else { return }
-        withCoordinatedRead(folderUrl: folderUrl, path: path, materialize: false, execute: { target in
+        // Ranges need file contents, so an evicted iCloud item is downloaded first.
+        withCoordinatedRead(folderUrl: folderUrl, path: path, execute: { target in
             try self.readRange(target: target, call: call)
         }) { result in
             switch result {
@@ -158,7 +141,7 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         guard let offset = call.getDouble("offset"), let length = call.getDouble("length"),
               offset.isFinite, length.isFinite, offset >= 0, length >= 0,
               offset.rounded(.down) == offset, length.rounded(.down) == length,
-              offset + length <= 9007199254740991, length <= 512 * 1024 * 1024 else {
+              offset + length <= 9007199254740991, length <= Double(Self.maxTransferBytes) else {
             throw rangeFailure("Invalid storage byte range")
         }
         let handle = try FileHandle(forReadingFrom: target)
@@ -194,8 +177,10 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func readFile(_ call: CAPPluginCall) {
         guard let (folderUrl, path) = folderAndPath(call: call) else { return }
 
-        withCoordinatedRead(folderUrl: folderUrl, path: path, execute: { target in
-            try Data(contentsOf: target)
+        withCoordinatedRead(folderUrl: folderUrl, path: path, execute: { target -> Data in
+            let size = (try FileManager.default.attributesOfItem(atPath: target.path)[.size] as? NSNumber)?.int64Value ?? 0
+            guard size <= Self.maxTransferBytes else { throw self.rangeFailure("File is too large to read at once") }
+            return try Data(contentsOf: target)
         }) { [weak self] result in
             guard let self = self else { return }
             switch result {
@@ -399,7 +384,7 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func storeFolder(url: URL, name: String?, renewing: Bool) -> (id: String, name: String)? {
+    private func storeFolder(url: URL) -> (id: String, name: String)? {
         let accessing = url.startAccessingSecurityScopedResource()
         guard accessing else { return nil }
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
@@ -407,16 +392,11 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         do {
             let values = try url.resourceValues(forKeys: [.isDirectoryKey])
             guard values.isDirectory == true else { return nil }
-            if renewing {
-                _ = try url.bookmarkData(options: [],
-                                         includingResourceValuesForKeys: nil,
-                                         relativeTo: nil)
-            }
             let data = try url.bookmarkData(options: [],
                                             includingResourceValuesForKeys: nil,
                                             relativeTo: nil)
             let id = UUID().uuidString
-            let folderName = name ?? url.lastPathComponent
+            let folderName = url.lastPathComponent
             UserDefaults.standard.set(data, forKey: bookmarkKey(id))
             UserDefaults.standard.set(folderName, forKey: nameKey(id))
             return (id, folderName)
@@ -481,7 +461,7 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
                 try self.validateRoot(folderUrl)
                 url = try self.childURL(folderUrl: folderUrl, path: path, allowRoot: allowRoot)
             } catch {
-                completion(.failure(error))
+                completion(.failure(self.classifyRootFailure(error, folderUrl: folderUrl)))
                 return
             }
             let coordinator = NSFileCoordinator(filePresenter: nil)
@@ -525,7 +505,7 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
                 try self.validateRoot(folderUrl)
                 url = try self.childURL(folderUrl: folderUrl, path: path)
             } catch {
-                completion(.failure(error))
+                completion(.failure(self.classifyRootFailure(error, folderUrl: folderUrl)))
                 return
             }
             let coordinator = NSFileCoordinator(filePresenter: nil)
@@ -600,9 +580,19 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Only a root that is missing or unreadable means lost folder access; one
+    /// unreadable file keeps its own error so the folder is not marked stale.
     private func classifyRootFailure(_ error: Error, folderUrl: URL) -> Error {
-        do { try validateRoot(folderUrl) } catch { return error }
+        do { try validateRoot(folderUrl) } catch let rootError {
+            return isPermissionDenied(rootError) ? ScopedStoragePluginError.accessRevoked : rootError
+        }
         return error
+    }
+
+    private func isPermissionDenied(_ error: Error) -> Bool {
+        let error = error as NSError
+        return (error.domain == NSCocoaErrorDomain && [NSFileReadNoPermissionError, NSFileWriteNoPermissionError].contains(error.code)) ||
+            (error.domain == NSPOSIXErrorDomain && [1, 13].contains(error.code))
     }
 
     private func isNotFound(_ error: Error) -> Bool {
@@ -662,9 +652,6 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject(error.localizedDescription, "REVISION_CHANGED", error, readData)
         } else if isNotFound(error) {
             call.reject("File not found", "NOT_FOUND", error, readData)
-        } else if (nsError.domain == NSCocoaErrorDomain && [NSFileReadNoPermissionError, NSFileWriteNoPermissionError].contains(nsError.code)) ||
-                    (nsError.domain == NSPOSIXErrorDomain && [1, 13].contains(nsError.code)) {
-            call.reject("Folder access has been revoked", "ACCESS_REVOKED", error, readData)
         } else {
             call.reject(error.localizedDescription, "UNREACHABLE", error, readData)
         }
@@ -681,7 +668,7 @@ extension BabylonSlateScopedStoragePlugin: UIDocumentPickerDelegate {
         }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            guard let folder = self.storeFolder(url: url, name: nil, renewing: false) else {
+            guard let folder = self.storeFolder(url: url) else {
                 DispatchQueue.main.async {
                     call.reject("Could not create folder bookmark", "UNREACHABLE")
                 }

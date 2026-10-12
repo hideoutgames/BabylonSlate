@@ -108,11 +108,71 @@ describe("addClassMember", () => {
     expect(slice?.edges).toHaveLength(1);
   });
 
-  it("drops the function graph when the function member is removed", () => {
+  it("drops the function graph and this Class's own Call Function nodes when the function member is removed", () => {
     let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
-    graph = removeClassMember(graph, "fn-1");
+    graph = addCallFunctionNode(graph, graph.members![0]!, { idFactory: () => "call-self" });
+    graph = addCallFunctionNode(graph, graph.members![0]!, { classId: "Hero", idFactory: () => "call-hero" });
+    graph = addCallFunctionNode(graph, { name: "Jump" }, {
+      classId: "OtherActor",
+      implicitSelf: false,
+      idFactory: () => "call-other",
+    });
+    // A Function Library static Call of the same name, as the palette stamps it.
+    graph = addCallFunctionNode(graph, { name: "Jump" }, { classId: "MathLib", idFactory: () => "call-library" });
+    graph.nodes.find((node) => node.id === "call-library")!.data.static = true;
+    graph = {
+      ...graph,
+      edges: [
+        { id: "e1", source: "call-self", target: "call-other", sourceHandle: "then", targetHandle: "exec" },
+        { id: "e2", source: "call-other", target: "call-library", sourceHandle: "then", targetHandle: "exec" },
+      ],
+    };
+    graph = removeClassMember(graph, "fn-1", { classId: "Hero" });
     expect(graph.members).toEqual([]);
     expect(graph.functionGraphs?.["fn-1"]).toBeUndefined();
+    expect(graph.nodes.map((node) => node.id)).toEqual(["call-other", "call-library"]);
+    expect(graph.edges.map((edge) => edge.id)).toEqual(["e2"]);
+  });
+
+  it("points this Class's Calls at the parent function when a function of the parent's name is removed", () => {
+    let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    graph = addCallFunctionNode(graph, graph.members![0]!, { classId: "Hero", idFactory: () => "call-hero" });
+    graph = addCallFunctionNode(graph, graph.members![0]!, { classId: "BaseHero", idFactory: () => "call-parent" });
+    const parentGraphs = { BaseHero: addClassMember(emptyGraph(), "function", "Jump", () => "base-fn") };
+    const next = removeClassMember(graph, "fn-1", {
+      classId: "Hero",
+      parentClass: "BaseHero",
+      parentOf: (id) => (id === "BaseHero" ? "Actor" : null),
+      parentGraphs,
+    });
+    expect(next.nodes.map((node) => [node.id, node.data.classId])).toEqual([
+      ["call-hero", "BaseHero"],
+      ["call-parent", "BaseHero"],
+    ]);
+    // A declared override names its parent even when that parent's graph is not loaded.
+    graph.members = [{ ...graph.members![0]!, overrides: { classId: "BaseHero", name: "Jump" } }];
+    expect(removeClassMember(graph, "fn-1", { classId: "Hero" }).nodes).toEqual(next.nodes);
+  });
+
+  it("drops the Get and Set nodes bound to a removed variable in every graph", () => {
+    let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    graph = addClassMember(graph, "variable", "Health", () => "var-1");
+    graph = addClassMember(graph, "variable", "Armor", () => "var-2");
+    const [, health, armor] = graph.members!;
+    graph = addVariableAccessNode(graph, health!, "get", { idFactory: () => "get-health" });
+    graph = addVariableAccessNode(graph, armor!, "get", { idFactory: () => "get-armor" });
+    graph = addVariableAccessNode(graph, health!, "set", {
+      functionId: "fn-1",
+      idFactory: () => "set-health",
+    });
+    expect(graph.functionGraphs?.["fn-1"]?.nodes.map((node) => node.id)).toContain("set-health");
+    graph = removeClassMember(graph, "var-1");
+    expect(graph.members?.map((member) => member.id)).toEqual(["fn-1", "var-2"]);
+    expect(graph.nodes.map((node) => node.id)).toEqual(["get-armor"]);
+    expect(graph.functionGraphs?.["fn-1"]?.nodes.map((node) => node.id)).toEqual([
+      "fn-1-input",
+      "fn-1-output",
+    ]);
   });
 
   it("adds a named custom event node for Events +", () => {
@@ -207,6 +267,22 @@ describe("addClassMember", () => {
     const next = removeClassMember(graph, graph.nodes[0]!.id);
     expect(next.nodes).toEqual([]);
     expect(next.members).toEqual([]);
+  });
+
+  it("drops the Call Parent node of a removed inherited custom event", () => {
+    let graph = addClassMember(emptyGraph(), "event", "On Hit", () => "evt-1");
+    graph = addClassMember(graph, "event", "On Land", () => "evt-2");
+    for (const [eventNodeId, eventName] of [["evt-1", "On Hit"], ["evt-2", "On Land"]] as const) {
+      graph = ensureCallParentForEvent(graph, {
+        eventNodeId,
+        eventType: "flow.event.custom",
+        eventName,
+        parentClassId: "BaseHero",
+      });
+    }
+    const next = removeClassMember(graph, "evt-1");
+    expect(next.nodes.map((node) => node.id)).toEqual(["evt-2", "call-parent-custom-on-land"]);
+    expect(next.edges.map((edge) => edge.source)).toEqual(["evt-2"]);
   });
 
   it("removes a native event canvas node without dropping the rest of the graph", () => {
@@ -801,13 +877,34 @@ describe("addClassMember", () => {
       { name: "exec", typeId: "exec", direction: "in" as const },
       { name: "then", typeId: "exec", direction: "out" as const },
     ];
-    graph = patchClassMember(graph, "fn-1", { pins });
+    graph = patchClassMember(graph, "fn-1", { pins }, "Hero");
     const landCall = graph.functionGraphs?.["fn-2"]?.nodes.find(
       (node) => node.id === "call-2",
     );
     for (const node of [graph.nodes[0], landCall]) {
       expect(node?.data.pins).toEqual(pins);
       expect(node?.data.__pins).toBeUndefined();
+    }
+  });
+
+  it("retargets self Call Function nodes in every graph when a function is renamed", () => {
+    let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    graph = addClassMember(graph, "function", "Land", () => "fn-2");
+    graph = addCallFunctionNode(graph, graph.members![0]!, { idFactory: () => "self-call", classId: "Hero" });
+    graph = addCallFunctionNode(graph, graph.members![0]!, { idFactory: () => "nested-call", functionId: "fn-2" });
+    graph = addCallFunctionNode(graph, graph.members![0]!, {
+      idFactory: () => "target-call", classId: "Enemy", implicitSelf: false,
+    });
+    graph = addCallFunctionNode(graph, graph.members![0]!, { idFactory: () => "library-call", classId: "MathLib" });
+    graph = patchClassMember(graph, "fn-1", { name: "Leap" }, "Hero");
+    const nested = graph.functionGraphs?.["fn-2"]?.nodes.find((node) => node.id === "nested-call");
+    for (const node of [graph.nodes.find((entry) => entry.id === "self-call"), nested]) {
+      expect(node?.data).toMatchObject({ functionName: "Leap", title: "Call Leap" });
+    }
+    for (const id of ["target-call", "library-call"]) {
+      expect(graph.nodes.find((node) => node.id === id)?.data).toMatchObject({
+        functionName: "Jump", title: "Call Jump",
+      });
     }
   });
 });
@@ -957,6 +1054,21 @@ describe("ensureEventNodeOnGraph Call Parent", () => {
     expect(
       graph.nodes.filter((node) => node.type === "flow.event.callParent"),
     ).toHaveLength(once);
+  });
+
+  it("wires a catalog event's arguments to Call Parent by pin id", () => {
+    const graph = ensureEventNodeOnGraph(emptyGraph(), "flow.event.hit", {
+      parentClassId: "Actor",
+      idFactory: () => "evt-hit",
+      pins: [{ name: "Hit Result", typeId: "struct", direction: "out" }],
+    });
+    expect(graph.edges).toContainEqual(expect.objectContaining({
+      source: "evt-hit",
+      target: "call-parent-flow-event-hit",
+      sourceHandle: "hitResult",
+      targetHandle: "hitResult",
+    }));
+    expect(graph.edges.some((edge) => edge.sourceHandle === "Hit Result")).toBe(false);
   });
 
   it("does not rewire when the user already moved Call Parent later", () => {

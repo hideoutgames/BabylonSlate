@@ -23,14 +23,9 @@ export function assetVariableGuidsFromGraph(graph: SerializedGraph): string[] {
   for (const slice of [graph, ...Object.values(graph.functionGraphs ?? {})]) {
     for (const node of slice.nodes ?? []) {
       if (node.type !== "variables.set") continue;
-      const nested = node.data?.properties;
-      const properties = nested && typeof nested === "object" && !Array.isArray(nested)
-        ? nested as Record<string, unknown> : node.data ?? {};
-      const name = typeof properties.variableName === "string" ? properties.variableName : "Value";
-      // Cleared canonical defaults mask older values, matching script pin defaults.
-      const value = ["default:value", "value", `default:${name}`, name]
-        .map((key) => properties[key]).find((entry) => entry !== undefined);
-      collect(properties as Partial<GraphClassMember>, value);
+      // The Value pin's authored literal, typed by the node's variable type.
+      const data = node.data ?? {};
+      collect(data as Partial<GraphClassMember>, data["default:value"]);
     }
   }
   return [...guids];
