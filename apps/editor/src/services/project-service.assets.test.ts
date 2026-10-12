@@ -1592,6 +1592,55 @@ describe("project documents as .babasset", () => {
     controller.dispose();
   });
 
+  it.each(["bakes it itself", "joins a background bake of it"] as const)(
+    "packs the reverb of the Scene export flushed when a geometry edit starts a background bake while export %s",
+    async (start) => {
+      const { service } = await scaffolded();
+      await service.saveDocument("scene", MAIN_SCENE_FILE, { ...createDefaultScene(), actors: [createActor("wall", "Wall", {
+        components: [createMeshComponent("wall-mesh", "box")],
+      })] });
+      const scene = await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+      // The saved chunk is an earlier result for this geometry.
+      await service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, new Uint8Array([1]), scene as unknown as Record<string, unknown>);
+      const bakes: Array<(bytes: Uint8Array) => void> = [];
+      // Wired as AudioReverbBakeProvider wires background and export bakes.
+      const controller = createAudioReverbBakeController({
+        debounceMs: 0,
+        bake: () => new Promise((resolve) => { bakes.push(resolve); }),
+        write: async () => { throw new Error("bakes write through withWrite"); },
+        withWrite: (work) => service.withSceneWrite((writer) =>
+          work((entry) => writer.writeSceneAudioReverbChunk(entry.path, entry.bytes, entry.payload))),
+      });
+      const debounced = () => new Promise((resolve) => setTimeout(resolve, 0));
+      if (start === "joins a background bake of it") {
+        controller.schedule(MAIN_SCENE_FILE, structuredClone(scene) as unknown as Record<string, unknown>);
+        await debounced();
+      }
+      const collected = await collectAudioReverbFlushScenes({
+        paths: [MAIN_SCENE_FILE], load: (path) => service.loadDocument("scene", path),
+      });
+      const flushed = controller.flushAll(collected.scenes);
+      await vi.waitFor(() => expect(bakes).toHaveLength(1));
+      // The user moves the wall in the open tab while export's bake runs.
+      const edited = structuredClone(scene);
+      edited.actors[0]!.transform.position[0] = 30;
+      controller.schedule(MAIN_SCENE_FILE, edited as unknown as Record<string, unknown>);
+      await debounced();
+      bakes[0]!(new Uint8Array([2]));
+      expect((await flushed).size).toBe(0);
+      const loaded = await loadExportDocuments({
+        assets: service.registry!.list().filter((asset) => asset.header.type === "Scene"),
+        loadDocument: (_kind, path) => service.loadDocument("scene", path),
+        readAssetChunk: (path, chunkId) => service.readAssetChunk(path, chunkId),
+        audioReverbBakeFailures: new Map(await flushed),
+      });
+      expect(loaded.audioReverbByGuid(service.guidForPath(MAIN_SCENE_FILE)!)).toEqual(new Uint8Array([2]));
+      // The edit's bake still runs once export's flush has settled.
+      await vi.waitFor(() => expect(bakes).toHaveLength(2));
+      controller.dispose();
+    },
+  );
+
   it.each([
     ["stored in an unsupported format", AssetFormatVersionError],
     ["that is corrupt", Error],
