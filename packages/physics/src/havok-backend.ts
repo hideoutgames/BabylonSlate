@@ -90,6 +90,11 @@ type ColliderRecord = {
   shape: PhysicsShape;
   /** Convex and mesh bounds for contact attribution, computed on first use. */
   bounds?: LocalBounds | null;
+  /**
+   * Position in the backend's `colliders` map order: assigned each time a transaction re-inserts the collider, so the
+   * lowest sequence among an owner's colliders is the one a `colliders` scan would reach first.
+   */
+  seq: number;
 };
 
 type CharacterRecord = {
@@ -131,6 +136,11 @@ function motionTypeOf(motion: MotionType): PhysicsMotionType {
     default:
       return PhysicsMotionType.DYNAMIC;
   }
+}
+
+/** Identifies a contact within one poll window: the first event of each kind per ordered actor pair wins. */
+function contactKey(kind: PhysicsContactEvent["kind"], actorAId: string, actorBId: string): string {
+  return `${kind}|${actorAId}|${actorBId}`;
 }
 
 function isShape3D(shape: ColliderShape): boolean {
@@ -184,6 +194,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   private readonly removeCollisionObservers: Array<() => void> = [];
   private readonly resetTriggerActors = new Set<string>();
   private pendingContacts: PhysicsContactEvent[] = [];
+  /** `contactKey` of each `pendingContacts` entry, index for index. */
+  private pendingContactKeys: string[] = [];
+  /** The distinct `pendingContactKeys`, so the first-event-wins check is one lookup instead of a scan. */
+  private readonly pendingContactKeySet = new Set<string>();
+  private colliderSeq = 0;
   /** The native bodies each pending hit came from; hits may name hosted actors. */
   private readonly hitBodies = new WeakMap<PhysicsContactEvent, readonly [PhysicsBody, PhysicsBody]>();
   private readonly tmpContactPoint = { x: 0, y: 0, z: 0 };
@@ -254,7 +269,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     this.failedBodies.clear();
     this.bodyIdByPhysicsBody.clear();
     this.activeTriggerPairs.clear();
-    this.pendingContacts = [];
+    this.clearPendingContacts();
     this.pendingMutations = [];
     this.resetTriggerActors.clear();
     this.scene.disablePhysicsEngine();
@@ -629,7 +644,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         if (!sameGeometry) provisional.add(shape);
         topologyChanged ||=
           !previous || !sameGeometry || !sameColliderPose(previous.desc, desc);
-        next.set(desc.id, { desc, shape });
+        next.set(desc.id, { desc, shape, seq: 0 });
       }
       // Container child indices are derived from this live order, never used as IDs.
       if (
@@ -696,7 +711,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       if (child.desc.actorId !== undefined && child.desc.actorId !== record.desc.actorId) record.hostsShapes = true;
     if (topologyChanged) record.container = container;
     for (const id of oldColliders.keys()) this.colliders.delete(id);
-    for (const [id, collider] of next) this.colliders.set(id, collider);
+    for (const [id, collider] of next) {
+      collider.seq = ++this.colliderSeq;
+      this.colliders.set(id, collider);
+    }
     const changedContactPolicy = upsert.some((desc) => {
       const previous = oldColliders.get(desc.id)?.desc;
       return (
@@ -738,7 +756,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
 
   pollContacts(): PhysicsContactEvent[] {
     const events = this.pendingContacts;
-    this.pendingContacts = [];
+    this.clearPendingContacts();
     return events;
   }
 
@@ -1230,9 +1248,15 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
     // Other bodies name their actor's first collider. On a trigger actor route
     // overlap events to its trigger component, even after a blocking collider.
+    const swapped = a > b;
+    // A hit is not paired, so a repeat of one already pending ends here, before the collider lookups.
+    let key: string | undefined;
+    if (kind === "hit") {
+      key = swapped ? contactKey(kind, b, a) : contactKey(kind, a, b);
+      if (this.pendingContactKeySet.has(key)) return;
+    }
     colliderAId ??= this.firstColliderIdForActor(a, isTriggerEvent);
     colliderBId ??= this.firstColliderIdForActor(b, isTriggerEvent);
-    const swapped = a > b;
     if (swapped) {
       const swap = a;
       a = b;
@@ -1244,7 +1268,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     if (kind === "overlapBegin" || kind === "overlapEnd") {
       // Havok reports each overlapping child-shape pair. Keep the actor overlap
       // alive until its final shape leaves, including events on later ticks.
-      const pairKey = JSON.stringify([a, b]);
+      // Length-prefixed, so no pair of IDs can produce another pair's key.
+      const pairKey = `${a.length}:${a}${b}`;
       const pair = this.activeTriggerPairs.get(pairKey);
       if (kind === "overlapBegin") {
         if (pair) {
@@ -1273,15 +1298,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         colliderBId = pair.colliderBId;
       }
     }
-    const key = `${kind}|${a}|${b}`;
-    if (
-      this.pendingContacts.some(
-        (existing) =>
-          `${existing.kind}|${existing.actorAId}|${existing.actorBId}` === key,
-      )
-    ) {
-      return;
-    }
+    key ??= contactKey(kind, a, b);
+    if (this.pendingContactKeySet.has(key)) return;
     const pair = {
       actorAId: a,
       actorBId: b,
@@ -1289,7 +1307,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       ...(colliderBId ? { colliderBId } : {}),
     };
     if (kind !== "hit") {
-      this.pendingContacts.push({ kind, ...pair });
+      this.enqueueContact({ kind, ...pair }, key);
       return;
     }
     const sign = swapped ? -1 : 1;
@@ -1307,19 +1325,52 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         z: sign * (event.normal?.z ?? 0),
       },
     };
-    this.pendingContacts.push(hit);
+    this.enqueueContact(hit, key);
     if (event.collider && event.collidedAgainst) this.hitBodies.set(hit, [event.collider, event.collidedAgainst]);
   }
 
   /** Ends an actor overlap with the colliders its begin event named. */
   private pushOverlapEnd(pair: { actorAId: string; actorBId: string; colliderAId?: string; colliderBId?: string }): void {
-    this.pendingContacts.push({
-      kind: "overlapEnd",
-      actorAId: pair.actorAId,
-      actorBId: pair.actorBId,
-      ...(pair.colliderAId ? { colliderAId: pair.colliderAId } : {}),
-      ...(pair.colliderBId ? { colliderBId: pair.colliderBId } : {}),
-    });
+    // Not deduplicated against pending events, but later events dedup against it.
+    this.enqueueContact(
+      {
+        kind: "overlapEnd",
+        actorAId: pair.actorAId,
+        actorBId: pair.actorBId,
+        ...(pair.colliderAId ? { colliderAId: pair.colliderAId } : {}),
+        ...(pair.colliderBId ? { colliderBId: pair.colliderBId } : {}),
+      },
+      contactKey("overlapEnd", pair.actorAId, pair.actorBId),
+    );
+  }
+
+  private enqueueContact(event: PhysicsContactEvent, key: string): void {
+    this.pendingContacts.push(event);
+    this.pendingContactKeys.push(key);
+    this.pendingContactKeySet.add(key);
+  }
+
+  private clearPendingContacts(): void {
+    this.pendingContacts = [];
+    this.pendingContactKeys = [];
+    this.pendingContactKeySet.clear();
+  }
+
+  /** Keeps the pending events `keep` accepts, in order, with the dedup keys of exactly those events. */
+  private retainPendingContacts(keep: (event: PhysicsContactEvent) => boolean): void {
+    const events: PhysicsContactEvent[] = [];
+    const keys: string[] = [];
+    this.pendingContactKeySet.clear();
+    for (let i = 0; i < this.pendingContacts.length; i++) {
+      const event = this.pendingContacts[i]!;
+      if (!keep(event)) continue;
+      const key = this.pendingContactKeys[i]!;
+      events.push(event);
+      keys.push(key);
+      this.pendingContactKeySet.add(key);
+    }
+    this.pendingContacts = events;
+    this.pendingContactKeys = keys;
   }
 
   /**
@@ -1358,14 +1409,18 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     actorId: string,
     preferTrigger = false,
   ): string | undefined {
-    let first: string | undefined;
-    for (const [id, collider] of this.colliders) {
-      const body = this.bodies.get(collider.desc.bodyId);
-      if (!body || (collider.desc.actorId ?? body.desc.actorId) !== actorId) continue;
-      first ??= id;
-      if (!preferTrigger || collider.desc.isTrigger) return id;
+    // The owner's colliders in `colliders` map order, which `seq` mirrors: the first one, or with `preferTrigger`
+    // the first trigger when it owns any.
+    const owned = this.collidersByOwner.get(actorId);
+    if (!owned) return undefined;
+    let first: ColliderRecord | undefined;
+    let firstTrigger: ColliderRecord | undefined;
+    for (const collider of owned) {
+      if (!first || collider.seq < first.seq) first = collider;
+      if (preferTrigger && collider.desc.isTrigger && (!firstTrigger || collider.seq < firstTrigger.seq))
+        firstTrigger = collider;
     }
-    return first;
+    return (firstTrigger ?? first)?.desc.id;
   }
 
   /** Whether `body`'s compound includes a child shape hosted for `actorId`. */
@@ -1546,7 +1601,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
    */
   private refreshTriggerPairs(record: BodyRecord): void {
     const actorId = record.desc.actorId;
-    this.pendingContacts = this.pendingContacts.filter(
+    this.retainPendingContacts(
       (event) => event.kind !== "hit" || !this.pendingHitInvolves(event, record),
     );
     for (const pair of this.activeTriggerPairs.values()) {
@@ -1574,7 +1629,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
 
   private retireTriggerPairs(record: BodyRecord): void {
     const actorId = record.desc.actorId;
-    this.pendingContacts = this.pendingContacts.filter(
+    this.retainPendingContacts(
       (event) =>
         event.kind === "overlapEnd" ||
         (event.kind === "hit"
