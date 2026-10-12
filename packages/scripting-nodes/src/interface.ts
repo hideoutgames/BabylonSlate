@@ -84,13 +84,7 @@ export const interfaceNodes: NodeDefinition[] = [
       const targetPin = ctx.node.pins.find(
         (entry) => entry.id === "target" && entry.direction === "in",
       );
-      const targetConnected =
-        !!targetPin &&
-        ctx.graph.edges.some(
-          (edge) =>
-            edge.targetNodeId === ctx.node.id &&
-            edge.targetPinId === targetPin.id,
-        );
+      const targetConnected = !!targetPin && ctx.isWired(targetPin.id);
       // Like Call Function: only a Self-bound row turns an unwired Target into Self.
       const targetExpr =
         !targetConnected && properties.implicitSelf === true

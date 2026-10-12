@@ -31,12 +31,19 @@ const VALUE_KEY_KINDS = new Set<PinType["kind"]>([
   "structRef",
 ]);
 
-/** Declares `q(a, b)`, recursive structural equality for plain data values. */
+/**
+ * Declares `q(a, b)`, recursive structural equality for plain data values.
+ * Walks own enumerable keys with `for..in` so each comparison allocates no key
+ * arrays; the counts are settled before recursing, as `Object.keys` length did.
+ */
 const VALUE_EQUALS_DECL =
-  "const q=(a,b)=>{if(a===b)return true;" +
+  "const h=Object.prototype.hasOwnProperty,q=(a,b)=>{if(a===b)return true;" +
   "if(a===null||b===null||typeof a!==\"object\"||typeof b!==\"object\")return false;" +
-  "const x=Object.keys(a);" +
-  "return x.length===Object.keys(b).length&&x.every((n)=>Object.prototype.hasOwnProperty.call(b,n)&&q(a[n],b[n]));};";
+  "let c=0;for(const n in a)if(h.call(a,n))c++;" +
+  "for(const n in b)if(h.call(b,n))c--;" +
+  "if(c!==0)return false;" +
+  "for(const n in a)if(h.call(a,n)&&!(h.call(b,n)&&q(a[n],b[n])))return false;" +
+  "return true;};";
 
 /**
  * `(m, k) => key` returning the stored key structurally equal to `k`. Native

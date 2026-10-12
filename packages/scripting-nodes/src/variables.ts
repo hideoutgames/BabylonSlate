@@ -53,10 +53,7 @@ function targetConnected(
     (entry) => entry.id === "target" && entry.direction === "in",
   );
   if (!targetPin) return false;
-  return ctx.graph.edges.some(
-    (edge) =>
-      edge.targetNodeId === ctx.node.id && edge.targetPinId === targetPin.id,
-  );
+  return ctx.isWired(targetPin.id);
 }
 
 function usesImplicitSelf(

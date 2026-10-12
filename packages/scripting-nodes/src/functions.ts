@@ -74,13 +74,7 @@ export const functionCallNodes: NodeDefinition[] = [
       const targetPin = ctx.node.pins.find(
         (entry) => entry.id === "target" && entry.direction === "in",
       );
-      const targetConnected =
-        !!targetPin &&
-        ctx.graph.edges.some(
-          (edge) =>
-            edge.targetNodeId === ctx.node.id &&
-            edge.targetPinId === targetPin.id,
-        );
+      const targetConnected = !!targetPin && ctx.isWired(targetPin.id);
       const classId =
         typeof ctx.node.properties.classId === "string" &&
         ctx.node.properties.classId.trim()

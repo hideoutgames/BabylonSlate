@@ -1,4 +1,4 @@
-import type { GraphNode, LogicGraph } from "./ir";
+import type { GraphEdge, GraphNode, LogicGraph } from "./ir";
 import { findNode, findPin } from "./ir";
 import { compiledNodeIds } from "./compiled-nodes";
 import { diagnostic, type Diagnostic } from "./diagnostics";
@@ -34,6 +34,19 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as
 
 function pinById(node: GraphNode, pinId: string) {
   return findPin(node, pinId);
+}
+
+/** First edge into an input pin; later duplicate wires are not reported through it. */
+type IncomingEdge = (nodeId: string, pinId: string) => GraphEdge | undefined;
+
+function indexIncomingEdges(graph: LogicGraph): IncomingEdge {
+  const byNode = new Map<string, Map<string, GraphEdge>>();
+  for (const edge of graph.edges) {
+    let pins = byNode.get(edge.targetNodeId);
+    if (!pins) byNode.set(edge.targetNodeId, (pins = new Map()));
+    if (!pins.has(edge.targetPinId)) pins.set(edge.targetPinId, edge);
+  }
+  return (nodeId, pinId) => byNode.get(nodeId)?.get(pinId);
 }
 
 function isPureEvalSource(
@@ -183,6 +196,7 @@ function validateStructural(
   ctx: TypeContext,
   compiled: ReadonlySet<string>,
   registry: ValidateOptions["registry"],
+  incoming: IncomingEdge,
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
   const { dataDeps } = buildAdjacency(graph, registry);
@@ -225,7 +239,7 @@ function validateStructural(
   for (const node of graph.nodes) {
     if (!compiled.has(node.id) || node.typeId !== "flow.whileLoop") continue;
     const condition = node.pins.find((pin) => pin.id === "condition");
-    if (!condition || !isConstantTrue(graph, node, condition.id)) continue;
+    if (!condition || !isConstantTrue(graph, incoming, node, condition.id)) continue;
     out.push(diagnostic({ severity: "warning", code: "flow.constant_loop",
       message: "While Loop condition is always True. Ensure the loop body breaks or yields.",
       assetGuid: ctx.assetGuid, graphId: graph.id, nodeId: node.id, pinId: condition.id }));
@@ -238,20 +252,27 @@ function validateStructural(
  * True when an input is the literal True: its unwired default, or a wire from
  * a Make Bool whose own input is (recursively) the literal True.
  */
-function isConstantTrue(graph: LogicGraph, node: GraphNode, pinId: string, seen = new Set<string>()): boolean {
+function isConstantTrue(
+  graph: LogicGraph,
+  incoming: IncomingEdge,
+  node: GraphNode,
+  pinId: string,
+  seen = new Set<string>(),
+): boolean {
   const pin = findPin(node, pinId);
   if (!pin || seen.has(node.id)) return false;
   seen.add(node.id);
-  const edge = graph.edges.find((entry) => entry.targetNodeId === node.id && entry.targetPinId === pinId);
+  const edge = incoming(node.id, pinId);
   if (!edge) return readPinDefaultForPin(node.properties, pin) === true;
   const source = findNode(graph, edge.sourceNodeId);
-  return source?.typeId === "literal.makeBool" && isConstantTrue(graph, source, "in", seen);
+  return source?.typeId === "literal.makeBool" && isConstantTrue(graph, incoming, source, "in", seen);
 }
 
 function validatePinTyping(
   graph: LogicGraph,
   ctx: TypeContext,
   registry: ValidateOptions["registry"],
+  incoming: IncomingEdge,
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
   const wildcards = resolveWildcardPinTypes(graph);
@@ -417,9 +438,7 @@ function validatePinTyping(
       if (pin.direction !== "in" || pin.kind !== "data" || pin.optional) {
         continue;
       }
-      const connected = graph.edges.some(
-        (e) => e.targetNodeId === node.id && e.targetPinId === pin.id,
-      );
+      const connected = incoming(node.id, pin.id) !== undefined;
       const stored = readPinDefaultForPin(node.properties, pin);
       const hasStored = stored !== undefined;
       const requiresReference = pin.reference === "required" ||
@@ -1126,11 +1145,12 @@ export function validateGraphs(
     const compiled = compiledNodeIds(graph);
     const keep = (diags: readonly Diagnostic[]) =>
       keepCompiledNodeDiagnostics(diags, compiled);
+    const incoming = indexIncomingEdges(graph);
     diagnostics.push(
-      ...keep(validateStructural(graph, ctx, compiled, options.registry)),
+      ...keep(validateStructural(graph, ctx, compiled, options.registry, incoming)),
     );
     diagnostics.push(...keep(validateBreakContext(graph, ctx, compiled, options)));
-    diagnostics.push(...keep(validatePinTyping(graph, ctx, options.registry)));
+    diagnostics.push(...keep(validatePinTyping(graph, ctx, options.registry, incoming)));
     diagnostics.push(...keep(validateExecuteJavaScript(graph, ctx)));
     diagnostics.push(...keep(validateMemberBindings(graph, ctx)));
     diagnostics.push(...keep(validateComponentAndInheritedBindings(graph, ctx)));

@@ -62,6 +62,14 @@ function inLineage(
   return false;
 }
 
+function sharesLineage(
+  classId: string,
+  owner: string,
+  parentOf?: (classId: string) => string | null | undefined,
+): boolean {
+  return inLineage(classId, owner, parentOf) || inLineage(owner, classId, parentOf);
+}
+
 /**
  * A Call naming `classId` runs the nearest implementation in the receiver's
  * lineage: an inherited one, or a subclass override when the receiver is a
@@ -78,12 +86,20 @@ export function isLatentFunctionKey(
     // Idents never contain ":", so the last one separates the class id.
     const split = key.lastIndexOf(":");
     if (key.slice(split + 1) !== ident) continue;
-    const owner = key.slice(0, split);
-    if (inLineage(classId, owner, parentOf) || inLineage(owner, classId, parentOf)) {
-      return true;
-    }
+    if (sharesLineage(classId, key.slice(0, split), parentOf)) return true;
   }
   return false;
+}
+
+/** Owner class ids of the latent keys, per function ident, in key order. */
+type LatentOwners = Map<string, string[]>;
+
+function addLatentOwner(owners: LatentOwners, key: string): void {
+  const split = key.lastIndexOf(":");
+  const ident = key.slice(split + 1);
+  const list = owners.get(ident);
+  if (list) list.push(key.slice(0, split));
+  else owners.set(ident, [key.slice(0, split)]);
 }
 
 /** Fixpoint: Delay / async JS, then Calls to Functions already in the set. */
@@ -93,11 +109,15 @@ export function collectLatentFunctions(
   parentOf?: (classId: string) => string | null | undefined,
 ): Set<string> {
   const latent = new Set<string>();
+  // Kept in step with `latent` so a Call only walks lineages of its own ident.
+  const owners: LatentOwners = new Map();
   let changed = true;
   while (changed) {
     changed = false;
     const isLatentCall = (classId: string, functionName: string) =>
-      isLatentFunctionKey(classId, functionName, latent, parentOf);
+      owners
+        .get(codegenJsIdent(functionName))
+        ?.some((owner) => sharesLineage(classId, owner, parentOf)) ?? false;
     for (const source of sources) {
       const key = latentFunctionKey(source.classId, source.functionName);
       if (latent.has(key)) continue;
@@ -107,6 +127,7 @@ export function collectLatentFunctions(
         )
       ) {
         latent.add(key);
+        addLatentOwner(owners, key);
         changed = true;
       }
     }

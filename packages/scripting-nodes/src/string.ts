@@ -252,7 +252,7 @@ export const stringNodes: NodeDefinition[] = [
       pin("out", "Out", "out", STRING),
     ],
     codegen: (ctx) => ({
-      out: `((${ctx.input("array")}) ?? []).map((entry) => String(entry)).join(String(${ctx.input("separator")}))`,
+      out: `((${ctx.input("array")}) ?? []).map(String).join(String(${ctx.input("separator")}))`,
     }),
   },
   {

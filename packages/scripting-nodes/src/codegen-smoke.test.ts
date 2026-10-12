@@ -49,6 +49,7 @@ function mockCtx(
       return "null";
     },
     continueIf: (expression) => { emits.push(`if (${expression}) {}`); },
+    isWired: () => false,
     output: (name) => {
       outputs.push(name);
       return `_out_${name}`;

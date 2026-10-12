@@ -24,6 +24,7 @@ import {
 } from "./types";
 import {
   checkParticleGraphDocument,
+  indexParticleIncomingEdges,
   type ParticleGraphDiagnostic,
   type ParticleGraphValidationContext,
 } from "./validate";
@@ -123,6 +124,7 @@ export function lowerParticleGraphDocument(
     return { ok: false, diagnostics };
   }
   const nodesById = new Map(doc.nodes.map((node) => [node.id, node]));
+  const incoming = indexParticleIncomingEdges(doc);
   const operations: ParticleOperation[] = [];
   const emitted = new Map<string, ParticleOperation>();
 
@@ -132,9 +134,7 @@ export function lowerParticleGraphDocument(
     const definition = resolver.definitionOf(node.id)!;
     const inputs: Record<string, ParticleOperand> = {};
     for (const pin of definition.inputs) {
-      const edge = doc.edges.find(
-        (candidate) => candidate.targetNodeId === node.id && candidate.targetPinId === pin.id,
-      );
+      const edge = incoming(node.id, pin.id);
       const source = edge ? nodesById.get(edge.sourceNodeId) : undefined;
       if (edge && source) {
         emit(source);

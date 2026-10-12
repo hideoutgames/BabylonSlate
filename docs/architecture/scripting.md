@@ -206,7 +206,7 @@ type Diagnostic = {
 
 **Rule registration hook:** `registerValidationRule(rule)` adds package rules to `validateGraphs`; `createDefaultNodeRegistry()` registers the physics and SceneLayer rules. Behaviour Trees use `validateBehaviourTree` instead ([behaviour-tree.md](behaviour-tree.md#validation)).
 
-**Rule groups (engineplan §6.2):** structural, pin typing, references (needs registry), signatures (needs class graph), semantic, ExecuteJavaScript parse.
+**Rule groups (engineplan §6.2):** structural, pin typing, references (needs registry), signatures (needs class graph), semantic, ExecuteJavaScript parse. Each graph builds one incoming-edge index (first edge into a pin wins) for the constant-condition and unconnected-input checks.
 
 **When it runs:**
 
@@ -306,7 +306,7 @@ Nonpositive Duration writes B immediately. Invalid endpoints or unsupported targ
 
 Anchor Offset, Scroll Offset and Layout Size use SceneLayer units. Scroll clamps to measured content bounds. Layout Size changes only Fixed dimensions; a box with neither dimension Fixed cannot start this action. Font Size and Wrap Size use pixels, Outline uses the existing component units, and text colors affect the base RGB style. Opacity and Tint are multiplicative visual controls. Transform, opacity, tint and scrolling updates retain existing visual meshes; text font/wrap changes still regenerate the affected text layout.
 
-The compiler's writable-reference resolver captures member targets once and emits local setter closures. `continueIf` gates only a latent node's completion descendants, so a canceled tween does not prevent unrelated Sequence outputs. Latent-function detection applies transitively, as it does for Delay.
+The compiler's writable-reference resolver captures member targets once and emits local setter closures. `continueIf` gates only a latent node's completion descendants, so a canceled tween does not prevent unrelated Sequence outputs. Latent-function detection applies transitively, as it does for Delay; its fixpoint indexes latent keys by function identifier so a Call only walks the lineages of same-named owners.
 
 One module + one test file per category:
 
@@ -690,6 +690,8 @@ The `ctx` handed to compiled code copies the world's `TickContext`: `self`, `del
 - Editor / debugger compiles (`compileGraphDocuments`, `instrumentInfiniteLoops: true`) prepend `ctx.checkInfiniteLoop();` to each impure exec emit and to generated `for` / `while` bodies (for example the gamepad connect loop). Play prepare / toolbar Compile reuse `GraphScriptCompileCache` (`p20-play-compile-audio`) so an unchanged graph is not recompiled. `graphCompileSignature` omits node positions on the **event graph and every function graph**; Class `members` (including variable defaults) and each open Class's saved parent stay in the key, so a parent changed on disk outside Reparent also marks the graphs for Compile. Per-document fingerprints are cached by document content reference (documents are immutable), so an unchanged open graph is not re-serialized when another document changes. Release export compiles (`stripDevelopmentOnly: true`) leave the flag off by default — no checks in shipped JS. Call Function recursion shares the same per-tick budget.
 - `ctx.checkInfiniteLoop` is always a function on `ScriptContext` (no-op when the debugger guard is missing or disabled) so mixed or stale instrumented scripts cannot throw `is not a function`.
 - A node that emits `await` must call `ctx.requestAsync()` (or declare `latent: true`) so the entry point is emitted `async`.
+- Codegen asks `ctx.isWired(pinId)` whether any edge targets an input pin; it reads the compiler's incoming-edge index, so nodes do not scan `ctx.graph.edges`. A wire from a stripped or missing source still counts as wired.
+- Switch On Tag and Select By Tag pass their case list as one module-scope `__tagCases_<ids>` constant through `ctx.hoist`, not an array literal rebuilt per evaluation. Animation transition-rule compiles emit hoisted declarations after the Tag runtime and before `evaluate`.
 - Statements must not introduce fixed-name temporaries outside a block; assign into `ctx.output(pin)` slots instead, since a node can be emitted more than once per function. A block such as `{ const __i = <index>; … }` is fine.
 - Codegen reads each input once per output or statement. An expression that uses an input several times (vector components, color channels, bounds checks) binds it first, as `((a, b) => …)(A, B)` or a block `const`, so an impure input such as Random Float is sampled once there. A pure node with two or more wired outputs reads each wired pure input once per executing statement (`__stmt` memos; each exec node, each While Loop condition check and each For Loop Last Index check after the first starts a new statement), so outputs used together see one value, and a later statement reads again. Pure codegen can also share work between its outputs through `ctx.shared(expression)` (Get Effective Scalability, Map Get, Break Map); with fewer than two wired outputs it returns the expression unchanged. Graphs without such nodes compile without memos.
 

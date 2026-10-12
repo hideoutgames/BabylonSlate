@@ -5,6 +5,17 @@ export function tagCasesOf(properties: Record<string, unknown>): number[] {
   return [...new Set(cases.map(normalizeTag).filter((tag) => tag !== 0))];
 }
 
+/**
+ * Module-scope constant holding a switch / select case list, so each
+ * evaluation passes one shared array instead of building a literal. The name
+ * encodes the contents: equal lists share one declaration, and `var` lets
+ * concatenated graph modules repeat it.
+ */
+export function tagCasesConstant(cases: readonly number[]): { name: string; declaration: string } {
+  const name = `__tagCases_${cases.length ? cases.join("_") : "none"}`;
+  return { name, declaration: `var ${name} = ${JSON.stringify(cases)};` };
+}
+
 export function tagCasePinId(tag: number): string {
   return `case:${tag}`;
 }
