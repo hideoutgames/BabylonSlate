@@ -1,5 +1,5 @@
 import { Material, type AbstractMesh, type InstancedMesh, type Mesh, type Scene } from "@babylonjs/core";
-import type { CelShadingSettings, OutlineBinding, RenderMode, SerializedScene } from "@babylonslate/core";
+import type { CelShadingSettings, OutlineBinding, RenderMode, SerializedActor, SerializedScene } from "@babylonslate/core";
 import { isColliderVisualTree } from "./collider-visual";
 import { isSkyboxMesh } from "./skybox";
 import { isViewportShadingTarget } from "./viewport-shading-mode";
@@ -12,18 +12,28 @@ type ActorOutline = { meshes: AbstractMesh[]; bindings: readonly OutlineBinding[
 /** Outline authoring changes no geometry, illumination or authored effects. */
 export function isOutlineOnlySceneEdit(previous: SerializedScene | null, next: SerializedScene): boolean {
   if (!previous) return false;
+  if (previous === next) return true;
+  if (previous.actors.length !== next.actors.length) return false;
+  const actorState = (actor: SerializedActor) => JSON.stringify({
+    ...actor, components: actor.components.flatMap((component) => component.classId !== "OutlineComponent" ? [component]
+      // A component can also be an attachment parent. Retain that structure
+      // so its transform edits still update child geometry and assets.
+      : actor.components.some((child) => child.parentId === component.id) ? [{ ...component, properties: {} }] : []),
+  });
+  // Immutable scene edits keep untouched actors' identity, so only replaced
+  // actors are serialized. The placeholder keeps the actors key in place.
+  for (let index = 0; index < next.actors.length; index++) {
+    const before = previous.actors[index]!;
+    const after = next.actors[index]!;
+    if (before !== after && actorState(before) !== actorState(after)) return false;
+  }
   const otherState = (scene: SerializedScene) => {
     const cel = { ...scene.settings.celShading };
     delete cel.outlinesEnabled; delete cel.outlineColor; delete cel.outlineWidth;
     delete cel.outlineDistanceFadeEnabled; delete cel.outlineFadeStart; delete cel.outlineFadeEnd;
-    return { ...scene, settings: { ...scene.settings, celShading: cel }, actors: scene.actors.map((actor) => ({
-      ...actor, components: actor.components.flatMap((component) => component.classId !== "OutlineComponent" ? [component]
-        // A component can also be an attachment parent. Retain that structure
-        // so its transform edits still update child geometry and assets.
-        : actor.components.some((child) => child.parentId === component.id) ? [{ ...component, properties: {} }] : []),
-    })) };
+    return JSON.stringify({ ...scene, settings: { ...scene.settings, celShading: cel }, actors: null });
   };
-  return previous === next || JSON.stringify(otherState(previous)) === JSON.stringify(otherState(next));
+  return otherState(previous) === otherState(next);
 }
 export interface SceneOutlineSelection {
   set(meshes: Iterable<AbstractMesh | null | undefined>): void;

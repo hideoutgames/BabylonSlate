@@ -1,5 +1,5 @@
 import { Color4, Matrix, Mesh, MeshBuilder, Quaternion, Ray, Vector3, type AbstractMesh, type LinesMesh } from "@babylonjs/core";
-import { appendFoliageInstance, chooseFoliageModel, createActor, identitySerializedTransform, parseFoliageProperties, parseLandscapeProperties, sculptLandscape, type FoliageGroup, type FoliageProperties, type LandscapeBrush, type SerializedScene } from "@babylonslate/core";
+import { appendFoliageInstance, chooseFoliageModel, createActor, identitySerializedTransform, parseFoliageProperties, parseLandscapeProperties, sculptLandscape, type FoliageGroup, type FoliageProperties, type LandscapeBrush, type SerializedActor, type SerializedScene } from "@babylonslate/core";
 import type { EngineHandle } from "./create-engine";
 import { RENDERING_GROUP } from "./sorting";
 
@@ -49,15 +49,25 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     }
     return null;
   };
-  const predicate = (state: SceneBrushState) => (mesh: AbstractMesh) => {
-    if (!mesh.isVisible || !mesh.isEnabled() || !mesh.isPickable || !mesh.getTotalVertices() || mesh.metadata?.foliageRoot) return false;
-    const actorId = actorFor(mesh);
-    const actor = state.scene?.actors.find((entry) => entry.id === actorId);
-    if (!actor || !actor.visible || actor.locked) return false;
-    if (state.mode === "foliage") return true;
-    const root = mesh.metadata?.landscapeRoot as Mesh | undefined;
-    return Boolean(root && actor.components.some((component) => component.classId === "LandscapeComponent" &&
-      `${actor.id}/${component.id}` === state.landscapeSelection && handle.editor?.sync.meshForComponent(actor.id, component.id) === root));
+  const predicate = (state: SceneBrushState) => {
+    // Every ray tests each mesh: index the actors once, on first use. The first
+    // actor of an id wins, as `find` would.
+    let actorsById: Map<string, SerializedActor> | undefined;
+    return (mesh: AbstractMesh) => {
+      if (!mesh.isVisible || !mesh.isEnabled() || !mesh.isPickable || !mesh.getTotalVertices() || mesh.metadata?.foliageRoot) return false;
+      const actorId = actorFor(mesh);
+      if (actorId === null) return false;
+      if (!actorsById) {
+        actorsById = new Map();
+        for (const entry of state.scene?.actors ?? []) if (!actorsById.has(entry.id)) actorsById.set(entry.id, entry);
+      }
+      const actor = actorsById.get(actorId);
+      if (!actor || !actor.visible || actor.locked) return false;
+      if (state.mode === "foliage") return true;
+      const root = mesh.metadata?.landscapeRoot as Mesh | undefined;
+      return Boolean(root && actor.components.some((component) => component.classId === "LandscapeComponent" &&
+        `${actor.id}/${component.id}` === state.landscapeSelection && handle.editor?.sync.meshForComponent(actor.id, component.id) === root));
+    };
   };
   const pick = (event: PointerEvent, state: SceneBrushState) => {
     const rect = canvas.getBoundingClientRect();
@@ -136,10 +146,11 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     } else if (state.group) {
       const brush = state.foliageBrush;
       const count = Math.min(256, Math.max(1, Math.round(Math.PI * brush.radius ** 2 * brush.density)));
+      const surface = predicate(state);
       for (let i = 0; i < count; i++) {
         const angle = random() * Math.PI * 2; const radius = Math.sqrt(random()) * brush.radius;
         const height = Math.max(100, brush.radius * 2);
-        const hit = handle.scene.pickWithRay(new Ray(new Vector3(point.x + Math.cos(angle) * radius, point.y + height, point.z + Math.sin(angle) * radius), Vector3.Down(), height * 2), predicate(state));
+        const hit = handle.scene.pickWithRay(new Ray(new Vector3(point.x + Math.cos(angle) * radius, point.y + height, point.z + Math.sin(angle) * radius), Vector3.Down(), height * 2), surface);
         const normal = hit?.getNormal(true, true)?.normalize(); const position = hit?.pickedPoint;
         if (!position || !normal || normal.y < Math.cos(brush.maxSlope * Math.PI / 180) || hasNeighbour(current, position)) continue;
         const model = chooseFoliageModel(state.group, random()); if (!model) continue;

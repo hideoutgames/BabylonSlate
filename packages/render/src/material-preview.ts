@@ -645,10 +645,11 @@ export function createMaterialPreviewPresenter(
     present: (presentOptions) => {
       if (disposed) return;
       pendingForce ||= presentOptions?.force === true;
-      canvas.dataset.cameraRadius = String(host.camera.radius);
       if (frozen || blitInFlight) return;
       const at = now();
       if (!pendingForce && at - lastPresentMs < minIntervalMs) return;
+      // e2e telemetry: refreshed per presentation attempt, not per requested frame.
+      canvas.dataset.cameraRadius = String(host.camera.radius);
       const size = previewBufferSize(canvas, maxSize);
       if (!size) return;
       try {

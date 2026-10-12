@@ -1083,7 +1083,9 @@ boundary. Animated/deformed shadow maps continue refreshing; the controller does
 not assume that a frozen world matrix makes a material or skeleton immutable.
 Bone attachment detach/retirement restores the snapshot pose even if the next
 snapshot contains unchanged TRS; an attachment's frozen world matrix is not a
-valid cache of that snapshot pose.
+valid cache of that snapshot pose. Within one attachment pass, attachments on
+the same unlinked skeleton prepare it and recompute its absolute matrices once,
+since nothing in the pass moves bones.
 
 ### Shared texture representations
 
