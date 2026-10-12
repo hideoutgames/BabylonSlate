@@ -7,6 +7,7 @@ import {
   validateSaveGameFieldValue,
   validateSaveGameValue,
   type SaveGameDefinition,
+  type SaveGameField,
   type SaveGameFailure,
   type SaveGameInfo,
   type SaveGameMigration,
@@ -64,6 +65,7 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
   private readonly options: SaveGameServiceOptions<TData>;
   private readonly root: string;
   private readonly data: TData;
+  private readonly fieldsById = new Map<string, SaveGameField>();
   private readonly migrations = new Map<number, SaveGameMigration>();
   private queue: Promise<unknown> = Promise.resolve();
 
@@ -76,19 +78,20 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
     segment(options.defaultSlot ?? "default");
     this.options = options;
     this.data = createSaveGameData(this.definition) as TData;
+    for (const field of this.definition.fields) if (!this.fieldsById.has(field.id)) this.fieldsById.set(field.id, field);
   }
 
   /** Stable object identity across loads; only declared fields are persisted. */
   getSaveData(): TData { return this.data; }
 
   getField(fieldId: string): SaveGameValue {
-    const field = this.definition.fields.find((entry) => entry.id === fieldId);
+    const field = this.fieldsById.get(fieldId);
     if (!field) throw new SaveGameError("invalid", `Unknown save field: ${fieldId}`);
     return (this.data as Record<string, SaveGameValue>)[field.name];
   }
 
   setField(fieldId: string, value: SaveGameValue): void {
-    const field = this.definition.fields.find((entry) => entry.id === fieldId);
+    const field = this.fieldsById.get(fieldId);
     if (!field) throw new SaveGameError("invalid", `Unknown save field: ${fieldId}`);
     (this.data as Record<string, SaveGameValue>)[field.name] = validateSaveGameFieldValue(field, value);
   }

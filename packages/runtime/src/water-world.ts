@@ -5,9 +5,10 @@ import {
   type LandscapeProperties, type Transform, type Vec3, type WaterBlendQueryInfo, type WaterBodyProperties, type WaterCutters,
   type WaterDefinition, type WaterSample,
 } from "@babylonslate/core";
-import type { Actor, ActorComponent } from "@babylonslate/object-model";
+import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import type { PhysicsBackend } from "@babylonslate/physics";
 import { actorParentGuid, actorWorldTransforms, composeActorWorldTransformsInto, composeParentChildTransform } from "./actor-world-transform";
+import { worldComponentIndex, type WorldComponentIndex } from "./world-component-index";
 
 type WaterBody = { actorId: string; definition: WaterDefinition; body: WaterBodyProperties; transform: Transform };
 /** Seconds over which a support's peak submersion settles before it weights horizontal drag (several wave periods). */
@@ -146,6 +147,12 @@ export class WaterClock {
   }
 }
 
+/** The component classes an evaluation reacts to: water surfaces, removal volumes, landscapes and buoyancy. */
+function reactsToClass(classId: string): boolean {
+  return waterKindForClass(classId) !== null || classId === "WaterRemovalVolumeComponent" ||
+    classId === "LandscapeComponent" || classId === "WaterBuoyancyComponent";
+}
+
 /** Component attachments have the same transform meaning in physics and rendering. */
 function componentWorldTransform(component: ActorComponent, actor: Actor, world: Transform): Transform {
   const chain = [component.transform];
@@ -194,6 +201,10 @@ export class WaterWorld {
   private readonly composed: Actor[] = [];
   private readonly byGuid = new Map<string, Actor>();
   private readonly defaultWater = createDefaultWaterDefinition();
+  private readonly worldOf: (actors: readonly Actor[]) => World | null;
+  /** The world structure last scanned for components water reacts to, and whether it held any. */
+  private scannedIndex: WorldComponentIndex | null = null;
+  private scannedReactive = true;
   private readonly fixedDrift = { x: 0, z: 0 };
   private readonly coupledDrift = { x: 0, z: 0 };
   /** Per buoyancy component: each support's recent peak submersion, which weights its horizontal drag. */
@@ -201,6 +212,11 @@ export class WaterWorld {
   /** Water Blend Distance (project setting): bodies this close blend, for the step and script queries alike. */
   private blendDistance = DEFAULT_WATER_BLEND_DISTANCE;
   get hasBodies(): boolean { return this.stepState.bodies.length > 0; }
+
+  /** `worldOf` names the world whose actor list `actors` is, so evaluations over it can use the world's component index. */
+  constructor(worldOf: (actors: readonly Actor[]) => World | null = () => null) {
+    this.worldOf = worldOf;
+  }
 
   /** Sets the Water Blend Distance (metres; 0 turns blending off). The next evaluation rediscovers neighbours. */
   setBlendDistance(distance: number): void {
@@ -279,7 +295,7 @@ export class WaterWorld {
     const { sourceActors, sourceComponents, sourceBodies, composed } = this;
     bodies.length = removals.length = landscapes.length = 0;
     let water = false;
-    for (const actor of actors) {
+    for (const actor of this.mayReact(actors) ? actors : []) {
       const surfaces = !actor.destroyed && !actor.sceneLayerId;
       for (const component of actor.components) {
         if (component.destroyed) continue;
@@ -331,6 +347,24 @@ export class WaterWorld {
     }
     // A comparison per evaluation; neighbours are rediscovered only when a body, its pose or the distance changed.
     state.blend.update(bodies, this.blendDistance);
+  }
+
+  /**
+   * False only for a world's own actor list when no actor owns a class the walk reacts to,
+   * so the walk would collect nothing. The answer follows the world structure.
+   */
+  private mayReact(actors: readonly Actor[]): boolean {
+    const world = this.worldOf(actors);
+    if (!world) return true;
+    const index = worldComponentIndex(world);
+    if (index !== this.scannedIndex) {
+      this.scannedIndex = index;
+      this.scannedReactive = false;
+      for (const classId of index.classIds()) {
+        if (reactsToClass(classId)) { this.scannedReactive = true; break; }
+      }
+    }
+    return this.scannedReactive;
   }
 
   /**

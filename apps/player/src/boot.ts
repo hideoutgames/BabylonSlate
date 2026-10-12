@@ -90,6 +90,15 @@ export type PlayerDiagnostic = {
   bodyLine?: number;
 };
 
+/**
+ * Diagnostics kept for `stop()` and handed to every `onDiagnostic` call. Past
+ * the cap the oldest entries after the first `PINNED_DIAGNOSTICS` are dropped,
+ * so a per-tick error neither grows memory nor the list posted per diagnostic
+ * without bound. `onDiagnostic` still runs once per diagnostic.
+ */
+const MAX_RETAINED_DIAGNOSTICS = 1000;
+const PINNED_DIAGNOSTICS = 100;
+
 export type PlayerBootHandle = {
   previewDiagnostics?: PlayerPreviewDiagnosticPorts;
   ticks: () => number;
@@ -203,6 +212,10 @@ function initializePlayer(
   }
   const content = options.content ?? packedContentFromGame(game);
   const diagnostics: PlayerDiagnostic[] = [];
+  const recordDiagnostic = (diagnostic: PlayerDiagnostic): void => {
+    diagnostics.push(diagnostic);
+    if (diagnostics.length > MAX_RETAINED_DIAGNOSTICS) diagnostics.splice(PINNED_DIAGNOSTICS, 1);
+  };
   const fontIds = new Set(manifest.assets.filter(entry => entry.type === "Font").map(entry => entry.guid));
   const fontFallbacks = new Map(manifest.assets.filter(entry => entry.type === "Font").map(entry => [entry.guid, entry.requiredDependencies?.filter(id => fontIds.has(id)) ?? []]));
   const fontCss = packedFontCssStacks(game.fontFamilies, "sans-serif", manifest.defaultFontGuid, fontFallbacks);
@@ -308,7 +321,7 @@ function initializePlayer(
         message: diagnostic.message,
         severity: "warning",
       });
-      diagnostics.push({
+      recordDiagnostic({
         message: diagnostic.message,
         severity: "warning",
         assetGuid: diagnostic.materialGuid,
@@ -322,7 +335,7 @@ function initializePlayer(
         message: diagnostic.message,
         severity: "warning",
       });
-      diagnostics.push({
+      recordDiagnostic({
         message: diagnostic.message,
         severity: "warning",
         code: diagnostic.code,
@@ -336,7 +349,7 @@ function initializePlayer(
         message: diagnostic.message,
         severity: "warning",
       });
-      diagnostics.push({
+      recordDiagnostic({
         message: diagnostic.message,
         severity: "warning",
         code: diagnostic.code,
@@ -352,7 +365,7 @@ function initializePlayer(
         message: diagnostic.message,
         severity: diagnostic.severity ?? "error",
       });
-      diagnostics.push({
+      recordDiagnostic({
         message: diagnostic.message,
         severity: diagnostic.severity ?? "error",
         code: diagnostic.code,
@@ -657,7 +670,7 @@ function initializePlayer(
       // Standalone hosts have no parent preview channel. Keep the underlying
       // exception visible as well as the structured lifecycle diagnostic.
       console.error("[player] Scene loading failed.", error);
-      diagnostics.push({
+      recordDiagnostic({
         message: `Scene loading failed: ${error instanceof Error ? error.message : String(error)}`,
         severity: "error",
         code: "scene.load.failed",
@@ -955,7 +968,7 @@ function initializePlayer(
       );
     }
     if (command.type === "diagnostic") {
-      diagnostics.push({
+      recordDiagnostic({
         message: String(command.message ?? ""),
         severity: String(command.severity ?? "error"),
         code: typeof command.code === "string" ? command.code : undefined,
@@ -979,7 +992,7 @@ function initializePlayer(
     releaseWorker = own(() => ownedWorker.terminate());
     worker.onError((error) => {
       if (halted) return;
-      diagnostics.push({ code: "player.worker.failed", severity: "error", message: error.message });
+      recordDiagnostic({ code: "player.worker.failed", severity: "error", message: error.message });
       try { options.onDiagnostic?.(diagnostics); }
       finally { haltPlayback(); }
     });
@@ -1163,7 +1176,7 @@ function initializePlayer(
     runtime = null;
     input = null;
     if (errors.length) {
-      diagnostics.push({ code: "player.cleanup.failed", severity: "error",
+      recordDiagnostic({ code: "player.cleanup.failed", severity: "error",
         message: `Player cleanup failed: ${errors.map((error) => error instanceof Error ? error.message : String(error)).join("; ")}` });
       options.onDiagnostic?.(diagnostics);
     }

@@ -100,6 +100,23 @@ describe("authored scene outline host", () => {
     expect(isOutlineOnlySceneEdit(previous, next)).toBe(false);
   });
 
+  it("compares replaced actors and scene fields when an edit keeps untouched actors by identity", () => {
+    const previous = createDefaultScene();
+    const first = createActor("a", "A", { components: [createMeshComponent("mesh-a")] });
+    const second = createActor("b", "B", { components: [createMeshComponent("mesh-b")] });
+    previous.actors = [first, second];
+    const withOutline = { ...second, components: [...second.components, { id: "ink", classId: "OutlineComponent", properties: { width: 3 } }] };
+    const outlineEdit = { ...previous, actors: [first, withOutline] };
+    expect(isOutlineOnlySceneEdit(previous, previous)).toBe(true);
+    expect(isOutlineOnlySceneEdit(previous, outlineEdit)).toBe(true);
+    expect(isOutlineOnlySceneEdit(outlineEdit, previous)).toBe(true);
+    expect(isOutlineOnlySceneEdit(previous, { ...outlineEdit, name: "Renamed" })).toBe(false);
+    expect(isOutlineOnlySceneEdit(previous, { ...previous, actors: [first, { ...second, name: "Renamed" }] })).toBe(false);
+    expect(isOutlineOnlySceneEdit(previous, { ...previous, actors: [first] })).toBe(false);
+    expect(isOutlineOnlySceneEdit(previous, { ...previous, actors: [first, second, withOutline] })).toBe(false);
+    expect(isOutlineOnlySceneEdit(previous, { ...previous, actors: [second, first] })).toBe(false);
+  });
+
   it("keeps regular instance model parts while excluding a separately authored child actor", () => {
     const { scene } = setup();
     const sync = new EditorSceneSync(scene);

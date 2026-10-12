@@ -1,4 +1,4 @@
-import { Matrix, Quaternion, Vector3, type AbstractMesh, type Bone, type Mesh, type TransformNode } from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3, type AbstractMesh, type Bone, type Mesh, type Skeleton, type TransformNode } from "@babylonjs/core";
 import type { CommandMessage } from "@babylonslate/bridge";
 import { isRigJointNode } from "./skeleton-preview";
 import type { SampledAudioPose } from "./snapshot-sync";
@@ -107,8 +107,12 @@ function updateAttachedSlot(binding: BoneAttachmentBinding, slotId: number, fram
       attachment.boneWorld.copyFrom(linked.computeWorldMatrix(true));
     } else {
       const skeleton = source.bone.getSkeleton();
-      skeleton.prepare(true);
-      for (const top of skeleton.bones) if (!top.getParent()) top.computeAbsoluteMatrices();
+      // Nothing in a pass moves bones, so attachments sharing a skeleton reuse its matrices.
+      if (!preparedSkeletons.has(skeleton)) {
+        skeleton.prepare(true);
+        for (const top of skeleton.bones) if (!top.getParent()) top.computeAbsoluteMatrices();
+        preparedSkeletons.add(skeleton);
+      }
       source.bone.getAbsoluteMatrix().multiplyToRef(source.mesh.computeWorldMatrix(true), attachment.boneWorld);
     }
   }
@@ -133,10 +137,15 @@ function updateAttachedSlot(binding: BoneAttachmentBinding, slotId: number, fram
 }
 
 let attachmentFrame = 0;
+const preparedSkeletons = new Set<Skeleton>();
 /** Run after all snapshot TRS writes, so slot ordering cannot lag moving parents. */
 export function updateBoneAttachments(binding: BoneAttachmentBinding): void {
   const frame = ++attachmentFrame;
-  for (const slotId of binding.boneAttachments.keys()) updateAttachedSlot(binding, slotId, frame);
+  try {
+    for (const slotId of binding.boneAttachments.keys()) updateAttachedSlot(binding, slotId, frame);
+  } finally {
+    preparedSkeletons.clear();
+  }
 }
 
 /** Spatial voices share the rendered actor pose, while gameplay snapshots stay unchanged. */

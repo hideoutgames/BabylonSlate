@@ -25,6 +25,7 @@ import { copyPlainData, samePlainData } from "./plain-data";
 import { navPointFromUnknown, type RuntimeNavigation } from "./runtime-navigation";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { ScriptHost } from "./script-host";
+import { walkComponentOwners } from "./world-component-index";
 
 type SpriteClip = { assetGuid: string; clipName: string; normalisedTime: number; stateId?: string };
 
@@ -571,88 +572,91 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
 
   /** One tick; `dtSeconds` is the tick's captured step, fixed for the whole tick. */
   tick(dtSeconds: number): void {
-    for (const actor of this.host.world().getActors()) {
-      if (this.host.stopped()) return;
-      if (!this.host.canTick(actor)) continue;
-      const slotId = this.host.slot(actor);
-      if (slotId === undefined) continue;
-      const component = actor.components.find(
-        (entry) =>
-          entry.classId === "BehaviourTreeComponent" && !entry.destroyed,
-      );
-      if (!component) {
-        // A removed BehaviourTreeComponent takes its tree's running work with it.
-        if (this.sourceBySlot.has(slotId)) this.resetEvaluation(actor, slotId, dtSeconds);
-        continue;
-      }
-      const guid = this.treeGuid(component);
-      if (!guid) {
-        this.emitMissing(actor.guid, "BehaviourTreeComponent has no treeGuid");
-        continue;
-      }
-      const document = this.documents.get(guid);
-      if (!document) {
-        this.emitMissing(actor.guid, `Behaviour tree not loaded: ${guid}`);
-        continue;
-      }
-      const blackboardGuid = this.stringGuid(component.getVariable("blackboardGuid")) ?? document.blackboardGuid;
-      const source = `${component.guid}\0${guid}\0${blackboardGuid ?? ""}`;
-      if (this.sourceBySlot.get(slotId)?.key !== source) {
-        if (this.sourceBySlot.has(slotId)) this.resetEvaluation(actor, slotId, dtSeconds);
-        this.sourceBySlot.set(slotId, { key: source, treeGuid: guid });
-      }
-      this.assetGuid = guid;
-      const previous = this.evalBySlot.get(slotId) ?? null;
-      const blackboard: BlackboardValues = previous
-        ? { ...previous.blackboard }
-        : this.blackboardDefaults(blackboardGuid);
-      const next = evaluateBehaviourTree(document, previous, dtSeconds, {
-        seed: this.host.seed(),
-        blackboard,
-        host: {
-          tick: (node, board, dtSeconds, memory) =>
-            this.tickTask(actor, node, board, dtSeconds, memory),
-          abort: (node, board, memory) =>
-            this.abortTask(actor, node, board, memory, dtSeconds),
-        },
-        decoratorHost: {
-          evaluate: (decorator, _node, board) =>
-            this.evaluateDecorator(actor, decorator.classId, board, dtSeconds),
-        },
-        serviceHost: {
-          tick: (service, _node, board, dtSeconds) => {
-            this.host.scripts().invokeBtEvent(
-              service.classId,
-              "onBtTick",
-              actor,
-              dtSeconds,
-              {
-                btFinish: () => undefined,
-                btEvaluate: () => undefined,
-                getBlackboard: (key) => board[key],
-                setBlackboard: (key, value) => {
-                  board[key] = value;
-                },
-              },
-            );
-          },
-        },
-      });
-      this.evalBySlot.set(slotId, next);
-      this.nodeId = null;
-      this.assetGuid = null;
-      // Evaluation copies its inputs, so the published objects stay as emitted.
-      const state: BtStatePayload = {
-        status: next.status,
-        btNodeId: next.btNodeId,
-        lastResults: next.lastResults,
-        blackboard: snapshotBlackboard(next.blackboard),
-        stack: next.stack,
-      };
-      if (samePlainData(this.lastState.get(slotId), state)) continue;
-      this.lastState.set(slotId, state);
-      this.host.emit({ type: "btState", slotId, ...state });
+    // Only an actor that owns a BehaviourTreeComponent has an evaluation to run or reset: a slot
+    // evaluation is created for, and released with, the actor that owns the component.
+    walkComponentOwners(this.host.world(), "BehaviourTreeComponent", () => this.host.stopped(),
+      (actor) => this.tickActor(actor, dtSeconds));
+  }
+
+  private tickActor(actor: Actor, dtSeconds: number): void {
+    if (!this.host.canTick(actor)) return;
+    const slotId = this.host.slot(actor);
+    if (slotId === undefined) return;
+    const component = actor.components.find(
+      (entry) =>
+        entry.classId === "BehaviourTreeComponent" && !entry.destroyed,
+    );
+    if (!component) {
+      // A removed BehaviourTreeComponent takes its tree's running work with it.
+      if (this.sourceBySlot.has(slotId)) this.resetEvaluation(actor, slotId, dtSeconds);
+      return;
     }
+    const guid = this.treeGuid(component);
+    if (!guid) {
+      this.emitMissing(actor.guid, "BehaviourTreeComponent has no treeGuid");
+      return;
+    }
+    const document = this.documents.get(guid);
+    if (!document) {
+      this.emitMissing(actor.guid, `Behaviour tree not loaded: ${guid}`);
+      return;
+    }
+    const blackboardGuid = this.stringGuid(component.getVariable("blackboardGuid")) ?? document.blackboardGuid;
+    const source = `${component.guid}\0${guid}\0${blackboardGuid ?? ""}`;
+    if (this.sourceBySlot.get(slotId)?.key !== source) {
+      if (this.sourceBySlot.has(slotId)) this.resetEvaluation(actor, slotId, dtSeconds);
+      this.sourceBySlot.set(slotId, { key: source, treeGuid: guid });
+    }
+    this.assetGuid = guid;
+    const previous = this.evalBySlot.get(slotId) ?? null;
+    // Evaluation copies its Blackboard input, so the previous state's is passed as is.
+    const blackboard: BlackboardValues = previous ? previous.blackboard : this.blackboardDefaults(blackboardGuid);
+    const next = evaluateBehaviourTree(document, previous, dtSeconds, {
+      seed: this.host.seed(),
+      blackboard,
+      host: {
+        tick: (node, board, dtSeconds, memory) =>
+          this.tickTask(actor, node, board, dtSeconds, memory),
+        abort: (node, board, memory) =>
+          this.abortTask(actor, node, board, memory, dtSeconds),
+      },
+      decoratorHost: {
+        evaluate: (decorator, _node, board) =>
+          this.evaluateDecorator(actor, decorator.classId, board, dtSeconds),
+      },
+      serviceHost: {
+        tick: (service, _node, board, dtSeconds) => {
+          this.host.scripts().invokeBtEvent(
+            service.classId,
+            "onBtTick",
+            actor,
+            dtSeconds,
+            {
+              btFinish: () => undefined,
+              btEvaluate: () => undefined,
+              getBlackboard: (key) => board[key],
+              setBlackboard: (key, value) => {
+                board[key] = value;
+              },
+            },
+          );
+        },
+      },
+    });
+    this.evalBySlot.set(slotId, next);
+    this.nodeId = null;
+    this.assetGuid = null;
+    // Evaluation copies its inputs, so the published objects stay as emitted.
+    const state: BtStatePayload = {
+      status: next.status,
+      btNodeId: next.btNodeId,
+      lastResults: next.lastResults,
+      blackboard: snapshotBlackboard(next.blackboard),
+      stack: next.stack,
+    };
+    if (samePlainData(this.lastState.get(slotId), state)) return;
+    this.lastState.set(slotId, state);
+    this.host.emit({ type: "btState", slotId, ...state });
   }
 
   /**

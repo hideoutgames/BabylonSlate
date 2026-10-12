@@ -381,15 +381,14 @@ export class ClusteredSceneLights {
           }
         }
         unbounded = this.usesUnboundedPhysicalLighting();
-        this.cameraBounds.sync(
-          container._updateBatches(this.scene.activeCamera),
-          unbounded,
-        );
+        // Read after growth, which replaces the mask texture.
+        const mask = container._updateBatches(this.scene.activeCamera);
+        this.cameraBounds.sync(mask, unbounded);
         this.lightOrder ??= new ClusteredLightOrder(
           container,
           this.compareAuthored,
         );
-        this.lightOrder.sync(container._updateBatches(this.scene.activeCamera));
+        this.lightOrder.sync(mask);
         if (this.orderDirty) this.restoreAuthoredOrder(container);
       }
       const clustered = this.container?.lights.length ?? 0;

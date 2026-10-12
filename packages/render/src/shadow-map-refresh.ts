@@ -68,7 +68,12 @@ export class ShadowMapRefresh {
     this.casterChanged = casterChanged;
   }
 
-  syncCasters(scene: Scene, meshes: ReadonlySet<AbstractMesh>): void {
+  /**
+   * The part of a walk that cannot wait for a map: it releases removed casters
+   * so they are not retained. Snapshots of the others stay, so a later walk
+   * reports only what changed in between.
+   */
+  dropRemovedCasters(meshes: ReadonlySet<AbstractMesh>): void {
     this.lodLevels.clear();
     // Removed casters leave each map's in-range list, which refreshes that map.
     for (const [mesh, record] of this.casters) {
@@ -76,6 +81,10 @@ export class ShadowMapRefresh {
       if (record.geometry) unwatchGeometry(record.geometry);
       this.casters.delete(mesh);
     }
+  }
+
+  syncCasters(scene: Scene, meshes: ReadonlySet<AbstractMesh>): void {
+    this.dropRemovedCasters(meshes);
     for (const mesh of meshes) {
       let record = this.casters.get(mesh);
       if (!record) {

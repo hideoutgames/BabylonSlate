@@ -80,6 +80,26 @@ describe("SimulationInspectionStore", () => {
     expect(store.getSnapshot().selection?.properties[0]?.value).toBe("After");
   });
 
+  it("clears an identity error on recovery and then stays quiet while nothing changes", async () => {
+    vi.useFakeTimers();
+    let polls = 0;
+    const transport = vi.fn((action: RuntimeInspectionAction) => {
+      if (action.kind !== "identities") return Promise.reject(new Error("unexpected"));
+      return ++polls === 1 ? Promise.reject(new Error("offline"))
+        : Promise.resolve(result({ kind: "identities", rows: [], unchanged: true }));
+    });
+    const store = new SimulationInspectionStore(); store.attach(transport); store.consume("identities");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.getSnapshot().identityError).toContain("offline");
+    await vi.advanceTimersByTimeAsync(200);
+    expect(store.getSnapshot().identityError).toBeNull();
+    const settled = store.getSnapshot(); const listener = vi.fn(); store.subscribe(listener);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(polls).toBeGreaterThan(2);
+    expect(listener).not.toHaveBeenCalled();
+    expect(store.getSnapshot()).toBe(settled);
+  });
+
   it("detaches session data and ignores stopped-session replies", async () => {
     vi.useFakeTimers(); const pending = deferred<RuntimeInspectorResult>();
     const store = new SimulationInspectionStore(); const detach = store.attach(() => pending.promise);

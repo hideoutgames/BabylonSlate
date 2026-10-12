@@ -201,6 +201,18 @@ describe("diffGraphCommands", () => {
     expect((addFunction[0] as SetGraphFunctionGraphsCommand).mergeKey).toBeUndefined();
   });
 
+  it("compares function graphs by content and key order, not identity", () => {
+    const fn = () => ({ nodes: [], edges: [] });
+    const base = { ...oneNodeGraph(), functionGraphs: { jump: fn(), land: fn() } };
+    const diff = (functionGraphs: SerializedGraph["functionGraphs"]) =>
+      diffGraphCommands(base, { ...base, functionGraphs });
+
+    expect(diff({ jump: fn(), land: fn() })).toHaveLength(0);
+    expect(diff({ land: fn(), jump: fn() })).toHaveLength(1);
+    expect(diff({ jump: fn(), land: fn(), skipped: undefined as never })).toHaveLength(0);
+    expect(diff({ jump: fn(), land: undefined as never })).toHaveLength(1);
+  });
+
   it("keeps a seeded function graph after applying the add-function diff", () => {
     const before = oneNodeGraph();
     const after: typeof before = {

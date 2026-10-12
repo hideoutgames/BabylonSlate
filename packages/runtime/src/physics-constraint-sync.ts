@@ -1,4 +1,4 @@
-import type { Actor, ActorComponent } from "@babylonslate/object-model";
+import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import {
   multiplyQuat,
   parseConstraintProperties,
@@ -9,6 +9,7 @@ import {
   type Vec3,
 } from "@babylonslate/physics";
 import { sameDescriptor } from "./physics-preparation";
+import { componentOwners } from "./world-component-index";
 
 type ConstraintProperties = ReturnType<typeof parseConstraintProperties>;
 
@@ -77,7 +78,8 @@ export class PhysicsConstraintSync {
   }
 
   sync(options: {
-    actors: readonly Actor[];
+    /** Whose constraint owners reconcile; none while no world is bound. */
+    world: World | null;
     actorById: ReadonlyMap<string, Actor>;
     /** World scale of a connected actor; resolved only for constraint endpoints. */
     worldScale: (actor: Actor) => Vec3;
@@ -90,7 +92,7 @@ export class PhysicsConstraintSync {
     // A failing constraint keeps its last usable joint; the others still
     // reconcile and absent joints are released before the failure is reported.
     let failure: Error | undefined;
-    for (const owner of options.actors) {
+    for (const owner of options.world ? componentOwners(options.world, "PhysicsConstraintComponent") : []) {
       if (owner.destroyed || options.actorById.get(owner.guid) !== owner || !options.eligible(owner)) continue;
       for (const component of owner.components) {
         if (component.destroyed || component.owner !== owner || component.classId !== "PhysicsConstraintComponent") continue;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { Actor, ActorComponent } from "@babylonslate/object-model";
+import { Actor, ActorComponent, ClassRegistry, World } from "@babylonslate/object-model";
 import { createDefaultWaterDefinition, normalizeWaterBody } from "@babylonslate/core";
 import { composeActorWorldTransformsInto } from "./actor-world-transform";
 import { WaterWorld } from "./water-world";
@@ -44,5 +44,20 @@ describe("Water world caching", () => {
     expect(water.sample({ x: 4, y: -1, z: 0 }).found).toBe(true);
     expect(normalize).toHaveBeenCalledTimes(2);
     expect(compose.mock.calls.length).toBeGreaterThan(6);
+  });
+
+  it("follows water attached to and destroyed in the world it is bound to", () => {
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    const water = new WaterWorld((actors) => actors === world.getActors() ? world : null);
+    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    const point = { x: 4, y: -1, z: 0 };
+    const lake = world.spawnActorNow(new Actor({ guid: "lake", classId: "Actor" }));
+    const evaluate = (time: number) => { water.update(world.getActors(), time); return water.sample(point).found; };
+    expect(evaluate(0)).toBe(false);
+    lake.attachComponent(new ActorComponent({ classId: "WaterLakeComponent", variables: { assetGuid: "water", width: 10, length: 10 } }));
+    expect(evaluate(1 / 60)).toBe(true);
+    world.destroyActor("lake");
+    world.flushPending();
+    expect(evaluate(2 / 60)).toBe(false);
   });
 });

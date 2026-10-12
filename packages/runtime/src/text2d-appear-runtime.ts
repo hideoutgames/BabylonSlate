@@ -1,6 +1,7 @@
 import { countText2DRevealCharacters, parseText2DProperties, text2DAppearDuration } from "@babylonslate/core";
-import type { Actor, ActorComponent } from "@babylonslate/object-model";
+import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
+import { componentOwners } from "./world-component-index";
 
 type AppearState = { progress: number; direction: -1 | 0 | 1; duration: number };
 export type Text2DAppearOperation = "triggerAppear" | "play" | "playReverse";
@@ -30,9 +31,9 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
     this.dirty.add(component);
   }
 
-  advance(actors: readonly Actor[], deltaSeconds: number, canTick: (actor: Actor) => boolean): void {
+  advance(world: World, deltaSeconds: number, canTick: (actor: Actor) => boolean): void {
     if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) return;
-    for (const actor of actors) {
+    for (const actor of componentOwners(world, "2DRichTextComponent")) {
       if (actor.destroyed || !canTick(actor)) continue;
       for (const component of actor.components) {
         if (component.classId !== "2DRichTextComponent" || component.destroyed) continue;

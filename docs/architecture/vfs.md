@@ -56,7 +56,7 @@ Bundled Engine Plugins use an HTTP file catalog. The build emits each `.babasset
 
 `openKnownFolder(handle)` rebinds a previously known project (Documents / OPFS / external bookmark) without showing a picker. The picker is only for first bind and Reconnect.
 
-Browser project writes require OPFS; an unavailable or denied filesystem reports an error instead of accepting temporary in-memory saves. Each project id maps to its own hashed directory (`project-v2-<SHA-256 hex of the JSON-encoded id>`); the project list records only ids and names, and the folder is always derived from the id. App-owned libraries and derived data bind with `new OpfsStorageAdapter({ library: true })`: they are not in the project list and never become the project a new adapter restores. Tests inject an explicit OPFS filesystem boundary.
+Browser project writes require OPFS; an unavailable or denied filesystem reports an error instead of accepting temporary in-memory saves. Each project id maps to its own hashed directory (`project-v2-<SHA-256 hex of the JSON-encoded id>`, computed once per id; a failed digest is not remembered); the project list records only ids and names, and the folder is always derived from the id. App-owned libraries and derived data bind with `new OpfsStorageAdapter({ library: true })`: they are not in the project list and never become the project a new adapter restores. Tests inject an explicit OPFS filesystem boundary.
 
 OPFS directory creation is recursive by default; `mkdir(path, false)` requires existing parent directories.
 

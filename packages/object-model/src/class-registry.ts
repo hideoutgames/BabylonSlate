@@ -281,8 +281,18 @@ export class ClassRegistry {
     return chain;
   }
 
+  /**
+   * `ancestry(classId).includes(ancestorId)` without the chain: called per
+   * tick by scripts, so it allocates nothing. The step bound ends a parent
+   * cycle the way `ancestry`'s visited set does.
+   */
   isA(classId: string, ancestorId: string): boolean {
-    return this.ancestry(classId).includes(ancestorId);
+    let current: string | null | undefined = classId;
+    for (let steps = 0; current && steps <= this.classes.size; steps++) {
+      if (current === ancestorId) return true;
+      current = this.classes.get(current)?.parentClassId;
+    }
+    return false;
   }
 
   /** All variable defs from ancestors then self (self overrides by name). */

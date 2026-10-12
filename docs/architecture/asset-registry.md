@@ -74,6 +74,7 @@ interface ContentRoot {
 
 - `AssetRegistry.generation` advances on every change to what the index reports: a header indexed or removed (scan, create, import, `reindexPath` after a save or chunk write, delete, placeholders), a move or rename, a folder added, moved or removed, a root mounted or unmounted, a Texture's compression state or committed encode (the registry's own rewrites), and an atlas status change. Reads never advance it.
 - `IndexedAsset` entries are replaced, never mutated, so a memo keyed on the generation sees every change.
+- `dependenciesFor`, `requiredDependenciesFor` and `showReferences` share one Class alias index (guid, path-derived id and authored `classId` to Class guids), built from the index on first use and rebuilt after the generation advances. It never holds a result, so a missing or ambiguous required Class still throws on every call.
 - `RegistryGenerationClock` holds the counter. `ProjectService` passes one clock to every project registry and advances it when a project closes, so a remount or project switch never reports a lower or repeated generation. Its `registryGeneration` getter reads it. Export scans use their own registry and clock.
 - The editor combines it with plugin, search-index and Show Plugin Content changes into `registryEpoch` (see Content Browser below).
 

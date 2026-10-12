@@ -86,7 +86,7 @@ interface ResolvedInputTick {
 }
 ```
 
-- **`resolve(events)`** — apply one tick's events and retain action transitions along the event sequence. A complete tap between ticks reports both `pressed` and `released` while final `held` is false; the next empty tick reports neither edge. Multiple bindings still combine into one action, so releasing one binding while another remains held does not release the action.
+- **`resolve(events)`** — apply one tick's events and retain action transitions along the event sequence. A complete tap between ticks reports both `pressed` and `released` while final `held` is false; the next empty tick reports neither edge. Multiple bindings still combine into one action, so releasing one binding while another remains held does not release the action. Bindings are re-read after each event that changed a held key, pointer button, pad button or axis value, or touch axis; an event that left them as they were (pointer move, key repeat, unchanged stick) adds no edge.
 - **Names.** `inputs` is keyed by asset GUID. The name-keyed `actions` / `axes` / `axes2D` combine every asset with that display name the same way: an action is held while any of them is held, and axis values add up and clamp to ±1.
 - **`kind: "2d"`** axes fold x/y bindings into `axes2D[name]`; magnitude also exposed on `axes[name]` for 1D callers.
 - **Gamepad samples** carry the pad's whole state; buttons and axes a sample omits count as released.

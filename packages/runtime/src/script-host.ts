@@ -769,6 +769,15 @@ export class ScriptHost {
    * runtime only changes the ClassRegistry immediately before a `load`.
    */
   private readonly lineageByClassId = new Map<string, readonly LoadedScript[][]>();
+  /** `hooksFor` results per class id; cleared with the lineage they derive from. */
+  private readonly hooksByClassId = new Map<string, LifecycleHooks<BObject>>();
+  /**
+   * `eventScriptsFor` results of the lifecycle events a hook dispatches each
+   * tick, per class id and event. They depend only on the lineage, so they are
+   * cleared with it. Held hooks look them up here, never in their closures, so
+   * a reload reaches actors that captured their hooks at creation.
+   */
+  private readonly lifecycleScriptsByClassId = new Map<string, Map<string, LoadedScript[] | null>>();
   private readonly pending = new WeakMap<BObject, Set<string>>();
   private readonly flowStates = new WeakMap<
     BObject,
@@ -838,7 +847,7 @@ export class ScriptHost {
     if (generation !== this.sourceGeneration) throw new Error("Script preparation was superseded or disposed.");
     this.byClassId.clear();
     for (const [classId, entries] of prepared) this.byClassId.set(classId, entries);
-    this.lineageByClassId.clear();
+    this.clearLineageCaches();
     const retained = new Set(scripts.map((script) => script.assetGuid));
     for (const key of this.orphanFlowStates.keys()) if (!retained.has(key.split("\0", 1)[0]!)) this.orphanFlowStates.delete(key);
   }
@@ -846,8 +855,14 @@ export class ScriptHost {
   dispose(): void {
     ++this.sourceGeneration;
     this.byClassId.clear();
-    this.lineageByClassId.clear();
+    this.clearLineageCaches();
     this.orphanFlowStates.clear();
+  }
+
+  private clearLineageCaches(): void {
+    this.lineageByClassId.clear();
+    this.hooksByClassId.clear();
+    this.lifecycleScriptsByClassId.clear();
   }
 
   classIds(): string[] {
@@ -915,24 +930,41 @@ export class ScriptHost {
   }
 
   /**
+   * `eventScriptsFor` for a lifecycle event the host invokes without a
+   * component id. That result ignores `self`, so it is cached per class.
+   */
+  private lifecycleScriptsFor(classId: string, event: string): LoadedScript[] | undefined {
+    let byEvent = this.lifecycleScriptsByClassId.get(classId);
+    if (!byEvent) this.lifecycleScriptsByClassId.set(classId, byEvent = new Map());
+    const cached = byEvent.get(event);
+    if (cached !== undefined) return cached ?? undefined;
+    const loaded = this.eventScriptsFor(classId, event, null);
+    byEvent.set(event, loaded ?? null);
+    return loaded;
+  }
+
+  /**
    * Lifecycle hooks for `classId`. Each event runs the nearest implementation
    * in the class lineage, so a child inherits its parent's events. Creation is
    * On Init for the Game Instance and subsystems, Begin Play for the rest.
+   * The hooks carry no per-object state, so one object serves every instance.
    */
   hooksFor(classId: string): LifecycleHooks<BObject> | undefined {
+    const cached = this.hooksByClassId.get(classId);
+    if (cached) return cached;
     if (this.scriptLineage(classId).length === 0) return undefined;
     const ancestry = this.services.classRegistry?.ancestry(classId) ?? [classId];
     const creationEvent =
       ancestry.includes("GameInstance") || ancestry.includes(SUBSYSTEM_CLASS_ID)
         ? "onInit"
         : "onBeginPlay";
-    return {
+    const hooks: LifecycleHooks<BObject> = {
       onCreation: (self) => {
-        const loaded = this.eventScriptsFor(classId, creationEvent, self);
+        const loaded = this.lifecycleScriptsFor(classId, creationEvent);
         if (loaded) this.dispatchEvent(loaded, creationEvent, self, 0, 0);
       },
       onTick: (self, ctx: TickContext) => {
-        const loaded = this.eventScriptsFor(classId, "onTick", self);
+        const loaded = this.lifecycleScriptsFor(classId, "onTick");
         if (!loaded) return;
         this.dispatchEvent(
           loaded,
@@ -946,10 +978,12 @@ export class ScriptHost {
       },
       onDestroyed: (self) => {
         this.clearFlowState(self);
-        const loaded = this.eventScriptsFor(classId, "onDestroyed", self);
+        const loaded = this.lifecycleScriptsFor(classId, "onDestroyed");
         if (loaded) this.dispatchFinalEvent(loaded, "onDestroyed", self);
       },
     };
+    this.hooksByClassId.set(classId, hooks);
+    return hooks;
   }
 
   invokeCommand(
@@ -1692,7 +1726,7 @@ export class ScriptHost {
         return actors.filter((actor) => {
           const id = actor.classId;
           if (!id) return false;
-          return services.classRegistry?.isA(id, target) ?? id === target;
+          return id === target || (services.classRegistry?.isA(id, target) ?? false);
         });
       },
       getActorOfClass: (classId) => {
@@ -1703,7 +1737,7 @@ export class ScriptHost {
           actors.find((actor) => {
             const id = actor.classId;
             if (!id) return false;
-            return services.classRegistry?.isA(id, target) ?? id === target;
+            return id === target || (services.classRegistry?.isA(id, target) ?? false);
           }) ?? null
         );
       },
@@ -2488,8 +2522,8 @@ function* componentsOfType(
     if (actor.destroyed) continue;
     for (const component of actor.components) {
       if (component.destroyed) continue;
-      if (services.classRegistry?.isA(component.classId, target) ??
-        component.classId === target) {
+      if (component.classId === target ||
+        (services.classRegistry?.isA(component.classId, target) ?? false)) {
         yield component;
       }
     }

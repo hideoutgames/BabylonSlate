@@ -1,18 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultAnimGraph, type AnimGraphDocument } from "@babylonslate/anim-graph";
-import { Actor, ActorComponent } from "@babylonslate/object-model";
+import { Actor, ActorComponent, ClassRegistry, World } from "@babylonslate/object-model";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
 
 function setup(document: AnimGraphDocument, count = 1) {
+  const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
   const actors = Array.from({ length: count }, () => {
     const actor = new Actor({ classId: "Hero" });
     actor.attachComponent(new ActorComponent({ classId: "AnimationGraphComponent", variables: { graphGuid: "graph" } }));
-    return actor;
+    return world.spawnActorNow(actor);
   });
   const gate = { canTick: true, playAnimationOwns: false };
   const invokeAnimEvent = vi.fn();
   const runtime = new AnimGraphRuntime({
-    actors: () => actors,
+    world: () => world,
     stopped: () => false,
     canTick: () => gate.canTick,
     slot: (actor) => actors.indexOf(actor),

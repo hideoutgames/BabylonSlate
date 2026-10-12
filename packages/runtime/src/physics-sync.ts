@@ -63,7 +63,7 @@ import {
  */
 export class PhysicsWorldSync {
   private readonly dynamicMeshCollisions = new DynamicMeshCollisionCache();
-  readonly water = new WaterWorld();
+  readonly water = new WaterWorld((actors) => actors === this.actors ? this.world : null);
   private readonly backend: PhysicsBackend;
   private readonly actorFilter: (actor: Actor) => boolean;
   private readonly skipEmptySteps: boolean;
@@ -818,7 +818,7 @@ export class PhysicsWorldSync {
 
   private syncConstraints(worldScale: (actor: Actor) => Vec3): void {
     this.constraints.sync({
-      actors: this.actors,
+      world: this.world,
       actorById: this.actorById,
       worldScale,
       bodies: this.bodyByActor,
@@ -836,9 +836,10 @@ export class PhysicsWorldSync {
   }
 
   /**
-   * Call-time joint reconciliation. Finding constraint owners and targets still
-   * scans and indexes the world, but only connected endpoints compose their
-   * own ancestor chains for anchor scale, instead of every physics participant.
+   * Call-time joint reconciliation. Targets are found through a guid index of
+   * the world and owners through the component owner index, and only connected
+   * endpoints compose their own ancestor chains for anchor scale, instead of
+   * every physics participant.
    */
   private syncLiveConstraints(): void {
     this.indexActors();

@@ -191,6 +191,31 @@ describe("runtime behaviour tree evaluation", () => {
     runtime.stop();
   });
 
+  it("ticks a tree attached to a running actor after earlier ticks", () => {
+    const commands: CommandMessage[] = [];
+    const playScene = aiScene({ treeGuid: "tree-1" });
+    playScene.actors.push(createActor("late", "Late"));
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false, playScene,
+      behaviourTrees: { "tree-1": createDefaultBehaviourTree("Guard") },
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    runtime.tick();
+    expect(commands.filter((command) => command.type === "btState")).toHaveLength(1);
+    const world = runtime.getWorld();
+    world.findActor("late")!.attachComponent(world.createComponent({
+      classId: "BehaviourTreeComponent", variables: { treeGuid: "tree-1" },
+    }));
+    runtime.tick();
+    const states = commands.filter((command) => command.type === "btState");
+    expect(states).toHaveLength(2);
+    expect(states[1]!.slotId).not.toBe(states[0]!.slotId);
+    runtime.stop();
+  });
+
   it("emits a diagnostic when the tree guid is missing", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({

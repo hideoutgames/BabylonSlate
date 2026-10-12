@@ -1406,11 +1406,14 @@ export function applyPossessCamera(
 }
 
 /** `actor-N`, `actor-N-…` or `actor-N|…`, but never `actor-NM…`. */
-function isWorldOverlayLeftoverName(name: string, prefix: string): boolean {
-  if (!name.startsWith(prefix)) return false;
-  if (name.length === prefix.length) return true;
-  const next = name.charCodeAt(prefix.length);
+function endsAtOverlayNameBoundary(name: string, end: number): boolean {
+  if (name.length === end) return true;
+  const next = name.charCodeAt(end);
   return next === 45 || next === 124;
+}
+
+function isWorldOverlayLeftoverName(name: string, prefix: string): boolean {
+  return name.startsWith(prefix) && endsAtOverlayNameBoundary(name, prefix.length);
 }
 
 /** Drop world-Scene copies of an overlay slot so the perspective camera cannot draw them. */
@@ -1428,6 +1431,46 @@ export function disposeWorldOverlayLeftovers(
   if (!leftovers) return;
   for (const mesh of leftovers) {
     if (!mesh.isDisposed()) mesh.dispose();
+  }
+}
+
+/**
+ * {@link disposeWorldOverlayLeftovers} for every overlay slot of one snapshot,
+ * with a single pass over the world Scene's meshes instead of one per slot.
+ */
+function disposeWorldOverlayLeftoverSlots(
+  worldScene: Scene,
+  slotIds: ReadonlySet<number>,
+): void {
+  // Map order is slot order, so disposal order matches one call per slot.
+  const leftovers = new Map<string, AbstractMesh[] | null>();
+  let shortest = Infinity;
+  let longest = 0;
+  for (const slotId of slotIds) {
+    const prefix = `actor-${slotId}`;
+    leftovers.set(prefix, null);
+    shortest = Math.min(shortest, prefix.length);
+    longest = Math.max(longest, prefix.length);
+  }
+  for (const mesh of worldScene.meshes) {
+    const name = mesh.name;
+    if (name.length < shortest || !name.startsWith("actor-")) continue;
+    // Only a prefix that ends at a name boundary can match, so look up those.
+    for (let end = shortest, limit = Math.min(name.length, longest); end <= limit; end++) {
+      if (!endsAtOverlayNameBoundary(name, end)) continue;
+      const prefix = name.slice(0, end);
+      const matched = leftovers.get(prefix);
+      if (matched === undefined) continue;
+      if (matched) matched.push(mesh);
+      else leftovers.set(prefix, [mesh]);
+      break;
+    }
+  }
+  for (const matched of leftovers.values()) {
+    if (!matched) continue;
+    for (const mesh of matched) {
+      if (!mesh.isDisposed()) mesh.dispose();
+    }
   }
 }
 
@@ -2055,40 +2098,45 @@ function reconcileSnapshotVisuals(
   animationScenes.add(scene);
   const count = snapshot.actorCount ?? snapshot.actors.length;
   binding.snapshotMeshes.length = count;
-  for (let i = 0; i < count; i++) {
-    const actor = snapshot.actors[i]!;
-    binding.snapshotMeshes[i] = null;
-    live.add(actor.slotId);
-    const wantsOverlay = snapshotSlotWantsOverlay(actor, binding);
-    const overlayScene = binding.sceneForSlot?.(actor.slotId) ?? null;
-    if (wantsOverlay && !overlayScene) {
+  // World copies of all overlay slots are dropped in one pass. It also runs
+  // when a later slot throws, so earlier slots keep their per-slot cleanup.
+  let overlaySlots: Set<number> | undefined;
+  try {
+    for (let i = 0; i < count; i++) {
+      const actor = snapshot.actors[i]!;
+      binding.snapshotMeshes[i] = null;
+      live.add(actor.slotId);
+      const wantsOverlay = snapshotSlotWantsOverlay(actor, binding);
+      const overlayScene = binding.sceneForSlot?.(actor.slotId) ?? null;
+      if (wantsOverlay && !overlayScene) {
+        seen.add(actor.slotId);
+        // Until its layer is live, a world copy must not keep drawing at its
+        // last pose; migration restores it once the layer Scene exists.
+        const waiting = binding.meshes.get(actor.slotId);
+        if (waiting?.getScene() === scene) setPlayVisualVisibility(binding, waiting, false);
+        continue;
+      }
+      const hostScene = wantsOverlay ? overlayScene : scene;
+      if (!hostScene) continue;
+      animationScenes.add(hostScene);
+      let mesh = binding.meshes.get(actor.slotId) ?? null;
+      if (mesh && mesh.getScene() !== hostScene) {
+        mesh = migratePlaySlotVisual(hostScene, binding, actor.slotId);
+      }
+      if (!mesh) {
+        mesh = createPlayVisual(hostScene, actor.slotId, binding);
+        binding.meshes.set(actor.slotId, mesh);
+        applyMaterialToActorMeshes(binding, actor.slotId, mesh);
+        binding.onVisualChanged?.(actor.slotId);
+      }
+      if (wantsOverlay) (overlaySlots ??= new Set()).add(actor.slotId);
+      binding.snapshotMeshes[i] = mesh;
+      // Seen only once applied: a scene lookup or visual build that throws
+      // leaves a command-built visual protected from a stale buffer.
       seen.add(actor.slotId);
-      // Until its layer is live, a world copy must not keep drawing at its
-      // last pose; migration restores it once the layer Scene exists.
-      const waiting = binding.meshes.get(actor.slotId);
-      if (waiting?.getScene() === scene) setPlayVisualVisibility(binding, waiting, false);
-      continue;
     }
-    const hostScene = wantsOverlay ? overlayScene : scene;
-    if (!hostScene) continue;
-    animationScenes.add(hostScene);
-    let mesh = binding.meshes.get(actor.slotId) ?? null;
-    if (mesh && mesh.getScene() !== hostScene) {
-      mesh = migratePlaySlotVisual(hostScene, binding, actor.slotId);
-    }
-    if (!mesh) {
-      mesh = createPlayVisual(hostScene, actor.slotId, binding);
-      binding.meshes.set(actor.slotId, mesh);
-      applyMaterialToActorMeshes(binding, actor.slotId, mesh);
-      binding.onVisualChanged?.(actor.slotId);
-    }
-    if (wantsOverlay) {
-      disposeWorldOverlayLeftovers(scene, actor.slotId);
-    }
-    binding.snapshotMeshes[i] = mesh;
-    // Seen only once applied: a scene lookup or visual build that throws
-    // leaves a command-built visual protected from a stale buffer.
-    seen.add(actor.slotId);
+  } finally {
+    if (overlaySlots) disposeWorldOverlayLeftoverSlots(scene, overlaySlots);
   }
   for (const slotId of binding.meshes.keys()) {
     // A command-built visual not yet seen must survive a stale buffer.

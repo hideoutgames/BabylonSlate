@@ -69,6 +69,32 @@ describe("SceneLayer layout runtime", () => {
     } finally { runtime.stop(); }
   });
 
+  it("arranges an actor spawned into the layer after earlier layouts", () => {
+    const layer = createDefaultSceneLayer();
+    layer.actors = [createActor("menu", "Menu", { classId: "SceneLayerActor", components: [
+      { id: "column", classId: "2DVerticalBoxComponent", properties: { width: 4, heightMode: "content", gap: 1 } },
+    ] })];
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: () => {} });
+    try {
+      runtime.realizePlayWorld();
+      const liveLayer = runtime.createSceneLayer("menu")!;
+      runtime.start(); runtime.tick();
+      const world = runtime.getWorld();
+      const menu = world.findActor(liveLayer.guid + ":menu")!;
+      const addLabel = (guid: string) => {
+        const label = world.createActor({ guid, classId: "SceneLayerActor", sceneLayerId: liveLayer.guid, variables: { parentId: menu.guid } });
+        label.attachComponent(world.createComponent({ guid: `${guid}-text`, classId: "2DTextComponent", variables: { text: guid, wrapWidth: 200, wrapHeight: 100 } }));
+        world.spawnActorNow(label);
+        return label;
+      };
+      const first = addLabel("first");
+      runtime.tick();
+      const second = addLabel("second");
+      runtime.tick();
+      expect(second.transform.position.y).toBeLessThan(first.transform.position.y);
+    } finally { runtime.stop(); }
+  });
+
   it("converts browser safe insets using each layer's bounds and reapplies them after resize", () => {
     const layer = (id: string, extent: number) => {
       const document = createDefaultSceneLayer();

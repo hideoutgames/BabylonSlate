@@ -1006,7 +1006,10 @@ cutoff, so a light still reaches slightly past its range; there, objects beyond 
 cast no shadow from it. On the FeatureTest main scene (10 m shadowed point light, camera
 far plane 1000 m) the point cube fell from 302 to 16 draws per frame.
 The policy scans before allocation/projection and again before per-camera targets,
-after active-mesh evaluation. It uses Babylon render-once counters and explicit resets;
+after active-mesh evaluation. While no light holds a map (shadows disabled, nothing
+requested or admitted) the scan, spatial refit and caster bounds are skipped; only removed
+casters are released. Snapshots are kept, so the scan that runs before the first map is
+allocated reports real changes only. It uses Babylon render-once counters and explicit resets;
 readiness probes do not count as a completed render. Unready caster shaders retain
 Babylon's automatic retry. Geometry observers preserve and restore existing callbacks.
 Empty model and tilemap roots may have no submesh list yet; they remain valid during
@@ -1080,7 +1083,9 @@ boundary. Animated/deformed shadow maps continue refreshing; the controller does
 not assume that a frozen world matrix makes a material or skeleton immutable.
 Bone attachment detach/retirement restores the snapshot pose even if the next
 snapshot contains unchanged TRS; an attachment's frozen world matrix is not a
-valid cache of that snapshot pose.
+valid cache of that snapshot pose. Within one attachment pass, attachments on
+the same unlinked skeleton prepare it and recompute its absolute matrices once,
+since nothing in the pass moves bones.
 
 ### Shared texture representations
 

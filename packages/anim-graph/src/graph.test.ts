@@ -69,6 +69,28 @@ describe("anim graph evaluator", () => {
     expect(next.normalisedTime).toBe(0);
   });
 
+  it("evaluates a replaced document from its own transitions", () => {
+    const doc = createDefaultAnimGraph();
+    doc.states.push({
+      id: "run",
+      name: "Run",
+      clipId: null,
+      speed: 1,
+      loop: true,
+      position: { x: 300, y: 80 },
+    });
+    doc.transitions.push({
+      id: "idle-to-run",
+      fromStateId: "idle",
+      toStateId: "run",
+      blendSeconds: 0,
+      priority: 0,
+      ruleGraph: createDefaultTransitionRuleGraph(),
+    });
+    expect(evaluateAnimGraph(doc, null, 0.016, {}).stateId).toBe("run");
+    expect(evaluateAnimGraph({ ...doc, transitions: [] }, null, 0.016, {}).stateId).toBe("idle");
+  });
+
   it("rejects a missing entry state", () => {
     const doc = createDefaultAnimGraph();
     doc.entryStateId = "missing";

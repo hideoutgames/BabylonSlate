@@ -1972,6 +1972,33 @@ describe("createPlayMesh", () => {
     overlay.dispose();
   });
 
+  it("disposes world leftovers of every overlay slot in a snapshot but not names that merely share a prefix", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene, engine } = handle;
+    const overlay = new Scene(engine);
+    const plane = (name: string) => MeshBuilder.CreatePlane(name, { size: 1 }, scene);
+    const leftovers = ["actor-1", "actor-1|part", "actor-3-blend"].map(plane);
+    const bystanders = ["actor-13", "actor-30", "actor-1x"].map(plane);
+    const binding = createSnapshotSceneBinding();
+    for (const slotId of [1, 3, 12]) binding.meshKinds.set(slotId, "box");
+    binding.sceneForSlot = () => overlay;
+    const actor = (slotId: number, flags: number) => ({ slotId, flags, position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } });
+    applySnapshotToScene(scene, binding, { frameId: 1, tickIndex: 1, actorCount: 3, actors: [
+      actor(1, SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY),
+      actor(3, SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY),
+      actor(12, SNAPSHOT_FLAG_VISIBLE),
+    ] });
+    expect(leftovers.every((mesh) => mesh.isDisposed())).toBe(true);
+    expect(bystanders.every((mesh) => !mesh.isDisposed())).toBe(true);
+    expect(binding.meshes.get(1)?.getScene()).toBe(overlay);
+    expect(binding.meshes.get(3)?.getScene()).toBe(overlay);
+    expect(binding.meshes.get(12)?.getScene()).toBe(scene);
+    expect(binding.meshes.get(12)?.isDisposed()).toBe(false);
+    overlay.dispose();
+  });
+
   it("keeps a command-built visual alive when a stale snapshot omits its slot", () => {
     const handle = createTestEngine();
     handles.push(handle);

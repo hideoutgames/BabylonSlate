@@ -304,6 +304,7 @@ export function syncActorComponentsFromPrefab(
   ];
 }
 
+/** Returns `scene` itself when no instance changed. */
 export function syncSceneActorsFromPrefabs(
   scene: SerializedScene,
   prefabsByClassId: Readonly<Record<string, readonly SerializedComponent[]>>,
@@ -505,11 +506,4 @@ export function stampUserComponentOverrides(
         : { ...actor, components: nextComponents, ...(suppressed.length ? { suppressedComponentSourceIds: suppressed } : {}) };
     }),
   };
-}
-
-export function scenesEqualForPrefabSync(
-  left: SerializedScene,
-  right: SerializedScene,
-): boolean {
-  return jsonEqual(left.actors, right.actors);
 }

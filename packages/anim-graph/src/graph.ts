@@ -426,6 +426,61 @@ export function validateAnimGraph(
   return diagnostics;
 }
 
+const NO_TRANSITIONS: readonly AnimTransition[] = [];
+
+interface AnimGraphIndex {
+  /** Later duplicate ids win, as with any `new Map(entries)`. */
+  states: Map<string, AnimState>;
+  clips: Map<string, AnimClipRef>;
+  /** Outgoing transitions per source state in priority order, then document order. */
+  outgoing: Map<string, readonly AnimTransition[]>;
+  /** Clip of the first state with each id, which is what `clipForState` returns. */
+  clipByStateId: Map<string, AnimClipRef | undefined>;
+}
+
+/**
+ * Derived once per document object. Loaded documents are replaced rather than
+ * mutated, so the result stays valid for the document's lifetime. Callers
+ * treat the maps as read-only.
+ */
+const animGraphIndexes = new WeakMap<AnimGraphDocument, AnimGraphIndex>();
+
+function animGraphIndex(doc: AnimGraphDocument): AnimGraphIndex {
+  let index = animGraphIndexes.get(doc);
+  if (!index) {
+    index = buildAnimGraphIndex(doc);
+    animGraphIndexes.set(doc, index);
+  }
+  return index;
+}
+
+function buildAnimGraphIndex(doc: AnimGraphDocument): AnimGraphIndex {
+  const states = new Map(doc.states.map((state) => [state.id, state]));
+  const clips = new Map(doc.clips.map((clip) => [clip.id, clip]));
+  const firstClips = new Map<string, AnimClipRef>();
+  for (const clip of doc.clips) if (!firstClips.has(clip.id)) firstClips.set(clip.id, clip);
+  const clipByStateId = new Map<string, AnimClipRef | undefined>();
+  for (const state of doc.states) {
+    if (clipByStateId.has(state.id)) continue;
+    clipByStateId.set(state.id, state.clipId ? firstClips.get(state.clipId) : undefined);
+  }
+  const grouped = new Map<string, Array<{ row: AnimTransition; index: number }>>();
+  doc.transitions.forEach((row, index) => {
+    const group = grouped.get(row.fromStateId);
+    if (group) group.push({ row, index });
+    else grouped.set(row.fromStateId, [{ row, index }]);
+  });
+  const outgoing = new Map<string, readonly AnimTransition[]>();
+  for (const [stateId, entries] of grouped) {
+    entries.sort((a, b) => {
+      const priority = a.row.priority - b.row.priority;
+      return priority !== 0 ? priority : a.index - b.index;
+    });
+    outgoing.set(stateId, entries.map((entry) => entry.row));
+  }
+  return { states, clips, outgoing, clipByStateId };
+}
+
 function clipDurationMs(
   state: AnimState,
   clips: Map<string, AnimClipRef>,
@@ -577,8 +632,7 @@ export function evaluateAnimGraph(
   dtSeconds: number,
   inputs: AnimGraphInputs,
 ): AnimEvalState {
-  const states = new Map(doc.states.map((state) => [state.id, state]));
-  const clips = new Map(doc.clips.map((clip) => [clip.id, clip]));
+  const { states, clips, outgoing: outgoingByState } = animGraphIndex(doc);
   // A missing entry (reported by `validateAnimGraph`) starts on the first state
   // rather than throwing inside the tick; a graph with no states stays idle.
   const entryStateId = states.has(doc.entryStateId) ? doc.entryStateId : doc.states[0]?.id;
@@ -602,13 +656,7 @@ export function evaluateAnimGraph(
     : 0;
   const currentFacts = factsFor(current, duration, clock, previousTotal);
 
-  const outgoing = doc.transitions
-    .map((row, index) => ({ row, index }))
-    .filter((entry) => entry.row.fromStateId === stateId)
-    .sort((a, b) => {
-      const priority = a.row.priority - b.row.priority;
-      return priority !== 0 ? priority : a.index - b.index;
-    });
+  const outgoing = outgoingByState.get(stateId) ?? NO_TRANSITIONS;
 
   let nextId = stateId;
   let nextTimeMs = clock.timeMs;
@@ -622,7 +670,7 @@ export function evaluateAnimGraph(
   let blendSeconds = previous?.blendSeconds ?? 0;
   let startedBlend: AnimTransition | null = null;
 
-  for (const { row } of outgoing) {
+  for (const row of outgoing) {
     // A transition to a missing state (`anim.badTransition`) never fires.
     if (!states.has(row.toStateId)) continue;
     if (!transitionPasses(row, currentFacts, inputs)) continue;
@@ -750,9 +798,7 @@ export function clipForState(
   doc: AnimGraphDocument,
   stateId: string,
 ): AnimClipRef | undefined {
-  const state = doc.states.find((row) => row.id === stateId);
-  if (!state?.clipId) return undefined;
-  return doc.clips.find((clip) => clip.id === state.clipId);
+  return animGraphIndex(doc).clipByStateId.get(stateId);
 }
 
 function asFiniteNumber(value: unknown, fallback: number): number {

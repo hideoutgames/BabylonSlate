@@ -440,3 +440,40 @@ describe("local shadow refresh", () => {
     expect(render()).toBe(0);
   });
 });
+
+describe("caster tracking while no map exists", () => {
+  const shadows = (enabled: boolean) =>
+    normalizeShadowSettings({ enabled, cascades: 1, localMapSize: 256, maxLocalLights: 1 });
+
+  it.each(["existing", "new"] as const)(
+    "gives the next map the %s caster state it missed while shadows were off",
+    async (kind) => {
+      const { scene, mesh, material, light, controller } = await fixture();
+      updateSceneRenderingSettings(scene, { shadows: shadows(false) });
+      controller.sync();
+      expect(controller.generator(light)).toBeNull();
+      // A per-frame render hook makes a caster's shadow uncacheable.
+      let caster = mesh;
+      if (kind === "new") {
+        caster = MeshBuilder.CreateBox("late caster", {}, scene);
+        caster.material = material;
+      }
+      caster.onBeforeRenderObservable.add(() => {});
+      scene.render();
+      updateSceneRenderingSettings(scene, { shadows: shadows(true) });
+      controller.sync();
+      expect(controller.diagnostics([light])[0]!.refreshMode).toBe("continuous");
+    },
+  );
+
+  it("releases the geometry hook of a caster removed while no map exists", async () => {
+    const { scene, mesh, geometry, light, controller, previousGeometryUpdate } = await fixture();
+    expect(geometry.onGeometryUpdated).not.toBe(previousGeometryUpdate);
+    updateSceneRenderingSettings(scene, { shadows: shadows(false) });
+    controller.sync();
+    expect(controller.generator(light)).toBeNull();
+    mesh.dispose();
+    controller.sync();
+    expect(geometry.onGeometryUpdated).toBe(previousGeometryUpdate);
+  });
+});

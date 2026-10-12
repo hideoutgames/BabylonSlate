@@ -250,26 +250,30 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
       );
       const parts = playPartsNeeded(renderables) ||
         renderables.some((component) => component.classId === SPRING_ARM_COMPONENT_CLASS_ID)
-        ? renderables.map((component) => ({
-            ...playMeshPartOf(
-              component,
-              nearestVisualParentId(
+        ? renderables.map((component) => {
+            // A Joystick reads its variables for both its visual style and its own properties.
+            const variables = component.classId === "2DJoystickComponent" ? Object.fromEntries(component.variables) : undefined;
+            return {
+              ...playMeshPartOf(
                 component,
-                componentsByGuid,
-                renderableIds,
+                nearestVisualParentId(
+                  component,
+                  componentsByGuid,
+                  renderableIds,
+                ),
+                component.classId === "2DRichTextComponent" ? this.host.textAppear().progress(component) : undefined,
               ),
-            ),
-            ...(supportsOverlayVisualStyle(component.classId) ? { overlayStyle: parseOverlayVisualStyle(Object.fromEntries(component.variables)) } : {}),
-            ...(component.classId === "CableComponent" ? { cable: this.host.cables().assign(component) } : {}),
-            ...(component.classId === "2DJoystickComponent" ? { joystick: parseJoystick2DProperties(Object.fromEntries(component.variables)) } : {}),
-            ...(isUIControl2DClass(component.classId) ? { uiControl: { classId: component.classId, properties: this.host.uiControls().payload(component) } } : {}),
-            ...(component.classId === "2DPainterComponent" ? { painter: this.host.painters().payload(component) } : {}),
-            ...(component.classId === "2DRichTextComponent" ? { text2d: text2dAssignPayload(component, this.host.textAppear().progress(component)) } : {}),
-            ...(component.classId === "DynamicRuntimeMeshComponent" ? { dynamicMesh: this.host.dynamicMeshes().assign(component) } : {}),
-            ...(component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" ? { light: lightAssignPayload(component) } : {}),
-            ...(component.classId === "CameraComponent" ? { camera: this.cameraAssignPayload(actor, component) } : {}),
-            parentTransforms: dynamicMeshParentTransforms(component, componentsByGuid, renderableIds),
-          }))
+              ...(supportsOverlayVisualStyle(component.classId) ? { overlayStyle: parseOverlayVisualStyle(variables ?? Object.fromEntries(component.variables)) } : {}),
+              ...(component.classId === "CableComponent" ? { cable: this.host.cables().assign(component) } : {}),
+              ...(variables ? { joystick: parseJoystick2DProperties(variables) } : {}),
+              ...(isUIControl2DClass(component.classId) ? { uiControl: { classId: component.classId, properties: this.host.uiControls().payload(component) } } : {}),
+              ...(component.classId === "2DPainterComponent" ? { painter: this.host.painters().payload(component) } : {}),
+              ...(component.classId === "DynamicRuntimeMeshComponent" ? { dynamicMesh: this.host.dynamicMeshes().assign(component) } : {}),
+              ...(component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" ? { light: lightAssignPayload(component) } : {}),
+              ...(component.classId === "CameraComponent" ? { camera: this.cameraAssignPayload(actor, component) } : {}),
+              parentTransforms: dynamicMeshParentTransforms(component, componentsByGuid, renderableIds),
+            };
+          })
         : undefined;
       const skyboxComp = renderables.find(
         (component) => component.classId === "SkyboxComponent",
@@ -732,6 +736,7 @@ function lightAssignPayload(component: ActorComponent): NonNullable<Extract<Comm
 function playMeshPartOf(
   component: ActorComponent,
   parentId = component.parentId,
+  textAppearProgress?: number,
 ): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["parts"]>[number] {
   const assetGuid = component.assetGuid ?? component.getVariable("assetGuid");
   const { position, rotation, scale } = component.transform;
@@ -758,7 +763,7 @@ function playMeshPartOf(
       : {}),
     ...(component.classId === "2DTextComponent" ||
     component.classId === "2DRichTextComponent"
-      ? { text2d: text2dAssignPayload(component) }
+      ? { text2d: text2dAssignPayload(component, textAppearProgress) }
       : {}),
     ...(component.classId === "SpriteComponent" ||
     component.classId === "TilemapComponent"

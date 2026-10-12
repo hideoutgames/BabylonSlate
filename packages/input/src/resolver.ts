@@ -150,6 +150,12 @@ function axisBindingValue(
   }
 }
 
+function sameMembers(a: ReadonlySet<number>, b: ReadonlySet<number>): boolean {
+  if (a.size !== b.size) return false;
+  for (const value of a) if (!b.has(value)) return false;
+  return true;
+}
+
 function updateModifiers(state: ResolverInternals): void {
   const held = state.heldKeys;
   state.modifiers.shift = held.has("ShiftLeft") || held.has("ShiftRight");
@@ -296,14 +302,21 @@ export class InputResolver {
     // A mapping change can release an action before the first new event arrives.
     // Observe that boundary so a fresh press of the replacement key keeps its edge.
     sample();
+    // Each event samples on its own so a press and release in one tick both
+    // edge. An event that left every control `sample` reads unchanged (pointer
+    // move, key repeat, steady stick) is skipped: a repeat sample rewrites the
+    // same results unless mappings share an `inputs` key.
+    let dirty = false;
+    let keysShared: boolean | undefined;
     for (const event of events) {
       switch (event.kind) {
         case "key": {
           const down = event.phase === "down";
-          if (down && !this.state.heldKeys.has(event.code))
-            pressed("key", event.code);
+          const wasHeld = this.state.heldKeys.has(event.code);
+          if (down && !wasHeld) pressed("key", event.code);
           if (down) this.state.heldKeys.add(event.code);
           else this.state.heldKeys.delete(event.code);
+          if (down !== wasHeld) dirty = true;
           updateModifiers(this.state);
           break;
         }
@@ -344,9 +357,10 @@ export class InputResolver {
               !this.state.heldPointerButtons.has(event.button)
             )
               pressed("mouseButton", String(event.button));
-            this.state.heldPointerButtons = new Set(
-              contacts.get(event.pointerId),
-            );
+            const heldButtons = new Set(contacts.get(event.pointerId));
+            if (!sameMembers(this.state.heldPointerButtons, heldButtons))
+              dirty = true;
+            this.state.heldPointerButtons = heldButtons;
             this.state.cursor.pressed = this.state.heldPointerButtons.has(0);
             if (
               (event.phase === "up" || event.phase === "cancel") &&
@@ -366,21 +380,22 @@ export class InputResolver {
           for (let i = 0; i < event.buttons.length; i++) {
             const key = `${pad}:${i}`;
             if ((event.buttons[i] ?? 0) > 0.5) {
-              if (!this.state.heldGamepadButtons.has(key))
+              if (!this.state.heldGamepadButtons.has(key)) {
                 pressed("gamepadButton", key);
+                dirty = true;
+              }
               this.state.heldGamepadButtons.add(key);
-            } else {
-              this.state.heldGamepadButtons.delete(key);
+            } else if (this.state.heldGamepadButtons.delete(key)) {
+              dirty = true;
             }
           }
           for (let i = 0; i < event.axes.length; i++) {
             const key = `${pad}:${i}`;
             const value = event.axes[i] ?? 0;
-            if (
-              Math.abs(value) > 0.5 &&
-              Math.abs(this.state.gamepadAxes.get(key) ?? 0) <= 0.5
-            )
+            const previous = this.state.gamepadAxes.get(key);
+            if (Math.abs(value) > 0.5 && Math.abs(previous ?? 0) <= 0.5)
               pressed("gamepadAxis", key);
+            if (!Object.is(previous, value)) dirty = true;
             this.state.gamepadAxes.set(key, value);
           }
           // A sample is the pad's whole state: controls it omits are at rest.
@@ -388,12 +403,16 @@ export class InputResolver {
           const sampled = (key: string, count: number) =>
             !key.startsWith(prefix) || Number(key.slice(prefix.length)) < count;
           for (const key of [...this.state.heldGamepadButtons]) {
-            if (!sampled(key, event.buttons.length))
+            if (!sampled(key, event.buttons.length)) {
               this.state.heldGamepadButtons.delete(key);
+              dirty = true;
+            }
           }
           for (const key of [...this.state.gamepadAxes.keys()]) {
-            if (!sampled(key, event.axes.length))
+            if (!sampled(key, event.axes.length)) {
               this.state.gamepadAxes.delete(key);
+              dirty = true;
+            }
           }
           break;
         }
@@ -403,22 +422,32 @@ export class InputResolver {
           connections.push({ gamepadIndex: pad, connected: false });
           // The pad's last sample must not keep actions held or sticks deflected.
           for (const key of [...this.state.heldGamepadButtons]) {
-            if (key.startsWith(`${pad}:`))
+            if (key.startsWith(`${pad}:`)) {
               this.state.heldGamepadButtons.delete(key);
+              dirty = true;
+            }
           }
           for (const key of [...this.state.gamepadAxes.keys()]) {
-            if (key.startsWith(`${pad}:`)) this.state.gamepadAxes.delete(key);
+            if (key.startsWith(`${pad}:`)) {
+              this.state.gamepadAxes.delete(key);
+              dirty = true;
+            }
           }
           break;
         }
         case "touchAxis": {
+          if (!Object.is(this.state.touchAxes.get(event.controlId), event.value))
+            dirty = true;
           this.state.touchAxes.set(event.controlId, event.value);
           break;
         }
         default:
           break;
       }
-      sample();
+      if (dirty || (keysShared ??= this.mappingKeysShared())) {
+        sample();
+        dirty = false;
+      }
     }
 
     sample();
@@ -464,6 +493,16 @@ export class InputResolver {
       gamepadConnections: connections,
       cursor: { ...this.state.cursor },
     };
+  }
+
+  /**
+   * Mappings with one `inputs` key accumulate it once per sample, so sampling
+   * unchanged state again is a no-op. Mappings sharing a key fold into each
+   * other's entry within one sample, so a repeat sample would change it.
+   */
+  private mappingKeysShared(): boolean {
+    const rows = [...this.mappings.actions, ...this.mappings.axes];
+    return new Set(rows.map((row) => inputMappingKey(row))).size !== rows.length;
   }
 
   getInputState(input: InputTypeValue): InputValueState | null {

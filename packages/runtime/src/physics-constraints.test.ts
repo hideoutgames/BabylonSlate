@@ -55,7 +55,7 @@ describe("authored physics constraints", () => {
       sync.syncFromWorld(world);
       const actors = world.getActors();
       const transforms = actorWorldTransforms(actors);
-      const options = { actors, actorById: new Map(actors.map((actor) => [actor.guid, actor])),
+      const options = { world, actorById: new Map(actors.map((actor) => [actor.guid, actor])),
         worldScale: (actor: Actor) => transforms.get(actor.guid)!.scale,
         bodies: new Map(actors.map((actor) => [actor.guid, `body:${actor.guid}`])),
         bodyOwners: new Map(actors.map((actor) => [actor.guid, actor])), eligible: () => true };

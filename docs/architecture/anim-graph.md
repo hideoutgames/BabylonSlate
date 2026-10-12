@@ -21,6 +21,8 @@ Helpers: `createDefaultAnimGraph`, `createDefaultAnimationObjectGraph`, `createD
 
 Pure function: `(graph, dt, previous, inputs) → AnimEvalState`. Deterministic; golden-tested. Validator uses the same diagnostic model as [scripting.md](scripting.md) (`code`, `message`, `nodeId`, severity).
 
+- State and clip lookups, each state's outgoing transitions in priority order, and the clip behind each state (`clipForState`) are derived once per `AnimGraphDocument` object and cached. Replace a document instead of mutating it after it has been evaluated.
+
 Each tick produces `stateId`, `normalisedTime` in `[0, 1]`, `blendWeights`, `facts` (elapsed / duration / remaining / looping / loop count / one-tick `justLooped` / `justFinished` / unwrapped `totalNormalisedTime` and `previousTotalNormalisedTime`), and weighted `layers[]` (`clipAssetGuid`, `clipName`, `clipKind`, `normalisedTime`, `weight`). `blendSeconds` crossfades two layers; the selected transition's `blendSeconds` is stored on `AnimEvalState` when the blend starts, so a duplicate `(from, to)` row cannot change its length mid-blend.
 
 Transition fire: **Exit State** (leave source) **and** **Enter State** (enter target) must both be true. Disconnected sinks default **true**. `decideTransition(transition, facts)` sees **post-advance** facts. `undefined` falls through to `transitionRules`; a transition with no decision passes, like a rule graph with both sinks unwired. A transition to a missing state never fires, and a graph whose entry state is missing starts on its first state (one with no states returns an empty evaluation) instead of throwing.
@@ -37,7 +39,7 @@ Transition fire: **Exit State** (leave source) **and** **Enter State** (enter ta
 
 `AnimationGraphComponent` (`graphGuid`) attaches a graph to an actor. `RuntimeDriver.registerAnimGraph` / worker `loadAnimGraphs` load documents. Play and export load the Animation Graphs in the session's dependency closure: those referenced by scene `graphGuid` and by the Classes and assets the scenes reach. A graph nothing in that closure references is not loaded. The editor's whole-project Compile compiles every project AnimationGraph.
 
-Each tick `AnimGraphRuntime.tick` (`packages/runtime/src/anim-graph-runtime.ts`, owned by the runtime driver):
+Each tick `AnimGraphRuntime.tick` (`packages/runtime/src/anim-graph-runtime.ts`, owned by the runtime driver) visits only actors that own an AnimationGraphComponent (shared component owner index, [object-model.md](object-model.md)):
 
 1. Seed component `variableStore` from document defaults; each component gets its own copy of an object default, and a struct without a default starts as an empty object (`{ Tags: [] }` for TagContainer).
 2. Once per `${componentGuid}:{guid}`, `invokeAnimEvent(AnimGraph:{guid}, onInitializeAnimation)`. A graph skipped for a tick (owner not admitted, no render slot, or a Behaviour Tree Play Animation owns the slot) keeps its initialization and evaluation; they are dropped only when the component, its graph guid or the document goes away. Evaluation and a queued Jump To State belong to one graph guid, so a component switched to another graph starts that graph at its entry state.

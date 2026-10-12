@@ -156,6 +156,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   readonly scene: Scene;
   private readonly engine: NullEngine;
   private readonly bodies = new Map<string, BodyRecord>();
+  /** Bodies with a `mutationFailure`, so `flushMutations` scans `bodies` only when one exists. */
+  private readonly failedBodies = new Set<BodyRecord>();
   private readonly colliders = new Map<string, ColliderRecord>();
   private readonly characters = new Map<string, CharacterRecord>();
   private readonly sphereSweeps = new Set<SphereSweepQuery>();
@@ -238,6 +240,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       this.disposeBodyRecord(record);
     }
     this.bodies.clear();
+    this.failedBodies.clear();
     this.bodyIdByPhysicsBody.clear();
     this.activeTriggerPairs.clear();
     this.pendingContacts = [];
@@ -315,6 +318,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
     this.disposeBodyRecord(record);
     this.bodies.delete(bodyId);
+    this.failedBodies.delete(record);
   }
 
   createConstraint(input: ConstraintDesc): void {
@@ -395,11 +399,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         body.setLinearVelocity(previousLinear);
         body.setAngularVelocity(previousAngular);
       } catch (rollbackError) {
-        record.mutationFailure = new AggregateError(
+        throw this.failMutation(record, new AggregateError(
           [error, rollbackError],
           `Havok teleport rollback failed for ${bodyId}`,
-        );
-        throw record.mutationFailure;
+        ));
       }
       this.retireTriggerPairs(record);
       throw error;
@@ -662,11 +665,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         body.setAngularVelocity(angular);
       } catch (rollbackError) {
         for (const shape of provisional) record.uncertainShapes.add(shape);
-        record.mutationFailure = new AggregateError(
+        throw this.failMutation(record, new AggregateError(
           [error, rollbackError],
           `Havok collider rollback failed for ${bodyId}`,
-        );
-        throw record.mutationFailure;
+        ));
       }
       if (topologyChanged) this.retireTriggerPairs(record);
       container?.dispose();
@@ -1022,11 +1024,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
           try {
             setHavokBodyPoseBeforeStep(this.plugin, body.body);
           } catch (rollbackError) {
-            body.mutationFailure = new AggregateError(
+            throw this.failMutation(body, new AggregateError(
               [error, rollbackError],
               `Havok Movement pose rollback failed for ${character.desc.bodyId}`,
-            );
-            throw body.mutationFailure;
+            ));
           }
           throw error;
         }
@@ -1482,6 +1483,12 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     if (record.mutationFailure) throw record.mutationFailure;
   }
 
+  private failMutation(record: BodyRecord, failure: Error): Error {
+    record.mutationFailure = failure;
+    this.failedBodies.add(record);
+    return failure;
+  }
+
   private flushMutations(): void {
     this.assertLive();
     if (this.stepping && this.pendingMutations.length)
@@ -1491,7 +1498,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     if (this.stepping) return;
     while (this.pendingMutations.length && !this.disposed)
       this.pendingMutations.shift()!();
-    for (const record of this.bodies.values()) this.assertHealthy(record);
+    // The scan keeps the first failed body in `bodies` order as the error raised.
+    if (this.failedBodies.size > 0)
+      for (const record of this.bodies.values()) this.assertHealthy(record);
   }
 
   /**

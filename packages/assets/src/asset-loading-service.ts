@@ -191,6 +191,8 @@ function byteCount(value: number): number {
 export class AssetLoadingService {
   private readonly options: AssetLoadingServiceOptions;
   private readonly entries = new Map<string, CacheEntry>();
+  /** `entries` grouped by asset id; `retain` and `evict` are the only places an entry enters or leaves `entries`. */
+  private readonly entriesByAsset = new Map<string, Set<CacheEntry>>();
   private readonly scopes = new Set<AssetLoadScope>();
   private readonly rootRequests = new Map<Acquisition, RootRequestState>();
   private readonly rootFailures = new Map<string, RootRequestState>();
@@ -230,8 +232,8 @@ export class AssetLoadingService {
     const requests = [...this.rootRequests.values()].filter(matches);
     if (requests.some(request => request.state === "loading")) return "loading";
     let latest: CacheEntry | undefined;
-    for (const entry of this.entries.values()) {
-      if (entry.asset.id === assetId && (!representation || entry.representation.key === representation)
+    for (const entry of this.entriesByAsset.get(assetId) ?? []) {
+      if ((!representation || entry.representation.key === representation)
         && (!latest || entry.order > latest.order)) latest = entry;
     }
     const failure = [...this.rootFailures.values()].filter(matches).sort((a, b) => b.order - a.order)[0];
@@ -415,6 +417,9 @@ export class AssetLoadingService {
       // Retention of later dependencies can throw before Promise.all is installed.
       void created.promise.catch(() => undefined);
       this.entries.set(key, created);
+      const sameAsset = this.entriesByAsset.get(asset.id);
+      if (sameAsset) sameAsset.add(created);
+      else this.entriesByAsset.set(asset.id, new Set([created]));
       this.queue.push(created);
     }
     entry.owners.add(ticket);
@@ -425,14 +430,20 @@ export class AssetLoadingService {
   private pump(): void {
     if (this.disposed) return;
     this.queue.sort((a, b) => a.priority - b.priority || a.order - b.order);
+    // Reused while heads keep failing to fit; an eviction or a load start can run
+    // consumer code and changes what a fresh sort would see, so either drops it.
+    let candidates: CacheEntry[] | undefined;
     while (this.active < this.budgets.concurrency && this.queue.length) {
       const entry = this.queue[0];
       const memory = entry.representation.estimate;
       if (!this.fits(memory)) {
-        for (const candidate of [...this.entries.values()].sort((a, b) => a.lastUsed - b.lastUsed)) {
-          if (candidate.owners.size === 0 && candidate.state !== "loading") this.evict(candidate);
+        candidates ??= [...this.entries.values()].sort((a, b) => a.lastUsed - b.lastUsed);
+        let evicted = false;
+        for (const candidate of candidates) {
+          if (candidate.owners.size === 0 && candidate.state !== "loading") { this.evict(candidate); evicted = true; }
           if (this.fits(memory)) break;
         }
+        if (evicted) candidates = undefined;
       }
       if (!this.fits(memory)) {
         if (this.active > 0) break;
@@ -447,6 +458,7 @@ export class AssetLoadingService {
       this.reservedDecodedBytes += memory.decodedBytes;
       this.temporaryBytes += memory.temporaryBytes;
       void this.run(entry);
+      candidates = undefined;
     }
   }
 
@@ -525,7 +537,12 @@ export class AssetLoadingService {
   }
 
   private evict(entry: CacheEntry): void {
-    if (this.entries.get(entry.key) === entry) this.entries.delete(entry.key);
+    if (this.entries.get(entry.key) === entry) {
+      this.entries.delete(entry.key);
+      const sameAsset = this.entriesByAsset.get(entry.asset.id);
+      sameAsset?.delete(entry);
+      if (sameAsset?.size === 0) this.entriesByAsset.delete(entry.asset.id);
+    }
     this.sourceBytes -= entry.sourceBytes;
     this.decodedBytes -= entry.decodedBytes;
     entry.sourceBytes = 0;

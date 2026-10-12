@@ -1,6 +1,6 @@
 import type { CommandMessage } from "@babylonslate/bridge";
 import type { TraceAnimGraphState } from "@babylonslate/debugger";
-import { Actor, ActorComponent } from "@babylonslate/object-model";
+import { Actor, ActorComponent, type World } from "@babylonslate/object-model";
 import {
   animGraphScriptClassId,
   animRuleScriptClassId,
@@ -12,11 +12,12 @@ import {
 } from "@babylonslate/anim-graph";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { AnimGraphControl, ScriptHost } from "./script-host";
+import { walkComponentOwners } from "./world-component-index";
 
 type SpriteClip = { assetGuid: string; clipName: string; normalisedTime: number; stateId?: string };
 
 interface AnimGraphRuntimeHost {
-  actors(): readonly Actor[];
+  world(): World;
   stopped(): boolean;
   canTick(actor: Actor): boolean;
   /** The render slot this actor's own commands target. */
@@ -193,127 +194,10 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     const liveEvalKeys = this.liveEvalKeys;
     liveKeys.clear();
     liveEvalKeys.clear();
-    for (const actor of this.host.actors()) {
-      if (this.host.stopped()) return;
-      const slotId = this.host.slot(actor);
-      // A graph skipped this tick (owner not admitted, no slot, or a Behaviour
-      // Tree Play Animation owns the slot) keeps its state and resumes later.
-      const runs = slotId !== undefined && this.host.canTick(actor) && !this.host.playAnimationOwns(slotId);
-      for (const component of actor.components) {
-        if (
-          component.classId !== "AnimationGraphComponent" ||
-          component.destroyed
-        ) {
-          continue;
-        }
-        const guid = this.graphGuid(component);
-        if (!guid) continue;
-        const document = this.documents.get(guid);
-        if (!document) continue;
-        const evalKey = component.guid;
-        const initKey = `${evalKey}:${guid}`;
-        liveKeys.add(initKey);
-        liveEvalKeys.add(evalKey);
-        this.bindGraph(evalKey, guid);
-        if (!runs || slotId === undefined || !this.host.canTick(actor)) continue;
-        this.seedVariables(component, document);
-        const jumpTo = this.pendingJumpByComponent.get(evalKey);
-        if (jumpTo) {
-          this.pendingJumpByComponent.delete(evalKey);
-          const jumped = document.states.find((state) => state.id === jumpTo);
-          if (jumped) {
-            this.evalByComponent.set(evalKey, {
-              stateId: jumped.id,
-              normalisedTime: 0,
-              blendWeights: { [jumped.id]: 1 },
-              timeMs: 0,
-              facts: {
-                elapsedSeconds: 0,
-                durationSeconds: 0,
-                normalisedTime: 0,
-                remainingSeconds: 0,
-                remainingRatio: 1,
-                looping: jumped.loop,
-                loopCount: 0,
-                justLooped: false,
-                justFinished: false,
-                totalNormalisedTime: 0,
-                previousTotalNormalisedTime: 0,
-              },
-              layers: [],
-              blendFromStateId: null,
-              blendFromTimeMs: 0,
-              blendElapsedMs: 0,
-              blendSeconds: 0,
-              loopCount: 0,
-            });
-          }
-        }
-        const extras = {
-          variableStore: component,
-          animFacts: this.evalByComponent.get(evalKey)?.facts,
-        };
-        const objectClassId = animGraphScriptClassId(guid);
-        if (!this.initializedBySlot.has(initKey)) {
-          this.host.scripts().invokeAnimEvent(
-            objectClassId,
-            "onInitializeAnimation",
-            actor,
-            0,
-            extras,
-          );
-          this.initializedBySlot.add(initKey);
-        }
-        this.host.scripts().invokeAnimEvent(
-          objectClassId,
-          "onUpdateAnimation",
-          actor,
-          dtSeconds,
-          extras,
-        );
-        const next = evaluateAnimGraph(
-          document,
-          this.evalByComponent.get(evalKey) ?? null,
-          dtSeconds,
-          {
-            decideTransition: (transition, facts) =>
-              this.host.scripts().invokeAnimRule(
-                animRuleScriptClassId(guid, transition.id),
-                actor,
-                { variableStore: component, animFacts: facts },
-              ),
-          },
-        );
-        this.evalByComponent.set(evalKey, next);
-        const clip = clipForState(document, next.stateId);
-        if (clip?.kind === "sprite" && clip.assetGuid) {
-          this.host.setSpriteClip(actor, {
-            assetGuid: clip.assetGuid,
-            clipName: clip.clipName,
-            normalisedTime: next.normalisedTime,
-            stateId: next.stateId,
-          });
-        } else {
-          this.host.setSpriteClip(actor, null);
-        }
-        const currentLayer =
-          next.layers.find((layer) => layer.stateId === next.stateId) ??
-          next.layers[next.layers.length - 1];
-        this.host.emit({
-          type: "animState",
-          slotId,
-          stateId: next.stateId,
-          normalisedTime: next.normalisedTime,
-          blendWeights: next.blendWeights,
-          clipName: currentLayer?.clipName || clip?.clipName,
-          clipKind: currentLayer?.clipKind ?? clip?.kind,
-          clipAssetGuid: currentLayer?.clipAssetGuid || clip?.assetGuid,
-          justFinished: next.facts.justFinished,
-          justLooped: next.facts.justLooped,
-          layers: next.layers,
-        });
-      }
-    }
+    // Only an actor that owns an AnimationGraphComponent has a graph to run.
+    const completed = walkComponentOwners(this.host.world(), "AnimationGraphComponent", () => this.host.stopped(),
+      (actor) => this.tickActor(actor, dtSeconds));
+    if (!completed) return;
     // Deleting the visited entry keeps Set/Map iteration valid, so prune in place.
     for (const key of this.initializedBySlot) {
       if (!liveKeys.has(key)) this.initializedBySlot.delete(key);
@@ -325,5 +209,126 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     }
     liveKeys.clear();
     liveEvalKeys.clear();
+  }
+
+  private tickActor(actor: Actor, dtSeconds: number): void {
+    const slotId = this.host.slot(actor);
+    // A graph skipped this tick (owner not admitted, no slot, or a Behaviour
+    // Tree Play Animation owns the slot) keeps its state and resumes later.
+    const runs = slotId !== undefined && this.host.canTick(actor) && !this.host.playAnimationOwns(slotId);
+    for (const component of actor.components) {
+      if (
+        component.classId !== "AnimationGraphComponent" ||
+        component.destroyed
+      ) {
+        continue;
+      }
+      const guid = this.graphGuid(component);
+      if (!guid) continue;
+      const document = this.documents.get(guid);
+      if (!document) continue;
+      const evalKey = component.guid;
+      const initKey = `${evalKey}:${guid}`;
+      this.liveInitKeys.add(initKey);
+      this.liveEvalKeys.add(evalKey);
+      this.bindGraph(evalKey, guid);
+      if (!runs || slotId === undefined || !this.host.canTick(actor)) continue;
+      this.seedVariables(component, document);
+      const jumpTo = this.pendingJumpByComponent.get(evalKey);
+      if (jumpTo) {
+        this.pendingJumpByComponent.delete(evalKey);
+        const jumped = document.states.find((state) => state.id === jumpTo);
+        if (jumped) {
+          this.evalByComponent.set(evalKey, {
+            stateId: jumped.id,
+            normalisedTime: 0,
+            blendWeights: { [jumped.id]: 1 },
+            timeMs: 0,
+            facts: {
+              elapsedSeconds: 0,
+              durationSeconds: 0,
+              normalisedTime: 0,
+              remainingSeconds: 0,
+              remainingRatio: 1,
+              looping: jumped.loop,
+              loopCount: 0,
+              justLooped: false,
+              justFinished: false,
+              totalNormalisedTime: 0,
+              previousTotalNormalisedTime: 0,
+            },
+            layers: [],
+            blendFromStateId: null,
+            blendFromTimeMs: 0,
+            blendElapsedMs: 0,
+            blendSeconds: 0,
+            loopCount: 0,
+          });
+        }
+      }
+      const extras = {
+        variableStore: component,
+        animFacts: this.evalByComponent.get(evalKey)?.facts,
+      };
+      const objectClassId = animGraphScriptClassId(guid);
+      if (!this.initializedBySlot.has(initKey)) {
+        this.host.scripts().invokeAnimEvent(
+          objectClassId,
+          "onInitializeAnimation",
+          actor,
+          0,
+          extras,
+        );
+        this.initializedBySlot.add(initKey);
+      }
+      this.host.scripts().invokeAnimEvent(
+        objectClassId,
+        "onUpdateAnimation",
+        actor,
+        dtSeconds,
+        extras,
+      );
+      const next = evaluateAnimGraph(
+        document,
+        this.evalByComponent.get(evalKey) ?? null,
+        dtSeconds,
+        {
+          decideTransition: (transition, facts) =>
+            this.host.scripts().invokeAnimRule(
+              animRuleScriptClassId(guid, transition.id),
+              actor,
+              { variableStore: component, animFacts: facts },
+            ),
+        },
+      );
+      this.evalByComponent.set(evalKey, next);
+      const clip = clipForState(document, next.stateId);
+      if (clip?.kind === "sprite" && clip.assetGuid) {
+        this.host.setSpriteClip(actor, {
+          assetGuid: clip.assetGuid,
+          clipName: clip.clipName,
+          normalisedTime: next.normalisedTime,
+          stateId: next.stateId,
+        });
+      } else {
+        this.host.setSpriteClip(actor, null);
+      }
+      const currentLayer =
+        next.layers.find((layer) => layer.stateId === next.stateId) ??
+        next.layers[next.layers.length - 1];
+      this.host.emit({
+        type: "animState",
+        slotId,
+        stateId: next.stateId,
+        normalisedTime: next.normalisedTime,
+        blendWeights: next.blendWeights,
+        clipName: currentLayer?.clipName || clip?.clipName,
+        clipKind: currentLayer?.clipKind ?? clip?.kind,
+        clipAssetGuid: currentLayer?.clipAssetGuid || clip?.assetGuid,
+        justFinished: next.facts.justFinished,
+        justLooped: next.facts.justLooped,
+        layers: next.layers,
+      });
+    }
   }
 }

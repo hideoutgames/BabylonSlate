@@ -175,6 +175,30 @@ describe("render bone attachment", () => {
     expect(child.parent).toBeNull();
   });
 
+  it("keeps attachments sharing one unlinked skeleton in step with its bones on every pass", () => {
+    const { scene, binding, target, child, childSlot, targetSlot, attach } = fixture();
+    const second = new Mesh("actor-3", scene);
+    binding.meshes.set(3, second);
+    const skin = new Mesh("hands", scene);
+    skin.parent = target;
+    const skeleton = skin.skeleton = new Skeleton("hands", "hands", scene);
+    const left = new Bone("Hand.L", skeleton, null, Matrix.Translation(0, 2, 0));
+    const right = new Bone("Hand.R", skeleton, null, Matrix.Translation(0, 5, 0));
+    targetSlot.position.x = childSlot.position.x = 10;
+    const secondSlot: ActorSlot = { ...childSlot, slotId: 3 };
+    attach("Hand.L");
+    snapshot.applyAttachToBone(binding, { type: "attachToBone", slotId: 3, targetSlotId: 2, boneName: "Hand.R" });
+    const apply = () => snapshot.applySnapshotToScene(scene, binding, { actors: [childSlot, targetSlot, secondSlot], actorCount: 3, frameId: 1, tickIndex: 1 });
+    apply();
+    expect(child.getAbsolutePosition().asArray()).toEqual([10, 2, 0]);
+    expect(second.getAbsolutePosition().asArray()).toEqual([10, 5, 0]);
+    left.setPosition(new Vector3(0, 3, 0));
+    right.setPosition(new Vector3(0, 7, 0));
+    apply();
+    expect(child.getAbsolutePosition().asArray()).toEqual([10, 3, 0]);
+    expect(second.getAbsolutePosition().asArray()).toEqual([10, 7, 0]);
+  });
+
   it("attaches to linked and hierarchy bones using their world transforms and keeps snapshot offsets local", () => {
     const { scene, target, child, childSlot, targetSlot, attach, apply } = fixture();
     const hand = new TransformNode("Hand", scene);

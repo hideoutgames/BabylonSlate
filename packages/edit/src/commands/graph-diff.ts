@@ -116,7 +116,20 @@ function functionGraphsEqual(
   b: SerializedGraph["functionGraphs"],
 ): boolean {
   if (a === b) return true;
-  return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
+  const left = a ?? {};
+  const right = b ?? {};
+  // Editing one function rebuilds the map but shares every other entry. With
+  // the same keys in the same order the whole-map JSON is the entries' JSON in
+  // turn (undefined entries omitted alike), so compare per entry; any other
+  // key list falls back to the whole map.
+  const keys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (keys.length === rightKeys.length && keys.every((key, i) => key === rightKeys[i])) {
+    return keys.every(
+      (key) => left[key] === right[key] || JSON.stringify(left[key]) === JSON.stringify(right[key]),
+    );
+  }
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 /**

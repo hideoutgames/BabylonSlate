@@ -362,6 +362,7 @@ export class SceneShadowController {
   }
   /** Refreshes admitted maps after the owning renderer updates caster transforms. */
   refreshShadowMaps(): void {
+    if (!this.holdsGenerator()) return;
     this.refresh.syncCasters(this.scene, this.meshes);
     for (const entry of this.entries.values())
       if (entry.generator && !entry.standby) {
@@ -466,8 +467,12 @@ export class SceneShadowController {
     // Caster participation and receiveShadows changed material defines or map
     // membership; cached strict readiness no longer applies.
     if (hadPending) markSceneReadinessDirty(scene);
-    this.refresh.syncCasters(scene, this.meshes);
-    const casterBounds = this.spatial.bounds();
+    // Without a map nothing reads caster state, so the walk waits for the first
+    // allocation; kept snapshots make the late walk report only real changes.
+    let castersCurrent = this.holdsGenerator();
+    if (castersCurrent) this.refresh.syncCasters(scene, this.meshes);
+    else this.refresh.dropRemovedCasters(this.meshes);
+    let casterBounds = castersCurrent ? this.spatial.bounds() : undefined;
     const state = sceneRenderingSettings(scene);
     const requested = state.shadows;
     const engineSupportsCascades = scene.getEngine()._features.supportCSM;
@@ -833,6 +838,12 @@ export class SceneShadowController {
         }
         continue;
       }
+      // The first map reads caster state, bounds and spatial queries from here on.
+      if (!castersCurrent) {
+        castersCurrent = true;
+        this.refresh.syncCasters(scene, this.meshes);
+        casterBounds = this.spatial.bounds();
+      }
       // Halving is bounded by the normalized 4096 maximum and 256 floor. Failed
       // attempts are fully released before smaller maps reuse the reservation.
       while (mapSize >= 256) {
@@ -1102,6 +1113,11 @@ export class SceneShadowController {
         fitLocalShadowDepth(entry.generator.getLight(), scene.activeCamera);
         this.refresh.apply(entry.generator);
       }
+  }
+  /** Caster state only drives allocated maps (admitted or standby) and their spatial queries. */
+  private holdsGenerator(): boolean {
+    for (const entry of this.entries.values()) if (entry.generator) return true;
+    return false;
   }
   /** Keep a moved or resumed map from sampling stale depth before it redraws. */
   private neutralUntilRendered(generator: ShadowGenerator): void {

@@ -35,6 +35,14 @@ import { SceneLayerVirtualization } from "./scene-layer-virtualization";
 import type { ScriptHost, ScriptHostServices } from "./script-host";
 import type { UIControls2DRuntime } from "./ui-controls2d-runtime";
 
+/** Every World actor by Scene Layer and by guid, as of one structural revision. */
+interface ActorIndex {
+  revision: number;
+  byLayer: ReadonlyMap<string, readonly Actor[]>;
+  byGuid: ReadonlyMap<string, Actor>;
+}
+const NO_ACTORS: readonly Actor[] = [];
+
 /** Objects the overlay holds from construction; none is replaced during a session. */
 interface SceneLayerOverlayDeps {
   world: World;
@@ -78,6 +86,7 @@ interface SceneLayerOverlayHost {
 export class SceneLayerOverlay {
   private readonly layout = new SceneLayerLayout();
   private readonly virtualization = new SceneLayerVirtualization();
+  private actorIndex: ActorIndex | null = null;
   private readonly focus: SceneLayerFocusNavigation;
   private readonly switchers: SceneLayerActorSwitchers;
   private readonly designPose = new Map<string, { x: number; y: number }>();
@@ -191,11 +200,12 @@ export class SceneLayerOverlay {
           top: this.safeAreaInsetsPixels.top * layer.layerBounds.height / this.canvasHeight,
           bottom: this.safeAreaInsetsPixels.bottom * layer.layerBounds.height / this.canvasHeight,
         };
-        let result = this.layout.update(layer.guid, world.getActors(), this.host.pixelsPerUnit(), texturePixelSizes, safeAreaInsets);
+        let result = this.layout.update(layer.guid, this.layerActors(layer.guid), this.host.pixelsPerUnit(), texturePixelSizes, safeAreaInsets);
         if (this.virtualization.sync(layer.guid, world.getActors(), result?.entries ?? this.layout.entries(layer.guid),
           (owner, classId, defaults) => this.spawnActor(owner, classId, defaults),
-          (actor) => this.removeActorSubtree(actor))) {
-          result = this.layout.update(layer.guid, world.getActors(), this.host.pixelsPerUnit(), texturePixelSizes, safeAreaInsets) ?? result;
+          (actor) => this.removeActorSubtree(actor), this.indexedActors().byGuid)) {
+          // Syncing spawned or retired actors; layerActors re-reads the index they invalidated.
+          result = this.layout.update(layer.guid, this.layerActors(layer.guid), this.host.pixelsPerUnit(), texturePixelSizes, safeAreaInsets) ?? result;
         }
         if (!result || layer.destroyed) continue;
         const transforms = new Map(result.actors.flatMap(actor => actor.components.map(component => [overlayLayoutKey(actor.id, component.id), component.transform] as const)));
@@ -205,6 +215,30 @@ export class SceneLayerOverlay {
         }) });
       }
     } finally { this.applyingLayouts = false; }
+  }
+
+  /**
+   * The World's actors grouped by Scene Layer. A spawn or destroy bumps the
+   * structural revision and an actor's layer and guid never change, so a
+   * publishing tick that changed no actors reuses the index. Scripts a sync
+   * runs may spawn into any layer, hence the check on every read.
+   */
+  private indexedActors(): ActorIndex {
+    const world = this.deps.world;
+    const revision = world.structuralRevision;
+    if (this.actorIndex?.revision === revision) return this.actorIndex;
+    const byLayer = new Map<string, Actor[]>(), byGuid = new Map<string, Actor>();
+    for (const actor of world.getActors()) {
+      byGuid.set(actor.guid, actor);
+      if (actor.sceneLayerId == null) continue;
+      const group = byLayer.get(actor.sceneLayerId);
+      if (group) group.push(actor); else byLayer.set(actor.sceneLayerId, [actor]);
+    }
+    return this.actorIndex = { revision, byLayer, byGuid };
+  }
+
+  private layerActors(layerId: string): readonly Actor[] {
+    return this.indexedActors().byLayer.get(layerId) ?? NO_ACTORS;
   }
 
   /** A Save Game boundary ended: whether it deferred layout (cleared on read). */
@@ -362,6 +396,7 @@ export class SceneLayerOverlay {
     this.focus.clearFocus();
     this.layout.clear();
     this.virtualization.clear();
+    this.actorIndex = null;
   }
 
   /** Spawn a prefab in its owner's overlay; transforms stay local to the parent. */

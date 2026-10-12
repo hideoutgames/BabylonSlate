@@ -161,6 +161,32 @@ function tickTask(
   }
 }
 
+interface EvaluationTree {
+  nodes: Map<string, BtNode>;
+  parents: Map<string, string>;
+  /**
+   * For each selector, the index of the child whose subtree holds a node id
+   * (the last index when a missing child id repeats among its children).
+   */
+  childIndexUnder: Map<string, Map<string, number>>;
+}
+
+/**
+ * Derived once per document object. Loaded documents are replaced rather than
+ * mutated, so the result stays valid for the document's lifetime. Callers
+ * treat the maps as read-only.
+ */
+const evaluationTrees = new WeakMap<BehaviourTreeDocument, EvaluationTree>();
+
+function evaluationTree(tree: BehaviourTreeDocument): EvaluationTree {
+  let derived = evaluationTrees.get(tree);
+  if (!derived) {
+    derived = buildEvaluationTree(tree);
+    evaluationTrees.set(tree, derived);
+  }
+  return derived;
+}
+
 /**
  * The tree an evaluation walks: the nodes reachable from the root, each under
  * the first parent a depth-first walk in child order reaches. A later
@@ -169,14 +195,12 @@ function tickTask(
  * `lastResults` entry, and parent walks end at the root. A missing child id is
  * kept and fails like before. `validateBehaviourTree` reports both shapes.
  */
-function evaluationTree(tree: BehaviourTreeDocument): {
-  nodes: Map<string, BtNode>;
-  parents: Map<string, string>;
-} {
+function buildEvaluationTree(tree: BehaviourTreeDocument): EvaluationTree {
   const source = new Map(tree.nodes.map((node) => [node.id, node]));
   const nodes = new Map<string, BtNode>();
   const parents = new Map<string, string>();
-  if (!source.has(tree.rootId)) return { nodes, parents };
+  const childIndexUnder = new Map<string, Map<string, number>>();
+  if (!source.has(tree.rootId)) return { nodes, parents, childIndexUnder };
   const kept = new Map<string, string[]>();
   const pending: Array<{ id: string; parentId: string | null }> = [
     { id: tree.rootId, parentId: null },
@@ -199,7 +223,15 @@ function evaluationTree(tree: BehaviourTreeDocument): {
     const node = source.get(id)!;
     nodes.set(id, children.length === node.children.length ? node : { ...node, children });
   }
-  return { nodes, parents };
+  for (const node of nodes.values()) {
+    if (node.kind !== "selector") continue;
+    const under = new Map<string, number>();
+    for (let index = 0; index < node.children.length; index += 1) {
+      for (const id of subtreeIds(nodes, node.children[index]!)) under.set(id, index);
+    }
+    childIndexUnder.set(node.id, under);
+  }
+  return { nodes, parents, childIndexUnder };
 }
 
 function subtreeIds(nodes: Map<string, BtNode>, rootId: string): Set<string> {
@@ -578,6 +610,7 @@ function armLowerPriorityObservers(
 function applyAborts(
   nodes: Map<string, BtNode>,
   parents: Map<string, string>,
+  childIndexUnder: Map<string, Map<string, number>>,
   stack: BtStackFrame[],
   lastResults: Record<string, BtResult>,
   blackboard: BlackboardValues,
@@ -616,11 +649,14 @@ function applyAborts(
       if (lower) {
         const found = nearestSelector(nodes, parents, node.id);
         if (!found || found.index < 0) continue;
-        const runningLower = found.selector.children.some((childId, index) => {
-          if (index <= found.index) return false;
-          const ids = subtreeIds(nodes, childId);
-          return [...ids].some((id) => active.has(id));
-        });
+        const under = childIndexUnder.get(found.selector.id)!;
+        let runningLower = false;
+        for (const id of active) {
+          if ((under.get(id) ?? -1) > found.index) {
+            runningLower = true;
+            break;
+          }
+        }
         const key = observerKey(decorator.id);
         if (!runningLower) {
           if (nodeMemory[node.id]) delete nodeMemory[node.id]![key];
@@ -798,7 +834,7 @@ export function evaluateBehaviourTree(
   dtSeconds: number,
   options?: EvaluateBehaviourTreeOptions,
 ): BtEvalState {
-  const { nodes, parents } = evaluationTree(tree);
+  const { nodes, parents, childIndexUnder } = evaluationTree(tree);
   const blackboard: BlackboardValues =
     options?.blackboard !== undefined
       ? { ...options.blackboard }
@@ -820,6 +856,7 @@ export function evaluateBehaviourTree(
   applyAborts(
     nodes,
     parents,
+    childIndexUnder,
     stack,
     lastResults,
     blackboard,

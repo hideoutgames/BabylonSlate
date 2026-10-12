@@ -41,6 +41,7 @@ Runtime seeds defaults from the tree's linked Blackboard unless `BehaviourTreeCo
 
 Pure: `(tree, previous, dtSeconds, options?) → BtEvalState`.
 
+- The walked tree (reachable nodes, single parents, and the per-selector subtree index lower-priority aborts use) is derived once per document object and cached. Replace a document instead of mutating it after it has been evaluated.
 - Explicit stack of `{ nodeId, childIndex }` — no recursion, so a tree can be stepped and inspected.
 - Results: `success` | `failure` | `running`.
 - `lastResult` per node for a later debug overlay.
@@ -65,7 +66,7 @@ The Behaviour Tree editor calls `validateBehaviourTree` directly for canvas badg
 ## Authoring (`p11-bt-authoring`)
 
 - Engine bases: `BTTask`, `BTDecorator`, `BTService`, `BTComposite`. Built-ins: Wait, MoveTo (crowd when the runtime host is attached), RotateToFace, Play Animation, PlaySound, SetBlackboardValue, Loop / Cooldown / TimeLimit, BlackboardIsSet, CompareBlackboardValue.
-- `BehaviourTreeComponent` has `treeGuid` + `blackboardGuid`. Search / Add Component list it. Play loads trees like AnimationGraphs (`loadBehaviourTrees`); `BehaviourTreeRuntime.tick` (`packages/runtime/src/behaviour-tree-runtime.ts`, owned by the runtime driver) emits `btState` (only when the published state changed), and a released render slot drops its evaluation state. When the slot's BehaviourTreeComponent, `treeGuid` or `blackboardGuid` changes (or the component is removed), the old tree's running tasks are aborted and the new tree starts at its root with fresh Blackboard defaults. Each evaluation gets its own copy of array and object Blackboard defaults; a live Object/Actor Reference default keeps referring to the same object.
+- `BehaviourTreeComponent` has `treeGuid` + `blackboardGuid`. Search / Add Component list it. Play loads trees like AnimationGraphs (`loadBehaviourTrees`); `BehaviourTreeRuntime.tick` (`packages/runtime/src/behaviour-tree-runtime.ts`, owned by the runtime driver) visits only actors that own a BehaviourTreeComponent (shared component owner index, [object-model.md](object-model.md)) and emits `btState` (only when the published state changed), and a released render slot drops its evaluation state. When the slot's BehaviourTreeComponent, `treeGuid` or `blackboardGuid` changes (or the component is removed), the old tree's running tasks are aborted and the new tree starts at its root with fresh Blackboard defaults. Each evaluation gets its own copy of array and object Blackboard defaults; a live Object/Actor Reference default keeps referring to the same object.
 - Missing `treeGuid` / unloaded tree emits `bt.missing_tree`.
 - Custom `classId` values run compiled graphs: tasks `On Activate` / `On Tick` / `On Abort` (`bt.event.*`) and finish via `bt.finish`; decorators `On Evaluate` plus `bt.returnCondition` (`ctx.btEvaluate`); services `On Tick`. Get/Set Blackboard (`bt.blackboard.get` / `bt.blackboard.set`) compile to `ctx.getBlackboard` / `ctx.setBlackboard`. Abort mode on a decorator stays a tree attachment property, not a class event.
 - Runtime `BTTask_MoveTo` abort calls `stopNavAgent` and clears `__moveRequested` so the crowd does not keep walking the aborted path.

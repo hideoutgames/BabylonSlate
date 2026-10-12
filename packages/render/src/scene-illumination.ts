@@ -493,11 +493,13 @@ export function syncAuthoredCamerasFromMeshes(
   for (const actor of sceneData.actors) {
     const mesh = meshForActor(actor.id);
     if (!mesh) continue;
-    const world = mesh.computeWorldMatrix(true);
+    // Drag moves call this for every actor; only camera actors need a fresh matrix.
+    let world: Matrix | undefined;
     for (const component of actor.components) {
       if (component.classId !== "CameraComponent") continue;
       const camera = state.cameras.get(authoredComponentKey(actor.id, component.id));
       if (!camera) continue;
+      world ??= mesh.computeWorldMatrix(true);
       const composed = composeWorldComponentTransform(world, actor, component);
       updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
     }
