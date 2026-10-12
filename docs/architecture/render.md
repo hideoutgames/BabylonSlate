@@ -1010,8 +1010,14 @@ dropped when twice their bounds cannot reach it. Physical PBR falloff has no aut
 cutoff, so a light still reaches slightly past its range; there, objects beyond the range
 cast no shadow from it. On the FeatureTest main scene (10 m shadowed point light, camera
 far plane 1000 m) the point cube fell from 302 to 16 draws per frame.
-The policy scans before allocation/projection and again before per-camera targets,
-after active-mesh evaluation. While no light holds a map (shadows disabled, nothing
+The caster scan runs once per rendered frame, immediately before Babylon's render-once
+gate consumes the maps and after active-mesh evaluation: `ManagedShadowsTask` in a
+FrameGraph scene, the per-camera before-render-targets notification in a native scene (the
+frame-level one before world matrices update, and a frame graph's, are skipped). Admission (`sync("admission")`, from readiness and the before-render
+hook) allocates and ranks lights without scanning, and walks only to read caster state
+itself (a new map, a changed sun distance); frozen cascade caster bounds follow the frame's
+scan. Snapshots persist between scans, so a change made by any earlier hook of the frame is
+still seen before the gate. While no light holds a map (shadows disabled, nothing
 requested or admitted) the scan, spatial refit and caster bounds are skipped; only removed
 casters are released. Snapshots are kept, so the scan that runs before the first map is
 allocated reports real changes only. It uses Babylon render-once counters and explicit resets;

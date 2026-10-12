@@ -122,7 +122,8 @@ export class ShadowMapRefresh {
       state.value(record.transformRevision);
       state.value(geometry);
       state.value(geometryWatch?.revision);
-      state.value(mesh.isEnabled());
+      const enabled = mesh.isEnabled();
+      state.value(enabled);
       state.value(mesh.isVisible);
       state.value(mesh.visibility);
       state.value(mesh instanceof Mesh ? mesh.sideOrientation : undefined);
@@ -188,7 +189,7 @@ export class ShadowMapRefresh {
         record.revision++;
         this.casterChanged(mesh);
       }
-      const visible = mesh.isEnabled() && mesh.isVisible && mesh.visibility > 0;
+      const visible = enabled && mesh.isVisible && mesh.visibility > 0;
       record.unsafe = visible && (!safeMesh || !safeMaterial);
       if (visible && autoLod) this.lodLevels.set(mesh, peekAutoLodLevel(mesh, scene.activeCamera) ?? 0);
     }

@@ -693,7 +693,9 @@ export class ForwardSceneFrameGraph {
       this.setActiveCamera(camera);
       // Admit the conventional prefix before shadows spend shared texture units.
       syncSceneLighting(this.scene);
-      controller?.sync();
+      // Admission needs no caster state; ManagedShadowsTask walks the casters
+      // once, right before it consumes each map's refresh.
+      controller?.sync("admission");
       // Allocation/participation changes alter the material shadow layout.
       // Commit that layout before probing effects, so onBeforeRender cannot
       // invalidate the variants we just declared ready for the first frame.
