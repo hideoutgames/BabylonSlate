@@ -30,6 +30,7 @@ import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
+import { DriverCompileWatch } from "./driver-compile";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
 import { isManagedClusteredLight } from "./clustered-light-policy";
 import {
@@ -974,14 +975,18 @@ export class ForwardSceneFrameGraph {
         this.water?.reconcile();
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
-      const deadline = performance.now() + 10_000;
+      let deadline = performance.now() + 10_000;
+      const compiles = new DriverCompileWatch(scene.getEngine());
       while (!this.disposed && !this.isReady()) {
         assertCurrent();
         // A failed shader never becomes ready; report it instead of timing out.
         const compileFailure = this.effectsGraph?.spatial?.compileFailure.message ?? this.outlineTask?.compileFailure.message;
         if (compileFailure) throw new Error(compileFailure);
-        if (performance.now() >= deadline)
-          throw new Error("Forward FrameGraph readiness timed out.");
+        if (performance.now() >= deadline) {
+          // A driver still compiling reports completion only, never progress.
+          if (!compiles.renew()) throw new Error("Forward FrameGraph readiness timed out.");
+          deadline = performance.now() + 10_000;
+        }
         await new Promise<void>((resolve) => setTimeout(resolve, 16));
       }
       if (this.disposed) throw new Error("FrameGraph coordinator is disposed.");

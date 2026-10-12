@@ -20,6 +20,8 @@ export type FeatureTestSceneName = keyof typeof FEATURE_TEST_SCENES;
 
 /** FeatureTest imports and bakes much more than the shared 30 s helpers allow. */
 const LONG_MS = 180_000;
+/** A cold open of FT_World compiles its Water shaders: about 210 s on a D3D11 RTX 2060 (the driver builds them one after another). */
+const SCENE_OPEN_MS = 300_000;
 
 type EngineSettings = ReturnType<typeof defaultEngineSettings>;
 
@@ -81,7 +83,7 @@ export async function reopenFeatureTestProject(page: Page, timeout = LONG_MS): P
 export async function openFeatureTestScene(
   page: Page,
   scene: FeatureTestSceneName,
-  timeout = LONG_MS,
+  timeout = SCENE_OPEN_MS,
 ): Promise<{ readyMs: number; loadRetries: number }> {
   const started = Date.now();
   await openAssetFromBrowser(page, FEATURE_TEST_SCENES[scene]);

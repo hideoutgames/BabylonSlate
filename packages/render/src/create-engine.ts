@@ -257,6 +257,7 @@ import {
   SCENE_FIRST_FRAME_TIMEOUT_MS,
   SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
+import { DriverCompileWatch } from "./driver-compile";
 
 export interface EditorSceneLoadOptions {
   signal: AbortSignal;
@@ -4060,7 +4061,15 @@ function initializeEngine(
       let resolve!: () => void;
       let reject!: (error: Error) => void;
       const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
-      const timer = setTimeout(() => expirePresentation(key), SCENE_FIRST_FRAME_TIMEOUT_MS);
+      // Pipelines the first draws request can still be building on the driver,
+      // which reports completion only; renew the budget while it makes progress.
+      const compiles = new DriverCompileWatch(engine);
+      const expire = () => {
+        const waiting = pendingPresentations.get(key);
+        if (waiting && !waiting.completionStarted && compiles.renew()) waiting.timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
+        else expirePresentation(key);
+      };
+      const timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
       pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false });
       return promise;
     },

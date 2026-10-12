@@ -440,6 +440,51 @@ it("rejects the loading owner at the preparation deadline instead of accepting a
   renderer.dispose();
 });
 
+describe("preparation while the driver compiles", () => {
+  /** A scene that is not ready while one effect compiles on a parallel-compile driver. */
+  function compilingHost() {
+    const made = host();
+    made.engine.getCaps().parallelShaderCompile = { COMPLETION_STATUS_KHR: 0x91b1 };
+    let compiled = false;
+    (made.engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects["water"] =
+      { isReady: () => compiled, getCompilationError: () => "" };
+    // Polled by the readiness loop: the deadline clock only matters once it runs.
+    let polls = 0;
+    made.scene.addIsReadyCheck({ isReady: () => { polls += 1; return compiled; } });
+    const settled: { value: unknown } = { value: undefined };
+    const done = made.renderer.prepare().then(() => { settled.value = "ready"; }, (error: unknown) => { settled.value = error; });
+    const pass = () => new Promise<void>((resolve) => setTimeout(resolve, 60));
+    return { ...made, settled, done, finishCompile: () => { compiled = true; }, pass, polling: () => vi.waitFor(() => expect(polls).toBeGreaterThan(1)) };
+  }
+
+  it("outlasts the preparation deadline and finishes when the compile completes", async () => {
+    const { renderer, settled, done, finishCompile, pass, polling } = compilingHost();
+    await polling();
+    const start = performance.now();
+    vi.spyOn(performance, "now").mockReturnValue(start + 10_001);
+    await pass();
+    expect(settled.value).toBeUndefined();
+    finishCompile();
+    await done;
+    expect(settled.value).toBe("ready");
+    renderer.dispose();
+  });
+
+  it("rejects once the same compile has been pending for the driver bound", async () => {
+    const { renderer, settled, done, pass, polling } = compilingHost();
+    await polling();
+    const start = performance.now();
+    const clock = vi.spyOn(performance, "now");
+    clock.mockReturnValue(start + 10_001);
+    await pass();
+    expect(settled.value).toBeUndefined();
+    clock.mockReturnValue(start + 10_001 + 60_001);
+    await done;
+    expect(settled.value).toEqual(expect.objectContaining({ message: expect.stringContaining("timed out") }));
+    renderer.dispose();
+  });
+});
+
 it("rejects a frozen active-mesh queue instead of drawing it", async () => {
   const { scene, renderer } = host();
   const mesh = MeshBuilder.CreateBox("box", {}, scene);
