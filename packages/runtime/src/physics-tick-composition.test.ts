@@ -137,6 +137,28 @@ describe("physics tick composition work", () => {
     }
   });
 
+  it("rejects a parent cycle before any body is created, then composes correctly once it is broken", () => {
+    const { world, spawn } = createWorld();
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    const staticBody: Components[number] = ["RigidBodyComponent", { motionType: "static" }];
+    const parent = spawn("parent", { x: 1 }, [staticBody]);
+    spawn("child", { x: 2 }, [staticBody], parent.guid);
+    try {
+      parent.setVariable("parentId", "child");
+      expect(() => sync.syncFromWorld(world)).toThrow("parent cycle");
+      expect(backend.getBodyTransform("body:parent")).toBeNull();
+      parent.setVariable("parentId", null);
+      sync.syncFromWorld(world);
+      expect(backend.getBodyTransform("body:child")?.position.x).toBeCloseTo(3);
+      parent.transform.position.x = 5;
+      sync.syncFromWorld(world);
+      expect(backend.getBodyTransform("body:child")?.position.x).toBeCloseTo(7);
+    } finally {
+      sync.dispose();
+    }
+  });
+
   it("reads back unparented and parented bodies without resolving unrelated actors", () => {
     const { world, spawn } = createWorld();
     // Render meshes participate in pre-step physics composition but own no body.

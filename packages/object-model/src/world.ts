@@ -90,6 +90,13 @@ export class DuplicateActorGuidError extends Error {
 /** An in-progress actor/component phase's view of the actor list. */
 type ActorIteration = { list: readonly Actor[]; length: number };
 
+/** Replaces `out`'s contents with the subsystems that have not ended, in order. */
+function liveInto<T extends Subsystem>(subsystems: readonly T[], out: T[]): T[] {
+  out.length = 0;
+  for (const subsystem of subsystems) if (!subsystem.ended) out.push(subsystem);
+  return out;
+}
+
 export class World {
   /** Identity/hierarchy revision; no properties or world snapshots are collected. */
   structuralRevision = 0;
@@ -115,6 +122,13 @@ export class World {
   private gameSubsystems: GameSubsystem[] = [];
   /** Current main Scene's SceneSubsystems in class-id order. */
   private sceneSubsystems: SceneSubsystem[] = [];
+  /**
+   * Live snapshots `runPhase` iterates. Only that method fills them and `tick`
+   * does not nest, so no callback can overwrite one mid-iteration; the notify
+   * paths run inside callbacks and take their own copies.
+   */
+  private readonly tickGameSubsystems: GameSubsystem[] = [];
+  private readonly tickSceneSubsystems: SceneSubsystem[] = [];
   private sceneSubsystemClassIds: string[] = [];
   /** Main Scene creations this session; numbers SceneSubsystem guids. */
   private mainSceneCreations = 0;
@@ -783,13 +797,13 @@ export class World {
       switch (phase) {
         case "gameInstance":
           this.gameInstance?.callOnTick(ctx);
-          for (const subsystem of this.liveGameSubsystems()) {
+          for (const subsystem of liveInto(this.gameSubsystems, this.tickGameSubsystems)) {
             if (this.ended) break;
             subsystem.callOnTick(ctx);
           }
           break;
         case "sceneSubsystems":
-          for (const subsystem of this.liveSceneSubsystems()) {
+          for (const subsystem of liveInto(this.sceneSubsystems, this.tickSceneSubsystems)) {
             if (!this.sceneTickable()) break;
             if (!subsystem.ended && this.canTickSceneSubsystem(subsystem)) {
               subsystem.callOnTick(ctx);
@@ -809,6 +823,8 @@ export class World {
       }
     } finally {
       this.ticking = false;
+      this.tickGameSubsystems.length = 0;
+      this.tickSceneSubsystems.length = 0;
     }
 
     this.flushDeferred();

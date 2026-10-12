@@ -38,6 +38,7 @@ import {
 } from "@babylonslate/physics";
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import {
+  PhysicsCompositionScratch,
   PreparedColliderGeometry,
   sameDescriptor,
   physicsChainTransforms,
@@ -130,6 +131,11 @@ export class PhysicsWorldSync {
   private readonly passHosts = new Map<Actor, Actor | null>();
   private readonly ancestorScratch: Actor[] = [];
   private readonly chainScratch: Actor[] = [];
+  private readonly relativeSeed: Transform = {
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0, w: 1 },
+    scale: { x: 1, y: 1, z: 1 },
+  };
   private readonly hostedScratch = new Map<string, ColliderDesc>();
   private readonly liveActors = new Set<string>();
   private readonly collisionScratch = new DescriptorScratch();
@@ -138,6 +144,10 @@ export class PhysicsWorldSync {
   private readonly poseScratch: unknown[] = [];
   private readonly bodyPoses = new Map<string, PhysicsTransform>();
   private readonly readbackWorld = new Map<string, Transform>();
+  // `worldTransforms` is rewritten in place by the next pre-step pass; a
+  // readback recomposition has its own so it never overwrites that map.
+  private readonly composition = new PhysicsCompositionScratch();
+  private readonly recomposition = new PhysicsCompositionScratch();
   private spriteInstallation = 0;
   private tileInstallation = 0;
   private actors: readonly Actor[] = [];
@@ -372,6 +382,8 @@ export class PhysicsWorldSync {
       this.actorById,
       this.backend.kind,
       this.actorFilter,
+      undefined,
+      this.composition,
     );
     this.passStale = false;
     const sources = this.passSources;
@@ -684,11 +696,20 @@ export class PhysicsWorldSync {
       const parentId = actorParentGuid(current);
       current = parentId ? this.findLiveActor(parentId) : undefined;
     }
-    let transform: Transform = {
-      position: { x: 0, y: 0, z: 0 },
-      rotation: { x: 0, y: 0, z: 0, w: 1 },
-      scale: { ...scale },
-    };
+    if (chain.length === 0) {
+      return {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { ...scale },
+      };
+    }
+    // Only the first composition reads this seed, so it is never returned and
+    // its scale is rewritten per call (position and rotation stay identity).
+    const seed = this.relativeSeed;
+    seed.scale.x = scale.x;
+    seed.scale.y = scale.y;
+    seed.scale.z = scale.z;
+    let transform = seed;
     for (let index = chain.length - 1; index >= 0; index--)
       transform = composeParentChildTransform(transform, chain[index]!.transform);
     chain.length = 0;
@@ -961,6 +982,7 @@ export class PhysicsWorldSync {
             this.backend.kind,
             this.actorFilter,
             poses,
+            this.recomposition,
           )
         : undefined;
       for (const [actorId, transform] of poses) {

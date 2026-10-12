@@ -22,8 +22,8 @@ const VOICE_STREAM_SALT = 0x564f4943;
  */
 export class RuntimeVoices {
   private readonly live = new Map<string, LiveVoice>();
-  /** Live voices a trace restore started. */
-  private readonly restored = new WeakSet<LiveVoice>();
+  /** Ids of the live voices a trace restore started; every `live` removal also clears its id. */
+  private readonly restored = new Set<string>();
   private readonly seed: () => number;
   private rng: Rng | null = null;
   private clockSeconds = 0;
@@ -47,8 +47,7 @@ export class RuntimeVoices {
 
   /** True while a voice a trace restore started is live; the host then needs `audioSimTime`. */
   get hasRestoredVoices(): boolean {
-    for (const voice of this.live.values()) if (this.restored.has(voice)) return true;
-    return false;
+    return this.restored.size > 0;
   }
 
   /** Gives a `playSound` that names an asset but no clip or pitch draws its draws. */
@@ -74,7 +73,7 @@ export class RuntimeVoices {
       // A Play Sound with no asset (an unset Play Sound pin) starts no voice.
       if (!voiceId || !command.assetGuid) return;
       // A replayed voice id restarts and moves to the end of the start order.
-      this.live.delete(voiceId);
+      this.drop(voiceId);
       const voice: LiveVoice = {
         voiceId,
         assetGuid: command.assetGuid,
@@ -85,22 +84,30 @@ export class RuntimeVoices {
         startedAt: this.clockSeconds - (command.startOffsetSeconds ?? 0),
       };
       this.live.set(voiceId, voice);
-      if (command.restoredAtSeconds !== undefined) this.restored.add(voice);
+      if (command.restoredAtSeconds !== undefined) this.restored.add(voiceId);
     } else if (command.type === "stopSound") {
-      this.live.delete(command.voiceId);
+      this.drop(command.voiceId);
     } else if (command.type === "setVoiceGain") {
       const voice = this.live.get(command.voiceId);
       if (voice) voice.volume = command.volume;
     } else if (command.type === "activeScene") {
       // Hosts reset their audio session when the active Scene changes from the boot Scene onward.
-      if (this.activeSceneGuid !== undefined && command.sceneAssetGuid !== this.activeSceneGuid) this.live.clear();
+      if (this.activeSceneGuid !== undefined && command.sceneAssetGuid !== this.activeSceneGuid) {
+        this.live.clear();
+        this.restored.clear();
+      }
       this.activeSceneGuid = command.sceneAssetGuid;
     }
   }
 
   /** The host finished a non-looping voice. */
   ended(voiceId: string): void {
+    this.drop(voiceId);
+  }
+
+  private drop(voiceId: string): void {
     this.live.delete(voiceId);
+    this.restored.delete(voiceId);
   }
 
   traceState(): TraceAudioState {

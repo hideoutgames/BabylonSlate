@@ -3,6 +3,7 @@ import type { Transform } from "@babylonslate/core";
 import {
   actorParentGuid,
   composeParentChildTransform,
+  copyTransform,
 } from "./actor-world-transform";
 import {
   colliderLocalPose,
@@ -126,6 +127,42 @@ const PARTICIPANT_CLASSES = new Set([
 ]);
 
 /**
+ * Containers and unparented poses one world's per-tick composition reuses, so a
+ * steady world allocates no map, set or flat pose per tick. A pass rewrites
+ * them: its result, and any pose in it, is valid only until the next pass, so
+ * nothing may keep them longer.
+ */
+export class PhysicsCompositionScratch {
+  readonly resolved = new Map<string, Transform>();
+  readonly resolving = new Set<Actor>();
+  private readonly poses = new Map<string, Transform>();
+
+  begin(): void {
+    this.resolved.clear();
+    this.resolving.clear();
+  }
+
+  /** The pose object for `guid`; the caller overwrites all of it. */
+  pose(guid: string): Transform {
+    let pose = this.poses.get(guid);
+    if (!pose) {
+      pose = {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      };
+      this.poses.set(guid, pose);
+    }
+    return pose;
+  }
+
+  /** Releases the poses of guids this pass did not resolve. */
+  end(): void {
+    for (const guid of this.poses.keys()) if (!this.resolved.has(guid)) this.poses.delete(guid);
+  }
+}
+
+/**
  * Physics hierarchy semantics shared by the per-tick pass and call-time chains:
  * `lookup` answers a parent guid with its live actor (as both
  * `World.findActor` and the per-tick index do), a destroyed parent ends the
@@ -137,8 +174,9 @@ function physicsTransformResolver(
   kind: "2d" | "3d",
   resolved: Map<string, Transform>,
   bodyPoses?: ReadonlyMap<string, PhysicsTransform>,
+  scratch?: PhysicsCompositionScratch,
 ): (actor: Actor) => Transform {
-  const resolving = new Set<Actor>();
+  const resolving = scratch?.resolving ?? new Set<Actor>();
   const resolve = (actor: Actor): Transform => {
     const old = resolved.get(actor.guid);
     if (old) return old;
@@ -147,11 +185,7 @@ function physicsTransformResolver(
     resolving.add(actor);
     const parentId = actorParentGuid(actor);
     const parent = parentId ? lookup(parentId) : undefined;
-    let transform = {
-      position: { ...actor.transform.position },
-      rotation: { ...actor.transform.rotation },
-      scale: { ...actor.transform.scale },
-    };
+    let transform: Transform;
     if (parent && !parent.destroyed) {
       const ancestor = resolve(parent);
       // Validate the supported shear-free TRS boundary, but retain the shared
@@ -162,19 +196,41 @@ function physicsTransformResolver(
         ancestor.scale,
       );
       transform = composeParentChildTransform(ancestor, actor.transform);
+    } else {
+      transform = scratch
+        ? copyTransformInto(actor.transform, scratch.pose(actor.guid))
+        : copyTransform(actor.transform);
     }
     const bodyPose = bodyPoses?.get(actor.guid);
-    if (bodyPose)
-      transform = {
-        ...transform,
-        position: { ...bodyPose.position },
-        rotation: { ...bodyPose.rotation },
-      };
+    // `transform` belongs to this pass alone, so the body pose overwrites it.
+    if (bodyPose) {
+      transform.position.x = bodyPose.position.x;
+      transform.position.y = bodyPose.position.y;
+      transform.position.z = bodyPose.position.z;
+      transform.rotation.x = bodyPose.rotation.x;
+      transform.rotation.y = bodyPose.rotation.y;
+      transform.rotation.z = bodyPose.rotation.z;
+      transform.rotation.w = bodyPose.rotation.w;
+    }
     resolving.delete(actor);
     resolved.set(actor.guid, transform);
     return transform;
   };
   return resolve;
+}
+
+function copyTransformInto(source: Transform, out: Transform): Transform {
+  out.position.x = source.position.x;
+  out.position.y = source.position.y;
+  out.position.z = source.position.z;
+  out.rotation.x = source.rotation.x;
+  out.rotation.y = source.rotation.y;
+  out.rotation.z = source.rotation.z;
+  out.rotation.w = source.rotation.w;
+  out.scale.x = source.scale.x;
+  out.scale.y = source.scale.y;
+  out.scale.z = source.scale.z;
+  return out;
 }
 
 /**
@@ -206,13 +262,16 @@ export function physicsWorldTransforms(
   kind: "2d" | "3d",
   eligible: (actor: Actor) => boolean,
   bodyPoses?: ReadonlyMap<string, PhysicsTransform>,
+  scratch?: PhysicsCompositionScratch,
 ): Map<string, Transform> {
-  const resolved = new Map<string, Transform>();
+  scratch?.begin();
+  const resolved = scratch?.resolved ?? new Map<string, Transform>();
   const resolve = physicsTransformResolver(
     (guid) => byGuid.get(guid),
     kind,
     resolved,
     bodyPoses,
+    scratch,
   );
   for (const actor of actors) {
     if (
@@ -231,5 +290,6 @@ export function physicsWorldTransforms(
     )
       resolve(actor);
   }
+  scratch?.end();
   return resolved;
 }

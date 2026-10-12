@@ -1,4 +1,4 @@
-import type { ColliderDesc, PhysicsTransform, Quat, Vec3 } from "./types";
+import type { ColliderDesc, ColliderShape, PhysicsTransform, Quat, Vec3 } from "./types";
 import { identityQuat, multiplyQuat, rotateQuatVec } from "./collider-bake";
 
 export type DebugColliderShape = "box" | "sphere" | "circle" | "polyline" | "capsule" | "capsule2d" | "cylinder" | "convex" | "mesh";
@@ -49,10 +49,47 @@ function polylinePoints(
   });
 }
 
+type PointShape = Extract<ColliderShape, { kind: "convex" | "mesh" }>;
+type PointGeometry = { points: Vec3[]; indices?: number[] };
+
+/**
+ * Pose-independent points of convex and mesh shapes, per shape object. Backends
+ * own prepared shapes (frozen, never edited in place) and replace them to change
+ * geometry, so a shape object identifies one geometry revision. Listings from the
+ * same shape share these arrays: treat them as read-only.
+ */
+const pointGeometryByShape = new WeakMap<PointShape, PointGeometry>();
+
+function pointGeometry(shape: PointShape, shared: boolean): PointGeometry {
+  const reusable = shared && Object.isFrozen(shape);
+  const cached = reusable ? pointGeometryByShape.get(shape) : undefined;
+  if (cached) return cached;
+  const geometry: PointGeometry = shape.kind === "convex"
+    ? { points: shape.points.map((point) => ({ ...point })) }
+    : {
+        points: Array.from({ length: shape.positions.length / 3 }, (_, i) => ({
+          x: shape.positions[i * 3]!,
+          y: shape.positions[i * 3 + 1]!,
+          z: shape.positions[i * 3 + 2]!,
+        })),
+        indices: Array.from(shape.indices),
+      };
+  if (reusable) pointGeometryByShape.set(shape, geometry);
+  return geometry;
+}
+
 /** Snapshot the simulation geometry with its current body and local collider pose. */
 export function debugColliderFromDesc(
   desc: ColliderDesc,
   bodyTransform: PhysicsTransform,
+): DebugColliderPrimitive | null {
+  return describeCollider(desc, bodyTransform, false);
+}
+
+function describeCollider(
+  desc: ColliderDesc,
+  bodyTransform: PhysicsTransform,
+  shared: boolean,
 ): DebugColliderPrimitive | null {
   const position = colliderWorldPosition(desc, bodyTransform);
   const rotation = multiplyQuat(
@@ -140,22 +177,20 @@ export function debugColliderFromDesc(
         shape: "convex",
         position,
         rotation,
-        points: shape.points.map((point) => ({ ...point })),
+        points: pointGeometry(shape, shared).points,
       };
-    case "mesh":
+    case "mesh": {
       if (shape.positions.length < 9 || shape.indices.length < 3) return null;
+      const geometry = pointGeometry(shape, shared);
       return {
         id: desc.id,
         shape: "mesh",
         position,
         rotation,
-        points: Array.from({ length: shape.positions.length / 3 }, (_, i) => ({
-          x: shape.positions[i * 3]!,
-          y: shape.positions[i * 3 + 1]!,
-          z: shape.positions[i * 3 + 2]!,
-        })),
-        indices: Array.from(shape.indices),
+        points: geometry.points,
+        indices: geometry.indices,
       };
+    }
     default:
       return null;
   }
@@ -169,7 +204,7 @@ export function listDebugCollidersFromRecords(
   for (const record of colliders) {
     const body = getBodyTransform(record.desc.bodyId);
     if (!body) continue;
-    const primitive = debugColliderFromDesc(record.desc, body);
+    const primitive = describeCollider(record.desc, body, true);
     if (primitive) out.push(primitive);
   }
   return out;

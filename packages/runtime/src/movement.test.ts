@@ -199,6 +199,28 @@ describe("Movement through the shared Play/player runtime", () => {
     } finally { runtime.stop(); }
   });
 
+  it("republishes get-only values that a direct write changed, and never edits a velocity a reader kept", async () => {
+    const { runtime, motor, call, tick } = await setup("3d", { gravityScale: 0 });
+    try {
+      tick();
+      motor.variables.set("velocity", { x: 9, y: 9, z: 9 });
+      motor.variables.set("speed", 9);
+      motor.variables.set("isGrounded", true);
+      motor.variables.set("isInAir", false);
+      motor.variables.set("isMoving", true);
+      tick();
+      expect(motor.getVariable("velocity")).toEqual({ x: 0, y: 0, z: 0 });
+      expect([motor.getVariable("speed"), motor.getVariable("isGrounded"), motor.getVariable("isInAir"), motor.getVariable("isMoving")])
+        .toEqual([0, false, true, false]);
+
+      call("setMovementVelocity", { velocity: { x: 2, y: 0, z: 0 } });
+      const kept = motor.getVariable("velocity");
+      call("setMovementVelocity", { velocity: { x: 3, y: 0, z: 0 } });
+      expect(kept).toEqual({ x: 2, y: 0, z: 0 });
+      expect(motor.getVariable("velocity")).toEqual({ x: 3, y: 0, z: 0 });
+    } finally { runtime.stop(); }
+  });
+
   it("keeps motor input across pause and promotes a surviving replacement without stale velocity", async () => {
     const properties = { gravityScale: 0, acceleration: 600, braking: 600, airControl: 1 };
     const { runtime, actor, motor, call, tick } = await setup("3d", properties);
