@@ -53,6 +53,7 @@ import {
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
 
 export { MISSING_STARTUP_SCENE_MESSAGE };
 
@@ -127,7 +128,7 @@ export type CollectExportGameParams = {
   areaEmissionBytesByGuid?: (guid: string) => Uint8Array | null;
   fontMsdfJsonByGuid?: (guid: string) => Uint8Array | null;
   fontMsdfPngByGuid?: (guid: string) => Uint8Array | null;
-  /** Throws for a Scene whose reverb could not be baked; a reached one fails the export. */
+  /** Throws for a Scene whose reverb could not be baked or saved; a reached one fails the export. */
   audioReverbByGuid?: (guid: string) => Uint8Array | null;
   renderSettings: RenderProjectSettings;
   defaultFontGuid?: string | null;
@@ -429,7 +430,13 @@ export async function collectAndExportGame(
     try {
       field = params.audioReverbByGuid?.(guid);
     } catch (error) {
-      return { ok: false, error: `${asset.name} could not be read for its audio reverb bake: ${error instanceof Error ? error.message : String(error)}` };
+      const reason = error instanceof Error ? error.message : String(error);
+      return {
+        ok: false,
+        error: error instanceof AudioReverbBakeUnsavedError
+          ? `${asset.name}'s audio reverb bake could not be saved: ${reason}`
+          : `${asset.name} could not be read for its audio reverb bake: ${reason}`,
+      };
     }
     if (!field || field.byteLength === 0) continue;
     exportAssets.push({

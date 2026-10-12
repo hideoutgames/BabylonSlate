@@ -79,10 +79,7 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
     registerAudioReverbSaveFlush(async (persistedScenes, writer) => {
       const write = writer ? (entry: import("../lib/audio-reverb-bake").AudioReverbBakeWrite) =>
         writer.writeSceneAudioReverbChunk(entry.path, entry.bytes, entry.payload) : undefined;
-      if (persistedScenes) {
-        await controller.flushAll(persistedScenes, write);
-        return;
-      }
+      if (persistedScenes) return controller.flushAll(persistedScenes, write);
       const { projectDocument, assetRegistry } = latestRef.current;
       const paths = playSceneLibraryPaths(
         projectDocument?.scenes ?? [],
@@ -92,7 +89,7 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
         paths,
         load: (path) => latestRef.current.loadAssetDocument("scene", path),
       });
-      await controller.flushAll(scenes, write);
+      return controller.flushAll(scenes, write);
     });
     return () => {
       registerAudioReverbSaveFlush(null);
