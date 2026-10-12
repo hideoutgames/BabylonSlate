@@ -123,7 +123,8 @@ describe.each([
 describe("worker entry snapshot transport", () => {
   type Post =
     | { kind: "snapshot"; frameId: number; buffer: ArrayBuffer }
-    | { kind: "command"; command: CommandMessage };
+    /** `batch` numbers the worker message the command arrived in. */
+    | { kind: "command"; command: CommandMessage; batch: number };
   let send: ((control: ControlMessage) => void) | undefined;
   afterEach(async () => {
     send?.({ type: "stop" });
@@ -149,17 +150,20 @@ describe("worker entry snapshot transport", () => {
     vi.stubGlobal("self", host);
     const deliver = (data: BridgeHostMessage) => host.onmessage!({ data });
     const posts: Post[] = [];
+    let batch = 0;
     vi.stubGlobal("postMessage", (message: BridgeWorkerMessage) => {
       if (message.channel === "snapshot") {
         const frameId = readSnapshotHeader(new Float32Array(message.payload)).frameId;
         posts.push({ kind: "snapshot", frameId, buffer: message.payload });
         return;
       }
-      const command = message.payload;
-      posts.push({ kind: "command", command });
-      // Like the real hosts, acknowledge a layout change on a later task.
-      if (command.type === "snapshotLayout") {
-        queueMicrotask(() => deliver({ channel: "snapshotLayoutAck", generation: command.generation }));
+      batch++;
+      for (const command of message.channel === "commands" ? message.payload : [message.payload]) {
+        posts.push({ kind: "command", command, batch });
+        // Like the real hosts, acknowledge a layout change on a later task.
+        if (command.type === "snapshotLayout") {
+          queueMicrotask(() => deliver({ channel: "snapshotLayoutAck", generation: command.generation }));
+        }
       }
     });
     const emitted: CommandMessage[] = [];
@@ -242,6 +246,59 @@ describe("worker entry snapshot transport", () => {
     expect(snapshots()[3]!.frameId).toBe(newest);
   });
 
+  it("sends a tick's commands as one batch in emission order, ahead of that tick's pose", async () => {
+    const { deliver, posts, runtime, runFrames, snapshots } = await bootWorker(
+      { type: "load", sceneAssetGuid: "main", scene: { ...createDefaultScene(), actors: [createActor("prop", "Prop")] } });
+    runFrames(8);
+    for (const pose of snapshots()) deliver({ channel: "recycleSnapshot", payload: pose.buffer });
+    const advance = runtime.advance.bind(runtime);
+    vi.spyOn(runtime, "advance").mockImplementation((elapsed) => {
+      advance(elapsed);
+      runtime.reportLog("first");
+      runtime.reportLog("second");
+    });
+
+    const before = posts.length;
+    runFrames(1);
+    const frame = posts.slice(before);
+    const poseAt = frame.findIndex((post) => post.kind === "snapshot");
+    expect(poseAt).toBeGreaterThan(1);
+    const commands = frame.slice(0, poseAt).flatMap((post) => post.kind === "command" ? [post] : []);
+    const logs = commands.filter((post) => post.command.type === "log");
+    expect(logs.map((post) => post.command.type === "log" && post.command.message)).toEqual(["first", "second"]);
+    expect(new Set(commands.map((post) => post.batch)).size).toBe(1);
+  });
+
+  it("flushes queued commands before the pose that releases a held reply, which then follows the pose alone", async () => {
+    const { deliver, posts, runtime, runFrames, kinds, snapshots } = await bootWorker({
+      type: "load", sceneAssetGuid: "main", sessionGeneration: 4, sessionMode: "simulate",
+      scene: { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero" })] },
+    }, [{ type: "loadScripts", scripts: [{ classId: "Hero", assetGuid: "hero-class", parentClassId: "Actor", source: "", anchors: [],
+      entryPoints: [], variables: [{ name: "health", type: "float", defaultValue: 10 }] }] }]);
+    const inspect = async (requestId: number, action: RuntimeInspectorAction) => {
+      deliver({ channel: "control", payload: { type: "runtimeInspector", sessionGeneration: 4, requestId, action } });
+      await vi.waitFor(() => expect(posts.some((post) => post.kind === "command" &&
+        post.command.type === "runtimeInspectorResult" && post.command.requestId === requestId)).toBe(true));
+    };
+    runFrames(8);
+    await inspect(1, { kind: "identities" });
+    const hero = posts.flatMap((post) => post.kind === "command" && post.command.type === "runtimeInspectorResult" &&
+      post.command.payload?.kind === "identities" ? post.command.payload.rows : []).find((row) => row.kind === "actor")!.identity;
+    deliver({ channel: "control", payload: { type: "runtimeInspector", sessionGeneration: 4, requestId: 2,
+      action: { kind: "setProperty", target: hero, sequence: 1, property: "health", value: 42 } } });
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+
+    // The reply is held for the next pose; a log emitted now is still queued when the buffer returns.
+    const before = posts.length;
+    runtime.reportLog("before the pose");
+    deliver({ channel: "recycleSnapshot", payload: snapshots()[0]!.buffer });
+    const released = posts.slice(before);
+    expect(kinds(released)).toEqual(["log", "snapshot", "runtimeInspectorResult"]);
+    const [log, , reply] = released;
+    if (log?.kind !== "command" || reply?.kind !== "command") throw new Error("unexpected posts");
+    expect(reply.batch).not.toBe(log.batch);
+  });
+
   it("pauses again after a single step whose tick throws", async () => {
     const { runtime, runFrames } = await bootWorker({ type: "load", sceneAssetGuid: "main", scene: { ...createDefaultScene(), actors: [createActor("prop", "Prop")] } });
     send!({ type: "setPaused", paused: true });
@@ -257,6 +314,8 @@ describe("worker entry snapshot transport", () => {
     const commands = () => posts.flatMap((post) => post.kind === "command" ? [post.command] : []);
     // An End Play save write the host has not answered yet.
     const written = saveStorage().write("slot", "end of play");
+    // A write made outside any handler or tick is flushed at the end of the current task's microtasks.
+    await Promise.resolve();
     const request = commands().find((command) => command.type === "saveStorageRequest");
     if (request?.type !== "saveStorageRequest") throw new Error("No save request");
     send!({ type: "stop" });

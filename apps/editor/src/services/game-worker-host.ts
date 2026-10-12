@@ -1,8 +1,9 @@
-import type {
-  BridgeHostMessage,
-  BridgeWorkerMessage,
-  CommandMessage,
-  ControlMessage,
+import {
+  dispatchCommandBatch,
+  type BridgeHostMessage,
+  type BridgeWorkerMessage,
+  type CommandMessage,
+  type ControlMessage,
 } from "@babylonslate/bridge";
 import type { RawInputEvent } from "@babylonslate/input";
 import { encodeInputEvents } from "@babylonslate/input";
@@ -31,19 +32,28 @@ export function createGameWorkerHost(): GameWorkerHost {
   const commandHandlers: Array<(command: CommandMessage) => void> = [];
   const snapshotHandlers: Array<(buffer: Float32Array) => void> = [];
   let installedGeneration = 0;
+  let terminated = false;
 
   const post = (message: BridgeHostMessage, transfer?: Transferable[]) => {
     worker.postMessage(message, transfer ?? []);
   };
 
+  const dispatchCommand = (command: CommandMessage) => {
+    if (command.type === "snapshotLayout") {
+      installedGeneration = command.generation;
+      post({ channel: "snapshotLayoutAck", generation: installedGeneration });
+    }
+    for (const handler of commandHandlers) handler(command);
+  };
+
   worker.onmessage = (event: MessageEvent<BridgeWorkerMessage>) => {
     const msg = event.data;
     if (msg.channel === "command") {
-      if (msg.payload.type === "snapshotLayout") {
-        installedGeneration = msg.payload.generation;
-        post({ channel: "snapshotLayoutAck", generation: installedGeneration });
-      }
-      for (const handler of commandHandlers) handler(msg.payload);
+      dispatchCommand(msg.payload);
+      return;
+    }
+    if (msg.channel === "commands") {
+      dispatchCommandBatch(msg.payload, dispatchCommand, () => terminated);
       return;
     }
     if (msg.channel === "snapshot") {
@@ -77,6 +87,9 @@ export function createGameWorkerHost(): GameWorkerHost {
     onSnapshot: (handler) => {
       snapshotHandlers.push(handler);
     },
-    terminate: () => worker.terminate(),
+    terminate: () => {
+      terminated = true;
+      worker.terminate();
+    },
   };
 }

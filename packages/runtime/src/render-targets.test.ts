@@ -20,6 +20,23 @@ describe("render target graph runtime", () => {
     } finally { runtime.stop(); }
   });
 
+  it("sends the capture lens pose by value, so a later in-place move cannot change the sent command", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      const actor = runtime.spawnScriptedActor({ classId: "RenderTargetCapture" })!;
+      const lens = actor.components.find((component) => component.classId === "RenderTargetCaptureComponent")!;
+      const sent = commands.find((command) => command.type === "configureRenderTargetCapture");
+      if (sent?.type !== "configureRenderTargetCapture" || !sent.transform) throw new Error("No capture command");
+      const x = sent.transform.position.x;
+      // Tweens move a component transform in place.
+      lens.transform.position.x = x + 5;
+      expect(sent.transform.position.x).toBe(x);
+    } finally { runtime.stop(); }
+  });
+
   it("reads asset mode and texture references after worker loading and edits actor filters without rebuilding meshes", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({

@@ -21,6 +21,7 @@ import {
   TransferablePingPong,
   dynamicMeshTransferables,
   type BridgeHostMessage,
+  type BridgeWorkerMessage,
   type CommandMessage,
   type ControlMessage,
 } from "@babylonslate/bridge";
@@ -43,7 +44,7 @@ let bootGeneration = 0;
 let consoleQueue = Promise.resolve();
 const sceneSnapshots = createSceneSnapshotDelivery({
   publishSnapshot: () => publishSnapshot(),
-  send: (command) => postMessage({ channel: "command", payload: command }),
+  send: queueCommand,
 });
 // Recycled via the host's `recycleSnapshot` message so the per-frame
 // snapshot transfer never allocates a fresh ArrayBuffer once warmed up.
@@ -60,9 +61,12 @@ let snapshotSkipped = false;
 let afterPose: CommandMessage[] = [];
 
 function releaseAfterPose(): void {
+  if (afterPose.length === 0) return;
   const held = afterPose;
   afterPose = [];
   for (const command of held) onCommand(command);
+  // Right after the pose, not behind whatever the rest of the handler emits.
+  flushCommands();
 }
 let installedGeneration = 0;
 let pendingGeneration: number | null = null;
@@ -70,26 +74,72 @@ let pendingGeneration: number | null = null;
 let unpostedLayout: Extract<CommandMessage, { type: "snapshotLayout" }> | null = null;
 let stopConsoleCapture: (() => void) | null = null;
 
+// Plain commands leave as one `commands` message instead of one clone each. The
+// queue is flushed where the emitting handler or tick ends and before every
+// other post (`post`), so the host sees the order separate posts would give.
+let commandQueue: CommandMessage[] = [];
+let flushScheduled = false;
+
+function queueCommand(command: CommandMessage): void {
+  commandQueue.push(command);
+  if (flushScheduled) return;
+  flushScheduled = true;
+  // Replies from promise and timer continuations have no handler end to flush them.
+  queueMicrotask(flushScheduledCommands);
+}
+
+function flushScheduledCommands(): void {
+  flushScheduled = false;
+  flushCommands();
+}
+
+/** Never throws, so a flush on the way to a pose or a `finally` cannot lose that post or mask an error. */
+function flushCommands(): void {
+  if (commandQueue.length === 0) return;
+  const batch = commandQueue;
+  commandQueue = [];
+  try {
+    postMessage({ channel: "commands", payload: batch } satisfies BridgeWorkerMessage);
+  } catch {
+    // A command the structured clone rejects must not drop the rest of the
+    // batch: send the others alone, in order, and report each failure as uncaught.
+    for (const command of batch) {
+      try {
+        postMessage({ channel: "command", payload: command } satisfies BridgeWorkerMessage);
+      } catch (error) {
+        queueMicrotask(() => { throw error; });
+      }
+    }
+  }
+}
+
+/** Every post except the batch itself, so queued commands are never overtaken. */
+function post(message: BridgeWorkerMessage, transfer?: Transferable[]): void {
+  flushCommands();
+  if (transfer) postMessage(message, transfer);
+  else postMessage(message);
+}
+
 function onCommand(command: CommandMessage): void {
   if (command.type === "performanceTicks") {
-    postMessage({ channel: "command", payload: command }, [command.rows.buffer as ArrayBuffer]);
+    post({ channel: "command", payload: command }, [command.rows.buffer as ArrayBuffer]);
     return;
   }
   if (sceneSnapshots.receive(command)) return;
   const geometryTransfers = dynamicMeshTransferables(command);
   if (geometryTransfers) {
-    postMessage({ channel: "command", payload: command }, geometryTransfers);
+    post({ channel: "command", payload: command }, geometryTransfers);
     return;
   }
   if (command.type === "cableFrame") {
-    postMessage({ channel: "command", payload: command }, [command.data.buffer as ArrayBuffer]);
+    post({ channel: "command", payload: command }, [command.data.buffer as ArrayBuffer]);
     return;
   }
   if (command.type === "snapshotLayout") {
     installSnapshotLayout(command);
     return;
   }
-  postMessage({ channel: "command", payload: command });
+  queueCommand(command);
 }
 
 /**
@@ -109,7 +159,7 @@ function installSnapshotLayout(command: Extract<CommandMessage, { type: "snapsho
   }
   unpostedLayout = null;
   pendingGeneration = command.generation;
-  postMessage({ channel: "command", payload: command });
+  post({ channel: "command", payload: command });
   return true;
 }
 
@@ -158,7 +208,7 @@ function handleControl(msg: ControlMessage): void {
         for (const bytes of simulationCaptureChunks(result.scene)) {
           if (superseded()) { refuseSuperseded(); return; }
           const chunk: CommandMessage = { type: "simulationCaptureChunk", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId, sequence: sequence++, bytes };
-          postMessage({ channel: "command", payload: chunk }, [bytes.buffer as ArrayBuffer]);
+          post({ channel: "command", payload: chunk }, [bytes.buffer as ArrayBuffer]);
           await new Promise(resolve => setTimeout(resolve, 0));
         }
         if (superseded()) { refuseSuperseded(); return; }
@@ -491,7 +541,7 @@ function publishSnapshot(): boolean {
   const ab = snapshotPing.commitWrite();
   inFlightSnapshots++;
   snapshotSkipped = false;
-  postMessage({ channel: "snapshot", payload: ab, generation: installedGeneration }, [ab]);
+  post({ channel: "snapshot", payload: ab, generation: installedGeneration }, [ab]);
   releaseAfterPose();
   return true;
 }
@@ -499,14 +549,17 @@ function publishSnapshot(): boolean {
 function pump(elapsed: number): void {
   const rt = runtime;
   if (!rt) return;
-  rt.advance(elapsed);
-  if (!sceneSnapshots.flush()) publishSnapshot();
+  try {
+    rt.advance(elapsed);
+    if (!sceneSnapshots.flush()) publishSnapshot();
+  } finally {
+    flushCommands();
+  }
 }
 
 const scheduler = createWorkerScheduler(self, pump);
 
-self.onmessage = (event: MessageEvent<BridgeHostMessage>) => {
-  const msg = event.data;
+function handleHostMessage(msg: BridgeHostMessage): void {
   if (msg.channel === "control") {
     handleControl(msg.payload);
     return;
@@ -529,12 +582,28 @@ self.onmessage = (event: MessageEvent<BridgeHostMessage>) => {
     pendingGeneration = null;
     sceneSnapshots.flush();
   }
+}
+
+self.onmessage = (event: MessageEvent<BridgeHostMessage>) => {
+  try {
+    handleHostMessage(event.data);
+  } finally {
+    flushCommands();
+  }
 };
 
 self.addEventListener("error", (event) => {
-  ensureRuntime().reportError(event.error ?? event.message);
+  try {
+    ensureRuntime().reportError(event.error ?? event.message);
+  } finally {
+    flushCommands();
+  }
 });
 
 self.addEventListener("unhandledrejection", (event) => {
-  ensureRuntime().reportError(event.reason);
+  try {
+    ensureRuntime().reportError(event.reason);
+  } finally {
+    flushCommands();
+  }
 });

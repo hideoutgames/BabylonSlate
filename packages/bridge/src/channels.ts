@@ -919,4 +919,6 @@ export type BridgeHostMessage =
 
 export type BridgeWorkerMessage =
   | { channel: "command"; payload: CommandMessage }
+  /** Plain commands emitted since the worker's last post, in emission order; hosts dispatch each as a lone `command`. */
+  | { channel: "commands"; payload: CommandMessage[] }
   | { channel: "snapshot"; payload: ArrayBuffer; generation: number };

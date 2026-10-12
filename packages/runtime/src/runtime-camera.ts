@@ -182,11 +182,13 @@ export class RuntimeCamera implements RuntimeSubsystem {
           : 0;
       const end =
         hit.hit === true && hit.location ? hit.location : ray.end;
+      // The script receives these vectors too; copy them so the queued command
+      // keeps this call's values (commands are cloned when the worker flushes).
       this.host.emit({
         type: "debugDraw",
         kind: "line",
-        start: ray.origin,
-        end,
+        start: { ...ray.origin },
+        end: { ...end },
         thickness: 1,
         color: { x: 1, y: 0, z: 0, w: 1 },
         duration,
@@ -196,7 +198,7 @@ export class RuntimeCamera implements RuntimeSubsystem {
         this.host.emit({
           type: "debugDraw",
           kind: "square",
-          center: hit.location,
+          center: { ...hit.location },
           size: 0.16,
           color: { x: 0, y: 1, z: 0, w: 1 },
           duration,
