@@ -16,16 +16,23 @@ export function lightSamplerCost(scene: Scene, light: Light, hasArea: boolean): 
   return 0;
 }
 
-export function lightSamplerCount(scene: Scene, lights: Iterable<Light>): number {
+export function lightSamplerCount(
+  scene: Scene,
+  lights: Iterable<Light>,
+  include?: (light: Light) => boolean,
+): number {
   let count = 0, hasArea = false;
   for (const light of lights) {
+    if (include && !include(light)) continue;
     count += lightSamplerCost(scene, light, hasArea);
     hasArea ||= light instanceof RectAreaLight;
   }
   return count;
 }
 
+const isAdmittedDirectLight = (light: Light): boolean => light.isEnabled() && light.intensity > 0;
+
 /** Shadows spend only the sampler headroom left by admitted direct lighting. */
 export function remainingShadowSamplers(scene: Scene): number {
-  return Math.max(0, lightingSamplerCapacity(scene) - lightSamplerCount(scene, scene.lights.filter((light) => light.isEnabled() && light.intensity > 0)));
+  return Math.max(0, lightingSamplerCapacity(scene) - lightSamplerCount(scene, scene.lights, isAdmittedDirectLight));
 }

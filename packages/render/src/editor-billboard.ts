@@ -166,9 +166,18 @@ export function applyEditorBillboardFromActor(
   const lightName = component?.classId === "AreaRectLightComponent" ? `authoredAreaLight:${actor.id}:${component.id}` : `${AUTHORED_LIGHT_PREFIX}${actor.id}`;
   const scene = mesh.getScene();
   let light: Light | null = null;
+  // scene.lights.length at the last failed lookup, or -1 to look up. A miss holds
+  // until a light is added or removed; Babylon defers its add notification, so a
+  // changed count is the synchronous backstop.
+  let missedAt = -1;
   const update = () => {
-    if (!light || light.isDisposed() || light.name !== lightName) {
+    if (
+      light
+        ? light.isDisposed() || light.name !== lightName
+        : missedAt !== scene.lights.length
+    ) {
       light = scene.getLightByName(lightName);
+      missedAt = light ? -1 : scene.lights.length;
     }
     const illuminationLimited = light && isForwardLightExcluded(light);
     const disabled = light ? (!light.isEnabled() && !illuminationLimited) || light.intensity <= 0
@@ -193,10 +202,15 @@ export function applyEditorBillboardFromActor(
   const observer = scene.onBeforeRenderObservable.add(update);
   const lightRemoved = scene.onLightRemovedObservable.add((removed) => {
     if (removed === light) light = null;
+    missedAt = -1;
+  });
+  const lightAdded = scene.onNewLightAddedObservable.add(() => {
+    missedAt = -1;
   });
   billboardUpdaters.set(mesh, () => {
     scene.onBeforeRenderObservable.remove(observer);
     scene.onLightRemovedObservable.remove(lightRemoved);
+    scene.onNewLightAddedObservable.remove(lightAdded);
   });
   if (!hasUpdater) mesh.onDisposeObservable.addOnce(() => {
     billboardUpdaters.get(mesh)?.();

@@ -88,7 +88,7 @@ type Entry = {
   requested: boolean;
   priority: number;
   generator: ShadowGenerator | null;
-  key: string;
+  key: AllocationKey | null;
   settings: ShadowSettings | null;
   mapSize: number;
   reason: string | null;
@@ -110,16 +110,42 @@ const NEUTRAL_DARKNESS = 1;
 const controllers = new WeakMap<Scene, SceneShadowController>();
 
 /** An admitted map's allocation shape; a change replaces the generator. */
+type AllocationKey = {
+  readonly mapSize: number;
+  readonly cube: boolean;
+  readonly cascades: number;
+};
+
 function allocationKey(
   mapSize: number,
   light: ShadowLight,
   cascades: number,
-): string {
-  return JSON.stringify([
+): AllocationKey {
+  return {
     mapSize,
-    light.needCube(),
-    light instanceof DirectionalLight ? cascades : 1,
-  ]);
+    cube: light.needCube(),
+    cascades: light instanceof DirectionalLight ? cascades : 1,
+  };
+}
+
+/** JSON equality of two numbers: every non-finite value serializes as null. */
+function sameJsonNumber(a: number, b: number): boolean {
+  return a === b || (!Number.isFinite(a) && !Number.isFinite(b));
+}
+
+/** Whether `key` equals the allocation shape of these inputs, without building one. */
+function matchesAllocationKey(
+  key: AllocationKey | null,
+  mapSize: number,
+  light: ShadowLight,
+  cascades: number,
+): boolean {
+  return (
+    key !== null &&
+    sameJsonNumber(key.mapSize, mapSize) &&
+    key.cube === light.needCube() &&
+    sameJsonNumber(key.cascades, light instanceof DirectionalLight ? cascades : 1)
+  );
 }
 
 /** Faces admission charges a light under the effective settings. */
@@ -306,7 +332,7 @@ export class SceneShadowController {
         requested,
         priority,
         generator: null,
-        key: "",
+        key: null,
         settings: null,
         mapSize: 0,
         reason: null,
@@ -692,7 +718,9 @@ export class SceneShadowController {
           ? `${cascadeFallback}; ${entry.reason}`
           : cascadeFallback;
     };
-    const settingsKey = JSON.stringify(settings);
+    // Only map moves and standby retention compare serialized settings.
+    let serializedSettings: string | undefined;
+    const settingsKey = () => (serializedSettings ??= JSON.stringify(settings));
     const release = (entry: Entry) => {
       if (entry.generator) {
         entry.generator.dispose();
@@ -702,7 +730,7 @@ export class SceneShadowController {
       entry.generator = null;
       entry.standby = false;
       entry.effectiveBias.length = 0;
-      entry.key = "";
+      entry.key = null;
     };
     // Release incompatible and retired maps before reserving/constructing their
     // replacements; old and new sets must never overlap outside this envelope.
@@ -710,7 +738,7 @@ export class SceneShadowController {
     const donors: Entry[] = [];
     for (const entry of this.entries.values()) {
       if (entry.status === "active" && entry.generator &&
-        entry.key === allocationKey(entry.mapSize, entry.light, settings.cascades)) {
+        matchesAllocationKey(entry.key, entry.mapSize, entry.light, settings.cascades)) {
         if (entry.standby) {
           entry.standby = false;
           entry.admittedAt = selectionTime;
@@ -729,8 +757,8 @@ export class SceneShadowController {
     for (const entry of planned) {
       if (entry.status !== "active" || entry.generator || entry.light instanceof DirectionalLight)
         continue;
-      const key = allocationKey(entry.mapSize, entry.light, settings.cascades);
-      const index = donors.findIndex((donor) => donor.key === key &&
+      const index = donors.findIndex((donor) =>
+        matchesAllocationKey(donor.key, entry.mapSize, entry.light, settings.cascades) &&
         (donor.generator as ReusableShadowGenerator).canMoveTo(entry.light as LocalShadowLight));
       if (index < 0) continue;
       const [donor] = donors.splice(index, 1) as [Entry];
@@ -738,7 +766,7 @@ export class SceneShadowController {
       generator.moveTo(entry.light as LocalShadowLight);
       // Same-kind lights exchange shader light indices, so receivers keep their
       // defines and effects. Otherwise dirty them as construction/disposal would.
-      if (JSON.stringify(donor.settings) !== settingsKey ||
+      if (JSON.stringify(donor.settings) !== settingsKey() ||
         !exchangeShadowReceivers(scene, donor.light, entry.light, generator)) {
         invalidateShadowReceiverHandoffs(scene);
         donor.light._markMeshesAsLightDirty();
@@ -755,7 +783,7 @@ export class SceneShadowController {
       entry.effectiveBias.length = 0;
       donor.generator = null;
       donor.standby = false;
-      donor.key = "";
+      donor.key = null;
       donor.effectiveBias.length = 0;
       this.slots.get(generator)!.entry = entry;
       this.neutralUntilRendered(generator);
@@ -776,7 +804,7 @@ export class SceneShadowController {
       if (
         clustered ||
         (entry.status !== "outside-relevant-area" && entry.status !== "budget-limited") ||
-        JSON.stringify(entry.settings) !== settingsKey ||
+        JSON.stringify(entry.settings) !== settingsKey() ||
         pooled >= settings.maxLocalLights ||
         admitted.bytes + standby.bytes + bytes > byteBudget ||
         admitted.samplers + standby.samplers + samplers > samplerBudget

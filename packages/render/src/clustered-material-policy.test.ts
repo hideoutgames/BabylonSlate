@@ -111,6 +111,43 @@ describe("clustered material consumers", () => {
     mesh.dispose();
   });
 
+  it("keeps watching existing meshes across later additions and removals", () => {
+    const { scene, mesh, material } = fixture();
+    expect(clusteredSceneMaterialReason(scene)).toBeUndefined();
+    const later = MeshBuilder.CreateBox("later", {}, scene);
+    later.material = material;
+    expect(clusteredSceneMaterialReason(scene)).toBeUndefined();
+    const removed = MeshBuilder.CreateBox("removed", {}, scene);
+    removed.material = material;
+    expect(clusteredSceneMaterialReason(scene)).toBeUndefined();
+    removed.dispose();
+    expect(removed.onMaterialChangedObservable.hasObservers()).toBe(false);
+    // The original and the earlier addition still notify after churn around them.
+    mesh.material = new ShaderMaterial("original custom", scene, {}, {});
+    expect(clusteredSceneMaterialReason(scene)).toContain('Material "original custom"');
+    mesh.material = material;
+    expect(clusteredSceneMaterialReason(scene)).toBeUndefined();
+    later.material = new ShaderMaterial("later custom", scene, {}, {});
+    expect(clusteredSceneMaterialReason(scene)).toContain('Material "later custom"');
+  });
+
+  it("keeps a shared instance source observed until its last instance leaves", () => {
+    const { scene, mesh, material } = fixture();
+    const first = mesh.createInstance("first");
+    const second = mesh.createInstance("second");
+    scene.removeMesh(mesh);
+    expect(clusteredSceneMaterialReason(scene)).toBeUndefined();
+    first.dispose();
+    expect(mesh.onMaterialChangedObservable.hasObservers()).toBe(true);
+    mesh.material = new ShaderMaterial("shared source", scene, {}, {});
+    expect(clusteredSceneMaterialReason(scene)).toContain('Material "shared source"');
+    mesh.material = material;
+    expect(clusteredSceneMaterialReason(scene)).toBeUndefined();
+    second.dispose();
+    expect(mesh.onMaterialChangedObservable.hasObservers()).toBe(false);
+    mesh.dispose();
+  });
+
   it("reads the live default material and lighting switch", () => {
     const { scene, mesh } = fixture();
     mesh.material = null;

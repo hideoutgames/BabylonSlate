@@ -1,4 +1,4 @@
-import { setAuthoredLightEnabled } from "./light-policy";
+import { setAuthoredLightEnabled, syncDirectionalLightPolicy } from "./light-policy";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
 import { AreaRectLightGroup } from "./area-rect-light";
 import { authoredActorMatrices, authoredComponentActorTransform } from "./authored-transform-matrices";
@@ -267,16 +267,18 @@ function lightKindOf(component: { properties: Record<string, unknown> }): string
   return kind === "directional" || kind === "spot" ? kind : "point";
 }
 
+/** A batch caller passes `syncPolicy: false` and runs syncDirectionalLightPolicy once after its last light. */
 export function applyAuthoredLightProperties(
   light: Light,
   properties: AuthoredLightProperties,
+  syncPolicy = true,
 ): void {
   light.intensity = asNumber(
     properties.intensity,
     light instanceof HemisphericLight ? DEFAULT_HEMISPHERIC_FILL_INTENSITY : 1,
   );
   light.diffuse = asRgb(properties.color);
-  setAuthoredLightEnabled(light, properties.enabled !== false);
+  setAuthoredLightEnabled(light, properties.enabled !== false, syncPolicy);
   sceneShadowController(light.getScene()).register(light, properties.castShadows === true, properties.shadowPriority);
   const range = asNumber(properties.range, 10);
   if (light instanceof PointLight || light instanceof SpotLight) {
@@ -596,6 +598,7 @@ export function* syncAuthoredIlluminationSteps(
   const actorWorld = authoredActorMatrices(sceneData.actors);
 
 
+  let lightsApplied = false;
   let completed = 0;
   const total = Math.max(1, sceneData.actors.length);
   for (const actor of sceneData.actors) {
@@ -628,7 +631,8 @@ export function* syncAuthoredIlluminationSteps(
         state.lights.set(key, light);
         state.lightKinds.set(key, kind);
       }
-      applyAuthoredLightProperties(light, lightComponent.properties);
+      applyAuthoredLightProperties(light, lightComponent.properties, false);
+      lightsApplied = true;
       {
         const composed = composeAttachedComponentTransform(actor, lightComponent, actorWorld, options.onDiagnostic);
         updateAuthoredLightTransform(
@@ -678,6 +682,8 @@ export function* syncAuthoredIlluminationSteps(
     }
     yield 0.7 * ++completed / total;
   }
+  // Each light skipped the scene-wide pass above; the policy reads only final state.
+  if (lightsApplied) syncDirectionalLightPolicy(scene);
 
   completed = 0;
   const retireTotal = Math.max(1, state.lights.size + state.cameras.size);

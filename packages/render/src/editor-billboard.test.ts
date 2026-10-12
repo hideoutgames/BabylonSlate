@@ -158,6 +158,7 @@ describe("editor billboard", () => {
     ] });
     const beforeRenderCount = scene.onBeforeRenderObservable.observers.length;
     const removedCount = scene.onLightRemovedObservable.observers.length;
+    const addedCount = scene.onNewLightAddedObservable.observers.length;
     const resolve = vi.spyOn(scene, "getLightByName");
     applyEditorBillboardFromActor(icon, actor);
     const material = icon.material as StandardMaterial;
@@ -179,6 +180,7 @@ describe("editor billboard", () => {
     await vi.waitFor(() => {
       expect(scene.onBeforeRenderObservable.observers).toHaveLength(beforeRenderCount + 1);
       expect(scene.onLightRemovedObservable.observers).toHaveLength(removedCount + 1);
+      expect(scene.onNewLightAddedObservable.observers).toHaveLength(addedCount + 1);
     });
     light.intensity = 1;
     frame();
@@ -189,7 +191,35 @@ describe("editor billboard", () => {
     await vi.waitFor(() => {
       expect(scene.onBeforeRenderObservable.observers).toHaveLength(beforeRenderCount);
       expect(scene.onLightRemovedObservable.observers).toHaveLength(removedCount);
+      expect(scene.onNewLightAddedObservable.observers).toHaveLength(addedCount);
     });
+  });
+
+  it("looks up an absent light once and finds it when one is added or replaces another", () => {
+    const { scene } = createHandle();
+    const icon = createEditorBillboard(scene, "editorActor:lamp", "point_light");
+    const actor = createActor("lamp", "Lamp", { components: [
+      { id: "light", classId: "LightComponent", properties: { castShadows: false } },
+    ] });
+    const color = () => (icon.material as StandardMaterial).emissiveColor.asArray();
+    const frame = () => scene.onBeforeRenderObservable.notifyObservers(scene);
+    const other = new PointLight("authoredLight:other", Vector3.Zero(), scene);
+    const resolve = vi.spyOn(scene, "getLightByName");
+    applyEditorBillboardFromActor(icon, actor);
+    frame();
+    frame();
+    expect(resolve).toHaveBeenCalledTimes(1);
+    // The count is unchanged by this swap; only the removal reveals it.
+    scene.removeLight(other);
+    const lamp = new PointLight("authoredLight:lamp", Vector3.Zero(), scene);
+    lamp.intensity = 0;
+    frame();
+    expect(color()).toEqual([1, 0, 0]);
+    lamp.intensity = 1;
+    frame();
+    expect(color()).toEqual([1, 1, 1]);
+    expect(resolve).toHaveBeenCalledTimes(2);
+    icon.dispose();
   });
 
   it.each(["dispose", "remove", "rename"] as const)("finds late-created lights and follows a replacement after %s", (retire) => {

@@ -211,6 +211,31 @@ describe("syncAuthoredIllumination", () => {
     expect(scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}drop`)).toBeNull();
   });
 
+  it("hands the sun to the next enabled authored directional light after a full sync", () => {
+    const { scene } = createHandle();
+    const sync = (first: boolean, second: boolean) =>
+      syncAuthoredIllumination(
+        scene,
+        sceneWith([
+          lightActor("a", { lightKind: "directional", enabled: first }),
+          lightActor("b", { lightKind: "directional", enabled: second }),
+          lightActor("lamp", { lightKind: "point" }),
+        ]),
+        { stealActiveCamera: false },
+      );
+    const sun = (id: string) =>
+      scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}${id}`)!;
+    sync(true, true);
+    expect([sun("a").isEnabled(), sun("b").isEnabled()]).toEqual([true, false]);
+    sync(false, true);
+    expect([sun("a").isEnabled(), sun("b").isEnabled()]).toEqual([false, true]);
+    sync(true, true);
+    expect([sun("a").isEnabled(), sun("b").isEnabled()]).toEqual([true, false]);
+    sync(false, false);
+    expect([sun("a").isEnabled(), sun("b").isEnabled()]).toEqual([false, false]);
+    expect(sun("lamp").isEnabled()).toBe(true);
+  });
+
   it("aims directional and spot lights along quaternion times Babylon forward", () => {
     const { scene } = createHandle();
     const half = Math.PI / 4;
