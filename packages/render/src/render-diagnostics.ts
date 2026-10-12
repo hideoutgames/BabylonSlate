@@ -28,6 +28,8 @@ export type RenderDiagnostics = {
   };
   rendererWork?: {
     graphBuilds: number; shadowAdmissions: number; shadowAdmissionMs: number; strictReadinessChecks: number;
+    /** Outline-task-only probes after a membership or style change. */
+    outlineReadinessChecks: number;
   };
   frameAdmission?: ReturnType<RenderScheduler["gateState"]> & {
     worldLoading: boolean;

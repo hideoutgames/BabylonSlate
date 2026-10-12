@@ -30,6 +30,8 @@ type MaskRecord = {
   renderer: SharedOutlineMaskRenderer;
   clearPass?: FrameGraphRenderPass;
   drawPass?: FrameGraphRenderPass;
+  /** Mesh list whose programs were last probed ready, while the group stayed active. */
+  probed?: readonly unknown[];
 };
 
 /** Shared outline masks and composition with a bounded per-view pass budget. */
@@ -171,10 +173,29 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     }
     if (this.composePass) this.composePass.disabled = !this.view.active;
   }
-  override isReady(): boolean {
+  override isReady(): boolean { return this.probe(false); }
+  /**
+   * Readiness after only outline membership or style changed. A group whose mesh
+   * list is the one already probed ready is not probed again: its programs
+   * cannot have changed, since any scene or material change reaches the owner
+   * as a full probe. A selection change thus costs the newly selected meshes.
+   */
+  isReadyAfterOutlineChange(): boolean { return this.probe(true); }
+  private probe(skipProbedGroups: boolean): boolean {
     if (this.disposed) return false;
     this.sync();
-    return !this.view.active || this.compose.isReady() && this.masks.every((record) => !this.view.groupActive(record.group) || record.objects.isReady());
+    if (!this.view.active) return true;
+    // Probe every group even after a failure, so each starts its own compilation.
+    let ready = this.compose.isReady();
+    for (const record of this.masks) {
+      if (!this.view.groupActive(record.group)) { record.probed = undefined; continue; }
+      const meshes = record.objects.objectList.meshes ?? undefined;
+      if (skipProbedGroups && record.probed === meshes) continue;
+      const groupReady = record.objects.isReady();
+      record.probed = groupReady ? meshes : undefined;
+      if (!groupReady) ready = false;
+    }
+    return ready;
   }
   reconcileResources(): void {
     if (this.committed || !this.lease) return;

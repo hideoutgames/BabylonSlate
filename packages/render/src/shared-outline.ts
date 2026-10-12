@@ -50,12 +50,16 @@ export class SharedOutlineOwner {
   private readonly identities = new Map<string, number>();
   private readonly meshIdentity = new Map<AbstractMesh, number>();
   private readonly sources = new Map<Mesh, SourceRecord>();
+  /** Sources admitted by a mask draw rather than a requested target. */
+  private readonly lateSources = new Set<Mesh>();
   private readonly renderPasses = new Set<number>();
   private readonly releases = new Set<Promise<void>>();
   private uploads = 0;
   private bufferBytes = 0;
   private disposed = false;
   meshRevision = 0;
+  /** Bumps whenever an instance source gains or loses its identity stream, which dirties that source's attributes. */
+  sourceRevision = 0;
   private readonly stopWatchingMeshes: () => void;
 
   private constructor(scene: Scene) {
@@ -123,10 +127,20 @@ export class SharedOutlineOwner {
     }
     for (const key of newKeys.sort()) this.identities.set(key, this.identities.size + 1);
     for (const [mesh, key] of requested) next.set(mesh, this.identities.get(key)!);
-    for (const [source, record] of this.sources) if (!requiredSources.has(source)) this.releaseSource(source, record);
+    // A source admitted by a mask draw (an occluder's, or a LOD level's) is not
+    // a requested target. Releasing it here would register it again on the next
+    // draw and dirty its attributes, so a membership change would churn them.
+    // It stays while any outline is active; every other source follows the targets.
+    const retainLate = [...this.views].some((view) => view.active);
+    const kept = new Set(requiredSources);
+    for (const [source, record] of this.sources) {
+      if (requiredSources.has(source)) continue;
+      if (retainLate && this.lateSources.has(source)) kept.add(source);
+      else this.releaseSource(source, record);
+    }
     this.meshIdentity.clear();
     for (const [mesh, id] of next) this.meshIdentity.set(mesh, id);
-    for (const source of requiredSources) {
+    for (const source of kept) {
       source.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE] = this.identityFor(source);
       for (const instance of source.instances)
         instance.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE] = this.identityFor(instance);
@@ -138,6 +152,7 @@ export class SharedOutlineOwner {
     const master = source._masterMesh;
     if (!source.hasInstances && !master?.hasInstances) return;
     this.acquireSource(source);
+    this.lateSources.add(source);
     source.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE] = this.identityFor(source);
     for (const instance of source.instances)
       instance.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE] = this.identityFor(instance);
@@ -149,6 +164,7 @@ export class SharedOutlineOwner {
     // The public registration also initializes existing instances and invalidates
     // native attribute caches. Replace only our stream, never another user's data.
     source.registerInstancedBuffer(SHARED_OUTLINE_ATTRIBUTE, 1);
+    this.sourceRevision++;
     const storage = source._userInstancedBuffersStorage!;
     storage.vertexBuffers[SHARED_OUTLINE_ATTRIBUTE]?.dispose();
     delete storage.vertexBuffers[SHARED_OUTLINE_ATTRIBUTE];
@@ -237,6 +253,8 @@ export class SharedOutlineOwner {
     for (const instance of source.instances) if (instance.instancedBuffers) delete instance.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE];
     this.invalidateBindings(source);
     this.sources.delete(source);
+    this.lateSources.delete(source);
+    this.sourceRevision++;
   }
   trackRelease(release: Promise<void>): void {
     this.releases.add(release);
@@ -310,6 +328,8 @@ export class SharedOutlineView {
   maximumWidth = 0;
   distanceFadeEnabled = false;
   constructor(owner: SharedOutlineOwner, key: string) { this.owner = owner; this.scene = owner.scene; this.key = key; }
+  /** Whether an instance source gained or lost its identity stream; unlike membership alone, that alters the scene's own draw state. */
+  get sourceRevision(): number { return this.owner.sourceRevision; }
   get active(): boolean {
     if (this.isDisposed) return false;
     for (const entry of this.contributions.values()) if (entry.targets.length > 0) return true;
@@ -474,8 +494,11 @@ export class SharedOutlineView {
     const previous = this.meshLists.get(group);
     if (previous?.revision === this.revision && previous.sceneRevision === this.owner.meshRevision) return previous.meshes;
     const data = this.styles.get(group)?.data;
-    const meshes = group === "strict" ? (this.occluders ?? this.scene.meshes).filter((mesh) => !mesh.isDisposed()) :
+    const fresh = group === "strict" ? (this.occluders ?? this.scene.meshes).filter((mesh) => !mesh.isDisposed()) :
       this.scene.meshes.filter((mesh) => !mesh.isDisposed() && (data?.[this.owner.identityFor(mesh) * 4 + 3] ?? 0) > 0);
+    // Another group's or a style change leaves this membership alone. Keeping the
+    // array lets readiness skip a group whose members were already probed.
+    const meshes = previous && sameMeshes(previous.meshes, fresh) ? previous.meshes : fresh;
     this.meshLists.set(group, { revision: this.revision, sceneRevision: this.owner.meshRevision, meshes });
     return meshes;
   }

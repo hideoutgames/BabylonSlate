@@ -195,6 +195,11 @@ export class SceneRenderCoordinator {
     return this.graph.strictReadinessChecks;
   }
 
+  /** Outline-task-only probes; a selection change adds these and no strict scene probe. */
+  get outlineReadinessChecks(): number {
+    return this.graph.outlineReadinessChecks;
+  }
+
   diagnostics() { return this.graph.diagnostics(); }
 
   /** Loading owners require the prepared selected path, including after resize. */
@@ -280,13 +285,14 @@ export class SceneRenderCoordinator {
     if (this.graph.readiness(camera).preparationRequired) this.requestPreparation();
   }
 
-  /** A corrected contribution may retry a failed preparation. Style changes
-   * clear failure/readiness only; they neither cancel nor rebuild a graph. */
+  /** A corrected contribution may retry a failed preparation. Membership and
+   * style changes neither cancel nor rebuild a graph; the graph notices the
+   * revision itself and re-probes only the outline task. */
   private refreshOutline(): void {
     const revision = this.outlineView?.revision ?? -1;
     if (revision === this.outlineRevision) return;
     this.outlineRevision = revision;
     this.failure = undefined;
-    this.graph.invalidate();
+    this.graph.clearFailure();
   }
 }
