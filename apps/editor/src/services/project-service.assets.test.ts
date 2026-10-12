@@ -1604,9 +1604,10 @@ describe("project documents as .babasset", () => {
     const edited = structuredClone(scene);
     edited.actors[0]!.transform.position[0] = 50;
     const registry = service.registry!;
-    const readChunk = registry.readChunk.bind(registry);
+    // Snapshot loads read every chunk against the locator they resolved once.
+    const readLocatedChunk = registry.readLocatedChunk.bind(registry);
     let saved = false;
-    vi.spyOn(registry, "readChunk").mockImplementation(async (guid, chunkId, ...rest) => {
+    vi.spyOn(registry, "readLocatedChunk").mockImplementation(async (guid, chunkId, ...rest) => {
       if (!saved && (chunkId === NAVMESH_CHUNK_ID || chunkId === AUDIO_REVERB_CHUNK_ID)) {
         saved = true;
         // Save writes the edited geometry with its reverb and navmesh once
@@ -1614,7 +1615,7 @@ describe("project documents as .babasset", () => {
         await service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, new Uint8Array([2]), edited as unknown as Record<string, unknown>);
         await service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([20]), edited as unknown as Record<string, unknown>);
       }
-      return readChunk(guid, chunkId, ...rest);
+      return readLocatedChunk(guid, chunkId, ...rest);
     });
     const loaded = await loadExportDocuments({
       assets: registry.list().filter((asset) => asset.header.type === "Scene"),
