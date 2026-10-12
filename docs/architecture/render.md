@@ -712,7 +712,7 @@ See [particles.md](particles.md).
 
 `visibilitychange` (and Capacitor app-state when present) pauses the render scheduler, game worker / in-process runtime tick, and texture encode queue. Encode pause uses a reason set (`visibility` | `play`) so ending Play does not resume encoding while the tab is still hidden.
 
-Editor canvases also freeze when zero-size or fully off-screen, or when a blocking overlay (`dialog-overlay`, `alert-dialog-overlay`, `sheet-overlay`) is open. Visibility uses IntersectionObserver plus an on-screen rect fallback so a lying iOS IO under Dockview transforms does not skip frames. Scene and Prefab Preview both register with the editor scheduler registry so continuous render and pause apply to whichever canvas is alive.
+Editor canvases also freeze when zero-size or fully off-screen, or when a blocking overlay (`dialog-overlay`, `alert-dialog-overlay`, `sheet-overlay`) is open. An overlay counts as closed only with `data-closed` or `hidden`: an open Base UI modal marks its own backdrop `aria-hidden`, so that attribute is not a closed state. A Scene viewport that kept drawing under Project Settings starved the main thread on software GL (Export Game took about 50 s instead of about 3 s). Visibility uses IntersectionObserver plus an on-screen rect fallback so a lying iOS IO under Dockview transforms does not skip frames. Scene and Prefab Preview both register with the editor scheduler registry so continuous render and pause apply to whichever canvas is alive.
 
 ## Editor tools (P6)
 

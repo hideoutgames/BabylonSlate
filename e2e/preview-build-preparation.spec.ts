@@ -66,14 +66,6 @@ test("Play, Preview Build and Export refuse an older-format startup Scene", asyn
   await openMinimalTestProject(page, files);
   const reason = `Asset type "Scene" version ${SCENE_SCHEMA_VERSION - 1} uses an unsupported old format. This engine reads version ${SCENE_SCHEMA_VERSION}; older files are not upgraded.`;
 
-  // Export first: with a Scene document open, Export Game waits on that Scene's reverb bake.
-  await page.getByTestId("settings-menu").click();
-  await page.getByTestId("project-settings").click();
-  await page.getByTestId("settings-modal-category-export").click();
-  await page.getByTestId("export-game").click();
-  await expect(page.getByTestId("export-game-error")).toContainText(reason);
-  await page.getByTestId("settings-modal").locator('[data-slot="dialog-close"]').click();
-
   await openAssetFromBrowser(page, otherScene);
   await page.getByRole("tab", { name: "Output Log" }).click();
   await expect(page.getByTestId("output-log-panel")).toBeVisible();
@@ -90,4 +82,10 @@ test("Play, Preview Build and Export refuse an older-format startup Scene", asyn
   await expect(previewFailure).toContainText(reason);
   await expect(page.getByTestId("preview-build-iframe")).toHaveCount(0);
   await previewFailure.getByRole("button", { name: "Close", exact: true }).click();
+
+  await page.getByTestId("settings-menu").click();
+  await page.getByTestId("project-settings").click();
+  await page.getByTestId("settings-modal-category-export").click();
+  await page.getByTestId("export-game").click();
+  await expect(page.getByTestId("export-game-error")).toContainText(reason);
 });

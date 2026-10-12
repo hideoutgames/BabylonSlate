@@ -127,6 +127,7 @@ export type CollectExportGameParams = {
   areaEmissionBytesByGuid?: (guid: string) => Uint8Array | null;
   fontMsdfJsonByGuid?: (guid: string) => Uint8Array | null;
   fontMsdfPngByGuid?: (guid: string) => Uint8Array | null;
+  /** Throws for a Scene whose reverb could not be baked; a reached one fails the export. */
   audioReverbByGuid?: (guid: string) => Uint8Array | null;
   renderSettings: RenderProjectSettings;
   defaultFontGuid?: string | null;
@@ -424,7 +425,12 @@ export async function collectAndExportGame(
   for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
     if (!asset || asset.type !== "Scene") continue;
-    const field = params.audioReverbByGuid?.(guid);
+    let field: Uint8Array | null | undefined;
+    try {
+      field = params.audioReverbByGuid?.(guid);
+    } catch (error) {
+      return { ok: false, error: `${asset.name} could not be read for its audio reverb bake: ${error instanceof Error ? error.message : String(error)}` };
+    }
     if (!field || field.byteLength === 0) continue;
     exportAssets.push({
       guid: audioReverbExportGuid(guid),
