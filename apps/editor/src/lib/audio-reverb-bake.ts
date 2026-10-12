@@ -34,12 +34,14 @@ export type AudioReverbBakeSceneEntry = { path: string; scene: AudioReverbBakeSc
  * when none is known; the saved chunk is current only if it equals `bytes`.
  */
 export class AudioReverbBakeUnsavedError extends Error {
-  constructor(
-    readonly bytes: Uint8Array | null,
-    readonly reason: unknown,
-  ) {
+  readonly bytes: Uint8Array | null;
+  readonly reason: unknown;
+
+  constructor(bytes: Uint8Array | null, reason: unknown) {
     super(reason instanceof Error ? reason.message : String(reason));
     this.name = "AudioReverbBakeUnsavedError";
+    this.bytes = bytes;
+    this.reason = reason;
   }
 
   /** True when `saved` already holds this fresh result, so nothing is stale. */
