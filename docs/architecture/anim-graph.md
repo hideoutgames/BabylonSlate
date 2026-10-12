@@ -21,6 +21,8 @@ Helpers: `createDefaultAnimGraph`, `createDefaultAnimationObjectGraph`, `createD
 
 Pure function: `(graph, dt, previous, inputs) → AnimEvalState`. Deterministic; golden-tested. Validator uses the same diagnostic model as [scripting.md](scripting.md) (`code`, `message`, `nodeId`, severity).
 
+- State and clip lookups, each state's outgoing transitions in priority order, and the clip behind each state (`clipForState`) are derived once per `AnimGraphDocument` object and cached. Replace a document instead of mutating it after it has been evaluated.
+
 Each tick produces `stateId`, `normalisedTime` in `[0, 1]`, `blendWeights`, `facts` (elapsed / duration / remaining / looping / loop count / one-tick `justLooped` / `justFinished` / unwrapped `totalNormalisedTime` and `previousTotalNormalisedTime`), and weighted `layers[]` (`clipAssetGuid`, `clipName`, `clipKind`, `normalisedTime`, `weight`). `blendSeconds` crossfades two layers; the selected transition's `blendSeconds` is stored on `AnimEvalState` when the blend starts, so a duplicate `(from, to)` row cannot change its length mid-blend.
 
 Transition fire: **Exit State** (leave source) **and** **Enter State** (enter target) must both be true. Disconnected sinks default **true**. `decideTransition(transition, facts)` sees **post-advance** facts. `undefined` falls through to `transitionRules`; a transition with no decision passes, like a rule graph with both sinks unwired. A transition to a missing state never fires, and a graph whose entry state is missing starts on its first state (one with no states returns an empty evaluation) instead of throwing.

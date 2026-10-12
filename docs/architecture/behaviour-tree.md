@@ -41,6 +41,7 @@ Runtime seeds defaults from the tree's linked Blackboard unless `BehaviourTreeCo
 
 Pure: `(tree, previous, dtSeconds, options?) → BtEvalState`.
 
+- The walked tree (reachable nodes, single parents, and the per-selector subtree index lower-priority aborts use) is derived once per document object and cached. Replace a document instead of mutating it after it has been evaluated.
 - Explicit stack of `{ nodeId, childIndex }` — no recursion, so a tree can be stepped and inspected.
 - Results: `success` | `failure` | `running`.
 - `lastResult` per node for a later debug overlay.

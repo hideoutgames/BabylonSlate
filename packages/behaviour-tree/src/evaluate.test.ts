@@ -50,6 +50,25 @@ describe("evaluateBehaviourTree", () => {
     expect(next.lastResults.no).toBe("failure");
   });
 
+  it("evaluates a replaced document from its own structure", () => {
+    const doc = tree(
+      [
+        node("root", "sequence", "bt.composite.sequence", ["ok", "no"]),
+        node("ok", "task", "bt.task.succeed"),
+        node("no", "task", "bt.task.fail"),
+      ],
+      "root",
+    );
+    expect(evaluateBehaviourTree(doc, null, 1 / 60).status).toBe("failure");
+    const edited = {
+      ...doc,
+      nodes: doc.nodes.map((row) => (row.id === "root" ? { ...row, children: ["ok"] } : row)),
+    };
+    const next = evaluateBehaviourTree(edited, null, 1 / 60);
+    expect(next.status).toBe("success");
+    expect(next.lastResults.no).toBeUndefined();
+  });
+
   it("selects the first succeeding child", () => {
     const doc = tree(
       [
