@@ -78,6 +78,15 @@ describe("input ring buffer overflow", () => {
     expect(state.cursor.x).toBe(599);
   });
 
+  it("coalesces by the controls queued after a drain, not the ones drained", () => {
+    const axis = (value: number): RawInputEvent => ({ kind: "touchAxis", tick: 2, controlId: "stick", value });
+    const ring = new InputRingBuffer(2);
+    for (const value of [0.6, 0.7, 0.8]) ring.push(axis(value));
+    expect(ring.drain()).toEqual([axis(0.7), axis(0.8)]);
+    for (const x of [1, 2, 3]) ring.push(move(x));
+    expect(ring.drain()).toEqual([move(2), move(3)]);
+  });
+
   it("keeps a gamepad button tap while coalescing the samples around it", () => {
     const resolver = new InputResolver({ actions: [{ name: "Jump", bindings: [{ device: "gamepadButton", code: "0:0" }] }], axes: [] });
     const ring = new InputRingBuffer(4);

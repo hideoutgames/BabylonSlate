@@ -1128,6 +1128,22 @@ export function waterSurfaceDrift(
 }
 
 /**
+ * What `sampleWaterSurface` derives from a body's pose alone: the inverse of its rotation and world up in scaled local
+ * coordinates (`ray`, null when the scale or the base's slope leaves no surface). A caller sampling one pose many
+ * times computes it once, and passes it back with that same `transform`.
+ */
+export interface WaterSurfaceFrame { readonly inverse: QuatObject; readonly ray: Vec3 | null }
+
+export function waterSurfaceFrame(transform: Transform): WaterSurfaceFrame {
+  const { x: sx, y: sy, z: sz } = transform.scale;
+  const inverse = inverseQuat(transform.rotation);
+  if (Math.min(Math.abs(sx), Math.abs(sy), Math.abs(sz)) < 1e-6) return { inverse, ray: null };
+  const up = quatRotateVector(inverse, { x: 0, y: 1, z: 0 });
+  const ray = { x: up.x / sx, y: up.y / sy, z: up.z / sz };
+  return { inverse, ray: Math.abs(ray.y) < 1e-6 ? null : ray };
+}
+
+/**
  * World-space waves first: the world X/Z inverts to the rest point whose displaced surface lies above it, which
  * meets the transformed volume's base along world vertical (so tilted volumes and rivers match the mesh exactly);
  * waves then add their height there. `inside` and bank distance use that rest point, like the rendered surface.
@@ -1139,15 +1155,12 @@ export function waterSurfaceDrift(
  */
 export function sampleWaterSurface(
   water: WaterDefinition, body: WaterBodyProperties, position: Vec3, time: number,
-  transform: Transform = identityTransform(),
+  transform: Transform = identityTransform(), frame?: WaterSurfaceFrame,
 ): WaterSample {
   if (!body.enabled || ![time, position.x, position.y, position.z].every(Number.isFinite)) return emptyWaterSample();
+  const { inverse, ray } = frame ?? waterSurfaceFrame(transform);
+  if (!ray) return emptyWaterSample();
   const { x: sx, y: sy, z: sz } = transform.scale;
-  if (Math.min(Math.abs(sx), Math.abs(sy), Math.abs(sz)) < 1e-6) return emptyWaterSample();
-  const inverse = inverseQuat(transform.rotation);
-  const up = quatRotateVector(inverse, { x: 0, y: 1, z: 0 });
-  const ray = { x: up.x / sx, y: up.y / sy, z: up.z / sz };
-  if (Math.abs(ray.y) < 1e-6) return emptyWaterSample();
   const set = waterWaveSet(water), scale = body.waveScale, wave = surfaceScratch, gerstner = waterWaveQ(set, scale) > 0;
   let hit = waterRestBase(body, transform, inverse, ray, position.x, position.y, position.z);
   if (!hit?.footprint.inside) return emptyWaterSample();

@@ -2,15 +2,20 @@ import {
   createDefaultWaterDefinition, DEFAULT_WATER_BLEND_DISTANCE, emptyWaterSample, normalizeWaterBlendDistance, normalizeWaterBody,
   normalizeWaterBuoyancy, normalizeWaterDefinition, normalizeWaterRemoval, parseLandscapeProperties, quatRotateVector,
   sampleWaterBlend, sampleWaterSurface, WaterBlendIndex, waterCutAt, waterKindForClass, waterSurfaceDrift,
+  waterSurfaceFrame,
   type LandscapeProperties, type Transform, type Vec3, type WaterBlendQueryInfo, type WaterBodyProperties, type WaterCutters,
-  type WaterDefinition, type WaterSample,
+  type WaterDefinition, type WaterSample, type WaterSurfaceFrame,
 } from "@babylonslate/core";
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import type { PhysicsBackend } from "@babylonslate/physics";
 import { actorParentGuid, actorWorldTransforms, composeActorWorldTransformsInto, composeParentChildTransform } from "./actor-world-transform";
 import { worldComponentIndex, type WorldComponentIndex } from "./world-component-index";
 
-type WaterBody = { actorId: string; definition: WaterDefinition; body: WaterBodyProperties; transform: Transform };
+/**
+ * `frame` is derived from `transform` on the first sample. A body lives for one evaluation and its transform is a
+ * snapshot taken then, so every sample of that evaluation shares it however the actors move in between.
+ */
+type WaterBody = { actorId: string; definition: WaterDefinition; body: WaterBodyProperties; transform: Transform; frame?: WaterSurfaceFrame };
 /** Seconds over which a support's peak submersion settles before it weights horizontal drag (several wave periods). */
 const WATER_DRAG_WETNESS_SECONDS = 8;
 export type WaterWorldSample = WaterSample & { actorId: string | null; density: number; waterDepth: number };
@@ -97,6 +102,7 @@ class WaterState {
   /** The blended offset scale of that result (1 off any blend), which scales its drift correction. */
   readonly sampledInfo: WaterBlendQueryInfo = { offsetScale: 1, fade: 1 };
   private readonly info: WaterBlendQueryInfo = { offsetScale: 1, fade: 1 };
+  private readonly surfacePoint: Vec3 = { x: 0, y: 0, z: 0 };
 
   /**
    * The highest surface over `position`. Blending bodies answer with the blended surface, and only the body owning the
@@ -112,9 +118,13 @@ class WaterState {
       this.info.offsetScale = 1;
       const sample = this.blend.neighbours(index).length
         ? sampleWaterBlend(this.blend, index, position, this.time, !actorId, this.info)
-        : sampleWaterSurface(water.definition, water.body, position, this.time, water.transform);
+        : sampleWaterSurface(water.definition, water.body, position, this.time, water.transform, water.frame ??= waterSurfaceFrame(water.transform));
       // Removal volumes and terrain above the surface take the water away, for queries and buoyancy alike.
-      if (sample.found && waterCutAt(this.cutters, { x: position.x, y: sample.height, z: position.z })) continue;
+      if (sample.found) {
+        const surface = this.surfacePoint;
+        surface.x = position.x; surface.y = sample.height; surface.z = position.z;
+        if (waterCutAt(this.cutters, surface)) continue;
+      }
       if (sample.found && (!result.found || sample.height > result.height)) {
         result = { ...sample, actorId: water.actorId, density: water.definition.density, waterDepth: water.body.depth * Math.abs(water.transform.scale.y) };
         this.sampled = water;

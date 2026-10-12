@@ -496,6 +496,8 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     const currentOverlap = new Set<string>();
     const hitKeys = new Set<string>();
     const list = [...this.colliders.values()];
+    // Bodies do not move during a poll: a collider's box is built when its first pair needs it and shared by the rest.
+    const boxes: Array<{ min: Vec3; max: Vec3 } | undefined> = new Array(list.length);
     for (let i = 0; i < list.length; i++) {
       for (let j = i + 1; j < list.length; j++) {
         const colliderA = list[i]!;
@@ -508,8 +510,8 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         let actorAId = colliderA.desc.actorId ?? bodyA.desc.actorId;
         let actorBId = colliderB.desc.actorId ?? bodyB.desc.actorId;
         if (actorAId === actorBId) continue;
-        const boxA = aabbForCollider(colliderA.desc, bodyA.transform);
-        const boxB = aabbForCollider(colliderB.desc, bodyB.transform);
+        const boxA = (boxes[i] ??= aabbForCollider(colliderA.desc, bodyA.transform));
+        const boxB = (boxes[j] ??= aabbForCollider(colliderB.desc, bodyB.transform));
         if (!aabbOverlap(boxA, boxB)) continue;
         let colliderAId = colliderA.desc.id;
         let colliderBId = colliderB.desc.id;
@@ -722,8 +724,9 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       const dy = center.y - cy;
       // A 2D world has no depth, as in Rapier: only X/Y decide an overlap.
       const dz = this.kind === "2d" ? 0 : center.z - cz;
+      if (!(dx * dx + dy * dy + dz * dz <= radius * radius)) continue;
       const key = `${body.desc.id}\t${actorId}`;
-      if (dx * dx + dy * dy + dz * dz <= radius * radius && !reported.has(key)) {
+      if (!reported.has(key)) {
         reported.add(key);
         actorIds.push(actorId);
         bodyIds.push(body.desc.id);

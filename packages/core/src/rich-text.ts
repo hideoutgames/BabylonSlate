@@ -199,11 +199,34 @@ function effectsOf(frame: Frame): RichTextEffects {
   };
 }
 
+// Runs used to compare via JSON.stringify, which writes NaN and +-Infinity as
+// null, so every non-finite value matched every other one.
+function sameNumber(a: number, b: number): boolean {
+  return a === b || (!Number.isFinite(a) && !Number.isFinite(b));
+}
+
+function sameRgb(a: Rgb, b: Rgb): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) if (!sameNumber(a[i]!, b[i]!)) return false;
+  return true;
+}
+
 function sameRun(a: RichTextSpan, b: RichTextSpan): boolean {
   if (a.kind !== "text" || b.kind !== "text") return false;
+  const sa = a.style, sb = b.style, ea = a.effects, eb = b.effects;
   return (
-    JSON.stringify(a.style) === JSON.stringify(b.style) &&
-    JSON.stringify(a.effects) === JSON.stringify(b.effects)
+    sa.bold === sb.bold &&
+    sa.italic === sb.italic &&
+    sa.underline === sb.underline &&
+    sameRgb(sa.color, sb.color) &&
+    sameNumber(sa.size, sb.size) &&
+    sameNumber(sa.outline, sb.outline) &&
+    sameRgb(sa.outlineColor, sb.outlineColor) &&
+    sameNumber(ea.shake, eb.shake) &&
+    sameNumber(ea.waveSpeed, eb.waveSpeed) &&
+    sameNumber(ea.waveIntensity, eb.waveIntensity) &&
+    sameNumber(ea.hover, eb.hover) &&
+    sameNumber(ea.rotate, eb.rotate)
   );
 }
 

@@ -116,7 +116,9 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
   const anchorActors = new Set(source.filter(isSceneLayerAnchorActor).map(actor => actor.id));
   const actors = source.map(a => ({ ...a, transform: anchorActors.has(a.id) ? identitySerializedTransform() : copyTransform(a.transform), components: a.components.map(c => ({ ...c, properties: { ...c.properties }, transform: c.transform ? copyTransform(c.transform) : identitySerializedTransform() })) }));
   const nodes = new Map<string, Node>(), actorNodes = new Map<string, Node>();
+  const actorById = new Map<string, (typeof actors)[number]>(); // First actor with an id wins, like Array.find.
   for (const actor of actors) {
+    if (!actorById.has(actor.id)) actorById.set(actor.id, actor);
     const node: Node = { key: actor.id, actor, classId: "actor", props: parseOverlayLayoutProperties({}, "actor"), local: actor.transform, parent: null, actualParent: null, children: [], native: [1, 1], desired: [1, 1], size: [1, 1], managed: false };
     nodes.set(node.key, node); actorNodes.set(actor.id, node);
     for (const component of actor.components) {
@@ -164,7 +166,7 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
   }
   const surfaceClasses = new Set<string>([...UI_CONTROL_2D_CLASS_IDS, "2DJoystickComponent", "2DTextureComponent", "2DMaterialComponent", "2DPanelComponent", "2DTextComponent", "2DRichTextComponent", "2DPainterComponent", "SpriteComponent", "MeshComponent"]);
   const interactionOnly = (n: Node) => n.classId === "2DMaskComponent" || n.classId === "2DAnchorComponent" || n.classId === "2DFocusTargetComponent" || n.classId === "2DButtonComponent" && (
-    n.actor.components.some(c => surfaceClasses.has(c.classId)) || (n.actor.parentId ? actors.find(a => a.id === n.actor.parentId)?.components.some(c => surfaceClasses.has(c.classId)) : false)
+    n.actor.components.some(c => surfaceClasses.has(c.classId)) || (n.actor.parentId ? actorById.get(n.actor.parentId)?.components.some(c => surfaceClasses.has(c.classId)) : false)
   );
   const paddingOnly = (n: Node) => n.classId === "2DPaddingComponent" || n.classId === "actor" && n.children.length > 0 && n.children.every(c => c.classId === "2DPaddingComponent" || interactionOnly(c));
   const visible = (n: Node) => n.actor.visible !== false && n.component?.properties.visible !== false && n.component?.properties.enabled !== false;
@@ -272,14 +274,16 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
     const total = fixed + (weight ? available : 0) + n.props.gap * Math.max(0, children.length - 1);
     const mainAlign = horizontal ? n.props.horizontalAlignment : n.props.verticalAlignment;
     let cursor = Math.max(0, mainSize - total) * (mainAlign === "end" ? 1 : mainAlign === "center" ? 0.5 : 0);
+    let childIndex: Map<Node, number> | undefined; // Position among the participating children; each node has one parent, so entries are unique.
     for (const child of n.children) {
       if (!hasLayout) { arrange(child, n.world, undefined, undefined, childClip, ancestors, realized); continue; }
-      if (!children.includes(child) || paddingOnly(child)) { arrange(child, n.world, undefined, undefined, childClip, ancestors, realized); continue; }
+      if (!childIndex) { childIndex = new Map(); for (let i = 0; i < children.length; i++) childIndex.set(children[i]!, i); }
+      if (!childIndex.has(child) || paddingOnly(child)) { arrange(child, n.world, undefined, undefined, childClip, ancestors, realized); continue; }
       const hasPadding = padding.left + padding.right + padding.top + padding.bottom > 0;
       if (n.classId === "actor" && !n.proxy && !hasPadding) { arrange(child, n.world, undefined, undefined, childClip, ancestors, realized); continue; }
       if (!container && !hasPadding || n.classId === "2DSpacerComponent" || n.classId === "2DPaddingComponent") { arrange(child, n.world, undefined, undefined, childClip, ancestors, realized); continue; }
       if (virtualWindow) {
-        const index = options.virtualItems?.[child.actor.id]?.index ?? children.indexOf(child);
+        const index = options.virtualItems?.[child.actor.id]?.index ?? childIndex.get(child)!;
         const p = parseOverlayContainerProperties(n.component?.properties);
         const column = index % virtualWindow.columns, row = Math.floor(index / virtualWindow.columns), gap = Math.min(1_000_000, n.props.gap);
         const x = -innerW / 2 + column * (p.itemWidth + gap) + p.itemWidth / 2;
