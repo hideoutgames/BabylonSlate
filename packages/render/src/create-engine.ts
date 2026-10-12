@@ -797,6 +797,9 @@ export function createEngine(
   }
 }
 
+/** Render-loop passes (about ten seconds at 60 Hz) that frame-phase timing outlives its last `renderDiagnostics()` read. */
+const FRAME_PHASE_LEASE_FRAMES = 600;
+
 function initializeEngine(
   canvas: HTMLCanvasElement,
   options: CreateEngineOptions,
@@ -1028,7 +1031,8 @@ function initializeEngine(
     preparationMs: 0, copyMs: 0,
     contextLosses: 0, contextRestorations: 0,
   };
-  let captureFramePhases = false;
+  /** Rendered-loop passes of preparation timing left; each `renderDiagnostics()` read renews it so a closed HUD stops the timing. */
+  let framePhaseLeaseFrames = 0;
   const performanceFeed = new RenderPerformanceFeed();
   const frameReportFeed = new RenderFrameReportFeed();
   let pendingFrameReportReceipt: RenderFrameReportReceipt | null = null;
@@ -2347,7 +2351,7 @@ function initializeEngine(
   // Engine-owned instrumentation is acquired only by a successfully returned handle.
   let readDiagnostics: ReturnType<typeof createRenderDiagnostics> | undefined;
   const renderDiagnostics = () => {
-    captureFramePhases = true;
+    framePhaseLeaseFrames = FRAME_PHASE_LEASE_FRAMES;
     const source = engine.getRenderingCanvas();
     // Babylon 9.29 exposes loop scheduling fields but keeps the native context
     // loss flag protected; this snapshot never mutates native ownership.
@@ -2535,7 +2539,8 @@ function initializeEngine(
     pendingPerformanceReceipt = null;
     pendingFrameReportReceipt = null;
     frameOwners.clear();
-    const measurePhases = captureFramePhases || performanceFeed.active;
+    const measurePhases = framePhaseLeaseFrames > 0 || performanceFeed.active;
+    if (framePhaseLeaseFrames > 0) framePhaseLeaseFrames--;
     const preparationStart = measurePhases ? performance.now() : 0;
     applyRenderingQuality();
     outlineHost.refreshSettings();

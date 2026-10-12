@@ -323,6 +323,8 @@ export function PlayOverlay({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<PlaySession | null>(null);
   const [fps, setFps] = useState(0);
+  /** Latest nonzero runtime FPS; the Stats HUD state above only updates while the HUD is visible. */
+  const runtimeFpsRef = useRef<number | null>(null);
   const [scriptMs, setScriptMs] = useState(0);
   const [physicsMs, setPhysicsMs] = useState(0);
   const [publishMs, setPublishMs] = useState(0);
@@ -337,6 +339,8 @@ export function PlayOverlay({
   const { logs, pushLog } = useDebugConsoleLogs();
   const [treeOpen, setTreeOpen] = useState(false);
   const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
+  // Test builds (or `?test`) expose e2e hooks as data attributes; other builds skip their polling.
+  const testMode = useMemo(() => isTestModeEnabled(), []);
   const [moveX, setMoveX] = useState<number | null>(null);
   const [actorGuids, setActorGuids] = useState<string[]>([]);
   const [actorYs, setActorYs] = useState<number[]>([]);
@@ -802,11 +806,15 @@ export function PlayOverlay({
             setStatGroups((groups) => nextStatGroups(groups, name, enabled));
           },
           onStats: (stats) => {
-            setFps(stats.fps);
-            setScriptMs(stats.scriptMs);
-            setPhysicsMs(stats.physicsMs);
-            setPublishMs(stats.publishMs);
-            setMoveX(sessionRef.current?.lastMoveX() ?? null);
+            // The FeatureTest probe reads the latest FPS even while the Stats HUD is hidden.
+            if (stats.fps > 0) runtimeFpsRef.current = stats.fps;
+            if (statsVisibleRef.current) {
+              setFps(stats.fps);
+              setScriptMs(stats.scriptMs);
+              setPhysicsMs(stats.physicsMs);
+              setPublishMs(stats.publishMs);
+            }
+            if (testMode) setMoveX(sessionRef.current?.lastMoveX() ?? null);
           },
           onLog: (message, severity) => pushLog(severity, message),
           onPrint: (entry) => {
@@ -939,11 +947,13 @@ export function PlayOverlay({
       });
       const movePoll = window.setInterval(() => {
         const current = sessionRef.current;
-        setMoveX(current?.lastMoveX() ?? null);
-        const nextGuids = [...(current?.spawnedActorGuids() ?? [])];
-        setActorGuids((previous) => keepIfEqual(previous, nextGuids));
-        const nextYs = (current?.lastActorPositions() ?? []).map((entry) => entry.y);
-        setActorYs((previous) => keepIfEqual(previous, nextYs));
+        if (testMode) {
+          setMoveX(current?.lastMoveX() ?? null);
+          const nextGuids = [...(current?.spawnedActorGuids() ?? [])];
+          setActorGuids((previous) => keepIfEqual(previous, nextGuids));
+          const nextYs = (current?.lastActorPositions() ?? []).map((entry) => entry.y);
+          setActorYs((previous) => keepIfEqual(previous, nextYs));
+        }
         setAudioQueued(audioStats.queued);
         setAudioUnlocked(audioStats.unlocked);
         if (current) {
@@ -952,8 +962,10 @@ export function PlayOverlay({
           const lights = current.handle.lightsDebugEnabled();
           setLightsDebug(lights);
           if (statsVisibleRef.current || lights) setRendering(current.handle.renderDiagnostics());
-          setPostProcessPasses(current.handle.postProcessPassCount());
-          setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
+          if (testMode) {
+            setPostProcessPasses(current.handle.postProcessPassCount());
+            setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
+          }
           setFreeCamEnabled(current.handle.isFreeCamEnabled());
           // Only the Stats HUD shows these; skip their reads while it is hidden.
           if (statsVisibleRef.current) {
@@ -980,7 +992,7 @@ export function PlayOverlay({
         const detail = (event as CustomEvent<LiveEngineSettings>).detail;
         if (!detail) return;
         applyLiveEngineSettings(session.handle, detail, { applyFrameCap: false });
-        setPostProcessPasses(session.handle.postProcessPassCount());
+        if (testMode) setPostProcessPasses(session.handle.postProcessPassCount());
       };
       window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
       disposePresentation = () => {
@@ -994,7 +1006,7 @@ export function PlayOverlay({
       };
     });
     return () => { cancelled = true; disposePresentation?.(); };
-  }, [sharedEngine, injectFixtureThrow, reportBtState, pushLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, simulationSession, diagnosticStore]);
+  }, [sharedEngine, injectFixtureThrow, reportBtState, pushLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, simulationSession, diagnosticStore, testMode]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
@@ -1068,12 +1080,12 @@ export function PlayOverlay({
     });
   };
 
-  const probeStateRef = useRef({ sceneLoading, fps: null as number | null, logs });
-  probeStateRef.current = { sceneLoading, fps: fps > 0 ? fps : probeStateRef.current.fps, logs };
+  const probeStateRef = useRef({ sceneLoading, logs });
+  probeStateRef.current = { sceneLoading, logs };
   useEffect(() => playProbes.register(PLAY_PROBE_KEY, {
     loadingPhase: () => probeStateRef.current.sceneLoading,
     tickIndex: () => sessionRef.current?.lastTickIndex() ?? 0,
-    runtimeFps: () => probeStateRef.current.fps,
+    runtimeFps: () => runtimeFpsRef.current,
     snapshot: () => {
       const session = sessionRef.current;
       const counts = session?.liveObjectCounts();
@@ -1116,8 +1128,8 @@ export function PlayOverlay({
       data-testid="play-overlay"
       data-mode={simulating ? "simulate" : "play"}
       data-scene-guid={sceneAssetGuid ?? ""}
-      data-post-process-passes={String(postProcessPasses)}
-      data-assigned-materials={assignedMaterials}
+      data-post-process-passes={testMode ? String(postProcessPasses) : undefined}
+      data-assigned-materials={testMode ? assignedMaterials : undefined}
     >
       {simulationSession ? <SimulationRetentionDialog session={simulationSession} onStop={() => finishSessionRef.current()} /> : null}
       <SceneLoadingDialog open={sceneLoading !== null} progress={sceneLoading?.progress ?? 0}
@@ -1165,20 +1177,22 @@ export function PlayOverlay({
               <SimulationTransformToolbar tool={transformTool} onToolChange={tool => { setTransformTool(tool); transformToolsRef.current?.setTool(tool); }} />
               <p className="pointer-events-none text-xs text-muted-foreground">Pause to inspect without gameplay changing values. The editor camera does not change the game camera.</p>
             </> : null}
-            <span
-              data-testid="play-move-x"
-              data-move-x={moveX === null ? "" : String(moveX)}
-              className="sr-only"
-            >
-              <SelectableText>
-                move.x={moveX === null ? "—" : moveX.toFixed(2)}
-              </SelectableText>
-            </span>
-            <span
-              data-testid="play-actor-guids"
-              data-guids={actorGuids.join(",")}
-            />
-            <span data-testid="play-actor-y" data-ys={actorYs.join(",")} />
+            {testMode ? <>
+              <span
+                data-testid="play-move-x"
+                data-move-x={moveX === null ? "" : String(moveX)}
+                className="sr-only"
+              >
+                <SelectableText>
+                  move.x={moveX === null ? "—" : moveX.toFixed(2)}
+                </SelectableText>
+              </span>
+              <span
+                data-testid="play-actor-guids"
+                data-guids={actorGuids.join(",")}
+              />
+              <span data-testid="play-actor-y" data-ys={actorYs.join(",")} />
+            </> : null}
             {shouldShowPlayAudioUnlockHint({
               queued: audioQueued,
               unlocked: audioUnlocked,
