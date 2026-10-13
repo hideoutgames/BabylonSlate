@@ -71,6 +71,11 @@ import {
   stableStringify,
   decodeBabasset,
   encodeBabasset,
+  carryStoredChunks,
+  storedBabassetMatches,
+  verifyChunksBeforeWrite,
+  audioReverbChunk,
+  isCarriedChunk,
   AUDIO_REVERB_CHUNK_ID,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   DOCUMENT_CHUNK_ID,
@@ -84,6 +89,7 @@ import {
   exportProjectZip,
   fallbackParentClass,
   clearDeletedAssetRefs,
+  createReadAhead,
   replaceClassAssetReferences,
   renamedAssetPath,
   type ClassAssetReplacement,
@@ -97,8 +103,10 @@ import {
   readProjectTree,
   writeThumbnail,
   ProjectSearchIndex,
+  type AssetCatalogRead,
   type BabassetHeader,
   type ChunkInput,
+  type EncodableChunk,
   type BlobStore,
   type EncodeFn,
   stubEncodeKtx2,
@@ -305,6 +313,9 @@ export type PluginImportResult =
  * Save, and the saved geometry's, with room to spare. Each is at most a few KB.
  */
 const SCENE_AUDIO_REVERB_RESULTS = 4;
+
+/** Stored payloads requested at once by a delete repair: the document being repaired plus the three after it. */
+const DELETE_REPAIR_READS = 4;
 
 /**
  * Chunks `loadDocumentWithChunks` reads with a document: fixed ids, or a choice
@@ -1766,9 +1777,7 @@ export class ProjectService {
       }
       return this.derivedStorage;
     }
-    const indexed = this.assetRegistry
-      ?.list()
-      .find((asset) => asset.path === path);
+    const indexed = this.assetRegistry?.getByPath(path);
     if (indexed && this.assetRegistry) {
       return this.assetRegistry.storageFor(indexed.rootId);
     }
@@ -1780,9 +1789,7 @@ export class ProjectService {
   }
 
   private blobsForPath(path: string): BlobStore {
-    const indexed = this.assetRegistry
-      ?.list()
-      .find((asset) => asset.path === path);
+    const indexed = this.assetRegistry?.getByPath(path);
     if (indexed && this.assetRegistry) {
       return this.assetRegistry.blobsFor(indexed.rootId);
     }
@@ -1883,7 +1890,7 @@ export class ProjectService {
     const before = registry?.getByGuid(guid);
     if (!registry || !before) throw new Error("The asset is unavailable.");
     const nextPath = renamedAssetPath(before.path, newName);
-    if (nextPath !== before.path && registry.list().some((asset) => asset.path === nextPath)) {
+    if (nextPath !== before.path && registry.getByPath(nextPath)) {
       throw new Error(`Target path already exists: ${nextPath}`);
     }
     if (before.header.type !== "Class") {
@@ -1961,7 +1968,21 @@ export class ProjectService {
     if (deletedGuids.size === 0 && deletedClassNames.size === 0) return [];
 
     const failed: Array<{ path: string; error: unknown }> = [];
-    for (const asset of registry.list()) {
+    const assets = registry.list();
+    // The walk replaces any string equal to a deleted guid, wherever a document keeps it, so the
+    // typed dependency metadata in the headers cannot say which documents are unaffected: every
+    // writable document is still read. The stored payloads of the next few are requested while one
+    // is repaired; migration bookkeeping, the walk and the save stay one document at a time, in
+    // catalog order, since a save changes the headers the next walk consults.
+    const repairable = assets.filter((asset) => {
+      const kind = documentKindForAssetType(asset.header.type);
+      return kind && kind !== "trace" && !isTracePath(asset.path) && !deletedGuids.has(asset.header.guid)
+        && !registry.getRoot(asset.rootId)?.readOnly && !isPluginDocumentReadOnly(this.pluginDescriptors, asset.path);
+    });
+    const repairableIndex = new Map(repairable.map((asset, index) => [asset, index] as const));
+    const readStored = createReadAhead(DELETE_REPAIR_READS, (asset: IndexedAsset) =>
+      this.readStoredAssetDocument(documentKindForAssetType(asset.header.type)!, asset.path));
+    for (const asset of assets) {
       if (deletedGuids.has(asset.header.guid)) continue;
       const root = registry.getRoot(asset.rootId);
       if (root?.readOnly) continue;
@@ -1977,7 +1998,18 @@ export class ProjectService {
         | SerializedGraph
         | Record<string, unknown>;
       try {
-        content = await this.loadDocument(kind, asset.path);
+        const position = repairableIndex.get(asset);
+        let stored: { type: string; version: number; payload: Record<string, unknown> } | undefined;
+        if (position !== undefined) {
+          // A save that syncs plugins unmounts and remounts their roots, which can fail a read
+          // that was already in flight for a plugin document. Such a document is read again, as
+          // a serial pass would have read it now, before it is given up on.
+          try { stored = await readStored(repairable, position); }
+          catch { stored = undefined; }
+        }
+        content = stored
+          ? this.documentContent(kind, asset.path, stored)
+          : await this.loadDocument(kind, asset.path);
       } catch {
         continue;
       }
@@ -2186,9 +2218,22 @@ export class ProjectService {
       }
       return decoded.payload;
     }
-    if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .babasset document.`);
-    const raw = await this.readAssetDocument(path, fallbackDocumentType(kind), options);
+    const raw = await this.readStoredAssetDocument(kind, path, options);
     return this.documentContent(kind, path, raw);
+  }
+
+  /**
+   * The stored payload `loadDocument` starts from. It records no migration
+   * bookkeeping, so a caller may read several documents ahead and apply
+   * `documentContent` to each in its own order.
+   */
+  private async readStoredAssetDocument(
+    kind: Exclude<DocumentKind, "content-browser">,
+    path: string,
+    options: { scope?: AssetLoadScope; signal?: AbortSignal } = {},
+  ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
+    if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .babasset document.`);
+    return this.readAssetDocument(path, fallbackDocumentType(kind), options);
   }
 
   /**
@@ -2506,9 +2551,10 @@ export class ProjectService {
     }
 
     const guid = await this.guidForAsset(path);
+    const stored = existing?.catalog ?? null;
     const extraChunks = type === "Scene"
-      ? await this.sceneExtraChunksForWrite(path, content as SerializedScene, guid)
-      : await this.extraChunksFor(path);
+      ? await this.sceneChunksForSave(path, content as SerializedScene, guid, stored)
+      : await this.keptChunksFor(path, stored);
     const bytes = await encodeAssetDocument(
       {
         type,
@@ -2541,8 +2587,10 @@ export class ProjectService {
         ),
       },
     );
-    await storage.writeBinary(path, bytes);
-    await this.assetRegistry?.reindexPath(path);
+    await this.storeDocumentBytes(path, stored, bytes, this.assetRegistry, [
+      DOCUMENT_CHUNK_ID,
+      ...extraChunks.filter((chunk) => !isCarriedChunk(chunk)).map((chunk) => chunk.id),
+    ]);
     this.noteMigrated(path);
     if (pluginContentChanged && ownerPlugin) {
       // In the settings file's own write queue, so a PluginSettings save is
@@ -2636,6 +2684,95 @@ export class ProjectService {
     return extra;
   }
 
+  /**
+   * {@link sceneExtraChunksForWrite} for a Scene document Save, carrying the
+   * stored chunks over from `stored` instead of reading them. A reverb result
+   * baked for this geometry replaces the stored chunk, which is then not read.
+   */
+  private async sceneChunksForSave(
+    path: string,
+    payload: SerializedScene | Record<string, unknown>,
+    guid: string,
+    stored: AssetCatalogRead | null,
+  ): Promise<EncodableChunk[]> {
+    const fingerprint = staticAudioGeometryFingerprint(payload as SerializedScene);
+    const baked = this.sceneAudioReverb.get(guid)?.get(fingerprint);
+    const kept = await this.keptChunksFor(path, stored, baked ? new Set([AUDIO_REVERB_CHUNK_ID]) : undefined);
+    if (baked) return [...kept, audioReverbChunk(baked)];
+    if (kept.some((chunk) => chunk.id === AUDIO_REVERB_CHUNK_ID)) {
+      const saved = await this.readAssetDocument(path, "Scene");
+      if (staticAudioGeometryFingerprint(normalizeScene(saved.payload)) !== fingerprint) {
+        return kept.filter((chunk) => chunk.id !== AUDIO_REVERB_CHUNK_ID);
+      }
+    }
+    return kept;
+  }
+
+  /**
+   * The chunks a rewrite of `path` keeps, other than its document body and
+   * `omit` (which the caller replaces). They are carried over from the chunk
+   * table `stored` snapshots, so unchanged blobs are neither read nor hashed
+   * again; when that cannot be shown safe (a missing blob, a changed file),
+   * every chunk is read and verified instead, which refuses the write if the
+   * file cannot be read.
+   */
+  private async keptChunksFor(
+    path: string,
+    stored: AssetCatalogRead | null,
+    omit?: ReadonlySet<string>,
+  ): Promise<EncodableChunk[]> {
+    if (stored) {
+      try {
+        const carried = await carryStoredChunks(this.storageForPath(path), this.blobsForPath(path), stored, {
+          omit: new Set([DOCUMENT_CHUNK_ID, ...(omit ?? [])]),
+        });
+        if (carried) return carried;
+      } catch {
+        // Read in full below, which reports an unreadable file.
+      }
+    }
+    const loaded = await this.extraChunksFor(path);
+    return omit ? loaded.filter((chunk) => !omit.has(chunk.id)) : loaded;
+  }
+
+  /**
+   * Replace `path` with `bytes`, unless it already holds exactly that (`stored`
+   * is what it held): a save that changed nothing leaves the file, its mtime and
+   * the registry's index alone, rather than invalidating everything keyed on the
+   * registry's generation.
+   *
+   * `replaced` names the chunks whose bytes the caller supplied. Their stored
+   * bytes are verified first (`verifyChunksBeforeWrite`): a damaged inline copy
+   * is rewritten rather than skipped, and a damaged blob, which a write cannot
+   * repair, or a blob the container names that has gone missing, refuses the
+   * save as an unreadable asset always has, so the caller's copy stays dirty.
+   */
+  private async storeDocumentBytes(
+    path: string,
+    stored: AssetCatalogRead | null,
+    bytes: Uint8Array,
+    registry = this.assetRegistry,
+    replaced: readonly string[] = [DOCUMENT_CHUNK_ID],
+  ): Promise<void> {
+    const storage = this.storageForPath(path);
+    if (stored) {
+      let intact: boolean;
+      try {
+        intact = await verifyChunksBeforeWrite(storage, this.blobsForPath(path), stored, bytes, replaced);
+      } catch (cause) {
+        throw new Error(`${path} could not be read, so it was not overwritten.`, { cause });
+      }
+      if (intact && await storedBabassetMatches(storage, stored, bytes)) {
+        const indexed = registry?.getByPath(path);
+        if (!registry || (indexed && stableStringify(indexed.header) === stableStringify(stored.header))) return;
+        await registry.reindexPath(path);
+        return;
+      }
+    }
+    await storage.writeBinary(path, bytes);
+    await registry?.reindexPath(path);
+  }
+
   /** Persist Recast `exportNavMesh` bytes as the Scene `navmesh` extra chunk. */
   async writeSceneNavmeshChunk(
     path: string,
@@ -2698,24 +2835,46 @@ export class ProjectService {
       const currentPath = current?.path ?? path;
       const storage = this.storageForPath(currentPath);
       const blobs = this.blobsForPath(currentPath);
-      const decoded = await decodeBabasset(await storage.readBinary(currentPath), (hash) => blobs.readBlob(hash));
-      const body = decoded.chunks.get(DOCUMENT_CHUNK_ID);
-      const persisted = body ? JSON.parse(new TextDecoder().decode(body)) : decoded.header.payload;
-      if (decoded.header.type !== "Scene") throw new Error("Audio reverb requires a Scene asset");
-      this.rememberSceneAudioReverb(decoded.header.guid, baked.fingerprint, baked.bytes);
+      // Only the document is read, to compare its geometry. The other chunks are
+      // carried over from the chunk table, and the reverb chunk this replaces is
+      // not read at all; if they cannot be carried safely, everything is decoded.
+      let stored: AssetCatalogRead | null = null;
+      let kept: EncodableChunk[] | null = null;
+      try {
+        stored = await readAssetCatalog(storage, currentPath);
+        kept = await carryStoredChunks(storage, blobs, stored, {
+          omit: new Set([AUDIO_REVERB_CHUNK_ID]),
+          load: (entry) => entry.id === DOCUMENT_CHUNK_ID,
+        });
+      } catch {
+        // `kept` stays unset, so everything is decoded below.
+      }
+      let header: BabassetHeader;
+      let body: Uint8Array | undefined;
+      if (stored && kept) {
+        header = stored.header;
+        body = kept.find((chunk): chunk is ChunkInput => chunk.id === DOCUMENT_CHUNK_ID && !isCarriedChunk(chunk))?.data;
+      } else {
+        stored = null;
+        const decoded = await decodeBabasset(await storage.readBinary(currentPath), (hash) => blobs.readBlob(hash));
+        header = decoded.header;
+        body = decoded.chunks.get(DOCUMENT_CHUNK_ID);
+        kept = header.chunks.filter((entry) => entry.id !== AUDIO_REVERB_CHUNK_ID).map((entry) => ({
+          id: entry.id, kind: entry.kind, mime: entry.mime, data: decoded.chunks.get(entry.id)!,
+        }));
+      }
+      const persisted = body ? JSON.parse(new TextDecoder().decode(body)) : header.payload;
+      if (header.type !== "Scene") throw new Error("Audio reverb requires a Scene asset");
+      this.rememberSceneAudioReverb(header.guid, baked.fingerprint, baked.bytes);
       if (staticAudioGeometryFingerprint(normalizeScene(persisted)) !== baked.fingerprint) return;
       // Re-encode the persisted container under the same queue as Save. Preserve
       // authored JSON, schema/header metadata, dependencies, and every other chunk.
-      const chunks = decoded.header.chunks.map((entry) => ({
-        id: entry.id, kind: entry.kind, mime: entry.mime, data: decoded.chunks.get(entry.id)!,
-      }));
       const encoded = await encodeBabasset({
-        header: decoded.header,
-        chunks: extraChunksWithAudioReverb(chunks, baked.bytes),
+        header,
+        chunks: [...kept, audioReverbChunk(baked.bytes)],
         writeBlob: (hash, data) => blobs.writeBlob(hash, data),
       });
-      await storage.writeBinary(currentPath, encoded);
-      await registry?.reindexPath(currentPath);
+      await this.storeDocumentBytes(currentPath, stored, encoded, registry, [AUDIO_REVERB_CHUNK_ID]);
     };
     if (asset) await registry!.withAssetWrite(asset.header.guid, write);
     else await write();
@@ -2814,12 +2973,20 @@ export class ProjectService {
     parentClass: string | null;
     hasDocumentChunk: boolean;
     payload: Record<string, unknown>;
+    /** The header and file snapshot these came from; null when only a whole-file read could parse it. */
+    catalog: AssetCatalogRead | null;
   } | null> {
-    if (!(await this.storageForPath(path).exists(path))) return null;
+    const storage = this.storageForPath(path);
+    if (!(await storage.exists(path))) return null;
     try {
-      const header = readAssetDocumentHeader(
-        await this.storageForPath(path).readBinary(path),
-      );
+      // The header is all a rewrite's metadata needs, so only it is read.
+      let catalog: AssetCatalogRead | null = null;
+      try {
+        catalog = await readAssetCatalog(storage, path);
+      } catch {
+        // Parsed from the whole file below, which fails or succeeds on its own terms.
+      }
+      const header = catalog?.header ?? readAssetDocumentHeader(await storage.readBinary(path));
       return {
         type: header.type,
         name: header.name,
@@ -2828,6 +2995,7 @@ export class ProjectService {
           (chunk) => chunk.id === DOCUMENT_CHUNK_ID,
         ),
         payload: header.payload,
+        catalog,
       };
     } catch {
       return null;

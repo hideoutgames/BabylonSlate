@@ -4,6 +4,7 @@
  * factories pull in every graph package, so the boot path can import them
  * without that module. `content-browser-helpers` re-exports everything here.
  */
+import type { AssetRegistry } from "@babylonslate/assets";
 import { engineParentOf, walkAncestry } from "@babylonslate/editor-kit";
 import { isSceneAssetClassId } from "@babylonslate/object-model";
 import { classIdForGraphPath } from "../services/script-compiler";
@@ -89,6 +90,23 @@ export function classParentLookup(
     if (isSceneAssetClassId(id) && id !== "Scene") return "Scene";
     return byId.get(id) ?? engineParentOf(id) ?? null;
   };
+}
+
+const registryParentLookups = new WeakMap<object, { generation: number; parentOf: (id: string) => string | null }>();
+
+/**
+ * `classParentLookup(registry.list())`, rebuilt only when the registry's catalog has
+ * changed since the last call. Callers on hot paths (Play preparation, dock layout
+ * changes) otherwise copy the catalog and re-derive every Class id on each call.
+ */
+export function registryClassParentLookup(registry: Pick<AssetRegistry, "generation" | "list"> | null | undefined): (id: string) => string | null {
+  if (!registry) return classParentLookup([]);
+  const generation = registry.generation;
+  const cached = registryParentLookups.get(registry);
+  if (cached?.generation === generation) return cached.parentOf;
+  const parentOf = classParentLookup(registry.list());
+  registryParentLookups.set(registry, { generation, parentOf });
+  return parentOf;
 }
 
 export function classDocumentShowsPrefab(

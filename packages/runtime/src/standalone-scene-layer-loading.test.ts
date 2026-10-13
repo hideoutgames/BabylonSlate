@@ -21,6 +21,7 @@ function chunkGate() {
   let held = false;
   let pending: (() => void) | undefined;
   return {
+    stepsPerYield: 32,
     yieldControl: () => held ? new Promise<void>((resolve) => { pending = resolve; }) : Promise.resolve(),
     hold() { held = true; },
     async next() {

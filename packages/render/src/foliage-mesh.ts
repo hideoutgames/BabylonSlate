@@ -20,9 +20,40 @@ const batchesByRoot = new WeakMap<Mesh, Array<{ root: Mesh; batch: FoliageBatch 
 
 export function foliagePreparation(root: Mesh): Promise<void> | undefined { return preparations.get(root); }
 
+type FoliageSummary = { json: string; models: readonly string[] };
+const summaries = new WeakMap<object, FoliageSummary>();
+
+/**
+ * Serialized properties and distinct model guids, computed once per properties
+ * object, so an unchanged component does not re-serialize up to
+ * MAX_FOLIAGE_INSTANCES transforms on every apply.
+ *
+ * Contract: the memo is keyed on object identity, so hosts must replace a
+ * Foliage component's properties (and the batches inside) rather than mutate
+ * them in place; an in-place edit would keep the old summary and the visual
+ * would not rebuild. The existing hosts do: the scene property command spreads
+ * (`withProperty`), `appendFoliageInstance` and the erase brush return new
+ * objects, and overlay layout copies every component's properties.
+ */
+function foliageSummary(properties: unknown): FoliageSummary {
+  const memo = properties !== null && typeof properties === "object" ? properties : null;
+  const cached = memo ? summaries.get(memo) : undefined;
+  if (cached) return cached;
+  const summary = {
+    json: JSON.stringify(properties),
+    models: [...new Set(parseFoliageProperties(properties).batches.map((batch) => batch.modelGuid))],
+  };
+  if (memo) summaries.set(memo, summary);
+  return summary;
+}
+
+/** Equals `JSON.stringify(properties)`: any edit of the authored foliage changes it. */
+export function foliagePropertiesFingerprint(properties: unknown): string {
+  return foliageSummary(properties).json;
+}
+
 export function foliageSourceFingerprint(properties: unknown, assets?: MeshAssetContext): string {
-  const models = new Set(parseFoliageProperties(properties).batches.map((batch) => batch.modelGuid));
-  return [...models].map((guid) => {
+  return foliageSummary(properties).models.map((guid) => {
     const source = assets?.modelSources?.get(guid) ?? assets?.modelBytes?.get(guid);
     return `${guid}:${source ? snapshotByteFingerprint(source) : "missing"}:${assets?.modelPayloads?.get(guid)?.importScale ?? 1}`;
   }).join("|");

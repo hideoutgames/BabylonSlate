@@ -1,4 +1,4 @@
-import { LinesMesh, Vector3, type AbstractMesh } from "@babylonjs/core";
+import { LinesMesh, Mesh, Vector3, type AbstractMesh } from "@babylonjs/core";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { isSkyboxMesh } from "./skybox";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
@@ -47,6 +47,7 @@ export function hasDeformingShadowBounds(mesh: AbstractMesh): boolean {
     hasMeshLatticeDeformer(mesh) ||
     !!mesh.skeleton ||
     !!mesh.morphTargetManager ||
+    (mesh instanceof Mesh && !!mesh.bakedVertexAnimationManager) ||
     Number(mesh.material?.metadata?.boundsPadding ?? 0) > 0
   );
 }
@@ -54,10 +55,16 @@ export function hasDeformingShadowBounds(mesh: AbstractMesh): boolean {
 /**
  * Whether a caster can reach a local light's range. Skinned, morphed and
  * lattice-deformed geometry can leave its bind-pose bounds, so it gets twice
- * its bounding radius.
+ * its bounding radius. The deforming test walks the parent chain and a material,
+ * so it runs only for casters between the one-radius and two-radius reach: this
+ * is called for every caster, light and frame.
  */
 export function casterWithinShadowRange(mesh: AbstractMesh, position: Vector3, range: number): boolean {
   const sphere = mesh.getBoundingInfo().boundingSphere;
-  const radius = sphere.radiusWorld * (hasDeformingShadowBounds(mesh) ? 2 : 1);
-  return Vector3.Distance(sphere.centerWorld, position) <= range + radius;
+  const radius = sphere.radiusWorld;
+  const distance = Vector3.Distance(sphere.centerWorld, position);
+  if (distance <= range + radius) return true;
+  // Negated so a NaN distance stays out of range, as with the single comparison.
+  if (!(distance <= range + 2 * radius)) return false;
+  return hasDeformingShadowBounds(mesh);
 }

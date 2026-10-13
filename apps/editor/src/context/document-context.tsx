@@ -175,6 +175,7 @@ import {
   classDocumentShowsPrefab,
   classIdFromClassAsset,
   classParentLookup,
+  registryClassParentLookup,
 } from "../lib/class-asset-lookup";
 import {
   editorTabContentForKind,
@@ -3641,10 +3642,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     const api = activeDockApi();
     if (!api) return;
-    const indexed = projectService.registry
-      ?.list()
-      .find((asset) => asset.path === doc.ref.path);
-    const parentOf = classParentLookup(projectService.registry?.list() ?? []);
+    const indexed = projectService.registry?.getByPath(doc.ref.path);
+    const parentOf = registryClassParentLookup(projectService.registry);
     const dockOptions = dockOptionsForIndexed(
       doc.ref.kind,
       indexed,
@@ -3723,10 +3722,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return;
     }
     const dock = api;
-    const indexed = projectService.registry
-      ?.list()
-      .find((asset) => asset.path === doc.ref.path);
-    const parentOf = classParentLookup(projectService.registry?.list() ?? []);
+    const indexed = projectService.registry?.getByPath(doc.ref.path);
+    const parentOf = registryClassParentLookup(projectService.registry);
     const animMode =
       doc.ref.kind === "anim-graph"
         ? animEditorModeForDocument(activeDocumentId, animEditorModesRef.current, doc)

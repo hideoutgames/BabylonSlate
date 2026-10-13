@@ -7,6 +7,7 @@ function controlledYields() {
   let automatic = false;
   const pending: Array<() => void> = [];
   return {
+    stepsPerYield: 32,
     yieldControl: (signal: AbortSignal) => automatic ? Promise.resolve() : new Promise<void>((resolve, reject) => {
       const abort = () => reject(signal.reason);
       signal.addEventListener("abort", abort, { once: true });

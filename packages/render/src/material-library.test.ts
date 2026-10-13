@@ -454,6 +454,42 @@ describe("material library", () => {
     expect(second.material).not.toBe(first.material);
   });
 
+  it("reports readiness while resolving, including after an in-place edit", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "tint", type: "const.vec3", position: { x: 0, y: 0 }, properties: { value: [1, 0, 0] } });
+    const pending = library.resolveWithReadiness(scene, "mat-1", doc);
+    if (!pending) throw new Error("Expected a pending material");
+    expect(pending.ready).toBe(false);
+    expect(library.isReady(scene, "mat-1", doc)).toBe(false);
+    const acquired = library.acquire(scene, "mat-1", doc);
+    if (!acquired.ok) throw new Error("Expected the pending material");
+    await acquired.ready;
+    const published = library.resolveWithReadiness(scene, "mat-1", doc);
+    expect(published?.material).toBe(pending.material);
+    expect(published?.ready).toBe(true);
+    expect(library.isReady(scene, "mat-1", doc)).toBe(true);
+    doc.edges = [
+      ...doc.edges.filter((edge) => !(edge.targetNodeId === "output" && edge.targetPinId === "baseColor")),
+      { id: "e-tint-out", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "baseColor" },
+    ];
+    // The edit recompiles; the last published generation stays bound but is no longer ready.
+    const edited = library.resolveWithReadiness(scene, "mat-1", doc);
+    expect(edited?.material).toBe(pending.material);
+    expect(edited?.ready).toBe(false);
+    expect(library.isReady(scene, "mat-1", doc)).toBe(false);
+    const replacement = library.acquire(scene, "mat-1", doc);
+    if (!replacement.ok) throw new Error("Expected the edited material to compile");
+    await replacement.ready;
+    const settled = library.resolveWithReadiness(scene, "mat-1", doc);
+    expect(settled?.material).toBe(replacement.material);
+    expect(settled?.material).not.toBe(pending.material);
+    expect(settled?.ready).toBe(true);
+    expect(library.resolveWithReadiness(scene, "missing", { ...doc, nodes: [], edges: [] })).toBeNull();
+  });
+
   it("compiles a Material Instance as its own material on its root Material's GPU program", async () => {
     const scene = host();
     const library = new MaterialLibrary();

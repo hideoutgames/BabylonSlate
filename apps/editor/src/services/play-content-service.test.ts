@@ -34,7 +34,7 @@ function createPlayContent(assets: readonly Asset[], readAssetChunk: (path: stri
   const project = {
     guid: "project-guid",
     plugins: [],
-    registry: { list: () => indexed, getRoot: () => undefined },
+    registry: { generation: 0, list: () => indexed, getRoot: () => undefined },
     loadDocument: vi.fn(async (_kind: string, path: string) => fromDisk(files.get(path))),
     guidForPath: (path: string) => assets.find((asset) => asset.path === path)?.guid ?? null,
   } as unknown as ProjectService;

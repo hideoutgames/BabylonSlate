@@ -52,9 +52,49 @@ export type LifecycleHooks<T extends BObject = BObject> = {
   onDestroyed?: (self: T) => void;
 };
 
+const isPrimitive = (value: unknown): boolean =>
+  value === null || (typeof value !== "object" && typeof value !== "function");
+
+/**
+ * Variables that count their writes. `revision` advances on every set, delete or
+ * clear that can change what a reader sees, so a consumer that remembers it can
+ * skip re-reading values nothing wrote. Rewriting a primitive with itself is no
+ * change; a value that is an object always counts, since it may be mutated
+ * in place before it is written again.
+ */
+class VersionedVariables extends Map<string, unknown> {
+  revision = 0;
+
+  constructor(entries: Iterable<readonly [string, unknown]> = []) {
+    super();
+    // Not `super(entries)`: that would call `set` before `revision` exists.
+    for (const [name, value] of entries) this.set(name, value);
+  }
+
+  override set(name: string, value: unknown): this {
+    // An object value always counts, so it skips the lookup; a primitive costs one `get`, and `has`
+    // only when the write is `undefined`, which a missing key also reads as.
+    const unchanged = isPrimitive(value) && Object.is(super.get(name), value) && (value !== undefined || super.has(name));
+    super.set(name, value);
+    if (!unchanged) this.revision++;
+    return this;
+  }
+
+  override delete(name: string): boolean {
+    const deleted = super.delete(name);
+    if (deleted) this.revision++;
+    return deleted;
+  }
+
+  override clear(): void {
+    if (this.size > 0) this.revision++;
+    super.clear();
+  }
+}
+
 /** Collider geometry enters through replacement, never in-place vertex mutation.
  * Copy at this existing authoring boundary; direct variables.set uses it too. */
-class ColliderVariables extends Map<string, unknown> {
+class ColliderVariables extends VersionedVariables {
   override set(name: string, value: unknown): this {
     return super.set(name, name === "shape" ? freezeCollisionValue(structuredClone(value)) : value);
   }
@@ -65,7 +105,7 @@ const isStructuralActorVariable = (name: string): boolean =>
   name === "parentId" || name === "name";
 
 /** Every write path, including direct `variables` map writes, marks structural changes. */
-class ActorVariables extends Map<string, unknown> {
+class ActorVariables extends VersionedVariables {
   private readonly actor: Actor;
 
   constructor(actor: Actor, entries: Iterable<readonly [string, unknown]>) {
@@ -133,7 +173,17 @@ export class BObject {
 
   /** Runs during construction, before subclass fields are initialized. */
   protected createVariables(entries: Array<[string, unknown]>): Map<string, unknown> {
-    return this.classId === "ColliderComponent" ? new ColliderVariables(entries) : new Map(entries);
+    return this.classId === "ColliderComponent" ? new ColliderVariables(entries) : new VersionedVariables(entries);
+  }
+
+  /**
+   * Advances whenever a variable is written, deleted or cleared; rewriting a
+   * primitive with itself does not. An unchanged revision proves no variable
+   * value changed, so a caller can skip re-reading them.
+   */
+  get variablesRevision(): number {
+    const variables = this.variables;
+    return variables instanceof VersionedVariables ? variables.revision : Number.NaN;
   }
 
   callOnCreation(): void {

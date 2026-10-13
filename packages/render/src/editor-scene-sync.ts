@@ -1,6 +1,7 @@
 import { refreshJoystick2DMaterials } from "./joystick2d-mesh";
 import { Mesh, type AbstractMesh, type Camera, type Material, type Node, type Scene } from "@babylonjs/core";
 import { applyMaterialBounds } from "./material-bounds";
+import { withNetMaterialChanges } from "./material-change-batch";
 import { DEFAULT_SORTING_LAYERS, isSceneLayerAnchorActor, resolveOverlayLayout } from "@babylonslate/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
 import type {
@@ -33,6 +34,7 @@ import {
   editorModelLoadTarget,
   freezeStaticActorWorldMatrix,
   isEditorActorOrigin,
+  SceneActorIndex,
   syncMeshCollisionDashes,
   syncEditorCablePreviews,
   visualMeshesOfActorRoot,
@@ -76,6 +78,8 @@ export class EditorSceneSync {
   private applyingScene: SerializedScene | null = null;
   private materialRefreshGeneration: number | null = null;
   private materialsRefreshable = false;
+  private materialRefreshTurn = false;
+  private materialRefreshDeferred = false;
   private disposed = false;
 
   private readonly scene: Scene;
@@ -94,6 +98,7 @@ export class EditorSceneSync {
   private lastModelSlotKey = "";
   private assetsNeedRebuild = false;
   private lastScene: SerializedScene | null = null;
+  private lastSceneActors: { actors: SerializedActor[]; length: number; byId: Map<string, SerializedActor> } | null = null;
   private stealActiveCamera = false;
   private restoreCamera: Camera | null = null;
   private drawMeshCollision = false;
@@ -104,6 +109,7 @@ export class EditorSceneSync {
     slotAnimEpoch: new Map<number, number>(),
     slotAnimationGroups: new Map(),
     slotAnimLoads: new Map<number, Promise<void>>(),
+    reuseFullDetailInstance: true,
   };
 
   constructor(
@@ -260,6 +266,9 @@ export class EditorSceneSync {
   private *applySteps(sceneData: SerializedScene, rebuild = false): Generator<number, void, unknown> {
     const layout = resolveOverlayLayout(sceneData.actors, { pixelsPerUnit: this.assets?.pixelsPerUnit, textureSize: guid => this.assets?.texturePixelSizes?.get(guid) });
     sceneData = { ...sceneData, actors: layout.actors };
+    // One lazily built lookup answers the per-actor visual rules (streaming
+    // labels, 2D buttons) instead of each actor scanning the Scene's actors.
+    const actorIndex = new SceneActorIndex(sceneData.actors);
     rebuild ||= this.assetsNeedRebuild;
     const assets = this.meshAssetsForScene(sceneData);
     const liveIds = new Set<string>();
@@ -271,7 +280,7 @@ export class EditorSceneSync {
     for (const actor of sceneData.actors) {
       if (isSceneLayerAnchorActor(actor)) continue;
       liveIds.add(actor.id);
-      const kind = actorVisualFingerprint(actor, assets, sceneData.actors);
+      const kind = actorVisualFingerprint(actor, assets, actorIndex);
       nextKinds.set(actor.id, kind);
       if (rebuild || this.meshKinds.get(actor.id) !== kind) retired.add(actor.id);
       yield 0.1 * ++index / actorCount;
@@ -300,7 +309,7 @@ export class EditorSceneSync {
         try {
           replacement = createActorMesh(this.scene, actor, {
             ...assets, retainedTextBitmapBytes: text2DBitmapBytes(mesh),
-          }, sceneData.actors);
+          }, actorIndex);
           const previous = mesh;
           this.prepareActorVisual(actor, replacement);
           const modelGuid = this.meshComponentAssetGuid(actor);
@@ -441,6 +450,7 @@ export class EditorSceneSync {
 
   private completeApply(sceneData: SerializedScene, generation: number): void {
     this.lastScene = sceneData;
+    this.lastSceneActors = null;
     this.assetsNeedRebuild = false;
     this.onAfterApply?.();
     if (generation !== this.applyGeneration) return;
@@ -464,14 +474,33 @@ export class EditorSceneSync {
     this.scheduler?.invalidate("asset");
   }
 
+  /**
+   * `refreshMaterials` for Material publications, which arrive one at a time and
+   * each cost a pass over every actor. The first publication of a microtask turn
+   * refreshes at once; those settling in the same turn share one more pass, run
+   * after them, so the last publication's binding still lands.
+   */
+  refreshMaterialsCoalesced(): void {
+    if (this.materialRefreshTurn) {
+      this.materialRefreshDeferred = true;
+      return;
+    }
+    this.materialRefreshTurn = true;
+    queueMicrotask(() => {
+      this.materialRefreshTurn = false;
+      if (!this.materialRefreshDeferred) return;
+      this.materialRefreshDeferred = false;
+      this.refreshMaterials();
+    });
+    this.refreshMaterials();
+  }
+
   private *materialRefreshSteps(sceneData: SerializedScene): Generator<number, void, unknown> {
     for (const actor of sceneData.actors) {
       const root = this.meshes.get(actor.id);
       if (root && !root.isDisposed()) {
         this.refreshEnvironmentComponents(actor, root, this.meshAssetsForScene(sceneData));
-        this.restoreMeshComponentConstruction(actor, root);
-        this.applyModelSlots(actor, root);
-        this.bindActorMeshMaterials(actor, root);
+        this.bindActorMaterials(actor, root);
       }
       yield 0.99;
     }
@@ -485,9 +514,28 @@ export class EditorSceneSync {
     return this.meshes.get(actorId) ?? null;
   }
 
+  /**
+   * `lastScene.actors.find` for an id, through an index built once per applied
+   * Scene so per-actor consumers (deformers, brushes) do not scan every actor.
+   * Applying drops the index, so a document edited in place between applies is
+   * read again; the actors array identity and length also guard it. The first
+   * actor with an id wins, like `find`.
+   */
+  private lastSceneActor(actorId: string): SerializedActor | undefined {
+    const actors = this.lastScene?.actors;
+    if (!actors) return undefined;
+    let index = this.lastSceneActors;
+    if (index?.actors !== actors || index.length !== actors.length) {
+      const byId = new Map<string, SerializedActor>();
+      for (const actor of actors) if (!byId.has(actor.id)) byId.set(actor.id, actor);
+      index = this.lastSceneActors = { actors, length: actors.length, byId };
+    }
+    return index.byId.get(actorId);
+  }
+
   /** Exact authored component visual; asset consumers never infer identity from mesh order. */
   meshForComponent(actorId: string, componentId: string): Mesh | null {
-    const actor = this.lastScene?.actors.find((entry) => entry.id === actorId);
+    const actor = this.lastSceneActor(actorId);
     const component = actor?.components.find((entry) => entry.id === componentId);
     const root = this.meshes.get(actorId);
     return root && component && ["MeshComponent", "LandscapeComponent", "FoliageComponent"].includes(component.classId)
@@ -497,7 +545,7 @@ export class EditorSceneSync {
   /** Authored visual boundaries, including attached non-Mesh components.
    * Imported subparts and another actor's visuals retain their own ownership. */
   visualComponentRootsForActor(actorId: string): Mesh[] {
-    const actor = this.lastScene?.actors.find((entry) => entry.id === actorId);
+    const actor = this.lastSceneActor(actorId);
     const root = this.meshes.get(actorId);
     if (!actor || !root) return [];
     if (!isEditorActorOrigin(root)) return [root];
@@ -602,9 +650,20 @@ export class EditorSceneSync {
     applyEditorBillboardFromActor(mesh, actor);
     for (const child of visualMeshesOfActorRoot(mesh)) applyEditorBillboardFromActor(child, actor);
     applyActorComponentSorting(mesh, actor, this.sortingLayers);
-    this.restoreMeshComponentConstruction(actor, mesh);
-    this.applyModelSlots(actor, mesh);
-    this.bindActorMeshMaterials(actor, mesh);
+    this.bindActorMaterials(actor, mesh);
+  }
+
+  /**
+   * Construction, model slot, override and saved-instance Materials assign in
+   * turn; observers hear only the net result, so an unchanged actor announces
+   * nothing and does not make the renderer re-probe its shader variants.
+   */
+  private bindActorMaterials(actor: SerializedActor, root: Mesh): void {
+    withNetMaterialChanges([root, ...root.getChildMeshes(false)], () => {
+      this.restoreMeshComponentConstruction(actor, root);
+      this.applyModelSlots(actor, root);
+      this.bindActorMeshMaterials(actor, root);
+    });
   }
 
   pendingModelLoadCount(): number {
@@ -772,9 +831,7 @@ export class EditorSceneSync {
       ownsLoad,
       (prepared) => {
         if (!ownsLoad()) return;
-        this.restoreMeshComponentConstruction(actor, prepared);
-        this.applyModelSlots(actor, prepared);
-        this.bindActorMeshMaterials(actor, prepared);
+        this.bindActorMaterials(actor, prepared);
       },
       this.preparationPriority,
     );

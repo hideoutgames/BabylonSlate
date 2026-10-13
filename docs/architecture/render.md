@@ -48,6 +48,12 @@ kind, Cast Shadows, Shadow Priority, an area light's emission texture) still tak
 Intensity crossing zero toggles the light's effective Enabled state, and a Range edit that moves a light across a shadow, clustered-light or volumetric
 selection boundary changes that selection, which the shadow controller, scene-lighting sync and effects key detect. A presentation or preparation in flight,
 or a latched preparation failure, keeps the full path so it restarts.
+Editor Material binding assigns construction, model-slot, override and saved-instance Materials in turn; observers of a mesh's
+`onMaterialChangedObservable` hear only the net result (`withNetMaterialChanges`), so re-applying an unchanged actor, as every edit does, announces
+nothing and does not make the renderer re-probe its shader variants.
+The editor also keeps a model instance that loaded before its slot Materials compiled (embedded textures retained) rather than reloading it slim
+on the next edit: slimming releases texture memory only, while the reload re-instantiated the model and recompiled its shaders (about 2 s on the
+FeatureTest main scene). A slim instance is still reloaded when its Materials stop being compiled; Play keeps reloading slim.
 
 Opt-in render diagnostics include attempted/drawn/copied/held frames, copy and
 render-callback preparation time, context events, graph builds, strict readiness
@@ -377,6 +383,19 @@ Primitive collider dimensions are validated during actor realization. Invalid dr
 ## Scene fog
 
 Authored PBR and Unlit surfaces apply scene fog before output color conversion; PBR applies it after linear lighting and emission, before image processing. Linear, Exponential and Exponential Squared settings update the shader uniforms live in the editor and Play. SceneLayer overlays remain fog-free. Fog color uses the same display-to-linear conversion as surface colors.
+
+## Editor apply and load CPU
+
+Every editor edit re-applies the Scene document through `EditorSceneSync`, so per-actor and per-apply work stays proportional to what changed:
+
+- `MaterialLibrary.resolveWithReadiness` returns the resolved Material with its published-generation readiness from the one plan `resolve` computed, so binding a Material-bound component serializes its document once, not twice. `planFor` still compares document content (hosts edit documents in place), so an edited document recompiles.
+- A Foliage component's visual fingerprint (serialized properties plus its distinct model guids) is memoized per `properties` object, not recomputed from up to 20,000 transforms on every apply. The memo assumes hosts replace a Foliage component's properties (and the batches inside) instead of mutating them in place: the scene property command (`withProperty`), `appendFoliageInstance` and the erase brush all return new objects, so any foliage edit still rebuilds the visual, whereas an in-place edit would keep the stale fingerprint and skip the rebuild. Scenes with overlay layout copy their components and simply recompute.
+- `applyEditorLayoutClips` indexes the Scene's meshes by name once per call (the first mesh of a duplicated name wins, as with `Scene.getMeshByName`) instead of scanning the mesh list for every layout entry.
+- `EditorSceneSync` resolves `meshForComponent` / `visualComponentRootsForActor` through an actor-id index built once per applied Scene (the first actor of an id wins, like `Array.find`), so syncing deformers, brushes and other per-actor consumers after an apply is linear in the actor count rather than quadratic.
+- Material publications refresh the editor's bindings through `refreshMaterialsCoalesced`: the first publication of a microtask turn runs the pass at once, and any that settle later in the same turn share one more pass instead of one pass over every actor each. `refreshMaterials` keeps its guards (disposed, aborted or still-applying Scenes) and stays synchronous for direct callers.
+- Cooperative Scene loading (`runSceneWork` for the editor, `runSceneRealizationWork` for Play and the player) yields after 8 ms of work or 256 steps, whichever comes first, instead of every 32 steps. Each yield costs a task turn (at least 4 ms once timers nest), and most of a load's steps are cheap, so the step bound only caps a run too cheap to reach the time budget. `stepsPerYield` exists for tests that observe partial realization and for tuning; production callers use the default. Per-step abort checks are unchanged.
+- The shadow controller no longer searches `scene.meshes` for every newly announced or pending mesh: removal notifies synchronously, so only a mesh that has left the Scene (and may have returned) is searched for. Loading N meshes into M listed ones is linear instead of quadratic. Babylon delivers add notices on one ordered task queue, so a removal that happened before the controller listened (a `ClusteredLightContainer` creates and removes its proxy mesh at once) is invisible to it; a marker queued at construction says when the notices older than the controller have drained, and until then an unseen mesh is checked against the Scene's list.
+- `EditorSceneSync` hands the per-actor visual rules (streaming labels, 2D buttons parented to a surface) the same lazily built `SceneActorIndex` a full load uses, rather than the raw actor list, so each apply no longer scans every actor per such actor.
 
 ## Snapshot apply
 
@@ -1017,6 +1036,26 @@ changes also invalidate. Maps keep their allocation and unchanged frames allocat
 signature arrays; each local map tests every caster's bounding sphere against its range
 once per frame. Diagnostics expose `on-change` or `continuous`.
 
+**Cascaded sun maps.** A cascaded sun (`CascadedShadowGenerator`) is cached like a local
+map. Babylon refits the cascades to the camera whenever the map binds, a readiness probe
+(possibly another camera's) included, and receivers then use that fit. So the snapshot
+records what a fresh fit depends on: the camera's view and projection, the light direction
+and the cascade settings (count, lambda, shadow distance, stabilization, depth clamp), and
+a clear observer keeps the cascade matrices of the last actual pass: if the generator holds
+different ones, a probe refit it and the map re-renders before it is sampled. A camera
+move, light turn, settings change or such a refit re-renders the cascades once; changes of
+the casters' union bounds alone do not. Casters follow the local-map rule against the cascades'
+light-space rectangles (from the last fit; depth is ignored because casters toward the
+light clamp into the map): one that cannot reach any rectangle is not drawn into the map,
+so its changes, and its unsafe content (animated, hooked), leave the map cached. Deforming
+casters (skinned, morphed, lattice, baked vertex animation, padded bounds) are the exception:
+the caster index never plane-culls them and their skin can leave its bind-pose bounds, so a
+visible one reaches when it is within twice its radius of a rectangle or within the shadow
+distance of the camera (always, for an orthographic camera). An unsafe caster that reaches a
+cascade, a scene clip plane or custom shader options keeps the map continuous. A render's derived bias, or
+rectangles that moved with the camera, can cost one more render after motion stops. A
+single-map sun (one cascade, custom projection) still renders every frame.
+
 **Local depth range.** A point/spot map's depth ends at its light's range
 (`fitLocalShadowDepth` sets `shadowMaxZ`) instead of the camera's far plane, unless the
 range reaches that far plane. Each cube face or spot frustum therefore culls casters
@@ -1436,7 +1475,7 @@ Volumetrics integrate fog along camera rays using directional, point and spot li
 - Cached local transforms and reused uniform buffers avoid per-frame volume allocations. Moving a volume updates uniforms without changing the shader layout; adding/removing the last active source changes pass demand. Pending streamed owners contribute no pass demand until publication, and cancellation/unload removes their instance-owned fog. Editor density and edge-falloff edits retain the post-process stack while fog demand is unchanged; shape/size edits still rebuild their bounds guide. Visibility, component removal, visual replacement and scene disposal retire owners. Runtime `setFogVolumes` commands travel through the shared Play/player bridge.
 - Shared controls remain available when Scene-Wide Fog is off. Viewport **Post-processing** disables both. Local volumes still incur the shared depth/effect targets while present, including frames where all volumes are culled; they are not automatically cheaper than Babylon's standard scene fog.
 
-**Quality tiers.** Post Processing quality allows each screen-space effect separately (`ambientOcclusion`, `reflections`, `volumetricLighting`): Low allows none, Medium (the default, labelled Apple A16) allows ambient occlusion, High and Ultra allow all three. An effect runs only when the project enables it and the tier allows it; a skipped one is never forced on and Play diagnostics list it under quality limits ("post processing quality skips …"). The volumetric allowance covers scene-wide volumetric lighting only: Fog Volumes always render, through the same pass with zero scene-wide density. Saves from before these allowances fill them from the saved Post Processing tier, otherwise Medium. With no spatial stage left (no allowed effect and no Fog Volume), the spatial geometry pass and its targets are not built; a Fog Volume alone keeps a depth-only geometry pass.
+**Quality tiers.** Post Processing quality allows each screen-space effect separately (`ambientOcclusion`, `reflections`, `volumetricLighting`): Low allows none, Medium (the default, labelled Apple A16) allows ambient occlusion, High and Ultra allow all three. An effect runs only when the project enables it and the tier allows it; a skipped one is never forced on and Play diagnostics list it under quality limits ("post processing quality skips …"). The volumetric allowance covers scene-wide volumetric lighting only: Fog Volumes always render, through the same pass with zero scene-wide density. Saves from before these allowances fill them from the saved Post Processing tier, otherwise Medium. With no spatial stage left (no allowed effect and no Fog Volume), the spatial geometry pass and its targets are not built; a Fog Volume alone builds a depth-only geometry pass. That graph follows authored presence only. Each frame, from inside the graph run (after Babylon's camera, animation and world-matrix updates), a stage with zero scene density asks `selectFogVolumes` for the frame's camera: when none is selected, the volumetric march and compose tasks and the geometry pass (and its depth clear) are disabled, and the compose pass copies the color through, so an off-screen Fog Volume costs one full-screen copy. The geometry pass keeps running while ambient occlusion, reflections or temporal anti-aliasing read it; scene-wide fog (density above zero) never idles. Toggling `disabled` never rebuilds the graph.
 
 All spatial stages (occlusion, reflections, volumetrics, temporal resolve) share GLSL/WGSL stages, run before bloom/Display Color, and rebuild for projection, output size, quality or light/shadow topology changes. Light transforms and colors bind live. They require WebGL2/WebGPU with depth sampling, four draw buffers, renderable half-float color targets and float view-depth targets; unsupported devices preserve base rendering. **Geometry view depth.** `geometryDepthTextureType` picks the view-depth attachment type for both geometry passes. Transparent meshes draw into the geometry targets with blending on, and blending into a 32-bit float target needs `EXT_float_blend` (WebGL) or `float32-blendable` (WebGPU); without them every such draw is an `INVALID_OPERATION` that fails the presented frame (seen on iPad A16). Those devices get a half-float view depth, which always blends, at reduced precision for distant surfaces; the far-plane clear stays within half-float range. Disabled effects allocate no additional targets. An exhausted shared resource budget skips the spatial stages, preserves base rendering and logs the reason. Geometry and intermediate targets participate in the shared Engine resource budget and shader compilation retirement. The FrameGraph adds a demand-driven geometry pass. `LogicalGeometryTask` clears its view depth to the far plane (so sky rays terminate there) with its own target rebound: Babylon's base clear ends on the backbuffer, where an MRT draw-buffer layout is a WebGL `INVALID_OPERATION` that fails the presented frame (the editor's "Rendering Update Failed") for every spatial effect. Display-space vignette passes do not request linear material output from it. Shadow lookups follow Babylon's large-world origin offset.
 

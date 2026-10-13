@@ -109,10 +109,15 @@ function setSceneClipOwner(scene: Scene, owner: object, enabled: boolean): void 
   hooks.refresh();
 }
 export function applyEditorLayoutClips(scene: Scene, entries: ReadonlyMap<string, OverlayLayoutEntry>): void {
-  for (const mesh of scene.meshes) { clips.delete(mesh); restoreVirtualMesh(mesh); }
+  // The first mesh of a name wins, like Scene.getMeshByName, without a scan per entry.
+  const meshesByName = new Map<string, AbstractMesh>();
+  for (const mesh of scene.meshes) {
+    clips.delete(mesh); restoreVirtualMesh(mesh);
+    if (entries.size > 0 && !meshesByName.has(mesh.name)) meshesByName.set(mesh.name, mesh);
+  }
   for (const entry of entries.values()) {
     const name = `editorActor:${entry.actorId}${entry.componentId ? `|${entry.componentId}` : ""}`;
-    const mesh = scene.getMeshByName(name);
+    const mesh = meshesByName.get(name);
     if (mesh) { clips.set(mesh, entry.clip); setVirtualRealized(mesh, entry.realized !== false); }
   }
   setSceneClipOwner(scene, editorClipOwner, [...entries.values()].some((entry) => entry.clip !== null));

@@ -1,8 +1,9 @@
 import { SourceRevisionChangedError, areaEmissionTextureGuids, collisionTriangleMeshBytes, normalizeScene, normalizeSceneLayer, parseText2DProperties, renderEffectsAssetGuids, type CollisionTriangleMesh, type ProjectDocument } from "@babylonslate/core";
 import {
   isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
-  complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, currentAreaEmissionChunk, decodeAreaEmission, normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
-  registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry,
+  complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, mapBounded,
+  normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
+  registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry, type AssetSourceLocator,
   type IndexedAsset, type ModelPayload, type RegistryLoadedAsset,
 } from "@babylonslate/assets";
 import { packedContentFromGame, packedPlayControls, packedSourceControls, type GameSourceContent, type PackedGameContent } from "@babylonslate/exporter";
@@ -92,20 +93,63 @@ async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: reado
   const { registry } = host;
   const revisions = new Map<string, string>();
   const pending = [...roots];
-  while (pending.length) {
-    signal.throwIfAborted();
-    const guid = pending.pop()!;
-    if (revisions.has(guid)) continue;
-    const locator = await cancellableCatalogRead(registry.getAssetLocator(guid, { signal }), signal);
-    signal.throwIfAborted();
-    const asset = registry.getByGuid(guid);
-    if (!asset || asset.placeholder || asset.locator !== locator) throw new SourceRevisionChangedError(`Required asset changed while resolving: ${guid}`);
-    if (!host.documentOverrides?.has(guid)) assetFormats.requireCurrent(asset.header.type, asset.header.version);
-    revisions.set(guid, locator.revision);
-    pending.push(...(host.documentOverrides?.get(guid)?.requiredDependencies ?? registry.requiredDependenciesFor(guid, asset.header)));
+  signal.throwIfAborted();
+  // Each asset's catalog read starts as soon as a referrer names it, so the storage
+  // round trips of siblings overlap (bounded). Assets are still visited, validated and
+  // recorded in the order the stack yields them, so the closure's insertion order and the
+  // first error stay those of a one-at-a-time walk.
+  // The reads answer to the walk, not only to the caller: when the walk ends, by failing as
+  // much as by finishing, reads still queued never start and running ones are cancelled, so
+  // they cannot overlap a retry or reindex an asset under it.
+  const walk = new AbortController();
+  const abortWalk = () => walk.abort(signal.reason);
+  signal.addEventListener("abort", abortWalk, { once: true });
+  const limit = createLimiter(CATALOG_READS);
+  const reads = new Map<string, Promise<AssetSourceLocator>>();
+  const startRead = (guid: string): Promise<AssetSourceLocator> => {
+    let read = reads.get(guid);
+    if (!read) {
+      read = limit(() => {
+        walk.signal.throwIfAborted();
+        return cancellableCatalogRead(registry.getAssetLocator(guid, { signal: walk.signal }), walk.signal);
+      });
+      // The walk may fail before it reaches this asset; that failure is then moot.
+      read.catch(() => undefined);
+      reads.set(guid, read);
+    }
+    return read;
+  };
+  const prefetch = (guids: readonly string[]) => {
+    // The stack pops from the end, so the last name is read first.
+    for (let index = guids.length - 1; index >= 0; index--) if (!revisions.has(guids[index]!)) startRead(guids[index]!);
+  };
+  try {
+    prefetch(pending);
+    while (pending.length) {
+      signal.throwIfAborted();
+      const guid = pending.pop()!;
+      if (revisions.has(guid)) continue;
+      const locator = await startRead(guid);
+      signal.throwIfAborted();
+      const asset = registry.getByGuid(guid);
+      if (!asset || asset.placeholder || asset.locator !== locator) throw new SourceRevisionChangedError(`Required asset changed while resolving: ${guid}`);
+      if (!host.documentOverrides?.has(guid)) assetFormats.requireCurrent(asset.header.type, asset.header.version);
+      revisions.set(guid, locator.revision);
+      const dependencies = host.documentOverrides?.get(guid)?.requiredDependencies ?? registry.requiredDependenciesFor(guid, asset.header);
+      pending.push(...dependencies);
+      prefetch(dependencies);
+    }
+    return revisions;
+  } finally {
+    signal.removeEventListener("abort", abortWalk);
+    walk.abort();
   }
-  return revisions;
 }
+
+/** Concurrent catalog (locator) reads while resolving a closure or revalidating it. The loader's own cap covers payload reads only. */
+const CATALOG_READS = 8;
+/** Assets whose documents or chunks are requested at once: the one being processed plus the five after it. */
+const READ_AHEAD = 6;
 
 function cancellableCatalogRead<T>(read: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -251,6 +295,9 @@ async function acquirePlayAssetSourcesAttempt(
     // First read authored documents to select the exact binary representations.
     const documents = new Map<string, RegistryLoadedAsset>();
     const fontModes = new Map<string, Set<string>>();
+    // `required` in insertion order. Fonts discovered while reading documents append to it,
+    // so the document pass below walks it by index rather than iterating a snapshot.
+    const order = [...required];
     const requireFont = async (guid: string | null | undefined, chunks: readonly string[]) => {
       if (!guid) return;
       const modes = fontModes.get(guid) ?? new Set<string>();
@@ -260,7 +307,7 @@ async function acquirePlayAssetSourcesAttempt(
         const previous = catalogRevisions.get(dependency);
         if (previous && previous !== revision) throw new SourceRevisionChangedError(`Asset ${dependency} changed while resolving font dependencies; retry`);
         catalogRevisions.set(dependency, revision);
-        required.add(dependency);
+        if (!required.has(dependency)) { required.add(dependency); order.push(dependency); }
       }
     };
     for (const [guid, modes] of options.fontModes ?? []) {
@@ -268,14 +315,21 @@ async function acquirePlayAssetSourcesAttempt(
         : mode === "msdf" ? [FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID] : ["source"]);
       await requireFont(guid || project.settings.fonts.defaultFontGuid, chunks);
     }
-    for (const guid of required) {
+    // Documents of the next few required assets are requested while the current one is
+    // examined (the loader caps how many read at once). They are consumed in `order`, so
+    // fonts, revision checks and the first error follow the sequence of a serial pass.
+    const readDocument = createReadAhead(READ_AHEAD, async (guid: string): Promise<RegistryLoadedAsset> => {
       // The catalog closure above has just been refreshed; the prepared result is validated before publication.
       const override = host.documentOverrides?.get(guid);
       const header = host.registry.getByGuid(guid)!.header;
-      const value: RegistryLoadedAsset = override ? {
+      return override ? {
         revision: catalogRevisions.get(guid)!, chunks: new Map(),
         document: { guid, type: header.type, name: header.name, version: header.version, payload: override.payload },
       } : await scope.acquire<RegistryLoadedAsset>(guid, undefined, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false });
+    });
+    for (let index = 0; index < order.length; index++) {
+      const guid = order[index]!;
+      const value = await readDocument(order, index);
       if (value.revision !== catalogRevisions.get(guid)) throw new SourceRevisionChangedError(`Asset ${guid} changed after resolving its dependencies; retry`);
       documents.set(guid, value);
       const payload = value.document.payload;
@@ -319,25 +373,44 @@ async function acquirePlayAssetSourcesAttempt(
     let sourceBytes = 0;
     let documentBytes = 0;
     const revisions: Array<[string, string]> = [];
-    for (const guid of required) {
+    // Source chunks of the next few assets are requested while the current one is applied
+    // (the loader caps how many read at once). Their results are consumed in `order`, so the
+    // game containers fill in the same sequence and the first failure is the one a serial pass reports.
+    const readChunks = createReadAhead(READ_AHEAD, async (guid: string): Promise<Map<string, Uint8Array>> => {
+      const asset = host.registry.getByGuid(guid)!;
+      const preparedDocument = documents.get(guid)!;
+      if (asset.locator?.revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed after its document loaded; retry`);
+      const chunkIds = selectedChunks(asset, preparedDocument.document.payload, fontModes, emissions);
+      // A chunk stays compatible when another consumer asks for additional
+      // variants (for example the same Texture used by a material and a light).
+      const requests = chunkIds.map((chunkId) => {
+        const request = (async () => {
+          const representation = await registryAssetRepresentation(host.registry, guid, {
+            selectChunks: () => [chunkId], includeDocument: false, representationKey: "runtime-source-chunk",
+          }, { signal: options.signal }, false);
+          return scope.acquire<RegistryLoadedAsset>(guid, representation, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false });
+        })();
+        // Awaited in chunk order below; a later chunk's failure is moot when an earlier one fails.
+        request.catch(() => undefined);
+        return request;
+      });
+      const chunks = new Map<string, Uint8Array>();
+      for (const [position, request] of requests.entries()) {
+        const loaded = await request;
+        if (loaded.revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed while selecting source data; retry`);
+        chunks.set(chunkIds[position]!, loaded.chunks.get(chunkIds[position]!)!);
+      }
+      return chunks;
+    });
+    for (let index = 0; index < order.length; index++) {
+      const guid = order[index]!;
       options.signal.throwIfAborted();
       const asset = host.registry.getByGuid(guid)!;
       const preparedDocument = documents.get(guid)!;
       const document = preparedDocument.document;
       // Storage is validated again before the prepared content is published.
       if (asset.locator?.revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed after its document loaded; retry`);
-      const chunkIds = selectedChunks(asset, document.payload, fontModes, emissions);
-      const chunks = new Map<string, Uint8Array>();
-      // A chunk stays compatible when another consumer asks for additional
-      // variants (for example the same Texture used by a material and a light).
-      for (const chunkId of chunkIds) {
-        const representation = await registryAssetRepresentation(host.registry, guid, {
-          selectChunks: () => [chunkId], includeDocument: false, representationKey: "runtime-source-chunk",
-        }, { signal: options.signal }, false);
-        const loaded = await scope.acquire<RegistryLoadedAsset>(guid, representation, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false });
-        if (loaded.revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed while selecting source data; retry`);
-        chunks.set(chunkId, loaded.chunks.get(chunkId)!);
-      }
+      const chunks = await readChunks(order, index);
       const value = { ...preparedDocument, chunks };
       sourceBytes += [...value.chunks.values()].reduce((total, bytes) => total + bytes.byteLength, 0);
       documentBytes += new TextEncoder().encode(JSON.stringify(document.payload)).byteLength;
@@ -438,10 +511,11 @@ async function acquirePlayAssetSourcesAttempt(
         // entries. A metadata cache entry must never prolong their residency.
         const value = packedContentFromGame({ ...game, navmeshBytes: new Map(), audioReverbBytes: new Map(), complexMeshes: new Map() });
         value.audioLibrary.sourceRevisions = new Map(audioRevisions);
-        for (const [guid, revision] of revisions) {
+        // Bounded concurrent revalidation; the mismatch reported is the first in `revisions` order.
+        await mapBounded(revisions, CATALOG_READS, async ([guid, revision]) => {
           const current = await host.registry.getAssetLocator(guid, { signal });
           if (current.revision !== revision) throw new SourceRevisionChangedError(`Asset ${guid} (${current.path}) changed during runtime preparation; retry. Expected source revision ${revision}; found ${current.revision}`);
-        }
+        }, signal);
         return { value, sourceBytes: 0, decodedBytes: cpuBytes, dispose: () => releasePackedContent(value) };
       },
     }, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false }) : packedContentFromGame(game);

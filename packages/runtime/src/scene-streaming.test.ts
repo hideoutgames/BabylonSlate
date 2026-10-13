@@ -34,7 +34,7 @@ async function setup(options: { child?: SerializedScene; deferred?: boolean; scr
   const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
     playScene: scene, playSceneGuid: "parent", sceneLibrary: options.acquireScene ? undefined : { child, ...options.scenes },
     acquireScene: options.acquireScene, deferSceneModelsReady: options.deferred ?? true,
-    ...(options.yieldControl ? { cooperativeSceneLoading: { yieldControl: options.yieldControl } } : {}),
+    ...(options.yieldControl ? { cooperativeSceneLoading: { yieldControl: options.yieldControl, stepsPerYield: 32 } } : {}),
     onCommand: (command) => commands.push(command) });
   await runtime.loadScripts([logic("Parent"), logic("ChildActor"), ...(options.scripts ?? [])]);
   await runtime.realizePlayWorld();

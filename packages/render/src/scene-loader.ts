@@ -35,7 +35,7 @@ import {
 } from "@babylonslate/core";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
 import { createLandscapeMesh } from "./landscape-mesh";
-import { createFoliageMesh, foliageSourceFingerprint } from "./foliage-mesh";
+import { createFoliageMesh, foliagePropertiesFingerprint, foliageSourceFingerprint } from "./foliage-mesh";
 import {
   extractGltfCollisionMesh,
   meshCollisionFingerprint,
@@ -549,7 +549,7 @@ function componentVisualKind(
     return `fogVolume:${volume.shape}:${volume.size.join(",")}`;
   }
   if (component.classId === "LandscapeComponent") return `landscape:${component.properties.subdivisions}`;
-  if (component.classId === "FoliageComponent") return `foliage:${JSON.stringify(component.properties)}:${foliageSourceFingerprint(component.properties, assets)}`;
+  if (component.classId === "FoliageComponent") return `foliage:${foliagePropertiesFingerprint(component.properties)}:${foliageSourceFingerprint(component.properties, assets)}`;
   if (component.classId === "MeshComponent") {
     const kind =
       typeof component.properties.meshKind === "string"

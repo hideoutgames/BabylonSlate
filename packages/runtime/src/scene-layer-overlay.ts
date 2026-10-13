@@ -201,7 +201,8 @@ export class SceneLayerOverlay {
           bottom: this.safeAreaInsetsPixels.bottom * layer.layerBounds.height / this.canvasHeight,
         };
         let result = this.layout.update(layer.guid, this.layerActors(layer.guid), this.host.pixelsPerUnit(), texturePixelSizes, safeAreaInsets);
-        if (this.virtualization.sync(layer.guid, world.getActors(), result?.entries ?? this.layout.entries(layer.guid),
+        // Only this layer's actors own its virtual items; the index holds them without scanning the World.
+        if (this.virtualization.sync(layer.guid, this.layerActors(layer.guid), result?.entries ?? this.layout.entries(layer.guid),
           (owner, classId, defaults) => this.spawnActor(owner, classId, defaults),
           (actor) => this.removeActorSubtree(actor), this.indexedActors().byGuid)) {
           // Syncing spawned or retired actors; layerActors re-reads the index they invalidated.

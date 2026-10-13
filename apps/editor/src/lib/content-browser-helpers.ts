@@ -94,6 +94,7 @@ export {
   classParentLookup,
   newAssetFileName,
   newAssetFileSuffix,
+  registryClassParentLookup,
   type ClassAssetRef,
 } from "./class-asset-lookup";
 

@@ -19,7 +19,7 @@ import {
   inverseQuaternion,
   multiplyQuaternion,
 } from "./actor-world-transform";
-import { blackboardInspectTypes, blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
+import { blackboardInspectTypes, blackboardTargetPosition, copyBlackboard, sameBlackboard, snapshotBlackboard } from "./bt-blackboard";
 import type { RuntimeDiagnostic } from "./diagnostics";
 import { copyPlainData, samePlainData } from "./plain-data";
 import { navPointFromUnknown, type RuntimeNavigation } from "./runtime-navigation";
@@ -79,6 +79,11 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
   /** The component, tree and Blackboard each slot's evaluation belongs to. */
   private readonly sourceBySlot = new Map<number, { key: string; treeGuid: string }>();
   private readonly lastState = new Map<number, BtStatePayload>();
+  /**
+   * Per slot, a raw copy of the Blackboard whose sanitized form equals `lastState`'s, so an
+   * unchanged tick is recognised without sanitizing (a JSON round trip) the live values.
+   */
+  private readonly blackboardBaseline = new Map<number, BlackboardValues>();
   private debug = false;
   private lastDebugMs = -Infinity;
   private readonly host: BehaviourTreeRuntimeHost;
@@ -143,6 +148,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     this.evalBySlot.delete(slotId);
     this.sourceBySlot.delete(slotId);
     this.lastState.delete(slotId);
+    this.blackboardBaseline.delete(slotId);
     this.playAnimOwnedSlots.delete(slotId);
     if (owner) this.stopPlaySound(owner.guid);
   }
@@ -161,6 +167,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     this.evalBySlot.clear();
     this.sourceBySlot.clear();
     this.lastState.clear();
+    this.blackboardBaseline.clear();
     this.playAnimOwnedSlots.clear();
     this.voiceByActor.clear();
     const actorBySlot = new Map<number, Actor>();
@@ -646,6 +653,13 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     this.evalBySlot.set(slotId, next);
     this.nodeId = null;
     this.assetGuid = null;
+    const last = this.lastState.get(slotId);
+    const baseline = this.blackboardBaseline.get(slotId);
+    // The sanitized Blackboard last published equals the sanitized baseline copy (below), so
+    // a live Blackboard that still equals that copy needs no sanitizing to know it is unchanged.
+    if (last && baseline && last.status === next.status && last.btNodeId === next.btNodeId &&
+      samePlainData(last.lastResults, next.lastResults) && samePlainData(last.stack, next.stack) &&
+      sameBlackboard(baseline, next.blackboard)) return;
     // Evaluation copies its inputs, so the published objects stay as emitted.
     const state: BtStatePayload = {
       status: next.status,
@@ -654,7 +668,8 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
       blackboard: snapshotBlackboard(next.blackboard),
       stack: next.stack,
     };
-    if (samePlainData(this.lastState.get(slotId), state)) return;
+    this.blackboardBaseline.set(slotId, copyBlackboard(next.blackboard));
+    if (samePlainData(last, state)) return;
     this.lastState.set(slotId, state);
     this.host.emit({ type: "btState", slotId, ...state });
   }
@@ -680,6 +695,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     this.evalBySlot.delete(slotId);
     this.sourceBySlot.delete(slotId);
     this.lastState.delete(slotId);
+    this.blackboardBaseline.delete(slotId);
     this.playAnimOwnedSlots.delete(slotId);
   }
 

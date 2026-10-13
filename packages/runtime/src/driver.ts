@@ -725,6 +725,7 @@ class InProcessRuntime implements RuntimeDriver {
       playScene: () => this.playScene,
       frameId: () => this.frameId,
       slot: (actor) => this.actorSlot(actor),
+      slotOwner: (slotId) => this.renderSlots.owner(slotId),
       guidSlot: (guid) => this.guidSlot(guid),
       streams: () => this.streams,
       cursor: () => this.resolvedInput.cursor,

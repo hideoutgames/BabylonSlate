@@ -54,6 +54,8 @@ function fixture(options: EditorSceneSyncOptions = {}) {
     sync: new EditorSceneSync(handle.scene, undefined, { ...options, onAfterApply }),
   };
 }
+/** These tests observe partially realized state at each yield, so they ask for small chunks. */
+const fine = { stepsPerYield: 32 };
 function document(count = 80): SerializedScene {
   return {
     ...createDefaultScene(),
@@ -89,6 +91,54 @@ it("enumerates an attached sprite as its own authored visual boundary without br
   sync.dispose();
 });
 
+it("resolves component visuals from the latest applied Scene even when its actor list was edited in place", () => {
+  const { sync } = fixture();
+  const data = document(2);
+  sync.apply(data);
+  expect(sync.meshForComponent("actor-1", "mesh-1")).not.toBeNull();
+  expect(sync.meshForComponent("actor-1", "replaced")).toBeNull();
+  data.actors[1] = createActor("actor-1", "Actor 1", { components: [createMeshComponent("replaced", "sphere")] });
+  sync.apply(data);
+  expect(sync.meshForComponent("actor-1", "mesh-1")).toBeNull();
+  expect(sync.meshForComponent("actor-1", "replaced")).not.toBeNull();
+});
+
+it("refreshes at once for the first Material publication and shares one more pass among those that settle in the same turn", async () => {
+  let current: StandardMaterial | null = null;
+  const resolveMaterial = vi.fn(() => current);
+  const { sync, scene, onAfterApply } = fixture({ resolveMaterial });
+  const data = document(3);
+  for (const actor of data.actors) actor.components[0]!.properties.materialGuid = "surface";
+  sync.apply(data);
+  const first = new StandardMaterial("First", scene);
+  const last = new StandardMaterial("Last", scene);
+  const bound = () => data.actors.map((actor) => sync.meshForActor(actor.id)!.material);
+  onAfterApply.mockClear();
+  resolveMaterial.mockClear();
+
+  current = first;
+  sync.refreshMaterialsCoalesced();
+  expect(bound()).toEqual([first, first, first]);
+  expect(onAfterApply).toHaveBeenCalledTimes(1);
+  expect(resolveMaterial).toHaveBeenCalledTimes(3);
+
+  current = last;
+  sync.refreshMaterialsCoalesced();
+  sync.refreshMaterialsCoalesced();
+  expect(onAfterApply).toHaveBeenCalledTimes(1);
+  await Promise.resolve();
+  expect(bound()).toEqual([last, last, last]);
+  expect(onAfterApply).toHaveBeenCalledTimes(2);
+  expect(resolveMaterial).toHaveBeenCalledTimes(6);
+
+  // The next publication after the turn is a leading one again.
+  current = first;
+  sync.refreshMaterialsCoalesced();
+  expect(bound()).toEqual([first, first, first]);
+  await Promise.resolve();
+  expect(onAfterApply).toHaveBeenCalledTimes(3);
+});
+
 describe("cooperative editor realization", () => {
   it.each(["abort", "replace", "dispose"] as const)("discards a deferred material refresh after %s", async (action) => {
     let resolve = () => null as StandardMaterial | null;
@@ -107,6 +157,7 @@ describe("cooperative editor realization", () => {
     let acted = false;
     const applying = sync.applyAsync(next, {
       signal: controller.signal,
+      ...fine,
       yieldControl: async () => {
         if (acted || sync.actorCount() < 2) return;
         acted = true;
@@ -169,6 +220,7 @@ describe("cooperative editor realization", () => {
     await sync.applyAsync(next, {
       signal: new AbortController().signal,
       onProgress: (value) => progress.push(value),
+      ...fine,
       yieldControl: async () => {
         expect(sync.serializedScene()).toBeNull();
         expect(onAfterApply).not.toHaveBeenCalled();
@@ -204,6 +256,7 @@ describe("cooperative editor realization", () => {
     let held = false;
     const applying = sync.applyAsync(document(), {
       signal: new AbortController().signal,
+      ...fine,
       yieldControl: async () => {
         if (!held) {
           held = true;
@@ -270,6 +323,7 @@ describe("cooperative editor realization", () => {
     await expect(
       sync.applyAsync(document(), {
         signal: controller.signal,
+        ...fine,
         yieldControl: async () => {
           if (sync.actorCount() > 0) controller.abort(failure);
         },
@@ -309,6 +363,7 @@ describe("cooperative editor realization", () => {
     let resume!: () => void;
     const old = sync.applyAsync(document(), {
       signal: new AbortController().signal,
+      ...fine,
       yieldControl: () =>
         new Promise<void>((resolve) => {
           resume = resolve;
@@ -339,6 +394,7 @@ describe("cooperative editor realization", () => {
     await expect(sync.applyAsync(next, {
       signal: controller.signal,
       assets: { modelBytes: new Map([["model", encodeTriangleGlb()]]) },
+      ...fine,
       yieldControl: async () => {
         if (requests.mock.calls.length) {
           await delayed.ready;
@@ -442,6 +498,7 @@ describe("cooperative editor realization", () => {
       signal: new AbortController().signal,
       assets: { modelBytes: new Map([["model", encodeTriangleGlb()]]) },
       onProgress: (value) => { progress = value; },
+      ...fine,
       yieldControl: async () => {
         if (progress < 0.95 || released) return;
         released = true;
@@ -468,6 +525,7 @@ describe("cooperative editor realization", () => {
     const old = sync.applyAsync(next, {
       signal: new AbortController().signal,
       assets: { modelBytes: new Map([["model", encodeTriangleGlb()]]) },
+      ...fine,
       yieldControl: async () => {
         if (!held && sync.meshForActor("actor-0")) {
           held = true;
