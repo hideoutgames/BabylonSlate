@@ -1317,7 +1317,7 @@ function initializeEngine(
     onMaterialReady: (materialScene) => {
       // Babylon completes deferred post-process effects on the attached pass.
       // Rebuilding here releases the ready material and starts compilation again.
-      if (materialScene === scene) editorSync?.refreshMaterials();
+      if (materialScene === scene) editorSync?.refreshMaterialsCoalesced();
       for (const root of binding.meshes.values()) {
         if (root.getScene() === materialScene) { refreshText2DMaterials(root, binding); refreshJoystick2DMaterials(root, binding); refreshUIControl2DMaterials(root, binding); }
       }
@@ -1332,11 +1332,11 @@ function initializeEngine(
     const host = options?.scene ?? scene;
     const document = materialDocuments.get(guid);
     if (!document) return null;
-    const material = materialLibrary.resolve(host, guid, document, options);
-    if (!material) return null;
-    if (materialLibrary.isReady(host, guid, document, options)) compiledMaterialGuids.add(guid);
+    const resolved = materialLibrary.resolveWithReadiness(host, guid, document, options);
+    if (!resolved) return null;
+    if (resolved.ready) compiledMaterialGuids.add(guid);
     else compiledMaterialGuids.delete(guid);
-    return material;
+    return resolved.material;
   };
   binding.releaseMaterialInstance = (key, assetGuid) =>
     materialLibrary.releaseInstance(key, assetGuid);

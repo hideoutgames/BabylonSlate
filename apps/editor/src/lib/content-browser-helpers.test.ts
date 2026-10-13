@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { IndexedAsset } from "@babylonslate/assets";
-import { createDefaultMigrationRegistry } from "@babylonslate/assets";
+import { AssetRegistry, createDefaultMigrationRegistry, encodeAssetDocument, projectContentRoot } from "@babylonslate/assets";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { createSceneStreamingActor } from "@babylonslate/core";
 import { mergeEngineTypeSchemas } from "@babylonslate/scripting";
 import {
@@ -61,6 +62,7 @@ import {
   classIdConflict,
   classIdFromClassAsset,
   classParentLookup,
+  registryClassParentLookup,
   exclusiveSelectAsset,
   exclusiveSelectFolder,
   paintSelectTiles,
@@ -1102,6 +1104,24 @@ describe("content-browser-helpers", () => {
     // A display name is not a class id, so it never replaces an engine class's parent.
     expect(parentOf("Actor")).toBe("BObject");
     expect(buildParentClassTreeRows(assets).find((row) => row.id === "Rain_Weather")?.parentClassId).toBe("Actor");
+  });
+
+  it("answers a registry's Class parents from its current catalog after the catalog changes", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Lookup.babproject");
+    await storage.mkdir("assets", true);
+    await storage.writeBinary("assets/Hero.class.babasset", await encodeAssetDocument(
+      { type: "Class", name: "Hero", guid: "hero", version: 1, payload: {} }, { parentClass: "Actor" },
+    ));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const before = registryClassParentLookup(registry);
+    expect(before("Hero")).toBe("Actor");
+
+    await registry.renameAsset("hero", "Champion");
+    const after = registryClassParentLookup(registry);
+    expect(after("Champion")).toBe("Actor");
+    expect(after("Hero")).toBeNull();
   });
 
   it("refuses a Class id that another Class or the engine already uses", () => {

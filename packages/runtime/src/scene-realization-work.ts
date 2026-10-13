@@ -1,6 +1,17 @@
+/** Steps between forced yields; the time budget normally yields sooner. */
+const SCENE_REALIZATION_STEPS_PER_YIELD = 256;
+/** Milliseconds of work between yields. */
+const SCENE_REALIZATION_BUDGET_MS = 8;
+
 export interface CooperativeSceneLoadingOptions {
   /** Host scheduler override; production yields a task between bounded chunks. */
   yieldControl?: (signal: AbortSignal) => Promise<void>;
+  /**
+   * Upper bound on steps between yields. It exists for tests that observe partial
+   * realization and for tuning; production callers use the default
+   * (`SCENE_REALIZATION_STEPS_PER_YIELD`).
+   */
+  stepsPerYield?: number;
 }
 
 export function sceneRealizationCancelled(): Error {
@@ -37,19 +48,24 @@ export function waitForSceneWork<T>(promise: Promise<T>, signal: AbortSignal): P
   });
 }
 
-/** Actor operations stay indivisible; both time and item bounds force a yield. */
+/**
+ * Actor operations stay indivisible. The time budget forces a yield; the step
+ * bound only caps a run of steps too cheap to reach it, since every yield costs a
+ * task turn (at least 4 ms once timers nest).
+ */
 export async function runSceneRealizationWork(
   steps: Generator<void, void, unknown>,
   signal: AbortSignal,
   options: CooperativeSceneLoadingOptions,
 ): Promise<void> {
+  const stepsPerYield = options.stepsPerYield ?? SCENE_REALIZATION_STEPS_PER_YIELD;
   let started = performance.now();
   let count = 0;
   try {
     while (true) {
       signal.throwIfAborted();
       if (steps.next().done) return;
-      if (++count >= 32 || performance.now() - started >= 8) {
+      if (++count >= stepsPerYield || performance.now() - started >= SCENE_REALIZATION_BUDGET_MS) {
         await waitForSceneWork((options.yieldControl ?? yieldTask)(signal), signal);
         signal.throwIfAborted();
         count = 0;

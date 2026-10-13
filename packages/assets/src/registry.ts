@@ -4,11 +4,16 @@ import {
   ASSET_DEPENDENCY_METADATA_VERSION,
   decodeBabasset,
   encodeBabasset,
+  isCarriedChunk,
   readBabassetHeader,
   type BabassetHeader,
+  type ChunkEntry,
   type ChunkInput,
+  type EncodableChunk,
 } from "./babasset";
+import { carryStoredChunks } from "./babasset-carry";
 import { createVfsBlobStore, type BlobStore } from "./blob-store";
+import { createReadAhead } from "./bounded-concurrency";
 import type { ContentRoot } from "./content-root";
 import { encodeJobMayWrite, type EncodeJobGuard, type EncodeJobResult, type EncodeQueue } from "./encode-queue";
 import { newAssetGuid } from "./guid";
@@ -55,6 +60,9 @@ import { buildClassAliasIndex, resolveDependenciesWithClassAliases, type ClassAl
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
+/** Header reads requested at once within a run of files while a root is scanned (a folder being walked has one such run active). */
+const SCAN_CATALOG_READS = 8;
+
 export type AreaEmissionProcessor = (request: { source: Uint8Array; sourceHash: string; mime?: string }, signal: AbortSignal, onProgress?: (progress: AreaEmissionProgress) => void) => Promise<Uint8Array>;
 
 /** Index entry: header-only, never a decoded payload (engineplan §2.4). */
@@ -74,6 +82,17 @@ export type ThumbnailWriter = (
   assetGuid: string,
   bytes: Uint8Array,
 ) => Promise<void>;
+
+/** A Texture file edit: the header and chunks to write back, or null to write nothing. */
+type TextureRewrite = (
+  header: Omit<BabassetHeader, "chunks">,
+  chunks: Map<string, EncodableChunk>,
+  /** The header as read from disk, chunk sha256s included. */
+  current: BabassetHeader,
+) => Promise<{
+  header: Omit<BabassetHeader, "chunks">;
+  chunks: Map<string, EncodableChunk>;
+} | null>;
 
 /**
  * The registry rewrote an asset file itself (Texture encode state, committed
@@ -195,6 +214,8 @@ export class AssetRegistry {
   private readonly clock: RegistryGenerationClock;
   /** Class alias index of the catalog as of `generation`; dropped when any index change advances it. */
   private classAliasMemo: { generation: number; index: ClassAliasIndex } | null = null;
+  /** Symbolic inbound references of the catalog as of `generation`; dropped like `classAliasMemo`. */
+  private symbolicInboundMemo: { generation: number; index: ReadonlyMap<string, readonly string[]> } | null = null;
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
@@ -529,6 +550,29 @@ export class AssetRegistry {
     return this.classAliasMemo.index;
   }
 
+  /**
+   * Guid of each asset -> guids of the assets whose symbolic Class references resolve to it,
+   * from the catalog as of `generation`. One pass over the catalog answers `showReferences`
+   * for every asset, instead of one pass per asset asked about.
+   */
+  private symbolicInbound(): ReadonlyMap<string, readonly string[]> {
+    const generation = this.generation;
+    if (this.symbolicInboundMemo?.generation !== generation) {
+      const index = new Map<string, string[]>();
+      for (const asset of this.byGuid.values()) {
+        if (!asset.header.classReferences?.length) continue;
+        // `resolveDependenciesWithClassAliases` returns each target once.
+        for (const target of resolveDependenciesWithClassAliases({ ...asset.header, dependencies: [] }, () => this.classAliases())) {
+          const referrers = index.get(target);
+          if (referrers) referrers.push(asset.header.guid);
+          else index.set(target, [asset.header.guid]);
+        }
+      }
+      this.symbolicInboundMemo = { generation, index };
+    }
+    return this.symbolicInboundMemo.index;
+  }
+
   getByPath(path: string): IndexedAsset | undefined {
     return this.byPath.get(path);
   }
@@ -595,11 +639,7 @@ export class AssetRegistry {
 
   /** Resolve symbolic classes alongside GUID edges without reading any payloads. */
   showReferences(guid: string): { outbound: string[]; inbound: string[] } {
-    const symbolicInbound = this.byGuid.has(guid) ? this.list().filter(asset =>
-      asset.header.classReferences?.length && resolveDependenciesWithClassAliases(
-        { ...asset.header, dependencies: [] }, () => this.classAliases(),
-      ).includes(guid),
-    ).map(asset => asset.header.guid) : [];
+    const symbolicInbound = this.byGuid.has(guid) ? this.symbolicInbound().get(guid) ?? [] : [];
     return {
       outbound: this.dependenciesFor(guid),
       inbound: [...new Set([
@@ -1327,6 +1367,8 @@ export class AssetRegistry {
     options?: { error?: string; canWrite?: (guid: string, current: BabassetHeader) => boolean },
   ): Promise<void> {
     await this.enqueueTextureWrite(guid, async () => {
+      // Header only: the chunk table is reused as it is, so the source pixels
+      // and encodes are neither read nor decoded for a state change.
       await this.rewriteTexture(guid, async (header, chunks, current) => {
         if (options?.canWrite && !options.canWrite(guid, current)) return null;
         const payload: Record<string, unknown> = {
@@ -1340,7 +1382,7 @@ export class AssetRegistry {
         }
         header.payload = payload;
         return { header, chunks };
-      });
+      }, undefined, () => false);
     });
   }
 
@@ -1367,13 +1409,18 @@ export class AssetRegistry {
       const size = sniffKtx2Size(result.ktx2);
       const blockAlign = result.settings.blockAlign;
       const sha256 = await sha256Hex(result.ktx2);
+      const dropsOffGrid = isOnBlockGrid(size) && !this.isAtlasTexture(result.assetGuid);
+      const isRetainedKtx2 = (chunk: { id: string; kind: string }) =>
+        chunk.id !== chunkId && (chunk.kind === "ktx2" || chunk.id.startsWith("ktx2:"));
+      // Only the older encodes are read, and only to size them; the source
+      // pixels and every other chunk are carried over from the chunk table.
       return this.rewriteTexture(result.assetGuid, async (header, chunks, current) => {
         // A background job commits only while its guard still allows it for
         // the file it replaces, and only onto the source it encoded.
         if (!encodeJobMayWrite(result, current)) return null;
-        if (isOnBlockGrid(size) && !this.isAtlasTexture(result.assetGuid)) {
+        if (dropsOffGrid) {
           for (const [id, chunk] of chunks) {
-            if (id === chunkId || !(chunk.kind === "ktx2" || id.startsWith("ktx2:"))) continue;
+            if (!isRetainedKtx2(chunk) || isCarriedChunk(chunk)) continue;
             const retained = sniffKtx2Size(chunk.data);
             if (retained && !isOnBlockGrid(retained)) chunks.delete(id);
           }
@@ -1402,7 +1449,7 @@ export class AssetRegistry {
         payload.ktx2Sha256 = sha256;
         header.payload = payload;
         return { header, chunks };
-      });
+      }, undefined, (entry) => dropsOffGrid && isRetainedKtx2(entry));
     });
   }
 
@@ -1445,7 +1492,8 @@ export class AssetRegistry {
         await this.rewriteTexture(guid, async (current, chunks) => {
           signal.throwIfAborted();
           const pixels = [...chunks.values()].find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
-          if (!pixels || await sha256Hex(pixels.data) !== sourceEntry.sha256) throw new Error("The Texture changed during emission processing; stale results were discarded.");
+          // Every chunk is decoded here (no `load`), so none is carried without its bytes.
+          if (!pixels || isCarriedChunk(pixels) || await sha256Hex(pixels.data) !== sourceEntry.sha256) throw new Error("The Texture changed during emission processing; stale results were discarded.");
           for (const [id, chunk] of chunks) if (chunk.kind === AREA_EMISSION_CHUNK_KIND) chunks.delete(id);
           const id = areaEmissionChunkId(sourceEntry.sha256);
           chunks.set(id, { id, kind: AREA_EMISSION_CHUNK_KIND, mime: "application/x-babylonslate-area-emission", data: bytes });
@@ -1878,18 +1926,19 @@ export class AssetRegistry {
     return next;
   }
 
+  /**
+   * Read-modify-write of a Texture file. By default every chunk is decoded
+   * and verified. With `load`, only the chunks it selects are read; the others
+   * (the source pixels and older encodes, which a state or metadata change
+   * cannot affect) are carried over from the chunk table and reach `mutate`
+   * as carried entries without `data`. Anything that cannot be carried safely
+   * (a missing or short blob, a changed file) is decoded in full instead.
+   */
   private async rewriteTexture(
     guid: string,
-    mutate: (
-      header: Omit<BabassetHeader, "chunks">,
-      chunks: Map<string, ChunkInput>,
-      /** The header as read from disk, chunk sha256s included. */
-      current: BabassetHeader,
-    ) => Promise<{
-      header: Omit<BabassetHeader, "chunks">;
-      chunks: Map<string, ChunkInput>;
-    } | null>,
+    mutate: TextureRewrite,
     assertCurrent: () => void = () => {},
+    load?: (entry: ChunkEntry) => boolean,
   ): Promise<boolean> {
     const asset = this.byGuid.get(guid);
     // Encode state and derived chunks are never written into a read-only root.
@@ -1898,25 +1947,10 @@ export class AssetRegistry {
     const storage = this.storageForAsset(asset);
     const blobs = this.blobsForAsset(asset);
     const previousMtime = await this.statMtime(storage, asset.path);
-    const fileBytes = await storage.readBinary(asset.path);
-    const decoded = await decodeBabasset(fileBytes, (sha256) =>
-      blobs.readBlob(sha256),
-    );
-    const chunksById = new Map<string, ChunkInput>();
-    for (const entry of decoded.header.chunks) {
-      const data = decoded.chunks.get(entry.id);
-      if (data) {
-        chunksById.set(entry.id, {
-          id: entry.id,
-          kind: entry.kind,
-          mime: entry.mime,
-          data,
-        });
-      }
-    }
-    const { chunks, ...headerRest } = decoded.header;
+    const { header: stored, chunks: chunksById } = await this.readForRewrite(storage, blobs, asset.path, load);
+    const { chunks, ...headerRest } = stored;
     void chunks;
-    const next = await mutate({ ...headerRest }, chunksById, decoded.header);
+    const next = await mutate({ ...headerRest }, chunksById, stored);
     // Nothing to write (a refused guard).
     if (!next) return false;
     const bytes = await encodeBabasset({
@@ -1931,6 +1965,31 @@ export class AssetRegistry {
     this.indexHeader(asset.rootId, asset.path, header, false, mtime);
     this.ownWriteListener?.({ path: asset.path, previousMtime, mtime });
     return true;
+  }
+
+  /** The stored header and chunks of a file about to be rewritten; see `rewriteTexture`. */
+  private async readForRewrite(
+    storage: ProjectStorage,
+    blobs: BlobStore,
+    path: string,
+    load?: (entry: ChunkEntry) => boolean,
+  ): Promise<{ header: BabassetHeader; chunks: Map<string, EncodableChunk> }> {
+    if (load) {
+      try {
+        const stored = await readAssetCatalog(storage, path);
+        const carried = await carryStoredChunks(storage, blobs, stored, { load });
+        if (carried) return { header: stored.header, chunks: new Map(carried.map((chunk) => [chunk.id, chunk])) };
+      } catch {
+        // Decoded in full below, which reports an unreadable file as it always has.
+      }
+    }
+    const decoded = await decodeBabasset(await storage.readBinary(path), (sha256) => blobs.readBlob(sha256));
+    const chunks = new Map<string, EncodableChunk>();
+    for (const entry of decoded.header.chunks) {
+      const data = decoded.chunks.get(entry.id);
+      if (data) chunks.set(entry.id, { id: entry.id, kind: entry.kind, mime: entry.mime, data });
+    }
+    return { header: decoded.header, chunks };
   }
 
   /** Attach a representation chunk (facetype / msdf) to an existing Font asset. */
@@ -2042,29 +2101,55 @@ export class AssetRegistry {
       if (isStorageNotFound(error)) return;
       throw error;
     }
+    // The header reads of a run of files overlap (bounded), but each result is consumed in
+    // directory order. Guid-conflict resolution (the first indexed file keeps a shared guid),
+    // folder registration and the first scan error therefore stay those of a serial scan.
+    // A run ends at a subfolder that will be walked: reads never start ahead across that walk,
+    // so a header is not read long before it is indexed (a `reindexPath` in between would
+    // otherwise be overwritten by the older header).
+    const slots: Array<{ run: string[]; index: number }> = [];
+    let run: string[] = [];
     for (const entry of entries) {
       const path = `${dir}/${entry.name}`;
       if (entry.isDir) {
-        if (entry.name === BLOBS_DIR_NAME || entry.name.startsWith(STORAGE_MOVE_BACKUP_PREFIX)) continue;
-        this.addKnownFolder(path);
-        await this.walk(root, path, storage);
-        continue;
+        if (!(entry.name === BLOBS_DIR_NAME || entry.name.startsWith(STORAGE_MOVE_BACKUP_PREFIX))) run = [];
+      } else if (entry.name !== FOLDER_MARKER_NAME && path.endsWith(".babasset")) {
+        run.push(path);
+        slots.push({ run, index: run.length - 1 });
       }
-      if (entry.name === FOLDER_MARKER_NAME) {
-        this.addKnownFolder(dir);
-        continue;
+    }
+    const readCatalog = createReadAhead(SCAN_CATALOG_READS, (path: string) => readScannedCatalog(storage, path));
+    let nextSlot = 0;
+    try {
+      for (const entry of entries) {
+        const path = `${dir}/${entry.name}`;
+        if (entry.isDir) {
+          if (entry.name === BLOBS_DIR_NAME || entry.name.startsWith(STORAGE_MOVE_BACKUP_PREFIX)) continue;
+          this.addKnownFolder(path);
+          await this.walk(root, path, storage);
+          continue;
+        }
+        if (entry.name === FOLDER_MARKER_NAME) {
+          this.addKnownFolder(dir);
+          continue;
+        }
+        if (!path.endsWith(".babasset")) continue;
+        const slot = slots[nextSlot++]!;
+        const { header, locator } = await readCatalog(slot.run, slot.index);
+        const indexed = this.byGuid.get(header.guid);
+        if (indexed && !indexed.placeholder && indexed.path !== path) {
+          // A second file with an indexed guid (a copy made outside the editor)
+          // must not evict the first one's entry; it is recorded instead.
+          this.guidConflicts.set(path, { rootId: root.id, path, guid: header.guid, indexedPath: indexed.path });
+          this.changed();
+          continue;
+        }
+        this.indexHeader(root.id, path, header, false, entry.mtime ?? null, locator);
       }
-      if (!path.endsWith(".babasset")) continue;
-      const { header, locator } = await readScannedCatalog(storage, path);
-      const indexed = this.byGuid.get(header.guid);
-      if (indexed && !indexed.placeholder && indexed.path !== path) {
-        // A second file with an indexed guid (a copy made outside the editor)
-        // must not evict the first one's entry; it is recorded instead.
-        this.guidConflicts.set(path, { rootId: root.id, path, guid: header.guid, indexedPath: indexed.path });
-        this.changed();
-        continue;
-      }
-      this.indexHeader(root.id, path, header, false, entry.mtime ?? null, locator);
+    } catch (error) {
+      // Reads left running must not outlive the scan: the read scope ends when it returns.
+      await readCatalog.settle();
+      throw error;
     }
   }
 

@@ -2240,6 +2240,109 @@ describe("project documents as .babasset", () => {
     expect((await service.loadDocument("sprite", "assets/stuck.sprite.babasset") as { textureGuid: string | null }).textureGuid).toBe("tex-1");
   });
 
+  it("repairs referrers one at a time in catalog order while reading their documents ahead, and skips one it cannot read", async () => {
+    const { storage, service } = await scaffolded();
+    await storage.writeBinary("assets/wall.babasset", await encodeAssetDocument({
+      type: "Texture", name: "wall", guid: "tex-1", version: 1, payload: { usage: "albedo" },
+    }));
+    const names = ["a", "b", "c", "d", "e", "f", "g"];
+    for (const name of names) {
+      await storage.writeBinary(`assets/${name}.sprite.babasset`, await encodeAssetDocument(
+        { type: "Sprite", name, guid: `${name}-1`, version: 1, payload: { textureGuid: "tex-1", pixelsPerUnit: 100, frames: [], clips: [] } },
+        { dependencies: ["tex-1"] },
+      ));
+    }
+    await service.remountRegistry();
+    await service.registry!.deleteAsset("tex-1");
+    const catalog = service.registry!.list().map((asset) => asset.path).filter((path) => path.endsWith(".sprite.babasset"));
+    expect(catalog).toHaveLength(names.length);
+    // A file that became unreadable after it was catalogued is skipped, as it always was.
+    const unreadable = catalog[2]!;
+    const garbage = new Uint8Array([1, 2, 3]);
+    await storage.writeBinary(unreadable, garbage);
+    // The first referrer answers last, so a repair that saved in completion order would not follow the catalog.
+    const read = storage.readBinaryRange.bind(storage);
+    let inFlight = 0;
+    let peak = 0;
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, ...rest) => {
+      const sprite = path.endsWith(".sprite.babasset");
+      if (sprite) peak = Math.max(peak, ++inFlight);
+      try {
+        if (sprite) await new Promise((resolve) => setTimeout(resolve, path === catalog[0] ? 40 : 2));
+        return await read(path, ...rest);
+      } finally { if (sprite) inFlight--; }
+    });
+    const write = storage.writeBinary.bind(storage);
+    const saved: string[] = [];
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      if (path.endsWith(".sprite.babasset")) saved.push(path);
+      return write(path, bytes);
+    });
+
+    const failed = await service.clearDeletedAssetReferences(new Set(["tex-1"]));
+
+    expect(failed).toEqual([]);
+    expect(saved).toEqual(catalog.filter((path) => path !== unreadable));
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(4);
+    for (const path of catalog) {
+      if (path === unreadable) expect(await storage.readBinary(path)).toEqual(garbage);
+      else expect((await service.loadDocument("sprite", path) as { textureGuid: string | null }).textureGuid).toBeNull();
+    }
+  });
+
+  it("reads a document again before giving up on it when the read that ran ahead failed", async () => {
+    const { storage, service } = await scaffolded();
+    await storage.writeBinary("assets/wall.babasset", await encodeAssetDocument({
+      type: "Texture", name: "wall", guid: "tex-1", version: 1, payload: { usage: "albedo" },
+    }));
+    const names = ["a", "b", "c"];
+    const paths = names.map((name) => `assets/${name}.sprite.babasset`);
+    for (const [index, path] of paths.entries()) {
+      await storage.writeBinary(path, await encodeAssetDocument(
+        { type: "Sprite", name: names[index]!, guid: `${names[index]}-1`, version: 1, payload: { textureGuid: "tex-1", pixelsPerUnit: 100, frames: [], clips: [] } },
+        { dependencies: ["tex-1"] },
+      ));
+    }
+    await service.remountRegistry();
+    await service.registry!.deleteAsset("tex-1");
+    // The first read of "b" fails, as one does when a plugin root is unmounted for a moment while it is in flight.
+    const read = storage.readBinaryRange.bind(storage);
+    let failedOnce = false;
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, ...rest) => {
+      if (path === paths[1] && !failedOnce) { failedOnce = true; throw new Error("Content root is remounting"); }
+      return read(path, ...rest);
+    });
+
+    const failed = await service.clearDeletedAssetReferences(new Set(["tex-1"]));
+
+    expect(failedOnce).toBe(true);
+    expect(failed).toEqual([]);
+    for (const path of paths) {
+      expect((await service.loadDocument("sprite", path) as { textureGuid: string | null }).textureGuid).toBeNull();
+    }
+  });
+
+  it("repairs a reference stored in a field the header dependency metadata does not describe", async () => {
+    const { storage, service } = await scaffolded();
+    await storage.writeBinary("assets/wall.babasset", await encodeAssetDocument({
+      type: "Texture", name: "wall", guid: "tex-1", version: 1, payload: { usage: "albedo" },
+    }));
+    // The dependency scan reads typed fields only, so this reference leaves the header's
+    // dependency list empty. Delete repair must still find it by walking the document.
+    await storage.writeBinary("assets/hero.sprite.babasset", await encodeAssetDocument({
+      type: "Sprite", name: "hero", guid: "sprite-1", version: 1,
+      payload: { pixelsPerUnit: 100, frames: [], clips: [], notes: { favourite: "tex-1" } },
+    }));
+    await service.remountRegistry();
+    expect(service.registry!.getByGuid("sprite-1")!.header.dependencies).toEqual([]);
+    await service.registry!.deleteAsset("tex-1");
+
+    await service.clearDeletedAssetReferences(new Set(["tex-1"]));
+
+    expect((await service.loadDocument("sprite", "assets/hero.sprite.babasset") as { notes: { favourite: string | null } }).notes.favourite).toBeNull();
+  });
+
   it("resets a Class parentClass to BObject when the parent Class is deleted", async () => {
     const { storage, service } = await scaffolded();
     const parentPath = "assets/Hero.class.babasset";
