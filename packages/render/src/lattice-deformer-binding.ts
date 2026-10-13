@@ -9,7 +9,7 @@ export interface LatticeBinding {
 /** One entry per marked node keeps the parent walk to a single lookup per level. */
 interface LatticeMark { root: boolean; binding?: LatticeBinding }
 const marks = new WeakMap<Node, LatticeMark>();
-/** Nodes holding a binding. While zero no mesh can resolve one, so the per-draw parent walk is skipped. */
+/** Bound owners, active or not: a zero-strength or identity cage stays bound. While zero no mesh can resolve a binding, so the per-draw parent walk is skipped. */
 let liveBindings = 0;
 export function markLatticeComponentRoot(root: AbstractMesh): void {
   const mark = marks.get(root);

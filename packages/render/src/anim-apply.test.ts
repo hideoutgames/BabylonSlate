@@ -492,6 +492,16 @@ describe("seekGameplayAnimation", () => {
     play("Idle");
     expect(seeks).toEqual(["hero/Sprint", "next/Walk"]);
     expect(missing).toEqual(["unknown/Walk", "/Sprint", "/Idle"]);
+    // Replacing groups in place, keeping the length, is followed for hits and misses alike.
+    seeks.length = 0;
+    missing.length = 0;
+    groups[0] = group("Walk", "swapped");
+    play("Walk");
+    groups[2] = group("Dash", "swapped");
+    play("Dash");
+    play("B");
+    expect(seeks).toEqual(["swapped/Walk", "swapped/Dash"]);
+    expect(missing).toEqual(["/B"]);
   });
 
   it("reports a missing animation clip instead of silently skipping it", () => {

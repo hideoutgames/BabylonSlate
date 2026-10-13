@@ -368,11 +368,13 @@ describe("createOverlayTransformBox", () => {
       layer.dispose();
     });
 
-    it("leaves an idle selection's world matrices alone and still follows a parent move", () => {
+    it("leaves an idle selection's world matrices alone and still follows a move of the origin or an ancestor", () => {
       const { scene } = createHandle();
       const layer = new UtilityLayerRenderer(scene);
+      const ancestor = MeshBuilder.CreatePlane("ancestor", { size: 1 }, scene);
       const origin = MeshBuilder.CreatePlane("origin", { size: 1 }, scene);
       origin.metadata = { editorPickProxy: true };
+      origin.parent = ancestor;
       const visual = MeshBuilder.CreatePlane("visual", { size: 1 }, scene);
       visual.parent = origin;
       const box = createOverlayTransformBox(layer, scene);
@@ -380,7 +382,7 @@ describe("createOverlayTransformBox", () => {
       const { frame, util } = boxOf(layer);
       const root = util.getTransformNodeByName("overlay-box-root")!;
       frame();
-      const flags = () => [origin, visual].map((mesh) => mesh.getWorldMatrix().updateFlag);
+      const flags = () => [ancestor, origin, visual].map((mesh) => mesh.getWorldMatrix().updateFlag);
       const idle = flags();
       frame();
       frame();
@@ -389,6 +391,10 @@ describe("createOverlayTransformBox", () => {
       origin.position.x = 4;
       frame();
       expect(root.position.x).toBeCloseTo(4);
+      ancestor.position.y = 2;
+      frame();
+      expect(root.position.x).toBeCloseTo(4);
+      expect(root.position.y).toBeCloseTo(2);
       box.dispose();
       layer.dispose();
     });

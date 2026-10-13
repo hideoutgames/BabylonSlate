@@ -176,29 +176,72 @@ const NO_GROUPS: readonly NamedSeekableGroup[] = [];
 /** Below this a scan beats a map lookup, and short lists skip the index entirely. */
 const INDEXED_CLIP_GROUPS = 6;
 /**
- * Groups by name, in list order. A slot's group list is replaced whole when a
- * model's clips load or unload (never edited in place) and a wrapped group's
- * name and clip guid are fixed, so the list's identity and length key its index.
+ * Groups by name, in list order, each with its position. A slot's group list is
+ * replaced whole when a model's clips load or unload and a wrapped group's name
+ * and clip guid are fixed, so the list's identity and length key its index. An
+ * in-place replacement of the same length is caught too: a hit must still sit
+ * at its recorded position, and a miss is confirmed against a snapshot of the
+ * list, either of which rebuilds the index. The one edit left unseen is an
+ * in-place replacement that makes an earlier group than the hit match as well.
  */
+interface ClipGroupEntry {
+  group: NamedSeekableGroup;
+  position: number;
+}
 interface ClipGroupIndex {
-  count: number;
-  byName: Map<string, NamedSeekableGroup[]>;
+  members: readonly NamedSeekableGroup[];
+  byName: Map<string, ClipGroupEntry[]>;
 }
 const clipGroupIndexes = new WeakMap<readonly NamedSeekableGroup[], ClipGroupIndex>();
 
-function clipGroupIndex(groups: readonly NamedSeekableGroup[]): ClipGroupIndex {
-  const cached = clipGroupIndexes.get(groups);
-  if (cached && cached.count === groups.length) return cached;
-  const byName = new Map<string, NamedSeekableGroup[]>();
+function buildClipGroupIndex(groups: readonly NamedSeekableGroup[]): ClipGroupIndex {
+  const byName = new Map<string, ClipGroupEntry[]>();
   for (let i = 0; i < groups.length; i++) {
     const group = groups[i]!;
+    const entry = { group, position: i };
     const named = byName.get(group.name);
-    if (named) named.push(group);
-    else byName.set(group.name, [group]);
+    if (named) named.push(entry);
+    else byName.set(group.name, [entry]);
   }
-  const index = { count: groups.length, byName };
+  const index = { members: groups.slice(), byName };
   clipGroupIndexes.set(groups, index);
   return index;
+}
+
+function indexedFrom(index: ClipGroupIndex, groups: readonly NamedSeekableGroup[]): boolean {
+  if (index.members.length !== groups.length) return false;
+  for (let i = 0; i < groups.length; i++) if (index.members[i] !== groups[i]) return false;
+  return true;
+}
+
+function findIndexedClipGroup(
+  groups: readonly NamedSeekableGroup[],
+  clipName: string,
+  clipAssetGuid?: string,
+): NamedSeekableGroup | undefined {
+  let index = clipGroupIndexes.get(groups);
+  let fresh = false;
+  if (!index || index.members.length !== groups.length) {
+    index = buildClipGroupIndex(groups);
+    fresh = true;
+  }
+  for (;;) {
+    let moved = false;
+    const named = index.byName.get(clipName);
+    if (named) {
+      for (let i = 0; i < named.length; i++) {
+        const entry = named[i]!;
+        if (!groupMatchesClip(entry.group, clipName, clipAssetGuid)) continue;
+        if (groups[entry.position] === entry.group) return entry.group;
+        moved = true;
+        break;
+      }
+    }
+    // A hit that left its position, or a miss in a list edited in place, rebuilds once.
+    if (fresh || (!moved && indexedFrom(index, groups))) return undefined;
+    index = buildClipGroupIndex(groups);
+    fresh = true;
+  }
 }
 
 /** The first group, in list order, with the clip's name (and guid when one is given). */
@@ -207,16 +250,9 @@ function findClipGroup(
   clipName: string,
   clipAssetGuid?: string,
 ): NamedSeekableGroup | undefined {
-  if (groups.length < INDEXED_CLIP_GROUPS) {
-    for (let i = 0; i < groups.length; i++) {
-      if (groupMatchesClip(groups[i]!, clipName, clipAssetGuid)) return groups[i];
-    }
-    return undefined;
-  }
-  const named = clipGroupIndex(groups).byName.get(clipName);
-  if (!named) return undefined;
-  for (let i = 0; i < named.length; i++) {
-    if (groupMatchesClip(named[i]!, clipName, clipAssetGuid)) return named[i];
+  if (groups.length >= INDEXED_CLIP_GROUPS) return findIndexedClipGroup(groups, clipName, clipAssetGuid);
+  for (let i = 0; i < groups.length; i++) {
+    if (groupMatchesClip(groups[i]!, clipName, clipAssetGuid)) return groups[i];
   }
   return undefined;
 }

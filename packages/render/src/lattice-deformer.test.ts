@@ -104,6 +104,21 @@ describe("component lattice resource ownership", () => {
     expect(managedRenderReservations(engine).reservedBytes).toBe(0);
   });
 
+  it("unbinds a cage when its root is disposed, so unrelated meshes skip the cage lookup again", () => {
+    const { root, mesh, scene } = fixture();
+    const holder = new Mesh("holder", scene), bystander = new Mesh("bystander", scene);
+    bystander.parent = holder;
+    const parentReads = vi.spyOn(bystander, "parent", "get");
+    setMeshLatticeDeformer(root, cage());
+    expect(hasMeshLatticeDeformer(mesh)).toBe(true);
+    expect(hasMeshLatticeDeformer(bystander)).toBe(false);
+    expect(parentReads).toHaveBeenCalled();
+    root.dispose();
+    parentReads.mockClear();
+    expect(hasMeshLatticeDeformer(bystander)).toBe(false);
+    expect(parentReads).not.toHaveBeenCalled();
+  });
+
   it("keeps component-owned regular instances batched while rejecting cages that could bleed into another component", () => {
     const { engine, root, mesh, scene } = fixture();
     const instance = mesh.createInstance("sameComponent"); instance.parent = root; instance.position.x = 2;

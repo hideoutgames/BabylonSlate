@@ -331,7 +331,10 @@ function boundsOfSources(
  * Matrices are read without forcing. A rendered frame starts a new render id,
  * and Babylon then re-derives any node whose own or an ancestor's transform
  * changed, so a move still changes the snapshot while an idle selection leaves
- * its world matrices (and its parents') untouched. Only the layout forces them.
+ * its world matrices (and its parents') untouched. Within one render id Babylon
+ * returns the cached matrix, so a move made after that frame's first compute
+ * shows up on the next render id: one frame later, then it self-corrects. Only
+ * the layout forces the matrices.
  */
 interface LayoutInputs {
   numbers: number[];
@@ -353,6 +356,7 @@ function recordLayoutInputs(
   numbers.length = 0;
   refs.length = 0;
   numbers.push(handleSize);
+  // Unforced: the cached matrix within a render id, re-derived on the next one if the node or an ancestor moved.
   pushMatrix(numbers, origin.computeWorldMatrix());
   for (const source of sources) {
     pushMatrix(numbers, source.computeWorldMatrix());
@@ -641,8 +645,9 @@ export function createOverlayTransformBox(
     const show = attached !== null;
     root.setEnabled(show);
     if (!attached) {
+      // Do not keep the last selection's meshes and vertex data alive.
+      sources.length = 0;
       if (laidOut) {
-        // Do not keep the last selection's meshes and vertex data alive.
         laidOut = false;
         frameInputs.refs.length = 0;
         laidOutInputs.refs.length = 0;

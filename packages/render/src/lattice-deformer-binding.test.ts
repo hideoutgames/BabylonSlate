@@ -3,7 +3,7 @@ import { Mesh, NullEngine, Scene } from "@babylonjs/core";
 import { markLatticeComponentRoot, meshLatticeBinding, setLatticeBinding, type LatticeBinding } from "./lattice-deformer-binding";
 
 const cleanups: (() => void)[] = [];
-afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); });
+afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); vi.restoreAllMocks(); });
 function cage(): LatticeBinding { return { active: true, bindEffect: vi.fn(), bindBuffer: vi.fn() }; }
 function component(scene: Scene, name: string) {
   const root = new Mesh(name, scene), part = new Mesh(`${name}-part`, scene);
@@ -37,6 +37,22 @@ describe("lattice binding resolution", () => {
     setLatticeBinding(a.root, first);
     expect(meshLatticeBinding(a.part)).toBe(first);
     setLatticeBinding(a.root);
+  });
+
+  it("walks a mesh's ancestors only while some cage is bound", () => {
+    const scene = fixture();
+    const a = component(scene, "a"), b = component(scene, "b");
+    const reads = vi.spyOn(b.part, "parent", "get");
+    expect(meshLatticeBinding(b.part)).toBeUndefined();
+    expect(reads).not.toHaveBeenCalled();
+    setLatticeBinding(a.root, cage());
+    expect(meshLatticeBinding(b.part)).toBeUndefined();
+    expect(reads).toHaveBeenCalled();
+    reads.mockClear();
+    setLatticeBinding(a.root);
+    expect(meshLatticeBinding(a.part)).toBeUndefined();
+    expect(meshLatticeBinding(b.part)).toBeUndefined();
+    expect(reads).not.toHaveBeenCalled();
   });
 
   it("stops at a nested component root and resolves a binding set on a root marked earlier", () => {

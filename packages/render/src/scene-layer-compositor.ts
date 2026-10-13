@@ -557,10 +557,12 @@ export class SceneLayerCompositor {
 
   /**
    * Pin the camera to the layer's fixed orthographic pose. Per-frame callers
-   * leave an untouched camera alone: it holds the pose the last bind wrote, and
-   * Babylon re-derives its view and projection when anything they read changes.
-   * Create, resize and preparation rebind (force), restoring a camera another
-   * owner moved on the way.
+   * leave a camera alone while its parent, position, rotation, mode, active-camera
+   * status and orthographic bounds still match what the last bind wrote; Babylon
+   * re-derives its view and projection when anything they read changes. A
+   * mismatch, and create, resize and preparation (force), rebind those fields and
+   * force both matrices. Nothing else is restored (target lock, up vector, near
+   * and far planes), as before.
    */
   private bindHudCamera(layer: LayerRecord, force = false): void {
     if (!force && this.hudCameraIntact(layer)) return;
