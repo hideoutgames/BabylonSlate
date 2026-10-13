@@ -95,6 +95,33 @@ describe("SceneLayer layout runtime", () => {
     } finally { runtime.stop(); }
   });
 
+  it("publishes a layer's layout again only after an input it reads changes, including in-place pose edits", () => {
+    const layer = createDefaultSceneLayer();
+    layer.actors = [createActor("menu", "Menu", { classId: "SceneLayerActor", components: [
+      { id: "column", classId: "2DVerticalBoxComponent", properties: { width: 4, heightMode: "content", gap: 1 } },
+      { id: "label", classId: "2DTextComponent", parentId: "column", properties: { text: "Score", wrapWidth: 200, wrapHeight: 100 } },
+    ] })];
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
+    try {
+      runtime.realizePlayWorld();
+      const liveLayer = runtime.createSceneLayer("menu")!;
+      runtime.start(); runtime.tick(); runtime.tick();
+      const menu = runtime.getWorld().findActor(liveLayer.guid + ":menu")!;
+      const label = menu.components.find(component => component.guid === "label")!;
+      const published = () => commands.filter(command => command.type === "sceneLayerLayout").length;
+      const ticked = (action: () => void) => { const before = published(); action(); runtime.tick(); return published() - before; };
+      expect(ticked(() => {})).toBe(0);
+      expect(ticked(() => label.setVariable("text", "Score"))).toBe(0);
+      expect(ticked(() => label.setVariable("text", "Score 100"))).toBe(1);
+      expect(ticked(() => {})).toBe(0);
+      expect(ticked(() => { menu.transform.position.x += 1; })).toBe(1);
+      expect(ticked(() => {})).toBe(0);
+      expect(ticked(() => { label.transform.scale.x = 2; })).toBe(1);
+      expect(ticked(() => {})).toBe(0);
+    } finally { runtime.stop(); }
+  });
+
   it("converts browser safe insets using each layer's bounds and reapplies them after resize", () => {
     const layer = (id: string, extent: number) => {
       const document = createDefaultSceneLayer();

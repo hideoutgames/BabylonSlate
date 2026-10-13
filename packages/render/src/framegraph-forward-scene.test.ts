@@ -29,7 +29,8 @@ import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
 import { normalizeParticleEmitterPayload } from "@babylonslate/assets";
-import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality } from "@babylonslate/core";
+import { DEFAULT_RENDER_EFFECTS, fogVolumeBindings, normalizeRenderingQuality, qualityPresetPatch } from "@babylonslate/core";
+import { upsertFogVolumes } from "./fog-volumes";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { ParticleService } from "./particle-service";
 import {
@@ -851,6 +852,60 @@ it("clears the temporal geometry attachments on their own target, never the back
   }
 });
 
+/** A spatial-effects host with one Fog Volume 10 units in front of the camera. */
+async function fogHost(effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, quality?: ReturnType<typeof normalizeRenderingQuality>) {
+  const { engine, scene, camera } = host();
+  // The spatial chain needs four float targets and depth sampling.
+  Object.assign(engine.getCaps(), {
+    maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true,
+    textureHalfFloatRender: true, textureFloatRender: true, texelFetch: true,
+  });
+  updateSceneRenderingSettings(scene, { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, ...effects }, ...(quality ? { quality } : {}) });
+  const root = new TransformNode("fog", scene);
+  root.position.z = 6;
+  upsertFogVolumes(scene, "fog", root, fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]));
+  const graph = new ForwardSceneFrameGraph(scene);
+  await graph.prepare(camera);
+  /** Names of the graph tasks that ran their disabled passes in one frame. */
+  const skipped = () => {
+    const frame = captureRenderFrame(engine, () => graph.render(camera));
+    expect(frame.value).toEqual({ path: "frameGraph" });
+    return frame.report.stages.filter((stage) => stage.kind === "task" && stage.fallbackPasses).map((stage) => stage.name);
+  };
+  return { scene, camera, graph, skipped };
+}
+const FOG_ONLY_TASKS = ["Spatial Geometry Clear", "Spatial Geometry", "Scene Volumetric Lighting", "Scene Volumetric Compose"];
+
+it("skips the Fog Volume geometry and march while none is in front of the camera, without rebuilding", async () => {
+  const { camera, graph, skipped } = await fogHost({});
+  expect(graph.taskNames()).toEqual(expect.arrayContaining(FOG_ONLY_TASKS));
+  const builds = graph.diagnostics().graphBuilds;
+  const tasks = graph.taskNames();
+  expect(skipped()).toEqual([]);
+  camera.rotation.y = Math.PI;
+  expect(skipped().sort()).toEqual([...FOG_ONLY_TASKS].sort());
+  camera.rotation.y = 0;
+  expect(skipped()).toEqual([]);
+  // Looking away and back only toggles tasks: the prepared graph is untouched.
+  expect(graph.diagnostics().graphBuilds).toBe(builds);
+  expect(graph.taskNames()).toEqual(tasks);
+  graph.dispose();
+});
+
+it("keeps the geometry pass running for another spatial effect while the fog march is skipped", async () => {
+  const { camera, graph, skipped } = await fogHost({ ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } });
+  camera.rotation.y = Math.PI;
+  expect(skipped().sort()).toEqual(["Scene Volumetric Compose", "Scene Volumetric Lighting"]);
+  graph.dispose();
+});
+
+it("never skips scene-wide fog, which fogs pixels without any Fog Volume in view", async () => {
+  const volumetricLighting = { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, density: 0.3 };
+  const { camera, graph, skipped } = await fogHost({ volumetricLighting }, normalizeRenderingQuality(qualityPresetPatch("high")));
+  camera.rotation.y = Math.PI;
+  expect(skipped()).toEqual([]);
+  graph.dispose();
+});
 
 it("redraws without advancing native animation or catching up after resume", async () => {
   const path = "frameGraph";

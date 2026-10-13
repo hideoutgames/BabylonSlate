@@ -27,10 +27,12 @@ export class SceneLayerVirtualization {
     let liveCount = [...this.pools.values()].filter(pool => pool.layerId === layerId).reduce((count, pool) => count + [...pool.actors.values()].filter(actor => !actor.destroyed).length, 0);
     for (const owner of actors) {
       if (owner.destroyed || owner.sceneLayerId !== layerId) continue;
-      const ancestors = ancestry(owner);
-      if (ancestors.depth >= 16) continue;
+      // Most actors own no virtualized container; walk the ancestors only for those that do.
+      let ancestors: ReturnType<typeof ancestry> | undefined;
       for (const component of owner.components) {
         if (component.destroyed || !isVirtualizedOverlayClass(component.classId)) continue;
+        ancestors ??= ancestry(owner);
+        if (ancestors.depth >= 16) break;
         const key = overlayLayoutKey(owner.guid, component.guid), entry = entries.get(key);
         const p = parseOverlayContainerProperties(Object.fromEntries(component.variables));
         if (!entry?.virtual || !p.itemClassId || entry.interactive === false || ancestors.classes.has(p.itemClassId)) continue;

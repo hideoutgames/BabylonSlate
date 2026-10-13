@@ -146,6 +146,55 @@ describe("beginSlotModelAnimLoad", () => {
     } finally { handle.scene.dispose(); handle.engine.dispose(); }
   });
 
+  it("keeps a full-detail editor instance when its slot Materials compile later, but reloads a slim one that needs its textures", async () => {
+    const handle = createTestEngine();
+    const slotted = (compiled = new Set<string>()) => {
+      const binding = createSnapshotSceneBinding();
+      binding.modelPayloads = new Map([["model", { clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true, materialSlots: [{ index: 0, name: "Mat", materialGuid: "mat" }] }]]);
+      binding.textureBytes = new Map();
+      binding.materialTextureGuids = new Map([["mat", [] as string[]]]);
+      binding.compiledMaterialGuids = compiled;
+      return binding;
+    };
+    const bytes = installAssetBytes(encodeTriangleGlb());
+    try {
+      // The model loads before its slot Material compiles, so its textures stay embedded.
+      const editorCompiled = new Set<string>();
+      const editor = { ...slotted(editorCompiled), reuseFullDetailInstance: true };
+      const root = createModelActorRoot(handle.scene, "editor");
+      await beginSlotModelAnimLoad(handle.scene, editor, 1, "model", bytes, root);
+      const [part] = visualMeshes(root);
+      expect(part).toBeDefined();
+      // Once it has compiled, the editor keeps the instance instead of reloading it slim.
+      editorCompiled.add("mat");
+      await beginSlotModelAnimLoad(handle.scene, editor, 2, "model", bytes, root);
+      expect(visualMeshes(root)).toEqual([part]);
+      expect(part!.isDisposed()).toBe(false);
+
+      // Without that allowance the same request reloads the model slim.
+      const playCompiled = new Set<string>();
+      const play = slotted(playCompiled);
+      const playRoot = createModelActorRoot(handle.scene, "play");
+      await beginSlotModelAnimLoad(handle.scene, play, 3, "model", bytes, playRoot);
+      const [playPart] = visualMeshes(playRoot);
+      playCompiled.add("mat");
+      await beginSlotModelAnimLoad(handle.scene, play, 4, "model", bytes, playRoot);
+      expect(visualMeshes(playRoot)).toHaveLength(1);
+      expect(visualMeshes(playRoot)[0]).not.toBe(playPart);
+
+      // A slim instance cannot stand in once the Material is no longer compiled.
+      const slimCompiled = new Set(["mat"]);
+      const slim = { ...slotted(slimCompiled), reuseFullDetailInstance: true };
+      const slimRoot = createModelActorRoot(handle.scene, "slim");
+      await beginSlotModelAnimLoad(handle.scene, slim, 5, "model", bytes, slimRoot);
+      const [slimPart] = visualMeshes(slimRoot);
+      slimCompiled.delete("mat");
+      await beginSlotModelAnimLoad(handle.scene, slim, 6, "model", bytes, slimRoot);
+      expect(visualMeshes(slimRoot)).toHaveLength(1);
+      expect(visualMeshes(slimRoot)[0]).not.toBe(slimPart);
+    } finally { handle.scene.dispose(); handle.engine.dispose(); }
+  });
+
   it("coalesces concurrent actor loads and leaves static instances free of animation work", async () => {
     const handle = createTestEngine();
     const binding = createSnapshotSceneBinding();

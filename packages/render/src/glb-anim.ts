@@ -52,7 +52,15 @@ export type ModelAnimLoadBinding = Pick<
   | "textureBytes"
   | "materialTextureGuids"
   | "compiledMaterialGuids"
->;
+> & {
+  /**
+   * The editor keeps a model loaded before its slot Materials compiled, rather
+   * than reloading it slim once they have: slimming only releases embedded
+   * textures, while the reload rebuilds the instance and recompiles its shaders
+   * at whichever edit applies next.
+   */
+  reuseFullDetailInstance?: boolean;
+};
 
 const MODEL_PLACEHOLDER_KEY = "editorModelPlaceholder";
 const MODEL_INSTANCE_KEY = "babylonslateModelInstance";
@@ -687,9 +695,16 @@ export function beginSlotModelAnimLoad(
       return [row, source ? installedAssetIdentity(source) : null];
     }),
   });
-  const key = `${modelSourceKey(clipAssetGuid, bytes, binding.modelPayloads?.get(clipAssetGuid), packed)}:scale=${importScale}:lod=${autoLod}:${animations}`;
+  const payload = binding.modelPayloads?.get(clipAssetGuid);
+  const settings = `:scale=${importScale}:lod=${autoLod}:${animations}`;
+  const key = `${modelSourceKey(clipAssetGuid, bytes, payload, packed)}${settings}`;
   const meta = asPlaceholderMeta(placeholder);
   if (meta[MODEL_LOAD_KEY] === key && meta[MODEL_INSTANCE_KEY]) {
+    return Promise.resolve();
+  }
+  // A full-detail instance already satisfies a slim request; the reverse still reloads.
+  if (binding.reuseFullDetailInstance && meta[MODEL_INSTANCE_KEY] &&
+    meta[MODEL_LOAD_KEY] === `${modelSourceKey(clipAssetGuid, bytes, payload, null)}${settings}`) {
     return Promise.resolve();
   }
   const pending = pendingModelLoads.get(placeholder);
