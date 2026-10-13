@@ -78,18 +78,64 @@ describe("RuntimeCamera.cameraActor", () => {
     expect(f.camera.cameraActor()).toBe(late);
   });
 
-  it("drops a possession whose actor left the World and does not hand it to the slot's next owner", () => {
-    const f = fixture();
-    const fallback = f.spawn("fallback");
-    const possessed = f.spawn("possessed");
-    f.camera.possess(possessed);
-    const slotId = f.slots.actorSlot(possessed)!;
-    expect(f.camera.cameraActor()).toBe(possessed);
-    f.remove(possessed);
-    expect(f.camera.cameraActor()).toBe(fallback);
-    f.slots.release(slotId);
-    const successor = f.spawn("successor", { camera: false });
-    expect(f.slots.actorSlot(successor)).toBe(slotId);
-    expect(f.camera.cameraActor()).toBe(fallback);
+  describe("a possessed slot whose owner no longer qualifies", () => {
+    /** A possession of `possessed`, with `fallback` as the camera the rest of the order yields. */
+    function possessing() {
+      const f = fixture();
+      const fallback = f.spawn("fallback");
+      const possessed = f.spawn("possessed");
+      f.camera.possess(possessed);
+      expect(f.camera.cameraActor()).toBe(possessed);
+      return { ...f, fallback, possessed };
+    }
+
+    it("falls back once the owner left the World, before its slot is released", () => {
+      const f = possessing();
+      f.remove(f.possessed);
+      expect(f.slots.owner(f.slots.recordedSlot(f.possessed)!)).toBe(f.possessed);
+      expect(f.camera.cameraActor()).toBe(f.fallback);
+    });
+
+    it("falls back while a destroyed owner is still listed in the World", () => {
+      const f = possessing();
+      f.possessed.destroyed = true;
+      expect(f.world.findActor("possessed")).toBe(f.possessed);
+      expect(f.camera.cameraActor()).toBe(f.fallback);
+    });
+
+    it("falls back when the slot's owner is not the live actor for its guid", () => {
+      const f = fixture();
+      const fallback = f.spawn("fallback");
+      // Holds a slot and is not destroyed, but was never spawned (or was replaced): not a World actor.
+      const ghost = f.world.createActor({ guid: "ghost", classId: "Actor" });
+      ghost.attachComponent(f.world.createComponent({ guid: "ghost-camera", classId: "CameraComponent" }));
+      f.slots.allocate(ghost);
+      f.camera.possess(ghost);
+      expect(ghost.destroyed).toBe(false);
+      expect(f.world.findActor("ghost")).toBeUndefined();
+      expect(f.camera.cameraActor()).toBe(fallback);
+      f.world.spawnActorNow(ghost);
+      expect(f.camera.cameraActor()).toBe(ghost);
+    });
+
+    it("falls back when the owner now records a different slot", () => {
+      const f = possessing();
+      const possessedSlot = f.slots.actorSlot(f.possessed)!;
+      // Allocating again moves the actor's own slot; the old slot still names it as owner.
+      const moved = f.slots.allocate(f.possessed);
+      expect(moved).not.toBe(possessedSlot);
+      expect(f.slots.owner(possessedSlot)).toBe(f.possessed);
+      expect(f.camera.cameraActor()).toBe(f.fallback);
+    });
+
+    it("forgets the possession when its slot is released, so the slot's next owner is not the camera", () => {
+      const f = possessing();
+      const slotId = f.slots.actorSlot(f.possessed)!;
+      f.remove(f.possessed);
+      f.slots.release(slotId);
+      const successor = f.spawn("successor");
+      expect(f.slots.actorSlot(successor)).toBe(slotId);
+      expect(f.camera.cameraActor()).toBe(f.fallback);
+    });
   });
 });
