@@ -92,12 +92,27 @@ export type PlaySceneLoad = {
 
 /** Prefer the registry guid so `activeScene` resolves in every Play host. */
 export function canonicalPlaySceneGuid(
-  scene: PlaySceneLoad,
+  scene: Pick<PlaySceneLoad, "sceneAssetGuid" | "path">,
   guidForPath: (path: string) => string | null,
 ): string {
   return scene.path
     ? (guidForPath(scene.path) ?? scene.sceneAssetGuid)
     : scene.sceneAssetGuid;
+}
+
+/**
+ * Which open scene document Play would load, without reading its content:
+ * the same document as `playSceneFromOpenDocuments`, for callers that need
+ * only its identity (the Play button, the Scene's guid) and so do not pay to
+ * normalize every actor.
+ */
+export function playSceneRefFromOpenDocuments(
+  documents: readonly PlaySceneDocument[],
+  activeDocumentId: string | null,
+): Pick<PlaySceneLoad, "sceneAssetGuid" | "path"> | null {
+  const scene = findOpenSceneDocument(documents, activeDocumentId);
+  if (!scene?.content) return null;
+  return { sceneAssetGuid: scene.id, path: scene.ref.path };
 }
 
 /** Active (or first) open scene document for the Play `load` message. */
@@ -125,7 +140,7 @@ export function playIsEnabled(
 ): boolean {
   if (options?.previewBuild) return true;
   if (options?.playFromScene !== false) {
-    if (playSceneFromOpenDocuments(documents, activeDocumentId) !== null) {
+    if (playSceneRefFromOpenDocuments(documents, activeDocumentId) !== null) {
       return true;
     }
     return options?.hasStartupScene === true;

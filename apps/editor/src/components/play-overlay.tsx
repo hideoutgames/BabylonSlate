@@ -14,7 +14,7 @@ import { formatSceneLoadReport } from "../lib/scene-load-report";
 import { nextStatGroups, type StatGroup } from "@babylonslate/debugger";
 import type { SceneLoadProgress } from "@babylonslate/render";
 import type { RenderDiagnostics } from "@babylonslate/render";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   resolveRenderingQuality,
   DEFAULT_PLAY_FRAME_CAP,
@@ -52,17 +52,14 @@ import {
 } from "../lib/viewport-render-gate";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 import { PrintHud, type PrintHudPrint } from "./print-overlay";
-import { DebugConsole } from "./debug-console";
+import { PlayDebugConsole } from "./play-debug-console";
 import { DebugBehaviourTreeDialog } from "./debug-behaviour-tree-dialog";
 import type { DebugBehaviourTree } from "@babylonslate/bridge";
-import { DebugInspectDialog } from "./debug-inspect-dialog";
+import { ConnectedDebugInspectDialog } from "./debug-inspect-dialog";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { PlayFreeCamJoystick } from "./play-freecam-joystick";
 import { StatsHud } from "./stats-hud";
-import {
-  playConsoleCommands,
-  playConsoleCompletionContext,
-} from "../lib/play-console";
+import { playConsoleCommands } from "../lib/play-console";
 import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
@@ -224,7 +221,7 @@ function emptyPlayResult(): PlaySessionResult {
   };
 }
 
-export function PlayOverlay({
+function PlayOverlayView({
   sessionOwner,
   sessionTicket,
   embedded = false,
@@ -622,22 +619,13 @@ export function PlayOverlay({
   const initialConsoleRenderRef = useRef({ ...render, quality: resolveRenderingQuality(render, {}, localRenderingQualityOverrides(localEngineSettings)) });
   const liveSizeRef = useRef<{ width: number; height: number } | null>(null);
   const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
-  const inspectSnapshot = useInspectWorldPoll(
+  // Polled snapshots go to a store the console and inspector read themselves,
+  // so each poll re-renders them, not this overlay.
+  const inspectStore = useInspectWorldPoll(
     consoleOpen || nextPlayInspectorOpen(inspectorOpen, overlayInspector),
     () =>
       sessionRef.current?.inspectWorld() ??
       Promise.resolve({ tickIndex: 0, nodes: [] }),
-  );
-  const completionContext = useMemo(
-    () =>
-      playConsoleCompletionContext({
-        commands,
-        sceneAssetGuid,
-        scene,
-        scenes,
-        inspectNodes: inspectSnapshot.nodes,
-      }),
-    [commands, sceneAssetGuid, scene, scenes, inspectSnapshot],
   );
 
   useEffect(() => {
@@ -1247,12 +1235,15 @@ export function PlayOverlay({
           ))}
         </div>
       ) : null}
-      <DebugConsole
+      <PlayDebugConsole
         open={consoleOpen}
         onOpenChange={setConsoleOpen}
         commands={commands}
         logs={logs}
-        completionContext={completionContext}
+        inspectStore={inspectStore}
+        sceneAssetGuid={sceneAssetGuid}
+        scene={scene}
+        scenes={scenes}
         onExecute={(line) =>
           sessionRef.current?.executeConsoleCommand(
             applyInspectSelectionToConsoleLine(
@@ -1273,10 +1264,10 @@ export function PlayOverlay({
         }}
         trees={trees}
       />
-      <DebugInspectDialog
+      <ConnectedDebugInspectDialog
         open={nextPlayInspectorOpen(inspectorOpen, overlayInspector)}
         onOpenChange={setInspectorOpen}
-        snapshot={inspectSnapshot}
+        store={inspectStore}
         onExecute={(line) => sessionRef.current?.executeConsoleCommand(line)
           ?? Promise.resolve({ success: false, output: "Not Playing" })}
         onSelectedIdChange={(id) => {
@@ -1286,3 +1277,11 @@ export function PlayOverlay({
     </div>
   );
 }
+
+/**
+ * The provider re-renders for every document edit and thumbnail capture. The
+ * props of a running game (its session Scene, physics and registry lists) keep
+ * their identity across those, so the overlay skips them and renders for its
+ * own state only.
+ */
+export const PlayOverlay = memo(PlayOverlayView);
