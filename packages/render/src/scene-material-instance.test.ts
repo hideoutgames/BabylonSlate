@@ -73,6 +73,36 @@ describe("saved component material instances", () => {
     expect(f.scene.materials).toContain(shared);
   });
 
+  it("keeps the private material without announcing a change when the scene is applied again, moved or extended", async () => {
+    const f = fixture();
+    const authored = sceneDocument({ Roughness: { kind: "float", value: 0.2 } });
+    f.sync.apply(authored);
+    await f.sync.whenEditorModelsReady();
+    const visual = f.sync.meshForActor("actor")!;
+    const privateMaterial = visual.material;
+    expect(privateMaterial).not.toBe(f.library.materialFor(f.scene, "material"));
+    const changed = vi.fn();
+    visual.onMaterialChangedObservable.add(changed);
+
+    // The component override assigns the shared Material before the saved instance replaces it.
+    f.sync.apply(structuredClone(authored));
+    const moved = structuredClone(authored);
+    moved.actors[0]!.transform.position = [1, 2, 3];
+    f.sync.apply(moved);
+    f.sync.apply({ ...moved, actors: [...moved.actors, createActor("other", "Other")] });
+    await f.sync.whenEditorModelsReady();
+    expect(changed).not.toHaveBeenCalled();
+    expect(f.sync.meshForActor("actor")!.material).toBe(privateMaterial);
+
+    // A changed value is announced once, when the replacement is published.
+    const retuned = structuredClone(moved);
+    retuned.actors[0]!.components[0]!.materialInstance!.parameters.Roughness = { kind: "float", value: 0.9 };
+    f.sync.apply(retuned);
+    await f.sync.whenEditorModelsReady();
+    expect(f.sync.meshForActor("actor")!.material).not.toBe(privateMaterial);
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
   it("reapplies saved values on a full scene load and ignores values for a different assignment", async () => {
     const f = fixture();
     const authored = sceneDocument({ Roughness: { kind: "float", value: 0.3 } });
