@@ -8,7 +8,11 @@ export interface SceneWorkOptions {
   onProgress?: (progress: number) => void;
   /** Hosts may provide a different cooperative scheduler. */
   yieldControl?: (signal: AbortSignal) => Promise<void>;
-  /** Upper bound on steps between yields (default `SCENE_WORK_STEPS_PER_YIELD`). */
+  /**
+   * Upper bound on steps between yields. It exists for tests that observe partial
+   * realization and for tuning; production callers use the default
+   * (`SCENE_WORK_STEPS_PER_YIELD`).
+   */
   stepsPerYield?: number;
 }
 

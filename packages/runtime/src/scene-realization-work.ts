@@ -6,7 +6,11 @@ const SCENE_REALIZATION_BUDGET_MS = 8;
 export interface CooperativeSceneLoadingOptions {
   /** Host scheduler override; production yields a task between bounded chunks. */
   yieldControl?: (signal: AbortSignal) => Promise<void>;
-  /** Upper bound on steps between yields (default `SCENE_REALIZATION_STEPS_PER_YIELD`). */
+  /**
+   * Upper bound on steps between yields. It exists for tests that observe partial
+   * realization and for tuning; production callers use the default
+   * (`SCENE_REALIZATION_STEPS_PER_YIELD`).
+   */
   stepsPerYield?: number;
 }
 
