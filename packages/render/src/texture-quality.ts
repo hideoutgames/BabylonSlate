@@ -2,7 +2,6 @@ import { acquireTextureVariant, type ResourceLease } from "./resource-cache";
 import type { Texture } from "@babylonjs/core";
 import {
   MaterialPluginBase,
-  RegisterMaterialPlugin,
   PBRBaseMaterial,
   StandardMaterial,
   TextureBlock,
@@ -17,6 +16,7 @@ import {
 } from "@babylonjs/core";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
+import { registerPersistentMaterialPlugin } from "./material-plugin-registration";
 import { applyMaterialTextureAnisotropy, sceneRenderingSettings } from "./render-settings";
 
 /** Implicit material samples may bias mip choice; explicit LOD and shadow samples remain authored. */
@@ -147,7 +147,7 @@ export class TextureQualityPlugin extends MaterialPluginBase {
     };
   }
 }
-RegisterMaterialPlugin("SlateTextureQuality", (material) =>
+registerPersistentMaterialPlugin("SlateTextureQuality", (material) =>
   material instanceof PBRBaseMaterial || material instanceof StandardMaterial
     ? new TextureQualityPlugin(material)
     : null,

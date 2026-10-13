@@ -38,13 +38,14 @@ function fixture() {
   return { scene, mesh };
 }
 
-function withTextureQuality<T extends PBRMaterial | StandardMaterial>(
+function nativeMaterial<T extends PBRMaterial | StandardMaterial>(
   material: T,
 ): T {
-  // Babylon clears global plugin factories when the last test Engine is disposed.
-  // Keep each case representative of the renderer's actual native materials.
-  if (!material.pluginManager?.getPlugin("SlateTextureQuality"))
-    new TextureQualityPlugin(material);
+  // The renderer registers this plugin on every native material, even after a test
+  // disposed the last Engine. Without it the trusted-plugin cases below are vacuous.
+  expect(material.pluginManager?.getPlugin("SlateTextureQuality")).toBeInstanceOf(
+    TextureQualityPlugin,
+  );
   return material;
 }
 
@@ -66,13 +67,13 @@ describe("shadow material cache policy", () => {
     "admits an opaque native %s caster but stops caching alpha coverage",
     (kind) => {
       const { scene, mesh } = fixture();
-      const material = withTextureQuality(
+      const material = nativeMaterial(
         kind === "pbr"
           ? new PBRMaterial("opaque", scene)
           : kind === "standard"
             ? new StandardMaterial("opaque", scene)
             : new CelMaterial(
-                withTextureQuality(new PBRMaterial("source", scene)),
+                nativeMaterial(new PBRMaterial("source", scene)),
                 scene,
               ),
       );

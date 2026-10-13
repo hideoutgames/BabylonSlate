@@ -1,4 +1,4 @@
-import { MaterialPluginBase, PBRBaseMaterial, RegisterMaterialPlugin, StandardMaterial, type AbstractMesh, type Material, type MaterialDefines, type Scene, type ShaderLanguage, type SubMesh, type UniformBuffer } from "@babylonjs/core";
+import { MaterialPluginBase, PBRBaseMaterial, StandardMaterial, type AbstractMesh, type Material, type MaterialDefines, type Scene, type ShaderLanguage, type SubMesh, type UniformBuffer } from "@babylonjs/core";
 import { defaultVertexShader } from "@babylonjs/core/Shaders/default.vertex";
 import { pbrVertexShader } from "@babylonjs/core/Shaders/pbr.vertex";
 import { defaultVertexShaderWGSL } from "@babylonjs/core/ShadersWGSL/default.vertex";
@@ -7,6 +7,7 @@ import { bumpFragment } from "@babylonjs/core/Shaders/ShadersInclude/bumpFragmen
 import { bumpFragmentWGSL } from "@babylonjs/core/ShadersWGSL/ShadersInclude/bumpFragment";
 import { bindMeshLatticeDeformerBuffer, hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { checkedShader } from "./checked-shader";
+import { registerPersistentMaterialPlugin } from "./material-plugin-registration";
 import { LATTICE_WORLD_POSITION_PATTERN, latticeNormalShaderFunction, latticeShaderDeclarations, latticeShaderFunctions, latticeWorldPositionCode } from "./lattice-deformer-shader";
 
 /** Registered before native material UBO layout freezes. Per-mesh defines keep
@@ -79,11 +80,12 @@ vTBN = mat3(slateLatticeBasisT,
   }
 }
 const supportedClasses = new Set(["StandardMaterial", "PBRMaterial", "PBRMetallicRoughnessMaterial", "PBRSpecularGlossinessMaterial", "CelMaterial"]);
-/** Babylon clears global plugin factories after the last Engine is disposed.
- * Its public plugin constructor also rebuilds an existing native UBO layout. */
+/** Materials built before this module loaded get the plugin on demand. Its public
+ * constructor also rebuilds an existing native UBO layout, so the persistent
+ * registration below attaches it at creation instead. */
 export function ensureLatticeDeformerPlugin(material: Material): LatticeDeformerPlugin | null {
   const existing = material.pluginManager?.getPlugin<LatticeDeformerPlugin>("SlateLattice");
   if (existing) return existing;
   return supportedClasses.has(material.getClassName()) && (material instanceof PBRBaseMaterial || material instanceof StandardMaterial) ? new LatticeDeformerPlugin(material) : null;
 }
-RegisterMaterialPlugin("SlateLattice", ensureLatticeDeformerPlugin);
+registerPersistentMaterialPlugin("SlateLattice", ensureLatticeDeformerPlugin);

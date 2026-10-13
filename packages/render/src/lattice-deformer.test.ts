@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { BoundingInfo, Matrix, Mesh, MeshBuilder, MultiMaterial, NullEngine, Scene, StandardMaterial, Vector3, VertexBuffer, type Effect, type MaterialPluginBase, type UniformBuffer } from "@babylonjs/core";
 import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
+import { LatticeDeformerPlugin } from "./lattice-deformer-native";
 import { bindMeshLatticeDeformer, disposeMeshLatticeDeformer, flushSceneLatticeDeformers, hasMeshLatticeDeformer, markLatticeComponentRoot, refreshMeshLatticeDeformer, setMeshLatticeDeformer, type LatticeDeformerConfig } from "./lattice-deformer";
 import { applyMaterialBounds, setMaterialBoundsExpansion, updateDynamicMaterialBounds } from "./material-bounds";
 import { managedRenderReservations } from "./managed-render-resources";
@@ -89,6 +90,14 @@ describe("component lattice resource ownership", () => {
     };
     expect(bound(mesh).get("slateLatticeEnabled")).toBe(1);
     expect(bound(plain).has("slateLatticeEnabled")).toBe(false);
+  });
+
+  it("attaches the cage plugin when a material is created, even after every Engine was disposed", () => {
+    // Babylon drops its global plugin factories at that point. A plugin added only when a cage is
+    // assigned would rebuild the already-frozen native UBO layout of a material that has drawn.
+    new NullEngine().dispose();
+    const { mesh } = fixture();
+    expect(mesh.material!.pluginManager?.getPlugin("SlateLattice")).toBeInstanceOf(LatticeDeformerPlugin);
   });
 
   it("allocates nothing for an identity cage and rolls back an unsupported device assignment", () => {
