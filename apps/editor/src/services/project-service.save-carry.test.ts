@@ -9,6 +9,7 @@ import {
   encodeBabasset,
   sha256Hex,
 } from "@babylonslate/assets";
+import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { installMinimalProject } from "../../../../packages/assets/src/test-support/minimal-project";
 import { ProjectService } from "./project-service";
@@ -161,5 +162,42 @@ describe("a Scene's reverb bake", () => {
     reads.mockRestore();
     expect(await reopened.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(reverb);
     expect(await reopened.loadDocument("scene", MAIN_SCENE_FILE)).toMatchObject({ name: "Renamed" });
+  });
+
+  it("is written reading only the Scene's document, and a repeated bake writes nothing", async () => {
+    const { service, storage } = await scaffolded();
+    const scene = await savedScene(service);
+    const navmesh = bigBytes(5);
+    await service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, navmesh, asRecord(scene));
+    const reverb = new Uint8Array([4, 5, 6]);
+    const reads = vi.spyOn(storage, "readBinary");
+
+    await service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, reverb, asRecord(scene));
+
+    expect(reads.mock.calls.map(([readPath]) => readPath)).not.toContain(await blobPath(navmesh));
+    reads.mockRestore();
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(navmesh);
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(reverb);
+    expect(await service.loadDocument("scene", MAIN_SCENE_FILE)).toEqual(scene);
+
+    const stored = await storage.readBinary(MAIN_SCENE_FILE);
+    const writes = vi.spyOn(storage, "writeBinary");
+    await service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, reverb.slice(), asRecord(scene));
+    expect(writes).not.toHaveBeenCalled();
+    writes.mockRestore();
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(stored);
+  });
+
+  it("is not written over a Scene whose other chunk's blob is missing", async () => {
+    const { service, storage } = await scaffolded();
+    const scene = await savedScene(service);
+    const navmesh = bigBytes(7);
+    await service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, navmesh, asRecord(scene));
+    await storage.remove(await blobPath(navmesh));
+    const before = await storage.readBinary(MAIN_SCENE_FILE);
+
+    await expect(service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, new Uint8Array([9]), asRecord(scene))).rejects.toThrow();
+
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(before);
   });
 });

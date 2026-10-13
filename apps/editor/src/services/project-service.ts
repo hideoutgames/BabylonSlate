@@ -74,6 +74,7 @@ import {
   carryStoredChunks,
   storedBabassetMatches,
   audioReverbChunk,
+  isCarriedChunk,
   AUDIO_REVERB_CHUNK_ID,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   DOCUMENT_CHUNK_ID,
@@ -2777,24 +2778,46 @@ export class ProjectService {
       const currentPath = current?.path ?? path;
       const storage = this.storageForPath(currentPath);
       const blobs = this.blobsForPath(currentPath);
-      const decoded = await decodeBabasset(await storage.readBinary(currentPath), (hash) => blobs.readBlob(hash));
-      const body = decoded.chunks.get(DOCUMENT_CHUNK_ID);
-      const persisted = body ? JSON.parse(new TextDecoder().decode(body)) : decoded.header.payload;
-      if (decoded.header.type !== "Scene") throw new Error("Audio reverb requires a Scene asset");
-      this.rememberSceneAudioReverb(decoded.header.guid, baked.fingerprint, baked.bytes);
+      // Only the document is read, to compare its geometry. The other chunks are
+      // carried over from the chunk table, and the reverb chunk this replaces is
+      // not read at all; if they cannot be carried safely, everything is decoded.
+      let stored: AssetCatalogRead | null = null;
+      let kept: EncodableChunk[] | null = null;
+      try {
+        stored = await readAssetCatalog(storage, currentPath);
+        kept = await carryStoredChunks(storage, blobs, stored, {
+          omit: new Set([AUDIO_REVERB_CHUNK_ID]),
+          load: (entry) => entry.id === DOCUMENT_CHUNK_ID,
+        });
+      } catch {
+        kept = null;
+      }
+      let header: BabassetHeader;
+      let body: Uint8Array | undefined;
+      if (stored && kept) {
+        header = stored.header;
+        body = kept.find((chunk): chunk is ChunkInput => chunk.id === DOCUMENT_CHUNK_ID && !isCarriedChunk(chunk))?.data;
+      } else {
+        stored = null;
+        const decoded = await decodeBabasset(await storage.readBinary(currentPath), (hash) => blobs.readBlob(hash));
+        header = decoded.header;
+        body = decoded.chunks.get(DOCUMENT_CHUNK_ID);
+        kept = header.chunks.filter((entry) => entry.id !== AUDIO_REVERB_CHUNK_ID).map((entry) => ({
+          id: entry.id, kind: entry.kind, mime: entry.mime, data: decoded.chunks.get(entry.id)!,
+        }));
+      }
+      const persisted = body ? JSON.parse(new TextDecoder().decode(body)) : header.payload;
+      if (header.type !== "Scene") throw new Error("Audio reverb requires a Scene asset");
+      this.rememberSceneAudioReverb(header.guid, baked.fingerprint, baked.bytes);
       if (staticAudioGeometryFingerprint(normalizeScene(persisted)) !== baked.fingerprint) return;
       // Re-encode the persisted container under the same queue as Save. Preserve
       // authored JSON, schema/header metadata, dependencies, and every other chunk.
-      const chunks = decoded.header.chunks.map((entry) => ({
-        id: entry.id, kind: entry.kind, mime: entry.mime, data: decoded.chunks.get(entry.id)!,
-      }));
       const encoded = await encodeBabasset({
-        header: decoded.header,
-        chunks: extraChunksWithAudioReverb(chunks, baked.bytes),
+        header,
+        chunks: [...kept, audioReverbChunk(baked.bytes)],
         writeBlob: (hash, data) => blobs.writeBlob(hash, data),
       });
-      await storage.writeBinary(currentPath, encoded);
-      await registry?.reindexPath(currentPath);
+      await this.storeDocumentBytes(currentPath, stored, encoded, registry);
     };
     if (asset) await registry!.withAssetWrite(asset.header.guid, write);
     else await write();
