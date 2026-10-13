@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  Color3, DirectionalLight, FreeCamera, HemisphericLight, Matrix, MeshBuilder, NullEngine, PBRMaterial, PointLight, Scene, Texture, TransformNode, Vector3,
+  Color3, DirectionalLight, FreeCamera, HemisphericLight, Matrix, MeshBuilder, NullEngine, PBRMaterial, PointLight, Scene, ShaderLanguage, Texture, TransformNode, Vector3,
   type Mesh, type UniformBuffer,
 } from "@babylonjs/core";
 import {
@@ -10,7 +10,7 @@ import {
 import { updateSceneRenderingSettings } from "./render-settings";
 import { waterFftDiagnostics, waterFftForSurface } from "./water-fft";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
-import { WATER_FFT_SAMPLER, WaterMaterialPlugin, waterHazeConstants } from "./water-material";
+import { WATER_FFT_SAMPLER, WaterMaterialPlugin, stripShaderComments, waterHazeConstants, waterOutlineVertexSource, waterShaderSource, type WaterLook } from "./water-material";
 import { createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater, updateWaterMeshDefinition } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 
@@ -255,6 +255,42 @@ describe("Water material binding", () => {
     } finally { scene.dispose(); engine.dispose(); }
   });
 
+  it("injects only the compiled look's shading, keyed by the effect's own defines, and no comments in any language or stage", async () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      new FreeCamera("camera", new Vector3(0, 5, -10), scene);
+      new DirectionalLight("sun", new Vector3(0, -1, 0.3), scene);
+      const looks: WaterLook[] = ["realistic", "painted", "toon"];
+      const main = (look: WaterLook) => stripShaderComments(waterShaderSource(ShaderLanguage.GLSL, look).main);
+      // The look's own shading is in the compiled effect's source before preprocessing, and no other look's is.
+      const holds = (source: string, own: WaterLook) => looks.every((look) => source.includes(main(look)) === (look === own));
+      const compiled = async (mesh: ReturnType<typeof createWaterMesh>) => {
+        const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
+        await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true));
+        return subMesh.effect!;
+      };
+      const painted = createWaterMesh(scene, "stylized", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition("stylized"));
+      const paintedEffect = await compiled(painted);
+      expect(holds(paintedEffect.fragmentSourceCodeBeforeMigration, "painted")).toBe(true);
+      // Editing the look in place compiles a second effect with the new look; the first keeps its own.
+      expect(updateWaterMeshDefinition(painted, createDefaultWaterDefinition("stylized", "toon"))).toBe(true);
+      const toonEffect = await compiled(painted);
+      expect(toonEffect).not.toBe(paintedEffect);
+      expect(holds(toonEffect.fragmentSourceCodeBeforeMigration, "toon")).toBe(true);
+      expect(holds(paintedEffect.fragmentSourceCodeBeforeMigration, "painted")).toBe(true);
+      const realistic = await compiled(createWaterMesh(scene, "realistic", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition("realistic")));
+      expect(holds(realistic.fragmentSourceCodeBeforeMigration, "realistic")).toBe(true);
+      // Everything the plugin and the outline mask inject is free of comments and blank lines.
+      const plugin = new WaterMaterialPlugin(new PBRMaterial("probe", scene), createDefaultWaterDefinition(), normalizeWaterBody({}));
+      const pieces = [ShaderLanguage.GLSL, ShaderLanguage.WGSL].flatMap((language) => [
+        ...Object.values(plugin.getCustomCode("fragment", language)!), ...Object.values(plugin.getCustomCode("vertex", language)!),
+        ...Object.values(waterOutlineVertexSource(language)),
+      ]);
+      expect(pieces.length).toBeGreaterThan(0);
+      for (const piece of pieces) expect(piece).not.toMatch(/\/\/|\n[ \t]*\n/);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
   it("compiles the project's Water Shading Detail, draws Realistic Low unlit, and compiles out asset features set to zero", async () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     try {
@@ -276,7 +312,8 @@ describe("Water material binding", () => {
         tier(level);
         const realistic = await compiled("realistic"), stylized = await compiled("stylized");
         expect(realistic).toContain(`#define SLATE_WATER_QUALITY ${index}`);
-        expect(stylized).toContain(`#define SLATE_WATER_QUALITY ${index}`);
+        // Painted has no Ultra term: Ultra compiles as High, sharing its effect.
+        expect(stylized).toContain(`#define SLATE_WATER_QUALITY ${Math.min(index, 2)}`);
         // Low drops the PBR light loop (its shader lights foam and the sun itself); other tiers keep scene lights.
         if (level === "low") expect(realistic).not.toContain("#define LIGHT0");
         else expect(realistic).toContain("#define LIGHT1");
