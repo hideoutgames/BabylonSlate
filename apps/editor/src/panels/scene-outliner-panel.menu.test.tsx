@@ -67,7 +67,7 @@ vi.mock("../context/keybind-context", async (importOriginal) => {
       return useMemo(
         () =>
           ({
-            get: (commandId: string) => {
+            get: (commandId: Parameters<typeof bindings.get>[0]) => {
               harness.keybindReads++;
               return bindings.get(commandId);
             },
