@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MeshBuilder, MorphTargetManager, NullEngine, Scene, Skeleton, Vector3 } from "@babylonjs/core";
+import {
+  BakedVertexAnimationManager,
+  MeshBuilder,
+  MorphTargetManager,
+  NullEngine,
+  Scene,
+  Skeleton,
+  Vector3,
+} from "@babylonjs/core";
 import { casterWithinShadowRange } from "./shadow-mesh-policy";
 
 const light = Vector3.Zero();
@@ -30,13 +38,14 @@ describe("casterWithinShadowRange", () => {
     expect(casterWithinShadowRange(caster(40), light, RANGE)).toBe(false);
   });
 
-  it.each(["skeleton", "morph targets"] as const)(
+  it.each(["skeleton", "morph targets", "baked vertex animation"] as const)(
     "gives %s geometry twice its bounding radius, and no more",
     (kind) => {
       const radius = radiusOf();
       const deform = (mesh: ReturnType<typeof caster>) => {
         if (kind === "skeleton") mesh.skeleton = new Skeleton("rig", "rig", scene);
-        else mesh.morphTargetManager = new MorphTargetManager(scene);
+        else if (kind === "morph targets") mesh.morphTargetManager = new MorphTargetManager(scene);
+        else mesh.bakedVertexAnimationManager = new BakedVertexAnimationManager(scene);
         return mesh;
       };
       expect(casterWithinShadowRange(deform(caster(RANGE + radius * 1.5)), light, RANGE)).toBe(true);

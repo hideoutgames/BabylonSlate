@@ -1,4 +1,4 @@
-import { LinesMesh, Vector3, type AbstractMesh } from "@babylonjs/core";
+import { LinesMesh, Mesh, Vector3, type AbstractMesh } from "@babylonjs/core";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { isSkyboxMesh } from "./skybox";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
@@ -47,6 +47,7 @@ export function hasDeformingShadowBounds(mesh: AbstractMesh): boolean {
     hasMeshLatticeDeformer(mesh) ||
     !!mesh.skeleton ||
     !!mesh.morphTargetManager ||
+    (mesh instanceof Mesh && !!mesh.bakedVertexAnimationManager) ||
     Number(mesh.material?.metadata?.boundsPadding ?? 0) > 0
   );
 }
