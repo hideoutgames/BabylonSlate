@@ -1319,11 +1319,11 @@ function initializeEngine(
     const host = options?.scene ?? scene;
     const document = materialDocuments.get(guid);
     if (!document) return null;
-    const material = materialLibrary.resolve(host, guid, document, options);
-    if (!material) return null;
-    if (materialLibrary.isReady(host, guid, document, options)) compiledMaterialGuids.add(guid);
+    const resolved = materialLibrary.resolveWithReadiness(host, guid, document, options);
+    if (!resolved) return null;
+    if (resolved.ready) compiledMaterialGuids.add(guid);
     else compiledMaterialGuids.delete(guid);
-    return material;
+    return resolved.material;
   };
   binding.releaseMaterialInstance = (key, assetGuid) =>
     materialLibrary.releaseInstance(key, assetGuid);

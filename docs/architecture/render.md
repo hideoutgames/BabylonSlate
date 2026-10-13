@@ -383,6 +383,12 @@ Primitive collider dimensions are validated during actor realization. Invalid dr
 
 Authored PBR and Unlit surfaces apply scene fog before output color conversion; PBR applies it after linear lighting and emission, before image processing. Linear, Exponential and Exponential Squared settings update the shader uniforms live in the editor and Play. SceneLayer overlays remain fog-free. Fog color uses the same display-to-linear conversion as surface colors.
 
+## Editor apply and load CPU
+
+Every editor edit re-applies the Scene document through `EditorSceneSync`, so per-actor and per-apply work stays proportional to what changed:
+
+- `MaterialLibrary.resolveWithReadiness` returns the resolved Material with its published-generation readiness from the one plan `resolve` computed, so binding a Material-bound component serializes its document once, not twice. `planFor` still compares document content (hosts edit documents in place), so an edited document recompiles.
+
 ## Snapshot apply
 
 - `SnapshotSampler` holds the latest stable bridge snapshot and decodes it (`sample()`). `push` copies only the header and `actorCount` rows into its owned buffer, so `sample` never reads past `actorCount` (older rows stay stale). It **ignores unpublished** (zeroed, no `magic`) buffers — the worker's first rAF after `play` copies the seq-lock before any tick, and applying that as `actorCount: 0` despawned `assignMesh` visuals and dropped `assignedMaterialGuids()` (`data-assigned-materials`). A published empty scene (`actorCount: 0` with magic) still despawns. Snapshot absence retires only a slot that a previously **applied** sample contained (`binding.seenSlots`, marked at apply time — the applied sample can still omit a slot whose buffer was already pushed); a command-built visual not yet seen survives a stale buffer that predates its `assignMesh`, and explicit `despawn` remains its removal path. Play `activeScene` / `loadScene` calls `clear()` so `sample()` is null until the destination snapshot is published — otherwise a stale pre-swap live set (monotonic slot ids) GCs destination cameras created by `assignMesh`. Play always draws the latest published snapshot: Play render and the worker tick share the same ~60 Hz cap, so interpolating between snapshots would add up to one tick of visual lag with no smoothing. `lastActorPositions` reads the same latest snapshot (e2e / HUD).
