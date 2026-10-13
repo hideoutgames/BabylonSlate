@@ -24,10 +24,11 @@ import {
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { updateSceneRenderingSettings } from "./render-settings";
+import { prewarmSceneMaterials } from "./scene-perf";
 import { configureEditorRenderingGroups } from "./sorting";
 import type { WaterMaterialPlugin } from "./water-material";
 import { createWaterMesh } from "./water-mesh";
-import { isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
+import { isMainWaterPass, waterMeshDrawsInSceneCopyPass, waterSceneCopyForPass } from "./water-scene-copy";
 
 const DEFAULT_TASKS = [
   "Forward admitted shadows",
@@ -435,12 +436,14 @@ it("compiles refraction and the screen-space march only into the copy's pass, fo
   expect(compiled(sampling, high)).toContain("#define SLATE_WATER_SSR_STEPS 16\n");
   expect(compiled(plain, high)).not.toContain("SLATE_WATER_REFRACTION\n");
   expect(compiled(plain, high)).not.toContain("SLATE_WATER_SSR\n");
-  // The main object pass (and any pass without a copy: captures, previews) compiles neither.
+  // The main object pass never draws copy-sampling water (the transparent pass does): it compiles nothing for it, and
+  // neither feature for water that samples no copy.
   const objectsPass = () => scene.objectRenderers.filter((renderer) => renderer.name === "Forward objects").at(-1)!.renderPassId;
   const objects = objectsPass();
-  expect(compiled(sampling, objects)).toContain("#define SLATE_WATER\n");
-  expect(compiled(sampling, objects)).not.toContain("SLATE_WATER_REFRACTION\n");
-  expect(compiled(sampling, objects)).not.toContain("SLATE_WATER_SSR\n");
+  expect(compiled(sampling, objects)).toBe("");
+  expect(compiled(plain, objects)).toContain("#define SLATE_WATER\n");
+  expect(compiled(plain, objects)).not.toContain("SLATE_WATER_REFRACTION\n");
+  expect(compiled(plain, objects)).not.toContain("SLATE_WATER_SSR\n");
   // Medium refracts and reflects the sky only; Low plans no copy, and the water compiles neither feature.
   quality("medium");
   const medium = (await plan())!;
@@ -453,6 +456,69 @@ it("compiles refraction and the screen-space march only into the copy's pass, fo
     expect(compiled(sampling, pass)).not.toContain("SLATE_WATER_REFRACTION\n");
     expect(compiled(sampling, pass)).not.toContain("SLATE_WATER_SSR\n");
   }
+  graph.dispose();
+});
+
+/** The kind of a water effect, from its defines: depth pre-pass, or colour with or without the scene copy's features. */
+function waterVariant(defines: string): string {
+  if (defines.includes("#define DEPTHPREPASS\n")) return "depth";
+  return defines.includes("#define SLATE_WATER_REFRACTION\n") ? "colour with copy" : "colour without copy";
+}
+
+/** Every water variant the engine has compiled. */
+function compiledWaterVariants(engine: NullEngine): string[] {
+  const effects = (engine as unknown as { _compiledEffects: Record<string, { defines: string }> })._compiledEffects;
+  return Object.values(effects).filter((effect) => /#define SLATE_WATER\n/.test(effect.defines ?? ""))
+    .map((effect) => waterVariant(effect.defines)).sort();
+}
+
+it("compiles the water variants the view draws before its first frame, and none it never draws", async () => {
+  const { engine, scene, camera } = host();
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "ultra" } }) });
+  const water = lake(scene, { ...createDefaultWaterDefinition(), refraction: 0.35 });
+  const drawn = new Set<string>();
+  water.onAfterRenderObservable.add(() => drawn.add(waterVariant(water.subMeshes[0]!.effect?.defines ?? "")));
+  // The load's order: the shader warm-up first, then the view's graph is prepared.
+  await prewarmSceneMaterials(scene, undefined, (mesh) => waterMeshDrawsInSceneCopyPass(scene, scene.activeCamera, mesh));
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  // Water the view draws through its scene copy: the drawn colour variant and its depth pre-pass, nothing else.
+  expect(compiledWaterVariants(engine)).toEqual(["colour with copy", "depth"]);
+  await settle(graph, camera);
+  expect([...drawn].sort()).toEqual(["colour with copy", "depth"]);
+  expect(compiledWaterVariants(engine)).toEqual(["colour with copy", "depth"]);
+  // A stale plan (a Refraction Resolution change) is probed by the render loop until the re-plan: it still draws
+  // through a copy, so the probe compiles no copy-less variant.
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "ultra", refractionScale: 0.75 } }) });
+  expect(graph.readiness(camera)).toMatchObject({ ready: false, preparationRequired: true });
+  graph.sceneStrictlyReady(camera);
+  expect(compiledWaterVariants(engine)).toEqual(["colour with copy", "depth"]);
+  // Low plans no copy: the re-plan compiles the variant the main pass then draws before the next frame.
+  drawn.clear();
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "low" } }) });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  const replanned = compiledWaterVariants(engine);
+  expect(replanned).toContain("colour without copy");
+  await settle(graph, camera);
+  expect([...drawn].sort()).toEqual(["colour without copy", "depth"]);
+  expect(compiledWaterVariants(engine)).toEqual(replanned);
+  graph.dispose();
+});
+
+it("warms the water variant of a view without a scene copy, which is the one it draws", async () => {
+  const { engine, scene, camera } = host();
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "low" } }) });
+  const water = lake(scene, { ...createDefaultWaterDefinition(), refraction: 0.35 });
+  const drawn = new Set<string>();
+  water.onAfterRenderObservable.add(() => drawn.add(waterVariant(water.subMeshes[0]!.effect?.defines ?? "")));
+  await prewarmSceneMaterials(scene, undefined, (mesh) => waterMeshDrawsInSceneCopyPass(scene, scene.activeCamera, mesh));
+  expect(compiledWaterVariants(engine)).toEqual(["colour without copy"]);
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(compiledWaterVariants(engine)).toEqual(["colour without copy", "depth"]);
+  await settle(graph, camera);
+  expect([...drawn].sort()).toEqual(["colour without copy", "depth"]);
+  expect(compiledWaterVariants(engine)).toEqual(["colour without copy", "depth"]);
   graph.dispose();
 });
 
