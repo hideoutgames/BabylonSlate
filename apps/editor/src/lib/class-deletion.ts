@@ -1,6 +1,6 @@
 import type { ClassAssetReference, ClassAssetReplacement, IndexedAsset } from "@babylonslate/assets";
 import { walkAncestry } from "@babylonslate/editor-kit";
-import { classIdFromClassAsset, classParentLookup } from "./content-browser-helpers";
+import { classIdFromClassAsset, classParentLookup } from "./class-asset-lookup";
 
 export function classAssetReference(asset: IndexedAsset): ClassAssetReference {
   return { guid: asset.header.guid, classId: classIdFromClassAsset(asset) };

@@ -1,4 +1,5 @@
 import {
+  controlTransferables,
   dispatchCommandBatch,
   type BridgeHostMessage,
   type BridgeWorkerMessage,
@@ -76,7 +77,7 @@ export function createGameWorkerHost(): GameWorkerHost {
   };
 
   return {
-    postControl: (message) => post({ channel: "control", payload: message }),
+    postControl: (message) => post({ channel: "control", payload: message }, controlTransferables(message)),
     pushInput: (events) => {
       const buffer = encodeInputEvents(events);
       post({ channel: "input", payload: buffer }, [buffer]);

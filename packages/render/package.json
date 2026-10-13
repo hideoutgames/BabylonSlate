@@ -21,7 +21,12 @@
     "./fog-volumes": "./src/fog-volumes.ts",
     "./render-settings": "./src/render-settings.ts",
     "./audio-playback-backend": "./src/audio-playback-backend.ts",
-    "./default-typeface": "./src/default-typeface.ts"
+    "./default-typeface": "./src/default-typeface.ts",
+    "./png-encode": "./src/png-encode.ts",
+    "./scene-load-readiness": "./src/scene-load-readiness.ts",
+    "./lifecycle-pause": "./src/lifecycle-pause.ts",
+    "./gl-error-trace": "./src/gl-error-trace.ts",
+    "./ktx2-transcoder": "./src/ktx2-transcoder.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

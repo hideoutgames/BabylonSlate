@@ -35,7 +35,7 @@ export async function applyRuntimeSourceControl(runtime: RuntimeDriver, control:
       runtime.registerModelContent({ models: new Map(control.models.map(entry => [entry.guid, normalizeModelPayload(entry.document)])), complexMeshes: cookedCollisionMeshMap(control.complexMeshes) });
       return true;
     case "loadComplexCollision": runtime.registerComplexCollisionMeshes(cookedCollisionMeshMap(control.meshes), control.unavailable); return true;
-    case "loadNavMesh": await runtime.loadNavMesh(new Uint8Array(control.bytes)); return true;
+    case "loadNavMesh": await runtime.loadNavMesh(control.bytes ? new Uint8Array(control.bytes) : undefined); return true;
     default: return false;
   }
 }

@@ -4,7 +4,7 @@ import {
   classDocumentShowsPrefab,
   classIdFromClassAsset,
   classParentLookup,
-} from "./content-browser-helpers";
+} from "./class-asset-lookup";
 
 export type AssetThumbnailWriteIdentity = { projectGuid: string; cacheKey: string };
 

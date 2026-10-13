@@ -288,14 +288,15 @@ export function playSessionBootControls(options: {
   if (options.tilemaps) controls.push(options.tilemaps);
   if (options.sprites) controls.push(options.sprites);
   if (options.models) controls.push(options.models);
-  if (options.navmeshBytes && options.navmeshBytes.byteLength > 0) {
-    const copy = options.navmeshBytes.slice();
-    controls.push({
+  const navmesh = options.navmeshBytes;
+  if (navmesh && navmesh.byteLength > 0) {
+    // `load` already clones every Scene's mesh into the worker, the startup one included; asking the
+    // worker to import that entry avoids a second copy. Otherwise send one private buffer, which the
+    // host transfers.
+    const catalogued = options.load.sceneNavmeshBytes?.[options.load.sceneAssetGuid] === navmesh;
+    controls.push(catalogued ? { type: "loadNavMesh" } : {
       type: "loadNavMesh",
-      bytes: copy.buffer.slice(
-        copy.byteOffset,
-        copy.byteOffset + copy.byteLength,
-      ) as ArrayBuffer,
+      bytes: navmesh.buffer.slice(navmesh.byteOffset, navmesh.byteOffset + navmesh.byteLength) as ArrayBuffer,
     });
   }
   controls.push({ type: "play" });

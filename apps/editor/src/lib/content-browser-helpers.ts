@@ -1,6 +1,6 @@
 import { createDefaultWaterDefinition, normalizeWaterDefinition, createDefaultRenderTargetPayload, createDefaultRenderTargetTexturePayload, normalizeRenderTargetTexturePayload, createDefaultRenderTargetCaptureProperties, renderTargetAssetGuidsFromGraph, type WaterStyle, type WaterStylizedLook } from "@babylonslate/core";
 import { createDataDefinitionAsset, createDataTreeAsset, type DataDefinitionAsset, type DataTreeAsset } from "@babylonslate/core";
-import type { AssetRegistry, ImportResult, IndexedAsset } from "@babylonslate/assets";
+import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
   collectAssetDependencyMetadata,
@@ -75,11 +75,28 @@ import {
   GAME_SUBSYSTEM_CLASS_ID,
   SCENE_SUBSYSTEM_CLASS_ID,
   isLockedEngineClassId,
-  isSceneAssetClassId,
 } from "@babylonslate/object-model";
 import { createDefaultLogicGraphSerialized, defaultNodeRegistry } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
+import {
+  classIdFromClassAsset,
+  classParentLookup,
+  newAssetFileName,
+  type ClassAssetRef,
+} from "./class-asset-lookup";
 import { defaultPrefabComponents } from "./prefab-preview";
+
+// Boot-path consumers import these from `class-asset-lookup` directly; the
+// re-export keeps every other importer of this module unchanged.
+export {
+  classDocumentShowsPrefab,
+  classIdFromClassAsset,
+  classParentLookup,
+  newAssetFileName,
+  newAssetFileSuffix,
+  registryClassParentLookup,
+  type ClassAssetRef,
+} from "./class-asset-lookup";
 
 export const ASSETS_ROOT = "assets";
 
@@ -400,26 +417,6 @@ export function isFolderTreeRoot(
 ): boolean {
   if (typeof rootPath === "string") return path === rootPath;
   return rootPath.includes(path);
-}
-
-export type ClassAssetRef = {
-  path?: string;
-  header: {
-    type: string;
-    name: string;
-    parentClass?: string | null;
-    guid?: string;
-    payload?: Record<string, unknown>;
-    requiredVariableNames?: readonly string[];
-  };
-};
-
-/**
- * Compile class id for a Class asset: its file stem, or without a path the
- * stem New Asset writes for its name (`Rain-Weather` → `Rain_Weather`).
- */
-export function classIdFromClassAsset(asset: ClassAssetRef): string {
-  return classIdForGraphPath(asset.path ?? newAssetFileName("Class", asset.header.name));
 }
 
 /** Single tap / click replaces the whole Content Browser selection with one asset. */
@@ -1492,39 +1489,6 @@ export function uniqueAssetTypes(assets: IndexedAsset[]): string[] {
   return [...new Set(assets.map((asset) => asset.header.type))].sort();
 }
 
-export function classParentLookup(
-  assets: ReadonlyArray<ClassAssetRef>,
-): (id: string) => string | null {
-  const byId = new Map<string, string>();
-  for (const asset of assets) {
-    if (asset.header.type !== "Class") continue;
-    const id = classIdFromClassAsset(asset);
-    // The first file keeps a shared id, as in buildParentClassTreeRows.
-    if (!byId.has(id)) byId.set(id, asset.header.parentClass ?? "BObject");
-  }
-  return (id) => {
-    if (isSceneAssetClassId(id) && id !== "Scene") return "Scene";
-    return byId.get(id) ?? engineParentOf(id) ?? null;
-  };
-}
-
-const registryParentLookups = new WeakMap<object, { generation: number; parentOf: (id: string) => string | null }>();
-
-/**
- * `classParentLookup(registry.list())`, rebuilt only when the registry's catalog has
- * changed since the last call. Callers on hot paths (Play preparation, dock layout
- * changes) otherwise copy the catalog and re-derive every Class id on each call.
- */
-export function registryClassParentLookup(registry: Pick<AssetRegistry, "generation" | "list"> | null | undefined): (id: string) => string | null {
-  if (!registry) return classParentLookup([]);
-  const generation = registry.generation;
-  const cached = registryParentLookups.get(registry);
-  if (cached?.generation === generation) return cached.parentOf;
-  const parentOf = classParentLookup(registry.list());
-  registryParentLookups.set(registry, { generation, parentOf });
-  return parentOf;
-}
-
 function isEngineClassId(classId: string): boolean {
   return isLockedEngineClassId(classId) || engineParentOf(classId) !== undefined;
 }
@@ -1565,13 +1529,6 @@ export function visualForIndexedAsset(
     });
   }
   return resolveTypeVisual({ assetType: asset.header.type });
-}
-
-export function classDocumentShowsPrefab(
-  parentClass: string | null | undefined,
-  parentOf: (id: string) => string | null,
-): boolean {
-  return walkAncestry(parentClass ?? "BObject", parentOf).includes("Actor");
 }
 
 export function defaultParentClassForType(
@@ -1885,52 +1842,6 @@ export function buildNewAssetResult(options: {
 
   const exhaustive: never = type;
   throw new Error(`Unsupported creatable asset type: ${String(exhaustive)}`);
-}
-
-const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
-  Scene: ".scene.babasset",
-  SceneLayer: ".scenelayer.babasset",
-  Class: ".class.babasset",
-  Prefab: ".prefab.babasset",
-  Sprite: ".sprite.babasset",
-  SpriteAnimation: ".spriteanim.babasset",
-  AnimationGraph: ".anim.babasset",
-  Material: ".material.babasset",
-  MaterialFunction: ".matfunc.babasset",
-  MaterialInstance: ".matinst.babasset",
-  Tileset: ".tileset.babasset",
-  Tilemap: ".tilemap.babasset",
-  BehaviourTree: ".bt.babasset",
-  Blackboard: ".blackboard.babasset",
-  SaveGame: ".savegame.babasset",
-  AudioMixer: ".mixer.babasset",
-  InputAction: ".inputaction.babasset",
-  DataDefinition: ".datadefinition.babasset",
-  DataTree: ".datatree.babasset",
-  InputAxis: ".inputaxis.babasset",
-  AudioChannel: ".channel.babasset",
-  SoundAttenuation: ".atten.babasset",
-  ParticleEmitter: ".emitter.babasset",
-  ParticleGraph: ".particlegraph.babasset",
-  ParticleSystem: ".particles.babasset",
-  Water: ".water.babasset",
-  RenderTarget: ".rendertarget.babasset",
-  RenderTargetTexture: ".rendertargettexture.babasset",
-  SkyboxCreator: ".skyboxcreator.babasset",
-};
-
-/** File suffix a new asset of this type is written with. */
-export function newAssetFileSuffix(type: CreatableAssetType): string {
-  return ASSET_FILE_SUFFIX[type] ?? ".babasset";
-}
-
-export function newAssetFileName(
-  type: CreatableAssetType,
-  name: string,
-): string {
-  const safe = name.trim().replace(/[^a-zA-Z0-9_.-]+/g, "_");
-  if (!safe) return "";
-  return `${safe}${newAssetFileSuffix(type)}`;
 }
 
 /**

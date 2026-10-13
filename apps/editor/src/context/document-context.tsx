@@ -176,7 +176,7 @@ import {
   classIdFromClassAsset,
   classParentLookup,
   registryClassParentLookup,
-} from "../lib/content-browser-helpers";
+} from "../lib/class-asset-lookup";
 import {
   editorTabContentForKind,
   persistableDocumentContent,
@@ -1666,7 +1666,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setRoute("editor");
       setAnimEditorModes({});
       const { probeKtx2TranscoderAvailable } = await import(
-        "@babylonslate/render"
+        "@babylonslate/render/ktx2-transcoder"
       );
       const transcoderOk = await probeKtx2TranscoderAvailable(
         editorKtx2PublicBase(),

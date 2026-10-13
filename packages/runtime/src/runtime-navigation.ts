@@ -100,6 +100,11 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     this.sceneNavmeshBytes.set(sceneGuid, bytes);
   }
 
+  /** The baked navmesh catalogued for a Scene, if any. */
+  sceneNavMesh(sceneGuid: string): Uint8Array | undefined {
+    return this.sceneNavmeshBytes.get(sceneGuid);
+  }
+
   /** Recast wasm must initialize before this Scene's baked navmesh can import. */
   needsInitialization(sceneGuid: string): boolean {
     return this.sceneNavmeshBytes.has(sceneGuid) && !this.navigationInitialized;
