@@ -9,7 +9,7 @@ import {
   type ParticleLibraryEmitter,
 } from "@babylonslate/assets";
 import {
-  validateParticleGraphDocument,
+  lowerParticleGraphDocumentCached,
   type ParticleGraphDocument,
 } from "@babylonslate/particle-graph";
 import {
@@ -44,11 +44,13 @@ const PREVIEW_COMPONENT = "preview";
 type PreviewFailure = Pick<ParticleServiceDiagnostic, "code" | "message">;
 type PreviewLook = "no-emitters" | "no-material" | "graph-errors" | "ok";
 
+/** Counted from the lowering the compile key and the service reuse, not a validation of their own. */
 function graphErrorCount(entry: ParticleLibraryEmitter): number {
   if (entry.kind !== "graph") return 0;
-  return validateParticleGraphDocument(entry.document).filter(
-    (diagnostic) => diagnostic.severity === "error",
-  ).length;
+  const lowered = lowerParticleGraphDocumentCached(entry.document);
+  return lowered.ok
+    ? 0
+    : lowered.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
 }
 
 /**

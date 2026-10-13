@@ -7,6 +7,7 @@ import {
 } from "./document";
 import {
   lowerParticleGraphDocument,
+  lowerParticleGraphDocumentCached,
   particleGraphCompileKey,
   type ParticleBuildPlan,
 } from "./lower";
@@ -175,6 +176,25 @@ describe("particle graph lowering", () => {
       direction1: { kind: "constant", type: "vec3", value: [0, 1, 0] },
       direction2: { kind: "constant", type: "vec3", value: [0.2, 1, 0] },
     });
+  });
+
+  it("remembers a lowering per document and keeps each validation context's warnings apart", () => {
+    const doc = edited((document) => (document.materialGuid = "mat-1"));
+    const plain = lowerParticleGraphDocumentCached(doc);
+    const surface = { materialDomain: () => "surface" };
+    const warned = lowerParticleGraphDocumentCached(doc, surface);
+
+    const codes = (result: typeof plain) => result.diagnostics.map((row) => row.code);
+    expect(codes(plain)).not.toContain("particle.materialDomain");
+    expect(codes(warned)).toContain("particle.materialDomain");
+    expect(codes(warned)).toEqual(codes(lowerParticleGraphDocument(doc, surface)));
+    expect(lowerParticleGraphDocumentCached(doc)).toBe(plain);
+    expect(lowerParticleGraphDocumentCached(doc, surface)).toBe(warned);
+
+    // A replaced document is lowered afresh, so an edit is never answered from the old one.
+    const capped = { ...doc, settings: { ...doc.settings, capacity: 64 } };
+    const next = lowerParticleGraphDocumentCached(capped);
+    expect(next.ok && plain.ok && next.plan.hash !== plain.plan.hash).toBe(true);
   });
 
   it("refuses invalid graphs and keys them without positions", () => {
