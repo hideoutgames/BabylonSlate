@@ -394,6 +394,7 @@ Every editor edit re-applies the Scene document through `EditorSceneSync`, so pe
 - Material publications refresh the editor's bindings through `refreshMaterialsCoalesced`: the first publication of a microtask turn runs the pass at once, and any that settle later in the same turn share one more pass instead of one pass over every actor each. `refreshMaterials` keeps its guards (disposed, aborted or still-applying Scenes) and stays synchronous for direct callers.
 - Cooperative Scene loading (`runSceneWork` for the editor, `runSceneRealizationWork` for Play and the player) yields after 8 ms of work or 256 steps, whichever comes first, instead of every 32 steps. Each yield costs a task turn (at least 4 ms once timers nest), and most of a load's steps are cheap, so the step bound only caps a run too cheap to reach the time budget. Hosts and tests that need to observe partial realization can pass `stepsPerYield`; per-step abort checks are unchanged.
 - The shadow controller no longer searches `scene.meshes` for every newly announced or pending mesh: removal notifies synchronously, so only a mesh that has left the Scene (and may have returned) is searched for. Loading N meshes into M listed ones is linear instead of quadratic.
+- `EditorSceneSync` hands the per-actor visual rules (streaming labels, 2D buttons parented to a surface) the same lazily built `SceneActorIndex` a full load uses, rather than the raw actor list, so each apply no longer scans every actor per such actor.
 
 ## Snapshot apply
 

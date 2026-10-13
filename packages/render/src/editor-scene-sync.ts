@@ -34,6 +34,7 @@ import {
   editorModelLoadTarget,
   freezeStaticActorWorldMatrix,
   isEditorActorOrigin,
+  SceneActorIndex,
   syncMeshCollisionDashes,
   syncEditorCablePreviews,
   visualMeshesOfActorRoot,
@@ -265,6 +266,9 @@ export class EditorSceneSync {
   private *applySteps(sceneData: SerializedScene, rebuild = false): Generator<number, void, unknown> {
     const layout = resolveOverlayLayout(sceneData.actors, { pixelsPerUnit: this.assets?.pixelsPerUnit, textureSize: guid => this.assets?.texturePixelSizes?.get(guid) });
     sceneData = { ...sceneData, actors: layout.actors };
+    // One lazily built lookup answers the per-actor visual rules (streaming
+    // labels, 2D buttons) instead of each actor scanning the Scene's actors.
+    const actorIndex = new SceneActorIndex(sceneData.actors);
     rebuild ||= this.assetsNeedRebuild;
     const assets = this.meshAssetsForScene(sceneData);
     const liveIds = new Set<string>();
@@ -276,7 +280,7 @@ export class EditorSceneSync {
     for (const actor of sceneData.actors) {
       if (isSceneLayerAnchorActor(actor)) continue;
       liveIds.add(actor.id);
-      const kind = actorVisualFingerprint(actor, assets, sceneData.actors);
+      const kind = actorVisualFingerprint(actor, assets, actorIndex);
       nextKinds.set(actor.id, kind);
       if (rebuild || this.meshKinds.get(actor.id) !== kind) retired.add(actor.id);
       yield 0.1 * ++index / actorCount;
@@ -305,7 +309,7 @@ export class EditorSceneSync {
         try {
           replacement = createActorMesh(this.scene, actor, {
             ...assets, retainedTextBitmapBytes: text2DBitmapBytes(mesh),
-          }, sceneData.actors);
+          }, actorIndex);
           const previous = mesh;
           this.prepareActorVisual(actor, replacement);
           const modelGuid = this.meshComponentAssetGuid(actor);
