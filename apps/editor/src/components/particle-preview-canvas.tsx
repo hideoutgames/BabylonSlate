@@ -346,9 +346,12 @@ export function ParticlePreviewCanvas({
     let presenter: MaterialPreviewPresenter | null = null;
     let materials: ReturnType<typeof createParticleMaterialResolver> | null = null;
     let frame = 0;
+    let stopRestoreWatch: (() => void) | null = null;
     const overlay = watchBlockingEditorOverlay();
     const disposePreview = () => {
       const applied = appliedRef.current;
+      stopRestoreWatch?.();
+      stopRestoreWatch = null;
       serviceRef.current?.dispose();
       serviceRef.current = null;
       appliedRef.current = null;
@@ -395,6 +398,10 @@ export function ParticlePreviewCanvas({
         animating: () => serviceRef.current?.needsFrames() ?? true,
       });
       presenterRef.current = presenter;
+      // A settled frame is not redrawn by itself, so a restored WebGL context needs a forced one.
+      const restored = engine.onContextRestoredObservable;
+      const restoreObserver = restored?.add(() => presenter?.present({ force: true })) ?? null;
+      stopRestoreWatch = () => restored?.remove(restoreObserver);
       materials = createParticleMaterialResolver({
         scene: host.scene,
         documents: docs.documents,

@@ -69,6 +69,7 @@ export function AnimationPreviewCanvas({
       null;
     let sourceLoaded: { dispose: () => void; animationGroups: AnimationGroup[] } | null =
       null;
+    let stopRestoreWatch: (() => void) | null = null;
     const raf = { id: 0 };
     const overlay = watchBlockingEditorOverlay();
     void (async () => {
@@ -125,9 +126,15 @@ export function AnimationPreviewCanvas({
         });
         hostRef.current = host;
         presenterRef.current = presenter;
+        // A settled frame is not redrawn by itself, so a restored WebGL context needs a forced one.
+        const restored = engine.onContextRestoredObservable;
+        const restoreObserver = restored?.add(() => presenter?.present({ force: true })) ?? null;
+        stopRestoreWatch = () => restored?.remove(restoreObserver);
         presenter.present({ force: true });
         if (cancelled) {
           group?.stop();
+          stopRestoreWatch?.();
+          stopRestoreWatch = null;
           presenter.dispose();
           gestures.dispose();
           loaded.dispose();
@@ -151,6 +158,8 @@ export function AnimationPreviewCanvas({
       } catch (error) {
         console.warn("[render] Animation preview failed", error);
         playingRef.current?.stop();
+        stopRestoreWatch?.();
+        stopRestoreWatch = null;
         presenter?.dispose();
         gestures?.dispose();
         loaded?.dispose();
@@ -171,6 +180,8 @@ export function AnimationPreviewCanvas({
       setClip(STOPPED_CLIP);
       bonesRef.current?.dispose();
       bonesRef.current = null;
+      stopRestoreWatch?.();
+      stopRestoreWatch = null;
       gestures?.dispose();
       presenter?.dispose();
       loaded?.dispose();

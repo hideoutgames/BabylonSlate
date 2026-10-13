@@ -43,6 +43,9 @@ const harness = vi.hoisted(() => ({
   presenters: [] as Array<{ present: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }>,
   /** What the service reports to the presenter: false once it is paused or its run finished. */
   needsFrames: true,
+  /** The shared Engine's context-restored subscription. */
+  contextRestored: null as (() => void) | null,
+  removeContextRestored: vi.fn(),
 }));
 
 vi.mock("@babylonslate/render", () => {
@@ -100,7 +103,15 @@ vi.mock("@babylonslate/render", () => {
   };
 });
 vi.mock("../context/play-context", () => {
-  const engine = {};
+  const engine = {
+    onContextRestoredObservable: {
+      add: (callback: () => void) => {
+        harness.contextRestored = callback;
+        return { callback };
+      },
+      remove: harness.removeContextRestored,
+    },
+  };
   const play = { ensureSharedEngine: () => engine };
   return { useOptionalPlay: () => play };
 });
@@ -135,6 +146,8 @@ afterEach(() => {
   harness.presenterOptions.length = 0;
   harness.presenters.length = 0;
   harness.needsFrames = true;
+  harness.contextRestored = null;
+  harness.removeContextRestored.mockClear();
   document.body.querySelectorAll('[data-slot="dialog-overlay"]').forEach((overlay) => overlay.remove());
 });
 
@@ -242,6 +255,20 @@ describe("Particle preview recovery", () => {
     presenter.present.mockClear();
     view.rerender(preview(withRate(61)));
     expect(presenter.present).not.toHaveBeenCalled();
+  });
+
+  it("draws an idle preview again after the WebGL context is restored", async () => {
+    const view = render(preview());
+    await screen.findByTestId("particle-preview-restart");
+    const presenter = harness.presenters.at(-1)!;
+    harness.needsFrames = false;
+    presenter.present.mockClear();
+
+    harness.contextRestored!();
+    expect(presenter.present).toHaveBeenCalledWith({ force: true });
+
+    view.unmount();
+    expect(harness.removeContextRestored).toHaveBeenCalled();
   });
 
   it("shows renderer failures and retries them into a running preview", async () => {
