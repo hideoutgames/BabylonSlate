@@ -5271,7 +5271,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   }
   /**
    * Injected code is a pure function of (stage, language, look), so it is built and stripped once per key
-   * (`cachedInjection`). Babylon calls this at every effect compile, once per injection point. The look comes from the
+   * (`injectionFor`). Babylon calls this at every effect compile, once per injection point. The look comes from the
    * defines of the effect being assembled (`trackCompileDefines`), the same defines its cache key is made of, so two
    * effects of different looks never share code; outside a compile (Babylon collecting the injection points when the
    * plugin is added) it keeps every look.
