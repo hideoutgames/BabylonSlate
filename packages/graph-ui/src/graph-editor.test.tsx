@@ -4209,6 +4209,44 @@ describe("GraphEditor", () => {
     ).not.toBeNull();
   });
 
+  it("marks only the wired behaviour tree pins as connected", async () => {
+    const treeNode = (id: string, kind: string, y: number) => ({
+      id,
+      type: "bt.node",
+      position: { x: 0, y },
+      data: { title: id, kind, classId: `bt.${kind}`, sortIndex: 0 },
+    });
+    const { container } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            treeNode("root", "selector", 0),
+            treeNode("wired", "task", 180),
+            treeNode("loose", "task", 360),
+          ],
+          edges: [
+            {
+              id: "root-wired",
+              source: "root",
+              target: "wired",
+              sourceHandle: "children",
+              targetHandle: "parent",
+            },
+          ],
+        }}
+        nodeTypes={treeNodeTypes}
+      />,
+    );
+    const connected = (node: string, handle: string) =>
+      container
+        .querySelector(`[data-id="${node}"] [data-handleid="${handle}"] [data-pin-connected]`)
+        ?.getAttribute("data-pin-connected");
+    await waitFor(() => expect(connected("root", "children")).toBe("true"));
+    expect(connected("wired", "parent")).toBe("true");
+    // A wire into one node does not light the same-named pin on another.
+    expect(connected("loose", "parent")).toBe("false");
+  });
+
   it("tap-connects behaviour tree parent and children handles", async () => {
     const onChange = vi.fn();
     const { container } = render(
