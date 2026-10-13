@@ -54,6 +54,8 @@ function fixture(options: EditorSceneSyncOptions = {}) {
     sync: new EditorSceneSync(handle.scene, undefined, { ...options, onAfterApply }),
   };
 }
+/** These tests observe partially realized state at each yield, so they ask for small chunks. */
+const fine = { stepsPerYield: 32 };
 function document(count = 80): SerializedScene {
   return {
     ...createDefaultScene(),
@@ -155,6 +157,7 @@ describe("cooperative editor realization", () => {
     let acted = false;
     const applying = sync.applyAsync(next, {
       signal: controller.signal,
+      ...fine,
       yieldControl: async () => {
         if (acted || sync.actorCount() < 2) return;
         acted = true;
@@ -217,6 +220,7 @@ describe("cooperative editor realization", () => {
     await sync.applyAsync(next, {
       signal: new AbortController().signal,
       onProgress: (value) => progress.push(value),
+      ...fine,
       yieldControl: async () => {
         expect(sync.serializedScene()).toBeNull();
         expect(onAfterApply).not.toHaveBeenCalled();
@@ -252,6 +256,7 @@ describe("cooperative editor realization", () => {
     let held = false;
     const applying = sync.applyAsync(document(), {
       signal: new AbortController().signal,
+      ...fine,
       yieldControl: async () => {
         if (!held) {
           held = true;
@@ -318,6 +323,7 @@ describe("cooperative editor realization", () => {
     await expect(
       sync.applyAsync(document(), {
         signal: controller.signal,
+        ...fine,
         yieldControl: async () => {
           if (sync.actorCount() > 0) controller.abort(failure);
         },
@@ -357,6 +363,7 @@ describe("cooperative editor realization", () => {
     let resume!: () => void;
     const old = sync.applyAsync(document(), {
       signal: new AbortController().signal,
+      ...fine,
       yieldControl: () =>
         new Promise<void>((resolve) => {
           resume = resolve;
@@ -387,6 +394,7 @@ describe("cooperative editor realization", () => {
     await expect(sync.applyAsync(next, {
       signal: controller.signal,
       assets: { modelBytes: new Map([["model", encodeTriangleGlb()]]) },
+      ...fine,
       yieldControl: async () => {
         if (requests.mock.calls.length) {
           await delayed.ready;
@@ -490,6 +498,7 @@ describe("cooperative editor realization", () => {
       signal: new AbortController().signal,
       assets: { modelBytes: new Map([["model", encodeTriangleGlb()]]) },
       onProgress: (value) => { progress = value; },
+      ...fine,
       yieldControl: async () => {
         if (progress < 0.95 || released) return;
         released = true;
@@ -516,6 +525,7 @@ describe("cooperative editor realization", () => {
     const old = sync.applyAsync(next, {
       signal: new AbortController().signal,
       assets: { modelBytes: new Map([["model", encodeTriangleGlb()]]) },
+      ...fine,
       yieldControl: async () => {
         if (!held && sync.meshForActor("actor-0")) {
           held = true;

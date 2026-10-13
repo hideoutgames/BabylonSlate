@@ -392,6 +392,7 @@ Every editor edit re-applies the Scene document through `EditorSceneSync`, so pe
 - `applyEditorLayoutClips` indexes the Scene's meshes by name once per call (the first mesh of a duplicated name wins, as with `Scene.getMeshByName`) instead of scanning the mesh list for every layout entry.
 - `EditorSceneSync` resolves `meshForComponent` / `visualComponentRootsForActor` through an actor-id index built once per applied Scene (the first actor of an id wins, like `Array.find`), so syncing deformers, brushes and other per-actor consumers after an apply is linear in the actor count rather than quadratic.
 - Material publications refresh the editor's bindings through `refreshMaterialsCoalesced`: the first publication of a microtask turn runs the pass at once, and any that settle later in the same turn share one more pass instead of one pass over every actor each. `refreshMaterials` keeps its guards (disposed, aborted or still-applying Scenes) and stays synchronous for direct callers.
+- Cooperative Scene loading (`runSceneWork` for the editor, `runSceneRealizationWork` for Play and the player) yields after 8 ms of work or 256 steps, whichever comes first, instead of every 32 steps. Each yield costs a task turn (at least 4 ms once timers nest), and most of a load's steps are cheap, so the step bound only caps a run too cheap to reach the time budget. Hosts and tests that need to observe partial realization can pass `stepsPerYield`; per-step abort checks are unchanged.
 
 ## Snapshot apply
 

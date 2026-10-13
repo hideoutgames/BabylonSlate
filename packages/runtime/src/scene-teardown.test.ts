@@ -12,6 +12,7 @@ function chunkGate() {
   let held = false;
   let release: (() => void) | null = null;
   return {
+    stepsPerYield: 32,
     yieldControl: () => held ? new Promise<void>((resolve) => { release = resolve; }) : Promise.resolve(),
     hold() { held = true; },
     async suspended() { await vi.waitFor(() => expect(release).not.toBeNull()); },
