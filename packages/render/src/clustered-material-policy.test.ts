@@ -10,8 +10,10 @@ import {
   PointLight,
   Scene,
   ShaderMaterial,
+  TransformNode,
   Vector3,
 } from "@babylonjs/core";
+import { CreateGreasedLine } from "@babylonjs/core/Meshes/Builders/greasedLineBuilder";
 import {
   clusteredSceneMaterialReason,
   registerClusteredSurfaceMaterial,
@@ -203,6 +205,70 @@ describe("clustered material consumers", () => {
     expect(clusteredSceneMaterialReason(scene)).toContain('Material "helper"');
     registerClusteredUnlitMaterial(helper);
     expect(clusteredSceneMaterialReason(scene)).toBeUndefined();
+  });
+
+  it("admits Babylon's light-free line program but not other materials on lines", () => {
+    const { scene, mesh } = fixture();
+    const points = [Vector3.Zero(), Vector3.Up()];
+    const lines = MeshBuilder.CreateLines("lines", { points }, scene);
+    MeshBuilder.CreateDashedLines("dashed", { points, dashNb: 4 }, scene);
+    MeshBuilder.CreateLineSystem("system", { lines: [points, points] }, scene);
+    lines.createInstance("instance");
+    expect(clusteredSceneMaterialReason(scene)).toBeUndefined();
+    // The program decides, not the name: a lookalike that runs its own shader stays rejected.
+    mesh.material = new ShaderMaterial("colorShader", scene, { vertex: "custom", fragment: "custom" }, {});
+    expect(clusteredSceneMaterialReason(scene)).toContain('Material "colorShader"');
+    mesh.material = null;
+    expect(clusteredSceneMaterialReason(scene)).toBeUndefined();
+    lines.material = new ShaderMaterial("custom lines", scene, {}, {});
+    expect(clusteredSceneMaterialReason(scene)).toContain('Material "custom lines"');
+    lines.material = null;
+    // GreasedLine's default is a lit StandardMaterial plus a plugin, not the color program.
+    CreateGreasedLine("thick", { points }, { createAndAssignMaterial: true }, scene);
+    expect(clusteredSceneMaterialReason(scene)).toContain('Material "thick"');
+  });
+
+  it("lets only meshes that draw select Forward, rechecking enabled and visible state live", () => {
+    const { scene, mesh } = fixture();
+    mesh.material = new ShaderMaterial("custom", scene, {}, {});
+    const rejected = () => clusteredSceneMaterialReason(scene);
+    expect(rejected()).toContain('Material "custom"');
+    mesh.setEnabled(false);
+    expect(rejected()).toBeUndefined();
+    mesh.setEnabled(true);
+    expect(rejected()).toContain('Material "custom"');
+    mesh.isVisible = false;
+    expect(rejected()).toBeUndefined();
+    mesh.isVisible = true;
+    mesh.visibility = 0;
+    expect(rejected()).toBeUndefined();
+    mesh.visibility = 1;
+    expect(rejected()).toContain('Material "custom"');
+    const parent = new TransformNode("parent", scene);
+    mesh.parent = parent;
+    parent.setEnabled(false);
+    expect(rejected()).toBeUndefined();
+    parent.setEnabled(true);
+    expect(rejected()).toContain('Material "custom"');
+  });
+
+  it("counts an enabled instance of a disabled source and a disabled LOD level as drawing", () => {
+    const { scene, mesh, material } = fixture();
+    mesh.material = new ShaderMaterial("custom", scene, {}, {});
+    const instance = mesh.createInstance("instance");
+    mesh.setEnabled(false);
+    // An instance renders through its source even while the source itself is off.
+    expect(clusteredSceneMaterialReason(scene)).toContain('Material "custom"');
+    instance.setEnabled(false);
+    expect(clusteredSceneMaterialReason(scene)).toBeUndefined();
+    // A LOD level draws in place of its master, whatever its own enabled state.
+    const master = MeshBuilder.CreateBox("master", {}, scene);
+    master.material = material;
+    const level = MeshBuilder.CreateBox("level", {}, scene);
+    level.material = new ShaderMaterial("level custom", scene, {}, {});
+    master.addLODLevel(10, level);
+    level.setEnabled(false);
+    expect(clusteredSceneMaterialReason(scene)).toContain('Material "level custom"');
   });
 
   it("requires fresh provenance after graph rebuilds and rechecks per-light blocks", async () => {

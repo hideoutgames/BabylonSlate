@@ -17,7 +17,12 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { ClusteredLightContainer } from "@babylonjs/core/Lights/Clustered/clusteredLightContainer";
-import { normalizeRenderingQuality } from "@babylonslate/core";
+import {
+  createActor,
+  createDefaultScene,
+  normalizeRenderingQuality,
+} from "@babylonslate/core";
+import { EditorDebugOverlay } from "./editor-debug-overlay";
 import * as capabilities from "./clustered-light-capabilities";
 import { applyAuthoredLightProperties } from "./scene-illumination";
 import {
@@ -256,6 +261,30 @@ describe("scene render path selection", () => {
     grid.dispose();
     compiled.dispose();
     copy.dispose();
+  });
+
+  it("keeps one container across the editor's persistent selection guides, shown or hidden", () => {
+    const { scene } = fixture();
+    setSceneRenderSettings(scene, { renderPath: "clusteredForward" });
+    const owner = container(scene)!;
+    expect(owner).toBeDefined();
+    // The guides' dashed LinesMesh materials join the Scene with the overlay.
+    const overlay = new EditorDebugOverlay(scene);
+    const lamp = createActor("lamp", "lamp", {
+      components: [
+        { id: "light", classId: "LightComponent", properties: { lightKind: "point", range: 8 } },
+      ],
+    });
+    const sceneData = { ...createDefaultScene(), actors: [lamp] };
+    for (const selectedActorIds of [[], ["lamp"], [], ["lamp"]]) {
+      overlay.sync({ sceneData, selectedActorIds });
+      syncSceneLighting(scene);
+      expect(sceneRenderPathStatus(scene).effective.renderPath).toBe(
+        "clusteredForward",
+      );
+      expect(container(scene)).toBe(owner);
+    }
+    overlay.dispose();
   });
 
   it("applies a game-wide session request and resumes the project path on reset", () => {
