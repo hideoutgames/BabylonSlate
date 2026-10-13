@@ -185,6 +185,32 @@ describe("Sphere Overlap", () => {
     } finally { backend.dispose(); }
   });
 
+  it("Havok 3D lists the bodies it finds in creation order, a recreated body last", async () => {
+    const backend = await createPhysicsBackend({
+      kind: "3d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+    });
+    const spawn = (id: string) => {
+      backend.createBody({ id, actorId: `actor-${id}`, motionType: "static", mass: 0,
+        linearDamping: 0, angularDamping: 0, gravityScale: 0,
+        transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } } });
+      backend.createCollider({ id: `${id}-col`, bodyId: id,
+        shape: { kind: "box", halfExtents: { x: 1, y: 1, z: 1 } },
+        friction: 0.5, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
+    };
+    try {
+      for (const id of ["delta", "alpha", "charlie", "bravo"]) spawn(id);
+      backend.step(1 / 60);
+      const inside = { x: 0, y: 0, z: 0 };
+      expect(backend.sphereOverlap(inside, 0.1).bodyIds).toEqual(["delta", "alpha", "charlie", "bravo"]);
+      backend.destroyBody("alpha");
+      spawn("alpha");
+      backend.step(1 / 60);
+      const found = backend.sphereOverlap(inside, 0.1);
+      expect(found.bodyIds).toEqual(["delta", "charlie", "bravo", "alpha"]);
+      expect(found.actorIds).toEqual(["actor-delta", "actor-charlie", "actor-bravo", "actor-alpha"]);
+    } finally { backend.dispose(); }
+  });
+
   it.each([
     { label: "Havok 3D", kind: "3d" as const },
     { label: "Rapier 2D", kind: "2d" as const },

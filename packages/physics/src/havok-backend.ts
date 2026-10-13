@@ -73,6 +73,8 @@ import {
 import { assertHavokConstraintAttached, disposeHavokConstraint, makeHavokConstraint } from "./havok-constraints";
 
 type BodyRecord = {
+  /** Position in the backend's `bodies` map order, assigned at creation: results that list bodies sort by it. */
+  order: number;
   desc: RigidBodyDesc;
   node: TransformNode;
   body: PhysicsBody;
@@ -166,6 +168,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   readonly scene: Scene;
   private readonly engine: NullEngine;
   private readonly bodies = new Map<string, BodyRecord>();
+  private bodySeq = 0;
   /** Bodies with a `mutationFailure`, so `flushMutations` scans `bodies` only when one exists. */
   private readonly failedBodies = new Set<BodyRecord>();
   private readonly colliders = new Map<string, ColliderRecord>();
@@ -182,6 +185,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   private readonly sphereSweeps = new Set<SphereSweepQuery>();
   private readonly constraints = new Map<string, { desc: ConstraintDesc; constraint: Physics6DoFConstraint }>();
   private readonly bodyIdByPhysicsBody = new Map<PhysicsBody, string>();
+  /** Result holders the synchronous queries share; the plugin resets them at the start of every query. */
+  private readonly proximityInput = new ProximityCastResult();
+  private readonly proximityHit = new ProximityCastResult();
+  private readonly castInput = new ShapeCastResult();
+  private readonly castHit = new ShapeCastResult();
   private readonly tmpFrom = new Vector3();
   private readonly tmpTo = new Vector3();
   private readonly tmpImpulse = new Vector3();
@@ -301,6 +309,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         this.scene,
       );
       const record: BodyRecord = {
+        order: ++this.bodySeq,
         desc: { ...desc, transform },
         node,
         body,
@@ -332,10 +341,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       if (constraint.desc.bodyAId === bodyId || constraint.desc.bodyBId === bodyId) this.destroyConstraint(id);
     }
     this.retireTriggerPairs(record);
-    for (const [id, collider] of [...this.colliders]) {
-      if (collider.desc.bodyId === bodyId) this.colliders.delete(id);
-    }
-    for (const [id, character] of [...this.characters]) {
+    // The body's colliders are exactly the backend entries naming it (a collider id belongs to one body).
+    for (const id of record.colliders.keys()) this.colliders.delete(id);
+    for (const [id, character] of this.characters) {
       if (character.desc.bodyId === bodyId) {
         character.controller.dispose();
         character.shape.dispose();
@@ -862,7 +870,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         collisionFilter: {},
         shouldHitTriggers: options?.includeTriggers !== false,
       };
-      const result = new ProximityCastResult();
+      const result = this.proximityHit;
       this.withQueryFilter(options, () => {
         const memberships = new Map<PhysicsShape, number>();
         try {
@@ -890,9 +898,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
     const actorIds: string[] = [];
     const bodyIds: string[] = [];
-    for (const record of this.bodies.values()) {
-      const owners = found.get(record);
-      if (!owners) continue;
+    // Only the bodies the query found, in body order.
+    const records = [...found.keys()].sort((a, b) => a.order - b.order);
+    for (const record of records) {
+      const owners = found.get(record)!;
       for (const collider of record.colliders.values()) {
         const owner = collider.desc.actorId ?? record.desc.actorId;
         if (!owners.delete(owner)) continue;
@@ -920,8 +929,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       const shouldHitTriggers = options?.includeTriggers !== false;
       return this.withQueryFilter(options, () => {
         // A cast alone misses shapes the swept shape already penetrates at its start.
-        const proximityInput = new ProximityCastResult();
-        const proximity = new ProximityCastResult();
+        const proximityInput = this.proximityInput;
+        const proximity = this.proximityHit;
         this.plugin.shapeProximity(
           { shape: queryShape, position: from, rotation, maxDistance: 0, shouldHitTriggers },
           proximityInput,
@@ -929,8 +938,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         );
         if (proximity.hasHit && proximity.hitDistance < -1e-6)
           return this.hitFromCast(proximity, 0);
-        const input = new ShapeCastResult();
-        const hit = new ShapeCastResult();
+        const input = this.castInput;
+        const hit = this.castHit;
         this.plugin.shapeCast(
           { shape: queryShape, rotation, startPosition: from, endPosition: to, shouldHitTriggers },
           input,
@@ -1124,13 +1133,13 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       const snap = character.desc.groundSnapDistance ?? 0.1;
       if (character.grounded && translation.y <= 0 && snap > 0) {
         const position = character.controller.getPosition();
-        const hit = new ShapeCastResult();
+        const hit = this.castHit;
         this.plugin.shapeCast({
           shape: character.shape, rotation: Quaternion.Identity(),
           startPosition: position,
           endPosition: position.add(new Vector3(0, -snap - character.desc.offset, 0)),
           shouldHitTriggers: false,
-        }, new ShapeCastResult(), hit);
+        }, this.castInput, hit);
         if (hit.hasHit && hit.hitNormal.y >= character.controller.maxSlopeCosine) {
           const drop = Math.max(0, hit.hitFraction * (snap + character.desc.offset) - character.desc.offset);
           if (drop <= snap) {
