@@ -72,6 +72,8 @@ class VersionedVariables extends Map<string, unknown> {
   }
 
   override set(name: string, value: unknown): this {
+    // An object value always counts, so it skips the lookup; a primitive costs one `get`, and `has`
+    // only when the write is `undefined`, which a missing key also reads as.
     const unchanged = isPrimitive(value) && Object.is(super.get(name), value) && (value !== undefined || super.has(name));
     super.set(name, value);
     if (!unchanged) this.revision++;
