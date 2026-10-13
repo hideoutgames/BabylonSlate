@@ -26,6 +26,15 @@ describe("Data Tree graph catalog and Inspector", () => {
     expect(collectDataGraphAssets(assets, [{ ref: { path: assets[0]!.path }, content: { defaultDefinitionGuid: null, entries: [{ ...entries[0], parentId: "sword" }, entries[1]] } }])[0]?.invalid).toBe(true);
   });
 
+  it("indexes an unchanged tree once per payload and re-indexes a replaced one", () => {
+    // Graph keystrokes recollect the catalog; only an edited Data Tree needs a new index.
+    expect(collectDataGraphAssets(assets)[0]?.entries).toBe(catalog[0]?.entries);
+    const replaced = { defaultDefinitionGuid: "weapon", entries: entries.map((entry) => ({ ...entry })) };
+    const reindexed = collectDataGraphAssets(assets, [{ ref: { path: assets[0]!.path }, content: replaced }])[0];
+    expect(reindexed?.entries).not.toBe(catalog[0]?.entries);
+    expect(reindexed?.entries).toEqual(catalog[0]?.entries);
+  });
+
   it("infers the selected entry schema only after an exact path resolves", () => {
     const current = { "default:tree": "items", "default:entryPath": "Weapons/Sword", definitionGuid: "weapon", "default:values": { Damage: 20 } };
     expect(dataGraphAssetPickPatch("data.readEntry", "entryPath", "Armor", catalog, current)).toMatchObject({ definitionGuid: "armor", "default:entryPath": "Armor", "default:values": undefined });

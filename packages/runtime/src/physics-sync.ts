@@ -68,12 +68,14 @@ export class PhysicsWorldSync {
   private readonly backend: PhysicsBackend;
   private readonly actorFilter: (actor: Actor) => boolean;
   private readonly skipEmptySteps: boolean;
+  private readonly observesContacts: ((actor: Actor) => boolean) | undefined;
+  /** Contact reporting last asked of the backend per actor guid; absent means the default, reporting. */
+  private readonly contactReporting = new Map<string, boolean>();
   private readonly constraints: PhysicsConstraintSync;
   private readonly suppressedActors = new WeakSet<Actor>();
   private readonly bodyByActor = new Map<string, string>();
   private readonly characterByActor = new Map<string, string>();
   private readonly movementControllerDescriptors = new Map<string, readonly unknown[]>();
-  private readonly actorById = new Map<string, Actor>();
   private readonly bodyOwnerByActor = new Map<string, Actor>();
   private readonly preparedByActor = new Map<
     string,
@@ -143,6 +145,8 @@ export class PhysicsWorldSync {
   private readonly meshScratch: unknown[] = [];
   private readonly poseScratch: unknown[] = [];
   private readonly bodyPoses = new Map<string, PhysicsTransform>();
+  /** Pose objects the readback fills each step, one per simulated body; they are never kept past it. */
+  private readonly posePool: PhysicsTransform[] = [];
   private readonly readbackWorld = new Map<string, Transform>();
   // `worldTransforms` is rewritten in place by the next pre-step pass; a
   // readback recomposition has its own so it never overwrites that map.
@@ -201,9 +205,16 @@ export class PhysicsWorldSync {
        * Only for worlds whose backend has no other users (Scene Layer worlds).
        */
       skipEmptySteps?: boolean;
+      /**
+       * Whether a hit or overlap event naming `actor` could be observed (a script handler on its class). Bodies of
+       * actors that cannot observe any, and host no shape of one that can, are not asked for native contact
+       * events (`PhysicsBackend.setContactReporting`). Omitted: every actor is observed.
+       */
+      observesContacts?: (actor: Actor) => boolean;
     },
   ) {
     this.backend = backend;
+    this.observesContacts = options?.observesContacts;
     this.skipEmptySteps = options?.skipEmptySteps ?? false;
     this.actorFilter = options?.actorFilter ?? (() => true);
     this.constraints = new PhysicsConstraintSync(backend, options?.deferUnsupportedConstraints);
@@ -220,12 +231,44 @@ export class PhysicsWorldSync {
     return bodyId ? this.backend.getBodyVelocity(bodyId) : null;
   }
 
+  /**
+   * Whether native contact events should be requested for `actor`'s bodies: an observer exists for the actor or
+   * for a static child whose solid shapes this actor's compound hosts, since the host's body raises their contacts.
+   */
+  wantsContacts(actor: Actor): boolean {
+    const observes = this.observesContacts;
+    if (!observes || observes(actor)) return true;
+    const hosted = this.hostedByHost.get(actor.guid);
+    if (hosted) for (const child of hosted) if (observes(child)) return true;
+    return false;
+  }
+
+  /** `wantsContacts`, recorded as what is being asked of the backend for the bodies the caller is about to create. */
+  claimContactReporting(actor: Actor): boolean {
+    const wants = this.wantsContacts(actor);
+    if (wants) this.contactReporting.delete(actor.guid);
+    else this.contactReporting.set(actor.guid, false);
+    return wants;
+  }
+
+  /** Bring the backend's contact reporting for `actor` in line with `wantsContacts`; cheap when unchanged. */
+  refreshContactReporting(actor: Actor): void {
+    if (!this.observesContacts || !this.backend.setContactReporting) return;
+    const wants = this.wantsContacts(actor);
+    if ((this.contactReporting.get(actor.guid) ?? true) === wants) return;
+    this.contactReporting.set(actor.guid, wants);
+    this.backend.setContactReporting(actor.guid, wants);
+  }
+
   /** An articulated ragdoll replaces the actor's ordinary body and colliders. */
   suppressActorBody(actor: Actor, suppressed: boolean): void {
     if (suppressed) {
       this.suppressedActors.add(actor);
       if (this.bodyOwnerByActor.get(actor.guid) === actor) this.retireActor(actor.guid);
-    } else this.suppressedActors.delete(actor);
+    } else {
+      this.suppressedActors.delete(actor);
+      this.contactReporting.delete(actor.guid);
+    }
   }
 
   setTileContent(options: {
@@ -348,7 +391,7 @@ export class PhysicsWorldSync {
     this.movementControllerDescriptors.clear();
     this.preparedByActor.clear();
     this.bodyOwnerByActor.clear();
-    this.actorById.clear();
+    this.contactReporting.clear();
     this.staticPoses.clear();
     this.hostByActor.clear();
     this.hostedByHost.clear();
@@ -356,6 +399,7 @@ export class PhysicsWorldSync {
     this.passHosts.clear();
     this.liveActors.clear();
     this.bodyPoses.clear();
+    this.posePool.length = 0;
     this.readbackWorld.clear();
     this.appliedBodyProperties.clear();
     this.modelContentIdentities.clear();
@@ -376,10 +420,9 @@ export class PhysicsWorldSync {
   /** Ensure every physics-bearing actor has backend bodies (idempotent). */
   syncFromWorld(world: World): void {
     this.bindWorld(world);
-    this.indexActors();
     this.worldTransforms = physicsWorldTransforms(
       this.actors,
-      this.actorById,
+      this.findLiveActor,
       this.backend.kind,
       this.actorFilter,
       undefined,
@@ -404,6 +447,8 @@ export class PhysicsWorldSync {
       if (this.hostByActor.has(actor.guid) && !this.hasTriggerCollider(actor)) continue;
       live.add(actor.guid);
       this.reconcileActor(actor, source, this.passWorldTransform);
+      // After hosting settled, so a host reports the contacts of the children it hosts.
+      if (this.bodyByActor.has(actor.guid)) this.refreshContactReporting(actor);
     }
     // Hosted IDs are host-qualified, so retiring bodies last cannot collide
     // with shapes that moved onto or off a compound in this pass.
@@ -512,12 +557,11 @@ export class PhysicsWorldSync {
       const source = sources.get(actor);
       return source === undefined ? "none" : this.isStaticSource(source) ? "static" : "simulated";
     };
-    const lookup = (guid: string) => this.actorById.get(guid);
     for (const [actor, source] of sources) {
       if (!this.isStaticSource(source)) continue;
       // The memoized ancestor walk comes first, so only statics under a
       // simulated body pay for a second component scan.
-      const host = this.simulatedAncestor(actor, motion, lookup, memo);
+      const host = this.simulatedAncestor(actor, motion, this.findLiveActor, memo);
       if (host && this.hasSolidCollision(actor)) this.hostActor(actor, host);
     }
     memo.clear();
@@ -756,9 +800,22 @@ export class PhysicsWorldSync {
     this.actors = world.getActors();
   }
 
-  /** First live match, as the per-tick index answers; that index before any world is bound. */
-  private readonly findLiveActor = (guid: string): Actor | undefined =>
-    this.world ? this.world.findActor(guid) : this.actorById.get(guid);
+  /**
+   * The live actor holding `guid`: the World's own registry, which lists exactly the actors `World.getActors()`
+   * does (a spawn or destroy updates both together). None before a world is bound.
+   */
+  private readonly findLiveActor = (guid: string): Actor | undefined => this.world?.findActor(guid);
+
+  /**
+   * `findLiveActor` for the readback that follows a step. A step hook can destroy an actor and spawn another under
+   * its guid before readback; a guid whose body still belongs to the destroyed actor answers as nobody, as the
+   * pre-step index did, so the replacement is never placed by (or composed under) the old body's pose.
+   */
+  private readonly findReadbackActor = (guid: string): Actor | undefined => {
+    const live = this.findLiveActor(guid);
+    const owner = this.bodyOwnerByActor.get(guid);
+    return owner !== undefined && live !== owner ? undefined : live;
+  };
 
   /**
    * Current world poses of `actor` and its own ancestor chain only, with the
@@ -840,7 +897,7 @@ export class PhysicsWorldSync {
   private syncConstraints(worldScale: (actor: Actor) => Vec3): void {
     this.constraints.sync({
       world: this.world,
-      actorById: this.actorById,
+      findActor: this.findLiveActor,
       worldScale,
       bodies: this.bodyByActor,
       bodyOwners: this.bodyOwnerByActor,
@@ -863,7 +920,6 @@ export class PhysicsWorldSync {
    * every physics participant.
    */
   private syncLiveConstraints(): void {
-    this.indexActors();
     const resolved = new Map<string, Transform>();
     this.syncConstraints((actor) => {
       let transform = resolved.get(actor.guid);
@@ -908,11 +964,6 @@ export class PhysicsWorldSync {
     this.staticPoses.set(actor.guid, descriptor.slice());
   }
 
-  private indexActors(): void {
-    this.actorById.clear();
-    for (const actor of this.actors) this.actorById.set(actor.guid, actor);
-  }
-
   private retireActor(actorId: string): void {
     const bodyId = this.bodyByActor.get(actorId);
     if (bodyId) {
@@ -922,6 +973,7 @@ export class PhysicsWorldSync {
     this.bodyByActor.delete(actorId);
     const owner = this.bodyOwnerByActor.get(actorId);
     this.bodyOwnerByActor.delete(actorId);
+    this.contactReporting.delete(actorId);
     this.staticPoses.delete(actorId);
     this.appliedBodyProperties.delete(actorId);
     this.characterByActor.delete(actorId);
@@ -945,7 +997,8 @@ export class PhysicsWorldSync {
     if (this.backend.kind === "3d") {
       this.water.update(this.actors, time);
       if (this.water.hasBodies) for (const [actorId, bodyId] of this.bodyByActor) {
-        const actor = this.actorById.get(actorId);
+        // The body's own actor: a step hook may have replaced the guid's holder.
+        const actor = this.bodyOwnerByActor.get(actorId);
         const tuning = this.appliedBodyProperties.get(actorId)?.value;
         if (actor && tuning?.motionType === "dynamic")
           this.water.applyBuoyancy(actor, bodyId, this.backend, tuning.mass, gravity, dt);
@@ -970,15 +1023,22 @@ export class PhysicsWorldSync {
     poses.clear();
     this.readbackWorld.clear();
     try {
+      // Poses are read into pooled objects: every consumer below copies the values and `poses` is cleared on exit.
+      const pool = this.posePool;
+      let used = 0;
       for (const [actorId, bodyId] of this.bodyByActor) {
         if (this.isStaticBody(actorId)) continue;
-        const transform = this.backend.getBodyTransform(bodyId);
-        if (transform) poses.set(actorId, transform);
+        // A body whose actor left the World during the step (or was replaced under its guid) has nothing to write back.
+        if (this.findLiveActor(actorId) !== this.bodyOwnerByActor.get(actorId)) continue;
+        const pose = (pool[used] ??= { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } });
+        if (!this.backend.readBodyTransform(bodyId, pose)) continue;
+        poses.set(actorId, pose);
+        used++;
       }
       const world = recompose
         ? physicsWorldTransforms(
             this.actors,
-            this.actorById,
+            this.findReadbackActor,
             this.backend.kind,
             this.actorFilter,
             poses,
@@ -986,13 +1046,13 @@ export class PhysicsWorldSync {
           )
         : undefined;
       for (const [actorId, transform] of poses) {
-        const actor = this.actorById.get(actorId);
+        const actor = this.bodyOwnerByActor.get(actorId);
         if (!actor || actor.destroyed) continue;
         let local: PhysicsTransform;
         if (world) local = actorLocalPhysicsTransform(transform, actor, world);
         else {
           const parentId = actorParentGuid(actor);
-          const parent = parentId ? this.actorById.get(parentId) : undefined;
+          const parent = parentId ? this.findReadbackActor(parentId) : undefined;
           // A body's resolved pose never reads its own local position or
           // rotation, so writing earlier bodies cannot change a later ancestor.
           local =
@@ -1022,7 +1082,7 @@ export class PhysicsWorldSync {
     const cached = this.readbackWorld.get(actor.guid);
     if (cached) return cached;
     const parentId = actorParentGuid(actor);
-    const parent = parentId ? this.actorById.get(parentId) : undefined;
+    const parent = parentId ? this.findReadbackActor(parentId) : undefined;
     const ancestor =
       parent && !parent.destroyed ? this.readbackPose(parent) : undefined;
     const body = this.bodyPoses.get(actor.guid);
@@ -1340,6 +1400,7 @@ export class PhysicsWorldSync {
       angularDamping: props.angularDamping,
       gravityScale: props.gravityScale,
       transform: pose,
+      reportContacts: this.claimContactReporting(actor),
     });
     try {
       this.applyActorColliders(actor, bodyId, resolved, movement ?? null);

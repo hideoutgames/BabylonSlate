@@ -11,9 +11,20 @@ inheritance still follows reparented descendants before drawing.
 
 `SceneLayerOverlay` indexes World actors by Scene Layer and guid, rebuilt only when
 `World.structuralRevision` changes. Each layer's layout reads its own actors and
-virtualization its guid index, so a publishing tick without spawns or destroys
-does no world-wide grouping. Layout inputs are still rebuilt and compared every
-tick: transforms and component variables are not covered by the revision.
+virtualization receives that layer's actors and the guid index, so a publishing
+tick without spawns or destroys does no world-wide grouping or scan. Virtualization
+walks an actor's ancestors only when it owns a virtualized container.
+
+A layer's layout inputs are built only when something they read may have changed
+(`SceneLayerLayoutGate`, `packages/runtime/src/scene-layer-layout-gate.ts`). After
+each layout the gate records the listed actors and owners, each owner's
+`variablesRevision` and component `parentId`, the live transform numbers the
+layout left behind, pixels per unit, the safe-area insets and the texture sizes it
+measured. The next publishing tick re-reads exactly those without allocating; any
+difference (a variable write, an in-place transform mutation by scripts, physics or
+anchors, a resize, a texture size that loaded since) takes the full layout path,
+which still compares the built inputs and re-records. A write to any variable of
+an owner takes that path once, even for a non-layout variable.
 
 ## One world Scene, overlay stack
 
@@ -75,7 +86,7 @@ Physics is opt-in per Scene Layer asset (**Enable Physics**, `settings.physicsEn
 Extra unlit ortho `Scene`s on the shared Engine:
 
 - World: `autoClear = true`, existing camera PP unchanged.
-- Each live SceneLayer: orthographic HUD camera at `(0, 0, -10)` looking at origin, `lightsEnabled = false`, unlit, no world PP. Each overlay `render` re-binds that camera (mode, pose, view/projection) so a shared Engine cannot reuse the world perspective camera.
+- Each live SceneLayer: orthographic HUD camera at `(0, 0, -10)` looking at origin, `lightsEnabled = false`, unlit, no world PP. Each overlay `render` checks that camera still holds that pose (parent, position, rotation, mode, active camera, orthographic bounds) and re-binds those, view/projection included, when another owner changed any of them (other camera state, such as a target lock, up vector or near/far planes, is not restored), so a shared Engine cannot reuse the world perspective camera. An untouched camera is left alone between frames; create, resize and preparation always re-bind.
 - Draw order: world, then layers by `zOrder` (stable by instance id on ties).
 - Layer with no PP: `autoClear = false` on color; clear depth so 2D quads sort.
 - Layer with PP: render to an RTT, run the Scene-owned coordinator's stack, then alpha-composite onto the framebuffer. The coordinator draws through its FrameGraph; world and layer inputs remain isolated. Engine Settings `postProcessingEnabled` still gates overlay PP in editor Play only.

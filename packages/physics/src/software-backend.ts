@@ -357,6 +357,20 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     return body ? cloneTransform(body.transform) : null;
   }
 
+  readBodyTransform(bodyId: string, out: PhysicsTransform): boolean {
+    const body = this.bodies.get(bodyId);
+    if (!body) return false;
+    const { position, rotation } = body.transform;
+    out.position.x = position.x;
+    out.position.y = position.y;
+    out.position.z = position.z;
+    out.rotation.x = rotation.x;
+    out.rotation.y = rotation.y;
+    out.rotation.z = rotation.z;
+    out.rotation.w = rotation.w;
+    return true;
+  }
+
   getBodyVelocity(bodyId: string): BodyVelocity | null {
     const body = this.bodies.get(bodyId);
     // The approximate software solver treats its body origin as its mass center.

@@ -12,6 +12,7 @@ import {
   nextActorId,
   placeActorsForHost,
   prefabComponentsForGuid,
+  prefabComponentsResolver,
   projectPlaceActors,
   spawnPlacedActor,
   visualForPlaceActor,
@@ -826,6 +827,41 @@ describe("projectPlaceActors", () => {
         }),
       ],
     });
+  });
+
+  it("resolves every Class's prefab from one read of each graph", () => {
+    const classAsset = (name: string, guid: string, parentClass: string) => ({
+      path: `assets/${name}.class.babasset`,
+      header: { guid, name, type: "Class", parentClass },
+    });
+    const assets = [
+      classAsset("pawn", "pawn-guid", "Actor"),
+      classAsset("hero", "hero-guid", "pawn"),
+      classAsset("villain", "villain-guid", "pawn"),
+      { path: "assets/hero.sprite.babasset", header: { guid: "sprite-guid", name: "Hero", type: "Sprite" } },
+    ];
+    const graphs: Record<string, { components?: SerializedComponent[] }> = {
+      "assets/pawn.class.babasset": { components: [createMeshComponent("prefab-mesh", "box")] },
+      "assets/hero.class.babasset": { components: [] },
+      "assets/villain.class.babasset": { components: [] },
+    };
+    const reads: string[] = [];
+    const resolve = prefabComponentsResolver({
+      assets,
+      graphForPath: (path) => {
+        reads.push(path);
+        return graphs[path];
+      },
+    });
+
+    const ids = ["pawn-guid", "hero-guid", "villain-guid"].map((guid) =>
+      resolve(guid)?.map((component) => component.id),
+    );
+    expect(ids).toEqual([["prefab-mesh"], ["prefab-mesh"], ["prefab-mesh"]]);
+    expect(resolve("sprite-guid")).toBeUndefined();
+    expect(resolve("missing-guid")).toBeUndefined();
+    // Resolving three Classes read each of the three graphs once, not once per Class.
+    expect(reads.sort()).toEqual(Object.keys(graphs).sort());
   });
 
   it("uses the compile class id for a Class asset named main.class", () => {

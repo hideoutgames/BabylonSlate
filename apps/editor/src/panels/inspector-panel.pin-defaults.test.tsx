@@ -96,6 +96,8 @@ vi.mock("../context/validation-context", () => ({
 
 vi.mock("../context/play-context", () => ({
   usePlay: () => ({ focusedNodeId: null }),
+  usePlayFocusedNodeId: () => null,
+  usePlaySimulationDocumentId: () => null,
 }));
 
 function renderPlaySoundInspector() {

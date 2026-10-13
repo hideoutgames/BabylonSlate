@@ -8,6 +8,7 @@ import type { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { SceneLayerOverlay } from "./scene-layer-overlay";
 import type { SceneStreams } from "./scene-streams";
+import { componentOwners } from "./world-component-index";
 
 /** The Scene Layer camera's distance in front of the layer plane (`SceneLayerCompositor`'s HUD camera at z = -10). */
 const SCENE_LAYER_CAMERA_DISTANCE = 10;
@@ -19,6 +20,8 @@ interface RuntimeCameraHost {
   frameId(): number;
   /** The render slot this actor's own commands target. */
   slot(actor: Actor): number | undefined;
+  /** The actor holding this render slot, if any. */
+  slotOwner(slotId: number): Actor | undefined;
   /** The slot of the live actor with this guid. */
   guidSlot(guid: string): number | undefined;
   streams(): Pick<SceneStreams, "isStreamActor">;
@@ -102,11 +105,11 @@ export class RuntimeCamera implements RuntimeSubsystem {
   cameraActor(): Actor | null {
     const world = this.host.world();
     if (this.possessedSlotId != null) {
-      for (const actor of world.getActors()) {
-        if (actor.destroyed) continue;
-        if (this.host.slot(actor) === this.possessedSlotId) {
-          return actor;
-        }
+      // A slot has one owner, so ask the table instead of scanning the World:
+      // it counts while it is still a live World actor and the slot is its own.
+      const actor = this.host.slotOwner(this.possessedSlotId);
+      if (actor && !actor.destroyed && this.host.slot(actor) === this.possessedSlotId && world.findActor(actor.guid) === actor) {
+        return actor;
       }
     }
     const mainId = this.host.playScene()?.settings.mainCameraActorId;
@@ -114,7 +117,8 @@ export class RuntimeCamera implements RuntimeSubsystem {
       const actor = world.findActor(mainId);
       if (actor && !actor.destroyed) return actor;
     }
-    for (const actor of world.getActors()) {
+    // Only camera owners can qualify; the index lists them in world order.
+    for (const actor of componentOwners(world, "CameraComponent")) {
       if (actor.destroyed || actor.sceneLayerId || this.host.streams().isStreamActor(actor)) continue;
       if (
         actor.components.some(

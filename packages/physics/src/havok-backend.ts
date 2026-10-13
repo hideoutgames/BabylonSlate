@@ -73,9 +73,13 @@ import {
 import { assertHavokConstraintAttached, disposeHavokConstraint, makeHavokConstraint } from "./havok-constraints";
 
 type BodyRecord = {
+  /** Position in the backend's `bodies` map order, assigned at creation: results that list bodies sort by it. */
+  order: number;
   desc: RigidBodyDesc;
   node: TransformNode;
   body: PhysicsBody;
+  /** Whether the native body is asked for contact events (`RigidBodyDesc.reportContacts`, `setContactReporting`). */
+  reporting: boolean;
   colliders: Map<string, ColliderRecord>;
   container: PhysicsShapeContainer | null;
   /** The compound includes shapes hosted for other actors; hits resolve per shape. */
@@ -166,6 +170,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   readonly scene: Scene;
   private readonly engine: NullEngine;
   private readonly bodies = new Map<string, BodyRecord>();
+  /** Each actor's live bodies, so `setContactReporting` reaches them without scanning every body. */
+  private readonly bodiesByActor = new Map<string, Set<BodyRecord>>();
+  private bodySeq = 0;
+  /** Contact reporting changes waiting for the body's open trigger overlaps to end (`requestReporting`). */
+  private readonly pendingReporting = new Map<BodyRecord, boolean>();
   /** Bodies with a `mutationFailure`, so `flushMutations` scans `bodies` only when one exists. */
   private readonly failedBodies = new Set<BodyRecord>();
   private readonly colliders = new Map<string, ColliderRecord>();
@@ -182,6 +191,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   private readonly sphereSweeps = new Set<SphereSweepQuery>();
   private readonly constraints = new Map<string, { desc: ConstraintDesc; constraint: Physics6DoFConstraint }>();
   private readonly bodyIdByPhysicsBody = new Map<PhysicsBody, string>();
+  /** Result holders the synchronous queries share; the plugin resets them at the start of every query. */
+  private readonly proximityInput = new ProximityCastResult();
+  private readonly proximityHit = new ProximityCastResult();
+  private readonly castInput = new ShapeCastResult();
+  private readonly castHit = new ShapeCastResult();
   private readonly tmpFrom = new Vector3();
   private readonly tmpTo = new Vector3();
   private readonly tmpImpulse = new Vector3();
@@ -264,6 +278,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       this.disposeBodyRecord(record);
     }
     this.bodies.clear();
+    this.bodiesByActor.clear();
+    this.pendingReporting.clear();
     this.collidersByOwner.clear();
     this.triggerColliders.clear();
     this.failedBodies.clear();
@@ -301,9 +317,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         this.scene,
       );
       const record: BodyRecord = {
+        order: ++this.bodySeq,
         desc: { ...desc, transform },
         node,
         body,
+        reporting: desc.reportContacts !== false,
         colliders: new Map(),
         container: null,
         hostsShapes: false,
@@ -311,9 +329,12 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       };
       this.applyMotionType(record);
       this.applyBodyTuning(record);
-      this.enableCollisionCallbacks(body);
+      body.setCollisionCallbackEnabled(record.reporting);
       this.bodies.set(desc.id, record);
       this.bodyIdByPhysicsBody.set(body, desc.id);
+      let owned = this.bodiesByActor.get(desc.actorId);
+      if (!owned) this.bodiesByActor.set(desc.actorId, (owned = new Set()));
+      owned.add(record);
     } catch (error) {
       body?.dispose();
       node.dispose();
@@ -332,10 +353,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       if (constraint.desc.bodyAId === bodyId || constraint.desc.bodyBId === bodyId) this.destroyConstraint(id);
     }
     this.retireTriggerPairs(record);
-    for (const [id, collider] of [...this.colliders]) {
-      if (collider.desc.bodyId === bodyId) this.colliders.delete(id);
-    }
-    for (const [id, character] of [...this.characters]) {
+    // The body's colliders are exactly the backend entries naming it (a collider id belongs to one body).
+    for (const id of record.colliders.keys()) this.colliders.delete(id);
+    for (const [id, character] of this.characters) {
       if (character.desc.bodyId === bodyId) {
         character.controller.dispose();
         character.shape.dispose();
@@ -344,7 +364,42 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
     this.disposeBodyRecord(record);
     this.bodies.delete(bodyId);
+    const owned = this.bodiesByActor.get(record.desc.actorId);
+    if (owned?.delete(record) && !owned.size) this.bodiesByActor.delete(record.desc.actorId);
+    this.pendingReporting.delete(record);
     this.failedBodies.delete(record);
+  }
+
+  setContactReporting(actorId: string, enabled: boolean): void {
+    if (this.stepping) {
+      this.pendingMutations.push(() => this.setContactReporting(actorId, enabled));
+      return;
+    }
+    for (const record of this.bodiesByActor.get(actorId) ?? []) this.requestReporting(record, enabled);
+  }
+
+  /**
+   * Changing a native body's event mask while it overlaps a trigger ends that overlap with an exit event the real
+   * exit never follows, so a body in an open overlap keeps its mask and changes it once the overlap ends.
+   * Hit events carry no state and follow the mask at once.
+   */
+  private requestReporting(record: BodyRecord, enabled: boolean): void {
+    if (record.reporting === enabled) {
+      this.pendingReporting.delete(record);
+      return;
+    }
+    if (this.inOpenOverlap(record.desc.actorId)) {
+      this.pendingReporting.set(record, enabled);
+      return;
+    }
+    this.pendingReporting.delete(record);
+    record.reporting = enabled;
+    record.body.setCollisionCallbackEnabled(enabled);
+  }
+
+  private inOpenOverlap(actorId: string): boolean {
+    for (const pair of this.activeTriggerPairs.values()) if (pair.actorAId === actorId || pair.actorBId === actorId) return true;
+    return false;
   }
 
   createConstraint(input: ConstraintDesc): void {
@@ -464,17 +519,22 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   }
 
   getBodyTransform(bodyId: string): PhysicsTransform | null {
+    const out = { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
+    return this.readBodyTransform(bodyId, out) ? out : null;
+  }
+
+  readBodyTransform(bodyId: string, out: PhysicsTransform): boolean {
     const record = this.bodies.get(bodyId);
-    if (!record) return null;
-    const q = record.node.rotationQuaternion ?? Quaternion.Identity();
-    return {
-      position: {
-        x: record.node.position.x,
-        y: record.node.position.y,
-        z: record.node.position.z,
-      },
-      rotation: { x: q.x, y: q.y, z: q.z, w: q.w },
-    };
+    if (!record) return false;
+    const { position, rotationQuaternion: q } = record.node;
+    out.position.x = position.x;
+    out.position.y = position.y;
+    out.position.z = position.z;
+    out.rotation.x = q?.x ?? 0;
+    out.rotation.y = q?.y ?? 0;
+    out.rotation.z = q?.z ?? 0;
+    out.rotation.w = q ? q.w : 1;
+    return true;
   }
 
   getBodyVelocity(bodyId: string): BodyVelocity | null {
@@ -772,6 +832,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
     // Before queued callback mutations, whose teleports await the next step.
     this.endUnconfirmedTriggerPairs();
+    if (this.pendingReporting.size)
+      for (const [record, enabled] of [...this.pendingReporting]) this.requestReporting(record, enabled);
     this.flushMutations();
   }
 
@@ -857,7 +919,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         collisionFilter: {},
         shouldHitTriggers: options?.includeTriggers !== false,
       };
-      const result = new ProximityCastResult();
+      const result = this.proximityHit;
       this.withQueryFilter(options, () => {
         const memberships = new Map<PhysicsShape, number>();
         try {
@@ -885,9 +947,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
     const actorIds: string[] = [];
     const bodyIds: string[] = [];
-    for (const record of this.bodies.values()) {
-      const owners = found.get(record);
-      if (!owners) continue;
+    // Only the bodies the query found, in body order.
+    const records = [...found.keys()].sort((a, b) => a.order - b.order);
+    for (const record of records) {
+      const owners = found.get(record)!;
       for (const collider of record.colliders.values()) {
         const owner = collider.desc.actorId ?? record.desc.actorId;
         if (!owners.delete(owner)) continue;
@@ -915,8 +978,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       const shouldHitTriggers = options?.includeTriggers !== false;
       return this.withQueryFilter(options, () => {
         // A cast alone misses shapes the swept shape already penetrates at its start.
-        const proximityInput = new ProximityCastResult();
-        const proximity = new ProximityCastResult();
+        const proximityInput = this.proximityInput;
+        const proximity = this.proximityHit;
         this.plugin.shapeProximity(
           { shape: queryShape, position: from, rotation, maxDistance: 0, shouldHitTriggers },
           proximityInput,
@@ -924,8 +987,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         );
         if (proximity.hasHit && proximity.hitDistance < -1e-6)
           return this.hitFromCast(proximity, 0);
-        const input = new ShapeCastResult();
-        const hit = new ShapeCastResult();
+        const input = this.castInput;
+        const hit = this.castHit;
         this.plugin.shapeCast(
           { shape: queryShape, rotation, startPosition: from, endPosition: to, shouldHitTriggers },
           input,
@@ -1119,13 +1182,13 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       const snap = character.desc.groundSnapDistance ?? 0.1;
       if (character.grounded && translation.y <= 0 && snap > 0) {
         const position = character.controller.getPosition();
-        const hit = new ShapeCastResult();
+        const hit = this.castHit;
         this.plugin.shapeCast({
           shape: character.shape, rotation: Quaternion.Identity(),
           startPosition: position,
           endPosition: position.add(new Vector3(0, -snap - character.desc.offset, 0)),
           shouldHitTriggers: false,
-        }, new ShapeCastResult(), hit);
+        }, this.castInput, hit);
         if (hit.hasHit && hit.hitNormal.y >= character.controller.maxSlopeCosine) {
           const drop = Math.max(0, hit.hitFraction * (snap + character.desc.offset) - character.desc.offset);
           if (drop <= snap) {
@@ -1158,10 +1221,6 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       velocity: { x: velocity.x, y: velocity.y, z: velocity.z },
       grounded,
     };
-  }
-
-  private enableCollisionCallbacks(body: PhysicsBody): void {
-    body.setCollisionCallbackEnabled(true);
   }
 
   private bindCollisionObservables(): void {

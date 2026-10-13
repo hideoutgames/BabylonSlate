@@ -566,7 +566,7 @@ function previewBufferSize(
  * with the Scene fully ready and its pixels are on the canvas, then idles. A
  * forced present, a canvas resize, a Scene membership or material change
  * (the renderer's readiness-dirty signal, which covers models and textures
- * that finish loading) or a running animation wakes it.
+ * that finish loading), a running animation or `animating` content wakes it.
  */
 export function createMaterialPreviewPresenter(
   host: MaterialPreviewScene,
@@ -579,6 +579,12 @@ export function createMaterialPreviewPresenter(
     staticContent?: boolean;
     /** A static preview settles only while this holds, for overlay layers that compile their own shaders. */
     settleWhen?: () => boolean;
+    /**
+     * Content that advances only while the Scene renders but does not register as an
+     * animatable (particles). While it returns true a settled static preview wakes and
+     * keeps drawing; polled once per `present`, so it must be cheap.
+     */
+    animating?: () => boolean;
     /** Polled by `present`: while true nothing draws and a forced redraw waits for it to clear. */
     suspended?: () => boolean;
   } = {},
@@ -641,7 +647,11 @@ export function createMaterialPreviewPresenter(
     const size = previewBufferSize(canvas, maxSize);
     // A hidden canvas keeps its last frame.
     if (size && (size.width !== settledSize.width || size.height !== settledSize.height)) return true;
-    return host.renderer.readinessDirty || host.scene.animatables.length > 0;
+    return (
+      host.renderer.readinessDirty ||
+      host.scene.animatables.length > 0 ||
+      options.animating?.() === true
+    );
   };
 
   const blit = (texture: RenderTargetTexture, size: { width: number; height: number }) => {

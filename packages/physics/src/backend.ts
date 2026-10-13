@@ -43,6 +43,12 @@ export interface PhysicsBackend {
   teleportBody(bodyId: string, transform: PhysicsTransform, options?: TeleportOptions): void;
   setBodyTargetTransform(bodyId: string, transform: PhysicsTransform): void;
   getBodyTransform(bodyId: string): PhysicsTransform | null;
+  /**
+   * `getBodyTransform` into a caller-owned `out` for per-step readback: writes all seven pose fields and returns
+   * true, or returns false and leaves `out` untouched when there is no such body. No pose object is allocated
+   * (Rapier's native translation read still allocates its own vector).
+   */
+  readBodyTransform(bodyId: string, out: PhysicsTransform): boolean;
   getBodyVelocity(bodyId: string): BodyVelocity | null;
   /** Set only the supplied world velocity axes of a dynamic body. */
   setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void;
@@ -56,6 +62,14 @@ export interface PhysicsBackend {
     linear: Vec3; angular: Vec3; centerOfMass: Vec3;
   } | null;
   updateBody(bodyId: string, tuning: RigidBodyTuning): void;
+  /**
+   * Optional. Whether contacts involving this actor's bodies need reporting (every body starts reporting unless its
+   * `RigidBodyDesc.reportContacts` is false). A contact between two bodies is reported while either side
+   * reports, so muting an actor only silences the pairs whose other side is muted too. Overlap
+   * begin/end pairs are unaffected, and a body in an open overlap changes only after it ends. Backends
+   * whose contact detection does not depend on native events ignore it.
+   */
+  setContactReporting?(actorId: string, enabled: boolean): void;
 
   /** Atomically creates/replaces one constraint, retaining the old one on failure. */
   createConstraint(desc: ConstraintDesc): void;

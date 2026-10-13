@@ -6,6 +6,7 @@ import {
   playLoadControl,
   playPhysicsFromOpenDocuments,
   playSceneFromOpenDocuments,
+  playSceneRefFromOpenDocuments,
   playIsEnabled,
   resolvePlayScene,
   resolvePreviewStartupGuid,
@@ -214,6 +215,36 @@ describe("playPhysicsFromOpenDocuments", () => {
       physicsWorld: "3d",
       gravity: [0, -9.81, 0],
     });
+  });
+});
+
+describe("playSceneRefFromOpenDocuments", () => {
+  // A Scene with thousands of actors: naming it, or enabling Play for it, must not walk it.
+  const unread = new Proxy({}, { get() { throw new Error("The scene content was read."); } });
+  const documents = [
+    { id: "scene:a", ref: { kind: "scene", path: "assets/a.scene.babasset" }, content: unread },
+    { id: "scene:b", ref: { kind: "scene", path: "assets/b.scene.babasset" }, content: unread },
+  ];
+
+  it("names the active scene, else the first open one, without reading its content", () => {
+    expect(playSceneRefFromOpenDocuments(documents, "scene:b")).toEqual({
+      sceneAssetGuid: "scene:b",
+      path: "assets/b.scene.babasset",
+    });
+    expect(playSceneRefFromOpenDocuments(documents, null)).toEqual({
+      sceneAssetGuid: "scene:a",
+      path: "assets/a.scene.babasset",
+    });
+  });
+
+  it("finds nothing for a scene tab without content, like playSceneFromOpenDocuments", () => {
+    const empty = [{ id: "scene:c", ref: { kind: "scene" }, content: null }];
+    expect(playSceneRefFromOpenDocuments(empty, "scene:c")).toBeNull();
+    expect(playSceneFromOpenDocuments(empty, "scene:c")).toBeNull();
+  });
+
+  it("lets Play be enabled for an open scene without reading it", () => {
+    expect(playIsEnabled(documents, "scene:a")).toBe(true);
   });
 });
 

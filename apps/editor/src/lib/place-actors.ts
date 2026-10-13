@@ -292,43 +292,71 @@ export const PLACEABLE_PROJECT_TYPES = new Set([
   "Sprite",
 ]);
 
+type PrefabComponentsOptions = {
+  assets: Array<{
+    path?: string;
+    header: {
+      guid: string;
+      name: string;
+      type: string;
+      parentClass?: string | null;
+    };
+  }>;
+  graphForPath: (
+    path: string,
+  ) => { components?: SerializedComponent[] } | undefined;
+};
+
+/**
+ * `prefabComponentsForGuid` for many guids over one project: the guid index,
+ * the class parent lookup and every Class graph are read once, on the first
+ * Class asked about, instead of once per Class. Results are the same as
+ * calling `prefabComponentsForGuid` for each guid with these options.
+ */
+export function prefabComponentsResolver(
+  options: PrefabComponentsOptions,
+): (guid: string) => SerializedComponent[] | undefined {
+  // First asset per guid, as `find` would pick.
+  const assetByGuid = new Map<string, PrefabComponentsOptions["assets"][number]>();
+  for (const entry of options.assets) {
+    if (!assetByGuid.has(entry.header.guid)) assetByGuid.set(entry.header.guid, entry);
+  }
+  let shared:
+    | {
+        parentOf: ReturnType<typeof classParentLookup>;
+        graphs: Record<string, { components?: SerializedComponent[] }>;
+      }
+    | undefined;
+  return (guid) => {
+    const asset = assetByGuid.get(guid);
+    if (!asset?.path || asset.header.type !== "Class") return undefined;
+    if (!shared) {
+      const graphs: Record<string, { components?: SerializedComponent[] }> = {};
+      for (const entry of options.assets) {
+        if (entry.header.type !== "Class" || !entry.path) continue;
+        const graph = options.graphForPath(entry.path);
+        if (!graph) continue;
+        graphs[classIdFromClassAsset(entry)] = graph;
+      }
+      shared = { parentOf: classParentLookup(options.assets), graphs };
+    }
+    const merged = mergedPrefabComponentsForClass({
+      classId: classIdFromClassAsset(asset),
+      parentOf: shared.parentOf,
+      graphs: shared.graphs,
+    });
+    if (merged) return merged;
+    const graph = options.graphForPath(asset.path);
+    if (!graph) return undefined;
+    return prefabComponentsFromGraph(graph);
+  };
+}
+
 export function prefabComponentsForGuid(
   guid: string,
-  options: {
-    assets: Array<{
-      path?: string;
-      header: {
-        guid: string;
-        name: string;
-        type: string;
-        parentClass?: string | null;
-      };
-    }>;
-    graphForPath: (
-      path: string,
-    ) => { components?: SerializedComponent[] } | undefined;
-  },
+  options: PrefabComponentsOptions,
 ): SerializedComponent[] | undefined {
-  const asset = options.assets.find((entry) => entry.header.guid === guid);
-  if (!asset?.path || asset.header.type !== "Class") return undefined;
-  const parentOf = classParentLookup(options.assets);
-  const graphs: Record<string, { components?: SerializedComponent[] }> = {};
-  for (const entry of options.assets) {
-    if (entry.header.type !== "Class" || !entry.path) continue;
-    const graph = options.graphForPath(entry.path);
-    if (!graph) continue;
-    graphs[classIdFromClassAsset(entry)] = graph;
-  }
-  const classId = classIdFromClassAsset(asset);
-  const merged = mergedPrefabComponentsForClass({
-    classId,
-    parentOf,
-    graphs,
-  });
-  if (merged) return merged;
-  const graph = options.graphForPath(asset.path);
-  if (!graph) return undefined;
-  return prefabComponentsFromGraph(graph);
+  return prefabComponentsResolver(options)(guid);
 }
 
 export function projectPlaceActors(

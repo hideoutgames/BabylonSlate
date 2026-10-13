@@ -1,6 +1,6 @@
 import type { CommandMessage, DebugNavAgent } from "@babylonslate/bridge";
 import { eulerDegreesToQuaternion, type Quat, type Transform } from "@babylonslate/core";
-import type { Actor, World } from "@babylonslate/object-model";
+import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import { parseRigidBodyProperties, type PhysicsWorldKind } from "@babylonslate/physics";
 import type { BtResult } from "@babylonslate/behaviour-tree";
 import {
@@ -70,6 +70,10 @@ export class RuntimeNavigation implements RuntimeSubsystem {
   private readonly navSteeredActors = new Set<string>();
   private readonly navPhysicalAgents = new Set<string>();
   private readonly navAgentActors: Actor[] = [];
+  /** Rigid Body → whether its `motionType` parses as dynamic; re-parsed only when that variable changes. */
+  private readonly dynamicRigidBodies = new WeakMap<ActorComponent, { motionType: unknown; dynamic: boolean }>();
+  /** Nav Agent → its parsed `height`; re-parsed only when that variable changes. */
+  private readonly navAgentHeights = new WeakMap<ActorComponent, { height: unknown; value: number }>();
   private showPathfinding = false;
   private showNavAgent = false;
   private lastNavigationDebugMs = -Infinity;
@@ -322,7 +326,27 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     const rigid = actor.components.find(
       (component) => component.classId === "RigidBodyComponent" && !component.destroyed,
     );
-    return !!rigid && parseRigidBodyProperties(Object.fromEntries(rigid.variables)).motionType === "dynamic";
+    if (!rigid) return false;
+    // The parse reads only `motionType` for this answer; every agent asks every tick.
+    const motionType = rigid.getVariable("motionType");
+    let cached = this.dynamicRigidBodies.get(rigid);
+    if (!cached || !Object.is(cached.motionType, motionType)) {
+      cached = { motionType, dynamic: parseRigidBodyProperties({ motionType }).motionType === "dynamic" };
+      this.dynamicRigidBodies.set(rigid, cached);
+    }
+    return cached.dynamic;
+  }
+
+  /** The Nav Agent's height, parsed as `parseNavAgentParams` does; Behaviour Tree Move To asks each tick. */
+  private navAgentHeight(component: ActorComponent | undefined): number {
+    if (!component) return parseNavAgentParams({}).height;
+    const height = component.getVariable("height");
+    let cached = this.navAgentHeights.get(component);
+    if (!cached || !Object.is(cached.height, height)) {
+      cached = { height, value: parseNavAgentParams({ height }).height };
+      this.navAgentHeights.set(component, cached);
+    }
+    return cached.value;
   }
 
   /** Current pose through the actor's own chain of live parents. */
@@ -680,7 +704,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     if (world) {
       const navComponent = actor.components.find((component) =>
         component.classId === "NavAgentComponent" && !component.destroyed);
-      const height = parseNavAgentParams(Object.fromEntries(navComponent?.variables ?? [])).height;
+      const height = this.navAgentHeight(navComponent);
       // Root pivots can be at the feet or inside the collider. The crowd is
       // surface-based; do not report arrival for a distant airborne owner.
       if (Math.abs(world.y - position.y) > Math.max(height, accept)) return "running";

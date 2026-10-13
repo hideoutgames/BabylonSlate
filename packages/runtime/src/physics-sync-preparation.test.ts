@@ -140,11 +140,12 @@ describe("physics preparation work", () => {
   );
 
   it.each([128, 512, 2048])(
-    "indexes the ordered actor list once for %i body readbacks",
+    "reads the ordered actor list once and each body pose into a pooled object for %i body readbacks",
     (bodyCount) => {
       const { world, actors, backend, sync } = fixture(bodyCount);
       const reads = vi.spyOn(world, "getActors");
-      const bodyReads = vi.spyOn(backend, "getBodyTransform");
+      const bodyReads = vi.spyOn(backend, "readBodyTransform");
+      const allocatedBodyReads = vi.spyOn(backend, "getBodyTransform");
       const ordered = world.getActors();
       const scans = vi.spyOn(ordered, "find");
       try {
@@ -153,6 +154,7 @@ describe("physics preparation work", () => {
         sync.addImpulse(actors.at(-1)!.guid, { x: 1, y: 0, z: 0 });
         reads.mockClear();
         bodyReads.mockClear();
+        allocatedBodyReads.mockClear();
         scans.mockClear();
         sync.step(1 / 60, world);
         console.info("physics actor lookup operations", {
@@ -167,6 +169,7 @@ describe("physics preparation work", () => {
         expect(reads).toHaveBeenCalledTimes(1);
         expect(scans).not.toHaveBeenCalled();
         expect(bodyReads).toHaveBeenCalledTimes(bodyCount);
+        expect(allocatedBodyReads).not.toHaveBeenCalled();
         expect(world.getActors()).toEqual(actors);
       } finally {
         sync.dispose();

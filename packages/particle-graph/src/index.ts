@@ -47,6 +47,7 @@ export {
 } from "./gradient";
 export {
   lowerParticleGraphDocument,
+  lowerParticleGraphDocumentCached,
   particleGraphCompileKey,
   type ParticleBuildPlan,
   type ParticleGraphLowerContext,

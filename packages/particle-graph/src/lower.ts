@@ -204,6 +204,28 @@ export function lowerParticleGraphDocument(
   };
 }
 
+const NO_CONTEXT: ParticleGraphLowerContext = {};
+const lowerings = new WeakMap<
+  ParticleGraphDocument,
+  WeakMap<ParticleGraphLowerContext, ParticleGraphLowerResult>
+>();
+
+/**
+ * `lowerParticleGraphDocument` remembered per document object and context, for the
+ * editor, the preview and the service that all lower the same document on each edit.
+ * Documents are replaced, never edited in place, and callers must not change the result.
+ */
+export function lowerParticleGraphDocumentCached(
+  doc: ParticleGraphDocument,
+  context: ParticleGraphLowerContext = NO_CONTEXT,
+): ParticleGraphLowerResult {
+  let byContext = lowerings.get(doc);
+  if (!byContext) lowerings.set(doc, (byContext = new WeakMap()));
+  let result = byContext.get(context);
+  if (!result) byContext.set(context, (result = lowerParticleGraphDocument(doc, context)));
+  return result;
+}
+
 /**
  * Preview and slot rebuild key. Node positions, the name and the Material are
  * excluded, so dragging a node never rebuilds; an invalid graph still gets a
@@ -213,7 +235,7 @@ export function particleGraphCompileKey(
   doc: ParticleGraphDocument,
   context?: ParticleGraphLowerContext,
 ): string {
-  const result = lowerParticleGraphDocument(doc, context);
+  const result = lowerParticleGraphDocumentCached(doc, context);
   if (result.ok) return result.plan.hash;
   return `invalid:${fnv1a(
     JSON.stringify({

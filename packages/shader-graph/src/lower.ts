@@ -239,8 +239,18 @@ export function materialCompileKey(
   document: MaterialDocument,
   context?: MaterialLowerContext,
 ): string {
-  const result = lowerMaterialDocument(document, context);
-  if (result.ok) return result.plan.hash;
+  return materialCompileKeyFromLowering(document, lowerMaterialDocument(document, context));
+}
+
+/**
+ * The key `materialCompileKey` returns, from a lowering the caller already holds
+ * for the same document and context, so an edit lowers the graph once.
+ */
+export function materialCompileKeyFromLowering(
+  document: MaterialDocument,
+  lowered: MaterialLowerResult,
+): string {
+  if (lowered.ok) return lowered.plan.hash;
   return `invalid:${fnv1a(compileFingerprint(document))}`;
 }
 

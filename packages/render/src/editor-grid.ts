@@ -414,9 +414,24 @@ export function createEditorGrid(
     boundsMesh.refreshBoundingInfo(false, false);
   };
 
+  // The plane, its scale and the four view uniforms follow from the mode,
+  // spacing and camera. The inputs and placement of the last sync let an
+  // unchanged frame (a parked camera) return without recomputing or rewriting.
+  const applied = {
+    valid: false, mode, spacing, x: 0, y: 0, z: 0, radius: 0,
+    orthoTop: null as number | null, orthoRight: null as number | null,
+    px: 0, py: 0, pz: 0, scale: 0,
+  };
+
   const sync = () => {
     if (!camera) return;
-    const origin = snapGridOrigin(mode, camera.target, spacing);
+    const target = camera.target;
+    if (applied.valid && applied.mode === mode && applied.spacing === spacing &&
+      applied.x === target.x && applied.y === target.y && applied.z === target.z &&
+      applied.radius === camera.radius && applied.orthoTop === camera.orthoTop && applied.orthoRight === camera.orthoRight &&
+      mesh.position.x === applied.px && mesh.position.y === applied.py && mesh.position.z === applied.pz &&
+      mesh.scaling.x === applied.scale && mesh.scaling.y === applied.scale && mesh.scaling.z === applied.scale) return;
+    const origin = snapGridOrigin(mode, target, spacing);
     if (mode === "2d") {
       mesh.position.set(origin.x, origin.y, GRID_PLANE_OFFSET);
     } else {
@@ -425,6 +440,11 @@ export function createEditorGrid(
     const coverage = gridCoverageWorld(mode, camera);
     const { fadeStart, fadeEnd } = gridEdgeFadeRange(coverage);
     mesh.scaling.setAll(coverage);
+    applied.valid = true;
+    applied.mode = mode; applied.spacing = spacing;
+    applied.x = target.x; applied.y = target.y; applied.z = target.z;
+    applied.radius = camera.radius; applied.orthoTop = camera.orthoTop; applied.orthoRight = camera.orthoRight;
+    applied.px = mesh.position.x; applied.py = mesh.position.y; applied.pz = mesh.position.z; applied.scale = coverage;
     // The plane origin is snapped to a major grid cell, so local coordinates
     // preserve world alignment without mixing absolute and floating positions.
     material.setFloat("gridExtent", coverage);

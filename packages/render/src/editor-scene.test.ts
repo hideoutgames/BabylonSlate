@@ -1806,6 +1806,40 @@ describe("editor grid", () => {
     grid.dispose();
   });
 
+  it("keeps following the camera across repeated syncs and restores a plane that was moved", () => {
+    const { scene } = createHandle();
+    const camera = createEditorCamera(scene, { mode: "3d" });
+    const grid = createEditorGrid(scene, { mode: "3d", camera: camera.camera, spacing: 1 });
+    const material = grid.mesh.material as ShaderMaterial;
+    grid.sync();
+    const placed = grid.mesh.position.clone();
+    const extent = grid.mesh.scaling.x;
+    grid.sync();
+    expect(grid.mesh.position.equals(placed)).toBe(true);
+    expect(grid.mesh.scaling.x).toBe(extent);
+
+    camera.camera.setTarget(new Vector3(12, 0, -7));
+    grid.sync();
+    expect(grid.mesh.position.x).toBe(12);
+    expect(grid.mesh.position.z).toBe(-7);
+
+    const zoomed = Math.max(camera.camera.radius, 1) * 8 * 2;
+    camera.camera.radius = zoomed / 8;
+    grid.sync();
+    expect(grid.mesh.scaling.x).toBeCloseTo(zoomed);
+    expect(material.serialize().floats.gridExtent).toBeCloseTo(zoomed);
+
+    grid.mesh.position.x += 3;
+    grid.mesh.scaling.setAll(1);
+    grid.sync();
+    expect(grid.mesh.position.x).toBe(12);
+    expect(grid.mesh.scaling.x).toBeCloseTo(zoomed);
+
+    grid.setMode("2d");
+    expect(grid.mesh.position.z).not.toBe(-7);
+    grid.dispose();
+  });
+
   it("keeps 2D camera bounds visible when the tile grid is hidden", () => {
     const { scene } = createHandle();
     const grid = createEditorGrid(scene, { mode: "2d" });

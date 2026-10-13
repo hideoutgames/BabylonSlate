@@ -9,7 +9,7 @@ import {
   type ParticleLibraryEmitter,
 } from "@babylonslate/assets";
 import {
-  validateParticleGraphDocument,
+  lowerParticleGraphDocumentCached,
   type ParticleGraphDocument,
 } from "@babylonslate/particle-graph";
 import {
@@ -44,11 +44,13 @@ const PREVIEW_COMPONENT = "preview";
 type PreviewFailure = Pick<ParticleServiceDiagnostic, "code" | "message">;
 type PreviewLook = "no-emitters" | "no-material" | "graph-errors" | "ok";
 
+/** Counted from the lowering the compile key and the service reuse, not a validation of their own. */
 function graphErrorCount(entry: ParticleLibraryEmitter): number {
   if (entry.kind !== "graph") return 0;
-  return validateParticleGraphDocument(entry.document).filter(
-    (diagnostic) => diagnostic.severity === "error",
-  ).length;
+  const lowered = lowerParticleGraphDocumentCached(entry.document);
+  return lowered.ok
+    ? 0
+    : lowered.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
 }
 
 /**
@@ -246,6 +248,7 @@ export function ParticlePreviewCanvas({
   onDiagnosticsRef.current = onDiagnostics;
   const pausedRef = useRef(paused);
   const serviceRef = useRef<ParticleService | null>(null);
+  const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const appliedRef = useRef<ParticleLibrary | null>(null);
   const diagnosticsRef = useRef<ParticleServiceDiagnostic[]>([]);
   /** True while a service call reports synchronously; the caller evaluates after it. */
@@ -278,6 +281,17 @@ export function ParticlePreviewCanvas({
     }
     const applied = appliedRef.current;
     if (applied) onDiagnosticsRef.current?.([...diagnostics], applied);
+  }, []);
+
+  /**
+   * The presenter idles once a frame is drawn and no system needs frames (paused, or a
+   * finished Once run). A change that alters the picture without a Scene signal asks for
+   * one more frame; a preview that is running already draws every interval, and one that
+   * resumes wakes through `needsFrames`.
+   */
+  const redraw = useCallback(() => {
+    if (serviceRef.current?.needsFrames()) return;
+    presenterRef.current?.present({ force: true });
   }, []);
 
   const assign = useCallback(
@@ -318,8 +332,9 @@ export function ParticlePreviewCanvas({
       // Only a re-prepare reports slot problems again.
       if (tier !== "rebuild") diagnosticsRef.current = [...previous, ...diagnosticsRef.current];
       evaluate();
+      redraw();
     },
-    [evaluate],
+    [evaluate, redraw],
   );
 
   useEffect(() => {
@@ -331,9 +346,12 @@ export function ParticlePreviewCanvas({
     let presenter: MaterialPreviewPresenter | null = null;
     let materials: ReturnType<typeof createParticleMaterialResolver> | null = null;
     let frame = 0;
+    let stopRestoreWatch: (() => void) | null = null;
     const overlay = watchBlockingEditorOverlay();
     const disposePreview = () => {
       const applied = appliedRef.current;
+      stopRestoreWatch?.();
+      stopRestoreWatch = null;
       serviceRef.current?.dispose();
       serviceRef.current = null;
       appliedRef.current = null;
@@ -345,6 +363,7 @@ export function ParticlePreviewCanvas({
       materials = null;
       presenter?.dispose();
       presenter = null;
+      presenterRef.current = null;
       overlay.dispose();
       host?.dispose();
       host = null;
@@ -372,7 +391,17 @@ export function ParticlePreviewCanvas({
       const sources = installTextureBytes(bytes) ?? new Map();
       const cache = resourceCacheForEngine(engine);
       host = createParticlePreviewScene(engine, { skybox: showSkybox });
-      presenter = createMaterialPreviewPresenter(host, canvas, { suspended: overlay.isOpen });
+      // Particle systems are not Babylon animatables: the service says when frames are needed.
+      presenter = createMaterialPreviewPresenter(host, canvas, {
+        suspended: overlay.isOpen,
+        staticContent: true,
+        animating: () => serviceRef.current?.needsFrames() ?? true,
+      });
+      presenterRef.current = presenter;
+      // A settled frame is not redrawn by itself, so a restored WebGL context needs a forced one.
+      const restored = engine.onContextRestoredObservable;
+      const restoreObserver = restored?.add(() => presenter?.present({ force: true })) ?? null;
+      stopRestoreWatch = () => restored?.remove(restoreObserver);
       materials = createParticleMaterialResolver({
         scene: host.scene,
         documents: docs.documents,
@@ -498,6 +527,7 @@ export function ParticlePreviewCanvas({
     service.setLibrary(libraryRef.current);
     appliedRef.current = libraryRef.current;
     assign(service);
+    redraw();
   };
 
   const retry = () => setAttempt((value) => value + 1);

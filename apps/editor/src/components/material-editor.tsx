@@ -42,7 +42,6 @@ import {
   customGlslInterface,
   hydrateMaterialGraphForEditor,
   listUnconnectedMaterialPinDefaults,
-  lowerMaterialDocument,
   materialGraphToSerialized,
   materialPaletteNodes,
   materialPinDefaultPropertyKey,
@@ -728,11 +727,9 @@ function MaterialDocumentDetails() {
 function MaterialCostSummary() {
   const { document } = useMaterialDocument();
   const editing = useMaterialEditing();
-  const lowered = useMemo(
-    () => lowerMaterialDocument(document, { functions: editing.functions }),
-    [document, editing.functions],
-  );
-  if (!lowered.ok) return null;
+  // The provider lowers this document once per edit; lowering it again here doubled the cost.
+  const lowered = editing.lowering;
+  if (!lowered?.ok) return null;
   const cost = lowered.plan.cost;
   const costClass = classifyMaterialCost(cost, {
     frameBudgetMs: editing.frameBudgetMs,

@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+} from "react";
 import { MessageDetails } from "./message-details";
 import { DiagnosticResultRow } from "./diagnostic-result-row";
 import type { IDockviewPanelProps } from "dockview-react";
@@ -82,6 +90,13 @@ import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 /** Org-chart wires: a trunk from the parent splits into square drops to each child. */
 const BT_EDGE_OPTIONS = { type: "smoothstep", pathOptions: { borderRadius: 8 } };
 
+const BT_HIDDEN_TOOLBAR_ACTIONS: Array<"copy" | "paste" | "breakLinks" | "format"> = [
+  "copy",
+  "paste",
+  "breakLinks",
+  "format",
+];
+
 function asTree(payload: Record<string, unknown>): BehaviourTreeDocument {
   return parseBehaviourTreeDocument(payload) ?? createDefaultBehaviourTree();
 }
@@ -138,13 +153,16 @@ function useBehaviourTreeDocument() {
     [entry?.content],
   );
   /** `mergeKey` groups one scrub's edits into one undo entry. */
-  const commit = (next: BehaviourTreeDocument, mergeKey?: string) => {
-    void applyAssetDocumentChange(
-      workspaceDocumentId,
-      next as unknown as Record<string, unknown>,
-      mergeKey,
-    );
-  };
+  const commit = useCallback(
+    (next: BehaviourTreeDocument, mergeKey?: string) => {
+      void applyAssetDocumentChange(
+        workspaceDocumentId,
+        next as unknown as Record<string, unknown>,
+        mergeKey,
+      );
+    },
+    [applyAssetDocumentChange, workspaceDocumentId],
+  );
   const overlay = useMemo((): BtGraphOverlay | undefined => {
     if (!play.playing || !liveBtState) return undefined;
     return {
@@ -281,26 +299,41 @@ function useBehaviourTreeDocument() {
       ? loadedBlackboard.document
       : null;
   }, [blackboardPath, linkedBlackboardContent, loadedBlackboard]);
-  const blackboardKeyEntries = blackboardDocument?.keys ?? [];
-  const blackboardKeys = blackboardKeyEntries.map((key) => key.name);
-  const diagnostics = validateBehaviourTree(doc, {
-    assetGuid: blackboardAsset?.header.guid ?? "tree",
-    blackboardKeys: blackboardKeys.length > 0 ? blackboardKeys : undefined,
-    blackboardKeyEntries: blackboardDocument?.keys,
-  });
-  const openClass = (classId: string) => {
-    const asset = (assetRegistry?.list() ?? []).find(
-      (item) =>
-        item.header.type === "Class" &&
-        (classIdFromClassAsset(item) === classId || item.header.guid === classId),
-    );
-    if (!asset) return;
-    void openDocument({
-      kind: "graph",
-      path: asset.path,
-      label: asset.header.name,
-    });
-  };
+  const blackboardKeyEntries = useMemo(
+    () => blackboardDocument?.keys ?? [],
+    [blackboardDocument],
+  );
+  const blackboardKeys = useMemo(
+    () => blackboardKeyEntries.map((key) => key.name),
+    [blackboardKeyEntries],
+  );
+  const blackboardGuid = blackboardAsset?.header.guid;
+  // A new object per render would re-render every node through the graph context.
+  const diagnostics = useMemo(
+    () =>
+      validateBehaviourTree(doc, {
+        assetGuid: blackboardGuid ?? "tree",
+        blackboardKeys: blackboardKeys.length > 0 ? blackboardKeys : undefined,
+        blackboardKeyEntries: blackboardDocument?.keys,
+      }),
+    [blackboardDocument, blackboardGuid, blackboardKeys, doc],
+  );
+  const openClass = useCallback(
+    (classId: string) => {
+      const asset = (assetRegistry?.list() ?? []).find(
+        (item) =>
+          item.header.type === "Class" &&
+          (classIdFromClassAsset(item) === classId || item.header.guid === classId),
+      );
+      if (!asset) return;
+      void openDocument({
+        kind: "graph",
+        path: asset.path,
+        label: asset.header.name,
+      });
+    },
+    [assetRegistry, openDocument],
+  );
   return {
     doc,
     commit,
@@ -363,67 +396,200 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
     setAttachmentId(null);
   }, [doc.nodes, nodeIdKey, setAttachmentId, setSelectedId]);
 
-  const selected = doc.nodes.find((node) => node.id === selectedId) ?? null;
+  // GraphEditor puts these callbacks in the context every node reads, so they keep one
+  // identity and read the latest tree and selection when they are called.
+  const latest = useRef({ doc, selectedId, commit, openClass });
+  useLayoutEffect(() => {
+    latest.current = { doc, selectedId, commit, openClass };
+  });
+  const rootId = doc.rootId;
 
-  const nodeMenu = (nodeId: string): NestedMenuItem[] => [
-    {
-      id: "add-decorator",
-      label: "Add Decorator",
-      testId: "bt-menu-add-decorator",
-      onSelect: () => {
-        setSelectedId(nodeId);
-        setAttachmentCatalog("decorator");
+  const nodeMenu = useCallback(
+    (nodeId: string): NestedMenuItem[] => [
+      {
+        id: "add-decorator",
+        label: "Add Decorator",
+        testId: "bt-menu-add-decorator",
+        onSelect: () => {
+          setSelectedId(nodeId);
+          setAttachmentCatalog("decorator");
+        },
       },
-    },
-    {
-      id: "wrap",
-      label: "Wrap In Sequence",
-      testId: "bt-menu-wrap",
-      onSelect: () => commit(wrapInSequence(doc, nodeId)),
-    },
-    {
-      id: "duplicate",
-      label: "Duplicate",
-      testId: "bt-menu-duplicate",
-      disabled: nodeId === doc.rootId,
-      onSelect: () => commit(duplicateSubtree(doc, nodeId)),
-    },
-    {
-      id: "delete",
-      label: "Delete",
-      testId: "bt-menu-delete",
-      variant: "destructive",
-      disabled: nodeId === doc.rootId,
-      onSelect: () => {
-        commit(deleteSubtree(doc, nodeId));
-        if (selectedId === nodeId) setSelectedId(doc.rootId);
+      {
+        id: "wrap",
+        label: "Wrap In Sequence",
+        testId: "bt-menu-wrap",
+        onSelect: () => {
+          const { doc, commit } = latest.current;
+          commit(wrapInSequence(doc, nodeId));
+        },
       },
-    },
-  ];
+      {
+        id: "duplicate",
+        label: "Duplicate",
+        testId: "bt-menu-duplicate",
+        disabled: nodeId === rootId,
+        onSelect: () => {
+          const { doc, commit } = latest.current;
+          commit(duplicateSubtree(doc, nodeId));
+        },
+      },
+      {
+        id: "delete",
+        label: "Delete",
+        testId: "bt-menu-delete",
+        variant: "destructive",
+        disabled: nodeId === rootId,
+        onSelect: () => {
+          const { doc, selectedId, commit } = latest.current;
+          commit(deleteSubtree(doc, nodeId));
+          if (selectedId === nodeId) setSelectedId(doc.rootId);
+        },
+      },
+    ],
+    // The root is the only document fact baked into the items.
+    [rootId, setAttachmentCatalog, setSelectedId],
+  );
 
-  const attachmentMenu = (nodeId: string, id: string): NestedMenuItem[] => [
-    {
-      id: "open-class",
-      label: "Open Class",
-      onSelect: () => {
-        const node = doc.nodes.find((item) => item.id === nodeId);
-        const row =
-          node?.decorators.find((item) => item.id === id) ??
-          node?.services.find((item) => item.id === id);
-        if (row) openClass(row.classId);
+  const attachmentMenu = useCallback(
+    (nodeId: string, id: string): NestedMenuItem[] => [
+      {
+        id: "open-class",
+        label: "Open Class",
+        onSelect: () => {
+          const { doc, openClass } = latest.current;
+          const node = doc.nodes.find((item) => item.id === nodeId);
+          const row =
+            node?.decorators.find((item) => item.id === id) ??
+            node?.services.find((item) => item.id === id);
+          if (row) openClass(row.classId);
+        },
       },
-    },
-    {
-      id: "remove",
-      label: "Remove",
-      variant: "destructive",
-      testId: "bt-menu-remove-attachment",
-      onSelect: () => {
-        commit(removeAttachment(doc, nodeId, id));
-        setAttachmentId(null);
+      {
+        id: "remove",
+        label: "Remove",
+        variant: "destructive",
+        testId: "bt-menu-remove-attachment",
+        onSelect: () => {
+          const { doc, commit } = latest.current;
+          commit(removeAttachment(doc, nodeId, id));
+          setAttachmentId(null);
+        },
       },
+    ],
+    [setAttachmentId],
+  );
+
+  const canConnect = useCallback(
+    (connection: {
+      source: string;
+      target: string;
+      sourceHandle: string;
+      targetHandle: string;
+    }) => {
+      if (connection.sourceHandle !== BT_CHILDREN_HANDLE) return false;
+      if (connection.targetHandle !== BT_PARENT_HANDLE) return false;
+      return canReparentNode(latest.current.doc, connection.target, connection.source);
     },
-  ];
+    [],
+  );
+
+  const onAttachmentSelect = useCallback(
+    (id: string | null) => {
+      setAttachmentId(id);
+      if (!id) return;
+      const owner = latest.current.doc.nodes.find(
+        (node) =>
+          node.decorators.some((row) => row.id === id) ||
+          node.services.some((row) => row.id === id),
+      );
+      if (owner) setSelectedId(owner.id);
+    },
+    [setAttachmentId, setSelectedId],
+  );
+
+  const onAttachmentDoubleClick = useCallback((nodeId: string, id: string) => {
+    const { doc, openClass } = latest.current;
+    const node = doc.nodes.find((item) => item.id === nodeId);
+    const row =
+      node?.decorators.find((item) => item.id === id) ??
+      node?.services.find((item) => item.id === id);
+    if (row) openClass(row.classId);
+  }, []);
+
+  const onNodeDoubleClick = useCallback((nodeId: string) => {
+    const { doc, openClass } = latest.current;
+    const node = doc.nodes.find((item) => item.id === nodeId);
+    if (node) openClass(node.classId);
+  }, []);
+
+  const onNavigateRequest = useCallback(
+    (request: { nodeId?: string }) => {
+      if (request.nodeId) onNodeDoubleClick(request.nodeId);
+    },
+    [onNodeDoubleClick],
+  );
+
+  const onSelectionChange = useCallback(
+    (nodeIds: string[]) => {
+      const { doc } = latest.current;
+      const nextId = nodeIds[0];
+      if (!nextId) {
+        // Deselecting a node on the canvas clears Details. The empty
+        // selection reported on mount keeps the default Root selection,
+        // and a deleted node leaves the selection its delete chose.
+        const previous = canvasSelectedId.current;
+        canvasSelectedId.current = null;
+        if (previous && doc.nodes.some((node) => node.id === previous)) {
+          setSelectedId(null);
+          setAttachmentId(null);
+        }
+        return;
+      }
+      canvasSelectedId.current = nextId;
+      setSelectedId(nextId);
+      setAttachmentId((current) => {
+        if (!current) return null;
+        const owner = doc.nodes.find((node) => node.id === nextId);
+        if (!owner) return null;
+        const onNode =
+          owner.decorators.some((row) => row.id === current) ||
+          owner.services.some((row) => row.id === current);
+        return onNode ? current : null;
+      });
+    },
+    [setAttachmentId, setSelectedId],
+  );
+
+  const toolbarExtra = useMemo(
+    () => (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        data-testid="bt-auto-arrange"
+        onClick={() => {
+          const { doc, commit } = latest.current;
+          commit(arrangeBehaviourTree(doc));
+        }}
+      >
+        Auto Arrange
+      </Button>
+    ),
+    [],
+  );
+
+  const onChange = useCallback<NonNullable<ComponentProps<typeof GraphEditor>["onChange"]>>(
+    (graph, meta) => {
+      const { doc, selectedId, commit } = latest.current;
+      const selected = doc.nodes.find((node) => node.id === selectedId) ?? null;
+      const parentId =
+        selected && selected.kind !== "task" ? selected.id : doc.rootId;
+      const { next } = commitBehaviourTreeGraphChange(doc, graph, meta, parentId);
+      commit(next);
+    },
+    [],
+  );
 
   return (
     <PanelFrame className="flex-1">
@@ -443,95 +609,23 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
           nodesFocusable={false}
           sessionViewport={sessionViewport}
           onSessionViewportChange={onSessionViewportChange}
-          canConnect={(connection) => {
-            if (connection.sourceHandle !== BT_CHILDREN_HANDLE) return false;
-            if (connection.targetHandle !== BT_PARENT_HANDLE) return false;
-            return canReparentNode(doc, connection.target, connection.source);
-          }}
+          canConnect={canConnect}
           commitPositionsOnDragEnd
           readOnly={play.playing}
           paletteNodes={paletteNodes}
           diagnostics={diagnostics}
           focusedNodeId={play.focusedNodeId ?? focusedNodeId ?? undefined}
           selectedAttachmentId={attachmentId}
-          onAttachmentSelect={(id) => {
-            setAttachmentId(id);
-            if (!id) return;
-            const owner = doc.nodes.find(
-              (node) =>
-                node.decorators.some((row) => row.id === id) ||
-                node.services.some((row) => row.id === id),
-            );
-            if (owner) setSelectedId(owner.id);
-          }}
-          onAttachmentDoubleClick={(nodeId, id) => {
-            const node = doc.nodes.find((item) => item.id === nodeId);
-            const row =
-              node?.decorators.find((item) => item.id === id) ??
-              node?.services.find((item) => item.id === id);
-            if (row) openClass(row.classId);
-          }}
-          onNodeDoubleClick={(nodeId) => {
-            const node = doc.nodes.find((item) => item.id === nodeId);
-            if (node) openClass(node.classId);
-          }}
-          onNavigateRequest={(request) => {
-            if (request.nodeId) {
-              const node = doc.nodes.find((item) => item.id === request.nodeId);
-              if (node) openClass(node.classId);
-            }
-          }}
+          onAttachmentSelect={onAttachmentSelect}
+          onAttachmentDoubleClick={onAttachmentDoubleClick}
+          onNodeDoubleClick={onNodeDoubleClick}
+          onNavigateRequest={onNavigateRequest}
           contextMenuItemsForNode={nodeMenu}
           contextMenuItemsForAttachment={attachmentMenu}
-          hiddenToolbarActions={["copy", "paste", "breakLinks", "format"]}
-          onSelectionChange={(nodeIds) => {
-            const nextId = nodeIds[0];
-            if (!nextId) {
-              // Deselecting a node on the canvas clears Details. The empty
-              // selection reported on mount keeps the default Root selection,
-              // and a deleted node leaves the selection its delete chose.
-              const previous = canvasSelectedId.current;
-              canvasSelectedId.current = null;
-              if (previous && doc.nodes.some((node) => node.id === previous)) {
-                setSelectedId(null);
-                setAttachmentId(null);
-              }
-              return;
-            }
-            canvasSelectedId.current = nextId;
-            setSelectedId(nextId);
-            setAttachmentId((current) => {
-              if (!current) return null;
-              const owner = doc.nodes.find((node) => node.id === nextId);
-              if (!owner) return null;
-              const onNode =
-                owner.decorators.some((row) => row.id === current) ||
-                owner.services.some((row) => row.id === current);
-              return onNode ? current : null;
-            });
-          }}
-          toolbarExtra={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              data-testid="bt-auto-arrange"
-              onClick={() => commit(arrangeBehaviourTree(doc))}
-            >
-              Auto Arrange
-            </Button>
-          }
-          onChange={(graph, meta) => {
-            const parentId =
-              selected && selected.kind !== "task" ? selected.id : doc.rootId;
-            const { next } = commitBehaviourTreeGraphChange(
-              doc,
-              graph,
-              meta,
-              parentId,
-            );
-            commit(next);
-          }}
+          hiddenToolbarActions={BT_HIDDEN_TOOLBAR_ACTIONS}
+          onSelectionChange={onSelectionChange}
+          toolbarExtra={toolbarExtra}
+          onChange={onChange}
         />
       </div>
     </PanelFrame>

@@ -100,6 +100,66 @@ describe("BehaviourTreeRuntime", () => {
     } finally { runtime.stop(); }
   });
 
+  it("publishes a Blackboard when a task replaces or edits a value in place, and nothing while it is unchanged", { timeout: 10_000 }, async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1, maxActors: 4, seedDemoActors: false, dt: 0.1, playScene: guardScene(),
+      behaviourTrees: { "tree-1": { name: "Edit", rootId: "edit", blackboardGuid: "board-1", nodes: [task("edit", "BTTask_Edit")] } },
+      blackboards: { "board-1": { name: "Edits", keys: [
+        { name: "list", type: { kind: "array", element: { kind: "string" } }, defaultValue: ["a"] },
+        { name: "nested", type: { kind: "objectRef", classId: "BObject" }, defaultValue: { hits: 0, tags: ["a"] } },
+        { name: "lookup", type: { kind: "map", key: { kind: "string" }, value: { kind: "string" } }, defaultValue: new Map([["a", 1]]) },
+      ] } },
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([{ assetGuid: "edit", classId: "BTTask_Edit", anchors: [],
+        source: `export function onBtTick(ctx) {
+          const step = ctx.self.getVariable("step");
+          if (step === "push") ctx.getBlackboard("list").push("b");
+          if (step === "deep") ctx.getBlackboard("nested").tags[0] = "changed";
+          if (step === "reference") ctx.setBlackboard("target", ctx.self);
+          if (step === "loop") { const loop = {}; loop.self = loop; ctx.setBlackboard("loop", loop); }
+          if (step === "fanout") { const node = {}; node.self = node; node.other = node; ctx.setBlackboard("fanout", node); }
+          if (step === "parents") {
+            const root = { children: [] };
+            for (const name of ["x", "y"]) root.children.push({ name, parent: root, siblings: root.children });
+            ctx.setBlackboard("tree", root);
+          }
+          if (step === "map-edit") ctx.getBlackboard("lookup").set("a", 2);
+        }`,
+        entryPoints: [{ name: "onBtTick", event: "onBtTick", isAsync: false }] }]);
+      runtime.start();
+      runtime.realizePlayWorld();
+      const guard = runtime.getWorld().findActor("guard")!;
+      const published = () => btStates(commands).length;
+      /** Runs one tick doing `step` and returns the Blackboard published by it, if any. */
+      const tickWith = (step: string) => {
+        const before = published();
+        guard.setVariable("step", step);
+        runtime.tick();
+        return published() > before ? btStates(commands).at(-1)!.blackboard : undefined;
+      };
+      expect(tickWith("none")).toEqual({ list: ["a"], nested: { hits: 0, tags: ["a"] }, lookup: { a: 1 } });
+      expect(tickWith("none")).toBeUndefined();
+      expect(tickWith("push")).toMatchObject({ list: ["a", "b"] });
+      expect(tickWith("none")).toBeUndefined();
+      expect(tickWith("deep")).toMatchObject({ nested: { tags: ["changed"] } });
+      expect(tickWith("none")).toBeUndefined();
+      expect(tickWith("reference")).toMatchObject({ target: { guid: "guard" } });
+      expect(tickWith("none")).toBeUndefined();
+      expect(tickWith("loop")).toMatchObject({ loop: expect.stringContaining("self") });
+      expect(tickWith("none")).toBeUndefined();
+      // Several back-references per node would take exponentially many steps to copy.
+      expect(tickWith("fanout")).toMatchObject({ fanout: expect.any(String) });
+      expect(tickWith("none")).toBeUndefined();
+      expect(tickWith("parents")).toMatchObject({ tree: expect.any(String) });
+      expect(tickWith("none")).toBeUndefined();
+      expect(tickWith("map-edit")).toMatchObject({ lookup: { a: 2 } });
+      expect(tickWith("none")).toBeUndefined();
+    } finally { runtime.stop(); }
+  });
+
   it("Rotate To Face turns a dynamic physics body so the next step keeps the new heading", async () => {
     const scene = guardScene();
     scene.actors[0]!.components.push(

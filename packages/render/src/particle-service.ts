@@ -24,7 +24,7 @@ import {
 import type { CommandMessage } from "@babylonslate/bridge";
 import { DEFAULT_SORTING_LAYERS, type ParticleSpace } from "@babylonslate/core";
 import {
-  lowerParticleGraphDocument,
+  lowerParticleGraphDocumentCached,
   particleGraphCompileKey,
   type ParticleBuildPlan,
   type ParticleGraphDocument,
@@ -180,8 +180,6 @@ export class ParticleService {
   private library: ParticleLibrary = emptyLibrary();
   private readonly live = new Map<string, LiveComponent>();
   private readonly slotMeshes = new Map<number, AbstractMesh | null>();
-  /** Library documents are replaced, never mutated, so the document object keys its plan. */
-  private readonly plans = new WeakMap<ParticleGraphDocument, ParticleGraphLowerResult>();
   private generation = 0;
   /** Distinguishes Material leases taken for one slot after its preparation (rebuild, rebind). */
   private leaseSerial = 0;
@@ -366,6 +364,21 @@ export class ParticleService {
     return { active, capacity, backend, approximate: gpu > 0 };
   }
 
+  /**
+   * Preview: whether the Scene must keep rendering for this service. Systems only advance
+   * inside a Scene render, so a bundle that is still preparing, emitting or draining needs
+   * frames, while a paused service, a finished Once run (`ready-stopped`) and a failed
+   * bundle hold a picture that no further render changes. The live particle count cannot
+   * decide this: a freshly started or slow emitter reports zero until its next render.
+   */
+  needsFrames(): boolean {
+    if (this.paused || this.disposed) return false;
+    for (const entry of this.live.values()) {
+      if (entry.state === "preparing" || entry.state === "playing" || entry.state === "draining") return true;
+    }
+    return false;
+  }
+
   resetSession(): void {
     for (const entry of this.live.values()) this.retire(entry);
     this.slotMeshes.clear();
@@ -496,13 +509,9 @@ export class ParticleService {
     } catch (error) { this.fail(entry, generation, error); }
   }
 
+  /** Library documents are replaced, never mutated, so the document object keys its plan. */
   private planFor(document: ParticleGraphDocument): ParticleGraphLowerResult {
-    let lowered = this.plans.get(document);
-    if (!lowered) {
-      lowered = lowerParticleGraphDocument(document);
-      this.plans.set(document, lowered);
-    }
-    return lowered;
+    return lowerParticleGraphDocumentCached(document);
   }
 
   private graphCompileKey(document: ParticleGraphDocument): string {

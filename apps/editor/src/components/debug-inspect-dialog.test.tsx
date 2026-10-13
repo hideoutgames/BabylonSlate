@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
-import { DebugInspectDialog } from "./debug-inspect-dialog";
+import { ConnectedDebugInspectDialog, DebugInspectDialog } from "./debug-inspect-dialog";
+import { createInspectWorldStore } from "../lib/inspect-world-store";
 
 const snapshot: DebugInspectSnapshot = {
   tickIndex: 4,
@@ -210,5 +211,59 @@ describe("DebugInspectDialog", () => {
     );
     expect(screen.getByTestId("debug-inspect-empty")).toBeTruthy();
     expect(screen.queryByTestId("debug-inspect-details")).toBeNull();
+  });
+});
+
+describe("ConnectedDebugInspectDialog", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("shows each snapshot the store publishes", () => {
+    const store = createInspectWorldStore(snapshot);
+    render(<ConnectedDebugInspectDialog open onOpenChange={() => {}} store={store} />);
+    expect(screen.getByTestId("debug-inspect-tick").getAttribute("data-tick")).toBe("4");
+
+    act(() => store.publish({ ...snapshot, tickIndex: 9 }));
+
+    expect(screen.getByTestId("debug-inspect-tick").getAttribute("data-tick")).toBe("9");
+  });
+
+  it("keeps reporting the selection while closed, so a vanished actor is not still selected for the console", () => {
+    const store = createInspectWorldStore(snapshot);
+    const onSelectedIdChange = vi.fn();
+    const dialog = (open: boolean) => (
+      <ConnectedDebugInspectDialog
+        open={open}
+        onOpenChange={() => {}}
+        store={store}
+        onSelectedIdChange={onSelectedIdChange}
+      />
+    );
+    const { rerender } = render(dialog(true));
+    tapRow("hero");
+    expect(onSelectedIdChange).toHaveBeenLastCalledWith("hero");
+
+    rerender(dialog(false));
+    act(() => store.publish({ tickIndex: 5, nodes: [snapshot.nodes[0]!] }));
+
+    expect(onSelectedIdChange).toHaveBeenLastCalledWith(null);
+  });
+
+  it("builds the tree and details from the snapshot as it is when reopened", () => {
+    const store = createInspectWorldStore(snapshot);
+    const dialog = (open: boolean) => (
+      <ConnectedDebugInspectDialog open={open} onOpenChange={() => {}} store={store} />
+    );
+    const { rerender } = render(dialog(true));
+    tapRow("hero");
+    expect(screen.getByTestId("debug-inspect-details")).toBeTruthy();
+
+    rerender(dialog(false));
+    act(() => store.publish({ tickIndex: 8, nodes: [] }));
+
+    rerender(dialog(true));
+    expect(screen.queryByTestId("tree-row-hero")).toBeNull();
+    expect(screen.getByTestId("debug-inspect-empty")).toBeTruthy();
   });
 });

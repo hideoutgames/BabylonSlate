@@ -1,5 +1,5 @@
 import { act, fireEvent, render, cleanup, screen, waitFor } from "@testing-library/react";
-import { useStore } from "@xyflow/react";
+import { useReactFlow, useStore } from "@xyflow/react";
 import { StrictMode, useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DRAG_ARM_MS, EditorReadOnlyContext, TagProvider } from "@babylonslate/editor-kit";
@@ -723,6 +723,43 @@ describe("GraphEditor", () => {
         expect(container.querySelector('[data-id="far"]')).not.toBeNull();
       });
       expect(container.querySelector('[data-id="near"]')).not.toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it("mounts the nodes a pan brings into range and drops the ones it leaves", { timeout: 15_000 }, async () => {
+    const restore = installImmediateGraphHostSize();
+    const nodes = [
+      { id: "near", position: { x: 0, y: 0 } },
+      { id: "far", position: { x: 6000, y: 4000 } },
+    ].map((node) => ({
+      ...node,
+      type: "debug.log",
+      data: { message: node.id, __pins: debugLogPins },
+    }));
+    let flow!: ReturnType<typeof useReactFlow>;
+    function FlowProbe() {
+      flow = useReactFlow();
+      return null;
+    }
+    try {
+      const { container, getByTestId } = render(
+        <GraphEditor
+          initialGraph={{ nodes, edges: [] }}
+          sessionViewport={{ x: 0, y: 0, zoom: 1 }}
+          toolbarExtra={<FlowProbe />}
+        />,
+      );
+      expect(container.querySelector('[data-id="far"]')).toBeNull();
+      expect(getByTestId("graph-editor").getAttribute("data-visible-node-count")).toBe("1");
+
+      act(() => {
+        void flow.setViewport({ x: -6000, y: -4000, zoom: 1 });
+      });
+      await waitFor(() => expect(container.querySelector('[data-id="far"]')).not.toBeNull());
+      expect(container.querySelector('[data-id="near"]')).toBeNull();
+      expect(getByTestId("graph-editor").getAttribute("data-visible-node-count")).toBe("1");
     } finally {
       restore();
     }
@@ -4207,6 +4244,44 @@ describe("GraphEditor", () => {
         '[data-id="task"] [data-handleid="parent"][data-pin-type="exec"] [data-pin-connected]',
       ),
     ).not.toBeNull();
+  });
+
+  it("marks only the wired behaviour tree pins as connected", async () => {
+    const treeNode = (id: string, kind: string, y: number) => ({
+      id,
+      type: "bt.node",
+      position: { x: 0, y },
+      data: { title: id, kind, classId: `bt.${kind}`, sortIndex: 0 },
+    });
+    const { container } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            treeNode("root", "selector", 0),
+            treeNode("wired", "task", 180),
+            treeNode("loose", "task", 360),
+          ],
+          edges: [
+            {
+              id: "root-wired",
+              source: "root",
+              target: "wired",
+              sourceHandle: "children",
+              targetHandle: "parent",
+            },
+          ],
+        }}
+        nodeTypes={treeNodeTypes}
+      />,
+    );
+    const connected = (node: string, handle: string) =>
+      container
+        .querySelector(`[data-id="${node}"] [data-handleid="${handle}"] [data-pin-connected]`)
+        ?.getAttribute("data-pin-connected");
+    await waitFor(() => expect(connected("root", "children")).toBe("true"));
+    expect(connected("wired", "parent")).toBe("true");
+    // A wire into one node does not light the same-named pin on another.
+    expect(connected("loose", "parent")).toBe("false");
   });
 
   it("tap-connects behaviour tree parent and children handles", async () => {

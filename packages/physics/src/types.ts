@@ -79,6 +79,11 @@ export type RigidBodyDesc = {
   angularDamping: number;
   gravityScale: number;
   transform: PhysicsTransform;
+  /**
+   * False when no hit or overlap event involving this body's actor can be observed, so a backend that must ask
+   * the native engine for contact events may skip them for this body. Default true; see `setContactReporting`.
+   */
+  reportContacts?: boolean;
 };
 
 /** Mid-Play rigid-body knobs (mass, damping, gravity, motion type). */

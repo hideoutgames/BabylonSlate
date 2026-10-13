@@ -19,7 +19,11 @@ export interface SceneEffectsImageProcessingPlan {
 
 /** Scene state beyond the project settings that changes the compiled chain. */
 export interface SceneEffectsInputs {
-  /** Local Fog Volumes request the volumetric pass with zero scene density. */
+  /**
+   * Local Fog Volumes request the volumetric pass with zero scene density. The
+   * plan follows authored presence; the pass idles per frame while none is in
+   * front of the camera (spatial-effects-graph.ts), so camera moves never rebuild.
+   */
   fogVolumesPresent?: boolean;
   /** The project's LUT, once loaded; null leaves color grading off. */
   colorGradingTexture?: BaseTexture | null;

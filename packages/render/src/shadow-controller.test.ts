@@ -20,6 +20,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { sceneShadowController } from "./shadow-controller";
+import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import {
   sceneRenderingSettings,
   updateSceneRenderingSettings,
@@ -88,35 +89,6 @@ function prepareShadowLayers(generator: ShadowGenerator): void {
   scene.updateTransformMatrix(true);
   const map = generator.getShadowMap()!;
   map.render();
-}
-
-function enableHeadlessCascades(scene: Scene): void {
-  const engine = scene.getEngine();
-  engine._features.supportCSM = true;
-  engine._features.supportShadowSamplers = true;
-  // NullEngine ignores size.layers for the color attachment. Native RTT uses
-  // this texture's array metadata to select the real per-cascade render loop.
-  const createTarget = engine.createRenderTargetTexture.bind(engine);
-  vi.spyOn(engine, "createRenderTargetTexture").mockImplementation((size, options) => {
-    const target = createTarget(size, options);
-    if (typeof size !== "number" && size.layers && target.texture) {
-      target.texture.depth = target.texture.baseDepth = size.layers;
-      target.texture.is2DArray = true;
-    }
-    return target;
-  });
-  vi.spyOn(engine, "createDepthStencilTexture").mockImplementation((size, options) => {
-    const texture = new InternalTexture(engine, InternalTextureSource.DepthStencil);
-    const dimensions = typeof size === "number" ? { width: size, height: size } : size;
-    texture.width = texture.baseWidth = dimensions.width;
-    texture.height = texture.baseHeight = dimensions.height;
-    texture.depth = texture.baseDepth = dimensions.layers ?? 0;
-    texture.is2DArray = texture.depth > 0;
-    texture.format = options.depthTextureFormat ?? 14;
-    texture.isReady = true;
-    engine.getLoadedTexturesCache().push(texture);
-    return texture;
-  });
 }
 
 describe("shared shadow lifecycle", () => {
@@ -435,7 +407,7 @@ describe("shared shadow lifecycle", () => {
 
   it("derives each cascade from its current extents and restores exact manual bias", () => {
     const { scene, controller } = fixture();
-    enableHeadlessCascades(scene);
+    enableHeadlessCascades(scene.getEngine());
     updateSceneRenderingSettings(scene, {
       shadows: normalizeShadowSettings({
         cascades: 2, distance: 40, mapSize: 1024, filterQuality: "low",
@@ -666,7 +638,7 @@ describe("shared shadow lifecycle", () => {
       const clock = vi.spyOn(performance, "now").mockReturnValue(0);
       try {
         const { scene, controller } = fixture();
-        if (cascaded) enableHeadlessCascades(scene);
+        if (cascaded) enableHeadlessCascades(scene.getEngine());
         // The sun's requested map exceeds the device size, so admission reduces it.
         scene.getEngine().getCaps().maxTextureSize = 1024;
         updateSceneRenderingSettings(scene, {

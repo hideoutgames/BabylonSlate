@@ -172,18 +172,21 @@ export function ParticleGraphEditingProvider({
 
   const previewSource = valid ? document : lastValidRef.current;
   const materialGuid = document.materialGuid;
-  const previewKey = useMemo(
-    () =>
-      previewSource
-        ? particleLibraryEmitterKey({
-            kind: "graph",
-            document: { ...previewSource, materialGuid },
-          })
-        : null,
+  const previewCandidate = useMemo(
+    () => (previewSource ? { ...previewSource, materialGuid } : null),
     [materialGuid, previewSource],
   );
+  // Keying the candidate lowers it; the Preview, its compile key and the service
+  // reuse that lowering because they receive this same object.
+  const previewKey = useMemo(
+    () =>
+      previewCandidate
+        ? particleLibraryEmitterKey({ kind: "graph", document: previewCandidate })
+        : null,
+    [previewCandidate],
+  );
   const previewDocument = useMemo(
-    () => (previewSource ? { ...previewSource, materialGuid } : null),
+    () => previewCandidate,
     // Keyed on the position-free key: drags and renames keep the same object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [previewKey],

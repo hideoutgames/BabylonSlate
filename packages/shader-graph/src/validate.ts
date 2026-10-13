@@ -463,15 +463,19 @@ function validateGraph(
     }
   }
 
+  const wiredInputs = new Map<string, Set<string>>();
+  for (const edge of graph.edges) {
+    let pins = wiredInputs.get(edge.targetNodeId);
+    if (!pins) wiredInputs.set(edge.targetNodeId, (pins = new Set()));
+    pins.add(edge.targetPinId);
+  }
   for (const node of graph.nodes) {
     const definition = definitions.get(node.id);
     if (!definition) continue;
     for (const pin of definition.inputs) {
       const required = pin.required ?? pin.type.kind === "texture";
       if (!required) continue;
-      const wired = graph.edges.some(
-        (edge) => edge.targetNodeId === node.id && edge.targetPinId === pin.id,
-      );
+      const wired = wiredInputs.get(node.id)?.has(pin.id) ?? false;
       if (wired || pin.defaultValue) continue;
       if (pin.type.kind === "texture") {
         const guid = node.properties.textureGuid;
@@ -554,6 +558,27 @@ interface WorldPositionOffsetWalkFrame {
     frame: WorldPositionOffsetWalkFrame;
     callNodeId: string;
   };
+  /** Built when the walk first reads this frame, once per validation. */
+  index?: {
+    nodes: Map<string, MaterialGraphNode>;
+    /** Edges by target node, in document order. */
+    incoming: Map<string, MaterialGraphEdge[]>;
+  };
+}
+
+function frameIndex(frame: WorldPositionOffsetWalkFrame) {
+  if (!frame.index) {
+    const nodes = new Map<string, MaterialGraphNode>();
+    for (const node of frame.graph.nodes) if (!nodes.has(node.id)) nodes.set(node.id, node);
+    const incoming = new Map<string, MaterialGraphEdge[]>();
+    for (const edge of frame.graph.edges) {
+      const edges = incoming.get(edge.targetNodeId);
+      if (edges) edges.push(edge);
+      else incoming.set(edge.targetNodeId, [edge]);
+    }
+    frame.index = { nodes, incoming };
+  }
+  return frame.index;
 }
 
 /**
@@ -594,10 +619,8 @@ function walkWorldPositionOffsetPin(
   const pinKey = `pin:${frame.prefix}${targetNodeId}:${targetPinId}`;
   if (seen.has(pinKey)) return;
   seen.add(pinKey);
-  for (const edge of frame.graph.edges) {
-    if (edge.targetNodeId !== targetNodeId || edge.targetPinId !== targetPinId) {
-      continue;
-    }
+  for (const edge of frameIndex(frame).incoming.get(targetNodeId) ?? []) {
+    if (edge.targetPinId !== targetPinId) continue;
     walkWorldPositionOffsetNode(
       frame,
       edge.sourceNodeId,
@@ -618,7 +641,8 @@ function walkWorldPositionOffsetNode(
   const nodeKey = `node:${frame.prefix}${nodeId}:${sourcePinId}`;
   if (seen.has(nodeKey)) return;
   seen.add(nodeKey);
-  const node = frame.graph.nodes.find((entry) => entry.id === nodeId);
+  const { nodes, incoming } = frameIndex(frame);
+  const node = nodes.get(nodeId);
   if (!node) return;
 
   if (node.type === "function.call") {
@@ -671,8 +695,7 @@ function walkWorldPositionOffsetNode(
     });
   }
 
-  for (const edge of frame.graph.edges) {
-    if (edge.targetNodeId !== node.id) continue;
+  for (const edge of incoming.get(node.id) ?? []) {
     walkWorldPositionOffsetPin(
       frame,
       node.id,

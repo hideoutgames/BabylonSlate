@@ -15,7 +15,9 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   assetRegistry: { list: () => [] },
 })));
 vi.mock("../context/validation-context", () => ({ useValidation: () => ({ focusDiagnostic: null, setFocusDiagnostic: vi.fn() }) }));
-vi.mock("../context/play-context", () => ({ usePlay: () => ({ focusedNodeId: null }) }));
+vi.mock("../context/play-context", () => ({ usePlay: () => ({ focusedNodeId: null }),
+  usePlayFocusedNodeId: () => null,
+  usePlaySimulationDocumentId: () => null }));
 afterEach(cleanup);
 
 describe("Execute JavaScript Inspector", () => {
