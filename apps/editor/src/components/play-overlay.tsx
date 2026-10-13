@@ -52,17 +52,14 @@ import {
 } from "../lib/viewport-render-gate";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 import { PrintHud, type PrintHudPrint } from "./print-overlay";
-import { DebugConsole } from "./debug-console";
+import { PlayDebugConsole } from "./play-debug-console";
 import { DebugBehaviourTreeDialog } from "./debug-behaviour-tree-dialog";
 import type { DebugBehaviourTree } from "@babylonslate/bridge";
-import { DebugInspectDialog } from "./debug-inspect-dialog";
+import { ConnectedDebugInspectDialog } from "./debug-inspect-dialog";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { PlayFreeCamJoystick } from "./play-freecam-joystick";
 import { StatsHud } from "./stats-hud";
-import {
-  playConsoleCommands,
-  playConsoleCompletionContext,
-} from "../lib/play-console";
+import { playConsoleCommands } from "../lib/play-console";
 import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
@@ -622,22 +619,13 @@ export function PlayOverlay({
   const initialConsoleRenderRef = useRef({ ...render, quality: resolveRenderingQuality(render, {}, localRenderingQualityOverrides(localEngineSettings)) });
   const liveSizeRef = useRef<{ width: number; height: number } | null>(null);
   const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
-  const inspectSnapshot = useInspectWorldPoll(
+  // Polled snapshots go to a store the console and inspector read themselves,
+  // so each poll re-renders them, not this overlay.
+  const inspectStore = useInspectWorldPoll(
     consoleOpen || nextPlayInspectorOpen(inspectorOpen, overlayInspector),
     () =>
       sessionRef.current?.inspectWorld() ??
       Promise.resolve({ tickIndex: 0, nodes: [] }),
-  );
-  const completionContext = useMemo(
-    () =>
-      playConsoleCompletionContext({
-        commands,
-        sceneAssetGuid,
-        scene,
-        scenes,
-        inspectNodes: inspectSnapshot.nodes,
-      }),
-    [commands, sceneAssetGuid, scene, scenes, inspectSnapshot],
   );
 
   useEffect(() => {
@@ -1247,12 +1235,15 @@ export function PlayOverlay({
           ))}
         </div>
       ) : null}
-      <DebugConsole
+      <PlayDebugConsole
         open={consoleOpen}
         onOpenChange={setConsoleOpen}
         commands={commands}
         logs={logs}
-        completionContext={completionContext}
+        inspectStore={inspectStore}
+        sceneAssetGuid={sceneAssetGuid}
+        scene={scene}
+        scenes={scenes}
         onExecute={(line) =>
           sessionRef.current?.executeConsoleCommand(
             applyInspectSelectionToConsoleLine(
@@ -1273,10 +1264,10 @@ export function PlayOverlay({
         }}
         trees={trees}
       />
-      <DebugInspectDialog
+      <ConnectedDebugInspectDialog
         open={nextPlayInspectorOpen(inspectorOpen, overlayInspector)}
         onOpenChange={setInspectorOpen}
-        snapshot={inspectSnapshot}
+        store={inspectStore}
         onExecute={(line) => sessionRef.current?.executeConsoleCommand(line)
           ?? Promise.resolve({ success: false, output: "Not Playing" })}
         onSelectedIdChange={(id) => {
