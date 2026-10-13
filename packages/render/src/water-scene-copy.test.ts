@@ -487,6 +487,12 @@ it("compiles the water variants the view draws before its first frame, and none 
   await settle(graph, camera);
   expect([...drawn].sort()).toEqual(["colour with copy", "depth"]);
   expect(compiledWaterVariants(engine)).toEqual(["colour with copy", "depth"]);
+  // A stale plan (a Refraction Resolution change) is probed by the render loop until the re-plan: it still draws
+  // through a copy, so the probe compiles no copy-less variant.
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "ultra", refractionScale: 0.75 } }) });
+  expect(graph.readiness(camera)).toMatchObject({ ready: false, preparationRequired: true });
+  graph.sceneStrictlyReady(camera);
+  expect(compiledWaterVariants(engine)).toEqual(["colour with copy", "depth"]);
   // Low plans no copy: the re-plan compiles the variant the main pass then draws before the next frame.
   drawn.clear();
   updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "low" } }) });
