@@ -258,7 +258,7 @@ export function physicsChainTransforms(
  * readback after step hooks may have changed authored actors. */
 export function physicsWorldTransforms(
   actors: readonly Actor[],
-  byGuid: ReadonlyMap<string, Actor>,
+  lookup: (guid: string) => Actor | undefined,
   kind: "2d" | "3d",
   eligible: (actor: Actor) => boolean,
   bodyPoses?: ReadonlyMap<string, PhysicsTransform>,
@@ -267,29 +267,34 @@ export function physicsWorldTransforms(
   scratch?.begin();
   const resolved = scratch?.resolved ?? new Map<string, Transform>();
   const resolve = physicsTransformResolver(
-    (guid) => byGuid.get(guid),
+    lookup,
     kind,
     resolved,
     bodyPoses,
     scratch,
   );
   for (const actor of actors) {
-    if (
-      !actor.destroyed &&
-      eligible(actor) &&
-      actor.components.some(
-        (component) =>
-          !component.destroyed &&
-          component.owner === actor &&
-          (component.classId !== "LandscapeComponent" ||
-            (kind === "3d" && component.getVariable("collisionsEnabled") === true)) &&
-          (component.classId !== "DynamicRuntimeMeshComponent" ||
-            (kind === "3d" && component.getVariable("enableCollision") === true)) &&
-          PARTICIPANT_CLASSES.has(component.classId),
-      )
-    )
-      resolve(actor);
+    if (!actor.destroyed && eligible(actor) && hasParticipantComponent(actor, kind)) resolve(actor);
   }
   scratch?.end();
   return resolved;
+}
+
+/** Whether `actor` owns a live component that makes it a physics participant in a `kind` world. */
+function hasParticipantComponent(actor: Actor, kind: "2d" | "3d"): boolean {
+  const components = actor.components;
+  for (let index = 0; index < components.length; index++) {
+    const component = components[index]!;
+    if (
+      !component.destroyed &&
+      component.owner === actor &&
+      (component.classId !== "LandscapeComponent" ||
+        (kind === "3d" && component.getVariable("collisionsEnabled") === true)) &&
+      (component.classId !== "DynamicRuntimeMeshComponent" ||
+        (kind === "3d" && component.getVariable("enableCollision") === true)) &&
+      PARTICIPANT_CLASSES.has(component.classId)
+    )
+      return true;
+  }
+  return false;
 }

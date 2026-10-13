@@ -46,6 +46,37 @@ it.each(["software", "rapier"] as const)("%s applies an off-centre impulse as tr
   } finally { backend.dispose(); }
 });
 
+it.each(["software", "rapier", "havok"] as const)("%s reads a body pose into a caller-owned object", async (kind) => {
+  const gravity = { x: 0, y: 0, z: 0 };
+  const backend = kind === "software"
+    ? createSoftwarePhysicsBackend("3d", gravity)
+    : await createPhysicsBackend({ kind: kind === "rapier" ? "2d" : "3d", gravity, allowSoftwareFallback: false });
+  try {
+    const quarterTurn = backend.kind === "2d"
+      ? { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 }
+      : { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 };
+    backend.createBody({
+      id: "body", actorId: "actor", motionType: "kinematic", mass: 1,
+      linearDamping: 0, angularDamping: 0, gravityScale: 0,
+      transform: { position: { x: 1, y: 2, z: backend.kind === "2d" ? 0 : 3 }, rotation: quarterTurn },
+    });
+    backend.createCollider({
+      id: "shape", bodyId: "body", shape: backend.kind === "2d" ? { kind: "circle", radius: 0.5 } : { kind: "sphere", radius: 0.5 },
+      friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff,
+    });
+    backend.step(1 / 60);
+    const out = { position: { x: 9, y: 9, z: 9 }, rotation: { x: 9, y: 9, z: 9, w: 9 } };
+    expect(backend.readBodyTransform("body", out)).toBe(true);
+    expect(out).toEqual(backend.getBodyTransform("body"));
+    expect(out.position.x).toBeCloseTo(1);
+    // A body that is gone leaves the caller's object as it was.
+    const before = structuredClone(out);
+    backend.destroyBody("body");
+    expect(backend.readBodyTransform("body", out)).toBe(false);
+    expect(out).toEqual(before);
+  } finally { backend.dispose(); }
+});
+
 it("keeps Rapier teleport/target rotation consistent in body readback", async () => {
   const backend = await createPhysicsBackend({
     kind: "2d",

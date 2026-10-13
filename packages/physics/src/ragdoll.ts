@@ -65,6 +65,8 @@ export class RagdollPhysics {
     input: readonly RagdollBonePose[],
     properties: RagdollProperties,
     initialVelocity?: BodyVelocity,
+    /** False when no hit or overlap event naming the actor can be observed (`RigidBodyDesc.reportContacts`). */
+    reportContacts = true,
   ) {
     this.backend = backend;
     if (backend.kind !== "3d" || !backend.supportsConstraints)
@@ -83,7 +85,7 @@ export class RagdollPhysics {
       if (backend.getBodyTransform(bodyId)) throw new Error(`Ragdoll body identity already exists: ${bodyId}`);
       const body: RigidBodyDesc = { id: bodyId, actorId, motionType: "dynamic", mass: tuning.totalMass / bones.length,
         linearDamping: tuning.linearDamping, angularDamping: tuning.angularDamping, gravityScale: 1,
-        transform: { position: bone.position, rotation: bone.rotation } };
+        transform: { position: bone.position, rotation: bone.rotation }, reportContacts };
       const child = bones.find((candidate) => candidate.parentName === bone.name &&
         Math.hypot(...Object.values(subtract(candidate.position, bone.position))) > 1e-6);
       const offset = child ? rotateQuatVec(inverse(bone.rotation), subtract(child.position, bone.position)) : zero();

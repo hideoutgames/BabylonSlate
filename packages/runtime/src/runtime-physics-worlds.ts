@@ -40,7 +40,7 @@ interface RuntimePhysicsWorldsHost {
   /** Some loaded Scene Layer document enables physics; otherwise no layer world can exist. */
   hasPhysicsSceneLayers(): boolean;
   canTickActor(actor: Actor): boolean;
-  scripts(): Pick<ScriptHost, "invokeEvent">;
+  scripts(): Pick<ScriptHost, "invokeEvent" | "scriptsFor">;
   frameId(): number;
   recordDiagnostic(diagnostic: RuntimeDiagnostic): void;
   emit(command: CommandMessage): void;
@@ -60,6 +60,8 @@ interface RuntimePhysicsWorldsOptions {
 
 const vec3 = (value: readonly number[]) => ({ x: value[0], y: value[1], z: value[2] });
 const NO_GRAVITY: Vec3Tuple = [0, 0, 0];
+/** The script events a contact can invoke (`dispatchContacts`). */
+const CONTACT_EVENTS = new Set(["onHit", "onBeginOverlap", "onEndOverlap"]);
 /** Explicit physics components that need their layer's Enable Physics. */
 const LAYER_PHYSICS_COMPONENTS = new Set(["RigidBodyComponent", "ColliderComponent", "BlockingVolumeComponent"]);
 
@@ -119,6 +121,22 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     this.pendingComplexMeshes.add(assetGuid);
     this.host.emit({ type: "requestComplexCollision", assetGuid });
   };
+  /** Per class id: whether a loaded script on it or an ancestor handles Hit or Overlap events. */
+  private readonly contactHandlers = new Map<string, boolean>();
+  /**
+   * Whether a contact event naming `actor` could reach a script. Only scripts consume contacts, and
+   * `invokeEvent` runs the nearest handler up the actor's class lineage; ancestors are all counted here,
+   * which can only over-report. Native backends skip contact events for actors where this is false.
+   */
+  private readonly observesContacts = (actor: Actor): boolean => {
+    let handled = this.contactHandlers.get(actor.classId);
+    if (handled === undefined) {
+      handled = this.classHandlesContacts(actor.classId);
+      // A class the registry does not know yet has no lineage to cache.
+      if (this.host.world().classRegistry.has(actor.classId)) this.contactHandlers.set(actor.classId, handled);
+    }
+    return handled;
+  };
   private readonly host: RuntimePhysicsWorldsHost;
 
   constructor(host: RuntimePhysicsWorldsHost, options: RuntimePhysicsWorldsOptions) {
@@ -135,6 +153,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       createSoftwarePhysicsBackend(this.worldKind, vec3(this.currentGravity)),
       {
         actorFilter: (actor) => actor.sceneLayerId == null && this.host.mainActorReady(actor),
+        observesContacts: this.observesContacts,
         deferUnsupportedConstraints: !this.preferSoftwarePhysics,
       },
     );
@@ -255,6 +274,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     const world = this.host.world();
     const physicsSync = new PhysicsWorldSync(backend, {
       actorFilter: (actor) => actor.sceneLayerId == null && this.host.mainActorReady(actor),
+      observesContacts: this.observesContacts,
     });
     this.nativeLayerBackend = layerBackend;
     // Layer worlds already created move to native worlds with their own gravity.
@@ -303,6 +323,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       check();
       sync = new PhysicsWorldSync(backend, {
         actorFilter: (actor) => actor.sceneLayerId == null && this.host.mainActorReady(actor),
+        observesContacts: this.observesContacts,
         deferUnsupportedConstraints: !this.preferSoftwarePhysics && backend instanceof SoftwarePhysicsBackend,
       });
       this.bindContent(sync);
@@ -473,6 +494,24 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     if (meshes.size > 0) this.installComplexMeshes(this.lastProvidedComplexMeshes);
   }
 
+  /**
+   * Scripts or the class registry were loaded or replaced: which classes handle contact events is asked again,
+   * and the next step brings every body's contact reporting in line with the new answer.
+   */
+  scriptsChanged(): void {
+    this.contactHandlers.clear();
+  }
+
+  private classHandlesContacts(classId: string): boolean {
+    const scripts = this.host.scripts();
+    for (const id of this.host.world().classRegistry.ancestry(classId)) {
+      for (const script of scripts.scriptsFor(id)) {
+        for (const point of script.entryPoints) if (point.event && CONTACT_EVENTS.has(point.event)) return true;
+      }
+    }
+    return false;
+  }
+
   /** Contacts from the main world, then each Scene Layer world in creation order, as Hit / Begin / End Overlap script events. */
   dispatchCollisionEvents(): void {
     this.dispatchContacts(this.mainSync);
@@ -523,6 +562,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     const backend = this.nativeLayerBackend?.(vec3(gravity)) ?? createSoftwarePhysicsBackend("2d", vec3(gravity));
     const sync = new PhysicsWorldSync(backend, {
       actorFilter: (actor) => actor.sceneLayerId === layerGuid && this.host.overlayActorReady(actor),
+      observesContacts: this.observesContacts,
       deferUnsupportedConstraints: !this.preferSoftwarePhysics && backend instanceof SoftwarePhysicsBackend,
       skipEmptySteps: true,
     });
