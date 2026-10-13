@@ -73,6 +73,11 @@ export class PhysicsWorldSync {
   private readonly contactReporting = new Map<string, boolean>();
   private readonly constraints: PhysicsConstraintSync;
   private readonly suppressedActors = new WeakSet<Actor>();
+  /**
+   * Actors whose ordinary body an active ragdoll replaced, by guid. The bones are dynamic bodies the ragdoll
+   * created under the actor's id, so they appear in no body map; channel queries classify them from here.
+   */
+  private readonly ragdollActors = new Map<string, Actor>();
   private readonly bodyByActor = new Map<string, string>();
   private readonly characterByActor = new Map<string, string>();
   private readonly movementControllerDescriptors = new Map<string, readonly unknown[]>();
@@ -264,9 +269,11 @@ export class PhysicsWorldSync {
   suppressActorBody(actor: Actor, suppressed: boolean): void {
     if (suppressed) {
       this.suppressedActors.add(actor);
+      this.ragdollActors.set(actor.guid, actor);
       if (this.bodyOwnerByActor.get(actor.guid) === actor) this.retireActor(actor.guid);
     } else {
       this.suppressedActors.delete(actor);
+      if (this.ragdollActors.get(actor.guid) === actor) this.ragdollActors.delete(actor.guid);
       this.contactReporting.delete(actor.guid);
     }
   }
@@ -391,6 +398,7 @@ export class PhysicsWorldSync {
     this.movementControllerDescriptors.clear();
     this.preparedByActor.clear();
     this.bodyOwnerByActor.clear();
+    this.ragdollActors.clear();
     this.contactReporting.clear();
     this.staticPoses.clear();
     this.hostByActor.clear();
@@ -1129,6 +1137,8 @@ export class PhysicsWorldSync {
     // Hosted shapes, and a hosted actor's own triggers, answer as their host.
     for (const [actorId, host] of this.hostByActor)
       if (!matches(host)) ignored.add(actorId);
+    // An active ragdoll's bones are dynamic and no Movement drives them: WorldDynamic (and All) keep them.
+    if (channel === "WorldStatic" || channel === "Pawn") for (const actorId of this.ragdollActors.keys()) ignored.add(actorId);
     return { ...options, ignoreActorIds: [...ignored] };
   }
 
