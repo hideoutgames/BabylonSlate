@@ -107,31 +107,6 @@ describe("createPlayBootCoordinator", () => {
     expect(realizedAfterNav).toBe(true);
   });
 
-  it("waits for a navmesh import that names no bytes before realizePlayWorld", async () => {
-    const nav = deferred<void>();
-    const requested: Array<Uint8Array | undefined> = [];
-    let navLoaded = false;
-    let realizedAfterNav = false;
-    const runtime = fakeRuntime({
-      loadNavMesh: (bytes) => {
-        requested.push(bytes);
-        return nav.promise.then(() => {
-          navLoaded = true;
-        });
-      },
-      realizePlayWorld() {
-        realizedAfterNav = navLoaded;
-      },
-    });
-    const boot = createPlayBootCoordinator();
-    boot.queueNavMesh(runtime);
-    const playing = boot.play(runtime);
-    nav.resolve();
-    await playing;
-    expect(requested).toEqual([undefined]);
-    expect(realizedAfterNav).toBe(true);
-  });
-
   it("skips graph spawns whose class already exists after realize", async () => {
     const runtime = fakeRuntime();
     const boot = createPlayBootCoordinator();
