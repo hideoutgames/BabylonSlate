@@ -388,6 +388,7 @@ Authored PBR and Unlit surfaces apply scene fog before output color conversion; 
 Every editor edit re-applies the Scene document through `EditorSceneSync`, so per-actor and per-apply work stays proportional to what changed:
 
 - `MaterialLibrary.resolveWithReadiness` returns the resolved Material with its published-generation readiness from the one plan `resolve` computed, so binding a Material-bound component serializes its document once, not twice. `planFor` still compares document content (hosts edit documents in place), so an edited document recompiles.
+- A Foliage component's visual fingerprint (serialized properties plus its distinct model guids) is memoized per `properties` object, not recomputed from up to 20,000 transforms on every apply. Scene edits replace the properties object, so any foliage edit still rebuilds the visual; Scenes with overlay layout copy their components and simply recompute.
 
 ## Snapshot apply
 
