@@ -270,23 +270,26 @@ export function isText2DOverlayMesh(mesh: AbstractMesh): boolean {
   );
 }
 
-function overlayBoxSources(
+/** Refill `into` with the meshes whose bounds make up the box. */
+function fillOverlayBoxSources(
+  into: AbstractMesh[],
   origin: AbstractMesh,
   visuals: readonly AbstractMesh[],
 ): AbstractMesh[] {
-  const candidates = isText2DOverlayMesh(origin)
-    ? [origin]
-    : visuals.length > 0
-      ? visuals
-      : [origin];
-  return candidates.filter((mesh) => !skipOverlayBoxVisual(mesh));
+  into.length = 0;
+  if (isText2DOverlayMesh(origin) || visuals.length === 0) {
+    if (!skipOverlayBoxVisual(origin)) into.push(origin);
+    return into;
+  }
+  for (const mesh of visuals) if (!skipOverlayBoxVisual(mesh)) into.push(mesh);
+  return into;
 }
 
 export function overlayBoxLocalBounds(
   origin: AbstractMesh,
   visuals: readonly AbstractMesh[] = [],
 ): OverlayBoxLocalBounds {
-  return boundsOfSources(origin, overlayBoxSources(origin, visuals));
+  return boundsOfSources(origin, fillOverlayBoxSources([], origin, visuals));
 }
 
 function boundsOfSources(
@@ -324,6 +327,11 @@ function boundsOfSources(
  * one taken after the last layout cannot change the box, so it skips the
  * bounds refresh. Numbers are compared with `Object.is`, so a signed zero is a
  * change and NaN is stable.
+ *
+ * Matrices are read without forcing. A rendered frame starts a new render id,
+ * and Babylon then re-derives any node whose own or an ancestor's transform
+ * changed, so a move still changes the snapshot while an idle selection leaves
+ * its world matrices (and its parents') untouched. Only the layout forces them.
  */
 interface LayoutInputs {
   numbers: number[];
@@ -345,9 +353,9 @@ function recordLayoutInputs(
   numbers.length = 0;
   refs.length = 0;
   numbers.push(handleSize);
-  pushMatrix(numbers, origin.computeWorldMatrix(true));
+  pushMatrix(numbers, origin.computeWorldMatrix());
   for (const source of sources) {
-    pushMatrix(numbers, source.computeWorldMatrix(true));
+    pushMatrix(numbers, source.computeWorldMatrix());
     // The stored bounds are what Babylon updates when geometry is edited;
     // swapped geometry or position data is caught by the references below.
     const info = source.getBoundingInfo();
@@ -623,6 +631,8 @@ export function createOverlayTransformBox(
 
   const frameInputs: LayoutInputs = { numbers: [], refs: [] };
   const laidOutInputs: LayoutInputs = { numbers: [], refs: [] };
+  // Refilled by every layout; the per-frame pass allocates no source list.
+  const sources: AbstractMesh[] = [];
   let laidOut = false;
 
   // Attach and drag always take the full path; the per-frame pass passes
@@ -643,7 +653,7 @@ export function createOverlayTransformBox(
       originalScene,
       options.canvasCssHeight?.(),
     );
-    const sources = overlayBoxSources(attached, visuals);
+    fillOverlayBoxSources(sources, attached, visuals);
     if (skipIfUnchanged && laidOut) {
       recordLayoutInputs(frameInputs, attached, sources, handleSize);
       if (sameLayoutInputs(frameInputs, laidOutInputs)) return;
