@@ -59,6 +59,19 @@ export function createParticleTypeResolver(
   const definitions = new Map<string, ParticleNodeDefinition | undefined>();
   const generics = new Map<string, ParticleNumericType | "conflict">();
   const inProgress = new Set<string>();
+  // First edge into each input pin, as `edges.find` answered; built when a generic node asks.
+  let incoming: Map<string, Map<string, (typeof graph.edges)[number]>> | undefined;
+  const incomingEdge = (nodeId: string, pinId: string) => {
+    if (!incoming) {
+      incoming = new Map();
+      for (const edge of graph.edges) {
+        let pins = incoming.get(edge.targetNodeId);
+        if (!pins) incoming.set(edge.targetNodeId, (pins = new Map()));
+        if (!pins.has(edge.targetPinId)) pins.set(edge.targetPinId, edge);
+      }
+    }
+    return incoming.get(nodeId)?.get(pinId);
+  };
 
   const definitionOf = (nodeId: string): ParticleNodeDefinition | undefined => {
     if (definitions.has(nodeId)) return definitions.get(nodeId);
@@ -81,9 +94,7 @@ export function createParticleTypeResolver(
     const connected: ParticleValueType[] = [];
     for (const pin of definition.inputs) {
       if (pin.type.kind !== "generic") continue;
-      const edge = graph.edges.find(
-        (candidate) => candidate.targetNodeId === nodeId && candidate.targetPinId === pin.id,
-      );
+      const edge = incomingEdge(nodeId, pin.id);
       if (!edge) continue;
       const sourceType = outputType(edge.sourceNodeId, edge.sourcePinId);
       if (sourceType && sourceType !== "particle") connected.push(sourceType);

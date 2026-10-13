@@ -35,7 +35,17 @@ const harness = vi.hoisted(() => ({
   registryEpoch: 0,
   /** Each scene's Material resolver options; `acquireTexture` returns the bound bytes. */
   resolvers: [] as Array<{ acquireTexture: (guid: string) => unknown }>,
-  presenterOptions: [] as Array<{ suspended?: () => boolean }>,
+  presenterOptions: [] as Array<{
+    suspended?: () => boolean;
+    staticContent?: boolean;
+    animating?: () => boolean;
+  }>,
+  presenters: [] as Array<{ present: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }>,
+  /** What the service reports to the presenter: false once it is paused or its run finished. */
+  needsFrames: true,
+  /** The shared Engine's context-restored subscription. */
+  contextRestored: null as (() => void) | null,
+  removeContextRestored: vi.fn(),
 }));
 
 vi.mock("@babylonslate/render", () => {
@@ -63,6 +73,7 @@ vi.mock("@babylonslate/render", () => {
       graphSystems: 0,
     });
     previewStats = () => ({ active: 12, capacity: 256, backend: "gpu", approximate: true });
+    needsFrames = () => harness.needsFrames;
     dispose = vi.fn();
     constructor(options: { onDiagnostic?: (diagnostic: ParticleServiceDiagnostic) => void }) {
       this.onDiagnostic = options.onDiagnostic;
@@ -72,9 +83,15 @@ vi.mock("@babylonslate/render", () => {
   return {
     ParticleService,
     createParticlePreviewScene: harness.createScene,
-    createMaterialPreviewPresenter: (_host: unknown, _canvas: unknown, options: { suspended?: () => boolean } = {}) => {
+    createMaterialPreviewPresenter: (
+      _host: unknown,
+      _canvas: unknown,
+      options: (typeof harness.presenterOptions)[number] = {},
+    ) => {
       harness.presenterOptions.push(options);
-      return { present: vi.fn(), dispose: vi.fn() };
+      const presenter = { present: vi.fn(), dispose: vi.fn() };
+      harness.presenters.push(presenter);
+      return presenter;
     },
     createParticleMaterialResolver: (options: { acquireTexture: (guid: string) => unknown }) => {
       harness.resolvers.push(options);
@@ -86,7 +103,15 @@ vi.mock("@babylonslate/render", () => {
   };
 });
 vi.mock("../context/play-context", () => {
-  const engine = {};
+  const engine = {
+    onContextRestoredObservable: {
+      add: (callback: () => void) => {
+        harness.contextRestored = callback;
+        return { callback };
+      },
+      remove: harness.removeContextRestored,
+    },
+  };
   const play = { ensureSharedEngine: () => engine };
   return { useOptionalPlay: () => play };
 });
@@ -119,6 +144,10 @@ afterEach(() => {
   harness.registryEpoch = 0;
   harness.resolvers.length = 0;
   harness.presenterOptions.length = 0;
+  harness.presenters.length = 0;
+  harness.needsFrames = true;
+  harness.contextRestored = null;
+  harness.removeContextRestored.mockClear();
   document.body.querySelectorAll('[data-slot="dialog-overlay"]').forEach((overlay) => overlay.remove());
 });
 
@@ -200,6 +229,46 @@ describe("Particle preview recovery", () => {
     overlay.removeAttribute("data-open");
     overlay.setAttribute("data-closed", "");
     await waitFor(() => expect(suspended()).toBe(false));
+  });
+
+  it("idles once the service needs no frames and draws one more for changes it cannot signal", async () => {
+    const view = render(preview());
+    await screen.findByTestId("particle-preview-restart");
+    const options = harness.presenterOptions.at(-1)!;
+    const presenter = harness.presenters.at(-1)!;
+    // Particles are not Babylon animatables, so the presenter follows the service.
+    expect(options.staticContent).toBe(true);
+    expect(options.animating!()).toBe(true);
+    harness.needsFrames = false;
+    expect(options.animating!()).toBe(false);
+
+    // A paused or finished preview shows an edit, or a Restart, only through a forced frame.
+    presenter.present.mockClear();
+    view.rerender(preview(withRate(60)));
+    expect(presenter.present).toHaveBeenCalledWith({ force: true });
+    presenter.present.mockClear();
+    fireEvent.click(screen.getByTestId("particle-preview-restart"));
+    expect(presenter.present).toHaveBeenCalledWith({ force: true });
+
+    // A running preview already draws every interval.
+    harness.needsFrames = true;
+    presenter.present.mockClear();
+    view.rerender(preview(withRate(61)));
+    expect(presenter.present).not.toHaveBeenCalled();
+  });
+
+  it("draws an idle preview again after the WebGL context is restored", async () => {
+    const view = render(preview());
+    await screen.findByTestId("particle-preview-restart");
+    const presenter = harness.presenters.at(-1)!;
+    harness.needsFrames = false;
+    presenter.present.mockClear();
+
+    harness.contextRestored!();
+    expect(presenter.present).toHaveBeenCalledWith({ force: true });
+
+    view.unmount();
+    expect(harness.removeContextRestored).toHaveBeenCalled();
   });
 
   it("shows renderer failures and retries them into a running preview", async () => {

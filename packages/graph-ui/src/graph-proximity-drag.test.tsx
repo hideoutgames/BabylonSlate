@@ -112,10 +112,11 @@ function renderDragGraph(
           });
       }
       internal.measured = { width: 100, height: 160 };
-      internal.internals.handleBounds = {
-        source: handles("out"),
-        target: handles("in"),
-      };
+      // XYFlow replaces a node's handle bounds only when it measures them again.
+      const bounds = { source: handles("out"), target: handles("in") };
+      if (JSON.stringify(internal.internals.handleBounds) !== JSON.stringify(bounds)) {
+        internal.internals.handleBounds = bounds;
+      }
     }
   }
 
@@ -406,6 +407,24 @@ describe("GraphEditor proximity dragging", () => {
     expect(graph.previews()).toHaveLength(0);
     graph.stop();
     expect(graph.emitted).toEqual([]);
+  });
+
+  it("follows a stationary node whose handles are measured again during the drag", () => {
+    const graph = renderDragGraph();
+    graph.start();
+    graph.move();
+    expect(graph.previews()).toHaveLength(1);
+
+    // The target's input moves to its top edge, which no longer faces the dragged output.
+    graph.setMeasurements("target", [{ ...floatInput, side: Position.Top }]);
+    graph.move({ x: 131, y: 0 });
+    expect(graph.previews()).toHaveLength(0);
+
+    graph.setMeasurements("target", [floatInput]);
+    graph.move();
+    expect(graph.previews()).toHaveLength(1);
+    graph.stop();
+    expect(graph.emitted.at(-1)?.edges).toHaveLength(1);
   });
 
   it("leaves overlapping input/output state plates to their own gestures", () => {

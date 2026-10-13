@@ -810,7 +810,11 @@ describe("material preview presenter", () => {
 
   describe("static content", () => {
     /** A presenter whose clock advances past any frame interval on every call. */
-    async function staticPresenter(host: MaterialPreviewScene, canvas: FakeCanvas, extra: { suspended?: () => boolean } = {}) {
+    async function staticPresenter(
+      host: MaterialPreviewScene,
+      canvas: FakeCanvas,
+      extra: { suspended?: () => boolean; animating?: () => boolean } = {},
+    ) {
       let now = 0;
       const presenter = createMaterialPreviewPresenter(
         host,
@@ -888,11 +892,11 @@ describe("material preview presenter", () => {
       expect(render).toHaveBeenCalledTimes(2);
     });
 
-    it("keeps drawing while an animation is running", async () => {
+    it("keeps drawing while an animation is running and idles once it ends", async () => {
       const host = await previewHost();
       const spin = new Animation("spin", "rotation.y", 30, Animation.ANIMATIONTYPE_FLOAT, Animation.ANIMATIONLOOPMODE_CYCLE);
       spin.setKeys([{ frame: 0, value: 0 }, { frame: 30, value: Math.PI }]);
-      host.scene.beginDirectAnimation(host.mesh, [spin], 0, 30, true);
+      const clip = host.scene.beginDirectAnimation(host.mesh, [spin], 0, 30, true);
       const render = vi.spyOn(host.scene, "render");
       const presenter = await staticPresenter(host, new FakeCanvas());
       for (let frame = 0; frame < 3; frame += 1) {
@@ -900,6 +904,58 @@ describe("material preview presenter", () => {
         await readbackDone();
       }
       expect(render).toHaveBeenCalledTimes(3);
+
+      clip.stop();
+      presenter.present();
+      presenter.present();
+      expect(render).toHaveBeenCalledTimes(3);
+    });
+
+    it("idles after an animation reaches its natural end, which removes it from the Scene", async () => {
+      const host = await previewHost();
+      // Each render advances the clip 1.6 s: the 1 s clip ends within two frames.
+      host.scene.useConstantAnimationDeltaTime = true;
+      const play = new Animation("play", "rotation.y", 30, Animation.ANIMATIONTYPE_FLOAT, Animation.ANIMATIONLOOPMODE_CONSTANT);
+      play.setKeys([{ frame: 0, value: 0 }, { frame: 30, value: Math.PI }]);
+      host.scene.beginDirectAnimation(host.mesh, [play], 0, 30, false, 100);
+      const render = vi.spyOn(host.scene, "render");
+      const presenter = await staticPresenter(host, new FakeCanvas());
+      for (let frame = 0; frame < 10 && host.scene.animatables.length > 0; frame += 1) {
+        presenter.present();
+        await readbackDone();
+      }
+      expect(host.scene.animatables).toHaveLength(0);
+
+      const rendered = render.mock.calls.length;
+      expect(rendered).toBeGreaterThan(0);
+      expect(rendered).toBeLessThan(10);
+      presenter.present();
+      presenter.present();
+      expect(render).toHaveBeenCalledTimes(rendered);
+    });
+
+    it("wakes for content the Scene does not register as animating, and idles when it stops", async () => {
+      const host = await previewHost();
+      const render = vi.spyOn(host.scene, "render");
+      let animating = false;
+      const presenter = await staticPresenter(host, new FakeCanvas(), { animating: () => animating });
+      presenter.present();
+      await readbackDone();
+      presenter.present();
+      expect(render).toHaveBeenCalledTimes(1);
+
+      // Particles advance only inside a render and never appear in `scene.animatables`.
+      animating = true;
+      for (let frame = 0; frame < 3; frame += 1) {
+        presenter.present();
+        await readbackDone();
+      }
+      expect(render).toHaveBeenCalledTimes(4);
+
+      animating = false;
+      presenter.present();
+      presenter.present();
+      expect(render).toHaveBeenCalledTimes(4);
     });
 
     it("draws nothing while suspended and honours the forced redraw once it clears", async () => {

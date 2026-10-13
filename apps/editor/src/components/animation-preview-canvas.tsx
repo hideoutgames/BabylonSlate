@@ -69,6 +69,7 @@ export function AnimationPreviewCanvas({
       null;
     let sourceLoaded: { dispose: () => void; animationGroups: AnimationGroup[] } | null =
       null;
+    let stopRestoreWatch: (() => void) | null = null;
     const raf = { id: 0 };
     const overlay = watchBlockingEditorOverlay();
     void (async () => {
@@ -114,15 +115,26 @@ export function AnimationPreviewCanvas({
           if (!cancelled) setClip(STOPPED_CLIP);
         });
         playingRef.current = group;
-        presenter = createMaterialPreviewPresenter(host, canvas, { maxFps: 30, suspended: overlay.isOpen });
+        // A playing clip keeps the presenter awake through the Scene's animatables; once it ends the frame is final.
+        presenter = createMaterialPreviewPresenter(host, canvas, {
+          maxFps: 30,
+          staticContent: true,
+          suspended: overlay.isOpen,
+        });
         gestures = attachMaterialPreviewGestures(canvas, host.camera, {
           onChange: () => presenter?.present({ force: true }),
         });
         hostRef.current = host;
         presenterRef.current = presenter;
+        // A settled frame is not redrawn by itself, so a restored WebGL context needs a forced one.
+        const restored = engine.onContextRestoredObservable;
+        const restoreObserver = restored?.add(() => presenter?.present({ force: true })) ?? null;
+        stopRestoreWatch = () => restored?.remove(restoreObserver);
         presenter.present({ force: true });
         if (cancelled) {
           group?.stop();
+          stopRestoreWatch?.();
+          stopRestoreWatch = null;
           presenter.dispose();
           gestures.dispose();
           loaded.dispose();
@@ -146,6 +158,8 @@ export function AnimationPreviewCanvas({
       } catch (error) {
         console.warn("[render] Animation preview failed", error);
         playingRef.current?.stop();
+        stopRestoreWatch?.();
+        stopRestoreWatch = null;
         presenter?.dispose();
         gestures?.dispose();
         loaded?.dispose();
@@ -166,6 +180,8 @@ export function AnimationPreviewCanvas({
       setClip(STOPPED_CLIP);
       bonesRef.current?.dispose();
       bonesRef.current = null;
+      stopRestoreWatch?.();
+      stopRestoreWatch = null;
       gestures?.dispose();
       presenter?.dispose();
       loaded?.dispose();

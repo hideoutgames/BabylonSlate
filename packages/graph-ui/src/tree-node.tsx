@@ -17,6 +17,7 @@ import { cn } from "@babylonslate/ui/lib/utils";
 import { BlueprintNodeShell, type CanvasNode } from "./graph-nodes";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { nodeRoleClass, type NodeVisualRole } from "./node-theme";
+import { isPinWired } from "./pin-connections";
 
 const DOUBLE_TAP_MS = 350;
 
@@ -76,12 +77,9 @@ function TreePinHandle({
 }) {
   const { onPinTap, pendingPin } = useGraphEditorContext();
   const pending = pendingPin?.nodeId === nodeId && pendingPin.pinId === pinId;
+  // Indexed once per edges array, so a drag or pan frame does not scan every edge per pin.
   const connected = useStore((state) =>
-    state.edges.some((edge) =>
-      direction === "out"
-        ? edge.source === nodeId && (edge.sourceHandle ?? "") === pinId
-        : edge.target === nodeId && (edge.targetHandle ?? "") === pinId,
-    ),
+    isPinWired(state.edges, nodeId, { id: pinId, direction }),
   );
 
   return (

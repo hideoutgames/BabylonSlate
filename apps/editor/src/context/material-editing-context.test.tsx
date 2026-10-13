@@ -251,6 +251,11 @@ function RenderProbe() {
   );
 }
 
+function LoweringProbe() {
+  const { lowering } = useMaterialEditing();
+  return <output data-testid="lowering">{!lowering ? "none" : lowering.ok ? "ok" : "invalid"}</output>;
+}
+
 function PreviewStateProbe() {
   const { previewState } = useMaterialEditing();
   return <output data-testid="preview-state">{previewState.status}</output>;
@@ -417,6 +422,40 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.presenter.present.mockClear();
     options.onChange();
     expect(harness.presenter.present).toHaveBeenCalledWith({ force: true });
+  });
+
+  it("shares its lowering with the panels and recompiles for graph edits, not node drags", async () => {
+    const tree = () => materialTree(true, (
+      <>
+        <AttachCanvas />
+        <LoweringProbe />
+      </>
+    ));
+    const view = render(tree());
+    await waitFor(() => expect(harness.acquireCalls).toBeGreaterThan(0));
+    expect(screen.getByTestId("lowering").textContent).toBe("ok");
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
+    const compiles = harness.acquireCalls;
+
+    // A node drag changes positions only, which the compile key leaves out.
+    const dragged = createDefaultMaterialDocument("Rock");
+    dragged.nodes[0]!.position = { x: 500, y: -200 };
+    harness.content = dragged;
+    view.rerender(tree());
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
+    expect(harness.acquireCalls).toBe(compiles);
+
+    const edited = createDefaultMaterialDocument("Rock");
+    edited.nodes.find((node) => node.type === "const.color")!.properties = { value: [1, 0, 0, 1] };
+    harness.content = edited;
+    view.rerender(tree());
+    await waitFor(() => expect(harness.acquireCalls).toBeGreaterThan(compiles));
+
+    const broken = createDefaultMaterialDocument("Rock");
+    broken.nodes.push({ id: "bogus", type: "math.doesNotExist", position: { x: 0, y: 0 }, properties: {} });
+    harness.content = broken;
+    view.rerender(tree());
+    expect(screen.getByTestId("lowering").textContent).toBe("invalid");
   });
 
   it("presents a plain Material only on change", async () => {

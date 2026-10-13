@@ -85,6 +85,19 @@ export function createTypeResolver(
   const definitions = new Map<string, MaterialNodeDefinition | undefined>();
   const generics = new Map<string, MaterialValueType | "conflict">();
   const inProgress = new Set<string>();
+  // First edge into each input pin, as `edges.find` answered; built when a generic node asks.
+  let incoming: Map<string, Map<string, MaterialGraphEdge>> | undefined;
+  const incomingEdge = (nodeId: string, pinId: string): MaterialGraphEdge | undefined => {
+    if (!incoming) {
+      incoming = new Map();
+      for (const edge of graph.edges) {
+        let pins = incoming.get(edge.targetNodeId);
+        if (!pins) incoming.set(edge.targetNodeId, (pins = new Map()));
+        if (!pins.has(edge.targetPinId)) pins.set(edge.targetPinId, edge);
+      }
+    }
+    return incoming.get(nodeId)?.get(pinId);
+  };
 
   const definitionOf = (
     nodeId: string,
@@ -132,10 +145,7 @@ export function createTypeResolver(
     inProgress.add(nodeId);
     const connected: MaterialValueType[] = [];
     for (const pin of genericInputs) {
-      const edge = graph.edges.find(
-        (candidate) =>
-          candidate.targetNodeId === nodeId && candidate.targetPinId === pin.id,
-      );
+      const edge = incomingEdge(nodeId, pin.id);
       if (!edge) continue;
       const sourceType = outputType(edge.sourceNodeId, edge.sourcePinId);
       if (sourceType) connected.push(sourceType);
