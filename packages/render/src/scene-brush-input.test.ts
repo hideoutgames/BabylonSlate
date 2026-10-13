@@ -65,6 +65,22 @@ it.each(["mouse", "touch", "pen"])("commits one undoable landscape stroke for %s
   expect(f.canvas.captures.size).toBe(0);
 });
 
+it("applies the scene once per pointer event however many dabs a drag interpolates, and commits the scene it showed", async () => {
+  const f = fixture();
+  const apply = vi.spyOn(f.sync, "apply");
+  f.pointer("pointerdown", -6, 0);
+  expect(apply).toHaveBeenCalledTimes(1);
+  apply.mockClear();
+  f.pointer("pointermove", 6, 0); // 12 units at a 0.8 spacing interpolates 15 dabs
+  expect(apply).toHaveBeenCalledTimes(1);
+  const shown = apply.mock.calls[0]![0];
+  expect(f.centerHeight()).toBeGreaterThan(0);
+  f.pointer("pointerup", 6, 0);
+  await Promise.resolve();
+  expect(f.committed).toHaveLength(1);
+  expect(f.committed[0]).toBe(shown);
+});
+
 it.each(["pointercancel", "second-touch", "escape"])("restores the landscape without a history entry on %s", (reason) => {
   const f = fixture();
   f.pointer("pointerdown", 0, 0, "touch");

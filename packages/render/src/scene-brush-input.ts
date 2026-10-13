@@ -20,7 +20,9 @@ const RING_LIFT = 0.03;
 const RING_COLOR = new Color4(0.95, 0.65, 0.2, 1);
 const RING_INNER_COLOR = new Color4(0.95, 0.65, 0.2, 0.5);
 
-type Stroke = { pointerId: number; before: SerializedScene; next: SerializedScene; state: SceneBrushState; last: Vector3 | null; foliage: FoliageProperties; actorId: string; componentId: string; occupied: Map<string, Vector3[]> };
+type Stroke = { pointerId: number; before: SerializedScene; next: SerializedScene; state: SceneBrushState; last: Vector3 | null; foliage: FoliageProperties; actorId: string; componentId: string; occupied: Map<string, Vector3[]>;
+  /** A landscape dab changed `next` since it was last shown in the viewport. */
+  unshown: boolean };
 
 function alignment(normal: Vector3): Quaternion {
   const axis = Vector3.Cross(Vector3.Up(), normal);
@@ -165,7 +167,13 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
       })] };
     }
     // Foliage is published once on release; the footprint previews placement without repeatedly decoding models.
-    if (state.mode === "landscape") handle.editor?.sync.apply(current.next);
+    if (state.mode === "landscape") current.unshown = true;
+  };
+  /** Shows the landscape once per pointer event: a drag interpolates many dabs, and each full-scene apply would only be overwritten by the next. */
+  const show = (current: Stroke) => {
+    if (!current.unshown) return;
+    current.unshown = false;
+    handle.editor?.sync.apply(current.next);
   };
   const finish = (cancel: boolean) => {
     const current = stroke; stroke = null;
@@ -193,7 +201,7 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     if (pointers.size > 1) { finish(true); return; }
     if (pending || !state.scene || (state.mode === "foliage" && state.foliageTool === "paint" && !state.group?.models.length)) return;
     const hit = pick(event, state); if (!hit?.pickedPoint) return;
-    stroke = { pointerId: event.pointerId, before: state.scene, next: state.scene, state, last: hit.pickedPoint.clone(), foliage: { groupId: state.group?.id ?? "", batches: [] }, actorId: crypto.randomUUID(), componentId: crypto.randomUUID(), occupied: new Map() };
+    stroke = { pointerId: event.pointerId, before: state.scene, next: state.scene, state, last: hit.pickedPoint.clone(), foliage: { groupId: state.group?.id ?? "", batches: [] }, actorId: crypto.randomUUID(), componentId: crypto.randomUUID(), occupied: new Map(), unshown: false };
     if (state.mode === "foliage") for (const actor of state.scene.actors) for (const component of actor.components) {
       if (component.classId !== "FoliageComponent") continue;
       const world = handle.editor?.sync.meshForComponent(actor.id, component.id)?.computeWorldMatrix(true); if (!world) continue;
@@ -201,6 +209,7 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     }
     canvas.setPointerCapture(event.pointerId);
     dab(stroke, hit.pickedPoint);
+    show(stroke);
   };
   const move = (event: PointerEvent) => {
     const state = options.getState();
@@ -218,6 +227,7 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     const count = Math.min(128, Math.floor(distance / step));
     if (!stroke.last) dab(stroke, hit.pickedPoint);
     for (let i = 1; i <= count; i++) dab(stroke, Vector3.Lerp(start, hit.pickedPoint, Math.min(1, i * step / distance)));
+    show(stroke);
     if (count || !stroke.last) stroke.last = hit.pickedPoint.clone();
   };
   const up = (event: PointerEvent) => {
