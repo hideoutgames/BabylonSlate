@@ -291,7 +291,7 @@ export class ShadowMapRefresh {
     state.value(generator.enableSoftTransparentShadow);
     state.value(generator.useOpacityTextureForTransparentShadow);
     const cascadedSun = generator instanceof CascadedShadowGenerator ? generator : null;
-    let continuous =
+    let continuous: boolean =
       this.continuous ||
       (light instanceof DirectionalLight && !cascadedSun) ||
       !!light.customProjectionMatrixBuilder ||
