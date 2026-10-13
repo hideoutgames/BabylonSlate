@@ -1,6 +1,7 @@
 import { resolveOverlayLayout, type OverlaySafeAreaInsets, type VirtualizedItem, type OverlayLayoutEntry, type OverlayLayoutResult, type SerializedActor, type SerializedTransform, type Transform } from "@babylonslate/core";
 import type { Actor, ActorComponent } from "@babylonslate/object-model";
 import { samePlainData } from "./plain-data";
+import { SceneLayerLayoutGate } from "./scene-layer-layout-gate";
 
 type CachedPose = { authored: SerializedTransform; applied: SerializedTransform };
 const LAYOUT_PROPERTY_KEYS = ["width", "height", "widthMode", "heightMode", "fillWeight", "gap", "horizontalAlignment", "verticalAlignment", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "scrollX", "scrollY", "scrollAxis", "visible", "enabled", "size", "text", "wrapWidth", "wrapHeight", "textureGuid", "itemClassId", "itemCount", "itemWidth", "itemHeight", "columns", "overscan", "useSafeArea", "safeLeft", "safeRight", "safeTop", "safeBottom", "insetLeft", "insetRight", "insetTop", "insetBottom"] as const;
@@ -23,6 +24,8 @@ export class SceneLayerLayout {
   private readonly inputs = new Map<string, unknown[]>();
   private readonly results = new Map<string, OverlayLayoutResult>();
   private readonly owners = new Map<string, Array<Actor | ActorComponent>>();
+  /** Recognises an unchanged layer before its inputs are built; see `SceneLayerLayoutGate`. */
+  private readonly gate = new SceneLayerLayoutGate();
   entries(layerId: string): ReadonlyMap<string, OverlayLayoutEntry> { return this.results.get(layerId)?.entries ?? new Map(); }
   /** The design pose: reused while the live pose is still the one layout applied. */
   private authored(target: Actor | ActorComponent): SerializedTransform {
@@ -32,6 +35,8 @@ export class SceneLayerLayout {
     return current;
   }
   update(layerId: string, actors: readonly Actor[], pixelsPerUnit: number, texturePixelSizes: Readonly<Record<string, { width: number; height: number }>> = {}, safeAreaInsets: Partial<OverlaySafeAreaInsets> = {}): OverlayLayoutResult | null {
+    // Nothing the layout reads has changed since it last ran: skip building its inputs.
+    if (this.gate.unchanged(layerId, actors, this.owners.get(layerId), pixelsPerUnit, texturePixelSizes, safeAreaInsets)) return null;
     const owners = actors.filter(actor => actor.sceneLayerId === layerId && !actor.destroyed).flatMap(actor => [actor, ...actor.components.filter(component => !component.destroyed)]);
     const source: SerializedActor[] = actors.filter(a => a.sceneLayerId === layerId && !a.destroyed).map(a => ({
       id: a.guid, classId: a.classId, name: String(a.getVariable("name") ?? ""), parentId: typeof a.getVariable("parentId") === "string" ? String(a.getVariable("parentId")) : null,
@@ -52,7 +57,11 @@ export class SceneLayerLayout {
     const inputs = [source, pixelsPerUnit, sizes, { ...safeAreaInsets }, virtualItems];
     const previousInputs = this.inputs.get(layerId);
     const previousOwners = this.owners.get(layerId);
-    if (previousInputs && samePlainData(previousInputs, inputs) && previousOwners?.length === owners.length && owners.every((owner, index) => previousOwners[index] === owner)) return null;
+    if (previousInputs && previousOwners && samePlainData(previousInputs, inputs) && previousOwners.length === owners.length && owners.every((owner, index) => previousOwners[index] === owner)) {
+      // Equal to what was laid out, so what was read now stands in for it.
+      this.gate.record(layerId, actors, previousOwners, pixelsPerUnit, texturePixelSizes, safeAreaInsets);
+      return null;
+    }
     const result = resolveOverlayLayout(source, { pixelsPerUnit, safeAreaInsets, virtualItems, textureSize: (guid) => texturePixelSizes[guid], includeUnmanagedBounds: true });
     const byId = new Map(actors.map(a => [a.guid, a]));
     const apply = (target: Actor | ActorComponent, transform: SerializedTransform) => {
@@ -69,10 +78,11 @@ export class SceneLayerLayout {
     this.results.set(layerId, result);
     this.inputs.set(layerId, inputs);
     this.owners.set(layerId, owners);
+    this.gate.record(layerId, actors, owners, pixelsPerUnit, texturePixelSizes, safeAreaInsets);
     return result;
   }
   remove(layerId: string): void {
-    this.results.delete(layerId); this.inputs.delete(layerId); this.owners.delete(layerId);
+    this.results.delete(layerId); this.inputs.delete(layerId); this.owners.delete(layerId); this.gate.remove(layerId);
   }
-  clear(): void { this.results.clear(); this.inputs.clear(); this.owners.clear(); this.poses = new WeakMap(); }
+  clear(): void { this.results.clear(); this.inputs.clear(); this.owners.clear(); this.gate.clear(); this.poses = new WeakMap(); }
 }

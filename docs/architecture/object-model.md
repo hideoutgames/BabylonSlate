@@ -23,7 +23,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 
 | Export | Role |
 | --- | --- |
-| `BObject` | Base instance: guid, classId, variables, `onCreation` / `onTick` / `onDestroyed` |
+| `BObject` | Base instance: guid, classId, variables, `onCreation` / `onTick` / `onDestroyed`. `variablesRevision` advances on every variable `set`/`delete`/`clear` (rewriting a primitive with itself does not), so a consumer that remembers it can skip re-reading unchanged values. |
 | `Actor` | World-placed object with transform and ordered component list. Its `variables` map marks the World's `structuralRevision` on any `set`/`delete`/`clear` that changes `parentId` or `name`, so direct map writes cannot bypass identity/hierarchy bookkeeping. |
 | `Scene` | Live Play scene `BObject` (`classId` `Scene:{assetGuid}`). `variables.sceneName` is the authored display name; `variables.assetGuid` is the document guid (Get-only); `variables.gravity` is the live world gravity `{ x, y, z }` (Get/Set). Not spawnable. |
 | `SceneLayer` | Session overlay instance (`BObject`); not an Actor. Stores `layerBounds` (orange design canvas, default 32×18). |
