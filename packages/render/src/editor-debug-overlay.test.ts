@@ -3,6 +3,7 @@ import {
   FreeCamera,
   MeshBuilder,
   NullEngine,
+  PointLight,
   Quaternion,
   RenderTargetTexture,
   Scene,
@@ -35,7 +36,7 @@ import {
   EditorDebugOverlay,
 } from "./editor-debug-overlay";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
-import { sceneRenderTargetCaptures } from "./render-target-capture";
+import { isRenderTargetCaptureCandidate, sceneRenderTargetCaptures } from "./render-target-capture";
 import { isViewportShadingTarget } from "./viewport-shading-mode";
 import { createEditorCameraModel } from "./editor-camera-model";
 
@@ -120,6 +121,38 @@ function frustumWorldPoints(root: TransformNode): Vector3[] {
   return points;
 }
 
+/** The counts whose change makes the frame graph re-run its whole-scene readiness probe. */
+function membership(scene: Scene) {
+  return {
+    meshes: scene.meshes.length,
+    transformNodes: scene.transformNodes.length,
+    materials: scene.materials.length,
+    textures: scene.textures.length,
+    cameras: scene.cameras.length,
+    lights: scene.lights.length,
+  };
+}
+
+function lightActor(
+  id: string,
+  properties: Record<string, unknown>,
+  options: { position?: [number, number, number]; rotation?: [number, number, number, number] } = {},
+) {
+  return createActor(id, id, {
+    transform: {
+      ...identitySerializedTransform(),
+      position: options.position ?? [0, 0, 0],
+      rotation: options.rotation ?? [0, 0, 0, 1],
+    },
+    components: [{ id: "light", classId: "LightComponent", properties }],
+  });
+}
+
+/** Distance from `from` of the farthest point. */
+function reach(points: readonly Vector3[], from = Vector3.Zero()): number {
+  return points.reduce((max, point) => Math.max(max, Vector3.Distance(point, from)), 0);
+}
+
 function maxAbs(points: readonly Vector3[], axis: "x" | "y" | "z"): number {
   return points.reduce((max, point) => Math.max(max, Math.abs(point[axis])), 0);
 }
@@ -129,10 +162,9 @@ function projectionAspect(camera: Camera): number {
   return m[5]! / m[0]!;
 }
 
-function previewCamera(scene: { cameras: Camera[] }): Camera {
-  const camera = scene.cameras.find((entry) =>
-    entry.name.startsWith("debugPreviewCam:"),
-  );
+/** The selected lens' preview camera; it is not in `scene.cameras`. */
+function previewCamera(overlay: EditorDebugOverlay): Camera {
+  const camera = overlay.previewTexture?.activeCamera;
   if (!camera) throw new Error("preview camera missing");
   return camera;
 }
@@ -202,7 +234,7 @@ describe("EditorDebugOverlay", () => {
       sceneData: sceneWith([cameraActor()]),
       selectedActorIds: ["cam"],
     });
-    expect(projectionAspect(previewCamera(scene))).toBeCloseTo(
+    expect(projectionAspect(previewCamera(overlay))).toBeCloseTo(
       CAMERA_PREVIEW_WIDTH / CAMERA_PREVIEW_HEIGHT,
       5,
     );
@@ -271,7 +303,7 @@ describe("EditorDebugOverlay", () => {
       ]),
       selectedActorIds: ["cam"],
     });
-    const preview = previewCamera(scene);
+    const preview = previewCamera(overlay);
     expect(preview.orthoRight! / preview.orthoTop!).toBeCloseTo(
       CAMERA_PREVIEW_WIDTH / CAMERA_PREVIEW_HEIGHT,
       5,
@@ -284,25 +316,118 @@ describe("EditorDebugOverlay", () => {
     overlay.dispose();
   });
 
-  it("builds dashed influence lines for a selected point light and disposes on deselect", () => {
+  it("draws dashed influence rings for a selected point light and hides them on deselect", () => {
     const { scene } = createHandle();
     const overlay = new EditorDebugOverlay(scene);
-    const sceneData = sceneWith([
-      createActor("lamp", "Lamp", {
-        components: [
-          {
-            id: "light",
-            classId: "LightComponent",
-            properties: { lightKind: "point", range: 8, intensity: 1 },
-          },
-        ],
-      }),
-    ]);
+    const sceneData = sceneWith([lightActor("lamp", { lightKind: "point", range: 8, intensity: 1 })]);
     overlay.sync({ sceneData, selectedActorIds: ["lamp"] });
-    expect(overlay.lightDebugMesh).not.toBeNull();
+    const root = overlay.lightDebugMesh as TransformNode;
+    expect(root.isEnabled()).toBe(true);
     expect(overlay.lightDebugKind).toBe("point");
+    const rings = frustumWorldPoints(root);
+    expect(reach(rings)).toBeGreaterThan(8 * 0.99);
+    expect(reach(rings)).toBeLessThanOrEqual(8 + 1e-4);
+    // The guide always lives in the scene, so no world consumer may treat it as content.
+    const [guide] = root.getChildMeshes() as LinesMesh[];
+    expect(guide!.isPickable).toBe(false);
+    expect(isViewportShadingTarget(guide!)).toBe(false);
+    expect(isRenderTargetCaptureCandidate(guide!)).toBe(false);
     overlay.sync({ sceneData, selectedActorIds: [] });
     expect(overlay.lightDebugMesh).toBeNull();
+    expect(overlay.lightDebugKind).toBeNull();
+    expect(root.isEnabled()).toBe(false);
+    expect(root.isDisposed()).toBe(false);
+    overlay.dispose();
+  });
+
+  it("selects, switches, edits and deselects lights, cameras and captures without changing scene membership", () => {
+    const { scene } = createHandle();
+    const overlay = new EditorDebugOverlay(scene, { now: () => 0 });
+    const baseline = membership(scene);
+    const actors = (range: number, fieldOfView: number) => sceneWith([
+      lightActor("lamp", { lightKind: "point", range }),
+      lightActor("spot", { lightKind: "spot", range, outerAngle: 30 }, { rotation: eulerDegreesToQuaternion([0, 90, 0]) }),
+      lightActor("sun", { lightKind: "directional" }),
+      cameraActor({ properties: { fieldOfView } }),
+      captureActor({ fieldOfView }),
+    ]);
+    const selections = [["lamp"], ["spot"], ["sun"], ["cam"], ["rt"], ["spot", "cam"], [], ["lamp"], []];
+    for (const selectedActorIds of selections) {
+      overlay.sync({ sceneData: actors(8, 60), selectedActorIds });
+      expect(membership(scene)).toEqual(baseline);
+    }
+    // Editing the selected actor reshapes its guide in place.
+    for (const [range, fieldOfView] of [[8, 60], [12, 60], [12, 90], [3, 30]] as const) {
+      overlay.sync({ sceneData: actors(range, fieldOfView), selectedActorIds: ["spot", "cam"] });
+      expect(membership(scene)).toEqual(baseline);
+    }
+    overlay.dispose();
+  });
+
+  it("releases every guide, the preview camera and the preview RTT on dispose", () => {
+    const { scene } = createHandle();
+    const before = membership(scene);
+    const overlay = new EditorDebugOverlay(scene, { now: () => 0 });
+    // The light and lens guides (a root and one dashed mesh with its own material each) and
+    // the first audio guide (a root and an inner and a max mesh).
+    const built = membership(scene);
+    expect(built).toEqual({
+      ...before,
+      meshes: before.meshes + 4,
+      transformNodes: before.transformNodes + 3,
+      materials: before.materials + 4,
+    });
+    const audio = createActor("speaker", "Speaker", {
+      components: [{ id: "audio", classId: "AudioComponent", properties: { audioAssetGuid: "sound" } }],
+    });
+    const audioLibrary = {
+      audio: new Map([["sound", { ...createDefaultAudioPayload(), soundAttenuationGuid: "near" }]]),
+      attenuations: new Map([["near", { ...createDefaultSoundAttenuationPayload(), innerRadius: 3, maxRadius: 12 }]]),
+    };
+    overlay.sync({
+      sceneData: sceneWith([lightActor("lamp", { lightKind: "point" }), cameraActor(), audio]),
+      selectedActorIds: ["lamp", "cam", "speaker"],
+      audioLibrary,
+    });
+    // Selecting all three kinds adds nothing: even the audio rings were built with the overlay.
+    expect(membership(scene)).toEqual(built);
+    const texture = overlay.previewTexture!;
+    const camera = texture.activeCamera!;
+    const disposeTexture = vi.spyOn(texture, "dispose");
+    const disposeCamera = vi.spyOn(camera, "dispose");
+    overlay.dispose();
+    expect(disposeTexture).toHaveBeenCalledOnce();
+    expect(disposeCamera).toHaveBeenCalledOnce();
+    expect(membership(scene)).toEqual(before);
+    // A late sync, such as a React effect after teardown, must not rebuild anything.
+    overlay.sync({ sceneData: sceneWith([lightActor("lamp", { lightKind: "point" })]), selectedActorIds: ["lamp"] });
+    expect(membership(scene)).toEqual(before);
+  });
+
+  it("reshapes the selected light's guide in place when its range or cone changes", () => {
+    const { scene } = createHandle();
+    const overlay = new EditorDebugOverlay(scene);
+    overlay.sync({ sceneData: sceneWith([lightActor("lamp", { lightKind: "point", range: 8 })]), selectedActorIds: ["lamp"] });
+    const root = overlay.lightDebugMesh as TransformNode;
+    const [lines] = root.getChildMeshes() as LinesMesh[];
+    const before = membership(scene);
+    expect(reach(frustumWorldPoints(root))).toBeCloseTo(8, 0);
+
+    overlay.sync({ sceneData: sceneWith([lightActor("lamp", { lightKind: "point", range: 20 })]), selectedActorIds: ["lamp"] });
+    expect(overlay.lightDebugMesh).toBe(root);
+    expect(root.getChildMeshes()[0]).toBe(lines);
+    expect(reach(frustumWorldPoints(root))).toBeCloseTo(20, 0);
+
+    // A wider cone at the same range widens the base ring around the aim axis (+Z).
+    const spot = (outerAngle: number) => sceneWith([lightActor("lamp", { lightKind: "spot", range: 10, outerAngle })]);
+    overlay.sync({ sceneData: spot(30), selectedActorIds: ["lamp"] });
+    const narrow = maxAbs(frustumWorldPoints(root), "x");
+    overlay.sync({ sceneData: spot(90), selectedActorIds: ["lamp"] });
+    const wide = maxAbs(frustumWorldPoints(root), "x");
+    expect(narrow).toBeCloseTo(Math.tan(Math.PI / 12) * 10, 3);
+    expect(wide).toBeCloseTo(10, 3);
+    expect(overlay.lightDebugKind).toBe("spot");
+    expect(membership(scene)).toEqual(before);
     overlay.dispose();
   });
 
@@ -325,10 +450,11 @@ describe("EditorDebugOverlay", () => {
     overlay.sync({ sceneData: sceneWith([actor]), selectedActorIds: [actor.id], audioLibrary });
     const root = scene.getTransformNodeByName("debugAudio:speaker:audio")!;
     expect(root.position.asArray()).toEqual([12, 0, 0]);
-    const inner = root.getChildMeshes().filter((mesh) => mesh.name.includes(":inner:")) as LinesMesh[];
-    const outer = root.getChildMeshes().filter((mesh) => mesh.name.includes(":max:")) as LinesMesh[];
-    expect(inner).toHaveLength(3);
-    expect(outer).toHaveLength(3);
+    // One mesh per colour holds the rings about all three axes.
+    const inner = root.getChildMeshes().filter((mesh) => mesh.name.endsWith(":inner")) as LinesMesh[];
+    const outer = root.getChildMeshes().filter((mesh) => mesh.name.endsWith(":max")) as LinesMesh[];
+    expect(inner).toHaveLength(1);
+    expect(outer).toHaveLength(1);
     for (const [meshes, radius, color] of [[inner, 3, [0, 1, 0]], [outer, 12, [1, 1, 0]]] as const) {
       for (const mesh of meshes) {
         expect(mesh.color.asArray()).toEqual(color);
@@ -365,9 +491,11 @@ describe("EditorDebugOverlay", () => {
     scene.onBeforeRenderObservable.notifyObservers(scene);
     expect(root.position.asArray()).toEqual([126, 0, 0]);
     overlay.sync({ sceneData: sceneWith([actor]), selectedActorIds: [], audioLibrary });
-    expect(root.isDisposed()).toBe(true);
-    expect(scene.meshes.some((mesh) => mesh.name.startsWith("debugAudio:"))).toBe(false);
+    expect(root.isEnabled()).toBe(false);
+    expect(root.isDisposed()).toBe(false);
+    expect(scene.meshes.some((mesh) => mesh.name.startsWith("debugAudio:") && mesh.isEnabled())).toBe(false);
     overlay.dispose();
+    expect(root.isDisposed()).toBe(true);
     expect(scene.onBeforeRenderObservable.hasObservers()).toBe(hadObservers);
   });
 
@@ -420,46 +548,79 @@ describe("EditorDebugOverlay", () => {
       attenuations: new Map([["near", createDefaultSoundAttenuationPayload()]]),
     };
     const options = { sceneData: sceneWith([actor]), selectedActorIds: [actor.id], audioLibrary };
+    const drawn = () => scene.meshes.filter((mesh) => mesh.name.startsWith("debugAudio:") && mesh.isEnabled());
     overlay.sync({ ...options, selectedComponentIds: ["dry", "missing"] });
-    expect(scene.meshes.some((mesh) => mesh.name.startsWith("debugAudio:"))).toBe(false);
+    expect(drawn()).toHaveLength(0);
+    // Inner and max radius rings, each colour in one mesh.
     overlay.sync({ ...options, selectedComponentIds: ["spatial"] });
-    expect(scene.meshes.filter((mesh) => mesh.name.startsWith("debugAudio:"))).toHaveLength(6);
+    expect(drawn().map((mesh) => mesh.name)).toEqual(["debugAudio:prefab-root:spatial:inner", "debugAudio:prefab-root:spatial:max"]);
     audioLibrary.attenuations.clear();
     overlay.sync({ ...options, selectedComponentIds: ["spatial"] });
-    expect(scene.meshes.some((mesh) => mesh.name.startsWith("debugAudio:"))).toBe(false);
+    expect(drawn()).toHaveLength(0);
     overlay.dispose();
   });
 
-  it("builds a dashed cone for a selected spot light and an arrow for directional", () => {
+  it("selects, switches, edits and deselects audio emitters without changing scene membership", () => {
     const { scene } = createHandle();
     const overlay = new EditorDebugOverlay(scene);
-    const spotScene = sceneWith([
-      createActor("spot", "Spot", {
-        components: [
-          {
-            id: "light",
-            classId: "LightComponent",
-            properties: { lightKind: "spot", range: 10, outerAngle: 45 },
-          },
-        ],
-      }),
-    ]);
-    overlay.sync({ sceneData: spotScene, selectedActorIds: ["spot"] });
-    expect(overlay.lightDebugKind).toBe("spot");
+    const baseline = membership(scene);
+    const speaker = (id: string) => createActor(id, id, {
+      components: [{ id: "audio", classId: "AudioComponent", properties: { audioAssetGuid: "sound" } }],
+    });
+    const sceneData = sceneWith([speaker("a"), speaker("b")]);
+    const attenuations = new Map([["near", { ...createDefaultSoundAttenuationPayload(), innerRadius: 3, maxRadius: 12 }]]);
+    const audioLibrary = {
+      audio: new Map([["sound", { ...createDefaultAudioPayload(), soundAttenuationGuid: "near" }]]),
+      attenuations,
+    };
+    const drawn = () => scene.meshes.filter((mesh) => mesh.name.startsWith("debugAudio:") && mesh.isEnabled());
+    const radius = (name: string) => reach(frustumWorldPoints(scene.getTransformNodeByName(name)!));
+    for (const selectedActorIds of [["a"], ["b"], [], ["a"], []]) {
+      overlay.sync({ sceneData, selectedActorIds, audioLibrary });
+      expect(membership(scene)).toEqual(baseline);
+    }
+    // Editing the selected emitter's attenuation reshapes its rings in place.
+    overlay.sync({ sceneData, selectedActorIds: ["a"], audioLibrary });
+    expect(radius("debugAudio:a:audio")).toBeCloseTo(12, 0);
+    attenuations.set("near", { ...createDefaultSoundAttenuationPayload(), innerRadius: 5, maxRadius: 30 });
+    overlay.sync({ sceneData, selectedActorIds: ["a"], audioLibrary });
+    expect(radius("debugAudio:a:audio")).toBeCloseTo(30, 0);
+    // A zero inner radius draws only the max rings.
+    attenuations.set("near", { ...createDefaultSoundAttenuationPayload(), innerRadius: 0, maxRadius: 30 });
+    overlay.sync({ sceneData, selectedActorIds: ["a"], audioLibrary });
+    expect(drawn().map((mesh) => mesh.name)).toEqual(["debugAudio:a:audio:max"]);
+    expect(membership(scene)).toEqual(baseline);
 
-    const dirScene = sceneWith([
-      createActor("sun", "Sun", {
-        components: [
-          {
-            id: "light",
-            classId: "LightComponent",
-            properties: { lightKind: "directional" },
-          },
-        ],
-      }),
+    // Selecting two emitters at once adds one pooled guide, once; afterwards the pair is free.
+    overlay.sync({ sceneData, selectedActorIds: ["a", "b"], audioLibrary });
+    expect(drawn()).toHaveLength(2);
+    const pooled = membership(scene);
+    expect(pooled.meshes).toBe(baseline.meshes + 2);
+    for (const selectedActorIds of [["a"], ["b", "a"], [], ["a", "b"]]) {
+      overlay.sync({ sceneData, selectedActorIds, audioLibrary });
+      expect(membership(scene)).toEqual(pooled);
+    }
+    overlay.dispose();
+  });
+
+  it("draws a cone for a spot light, an arrow for a directional one, and re-aims when the selection switches", () => {
+    const { scene } = createHandle();
+    const overlay = new EditorDebugOverlay(scene);
+    const sceneData = sceneWith([
+      lightActor("spot", { lightKind: "spot", range: 10, outerAngle: 45 }),
+      lightActor("sun", { lightKind: "directional" }),
     ]);
-    overlay.sync({ sceneData: dirScene, selectedActorIds: ["sun"] });
+    overlay.sync({ sceneData, selectedActorIds: ["spot"] });
+    expect(overlay.lightDebugKind).toBe("spot");
+    const cone = frustumWorldPoints(overlay.lightDebugMesh as TransformNode);
+    expect(cone.some((point) => Math.abs(point.z - 10) < 1e-4)).toBe(true);
+
+    overlay.sync({ sceneData, selectedActorIds: ["sun"] });
     expect(overlay.lightDebugKind).toBe("directional");
+    // The arrow's shaft is 2 long down +Z, with no ring left from the cone.
+    const arrow = frustumWorldPoints(overlay.lightDebugMesh as TransformNode);
+    expect(maxAbs(arrow, "z")).toBeLessThanOrEqual(2 + 1e-4);
+    expect(maxAbs(arrow, "x")).toBeLessThanOrEqual(0.25 + 1e-4);
     overlay.dispose();
   });
 
@@ -484,13 +645,13 @@ describe("EditorDebugOverlay", () => {
       }),
     ]);
     overlay.sync({ sceneData, selectedActorIds: ["spot"] });
-    const axis = scene.getMeshByName("debugLight:spot:axis")!;
-    axis.computeWorldMatrix(true);
-    const data = axis.getVerticesData(VertexBuffer.PositionKind)!;
-    const start = Vector3.TransformCoordinates(Vector3.FromArray(data, 0), axis.getWorldMatrix());
-    const end = Vector3.TransformCoordinates(Vector3.FromArray(data, data.length - 3), axis.getWorldMatrix());
-    expect(start.subtract(new Vector3(3, 0, 0)).length()).toBeCloseTo(0, 5);
-    expect(end.subtract(start).normalize().subtract(Vector3.Right()).length()).toBeCloseTo(0, 5);
+    const points = frustumWorldPoints(overlay.lightDebugMesh as TransformNode);
+    // The cone opens from the apex at (3, 0, 0) toward +X, with its base ring 10 away.
+    expect(Math.min(...points.map((point) => point.x))).toBeCloseTo(3, 4);
+    expect(Math.max(...points.map((point) => point.x))).toBeCloseTo(13, 4);
+    for (const apex of points.filter((point) => point.x < 3 + 1e-4)) {
+      expect(apex.subtract(new Vector3(3, 0, 0)).length()).toBeCloseTo(0, 4);
+    }
     overlay.dispose();
   });
 
@@ -514,14 +675,59 @@ describe("EditorDebugOverlay", () => {
       }),
     ]);
     overlay.sync({ sceneData, selectedActorIds: ["spot"] });
-    const axis = scene.getMeshByName("debugLight:spot:axis")!;
-    axis.computeWorldMatrix(true);
-    const data = axis.getVerticesData(VertexBuffer.PositionKind)!;
-    const start = Vector3.TransformCoordinates(Vector3.FromArray(data, 0), axis.getWorldMatrix());
-    const end = Vector3.TransformCoordinates(Vector3.FromArray(data, data.length - 3), axis.getWorldMatrix());
+    const points = frustumWorldPoints(overlay.lightDebugMesh as TransformNode);
     // The car turns the child's local +Z offset and forward onto world +X.
-    expect(start.subtract(new Vector3(2, 0, 5)).length()).toBeCloseTo(0, 5);
-    expect(end.subtract(start).normalize().subtract(Vector3.Right()).length()).toBeCloseTo(0, 5);
+    expect(Math.min(...points.map((point) => point.x))).toBeCloseTo(2, 4);
+    expect(Math.max(...points.map((point) => point.x))).toBeCloseTo(12, 4);
+    for (const apex of points.filter((point) => point.x < 2 + 1e-4)) {
+      expect(apex.subtract(new Vector3(2, 0, 5)).length()).toBeCloseTo(0, 4);
+    }
+    overlay.dispose();
+  });
+
+  it("follows an area light's native parent, hides without it, and never changes scene membership", () => {
+    const { scene } = createHandle();
+    const parent = new TransformNode("area parent", scene);
+    const native = new PointLight("authoredAreaLight:panel:light", Vector3.Zero(), scene);
+    native.parent = parent;
+    const overlay = new EditorDebugOverlay(scene);
+    const baseline = membership(scene);
+    const area = (width: number, height: number) => sceneWith([createActor("panel", "Panel", {
+      components: [{ id: "light", classId: "AreaRectLightComponent", properties: { width, height } }],
+    })]);
+    overlay.sync({ sceneData: area(4, 2), selectedActorIds: ["panel"] });
+    const root = overlay.lightDebugMesh as TransformNode;
+    expect(overlay.lightDebugKind).toBe("area");
+    expect(root.isEnabled()).toBe(true);
+    // The rectangle spans the light's width and height, and the guides point down local -Z.
+    expect(maxAbs(frustumWorldPoints(root), "x")).toBeCloseTo(2, 3);
+    expect(maxAbs(frustumWorldPoints(root), "y")).toBeCloseTo(1, 3);
+
+    // A gizmo drag moves the parent before any document commit; the next frame follows it.
+    parent.position.set(5, 0, 0);
+    parent.rotationQuaternion = Quaternion.FromEulerAngles(0, Math.PI / 2, 0);
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    const moved = frustumWorldPoints(root);
+    // The parent's quarter turn lays the 4-wide rectangle along Z and the emission side (-Z) along -X from x = 5.
+    expect(Math.min(...moved.map((point) => point.x))).toBeCloseTo(3, 3);
+    expect(Math.max(...moved.map((point) => point.x))).toBeCloseTo(5, 3);
+    expect(maxAbs(moved, "z")).toBeCloseTo(2, 3);
+
+    overlay.sync({ sceneData: area(8, 6), selectedActorIds: ["panel"] });
+    expect(maxAbs(frustumWorldPoints(root), "z")).toBeCloseTo(4, 3);
+
+    native.metadata = { areaLight: { error: "unsupported" } };
+    overlay.sync({ sceneData: area(8, 6), selectedActorIds: ["panel"] });
+    expect(overlay.lightDebugMesh).toBeNull();
+    expect(root.isEnabled()).toBe(false);
+    native.metadata = null;
+    overlay.sync({ sceneData: area(8, 6), selectedActorIds: ["panel"] });
+    expect(root.isEnabled()).toBe(true);
+    // Rebuilding the native light hides the guide until a sync finds the new one.
+    native.dispose();
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(root.isEnabled()).toBe(false);
+    expect({ ...membership(scene), lights: 0 }).toEqual({ ...baseline, lights: 0 });
     overlay.dispose();
   });
 
@@ -601,15 +807,32 @@ describe("EditorDebugOverlay", () => {
     overlay.dispose();
   });
 
-  it("parents the frustum to the editor origin so it follows the actor mesh", () => {
+  it("follows the editor origin mesh without becoming its child, so rebuilding the mesh cannot dispose the guide", () => {
     const { scene } = createHandle();
     const origin = MeshBuilder.CreateBox(editorMeshName("cam"), { size: 0.01 }, scene);
+    origin.position.set(4, 1, -2);
     const overlay = new EditorDebugOverlay(scene);
-    overlay.sync({
-      sceneData: sceneWith([cameraActor()]),
-      selectedActorIds: ["cam"],
-    });
-    expect(overlay.frustumMesh?.parent).toBe(origin);
+    const sceneData = sceneWith([cameraActor()]);
+    overlay.sync({ sceneData, selectedActorIds: ["cam"] });
+    const root = overlay.frustumMesh as TransformNode;
+    expect(root.parent).toBeNull();
+    expect(root.getAbsolutePosition().asArray()).toEqual([4, 1, -2]);
+
+    // A gizmo drag moves the origin before the commit; the next frame follows it.
+    origin.position.set(9, 3, -5);
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(root.getAbsolutePosition().asArray()).toEqual([9, 3, -5]);
+
+    // Editing the camera rebuilds the actor's meshes, and the guide survives and follows the new one.
+    const guide = root.getChildMeshes()[0]!;
+    origin.dispose();
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(root.isDisposed()).toBe(false);
+    expect(guide.isDisposed()).toBe(false);
+    const rebuilt = MeshBuilder.CreateBox(editorMeshName("cam"), { size: 0.01 }, scene);
+    rebuilt.position.set(-3, 2, 6);
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(root.getAbsolutePosition().asArray()).toEqual([-3, 2, 6]);
     overlay.dispose();
   });
 
@@ -627,7 +850,7 @@ describe("EditorDebugOverlay", () => {
     origin.rotationQuaternion = Quaternion.Identity();
     origin.computeWorldMatrix(true);
     overlay.followLivePose();
-    const preview = previewCamera(scene);
+    const preview = previewCamera(overlay);
     expect(preview.position.x).toBeCloseTo(9);
     expect(preview.position.y).toBeCloseTo(3);
     expect(preview.position.z).toBeCloseTo(-5);
@@ -649,10 +872,8 @@ describe("EditorDebugOverlay", () => {
       ]),
       selectedActorIds: ["cam"],
     });
-    const preview = scene.getCameraByName(
-      "debugPreviewCam:cam",
-    ) as FreeCamera | null;
-    expect(preview).toBeTruthy();
+    const preview = previewCamera(overlay) as FreeCamera;
+    expect(preview.name).toBe("debugPreviewCam:cam");
     const expected = new Quaternion(
       actorRotation[0],
       actorRotation[1],
@@ -694,21 +915,68 @@ describe("EditorDebugOverlay", () => {
       captureActor({ enabled: false, captureEveryFrame: false, renderTargetGuid: null }),
     ]);
     overlay.sync({ sceneData, selectedActorIds: ["rt"] });
-    expect(overlay.frustumMesh?.parent).toBe(origin);
+    expect((overlay.frustumMesh as TransformNode).getAbsolutePosition().asArray()).toEqual(origin.position.asArray());
     expect(overlay.previewTexture).not.toBeNull();
     expect(overlay.previewRenderCount).toBe(1);
 
     origin.position.set(9, 3, -5);
     origin.computeWorldMatrix(true);
     overlay.followLivePose();
-    const followed = previewCamera(scene).position;
+    const followed = previewCamera(overlay).position;
     expect([followed.x, followed.y, followed.z].map((value) => Math.round(value * 1e5) / 1e5))
       .toEqual([9, 3, -5]);
 
     overlay.sync({ sceneData, selectedActorIds: [] });
     expect(overlay.frustumMesh).toBeNull();
     expect(overlay.previewTexture).toBeNull();
-    expect(scene.cameras.some((camera) => camera.name.startsWith("debugPreviewCam:"))).toBe(false);
+    // The camera and RTT are kept for the next selection, but nothing draws the preview.
+    const drawn = vi.spyOn(RenderTargetTexture.prototype, "render");
+    overlay.tick(10_000);
+    expect(drawn).not.toHaveBeenCalled();
+    drawn.mockRestore();
+    overlay.dispose();
+  });
+
+  it("retargets one preview camera and RTT between lenses instead of creating new ones", () => {
+    const { scene } = createHandle();
+    const targets = renderTargetMap({ wide: { width: 16, height: 8 } });
+    const overlay = new EditorDebugOverlay(scene, { now: () => 0, renderTargets: () => targets });
+    const baseline = membership(scene);
+    const sceneData = sceneWith([
+      cameraActor(),
+      captureActor({ renderTargetGuid: "wide", fieldOfView: 90 }),
+      createActor("ortho", "Ortho", {
+        components: [{
+          id: "camera",
+          classId: "CameraComponent",
+          properties: { projectionMode: "orthographic", orthographicSize: 5 },
+        }],
+      }),
+    ]);
+
+    // Even the first lens selection leaves the scene's cameras and textures alone.
+    overlay.sync({ sceneData, selectedActorIds: ["cam"] });
+    expect(membership(scene)).toEqual(baseline);
+    const texture = overlay.previewTexture!;
+    const camera = previewCamera(overlay);
+    expect(texture.getSize()).toEqual({ width: 320, height: 180 });
+    expect(camera.name).toBe("debugPreviewCam:cam");
+
+    overlay.sync({ sceneData, selectedActorIds: ["rt"] });
+    expect(overlay.previewTexture).toBe(texture);
+    expect(texture.getSize()).toEqual({ width: 320, height: 160 });
+    expect(texture.name).toBe("debugCameraPreview:rt");
+    expect(projectionAspect(camera)).toBeCloseTo(2, 5);
+
+    // An orthographic lens fully replaces the perspective capture's lens state.
+    overlay.sync({ sceneData, selectedActorIds: ["ortho"] });
+    expect(texture.getSize()).toEqual({ width: 320, height: 180 });
+    expect(camera.mode).toBe(FreeCamera.ORTHOGRAPHIC_CAMERA);
+    expect(camera.orthoRight! / camera.orthoTop!).toBeCloseTo(CAMERA_PREVIEW_WIDTH / CAMERA_PREVIEW_HEIGHT, 5);
+
+    overlay.sync({ sceneData, selectedActorIds: ["cam"] });
+    expect(camera.mode).toBe(FreeCamera.PERSPECTIVE_CAMERA);
+    expect(membership(scene)).toEqual(baseline);
     overlay.dispose();
   });
 
@@ -734,7 +1002,7 @@ describe("EditorDebugOverlay", () => {
     expect(maxAbs(points, "z")).toBeCloseTo(20, 5);
     expect(maxAbs(points, "y")).toBeCloseTo(farHalfHeight, 5);
     expect(maxAbs(points, "x")).toBeCloseTo(farHalfHeight * aspect, 5);
-    const preview = previewCamera(scene);
+    const preview = previewCamera(overlay);
     expect(overlay.previewTexture!.getSize()).toEqual(size);
     expect(projectionAspect(preview)).toBeCloseTo(aspect, 5);
     expect([preview.minZ, preview.maxZ]).toEqual([1, 20]);
@@ -811,7 +1079,7 @@ describe("EditorDebugOverlay", () => {
     overlay.dispose();
   });
 
-  it("rebuilds a selected capture preview only when its target's aspect changes", () => {
+  it("resizes a selected capture preview and reshapes its frustum only when its target's aspect changes", () => {
     const { scene } = createHandle();
     let targets = renderTargetMap({ target: { width: 16, height: 8 } });
     const overlay = new EditorDebugOverlay(scene, { now: () => 0, renderTargets: () => targets });
@@ -819,16 +1087,21 @@ describe("EditorDebugOverlay", () => {
       sceneData: sceneWith([captureActor({ renderTargetGuid: "target" })]),
       selectedActorIds: ["rt"],
     });
-    const wide = overlay.previewTexture;
+    const preview = overlay.previewTexture!;
+    const resize = vi.spyOn(preview, "resize");
+    const rendered = overlay.previewRenderCount;
     targets = renderTargetMap({ target: { width: 32, height: 16 } });
     overlay.refreshRenderTargets();
-    expect(overlay.previewTexture).toBe(wide);
+    expect(resize).not.toHaveBeenCalled();
+    expect(overlay.previewRenderCount).toBe(rendered);
 
     targets = renderTargetMap({ target: { width: 8, height: 16 } });
     overlay.refreshRenderTargets();
-    expect(overlay.previewTexture).not.toBe(wide);
-    expect(overlay.previewTexture!.getSize()).toEqual({ width: 90, height: 180 });
-    expect(projectionAspect(previewCamera(scene))).toBeCloseTo(0.5, 5);
+    // The retained RTT changes size in place; no second texture joins the scene.
+    expect(overlay.previewTexture).toBe(preview);
+    expect(resize).toHaveBeenCalledOnce();
+    expect(preview.getSize()).toEqual({ width: 90, height: 180 });
+    expect(projectionAspect(previewCamera(overlay))).toBeCloseTo(0.5, 5);
     const points = frustumWorldPoints(overlay.frustumMesh as TransformNode);
     expect(maxAbs(points, "x") / maxAbs(points, "y")).toBeCloseTo(0.5, 5);
     overlay.dispose();

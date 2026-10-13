@@ -2231,6 +2231,43 @@ describe("Play createEngine view", () => {
     expect(attach.mock.calls.some(([value]) => value.scene === layer && value.camera === layer.activeCamera)).toBe(true);
   });
 
+  it("keeps the editor's prepared post-process stack across an edit that leaves it alone", () => {
+    const attach = vi.spyOn(SceneRenderCoordinator.prototype, "attachPostProcess");
+    const stack = [{ id: "pass", materialGuid: "pp", enabled: true }];
+    const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(),
+      editor: true,
+      materialDocuments: new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]),
+      postProcessStack: stack,
+    });
+    handles.push(editor);
+    const base = createDefaultScene();
+    const scene = (postProcessStack = stack, range = 8) => ({
+      ...base,
+      settings: { ...base.settings, postProcessStack },
+      actors: [...base.actors, createActor("lamp", "Lamp", {
+        components: [{ id: "light", classId: "LightComponent", properties: { lightKind: "point", range } }],
+      })],
+    });
+    const attaches = () => attach.mock.calls.filter(([value]) => value.scene === editor.scene).length;
+    editor.loadScene(scene(), { sceneAssetGuid: "scene" });
+    const attached = attaches();
+    expect(attached).toBeGreaterThan(0);
+
+    // Re-attaching releases the prepared FrameGraph, whose rebuild holds the viewport for seconds.
+    editor.loadScene(scene(stack, 12), { sceneAssetGuid: "scene" });
+    editor.loadScene(scene(stack, 20), { sceneAssetGuid: "scene" });
+    expect(attaches()).toBe(attached);
+
+    // A changed stack, or a different scene, still attaches it afresh.
+    editor.loadScene(scene([{ ...stack[0]!, enabled: false }]), { sceneAssetGuid: "scene" });
+    expect(attaches()).toBe(attached + 1);
+    editor.loadScene(scene(), { sceneAssetGuid: "scene" });
+    expect(attaches()).toBe(attached + 2);
+    editor.loadScene(scene(), { sceneAssetGuid: "another scene" });
+    expect(attaches()).toBe(attached + 3);
+  });
+
   it("keeps shared Scene and cache resources alive until graph retirement settles after Stop", async () => {
     const engine = sharedEngine();
     const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
@@ -2325,6 +2362,8 @@ describe("Play createEngine view", () => {
   it("sizes a selected Render Target Capture preview from the installed target assets", () => {
     const engine = sharedEngine();
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    // The preview RTT is not in the scene's texture list: read it from the draw that refreshes it.
+    const previewRenders = vi.spyOn(RenderTargetTexture.prototype, "render");
     try {
       const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
       handles.push(editor);
@@ -2339,11 +2378,12 @@ describe("Play createEngine view", () => {
         }],
       });
       editor.editor!.syncSelectionDebug({ sceneData: { ...createDefaultScene(), actors: [capture] }, selectedActorIds: [capture.id] });
-      const preview = () => editor.scene.getTextureByName("debugCameraPreview:rt")?.getSize();
+      const preview = () => (previewRenders.mock.contexts.at(-1) as RenderTargetTexture).getSize();
       expect(preview()).toEqual({ width: 320, height: 160 });
       editor.setMeshAssets({ renderTargets: target(8, 16) });
       expect(preview()).toEqual({ width: 90, height: 180 });
     } finally {
+      previewRenders.mockRestore();
       vi.useRealTimers();
     }
   });

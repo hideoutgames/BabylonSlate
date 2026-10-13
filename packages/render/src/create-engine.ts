@@ -1872,11 +1872,19 @@ function initializeEngine(
     worldRenderer.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
     setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
-    postProcessParameters.clear();
-    appliedPostProcessKey = undefined;
-    postProcessStack = normalizePostProcessStack(
+    const nextPostProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
     );
+    // Re-attaching the post-process stack releases the prepared FrameGraph, and
+    // rebuilding it holds the viewport's frames for seconds. An edit of the same
+    // editor scene that leaves the stack alone (a light range, say) keeps it;
+    // the key below still re-attaches for any other change to its inputs.
+    const keepPostProcess = Boolean(editorSync) &&
+      loadOptions?.sceneAssetGuid === lastSceneAssetGuid &&
+      JSON.stringify(nextPostProcessStack) === JSON.stringify(postProcessStack);
+    postProcessParameters.clear();
+    if (!keepPostProcess) appliedPostProcessKey = undefined;
+    postProcessStack = nextPostProcessStack;
     lastSceneAssetGuid = loadOptions?.sceneAssetGuid;
     if (editorSync) {
       editorSync.apply(sceneData);
