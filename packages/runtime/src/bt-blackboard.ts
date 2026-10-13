@@ -17,6 +17,82 @@ export function snapshotBlackboard(values: BlackboardValues): BlackboardValues {
   );
 }
 
+/** What `copyBlackboard` leaves for a value it cannot copy exactly; it equals nothing. */
+const UNCOMPARABLE = Symbol("uncomparable");
+/** Deeper nesting than a blackboard value has (or a cycle) is never compared. */
+const MAX_COPY_DEPTH = 32;
+
+const isPlainObject = (value: object): boolean => {
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
+
+function copyValue(value: unknown, depth: number): unknown {
+  if (typeof value === "function") return UNCOMPARABLE;
+  if (value === null || typeof value !== "object") return value;
+  // A live object is compared by identity: its guid and class never change.
+  if (value instanceof BObject) return value;
+  if (depth >= MAX_COPY_DEPTH) return UNCOMPARABLE;
+  if (Array.isArray(value)) {
+    const copy: unknown[] = [];
+    for (let index = 0; index < value.length; index++) copy.push(copyValue(value[index], depth + 1));
+    return copy;
+  }
+  // Maps, Sets, Dates and class instances sanitize by their own rules; never claim them unchanged.
+  if (!isPlainObject(value)) return UNCOMPARABLE;
+  const copy: Record<string, unknown> = Object.create(null);
+  for (const key of Object.keys(value)) copy[key] = copyValue((value as Record<string, unknown>)[key], depth + 1);
+  return copy;
+}
+
+function sameValue(baseline: unknown, live: unknown, depth: number): boolean {
+  if (baseline === UNCOMPARABLE) return false;
+  if (baseline === live) return true;
+  if (typeof baseline === "number" && typeof live === "number") return baseline !== baseline && live !== live;
+  if (baseline === null || live === null || typeof baseline !== "object" || typeof live !== "object") return false;
+  // Equal live objects were identical above, so a different one has changed.
+  if (baseline instanceof BObject || depth >= MAX_COPY_DEPTH) return false;
+  if (Array.isArray(baseline)) {
+    if (!Array.isArray(live) || live.length !== baseline.length) return false;
+    for (let index = 0; index < baseline.length; index++) if (!sameValue(baseline[index], live[index], depth + 1)) return false;
+    return true;
+  }
+  if (Array.isArray(live) || !isPlainObject(live)) return false;
+  const keys = Object.keys(baseline);
+  if (keys.length !== Object.keys(live).length) return false;
+  for (const key of keys) {
+    if (!Object.hasOwn(live, key) || !sameValue((baseline as Record<string, unknown>)[key], (live as Record<string, unknown>)[key], depth + 1)) return false;
+  }
+  return true;
+}
+
+/**
+ * An independent copy of a Blackboard's arrays and plain objects, to compare the
+ * live values with later without sanitizing them. Live objects stay by reference
+ * and anything else that is not plain data becomes `UNCOMPARABLE`.
+ */
+export function copyBlackboard(values: BlackboardValues): BlackboardValues {
+  const copy: BlackboardValues = Object.create(null);
+  for (const key of Object.keys(values)) copy[key] = copyValue(values[key], 0);
+  return copy;
+}
+
+/**
+ * Whether the live Blackboard still equals a `copyBlackboard` copy, so that
+ * sanitizing both gives equal results: plain data by content (NaN equals NaN),
+ * live objects by identity. Maps, class instances, functions and cycles never
+ * match, which sends the caller down its sanitizing path. Unlike `samePlainData`
+ * it never descends into a live actor or component.
+ */
+export function sameBlackboard(baseline: BlackboardValues, live: BlackboardValues): boolean {
+  const keys = Object.keys(baseline);
+  if (keys.length !== Object.keys(live).length) return false;
+  for (const key of keys) {
+    if (!Object.hasOwn(live, key) || !sameValue(baseline[key], live[key], 0)) return false;
+  }
+  return true;
+}
+
 function inspectType(type: BlackboardDocument["keys"][number]["type"]): string {
   switch (type.kind) {
     case "array":
