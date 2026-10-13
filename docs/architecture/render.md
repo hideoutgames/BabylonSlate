@@ -191,7 +191,7 @@ The narrow Babylon 9.29 particle binder adapter preserves current particle defin
 - Re-inventory first: `rg '\._[a-zA-Z]' packages/render/src packages/physics/src apps/editor/src`, plus member replacements (`const original = x.member`, `.bind(` then reassignment, `Object.defineProperty`). Only `packages/render`, `packages/physics` and editor test-mode proofs/diagnostics touch internals.
 - † marks access through a cast or string name: `tsc` cannot flag a rename, so read the new Babylon source. Other members are typed in Babylon's declarations and fail the scoped render/physics typecheck when they change.
 - Layout guards that throw `Unsupported Babylon … layout` (`node-material-particles`, `clustered-light-order`, `clustered-camera-bounds`, `particle-system-factory`) must be re-derived for the new layout, never relaxed.
-- Shader-source assumption: `clustered-material-policy` admits ShaderMaterials by `shaderPath === "color"` (LinesMesh's internal material) because the Babylon 9.29 `color` sources read no light data. Re-read them (GLSL and WGSL) on a pin move. A renamed program falls back to Forward and fails the line case in `clustered-material-policy.test.ts`; a program that gains light terms is not detected by any test.
+- Shader-source assumption: `clustered-material-policy` admits ShaderMaterials by `shaderPath === "color"` (LinesMesh's internal material) because the Babylon 9.29 `color` sources read no light data; owned helper ShaderMaterials (grid, Text 2D MSDF) register through `registerClusteredUnlitMaterial`. Re-read them (GLSL and WGSL) on a pin move. A renamed program falls back to Forward and fails the line case in `clustered-material-policy.test.ts`; a program that gains light terms is not detected by any test.
 - Tests are the sibling `*.test.ts` unless named; `e2e/*.spec.ts` are pixel/browser proofs. Many comments say "Babylon 9.29"; recheck the behavior they describe.
 
 **Package patch** — drop each hunk upstream has fixed, rebase the rest:
@@ -573,7 +573,7 @@ See [fonts.md](fonts.md).
 
 - Invisible wrap-box pick plane (`wrapWidth`/`wrapHeight` px ÷ `pixelsPerUnit`); glyph / `[img]` children are not pickable. Left/right Alignment uses wrap-box edges when `wrapWidth` > 0; Vertical Alignment Top / Center / Bottom pins the block in the wrap height
 - Bitmap: canvas `FontFace` cells packed onto one `RawTexture` atlas when the paint is letter-shaped; a full-canvas fill or a solid tofu box (headless/software) falls back to bundled 5×7. Quad size follows the raster cell so 5×7 is not stretched to `measureText`. Quads sample `emissiveTexture` + `diffuseTexture` with alpha test, matching sprites. `setMeshAssets` supplies `fontCssStack` / `fontCssStackByGuid` from `compileText2DFontStacks`
-- MSDF: imported JSON + PNG through `ResourceCache`; missing glyphs fall back to Bitmap cells. Glyphs of one text share one bundle-owned material per color/outline style
+- MSDF: imported JSON + PNG through `ResourceCache`; missing glyphs fall back to Bitmap cells. Glyphs of one text share one bundle-owned material per color/outline style. The `text2dMsdf` ShaderMaterial samples only its atlas and colour uniforms, so it is registered light-free (`registerClusteredUnlitMaterial`) and drawing MSDF text does not push the clustered path back to Forward
 - Fingerprint includes compiled CSS stack **values** so a fallback change rebuilds meshes
 
 See [scene-layers.md](scene-layers.md) and [fonts.md](fonts.md).
