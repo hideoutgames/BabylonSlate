@@ -224,7 +224,10 @@ import { collectClassGraphsForPalette, collectGraphTypeAssets, typeSchemasFromGr
 import { classIdForGraphPath } from "../services/script-compiler";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { useContentBrowserPaintSelect } from "../lib/use-content-browser-paint-select";
-import { syncContentBrowserThumbnailUrls } from "../lib/content-browser-thumbnails";
+import {
+  THUMBNAIL_SYNC_DEBOUNCE_MS,
+  syncContentBrowserThumbnailUrls,
+} from "../lib/content-browser-thumbnails";
 import { useContentBrowserGridWindow } from "../lib/use-content-browser-grid-window";
 import {
   ContentBrowserGridTiles,
@@ -919,35 +922,81 @@ function ContentBrowserWorkspaceBody({
 
   const loadedThumbnailVersionsRef = useRef<Readonly<Record<string, number>>>({});
 
+  const thumbnailSyncStartedRef = useRef(false);
+  // URLs a commit stopped showing, tagged with that commit's URL map. A URL is
+  // revoked only after the map that dropped it has rendered; revoking it when
+  // the commit is scheduled would leave an <img> pointing at a revoked URL.
+  const lastThumbnailCommitRef = useRef<Record<string, string> | null>(null);
+  const retiredThumbnailUrlsRef = useRef<Array<{ shown: Record<string, string> | null; urls: readonly string[] }>>([]);
+  useEffect(() => {
+    const retired = retiredThumbnailUrlsRef.current;
+    const rendered = retired.findLastIndex((entry) => entry.shown === thumbnailUrls);
+    if (rendered < 0) return;
+    for (const entry of retired.splice(0, rendered + 1)) {
+      for (const url of entry.urls) URL.revokeObjectURL(url);
+    }
+  }, [thumbnailUrls]);
   useEffect(() => {
     if (!thumbnailsEnabled) return;
     let cancelled = false;
-    void syncContentBrowserThumbnailUrls({
-      mountedTextureGuids,
-      urls: thumbnailUrlsRef.current,
-      refreshGuids: new Set(mountedTextureGuids.filter((guid) =>
-        thumbnailVersions[guid] !== loadedThumbnailVersionsRef.current[guid],
-      )),
-      hidden,
-      load: loadAssetThumbnail,
-      createObjectURL: (blob) => URL.createObjectURL(blob),
-      revokeObjectURL: (url) => URL.revokeObjectURL(url),
-      isCancelled: () => cancelled,
-      commit: (next) => {
-        loadedThumbnailVersionsRef.current = thumbnailVersions;
-        thumbnailUrlsRef.current = next;
-        setThumbnailUrls(next);
-      },
-    });
+    const sync = () => {
+      if (!hidden) thumbnailSyncStartedRef.current = true;
+      void syncContentBrowserThumbnailUrls({
+        mountedTextureGuids,
+        urls: thumbnailUrlsRef.current,
+        refreshGuids: new Set(mountedTextureGuids.filter((guid) =>
+          thumbnailVersions[guid] !== loadedThumbnailVersionsRef.current[guid],
+        )),
+        hidden,
+        load: loadAssetThumbnail,
+        createObjectURL: (blob) => URL.createObjectURL(blob),
+        revokeObjectURL: (url) => URL.revokeObjectURL(url),
+        isCancelled: () => cancelled,
+        retireObjectURLs: (urls) => {
+          if (urls.length > 0) {
+            retiredThumbnailUrlsRef.current.push({ shown: lastThumbnailCommitRef.current, urls });
+          }
+        },
+        commit: (next, { loaded, done }) => {
+          // A cancelled sync leaves later guids unloaded, so only a finished
+          // one may claim every version; batches record just what they read.
+          loadedThumbnailVersionsRef.current = done
+            ? thumbnailVersions
+            : {
+                ...loadedThumbnailVersionsRef.current,
+                ...Object.fromEntries(loaded.map((guid) => [guid, thumbnailVersions[guid]])),
+              };
+          thumbnailUrlsRef.current = next;
+          lastThumbnailCommitRef.current = next;
+          setThumbnailUrls(next);
+        },
+      });
+    };
+    // The first sync runs at once. Scrolling changes the mounted tiles with
+    // every row, and each change cancels the sync before it; later syncs wait
+    // for the window to settle so a fast scroll reads only the tiles it stops on.
+    if (!thumbnailSyncStartedRef.current) {
+      sync();
+      return () => {
+        cancelled = true;
+      };
+    }
+    const timer = window.setTimeout(sync, THUMBNAIL_SYNC_DEBOUNCE_MS);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [hidden, loadAssetThumbnail, mountedTextureGuids, thumbnailVersions, thumbnailsEnabled]);
 
   useEffect(() => {
+    // The queue is only ever mutated in place, so this is the list the sync fills.
+    const retired = retiredThumbnailUrlsRef.current;
     return () => {
       for (const url of Object.values(thumbnailUrlsRef.current)) {
         URL.revokeObjectURL(url);
+      }
+      for (const entry of retired.splice(0)) {
+        for (const url of entry.urls) URL.revokeObjectURL(url);
       }
     };
   }, []);
