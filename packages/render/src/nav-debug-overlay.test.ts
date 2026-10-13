@@ -150,13 +150,19 @@ describe("NavMeshDebugOverlay", () => {
     expect(added).not.toHaveBeenCalled();
     expect(removed).not.toHaveBeenCalled();
 
+    // Reading the stored chunk again after a save hands over equal bytes in a new array.
+    await overlay.sync(new Uint8Array(bytes), [door(1)]);
+    expect(overlay.mesh).toBe(fill);
+    expect(overlay.blockerMeshes[0]).toBe(blocker);
+    expect(removed).not.toHaveBeenCalled();
+
     // A moved blocker, another bake or world, or a mesh the scene dropped, is a new request.
     await overlay.sync(bytes, [door(5)]);
     expect(blocker.isDisposed()).toBe(true);
     expect(overlay.blockerMeshes[0]).not.toBe(blocker);
     const moved = overlay.blockerMeshes[0]!;
     expect(worldBox(moved).min[0]).toBeCloseTo(4.5, 5);
-    const other = await generateNavMesh(groundPrism());
+    const other = await generateNavMesh({ positions: [-5, 0, -5, 5, 0, -5, 5, 0, 5, -5, 0, 5], indices: [0, 3, 2, 0, 2, 1] });
     await overlay.sync(other, [door(5)]);
     expect(moved.isDisposed()).toBe(true);
     const rebuilt = overlay.blockerMeshes[0]!;

@@ -53,6 +53,14 @@ export function navDebugBlockersFromActors(
   return poses;
 }
 
+/** The editor rereads the stored chunk after a save, which yields equal bytes in a new array. */
+function sameBytes(a: Uint8Array | null, b: Uint8Array | null): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.byteLength !== b.byteLength) return false;
+  for (let index = 0; index < a.byteLength; index += 1) if (a[index] !== b[index]) return false;
+  return true;
+}
+
 /**
  * Editor and Play navmesh overlay. Recast has no published `@recast-navigation/babylon`
  * helper; primitives come from Recast `DebugDrawerUtils` and land as a Babylon mesh.
@@ -78,7 +86,7 @@ export class NavMeshDebugOverlay {
     // disposes scene meshes and materials, which marks renderer readiness dirty for nothing.
     const request = { bytes, blockers: JSON.stringify(blockers), world };
     const applied = this.applied;
-    if (applied && applied.bytes === request.bytes && applied.blockers === request.blockers && applied.world === request.world && this.isLive()) return;
+    if (applied && sameBytes(applied.bytes, request.bytes) && applied.blockers === request.blockers && applied.world === request.world && this.isLive()) return;
     this.clear();
     this.applied = request;
     const generation = this.generation;
