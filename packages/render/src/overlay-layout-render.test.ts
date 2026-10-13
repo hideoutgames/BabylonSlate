@@ -39,6 +39,19 @@ describe("SceneLayer layout rendering", () => {
     expect(root.isEnabled()).toBe(false);
   });
 
+  it("clips only the first editor mesh that carries a duplicated name", () => {
+    const { engine, scene } = createTestEngine();
+    cleanup.push(() => { applyEditorLayoutClips(scene, new Map()); scene.dispose(); engine.dispose(); });
+    const first = MeshBuilder.CreatePlane("editorActor:item", {}, scene);
+    const duplicate = MeshBuilder.CreatePlane("editorActor:item", {}, scene);
+    const rect = { x: 0, y: 0, width: 1, height: 1 };
+    applyEditorLayoutClips(scene, new Map([["item", { actorId: "item", slotId: 1, rect, clip: rect, scrollAncestors: [], realized: false }]]));
+    expect(overlayClipAllowsPoint(first, 5, 5)).toBe(false);
+    expect(overlayClipAllowsPoint(duplicate, 5, 5)).toBe(true);
+    expect(first.isEnabled()).toBe(false);
+    expect(duplicate.isEnabled()).toBe(true);
+  });
+
   it.each(["editor", "runtime"] as const)("restores shadow caching when %s clipping is cleared or a mesh leaves its clip", (mode) => {
     const { engine, scene } = createTestEngine();
     const renderer = new OverlayLayoutRenderer(() => scene);
