@@ -19,6 +19,7 @@ import {
   type EdgeChange,
   type EdgeTypes,
   type FinalConnectionState,
+  type InternalNode,
   type NodeChange,
   type NodeTypes,
   type OnConnectStartParams,
@@ -393,14 +394,127 @@ function toCanvasNodes(
   );
 }
 
+// Node arrays and pin lists are React state: replaced on change, never edited in
+// place. A lookup builds its index once per array instead of scanning for each pin.
+const nodeIndexes = new WeakMap<CanvasNode[], Map<string, CanvasNode>>();
+const pinIndexes = new WeakMap<readonly SerializedPin[], Map<string, SerializedPin>>();
+
+/** The first entry with each id, as `find` would answer. */
+function indexById<T extends { id: string }>(entries: readonly T[]): Map<string, T> {
+  const index = new Map<string, T>();
+  for (const entry of entries) if (!index.has(entry.id)) index.set(entry.id, entry);
+  return index;
+}
+
 function pinOnNode(
   nodes: CanvasNode[],
   nodeId: string,
   pinId: string,
 ): SerializedPin | undefined {
-  const node = nodes.find((entry) => entry.id === nodeId);
-  const pins = hasSerializedPins(node?.data) ? node.data.__pins : [];
-  return pins.find((pin) => pin.id === pinId);
+  let nodeIndex = nodeIndexes.get(nodes);
+  if (!nodeIndex) nodeIndexes.set(nodes, (nodeIndex = indexById(nodes)));
+  const node = nodeIndex.get(nodeId);
+  if (!hasSerializedPins(node?.data)) return undefined;
+  const pins = node.data.__pins;
+  let pinIndex = pinIndexes.get(pins);
+  if (!pinIndex) pinIndexes.set(pins, (pinIndex = indexById(pins)));
+  return pinIndex.get(pinId);
+}
+
+/** The pins of one node a dragged node can link to, at the node's `position`. */
+function proximityPinsOf(
+  node: CanvasNode,
+  bounds: InternalNode["internals"]["handleBounds"],
+  position: { x: number; y: number },
+): ProximityPin[] {
+  const pins: ProximityPin[] = [];
+  const nodePins = hasSerializedPins(node.data) ? node.data.__pins : [];
+  let pinIndex = pinIndexes.get(nodePins);
+  if (!pinIndex) pinIndexes.set(nodePins, (pinIndex = indexById(nodePins)));
+  for (const [direction, handles] of [
+    ["out", bounds?.source],
+    ["in", bounds?.target],
+  ] as const) {
+    for (const handle of handles ?? []) {
+      if (!handle.id) continue;
+      const pin = pinIndex.get(handle.id);
+      if (!pin || pin.direction !== direction) continue;
+      // Node assistance joins facing pins; custom top-down tree handles
+      // and overlapping state-transition plates retain their own gestures.
+      if (handle.position !== (direction === "out" ? Position.Right : Position.Left)) continue;
+      const opposite = direction === "out" ? bounds?.target : bounds?.source;
+      if (opposite?.some((other) => other.position === handle.position)) continue;
+      pins.push({
+        nodeId: node.id,
+        pinId: handle.id,
+        direction,
+        x: position.x + handle.x + handle.width / 2,
+        y: position.y + handle.y + handle.height / 2,
+      });
+    }
+  }
+  return pins;
+}
+
+// A node that is not being dragged keeps its object and measured handles for the whole
+// drag, so its pins are worked out once instead of on every drag tick.
+const stationaryPins = new WeakMap<
+  CanvasNode,
+  { bounds: InternalNode["internals"]["handleBounds"]; pins: ProximityPin[] }
+>();
+
+function stationaryProximityPins(
+  node: CanvasNode,
+  bounds: InternalNode["internals"]["handleBounds"],
+): ProximityPin[] {
+  const cached = stationaryPins.get(node);
+  if (cached && cached.bounds === bounds) return cached.pins;
+  const pins = proximityPinsOf(node, bounds, node.position);
+  stationaryPins.set(node, { bounds, pins });
+  return pins;
+}
+
+type VisibleGraph = { nodes: CanvasNode[]; edges: Edge[] };
+type VisibleGraphInputs = {
+  nodes: CanvasNode[];
+  edges: Edge[];
+  keepIds: string[];
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  zoom: number;
+  result: VisibleGraph;
+};
+
+/** The same mounted nodes and edges, element for element. */
+function sameVisibleGraph(left: VisibleGraph, right: VisibleGraph): boolean {
+  return (
+    left === right ||
+    (left.nodes.length === right.nodes.length &&
+      left.edges.length === right.edges.length &&
+      left.nodes.every((node, index) => node === right.nodes[index]) &&
+      left.edges.every((edge, index) => edge === right.edges[index]))
+  );
+}
+
+function sameProximityPaths(
+  left: ReadonlyArray<{ connection: OrientedConnection; path: string }>,
+  right: ReadonlyArray<{ connection: OrientedConnection; path: string }>,
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((entry, index) => {
+      const other = right[index]!;
+      return (
+        entry.path === other.path &&
+        entry.connection.source === other.connection.source &&
+        entry.connection.sourceHandle === other.connection.sourceHandle &&
+        entry.connection.target === other.connection.target &&
+        entry.connection.targetHandle === other.connection.targetHandle
+      );
+    })
+  );
 }
 
 function overlayPin(
@@ -1050,37 +1164,12 @@ function GraphEditorCanvas({
         if (isDisabledNode(node)) continue;
         const internal = store.nodeLookup.get(node.id);
         if (!internal) continue;
-        const position = moving.get(node.id)?.position ?? node.position;
         const bounds = internal.internals.handleBounds;
-        const nodePins = hasSerializedPins(node.data) ? node.data.__pins : [];
-        for (const [direction, handles] of [
-          ["out", bounds?.source],
-          ["in", bounds?.target],
-        ] as const) {
-          for (const handle of handles ?? []) {
-            if (!handle.id) continue;
-            const pin = nodePins.find((entry) => entry.id === handle.id);
-            if (!pin || pin.direction !== direction) continue;
-            // Node assistance joins facing pins; custom top-down tree handles
-            // and overlapping state-transition plates retain their own gestures.
-            if (
-              handle.position !==
-              (direction === "out" ? Position.Right : Position.Left)
-            )
-              continue;
-            const opposite =
-              direction === "out" ? bounds?.target : bounds?.source;
-            if (opposite?.some((other) => other.position === handle.position))
-              continue;
-            pins.push({
-              nodeId: node.id,
-              pinId: handle.id,
-              direction,
-              x: position.x + handle.x + handle.width / 2,
-              y: position.y + handle.y + handle.height / 2,
-            });
-          }
-        }
+        const dragged = moving.get(node.id);
+        const nodePins = dragged
+          ? proximityPinsOf(node, bounds, dragged.position)
+          : stationaryProximityPins(node, bounds);
+        for (const pin of nodePins) pins.push(pin);
       }
       const connections = findProximityConnections({
         pins,
@@ -1291,8 +1380,10 @@ function GraphEditorCanvas({
         }
       }
       const paths = collectProximityConnections(moving);
+      // A drag tick with the same suggestions (usually none) must not render the editor again.
+      const unchanged = sameProximityPaths(proximityPathsRef.current, paths);
       proximityPathsRef.current = paths;
-      setProximityPaths(paths);
+      if (!unchanged) setProximityPaths(paths);
     },
     [collectProximityConnections, commitGraph, interactions.shakeEnabled, nodesDraggable, readOnly, storeApi],
   );
@@ -2315,9 +2406,6 @@ function GraphEditorCanvas({
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const viewportX = useStore((state) => state.transform[0]);
-  const viewportY = useStore((state) => state.transform[1]);
-  const viewportZoom = useStore((state) => state.transform[2]);
   const keepIds = useMemo(() => {
     const ids = new Set<string>();
     if (focusedNodeId) ids.add(focusedNodeId);
@@ -2327,32 +2415,45 @@ function GraphEditorCanvas({
     }
     return [...ids];
   }, [focusedNodeId, nodes, selectedNodeId]);
-  const visibleGraph = useMemo(
-    () =>
-      selectVisibleGraphElements(
-        nodes,
-        styledEdges,
-        {
-          x: viewportX,
-          y: viewportY,
-          zoom: viewportZoom,
-          width: hostSize.width,
-          height: hostSize.height,
-        },
-        GRAPH_VIRTUALIZE_OVERSCAN_PX,
-        keepIds,
-      ),
-    [
-      keepIds,
+  // The mounted nodes and edges follow the pan/zoom transform, but the editor renders
+  // again only when that set changes, not on every pan or zoom frame.
+  const visibleInputs = useRef<VisibleGraphInputs | null>(null);
+  const visibleGraph = useStore((state) => {
+    const [x, y, zoom] = state.transform;
+    const last = visibleInputs.current;
+    if (
+      last &&
+      last.nodes === nodes &&
+      last.edges === styledEdges &&
+      last.keepIds === keepIds &&
+      last.width === hostSize.width &&
+      last.height === hostSize.height &&
+      last.x === x &&
+      last.y === y &&
+      last.zoom === zoom
+    ) {
+      return last.result;
+    }
+    const result = selectVisibleGraphElements(
       nodes,
       styledEdges,
-      viewportX,
-      viewportY,
-      viewportZoom,
-      hostSize.height,
-      hostSize.width,
-    ],
-  );
+      { x, y, zoom, width: hostSize.width, height: hostSize.height },
+      GRAPH_VIRTUALIZE_OVERSCAN_PX,
+      keepIds,
+    );
+    visibleInputs.current = {
+      nodes,
+      edges: styledEdges,
+      keepIds,
+      width: hostSize.width,
+      height: hostSize.height,
+      x,
+      y,
+      zoom,
+      result,
+    };
+    return result;
+  }, sameVisibleGraph);
   const virtualize = hostSize.width > 0 && hostSize.height > 0;
 
   const paletteSourcePins = useMemo(() => {
