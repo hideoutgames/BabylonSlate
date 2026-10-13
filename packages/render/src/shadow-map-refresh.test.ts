@@ -563,7 +563,7 @@ describe("cascaded sun refresh", () => {
     expect(render()).toBe(0);
   });
 
-  it("ignores casters no cascade can reach, whether static, hooked or skinned", async () => {
+  it("ignores casters no cascade can reach, whether static or hooked, and skinned ones beyond the shadow distance", async () => {
     const { scene, distant, render } = await cascadedSun();
     distant.position.x += 1;
     expect(render()).toBe(0);
@@ -571,6 +571,26 @@ describe("cascaded sun refresh", () => {
     distant.skeleton = new Skeleton("rig", "rig", scene);
     expect([render(), render()]).toEqual([0, 0]);
   });
+
+  it.each(["skeleton", "morph targets"] as const)(
+    "draws every frame for %s geometry within the shadow distance, even outside every cascade's rectangle",
+    async (kind) => {
+      const { scene, camera, render, settle } = await cascadedSun();
+      // A narrow view keeps the rectangles small, so a part beside the camera is
+      // beyond twice its radius of each, yet the animated skin could swing into view.
+      camera.fov = 0.2;
+      settle();
+      const part = MeshBuilder.CreateBox("swinging part", {}, scene);
+      part.position.set(30, 1, -12);
+      if (kind === "skeleton") part.skeleton = new Skeleton("rig", "rig", scene);
+      else part.morphTargetManager = new MorphTargetManager(scene);
+      expect([render(), render(), render()]).toEqual([1, 1, 1]);
+      // Beyond the shadow distance it no longer matters.
+      part.position.x = 300;
+      settle();
+      expect(render()).toBe(0);
+    },
+  );
 });
 
 describe("caster tracking while no map exists", () => {

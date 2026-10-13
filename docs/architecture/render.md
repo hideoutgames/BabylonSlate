@@ -1019,9 +1019,12 @@ move, light turn, settings change or such a refit re-renders the cascades once; 
 the casters' union bounds alone do not. Casters follow the local-map rule against the cascades'
 light-space rectangles (from the last fit; depth is ignored because casters toward the
 light clamp into the map): one that cannot reach any rectangle is not drawn into the map,
-so its changes, and its unsafe content (animated, skinned, hooked), leave the map cached;
-deforming casters get twice their radius. An unsafe caster that reaches a cascade, a scene
-clip plane or custom shader options keeps the map continuous. A render's derived bias, or
+so its changes, and its unsafe content (animated, hooked), leave the map cached. Deforming
+casters (skinned, morphed, lattice, baked vertex animation, padded bounds) are the exception:
+the caster index never plane-culls them and their skin can leave its bind-pose bounds, so a
+visible one reaches when it is within twice its radius of a rectangle or within the shadow
+distance of the camera (always, for an orthographic camera). An unsafe caster that reaches a
+cascade, a scene clip plane or custom shader options keeps the map continuous. A render's derived bias, or
 rectangles that moved with the camera, can cost one more render after motion stops. A
 single-map sun (one cascade, custom projection) still renders every frame.
 

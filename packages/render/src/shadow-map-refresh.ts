@@ -1,4 +1,5 @@
 import {
+  Camera,
   CascadedShadowGenerator,
   DirectionalLight,
   Matrix,
@@ -6,7 +7,6 @@ import {
   RenderTargetTexture,
   VertexBuffer,
   type AbstractMesh,
-  type Camera,
   type Geometry,
   type Scene,
   type ShadowGenerator,
@@ -338,8 +338,8 @@ export class ShadowMapRefresh {
    * the one of the pass that drew the retained depth: a probe that refit it
    * differently marks the snapshot changed. The casters follow the local-map
    * rule: one that cannot reach any cascade's light-space rectangle is not drawn
-   * into the map (deforming geometry gets twice its bounding radius, as for a
-   * local range).
+   * into the map. Deforming geometry is drawn whatever its bounds, so it
+   * reaches within the shadow distance of the camera as well.
    */
   private trackCascades(generator: CascadedShadowGenerator, map: RenderTargetTexture, state: Snapshot): boolean {
     const camera: Camera | null = generator.camera ?? generator.getLight().getScene().activeCamera;
@@ -374,14 +374,28 @@ export class ShadowMapRefresh {
       matrices.push(m);
     }
     if (refit) state.changed = true;
+    const eye = camera?.globalPosition;
+    const orthographic = camera?.mode === Camera.ORTHOGRAPHIC_CAMERA;
     for (const [mesh, record] of this.casters) {
       if (matrices.length) {
         const sphere = mesh.getBoundingInfo().boundingSphere;
         const center = sphere.centerWorld;
         const radius = sphere.radiusWorld;
-        if (!reachesCascade(matrices, this.cascadeScales, center, radius) &&
-          !(reachesCascade(matrices, this.cascadeScales, center, 2 * radius) && hasDeformingShadowBounds(mesh)))
-          continue;
+        if (!reachesCascade(matrices, this.cascadeScales, center, radius)) {
+          // Deforming geometry is drawn into the cascades whatever its bounds: no
+          // plane culls it, and its skin can leave its bind-pose bounds anywhere.
+          // So a visible one within the shadow distance of the camera (or near a
+          // rectangle) reaches; any other caster out of reach is not drawn.
+          if (!record.unsafe || !hasDeformingShadowBounds(mesh)) continue;
+          if (!reachesCascade(matrices, this.cascadeScales, center, 2 * radius) && eye && !orthographic) {
+            const limit = generator.shadowMaxZ + 2 * radius;
+            const dx = center.x - eye.x;
+            const dy = center.y - eye.y;
+            const dz = center.z - eye.z;
+            // Not negated: a non-finite distance reaches.
+            if (dx * dx + dy * dy + dz * dz > limit * limit) continue;
+          }
+        }
       }
       if (record.unsafe) return true;
       state.value(mesh);
