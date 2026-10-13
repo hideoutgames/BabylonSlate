@@ -26,7 +26,7 @@ import {
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { sceneAssetClassId } from "@babylonslate/object-model";
-import { encodeRgbaPng } from "@babylonslate/render";
+import { encodeRgbaPng } from "@babylonslate/render/png-encode";
 import type { Diagnostic } from "@babylonslate/scripting";
 import {
   materializeMaterialInstances,

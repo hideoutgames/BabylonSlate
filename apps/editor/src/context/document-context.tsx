@@ -1665,7 +1665,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setRoute("editor");
       setAnimEditorModes({});
       const { probeKtx2TranscoderAvailable } = await import(
-        "@babylonslate/render"
+        "@babylonslate/render/ktx2-transcoder"
       );
       const transcoderOk = await probeKtx2TranscoderAvailable(
         editorKtx2PublicBase(),
