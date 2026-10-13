@@ -120,6 +120,8 @@ export class ForwardSceneFrameGraph {
   /** waterSceneCopyDemand when the graph was planned; -1 before any plan. */
   private preparedWaterDemand = -1;
   private water: WaterSceneCopyGraph | undefined;
+  /** Copy-sampling water draws only in the water split's pass: the camera and main object pass probes skip it. */
+  private readonly skipCopyWater = (mesh: AbstractMesh): boolean => this.water?.drawsInCopyPass(mesh) === true;
   private retirement: Promise<void> | undefined;
   private released: Promise<void> | undefined;
   private readonly postProcessRetirement = new PostProcessRetirement();
@@ -890,6 +892,7 @@ export class ForwardSceneFrameGraph {
             output: { color, texture: Boolean(output.color) },
           });
         }
+        this.objects.neverDraws = this.water && this.skipCopyWater;
         // Temporal anti-aliasing jitters the scene draw with its geometry pass,
         // including the water split's transparent pass, which draws over the
         // jittered opaque depth and samples the jittered scene copy.
@@ -1089,7 +1092,7 @@ export class ForwardSceneFrameGraph {
         this.scene._activeCamera = camera;
         this.scene.getEngine().currentRenderPassId = camera.renderPassId;
         const sources = this.outlineView?.sourceRevision ?? 0;
-        const cameraReady = isSceneFrameReady(this.scene);
+        const cameraReady = isSceneFrameReady(this.scene, [], this.water && this.skipCopyWater);
         const ready = this.graph!.isReady() && cameraReady;
         // A mask admitting an instance source late dirties attributes that the
         // earlier probes already accepted; the next probe sees the final state.
