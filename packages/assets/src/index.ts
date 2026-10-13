@@ -4,6 +4,7 @@ export * from "./asset-loading-service";
 export * from "./registry-asset-loading";
 export * from "./atlas-textures";
 export * from "./babasset";
+export * from "./babasset-carry";
 export * from "./babproject";
 export * from "./blob-store";
 export * from "./bytes";

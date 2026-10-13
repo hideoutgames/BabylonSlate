@@ -70,9 +70,30 @@ export interface ChunkInput {
   data: Uint8Array;
 }
 
+/**
+ * A chunk an existing container already holds, written again without hashing
+ * it or uploading it: the table's digest and length are kept as they are. An
+ * externalised chunk stays in the blob store; an inline chunk's bytes are
+ * copied. The caller owns the proof that those bytes are the ones the digest
+ * names (see `carryStoredChunks`), because nothing here re-reads a blob.
+ */
+export interface CarriedChunkInput {
+  id: string;
+  kind: string;
+  mime: string;
+  carried: { sha256: string; byteLength: number } & ({ blob: string } | { bytes: Uint8Array });
+}
+
+/** A chunk to write: new bytes, or one carried from the container being replaced. */
+export type EncodableChunk = ChunkInput | CarriedChunkInput;
+
+export function isCarriedChunk(chunk: EncodableChunk): chunk is CarriedChunkInput {
+  return "carried" in chunk;
+}
+
 export interface EncodeBabassetOptions {
   header: Omit<BabassetHeader, "chunks">;
-  chunks: ChunkInput[];
+  chunks: EncodableChunk[];
   /** When set, chunks >= threshold use blob locators (thin mode). */
   blobThreshold?: number;
   /** Existing blob store writer; required when externalising. */
@@ -175,7 +196,7 @@ export async function encodeBabasset(
   const table: ChunkEntry[] = [];
   let inlineOffset = 0;
 
-  const allChunks: ChunkInput[] = [...options.chunks];
+  const allChunks: EncodableChunk[] = [...options.chunks];
   if (mode === "bundled" && options.nestedAssets) {
     for (const nested of options.nestedAssets) {
       allChunks.push({
@@ -188,6 +209,35 @@ export async function encodeBabasset(
   }
 
   for (const chunk of allChunks) {
+    if (isCarriedChunk(chunk)) {
+      const { sha256, byteLength } = chunk.carried;
+      if ("blob" in chunk.carried) {
+        if (mode !== "thin") throw new Error(`Chunk ${chunk.id} lives in the blob store, which a ${mode} asset does not use`);
+        table.push({
+          id: chunk.id,
+          kind: chunk.kind,
+          mime: chunk.mime,
+          sha256,
+          byteLength,
+          locator: { blob: chunk.carried.blob },
+        });
+      } else {
+        if (chunk.carried.bytes.byteLength !== byteLength) {
+          throw new Error(`Carried chunk ${chunk.id} does not have its recorded length`);
+        }
+        table.push({
+          id: chunk.id,
+          kind: chunk.kind,
+          mime: chunk.mime,
+          sha256,
+          byteLength,
+          locator: { inline: { offset: inlineOffset, length: byteLength } },
+        });
+        chunkBytes.push(chunk.carried.bytes);
+        inlineOffset += byteLength;
+      }
+      continue;
+    }
     const hash = await sha256Hex(chunk.data);
     const externalise =
       mode === "thin" && chunk.data.byteLength >= threshold && options.writeBlob;
