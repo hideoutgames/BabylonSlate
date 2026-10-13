@@ -324,6 +324,33 @@ describe("per-emitter lifecycle", () => {
     // Released, not failed: the next Play prepares a new run.
     expect(f.state()).toBe("ready-stopped");
   });
+
+  it("needs Scene frames while a run prepares, emits or drains, and not while paused or finished", async () => {
+    const f = fixture(true);
+    f.service.setLibrary(libraryOf({ flash: { emitter: { loop: "once", duration: 0.25 } } }));
+    expect(f.service.needsFrames()).toBe(false);
+    f.assign();
+    expect(f.state()).toBe("preparing");
+    expect(f.service.needsFrames()).toBe(true);
+
+    await f.complete();
+    await vi.waitFor(() => expect(f.state()).toBe("playing"));
+    const system = f.scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+    // A freshly started emitter has no particles yet, but it still needs the render that creates them.
+    expect(system.getActiveCount()).toBe(0);
+    expect(f.service.needsFrames()).toBe(true);
+
+    f.service.setPaused(true);
+    expect(f.service.needsFrames()).toBe(false);
+    f.service.setPaused(false);
+    expect(f.service.needsFrames()).toBe(true);
+
+    simulate([system], 150);
+    f.frame();
+    expect(f.state()).toBe("ready-stopped");
+    expect(f.service.needsFrames()).toBe(false);
+  });
 });
 
 describe("Particle Graph slot lifecycle", () => {

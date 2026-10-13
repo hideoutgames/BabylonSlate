@@ -50,6 +50,7 @@ vi.mock("@babylonslate/render", () => {
     });
     playbackState = () => this.state;
     previewStats = () => ({ active: 0, capacity: 0, backend: "none", approximate: false });
+    needsFrames = () => true;
     dispose = vi.fn();
     constructor() {
       harness.services.push(this);

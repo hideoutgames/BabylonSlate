@@ -366,6 +366,21 @@ export class ParticleService {
     return { active, capacity, backend, approximate: gpu > 0 };
   }
 
+  /**
+   * Preview: whether the Scene must keep rendering for this service. Systems only advance
+   * inside a Scene render, so a bundle that is still preparing, emitting or draining needs
+   * frames, while a paused service, a finished Once run (`ready-stopped`) and a failed
+   * bundle hold a picture that no further render changes. The live particle count cannot
+   * decide this: a freshly started or slow emitter reports zero until its next render.
+   */
+  needsFrames(): boolean {
+    if (this.paused || this.disposed) return false;
+    for (const entry of this.live.values()) {
+      if (entry.state === "preparing" || entry.state === "playing" || entry.state === "draining") return true;
+    }
+    return false;
+  }
+
   resetSession(): void {
     for (const entry of this.live.values()) this.retire(entry);
     this.slotMeshes.clear();

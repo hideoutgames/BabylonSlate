@@ -810,7 +810,11 @@ describe("material preview presenter", () => {
 
   describe("static content", () => {
     /** A presenter whose clock advances past any frame interval on every call. */
-    async function staticPresenter(host: MaterialPreviewScene, canvas: FakeCanvas, extra: { suspended?: () => boolean } = {}) {
+    async function staticPresenter(
+      host: MaterialPreviewScene,
+      canvas: FakeCanvas,
+      extra: { suspended?: () => boolean; animating?: () => boolean } = {},
+    ) {
       let now = 0;
       const presenter = createMaterialPreviewPresenter(
         host,
@@ -900,6 +904,30 @@ describe("material preview presenter", () => {
         await readbackDone();
       }
       expect(render).toHaveBeenCalledTimes(3);
+    });
+
+    it("wakes for content the Scene does not register as animating, and idles when it stops", async () => {
+      const host = await previewHost();
+      const render = vi.spyOn(host.scene, "render");
+      let animating = false;
+      const presenter = await staticPresenter(host, new FakeCanvas(), { animating: () => animating });
+      presenter.present();
+      await readbackDone();
+      presenter.present();
+      expect(render).toHaveBeenCalledTimes(1);
+
+      // Particles advance only inside a render and never appear in `scene.animatables`.
+      animating = true;
+      for (let frame = 0; frame < 3; frame += 1) {
+        presenter.present();
+        await readbackDone();
+      }
+      expect(render).toHaveBeenCalledTimes(4);
+
+      animating = false;
+      presenter.present();
+      presenter.present();
+      expect(render).toHaveBeenCalledTimes(4);
     });
 
     it("draws nothing while suspended and honours the forced redraw once it clears", async () => {

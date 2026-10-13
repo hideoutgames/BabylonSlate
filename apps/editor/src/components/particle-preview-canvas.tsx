@@ -246,6 +246,7 @@ export function ParticlePreviewCanvas({
   onDiagnosticsRef.current = onDiagnostics;
   const pausedRef = useRef(paused);
   const serviceRef = useRef<ParticleService | null>(null);
+  const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const appliedRef = useRef<ParticleLibrary | null>(null);
   const diagnosticsRef = useRef<ParticleServiceDiagnostic[]>([]);
   /** True while a service call reports synchronously; the caller evaluates after it. */
@@ -278,6 +279,17 @@ export function ParticlePreviewCanvas({
     }
     const applied = appliedRef.current;
     if (applied) onDiagnosticsRef.current?.([...diagnostics], applied);
+  }, []);
+
+  /**
+   * The presenter idles once a frame is drawn and no system needs frames (paused, or a
+   * finished Once run). A change that alters the picture without a Scene signal asks for
+   * one more frame; a preview that is running already draws every interval, and one that
+   * resumes wakes through `needsFrames`.
+   */
+  const redraw = useCallback(() => {
+    if (serviceRef.current?.needsFrames()) return;
+    presenterRef.current?.present({ force: true });
   }, []);
 
   const assign = useCallback(
@@ -318,8 +330,9 @@ export function ParticlePreviewCanvas({
       // Only a re-prepare reports slot problems again.
       if (tier !== "rebuild") diagnosticsRef.current = [...previous, ...diagnosticsRef.current];
       evaluate();
+      redraw();
     },
-    [evaluate],
+    [evaluate, redraw],
   );
 
   useEffect(() => {
@@ -345,6 +358,7 @@ export function ParticlePreviewCanvas({
       materials = null;
       presenter?.dispose();
       presenter = null;
+      presenterRef.current = null;
       overlay.dispose();
       host?.dispose();
       host = null;
@@ -372,7 +386,13 @@ export function ParticlePreviewCanvas({
       const sources = installTextureBytes(bytes) ?? new Map();
       const cache = resourceCacheForEngine(engine);
       host = createParticlePreviewScene(engine, { skybox: showSkybox });
-      presenter = createMaterialPreviewPresenter(host, canvas, { suspended: overlay.isOpen });
+      // Particle systems are not Babylon animatables: the service says when frames are needed.
+      presenter = createMaterialPreviewPresenter(host, canvas, {
+        suspended: overlay.isOpen,
+        staticContent: true,
+        animating: () => serviceRef.current?.needsFrames() ?? true,
+      });
+      presenterRef.current = presenter;
       materials = createParticleMaterialResolver({
         scene: host.scene,
         documents: docs.documents,
@@ -498,6 +518,7 @@ export function ParticlePreviewCanvas({
     service.setLibrary(libraryRef.current);
     appliedRef.current = libraryRef.current;
     assign(service);
+    redraw();
   };
 
   const retry = () => setAttempt((value) => value + 1);
