@@ -40,6 +40,14 @@ retain their existing owners. Any edit of the same editor Scene that leaves its 
 light range, an actor property) keeps the attached stack and its prepared FrameGraph, so the viewport does not hold
 frames while a graph rebuilds (about 1.5–2.5 s on the FeatureTest main scene, which has a post-process stack). A
 changed stack, a different Scene or a changed input (material revision, quality scale, camera) still re-attaches it.
+A Scene whose Asset GUID resolves after the viewport's blocking load (the registry indexes it late) is still the same Scene.
+Edits of only a light's Range, Intensity, Color or cone angles (Hemispheric Fill: Color, Ground Color, Intensity; Rectangular Area Light: Color, Intensity,
+Width, Height) apply in place through `EditorSceneSync` without invalidating renderer readiness, like pose edits: those values reach Babylon as uniforms,
+so no shader variant needs a strict re-probe (about 0.3 s on the FeatureTest main scene). Anything that chooses a variant or a shadow owner (Enabled, light
+kind, Cast Shadows, Shadow Priority, an area light's emission texture) still takes the full path. Their readiness-relevant side effects mark it themselves: an
+Intensity crossing zero toggles the light's effective Enabled state, and a Range edit that moves a light across a shadow, clustered-light or volumetric
+selection boundary changes that selection, which the shadow controller, scene-lighting sync and effects key detect. A presentation or preparation in flight,
+or a latched preparation failure, keeps the full path so it restarts.
 
 Opt-in render diagnostics include attempted/drawn/copied/held frames, copy and
 render-callback preparation time, context events, graph builds, strict readiness

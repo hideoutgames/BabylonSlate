@@ -1,7 +1,7 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import {
@@ -2266,6 +2266,111 @@ describe("Play createEngine view", () => {
     expect(attaches()).toBe(attached + 2);
     editor.loadScene(scene(), { sceneAssetGuid: "another scene" });
     expect(attaches()).toBe(attached + 3);
+  });
+
+  it("keeps the prepared post-process stack across an edit when the Scene's Asset GUID resolved after the blocking load", async () => {
+    const attach = vi.spyOn(SceneRenderCoordinator.prototype, "attachPostProcess");
+    const stack = [{ id: "pass", materialGuid: "pp", enabled: true }];
+    const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(),
+      editor: true,
+      materialDocuments: new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]),
+      postProcessStack: stack,
+    });
+    handles.push(editor);
+    const base = createDefaultScene();
+    const scene = (properties: Record<string, unknown>) => ({
+      ...base,
+      settings: { ...base.settings, postProcessStack: stack },
+      actors: [...base.actors, createActor("lamp", "Lamp", {
+        components: [{ id: "light", classId: "LightComponent", properties: { lightKind: "point", ...properties } }],
+      })],
+    });
+    const attaches = () => attach.mock.calls.filter(([value]) => value.scene === editor.scene).length;
+    // The viewport's blocking load can run before the registry has indexed the Scene.
+    await editor.loadSceneAsync(scene({ range: 8 }), { signal: new AbortController().signal });
+    const attached = attaches();
+    expect(attached).toBeGreaterThan(0);
+
+    editor.loadScene(scene({ range: 12 }), { sceneAssetGuid: "scene" });
+    editor.loadScene(scene({ range: 12, enabled: false }), { sceneAssetGuid: "scene" });
+    expect(attaches()).toBe(attached);
+    // Once known, the Asset GUID identifies the Scene again.
+    editor.loadScene(scene({ range: 12 }), { sceneAssetGuid: "another scene" });
+    expect(attaches()).toBe(attached + 1);
+  });
+
+  it("applies light value edits in place without re-probing readiness, but re-probes when a light stops or starts illuminating", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(handle);
+    const base = createDefaultScene();
+    const scene = (properties: Record<string, unknown> = {}) => ({
+      ...base,
+      actors: [...base.actors, createActor("box", "Box", { components: [createMeshComponent("box-mesh", "box")] }),
+        createActor("lamp", "Lamp", { components: [{ id: "lamp-light", classId: "LightComponent", properties: {
+          lightKind: "point", enabled: true, castShadows: false, color: [1, 1, 1], intensity: 2, range: 8, ...properties,
+        } }] })],
+    });
+    const frame = () => { engine.beginFrame(); renderViews(engine); engine.endFrame(); };
+    const probes = () => handle.renderDiagnostics().rendererWork!.strictReadinessChecks;
+    const lamp = () => handle.scene.getLightByName("authoredLight:lamp") as PointLight;
+    const settle = async () => {
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const before = probes();
+        frame();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        if (probes() === before && attempt > 0) return;
+      }
+    };
+    handle.loadScene(scene(), { sceneAssetGuid: "scene" });
+    await handle.prewarmSceneMaterials();
+    await settle();
+    const steady = probes();
+
+    // A drag of Range, Intensity or Color changes uniforms only: no variant to compile or re-admit.
+    for (const range of [12, 6, 14]) {
+      handle.loadScene(scene({ range, intensity: range / 4, color: [range / 20, 0.5, 0.25] }), { sceneAssetGuid: "scene" });
+      frame();
+      frame();
+      expect(lamp().range).toBe(range);
+      expect(lamp().intensity).toBe(range / 4);
+      expect(lamp().diffuse.r).toBeCloseTo(range / 20);
+    }
+    expect(probes()).toBe(steady);
+
+    // A light that stops illuminating changes which lights the materials compile for.
+    handle.loadScene(scene({ intensity: 0 }), { sceneAssetGuid: "scene" });
+    await settle();
+    expect(lamp().isEnabled(false)).toBe(false);
+    const dimmed = probes();
+    expect(dimmed).toBeGreaterThan(steady);
+    handle.loadScene(scene({ intensity: 1 }), { sceneAssetGuid: "scene" });
+    await settle();
+    expect(lamp().isEnabled(false)).toBe(true);
+    expect(probes()).toBeGreaterThan(dimmed);
+
+    // Properties that choose shader variants or shadow ownership are not value edits.
+    const lit = probes();
+    handle.loadScene(scene({ enabled: false }), { sceneAssetGuid: "scene" });
+    await settle();
+    expect(probes()).toBeGreaterThan(lit);
+  });
+
+  it("restarts an outstanding presentation when a light is edited, as for any other document edit", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(handle);
+    const base = createDefaultScene();
+    const scene = (range: number) => ({
+      ...base,
+      actors: [...base.actors, createActor("lamp", "Lamp", { components: [{ id: "lamp-light", classId: "LightComponent", properties: { lightKind: "point", range } }] })],
+    });
+    handle.loadScene(scene(8), { sceneAssetGuid: "scene" });
+    const presented = handle.presentFirstFrame();
+    const outcome = expect(presented).rejects.toThrow("superseded");
+    handle.loadScene(scene(12), { sceneAssetGuid: "scene" });
+    await outcome;
   });
 
   it("keeps shared Scene and cache resources alive until graph retirement settles after Stop", async () => {
