@@ -73,8 +73,16 @@ function describeShaderStall(stalled: string | null, completed: number): string 
   return `Scene shaders did not become ready before the loading deadline.${where} after ${completed} compiled variant${completed === 1 ? "" : "s"}.`;
 }
 
-export async function prewarmSceneMaterials(scene: Scene, assertCurrent?: () => void): Promise<void> {
-  await prewarmMeshMaterials(scene, scene.meshes, assertCurrent);
+/**
+ * `skipMesh` names meshes whose drawn variant a later readiness probe compiles under the pass that draws them (water
+ * the view samples a scene copy for), so warming the pass-less variant here would compile one nothing draws.
+ */
+export async function prewarmSceneMaterials(
+  scene: Scene,
+  assertCurrent?: () => void,
+  skipMesh?: (mesh: AbstractMesh) => boolean,
+): Promise<void> {
+  await prewarmMeshMaterials(scene, scene.meshes, assertCurrent, skipMesh);
 }
 
 /** Warm only an additive instance's consumers, without waiting on sibling loads. */
@@ -82,6 +90,7 @@ export async function prewarmMeshMaterials(
   scene: Scene,
   meshes: Iterable<AbstractMesh>,
   assertCurrent?: (mesh?: AbstractMesh) => void,
+  skipMesh?: (mesh: AbstractMesh) => boolean,
 ): Promise<void> {
   let finished = false;
   const check = (mesh?: AbstractMesh) => {
@@ -97,7 +106,7 @@ export async function prewarmMeshMaterials(
     await deadline.race((async () => {
       for (const mesh of meshes) {
         check(mesh);
-        if (!(mesh instanceof Mesh)) continue;
+        if (!(mesh instanceof Mesh) || skipMesh?.(mesh)) continue;
         const material = mesh.material ?? scene.defaultMaterial;
         // The same material can have different effects for skinned, morphed,
         // instanced and static meshes. Warm each consumer, including submaterials.
@@ -218,8 +227,15 @@ function hasParentPendingData(scene: Scene): boolean {
 /**
  * Babylon 9.29 Scene.isReady also waits for every cached Engine effect. Mirror
  * its scene-owned checks so an unrelated preview cannot block this viewport.
+ * This probe compiles each mesh's variant under the camera's own pass; `skipVariant` names meshes the view
+ * never draws in that pass (copy-sampling water draws only in the water split's pass), whose other
+ * readiness checks still run.
  */
-export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTexture[] = []): boolean {
+export function isSceneFrameReady(
+  scene: Scene,
+  targets: readonly RenderTargetTexture[] = [],
+  skipVariant?: (mesh: AbstractMesh) => boolean,
+): boolean {
   if (scene.isDisposed) return false;
   return withSceneReadinessState(scene, () => {
     const engine = scene.getEngine();
@@ -241,7 +257,7 @@ export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTe
     for (const mesh of meshes) {
       if (!mesh.subMeshes?.length) continue;
       // Start all consumers' compilation even when an earlier one is unready.
-      if (!isMeshFrameReady(mesh)) { ready = false; continue; }
+      if (!skipVariant?.(mesh) && !isMeshFrameReady(mesh)) { ready = false; continue; }
       const instanced = mesh.hasThinInstances || mesh.getClassName() === "InstancedMesh" ||
         mesh.getClassName() === "InstancedLinesMesh" || Boolean(engine.getCaps().instancedArrays && mesh instanceof Mesh && mesh.instances.length);
       for (const step of scene._isReadyForMeshStage) {

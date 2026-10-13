@@ -1,4 +1,5 @@
 import type {
+  AbstractMesh,
   Camera,
   InternalTexture,
   Light,
@@ -38,6 +39,12 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
    * isMainObjectRenderer, which Babylon uses to find the frame's camera.
    */
   mainView = false;
+
+  /**
+   * Meshes this pass never draws (the water split draws copy-sampling water in its own pass): its readiness probe
+   * leaves them to the pass that does, so no variant that nothing draws is compiled.
+   */
+  neverDraws: ((mesh: AbstractMesh) => boolean) | undefined;
 
   /** Transparent depth pre-passes draw under their own render pass id (see TransparentDepthPrePass). */
   private readonly depthPrePass: TransparentDepthPrePass;
@@ -93,8 +100,8 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
       // Only override the readiness probe. Actual rendering keeps the official
       // renderer's readiness/cache behavior and any existing custom callback.
       this._renderer.customIsReadyFunction = (mesh, rate, preWarm) =>
-        (!previous || previous(mesh, rate, preWarm)) && isMeshFrameReady(mesh) &&
-        (this._renderer.disableDepthPrePass || this.depthPrePass.isReady(mesh));
+        (!previous || previous(mesh, rate, preWarm)) && (this.neverDraws?.(mesh) === true ||
+          isMeshFrameReady(mesh) && (this._renderer.disableDepthPrePass || this.depthPrePass.isReady(mesh)));
       return super.isReady();
     } finally {
       this._renderer.customIsReadyFunction = previous;
