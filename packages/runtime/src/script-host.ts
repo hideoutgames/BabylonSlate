@@ -78,6 +78,8 @@ import { isUIControl2DClass } from "@babylonslate/core";
 
 const EMPTY_DATA = new RuntimeDataCatalog();
 const UNAVAILABLE_EDITOR_DATA = createUnavailableEditorDataApi();
+/** Behaviour Tree hooks of a context without a Behaviour Tree run: they do nothing and read nothing. */
+const NO_BT_HOOK = (): undefined => undefined;
 
 export type AnimGraphControl = {
   getVariable(name: string): unknown;
@@ -754,6 +756,38 @@ type LoadedScript = {
 };
 
 /**
+ * The `ScriptContext` members that capture only host-lifetime state: `this`, the host services, the
+ * seeded RNG and module-level helpers, never the calling object, tick, arguments or extras. The host
+ * builds them once and every context inherits them, so none may read the context's `this` (compiled and
+ * user code detaches them: `const { log } = ctx`). Every other member is built per call by `createContext`.
+ */
+type HostContextKey =
+  | "getSaveData" | "getSaveField" | "setSaveField" | "newGame" | "saveGame" | "loadGame" | "listSaves"
+  | "deleteSave" | "registerSaveActor" | "assetRegistry" | "formatValue" | "checkInfiniteLoop" | "log" | "print"
+  | "drawDebug" | "getPostProcessEntry" | "getMaterialFloatParameter" | "getMaterialColorParameter"
+  | "getMaterialTextureParameter" | "resetMaterialFloatParameter" | "resetMaterialColorParameter"
+  | "resetMaterialTextureParameter" | "setMeshMaterial" | "getMaterialAsset" | "setMaterialFloatParameter"
+  | "setMaterialColorParameter" | "setMaterialTextureParameter" | "rotatorToQuat" | "quatToRotator"
+  | "combineRotators" | "inverseRotator" | "deltaRotator" | "lerpRotator" | "rotatorForward" | "rotatorRight"
+  | "rotatorUp" | "lookAtRotator" | "multiplyQuats" | "inverseQuat" | "slerpQuats" | "quatRotateVector"
+  | "normalizeQuat" | "randomFloat" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
+  | "detachActor" | "getParent" | "setOwner" | "getOwner" | "executeConsoleCommand" | "getFirstComponentOfType"
+  | "getAllComponentsOfType" | "getSceneLoadingProgress" | "getTargetSceneName" | "releaseAssetLoad"
+  | "getAssetLoadHandleState" | "getAssetLoadHandleProgress" | "getAssetLoadState" | "loadSceneAsync"
+  | "unloadSceneAsync" | "isSceneLoaded" | "getSceneLoadProgress" | "getSceneState" | "getProjectName"
+  | "getProjectVersion" | "getSubsystem" | "getGameInstance" | "isA" | "getAnimGraphVariable"
+  | "setAnimGraphVariable" | "getAnimGraphCurrentState" | "jumpAnimGraphState" | "setChannelVolume"
+  | "setGlobalVolume" | "changeScene" | "createSceneLayer" | "removeSceneLayer" | "clearSceneLayers"
+  | "setFocusTarget" | "clearFocusTarget" | "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess"
+  | "getScalability" | "requestScalability" | "possessCamera" | "getRenderTargetMode"
+  | "getRenderTargetTextureTarget" | "captureRenderTarget" | "getRenderTargetCaptureProperty"
+  | "setRenderTargetCaptureProperty" | "getCameraFieldOfView" | "setCameraFieldOfView" | "getCameraOrthographicSize"
+  | "setCameraOrthographicSize" | "setLightEnabled" | "setLightColor" | "setLightIntensity" | "findPathTo"
+  | "isPathValid" | "getClosestNavigablePoint" | "getRandomPointInRadius" | "addObstacle" | "removeObstacle";
+type HostContextMembers = Pick<ScriptContext, HostContextKey>;
+type CallContextMembers = Omit<ScriptContext, HostContextKey>;
+
+/**
  * Loads compiled graph modules and binds their entry points to actor
  * lifecycle hooks. One host per runtime session.
  */
@@ -795,10 +829,13 @@ export class ScriptHost {
   /** The `ctx.callInterface` caller whose frame its interface handler runs in. */
   private interfaceCaller: CallerFrame | null = null;
   private readonly rng: Rng;
+  /** Host-lifetime members every context inherits; built once in the constructor. */
+  private readonly hostMembers: HostContextMembers;
 
   constructor(services: ScriptHostServices) {
     this.services = services;
     this.rng = createSeededRng(services.seed ?? 1);
+    this.hostMembers = this.createHostMembers();
   }
 
   /** The driver installs persistence before authored Init/Begin Play hooks run. */
@@ -1275,8 +1312,9 @@ export class ScriptHost {
         }
         const fn = entry.exports[point.name];
         if (typeof fn !== "function") continue;
-        const key = `${entry.script.assetGuid}:${point.name}`;
-        if (self && point.isAsync && this.isPending(self, key)) continue;
+        // Only a latent entry point is checked for a pending run; the synchronous common path builds no key.
+        const latentKey = self && point.isAsync ? `${entry.script.assetGuid}:${point.name}` : undefined;
+        if (self && latentKey !== undefined && this.isPending(self, latentKey)) continue;
         const ctx = this.createContext(
           self,
           deltaSeconds,
@@ -1289,6 +1327,7 @@ export class ScriptHost {
         try {
           const result = this.invokeOwned(self, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
           if (result instanceof Promise) {
+            const key = latentKey ?? `${entry.script.assetGuid}:${point.name}`;
             if (self) this.markPending(self, key);
             void result
               .catch((error) => this.reportLatentError(error, self))
@@ -1351,6 +1390,360 @@ export class ScriptHost {
     return row;
   }
 
+  /**
+   * The members every context inherits: the ones whose behavior depends only on the host (see
+   * `HostContextKey`). Built once per host. Their closures must not capture a per-call value, which
+   * `createContext` owns; they live in this scope so that a reference to one is a compile error.
+   */
+  private createHostMembers(): HostContextMembers {
+    const services = this.services;
+    const unavailable = async <T>(): Promise<SaveGameResult<T>> => ({ ok: false, error: {
+      code: "unavailable", message: "Select a default Save Game in Project Settings before using saves.",
+    } });
+    const readField = (value: SaveGameValue, type?: string, array?: boolean): unknown => {
+      if (array && Array.isArray(value)) return value.map((entry) => readField(entry, type));
+      return type === "actor" && typeof value === "string" ? (services.resolveSaveActor?.(value) ?? services.findActor?.(value) ?? null) : value;
+    };
+    const writeField = (value: unknown, type?: string, array?: boolean): SaveGameValue => {
+      if (array && Array.isArray(value)) return value.map((entry) => writeField(entry, type));
+      return cloneSaveGameValue(type === "actor" && value instanceof Actor ? services.getSaveActorId?.(value) ?? value.guid : value);
+    };
+    const members: HostContextMembers = {
+      getSaveData: <TData extends object>() => this.saveGameService().getSaveData() as TData,
+      getSaveField: (id, type, array) => readField(this.saveGameService().getField(id), type, array),
+      setSaveField: (id, value, type, array) => this.saveGameService().setField(id, writeField(value, type, array)),
+      newGame: () => services.saveGame?.newGame() ?? unavailable(),
+      saveGame: (options) => services.saveGame?.saveGame(options) ?? unavailable(),
+      loadGame: (options) => services.saveGame?.loadGame(options) ?? unavailable(),
+      listSaves: (options) => services.saveGame?.listSaves(options) ?? unavailable(),
+      deleteSave: (options) => services.saveGame?.deleteSave(options) ?? unavailable(),
+      registerSaveActor: (actor, persistentId) => {
+        if (!(actor instanceof Actor) || actor.destroyed) throw new SaveGameError("invalid", "Register Save Actor requires a live actor.");
+        if (!services.registerSaveActor) throw new SaveGameError("unavailable", "Actor persistence is not available in this host.");
+        services.registerSaveActor(actor, persistentId);
+      },
+      // Read on use: an editor host may rebuild its catalog after a registry change.
+      get assetRegistry() { return services.getAssetCatalog?.() ?? EMPTY_ASSET_CATALOG; },
+      formatValue: (value) => formatValue(value),
+      checkInfiniteLoop: (location) => {
+        try {
+          services.checkInfiniteLoop?.();
+        } catch (error) {
+          if (isInfiniteLoopError(error) && location) error.scriptLocation = location;
+          throw error;
+        }
+      },
+      log: (severity, category, message) =>
+        services.log(severity, category, message),
+      print: (message, key, duration, color) =>
+        services.print(message, key, duration, color),
+      drawDebug: (payload) => {
+        services.drawDebug?.(payload);
+      },
+      getPostProcessEntry: (owner, entryId) => {
+        if (!(owner instanceof Scene || owner instanceof SceneLayer) || !this.canInvokeOwner(owner) || typeof entryId !== "string" || !entryId.trim()) return null;
+        return services.getPostProcessEntry?.(owner, entryId.trim()) ?? null;
+      },
+      getMaterialFloatParameter: (material, name) => {
+        const result = this.getMaterialParameter(material, name, "float");
+        return { found: result?.kind === "float", value: result?.kind === "float" ? result.value : 0 };
+      },
+      getMaterialColorParameter: (material, name) => {
+        const result = this.getMaterialParameter(material, name, "color");
+        const [x, y, z, w] = result?.kind === "color" ? result.value : [0, 0, 0, 1];
+        return { found: result?.kind === "color", value: { x: x!, y: y!, z: z!, w: w! } };
+      },
+      getMaterialTextureParameter: (material, name) => {
+        const result = this.getMaterialParameter(material, name, "texture");
+        return { found: result?.kind === "texture", value: result?.kind === "texture" ? result.textureAssetGuid : null };
+      },
+      resetMaterialFloatParameter: (material, name) => this.resetMaterialParameter(material, name, "float"),
+      resetMaterialColorParameter: (material, name) => this.resetMaterialParameter(material, name, "color"),
+      resetMaterialTextureParameter: (material, name) => this.resetMaterialParameter(material, name, "texture"),
+      setMeshMaterial: (component, materialGuid) => {
+        const target = asActorComponent(component);
+        if (!target || (target.classId !== "MeshComponent" && target.classId !== "DynamicRuntimeMeshComponent") ||
+          !this.canInvokeOwner(target)) return null;
+        const guid = typeof materialGuid === "string" ? materialGuid.trim() : "";
+        if (guid && services.prepareAssets && services.getAssetLoadState?.(guid) !== "ready") {
+          throw new Error(`Material ${guid} is not prepared; use Set Material Instance (ctx.setMeshMaterialAsync), or load the Material first with Async Load Asset`);
+        }
+        this.beginMaterialReplacement(target, "material");
+        this.retainMaterialPreload(target, "material", "");
+        // Re-applying the current asset keeps the runtime parameter values.
+        if (target.getVariable("materialGuid") !== guid) {
+          const previous = target.getVariable("materialObject");
+          if (previous instanceof MaterialObject) this.releaseMaterialPreloads(previous);
+          target.setVariable("materialGuid", guid);
+          this.applyComponentVariable(target, "materialGuid", guid);
+        }
+        return (target.getVariable("materialObject") as MaterialObject | null) ?? null;
+      },
+      getMaterialAsset: (material) =>
+        (material instanceof MaterialObject || material instanceof PostProcessMaterialObject) && !material.destroyed
+          ? material.materialAssetGuid
+          : null,
+      setMaterialFloatParameter: (material, name, value) => {
+        if (typeof value !== "number" || !Number.isFinite(value)) return;
+        this.setMaterialParameter(material, name, { kind: "float", value });
+      },
+      setMaterialColorParameter: (material, name, value) => {
+        if (!value || typeof value !== "object") return;
+        const rgba: [number, number, number, number] = [
+          value.x,
+          value.y,
+          value.z,
+          value.w,
+        ];
+        if (
+          !rgba.every(
+            (channel) =>
+              typeof channel === "number" && Number.isFinite(channel),
+          )
+        )
+          return;
+        this.setMaterialParameter(material, name, {
+          kind: "color",
+          value: rgba,
+        });
+      },
+      setMaterialTextureParameter: (material, name, value) => {
+        if (value !== null && typeof value !== "string") return;
+        if (value && services.prepareAssets && services.getAssetLoadState?.(value.trim()) !== "ready") {
+          throw new Error(`Texture ${value} is not prepared; use Set Material Texture Parameter (ctx.setMaterialTextureParameterAsync), or load the Texture first with Async Load Asset`);
+        }
+        if (material instanceof MaterialObject || material instanceof PostProcessMaterialObject) {
+          this.beginMaterialReplacement(material, `texture:${name.trim()}`);
+          this.retainMaterialPreload(material, `texture:${name.trim()}`, "");
+        }
+        this.setMaterialParameter(material, name, {
+          kind: "texture",
+          textureAssetGuid: value?.trim() || null,
+        });
+      },
+      rotatorToQuat,
+      quatToRotator,
+      combineRotators,
+      inverseRotator,
+      deltaRotator,
+      lerpRotator,
+      rotatorForward,
+      rotatorRight,
+      rotatorUp,
+      lookAtRotator,
+      multiplyQuats,
+      inverseQuat,
+      slerpQuats,
+      quatRotateVector,
+      normalizeQuat,
+      randomFloat: () => this.rng.nextFloat(),
+      getAllActorsOfClass: (classId) => {
+        const target = String(classId ?? "");
+        const actors = services.getActors?.() ?? [];
+        if (!target) return [];
+        return actors.filter((actor) => {
+          const id = actor.classId;
+          if (!id) return false;
+          return id === target || (services.classRegistry?.isA(id, target) ?? false);
+        });
+      },
+      getActorOfClass: (classId) => {
+        const target = String(classId ?? "");
+        const actors = services.getActors?.() ?? [];
+        if (!target) return null;
+        return (
+          actors.find((actor) => {
+            const id = actor.classId;
+            if (!id) return false;
+            return id === target || (services.classRegistry?.isA(id, target) ?? false);
+          }) ?? null
+        );
+      },
+      attachActor: (child, parent) => {
+        const actor = asActor(child);
+        const target = asActor(parent);
+        // Refuse before the bone detach so a rejected link changes nothing. A
+        // destroyed parent is a stale reference and is refused the same way.
+        // Attaching an actor to itself keeps its documented Detach behavior.
+        if (target?.destroyed) return;
+        if (actor && !actor.destroyed && target && target.guid !== actor.guid &&
+          refuseParentCycle(services, actor, target, "Attach Actor")) return;
+        if (actor && !actor.destroyed) services.attachToBone?.(actor, null, "");
+        setActorLink(child, "parentId", parent);
+      },
+      detachActor: (child) => {
+        const actor = asActor(child);
+        if (actor && !actor.destroyed) services.attachToBone?.(actor, null, "");
+        setActorLink(child, "parentId", null);
+      },
+      getParent: (actor) => readActorLink(services, actor, "parentId"),
+      setOwner: (actor, owner) => {
+        setActorLink(actor, "ownerId", owner);
+      },
+      getOwner: (actor) => readActorLink(services, actor, "ownerId"),
+      executeConsoleCommand: (command) =>
+        services.executeConsoleCommand(command),
+      getFirstComponentOfType: (classId) =>
+        componentsOfType(services, classId).next().value ?? null,
+      getAllComponentsOfType: (classId) =>
+        [...componentsOfType(services, classId)],
+      getSceneLoadingProgress: () =>
+        clamp01(services.getSceneLoadingProgress?.() ?? 1),
+      getTargetSceneName: (target) => services.getTargetSceneName?.(target) ?? "",
+      releaseAssetLoad: (handle) => services.releaseAssetLoad?.(handle),
+      getAssetLoadHandleState: (handle) => services.getAssetLoadHandleState?.(handle) ?? "Failed",
+      getAssetLoadHandleProgress: (handle) => clamp01(services.getAssetLoadHandleProgress?.(handle) ?? 0),
+      getAssetLoadState: (assetGuid) => assetLoadStateName(services.getAssetLoadState?.(assetGuid)),
+      loadSceneAsync: (target) => { void services.loadScene?.(target, false).catch((error) => services.reportError(error)); },
+      unloadSceneAsync: (target) => { void services.unloadScene?.(target, false).catch((error) => services.reportError(error)); },
+      isSceneLoaded: (target) => services.isSceneLoaded?.(target) ?? false,
+      getSceneLoadProgress: (target) => clamp01(services.getSceneLoadProgress?.(target) ?? 0),
+      getSceneState: (target) => services.getSceneState?.(target) ?? "Unloaded",
+      getProjectName: () => services.getProjectName?.() ?? "",
+      getProjectVersion: () => services.getProjectVersion?.() ?? "",
+      getSubsystem: (classId) => {
+        const id = typeof classId === "string" ? classId.trim() : "";
+        return id ? (services.getSubsystem?.(id) ?? null) : null;
+      },
+      getGameInstance: () => services.getGameInstance?.() ?? null,
+      isA: (instance, classId) => {
+        if (instance == null || typeof instance !== "object") return false;
+        const id = (instance as { classId?: unknown }).classId;
+        if (typeof id !== "string" || !id) return false;
+        const target = String(classId ?? "");
+        if (!target) return false;
+        return services.classRegistry?.isA(id, target) ?? id === target;
+      },
+      getAnimGraphVariable: (target, name) =>
+        animationGraphComponentOf(target)?.getVariable(String(name ?? "")),
+      setAnimGraphVariable: (target, name, value) => {
+        animationGraphComponentOf(target)?.setVariable(
+          String(name ?? ""),
+          value,
+        );
+      },
+      getAnimGraphCurrentState: (target) =>
+        services.animGraphControl?.(target)?.getCurrentState() ?? null,
+      jumpAnimGraphState: (target, state) => {
+        services.animGraphControl?.(target)?.jumpToState(String(state ?? ""));
+      },
+      setChannelVolume: (channelGuid, volume) => {
+        services.setChannelVolume?.(
+          String(channelGuid ?? ""),
+          Number(volume ?? 1),
+        );
+      },
+      setGlobalVolume: (volume) => {
+        services.setGlobalVolume?.(Number(volume ?? 1));
+      },
+      changeScene: (scene) => {
+        services.changeScene?.(scene);
+      },
+      createSceneLayer: (assetGuid, zOrder) =>
+        services.createSceneLayer?.(String(assetGuid ?? ""), Number(zOrder) || 0) ??
+        null,
+      removeSceneLayer: (layer) => {
+        const guid = sceneLayerGuidOf(layer);
+        if (guid) services.removeSceneLayer?.(guid);
+      },
+      clearSceneLayers: () => {
+        services.clearSceneLayers?.();
+      },
+      setFocusTarget: (target) => services.setFocusTarget?.(target) ?? false,
+      clearFocusTarget: (target) => { services.clearFocusTarget?.(target); },
+      registerSceneLayerPostProcess: (layer, materialGuid) => {
+        const guid = sceneLayerGuidOf(layer);
+        if (guid) {
+          services.registerSceneLayerPostProcess?.(
+            guid,
+            String(materialGuid ?? ""),
+          );
+        }
+      },
+      unregisterSceneLayerPostProcess: (layer, materialGuid) => {
+        const guid = sceneLayerGuidOf(layer);
+        if (guid) {
+          services.unregisterSceneLayerPostProcess?.(
+            guid,
+            String(materialGuid ?? ""),
+          );
+        }
+      },
+      getScalability: () => services.getScalability?.() ?? null,
+      requestScalability: (request) => services.requestScalability?.(request) ?? {
+        revision: 0, status: "unsupported", message: "Scalability requires an active Play or player session.",
+      },
+      possessCamera: (target) => {
+        services.possessCamera?.(target);
+      },
+      getRenderTargetMode: (guid) => typeof guid === "string" ? services.getRenderTargetMode?.(guid) ?? "SceneColor" : "SceneColor",
+      getRenderTargetTextureTarget: (guid) => typeof guid === "string" ? services.getRenderTargetTextureTarget?.(guid) ?? null : null,
+      captureRenderTarget: (target) => {
+        const component = captureComponent(target);
+        if (component?.owner && this.canInvokeOwner(component)) services.captureRenderTarget?.(component.owner);
+      },
+      getRenderTargetCaptureProperty: (target, key) => {
+        const component = captureComponent(target);
+        if (!component || !this.canInvokeOwner(component)) return createDefaultRenderTargetCaptureProperties()[key];
+        return key === "actorIds" ? captureActorReferences(component, (id) => services.findActor?.(id)) : captureProperties(component)[key];
+      },
+      setRenderTargetCaptureProperty: (target, key, value) => {
+        const component = captureComponent(target);
+        if (component && this.canInvokeOwner(component) && setCaptureProperty(component, key, value, (id) => services.findActor?.(id))) {
+          this.applyComponentVariable(component, key, value);
+        }
+      },
+      getCameraFieldOfView: (target) =>
+        Number(cameraComponentOf(target)?.getVariable("fieldOfView") ?? 60),
+      setCameraFieldOfView: (target, fov) => {
+        cameraComponentOf(target)?.setVariable("fieldOfView", Number(fov));
+        services.updateIllumination?.(target);
+      },
+      getCameraOrthographicSize: (target) =>
+        Number(
+          cameraComponentOf(target)?.getVariable("orthographicSize") ?? 5,
+        ),
+      setCameraOrthographicSize: (target, size) => {
+        cameraComponentOf(target)?.setVariable("orthographicSize", Number(size));
+        services.updateIllumination?.(target);
+      },
+      setLightEnabled: (target, enabled) => {
+        lightComponentOf(target)?.setVariable("enabled", Boolean(enabled));
+        services.updateIllumination?.(target);
+      },
+      setLightColor: (target, color) => {
+        lightComponentOf(target)?.setVariable("color", [
+          Number(color?.x ?? 1),
+          Number(color?.y ?? 1),
+          Number(color?.z ?? 1),
+        ]);
+        services.updateIllumination?.(target);
+      },
+      setLightIntensity: (target, intensity) => {
+        lightComponentOf(target)?.setVariable("intensity", Number(intensity));
+        services.updateIllumination?.(target);
+      },
+      findPathTo: (from, to) => services.findPathTo?.(from, to) ?? [],
+      isPathValid: (from, to) => services.isPathValid?.(from, to) ?? false,
+      getClosestNavigablePoint: (point) =>
+        services.getClosestNavigablePoint?.(point) ?? null,
+      getRandomPointInRadius: (center, radius) =>
+        services.getRandomPointInRadius?.(center, radius) ?? null,
+      addObstacle: (kind, pose, size) =>
+        services.addObstacle?.(kind, pose, size) ?? "",
+      removeObstacle: (id) => {
+        services.removeObstacle?.(id);
+      },
+    };
+    return members;
+  }
+
+  /**
+   * A context for one script call. It owns what depends on the call (self, tick, arguments, extras, the
+   * calling object's defaults) and inherits the rest from the host's shared members, so it allocates
+   * only the closures that need the call's values. Inherited members never use `this`, so detaching one
+   * (`const { log } = ctx`) works. Own properties are therefore only the per-call members.
+   */
   createContext(
     self: BObject | null,
     deltaSeconds: number,
@@ -1365,36 +1758,12 @@ export class ScriptHost {
     // Also the Scene query caller: queries answer from this object's world, so
     // a static Function Library call keeps its caller's.
     const contextOwner = self ?? extras?.callerOwner ?? null;
-    const unavailable = async <T>(): Promise<SaveGameResult<T>> => ({ ok: false, error: {
-      code: "unavailable", message: "Select a default Save Game in Project Settings before using saves.",
-    } });
-    const readField = (value: SaveGameValue, type?: string, array?: boolean): unknown => {
-      if (array && Array.isArray(value)) return value.map((entry) => readField(entry, type));
-      return type === "actor" && typeof value === "string" ? (services.resolveSaveActor?.(value) ?? services.findActor?.(value) ?? null) : value;
-    };
-    const writeField = (value: unknown, type?: string, array?: boolean): SaveGameValue => {
-      if (array && Array.isArray(value)) return value.map((entry) => writeField(entry, type));
-      return cloneSaveGameValue(type === "actor" && value instanceof Actor ? services.getSaveActorId?.(value) ?? value.guid : value);
-    };
     const migrationData = (): SaveGameMigrationData => {
       const data = extras?.saveMigrationData ?? commandArgs.saveMigrationData as SaveGameMigrationData | undefined;
       if (!data) throw new SaveGameError("invalid", "Migration fields are available only inside Event Save Migration.");
       return data;
     };
-    const context: ScriptContext = {
-      getSaveData: <TData extends object>() => this.saveGameService().getSaveData() as TData,
-      getSaveField: (id, type, array) => readField(this.saveGameService().getField(id), type, array),
-      setSaveField: (id, value, type, array) => this.saveGameService().setField(id, writeField(value, type, array)),
-      newGame: () => services.saveGame?.newGame() ?? unavailable(),
-      saveGame: (options) => services.saveGame?.saveGame(options) ?? unavailable(),
-      loadGame: (options) => services.saveGame?.loadGame(options) ?? unavailable(),
-      listSaves: (options) => services.saveGame?.listSaves(options) ?? unavailable(),
-      deleteSave: (options) => services.saveGame?.deleteSave(options) ?? unavailable(),
-      registerSaveActor: (actor, persistentId) => {
-        if (!(actor instanceof Actor) || actor.destroyed) throw new SaveGameError("invalid", "Register Save Actor requires a live actor.");
-        if (!services.registerSaveActor) throw new SaveGameError("unavailable", "Actor persistence is not available in this host.");
-        services.registerSaveActor(actor, persistentId);
-      },
+    const call: CallContextMembers = {
       registerSaveMigration: (fromVersion, migrate) => {
         const service = this.saveGameService();
         if (typeof migrate === "function") service.registerMigration(fromVersion, migrate);
@@ -1417,8 +1786,6 @@ export class ScriptHost {
         return services.data?.readEntry(tree, path, definitionGuid) ?? null;
       },
       editorData: services.editorData ?? UNAVAILABLE_EDITOR_DATA,
-      // Read on use: an editor host may rebuild its catalog after a registry change.
-      get assetRegistry() { return services.getAssetCatalog?.() ?? EMPTY_ASSET_CATALOG; },
       self,
       deltaSeconds,
       tickIndex,
@@ -1432,21 +1799,19 @@ export class ScriptHost {
       reportCommand: (success, output) => {
         if (extras?.commandResult) Object.assign(extras.commandResult, { success: Boolean(success), output: String(output) });
       },
-      formatValue: (value) => formatValue(value),
-      checkInfiniteLoop: (location) => {
-        try {
-          services.checkInfiniteLoop?.();
-        } catch (error) {
-          if (isInfiniteLoopError(error) && location) error.scriptLocation = location;
-          throw error;
-        }
-      },
-      log: (severity, category, message) =>
-        services.log(severity, category, message),
-      print: (message, key, duration, color) =>
-        services.print(message, key, duration, color),
-      drawDebug: (payload) => {
-        services.drawDebug?.(payload);
+      // Own per context, as before: a script that patches its `ctx.random` changes only that context. Every
+      // context draws from the host RNG, in call order.
+      random: {
+        float: () => this.rng.nextFloat(),
+        int: (min, max) => {
+          const a = Number(min) | 0;
+          const b = Number(max) | 0;
+          const lo = Math.min(a, b);
+          const hi = Math.max(a, b);
+          if (hi === lo) return lo;
+          return lo + (this.rng.next() % (hi - lo + 1));
+        },
+        bool: () => this.rng.nextFloat() < 0.5,
       },
       getVariable: (name) => store?.getVariable(name),
       variableReference: (target, name, implicitSelf = false) => {
@@ -1524,45 +1889,6 @@ export class ScriptHost {
           this.applyComponentVariable(object, String(name ?? ""), value, previous);
         }
       },
-      getPostProcessEntry: (owner, entryId) => {
-        if (!(owner instanceof Scene || owner instanceof SceneLayer) || !this.canInvokeOwner(owner) || typeof entryId !== "string" || !entryId.trim()) return null;
-        return services.getPostProcessEntry?.(owner, entryId.trim()) ?? null;
-      },
-      getMaterialFloatParameter: (material, name) => {
-        const result = this.getMaterialParameter(material, name, "float");
-        return { found: result?.kind === "float", value: result?.kind === "float" ? result.value : 0 };
-      },
-      getMaterialColorParameter: (material, name) => {
-        const result = this.getMaterialParameter(material, name, "color");
-        const [x, y, z, w] = result?.kind === "color" ? result.value : [0, 0, 0, 1];
-        return { found: result?.kind === "color", value: { x: x!, y: y!, z: z!, w: w! } };
-      },
-      getMaterialTextureParameter: (material, name) => {
-        const result = this.getMaterialParameter(material, name, "texture");
-        return { found: result?.kind === "texture", value: result?.kind === "texture" ? result.textureAssetGuid : null };
-      },
-      resetMaterialFloatParameter: (material, name) => this.resetMaterialParameter(material, name, "float"),
-      resetMaterialColorParameter: (material, name) => this.resetMaterialParameter(material, name, "color"),
-      resetMaterialTextureParameter: (material, name) => this.resetMaterialParameter(material, name, "texture"),
-      setMeshMaterial: (component, materialGuid) => {
-        const target = asActorComponent(component);
-        if (!target || (target.classId !== "MeshComponent" && target.classId !== "DynamicRuntimeMeshComponent") ||
-          !this.canInvokeOwner(target)) return null;
-        const guid = typeof materialGuid === "string" ? materialGuid.trim() : "";
-        if (guid && services.prepareAssets && services.getAssetLoadState?.(guid) !== "ready") {
-          throw new Error(`Material ${guid} is not prepared; use Set Material Instance (ctx.setMeshMaterialAsync), or load the Material first with Async Load Asset`);
-        }
-        this.beginMaterialReplacement(target, "material");
-        this.retainMaterialPreload(target, "material", "");
-        // Re-applying the current asset keeps the runtime parameter values.
-        if (target.getVariable("materialGuid") !== guid) {
-          const previous = target.getVariable("materialObject");
-          if (previous instanceof MaterialObject) this.releaseMaterialPreloads(previous);
-          target.setVariable("materialGuid", guid);
-          this.applyComponentVariable(target, "materialGuid", guid);
-        }
-        return (target.getVariable("materialObject") as MaterialObject | null) ?? null;
-      },
       setMeshMaterialAsync: async (component, materialGuid) => {
         const target = asActorComponent(component);
         if (!target || (target.classId !== "MeshComponent" && target.classId !== "DynamicRuntimeMeshComponent") || !this.canInvokeOwner(target)) return null;
@@ -1581,48 +1907,6 @@ export class ScriptHost {
         } finally {
           if (preload) services.releaseAcquiredAssets?.(preload);
         }
-      },
-      getMaterialAsset: (material) =>
-        (material instanceof MaterialObject || material instanceof PostProcessMaterialObject) && !material.destroyed
-          ? material.materialAssetGuid
-          : null,
-      setMaterialFloatParameter: (material, name, value) => {
-        if (typeof value !== "number" || !Number.isFinite(value)) return;
-        this.setMaterialParameter(material, name, { kind: "float", value });
-      },
-      setMaterialColorParameter: (material, name, value) => {
-        if (!value || typeof value !== "object") return;
-        const rgba: [number, number, number, number] = [
-          value.x,
-          value.y,
-          value.z,
-          value.w,
-        ];
-        if (
-          !rgba.every(
-            (channel) =>
-              typeof channel === "number" && Number.isFinite(channel),
-          )
-        )
-          return;
-        this.setMaterialParameter(material, name, {
-          kind: "color",
-          value: rgba,
-        });
-      },
-      setMaterialTextureParameter: (material, name, value) => {
-        if (value !== null && typeof value !== "string") return;
-        if (value && services.prepareAssets && services.getAssetLoadState?.(value.trim()) !== "ready") {
-          throw new Error(`Texture ${value} is not prepared; use Set Material Texture Parameter (ctx.setMaterialTextureParameterAsync), or load the Texture first with Async Load Asset`);
-        }
-        if (material instanceof MaterialObject || material instanceof PostProcessMaterialObject) {
-          this.beginMaterialReplacement(material, `texture:${name.trim()}`);
-          this.retainMaterialPreload(material, `texture:${name.trim()}`, "");
-        }
-        this.setMaterialParameter(material, name, {
-          kind: "texture",
-          textureAssetGuid: value?.trim() || null,
-        });
       },
       setMaterialTextureParameterAsync: async (material, name, value) => {
         if (!this.materialAvailable(material) || typeof name !== "string" || !name.trim()) return;
@@ -1693,73 +1977,6 @@ export class ScriptHost {
         if (scale) Object.assign(target.transform.scale, scale);
         services.teleportActor?.(target, options);
       },
-      rotatorToQuat,
-      quatToRotator,
-      combineRotators,
-      inverseRotator,
-      deltaRotator,
-      lerpRotator,
-      rotatorForward,
-      rotatorRight,
-      rotatorUp,
-      lookAtRotator,
-      multiplyQuats,
-      inverseQuat,
-      slerpQuats,
-      quatRotateVector,
-      normalizeQuat,
-      random: {
-        float: () => this.rng.nextFloat(),
-        int: (min, max) => {
-          const a = Number(min) | 0;
-          const b = Number(max) | 0;
-          const lo = Math.min(a, b);
-          const hi = Math.max(a, b);
-          if (hi === lo) return lo;
-          return lo + (this.rng.next() % (hi - lo + 1));
-        },
-        bool: () => this.rng.nextFloat() < 0.5,
-      },
-      randomFloat: () => this.rng.nextFloat(),
-      getAllActorsOfClass: (classId) => {
-        const target = String(classId ?? "");
-        const actors = services.getActors?.() ?? [];
-        if (!target) return [];
-        return actors.filter((actor) => {
-          const id = actor.classId;
-          if (!id) return false;
-          return id === target || (services.classRegistry?.isA(id, target) ?? false);
-        });
-      },
-      getActorOfClass: (classId) => {
-        const target = String(classId ?? "");
-        const actors = services.getActors?.() ?? [];
-        if (!target) return null;
-        return (
-          actors.find((actor) => {
-            const id = actor.classId;
-            if (!id) return false;
-            return id === target || (services.classRegistry?.isA(id, target) ?? false);
-          }) ?? null
-        );
-      },
-      attachActor: (child, parent) => {
-        const actor = asActor(child);
-        const target = asActor(parent);
-        // Refuse before the bone detach so a rejected link changes nothing. A
-        // destroyed parent is a stale reference and is refused the same way.
-        // Attaching an actor to itself keeps its documented Detach behavior.
-        if (target?.destroyed) return;
-        if (actor && !actor.destroyed && target && target.guid !== actor.guid &&
-          refuseParentCycle(services, actor, target, "Attach Actor")) return;
-        if (actor && !actor.destroyed) services.attachToBone?.(actor, null, "");
-        setActorLink(child, "parentId", parent);
-      },
-      detachActor: (child) => {
-        const actor = asActor(child);
-        if (actor && !actor.destroyed) services.attachToBone?.(actor, null, "");
-        setActorLink(child, "parentId", null);
-      },
       attachToBone: (actor, target, boneName) => {
         const child = asActor(actor ?? self);
         const parent = asActor(target);
@@ -1773,13 +1990,6 @@ export class ScriptHost {
         child.transform.position = { x: 0, y: 0, z: 0 };
         child.transform.rotation = { x: 0, y: 0, z: 0, w: 1 };
       },
-      getParent: (actor) => readActorLink(services, actor, "parentId"),
-      setOwner: (actor, owner) => {
-        setActorLink(actor, "ownerId", owner);
-      },
-      getOwner: (actor) => readActorLink(services, actor, "ownerId"),
-      executeConsoleCommand: (command) =>
-        services.executeConsoleCommand(command),
       executeConsoleCommandAsync: async (command) => {
         const result = await (services.executeConsoleCommandAsync?.(String(command ?? "")) ?? services.executeConsoleCommand(String(command ?? "")));
         if (self?.destroyed) throw Object.assign(new Error("The console command caller was destroyed"), { name: "AbortError" });
@@ -1805,10 +2015,6 @@ export class ScriptHost {
       getComponent: (actor, classId) =>
         asActor(actor ?? self)?.components.find((c) => c.classId === classId && !c.destroyed) ??
         null,
-      getFirstComponentOfType: (classId) =>
-        componentsOfType(services, classId).next().value ?? null,
-      getAllComponentsOfType: (classId) =>
-        [...componentsOfType(services, classId)],
       getComponentById: (actor, componentId) => {
         const target = actor ?? self;
         // Spawned prefabs resolve their own sourceId before an authored scene
@@ -1837,9 +2043,6 @@ export class ScriptHost {
         if (self?.destroyed) throw Object.assign(new Error("The spawn caller was destroyed"), { name: "AbortError" });
         return actor;
       },
-      getSceneLoadingProgress: () =>
-        clamp01(services.getSceneLoadingProgress?.() ?? 1),
-      getTargetSceneName: (target) => services.getTargetSceneName?.(target) ?? "",
       // A destroyed owner's handle would never be released, so it gets none. A host
       // without load handles hands out "" too and fails every wait and state read.
       requestAssetLoad: (assets, options) => self?.destroyed ? "" : services.requestAssetLoad?.(assets, self, options) ?? "",
@@ -1851,19 +2054,13 @@ export class ScriptHost {
         if (self?.destroyed) throw Object.assign(new Error("The asset load caller was destroyed"), { name: "AbortError" });
         return result;
       },
-      releaseAssetLoad: (handle) => services.releaseAssetLoad?.(handle),
       unloadAsset: (asset, options) => services.unloadAsset?.(String(asset ?? ""), self, options),
-      getAssetLoadHandleState: (handle) => services.getAssetLoadHandleState?.(handle) ?? "Failed",
-      getAssetLoadHandleProgress: (handle) => clamp01(services.getAssetLoadHandleProgress?.(handle) ?? 0),
       prepareAssets: async (assets) => {
         if (self?.destroyed) throw Object.assign(new Error("The asset consumer was destroyed"), { name: "AbortError" });
         if (!services.prepareAssets) throw new Error("This host cannot prepare cold assets");
         await services.prepareAssets(assets, self);
         if (self?.destroyed) throw Object.assign(new Error("The asset consumer was destroyed"), { name: "AbortError" });
       },
-      getAssetLoadState: (assetGuid) => assetLoadStateName(services.getAssetLoadState?.(assetGuid)),
-      loadSceneAsync: (target) => { void services.loadScene?.(target, false).catch((error) => services.reportError(error)); },
-      unloadSceneAsync: (target) => { void services.unloadScene?.(target, false).catch((error) => services.reportError(error)); },
       loadSceneBlocking: async (target) => {
         await services.loadScene?.(target, true);
         await services.waitForSimulation?.(self);
@@ -1874,40 +2071,9 @@ export class ScriptHost {
         await services.waitForSimulation?.(self);
         if (self?.destroyed) throw Object.assign(new Error("The streaming caller was destroyed."), { name: "AbortError" });
       },
-      isSceneLoaded: (target) => services.isSceneLoaded?.(target) ?? false,
-      getSceneLoadProgress: (target) => clamp01(services.getSceneLoadProgress?.(target) ?? 0),
-      getSceneState: (target) => services.getSceneState?.(target) ?? "Unloaded",
-      getProjectName: () => services.getProjectName?.() ?? "",
-      getProjectVersion: () => services.getProjectVersion?.() ?? "",
       getSceneReference: () => {
         const scene = services.getSceneReference?.(self) ?? null;
         return scene && !scene.destroyed ? scene : null;
-      },
-      getSubsystem: (classId) => {
-        const id = typeof classId === "string" ? classId.trim() : "";
-        return id ? (services.getSubsystem?.(id) ?? null) : null;
-      },
-      getGameInstance: () => services.getGameInstance?.() ?? null,
-      isA: (instance, classId) => {
-        if (instance == null || typeof instance !== "object") return false;
-        const id = (instance as { classId?: unknown }).classId;
-        if (typeof id !== "string" || !id) return false;
-        const target = String(classId ?? "");
-        if (!target) return false;
-        return services.classRegistry?.isA(id, target) ?? id === target;
-      },
-      getAnimGraphVariable: (target, name) =>
-        animationGraphComponentOf(target)?.getVariable(String(name ?? "")),
-      setAnimGraphVariable: (target, name, value) => {
-        animationGraphComponentOf(target)?.setVariable(
-          String(name ?? ""),
-          value,
-        );
-      },
-      getAnimGraphCurrentState: (target) =>
-        services.animGraphControl?.(target)?.getCurrentState() ?? null,
-      jumpAnimGraphState: (target, state) => {
-        services.animGraphControl?.(target)?.jumpToState(String(state ?? ""));
       },
       invokeCustomEvent: (target, eventName, eventArgs) => {
         const receiver = (target ?? self) as BObject | null;
@@ -2163,109 +2329,12 @@ export class ScriptHost {
         if (!target) return;
         services.setParticlePlaying?.(target.guid, false);
       },
-      setChannelVolume: (channelGuid, volume) => {
-        services.setChannelVolume?.(
-          String(channelGuid ?? ""),
-          Number(volume ?? 1),
-        );
-      },
-      setGlobalVolume: (volume) => {
-        services.setGlobalVolume?.(Number(volume ?? 1));
-      },
-      changeScene: (scene) => {
-        services.changeScene?.(scene);
-      },
-      createSceneLayer: (assetGuid, zOrder) =>
-        services.createSceneLayer?.(String(assetGuid ?? ""), Number(zOrder) || 0) ??
-        null,
       createSceneLayerAsync: async (assetGuid, zOrder) => {
         if (!services.createSceneLayerAsync) throw new Error("This host cannot prepare a cold SceneLayer");
         const layer = await services.createSceneLayerAsync(String(assetGuid ?? ""), Number(zOrder) || 0, self);
         if (self?.destroyed) throw Object.assign(new Error("The SceneLayer caller was destroyed"), { name: "AbortError" });
         return layer;
       },
-      removeSceneLayer: (layer) => {
-        const guid = sceneLayerGuidOf(layer);
-        if (guid) services.removeSceneLayer?.(guid);
-      },
-      clearSceneLayers: () => {
-        services.clearSceneLayers?.();
-      },
-      setFocusTarget: (target) => services.setFocusTarget?.(target) ?? false,
-      clearFocusTarget: (target) => { services.clearFocusTarget?.(target); },
-      registerSceneLayerPostProcess: (layer, materialGuid) => {
-        const guid = sceneLayerGuidOf(layer);
-        if (guid) {
-          services.registerSceneLayerPostProcess?.(
-            guid,
-            String(materialGuid ?? ""),
-          );
-        }
-      },
-      unregisterSceneLayerPostProcess: (layer, materialGuid) => {
-        const guid = sceneLayerGuidOf(layer);
-        if (guid) {
-          services.unregisterSceneLayerPostProcess?.(
-            guid,
-            String(materialGuid ?? ""),
-          );
-        }
-      },
-      getScalability: () => services.getScalability?.() ?? null,
-      requestScalability: (request) => services.requestScalability?.(request) ?? {
-        revision: 0, status: "unsupported", message: "Scalability requires an active Play or player session.",
-      },
-      possessCamera: (target) => {
-        services.possessCamera?.(target);
-      },
-      getRenderTargetMode: (guid) => typeof guid === "string" ? services.getRenderTargetMode?.(guid) ?? "SceneColor" : "SceneColor",
-      getRenderTargetTextureTarget: (guid) => typeof guid === "string" ? services.getRenderTargetTextureTarget?.(guid) ?? null : null,
-      captureRenderTarget: (target) => {
-        const component = captureComponent(target);
-        if (component?.owner && this.canInvokeOwner(component)) services.captureRenderTarget?.(component.owner);
-      },
-      getRenderTargetCaptureProperty: (target, key) => {
-        const component = captureComponent(target);
-        if (!component || !this.canInvokeOwner(component)) return createDefaultRenderTargetCaptureProperties()[key];
-        return key === "actorIds" ? captureActorReferences(component, (id) => services.findActor?.(id)) : captureProperties(component)[key];
-      },
-      setRenderTargetCaptureProperty: (target, key, value) => {
-        const component = captureComponent(target);
-        if (component && this.canInvokeOwner(component) && setCaptureProperty(component, key, value, (id) => services.findActor?.(id))) {
-          this.applyComponentVariable(component, key, value);
-        }
-      },
-      getCameraFieldOfView: (target) =>
-        Number(cameraComponentOf(target)?.getVariable("fieldOfView") ?? 60),
-      setCameraFieldOfView: (target, fov) => {
-        cameraComponentOf(target)?.setVariable("fieldOfView", Number(fov));
-        services.updateIllumination?.(target);
-      },
-      getCameraOrthographicSize: (target) =>
-        Number(
-          cameraComponentOf(target)?.getVariable("orthographicSize") ?? 5,
-        ),
-      setCameraOrthographicSize: (target, size) => {
-        cameraComponentOf(target)?.setVariable("orthographicSize", Number(size));
-        services.updateIllumination?.(target);
-      },
-      setLightEnabled: (target, enabled) => {
-        lightComponentOf(target)?.setVariable("enabled", Boolean(enabled));
-        services.updateIllumination?.(target);
-      },
-      setLightColor: (target, color) => {
-        lightComponentOf(target)?.setVariable("color", [
-          Number(color?.x ?? 1),
-          Number(color?.y ?? 1),
-          Number(color?.z ?? 1),
-        ]);
-        services.updateIllumination?.(target);
-      },
-      setLightIntensity: (target, intensity) => {
-        lightComponentOf(target)?.setVariable("intensity", Number(intensity));
-        services.updateIllumination?.(target);
-      },
-      findPathTo: (from, to) => services.findPathTo?.(from, to) ?? [],
       moveTo: (actor, destination) => {
         const target = asActor(actor ?? self);
         if (!target) return;
@@ -2276,21 +2345,12 @@ export class ScriptHost {
         if (!target) return;
         services.stopMovement?.(target);
       },
-      isPathValid: (from, to) => services.isPathValid?.(from, to) ?? false,
-      getClosestNavigablePoint: (point) =>
-        services.getClosestNavigablePoint?.(point) ?? null,
-      getRandomPointInRadius: (center, radius) =>
-        services.getRandomPointInRadius?.(center, radius) ?? null,
-      addObstacle: (kind, pose, size) =>
-        services.addObstacle?.(kind, pose, size) ?? "",
-      removeObstacle: (id) => {
-        services.removeObstacle?.(id);
-      },
-      btFinish: extras?.btFinish ?? (() => undefined),
-      btEvaluate: extras?.btEvaluate ?? (() => undefined),
-      getBlackboard: extras?.getBlackboard ?? (() => undefined),
-      setBlackboard: extras?.setBlackboard ?? (() => undefined),
+      btFinish: extras?.btFinish ?? NO_BT_HOOK,
+      btEvaluate: extras?.btEvaluate ?? NO_BT_HOOK,
+      getBlackboard: extras?.getBlackboard ?? NO_BT_HOOK,
+      setBlackboard: extras?.setBlackboard ?? NO_BT_HOOK,
     };
+    const context = Object.setPrototypeOf(call, this.hostMembers) as ScriptContext;
     return context;
   }
 

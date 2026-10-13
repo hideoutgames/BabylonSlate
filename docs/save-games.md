@@ -73,6 +73,8 @@ Stop and restart Play with **Wipe Preview Saves On Play** off. The startup load 
 | `await ctx.listSaves({ profile: "player-2" })` | Return save metadata for a profile. |
 | `await ctx.deleteSave({ slot: "manual-1", profile: "player-2" })` | Explicitly remove a slot and its retained originals. |
 
+`ctx` members can be destructured or passed as callbacks (`const { loadGame, log } = ctx`). Do not enumerate or spread `ctx`: the host shares most members through its prototype, so `{ ...ctx }` and `Object.keys(ctx)` list only the per-call ones (`self`, `deltaSeconds`, `args`, ...); see [Scripting](architecture/scripting.md#scripthost-babylonslateruntime).
+
 The default definition adds **Get/Set Save _Field Name_** nodes with stable field IDs and typed pins. The definition's **Advanced → Generated Type** view provides a `SaveData` TypeScript interface for code tooling; the core `generateSaveGameTypes()` helper produces the same declaration. JavaScript remains JavaScript: use `data["Field Name"]` for names containing spaces, and update name-based code when renaming a field.
 
 ## Operations and errors
