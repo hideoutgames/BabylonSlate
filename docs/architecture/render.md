@@ -222,6 +222,7 @@ The narrow Babylon 9.29 particle binder adapter preserves current particle defin
 | `framegraph-forward-scene` | `scene.customRenderFunction` installed by the `frameGraph` setter | Pin camera updates off; `Scene.render` already updated the selected camera | `framegraph-forward-scene` |
 | `framegraph-managed-shadows` | `ObjectRenderer.render` | 9.29 marks every graph renderer intermediate; restore main-pass `_intermediateRendering` | `framegraph-managed-shadows` |
 | `registered-view-admission` | `engine._renderViewStep`, `engine._renderViews` | Commit a view's bitmap only after a valid frame; 9.29 skips `_renderFrame` for all-disabled views | `registered-view-admission` |
+| `water-material` | `MaterialPluginManager._injectCustomCode` (per material's manager) | Expose the compiling effect's defines to `getCustomCode`, so each compile emits only its own look's shader; without the wrap every look is emitted (correct, larger) | `water-material` |
 | `node-material-particles` | `NodeMaterial._createEffectForParticles` † | 9.29 recursive binder appends observers indefinitely | `node-material-particles` |
 | `owned-post-process` | `Effect._isReadyInternal` † | 9.29 polls the pipeline before the disposed flag | None dedicated; `framegraph-post-process` covers the owner |
 | `clustered-material-bindings` | `LightBlock` / `PBRMetallicRoughnessBlock.updateUniformsAndSamples` | Add clustered light samplers when a slot changes type | `clustered-scene-lights`, `e2e/clustered-lights.spec.ts` |
