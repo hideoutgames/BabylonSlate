@@ -6,7 +6,7 @@ import { isLockedEngineClassId, isSceneLayerAllowedComponent, isSceneLayerExclus
 import {
   classIdFromClassAsset,
   classParentLookup,
-} from "../lib/content-browser-helpers";
+} from "../lib/class-asset-lookup";
 import { fittedColliderShape } from "../lib/fitted-collider";
 
 export type AddComponentItem = {

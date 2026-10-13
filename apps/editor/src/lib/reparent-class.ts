@@ -7,7 +7,7 @@ import {
 import {
   classIdFromClassAsset,
   type ClassAssetRef,
-} from "./content-browser-helpers";
+} from "./class-asset-lookup";
 
 export function editorClassRegistryFromAssets(
   assets: ReadonlyArray<ClassAssetRef>,

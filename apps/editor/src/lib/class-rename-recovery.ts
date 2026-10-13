@@ -1,7 +1,7 @@
 import { documentId, parseDocumentId } from "@babylonslate/core";
 import { replaceClassAssetReferences, type AssetRegistry, type ClassAssetReference } from "@babylonslate/assets";
 import { JOURNAL_CHECKPOINT_TYPE, parseJournalLine, resolveJournalLines, serializeJournalLine } from "@babylonslate/edit";
-import { classIdFromClassAsset } from "./content-browser-helpers";
+import { classIdFromClassAsset } from "./class-asset-lookup";
 
 /** Checkpoints survive both completed and rolled-back Class file operations. */
 export function resolveClassRenameRecovery(lines: string[], registry: AssetRegistry | null): string[] {

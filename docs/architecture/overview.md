@@ -69,6 +69,11 @@ For Electron and native iOS/Android, enable **Native API** in the Clerk dashboar
 
 New and restored sessions must appear active in Clerk's response. While the account UI is mounted, window focus or foreground visibility revalidates a signed-in session; mobile project actions stay hidden until that check succeeds. These listeners and forms unmount on entering the editor (desktop sign-in forms also unmount when their modal closes). Authentication failure never gates desktop project access. The configured Clerk application and actual desktop/mobile host transport still require end-to-end validation before distribution; unit tests exercise controlled external HTTP/storage boundaries.
 
+## Boot bundle
+
+- `main.tsx` → `App` → `DocumentProvider` must not statically import the heavy barrels `@babylonslate/render`, `/runtime`, `/physics` or `/navigation`: they pull Babylon core into the entry's `modulepreload` closure and, through shared modules, the lazy editor route chunk. Boot-path code imports leaf modules by deep export instead (`@babylonslate/render/png-encode`, `/scene-load-readiness`, `/lifecycle-pause`, `/gl-error-trace`, `/ktx2-transcoder`; `@babylonslate/physics/component-props`; `@babylonslate/navigation/chunk` and `/settings`; `@babylonslate/runtime/component-authoring`). A deep-exported module must not import Babylon or a barrel; import-free leaves keep that true.
+- Viewport, Play and import code is reached only from the lazy Editor route, so it still imports the full barrels, whose loader and shader registrations (for example `gltf-loader`) run when the viewport opens. Remaining static boot edges: `project-service.ts` imports `@babylonslate/navigation` (`extraChunksWithNavmesh`) and `content-browser-helpers` (asset factories, new-asset file names); class id and ancestry helpers (`classIdFromClassAsset`, `classParentLookup`, `classDocumentShowsPrefab`) live in `lib/class-asset-lookup.ts` and are re-exported from `content-browser-helpers`.
+
 ## Threading (P4)
 
 ```mermaid

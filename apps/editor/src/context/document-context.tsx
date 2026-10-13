@@ -175,7 +175,7 @@ import {
   classDocumentShowsPrefab,
   classIdFromClassAsset,
   classParentLookup,
-} from "../lib/content-browser-helpers";
+} from "../lib/class-asset-lookup";
 import {
   editorTabContentForKind,
   persistableDocumentContent,

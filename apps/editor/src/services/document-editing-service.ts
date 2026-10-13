@@ -23,7 +23,7 @@ import {
 } from "@babylonslate/edit";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
 import { resolveClassRenameRecovery } from "../lib/class-rename-recovery";
-import { classParentLookup } from "../lib/content-browser-helpers";
+import { classParentLookup } from "../lib/class-asset-lookup";
 import { afterMutatingApply, isMutatingApplyBlocked } from "../lib/document-lock-apply";
 import type { JournalBuffer } from "../lib/journal-buffer";
 import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
