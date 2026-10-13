@@ -39,6 +39,7 @@ import {
   useDoubleTap,
   walkAncestry,
   type PropertyRow,
+  type SearchDialogItem,
 } from "@babylonslate/editor-kit";
 import {
   DEFAULT_COLLISION_LAYERS,
@@ -146,11 +147,13 @@ import {
 } from "../lib/prefab-instance-sync";
 import { physicsConstraintTargets } from "../lib/physics-constraint-targets";
 import { sceneActorDisplayNames } from "../lib/scene-actor-names";
+import { useRetainedValue } from "../lib/use-retained-value";
 import {
   MATERIAL_DOCUMENT_KINDS,
   useOpenDocumentsOfKinds,
 } from "../lib/use-open-documents-of-kinds";
 
+const NO_SEARCH_ITEMS: SearchDialogItem[] = [];
 const CLASS_KINDS = ["graph"] as const;
 const PREFAB_KINDS = ["prefab"] as const;
 const MODEL_KINDS = ["model"] as const;
@@ -464,6 +467,52 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     },
     [actorId, mutate, scene],
   );
+
+  // Focus Target choices across the Scene, read by every component's rows:
+  // built once per Scene edit, not once per component per render.
+  const focusTargets = useMemo(
+    () =>
+      scene
+        ? scene.actors.flatMap((candidate) =>
+            candidate.components
+              .filter((entry) => isFocusTargetClass(entry.classId))
+              .map((entry, index) => ({
+                value: entry.id,
+                label: `${actorDisplayNames.get(candidate.id) ?? candidate.name} / ${humanizePropertyLabel(entry.classId.replace(/Component$/, ""))} ${index + 1}`,
+              })),
+          )
+        : [],
+    [actorDisplayNames, scene],
+  );
+
+  // The constraint / cable target list covers every actor, so it is built only
+  // while its picker is open; closed, the picker keeps the last list so it
+  // fades out intact.
+  const constraintPickerOpen =
+    actor !== null && constraintTargetPick?.actorId === actor.id;
+  const openConstraintTargets = useMemo((): SearchDialogItem[] | null => {
+    if (!constraintPickerOpen || !scene || !actor) return null;
+    return [
+      {
+        id: "",
+        label: pickingCableTarget ? "Self" : "None",
+        description: pickingCableTarget
+          ? "Use this actor's cable or a local component"
+          : "Leave the constraint unconnected",
+      },
+      ...(pickingCableTarget
+        ? scene.actors
+            .filter((candidate) => candidate.id !== actor.id)
+            .map((candidate) => ({
+              id: candidate.id,
+              label: actorDisplayNames.get(candidate.id)!,
+              description: candidate.classId,
+              group: "Actors",
+            }))
+        : physicsConstraintTargets(scene, actor.id)),
+    ];
+  }, [actor, actorDisplayNames, constraintPickerOpen, pickingCableTarget, scene]);
+  const constraintTargetItems = useRetainedValue(openConstraintTargets, NO_SEARCH_ITEMS);
 
   if (!scene) {
     return (
@@ -1280,7 +1329,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
             actorVariableNames: () => saveGameVariableNames(actor.classId, classSaveGraphs, parentOf),
             componentVariableNames: (classId) => saveGameVariableNames(classId, classSaveGraphs, parentOf),
             sceneLayerClasses,
-            focusTargets: scene.actors.flatMap((candidate) => candidate.components.filter((entry) => isFocusTargetClass(entry.classId)).map((entry, index) => ({ value: entry.id, label: `${actorDisplayNames.get(candidate.id) ?? candidate.name} / ${humanizePropertyLabel(entry.classId.replace(/Component$/, ""))} ${index + 1}` }))),
+            focusTargets,
             onPickActor: (componentId) => setConstraintTargetPick({ actorId: actor.id, componentId }),
           },
         ),
@@ -1727,18 +1776,13 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
         data-testid="details-asset-picker"
       />
       <SearchDialog
-        open={constraintTargetPick?.actorId === actor.id}
+        open={constraintPickerOpen}
         onOpenChange={(open) => { if (!open) setConstraintTargetPick(null); }}
         title="Pick Target Actor"
         description={pickingCableTarget ? "Choose an actor for the cable end, or Self for a local attachment." : "Choose a physics actor in this scene. Both actors need collision; at least one must be dynamic."}
         placeholder={pickingCableTarget ? "Search Actors" : "Search Physics Actors"}
         emptyLabel={pickingCableTarget ? "No Matching Actors" : "No Matching Physics Actors"}
-        items={[
-          { id: "", label: pickingCableTarget ? "Self" : "None", description: pickingCableTarget ? "Use this actor's cable or a local component" : "Leave the constraint unconnected" },
-          ...(pickingCableTarget
-            ? scene.actors.filter((candidate) => candidate.id !== actor.id).map((candidate) => ({ id: candidate.id, label: actorDisplayNames.get(candidate.id)!, description: candidate.classId, group: "Actors" }))
-            : physicsConstraintTargets(scene, actor.id)),
-        ]}
+        items={constraintTargetItems}
         onSelect={(targetActorId) => {
           if (constraintTargetPick?.actorId !== actor.id) return;
           updateActor((entry) => ({
