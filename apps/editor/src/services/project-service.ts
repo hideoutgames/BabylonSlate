@@ -84,6 +84,7 @@ import {
   exportProjectZip,
   fallbackParentClass,
   clearDeletedAssetRefs,
+  createReadAhead,
   replaceClassAssetReferences,
   renamedAssetPath,
   type ClassAssetReplacement,
@@ -305,6 +306,9 @@ export type PluginImportResult =
  * Save, and the saved geometry's, with room to spare. Each is at most a few KB.
  */
 const SCENE_AUDIO_REVERB_RESULTS = 4;
+
+/** Documents whose stored payloads are requested ahead of the one a delete repair is rewriting. */
+const DELETE_REPAIR_READS = 4;
 
 /**
  * Chunks `loadDocumentWithChunks` reads with a document: fixed ids, or a choice
@@ -1961,7 +1965,21 @@ export class ProjectService {
     if (deletedGuids.size === 0 && deletedClassNames.size === 0) return [];
 
     const failed: Array<{ path: string; error: unknown }> = [];
-    for (const asset of registry.list()) {
+    const assets = registry.list();
+    // The walk replaces any string equal to a deleted guid, wherever a document keeps it, so the
+    // typed dependency metadata in the headers cannot say which documents are unaffected: every
+    // writable document is still read. The stored payloads of the next few are requested while one
+    // is repaired; migration bookkeeping, the walk and the save stay one document at a time, in
+    // catalog order, since a save changes the headers the next walk consults.
+    const repairable = assets.filter((asset) => {
+      const kind = documentKindForAssetType(asset.header.type);
+      return kind && kind !== "trace" && !isTracePath(asset.path) && !deletedGuids.has(asset.header.guid)
+        && !registry.getRoot(asset.rootId)?.readOnly && !isPluginDocumentReadOnly(this.pluginDescriptors, asset.path);
+    });
+    const repairableIndex = new Map(repairable.map((asset, index) => [asset, index] as const));
+    const readStored = createReadAhead(DELETE_REPAIR_READS, (asset: IndexedAsset) =>
+      this.readStoredAssetDocument(documentKindForAssetType(asset.header.type)!, asset.path));
+    for (const asset of assets) {
       if (deletedGuids.has(asset.header.guid)) continue;
       const root = registry.getRoot(asset.rootId);
       if (root?.readOnly) continue;
@@ -1977,7 +1995,10 @@ export class ProjectService {
         | SerializedGraph
         | Record<string, unknown>;
       try {
-        content = await this.loadDocument(kind, asset.path);
+        const position = repairableIndex.get(asset);
+        content = position === undefined
+          ? await this.loadDocument(kind, asset.path)
+          : this.documentContent(kind, asset.path, await readStored(repairable, position));
       } catch {
         continue;
       }
@@ -2186,9 +2207,22 @@ export class ProjectService {
       }
       return decoded.payload;
     }
-    if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .babasset document.`);
-    const raw = await this.readAssetDocument(path, fallbackDocumentType(kind), options);
+    const raw = await this.readStoredAssetDocument(kind, path, options);
     return this.documentContent(kind, path, raw);
+  }
+
+  /**
+   * The stored payload `loadDocument` starts from. It records no migration
+   * bookkeeping, so a caller may read several documents ahead and apply
+   * `documentContent` to each in its own order.
+   */
+  private async readStoredAssetDocument(
+    kind: Exclude<DocumentKind, "content-browser">,
+    path: string,
+    options: { scope?: AssetLoadScope; signal?: AbortSignal } = {},
+  ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
+    if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .babasset document.`);
+    return this.readAssetDocument(path, fallbackDocumentType(kind), options);
   }
 
   /**
