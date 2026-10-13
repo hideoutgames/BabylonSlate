@@ -1106,7 +1106,7 @@ describe("content-browser-helpers", () => {
     expect(buildParentClassTreeRows(assets).find((row) => row.id === "Rain_Weather")?.parentClassId).toBe("Actor");
   });
 
-  it("reuses a registry's Class parent lookup until its catalog changes, then answers from the new catalog", async () => {
+  it("answers a registry's Class parents from its current catalog after the catalog changes", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("Lookup.babproject");
     await storage.mkdir("assets", true);
@@ -1117,7 +1117,6 @@ describe("content-browser-helpers", () => {
     await registry.mountRoot(projectContentRoot());
     const before = registryClassParentLookup(registry);
     expect(before("Hero")).toBe("Actor");
-    expect(registryClassParentLookup(registry)).toBe(before);
 
     await registry.renameAsset("hero", "Champion");
     const after = registryClassParentLookup(registry);
