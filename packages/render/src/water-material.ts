@@ -3898,14 +3898,21 @@ const VERTEX_WAVE_ATTRIBUTES: ReadonlyArray<readonly string[]> = [["slateWaterDa
  * `SLATE_WATER_FFT_VERTEX`), so the pass's other programs are unchanged.
  */
 export function waterOutlineVertexSource(language: ShaderLanguage): { declarations: string; displacement: string } {
+  const key = language === ShaderLanguage.WGSL ? "wgsl" : "glsl";
+  let source = outlineVertexSources.get(key);
+  if (!source) outlineVertexSources.set(key, source = buildOutlineVertexSource(language));
+  return source;
+}
+const outlineVertexSources = new Map<string, { declarations: string; displacement: string }>();
+function buildOutlineVertexSource(language: ShaderLanguage): { declarations: string; displacement: string } {
   const wgsl = language === ShaderLanguage.WGSL;
   const uniforms = WATER_VERTEX_WAVE_UNIFORMS.map((name) => (wgsl ? `uniform ${name}: vec4f;` : `uniform vec4 ${name};`)).join("\n");
   const attribute = wgsl ? "attribute slateWaterData: vec4f;" : "attribute vec4 slateWaterData;";
   const blend = `#ifdef ${WATER_BLEND_DEFINE}\n${wgsl ? "attribute slateWaterBlend: vec4f;" : "attribute vec4 slateWaterBlend;"}\n#endif`;
   const displacement = vertexWaveSource(false);
   return {
-    declarations: `\n#ifdef ${WATER_GPU_WAVES_DEFINE}\n${attribute}\n${blend}\n${uniforms}${fftHelpers(wgsl, FFT_VERTEX)}#endif\n`,
-    displacement: bindVertexSource(wgsl ? toWgsl(displacement) : displacement, wgsl, "uniforms."),
+    declarations: `\n${stripShaderComments(`#ifdef ${WATER_GPU_WAVES_DEFINE}\n${attribute}\n${blend}\n${uniforms}${fftHelpers(wgsl, FFT_VERTEX)}#endif`)}\n`,
+    displacement: `\n${stripShaderComments(bindVertexSource(wgsl ? toWgsl(displacement) : displacement, wgsl, "uniforms."))}\n`,
   };
 }
 
@@ -4016,11 +4023,23 @@ function beforeFogSource(wgsl: boolean): string {
   ].join("\n");
 }
 
+/** The three looks: Realistic, and Stylized's Painted and Toon (`SLATE_WATER_STYLIZED`, within it `SLATE_WATER_TOON`). */
+export type WaterLook = "realistic" | "painted" | "toon";
+const LOOK_SOURCES: Readonly<Record<WaterLook, () => string>> = { realistic: realisticSource, painted: paintedSource, toon: toonSource };
+
+/** The look a compile's defines select: the one `fragmentSource`'s directives would keep. */
+function lookOfDefines(defines: readonly string[]): WaterLook {
+  const defined = (name: string) => defines.some((line) => line === `#define ${name}` || line.startsWith(`#define ${name} `));
+  return !defined(WATER_STYLIZED_DEFINE) ? "realistic" : defined(WATER_TOON_DEFINE) ? "toon" : "painted";
+}
+
 /**
- * Every style and look, selected by `SLATE_WATER_STYLIZED` and, within Stylized, `SLATE_WATER_TOON` so each material
- * compiles only one (each directive on its own line).
+ * The look's shading, or with no look every look, selected by `SLATE_WATER_STYLIZED` and, within Stylized,
+ * `SLATE_WATER_TOON` so each material compiles only one (each directive on its own line). A compile knows its defines
+ * (`WaterMaterialPlugin.getCustomCode`), so it asks for its look alone; the look sources never test the look defines.
  */
-function fragmentSource(): string {
+function fragmentSource(look: WaterLook | null): string {
+  if (look) return `\n${LOOK_SOURCES[look]()}\n`;
   return `\n#ifdef ${WATER_STYLIZED_DEFINE}\n#ifdef ${WATER_TOON_DEFINE}\n${toonSource()}\n#else\n${paintedSource()}\n#endif\n#else\n${realisticSource()}\n#endif\n`;
 }
 
@@ -4038,7 +4057,7 @@ function blendColors(source: string): string {
   return out;
 }
 
-export function waterShaderSource(language: ShaderLanguage): { helpers: string; cut: string; main: string } {
+export function waterShaderSource(language: ShaderLanguage, look: WaterLook | null = null): { helpers: string; cut: string; main: string } {
   const wgsl = language === ShaderLanguage.WGSL;
   const bind = (code: string) => code.replace(/\bU\./g, wgsl ? "uniforms." : "").replace(/\bIN\./g, wgsl ? "fragmentInputs." : "").replace(/\bS\./g, wgsl ? "scene." : "")
     // The fragment's framebuffer position (on render targets both backends store rows in the same order as uv).
@@ -4054,11 +4073,11 @@ export function waterShaderSource(language: ShaderLanguage): { helpers: string; 
   return wgsl
     ? {
       helpers: samplerDeclaration + roughnessGlobals + toWgsl(HELPERS + REMOVAL_HELPER) + CONTACT_TAP_WGSL + objectHelpers(true) + fftHelpers(true),
-      cut: bind(toWgsl(cutSource(true))), main: bind(toWgsl(blendColors(fragmentSource()))),
+      cut: bind(toWgsl(cutSource(true))), main: bind(toWgsl(blendColors(fragmentSource(look)))),
     }
     : {
       helpers: samplerDeclaration + roughnessGlobals + HELPERS + REMOVAL_HELPER + CONTACT_TAP_GLSL + objectHelpers(false) + fftHelpers(false),
-      cut: bind(cutSource(false)), main: bind(blendColors(fragmentSource())),
+      cut: bind(cutSource(false)), main: bind(blendColors(fragmentSource(look))),
     };
 }
 
@@ -4441,6 +4460,157 @@ function setDefine(defines: MaterialDefines, name: string, value: boolean | numb
   return true;
 }
 
+type VertexPoint = "CUSTOM_VERTEX_DEFINITIONS" | "CUSTOM_VERTEX_UPDATE_WORLDPOS" | "CUSTOM_VERTEX_MAIN_END";
+const FRAGMENT_POINTS = [
+  "CUSTOM_FRAGMENT_DEFINITIONS", "CUSTOM_FRAGMENT_UPDATE_ALPHA", "CUSTOM_FRAGMENT_BEFORE_LIGHTS", "CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS",
+  "CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION", "CUSTOM_FRAGMENT_BEFORE_FOG",
+] as const;
+/**
+ * The code a stage injects into the PBR shader, by injection point. `look` (fragment only) keeps that look's shading
+ * alone; null keeps every look under its defines.
+ */
+function waterInjection(stage: "vertex" | "fragment", language: ShaderLanguage, look: WaterLook | null): Record<string, string> {
+  const wgsl = language === ShaderLanguage.WGSL;
+  const v3 = wgsl ? "vec3f" : "vec3", v4 = wgsl ? "vec4f" : "vec4";
+  // Babylon's shader processors are line-based: every attribute, varying and sampler needs its own line.
+  const varying = (type: string, name: string) => (wgsl ? `varying ${name}: ${type};` : `varying ${type} ${name};`) + "\n";
+  // vSlateWaterFlow packs the world current (x, z) and the Gerstner offset (Dx, Dz), so the fragment finds its rest point.
+  const varyings = varying(v4, "vSlateWater") + varying(v4, "vSlateWaterFlow") + varying(v3, "vSlateWaterBaseNormal")
+    + `#ifdef ${WATER_BLEND_DEFINE}\n` + varying(v4, "vSlateWaterBlend") + "#endif\n";
+  const blendAttribute = `#ifdef ${WATER_BLEND_DEFINE}\n${wgsl ? "attribute slateWaterBlend: vec4f;" : "attribute vec4 slateWaterBlend;"}\n#endif\n`;
+  if (stage === "vertex") {
+    const vertex = waterVertexSource(language);
+    return {
+      CUSTOM_VERTEX_DEFINITIONS: (wgsl
+        ? "attribute slateWaterData: vec4f;\nattribute slateWaterFlow: vec3f;\nattribute slateWaterBaseNormal: vec3f;\nattribute slateWaterOffset: vec2f;\n"
+        : "attribute vec4 slateWaterData;\nattribute vec3 slateWaterFlow;\nattribute vec3 slateWaterBaseNormal;\nattribute vec2 slateWaterOffset;\n") + blendAttribute + varyings + vertex.definitions,
+      CUSTOM_VERTEX_UPDATE_WORLDPOS: vertex.worldPosition,
+      CUSTOM_VERTEX_MAIN_END: vertex.end,
+    } satisfies Record<VertexPoint, string>;
+  }
+  const source = waterShaderSource(language, look);
+  return {
+    CUSTOM_FRAGMENT_DEFINITIONS: varyings + source.helpers,
+    CUSTOM_FRAGMENT_UPDATE_ALPHA: source.cut,
+    CUSTOM_FRAGMENT_BEFORE_LIGHTS: source.main,
+    // Realistic: filtered chop widens the GGX lobe with distance, and foam is fully rough.
+    CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS:
+      "metallicRoughness.g = mix(sqrt(sqrt(metallicRoughness.g * metallicRoughness.g * metallicRoughness.g * metallicRoughness.g * swSharp + 2.0 * swSlopeVariance)), 1.0, swMatte);",
+    // Foam and the mesh edge hide the mirror; without an environment, the analytic scene sky (`swSkyRefl`) stands in.
+    // Reflected objects (screen-space or planar) replace the sky or environment where found, with the water's own
+    // Fresnel and Reflection Strength.
+    CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: [
+      "finalEmissive += swEmissive;",
+      `#ifndef ${WATER_STYLIZED_DEFINE}`,
+      "#ifdef REFLECTION",
+      // The facet's own Fresnel (`swFres`) replaces the environment BRDF's, which the lifted shading normal and the
+      // filtered roughness would dim toward the horizon.
+      `finalRadianceScaled = reflectionOut.environmentRadiance.rgb * (${wgsl ? "uniforms." : ""}vLightingIntensity.z * swFres);`,
+      `#if ${REFLECTS_OBJECTS}`,
+      `finalRadianceScaled = mix(finalRadianceScaled, swObjRefl.rgb * (swFres * ${wgsl ? "uniforms." : ""}slateWaterDeep.w), swObjRefl.a);`,
+      "#endif",
+      "finalRadianceScaled *= swGloss;",
+      "#else",
+      `#if ${REFLECTS_OBJECTS}`,
+      `finalEmissive += mix(swSkyRefl, swObjRefl.rgb * ${wgsl ? "uniforms." : ""}slateWaterDeep.w, swObjRefl.a) * (swFres * swGloss);`,
+      "#else",
+      "finalEmissive += swSkyRefl * (swFres * swGloss);",
+      "#endif",
+      "#endif",
+      "#ifdef SPECULARTERM",
+      // The sun's lobe is dimmed close by (where facet glints carry it), log-compressed where bright, and far away
+      // broken into glitter (see the sun in `realisticSource`).
+      "finalSpecularScaled *= swGloss * swSunReach * swSpecKeep;",
+      `finalSpecularScaled *= log(1.0 + dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) * swSpecSquash + 0.0001) / (dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) * swSpecSquash + 0.0001);`,
+      // The glitter's weight rises smoothly with the lobe's luminance (a threshold on it drew an outline around every contour of the slope).
+      `finalSpecularScaled *= mix(1.0, swSpecMod, swSpecModW * 0.6 * dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) / (dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) + 0.15));`,
+      "#endif",
+      "#endif",
+    ].join("\n"),
+    CUSTOM_FRAGMENT_BEFORE_FOG: beforeFogSource(wgsl),
+  } satisfies Record<(typeof FRAGMENT_POINTS)[number], string>;
+}
+
+/**
+ * Removes `//` comments and blank lines from generated shader code. The source has no string literals, block comments
+ * or line continuations, so the first `//` of a line always starts a comment; directives keep their own lines.
+ */
+export function stripShaderComments(source: string): string {
+  const lines: string[] = [];
+  for (const line of source.split("\n")) {
+    const comment = line.indexOf("//");
+    const code = (comment < 0 ? line : line.slice(0, comment)).trimEnd();
+    if (code) lines.push(code);
+  }
+  return lines.join("\n");
+}
+
+const injections = new Map<string, Readonly<Record<string, string>>>();
+/**
+ * `waterInjection`'s points with comments stripped, built once per stage, language and look. Every look is for Babylon
+ * collecting the point names when the plugin is added (no compile yet), so it builds on the first read of a value.
+ */
+function injectionFor(stage: "vertex" | "fragment", language: ShaderLanguage, look: WaterLook | null): Readonly<Record<string, string>> {
+  const key = `${stage}:${language === ShaderLanguage.WGSL ? "wgsl" : "glsl"}:${look ?? "all"}`;
+  let injection = injections.get(key);
+  if (!injection) {
+    const build = () => Object.fromEntries(Object.entries(waterInjection(stage, language, look)).map(([point, code]) => [point, stripShaderComments(code)]));
+    injection = stage === "fragment" && !look ? lazyInjection(FRAGMENT_POINTS, build) : Object.freeze(build());
+    injections.set(key, injection);
+  }
+  return injection;
+}
+function lazyInjection(points: readonly string[], build: () => Record<string, string>): Readonly<Record<string, string>> {
+  let built: Record<string, string> | undefined;
+  return Object.defineProperties({}, Object.fromEntries(points.map((point) => [point, { enumerable: true, get: () => (built ??= build())[point] }])));
+}
+
+/** The look a definition draws: Realistic, or Stylized's Painted or Toon. */
+const waterLook = (w: WaterDefinition): WaterLook => (w.style !== "stylized" ? "realistic" : w.stylizedLook === "toon" ? "toon" : "painted");
+const resolvesUltra = new Map<string, boolean>();
+/**
+ * Whether a look's code (either stage) tests the shading tier for anything but `>= 0` to `>= 2`, i.e. tells Ultra from
+ * High. Painted and Toon have no Ultra term; any other test, or a use of the define outside `#if`, counts as one.
+ */
+function lookResolvesUltra(look: WaterLook, language: ShaderLanguage): boolean {
+  const key = `${language === ShaderLanguage.WGSL ? "wgsl" : "glsl"}:${look}`;
+  let resolves = resolvesUltra.get(key);
+  if (resolves === undefined) {
+    const code = [injectionFor("vertex", language, null), injectionFor("fragment", language, look)].flatMap((injection) => Object.values(injection));
+    resolves = code.some((text) => [...text.matchAll(new RegExp(`${WATER_QUALITY_DEFINE}(.*)`, "g"))].some((use) => !/^ >= [012]\s*$/.test(use[1]!)));
+    resolvesUltra.set(key, resolves);
+  }
+  return resolves;
+}
+
+/** Defines of the effect whose shader code Babylon is assembling at this moment (synchronously, see below), else null. */
+let compileDefines: readonly string[] | null = null;
+type ProcessShaderCode = (shaderType: string, code: string, defines?: string[]) => string;
+/** The part of Babylon's `MaterialPluginManager` that makes the callback an effect assembles its code with (`protected` there). */
+interface CodeInjectingManager { _injectCustomCode(eventData: unknown, existingCallback?: ProcessShaderCode): ProcessShaderCode }
+const trackedManagers = new WeakSet<object>();
+/**
+ * Makes the defines of the effect being compiled visible to `getCustomCode` while it runs. Babylon's effect calls the
+ * manager's callback with the defines that make up its cache key (`engine.createEffect` keys by name and defines) but
+ * the manager drops them before `getCustomCode(shaderType, language)`. Reading the look from the plugin's own state
+ * instead could disagree with the key: the effect assembles its code asynchronously, and a Stylized Look edit in place
+ * changes the state meanwhile. Wrapped once per manager, as `eventData.customCode` is created per effect.
+ */
+function trackCompileDefines(material: Material): void {
+  const manager = material.pluginManager as unknown as CodeInjectingManager | null;
+  if (!manager || trackedManagers.has(manager)) return;
+  trackedManagers.add(manager);
+  const injectCustomCode = manager._injectCustomCode;
+  manager._injectCustomCode = function (this: CodeInjectingManager, eventData, existingCallback) {
+    const process = injectCustomCode.call(this, eventData, existingCallback);
+    return (shaderType, code, defines) => {
+      const outer = compileDefines;
+      compileDefines = defines ?? null;
+      try { return process(shaderType, code, defines); } finally { compileDefines = outer; }
+    };
+  };
+}
+
 /** World-space water shading on native PBR; both backends use the same wave spectrum. */
 export class WaterMaterialPlugin extends MaterialPluginBase {
   time = 0;
@@ -4526,6 +4696,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     }, true, false);
     this.water = water;
     this.body = body;
+    trackCompileDefines(material);
     this.assetDefines = this.assetDefineMask();
     this.doNotSerialize = true;
     this.registerForExtraEvents = true;
@@ -4562,6 +4733,14 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     if (material.isFrozen) material.markDirty(true);
     // Lit again: the scene's light-slot capacity reaches this material at its next lighting sync.
     invalidateSceneLighting(scene);
+  }
+  /**
+   * The tier `SLATE_WATER_QUALITY` compiles: the shading tier, but Ultra compiles as High for a look with no Ultra term
+   * (Painted and Toon: `lookResolvesUltra`), so both tiers share one effect and the shader is the same either way.
+   */
+  private compiledTier(): number {
+    const look = waterLook(this.water);
+    return this.tier > WATER_SHADING_TIERS.high && look !== "realistic" && !lookResolvesUltra(look, this._material.shaderLanguage) ? WATER_SHADING_TIERS.high : this.tier;
   }
   /** Defines changed outside define preparation; a frozen Play material re-prepares only when marked dirty. */
   private markDefinesDirty(): void {
@@ -4667,7 +4846,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     let changed = setDefine(defines, WATER_STYLIZED_DEFINE, w.style === "stylized");
     changed = setDefine(defines, WATER_TOON_DEFINE, toonLook(w)) || changed;
     changed = setDefine(defines, WATER_GPU_WAVES_DEFINE, this._gpuWaves) || changed;
-    changed = setDefine(defines, Q, this.tier) || changed;
+    changed = setDefine(defines, Q, this.compiledTier()) || changed;
     for (let i = 0; i < FEATURES.length; i++) {
       const [field, define] = FEATURES[i]!;
       changed = setDefine(defines, define, w[field] > 0) || changed;
@@ -5090,67 +5269,16 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     }
     effect.setTexture(WATER_FFT_SAMPLER, band?.texture ?? placeholderFft(scene));
   }
+  /**
+   * Injected code is a pure function of (stage, language, look), so it is built and stripped once per key
+   * (`cachedInjection`). Babylon calls this at every effect compile, once per injection point. The look comes from the
+   * defines of the effect being assembled (`trackCompileDefines`), the same defines its cache key is made of, so two
+   * effects of different looks never share code; outside a compile (Babylon collecting the injection points when the
+   * plugin is added) it keeps every look.
+   */
   override getCustomCode(shaderType: string, language = ShaderLanguage.GLSL): Record<string, string> | null {
-    const wgsl = language === ShaderLanguage.WGSL;
-    const v3 = wgsl ? "vec3f" : "vec3", v4 = wgsl ? "vec4f" : "vec4";
-    // Babylon's shader processors are line-based: every attribute, varying and sampler needs its own line.
-    const varying = (type: string, name: string) => (wgsl ? `varying ${name}: ${type};` : `varying ${type} ${name};`) + "\n";
-    // vSlateWaterFlow packs the world current (x, z) and the Gerstner offset (Dx, Dz), so the fragment finds its rest point.
-    const varyings = varying(v4, "vSlateWater") + varying(v4, "vSlateWaterFlow") + varying(v3, "vSlateWaterBaseNormal")
-      + `#ifdef ${WATER_BLEND_DEFINE}\n` + varying(v4, "vSlateWaterBlend") + "#endif\n";
-    const blendAttribute = `#ifdef ${WATER_BLEND_DEFINE}\n${wgsl ? "attribute slateWaterBlend: vec4f;" : "attribute vec4 slateWaterBlend;"}\n#endif\n`;
-    if (shaderType === "vertex") {
-      const vertex = waterVertexSource(language);
-      return {
-        CUSTOM_VERTEX_DEFINITIONS: (wgsl
-          ? "attribute slateWaterData: vec4f;\nattribute slateWaterFlow: vec3f;\nattribute slateWaterBaseNormal: vec3f;\nattribute slateWaterOffset: vec2f;\n"
-          : "attribute vec4 slateWaterData;\nattribute vec3 slateWaterFlow;\nattribute vec3 slateWaterBaseNormal;\nattribute vec2 slateWaterOffset;\n") + blendAttribute + varyings + vertex.definitions,
-        CUSTOM_VERTEX_UPDATE_WORLDPOS: vertex.worldPosition,
-        CUSTOM_VERTEX_MAIN_END: vertex.end,
-      };
-    }
-    if (shaderType !== "fragment") return null;
-    const source = waterShaderSource(language);
-    return {
-      CUSTOM_FRAGMENT_DEFINITIONS: varyings + source.helpers,
-      CUSTOM_FRAGMENT_UPDATE_ALPHA: source.cut,
-      CUSTOM_FRAGMENT_BEFORE_LIGHTS: source.main,
-      // Realistic: filtered chop widens the GGX lobe with distance, and foam is fully rough.
-      CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS:
-        "metallicRoughness.g = mix(sqrt(sqrt(metallicRoughness.g * metallicRoughness.g * metallicRoughness.g * metallicRoughness.g * swSharp + 2.0 * swSlopeVariance)), 1.0, swMatte);",
-      // Foam and the mesh edge hide the mirror; without an environment, the analytic scene sky (`swSkyRefl`) stands in.
-      // Reflected objects (screen-space or planar) replace the sky or environment where found, with the water's own
-      // Fresnel and Reflection Strength.
-      CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: [
-        "finalEmissive += swEmissive;",
-        `#ifndef ${WATER_STYLIZED_DEFINE}`,
-        "#ifdef REFLECTION",
-        // The facet's own Fresnel (`swFres`) replaces the environment BRDF's, which the lifted shading normal and the
-        // filtered roughness would dim toward the horizon.
-        `finalRadianceScaled = reflectionOut.environmentRadiance.rgb * (${wgsl ? "uniforms." : ""}vLightingIntensity.z * swFres);`,
-        `#if ${REFLECTS_OBJECTS}`,
-        `finalRadianceScaled = mix(finalRadianceScaled, swObjRefl.rgb * (swFres * ${wgsl ? "uniforms." : ""}slateWaterDeep.w), swObjRefl.a);`,
-        "#endif",
-        "finalRadianceScaled *= swGloss;",
-        "#else",
-        `#if ${REFLECTS_OBJECTS}`,
-        `finalEmissive += mix(swSkyRefl, swObjRefl.rgb * ${wgsl ? "uniforms." : ""}slateWaterDeep.w, swObjRefl.a) * (swFres * swGloss);`,
-        "#else",
-        "finalEmissive += swSkyRefl * (swFres * swGloss);",
-        "#endif",
-        "#endif",
-        "#ifdef SPECULARTERM",
-        // The sun's lobe is dimmed close by (where facet glints carry it), log-compressed where bright, and far away
-        // broken into glitter (see the sun in `realisticSource`).
-        "finalSpecularScaled *= swGloss * swSunReach * swSpecKeep;",
-        `finalSpecularScaled *= log(1.0 + dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) * swSpecSquash + 0.0001) / (dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) * swSpecSquash + 0.0001);`,
-        // The glitter's weight rises smoothly with the lobe's luminance (a threshold on it drew an outline around every contour of the slope).
-        `finalSpecularScaled *= mix(1.0, swSpecMod, swSpecModW * 0.6 * dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) / (dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) + 0.15));`,
-        "#endif",
-        "#endif",
-      ].join("\n"),
-      CUSTOM_FRAGMENT_BEFORE_FOG: beforeFogSource(wgsl),
-    };
+    if (shaderType !== "vertex" && shaderType !== "fragment") return null;
+    return injectionFor(shaderType, language, shaderType === "fragment" && compileDefines ? lookOfDefines(compileDefines) : null);
   }
 }
 
