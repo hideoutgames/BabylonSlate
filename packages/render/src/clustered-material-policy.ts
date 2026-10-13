@@ -14,6 +14,7 @@ import {
   PBRMetallicRoughnessBlock,
   PBRSheenConfiguration,
   PBRSubSurfaceConfiguration,
+  ShaderMaterial,
   StandardMaterial,
   type AbstractMesh,
   type Observer,
@@ -48,6 +49,21 @@ const nativePlugins = new Set<unknown>([
   LatticeDeformerPlugin,
 ]);
 
+/**
+ * Every Babylon `LinesMesh` (lines, dashed lines, line systems) draws through an
+ * internal ShaderMaterial named "colorShader" that runs the `color` program. Its
+ * 9.29 vertex and fragment sources (GLSL and WGSL) output the uniform or vertex
+ * colour with fog and clip planes and declare no light uniform, sampler or
+ * define, and a ShaderMaterial binds no scene light itself, so how lights are
+ * admitted cannot change it. Matched by program (`shaderPath`), not by name: a
+ * ShaderMaterial that merely calls itself "colorShader" runs its own shader.
+ * Re-read the `color` sources when moving the Babylon pin. GreasedLine is not
+ * covered: the builder's default is a lit StandardMaterial plus a plugin.
+ */
+function runsColorProgram(material: Material): boolean {
+  return material instanceof ShaderMaterial && material.shaderPath === "color";
+}
+
 function compatible(material: Material): boolean {
   if (unlit.has(material)) return true;
   if (material instanceof MultiMaterial)
@@ -71,7 +87,7 @@ function compatible(material: Material): boolean {
       compatible((material as CelMaterial).source)
     );
   if (constructor !== PBRMaterial && constructor !== StandardMaterial)
-    return false;
+    return runsColorProgram(material);
   if (
     Boolean(material.customShaderNameResolve) ||
     material.onBindObservable.hasObservers()
@@ -118,10 +134,24 @@ type MaterialConsumers = {
   meshes: { mesh: AbstractMesh; index: number }[];
 };
 
+/**
+ * Whether the mesh would draw: Babylon's active-mesh test, read live because
+ * enabling or showing a mesh emits no material or membership event. A LOD level
+ * is blocked and draws in place of its master, so it counts by geometry alone.
+ */
+function draws(mesh: AbstractMesh): boolean {
+  if (
+    !mesh.isBlocked &&
+    !(mesh.isEnabled() && mesh.isVisible && mesh.visibility > 0)
+  )
+    return false;
+  return mesh.getTotalVertices() > 0;
+}
+
 function firstDrawable(group: MaterialConsumers, before: number) {
   for (const entry of group.meshes) {
     if (entry.index >= before) break;
-    if (entry.mesh.getTotalVertices()) return entry;
+    if (draws(entry.mesh)) return entry;
   }
   return undefined;
 }
