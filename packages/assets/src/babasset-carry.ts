@@ -55,7 +55,7 @@ export async function carryStoredChunks(
   // A re-encode moves an inline chunk this large to the blob store, so it cannot be copied as it is.
   if (entries.some((entry) => inlineSpan(entry) && !wanted(entry) && entry.byteLength >= DEFAULT_BLOB_THRESHOLD)) return null;
 
-  let region = new Uint8Array(0);
+  let region: Uint8Array = new Uint8Array(0);
   let regionStart = 0;
   const spans = entries.flatMap((entry) => {
     const span = inlineSpan(entry);
