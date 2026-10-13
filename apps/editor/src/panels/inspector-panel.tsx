@@ -86,7 +86,7 @@ import {
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useValidation } from "../context/validation-context";
-import { usePlay } from "../context/play-context";
+import { usePlayFocusedNodeId, usePlaySimulationDocumentId } from "../context/play-context";
 import {
   resolveInspectorNodeId,
   useGraphEditing,
@@ -1129,7 +1129,7 @@ function PrefabComponentDetails({
 
 export function InspectorPanel(props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
-  const { simulationDocumentId } = usePlay();
+  const simulationDocumentId = usePlaySimulationDocumentId();
   const store = useSimulationInspectionStore();
   return store && simulationDocumentId === documentId
     ? <SimulationInspector store={store} panel={props} />
@@ -1150,7 +1150,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   const pickerMaterialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const { focusDiagnostic } = useValidation();
   const { entries: tags } = useTags();
-  const { focusedNodeId } = usePlay();
+  const focusedNodeId = usePlayFocusedNodeId();
   const { selectedNodeIds, selectedMemberId, activeFunctionId } =
     useGraphEditing();
   const animEditing = useOptionalAnimGraphEditing();

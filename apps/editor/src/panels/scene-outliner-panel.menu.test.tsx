@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
@@ -30,6 +31,7 @@ const harness = vi.hoisted(() => ({
   documentPath: "assets/Main.scene.babasset",
   phone: false,
   assetListReads: 0,
+  keybindReads: 0,
   registryEpoch: 0,
   scene: null as SerializedScene | null,
   assets: [] as Array<{
@@ -54,6 +56,27 @@ vi.mock("../context/document-workspace-context", () => ({
     documentId: `scene:${harness.documentPath}`,
   }),
 }));
+
+// Counts chord lookups: building a row menu reads one per shortcut it shows.
+vi.mock("../context/keybind-context", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../context/keybind-context")>();
+  return {
+    ...actual,
+    useKeybindings: () => {
+      const bindings = actual.useKeybindings();
+      return useMemo(
+        () =>
+          ({
+            get: (commandId: Parameters<typeof bindings.get>[0]) => {
+              harness.keybindReads++;
+              return bindings.get(commandId);
+            },
+          }) as typeof bindings,
+        [bindings],
+      );
+    },
+  };
+});
 
 vi.mock("../context/scene-editing-context", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../context/scene-editing-context")>();
@@ -93,6 +116,7 @@ afterEach(() => {
   harness.documentPath = "assets/Main.scene.babasset";
   harness.phone = false;
   harness.assetListReads = 0;
+  harness.keybindReads = 0;
   harness.registryEpoch = 0;
 });
 
@@ -144,6 +168,87 @@ describe("SceneOutlinerPanel menus", () => {
     expect(screen.getByRole("menuitem", { name: "Deselect" })).toBeTruthy();
     expect(actorIdReads).toBeLessThanOrEqual(10 * scene.actors.length);
     expect(harness.assetListReads).toBeLessThanOrEqual(4);
+  });
+  it("builds menu items only for the row menu that opens, not for every row on selection", async () => {
+    const scene = createDefaultScene();
+    scene.actors = Array.from({ length: 100 }, (_, index) =>
+      createActor(`actor-${index}`, `Actor ${index}`),
+    );
+    harness.scene = scene;
+    render(
+      <SceneEditingProvider>
+        <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
+      </SceneEditingProvider>,
+    );
+    harness.keybindReads = 0;
+
+    fireEvent.click(screen.getByTestId("outliner-menu-actor-3"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Select" }));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+
+    expect(
+      screen.getByTestId("tree-row-actor:actor-3").getAttribute("aria-selected"),
+    ).toBe("true");
+    // One menu shows a handful of chords; a menu per row would read hundreds.
+    expect(harness.keybindReads).toBeLessThanOrEqual(40);
+  });
+  it.each([
+    ["Duplicate", "outliner-duplicate-actor-1", ["Cube", "Cube Copy"]],
+    ["Delete", "outliner-delete-actor-1", []],
+  ])("applies %s from an open row menu to the Scene as it is after an edit that landed while the menu was open", (_name, itemTestId, actorNames) => {
+    const scene = createDefaultScene();
+    scene.actors = [createActor("actor-1", "Cube")];
+    harness.scene = scene;
+    const panel = () => (
+      <SceneEditingProvider>
+        <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
+      </SceneEditingProvider>
+    );
+    const view = render(panel());
+    fireEvent.click(screen.getByTestId("outliner-menu-actor-1"));
+    expect(screen.getByTestId(itemTestId)).toBeTruthy();
+
+    // An edit made elsewhere (a gizmo drag, an Undo) lands while the menu is open.
+    harness.scene = { ...scene, name: "Edited While Open" };
+    view.rerender(panel());
+    fireEvent.click(screen.getByTestId(itemTestId));
+
+    const written = applySceneChange.mock.calls.at(-1)?.[1] as SerializedScene;
+    expect(written.name).toBe("Edited While Open");
+    expect(written.actors.map((actor) => actor.name)).toEqual(actorNames);
+  });
+  it("lists assets added to the registry while Place Actors was closed when it reopens", async () => {
+    const scene = createDefaultScene();
+    scene.actors = [createActor("actor-1", "Cube")];
+    harness.scene = scene;
+    harness.assets = [
+      { path: "assets/Hero.sprite.babasset", header: { type: "Sprite", name: "Hero", guid: "hero-sprite" } },
+    ];
+    const panel = () => (
+      <SceneEditingProvider>
+        <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
+      </SceneEditingProvider>
+    );
+    const view = render(panel());
+
+    fireEvent.click(screen.getByTestId("outliner-add-actor"));
+    fireEvent.click(screen.getByTestId("place-actors-catalog-category-Project"));
+    expect(screen.getByTestId("place-actors-item-asset-hero-sprite")).toBeTruthy();
+    expect(screen.queryByTestId("place-actors-item-asset-villain-sprite")).toBeNull();
+    // Placing closes the dialog.
+    fireEvent.click(screen.getByTestId("place-actors-item-asset-hero-sprite"));
+    await waitFor(() => expect(screen.queryByTestId("place-actors-catalog")).toBeNull());
+
+    harness.assets = [
+      ...harness.assets,
+      { path: "assets/Villain.sprite.babasset", header: { type: "Sprite", name: "Villain", guid: "villain-sprite" } },
+    ];
+    harness.registryEpoch += 1;
+    view.rerender(panel());
+    fireEvent.click(screen.getByTestId("outliner-add-actor"));
+    fireEvent.click(screen.getByTestId("place-actors-catalog-category-Project"));
+    expect(screen.getByTestId("place-actors-item-asset-hero-sprite")).toBeTruthy();
+    expect(screen.getByTestId("place-actors-item-asset-villain-sprite")).toBeTruthy();
   });
   it("toggles an actor from the menu without replacing other selected actors", async () => {
     const scene = createDefaultScene();

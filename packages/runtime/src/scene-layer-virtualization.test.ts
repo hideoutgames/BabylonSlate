@@ -30,7 +30,39 @@ function fixture() {
   return { world, root, list, layout, virtualization, update, items, removed };
 }
 
+/** A list owned by an actor beneath `depth` virtualized-item ancestors, synced once. */
+function listBeneathContainers(depth: number) {
+  const registry = new ClassRegistry();
+  registry.register({ id: "Item", parentClassId: "SceneLayerActor", kind: "actor", variables: [], implementedInterfaces: [] });
+  const world = new World({ seed: 1, dt: 0.1, classRegistry: registry });
+  let parentId: string | undefined;
+  for (let level = 0; level < depth; level++) {
+    const ancestor = world.createActor({ guid: `level-${level}`, classId: "SceneLayerActor", sceneLayerId: "layer", variables: { virtualizedContainerId: "outer", ...(parentId ? { parentId } : {}) } });
+    world.spawnActorNow(ancestor);
+    parentId = ancestor.guid;
+  }
+  const owner = world.createActor({ guid: "owner", classId: "SceneLayerActor", sceneLayerId: "layer", variables: parentId ? { parentId } : {} });
+  owner.attachComponent(world.createComponent({ guid: "list", classId: "2DVirtualizedListComponent", variables: { width: 4, height: 3, itemClassId: "Item", itemCount: 100, overscan: 0 } }));
+  world.spawnActorNow(owner);
+  const layout = new SceneLayerLayout();
+  layout.update("layer", world.getActors(), 100);
+  const items: Actor[] = [];
+  new SceneLayerVirtualization().sync("layer", world.getActors(), layout.entries("layer"), (parent, classId, defaults) => {
+    const item = world.createActor({ classId, sceneLayerId: parent.sceneLayerId, variables: { ...defaults, parentId: parent.guid } });
+    world.spawnActorNow(item);
+    items.push(item);
+    return item;
+  }, () => {});
+  return items;
+}
+
 describe("virtualized SceneLayer actor ownership", () => {
+  it("realizes items beneath fifteen virtualized ancestors but none beneath sixteen", () => {
+    expect(listBeneathContainers(0).length).toBeGreaterThan(0);
+    expect(listBeneathContainers(15).length).toBeGreaterThan(0);
+    expect(listBeneathContainers(16)).toHaveLength(0);
+  });
+
   it("realizes only visible rows, preserves overlapping references and retires offscreen components", () => {
     const f = fixture();
     expect(f.update()).toBe(true);

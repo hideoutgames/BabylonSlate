@@ -177,7 +177,7 @@ Main-scene editor viewport at default (Medium) quality, Forward path, with float
 | Full-screen effects | 21 | 21 | 21 |
 | **Total** | **1289** | **1002** | **713** |
 
-Medium skips reflections and scene-wide volumetric fog and Low also skips ambient occlusion; both save GPU time rather than draws here. The Effects zone's Fog Volume keeps the spatial-effects geometry pass (depth only at Low) on every tier, so its 123 draws remain.
+Medium skips reflections and scene-wide volumetric fog and Low also skips ambient occlusion; both save GPU time rather than draws here. The Effects zone's Fog Volume keeps the spatial-effects geometry pass built on every tier, but the pass now draws only while ambient occlusion reads it (Medium and up) or that Fog Volume is in front of the camera; the fog march and compose passes are skipped whenever it is not. The sun's cascades redraw only when the camera, the light, the cascade settings or a caster that reaches a cascade changes, and every frame while an animated or skinned caster stays in reach. The columns above were counted before these two changes and have not been re-measured, so they still show every frame drawing all three passes.
 
 ## Verification
 

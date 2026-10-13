@@ -1564,6 +1564,90 @@ describe("EditorSceneSync", () => {
     expect(visuals.find((part) => part.name === "part-b")?.material).toBe(slot1);
   });
 
+  it("keeps a model's override Material without announcing a change when its actor is applied again", async () => {
+    const { scene } = createHandle();
+    const slot = new StandardMaterial("slot-0", scene);
+    const override = new StandardMaterial("override", scene);
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "hero-model";
+    mesh.properties.materialGuid = "mat-override";
+    const sync = new EditorSceneSync(scene, undefined, {
+      resolveMaterial: (guid) => (guid === "mat-1" ? slot : guid === "mat-override" ? override : null),
+    });
+    sync.setMeshAssets({
+      modelBytes: new Map([["hero-model", encodeUvHierarchyGlb()]]),
+      modelPayloads: new Map([["hero-model", {
+        clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
+        materialSlots: [{ index: 0, name: "MatA", materialGuid: "mat-1" }],
+      }]]),
+    });
+    const authored = sceneWith([createActor("a", "A", { components: [mesh] })]);
+    sync.apply(authored);
+    await vi.waitFor(() => {
+      const root = sync.meshForActor("a");
+      expect(root).toBeDefined();
+      expect(visualMeshes(root!).length).toBe(2);
+    });
+    await sync.whenEditorModelsReady();
+    const parts = visualMeshes(sync.meshForActor("a")!);
+    // The override replaces the slot Material.
+    for (const part of parts) expect(part.material).toBe(override);
+    const changed = vi.fn();
+    for (const part of parts) part.onMaterialChangedObservable.add(changed);
+
+    // The slot assignment and the override each assign in turn, but only a net change is announced.
+    sync.apply(structuredClone(authored));
+    const moved = structuredClone(authored);
+    moved.actors[0]!.transform.position = [1, 2, 3];
+    sync.apply(moved);
+    expect(changed).not.toHaveBeenCalled();
+    for (const part of parts) expect(part.material).toBe(override);
+
+    // Dropping the override really changes the Material, once per part.
+    const cleared = structuredClone(moved);
+    cleared.actors[0]!.components[0]!.properties.materialGuid = null;
+    sync.apply(cleared);
+    for (const part of parts) expect(part.material).toBe(slot);
+    expect(changed).toHaveBeenCalledTimes(parts.length);
+  });
+
+  it("does not rebuild a loaded model when its slot Materials finish compiling", async () => {
+    const { scene } = createHandle();
+    const slot = new StandardMaterial("slot-0", scene);
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "hero-model";
+    const compiled = new Set<string>();
+    const sync = new EditorSceneSync(scene, undefined, { resolveMaterial: (guid) => (guid === "mat-1" ? slot : null) });
+    sync.setMeshAssets({
+      modelBytes: new Map([["hero-model", encodeUvHierarchyGlb()]]),
+      modelPayloads: new Map([["hero-model", {
+        clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
+        materialSlots: [{ index: 0, name: "MatA", materialGuid: "mat-1" }],
+      }]]),
+      textureBytes: new Map(),
+      materialTextureGuids: new Map([["mat-1", [] as string[]]]),
+      compiledMaterialGuids: compiled,
+    });
+    const authored = sceneWith([createActor("a", "A", { components: [mesh] })]);
+    sync.apply(authored);
+    await vi.waitFor(() => {
+      const root = sync.meshForActor("a");
+      expect(root).toBeDefined();
+      expect(visualMeshes(root!).length).toBe(2);
+    });
+    await sync.whenEditorModelsReady();
+    const parts = visualMeshes(sync.meshForActor("a")!);
+
+    // Compiling the slot Material lets a fresh load drop the embedded textures, but this instance renders the same.
+    compiled.add("mat-1");
+    const moved = structuredClone(authored);
+    moved.actors[0]!.transform.position = [1, 2, 3];
+    sync.apply(moved);
+    await sync.whenEditorModelsReady();
+    expect(visualMeshes(sync.meshForActor("a")!)).toEqual(parts);
+    for (const part of parts) expect(part.isDisposed()).toBe(false);
+  });
+
   it("adopts a pack GLB with UVs on every visual mesh and slot 0 on all parts", async () => {
     const { scene } = createHandle();
     const override = new StandardMaterial("slot-0", scene);

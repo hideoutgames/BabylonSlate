@@ -1,7 +1,7 @@
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { MaterialLibrary } from "./material-library";
-import { DirectionalLight, Effect, FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RawTexture, RenderTargetTexture, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Color3, DirectionalLight, Effect, FreeCamera, HemisphericLight, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RawTexture, RenderTargetTexture, Scene, SpotLight, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { SceneOutlineHost } from "./scene-outline-host";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
@@ -606,6 +606,42 @@ it("caches strict readiness on unchanged frames and re-probes once after a scene
   MeshBuilder.CreateBox("added", {}, scene);
   expect(renderer.isReady()).toBe(true);
   expect(renderer.strictReadinessChecks).toBe(checks + 1);
+  renderer.dispose();
+});
+
+it("keeps strict readiness cached across in-place light value edits, and re-probes when a light stops illuminating", async () => {
+  const { scene, renderer } = host();
+  MeshBuilder.CreateBox("box", {}, scene);
+  const point = new PointLight("point", new Vector3(0, 2, -3), scene);
+  const spot = new SpotLight("spot", new Vector3(0, 2, 3), new Vector3(0, -1, 0), 1, 2, scene);
+  const sky = new HemisphericLight("sky", Vector3.Up(), scene);
+  await renderer.prepare();
+  // The lights' shader variants may compile asynchronously before the scene is admitted.
+  await vi.waitFor(() => { expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true }); });
+  const checks = renderer.strictReadinessChecks;
+  for (let edit = 1; edit <= 5; edit += 1) {
+    point.range = 4 + edit;
+    point.intensity = 1 + edit;
+    point.diffuse = new Color3(edit / 5, 0.5, 0.25);
+    spot.angle = 0.5 + edit / 10;
+    spot.innerAngle = 0.2 + edit / 10;
+    sky.groundColor = new Color3(0, edit / 10, 0);
+    expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
+  }
+  expect(renderer.strictReadinessChecks).toBe(checks);
+  point.setEnabled(false);
+  renderer.render();
+  expect(renderer.strictReadinessChecks).toBeGreaterThan(checks);
+  renderer.dispose();
+});
+
+it("is settled only while no preparation is running", async () => {
+  const { renderer } = host();
+  expect(renderer.settled).toBe(true);
+  const preparing = renderer.prepare();
+  expect(renderer.settled).toBe(false);
+  await preparing;
+  expect(renderer.settled).toBe(true);
   renderer.dispose();
 });
 
