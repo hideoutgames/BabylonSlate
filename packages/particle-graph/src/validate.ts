@@ -201,10 +201,11 @@ function createColorOverwrittenBy(
   graph: GraphLike,
   incoming: ParticleIncomingEdges,
   spine: readonly string[],
+  nodesById: ReadonlyMap<string, ParticleGraphNode>,
 ): string | null {
   let overwrittenBy: string | null = null;
   for (const nodeId of spine) {
-    const node = graph.nodes.find((entry) => entry.id === nodeId);
+    const node = nodesById.get(nodeId);
     if (node?.type !== "update.color" || !isPinSet(incoming, node, "color")) continue;
     const edge = incoming(nodeId, "color");
     const reads = edge ? upstreamTypes(graph, edge.sourceNodeId) : new Set<string>();
@@ -425,6 +426,9 @@ function validateSpine(
   if (!output) return diagnostics;
   const spine = spineOf(graph, incoming);
   const onSpine = new Set(spine);
+  // The first node with each id, as `nodes.find` answered.
+  const nodesById = new Map<string, ParticleGraphNode>();
+  for (const node of graph.nodes) if (!nodesById.has(node.id)) nodesById.set(node.id, node);
 
   const emitRate = incoming(output.id, "emitRate");
   const hazard = emitRate
@@ -447,7 +451,7 @@ function validateSpine(
   const shapes: string[] = [];
   let moves = false;
   for (const nodeId of spine) {
-    const node = graph.nodes.find((entry) => entry.id === nodeId)!;
+    const node = nodesById.get(nodeId)!;
     const definition = definitions.get(nodeId);
     if (!definition) continue;
     if (definition.role === "shape") shapes.push(nodeId);
@@ -478,7 +482,7 @@ function validateSpine(
     });
   }
   const first = spine[0] ? definitions.get(spine[0]) : undefined;
-  const overwrittenBy = first?.role === "create" ? createColorOverwrittenBy(graph, incoming, spine) : null;
+  const overwrittenBy = first?.role === "create" ? createColorOverwrittenBy(graph, incoming, spine, nodesById) : null;
   if (overwrittenBy) {
     diagnostics.push({
       code: "particle.colorOverridden",
