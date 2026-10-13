@@ -34,7 +34,7 @@ import {
 import { TemporalJitter, temporalAntiAliasingShader } from "./temporal-anti-aliasing";
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import { beginManagedRenderAllocation } from "./managed-render-resources";
-import { bindFogVolumes, hasFogVolumes } from "./fog-volumes";
+import { bindFogVolumes, hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import type { EffectCompileFailure } from "./effect-compile-failure";
 
 /** Delay native define setters until all settings/camera flags are configured.
@@ -92,6 +92,14 @@ export interface SpatialStage {
   /** Renders into a persistent history target and samples the previous one;
    * the owner hooks the jitter into its view's draws. */
   history?: TemporalJitter;
+  /**
+   * Evaluated before each frame: true when running this stage would leave the
+   * chain's color unchanged. The graph then skips it (a stage with `mainInput`
+   * passes that color through; one without draws nothing, so only its
+   * idle-capable successor may read its output), and skips the geometry pass
+   * once no running stage reads it.
+   */
+  idle?(): boolean;
   bind(effect: Effect): void;
 }
 
@@ -398,10 +406,15 @@ export function createSpatialStages(
       const inverseProjection = Matrix.Identity(),
         inverseView = Matrix.Identity();
       const mainInput = stages.length;
+      // Without scene density the march only fogs authored Fog Volumes: none in
+      // front of this camera leaves every pixel unfogged, whatever the lights.
+      const idle = () =>
+        volume.density <= 0 && (!localVolumes || selectFogVolumes(scene, camera, volume.maxDistance).length === 0);
       stages.push({
         wrapper: march,
         scale: Math.max(0.25, volume.resolutionScale * quality),
         geometry: true,
+        idle,
         bind: (effect) => {
           camera.getProjectionMatrix().invertToRef(inverseProjection);
           camera.getViewMatrix().invertToRef(inverseView);
@@ -451,6 +464,7 @@ export function createSpatialStages(
         scale: 1,
         mainInput,
         geometry: true,
+        idle,
         bind: (effect) => {
           effect.setFloat2(
             "fogTexelSize",

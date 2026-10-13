@@ -44,7 +44,10 @@ class SpatialTask extends FrameGraphPostProcessTask {
     this.depthTest = false;
   }
   override record() {
-    const pass = super.record(false, undefined, (context) => {
+    // Babylon's own disabled pass copies the previous stage's output, which for
+    // an idle-capable stage is not the color to pass through.
+    const idleCapable = this.stage.idle !== undefined;
+    const pass = super.record(idleCapable, undefined, (context) => {
       const effect = this.drawWrapper.effect!;
       if (this.stage.geometry)
         for (const [name, handle] of Object.entries(this.buffers)) {
@@ -65,6 +68,16 @@ class SpatialTask extends FrameGraphPostProcessTask {
     });
     if (this.stage.geometry) pass.addDependencies(Object.values(this.buffers));
     if (this.main !== undefined) pass.addDependencies(this.main);
+    if (idleCapable) {
+      const skipped = this._frameGraph.addRenderPass(`${this.name}_disabled`, true);
+      skipped.setRenderTarget(this.outputTexture);
+      if (this.main === undefined) skipped.setExecuteFunc(() => {});
+      else {
+        const main = this.main;
+        skipped.addDependencies(main);
+        skipped.setExecuteFunc((context) => context.copyTexture(main));
+      }
+    }
     return pass;
   }
   override dispose(): void {
@@ -247,6 +260,19 @@ export class SpatialEffectsGraph {
       );
       throw error;
     }
+  }
+  /**
+   * Run before each frame's graph execution. Skips the stages that would change
+   * nothing for this camera, and the geometry passes once nothing running reads
+   * them; toggling flags never rebuilds the graph.
+   */
+  syncIdle(): void {
+    let geometryRead = false;
+    for (const task of this.tasks) {
+      task.disabled = task.stage.idle?.() === true;
+      if (!task.disabled && task.stage.geometry) geometryRead = true;
+    }
+    this.geometry.disabled = this.clear.disabled = !geometryRead;
   }
   reconcile(): void {
     if (this.committed) return;

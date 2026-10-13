@@ -177,7 +177,7 @@ Main-scene editor viewport at default (Medium) quality, Forward path, with float
 | Full-screen effects | 21 | 21 | 21 |
 | **Total** | **1289** | **1002** | **713** |
 
-Medium skips reflections and scene-wide volumetric fog and Low also skips ambient occlusion; both save GPU time rather than draws here. The Effects zone's Fog Volume keeps the spatial-effects geometry pass (depth only at Low) on every tier, so its 123 draws remain.
+Medium skips reflections and scene-wide volumetric fog and Low also skips ambient occlusion; both save GPU time rather than draws here. The Effects zone's Fog Volume keeps the spatial-effects geometry pass built on every tier, but it draws (123 draws) only while ambient occlusion reads it (Medium and up) or that Fog Volume is in front of the camera; at Low, a view that looks away from the Effects zone skips the geometry pass and the fog march. The columns above were counted before that skip.
 
 ## Verification
 
