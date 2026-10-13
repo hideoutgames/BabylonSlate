@@ -202,6 +202,10 @@ interface PlayContextValue {
 }
 
 const PlayContext = createContext<PlayContextValue | null>(null);
+// Single values of the Play state, each in a context of its own: a reader
+// re-renders only when that value changes, not for every `PlayContext` change.
+const PlaySimulationDocumentIdContext = createContext<string | null>(null);
+const PlayFocusedNodeIdContext = createContext<string | null>(null);
 const OutputLogContext = createContext<{ lines: string[] }>({ lines: [] });
 const LiveBtStateContext = createContext<LiveBtState | null>(null);
 type PlayDiagnosticsActions = Pick<PlayContextValue, "appendLog" | "reportBtState"> & {
@@ -261,6 +265,24 @@ function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
         </LiveBtStateContext.Provider>
       </OutputLogContext.Provider>
     </PlayDiagnosticsActionsContext.Provider>
+  );
+}
+
+function PlayValueContexts({
+  simulationDocumentId,
+  focusedNodeId,
+  children,
+}: {
+  simulationDocumentId: string | null;
+  focusedNodeId: string | null;
+  children: ReactNode;
+}) {
+  return (
+    <PlaySimulationDocumentIdContext.Provider value={simulationDocumentId}>
+      <PlayFocusedNodeIdContext.Provider value={focusedNodeId}>
+        {children}
+      </PlayFocusedNodeIdContext.Provider>
+    </PlaySimulationDocumentIdContext.Provider>
   );
 }
 
@@ -1784,7 +1806,9 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   return (
     <PlayContext.Provider value={value}>
       <SimulationInspectionProvider>
-        {children}
+        <PlayValueContexts simulationDocumentId={simulationDocumentId} focusedNodeId={focusedNodeId}>
+          {children}
+        </PlayValueContexts>
         {sessionState.mode === "simulate" && !sessionState.quarantined ? (
           <SimulationSessionBar stopping={sessionState.lifecycle === "stopping"}
             keepChanges={simulationRef.current?.keepChanges ?? false}
@@ -1982,6 +2006,23 @@ export function usePlay(): PlayContextValue {
 
 export function useOptionalPlay(): PlayContextValue | null {
   return useContext(PlayContext);
+}
+
+/**
+ * The Scene document a Simulate session runs from, or null (also without a
+ * PlayProvider). Unlike `usePlay()`, a reader re-renders only when this
+ * changes, not for every Play state change.
+ */
+export function usePlaySimulationDocumentId(): string | null {
+  return useContext(PlaySimulationDocumentIdContext);
+}
+
+/**
+ * The graph node Play diagnostics asked to focus, or null (also without a
+ * PlayProvider). Re-renders its reader only when the focused node changes.
+ */
+export function usePlayFocusedNodeId(): string | null {
+  return useContext(PlayFocusedNodeIdContext);
 }
 
 /**

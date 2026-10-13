@@ -178,6 +178,8 @@ vi.mock("../context/document-context", async () => {
 
 vi.mock("../context/play-context", () => ({
   usePlay: () => ({ focusedNodeId: null }),
+  usePlayFocusedNodeId: () => null,
+  usePlaySimulationDocumentId: () => null,
 }));
 
 afterEach(() => {

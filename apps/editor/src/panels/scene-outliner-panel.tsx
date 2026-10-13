@@ -1,6 +1,6 @@
 import { SimulationOutliner } from "./simulation-outliner";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
-import { useOptionalPlay } from "../context/play-context";
+import { usePlaySimulationDocumentId } from "../context/play-context";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { IndexedAsset } from "@babylonslate/assets";
 import {
@@ -543,7 +543,7 @@ export function flattenOutliner(
 
 export function SceneOutlinerPanel(props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
-  const simulationDocumentId = useOptionalPlay()?.simulationDocumentId;
+  const simulationDocumentId = usePlaySimulationDocumentId();
   const store = useSimulationInspectionStore();
   return store && simulationDocumentId === documentId
     ? <SimulationOutliner store={store} panel={props} />

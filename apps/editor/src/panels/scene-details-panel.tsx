@@ -1,4 +1,4 @@
-import { useOptionalPlay } from "../context/play-context";
+import { usePlaySimulationDocumentId } from "../context/play-context";
 import { SimulationInspector } from "./simulation-inspector";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
@@ -212,7 +212,7 @@ function ComponentCardName({ title, onRename }: { title: string; onRename: () =>
 
 export function SceneDetailsPanel(props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
-  const simulationDocumentId = useOptionalPlay()?.simulationDocumentId;
+  const simulationDocumentId = usePlaySimulationDocumentId();
   const store = useSimulationInspectionStore();
   return store && simulationDocumentId === documentId
     ? <SimulationInspector store={store} panel={props} />
