@@ -7,8 +7,10 @@ import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   createMaterialPreviewState,
+  lowerMaterialDocument,
   materialPreviewReducer,
   newCustomGlslProperties,
+  normalizeMaterialDocument,
   type MaterialDocument,
   type MaterialPreviewState,
 } from "@babylonslate/shader-graph";
@@ -57,6 +59,8 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
 vi.mock("../context/material-editing-context", () => ({
   useMaterialEditing: () => ({
     functions: {},
+    // The provider lowers the open document once for every panel.
+    lowering: lowerMaterialDocument(normalizeMaterialDocument(harness.content), { functions: {} }),
     previewState: harness.previewState,
     compileDiagnostics: [],
     selectedNodeId: harness.selectedNodeId,

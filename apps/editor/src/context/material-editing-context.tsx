@@ -29,7 +29,7 @@ import {
   classifyMaterialCost,
   createMaterialPreviewState,
   lowerMaterialDocument,
-  materialCompileKey,
+  materialCompileKeyFromLowering,
   materialParameterDefaults,
   materialDependencies,
   materialPreviewReducer,
@@ -43,6 +43,7 @@ import {
   type MaterialDomain,
   type MaterialFunctionDocument,
   type MaterialInstanceDocument,
+  type MaterialLowerResult,
   type MaterialPreviewState,
 } from "@babylonslate/shader-graph";
 import type { MaterialParameterValue } from "@babylonslate/core";
@@ -92,6 +93,11 @@ export interface MaterialEditingValue {
   functions: Record<string, MaterialFunctionDocument>;
   /** Domain of the previewed graph (a Material Instance previews its root's). */
   previewDomain: MaterialDomain | null;
+  /**
+   * The previewed graph lowered once for this provider (null without a graph). Panels
+   * read it instead of lowering the same document again on every edit.
+   */
+  lowering: MaterialLowerResult | null;
   /** Set only for Material Instance documents. */
   instance: MaterialInstanceEditing | null;
   previewState: MaterialPreviewState;
@@ -441,9 +447,9 @@ export function MaterialEditingProvider({
   }, [document, frameBudgetMs, lowering, previewState.compileSamplesMs]);
 
   const compileKey = useMemo(() => {
-    if (!document) return null;
-    return materialCompileKey(document, { functions });
-  }, [document, functions]);
+    if (!document || !lowering) return null;
+    return materialCompileKeyFromLowering(document, lowering);
+  }, [document, lowering]);
 
   const costClassRef = useRef(costClass);
   costClassRef.current = costClass;
@@ -716,6 +722,7 @@ export function MaterialEditingProvider({
     () => ({
       functions,
       previewDomain: document?.domain ?? null,
+      lowering,
       instance,
       previewState,
       compileDiagnostics,
@@ -734,6 +741,7 @@ export function MaterialEditingProvider({
       frameBudgetMs,
       functions,
       instance,
+      lowering,
       previewState,
       requestRender,
       selectedNodeId,

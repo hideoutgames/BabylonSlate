@@ -463,7 +463,10 @@ post-process passes are always manual because neither is profiled on the device.
 Timings stay session-local and are never written into an asset.
 
 Layout-only node moves do not recompile: `materialCompileKey` / the plan hash
-ignore positions. The graph canvas commits positions once per drag, with a
+ignore positions. `MaterialEditingProvider` lowers the open Material once per
+edit, derives the key with `materialCompileKeyFromLowering` and exposes the
+result as `useMaterialEditing().lowering` for panels such as the cost summary.
+The graph canvas commits positions once per drag, with a
 per-gesture `transactionId` so Undo restores one drag at a time. Measured-size
 frames and identical payloads do not dirty the document. The preview canvas
 exposes `data-camera-radius` (refreshed whenever a frame is attempted, not while
