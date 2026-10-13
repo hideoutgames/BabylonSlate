@@ -711,7 +711,11 @@ describe("Play source reads overlap without changing order", () => {
     loading.dispose();
   });
 
-  it("resolves catalog locators concurrently but never more than its bound, and still validates in order", async () => {
+  /**
+   * A Scene requiring 24 Materials. Catalog locator reads made while the closure is walked (before the
+   * host creates its ownership scope) are counted; each takes `delayOf(guid)` and may fail.
+   */
+  async function materialFleet(delayOf: (guid: string) => number, failOn?: (guid: string) => boolean) {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder();
     await storage.mkdir("assets");
@@ -727,21 +731,46 @@ describe("Play source reads overlap without changing order", () => {
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const loading = createRegistryAssetLoadingService(registry, { projectId: "materials" });
+    const walk = { reads: [] as string[], inFlight: 0, peak: 0, over: false };
     const locate = registry.getAssetLocator.bind(registry);
-    let inFlight = 0;
-    let peak = 0;
-    vi.spyOn(registry, "getAssetLocator").mockImplementation(async (...args) => {
-      peak = Math.max(peak, ++inFlight);
-      try { await sleep(3); return await locate(...args); }
-      finally { inFlight--; }
+    vi.spyOn(registry, "getAssetLocator").mockImplementation(async (guid, ...rest) => {
+      const counted = !walk.over;
+      if (counted) { walk.reads.push(guid); walk.peak = Math.max(walk.peak, ++walk.inFlight); }
+      try {
+        await sleep(delayOf(guid));
+        if (failOn?.(guid)) throw new Error(`cannot locate ${guid}`);
+        return await locate(guid, ...rest);
+      } finally { if (counted) walk.inFlight--; }
     });
-    const host = { registry, project: createEmptyProject("Materials"), createScope: (owner: string) => loading.createScope(owner),
+    const host = { registry, project: createEmptyProject("Materials"),
+      createScope: (owner: string) => { walk.over = true; return loading.createScope(owner); },
       compile: async () => ({ bundles: [], diagnostics: [] }) };
+    return { materials, loading, host, walk };
+  }
+
+  it("resolves catalog locators concurrently during the walk but never more than its bound, and still validates in order", async () => {
+    const { materials, loading, host, walk } = await materialFleet(() => 3);
     const prepared = await acquirePlayAssetSources(host, ["scene"], { consumer: "Scene", signal: new AbortController().signal });
     expect([...prepared.required]).toEqual(["scene", ...[...materials].reverse()]);
-    expect(peak).toBeGreaterThan(1);
-    expect(peak).toBeLessThanOrEqual(8);
+    expect(walk.reads).toHaveLength(25);
+    // Only the walk is counted: a one-at-a-time walk would peak at 1.
+    expect(walk.peak).toBeGreaterThan(1);
+    expect(walk.peak).toBeLessThanOrEqual(8);
     prepared.release();
+    loading.dispose();
+  });
+
+  it("starts no further catalog read once the walk has failed", async () => {
+    // material-23 is the first asset the walk visits after the Scene; it fails while the others are still being read.
+    const { loading, host, walk } = await materialFleet((guid) => guid === "scene" ? 1 : guid === "material-23" ? 5 : 40,
+      (guid) => guid === "material-23");
+    await expect(acquirePlayAssetSources(host, ["scene"], { consumer: "Scene", signal: new AbortController().signal }))
+      .rejects.toThrow("cannot locate material-23");
+    const atFailure = walk.reads.length;
+    // The Scene plus at most one full batch of reads had begun; 16 more Materials were still queued.
+    expect(atFailure).toBeLessThanOrEqual(9);
+    await sleep(120);
+    expect(walk.reads).toHaveLength(atFailure);
     loading.dispose();
   });
 });

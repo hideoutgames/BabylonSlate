@@ -93,16 +93,26 @@ async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: reado
   const { registry } = host;
   const revisions = new Map<string, string>();
   const pending = [...roots];
+  signal.throwIfAborted();
   // Each asset's catalog read starts as soon as a referrer names it, so the storage
   // round trips of siblings overlap (bounded). Assets are still visited, validated and
   // recorded in the order the stack yields them, so the closure's insertion order and the
   // first error stay those of a one-at-a-time walk.
+  // The reads answer to the walk, not only to the caller: when the walk ends, by failing as
+  // much as by finishing, reads still queued never start and running ones are cancelled, so
+  // they cannot overlap a retry or reindex an asset under it.
+  const walk = new AbortController();
+  const abortWalk = () => walk.abort(signal.reason);
+  signal.addEventListener("abort", abortWalk, { once: true });
   const limit = createLimiter(CATALOG_READS);
   const reads = new Map<string, Promise<AssetSourceLocator>>();
   const startRead = (guid: string): Promise<AssetSourceLocator> => {
     let read = reads.get(guid);
     if (!read) {
-      read = limit(() => cancellableCatalogRead(registry.getAssetLocator(guid, { signal }), signal));
+      read = limit(() => {
+        walk.signal.throwIfAborted();
+        return cancellableCatalogRead(registry.getAssetLocator(guid, { signal: walk.signal }), walk.signal);
+      });
       // The walk may fail before it reaches this asset; that failure is then moot.
       read.catch(() => undefined);
       reads.set(guid, read);
@@ -113,27 +123,32 @@ async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: reado
     // The stack pops from the end, so the last name is read first.
     for (let index = guids.length - 1; index >= 0; index--) if (!revisions.has(guids[index]!)) startRead(guids[index]!);
   };
-  prefetch(pending);
-  while (pending.length) {
-    signal.throwIfAborted();
-    const guid = pending.pop()!;
-    if (revisions.has(guid)) continue;
-    const locator = await startRead(guid);
-    signal.throwIfAborted();
-    const asset = registry.getByGuid(guid);
-    if (!asset || asset.placeholder || asset.locator !== locator) throw new SourceRevisionChangedError(`Required asset changed while resolving: ${guid}`);
-    if (!host.documentOverrides?.has(guid)) assetFormats.requireCurrent(asset.header.type, asset.header.version);
-    revisions.set(guid, locator.revision);
-    const dependencies = host.documentOverrides?.get(guid)?.requiredDependencies ?? registry.requiredDependenciesFor(guid, asset.header);
-    pending.push(...dependencies);
-    prefetch(dependencies);
+  try {
+    prefetch(pending);
+    while (pending.length) {
+      signal.throwIfAborted();
+      const guid = pending.pop()!;
+      if (revisions.has(guid)) continue;
+      const locator = await startRead(guid);
+      signal.throwIfAborted();
+      const asset = registry.getByGuid(guid);
+      if (!asset || asset.placeholder || asset.locator !== locator) throw new SourceRevisionChangedError(`Required asset changed while resolving: ${guid}`);
+      if (!host.documentOverrides?.has(guid)) assetFormats.requireCurrent(asset.header.type, asset.header.version);
+      revisions.set(guid, locator.revision);
+      const dependencies = host.documentOverrides?.get(guid)?.requiredDependencies ?? registry.requiredDependenciesFor(guid, asset.header);
+      pending.push(...dependencies);
+      prefetch(dependencies);
+    }
+    return revisions;
+  } finally {
+    signal.removeEventListener("abort", abortWalk);
+    walk.abort();
   }
-  return revisions;
 }
 
 /** Concurrent catalog (locator) reads while resolving a closure or revalidating it. The loader's own cap covers payload reads only. */
 const CATALOG_READS = 8;
-/** How many assets ahead of the one being processed have their documents or chunks requested. */
+/** Assets whose documents or chunks are requested at once: the one being processed plus the five after it. */
 const READ_AHEAD = 6;
 
 function cancellableCatalogRead<T>(read: Promise<T>, signal: AbortSignal): Promise<T> {
