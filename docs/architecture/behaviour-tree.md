@@ -101,6 +101,8 @@ The Behaviour Tree editor calls `validateBehaviourTree` directly for canvas badg
 
 Both inspector snapshots and authoring `btState` messages sanitize blackboard values using the existing inspect formatter. Actor/object references become GUID/class identities; cyclic values, functions and BigInts become readable text. This keeps console/worker transport safe without replacing the values used by the running tree.
 
+A tick publishes `btState` only when the state changed, and an unchanged tick sanitizes nothing: the runtime keeps a raw copy of each slot's Blackboard (`copyBlackboard`, `bt-blackboard.ts`) and compares the live values with it (`sameBlackboard`): plain data by content, live actors and components by identity, never descending into them. Maps, class instances, functions and cycles never compare equal, so a Blackboard holding one is sanitized and compared by its sanitized form each tick, as before. In-place edits (a task pushing to an array it read) are seen because the baseline is a copy.
+
 ## Honest residuals
 
 - Without a `BtTaskHost`, hosted tasks still stub-succeed (package-only tests).

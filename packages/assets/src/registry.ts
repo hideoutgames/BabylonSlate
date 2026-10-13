@@ -4,10 +4,14 @@ import {
   ASSET_DEPENDENCY_METADATA_VERSION,
   decodeBabasset,
   encodeBabasset,
+  isCarriedChunk,
   readBabassetHeader,
   type BabassetHeader,
+  type ChunkEntry,
   type ChunkInput,
+  type EncodableChunk,
 } from "./babasset";
+import { carryStoredChunks } from "./babasset-carry";
 import { createVfsBlobStore, type BlobStore } from "./blob-store";
 import { createReadAhead } from "./bounded-concurrency";
 import type { ContentRoot } from "./content-root";
@@ -78,6 +82,17 @@ export type ThumbnailWriter = (
   assetGuid: string,
   bytes: Uint8Array,
 ) => Promise<void>;
+
+/** A Texture file edit: the header and chunks to write back, or null to write nothing. */
+type TextureRewrite = (
+  header: Omit<BabassetHeader, "chunks">,
+  chunks: Map<string, EncodableChunk>,
+  /** The header as read from disk, chunk sha256s included. */
+  current: BabassetHeader,
+) => Promise<{
+  header: Omit<BabassetHeader, "chunks">;
+  chunks: Map<string, EncodableChunk>;
+} | null>;
 
 /**
  * The registry rewrote an asset file itself (Texture encode state, committed
@@ -1352,6 +1367,8 @@ export class AssetRegistry {
     options?: { error?: string; canWrite?: (guid: string, current: BabassetHeader) => boolean },
   ): Promise<void> {
     await this.enqueueTextureWrite(guid, async () => {
+      // Header only: the chunk table is reused as it is, so the source pixels
+      // and encodes are neither read nor decoded for a state change.
       await this.rewriteTexture(guid, async (header, chunks, current) => {
         if (options?.canWrite && !options.canWrite(guid, current)) return null;
         const payload: Record<string, unknown> = {
@@ -1365,7 +1382,7 @@ export class AssetRegistry {
         }
         header.payload = payload;
         return { header, chunks };
-      });
+      }, undefined, () => false);
     });
   }
 
@@ -1392,13 +1409,18 @@ export class AssetRegistry {
       const size = sniffKtx2Size(result.ktx2);
       const blockAlign = result.settings.blockAlign;
       const sha256 = await sha256Hex(result.ktx2);
+      const dropsOffGrid = isOnBlockGrid(size) && !this.isAtlasTexture(result.assetGuid);
+      const isRetainedKtx2 = (chunk: { id: string; kind: string }) =>
+        chunk.id !== chunkId && (chunk.kind === "ktx2" || chunk.id.startsWith("ktx2:"));
+      // Only the older encodes are read, and only to size them; the source
+      // pixels and every other chunk are carried over from the chunk table.
       return this.rewriteTexture(result.assetGuid, async (header, chunks, current) => {
         // A background job commits only while its guard still allows it for
         // the file it replaces, and only onto the source it encoded.
         if (!encodeJobMayWrite(result, current)) return null;
-        if (isOnBlockGrid(size) && !this.isAtlasTexture(result.assetGuid)) {
+        if (dropsOffGrid) {
           for (const [id, chunk] of chunks) {
-            if (id === chunkId || !(chunk.kind === "ktx2" || id.startsWith("ktx2:"))) continue;
+            if (!isRetainedKtx2(chunk) || isCarriedChunk(chunk)) continue;
             const retained = sniffKtx2Size(chunk.data);
             if (retained && !isOnBlockGrid(retained)) chunks.delete(id);
           }
@@ -1427,7 +1449,7 @@ export class AssetRegistry {
         payload.ktx2Sha256 = sha256;
         header.payload = payload;
         return { header, chunks };
-      });
+      }, undefined, (entry) => dropsOffGrid && isRetainedKtx2(entry));
     });
   }
 
@@ -1470,7 +1492,8 @@ export class AssetRegistry {
         await this.rewriteTexture(guid, async (current, chunks) => {
           signal.throwIfAborted();
           const pixels = [...chunks.values()].find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
-          if (!pixels || await sha256Hex(pixels.data) !== sourceEntry.sha256) throw new Error("The Texture changed during emission processing; stale results were discarded.");
+          // Every chunk is decoded here (no `load`), so none is carried without its bytes.
+          if (!pixels || isCarriedChunk(pixels) || await sha256Hex(pixels.data) !== sourceEntry.sha256) throw new Error("The Texture changed during emission processing; stale results were discarded.");
           for (const [id, chunk] of chunks) if (chunk.kind === AREA_EMISSION_CHUNK_KIND) chunks.delete(id);
           const id = areaEmissionChunkId(sourceEntry.sha256);
           chunks.set(id, { id, kind: AREA_EMISSION_CHUNK_KIND, mime: "application/x-babylonslate-area-emission", data: bytes });
@@ -1903,18 +1926,19 @@ export class AssetRegistry {
     return next;
   }
 
+  /**
+   * Read-modify-write of a Texture file. By default every chunk is decoded
+   * and verified. With `load`, only the chunks it selects are read; the others
+   * (the source pixels and older encodes, which a state or metadata change
+   * cannot affect) are carried over from the chunk table and reach `mutate`
+   * as carried entries without `data`. Anything that cannot be carried safely
+   * (a missing or short blob, a changed file) is decoded in full instead.
+   */
   private async rewriteTexture(
     guid: string,
-    mutate: (
-      header: Omit<BabassetHeader, "chunks">,
-      chunks: Map<string, ChunkInput>,
-      /** The header as read from disk, chunk sha256s included. */
-      current: BabassetHeader,
-    ) => Promise<{
-      header: Omit<BabassetHeader, "chunks">;
-      chunks: Map<string, ChunkInput>;
-    } | null>,
+    mutate: TextureRewrite,
     assertCurrent: () => void = () => {},
+    load?: (entry: ChunkEntry) => boolean,
   ): Promise<boolean> {
     const asset = this.byGuid.get(guid);
     // Encode state and derived chunks are never written into a read-only root.
@@ -1923,25 +1947,10 @@ export class AssetRegistry {
     const storage = this.storageForAsset(asset);
     const blobs = this.blobsForAsset(asset);
     const previousMtime = await this.statMtime(storage, asset.path);
-    const fileBytes = await storage.readBinary(asset.path);
-    const decoded = await decodeBabasset(fileBytes, (sha256) =>
-      blobs.readBlob(sha256),
-    );
-    const chunksById = new Map<string, ChunkInput>();
-    for (const entry of decoded.header.chunks) {
-      const data = decoded.chunks.get(entry.id);
-      if (data) {
-        chunksById.set(entry.id, {
-          id: entry.id,
-          kind: entry.kind,
-          mime: entry.mime,
-          data,
-        });
-      }
-    }
-    const { chunks, ...headerRest } = decoded.header;
+    const { header: stored, chunks: chunksById } = await this.readForRewrite(storage, blobs, asset.path, load);
+    const { chunks, ...headerRest } = stored;
     void chunks;
-    const next = await mutate({ ...headerRest }, chunksById, decoded.header);
+    const next = await mutate({ ...headerRest }, chunksById, stored);
     // Nothing to write (a refused guard).
     if (!next) return false;
     const bytes = await encodeBabasset({
@@ -1956,6 +1965,31 @@ export class AssetRegistry {
     this.indexHeader(asset.rootId, asset.path, header, false, mtime);
     this.ownWriteListener?.({ path: asset.path, previousMtime, mtime });
     return true;
+  }
+
+  /** The stored header and chunks of a file about to be rewritten; see `rewriteTexture`. */
+  private async readForRewrite(
+    storage: ProjectStorage,
+    blobs: BlobStore,
+    path: string,
+    load?: (entry: ChunkEntry) => boolean,
+  ): Promise<{ header: BabassetHeader; chunks: Map<string, EncodableChunk> }> {
+    if (load) {
+      try {
+        const stored = await readAssetCatalog(storage, path);
+        const carried = await carryStoredChunks(storage, blobs, stored, { load });
+        if (carried) return { header: stored.header, chunks: new Map(carried.map((chunk) => [chunk.id, chunk])) };
+      } catch {
+        // Decoded in full below, which reports an unreadable file as it always has.
+      }
+    }
+    const decoded = await decodeBabasset(await storage.readBinary(path), (sha256) => blobs.readBlob(sha256));
+    const chunks = new Map<string, EncodableChunk>();
+    for (const entry of decoded.header.chunks) {
+      const data = decoded.chunks.get(entry.id);
+      if (data) chunks.set(entry.id, { id: entry.id, kind: entry.kind, mime: entry.mime, data });
+    }
+    return { header: decoded.header, chunks };
   }
 
   /** Attach a representation chunk (facetype / msdf) to an existing Font asset. */

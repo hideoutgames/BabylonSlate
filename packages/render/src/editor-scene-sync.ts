@@ -1,6 +1,7 @@
 import { refreshJoystick2DMaterials } from "./joystick2d-mesh";
 import { Mesh, type AbstractMesh, type Camera, type Material, type Node, type Scene } from "@babylonjs/core";
 import { applyMaterialBounds } from "./material-bounds";
+import { withNetMaterialChanges } from "./material-change-batch";
 import { DEFAULT_SORTING_LAYERS, isSceneLayerAnchorActor, resolveOverlayLayout } from "@babylonslate/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
 import type {
@@ -104,6 +105,7 @@ export class EditorSceneSync {
     slotAnimEpoch: new Map<number, number>(),
     slotAnimationGroups: new Map(),
     slotAnimLoads: new Map<number, Promise<void>>(),
+    reuseFullDetailInstance: true,
   };
 
   constructor(
@@ -469,9 +471,7 @@ export class EditorSceneSync {
       const root = this.meshes.get(actor.id);
       if (root && !root.isDisposed()) {
         this.refreshEnvironmentComponents(actor, root, this.meshAssetsForScene(sceneData));
-        this.restoreMeshComponentConstruction(actor, root);
-        this.applyModelSlots(actor, root);
-        this.bindActorMeshMaterials(actor, root);
+        this.bindActorMaterials(actor, root);
       }
       yield 0.99;
     }
@@ -602,9 +602,20 @@ export class EditorSceneSync {
     applyEditorBillboardFromActor(mesh, actor);
     for (const child of visualMeshesOfActorRoot(mesh)) applyEditorBillboardFromActor(child, actor);
     applyActorComponentSorting(mesh, actor, this.sortingLayers);
-    this.restoreMeshComponentConstruction(actor, mesh);
-    this.applyModelSlots(actor, mesh);
-    this.bindActorMeshMaterials(actor, mesh);
+    this.bindActorMaterials(actor, mesh);
+  }
+
+  /**
+   * Construction, model slot, override and saved-instance Materials assign in
+   * turn; observers hear only the net result, so an unchanged actor announces
+   * nothing and does not make the renderer re-probe its shader variants.
+   */
+  private bindActorMaterials(actor: SerializedActor, root: Mesh): void {
+    withNetMaterialChanges([root, ...root.getChildMeshes(false)], () => {
+      this.restoreMeshComponentConstruction(actor, root);
+      this.applyModelSlots(actor, root);
+      this.bindActorMeshMaterials(actor, root);
+    });
   }
 
   pendingModelLoadCount(): number {
@@ -772,9 +783,7 @@ export class EditorSceneSync {
       ownsLoad,
       (prepared) => {
         if (!ownsLoad()) return;
-        this.restoreMeshComponentConstruction(actor, prepared);
-        this.applyModelSlots(actor, prepared);
-        this.bindActorMeshMaterials(actor, prepared);
+        this.bindActorMaterials(actor, prepared);
       },
       this.preparationPriority,
     );

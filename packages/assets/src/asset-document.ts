@@ -6,6 +6,7 @@ import {
   type BabassetHeader,
   type ChunkInput,
   type DecodedBabasset,
+  type EncodableChunk,
 } from "./babasset";
 import type { BlobStore } from "./blob-store";
 import { AccountedPayloadLoader, readAssetCatalog } from "./payload-loader";
@@ -52,7 +53,8 @@ export async function encodeAssetDocument(
   options: {
     engineVersion?: string;
     blobs?: BlobStore;
-    extraChunks?: readonly ChunkInput[];
+    /** Chunks beside the document body; carried ones keep their stored digest instead of being hashed again. */
+    extraChunks?: readonly EncodableChunk[];
     parentClass?: string | null;
     headerPayload?: Record<string, unknown>;
     /** Merged into the header payload without switching to header-only mode. */

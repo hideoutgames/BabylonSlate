@@ -726,6 +726,64 @@ describe("World tick", () => {
     expect(revision()).toBeGreaterThan(before);
   });
 
+  it("advances variablesRevision on every change a reader could see, for actors and components", () => {
+    const world = createTestWorld();
+    const actor = world.createActor({ classId: "Actor", variables: { health: 3 } });
+    const component = world.createComponent({ classId: "Probe", variables: { label: "a" } });
+    actor.attachComponent(component);
+    world.spawnActorNow(actor);
+    for (const object of [actor, component]) {
+      let seen = object.variablesRevision;
+      const advanced = () => {
+        const moved = object.variablesRevision !== seen;
+        seen = object.variablesRevision;
+        return moved;
+      };
+      object.setVariable("n", 1);
+      expect(advanced()).toBe(true);
+      object.setVariable("n", 1);
+      expect(advanced()).toBe(false);
+      object.variables.set("n", 2);
+      expect(advanced()).toBe(true);
+      const list = [1];
+      object.setVariable("list", list);
+      expect(advanced()).toBe(true);
+      list.push(2);
+      object.setVariable("list", list);
+      expect(advanced()).toBe(true);
+      object.setVariable("gone", undefined);
+      expect(advanced()).toBe(true);
+      object.setVariable("gone", undefined);
+      expect(advanced()).toBe(false);
+      expect(object.variables.delete("n")).toBe(true);
+      expect(advanced()).toBe(true);
+      expect(object.variables.delete("n")).toBe(false);
+      expect(advanced()).toBe(false);
+      object.variables.clear();
+      expect(advanced()).toBe(true);
+      object.variables.clear();
+      expect(advanced()).toBe(false);
+    }
+  });
+
+  it("still copies and freezes a collider shape written after construction", () => {
+    const world = createTestWorld();
+    const shape = { kind: "box", size: [1, 2, 3] };
+    const collider = world.createComponent({ classId: "ColliderComponent", variables: { shape } });
+    const constructed = collider.getVariable("shape") as typeof shape;
+    expect(constructed).toEqual(shape);
+    expect(constructed).not.toBe(shape);
+    expect(Object.isFrozen(constructed)).toBe(true);
+    const before = collider.variablesRevision;
+    const replacement = { kind: "box", size: [4, 5, 6] };
+    collider.setVariable("shape", replacement);
+    const stored = collider.getVariable("shape") as typeof replacement;
+    expect(stored).toEqual(replacement);
+    expect(stored).not.toBe(replacement);
+    expect(Object.isFrozen(stored.size)).toBe(true);
+    expect(collider.variablesRevision).not.toBe(before);
+  });
+
   it("produces identical snapshots for the same seed", () => {
     const run = (seed: number) => {
       const world = createTestWorld(seed);

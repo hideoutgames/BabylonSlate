@@ -966,6 +966,48 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(order()).toEqual(["guid-d", "guid-a", "guid-b", "guid-c", "guid-f"]);
   });
 
+  it("shows thumbnails a batch at a time while the later ones are still loading", async () => {
+    const assets = Array.from({ length: 6 }, (_, index) => texture(index));
+    installRegistry(assets);
+    const stalled = new Promise<Uint8Array>(() => {});
+    // The first batch of four reads at once; the rest never finishes.
+    loadAssetThumbnail.mockImplementation((guid) =>
+      Number(guid.slice("tex-".length)) < 4
+        ? Promise.resolve(new Uint8Array([137, 80, 78, 71]))
+        : stalled);
+    let sequence = 0;
+    const createUrl = vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:batch-${++sequence}`);
+    const imageFor = (asset: IndexedAsset) =>
+      screen.getByTestId(`content-item-${asset.path}`).querySelector("img");
+    try {
+      render(<ContentBrowserWorkspace />);
+      await waitFor(() => expect(imageFor(assets[3]!)).not.toBeNull());
+      expect(imageFor(assets[0]!)).not.toBeNull();
+      expect(imageFor(assets[4]!)).toBeNull();
+      expect(imageFor(assets[5]!)).toBeNull();
+    } finally {
+      createUrl.mockRestore();
+      loadAssetThumbnail.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    }
+  });
+
+  it("reads thumbnails once for changes that arrive together instead of once per change", async () => {
+    installRegistry([texture(0)]);
+    const { rerender } = render(<ContentBrowserWorkspace />);
+    await waitFor(() => expect(loadAssetThumbnail).toHaveBeenCalledTimes(1));
+    loadAssetThumbnail.mockClear();
+
+    // Two captures land back to back, as a scroll changes the mounted tiles row after row.
+    docs.thumbnailVersions = { "tex-0": 1 };
+    rerender(<ContentBrowserWorkspace />);
+    docs.thumbnailVersions = { "tex-0": 2 };
+    rerender(<ContentBrowserWorkspace />);
+
+    await waitFor(() => expect(loadAssetThumbnail).toHaveBeenCalledWith("tex-0"));
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(loadAssetThumbnail).toHaveBeenCalledTimes(1);
+  });
+
   it("does not decode thumbnails while CSS-hidden", async () => {
     loadAssetThumbnail.mockClear();
     render(<ContentBrowserWorkspace hidden />);
@@ -1024,6 +1066,12 @@ describe("ContentBrowserWorkspace grid window", () => {
       rerender(<ContentBrowserWorkspace />);
       await waitFor(() => expect(screen.getByTestId(`content-item-${animation.path}`).querySelector("img")).not.toBeNull());
       const oldUrl = screen.getByTestId(`content-item-${model.path}`).querySelector("img")!.getAttribute("src");
+      let srcWhenRevoked: string | null | undefined;
+      revokeUrl.mockImplementation((url) => {
+        if (url === oldUrl) {
+          srcWhenRevoked = screen.getByTestId(`content-item-${model.path}`).querySelector("img")?.getAttribute("src");
+        }
+      });
       docs.thumbnailVersions = { ...docs.thumbnailVersions, [model.header.guid]: 2 };
       rerender(<ContentBrowserWorkspace />);
       await waitFor(() => {
@@ -1031,7 +1079,10 @@ describe("ContentBrowserWorkspace grid window", () => {
         expect(image).not.toBeNull();
         expect(image!.getAttribute("src")).not.toBe(oldUrl);
       });
-      expect(revokeUrl).toHaveBeenCalledWith(oldUrl);
+      // The replaced URL is revoked once the new one has rendered, not while the old image still shows it.
+      await waitFor(() => expect(revokeUrl).toHaveBeenCalledWith(oldUrl));
+      expect(srcWhenRevoked).toBeTruthy();
+      expect(srcWhenRevoked).not.toBe(oldUrl);
     } finally {
       createUrl.mockRestore();
       revokeUrl.mockRestore();
@@ -1086,8 +1137,10 @@ describe("ContentBrowserWorkspace grid window", () => {
       expect(imageFor(unchanged.path)).toBe(textureImage);
       expect(textureImage.getAttribute("src")).toBe(textureUrl);
       expect(loadAssetThumbnail).not.toHaveBeenCalledWith(unchanged.header.guid);
-      expect(revokeUrl).toHaveBeenCalledWith(modelUrl);
-      expect(revokeUrl).toHaveBeenCalledWith(animationUrl);
+      await waitFor(() => {
+        expect(revokeUrl).toHaveBeenCalledWith(modelUrl);
+        expect(revokeUrl).toHaveBeenCalledWith(animationUrl);
+      });
       expect(revokeUrl).not.toHaveBeenCalledWith(textureUrl);
     } finally {
       createUrl.mockRestore();

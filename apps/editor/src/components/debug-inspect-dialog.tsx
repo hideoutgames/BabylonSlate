@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { DebugInspectNode, DebugInspectSnapshot } from "@babylonslate/object-model";
 import {
   PropertyGrid,
@@ -29,6 +29,8 @@ import {
   flattenInspectTree,
   nextInspectSelection,
 } from "../lib/play-inspect-tree";
+import type { InspectWorldStore } from "../lib/inspect-world-store";
+import { useRetainedValue } from "../lib/use-retained-value";
 import {
   playInspectIdentityRows,
   playInspectTransformRows,
@@ -43,14 +45,17 @@ export type DebugInspectDialogProps = {
   onExecute?: (line: string) => Promise<CommandResult>;
 };
 
+const NO_NODES: DebugInspectNode[] = [];
+const NO_TREE_NODES: TreeViewNode[] = [];
+const NO_DETAILS: InspectDetails = { selected: null, hasCamera: false };
+
+type InspectDetails = { selected: DebugInspectNode | null; hasCamera: boolean };
+
 function inspectTypeVisual(
   node: DebugInspectNode,
-  nodes: DebugInspectNode[],
+  components: DebugInspectNode[],
 ) {
   if (node.kind === "actor") {
-    const components = nodes.filter(
-      (child) => child.parentId === node.id && child.kind === "component",
-    );
     return resolveActorTypeVisual({
       classId: node.classId,
       ancestry: node.ancestry,
@@ -62,6 +67,71 @@ function inspectTypeVisual(
     ancestry: node.ancestry,
     family: "class",
   });
+}
+
+/**
+ * Type glyph of a tree row. It resolves when the row renders, so a snapshot
+ * with thousands of nodes resolves only the rows the tree mounts.
+ */
+function InspectNodeIcon({
+  node,
+  components,
+}: {
+  node: DebugInspectNode;
+  components: DebugInspectNode[];
+}) {
+  return <TypeVisualIcon visual={inspectTypeVisual(node, components)} />;
+}
+
+/** The tree rows of a snapshot: expanded by default, all expanded while searching. */
+function inspectTreeNodes(
+  nodes: DebugInspectNode[],
+  collapsedIds: ReadonlySet<string>,
+  search: string,
+): TreeViewNode[] {
+  const parentIds = new Set<string>();
+  const componentsByActor = new Map<string, DebugInspectNode[]>();
+  for (const node of nodes) {
+    if (node.parentId) {
+      parentIds.add(node.parentId);
+    }
+    // An actor row reads its components here instead of scanning every node.
+    if (node.kind === "component" && node.parentId !== null) {
+      const components = componentsByActor.get(node.parentId);
+      if (components) components.push(node);
+      else componentsByActor.set(node.parentId, [node]);
+    }
+  }
+  const expandedIds = new Set<string>();
+  for (const id of parentIds) {
+    if (!collapsedIds.has(id)) {
+      expandedIds.add(id);
+    }
+  }
+  const searching = search.trim().length > 0;
+  return flattenInspectTree(nodes, expandedIds, search).map((row) => ({
+    id: row.id,
+    label: row.label,
+    depth: row.depth,
+    hasChildren: row.hasChildren,
+    expanded: searching ? true : expandedIds.has(row.id),
+    icon: <InspectNodeIcon node={row} components={componentsByActor.get(row.id) ?? NO_NODES} />,
+  }));
+}
+
+function inspectDetails(nodes: DebugInspectNode[], selectedId: string | null): InspectDetails {
+  const selected = nodes.find((node) => node.id === selectedId) ?? null;
+  return {
+    selected,
+    hasCamera:
+      selected?.kind === "actor" &&
+      nodes.some(
+        (node) =>
+          node.parentId === selected.id &&
+          node.kind === "component" &&
+          node.classId === "CameraComponent",
+      ),
+  };
 }
 
 /** Play inspector: live values and session-only actor debug actions. */
@@ -79,50 +149,24 @@ export function DebugInspectDialog({
   const [actionPending, setActionPending] = useState(false);
   const [actionResult, setActionResult] = useState<string | null>(null);
 
-  const parentIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const node of snapshot.nodes) {
-      if (node.parentId) {
-        ids.add(node.parentId);
-      }
-    }
-    return ids;
-  }, [snapshot.nodes]);
-
-  const expandedIds = useMemo(() => {
-    const next = new Set<string>();
-    for (const id of parentIds) {
-      if (!collapsedIds.has(id)) {
-        next.add(id);
-      }
-    }
-    return next;
-  }, [collapsedIds, parentIds]);
-
-  const rows = useMemo(
-    () => flattenInspectTree(snapshot.nodes, expandedIds, search),
-    [expandedIds, search, snapshot.nodes],
-  );
-
-  const treeNodes: TreeViewNode[] = useMemo(
-    () =>
-      rows.map((row) => ({
-        id: row.id,
-        label: row.label,
-        depth: row.depth,
-        hasChildren: row.hasChildren,
-        expanded: search.trim() ? true : expandedIds.has(row.id),
-        icon: (
-          <TypeVisualIcon visual={inspectTypeVisual(row, snapshot.nodes)} />
-        ),
-      })),
-    [expandedIds, rows, search, snapshot.nodes],
+  // The console polls snapshots while this dialog is closed. Closed, a
+  // snapshot costs the selection check below and nothing else; the tree and
+  // details are built for an open dialog and kept while it fades out.
+  const treeNodes = useRetainedValue(
+    useMemo(
+      () => (open ? inspectTreeNodes(snapshot.nodes, collapsedIds, search) : null),
+      [collapsedIds, open, search, snapshot.nodes],
+    ),
+    NO_TREE_NODES,
   );
 
   const effectiveId = nextInspectSelection(selectedId, snapshot.nodes);
-  const selected = snapshot.nodes.find((node) => node.id === effectiveId) ?? null;
-  const selectedHasCamera = selected?.kind === "actor" && snapshot.nodes.some(
-    (node) => node.parentId === selected.id && node.kind === "component" && node.classId === "CameraComponent",
+  const { selected, hasCamera: selectedHasCamera } = useRetainedValue(
+    useMemo(
+      () => (open ? inspectDetails(snapshot.nodes, effectiveId) : null),
+      [effectiveId, open, snapshot.nodes],
+    ),
+    NO_DETAILS,
   );
   const executeAction = async (command: "possess" | "destroyactor") => {
     if (!onExecute || selected?.kind !== "actor" || actionPending) return;
@@ -253,4 +297,16 @@ export function DebugInspectDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * The Play inspector over a polled snapshot store. It subscribes itself, so
+ * the owner that polls does not re-render per snapshot.
+ */
+export function ConnectedDebugInspectDialog({
+  store,
+  ...props
+}: Omit<DebugInspectDialogProps, "snapshot"> & { store: InspectWorldStore }) {
+  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  return <DebugInspectDialog {...props} snapshot={snapshot} />;
 }

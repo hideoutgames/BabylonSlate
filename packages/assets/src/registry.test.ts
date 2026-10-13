@@ -895,10 +895,11 @@ describe("AssetRegistry", () => {
     let release!: () => void;
     const reading = new Promise<void>((resolve) => { entered = resolve; });
     const gate = new Promise<void>((resolve) => { release = resolve; });
-    const read = storage.readBinary.bind(storage);
-    vi.spyOn(storage, "readBinary").mockImplementation(async (path, options) => {
-      if (path === "plugin/assets/tex.babasset") { entered(); await gate; }
-      return read(path, options);
+    // A state write reads only the header of the file it replaces.
+    const read = storage.readBinaryRange.bind(storage);
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (...args) => {
+      if (args[0] === "plugin/assets/tex.babasset") { entered(); await gate; }
+      return read(...args);
     });
     const write = registry.setCompressionState("plugin-tex", "encode_failed", { error: "boom" });
     await reading;
