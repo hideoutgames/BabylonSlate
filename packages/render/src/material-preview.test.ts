@@ -892,17 +892,22 @@ describe("material preview presenter", () => {
       expect(render).toHaveBeenCalledTimes(2);
     });
 
-    it("keeps drawing while an animation is running", async () => {
+    it("keeps drawing while an animation is running and idles once it ends", async () => {
       const host = await previewHost();
       const spin = new Animation("spin", "rotation.y", 30, Animation.ANIMATIONTYPE_FLOAT, Animation.ANIMATIONLOOPMODE_CYCLE);
       spin.setKeys([{ frame: 0, value: 0 }, { frame: 30, value: Math.PI }]);
-      host.scene.beginDirectAnimation(host.mesh, [spin], 0, 30, true);
+      const clip = host.scene.beginDirectAnimation(host.mesh, [spin], 0, 30, true);
       const render = vi.spyOn(host.scene, "render");
       const presenter = await staticPresenter(host, new FakeCanvas());
       for (let frame = 0; frame < 3; frame += 1) {
         presenter.present();
         await readbackDone();
       }
+      expect(render).toHaveBeenCalledTimes(3);
+
+      clip.stop();
+      presenter.present();
+      presenter.present();
       expect(render).toHaveBeenCalledTimes(3);
     });
 

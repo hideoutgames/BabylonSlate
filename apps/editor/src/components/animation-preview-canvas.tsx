@@ -114,7 +114,12 @@ export function AnimationPreviewCanvas({
           if (!cancelled) setClip(STOPPED_CLIP);
         });
         playingRef.current = group;
-        presenter = createMaterialPreviewPresenter(host, canvas, { maxFps: 30, suspended: overlay.isOpen });
+        // A playing clip keeps the presenter awake through the Scene's animatables; once it ends the frame is final.
+        presenter = createMaterialPreviewPresenter(host, canvas, {
+          maxFps: 30,
+          staticContent: true,
+          suspended: overlay.isOpen,
+        });
         gestures = attachMaterialPreviewGestures(canvas, host.camera, {
           onChange: () => presenter?.present({ force: true }),
         });
