@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CascadedShadowGenerator,
   DirectionalLight,
   Material,
   Matrix,
@@ -26,6 +27,7 @@ import { attachModelLods, generateModelLods } from "./model-lod";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
+import { enableHeadlessCascades } from "./shadow-test-fixtures";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -337,7 +339,7 @@ describe("local shadow refresh", () => {
     expect(render()).toBe(6);
   });
 
-  it("invalidates local depth changes while continuing to render camera-dependent sun maps", async () => {
+  it("invalidates local depth changes while a single-map sun, whose custom projection follows the camera, renders every frame", async () => {
     const { scene, camera, light, controller, generator, render } =
       await fixture();
     const sun = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
@@ -458,6 +460,116 @@ describe("local shadow refresh", () => {
     expect(render()).toBe(6);
     expect(scene.floatingOriginOffset.equals(oldOrigin)).toBe(false);
     expect(render()).toBe(0);
+  });
+});
+
+/** A cascaded sun over two boxes, drawn through the real native path. */
+async function cascadedSun() {
+  const engine = new NullEngine();
+  engines.push(engine);
+  Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16 });
+  enableHeadlessCascades(engine);
+  const scene = new Scene(engine);
+  const camera = new UniversalCamera("camera", new Vector3(0, 3, -12), scene);
+  camera.setTarget(Vector3.Zero());
+  scene.activeCamera = camera;
+  updateSceneRenderingSettings(scene, {
+    shadows: normalizeShadowSettings({ cascades: 2, distance: 40, mapSize: 512, maxLocalLights: 1 }),
+  });
+  const added = new Promise<void>((resolve) => scene.onNewMeshAddedObservable.addOnce(() => resolve()));
+  const material = new StandardMaterial("opaque", scene);
+  const box = (name: string, x: number) => {
+    const mesh = MeshBuilder.CreateBox(name, {}, scene);
+    mesh.position.set(x, 1, 0);
+    mesh.material = material;
+    return mesh;
+  };
+  const near = box("near caster", 2);
+  // Far from every cascade.
+  const distant = box("distant caster", 200);
+  const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene);
+  const controller = sceneShadowController(scene);
+  controller.register(sun, true);
+  await added;
+  controller.sync();
+  const generator = controller.generator(sun) as CascadedShadowGenerator;
+  expect(generator).toBeInstanceOf(CascadedShadowGenerator);
+  const map = generator.getShadowMap()!;
+  await material.forceCompilationAsync(near);
+  await generator.forceCompilationAsync();
+  let binds = 0;
+  const bindFramebuffer = engine.bindFramebuffer.bind(engine);
+  vi.spyOn(engine, "bindFramebuffer").mockImplementation((target, ...args) => {
+    if (target === map.renderTarget) binds++;
+    bindFramebuffer(target, ...args);
+  });
+  /** Times the sun map was drawn (every cascade) by one scene frame. */
+  const render = () => {
+    const before = binds;
+    scene.render();
+    return (binds - before) / generator.numCascades;
+  };
+  /** A render feeds the next frame's snapshot once (its derived bias), then the map stays cached. */
+  const settle = () => {
+    for (let frame = 0; frame < 5; frame++) if (render() === 0) return;
+    throw new Error("The sun map kept redrawing.");
+  };
+  expect(render()).toBeGreaterThan(0);
+  settle();
+  return { scene, camera, sun, map, near, distant, render, settle };
+}
+
+describe("cascaded sun refresh", () => {
+  it("keeps the cascades cached while nothing that shapes them changes", async () => {
+    const { render } = await cascadedSun();
+    expect([render(), render(), render()]).toEqual([0, 0, 0]);
+  });
+
+  it.each([
+    ["the camera moves", ({ camera }) => { camera.position.x += 1; }],
+    ["the camera zooms", ({ camera }) => { camera.fov *= 1.2; }],
+    ["the light turns", ({ sun }) => { sun.direction = new Vector3(-0.3, -1, 0.2); }],
+    ["a caster in a cascade moves", ({ near }) => { near.position.z += 1; }],
+  ] as [string, (sun: Awaited<ReturnType<typeof cascadedSun>>) => void][])(
+    "redraws once, then caches again, when %s",
+    async (_name, change) => {
+      const sun = await cascadedSun();
+      change(sun);
+      expect(sun.render()).toBe(1);
+      sun.settle();
+      expect([sun.render(), sun.render()]).toEqual([0, 0]);
+    },
+  );
+
+  it("redraws when a readiness probe left the cascades fitted to another pose", async () => {
+    const { camera, map, render, settle } = await cascadedSun();
+    const home = camera.position.clone();
+    // A probe (here under a moved camera, as another view's would be) refits the
+    // cascades the receivers use without drawing the retained depth again.
+    camera.position.x += 5;
+    map.isReadyForRendering();
+    camera.position.copyFrom(home);
+    expect(render()).toBe(1);
+    settle();
+    expect(render()).toBe(0);
+  });
+
+  it("redraws every frame while a caster that changes without notice reaches a cascade", async () => {
+    const { near, render, settle } = await cascadedSun();
+    const hook = near.onBeforeRenderObservable.add(() => {});
+    expect([render(), render(), render()]).toEqual([1, 1, 1]);
+    near.onBeforeRenderObservable.remove(hook);
+    settle();
+    expect(render()).toBe(0);
+  });
+
+  it("ignores casters no cascade can reach, whether static, hooked or skinned", async () => {
+    const { scene, distant, render } = await cascadedSun();
+    distant.position.x += 1;
+    expect(render()).toBe(0);
+    distant.onBeforeRenderObservable.add(() => {});
+    distant.skeleton = new Skeleton("rig", "rig", scene);
+    expect([render(), render()]).toEqual([0, 0]);
   });
 });
 

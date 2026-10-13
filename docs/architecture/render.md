@@ -1008,6 +1008,23 @@ changes also invalidate. Maps keep their allocation and unchanged frames allocat
 signature arrays; each local map tests every caster's bounding sphere against its range
 once per frame. Diagnostics expose `on-change` or `continuous`.
 
+**Cascaded sun maps.** A cascaded sun (`CascadedShadowGenerator`) is cached like a local
+map. Babylon refits the cascades to the camera whenever the map binds, a readiness probe
+(possibly another camera's) included, and receivers then use that fit. So the snapshot
+records what a fresh fit depends on: the camera's view and projection, the light direction
+and the cascade settings (count, lambda, shadow distance, stabilization, depth clamp), and
+a clear observer keeps the cascade matrices of the last actual pass: if the generator holds
+different ones, a probe refit it and the map re-renders before it is sampled. A camera
+move, light turn, settings change or such a refit re-renders the cascades once; changes of
+the casters' union bounds alone do not. Casters follow the local-map rule against the cascades'
+light-space rectangles (from the last fit; depth is ignored because casters toward the
+light clamp into the map): one that cannot reach any rectangle is not drawn into the map,
+so its changes, and its unsafe content (animated, skinned, hooked), leave the map cached;
+deforming casters get twice their radius. An unsafe caster that reaches a cascade, a scene
+clip plane or custom shader options keeps the map continuous. A render's derived bias, or
+rectangles that moved with the camera, can cost one more render after motion stops. A
+single-map sun (one cascade, custom projection) still renders every frame.
+
 **Local depth range.** A point/spot map's depth ends at its light's range
 (`fitLocalShadowDepth` sets `shadowMaxZ`) instead of the camera's far plane, unless the
 range reaches that far plane. Each cube face or spot frustum therefore culls casters

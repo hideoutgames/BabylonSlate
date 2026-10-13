@@ -1,20 +1,23 @@
 import {
+  CascadedShadowGenerator,
   DirectionalLight,
   Matrix,
   Mesh,
   RenderTargetTexture,
   VertexBuffer,
   type AbstractMesh,
+  type Camera,
   type Geometry,
   type Scene,
   type ShadowGenerator,
+  type Vector3,
 } from "@babylonjs/core";
 import { canCacheShadowMaterial } from "./shadow-material-policy";
 import { hasRevisionTrackedCableGeometry } from "./cable-mesh";
 import { hasRevisionTrackedDynamicMesh } from "./dynamic-runtime-mesh";
 import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";
 import { isAutoLodMaster, peekAutoLodLevel } from "./model-lod";
-import { casterWithinShadowRange } from "./shadow-mesh-policy";
+import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 
 /** Reused scalar/object snapshot; unchanged frames allocate no signature arrays. */
 class Snapshot {
@@ -35,6 +38,9 @@ class Snapshot {
   }
 }
 
+/** Cascade transform matrices (4 x 16) of a cascaded map's last actual pass. */
+type DrawnFit = { matrices: Float64Array; valid: boolean };
+
 type Caster = {
   snapshot: Snapshot;
   geometry: Geometry | null;
@@ -49,12 +55,40 @@ type Caster = {
 };
 
 /**
- * Per-map invalidation for local maps with static opaque content. A local map
+ * Whether a world sphere may touch the light-space rectangle of any cascade
+ * (given as transform matrices with the world scale of their x and y axes).
+ * Depth is ignored: casters toward the light are clamped into the map.
+ */
+function reachesCascade(
+  matrices: readonly ArrayLike<number>[],
+  scales: Float64Array,
+  center: Vector3,
+  radius: number,
+): boolean {
+  for (let cascade = 0; cascade < matrices.length; cascade++) {
+    const m = matrices[cascade]!;
+    const x = center.x * m[0]! + center.y * m[4]! + center.z * m[8]! + m[12]!;
+    const y = center.x * m[1]! + center.y * m[5]! + center.z * m[9]! + m[13]!;
+    // Negated so a non-finite value stays inside, never wrongly outside.
+    if (!(Math.abs(x) > 1 + radius * scales[2 * cascade]! || Math.abs(y) > 1 + radius * scales[2 * cascade + 1]!)) return true;
+  }
+  return false;
+}
+
+/**
+ * Per-map invalidation for shadow maps with static opaque content. A local map
  * tracks only casters within its light's range: elsewhere a caster cannot
- * reach the map, whose depth range ends at that range.
+ * reach the map, whose depth range ends at that range. A cascaded sun map
+ * tracks the camera, the light and its own cascade settings, and only the
+ * casters that can reach a cascade's light-space rectangle. A single-map sun
+ * (custom projection) is always drawn.
  */
 export class ShadowMapRefresh {
   private readonly casters = new Map<AbstractMesh, Caster>();
+  /** Scratch for the cascaded map being applied: transform matrices, then x/y axis scales per cascade. */
+  private readonly cascadeMatrices: ArrayLike<number>[] = [];
+  private readonly cascadeScales = new Float64Array(8);
+  private readonly drawnFits = new WeakMap<RenderTargetTexture, DrawnFit>();
   private readonly maps = new WeakMap<ShadowGenerator, Snapshot>();
   /** Drawn level of each visible automatic-LOD caster for the scene camera. */
   private readonly lodLevels = new Map<AbstractMesh, number>();
@@ -256,13 +290,15 @@ export class ShadowMapRefresh {
     state.value(generator.transparencyShadow);
     state.value(generator.enableSoftTransparentShadow);
     state.value(generator.useOpacityTextureForTransparentShadow);
-    const directional = light instanceof DirectionalLight;
+    const cascadedSun = generator instanceof CascadedShadowGenerator ? generator : null;
     let continuous =
       this.continuous ||
-      directional ||
+      (light instanceof DirectionalLight && !cascadedSun) ||
       !!light.customProjectionMatrixBuilder ||
       !!generator.customShaderOptions;
-    if (!continuous) {
+    if (!continuous && cascadedSun) {
+      continuous = this.trackCascades(cascadedSun, map, state);
+    } else if (!continuous) {
       // A local map re-renders once when a caster within its range changes,
       // enters or leaves, or changes the level the camera draws; unrelated
       // casters elsewhere in the scene do not touch it.
@@ -288,6 +324,90 @@ export class ShadowMapRefresh {
     // No completion observer: readiness probes also emit onAfterUnbind without
     // drawing. Babylon consumes the refresh only at its real target-render gate,
     // and retries automatically when a caster's shader is not ready.
+  }
+
+  /**
+   * Records what a cascaded sun map is fitted and drawn from, and reports
+   * whether content that changes without a tracked state change reaches it.
+   *
+   * Babylon refits the cascades whenever the map binds, a readiness probe
+   * (possibly another camera's) included, and the receivers then use that fit.
+   * So the snapshot holds what a fresh fit depends on and a render must follow:
+   * the camera's view and projection, the cascade settings and, from the
+   * caller, the light direction. Separately, the fit the generator holds must be
+   * the one of the pass that drew the retained depth: a probe that refit it
+   * differently marks the snapshot changed. The casters follow the local-map
+   * rule: one that cannot reach any cascade's light-space rectangle is not drawn
+   * into the map (deforming geometry gets twice its bounding radius, as for a
+   * local range).
+   */
+  private trackCascades(generator: CascadedShadowGenerator, map: RenderTargetTexture, state: Snapshot): boolean {
+    const camera: Camera | null = generator.camera ?? generator.getLight().getScene().activeCamera;
+    const view = camera?.getViewMatrix().m;
+    const projection = camera?.getProjectionMatrix().m;
+    for (let index = 0; index < 16; index++) {
+      state.value(view?.[index]);
+      state.value(projection?.[index]);
+    }
+    state.value(generator.numCascades);
+    state.value(generator.lambda);
+    state.value(generator.shadowMaxZ);
+    state.value(generator.stabilizeCascades);
+    state.value(generator.depthClamp);
+    // The held fit places each cascade for the reach test. It is stale only
+    // after a camera or light change, which renders the map this frame anyway.
+    const drawn = this.drawnFit(generator, map);
+    let refit = !drawn.valid;
+    const matrices = this.cascadeMatrices;
+    matrices.length = 0;
+    for (let cascade = 0; cascade < generator.numCascades; cascade++) {
+      const m = generator.getCascadeTransformMatrix(cascade)?.m;
+      if (!m) {
+        // No fit to test against: every caster may reach.
+        matrices.length = 0;
+        refit = true;
+        break;
+      }
+      for (let index = 0; index < 16; index++) if (drawn.matrices[16 * cascade + index] !== m[index]) refit = true;
+      this.cascadeScales[2 * cascade] = Math.hypot(m[0]!, m[4]!, m[8]!);
+      this.cascadeScales[2 * cascade + 1] = Math.hypot(m[1]!, m[5]!, m[9]!);
+      matrices.push(m);
+    }
+    if (refit) state.changed = true;
+    for (const [mesh, record] of this.casters) {
+      if (matrices.length) {
+        const sphere = mesh.getBoundingInfo().boundingSphere;
+        const center = sphere.centerWorld;
+        const radius = sphere.radiusWorld;
+        if (!reachesCascade(matrices, this.cascadeScales, center, radius) &&
+          !(reachesCascade(matrices, this.cascadeScales, center, 2 * radius) && hasDeformingShadowBounds(mesh)))
+          continue;
+      }
+      if (record.unsafe) return true;
+      state.value(mesh);
+      state.value(record.revision);
+      const level = this.lodLevels.get(mesh);
+      if (level !== undefined) state.value(level);
+    }
+    return false;
+  }
+
+  /** The cascade matrices of the map's last actual pass, kept by a clear observer. */
+  private drawnFit(generator: CascadedShadowGenerator, map: RenderTargetTexture): DrawnFit {
+    const existing = this.drawnFits.get(map);
+    if (existing) return existing;
+    const fit: DrawnFit = { matrices: new Float64Array(16 * 4), valid: false };
+    this.drawnFits.set(map, fit);
+    // Only an actual pass clears (probes emit the other render events), and the
+    // map refit its cascades for that pass before it did.
+    map.onClearObservable.add(() => {
+      for (let cascade = 0; cascade < generator.numCascades; cascade++) {
+        const m = generator.getCascadeTransformMatrix(cascade)?.m;
+        if (m) for (let index = 0; index < 16; index++) fit.matrices[16 * cascade + index] = m[index]!;
+      }
+      fit.valid = true;
+    });
+    return fit;
   }
 
   dispose(): void {
