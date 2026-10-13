@@ -105,6 +105,7 @@ export class EditorSceneSync {
     slotAnimEpoch: new Map<number, number>(),
     slotAnimationGroups: new Map(),
     slotAnimLoads: new Map<number, Promise<void>>(),
+    reuseFullDetailInstance: true,
   };
 
   constructor(
