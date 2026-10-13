@@ -42,7 +42,7 @@ import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
 import { MaterialLibrary } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
-import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_FIRST_FRAME_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
+import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_FIRST_FRAME_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { SharedOutlineView } from "./shared-outline";
@@ -943,7 +943,11 @@ describe("Play createEngine view", () => {
         await frame;
         expect(state).toBe("ready");
       } else {
+        // The unblocked fence wait spans the driver's compile of the draw, which can outlast 15 s.
         await vi.advanceTimersByTimeAsync(11_000);
+        expect(state).toBe("pending");
+        expect(cancel).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(SCENE_DRIVER_COMPILE_TIMEOUT_MS - 16_000);
         expect(await frame).toMatchObject({ message: expect.stringContaining("loading deadline") });
         expect(state).toBe("failed");
         expect(cancel).toHaveBeenCalledOnce();
