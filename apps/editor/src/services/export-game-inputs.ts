@@ -26,7 +26,7 @@ import {
   type BabassetHeader,
   type IndexedAsset,
 } from "@babylonslate/assets";
-import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
+import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation/chunk";
 import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
 
 const JSON_TYPES = new Set<string>([

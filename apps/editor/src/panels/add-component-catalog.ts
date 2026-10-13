@@ -1,6 +1,6 @@
 import { UI_CONTROL_2D_CLASS_IDS, OVERLAY_LAYOUT_CLASSES } from "@babylonslate/core";
 import type { PhysicsWorldKind, SerializedComponent, SerializedScene, ViewportMode } from "@babylonslate/core";
-import { defaultComponentAuthoringProperties } from "@babylonslate/runtime";
+import { defaultComponentAuthoringProperties } from "@babylonslate/runtime/component-authoring";
 import { humanizePropertyLabel, walkAncestry } from "@babylonslate/editor-kit";
 import { isLockedEngineClassId, isSceneLayerAllowedComponent, isSceneLayerExclusiveComponent } from "@babylonslate/object-model";
 import {
