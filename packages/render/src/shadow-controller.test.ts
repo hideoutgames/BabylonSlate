@@ -304,6 +304,39 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     expect(casters()).toEqual(["spawned", "sibling"]);
   });
+  it("lets a removal win over Babylon's deferred add, and registers a mesh that returns to the Scene", async () => {
+    const { scene, controller } = fixture();
+    const light = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
+    controller.register(light, true);
+    controller.sync();
+    const casters = () => controller.generator(light)?.getShadowMap()?.renderList ?? [];
+    const added = (target: ReturnType<typeof MeshBuilder.CreateBox>) =>
+      new Promise<void>((resolve) =>
+        scene.onNewMeshAddedObservable.add((mesh) => {
+          if (mesh === target) resolve();
+        }),
+      );
+    // Leaves the Scene (still alive) before the add notification arrives.
+    const proxy = MeshBuilder.CreateBox("proxy", {}, scene);
+    const proxyAdded = added(proxy);
+    scene.removeMesh(proxy);
+    await proxyAdded;
+    controller.sync();
+    expect(casters()).not.toContain(proxy);
+    // Returning to the Scene registers it again.
+    const returned = added(proxy);
+    scene.addMesh(proxy);
+    await returned;
+    controller.sync();
+    expect(casters()).toContain(proxy);
+    scene.removeMesh(proxy);
+    expect(casters()).not.toContain(proxy);
+    const again = added(proxy);
+    scene.addMesh(proxy);
+    await again;
+    controller.sync();
+    expect(casters()).toContain(proxy);
+  });
   it("adapts Low to admitted map dimensions and updates projection and allocation in the current draw", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
