@@ -2291,6 +2291,38 @@ describe("project documents as .babasset", () => {
     }
   });
 
+  it("reads a document again before giving up on it when the read that ran ahead failed", async () => {
+    const { storage, service } = await scaffolded();
+    await storage.writeBinary("assets/wall.babasset", await encodeAssetDocument({
+      type: "Texture", name: "wall", guid: "tex-1", version: 1, payload: { usage: "albedo" },
+    }));
+    const names = ["a", "b", "c"];
+    const paths = names.map((name) => `assets/${name}.sprite.babasset`);
+    for (const [index, path] of paths.entries()) {
+      await storage.writeBinary(path, await encodeAssetDocument(
+        { type: "Sprite", name: names[index]!, guid: `${names[index]}-1`, version: 1, payload: { textureGuid: "tex-1", pixelsPerUnit: 100, frames: [], clips: [] } },
+        { dependencies: ["tex-1"] },
+      ));
+    }
+    await service.remountRegistry();
+    await service.registry!.deleteAsset("tex-1");
+    // The first read of "b" fails, as one does when a plugin root is unmounted for a moment while it is in flight.
+    const read = storage.readBinaryRange.bind(storage);
+    let failedOnce = false;
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, ...rest) => {
+      if (path === paths[1] && !failedOnce) { failedOnce = true; throw new Error("Content root is remounting"); }
+      return read(path, ...rest);
+    });
+
+    const failed = await service.clearDeletedAssetReferences(new Set(["tex-1"]));
+
+    expect(failedOnce).toBe(true);
+    expect(failed).toEqual([]);
+    for (const path of paths) {
+      expect((await service.loadDocument("sprite", path) as { textureGuid: string | null }).textureGuid).toBeNull();
+    }
+  });
+
   it("repairs a reference stored in a field the header dependency metadata does not describe", async () => {
     const { storage, service } = await scaffolded();
     await storage.writeBinary("assets/wall.babasset", await encodeAssetDocument({

@@ -307,7 +307,7 @@ export type PluginImportResult =
  */
 const SCENE_AUDIO_REVERB_RESULTS = 4;
 
-/** Documents whose stored payloads are requested ahead of the one a delete repair is rewriting. */
+/** Stored payloads requested at once by a delete repair: the document being repaired plus the three after it. */
 const DELETE_REPAIR_READS = 4;
 
 /**
@@ -1992,9 +1992,17 @@ export class ProjectService {
         | Record<string, unknown>;
       try {
         const position = repairableIndex.get(asset);
-        content = position === undefined
-          ? await this.loadDocument(kind, asset.path)
-          : this.documentContent(kind, asset.path, await readStored(repairable, position));
+        let stored: { type: string; version: number; payload: Record<string, unknown> } | undefined;
+        if (position !== undefined) {
+          // A save that syncs plugins unmounts and remounts their roots, which can fail a read
+          // that was already in flight for a plugin document. Such a document is read again, as
+          // a serial pass would have read it now, before it is given up on.
+          try { stored = await readStored(repairable, position); }
+          catch { stored = undefined; }
+        }
+        content = stored
+          ? this.documentContent(kind, asset.path, stored)
+          : await this.loadDocument(kind, asset.path);
       } catch {
         continue;
       }
