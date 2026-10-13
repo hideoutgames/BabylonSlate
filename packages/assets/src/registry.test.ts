@@ -801,6 +801,55 @@ describe("AssetRegistry", () => {
     expect(peak).toBeLessThanOrEqual(8);
   });
 
+  it("does not read headers ahead across a subfolder it has yet to walk", async () => {
+    const storage = await createStorage();
+    // Directory order: a1, a2, sub/, b1, b2.
+    await writeAsset(storage, "assets/a1.babasset", { guid: "a1", type: "Material", name: "A1" });
+    await writeAsset(storage, "assets/a2.babasset", { guid: "a2", type: "Material", name: "A2" });
+    await writeAsset(storage, "assets/sub/s1.babasset", { guid: "s1", type: "Material", name: "S1" });
+    await writeAsset(storage, "assets/b1.babasset", { guid: "b1", type: "Material", name: "B1" });
+    await writeAsset(storage, "assets/b2.babasset", { guid: "b2", type: "Material", name: "B2" });
+    expect((await storage.readdir("assets")).map((entry) => entry.name)).toEqual(["a1.babasset", "a2.babasset", "sub", "b1.babasset", "b2.babasset"]);
+    const read = storage.readBinaryRange.bind(storage);
+    const events: string[] = [];
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, ...rest) => {
+      events.push(`start ${path}`);
+      // The subfolder's file answers slowly, so any read begun meanwhile would show.
+      if (path === "assets/sub/s1.babasset") await new Promise((resolve) => setTimeout(resolve, 30));
+      try { return await read(path, ...rest); } finally { events.push(`end ${path}`); }
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+
+    expect(registry.list().map((asset) => asset.header.guid).sort()).toEqual(["a1", "a2", "b1", "b2", "s1"]);
+    const firstStartOfB = events.findIndex((event) => event === "start assets/b1.babasset");
+    const lastEndInSub = events.map((event, index) => event === "end assets/sub/s1.babasset" ? index : -1).reduce((a, b) => Math.max(a, b));
+    expect(firstStartOfB).toBeGreaterThan(lastEndInSub);
+  });
+
+  it("lets every header read it started settle before a failed scan returns", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    // The first file in directory order cannot be parsed; the files after it are read ahead of it and answer slowly.
+    await storage.writeBinary("assets/a-broken.babasset", new Uint8Array([1, 2, 3]));
+    for (let index = 0; index < 5; index++) await writeAsset(storage, `assets/item-${index}.babasset`, { guid: `item-${index}`, type: "Material", name: `Item ${index}` });
+    const read = storage.readBinaryRange.bind(storage);
+    let inFlight = 0;
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, ...rest) => {
+      inFlight++;
+      try {
+        if (path !== "assets/a-broken.babasset") await new Promise((resolve) => setTimeout(resolve, 30));
+        return await read(path, ...rest);
+      } finally { inFlight--; }
+    });
+    const registry = new AssetRegistry(storage);
+
+    await expect(registry.mountRoot(projectContentRoot())).rejects.toThrow();
+
+    expect(inFlight).toBe(0);
+    expect(registry.listRoots()).toEqual([]);
+  });
+
   it("reads a moved asset's chunks from its new path on storage whose revisions follow content", async () => {
     class ContentRevisionStorage extends MemoryStorageAdapter {
       override async readBinaryRange(path: string, offset: number, length: number, revision?: string, options?: StorageReadOptions) {

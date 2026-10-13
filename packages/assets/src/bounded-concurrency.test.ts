@@ -116,6 +116,26 @@ describe("createReadAhead", () => {
     await tick();
   });
 
+  it("reads ahead only within the order it is given, and settle waits for reads left running without rejecting", async () => {
+    const started: string[] = [];
+    const reads = new Map(["a", "b", "c"].map((key) => [key, gate<string>()]));
+    const take = createReadAhead(5, (key: string) => { started.push(key); return reads.get(key)!.promise; });
+    // A run of two keys: the window of five never reaches "c".
+    const first = take(["a", "b"], 0);
+    expect(started).toEqual(["a", "b"]);
+    reads.get("a")!.resolve("A");
+    expect(await first).toBe("A");
+
+    let settled = false;
+    const waiting = take.settle().then(() => { settled = true; });
+    await tick();
+    expect(settled).toBe(false);
+    reads.get("b")!.reject(new Error("left running, then failed"));
+    await waiting;
+    expect(settled).toBe(true);
+    expect(started).toEqual(["a", "b"]);
+  });
+
   it("reads a key once however many times the window covers it", async () => {
     let reads = 0;
     const order = ["x", "y", "z"];

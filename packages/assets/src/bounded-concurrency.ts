@@ -57,18 +57,28 @@ export async function mapBounded<T, R>(
   return results;
 }
 
+/** See `createReadAhead`. */
+export interface ReadAhead<K, V> {
+  (order: readonly K[], index: number): Promise<V>;
+  /** Resolves once every read that was started but not yet consumed has settled. Never rejects. */
+  settle(): Promise<void>;
+}
+
 /**
  * Ordered read-ahead. The returned function starts `start(key)` for `order[index]`
- * and for up to `window - 1` keys after it that have not started, then returns the
- * promise for `order[index]`. The consumer awaits keys in order, so decisions and
- * errors surface in the same order as without read-ahead. A prefetched failure that
- * the consumer never reaches (because an earlier key failed) is not reported as an
- * unhandled rejection, and a consumed result is released.
+ * and for up to `window - 1` keys after it (so the window counts the current key)
+ * that have not started, then returns the promise for `order[index]`. Only keys of
+ * the `order` passed to that call are started, so a caller that passes a run of
+ * keys never reads beyond the run. The consumer awaits keys in order, so decisions
+ * and errors surface in the same order as without read-ahead. A prefetched failure
+ * that the consumer never reaches (because an earlier key failed) is not reported
+ * as an unhandled rejection, and a consumed result is released. A consumer that
+ * stops early calls `settle()` to wait for the reads it leaves running.
  */
 export function createReadAhead<K, V>(
   window: number,
   start: (key: K) => Promise<V>,
-): (order: readonly K[], index: number) => Promise<V> {
+): ReadAhead<K, V> {
   const ahead = Math.max(1, Math.floor(window));
   const started = new Map<K, Promise<V>>();
   const begin = (key: K): Promise<V> => {
@@ -81,10 +91,13 @@ export function createReadAhead<K, V>(
     }
     return promise;
   };
-  return (order, index) => {
+  const take = (order: readonly K[], index: number): Promise<V> => {
     const current = begin(order[index]!);
     for (let next = index + 1; next < Math.min(order.length, index + ahead); next++) begin(order[next]!);
     started.delete(order[index]!);
     return current;
   };
+  return Object.assign(take, {
+    settle: async (): Promise<void> => { await Promise.allSettled([...started.values()]); },
+  });
 }
