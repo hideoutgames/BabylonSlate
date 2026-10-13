@@ -7,6 +7,7 @@ export * from "./babasset";
 export * from "./babasset-carry";
 export * from "./babproject";
 export * from "./blob-store";
+export * from "./bounded-concurrency";
 export * from "./bytes";
 export * from "./installed-asset";
 export * from "./clear-asset-refs";

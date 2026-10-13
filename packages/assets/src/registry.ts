@@ -13,6 +13,7 @@ import {
 } from "./babasset";
 import { carryStoredChunks } from "./babasset-carry";
 import { createVfsBlobStore, type BlobStore } from "./blob-store";
+import { createReadAhead } from "./bounded-concurrency";
 import type { ContentRoot } from "./content-root";
 import { encodeJobMayWrite, type EncodeJobGuard, type EncodeJobResult, type EncodeQueue } from "./encode-queue";
 import { newAssetGuid } from "./guid";
@@ -58,6 +59,9 @@ import { buildClassAliasIndex, resolveDependenciesWithClassAliases, type ClassAl
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
+
+/** Header reads requested at once within a run of files while a root is scanned (a folder being walked has one such run active). */
+const SCAN_CATALOG_READS = 8;
 
 export type AreaEmissionProcessor = (request: { source: Uint8Array; sourceHash: string; mime?: string }, signal: AbortSignal, onProgress?: (progress: AreaEmissionProgress) => void) => Promise<Uint8Array>;
 
@@ -210,6 +214,8 @@ export class AssetRegistry {
   private readonly clock: RegistryGenerationClock;
   /** Class alias index of the catalog as of `generation`; dropped when any index change advances it. */
   private classAliasMemo: { generation: number; index: ClassAliasIndex } | null = null;
+  /** Symbolic inbound references of the catalog as of `generation`; dropped like `classAliasMemo`. */
+  private symbolicInboundMemo: { generation: number; index: ReadonlyMap<string, readonly string[]> } | null = null;
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
@@ -544,6 +550,29 @@ export class AssetRegistry {
     return this.classAliasMemo.index;
   }
 
+  /**
+   * Guid of each asset -> guids of the assets whose symbolic Class references resolve to it,
+   * from the catalog as of `generation`. One pass over the catalog answers `showReferences`
+   * for every asset, instead of one pass per asset asked about.
+   */
+  private symbolicInbound(): ReadonlyMap<string, readonly string[]> {
+    const generation = this.generation;
+    if (this.symbolicInboundMemo?.generation !== generation) {
+      const index = new Map<string, string[]>();
+      for (const asset of this.byGuid.values()) {
+        if (!asset.header.classReferences?.length) continue;
+        // `resolveDependenciesWithClassAliases` returns each target once.
+        for (const target of resolveDependenciesWithClassAliases({ ...asset.header, dependencies: [] }, () => this.classAliases())) {
+          const referrers = index.get(target);
+          if (referrers) referrers.push(asset.header.guid);
+          else index.set(target, [asset.header.guid]);
+        }
+      }
+      this.symbolicInboundMemo = { generation, index };
+    }
+    return this.symbolicInboundMemo.index;
+  }
+
   getByPath(path: string): IndexedAsset | undefined {
     return this.byPath.get(path);
   }
@@ -610,11 +639,7 @@ export class AssetRegistry {
 
   /** Resolve symbolic classes alongside GUID edges without reading any payloads. */
   showReferences(guid: string): { outbound: string[]; inbound: string[] } {
-    const symbolicInbound = this.byGuid.has(guid) ? this.list().filter(asset =>
-      asset.header.classReferences?.length && resolveDependenciesWithClassAliases(
-        { ...asset.header, dependencies: [] }, () => this.classAliases(),
-      ).includes(guid),
-    ).map(asset => asset.header.guid) : [];
+    const symbolicInbound = this.byGuid.has(guid) ? this.symbolicInbound().get(guid) ?? [] : [];
     return {
       outbound: this.dependenciesFor(guid),
       inbound: [...new Set([
@@ -2076,29 +2101,55 @@ export class AssetRegistry {
       if (isStorageNotFound(error)) return;
       throw error;
     }
+    // The header reads of a run of files overlap (bounded), but each result is consumed in
+    // directory order. Guid-conflict resolution (the first indexed file keeps a shared guid),
+    // folder registration and the first scan error therefore stay those of a serial scan.
+    // A run ends at a subfolder that will be walked: reads never start ahead across that walk,
+    // so a header is not read long before it is indexed (a `reindexPath` in between would
+    // otherwise be overwritten by the older header).
+    const slots: Array<{ run: string[]; index: number }> = [];
+    let run: string[] = [];
     for (const entry of entries) {
       const path = `${dir}/${entry.name}`;
       if (entry.isDir) {
-        if (entry.name === BLOBS_DIR_NAME || entry.name.startsWith(STORAGE_MOVE_BACKUP_PREFIX)) continue;
-        this.addKnownFolder(path);
-        await this.walk(root, path, storage);
-        continue;
+        if (!(entry.name === BLOBS_DIR_NAME || entry.name.startsWith(STORAGE_MOVE_BACKUP_PREFIX))) run = [];
+      } else if (entry.name !== FOLDER_MARKER_NAME && path.endsWith(".babasset")) {
+        run.push(path);
+        slots.push({ run, index: run.length - 1 });
       }
-      if (entry.name === FOLDER_MARKER_NAME) {
-        this.addKnownFolder(dir);
-        continue;
+    }
+    const readCatalog = createReadAhead(SCAN_CATALOG_READS, (path: string) => readScannedCatalog(storage, path));
+    let nextSlot = 0;
+    try {
+      for (const entry of entries) {
+        const path = `${dir}/${entry.name}`;
+        if (entry.isDir) {
+          if (entry.name === BLOBS_DIR_NAME || entry.name.startsWith(STORAGE_MOVE_BACKUP_PREFIX)) continue;
+          this.addKnownFolder(path);
+          await this.walk(root, path, storage);
+          continue;
+        }
+        if (entry.name === FOLDER_MARKER_NAME) {
+          this.addKnownFolder(dir);
+          continue;
+        }
+        if (!path.endsWith(".babasset")) continue;
+        const slot = slots[nextSlot++]!;
+        const { header, locator } = await readCatalog(slot.run, slot.index);
+        const indexed = this.byGuid.get(header.guid);
+        if (indexed && !indexed.placeholder && indexed.path !== path) {
+          // A second file with an indexed guid (a copy made outside the editor)
+          // must not evict the first one's entry; it is recorded instead.
+          this.guidConflicts.set(path, { rootId: root.id, path, guid: header.guid, indexedPath: indexed.path });
+          this.changed();
+          continue;
+        }
+        this.indexHeader(root.id, path, header, false, entry.mtime ?? null, locator);
       }
-      if (!path.endsWith(".babasset")) continue;
-      const { header, locator } = await readScannedCatalog(storage, path);
-      const indexed = this.byGuid.get(header.guid);
-      if (indexed && !indexed.placeholder && indexed.path !== path) {
-        // A second file with an indexed guid (a copy made outside the editor)
-        // must not evict the first one's entry; it is recorded instead.
-        this.guidConflicts.set(path, { rootId: root.id, path, guid: header.guid, indexedPath: indexed.path });
-        this.changed();
-        continue;
-      }
-      this.indexHeader(root.id, path, header, false, entry.mtime ?? null, locator);
+    } catch (error) {
+      // Reads left running must not outlive the scan: the read scope ends when it returns.
+      await readCatalog.settle();
+      throw error;
     }
   }
 

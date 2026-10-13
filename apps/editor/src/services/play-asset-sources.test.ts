@@ -637,3 +637,141 @@ describe("Play source ownership", () => {
     loading.dispose();
   });
 });
+
+describe("Play source reads overlap without changing order", () => {
+  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+  const FONT_COUNT = 6;
+  const facetype = (index: number) => new TextEncoder().encode(`{"font":${index}}`);
+
+  /** A Scene whose 3D labels use `FONT_COUNT` fonts; each font has one distinct facetype chunk. */
+  async function fontFleet() {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const fonts = Array.from({ length: FONT_COUNT }, (_, index) => `font-${index}`);
+    await storage.writeBinary("assets/scene.babasset", await encodeBabasset({ header: {
+      guid: "scene", name: "Scene", type: "Scene", version: SCENE_SCHEMA_VERSION, engineVersion: "0.0.0", mode: "thin",
+      payload: { name: "Scene", actors: [{ id: "labels", name: "Labels", classId: "Actor",
+        components: fonts.map((font) => ({ id: font, classId: "Text3DComponent", properties: { fontAssetGuid: font } })) }] },
+      dependencies: fonts, requiredDependencies: fonts, dependencyMetadataVersion: 1,
+    }, chunks: [] }));
+    for (const [index, guid] of fonts.entries()) await storage.writeBinary(`assets/${guid}.babasset`, await encodeBabasset({
+      header: { guid, name: guid, type: "Font", version: 1, engineVersion: "0.0.0", mode: "thin", payload: { family: guid },
+        dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1 },
+      chunks: [{ id: FONT_FACETYPE_CHUNK_ID, kind: "font", mime: "application/json", data: facetype(index) }],
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "fleet" });
+    const host = { registry, project: createEmptyProject("Fleet"), createScope: (owner: string) => loading.createScope(owner),
+      compile: async () => ({ bundles: [], diagnostics: [] }) };
+    /** Delay each font's chunk read and report how many reads were in flight together. */
+    const delayChunkReads = (delayOf: (guid: string) => number, fail?: (guid: string) => boolean) => {
+      const read = registry.readLocatedChunk.bind(registry);
+      const state = { inFlight: 0, peak: 0 };
+      vi.spyOn(registry, "readLocatedChunk").mockImplementation(async (guid, chunkId, ...rest) => {
+        if (chunkId !== FONT_FACETYPE_CHUNK_ID) return read(guid, chunkId, ...rest);
+        state.peak = Math.max(state.peak, ++state.inFlight);
+        try {
+          await sleep(delayOf(guid));
+          if (fail?.(guid)) throw new Error(`cannot read ${guid}`);
+          return await read(guid, chunkId, ...rest);
+        } finally { state.inFlight--; }
+      });
+      return state;
+    };
+    return { registry, loading, host, delayChunkReads };
+  }
+
+  it("reads several assets' chunks at once, within the loader cap, yet fills the game in required order", async () => {
+    const { loading, host, delayChunkReads } = await fontFleet();
+    // font-5 is first in required order and the slowest to read, so completions arrive in reverse.
+    const reads = delayChunkReads((guid) => 5 + Number(guid.slice(5)) * 3);
+    const prepared = await acquirePlayAssetSources(host, ["scene"], { consumer: "Labels", signal: new AbortController().signal });
+    // The stack pops the last (sorted) dependency first.
+    const requiredOrder = ["scene", "font-5", "font-4", "font-3", "font-2", "font-1", "font-0"];
+    expect([...prepared.required]).toEqual(requiredOrder);
+    expect([...prepared.game.fontFacetypeBytes.keys()]).toEqual(requiredOrder.slice(1));
+    for (const [guid, bytes] of prepared.game.fontFacetypeBytes) expect(bytes).toEqual(facetype(Number(guid.slice(5))));
+    expect(reads.peak).toBeGreaterThan(1);
+    expect(reads.peak).toBeLessThanOrEqual(4);
+    prepared.release();
+    loading.dispose();
+  });
+
+  it("reports the failure first in required order, not the one that happened first, and releases every read", async () => {
+    const { loading, host, delayChunkReads } = await fontFleet();
+    // font-1 fails at once; font-5 (earlier in required order) fails later.
+    delayChunkReads((guid) => guid === "font-5" ? 40 : 1, (guid) => guid === "font-5" || guid === "font-1");
+    const request = acquirePlayAssetSources(host, ["scene"], { consumer: "Labels", signal: new AbortController().signal });
+    await expect(request).rejects.toThrow("cannot read font-5");
+    await vi.waitFor(() => expect(loading.snapshot().temporaryBytes).toBe(0));
+    loading.trim({ force: true });
+    expect(loading.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0, entries: [] });
+    loading.dispose();
+  });
+
+  /**
+   * A Scene requiring 24 Materials. Catalog locator reads made while the closure is walked (before the
+   * host creates its ownership scope) are counted; each takes `delayOf(guid)` and may fail.
+   */
+  async function materialFleet(delayOf: (guid: string) => number, failOn?: (guid: string) => boolean) {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const materials = Array.from({ length: 24 }, (_, index) => `material-${String(index).padStart(2, "0")}`);
+    await storage.writeBinary("assets/scene.babasset", await encodeBabasset({ header: {
+      guid: "scene", name: "Scene", type: "Scene", version: SCENE_SCHEMA_VERSION, engineVersion: "0.0.0", mode: "thin",
+      payload: { name: "Scene", actors: [] }, dependencies: materials, requiredDependencies: materials, dependencyMetadataVersion: 1,
+    }, chunks: [] }));
+    for (const guid of materials) await storage.writeBinary(`assets/${guid}.babasset`, await encodeBabasset({ header: {
+      guid, name: guid, type: "Material", version: MATERIAL_PAYLOAD_VERSION, engineVersion: "0.0.0", mode: "thin",
+      payload: { name: guid, nodes: [], edges: [] }, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1,
+    }, chunks: [] }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "materials" });
+    const walk = { reads: [] as string[], inFlight: 0, peak: 0, over: false };
+    const locate = registry.getAssetLocator.bind(registry);
+    vi.spyOn(registry, "getAssetLocator").mockImplementation(async (guid, ...rest) => {
+      const counted = !walk.over;
+      if (counted) { walk.reads.push(guid); walk.peak = Math.max(walk.peak, ++walk.inFlight); }
+      try {
+        await sleep(delayOf(guid));
+        if (failOn?.(guid)) throw new Error(`cannot locate ${guid}`);
+        return await locate(guid, ...rest);
+      } finally { if (counted) walk.inFlight--; }
+    });
+    const host = { registry, project: createEmptyProject("Materials"),
+      createScope: (owner: string) => { walk.over = true; return loading.createScope(owner); },
+      compile: async () => ({ bundles: [], diagnostics: [] }) };
+    return { materials, loading, host, walk };
+  }
+
+  it("resolves catalog locators concurrently during the walk but never more than its bound, and still validates in order", async () => {
+    const { materials, loading, host, walk } = await materialFleet(() => 3);
+    const prepared = await acquirePlayAssetSources(host, ["scene"], { consumer: "Scene", signal: new AbortController().signal });
+    expect([...prepared.required]).toEqual(["scene", ...[...materials].reverse()]);
+    expect(walk.reads).toHaveLength(25);
+    // Only the walk is counted: a one-at-a-time walk would peak at 1.
+    expect(walk.peak).toBeGreaterThan(1);
+    expect(walk.peak).toBeLessThanOrEqual(8);
+    prepared.release();
+    loading.dispose();
+  });
+
+  it("starts no further catalog read once the walk has failed", async () => {
+    // material-23 is the first asset the walk visits after the Scene; it fails while the others are still being read.
+    const { loading, host, walk } = await materialFleet((guid) => guid === "scene" ? 1 : guid === "material-23" ? 5 : 40,
+      (guid) => guid === "material-23");
+    await expect(acquirePlayAssetSources(host, ["scene"], { consumer: "Scene", signal: new AbortController().signal }))
+      .rejects.toThrow("cannot locate material-23");
+    const atFailure = walk.reads.length;
+    // The Scene, one full batch of eight and, at most, the one read that took the failed read's slot in the
+    // turn the failure propagated; the other 15 Materials were still queued.
+    expect(atFailure).toBeLessThanOrEqual(10);
+    await sleep(120);
+    expect(walk.reads).toHaveLength(atFailure);
+    loading.dispose();
+  });
+});

@@ -39,7 +39,7 @@ import {
 import { createAppSettingsStore } from "@babylonslate/vfs";
 import { collectAreaEmissions } from "../lib/collect-area-emissions";
 import { collectGpuTextureBytes, texturePixelSizesFromHeaders } from "../lib/collect-gpu-texture-bytes";
-import { classParentLookup, materialDomainsFromAssets } from "../lib/content-browser-helpers";
+import { materialDomainsFromAssets, registryClassParentLookup } from "../lib/content-browser-helpers";
 import { collectDataGraphAssets } from "../lib/data-graph";
 import { selectEditorUtilityGraphs } from "../lib/editor-utility-scripts";
 import { inputAssetCatalog } from "../lib/input-asset-catalog";
@@ -283,7 +283,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         },
       ]),
     );
-    const parentOf = classParentLookup(assets);
+    const parentOf = registryClassParentLookup(projectService.registry);
     return collectPlayScriptDocuments(documents, headers, parentOf);
   };
 
@@ -326,7 +326,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         { type: asset.header.type, parentClass: asset.header.parentClass ?? null },
       ]),
     );
-    const parentOf = classParentLookup(assets);
+    const parentOf = registryClassParentLookup(projectService.registry);
     const registered = mergePluginEditorUtilityObjects(
       options.projectDocument()?.settings.editorUtilityObjects ?? [],
       projectService.plugins
@@ -365,7 +365,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     const strict = requiredGuids !== undefined;
     const documents = await loadProjectGraphDocuments(requiredGuids, sourceDocuments, strict);
     const animDocuments = await loadProjectAnimGraphDocuments(requiredGuids, sourceDocuments, strict);
-    const parentOf = classParentLookup(projectService.registry?.list() ?? []);
+    const parentOf = registryClassParentLookup(projectService.registry);
     const assets = projectService.registry?.list() ?? [];
     const openDocuments = sourceDocuments ?? [...documentService.getState().openDocuments.values()];
     const classGraphs = collectClassGraphsForPalette({

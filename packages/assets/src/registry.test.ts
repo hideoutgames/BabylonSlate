@@ -770,6 +770,86 @@ describe("AssetRegistry", () => {
     await expect(registry.deleteFolder("project", "copies")).rejects.toThrow(/copies\/hero\.babasset/);
   });
 
+  it("scans a folder's files concurrently within a bound yet resolves a shared guid in directory order", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/copy-a.babasset", { guid: "shared", type: "Material", name: "First" });
+    await writeAsset(storage, "assets/copy-b.babasset", { guid: "shared", type: "Material", name: "Second" });
+    for (let index = 0; index < 20; index++) {
+      await writeAsset(storage, `assets/item-${String(index).padStart(2, "0")}.babasset`, { guid: `item-${index}`, type: "Material", name: `Item ${index}` });
+    }
+    const listed = (await storage.readdir("assets")).map((entry) => `assets/${entry.name}`);
+    const firstCopy = listed.find((path) => path.includes("copy-"))!;
+    // The file listed first for the shared guid answers last, so a scan that indexes in completion order would keep the other copy.
+    const read = storage.readBinaryRange.bind(storage);
+    let inFlight = 0;
+    let peak = 0;
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, ...rest) => {
+      peak = Math.max(peak, ++inFlight);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, path === firstCopy ? 40 : 2));
+        return await read(path, ...rest);
+      } finally { inFlight--; }
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+
+    const secondCopy = listed.find((path) => path.includes("copy-") && path !== firstCopy)!;
+    expect(registry.getByGuid("shared")?.path).toBe(firstCopy);
+    expect(registry.listGuidConflicts().map((conflict) => [conflict.path, conflict.indexedPath])).toEqual([[secondCopy, firstCopy]]);
+    expect(registry.list()).toHaveLength(21);
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(8);
+  });
+
+  it("does not read headers ahead across a subfolder it has yet to walk", async () => {
+    const storage = await createStorage();
+    // Directory order: a1, a2, sub/, b1, b2.
+    await writeAsset(storage, "assets/a1.babasset", { guid: "a1", type: "Material", name: "A1" });
+    await writeAsset(storage, "assets/a2.babasset", { guid: "a2", type: "Material", name: "A2" });
+    await writeAsset(storage, "assets/sub/s1.babasset", { guid: "s1", type: "Material", name: "S1" });
+    await writeAsset(storage, "assets/b1.babasset", { guid: "b1", type: "Material", name: "B1" });
+    await writeAsset(storage, "assets/b2.babasset", { guid: "b2", type: "Material", name: "B2" });
+    expect((await storage.readdir("assets")).map((entry) => entry.name)).toEqual(["a1.babasset", "a2.babasset", "sub", "b1.babasset", "b2.babasset"]);
+    const read = storage.readBinaryRange.bind(storage);
+    const events: string[] = [];
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, ...rest) => {
+      events.push(`start ${path}`);
+      // The subfolder's file answers slowly, so any read begun meanwhile would show.
+      if (path === "assets/sub/s1.babasset") await new Promise((resolve) => setTimeout(resolve, 30));
+      try { return await read(path, ...rest); } finally { events.push(`end ${path}`); }
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+
+    expect(registry.list().map((asset) => asset.header.guid).sort()).toEqual(["a1", "a2", "b1", "b2", "s1"]);
+    const firstStartOfB = events.findIndex((event) => event === "start assets/b1.babasset");
+    const lastEndInSub = events.map((event, index) => event === "end assets/sub/s1.babasset" ? index : -1).reduce((a, b) => Math.max(a, b));
+    expect(firstStartOfB).toBeGreaterThan(lastEndInSub);
+  });
+
+  it("lets every header read it started settle before a failed scan returns", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    // The first file in directory order cannot be parsed; the files after it are read ahead of it and answer slowly.
+    await storage.writeBinary("assets/a-broken.babasset", new Uint8Array([1, 2, 3]));
+    for (let index = 0; index < 5; index++) await writeAsset(storage, `assets/item-${index}.babasset`, { guid: `item-${index}`, type: "Material", name: `Item ${index}` });
+    const read = storage.readBinaryRange.bind(storage);
+    let inFlight = 0;
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, ...rest) => {
+      inFlight++;
+      try {
+        if (path !== "assets/a-broken.babasset") await new Promise((resolve) => setTimeout(resolve, 30));
+        return await read(path, ...rest);
+      } finally { inFlight--; }
+    });
+    const registry = new AssetRegistry(storage);
+
+    await expect(registry.mountRoot(projectContentRoot())).rejects.toThrow();
+
+    expect(inFlight).toBe(0);
+    expect(registry.listRoots()).toEqual([]);
+  });
+
   it("reads a moved asset's chunks from its new path on storage whose revisions follow content", async () => {
     class ContentRevisionStorage extends MemoryStorageAdapter {
       override async readBinaryRange(path: string, offset: number, length: number, revision?: string, options?: StorageReadOptions) {
@@ -1592,6 +1672,35 @@ describe("AssetRegistry generation", () => {
     await registry.renameAsset("class-goblin", "Goblin");
     expect(registry.requiredDependenciesFor("scene")).toEqual(["class-goblin"]);
     expect(registry.showReferences("class-goblin").inbound).toEqual(["scene"]);
+  });
+
+  it("reports each Class's symbolic referrers together and follows referrers that are removed or added", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    const base = { dependencyMetadataVersion: 1, dependencies: [], requiredDependencies: [], requiredVariableNames: [] };
+    const writeClass = async (name: string, guid: string) => storage.writeBinary(`assets/${name}.class.babasset`, await encodeAssetDocument(
+      { type: "Class", name, guid, version: 1, payload: { members: [] } }, { parentClass: null, dependencyMetadata: base },
+    ));
+    const writeScene = async (guid: string, classes: string[]) => storage.writeBinary(`assets/${guid}.scene.babasset`, await encodeAssetDocument(
+      { type: "Scene", name: guid, guid, version: 1, payload: { name: guid, actors: classes.map((classId, index) => ({ id: `a${index}`, classId, components: [] })) } },
+      { parentClass: null, dependencyMetadata: { ...base, classReferences: classes, requiredClassReferences: classes } },
+    ));
+    await writeClass("Goblin", "class-goblin");
+    await writeClass("Orc", "class-orc");
+    await writeScene("scene-b", ["Goblin"]);
+    await writeScene("scene-a", ["Goblin", "Orc"]);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    expect(registry.showReferences("class-goblin").inbound).toEqual(["scene-a", "scene-b"]);
+    expect(registry.showReferences("class-orc").inbound).toEqual(["scene-a"]);
+    expect(registry.showReferences("scene-a").inbound).toEqual([]);
+
+    await registry.deleteAsset("scene-a");
+    expect(registry.showReferences("class-goblin").inbound).toEqual(["scene-b"]);
+    expect(registry.showReferences("class-orc").inbound).toEqual([]);
+    await writeScene("scene-c", ["Orc"]);
+    await registry.reindexPath("assets/scene-c.scene.babasset");
+    expect(registry.showReferences("class-orc").inbound).toEqual(["scene-c"]);
   });
 });
 
