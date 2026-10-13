@@ -2180,6 +2180,43 @@ describe("Play createEngine view", () => {
     expect(attach.mock.calls.some(([value]) => value.scene === layer && value.camera === layer.activeCamera)).toBe(true);
   });
 
+  it("keeps the editor's prepared post-process stack across an edit that leaves it alone", () => {
+    const attach = vi.spyOn(SceneRenderCoordinator.prototype, "attachPostProcess");
+    const stack = [{ id: "pass", materialGuid: "pp", enabled: true }];
+    const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(),
+      editor: true,
+      materialDocuments: new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]),
+      postProcessStack: stack,
+    });
+    handles.push(editor);
+    const base = createDefaultScene();
+    const scene = (postProcessStack = stack, range = 8) => ({
+      ...base,
+      settings: { ...base.settings, postProcessStack },
+      actors: [...base.actors, createActor("lamp", "Lamp", {
+        components: [{ id: "light", classId: "LightComponent", properties: { lightKind: "point", range } }],
+      })],
+    });
+    const attaches = () => attach.mock.calls.filter(([value]) => value.scene === editor.scene).length;
+    editor.loadScene(scene(), { sceneAssetGuid: "scene" });
+    const attached = attaches();
+    expect(attached).toBeGreaterThan(0);
+
+    // Re-attaching releases the prepared FrameGraph, whose rebuild holds the viewport for seconds.
+    editor.loadScene(scene(stack, 12), { sceneAssetGuid: "scene" });
+    editor.loadScene(scene(stack, 20), { sceneAssetGuid: "scene" });
+    expect(attaches()).toBe(attached);
+
+    // A changed stack, or a different scene, still attaches it afresh.
+    editor.loadScene(scene([{ ...stack[0]!, enabled: false }]), { sceneAssetGuid: "scene" });
+    expect(attaches()).toBe(attached + 1);
+    editor.loadScene(scene(), { sceneAssetGuid: "scene" });
+    expect(attaches()).toBe(attached + 2);
+    editor.loadScene(scene(), { sceneAssetGuid: "another scene" });
+    expect(attaches()).toBe(attached + 3);
+  });
+
   it("keeps shared Scene and cache resources alive until graph retirement settles after Stop", async () => {
     const engine = sharedEngine();
     const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });

@@ -36,7 +36,10 @@ Editor transform commits preserve post-process and material ownership. Asset
 collection is keyed by referenced resources, saved resource revisions and
 relevant settings; pose edits and Scene autosaves do not reread model/texture
 containers. Changed resources still refresh. Equivalent material documents and effective post-process stacks
-retain their existing owners.
+retain their existing owners. Any edit of the same editor Scene that leaves its post-process stack unchanged (a
+light range, an actor property) keeps the attached stack and its prepared FrameGraph, so the viewport does not hold
+frames while a graph rebuilds (about 1.5–2.5 s on the FeatureTest main scene, which has a post-process stack). A
+changed stack, a different Scene or a changed input (material revision, quality scale, camera) still re-attaches it.
 
 Opt-in render diagnostics include attempted/drawn/copied/held frames, copy and
 render-callback preparation time, context events, graph builds, strict readiness
