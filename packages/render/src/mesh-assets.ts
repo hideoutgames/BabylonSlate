@@ -245,6 +245,11 @@ function syncAlbedoTransparency(mesh: AbstractMesh, material: StandardMaterial):
   markSceneReadinessDirty(mesh.getScene());
 }
 
+/** Whether Babylon's StandardMaterial reads this texture straight from the UVs (an identity texture matrix). */
+function usesDirectUv(texture: Texture | CubeTexture): boolean {
+  return texture.getTextureMatrix().isIdentityAs3x2();
+}
+
 /** Weight changes preserve owned cutouts while opting fractional weights into blending. */
 export function applySpriteVisibility(mesh: AbstractMesh, visibility: number): void {
   const material = mesh.material;
@@ -335,6 +340,7 @@ export function applyAlbedoTexture(
       material.alphaCutOff = 0.4;
       binding.material = material;
     }
+    const replaced = binding.lease?.resource;
     material.diffuseTexture = next.resource;
     material.emissiveTexture = next.resource;
     // Preparation may finish after an authored assignment. Update only our
@@ -343,6 +349,15 @@ export function applyAlbedoTexture(
       mesh.material = material;
       enableOverlayVisualMaterial(mesh);
       syncAlbedoTransparency(mesh, material);
+      // Babylon samples a texture with an identity matrix straight from the UVs
+      // (DIFFUSEDIRECTUV / EMISSIVEDIRECTUV) and any other through the matrix, a
+      // different shader. A KTX2 is flipped on its wrapper, a PNG is not, so
+      // swapping one for the other recompiles the draw; none of Babylon's
+      // observables announce that, and without it the strict probe is skipped
+      // and the visual is not drawn while the new variant compiles.
+      if (replaced && replaced !== next.resource && usesDirectUv(replaced) !== usesDirectUv(next.resource)) {
+        markSceneReadinessDirty(scene);
+      }
     }
     const previous = binding.lease;
     binding.lease = next; binding.pending = undefined;

@@ -123,6 +123,13 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const appliedAssetsRef = useRef<{ key: string; handle: EngineHandle; textures: Map<string, string> } | null>(null);
   /** The asset load in flight; an encoding swap waits for it rather than racing its install. */
   const assetLoadRef = useRef<AbortController | null>(null);
+  /** The Texture-encoding swap for one applied asset set; `attempted` is the registry view its last pass finished against. */
+  const textureSwapRef = useRef<{
+    applied: object;
+    attempted: ReadonlyMap<string, string> | null;
+    running: boolean;
+    controller: AbortController;
+  } | null>(null);
   const dragStartSceneRef = useRef<SerializedScene | null>(null);
   const { documentId } = useDocumentWorkspace();
   const {
@@ -1004,35 +1011,55 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     engineEpoch,
   ]);
 
+  useEffect(() => () => textureSwapRef.current?.controller.abort(), []);
+
   // A background encode commit swaps how a Texture is stored (PNG to KTX2), not
   // what it shows, so it never reloads the scene: only the changed Textures are
-  // read again and swapped in place on the live meshes and Materials. Commits that
-  // land within a frame share one swap. A load in flight reads the latest bytes
-  // itself, and re-runs this when it finishes (`dropReady`).
+  // read again and swapped in place on the live meshes and Materials.
+  // Single-flight per applied asset set: a running swap is never restarted by a
+  // later commit. It collects whatever changed within its paint, and goes round
+  // again if the registry changed while it read. A load in flight stands the swap
+  // down (it reads the latest bytes itself) and re-runs this when it finishes
+  // (`dropReady`). A Texture the engine skipped stays pending and is retried
+  // when the registry next changes, not on every scene edit.
   useEffect(() => {
     const handle = engineRef.current;
     const applied = appliedAssetsRef.current;
     if (!handle || !applied || applied.handle !== handle || applied.key !== viewportAssetsKey || assetLoadRef.current) return;
     if (changedTextureEncodings(applied.textures, textureEncodingsRef.current).length === 0) return;
-    const controller = new AbortController();
-    const isCurrent = () => !controller.signal.aborted && engineRef.current === handle &&
+    let swap = textureSwapRef.current;
+    if (!swap || swap.applied !== applied) {
+      swap?.controller.abort();
+      swap = textureSwapRef.current = { applied, attempted: null, running: false, controller: new AbortController() };
+    }
+    if (swap.running || swap.attempted === textureEncodingsRef.current) return;
+    const state = swap;
+    const { signal } = state.controller;
+    const isCurrent = () => !signal.aborted && engineRef.current === handle &&
       appliedAssetsRef.current === applied && assetLoadRef.current === null;
+    state.running = true;
     void (async () => {
       try {
-        await waitForSceneLoadingPaint(controller.signal);
-        if (!isCurrent()) return;
-        const encodings = textureEncodingsRef.current;
-        const guids = changedTextureEncodings(applied.textures, encodings);
-        if (guids.length === 0) return;
-        const bytes = await collectPlayTextureBytes(new Map(), new Map(), guids);
-        if (!isCurrent()) return;
-        handle.replaceTextureBytes(bytes);
-        for (const guid of bytes.keys()) applied.textures.set(guid, encodings.get(guid) ?? "");
+        for (;;) {
+          await waitForSceneLoadingPaint(signal);
+          if (!isCurrent()) return;
+          const encodings = textureEncodingsRef.current;
+          const guids = changedTextureEncodings(applied.textures, encodings);
+          if (guids.length > 0) {
+            const bytes = await collectPlayTextureBytes(new Map(), new Map(), guids);
+            if (!isCurrent()) return;
+            // Only what the engine replaced counts as applied.
+            for (const guid of handle.replaceTextureBytes(bytes)) applied.textures.set(guid, encodings.get(guid) ?? "");
+          }
+          state.attempted = encodings;
+          if (textureEncodingsRef.current === encodings) return;
+        }
       } catch (error) {
-        if (!controller.signal.aborted) console.warn("[viewport] failed to swap Texture encodings", error);
+        if (!signal.aborted) console.warn("[viewport] failed to swap Texture encodings", error);
+      } finally {
+        state.running = false;
       }
     })();
-    return () => controller.abort();
   }, [textureEncodingsKey, viewportAssetsKey, dropReady, engineEpoch, collectPlayTextureBytes]);
 
   useEffect(() => {

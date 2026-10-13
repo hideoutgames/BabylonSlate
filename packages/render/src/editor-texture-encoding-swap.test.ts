@@ -1,18 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { StandardMaterial, TextureBlock, type NodeMaterial } from "@babylonjs/core";
+import { StandardMaterial, TextureBlock, type NodeMaterial, type Texture } from "@babylonjs/core";
 import { createDefaultSpritePayload } from "@babylonslate/assets";
 import { createActor, createDefaultScene, createMeshComponent, type SerializedScene } from "@babylonslate/core";
-import { createDefaultMaterialDocument, type MaterialDocument } from "@babylonslate/shader-graph";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { MaterialLibrary } from "./material-library";
 import { installTextureBytes, type MeshAssetContext } from "./mesh-assets";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
+import { sampledTextureDocument } from "./sampled-texture-material-fixture";
+import { onSceneReadinessDirty } from "./scene-readiness-signal";
+import { ktx2HeaderBytes } from "./texture-test-fixtures";
 
-// The same pixels stored two ways: the render layer only sees different installed bytes.
+// The same pixels stored two ways. A real KTX2 header makes the cache flip the
+// wrapper's V axis (a sprite-sampled KTX2 gets a non-identity texture matrix).
 const STORED_AS_PNG = new Uint8Array([1, 2, 3, 4]);
-const STORED_AS_KTX2 = new Uint8Array([1, 2, 3, 4, 5]);
+const STORED_AS_KTX2 = ktx2HeaderBytes(4, 4);
+const STORED_AS_OTHER_PNG = new Uint8Array([1, 2, 3, 4, 5]);
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -86,6 +90,33 @@ describe("swapping a Texture's stored encoding", () => {
     expect(f.sync.meshForActor("a")).toBe(f.mesh);
   });
 
+  it("announces the shader variant change when a KTX2 replaces a PNG, so the visual is held rather than skipped", async () => {
+    const f = spriteFixture();
+    const dirty = vi.fn();
+    cleanups.push(onSceneReadinessDirty(f.scene, dirty));
+    // Babylon reads a texture with an identity matrix straight from the UVs and any other through the matrix.
+    expect((f.first as Texture).getTextureMatrix().isIdentityAs3x2()).toBe(true);
+
+    f.sync.replaceTextureEncodings(installed(STORED_AS_KTX2), ["tex"]);
+    // The working texture stays bound, and nothing is announced, until the successor is ready.
+    expect(dirty).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(f.material.diffuseTexture).not.toBe(f.first));
+
+    expect((f.material.diffuseTexture as Texture).getTextureMatrix().isIdentityAs3x2()).toBe(false);
+    expect(dirty).toHaveBeenCalled();
+  });
+
+  it("does not announce a swap that keeps the shader variant", async () => {
+    const f = spriteFixture();
+    const dirty = vi.fn();
+    cleanups.push(onSceneReadinessDirty(f.scene, dirty));
+
+    f.sync.replaceTextureEncodings(installed(STORED_AS_OTHER_PNG), ["tex"]);
+    await vi.waitFor(() => expect(f.material.diffuseTexture).not.toBe(f.first));
+
+    expect(dirty).not.toHaveBeenCalled();
+  });
+
   it("leaves the working texture bound when the replacement upload fails", async () => {
     const f = spriteFixture();
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -149,20 +180,3 @@ describe("swapping a Texture's stored encoding", () => {
     expect(scene.materials).not.toContain(first);
   });
 });
-
-/** A Material whose base color samples `textureGuid` through a block named "sample". */
-function sampledTextureDocument(textureGuid: string): MaterialDocument {
-  const doc = createDefaultMaterialDocument();
-  doc.nodes.push(
-    { id: "texture", type: "param.texture", position: { x: 0, y: 0 }, properties: { name: "Albedo", textureGuid } },
-    { id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties: {} },
-    { id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: {} },
-  );
-  doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
-  doc.edges.push(
-    { id: "texture-sample", sourceNodeId: "texture", sourcePinId: "out", targetNodeId: "sample", targetPinId: "texture" },
-    { id: "uv-sample", sourceNodeId: "uv", sourcePinId: "uv", targetNodeId: "sample", targetPinId: "uv" },
-    { id: "sample-output", sourceNodeId: "sample", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "baseColor" },
-  );
-  return doc;
-}

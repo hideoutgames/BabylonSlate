@@ -371,9 +371,10 @@ export interface EngineHandle {
    * Swap the stored encoding (PNG to KTX2) of Textures already installed with
    * `setMeshAssets`, when their pixels, sampler and settings are unchanged.
    * Editor meshes and Materials stay alive; a guid never installed, or whose
-   * bytes are identical, is ignored. Content edits go through `setMeshAssets`.
+   * bytes are identical, is skipped. Returns the guids whose bytes were
+   * replaced. Content edits go through `setMeshAssets`.
    */
-  replaceTextureBytes: (textureBytes: ReadonlyMap<string, Uint8Array | Blob>) => void;
+  replaceTextureBytes: (textureBytes: ReadonlyMap<string, Uint8Array | Blob>) => string[];
   /** Retain prepared source maps until the consuming runtime instance is retired. */
   acquireSceneSources: (sources: SceneSourceAssets, options?: { prepare?: boolean; signal?: AbortSignal; priority?: NativePreparationPriority }) => Promise<() => void>;
   nativePreparationStats: () => ReturnType<ReturnType<typeof nativePreparationForEngine>["snapshot"]>;
@@ -3872,7 +3873,7 @@ function initializeEngine(
     },
     replaceTextureBytes: (textureBytes) => {
       const current = binding.textureBytes;
-      if (!current) return;
+      if (!current) return [];
       const next = new Map(current);
       const changed: string[] = [];
       for (const [guid, source] of installTextureBytes(textureBytes) ?? []) {
@@ -3882,9 +3883,11 @@ function initializeEngine(
         next.set(guid, source);
         changed.push(guid);
       }
-      if (changed.length === 0) return;
+      if (changed.length === 0) return changed;
+      // Before the sync call: the Material library reads these bytes for its texture identity.
       binding.textureBytes = next;
       editorSync?.replaceTextureEncodings(next, changed);
+      return changed;
     },
     acquireSceneSources: async (sources, preparation) => {
       if (disposed) throw new Error("The render Scene is disposed.");
