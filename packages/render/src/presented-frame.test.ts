@@ -1,6 +1,6 @@
 import { NullEngine } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { submitPresentedFrame } from "./presented-frame";
+import { presentationFencePending, submitPresentedFrame, whenPresentationFenceClear } from "./presented-frame";
 
 function deferred() {
   let resolve!: () => void;
@@ -161,18 +161,72 @@ describe("owned scene GPU submission", () => {
     Reflect.deleteProperty(native, "_gl");
   });
 
-  it("charges an error a later owner's pre-draw read finds to the earlier owner still waiting on its fence", async () => {
+  it("reads no errors for a later owner while an earlier fence is pending, and every waiting owner shares an error raised meanwhile", async () => {
+    vi.useFakeTimers();
     const native = engine();
     const fake = fakeGl();
     Object.assign(native, { _gl: fake.gl });
-    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     const first = submitPresentedFrame(native, () => { fake.state.raised.push(fake.gl.OUT_OF_MEMORY); });
     const firstRejected = expect(first.completed).rejects.toThrow("Scene presentation WebGL errors: 1285");
-    fake.state.signaled = true;
+    expect(fake.gl.getError).toHaveBeenCalledTimes(1);
     const second = submitPresentedFrame(native, () => {});
-    await Promise.all([firstRejected, second.completed]);
-    expect(warning).not.toHaveBeenCalledWith(expect.stringContaining("Pre-existing"));
+    const secondRejected = expect(second.completed).rejects.toThrow("Scene presentation WebGL errors: 1285");
+    // Only the first owner's pre-draw read ran: the second would wait behind the first draw.
+    expect(fake.gl.getError).toHaveBeenCalledTimes(1);
+    expect(first.fenceWaiting()).toBe(true);
+    expect(second.fenceWaiting()).toBe(true);
+    fake.state.signaled = true;
+    await vi.advanceTimersByTimeAsync(20);
+    await Promise.all([firstRejected, secondRejected]);
+    expect(first.fenceWaiting()).toBe(false);
     expect(fake.fences.size).toBe(0);
+    Reflect.deleteProperty(native, "_gl");
+  });
+
+  it("skips the pre-draw read when the previous attempt left the error state clear, but still rejects a draw error at the fence", async () => {
+    vi.useFakeTimers();
+    const native = engine();
+    const fake = fakeGl();
+    Object.assign(native, { _gl: fake.gl });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const submission = submitPresentedFrame(native, () => { fake.state.raised.push(fake.gl.INVALID_OPERATION); }, { errorStateKnownClear: true });
+    const rejected = expect(submission.completed).rejects.toThrow("Scene presentation WebGL errors: 1282");
+    expect(fake.gl.getError).not.toHaveBeenCalled();
+    fake.state.signaled = true;
+    await vi.advanceTimersByTimeAsync(10);
+    await rejected;
+    Reflect.deleteProperty(native, "_gl");
+  });
+
+  it("keeps the synchronous error reads on a context without fences", () => {
+    const native = engine();
+    const fake = fakeGl();
+    Object.assign(native, { _gl: { ...fake.gl, fenceSync: undefined, clientWaitSync: undefined, finish: () => { fake.calls.push("finish"); } } });
+    const submission = submitPresentedFrame(native, () => { fake.calls.push("draw"); }, { errorStateKnownClear: true });
+    expect(fake.calls).toEqual(["getError", "draw", "getError", "finish"]);
+    expect(submission.fenceWaiting()).toBe(false);
+    Reflect.deleteProperty(native, "_gl");
+  });
+
+  it("holds loading work until the fence is released", async () => {
+    vi.useFakeTimers();
+    const native = engine();
+    const fake = fakeGl();
+    Object.assign(native, { _gl: fake.gl });
+    expect(presentationFencePending(native)).toBe(false);
+    await expect(whenPresentationFenceClear(native)).resolves.toBe(0);
+    const submission = submitPresentedFrame(native, () => {});
+    expect(presentationFencePending(native)).toBe(true);
+    let released = false;
+    const cleared = whenPresentationFenceClear(native).then(() => { released = true; });
+    await vi.advanceTimersByTimeAsync(40);
+    expect(released).toBe(false);
+    submission.cancel();
+    await expect(submission.completed).rejects.toThrow("cancelled");
+    await vi.advanceTimersByTimeAsync(10);
+    await cleared;
+    expect(presentationFencePending(native)).toBe(false);
     Reflect.deleteProperty(native, "_gl");
   });
 });

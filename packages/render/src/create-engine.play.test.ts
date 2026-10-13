@@ -737,6 +737,53 @@ describe("Play createEngine view", () => {
     Reflect.deleteProperty(engine, "_gl");
   });
 
+  it("issues no loading work while a presentation fence is pending, then retries and skips the pre-draw error read", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    const frame = () => { engine.beginFrame(); renderViews(engine); engine.endFrame(); };
+    await handle.prewarmSceneMaterials();
+    handle.setPaused(true);
+    // The first draw lands but a late readiness change keeps it from being presentable.
+    let worldReady = true;
+    let frames = 0;
+    handle.scene.addIsReadyCheck({ isReady: () => worldReady });
+    handle.scene.onAfterRenderObservable.add(() => {
+      frames += 1;
+      if (frames === 1) { worldReady = false; markSceneReadinessDirty(handle.scene); }
+    });
+    markSceneReadinessDirty(handle.scene);
+    let waiting = true;
+    const completions: Array<() => void> = [];
+    const submitted = vi.spyOn(presentation, "submitPresentedFrame").mockImplementation((_engine, draw) => {
+      draw();
+      const completed = new Promise<void>((resolve) => { completions.push(resolve); });
+      return { completed, cancel: () => {}, fenceWaiting: () => waiting };
+    });
+    let presented = false;
+    const pending = handle.presentFirstFrame().then(() => { presented = true; });
+    frame();
+    expect(submitted).toHaveBeenCalledTimes(1);
+    expect(frames).toBe(1);
+    worldReady = true;
+    markSceneReadinessDirty(handle.scene);
+    frame();
+    frame();
+    expect(submitted).toHaveBeenCalledTimes(1);
+    expect(frames).toBe(1);
+    waiting = false;
+    completions[0]!();
+    await Promise.resolve();
+    frame();
+    expect(submitted).toHaveBeenCalledTimes(2);
+    expect(frames).toBe(2);
+    expect(submitted.mock.calls[0]![2]).toEqual({ errorStateKnownClear: false });
+    expect(submitted.mock.calls[1]![2]).toEqual({ errorStateKnownClear: true });
+    completions[1]!();
+    await pending;
+    expect(presented).toBe(true);
+    submitted.mockRestore();
+  });
+
   it("applies locked output quality before preparation without resizing inside a scene render owner", async () => {
     const engine = sharedEngine();
     // NullEngine hard-codes scale 1; model the native scale storage boundary.
@@ -927,7 +974,7 @@ describe("Play createEngine view", () => {
     const cancel = vi.fn(() => cancelGpu(new Error("Owned GPU wait cancelled")));
     const submission = vi.spyOn(presentation, "submitPresentedFrame").mockImplementation((_engine, draw) => {
       draw();
-      return { completed: gpu, cancel };
+      return { completed: gpu, cancel, fenceWaiting: () => false };
     });
     vi.useFakeTimers();
     let state = "pending";
@@ -1647,7 +1694,7 @@ describe("Play createEngine view", () => {
       draw();
       let reject!: (error: Error) => void;
       const completed = new Promise<void>((resolve, fail) => { fences.push(resolve); reject = fail; });
-      return { completed, cancel: () => reject(new Error("Discarded candidate")) };
+      return { completed, cancel: () => reject(new Error("Discarded candidate")), fenceWaiting: () => false };
     });
     const pending = handle.presentFirstFrame(owner).then(() => { presented = true; });
     const copied = handle.renderDiagnostics().presentation!.copied;

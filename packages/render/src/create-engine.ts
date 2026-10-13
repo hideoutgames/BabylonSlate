@@ -935,6 +935,7 @@ function initializeEngine(
     submission: ReturnType<typeof submitPresentedFrame> | null;
     copied: boolean;
     completionStarted: boolean;
+    errorsCleared: boolean;
   };
   const pendingPresentations = new Map<string, PendingPresentation>();
   const frameOwners = new Map<string, PendingPresentation>();
@@ -1057,7 +1058,15 @@ function initializeEngine(
   };
   let runtimeScalability: RuntimeScalability | undefined;
   let lastScalabilityStatus: ScalabilityAcknowledgement | undefined;
+  // While a presentation fence is outstanding, no loading work may touch the GL
+  // context: the strict readiness probe finalises effects, a retry draw queues
+  // more driver compiles, and each synchronous query waits behind all of them.
+  const presentationFenceWaiting = () => {
+    for (const pending of pendingPresentations.values()) if (pending.submission?.fenceWaiting()) return true;
+    return false;
+  };
   const hasLoadingFrame = () => {
+    if (presentationFenceWaiting()) return false;
     for (const pending of pendingPresentations.values()) {
       if (!pending.copied && presentationReady(pending)) return scheduler.canPresentLoadingFrame();
     }
@@ -2596,6 +2605,7 @@ function initializeEngine(
       const drawOwner = (key: string, draw: () => boolean, fallback?: () => void) => {
         const pending = pendingPresentations.get(key);
         if (!pending) { draw(); return; }
+        if (presentationFenceWaiting()) return;
         if (!presentationReady(pending)) {
           pending.rendered = false;
           pending.copied = false;
@@ -2611,8 +2621,10 @@ function initializeEngine(
           pending.attempts += 1;
           const rendered = draw();
           pending.rendered = rendered && presentationReady(pending);
-        });
+        }, { errorStateKnownClear: pending.errorsCleared });
         pending.submission = submission;
+        // Unproven until this attempt's own fence-time read; a cancelled attempt leaves it unread.
+        pending.errorsCleared = false;
         if (pending.rendered) {
           frameOwners.set(key, pending);
           // A validated draw is progress beyond shader readiness. Observed
@@ -2633,6 +2645,8 @@ function initializeEngine(
         void submission.completed.then(() => {
           if (pending.submission !== submission) return;
           pending.submission = null;
+          // The fence-time read left the error state cleared for this owner's next attempt.
+          pending.errorsCleared = true;
           finishPresentation(key, pending);
         }, (error: unknown) => {
           if (pending.submission !== submission) return;
@@ -4074,7 +4088,7 @@ function initializeEngine(
         else expirePresentation(key);
       };
       const timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
-      pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false });
+      pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false });
       return promise;
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
