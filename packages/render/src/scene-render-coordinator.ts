@@ -6,6 +6,7 @@ import { onSceneReadinessDirty } from "./scene-perf";
 import type { SharedOutlineView } from "./shared-outline";
 import { flushSceneCables } from "./cable-mesh";
 import { DriverCompileWatch } from "./driver-compile";
+import { whenPresentationFenceClear } from "./presented-frame";
 import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
@@ -154,6 +155,11 @@ export class SceneRenderCoordinator {
       check();
       for (;;) {
         check();
+        // Preparing creates and finalises effects, and each synchronous GL query
+        // waits behind the presented draw's driver compile. The wait is not
+        // preparation time, so it extends both bounds.
+        const waited = await whenPresentationFenceClear(this.scene.getEngine(), check);
+        if (waited > 0) { finalDeadline += waited; restartDeadline(); }
         flushSceneLatticeDeformers(this.scene);
         if (expired())
           throw new Error("Scene rendering preparation timed out.");

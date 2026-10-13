@@ -33,6 +33,7 @@ import { syncSceneLighting } from "./scene-lighting";
 import { DriverCompileWatch } from "./driver-compile";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
 import { isManagedClusteredLight } from "./clustered-light-policy";
+import { whenPresentationFenceClear } from "./presented-frame";
 import {
   ManagedShadowObjectRendererTask,
   ManagedShadowsTask,
@@ -981,7 +982,11 @@ export class ForwardSceneFrameGraph {
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
       let deadline = performance.now() + 10_000;
       const compiles = new DriverCompileWatch(scene.getEngine());
-      while (!this.disposed && !this.isReady()) {
+      for (;;) {
+        // Readiness probes finalise effects; a synchronous GL query waits behind
+        // an outstanding presentation fence's driver compile, so defer them.
+        deadline += await whenPresentationFenceClear(scene.getEngine(), assertCurrent);
+        if (this.disposed || this.isReady()) break;
         assertCurrent();
         // A failed shader never becomes ready; report it instead of timing out.
         const compileFailure = this.effectsGraph?.spatial?.compileFailure.message ?? this.outlineTask?.compileFailure.message;
