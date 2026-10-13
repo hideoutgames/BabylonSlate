@@ -48,6 +48,12 @@ kind, Cast Shadows, Shadow Priority, an area light's emission texture) still tak
 Intensity crossing zero toggles the light's effective Enabled state, and a Range edit that moves a light across a shadow, clustered-light or volumetric
 selection boundary changes that selection, which the shadow controller, scene-lighting sync and effects key detect. A presentation or preparation in flight,
 or a latched preparation failure, keeps the full path so it restarts.
+Editor Material binding assigns construction, model-slot, override and saved-instance Materials in turn; observers of a mesh's
+`onMaterialChangedObservable` hear only the net result (`withNetMaterialChanges`), so re-applying an unchanged actor, as every edit does, announces
+nothing and does not make the renderer re-probe its shader variants.
+The editor also keeps a model instance that loaded before its slot Materials compiled (embedded textures retained) rather than reloading it slim
+on the next edit: slimming releases texture memory only, while the reload re-instantiated the model and recompiled its shaders (about 2 s on the
+FeatureTest main scene). A slim instance is still reloaded when its Materials stop being compiled; Play keeps reloading slim.
 
 Opt-in render diagnostics include attempted/drawn/copied/held frames, copy and
 render-callback preparation time, context events, graph builds, strict readiness
