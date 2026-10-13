@@ -127,6 +127,45 @@ describe("NavMeshDebugOverlay", () => {
     overlay.clear();
     expect(overlay.blockerMeshes).toHaveLength(0);
   });
+
+  it("keeps the drawn overlay, and the scene's meshes and materials, when synced again with the same request", async () => {
+    const bytes = await generateNavMesh(groundPrism());
+    const handle = createTestEngine();
+    handles.push(handle);
+    const overlay = new NavMeshDebugOverlay(handle.scene);
+    const door = (x: number) => ({ id: "door", kind: "box" as const, world: Matrix.Translation(x, 0, 0).asArray() });
+    await overlay.sync(bytes, [door(1)]);
+    const fill = overlay.mesh!;
+    const blocker = overlay.blockerMeshes[0]!;
+    const added = vi.fn();
+    const removed = vi.fn();
+    handle.scene.onNewMeshAddedObservable.add(added);
+    handle.scene.onMeshRemovedObservable.add(removed);
+    // A scene edit hands over equal blockers in a fresh array.
+    await overlay.sync(bytes, [door(1)]);
+    expect(overlay.mesh).toBe(fill);
+    expect(overlay.blockerMeshes[0]).toBe(blocker);
+    expect(fill.isDisposed()).toBe(false);
+    expect(blocker.isDisposed()).toBe(false);
+    expect(added).not.toHaveBeenCalled();
+    expect(removed).not.toHaveBeenCalled();
+
+    // A moved blocker, another bake or world, or a mesh the scene dropped, is a new request.
+    await overlay.sync(bytes, [door(5)]);
+    expect(blocker.isDisposed()).toBe(true);
+    expect(overlay.blockerMeshes[0]).not.toBe(blocker);
+    const moved = overlay.blockerMeshes[0]!;
+    expect(worldBox(moved).min[0]).toBeCloseTo(4.5, 5);
+    const other = await generateNavMesh(groundPrism());
+    await overlay.sync(other, [door(5)]);
+    expect(moved.isDisposed()).toBe(true);
+    const rebuilt = overlay.blockerMeshes[0]!;
+    rebuilt.dispose();
+    await overlay.sync(other, [door(5)]);
+    expect(overlay.blockerMeshes[0]!.isDisposed()).toBe(false);
+    expect(overlay.blockerMeshes[0]).not.toBe(rebuilt);
+    overlay.dispose();
+  });
 });
 
 describe("navmesh overlay helpers", () => {

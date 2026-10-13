@@ -62,6 +62,8 @@ export class NavMeshDebugOverlay {
   blockerMeshes: Mesh[] = [];
   private readonly scene: Scene;
   private generation = 0;
+  /** The request the live overlay was built for; cleared with it. */
+  private applied: { bytes: Uint8Array | null; blockers: string; world: PhysicsWorldKind } | null = null;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -72,8 +74,29 @@ export class NavMeshDebugOverlay {
     blockers: readonly NavDebugBlockerPose[] = [],
     world: PhysicsWorldKind = "3d",
   ): Promise<void> {
+    // Scene edits resync with an unchanged bake and unchanged blockers. Rebuilding adds and
+    // disposes scene meshes and materials, which marks renderer readiness dirty for nothing.
+    const request = { bytes, blockers: JSON.stringify(blockers), world };
+    const applied = this.applied;
+    if (applied && applied.bytes === request.bytes && applied.blockers === request.blockers && applied.world === request.world && this.isLive()) return;
     this.clear();
+    this.applied = request;
     const generation = this.generation;
+    try {
+      await this.build(bytes, blockers, world, generation);
+    } catch (error) {
+      // A failed build must not make the identical request a no-op.
+      if (generation === this.generation) this.applied = null;
+      throw error;
+    }
+  }
+
+  private async build(
+    bytes: Uint8Array | null,
+    blockers: readonly NavDebugBlockerPose[],
+    world: PhysicsWorldKind,
+    generation: number,
+  ): Promise<void> {
     const positions: number[] = [];
     const indices: number[] = [];
     if (bytes && bytes.byteLength > 0) {
@@ -134,8 +157,14 @@ export class NavMeshDebugOverlay {
     }
   }
 
+  /** Every mesh this overlay built is still in the scene. */
+  private isLive(): boolean {
+    return (this.mesh === null || !this.mesh.isDisposed()) && this.blockerMeshes.every((mesh) => !mesh.isDisposed());
+  }
+
   clear(): void {
     this.generation += 1;
+    this.applied = null;
     this.mesh?.dispose(false, true);
     this.mesh = null;
     for (const mesh of this.blockerMeshes) mesh.dispose();
