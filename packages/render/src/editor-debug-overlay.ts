@@ -99,83 +99,88 @@ function asNumber(value: unknown, fallback: number): number {
 
 /** Every guide path gets 64 dashes, so the pattern scales with the path's length. */
 const DASH_STYLE = { dashSize: 0.12, gapSize: 0.08, dashNb: 64 } as const;
-const GUIDE_COLOR = { r: 0.85, g: 0.9, b: 0.4 } as const;
-
-function dashedLines(
-  name: string,
-  points: Vector3[],
-  scene: Scene,
-  parent: TransformNode,
-): LinesMesh {
-  const mesh = MeshBuilder.CreateDashedLines(name, { points, ...DASH_STYLE }, scene);
-  mesh.color = new Color3(GUIDE_COLOR.r, GUIDE_COLOR.g, GUIDE_COLOR.b);
-  mesh.isPickable = false;
-  mesh.parent = parent;
-  return mesh;
-}
+type GuideColor = { readonly r: number; readonly g: number; readonly b: number };
+const GUIDE_COLOR: GuideColor = { r: 0.85, g: 0.9, b: 0.4 };
+/** Audio attenuation radii: inner green, max yellow. */
+const AUDIO_LAYERS = [
+  { name: "inner", color: { r: 0, g: 1, b: 0 } },
+  { name: "max", color: { r: 1, g: 1, b: 0 } },
+] as const;
 
 /**
- * A persistent selection guide: a hidden root and one dashed LinesMesh holding
- * every path of the shape. It joins the Scene once, and showing, hiding,
- * moving or reshaping it afterwards never adds or removes a mesh or material.
- * Scene membership changes force the whole-scene strict readiness probe, which
- * is far costlier than a selection. The root is never parented to an actor
- * mesh, because disposing a parent also disposes its children.
+ * A persistent selection guide: a hidden root and one dashed LinesMesh per
+ * colour layer, each holding every path of its shape. It joins the Scene once,
+ * and showing, hiding, moving or reshaping it afterwards never adds or removes
+ * a mesh or material. Scene membership changes force the whole-scene strict
+ * readiness probe, which is far costlier than a selection. The root is never
+ * parented to an actor mesh, because disposing a parent also disposes its
+ * children.
  */
 class DashedGuide {
   readonly root: TransformNode;
-  private readonly lines: LinesMesh;
+  private readonly layers: Array<{ name: string; lines: LinesMesh; shape: string | null }>;
   private readonly namePrefix: string;
-  private shape: string | null = null;
 
-  constructor(scene: Scene, namePrefix: string) {
+  constructor(
+    scene: Scene,
+    namePrefix: string,
+    layers: ReadonlyArray<{ name: string; color: GuideColor }> = [{ name: "lines", color: GUIDE_COLOR }],
+  ) {
     this.namePrefix = namePrefix;
     this.root = new TransformNode(namePrefix, scene);
     this.root.rotationQuaternion = Quaternion.Identity();
     this.root.setEnabled(false);
-    // Placeholder dashes: a real mesh lets the line shader compile with the
-    // Scene's load instead of on the first selection. The first reshape replaces it.
-    const lines = MeshBuilder.CreateDashedLines(
-      `${namePrefix}lines`,
-      { points: [Vector3.Zero(), Vector3.Forward()], ...DASH_STYLE, updatable: true },
-      scene,
-    );
-    lines.color = new Color3(GUIDE_COLOR.r, GUIDE_COLOR.g, GUIDE_COLOR.b);
-    lines.isPickable = false;
-    lines.parent = this.root;
-    markEditorHelperMesh(lines);
-    this.lines = lines;
+    this.layers = layers.map(({ name, color }) => {
+      // Placeholder dashes: a real mesh lets the line shader compile with the
+      // Scene's load instead of on the first selection. The first reshape replaces it.
+      const lines = MeshBuilder.CreateDashedLines(
+        `${namePrefix}${name}`,
+        { points: [Vector3.Zero(), Vector3.Forward()], ...DASH_STYLE, updatable: true },
+        scene,
+      );
+      lines.color = new Color3(color.r, color.g, color.b);
+      lines.isPickable = false;
+      lines.parent = this.root;
+      markEditorHelperMesh(lines);
+      return { name, lines, shape: null };
+    });
   }
 
-  /** Name the guide after the actor it currently shows. */
-  label(actorId: string): void {
-    this.root.name = `${this.namePrefix}${actorId}`;
-    this.lines.name = `${this.namePrefix}${actorId}:lines`;
+  /** Name the guide after what it currently shows. */
+  label(id: string): void {
+    this.root.name = `${this.namePrefix}${id}`;
+    for (const layer of this.layers) layer.lines.name = `${this.namePrefix}${id}:${layer.name}`;
   }
 
   /**
-   * Replace the dashes in place unless `shape` is the one already drawn. The
-   * vertex count follows the dash builder, so a changed count (floating-point
+   * Replace a layer's dashes in place unless `shape` is the one already drawn.
+   * The vertex count follows the dash builder, so a changed count (floating-point
    * dash rounding, a different path set) replaces the buffers instead.
    */
-  reshape(shape: string, paths: () => Vector3[][]): void {
-    if (shape === this.shape) return;
-    this.shape = shape;
+  reshape(shape: string, paths: () => Vector3[][], layerIndex = 0): void {
+    const layer = this.layers[layerIndex]!;
+    if (shape === layer.shape) return;
+    layer.shape = shape;
     const positions: number[] = [];
     for (const points of paths()) {
       const dashes = CreateDashedLinesVertexData({ points, ...DASH_STYLE }).positions;
       if (dashes) for (let index = 0; index < dashes.length; index += 1) positions.push(dashes[index]!);
     }
     const vertices = positions.length / 3;
-    if (this.lines.getTotalVertices() === vertices) {
+    if (layer.lines.getTotalVertices() === vertices) {
       // Dashes are consecutive index pairs, so equal counts mean equal indices.
-      this.lines.updateVerticesData(VertexBuffer.PositionKind, new Float32Array(positions), true);
+      layer.lines.updateVerticesData(VertexBuffer.PositionKind, new Float32Array(positions), true);
       return;
     }
     const data = new VertexData();
     data.positions = positions;
     data.indices = Array.from({ length: vertices }, (_, index) => index);
-    data.applyToMesh(this.lines, true);
+    data.applyToMesh(layer.lines, true);
+  }
+
+  /** Hide one colour layer while the guide is shown (a radius of zero draws nothing). */
+  setLayerShown(layerIndex: number, shown: boolean): void {
+    this.layers[layerIndex]!.lines.setEnabled(shown);
   }
 
   setShown(shown: boolean): void {
@@ -293,6 +298,18 @@ function areaLightPaths(width: number, height: number): Vector3[][] {
   ];
 }
 
+/** An Audio Component's attenuation radius: one ring about each world axis. */
+function audioRingPaths(radius: number): Vector3[][] {
+  return [Vector3.Up(), Vector3.Right(), Vector3.Forward()].map((normal) => ringPoints(Vector3.Zero(), normal, radius));
+}
+
+type AudioGuideSpec = {
+  actor: SerializedActor;
+  component: SerializedComponent;
+  innerRadius: number;
+  maxRadius: number;
+};
+
 /** Near quad, far quad and the four rails joining them. */
 const FRUSTUM_EDGES: ReadonlyArray<readonly [number, number]> = [
   [0, 1], [1, 2], [2, 3], [3, 0],
@@ -318,7 +335,9 @@ function frustumPaths(lens: AuthoredCameraProperties, aspect: number): Vector3[]
  * probe. One guide of each kind is enough, as only the first selected light and
  * the first selected lens are drawn. The preview RTT is at most 320×180 RGBA8
  * plus its depth buffer (about 0.5 MB); it renders only while a lens is selected
- * and is released with the overlay. Audio radii are still built per sync.
+ * and is released with the overlay. Audio radii use the same kind of guide from
+ * a pool: one is built with the overlay, and another only joins the Scene when
+ * more Audio Components are selected at once than ever before.
  */
 export class EditorDebugOverlay {
   /** Root of the lens guide while a lens is selected. */
@@ -373,8 +392,15 @@ export class EditorDebugOverlay {
   private readonly previewBlitter = createRttCanvasBlitter();
   // The shared blitter reuses one buffer: draw each readback before the next.
   private previewBlitInFlight = false;
+  /**
+   * Pooled attenuation guides, one per selected Audio Component. A pool entry is
+   * only created when more are selected at once than ever before, so repeated
+   * selections of that many or fewer never change Scene membership.
+   */
+  private readonly audioGuides: DashedGuide[] = [];
+  /** The pool entries currently showing a selected Audio Component. */
   private audioDebug: Array<{
-    root: TransformNode;
+    guide: DashedGuide;
     actor: SerializedActor;
     component: SerializedComponent;
     visual: AbstractMesh | null;
@@ -389,6 +415,7 @@ export class EditorDebugOverlay {
     // Built before any content loads, so these joins never force a probe of a loaded Scene.
     this.lightGuide = new DashedGuide(scene, "debugLight:");
     this.lensGuide = new DashedGuide(scene, "debugFrustum:");
+    this.audioGuides.push(new DashedGuide(scene, "debugAudio:", AUDIO_LAYERS));
     this.poseObserver = scene.onBeforeRenderObservable.add(() => this.updateHelperPoses());
     // Additions notify after a deferral and removals immediately; the mesh
     // count in `findMesh` covers an addition not yet notified.
@@ -403,12 +430,12 @@ export class EditorDebugOverlay {
 
   sync(options: OverlaySync): void {
     if (this.disposed) return;
-    this.disposeAudioDebug();
     this.lastSync = options;
     const sceneData = options.sceneData;
     if (!sceneData) {
       this.hideLens();
       this.hideLight();
+      this.showAudio([]);
       this.updatePreviewCanvasVisibility();
       return;
     }
@@ -431,6 +458,7 @@ export class EditorDebugOverlay {
     }
     if (light) this.showLight(light.actor, light.component, sceneData.actors);
     else this.hideLight();
+    const audio: AudioGuideSpec[] = [];
     for (const { actor, component } of selected) {
       if (component.classId !== "AudioComponent") continue;
       const guid = component.properties.audioAssetGuid;
@@ -440,9 +468,10 @@ export class EditorDebugOverlay {
         ? options.audioLibrary?.attenuations.get(attenuationGuid)
         : undefined;
       if (attenuation) {
-        this.buildAudioDebug(actor, component, attenuation.innerRadius, attenuation.maxRadius);
+        audio.push({ actor, component, innerRadius: attenuation.innerRadius, maxRadius: attenuation.maxRadius });
       }
     }
+    this.showAudio(audio);
     this.followLivePose();
     this.updatePreviewCanvasVisibility();
     this.ensureTimer();
@@ -523,7 +552,9 @@ export class EditorDebugOverlay {
     if (this.disposed) return;
     this.stop();
     this.disposed = true;
-    this.disposeAudioDebug();
+    this.audioDebug = [];
+    for (const guide of this.audioGuides) guide.dispose();
+    this.audioGuides.length = 0;
     this.lightGuide.dispose();
     this.lensGuide.dispose();
     this.preview?.rtt.dispose();
@@ -541,11 +572,6 @@ export class EditorDebugOverlay {
       clearInterval(this.timer);
       this.timer = null;
     }
-  }
-
-  private disposeAudioDebug(): void {
-    for (const { root } of this.audioDebug) root.dispose();
-    this.audioDebug = [];
   }
 
   /** Stop previewing: hide the guide and idle the retained camera and RTT. */
@@ -832,7 +858,8 @@ export class EditorDebugOverlay {
 
   private updateAudioDebugPoses(): void {
     for (const entry of this.audioDebug) {
-      const { root, actor, component } = entry;
+      const { actor, component } = entry;
+      const root = entry.guide.root;
       // Runs every frame: keep resolved meshes until they are disposed, and
       // re-resolve unresolved ones as meshes arrive so an emitter realized
       // later is still followed.
@@ -857,30 +884,27 @@ export class EditorDebugOverlay {
     }
   }
 
-  private buildAudioDebug(
-    actor: SerializedActor,
-    component: SerializedComponent,
-    innerRadius: number,
-    maxRadius: number,
-  ): void {
-    const name = `debugAudio:${actor.id}:${component.id}`;
-    const root = new TransformNode(name, this.scene);
-    for (const [label, radius, color] of [
-      ["inner", innerRadius, Color3.Green()],
-      ["max", maxRadius, Color3.Yellow()],
-    ] as const) {
-      if (radius <= 0) continue;
-      for (const [axis, normal] of [Vector3.Up(), Vector3.Right(), Vector3.Forward()].entries()) {
-        const mesh = dashedLines(
-          `${name}:${label}:${axis}`,
-          ringPoints(Vector3.Zero(), normal, radius),
-          this.scene,
-          root,
-        );
-        mesh.color = color;
-      }
-    }
-    this.audioDebug.push({ root, actor, component, visual: null, origin: null });
+  /**
+   * Show each selected Audio Component's inner (green) and max (yellow) radius
+   * rings on a pooled guide, and hide the rest. Pool entry `i` serves the
+   * `i`-th selected component, so switching the selection reshapes in place.
+   */
+  private showAudio(wanted: readonly AudioGuideSpec[]): void {
+    const entries: typeof this.audioDebug = [];
+    wanted.forEach(({ actor, component, innerRadius, maxRadius }, index) => {
+      // A guide joins the Scene only when more are selected at once than ever before.
+      const guide = this.audioGuides[index] ??= new DashedGuide(this.scene, "debugAudio:", AUDIO_LAYERS);
+      guide.label(`${actor.id}:${component.id}`);
+      [innerRadius, maxRadius].forEach((radius, layer) => {
+        const drawn = radius > 0;
+        guide.setLayerShown(layer, drawn);
+        if (drawn) guide.reshape(`rings|${radius}`, () => audioRingPaths(radius), layer);
+      });
+      guide.setShown(true);
+      entries.push({ guide, actor, component, visual: null, origin: null });
+    });
+    for (let index = wanted.length; index < this.audioGuides.length; index += 1) this.audioGuides[index]!.setShown(false);
+    this.audioDebug = entries;
   }
 
   private updatePreviewCanvasVisibility(): void {

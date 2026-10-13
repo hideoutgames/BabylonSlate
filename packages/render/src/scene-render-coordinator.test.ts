@@ -5,6 +5,7 @@ import { DirectionalLight, Effect, FreeCamera, MeshBuilder, NullEngine, NullEngi
 import { SceneOutlineHost } from "./scene-outline-host";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
+import { createDefaultAudioPayload, createDefaultSoundAttenuationPayload } from "@babylonslate/assets";
 import { createActor, createDefaultScene, fogVolumeBindings, normalizeRenderingQuality, normalizeShadowSettings, outlineBindings } from "@babylonslate/core";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
 import { sceneShadowController } from "./shadow-controller";
@@ -796,7 +797,7 @@ describe("selection outline changes", () => {
 });
 
 describe("editor selection guides", () => {
-  it("shows, edits and hides light and camera guides without a scene probe or graph rebuild", async () => {
+  it("shows, edits and hides light, camera and audio guides without a scene probe or graph rebuild", async () => {
     const { scene, renderer } = host();
     MeshBuilder.CreateBox("world", {}, scene);
     // The editor builds its overlay before content loads, so the guides join the first probe.
@@ -810,15 +811,22 @@ describe("editor selection guides", () => {
         createActor("cam", "Camera", {
           components: [{ id: "camera", classId: "CameraComponent", properties: { fieldOfView: 60 } }],
         }),
+        createActor("speaker", "Speaker", {
+          components: [{ id: "audio", classId: "AudioComponent", properties: { audioAssetGuid: "sound" } }],
+        }),
       ],
     });
+    const audioLibrary = {
+      audio: new Map([["sound", { ...createDefaultAudioPayload(), soundAttenuationGuid: "near" }]]),
+      attenuations: new Map([["near", { ...createDefaultSoundAttenuationPayload(), innerRadius: 2, maxRadius: 20 }]]),
+    };
     await renderer.prepare();
     expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
     const strict = renderer.strictReadinessChecks;
     const { graphBuilds } = renderer.diagnostics();
-    // Select a light, drag its range, switch to the camera, select both, then clear.
-    for (const [range, selectedActorIds] of [[10, ["spot"]], [14, ["spot"]], [14, ["cam"]], [14, ["spot", "cam"]], [14, []]] as const) {
-      overlay.sync({ sceneData: document(range), selectedActorIds });
+    // Select a light, drag its range, switch to the camera and an emitter, select all, then clear.
+    for (const [range, selectedActorIds] of [[10, ["spot"]], [14, ["spot"]], [14, ["cam"]], [14, ["speaker"]], [14, ["spot", "cam", "speaker"]], [14, []]] as const) {
+      overlay.sync({ sceneData: document(range), selectedActorIds, audioLibrary });
       expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
     }
     expect(renderer.strictReadinessChecks).toBe(strict);

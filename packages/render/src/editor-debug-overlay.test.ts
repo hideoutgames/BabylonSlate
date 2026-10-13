@@ -368,13 +368,14 @@ describe("EditorDebugOverlay", () => {
     const { scene } = createHandle();
     const before = membership(scene);
     const overlay = new EditorDebugOverlay(scene, { now: () => 0 });
-    // The light and lens guides: a root and one dashed mesh with its own material each.
+    // The light and lens guides (a root and one dashed mesh with its own material each) and
+    // the first audio guide (a root and an inner and a max mesh).
     const built = membership(scene);
     expect(built).toEqual({
       ...before,
-      meshes: before.meshes + 2,
-      transformNodes: before.transformNodes + 2,
-      materials: before.materials + 2,
+      meshes: before.meshes + 4,
+      transformNodes: before.transformNodes + 3,
+      materials: before.materials + 4,
     });
     const audio = createActor("speaker", "Speaker", {
       components: [{ id: "audio", classId: "AudioComponent", properties: { audioAssetGuid: "sound" } }],
@@ -388,13 +389,8 @@ describe("EditorDebugOverlay", () => {
       selectedActorIds: ["lamp", "cam", "speaker"],
       audioLibrary,
     });
-    // Only the audio radii (a root plus six dashed meshes and materials) join the scene by selection.
-    expect(membership(scene)).toEqual({
-      ...built,
-      meshes: built.meshes + 6,
-      transformNodes: built.transformNodes + 1,
-      materials: built.materials + 6,
-    });
+    // Selecting all three kinds adds nothing: even the audio rings were built with the overlay.
+    expect(membership(scene)).toEqual(built);
     const texture = overlay.previewTexture!;
     const camera = texture.activeCamera!;
     const disposeTexture = vi.spyOn(texture, "dispose");
@@ -454,10 +450,11 @@ describe("EditorDebugOverlay", () => {
     overlay.sync({ sceneData: sceneWith([actor]), selectedActorIds: [actor.id], audioLibrary });
     const root = scene.getTransformNodeByName("debugAudio:speaker:audio")!;
     expect(root.position.asArray()).toEqual([12, 0, 0]);
-    const inner = root.getChildMeshes().filter((mesh) => mesh.name.includes(":inner:")) as LinesMesh[];
-    const outer = root.getChildMeshes().filter((mesh) => mesh.name.includes(":max:")) as LinesMesh[];
-    expect(inner).toHaveLength(3);
-    expect(outer).toHaveLength(3);
+    // One mesh per colour holds the rings about all three axes.
+    const inner = root.getChildMeshes().filter((mesh) => mesh.name.endsWith(":inner")) as LinesMesh[];
+    const outer = root.getChildMeshes().filter((mesh) => mesh.name.endsWith(":max")) as LinesMesh[];
+    expect(inner).toHaveLength(1);
+    expect(outer).toHaveLength(1);
     for (const [meshes, radius, color] of [[inner, 3, [0, 1, 0]], [outer, 12, [1, 1, 0]]] as const) {
       for (const mesh of meshes) {
         expect(mesh.color.asArray()).toEqual(color);
@@ -494,9 +491,11 @@ describe("EditorDebugOverlay", () => {
     scene.onBeforeRenderObservable.notifyObservers(scene);
     expect(root.position.asArray()).toEqual([126, 0, 0]);
     overlay.sync({ sceneData: sceneWith([actor]), selectedActorIds: [], audioLibrary });
-    expect(root.isDisposed()).toBe(true);
-    expect(scene.meshes.some((mesh) => mesh.name.startsWith("debugAudio:"))).toBe(false);
+    expect(root.isEnabled()).toBe(false);
+    expect(root.isDisposed()).toBe(false);
+    expect(scene.meshes.some((mesh) => mesh.name.startsWith("debugAudio:") && mesh.isEnabled())).toBe(false);
     overlay.dispose();
+    expect(root.isDisposed()).toBe(true);
     expect(scene.onBeforeRenderObservable.hasObservers()).toBe(hadObservers);
   });
 
@@ -549,13 +548,58 @@ describe("EditorDebugOverlay", () => {
       attenuations: new Map([["near", createDefaultSoundAttenuationPayload()]]),
     };
     const options = { sceneData: sceneWith([actor]), selectedActorIds: [actor.id], audioLibrary };
+    const drawn = () => scene.meshes.filter((mesh) => mesh.name.startsWith("debugAudio:") && mesh.isEnabled());
     overlay.sync({ ...options, selectedComponentIds: ["dry", "missing"] });
-    expect(scene.meshes.some((mesh) => mesh.name.startsWith("debugAudio:"))).toBe(false);
+    expect(drawn()).toHaveLength(0);
+    // Inner and max radius rings, each colour in one mesh.
     overlay.sync({ ...options, selectedComponentIds: ["spatial"] });
-    expect(scene.meshes.filter((mesh) => mesh.name.startsWith("debugAudio:"))).toHaveLength(6);
+    expect(drawn().map((mesh) => mesh.name)).toEqual(["debugAudio:prefab-root:spatial:inner", "debugAudio:prefab-root:spatial:max"]);
     audioLibrary.attenuations.clear();
     overlay.sync({ ...options, selectedComponentIds: ["spatial"] });
-    expect(scene.meshes.some((mesh) => mesh.name.startsWith("debugAudio:"))).toBe(false);
+    expect(drawn()).toHaveLength(0);
+    overlay.dispose();
+  });
+
+  it("selects, switches, edits and deselects audio emitters without changing scene membership", () => {
+    const { scene } = createHandle();
+    const overlay = new EditorDebugOverlay(scene);
+    const baseline = membership(scene);
+    const speaker = (id: string) => createActor(id, id, {
+      components: [{ id: "audio", classId: "AudioComponent", properties: { audioAssetGuid: "sound" } }],
+    });
+    const sceneData = sceneWith([speaker("a"), speaker("b")]);
+    const attenuations = new Map([["near", { ...createDefaultSoundAttenuationPayload(), innerRadius: 3, maxRadius: 12 }]]);
+    const audioLibrary = {
+      audio: new Map([["sound", { ...createDefaultAudioPayload(), soundAttenuationGuid: "near" }]]),
+      attenuations,
+    };
+    const drawn = () => scene.meshes.filter((mesh) => mesh.name.startsWith("debugAudio:") && mesh.isEnabled());
+    const radius = (name: string) => reach(frustumWorldPoints(scene.getTransformNodeByName(name)!));
+    for (const selectedActorIds of [["a"], ["b"], [], ["a"], []]) {
+      overlay.sync({ sceneData, selectedActorIds, audioLibrary });
+      expect(membership(scene)).toEqual(baseline);
+    }
+    // Editing the selected emitter's attenuation reshapes its rings in place.
+    overlay.sync({ sceneData, selectedActorIds: ["a"], audioLibrary });
+    expect(radius("debugAudio:a:audio")).toBeCloseTo(12, 0);
+    attenuations.set("near", { ...createDefaultSoundAttenuationPayload(), innerRadius: 5, maxRadius: 30 });
+    overlay.sync({ sceneData, selectedActorIds: ["a"], audioLibrary });
+    expect(radius("debugAudio:a:audio")).toBeCloseTo(30, 0);
+    // A zero inner radius draws only the max rings.
+    attenuations.set("near", { ...createDefaultSoundAttenuationPayload(), innerRadius: 0, maxRadius: 30 });
+    overlay.sync({ sceneData, selectedActorIds: ["a"], audioLibrary });
+    expect(drawn().map((mesh) => mesh.name)).toEqual(["debugAudio:a:audio:max"]);
+    expect(membership(scene)).toEqual(baseline);
+
+    // Selecting two emitters at once adds one pooled guide, once; afterwards the pair is free.
+    overlay.sync({ sceneData, selectedActorIds: ["a", "b"], audioLibrary });
+    expect(drawn()).toHaveLength(2);
+    const pooled = membership(scene);
+    expect(pooled.meshes).toBe(baseline.meshes + 2);
+    for (const selectedActorIds of [["a"], ["b", "a"], [], ["a", "b"]]) {
+      overlay.sync({ sceneData, selectedActorIds, audioLibrary });
+      expect(membership(scene)).toEqual(pooled);
+    }
     overlay.dispose();
   });
 
