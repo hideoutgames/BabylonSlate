@@ -1436,11 +1436,20 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   async loadScripts(scripts: readonly CompiledScript[]): Promise<void> {
-    return this.scriptRuntime.updateSources(scripts, false);
+    return this.updateScriptSources(scripts, false);
   }
 
   replaceScriptSources(scripts: readonly CompiledScript[]): Promise<void> {
-    return this.scriptRuntime.updateSources(scripts, true);
+    return this.updateScriptSources(scripts, true);
+  }
+
+  private async updateScriptSources(scripts: readonly CompiledScript[], replace: boolean): Promise<void> {
+    try {
+      await this.scriptRuntime.updateSources(scripts, replace);
+    } finally {
+      // Which classes handle Hit and Overlap events, and so need contact reporting, may have changed.
+      this.physics.scriptsChanged();
+    }
   }
 
   spawnScriptedActor(options: ScriptedActorSpawn): Actor | null {

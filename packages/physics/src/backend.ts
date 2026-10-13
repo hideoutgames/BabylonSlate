@@ -62,6 +62,14 @@ export interface PhysicsBackend {
     linear: Vec3; angular: Vec3; centerOfMass: Vec3;
   } | null;
   updateBody(bodyId: string, tuning: RigidBodyTuning): void;
+  /**
+   * Optional. Whether contacts involving this actor's bodies need reporting (every body starts reporting unless its
+   * `RigidBodyDesc.reportContacts` is false). A contact between two bodies is reported while either side
+   * reports, so muting an actor only silences the pairs whose other side is muted too. Overlap
+   * begin/end pairs are unaffected, and a body in an open overlap changes only after it ends. Backends
+   * whose contact detection does not depend on native events ignore it.
+   */
+  setContactReporting?(actorId: string, enabled: boolean): void;
 
   /** Atomically creates/replaces one constraint, retaining the old one on failure. */
   createConstraint(desc: ConstraintDesc): void;

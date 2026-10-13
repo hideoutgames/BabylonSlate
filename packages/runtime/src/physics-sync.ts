@@ -68,6 +68,9 @@ export class PhysicsWorldSync {
   private readonly backend: PhysicsBackend;
   private readonly actorFilter: (actor: Actor) => boolean;
   private readonly skipEmptySteps: boolean;
+  private readonly observesContacts: ((actor: Actor) => boolean) | undefined;
+  /** Contact reporting last asked of the backend per actor guid; absent means the default, reporting. */
+  private readonly contactReporting = new Map<string, boolean>();
   private readonly constraints: PhysicsConstraintSync;
   private readonly suppressedActors = new WeakSet<Actor>();
   private readonly bodyByActor = new Map<string, string>();
@@ -202,9 +205,16 @@ export class PhysicsWorldSync {
        * Only for worlds whose backend has no other users (Scene Layer worlds).
        */
       skipEmptySteps?: boolean;
+      /**
+       * Whether a hit or overlap event naming `actor` could be observed (a script handler on its class). Bodies of
+       * actors that cannot observe any, and host no shape of one that can, are not asked for native contact
+       * events (`PhysicsBackend.setContactReporting`). Omitted: every actor is observed.
+       */
+      observesContacts?: (actor: Actor) => boolean;
     },
   ) {
     this.backend = backend;
+    this.observesContacts = options?.observesContacts;
     this.skipEmptySteps = options?.skipEmptySteps ?? false;
     this.actorFilter = options?.actorFilter ?? (() => true);
     this.constraints = new PhysicsConstraintSync(backend, options?.deferUnsupportedConstraints);
@@ -221,12 +231,44 @@ export class PhysicsWorldSync {
     return bodyId ? this.backend.getBodyVelocity(bodyId) : null;
   }
 
+  /**
+   * Whether native contact events should be requested for `actor`'s bodies: an observer exists for the actor or
+   * for a static child whose solid shapes this actor's compound hosts, since the host's body raises their contacts.
+   */
+  wantsContacts(actor: Actor): boolean {
+    const observes = this.observesContacts;
+    if (!observes || observes(actor)) return true;
+    const hosted = this.hostedByHost.get(actor.guid);
+    if (hosted) for (const child of hosted) if (observes(child)) return true;
+    return false;
+  }
+
+  /** `wantsContacts`, recorded as what is being asked of the backend for the bodies the caller is about to create. */
+  claimContactReporting(actor: Actor): boolean {
+    const wants = this.wantsContacts(actor);
+    if (wants) this.contactReporting.delete(actor.guid);
+    else this.contactReporting.set(actor.guid, false);
+    return wants;
+  }
+
+  /** Bring the backend's contact reporting for `actor` in line with `wantsContacts`; cheap when unchanged. */
+  refreshContactReporting(actor: Actor): void {
+    if (!this.observesContacts || !this.backend.setContactReporting) return;
+    const wants = this.wantsContacts(actor);
+    if ((this.contactReporting.get(actor.guid) ?? true) === wants) return;
+    this.contactReporting.set(actor.guid, wants);
+    this.backend.setContactReporting(actor.guid, wants);
+  }
+
   /** An articulated ragdoll replaces the actor's ordinary body and colliders. */
   suppressActorBody(actor: Actor, suppressed: boolean): void {
     if (suppressed) {
       this.suppressedActors.add(actor);
       if (this.bodyOwnerByActor.get(actor.guid) === actor) this.retireActor(actor.guid);
-    } else this.suppressedActors.delete(actor);
+    } else {
+      this.suppressedActors.delete(actor);
+      this.contactReporting.delete(actor.guid);
+    }
   }
 
   setTileContent(options: {
@@ -349,6 +391,7 @@ export class PhysicsWorldSync {
     this.movementControllerDescriptors.clear();
     this.preparedByActor.clear();
     this.bodyOwnerByActor.clear();
+    this.contactReporting.clear();
     this.staticPoses.clear();
     this.hostByActor.clear();
     this.hostedByHost.clear();
@@ -404,6 +447,8 @@ export class PhysicsWorldSync {
       if (this.hostByActor.has(actor.guid) && !this.hasTriggerCollider(actor)) continue;
       live.add(actor.guid);
       this.reconcileActor(actor, source, this.passWorldTransform);
+      // After hosting settled, so a host reports the contacts of the children it hosts.
+      if (this.bodyByActor.has(actor.guid)) this.refreshContactReporting(actor);
     }
     // Hosted IDs are host-qualified, so retiring bodies last cannot collide
     // with shapes that moved onto or off a compound in this pass.
@@ -928,6 +973,7 @@ export class PhysicsWorldSync {
     this.bodyByActor.delete(actorId);
     const owner = this.bodyOwnerByActor.get(actorId);
     this.bodyOwnerByActor.delete(actorId);
+    this.contactReporting.delete(actorId);
     this.staticPoses.delete(actorId);
     this.appliedBodyProperties.delete(actorId);
     this.characterByActor.delete(actorId);
@@ -1354,6 +1400,7 @@ export class PhysicsWorldSync {
       angularDamping: props.angularDamping,
       gravityScale: props.gravityScale,
       transform: pose,
+      reportContacts: this.claimContactReporting(actor),
     });
     try {
       this.applyActorColliders(actor, bodyId, resolved, movement ?? null);

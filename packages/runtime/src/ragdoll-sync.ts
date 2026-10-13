@@ -73,6 +73,8 @@ export class RagdollWorldSync implements RuntimeSubsystem {
       const scale = transforms.get(actor.guid)?.scale ?? actor.transform.scale;
       const descriptor = sourceDescriptor(actor, component, scale);
       if (old?.component === component && old.slotId === slotId && sameDescriptor(old.descriptor, descriptor)) {
+        // Scripts may have been replaced since the bones were created.
+        if (old.physics) this.host.physics().refreshContactReporting(actor);
         if (old.phase === "pending" && this.host.world.clock.tickIndex - old.requestedAt > 600) {
           this.fail(old, new Error("The renderer did not provide a skeletal pose within 600 simulation ticks"));
         }
@@ -126,7 +128,8 @@ export class RagdollWorldSync implements RuntimeSubsystem {
     try {
       const sync = this.host.physics();
       const initialVelocity = sync.getActorVelocity(state.actor) ?? undefined;
-      physics = new RagdollPhysics(sync.getBackend(), state.actor.guid, state.requestId, message.bones, state.properties, initialVelocity);
+      physics = new RagdollPhysics(sync.getBackend(), state.actor.guid, state.requestId, message.bones, state.properties, initialVelocity,
+        sync.claimContactReporting(state.actor));
       physics.addImpulse(state.pendingImpulse);
       state.pendingImpulse = { x: 0, y: 0, z: 0 };
       const bones = physics.readPose();

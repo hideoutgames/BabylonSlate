@@ -456,4 +456,76 @@ describe("runtime collision events", () => {
     expect(other).toHaveLength(1);
     runtime.stop();
   });
+
+  /** A scripted static "Bumper" and a plain dynamic actor pressed into it by a steady push. */
+  async function pressPlainActorIntoBumper(commands: CommandMessage[], bumperGraph: (registry: NodeRegistry) => LogicGraph) {
+    const registry = createDefaultNodeRegistry();
+    const runtime = createInProcessRuntime({
+      seed: 8,
+      seedDemoActors: false,
+      physicsWorld: "3d",
+      gravity: [0, 0, 0],
+      dt: 1 / 60,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([toScript(bumperGraph(registry), registry, "Bumper", "bumper-asset")]);
+    const bumper = runtime.spawnScriptedActor({ classId: "Bumper" })!;
+    const world = runtime.getWorld();
+    const plain = world.createActor({ classId: "Actor", guid: "plain" });
+    attachKinematicBox(runtime, bumper);
+    attachKinematicBox(runtime, plain);
+    bumper.components.find((component) => component.classId === "RigidBodyComponent")!.setVariable("motionType", "static");
+    plain.components.find((component) => component.classId === "RigidBodyComponent")!.setVariable("motionType", "dynamic");
+    plain.transform.position.x = -0.9;
+    world.spawnActorNow(plain);
+    await runtime.loadPhysics();
+    const physics = runtime.getPhysicsSync()!;
+    const push = () => physics.getBackend().setBodyLinearVelocity(`body:${plain.guid}`, { x: 2 });
+    return { runtime, registry, push };
+  }
+
+  const hitLogs = (commands: CommandMessage[]) =>
+    commands.filter((command) => command.type === "log" && command.category === "Hit");
+
+  it("dispatches a Havok hit to the only scripted actor of a pair", async () => {
+    const commands: CommandMessage[] = [];
+    const { runtime, push } = await pressPlainActorIntoBumper(commands, hitLogGraph);
+    try {
+      runtime.start();
+      for (let tick = 0; tick < 60; tick++) {
+        push();
+        runtime.tick();
+      }
+      expect(hitLogs(commands).length).toBeGreaterThan(0);
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it("starts dispatching hits when replaced scripts add a handler to a class mid-Play", async () => {
+    const commands: CommandMessage[] = [];
+    const tickOnlyGraph = (registry: NodeRegistry): LogicGraph => ({
+      id: "event-graph",
+      kind: "event",
+      nodes: [node(registry, "tick", "flow.event.tick"), node(registry, "log", "debug.log", { category: "Tick" })],
+      edges: [edge("e1", "tick", "execOut", "log", "execIn")],
+    });
+    const { runtime, registry, push } = await pressPlainActorIntoBumper(commands, tickOnlyGraph);
+    try {
+      runtime.start();
+      for (let tick = 0; tick < 30; tick++) {
+        push();
+        runtime.tick();
+      }
+      expect(hitLogs(commands)).toHaveLength(0);
+      await runtime.replaceScriptSources([toScript(hitLogGraph(registry), registry, "Bumper", "bumper-asset")]);
+      for (let tick = 0; tick < 30; tick++) {
+        push();
+        runtime.tick();
+      }
+      expect(hitLogs(commands).length).toBeGreaterThan(0);
+    } finally {
+      runtime.stop();
+    }
+  });
 });
