@@ -2790,7 +2790,7 @@ export class ProjectService {
           load: (entry) => entry.id === DOCUMENT_CHUNK_ID,
         });
       } catch {
-        kept = null;
+        // `kept` stays unset, so everything is decoded below.
       }
       let header: BabassetHeader;
       let body: Uint8Array | undefined;
