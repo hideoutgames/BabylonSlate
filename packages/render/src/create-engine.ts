@@ -41,6 +41,7 @@ import { SceneOutlineHost, isOutlineOnlySceneEdit, type SceneOutlineSelection } 
 import { SceneDeformerHost, isDeformerOnlySceneEdit } from "./scene-deformer-host";
 import { markLatticeComponentRoot } from "./lattice-deformer";
 import { isTransformOnlySceneEdit } from "./scene-transform-edit";
+import { isLightValueOnlySceneEdit } from "./light-edit";
 import { visualMeshes } from "./visual-meshes";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
 import type { SceneStreamIdentity } from "./scene-streaming-readiness";
@@ -1865,18 +1866,35 @@ function initializeEngine(
     loadOptions?: { sceneAssetGuid?: string },
   ) => {
     assertCurrent(loadGeneration);
-    if (editorSync && loadOptions?.sceneAssetGuid === lastSceneAssetGuid &&
+    // The registry can index a Scene after the viewport's first load, so the same editor
+    // document may resolve its Asset GUID late. That is not a different Scene.
+    let sameScene = loadOptions?.sceneAssetGuid === lastSceneAssetGuid;
+    if (!sameScene && editorSync && lastSceneAssetGuid === undefined && loadOptions?.sceneAssetGuid !== undefined &&
+      editorSync.serializedScene() !== null) {
+      sameScene = true;
+      lastSceneAssetGuid = loadOptions.sceneAssetGuid;
+    }
+    if (editorSync && sameScene &&
       (isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData) ||
         isDeformerOnlySceneEdit(editorSync.serializedScene(), sceneData) ||
         isFogVolumeOnlySceneEdit(editorSync.serializedScene(), sceneData))) {
       editorSync.apply(sceneData);
       return;
     }
-    if (editorSync && loadOptions?.sceneAssetGuid === lastSceneAssetGuid &&
+    if (editorSync && sameScene &&
       isOutlineOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
       setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
       editorSync.apply(sceneData);
       outlineHost.refreshSettings();
+      return;
+    }
+    // A light value edit (Range, Intensity, Color, cone angles) changes uniforms, never a
+    // shader variant, so it applies in place without restarting readiness. A presentation or
+    // preparation in flight, or a latched failure, still takes the full path below.
+    if (editorSync && sameScene &&
+      pendingPresentations.size === 0 && !frameReportFeed.active && worldRenderer.settled &&
+      isLightValueOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
+      editorSync.apply(sceneData);
       return;
     }
     loadGeneration += 1;
@@ -1891,8 +1909,7 @@ function initializeEngine(
     // rebuilding it holds the viewport's frames for seconds. An edit of the same
     // editor scene that leaves the stack alone (a light range, say) keeps it;
     // the key below still re-attaches for any other change to its inputs.
-    const keepPostProcess = Boolean(editorSync) &&
-      loadOptions?.sceneAssetGuid === lastSceneAssetGuid &&
+    const keepPostProcess = Boolean(editorSync) && sameScene &&
       JSON.stringify(nextPostProcessStack) === JSON.stringify(postProcessStack);
     postProcessParameters.clear();
     if (!keepPostProcess) appliedPostProcessKey = undefined;

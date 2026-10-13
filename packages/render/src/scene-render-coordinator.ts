@@ -200,6 +200,13 @@ export class SceneRenderCoordinator {
     return promise;
   }
 
+  /** No preparation is running and none has failed. Only then can an edit that
+   * leaves every readiness input alone skip `invalidate()`: nothing is waiting
+   * for a restart, and no latched failure needs the retry an invalidation grants. */
+  get settled(): boolean {
+    return !this.pending && this.failure === undefined;
+  }
+
   /** True while strict readiness must be re-probed after an invalidation. */
   get readinessDirty(): boolean {
     this.refreshOutline();
