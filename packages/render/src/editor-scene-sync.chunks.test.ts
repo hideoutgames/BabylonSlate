@@ -101,6 +101,42 @@ it("resolves component visuals from the latest applied Scene even when its actor
   expect(sync.meshForComponent("actor-1", "replaced")).not.toBeNull();
 });
 
+it("refreshes at once for the first Material publication and shares one more pass among those that settle in the same turn", async () => {
+  let current: StandardMaterial | null = null;
+  const resolveMaterial = vi.fn(() => current);
+  const { sync, scene, onAfterApply } = fixture({ resolveMaterial });
+  const data = document(3);
+  for (const actor of data.actors) actor.components[0]!.properties.materialGuid = "surface";
+  sync.apply(data);
+  const first = new StandardMaterial("First", scene);
+  const last = new StandardMaterial("Last", scene);
+  const bound = () => data.actors.map((actor) => sync.meshForActor(actor.id)!.material);
+  onAfterApply.mockClear();
+  resolveMaterial.mockClear();
+
+  current = first;
+  sync.refreshMaterialsCoalesced();
+  expect(bound()).toEqual([first, first, first]);
+  expect(onAfterApply).toHaveBeenCalledTimes(1);
+  expect(resolveMaterial).toHaveBeenCalledTimes(3);
+
+  current = last;
+  sync.refreshMaterialsCoalesced();
+  sync.refreshMaterialsCoalesced();
+  expect(onAfterApply).toHaveBeenCalledTimes(1);
+  await Promise.resolve();
+  expect(bound()).toEqual([last, last, last]);
+  expect(onAfterApply).toHaveBeenCalledTimes(2);
+  expect(resolveMaterial).toHaveBeenCalledTimes(6);
+
+  // The next publication after the turn is a leading one again.
+  current = first;
+  sync.refreshMaterialsCoalesced();
+  expect(bound()).toEqual([first, first, first]);
+  await Promise.resolve();
+  expect(onAfterApply).toHaveBeenCalledTimes(3);
+});
+
 describe("cooperative editor realization", () => {
   it.each(["abort", "replace", "dispose"] as const)("discards a deferred material refresh after %s", async (action) => {
     let resolve = () => null as StandardMaterial | null;

@@ -391,6 +391,7 @@ Every editor edit re-applies the Scene document through `EditorSceneSync`, so pe
 - A Foliage component's visual fingerprint (serialized properties plus its distinct model guids) is memoized per `properties` object, not recomputed from up to 20,000 transforms on every apply. Scene edits replace the properties object, so any foliage edit still rebuilds the visual; Scenes with overlay layout copy their components and simply recompute.
 - `applyEditorLayoutClips` indexes the Scene's meshes by name once per call (the first mesh of a duplicated name wins, as with `Scene.getMeshByName`) instead of scanning the mesh list for every layout entry.
 - `EditorSceneSync` resolves `meshForComponent` / `visualComponentRootsForActor` through an actor-id index built once per applied Scene (the first actor of an id wins, like `Array.find`), so syncing deformers, brushes and other per-actor consumers after an apply is linear in the actor count rather than quadratic.
+- Material publications refresh the editor's bindings through `refreshMaterialsCoalesced`: the first publication of a microtask turn runs the pass at once, and any that settle later in the same turn share one more pass instead of one pass over every actor each. `refreshMaterials` keeps its guards (disposed, aborted or still-applying Scenes) and stays synchronous for direct callers.
 
 ## Snapshot apply
 

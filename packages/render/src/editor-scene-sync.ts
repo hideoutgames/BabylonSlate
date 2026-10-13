@@ -77,6 +77,8 @@ export class EditorSceneSync {
   private applyingScene: SerializedScene | null = null;
   private materialRefreshGeneration: number | null = null;
   private materialsRefreshable = false;
+  private materialRefreshTurn = false;
+  private materialRefreshDeferred = false;
   private disposed = false;
 
   private readonly scene: Scene;
@@ -466,6 +468,27 @@ export class EditorSceneSync {
     for (const _progress of this.materialRefreshSteps(this.lastScene)) void _progress;
     this.onAfterApply?.();
     this.scheduler?.invalidate("asset");
+  }
+
+  /**
+   * `refreshMaterials` for Material publications, which arrive one at a time and
+   * each cost a pass over every actor. The first publication of a microtask turn
+   * refreshes at once; those settling in the same turn share one more pass, run
+   * after them, so the last publication's binding still lands.
+   */
+  refreshMaterialsCoalesced(): void {
+    if (this.materialRefreshTurn) {
+      this.materialRefreshDeferred = true;
+      return;
+    }
+    this.materialRefreshTurn = true;
+    queueMicrotask(() => {
+      this.materialRefreshTurn = false;
+      if (!this.materialRefreshDeferred) return;
+      this.materialRefreshDeferred = false;
+      this.refreshMaterials();
+    });
+    this.refreshMaterials();
   }
 
   private *materialRefreshSteps(sceneData: SerializedScene): Generator<number, void, unknown> {

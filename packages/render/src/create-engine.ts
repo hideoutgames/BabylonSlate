@@ -1304,7 +1304,7 @@ function initializeEngine(
     onMaterialReady: (materialScene) => {
       // Babylon completes deferred post-process effects on the attached pass.
       // Rebuilding here releases the ready material and starts compilation again.
-      if (materialScene === scene) editorSync?.refreshMaterials();
+      if (materialScene === scene) editorSync?.refreshMaterialsCoalesced();
       for (const root of binding.meshes.values()) {
         if (root.getScene() === materialScene) { refreshText2DMaterials(root, binding); refreshJoystick2DMaterials(root, binding); refreshUIControl2DMaterials(root, binding); }
       }
