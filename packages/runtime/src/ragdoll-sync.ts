@@ -2,7 +2,7 @@ import { parseRagdollProperties, type RagdollProperties, type Transform } from "
 import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import { RagdollPhysics, type Vec3 } from "@babylonslate/physics";
-import { actorWorldTransforms } from "./actor-world-transform";
+import { composeActorWorldTransforms } from "./actor-world-transform";
 import { actorLocalPhysicsTransform, type PhysicsWorldSync } from "./physics-sync";
 import { sameDescriptor } from "./physics-preparation";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
@@ -45,8 +45,10 @@ export class RagdollWorldSync implements RuntimeSubsystem {
     this.host = host;
   }
 
+  /** The live actor by guid, as the World's own registry answers it; no per-call index over every actor. */
+  private readonly findActor = (guid: string): Actor | undefined => this.host.world.findActor(guid);
+
   sync(): void {
-    const actors = this.host.world.getActors();
     const candidates = new Map<Actor, { component: ActorComponent; count: number }>();
     for (const actor of componentOwners(this.host.world, "RagdollComponent")) {
       if (actor.destroyed || !this.host.eligible(actor)) continue;
@@ -63,7 +65,7 @@ export class RagdollWorldSync implements RuntimeSubsystem {
     // Only ragdoll owners are scanned, with enabled state read live, and unrelated actor
     // transforms stay untouched. Disabled ragdolls need no hierarchy preparation.
     if (!candidates.size) return;
-    const transforms = actorWorldTransforms(actors, candidates.keys());
+    const transforms = composeActorWorldTransforms(this.findActor, candidates.keys());
     for (const [actor, { component, count }] of candidates) {
       const old = this.states.get(actor);
       const slotId = this.host.slot(actor);
@@ -130,7 +132,7 @@ export class RagdollWorldSync implements RuntimeSubsystem {
       const bones = physics.readPose();
       const root = bones.find((bone) => bone.name === physics!.rootBoneName);
       if (!root) throw new Error("The ragdoll has no root bone pose");
-      const transform = actorWorldTransforms(this.host.world.getActors(), [state.actor]).get(state.actor.guid)!;
+      const transform = composeActorWorldTransforms(this.findActor, [state.actor]).get(state.actor.guid)!;
       state.offset = { x: transform.position.x - root.position.x, y: transform.position.y - root.position.y, z: transform.position.z - root.position.z };
       state.rotation = { ...transform.rotation };
       this.host.physics().suppressActorBody(state.actor, true);
@@ -147,7 +149,7 @@ export class RagdollWorldSync implements RuntimeSubsystem {
   afterStep(): void {
     const active = [...this.states.values()].filter((state) => state.physics && this.host.eligible(state.actor));
     if (!active.length) return;
-    const transforms = actorWorldTransforms(this.host.world.getActors(), active.map((state) => state.actor));
+    const transforms = composeActorWorldTransforms(this.findActor, active.map((state) => state.actor));
     for (const state of active) {
       if (!state.physics) continue;
       const bones = state.physics.readPose();
