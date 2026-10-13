@@ -40,12 +40,13 @@ describe("EngineHandle.replaceTextureBytes", () => {
     expect(handle.replaceTextureBytes(new Map([["tex", KTX2]]))).toEqual([]);
   });
 
-  it("installs the bytes before syncing the scene, and skips Textures never installed or already identical", async () => {
+  /** An editor scene whose Material samples "tex"; "other" is installed with it but sampled by nothing. */
+  async function sceneSamplingTex() {
     const handle = editorHandle();
     const sync = handle.editor!.sync;
     const swap = vi.spyOn(sync, "replaceTextureEncodings");
     handle.setMaterialDocuments(new Map([["mat", sampledTextureDocument("tex")]]));
-    handle.setMeshAssets({ resourceCache: handle.resourceCache, textureBytes: new Map([["tex", PNG]]) });
+    handle.setMeshAssets({ resourceCache: handle.resourceCache, textureBytes: new Map([["tex", PNG], ["other", PNG]]) });
     const component = createMeshComponent("c1", "box");
     component.properties.materialGuid = "mat";
     handle.loadScene({ ...createDefaultScene(), actors: [createActor("a", "A", { components: [component] })] });
@@ -53,18 +54,31 @@ describe("EngineHandle.replaceTextureBytes", () => {
     const first = root.material as NodeMaterial;
     await handle.whenMaterialTexturesReady();
     await handle.prewarmSceneMaterials();
+    return { handle, sync, swap, root, first };
+  }
 
-    // A guid the scene never installed is a structural change, and a fresh array with the same bytes is no change.
+  it("returns a Texture whose installed bytes are already identical without applying it again, and leaves a never-installed one out", async () => {
+    const { handle, swap, root, first } = await sceneSamplingTex();
+
+    // A guid the scene never installed is a structural change: setMeshAssets owns it, so the caller must retry.
     expect(handle.replaceTextureBytes(new Map([["never-installed", KTX2]]))).toEqual([]);
-    expect(handle.replaceTextureBytes(new Map([["tex", new Uint8Array(PNG)]]))).toEqual([]);
+    // A fresh array with the same bytes is already stored this way, so there is nothing left to retry.
+    expect(handle.replaceTextureBytes(new Map([["tex", new Uint8Array(PNG)]]))).toEqual(["tex"]);
     expect(swap).not.toHaveBeenCalled();
     expect(root.material).toBe(first);
+  });
 
-    expect(handle.replaceTextureBytes(new Map([["tex", KTX2], ["never-installed", KTX2]]))).toEqual(["tex"]);
+  it("installs the bytes before syncing the scene, and syncs only the Textures whose bytes changed", async () => {
+    const { handle, sync, swap, root, first } = await sceneSamplingTex();
+
+    // "other" is identical and "never-installed" is unknown: neither reaches the sync call, but only the identical one is returned.
+    expect(handle.replaceTextureBytes(new Map([
+      ["tex", KTX2], ["other", new Uint8Array(PNG)], ["never-installed", KTX2],
+    ]))).toEqual(["tex", "other"]);
     expect(swap).toHaveBeenCalledOnce();
     const [installed, guids] = swap.mock.calls[0]!;
     expect(guids).toEqual(["tex"]);
-    expect([...installed.keys()]).toEqual(["tex"]);
+    expect([...installed.keys()]).toEqual(["tex", "other"]);
     expect((installed.get("tex") as Blob).type).toBe("image/ktx2");
     // The Material library reads the engine's installed bytes for its texture identity. The scene refresh inside
     // the sync call can only promote a new generation if they were replaced before it.
@@ -73,7 +87,7 @@ describe("EngineHandle.replaceTextureBytes", () => {
     expect(root.isDisposed()).toBe(false);
 
     // The swap is the baseline: installing the same bytes through setMeshAssets rebuilds nothing.
-    handle.setMeshAssets({ resourceCache: handle.resourceCache, textureBytes: new Map([["tex", KTX2]]) });
+    handle.setMeshAssets({ resourceCache: handle.resourceCache, textureBytes: new Map([["tex", KTX2], ["other", PNG]]) });
     expect(sync.meshForActor("a")).toBe(root);
   });
 });

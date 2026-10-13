@@ -1020,8 +1020,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   // later commit. It collects whatever changed within its paint, and goes round
   // again if the registry changed while it read. A load in flight stands the swap
   // down (it reads the latest bytes itself) and re-runs this when it finishes
-  // (`dropReady`). A Texture the engine skipped stays pending and is retried
-  // when the registry next changes, not on every scene edit.
+  // (`dropReady`). A Texture the engine did not take (not installed yet) stays
+  // pending and is retried when the registry next changes, not on every scene edit.
   useEffect(() => {
     const handle = engineRef.current;
     const applied = appliedAssetsRef.current;
@@ -1048,7 +1048,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           if (guids.length > 0) {
             const bytes = await collectPlayTextureBytes(new Map(), new Map(), guids);
             if (!isCurrent()) return;
-            // Only what the engine replaced counts as applied.
+            // Only what the engine reports as now stored this way counts as applied.
             for (const guid of handle.replaceTextureBytes(bytes)) applied.textures.set(guid, encodings.get(guid) ?? "");
           }
           state.attempted = encodings;

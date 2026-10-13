@@ -55,7 +55,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
     resourceCache: {},
     registerFonts: vi.fn(async () => {}),
     setMeshAssets: vi.fn(),
-    // The engine reports the guids it replaced; by default it replaces every Texture it is given.
+    // The engine reports the guids whose installed bytes now match; by default that is every Texture it is given.
     replaceTextureBytes: vi.fn((textureBytes: ReadonlyMap<string, unknown>) => [...textureBytes.keys()]),
     setRenderSettings: vi.fn(),
     setMaterialDocuments: vi.fn(),
@@ -1094,9 +1094,9 @@ describe("ViewportPanel engine", () => {
     expect(view.swapReads()).toEqual([["tex"]]);
   });
 
-  it("keeps a Texture the engine skipped pending, retrying it with the next commit and not with a scene edit", async () => {
+  it("keeps a Texture the engine did not take pending, retrying it with the next commit and not with a scene edit", async () => {
     const view = await mountWithTextures(["a", "b"]);
-    // The engine kept the installed bytes, as when the KTX2 read fell back to the PNG.
+    // The engine has no such Texture installed yet, so it leaves it to setMeshAssets and returns nothing.
     handle.replaceTextureBytes.mockImplementationOnce(() => []);
 
     await view.commit("a");
