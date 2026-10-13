@@ -1,13 +1,18 @@
 import { isEditorCameraModel } from "./editor-camera-model";
 import {
   Color3,
+  CreateDashedLinesVertexData,
   FreeCamera,
+  Matrix,
   MeshBuilder,
   Quaternion,
   RenderTargetTexture,
   TransformNode,
   Vector3,
+  VertexBuffer,
+  VertexData,
   type AbstractMesh,
+  type Light,
   type LinesMesh,
   type Node,
   type Observer,
@@ -35,6 +40,7 @@ import { actorIdFromMeshName, editorComponentMeshName, editorMeshName } from "./
 import { actorMeshName } from "./picking";
 import { authoredComponentActorTransform } from "./authored-transform-matrices";
 import { createRttCanvasBlitter } from "./flip-read-pixels";
+import { markEditorHelperMesh } from "./helper-mesh";
 import { withSceneReadinessState } from "./scene-perf";
 import { isRenderTargetCaptureCandidate } from "./render-target-capture";
 import { admittedSceneMeshes } from "./scene-stream-admission";
@@ -91,21 +97,94 @@ function asNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+/** Every guide path gets 64 dashes, so the pattern scales with the path's length. */
+const DASH_STYLE = { dashSize: 0.12, gapSize: 0.08, dashNb: 64 } as const;
+const GUIDE_COLOR = { r: 0.85, g: 0.9, b: 0.4 } as const;
+
 function dashedLines(
   name: string,
   points: Vector3[],
   scene: Scene,
   parent: TransformNode,
 ): LinesMesh {
-  const mesh = MeshBuilder.CreateDashedLines(
-    name,
-    { points, dashSize: 0.12, gapSize: 0.08, dashNb: 64 },
-    scene,
-  );
-  mesh.color = new Color3(0.85, 0.9, 0.4);
+  const mesh = MeshBuilder.CreateDashedLines(name, { points, ...DASH_STYLE }, scene);
+  mesh.color = new Color3(GUIDE_COLOR.r, GUIDE_COLOR.g, GUIDE_COLOR.b);
   mesh.isPickable = false;
   mesh.parent = parent;
   return mesh;
+}
+
+/**
+ * A persistent selection guide: a hidden root and one dashed LinesMesh holding
+ * every path of the shape. It joins the Scene once, and showing, hiding,
+ * moving or reshaping it afterwards never adds or removes a mesh or material.
+ * Scene membership changes force the whole-scene strict readiness probe, which
+ * is far costlier than a selection. The root is never parented to an actor
+ * mesh, because disposing a parent also disposes its children.
+ */
+class DashedGuide {
+  readonly root: TransformNode;
+  private readonly lines: LinesMesh;
+  private readonly namePrefix: string;
+  private shape: string | null = null;
+
+  constructor(scene: Scene, namePrefix: string) {
+    this.namePrefix = namePrefix;
+    this.root = new TransformNode(namePrefix, scene);
+    this.root.rotationQuaternion = Quaternion.Identity();
+    this.root.setEnabled(false);
+    // Placeholder dashes: a real mesh lets the line shader compile with the
+    // Scene's load instead of on the first selection. The first reshape replaces it.
+    const lines = MeshBuilder.CreateDashedLines(
+      `${namePrefix}lines`,
+      { points: [Vector3.Zero(), Vector3.Forward()], ...DASH_STYLE, updatable: true },
+      scene,
+    );
+    lines.color = new Color3(GUIDE_COLOR.r, GUIDE_COLOR.g, GUIDE_COLOR.b);
+    lines.isPickable = false;
+    lines.parent = this.root;
+    markEditorHelperMesh(lines);
+    this.lines = lines;
+  }
+
+  /** Name the guide after the actor it currently shows. */
+  label(actorId: string): void {
+    this.root.name = `${this.namePrefix}${actorId}`;
+    this.lines.name = `${this.namePrefix}${actorId}:lines`;
+  }
+
+  /**
+   * Replace the dashes in place unless `shape` is the one already drawn. The
+   * vertex count follows the dash builder, so a changed count (floating-point
+   * dash rounding, a different path set) replaces the buffers instead.
+   */
+  reshape(shape: string, paths: () => Vector3[][]): void {
+    if (shape === this.shape) return;
+    this.shape = shape;
+    const positions: number[] = [];
+    for (const points of paths()) {
+      const dashes = CreateDashedLinesVertexData({ points, ...DASH_STYLE }).positions;
+      if (dashes) for (let index = 0; index < dashes.length; index += 1) positions.push(dashes[index]!);
+    }
+    const vertices = positions.length / 3;
+    if (this.lines.getTotalVertices() === vertices) {
+      // Dashes are consecutive index pairs, so equal counts mean equal indices.
+      this.lines.updateVerticesData(VertexBuffer.PositionKind, new Float32Array(positions), true);
+      return;
+    }
+    const data = new VertexData();
+    data.positions = positions;
+    data.indices = Array.from({ length: vertices }, (_, index) => index);
+    data.applyToMesh(this.lines, true);
+  }
+
+  setShown(shown: boolean): void {
+    this.root.setEnabled(shown);
+  }
+
+  dispose(): void {
+    this.root.dispose();
+  }
 }
 
 function buildFrustumCornersLocal(lens: AuthoredCameraProperties, aspect: number): Vector3[] {
@@ -162,22 +241,116 @@ function ringPoints(center: Vector3, axis: Vector3, radius: number, segments = 3
   return points;
 }
 
+/** Rings of a point light's range sphere: three world-axis circles about the light. */
+function pointLightPaths(range: number): Vector3[][] {
+  return [
+    ringPoints(Vector3.Zero(), Vector3.Up(), range),
+    ringPoints(Vector3.Zero(), Vector3.Right(), range),
+    ringPoints(Vector3.Zero(), Vector3.Forward(), range),
+  ];
+}
+
+/** A spot light's axis, base ring and four rim edges, aimed down local +Z. */
+function spotLightPaths(range: number, outerAngleDegrees: number): Vector3[][] {
+  const forward = Vector3.Forward();
+  const radius = Math.tan((outerAngleDegrees * Math.PI) / 360) * range;
+  const base = forward.scale(range);
+  const rim = ringPoints(base, forward, radius, 4);
+  return [
+    [Vector3.Zero(), base],
+    ringPoints(base, forward, radius),
+    ...[0, 1, 2, 3].map((index) => [Vector3.Zero(), rim[index]!]),
+  ];
+}
+
+/** A directional light's shaft and arrow head along local +Z. */
+function directionalLightPaths(): Vector3[][] {
+  const forward = Vector3.Forward();
+  const tip = forward.scale(2);
+  const right = Vector3.Cross(forward, Vector3.Up());
+  if (right.lengthSquared() < 1e-6) right.copyFrom(Vector3.Right());
+  right.normalize();
+  return [
+    [Vector3.Zero(), tip],
+    [tip.add(right.scale(-0.25)).add(forward.scale(-0.4)), tip, tip.add(right.scale(0.25)).add(forward.scale(-0.4))],
+  ];
+}
+
+/**
+ * An area light's rectangle, emission arrow and short parallel guides. The
+ * guides indicate the emitting side (local -Z), never a cutoff or cone.
+ */
+function areaLightPaths(width: number, height: number): Vector3[][] {
+  const w = width / 2, h = height / 2;
+  const corners = [new Vector3(-w, -h, 0), new Vector3(w, -h, 0), new Vector3(w, h, 0), new Vector3(-w, h, 0)];
+  const distance = Math.min(2, Math.max(0.4, Math.min(width, height)));
+  const tip = new Vector3(0, 0, -distance);
+  return [
+    [...corners, corners[0]!],
+    [Vector3.Zero(), tip],
+    [new Vector3(-distance * 0.15, 0, -distance * 0.75), tip, new Vector3(distance * 0.15, 0, -distance * 0.75)],
+    ...corners.map((corner) => [corner, corner.add(new Vector3(0, 0, -distance * 0.25))]),
+  ];
+}
+
+/** Near quad, far quad and the four rails joining them. */
+const FRUSTUM_EDGES: ReadonlyArray<readonly [number, number]> = [
+  [0, 1], [1, 2], [2, 3], [3, 0],
+  [4, 5], [5, 6], [6, 7], [7, 4],
+  [0, 4], [1, 5], [2, 6], [3, 7],
+];
+
+function frustumPaths(lens: AuthoredCameraProperties, aspect: number): Vector3[][] {
+  const corners = buildFrustumCornersLocal(lens, aspect);
+  return FRUSTUM_EDGES.map(([a, b]) => [corners[a]!, corners[b]!]);
+}
+
 /**
  * Editor-only frustum, light/audio influence, and 1 Hz lens preview RTT for a
  * selected Camera or Render Target Capture. Does not replace the orbit camera
  * or the hemispheric fill light.
+ *
+ * The light and lens guides and the preview camera and RTT are created once, with
+ * the overlay, and only shown, hidden, moved and reshaped afterwards: selecting an
+ * actor or editing the selected one never changes the Scene's mesh, material,
+ * texture or camera membership, so it cannot force a whole-scene readiness
+ * probe. One guide of each kind is enough, as only the first selected light and
+ * the first selected lens are drawn. The preview RTT is at most 320×180 RGBA8
+ * plus its depth buffer (about 0.5 MB); it renders only while a lens is selected.
+ * Audio radii are still built per sync.
  */
 export class EditorDebugOverlay {
+  /** Root of the lens guide while a lens is selected. */
   frustumMesh: Node | null = null;
+  /** Root of the light guide while a light is selected. */
   lightDebugMesh: Node | null = null;
-  previewTexture: RenderTargetTexture | null = null;
   previewRenderCount = 0;
   lightDebugKind: LightDebugKind | null = null;
+
+  /** The preview RTT while a lens is selected; null otherwise, though the RTT is retained. */
+  get previewTexture(): RenderTargetTexture | null {
+    return this.lensActive ? this.previewRtt : null;
+  }
 
   private readonly scene: Scene;
   private readonly now: () => number;
   private readonly useExternalClock: boolean;
-  private previewCamera: FreeCamera | null = null;
+  private readonly lightGuide: DashedGuide;
+  private readonly lensGuide: DashedGuide;
+  private readonly previewRtt: RenderTargetTexture;
+  private readonly previewCamera: FreeCamera;
+  private lensActive = false;
+  private lensActorId: string | null = null;
+  private lensOrigin: AbstractMesh | null = null;
+  /** The selected lens' pose relative to its actor's editor origin mesh. */
+  private readonly lensLocal = Matrix.Identity();
+  /** World pose used while the actor has no editor origin mesh. */
+  private readonly lensFallbackPosition = Vector3.Zero();
+  private readonly lensFallbackRotation = Quaternion.Identity();
+  private readonly poseScratch = Matrix.Identity();
+  /** The selected area light's authored native light, found by name and followed through its parent. */
+  private areaLightName: string | null = null;
+  private areaNative: Light | null = null;
   private previewLens: AuthoredCameraProperties | null = null;
   private previewAspect = CAMERA_PREVIEW_ASPECT;
   /** Settings of the previewed capture; null for a camera or no lens. */
@@ -188,7 +361,8 @@ export class EditorDebugOverlay {
   private lastPreviewMs = Number.NEGATIVE_INFINITY;
   private timer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
-  private readonly audioPoseObserver: Observer<Scene> | null;
+  private disposed = false;
+  private readonly poseObserver: Observer<Scene> | null;
   private readonly meshAddedObserver: Observer<AbstractMesh> | null;
   private readonly meshRemovedObserver: Observer<AbstractMesh> | null;
   /** Names `getMeshByName` missed since the scene's meshes last changed. */
@@ -211,7 +385,20 @@ export class EditorDebugOverlay {
     this.now = options?.now ?? (() => Date.now());
     this.useExternalClock = Boolean(options?.now);
     this.renderTargets = options?.renderTargets;
-    this.audioPoseObserver = scene.onBeforeRenderObservable.add(() => this.updateAudioDebugPoses());
+    // Built before any content loads, so these joins never force a probe of a loaded Scene.
+    this.lightGuide = new DashedGuide(scene, "debugLight:");
+    this.lensGuide = new DashedGuide(scene, "debugFrustum:");
+    this.previewCamera = new FreeCamera("debugPreviewCam:", Vector3.Zero(), scene, false);
+    this.previewCamera.rotationQuaternion = Quaternion.Identity();
+    this.previewRtt = new RenderTargetTexture(
+      "debugCameraPreview:",
+      lensPreviewSize(CAMERA_PREVIEW_ASPECT),
+      scene,
+      false,
+    );
+    this.previewRtt.activeCamera = this.previewCamera;
+    this.previewRtt.renderList = [];
+    this.poseObserver = scene.onBeforeRenderObservable.add(() => this.updateHelperPoses());
     // Additions notify after a deferral and removals immediately; the mesh
     // count in `findMesh` covers an addition not yet notified.
     this.meshAddedObserver = scene.onNewMeshAddedObservable.add(() => { this.meshesChanged = true; });
@@ -224,10 +411,13 @@ export class EditorDebugOverlay {
   }
 
   sync(options: OverlaySync): void {
-    this.disposeVisuals();
+    if (this.disposed) return;
+    this.disposeAudioDebug();
     this.lastSync = options;
     const sceneData = options.sceneData;
     if (!sceneData) {
+      this.hideLens();
+      this.hideLight();
       this.updatePreviewCanvasVisibility();
       return;
     }
@@ -238,15 +428,18 @@ export class EditorDebugOverlay {
       entry.component.classId === "RenderTargetCaptureComponent");
     const light = selected.find((entry) => entry.component.classId === "LightComponent" || entry.component.classId === "AreaRectLightComponent");
     if (lens) {
-      this.buildLensDebug(
+      this.showLens(
         lens.actor,
         lens.component,
         lens.component.classId === "CameraComponent"
           ? this.cameraLens(lens.component)
           : this.captureLens(lens.component),
       );
+    } else {
+      this.hideLens();
     }
-    if (light) this.buildLightDebug(light.actor, light.component, sceneData.actors);
+    if (light) this.showLight(light.actor, light.component, sceneData.actors);
+    else this.hideLight();
     for (const { actor, component } of selected) {
       if (component.classId !== "AudioComponent") continue;
       const guid = component.properties.audioAssetGuid;
@@ -265,7 +458,7 @@ export class EditorDebugOverlay {
   }
 
   /**
-   * After asset installation, rebuild a selected capture's frustum and preview
+   * After asset installation, re-lens a selected capture's frustum and preview
    * when its Render Target's aspect changed. Otherwise keep the RTT and only
    * re-filter its meshes, since installs can rebuild captured geometry.
    */
@@ -276,33 +469,21 @@ export class EditorDebugOverlay {
       this.sync(this.lastSync);
       return;
     }
-    if (this.previewTexture) this.previewTexture.renderList = this.captureRenderList(capture);
+    this.previewRtt.renderList = this.captureRenderList(capture);
   }
 
   /**
-   * Copy the live frustum (origin-parented) world pose onto the PIP camera so
-   * the preview tracks a gizmo drag before the document commit.
+   * Move the guides onto their actors' live poses and copy the lens pose onto
+   * the PIP camera, so the preview tracks a gizmo drag before the document commit.
    */
   followLivePose(): void {
-    this.updateAudioDebugPoses();
-    const root = this.frustumMesh;
-    const camera = this.previewCamera;
-    if (!root || !camera) return;
-    root.computeWorldMatrix(true);
-    const position = Vector3.Zero();
-    const rotation = Quaternion.Identity();
-    const scaling = Vector3.Zero();
-    root.getWorldMatrix().decompose(scaling, rotation, position);
-    camera.position.copyFrom(position);
-    if (!camera.rotationQuaternion) {
-      camera.rotationQuaternion = Quaternion.Identity();
-    }
-    camera.rotationQuaternion.copyFrom(rotation);
-    camera.rotation.set(0, 0, 0);
+    this.updateHelperPoses();
+    if (!this.lensActive) return;
+    this.copyLensPoseToPreviewCamera();
   }
 
   tick(nowMs?: number): void {
-    if (!this.previewTexture || !this.previewCamera) return;
+    if (!this.lensActive) return;
     this.followLivePose();
     const now = nowMs ?? this.now();
     if (now - this.lastPreviewMs < CAMERA_PREVIEW_INTERVAL_MS) return;
@@ -319,7 +500,7 @@ export class EditorDebugOverlay {
       this.scene.incrementRenderId();
       this.scene.resetCachedMaterial();
       try {
-        this.previewTexture!.render(false);
+        this.previewRtt.render(false);
       } finally {
         // The caller must not reuse the preview camera's cached light data.
         this.scene.incrementRenderId();
@@ -339,7 +520,7 @@ export class EditorDebugOverlay {
    */
   stop(): void {
     this.stopped = true;
-    this.scene.onBeforeRenderObservable.remove(this.audioPoseObserver);
+    this.scene.onBeforeRenderObservable.remove(this.poseObserver);
     this.scene.onNewMeshAddedObservable.remove(this.meshAddedObserver);
     this.scene.onMeshRemovedObservable.remove(this.meshRemovedObserver);
     this.clearTimer();
@@ -347,12 +528,18 @@ export class EditorDebugOverlay {
   }
 
   dispose(): void {
+    if (this.disposed) return;
     this.stop();
-    this.disposeVisuals();
+    this.disposed = true;
+    this.disposeAudioDebug();
+    this.lightGuide.dispose();
+    this.lensGuide.dispose();
+    this.previewRtt.dispose();
+    this.previewCamera.dispose();
   }
 
   private ensureTimer(): void {
-    if (this.stopped || this.useExternalClock || this.timer || !this.previewTexture) return;
+    if (this.stopped || this.useExternalClock || this.timer || !this.lensActive) return;
     this.timer = setInterval(() => this.tick(), CAMERA_PREVIEW_INTERVAL_MS);
   }
 
@@ -363,24 +550,34 @@ export class EditorDebugOverlay {
     }
   }
 
-  private disposeVisuals(): void {
-    this.frustumMesh?.dispose();
-    this.frustumMesh = null;
-    this.lightDebugMesh?.dispose();
-    this.lightDebugMesh = null;
-    this.lightDebugKind = null;
+  private disposeAudioDebug(): void {
     for (const { root } of this.audioDebug) root.dispose();
     this.audioDebug = [];
-    this.previewTexture?.dispose();
-    this.previewTexture = null;
-    this.previewCamera?.dispose();
-    this.previewCamera = null;
+  }
+
+  /** Stop previewing: hide the guide and idle the retained camera and RTT. */
+  private hideLens(): void {
+    if (!this.lensActive) return;
+    this.lensActive = false;
+    this.lensGuide.setShown(false);
+    this.frustumMesh = null;
+    this.lensActorId = null;
+    this.lensOrigin = null;
     this.previewLens = null;
     this.previewAspect = CAMERA_PREVIEW_ASPECT;
     this.previewCapture = null;
+    this.previewRtt.renderList = [];
     this.previewRenderCount = 0;
     this.lastPreviewMs = Number.NEGATIVE_INFINITY;
     this.clearTimer();
+  }
+
+  private hideLight(): void {
+    this.lightGuide.setShown(false);
+    this.lightDebugMesh = null;
+    this.lightDebugKind = null;
+    this.areaLightName = null;
+    this.areaNative = null;
   }
 
   /** Camera lenses keep the fixed 16:9 PIP aspect and their existing mesh list. */
@@ -451,122 +648,154 @@ export class EditorDebugOverlay {
     return width / height;
   }
 
-  private buildLensDebug(actor: SerializedActor, component: SerializedComponent, debug: LensDebug): void {
+  /**
+   * Point the retained frustum guide, preview camera and RTT at this lens and
+   * render the preview once. Re-run on every sync, so an edit shows at once.
+   */
+  private showLens(actor: SerializedActor, component: SerializedComponent, debug: LensDebug): void {
+    const { lens, aspect } = debug;
+    this.lensGuide.reshape(
+      [lens.projectionMode, lens.nearClip, lens.farClip, lens.fieldOfView, lens.orthographicSize, aspect].join("|"),
+      () => frustumPaths(lens, aspect),
+    );
+    this.lensGuide.label(actor.id);
     const composed = composeActorComponentTransform(actor, component);
-    const root = new TransformNode(`debugFrustum:${actor.id}`, this.scene);
-    const origin = this.scene.getMeshByName(editorMeshName(actor.id));
-    if (origin) {
-      const local = authoredComponentActorTransform(actor, component);
-      root.parent = origin;
-      root.position.set(local.position[0], local.position[1], local.position[2]);
-      root.rotationQuaternion = new Quaternion(
-        local.rotation[0],
-        local.rotation[1],
-        local.rotation[2],
-        local.rotation[3],
-      );
-      root.scaling.set(local.scale[0], local.scale[1], local.scale[2]);
-    } else {
-      root.position.copyFrom(composed.position);
-      root.rotationQuaternion = composed.rotation.clone();
-    }
-    const corners = buildFrustumCornersLocal(debug.lens, debug.aspect);
-    const edges: Array<[number, number]> = [
-      [0, 1], [1, 2], [2, 3], [3, 0],
-      [4, 5], [5, 6], [6, 7], [7, 4],
-      [0, 4], [1, 5], [2, 6], [3, 7],
-    ];
-    edges.forEach(([a, b], index) => {
-      dashedLines(
-        `debugFrustum:${actor.id}:${index}`,
-        [corners[a]!, corners[b]!],
-        this.scene,
-        root,
-      );
-    });
-    this.frustumMesh = root;
+    const local = authoredComponentActorTransform(actor, component);
+    Matrix.ComposeToRef(
+      new Vector3(local.scale[0], local.scale[1], local.scale[2]),
+      new Quaternion(local.rotation[0], local.rotation[1], local.rotation[2], local.rotation[3]),
+      new Vector3(local.position[0], local.position[1], local.position[2]),
+      this.lensLocal,
+    );
+    this.lensFallbackPosition.copyFrom(composed.position);
+    this.lensFallbackRotation.copyFrom(composed.rotation);
+    if (this.lensActorId !== actor.id) this.lensOrigin = null;
+    this.lensActorId = actor.id;
+    this.lensActive = true;
+    this.updateLensPose();
+    this.lensGuide.setShown(true);
+    this.frustumMesh = this.lensGuide.root;
 
-    const camera = new FreeCamera(
-      `debugPreviewCam:${actor.id}`,
-      composed.position.clone(),
-      this.scene,
-      false,
-    );
-    camera.rotationQuaternion = composed.rotation.clone();
-    camera.rotation.set(0, 0, 0);
-    this.previewLens = debug.lens;
-    this.previewAspect = debug.aspect;
+    const camera = this.previewCamera;
+    camera.name = `debugPreviewCam:${actor.id}`;
+    this.copyLensPoseToPreviewCamera();
+    this.previewLens = lens;
+    this.previewAspect = aspect;
     this.previewCapture = debug.capture ?? null;
-    applyAuthoredCameraLens(camera, debug.lens, debug.aspect);
-    this.previewCamera = camera;
-    const rtt = new RenderTargetTexture(
-      `debugCameraPreview:${actor.id}`,
-      lensPreviewSize(debug.aspect),
-      this.scene,
-      false,
-    );
-    rtt.activeCamera = camera;
+    applyAuthoredCameraLens(camera, lens, aspect);
+    const rtt = this.previewRtt;
+    rtt.name = `debugCameraPreview:${actor.id}`;
+    const size = lensPreviewSize(aspect);
+    const current = rtt.getSize();
+    if (current.width !== size.width || current.height !== size.height) rtt.resize(size);
     rtt.renderList = debug.renderList;
-    this.previewTexture = rtt;
+    this.previewRenderCount = 0;
+    this.lastPreviewMs = Number.NEGATIVE_INFINITY;
     this.tick(this.now());
   }
 
-  private buildLightDebug(actor: SerializedActor, component: SerializedComponent, actors: readonly SerializedActor[]): void {
+  /** Follow the lens' actor origin mesh, or hold the document pose while it has none. */
+  private updateLensPose(): void {
+    if (!this.lensActive || this.lensActorId === null) return;
+    const root = this.lensGuide.root;
+    // The origin is looked up again whenever the actor's meshes are rebuilt.
+    if (this.lensOrigin?.isDisposed()) this.lensOrigin = null;
+    this.lensOrigin ??= this.findMesh(editorMeshName(this.lensActorId));
+    const origin = this.lensOrigin;
+    if (origin) {
+      origin.computeWorldMatrix(true);
+      this.lensLocal.multiplyToRef(origin.getWorldMatrix(), this.poseScratch);
+      this.poseScratch.decompose(root.scaling, root.rotationQuaternion!, root.position);
+    } else {
+      root.position.copyFrom(this.lensFallbackPosition);
+      root.rotationQuaternion!.copyFrom(this.lensFallbackRotation);
+      root.scaling.setAll(1);
+    }
+    root.computeWorldMatrix(true);
+  }
+
+  private copyLensPoseToPreviewCamera(): void {
+    const root = this.lensGuide.root;
+    const camera = this.previewCamera;
+    camera.position.copyFrom(root.position);
+    camera.rotationQuaternion!.copyFrom(root.rotationQuaternion!);
+    camera.rotation.set(0, 0, 0);
+  }
+
+  private showLight(actor: SerializedActor, component: SerializedComponent, actors: readonly SerializedActor[]): void {
+    const guide = this.lightGuide;
+    const root = guide.root;
     if (component.classId === "AreaRectLightComponent") {
-      const native = this.scene.getLightByName(`authoredAreaLight:${actor.id}:${component.id}`);
-      if (!native?.parent || native.metadata?.areaLight?.error) return;
-      const root = new TransformNode(`debugLight:${actor.id}`, this.scene);
-      root.parent = native.parent;
+      const name = `authoredAreaLight:${actor.id}:${component.id}`;
+      const native = this.scene.getLightByName(name);
+      if (!(native?.parent instanceof TransformNode) || native.metadata?.areaLight?.error) {
+        this.hideLight();
+        return;
+      }
       const { width, height } = parseAreaRectLightProperties(component.properties);
-      const w = width / 2, h = height / 2;
-      const corners = [new Vector3(-w, -h, 0), new Vector3(w, -h, 0), new Vector3(w, h, 0), new Vector3(-w, h, 0)];
-      dashedLines(`debugLight:${actor.id}:rectangle`, [...corners, corners[0]!], this.scene, root);
-      const distance = Math.min(2, Math.max(0.4, Math.min(width, height)));
-      const tip = new Vector3(0, 0, -distance);
-      dashedLines(`debugLight:${actor.id}:emission`, [Vector3.Zero(), tip], this.scene, root);
-      dashedLines(`debugLight:${actor.id}:arrow`, [new Vector3(-distance * 0.15, 0, -distance * 0.75), tip, new Vector3(distance * 0.15, 0, -distance * 0.75)], this.scene, root);
-      // Short parallel guides indicate the emitting side, never a cutoff/cone.
-      corners.forEach((corner, index) => dashedLines(`debugLight:${actor.id}:side${index}`, [corner, corner.add(new Vector3(0, 0, -distance * 0.25))], this.scene, root));
+      guide.reshape(`area|${width}|${height}`, () => areaLightPaths(width, height));
+      this.areaLightName = name;
+      this.areaNative = native;
       this.lightDebugKind = "area";
-      this.lightDebugMesh = root;
+      this.updateAreaPose();
+      // The native light vanished while posing: nothing to show.
+      if (this.areaLightName === null) return;
+    } else {
+      const kind = String(component.properties.lightKind ?? "point");
+      const range = Math.max(0.1, asNumber(component.properties.range, 10));
+      const lightKind: LightDebugKind = kind === "spot" || kind === "directional" ? kind : "point";
+      // Match the authored light: parent-resolved actor pose × component transform.
+      const composed = composeAuthoredComponentTransform(actor, component, actors);
+      if (lightKind === "directional") {
+        guide.reshape("directional", directionalLightPaths);
+      } else if (lightKind === "spot") {
+        const outerAngle = asNumber(component.properties.outerAngle, 45);
+        guide.reshape(`spot|${range}|${outerAngle}`, () => spotLightPaths(range, outerAngle));
+      } else {
+        guide.reshape(`point|${range}`, () => pointLightPaths(range));
+      }
+      this.areaLightName = null;
+      this.areaNative = null;
+      this.lightDebugKind = lightKind;
+      root.position.copyFrom(composed.position);
+      // A point light's rings stay world-aligned, whatever the light's rotation.
+      if (lightKind === "point") root.rotationQuaternion!.copyFromFloats(0, 0, 0, 1);
+      else root.rotationQuaternion!.copyFrom(composed.rotation);
+      root.scaling.setAll(1);
+      root.computeWorldMatrix(true);
+    }
+    guide.label(actor.id);
+    guide.setShown(true);
+    this.lightDebugMesh = root;
+  }
+
+  /**
+   * The area-light guide sits at its native light's parent, so it follows live
+   * drags. It hides when the native light is gone or reports an error, until a
+   * sync finds it again.
+   */
+  private updateAreaPose(): void {
+    const name = this.areaLightName;
+    if (name === null) return;
+    // A rebuilt native light replaces the disposed one under the same name.
+    let native = this.areaNative;
+    if (!native || native.isDisposed()) native = this.scene.getLightByName(name);
+    const parent = native?.parent;
+    if (!native || !(parent instanceof TransformNode) || native.metadata?.areaLight?.error) {
+      this.hideLight();
       return;
     }
-    const kind = String(component.properties.lightKind ?? "point") as LightDebugKind;
-    const range = Math.max(0.1, asNumber(component.properties.range, 10));
-    // Match the authored light: parent-resolved actor pose × component transform.
-    const composed = composeAuthoredComponentTransform(actor, component, actors);
-    const origin = composed.position;
-    const forward = Vector3.Forward().applyRotationQuaternion(composed.rotation);
-    const root = new TransformNode(`debugLight:${actor.id}`, this.scene);
-    this.lightDebugKind = kind === "spot" || kind === "directional" ? kind : "point";
-    if (this.lightDebugKind === "directional") {
-      const tip = origin.add(forward.scale(2));
-      dashedLines(`debugLight:${actor.id}:shaft`, [origin, tip], this.scene, root);
-      const right = Vector3.Cross(forward, Vector3.Up());
-      if (right.lengthSquared() < 1e-6) right.copyFrom(Vector3.Right());
-      right.normalize();
-      dashedLines(
-        `debugLight:${actor.id}:head`,
-        [tip.add(right.scale(-0.25)).add(forward.scale(-0.4)), tip, tip.add(right.scale(0.25)).add(forward.scale(-0.4))],
-        this.scene,
-        root,
-      );
-    } else if (this.lightDebugKind === "spot") {
-      const angle = (asNumber(component.properties.outerAngle, 45) * Math.PI) / 180;
-      const radius = Math.tan(angle / 2) * range;
-      const base = origin.add(forward.scale(range));
-      dashedLines(`debugLight:${actor.id}:axis`, [origin, base], this.scene, root);
-      dashedLines(`debugLight:${actor.id}:ring`, ringPoints(base, forward, radius), this.scene, root);
-      const rim = ringPoints(base, forward, radius, 4);
-      for (let i = 0; i < 4; i++) {
-        dashedLines(`debugLight:${actor.id}:edge${i}`, [origin, rim[i]!], this.scene, root);
-      }
-    } else {
-      dashedLines(`debugLight:${actor.id}:eq`, ringPoints(origin, Vector3.Up(), range), this.scene, root);
-      dashedLines(`debugLight:${actor.id}:mer`, ringPoints(origin, Vector3.Right(), range), this.scene, root);
-      dashedLines(`debugLight:${actor.id}:mer2`, ringPoints(origin, Vector3.Forward(), range), this.scene, root);
-    }
-    this.lightDebugMesh = root;
+    this.areaNative = native;
+    const root = this.lightGuide.root;
+    parent.computeWorldMatrix(true);
+    parent.getWorldMatrix().decompose(root.scaling, root.rotationQuaternion!, root.position);
+    root.computeWorldMatrix(true);
+  }
+
+  private updateHelperPoses(): void {
+    this.updateAudioDebugPoses();
+    this.updateLensPose();
+    this.updateAreaPose();
   }
 
   /** `getMeshByName` that rescans a missing name only after the scene's meshes change. */
@@ -639,7 +868,7 @@ export class EditorDebugOverlay {
   private updatePreviewCanvasVisibility(): void {
     const canvas = this.previewCanvas;
     if (!canvas) return;
-    const active = this.previewTexture !== null;
+    const active = this.lensActive;
     canvas.hidden = !active;
     canvas.dataset.active = active ? "true" : "false";
   }
