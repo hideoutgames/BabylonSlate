@@ -767,8 +767,9 @@ describe("Play source reads overlap without changing order", () => {
     await expect(acquirePlayAssetSources(host, ["scene"], { consumer: "Scene", signal: new AbortController().signal }))
       .rejects.toThrow("cannot locate material-23");
     const atFailure = walk.reads.length;
-    // The Scene plus at most one full batch of reads had begun; 16 more Materials were still queued.
-    expect(atFailure).toBeLessThanOrEqual(9);
+    // The Scene, one full batch of eight and, at most, the one read that took the failed read's slot in the
+    // turn the failure propagated; the other 15 Materials were still queued.
+    expect(atFailure).toBeLessThanOrEqual(10);
     await sleep(120);
     expect(walk.reads).toHaveLength(atFailure);
     loading.dispose();
