@@ -96,6 +96,79 @@ describe("tile-cache obstacles and static carve", () => {
     } finally { nav.dispose(); }
   });
 
+  it("carves a batch of obstacle changes on the next query, including ones added and removed in between", async () => {
+    const nav = createNavigationBackend();
+    nav.importNavMesh(await generateNavMesh({ ...groundPrism(), settings: { supportDynamicObstacles: true } }));
+    const update = vi.spyOn(TileCache.prototype, "update");
+    try {
+      const wall = nav.addObstacle("box", { x: 0, y: 1, z: 0 }, { x: 2, y: 2, z: 8 });
+      const brief = nav.addObstacle("box", { x: 0, y: 1, z: -6 }, { x: 2, y: 2, z: 4 });
+      const second = nav.addObstacle("box", { x: 0, y: 1, z: 7 }, { x: 2, y: 2, z: 2 });
+      expect([wall, brief, second].every((id) => id !== "")).toBe(true);
+      nav.removeObstacle(brief);
+      // Four changes are queued and nothing has rebuilt tiles yet.
+      expect(update).not.toHaveBeenCalled();
+      const path = nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 });
+      expect(detours(path, { x: 4, z: 0 }, 3.8)).toBe(true);
+      // The removed obstacle left no wall: the way around the short end beyond it stays open.
+      expect(nav.findPath({ x: -4, y: 0, z: -6 }, { x: 4, y: 0, z: -6 })).toHaveLength(2);
+    } finally {
+      nav.dispose();
+      update.mockRestore();
+    }
+  });
+
+  it("keeps carving once more obstacle changes queue than the tile cache holds requests", async () => {
+    const nav = createNavigationBackend();
+    nav.importNavMesh(await generateNavMesh({ ...groundPrism(), settings: { supportDynamicObstacles: true } }));
+    try {
+      // 100 adds and 100 removes before any query, well past Detour's 64 queued requests.
+      const ids: string[] = [];
+      for (let index = 0; index < 100; index++) {
+        ids.push(nav.addObstacle("box", { x: -9 + (index % 20) * 0.9, y: 1, z: -9 + Math.floor(index / 20) * 0.9 }, { x: 0.2, y: 2, z: 0.2 }));
+      }
+      expect(ids.every((id) => id !== "")).toBe(true);
+      for (const id of ids) nav.removeObstacle(id);
+      expect(nav.findPath({ x: -9, y: 0, z: -9 }, { x: 9, y: 0, z: 9 })).toHaveLength(2);
+      // The cache accepts requests again and still carves.
+      expect(nav.addObstacle("box", { x: 0, y: 1, z: 0 }, { x: 2, y: 2, z: 8 })).not.toBe("");
+      expect(detours(nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }), { x: 4, z: 0 }, 3.8)).toBe(true);
+    } finally { nav.dispose(); }
+  });
+
+  it("takes no obstacle change behind a failed tile-cache update until a retry finishes it", async () => {
+    const nav = createNavigationBackend();
+    nav.importNavMesh(await generateNavMesh({ ...groundPrism(), settings: { supportDynamicObstacles: true } }));
+    const update = vi.spyOn(TileCache.prototype, "update").mockReturnValue({ success: false, status: 0, upToDate: false });
+    const add = vi.spyOn(TileCache.prototype, "addBoxObstacle");
+    const remove = vi.spyOn(TileCache.prototype, "removeObstacle");
+    try {
+      // The eighth queued request flushes early, and that update fails.
+      const ids = Array.from({ length: 8 }, (_, index) =>
+        nav.addObstacle("box", { x: -9 + index, y: 1, z: 8 }, { x: 0.2, y: 2, z: 0.2 }));
+      expect(ids.every((id) => id !== "")).toBe(true);
+      expect(update).toHaveBeenCalled();
+      // Nothing more is queued behind the unfinished rebuilds, whatever the call.
+      const wall = { x: 0, y: 1, z: 0 };
+      expect(nav.addObstacle("box", wall, { x: 2, y: 2, z: 8 })).toBe("");
+      nav.removeObstacle(ids[0]!);
+      expect(add).toHaveBeenCalledTimes(8);
+      expect(remove).not.toHaveBeenCalled();
+      update.mockRestore();
+      // The retry completes the earlier requests, then the cache takes changes again.
+      const carved = nav.addObstacle("box", wall, { x: 2, y: 2, z: 8 });
+      expect(carved).not.toBe("");
+      nav.removeObstacle(ids[0]!);
+      expect(remove).toHaveBeenCalledTimes(1);
+      expect(detours(nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }), { x: 4, z: 0 }, 3.8)).toBe(true);
+    } finally {
+      nav.dispose();
+      update.mockRestore();
+      add.mockRestore();
+      remove.mockRestore();
+    }
+  });
+
   it("reuses queries and skips tile work while the crowd and obstacles are unchanged", async () => {
     const bytes = await generateNavMesh({ ...groundPrism(), settings: { supportDynamicObstacles: true } });
     const nav = createNavigationBackend();
@@ -107,6 +180,8 @@ describe("tile-cache obstacles and static carve", () => {
       for (let tick = 0; tick < 8; tick++) nav.stepCrowd(1 / 60);
       expect(update).not.toHaveBeenCalled();
       const obstacle = nav.addObstacle("box", { x: 0, y: 1, z: 0 }, { x: 2, y: 2, z: 8 });
+      // The carve waits for the next crowd step or query.
+      nav.stepCrowd(1 / 60);
       expect(update).toHaveBeenCalled();
       update.mockClear();
       for (let tick = 0; tick < 8; tick++) nav.stepCrowd(1 / 60);

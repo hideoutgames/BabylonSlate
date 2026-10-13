@@ -48,6 +48,14 @@ const TILE_SIZE = 32;
 const TILE_CACHE_LAYERS_PER_TILE = 4;
 const TILE_CACHE_MAX_LAYERS_PER_TILE = 32;
 const TILE_CACHE_MAX_OBSTACLES = 128;
+/**
+ * Obstacle adds and removes queue as tile-cache requests until an update. Detour holds at most 64 requests and
+ * lists at most 64 distinct tiles to rebuild, and each request touches at most 8 tiles. Updates run before every
+ * query, so the backlog is bounded by flushing at 8 requests: 8 x 8 touched tiles always fit the list. A tile the
+ * list cannot hold would silently stay uncarved, so no request is queued behind an update that failed and has
+ * not finished (`tileCacheStalled`).
+ */
+const TILE_CACHE_MAX_PENDING_REQUESTS = 8;
 /** Crowd capacity; Detour places a new agent within (2, 1.5, 2) x the max agent radius. */
 const CROWD_MAX_AGENTS = 128;
 const CROWD_MAX_AGENT_RADIUS = 2;
@@ -214,6 +222,10 @@ class RecastNavigationBackend implements NavigationBackend {
   private tileCache: TileCache | null = null;
   private releaseTileCacheResources: (() => void) | null = null;
   private tileCacheDirty = false;
+  /** Obstacle requests queued in the tile cache since its last update. */
+  private pendingObstacleRequests = 0;
+  /** An update failed with tile rebuilds unfinished; obstacle changes wait until a retry completes them. */
+  private tileCacheStalled = false;
   private costVolumesDirty = false;
   private obstacles = new Map<string, Obstacle>();
   private nextObstacle = 1;
@@ -301,31 +313,36 @@ class RecastNavigationBackend implements NavigationBackend {
 
   addObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint, yaw = 0): string {
     const tileCache = this.tileCache;
-    if (!tileCache) return "";
+    if (!tileCache || !this.tileCacheReady()) return "";
     const extent = (value: number) => Math.max(Math.abs(value), MIN_OBSTACLE_EXTENT);
-    let added: { success: boolean; obstacle?: Obstacle };
-    if (kind === "cylinder") {
-      // Tile-cache cylinders stand on their base; callers pass the volume center.
-      const height = extent(size.y);
-      added = tileCache.addCylinderObstacle(
-        { x: pose.x, y: pose.y - height / 2, z: pose.z },
-        Math.max(extent(size.x), extent(size.z)) / 2,
-        height,
-      );
-    } else {
-      added = tileCache.addBoxObstacle(
+    const request = (): { success: boolean; obstacle?: Obstacle } => {
+      if (kind === "cylinder") {
+        // Tile-cache cylinders stand on their base; callers pass the volume center.
+        const height = extent(size.y);
+        return tileCache.addCylinderObstacle(
+          { x: pose.x, y: pose.y - height / 2, z: pose.z },
+          Math.max(extent(size.x), extent(size.z)) / 2,
+          height,
+        );
+      }
+      return tileCache.addBoxObstacle(
         pose,
         { x: extent(size.x) / 2, y: extent(size.y) / 2, z: extent(size.z) / 2 },
         Number.isFinite(yaw) ? yaw : 0,
       );
+    };
+    let added = request();
+    // A removal frees its obstacle slot only when the queue is applied, so a full cache retries once after that.
+    if ((!added.success || !added.obstacle) && this.pendingObstacleRequests > 0) {
+      this.flushTileCache();
+      if (!this.tileCacheStalled) added = request();
     }
     // A full tile cache carves nothing, so the caller gets no id to remove.
     if (!added.success || !added.obstacle) return "";
     const id = `obstacle-${this.nextObstacle}`;
     this.nextObstacle += 1;
     this.obstacles.set(id, added.obstacle);
-    this.tileCacheDirty = true;
-    this.flushTileCache();
+    this.queueObstacleRequest();
     return id;
   }
 
@@ -333,10 +350,9 @@ class RecastNavigationBackend implements NavigationBackend {
     const obstacle = this.obstacles.get(id);
     if (!obstacle || !this.tileCache) return;
     // Keep the id while the carve is still in place so removal can be retried.
-    if (!this.tileCache.removeObstacle(obstacle).success) return;
+    if (!this.tileCacheReady() || !this.tileCache.removeObstacle(obstacle).success) return;
     this.obstacles.delete(id);
-    this.tileCacheDirty = true;
-    this.flushTileCache();
+    this.queueObstacleRequest();
   }
 
   applyCostVolume(volume: NavCostVolume): void {
@@ -507,6 +523,26 @@ class RecastNavigationBackend implements NavigationBackend {
     this.crowd?.update(dtSeconds);
   }
 
+  /**
+   * An obstacle add or remove is queued, not carved: every query and crowd step flushes first, so a batch of
+   * changes rebuilds each touched tile and restamps the cost volumes once.
+   */
+  private queueObstacleRequest(): void {
+    this.tileCacheDirty = true;
+    this.pendingObstacleRequests += 1;
+    if (this.pendingObstacleRequests >= TILE_CACHE_MAX_PENDING_REQUESTS) this.flushTileCache();
+  }
+
+  /**
+   * Whether the tile cache can take another obstacle request. After a failed update it first retries the
+   * unfinished rebuilds, and while they stay unfinished it takes none: `addObstacle` then returns no id and
+   * `removeObstacle` keeps the obstacle, so the caller can try again later.
+   */
+  private tileCacheReady(): boolean {
+    if (this.tileCacheStalled) this.flushTileCache();
+    return !this.tileCacheStalled;
+  }
+
   private flushTileCache(): void {
     if (!this.tileCacheDirty || !this.tileCache || !this.navMesh) return;
     this.restoreCostVolumePolys();
@@ -515,9 +551,14 @@ class RecastNavigationBackend implements NavigationBackend {
       const result = this.tileCache.update(this.navMesh);
       if (result.upToDate) {
         this.tileCacheDirty = false;
+        this.tileCacheStalled = false;
+        this.pendingObstacleRequests = 0;
         break;
       }
-      if (!result.success) break;
+      if (!result.success) {
+        this.tileCacheStalled = true;
+        break;
+      }
     }
     // Detour queries retain the same mutable NavMesh. Tile rebuilds do not
     // require allocating a replacement query; only stamped areas need refresh.
@@ -606,6 +647,8 @@ class RecastNavigationBackend implements NavigationBackend {
     this.releaseTileCacheResources?.();
     this.releaseTileCacheResources = null;
     this.tileCacheDirty = false;
+    this.pendingObstacleRequests = 0;
+    this.tileCacheStalled = false;
     this.costVolumesDirty = false;
     this.obstacles.clear();
     this.agents.clear();

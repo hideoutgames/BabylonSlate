@@ -40,7 +40,8 @@ export type NavigationBackend = {
    * Carve a tile-cache obstacle centered on `pose`. `size` is the full extent
    * (a cylinder uses the larger of X/Z as its diameter and Y as its height);
    * `yaw` turns a box about +Y in radians. Returns "" when nothing was carved:
-   * a solo navmesh, or a tile cache already holding its maximum obstacles.
+   * a solo navmesh, a tile cache already holding its maximum obstacles, or one whose last
+   * update failed and has not finished rebuilding yet (try again later).
    */
   addObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint, yaw?: number): string;
   removeObstacle(id: string): void;
