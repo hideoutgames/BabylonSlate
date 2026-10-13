@@ -173,13 +173,50 @@ function groupMatchesClip(
 
 const NO_GROUPS: readonly NamedSeekableGroup[] = [];
 
+/** Below this a scan beats a map lookup, and short lists skip the index entirely. */
+const INDEXED_CLIP_GROUPS = 6;
+/**
+ * Groups by name, in list order. A slot's group list is replaced whole when a
+ * model's clips load or unload (never edited in place) and a wrapped group's
+ * name and clip guid are fixed, so the list's identity and length key its index.
+ */
+interface ClipGroupIndex {
+  count: number;
+  byName: Map<string, NamedSeekableGroup[]>;
+}
+const clipGroupIndexes = new WeakMap<readonly NamedSeekableGroup[], ClipGroupIndex>();
+
+function clipGroupIndex(groups: readonly NamedSeekableGroup[]): ClipGroupIndex {
+  const cached = clipGroupIndexes.get(groups);
+  if (cached && cached.count === groups.length) return cached;
+  const byName = new Map<string, NamedSeekableGroup[]>();
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i]!;
+    const named = byName.get(group.name);
+    if (named) named.push(group);
+    else byName.set(group.name, [group]);
+  }
+  const index = { count: groups.length, byName };
+  clipGroupIndexes.set(groups, index);
+  return index;
+}
+
+/** The first group, in list order, with the clip's name (and guid when one is given). */
 function findClipGroup(
   groups: readonly NamedSeekableGroup[],
   clipName: string,
   clipAssetGuid?: string,
 ): NamedSeekableGroup | undefined {
-  for (let i = 0; i < groups.length; i++) {
-    if (groupMatchesClip(groups[i]!, clipName, clipAssetGuid)) return groups[i];
+  if (groups.length < INDEXED_CLIP_GROUPS) {
+    for (let i = 0; i < groups.length; i++) {
+      if (groupMatchesClip(groups[i]!, clipName, clipAssetGuid)) return groups[i];
+    }
+    return undefined;
+  }
+  const named = clipGroupIndex(groups).byName.get(clipName);
+  if (!named) return undefined;
+  for (let i = 0; i < named.length; i++) {
+    if (groupMatchesClip(named[i]!, clipName, clipAssetGuid)) return named[i];
   }
   return undefined;
 }
