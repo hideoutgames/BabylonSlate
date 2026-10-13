@@ -120,6 +120,39 @@ describe("SceneLayerCompositor", () => {
     expect(wide.camera.orthoBottom).toBeCloseTo(-5);
   });
 
+  it("leaves an untouched HUD camera and its matrices alone each frame, and restores one another owner moved", () => {
+    const { compositor } = world();
+    const layer = compositor.create({
+      type: "sceneLayerCreate",
+      layerId: "hud",
+      assetGuid: "hud-asset",
+      zOrder: 0,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+      layerBounds: { width: 20, height: 10 },
+    });
+    const { camera, scene } = layer;
+    compositor.render();
+    const view = camera.getViewMatrix().updateFlag;
+    const projection = camera.getProjectionMatrix().updateFlag;
+    compositor.render();
+    compositor.render();
+    expect(camera.getViewMatrix().updateFlag).toBe(view);
+    expect(camera.getProjectionMatrix().updateFlag).toBe(projection);
+
+    camera.position.x = 3;
+    camera.mode = Camera.PERSPECTIVE_CAMERA;
+    camera.orthoRight = 99;
+    scene.activeCamera = new UniversalCamera("other", Vector3.Zero(), scene);
+    compositor.render();
+    expect(camera.position.asArray()).toEqual([0, 0, -10]);
+    expect(camera.mode).toBe(Camera.ORTHOGRAPHIC_CAMERA);
+    expect(camera.orthoRight).toBe(10);
+    expect(scene.activeCamera).toBe(camera);
+    expect(camera.getViewMatrix().m[12]).toBeCloseTo(0);
+    expect(camera.getViewMatrix().m[14]).toBeCloseTo(10);
+  });
+
   it("sorts overlay draw order by zOrder and stable layer id on ties", () => {
     const { compositor } = world();
     compositor.create({

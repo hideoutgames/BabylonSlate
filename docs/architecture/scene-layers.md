@@ -75,7 +75,7 @@ Physics is opt-in per Scene Layer asset (**Enable Physics**, `settings.physicsEn
 Extra unlit ortho `Scene`s on the shared Engine:
 
 - World: `autoClear = true`, existing camera PP unchanged.
-- Each live SceneLayer: orthographic HUD camera at `(0, 0, -10)` looking at origin, `lightsEnabled = false`, unlit, no world PP. Each overlay `render` re-binds that camera (mode, pose, view/projection) so a shared Engine cannot reuse the world perspective camera.
+- Each live SceneLayer: orthographic HUD camera at `(0, 0, -10)` looking at origin, `lightsEnabled = false`, unlit, no world PP. Each overlay `render` checks that camera still holds that pose (mode, active camera, orthographic bounds) and re-binds it, view/projection included, when another owner changed it, so a shared Engine cannot reuse the world perspective camera. An untouched camera is left alone between frames; create, resize and preparation always re-bind.
 - Draw order: world, then layers by `zOrder` (stable by instance id on ties).
 - Layer with no PP: `autoClear = false` on color; clear depth so 2D quads sort.
 - Layer with PP: render to an RTT, run the Scene-owned coordinator's stack, then alpha-composite onto the framebuffer. The coordinator draws through its FrameGraph; world and layer inputs remain isolated. Engine Settings `postProcessingEnabled` still gates overlay PP in editor Play only.
