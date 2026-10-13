@@ -25,9 +25,15 @@ const summaries = new WeakMap<object, FoliageSummary>();
 
 /**
  * Serialized properties and distinct model guids, computed once per properties
- * object. Scene edits replace a component's properties instead of mutating them,
- * so an unchanged component keeps its object across applies and does not
- * re-serialize up to MAX_FOLIAGE_INSTANCES transforms each time.
+ * object, so an unchanged component does not re-serialize up to
+ * MAX_FOLIAGE_INSTANCES transforms on every apply.
+ *
+ * Contract: the memo is keyed on object identity, so hosts must replace a
+ * Foliage component's properties (and the batches inside) rather than mutate
+ * them in place; an in-place edit would keep the old summary and the visual
+ * would not rebuild. The existing hosts do: the scene property command spreads
+ * (`withProperty`), `appendFoliageInstance` and the erase brush return new
+ * objects, and overlay layout copies every component's properties.
  */
 function foliageSummary(properties: unknown): FoliageSummary {
   const memo = properties !== null && typeof properties === "object" ? properties : null;
