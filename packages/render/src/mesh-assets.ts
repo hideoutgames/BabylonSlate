@@ -371,6 +371,28 @@ export function applyAlbedoTexture(
 }
 
 /**
+ * Point the owned albedo bindings under `root` at the current bytes of Textures
+ * whose stored encoding changed (PNG to KTX2). Each binding takes a successor
+ * lease that replaces the working one only once it is ready, so a failed upload
+ * leaves the visual as it was. Returns the successor preparations.
+ */
+export function refreshAlbedoTextures(
+  root: AbstractMesh,
+  assets: MeshAssetContext,
+  changed: ReadonlySet<string>,
+): Promise<void>[] {
+  const pending: Promise<void>[] = [];
+  for (const mesh of [root, ...root.getChildMeshes()]) {
+    const binding = albedoBindings.get(mesh);
+    if (!binding?.guid || !changed.has(binding.guid)) continue;
+    const before = binding.preparation;
+    applyAlbedoTexture(mesh, mesh.getScene(), binding.guid, assets, { alwaysBlend: binding.alwaysBlend });
+    if (binding.preparation && binding.preparation !== before) pending.push(binding.preparation);
+  }
+  return pending;
+}
+
+/**
  * Tilemap atlases keep their exact display colors: the scene's tone mapping and
  * exposure never apply to them. Under a Scene Linear display stage they still
  * decode to linear, like Standard materials on the scene's configuration, so

@@ -83,7 +83,12 @@ import {
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs, fontGuidsForSceneRepresentation } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
-import { sceneViewportAssetKey, sceneViewportRequiredAssets } from "../lib/scene-viewport-assets";
+import {
+  changedTextureEncodings,
+  sceneViewportAssetKey,
+  sceneViewportRequiredAssets,
+  sceneViewportTextureEncodings,
+} from "../lib/scene-viewport-assets";
 import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
 import { sceneStreamingEditorScene } from "../lib/scene-streaming-editor-labels";
 import {
@@ -114,7 +119,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const navDebugRef = useRef<NavMeshDebugOverlay | null>(null);
   const sceneRef = useRef<SerializedScene | null>(null);
   const appliedSceneRef = useRef<{ scene: SerializedScene; handle: EngineHandle } | null>(null);
-  const appliedAssetsRef = useRef<{ key: string; handle: EngineHandle } | null>(null);
+  /** `textures` maps each installed Texture to the stored encoding its bytes came from. */
+  const appliedAssetsRef = useRef<{ key: string; handle: EngineHandle; textures: Map<string, string> } | null>(null);
+  /** The asset load in flight; an encoding swap waits for it rather than racing its install. */
+  const assetLoadRef = useRef<AbortController | null>(null);
   const dragStartSceneRef = useRef<SerializedScene | null>(null);
   const { documentId } = useDocumentWorkspace();
   const {
@@ -736,6 +744,14 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   ]);
   const areaTextureGuids = useMemo(() => areaEmissionTextureGuids(scene), [scene]);
   const areaEmissionKey = savedAreaEmissionKey(areaTextureGuids, (guid) => assetRegistry?.getByGuid(guid));
+  // How each Texture is stored. An encode commit changes this and not `viewportAssetsKey`.
+  const textureEncodings = useMemo(() => {
+    void registryEpoch;
+    return sceneViewportTextureEncodings(assetRegistry?.list() ?? []);
+  }, [assetRegistry, registryEpoch]);
+  const textureEncodingsRef = useRef(textureEncodings);
+  textureEncodingsRef.current = textureEncodings;
+  const textureEncodingsKey = useMemo(() => JSON.stringify([...textureEncodings]), [textureEncodings]);
 
   useEffect(() => {
     const handle = engineRef.current;
@@ -746,6 +762,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     setDropReady(null);
     setSceneReady(false);
     const controller = new AbortController();
+    assetLoadRef.current = controller;
     const transitionId = ++loadTransitionRef.current;
     const isCurrent = () => !controller.signal.aborted &&
       transitionId === loadTransitionRef.current && engineRef.current === handle;
@@ -786,6 +803,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       const applyCollectedAssets = async () => {
         if (!blocking && appliedAssetsRef.current?.handle === handle &&
           appliedAssetsRef.current.key === viewportAssetsKey) return;
+        // The encodings the bytes below are read against; a commit that lands
+        // while they load is swapped in afterwards.
+        const encodings = textureEncodingsRef.current;
         const catalog = assetRegistry?.list() ?? [];
         const fontSources = catalog.map((asset) => ({ guid: asset.header.guid, path: asset.path, type: asset.header.type, payload: asset.header.payload }));
         const bitmapFonts = new Set(fontGuidsForSceneRepresentation([scene], fontSources, "source", projectDocument?.settings.fonts.defaultFontGuid));
@@ -876,7 +896,13 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           handle.setMaterialDocuments(materials.documents, materials.functions);
           handle.setMeshAssets(assets);
         }
-        if (isCurrent()) appliedAssetsRef.current = { key: viewportAssetsKey, handle };
+        if (isCurrent()) {
+          appliedAssetsRef.current = {
+            key: viewportAssetsKey,
+            handle,
+            textures: new Map([...textureBytes.keys()].map((guid): [string, string] => [guid, encodings.get(guid) ?? ""])),
+          };
+        }
       };
       try {
         if (blocking) {
@@ -940,10 +966,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         setSceneLoad((current) => ({ ...current, open: true, failed: true, error, gpu }));
       } finally {
         if (blockingLoadRef.current === controller) blockingLoadRef.current = null;
+        if (assetLoadRef.current === controller) assetLoadRef.current = null;
       }
     })();
     return () => {
       controller.abort();
+      if (assetLoadRef.current === controller) assetLoadRef.current = null;
     };
   }, [
     scene,
@@ -975,6 +1003,37 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     projectDocument?.settings.fonts.globalFallback,
     engineEpoch,
   ]);
+
+  // A background encode commit swaps how a Texture is stored (PNG to KTX2), not
+  // what it shows, so it never reloads the scene: only the changed Textures are
+  // read again and swapped in place on the live meshes and Materials. Commits that
+  // land within a frame share one swap. A load in flight reads the latest bytes
+  // itself, and re-runs this when it finishes (`dropReady`).
+  useEffect(() => {
+    const handle = engineRef.current;
+    const applied = appliedAssetsRef.current;
+    if (!handle || !applied || applied.handle !== handle || applied.key !== viewportAssetsKey || assetLoadRef.current) return;
+    if (changedTextureEncodings(applied.textures, textureEncodingsRef.current).length === 0) return;
+    const controller = new AbortController();
+    const isCurrent = () => !controller.signal.aborted && engineRef.current === handle &&
+      appliedAssetsRef.current === applied && assetLoadRef.current === null;
+    void (async () => {
+      try {
+        await waitForSceneLoadingPaint(controller.signal);
+        if (!isCurrent()) return;
+        const encodings = textureEncodingsRef.current;
+        const guids = changedTextureEncodings(applied.textures, encodings);
+        if (guids.length === 0) return;
+        const bytes = await collectPlayTextureBytes(new Map(), new Map(), guids);
+        if (!isCurrent()) return;
+        handle.replaceTextureBytes(bytes);
+        for (const guid of bytes.keys()) applied.textures.set(guid, encodings.get(guid) ?? "");
+      } catch (error) {
+        if (!controller.signal.aborted) console.warn("[viewport] failed to swap Texture encodings", error);
+      }
+    })();
+    return () => controller.abort();
+  }, [textureEncodingsKey, viewportAssetsKey, dropReady, engineEpoch, collectPlayTextureBytes]);
 
   useEffect(() => {
     const handle = engineRef.current;

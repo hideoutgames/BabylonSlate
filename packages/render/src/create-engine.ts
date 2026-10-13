@@ -367,6 +367,13 @@ export interface EngineHandle {
   }>;
   /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
   setMeshAssets: (assets: MeshAssetContext) => void;
+  /**
+   * Swap the stored encoding (PNG to KTX2) of Textures already installed with
+   * `setMeshAssets`, when their pixels, sampler and settings are unchanged.
+   * Editor meshes and Materials stay alive; a guid never installed, or whose
+   * bytes are identical, is ignored. Content edits go through `setMeshAssets`.
+   */
+  replaceTextureBytes: (textureBytes: ReadonlyMap<string, Uint8Array | Blob>) => void;
   /** Retain prepared source maps until the consuming runtime instance is retired. */
   acquireSceneSources: (sources: SceneSourceAssets, options?: { prepare?: boolean; signal?: AbortSignal; priority?: NativePreparationPriority }) => Promise<() => void>;
   nativePreparationStats: () => ReturnType<ReturnType<typeof nativePreparationForEngine>["snapshot"]>;
@@ -3862,6 +3869,22 @@ function initializeEngine(
       }
       // After any mesh rebuild, so a resized target re-parents to live meshes.
       debugOverlay?.refreshRenderTargets();
+    },
+    replaceTextureBytes: (textureBytes) => {
+      const current = binding.textureBytes;
+      if (!current) return;
+      const next = new Map(current);
+      const changed: string[] = [];
+      for (const [guid, source] of installTextureBytes(textureBytes) ?? []) {
+        const previous = current.get(guid);
+        // A Texture that was never installed changes what meshes sample: setMeshAssets owns that.
+        if (!previous || assetByteFingerprint(previous) === assetByteFingerprint(source)) continue;
+        next.set(guid, source);
+        changed.push(guid);
+      }
+      if (changed.length === 0) return;
+      binding.textureBytes = next;
+      editorSync?.replaceTextureEncodings(next, changed);
     },
     acquireSceneSources: async (sources, preparation) => {
       if (disposed) throw new Error("The render Scene is disposed.");

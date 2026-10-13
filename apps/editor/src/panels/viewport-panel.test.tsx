@@ -55,6 +55,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
     resourceCache: {},
     registerFonts: vi.fn(async () => {}),
     setMeshAssets: vi.fn(),
+    replaceTextureBytes: vi.fn(),
     setRenderSettings: vi.fn(),
     setMaterialDocuments: vi.fn(),
     whenEditorModelsReady: vi.fn(async () => {}),
@@ -257,6 +258,7 @@ describe("ViewportPanel engine", () => {
     handle.loadScene.mockClear();
     handle.loadSceneAsync.mockReset().mockResolvedValue(undefined);
     handle.setMeshAssets.mockClear();
+    handle.replaceTextureBytes.mockClear();
     handle.setMaterialDocuments.mockClear();
     handle.dispose.mockClear();
     handle.engine.onContextRestoredObservable.add.mockClear();
@@ -912,6 +914,74 @@ describe("ViewportPanel engine", () => {
     );
     await Promise.resolve();
     expect(handle.setMaterialDocuments).toHaveBeenCalledTimes(initialMaterials + 1);
+  });
+
+  it("swaps a committed Texture encode in place, and still reloads assets when the Texture's content changes", async () => {
+    const chunk = (id: string, kind: string, sha256: string) =>
+      ({ id, kind, mime: "application/octet-stream", sha256, byteLength: 4, locator: { inline: { offset: 0, length: 4 } } });
+    const texture = async (payload: Record<string, unknown>, chunks: Array<ReturnType<typeof chunk>>) => ({
+      rootId: "project",
+      path: "assets/Tex.texture.babasset",
+      header: {
+        ...readAssetDocumentHeader(await encodeAssetDocument({ type: "Texture", guid: "tex", name: "Tex", version: 1, payload })),
+        payload,
+        chunks,
+      },
+    });
+    const png = new Uint8Array([1, 2, 3, 4]);
+    const ktx2 = new Uint8Array([9, 9, 9, 9, 9]);
+    const reimported = new Uint8Array([5, 6, 7, 8]);
+    let asset = await texture({ usage: "albedo", compressionState: "pending" }, [chunk("pixels", "pixels", "a")]);
+    documents.assetRegistry = { list: () => [asset], getByGuid: () => asset };
+    documents.openDocuments = [{
+      id: "scene:S",
+      ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: createDefaultScene(),
+    }];
+    documents.collectPlayTextureBytes.mockResolvedValue(new Map([["tex", png]]));
+    const { rerender } = renderViewport();
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    const refresh = () => rerender(<DocumentWorkspaceProvider documentId="scene:S">
+      <ViewportPanel {...({} as IDockviewPanelProps)} />
+    </DocumentWorkspaceProvider>);
+    const loads = handle.loadScene.mock.calls.length;
+    const installs = handle.setMeshAssets.mock.calls.length;
+    const libraries = documents.collectPlayMaterialLibrary.mock.calls.length;
+    const reads = documents.collectPlayTextureBytes.mock.calls.length;
+
+    // Encode progress rewrites the header without touching what the viewport shows.
+    asset = await texture({ usage: "albedo", compressionState: "encoding" }, [chunk("pixels", "pixels", "a")]);
+    documents.registryEpoch += 1;
+    refresh();
+    await act(async () => {});
+    expect(documents.collectPlayTextureBytes).toHaveBeenCalledTimes(reads);
+
+    // The commit swaps only that Texture, with nothing reloaded around it.
+    documents.collectPlayTextureBytes.mockResolvedValueOnce(new Map([["tex", ktx2]]));
+    asset = await texture(
+      { usage: "albedo", compressionState: "compressed", ktx2ChunkId: "ktx2:abc" },
+      [chunk("pixels", "pixels", "a"), chunk("ktx2:abc", "ktx2", "k")],
+    );
+    documents.registryEpoch += 1;
+    refresh();
+    await waitFor(() => expect(handle.replaceTextureBytes).toHaveBeenCalledWith(new Map([["tex", ktx2]])));
+    expect(documents.collectPlayTextureBytes).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), ["tex"]);
+    expect(documents.collectPlayTextureBytes).toHaveBeenCalledTimes(reads + 1);
+    expect(handle.setMeshAssets).toHaveBeenCalledTimes(installs);
+    expect(handle.loadScene).toHaveBeenCalledTimes(loads);
+    expect(documents.collectPlayMaterialLibrary).toHaveBeenCalledTimes(libraries);
+
+    // A reimport changes the pixels: the whole asset set is installed again, not swapped.
+    documents.collectPlayTextureBytes.mockResolvedValueOnce(new Map([["tex", reimported]]));
+    asset = await texture(
+      { usage: "albedo", compressionState: "compressed", ktx2ChunkId: "ktx2:abc" },
+      [chunk("pixels", "pixels", "b"), chunk("ktx2:abc", "ktx2", "k")],
+    );
+    documents.registryEpoch += 1;
+    refresh();
+    await waitFor(() => expect(handle.setMeshAssets).toHaveBeenCalledTimes(installs + 1));
+    await act(async () => {});
+    expect(handle.replaceTextureBytes).toHaveBeenCalledTimes(1);
   });
 
   it("updates transforms without collecting assets again and collects when a resource reference changes", async () => {
