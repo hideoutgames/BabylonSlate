@@ -42,6 +42,34 @@ export function dataGraphNodeTitle(typeId: DataGraphNodeType, definitionName?: s
 export type DataGraphTreeEntry = { id: string; path: string; parentPath: string; effectiveDefinitionGuid: string | null };
 export type DataGraphAssetEntry = { guid: string; name: string; type: "DataTree"; defaultDefinitionGuid?: string | null; entries: readonly DataGraphTreeEntry[]; invalid?: boolean };
 
+type DataTreeSummary = Pick<DataGraphAssetEntry, "defaultDefinitionGuid" | "entries" | "invalid">;
+
+// A DataTree payload is replaced when its tree is edited or saved, never changed in place, so
+// its hierarchy is indexed once per payload object. This runs on every graph keystroke.
+const summaries = new WeakMap<object, DataTreeSummary>();
+
+function summarizeDataTree(payload: unknown): DataTreeSummary {
+  const key = typeof payload === "object" && payload !== null ? payload : null;
+  const cached = key ? summaries.get(key) : undefined;
+  if (cached) return cached;
+  let summary: DataTreeSummary;
+  try {
+    const tree = isDataTreeAsset(payload) ? payload : normalizeDataTreeAsset(payload);
+    const { index } = buildDataTreeIndex(tree);
+    summary = index
+      ? { defaultDefinitionGuid: tree.defaultDefinitionGuid, entries: index.orderedEntries.map((entry) => ({
+          id: entry.id, path: index.pathById.get(entry.id)!,
+          parentPath: entry.parentId ? index.pathById.get(entry.parentId)! : "",
+          effectiveDefinitionGuid: index.effectiveDefinitionById.get(entry.id) ?? null,
+        })) }
+      : { entries: [], invalid: true };
+  } catch {
+    summary = { entries: [], invalid: true };
+  }
+  if (key) summaries.set(key, summary);
+  return summary;
+}
+
 /** One shared hierarchy pass indexes live unsaved trees for graph consumers. */
 export function collectDataGraphAssets(
   assets: readonly { path: string; header: { guid: string; name: string; type: string; payload?: unknown } }[],
@@ -51,19 +79,7 @@ export function collectDataGraphAssets(
   return assets.flatMap((asset): DataGraphAssetEntry[] => {
     const { type, guid, name } = asset.header;
     if (type !== "DataTree") return [];
-    try {
-      const payload = open.get(asset.path) ?? asset.header.payload;
-      const tree = isDataTreeAsset(payload) ? payload : normalizeDataTreeAsset(payload);
-      const { index } = buildDataTreeIndex(tree);
-      if (!index) return [{ guid, name, type, entries: [], invalid: true }];
-      return [{ guid, name, type, defaultDefinitionGuid: tree.defaultDefinitionGuid, entries: index.orderedEntries.map((entry) => ({
-        id: entry.id, path: index.pathById.get(entry.id)!,
-        parentPath: entry.parentId ? index.pathById.get(entry.parentId)! : "",
-        effectiveDefinitionGuid: index.effectiveDefinitionById.get(entry.id) ?? null,
-      })) }];
-    } catch {
-      return [{ guid, name, type, entries: [], invalid: true }];
-    }
+    return [{ guid, name, type, ...summarizeDataTree(open.get(asset.path) ?? asset.header.payload) }];
   });
 }
 

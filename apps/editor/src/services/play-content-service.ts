@@ -163,23 +163,28 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
   const { documents: documentService, project: projectService, readAssetChunk } = options;
   const compileCache = new GraphScriptCompileCache();
 
-  const collectGraphTypeSchemas = () => {
-    return typeSchemasFromGraphAssets(
-      collectGraphTypeAssets({
-        assets: projectService.registry?.list() ?? [],
-        openDocuments: [...documentService.getState().openDocuments.values()],
-      }),
-    );
+  const collectGraphTypeSchemas = (
+    assets = projectService.registry?.list() ?? [],
+    openDocuments = [...documentService.getState().openDocuments.values()],
+  ) => {
+    return typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets, openDocuments }));
   };
 
-  /** Fingerprint of the open Class and Animation Graphs and the catalogs they compile against (node positions omitted). */
-  const graphSignature = (tags: ProjectDocument["settings"]["tags"] | undefined) => graphCompileSignature(
-    [...openGraphCompileDocuments(documentService, projectService.registry?.list() ?? []), ...openAnimGraphSignatureSlices(documentService)],
-    inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
-    tags,
-    collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
-    collectGraphTypeSchemas(),
-  );
+  /**
+   * Fingerprint of the open Class and Animation Graphs and the catalogs they compile against (node positions omitted).
+   * It runs on every graph keystroke, so the registry and the open documents are listed once for all of its catalogs.
+   */
+  const graphSignature = (tags: ProjectDocument["settings"]["tags"] | undefined) => {
+    const assets = projectService.registry?.list() ?? [];
+    const openDocuments = [...documentService.getState().openDocuments.values()];
+    return graphCompileSignature(
+      [...openGraphCompileDocuments(documentService, assets), ...openAnimGraphSignatureSlices(documentService)],
+      inputAssetCatalog(assets, openDocuments),
+      tags,
+      collectDataGraphAssets(assets, openDocuments),
+      collectGraphTypeSchemas(assets, openDocuments),
+    );
+  };
 
   const recordPlayPreviewScripts = (bundles: ScriptBundleEntry[], nextDiagnostics: Diagnostic[]) => {
     options.onPreviewScriptsCompiled(graphSignature(options.projectDocument()?.settings.tags), bundles, nextDiagnostics);
