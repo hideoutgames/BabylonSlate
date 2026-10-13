@@ -162,10 +162,9 @@ function projectionAspect(camera: Camera): number {
   return m[5]! / m[0]!;
 }
 
-function previewCamera(scene: { cameras: Camera[] }): Camera {
-  const camera = scene.cameras.find((entry) =>
-    entry.name.startsWith("debugPreviewCam:"),
-  );
+/** The selected lens' preview camera; it is not in `scene.cameras`. */
+function previewCamera(overlay: EditorDebugOverlay): Camera {
+  const camera = overlay.previewTexture?.activeCamera;
   if (!camera) throw new Error("preview camera missing");
   return camera;
 }
@@ -235,7 +234,7 @@ describe("EditorDebugOverlay", () => {
       sceneData: sceneWith([cameraActor()]),
       selectedActorIds: ["cam"],
     });
-    expect(projectionAspect(previewCamera(scene))).toBeCloseTo(
+    expect(projectionAspect(previewCamera(overlay))).toBeCloseTo(
       CAMERA_PREVIEW_WIDTH / CAMERA_PREVIEW_HEIGHT,
       5,
     );
@@ -304,7 +303,7 @@ describe("EditorDebugOverlay", () => {
       ]),
       selectedActorIds: ["cam"],
     });
-    const preview = previewCamera(scene);
+    const preview = previewCamera(overlay);
     expect(preview.orthoRight! / preview.orthoTop!).toBeCloseTo(
       CAMERA_PREVIEW_WIDTH / CAMERA_PREVIEW_HEIGHT,
       5,
@@ -364,13 +363,13 @@ describe("EditorDebugOverlay", () => {
     const { scene } = createHandle();
     const before = membership(scene);
     const overlay = new EditorDebugOverlay(scene, { now: () => 0 });
-    expect(membership(scene)).toEqual({
+    // The light and lens guides: a root and one dashed mesh with its own material each.
+    const built = membership(scene);
+    expect(built).toEqual({
       ...before,
       meshes: before.meshes + 2,
       transformNodes: before.transformNodes + 2,
       materials: before.materials + 2,
-      textures: before.textures + 1,
-      cameras: before.cameras + 1,
     });
     const audio = createActor("speaker", "Speaker", {
       components: [{ id: "audio", classId: "AudioComponent", properties: { audioAssetGuid: "sound" } }],
@@ -384,7 +383,20 @@ describe("EditorDebugOverlay", () => {
       selectedActorIds: ["lamp", "cam", "speaker"],
       audioLibrary,
     });
+    // Only the audio radii (a root plus six dashed meshes and materials) join the scene by selection.
+    expect(membership(scene)).toEqual({
+      ...built,
+      meshes: built.meshes + 6,
+      transformNodes: built.transformNodes + 1,
+      materials: built.materials + 6,
+    });
+    const texture = overlay.previewTexture!;
+    const camera = texture.activeCamera!;
+    const disposeTexture = vi.spyOn(texture, "dispose");
+    const disposeCamera = vi.spyOn(camera, "dispose");
     overlay.dispose();
+    expect(disposeTexture).toHaveBeenCalledOnce();
+    expect(disposeCamera).toHaveBeenCalledOnce();
     expect(membership(scene)).toEqual(before);
     // A late sync, such as a React effect after teardown, must not rebuild anything.
     overlay.sync({ sceneData: sceneWith([lightActor("lamp", { lightKind: "point" })]), selectedActorIds: ["lamp"] });
@@ -789,7 +801,7 @@ describe("EditorDebugOverlay", () => {
     origin.rotationQuaternion = Quaternion.Identity();
     origin.computeWorldMatrix(true);
     overlay.followLivePose();
-    const preview = previewCamera(scene);
+    const preview = previewCamera(overlay);
     expect(preview.position.x).toBeCloseTo(9);
     expect(preview.position.y).toBeCloseTo(3);
     expect(preview.position.z).toBeCloseTo(-5);
@@ -811,10 +823,8 @@ describe("EditorDebugOverlay", () => {
       ]),
       selectedActorIds: ["cam"],
     });
-    const preview = scene.getCameraByName(
-      "debugPreviewCam:cam",
-    ) as FreeCamera | null;
-    expect(preview).toBeTruthy();
+    const preview = previewCamera(overlay) as FreeCamera;
+    expect(preview.name).toBe("debugPreviewCam:cam");
     const expected = new Quaternion(
       actorRotation[0],
       actorRotation[1],
@@ -863,27 +873,25 @@ describe("EditorDebugOverlay", () => {
     origin.position.set(9, 3, -5);
     origin.computeWorldMatrix(true);
     overlay.followLivePose();
-    const followed = previewCamera(scene).position;
+    const followed = previewCamera(overlay).position;
     expect([followed.x, followed.y, followed.z].map((value) => Math.round(value * 1e5) / 1e5))
       .toEqual([9, 3, -5]);
 
     overlay.sync({ sceneData, selectedActorIds: [] });
     expect(overlay.frustumMesh).toBeNull();
     expect(overlay.previewTexture).toBeNull();
-    // The camera and RTT stay in the scene for the next selection, but nothing draws the preview.
+    // The camera and RTT are kept for the next selection, but nothing draws the preview.
     const drawn = vi.spyOn(RenderTargetTexture.prototype, "render");
     overlay.tick(10_000);
     expect(drawn).not.toHaveBeenCalled();
     drawn.mockRestore();
     overlay.dispose();
-    expect(scene.cameras.some((camera) => camera.name.startsWith("debugPreviewCam:"))).toBe(false);
   });
 
   it("retargets one preview camera and RTT between lenses instead of creating new ones", () => {
     const { scene } = createHandle();
     const targets = renderTargetMap({ wide: { width: 16, height: 8 } });
     const overlay = new EditorDebugOverlay(scene, { now: () => 0, renderTargets: () => targets });
-    const camera = previewCamera(scene);
     const baseline = membership(scene);
     const sceneData = sceneWith([
       cameraActor(),
@@ -897,10 +905,12 @@ describe("EditorDebugOverlay", () => {
       }),
     ]);
 
+    // Even the first lens selection leaves the scene's cameras and textures alone.
     overlay.sync({ sceneData, selectedActorIds: ["cam"] });
+    expect(membership(scene)).toEqual(baseline);
     const texture = overlay.previewTexture!;
+    const camera = previewCamera(overlay);
     expect(texture.getSize()).toEqual({ width: 320, height: 180 });
-    expect(texture.activeCamera).toBe(camera);
     expect(camera.name).toBe("debugPreviewCam:cam");
 
     overlay.sync({ sceneData, selectedActorIds: ["rt"] });
@@ -943,7 +953,7 @@ describe("EditorDebugOverlay", () => {
     expect(maxAbs(points, "z")).toBeCloseTo(20, 5);
     expect(maxAbs(points, "y")).toBeCloseTo(farHalfHeight, 5);
     expect(maxAbs(points, "x")).toBeCloseTo(farHalfHeight * aspect, 5);
-    const preview = previewCamera(scene);
+    const preview = previewCamera(overlay);
     expect(overlay.previewTexture!.getSize()).toEqual(size);
     expect(projectionAspect(preview)).toBeCloseTo(aspect, 5);
     expect([preview.minZ, preview.maxZ]).toEqual([1, 20]);
@@ -1042,7 +1052,7 @@ describe("EditorDebugOverlay", () => {
     expect(overlay.previewTexture).toBe(preview);
     expect(resize).toHaveBeenCalledOnce();
     expect(preview.getSize()).toEqual({ width: 90, height: 180 });
-    expect(projectionAspect(previewCamera(scene))).toBeCloseTo(0.5, 5);
+    expect(projectionAspect(previewCamera(overlay))).toBeCloseTo(0.5, 5);
     const points = frustumWorldPoints(overlay.frustumMesh as TransformNode);
     expect(maxAbs(points, "x") / maxAbs(points, "y")).toBeCloseTo(0.5, 5);
     overlay.dispose();

@@ -2274,6 +2274,8 @@ describe("Play createEngine view", () => {
   it("sizes a selected Render Target Capture preview from the installed target assets", () => {
     const engine = sharedEngine();
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    // The preview RTT is not in the scene's texture list: read it from the draw that refreshes it.
+    const previewRenders = vi.spyOn(RenderTargetTexture.prototype, "render");
     try {
       const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
       handles.push(editor);
@@ -2288,11 +2290,12 @@ describe("Play createEngine view", () => {
         }],
       });
       editor.editor!.syncSelectionDebug({ sceneData: { ...createDefaultScene(), actors: [capture] }, selectedActorIds: [capture.id] });
-      const preview = () => editor.scene.getTextureByName("debugCameraPreview:rt")?.getSize();
+      const preview = () => (previewRenders.mock.contexts.at(-1) as RenderTargetTexture).getSize();
       expect(preview()).toEqual({ width: 320, height: 160 });
       editor.setMeshAssets({ renderTargets: target(8, 16) });
       expect(preview()).toEqual({ width: 90, height: 180 });
     } finally {
+      previewRenders.mockRestore();
       vi.useRealTimers();
     }
   });

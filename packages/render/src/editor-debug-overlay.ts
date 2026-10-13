@@ -310,14 +310,15 @@ function frustumPaths(lens: AuthoredCameraProperties, aspect: number): Vector3[]
  * selected Camera or Render Target Capture. Does not replace the orbit camera
  * or the hemispheric fill light.
  *
- * The light and lens guides and the preview camera and RTT are created once, with
- * the overlay, and only shown, hidden, moved and reshaped afterwards: selecting an
- * actor or editing the selected one never changes the Scene's mesh, material,
+ * The light and lens guides are created with the overlay, and the preview camera
+ * and RTT by the first lens selection (outside the Scene's camera and texture
+ * lists). They are only shown, hidden, moved and reshaped afterwards: selecting
+ * an actor or editing the selected one never changes the Scene's mesh, material,
  * texture or camera membership, so it cannot force a whole-scene readiness
  * probe. One guide of each kind is enough, as only the first selected light and
  * the first selected lens are drawn. The preview RTT is at most 320×180 RGBA8
- * plus its depth buffer (about 0.5 MB); it renders only while a lens is selected.
- * Audio radii are still built per sync.
+ * plus its depth buffer (about 0.5 MB); it renders only while a lens is selected
+ * and is released with the overlay. Audio radii are still built per sync.
  */
 export class EditorDebugOverlay {
   /** Root of the lens guide while a lens is selected. */
@@ -329,7 +330,7 @@ export class EditorDebugOverlay {
 
   /** The preview RTT while a lens is selected; null otherwise, though the RTT is retained. */
   get previewTexture(): RenderTargetTexture | null {
-    return this.lensActive ? this.previewRtt : null;
+    return this.lensActive ? (this.preview?.rtt ?? null) : null;
   }
 
   private readonly scene: Scene;
@@ -337,8 +338,8 @@ export class EditorDebugOverlay {
   private readonly useExternalClock: boolean;
   private readonly lightGuide: DashedGuide;
   private readonly lensGuide: DashedGuide;
-  private readonly previewRtt: RenderTargetTexture;
-  private readonly previewCamera: FreeCamera;
+  /** The retained PIP camera and RTT, created by the first lens selection. */
+  private preview: { camera: FreeCamera; rtt: RenderTargetTexture } | null = null;
   private lensActive = false;
   private lensActorId: string | null = null;
   private lensOrigin: AbstractMesh | null = null;
@@ -388,16 +389,6 @@ export class EditorDebugOverlay {
     // Built before any content loads, so these joins never force a probe of a loaded Scene.
     this.lightGuide = new DashedGuide(scene, "debugLight:");
     this.lensGuide = new DashedGuide(scene, "debugFrustum:");
-    this.previewCamera = new FreeCamera("debugPreviewCam:", Vector3.Zero(), scene, false);
-    this.previewCamera.rotationQuaternion = Quaternion.Identity();
-    this.previewRtt = new RenderTargetTexture(
-      "debugCameraPreview:",
-      lensPreviewSize(CAMERA_PREVIEW_ASPECT),
-      scene,
-      false,
-    );
-    this.previewRtt.activeCamera = this.previewCamera;
-    this.previewRtt.renderList = [];
     this.poseObserver = scene.onBeforeRenderObservable.add(() => this.updateHelperPoses());
     // Additions notify after a deferral and removals immediately; the mesh
     // count in `findMesh` covers an addition not yet notified.
@@ -469,7 +460,7 @@ export class EditorDebugOverlay {
       this.sync(this.lastSync);
       return;
     }
-    this.previewRtt.renderList = this.captureRenderList(capture);
+    if (this.preview) this.preview.rtt.renderList = this.captureRenderList(capture);
   }
 
   /**
@@ -483,13 +474,14 @@ export class EditorDebugOverlay {
   }
 
   tick(nowMs?: number): void {
-    if (!this.lensActive) return;
+    const preview = this.preview;
+    if (!this.lensActive || !preview) return;
     this.followLivePose();
     const now = nowMs ?? this.now();
     if (now - this.lastPreviewMs < CAMERA_PREVIEW_INTERVAL_MS) return;
     this.lastPreviewMs = now;
     if (this.previewLens) {
-      applyAuthoredCameraLens(this.previewCamera, this.previewLens, this.previewAspect);
+      applyAuthoredCameraLens(preview.camera, this.previewLens, this.previewAspect);
     }
     const engine = this.scene.getEngine();
     const target = engine._currentRenderTarget;
@@ -500,7 +492,7 @@ export class EditorDebugOverlay {
       this.scene.incrementRenderId();
       this.scene.resetCachedMaterial();
       try {
-        this.previewRtt.render(false);
+        preview.rtt.render(false);
       } finally {
         // The caller must not reuse the preview camera's cached light data.
         this.scene.incrementRenderId();
@@ -534,8 +526,9 @@ export class EditorDebugOverlay {
     this.disposeAudioDebug();
     this.lightGuide.dispose();
     this.lensGuide.dispose();
-    this.previewRtt.dispose();
-    this.previewCamera.dispose();
+    this.preview?.rtt.dispose();
+    this.preview?.camera.dispose();
+    this.preview = null;
   }
 
   private ensureTimer(): void {
@@ -566,7 +559,7 @@ export class EditorDebugOverlay {
     this.previewLens = null;
     this.previewAspect = CAMERA_PREVIEW_ASPECT;
     this.previewCapture = null;
-    this.previewRtt.renderList = [];
+    if (this.preview) this.preview.rtt.renderList = [];
     this.previewRenderCount = 0;
     this.lastPreviewMs = Number.NEGATIVE_INFINITY;
     this.clearTimer();
@@ -676,16 +669,15 @@ export class EditorDebugOverlay {
     this.lensGuide.setShown(true);
     this.frustumMesh = this.lensGuide.root;
 
-    const camera = this.previewCamera;
+    const size = lensPreviewSize(aspect);
+    const { camera, rtt } = this.ensurePreview(size);
     camera.name = `debugPreviewCam:${actor.id}`;
     this.copyLensPoseToPreviewCamera();
     this.previewLens = lens;
     this.previewAspect = aspect;
     this.previewCapture = debug.capture ?? null;
     applyAuthoredCameraLens(camera, lens, aspect);
-    const rtt = this.previewRtt;
     rtt.name = `debugCameraPreview:${actor.id}`;
-    const size = lensPreviewSize(aspect);
     const current = rtt.getSize();
     if (current.width !== size.width || current.height !== size.height) rtt.resize(size);
     rtt.renderList = debug.renderList;
@@ -714,9 +706,35 @@ export class EditorDebugOverlay {
     root.computeWorldMatrix(true);
   }
 
+  /**
+   * The PIP camera and RTT are created by the first lens selection. Neither
+   * joins `scene.cameras` or `scene.textures`: a membership change would force
+   * the whole-scene strict readiness probe, and a stray extra camera could
+   * become the scene's active one when another camera is disposed. The water
+   * planar reflection does the same. Only this overlay owns them, so `dispose`
+   * releases them explicitly.
+   */
+  private ensurePreview(size: { width: number; height: number }): { camera: FreeCamera; rtt: RenderTargetTexture } {
+    if (this.preview) return this.preview;
+    const scene = this.scene;
+    const blocked = scene._blockEntityCollection;
+    scene._blockEntityCollection = true;
+    try {
+      const camera = new FreeCamera("debugPreviewCam:", Vector3.Zero(), scene, false);
+      camera.rotationQuaternion = Quaternion.Identity();
+      const rtt = new RenderTargetTexture("debugCameraPreview:", size, scene, false);
+      rtt.activeCamera = camera;
+      this.preview = { camera, rtt };
+    } finally {
+      scene._blockEntityCollection = blocked;
+    }
+    return this.preview;
+  }
+
   private copyLensPoseToPreviewCamera(): void {
+    const camera = this.preview?.camera;
+    if (!camera) return;
     const root = this.lensGuide.root;
-    const camera = this.previewCamera;
     camera.position.copyFrom(root.position);
     camera.rotationQuaternion!.copyFrom(root.rotationQuaternion!);
     camera.rotation.set(0, 0, 0);
