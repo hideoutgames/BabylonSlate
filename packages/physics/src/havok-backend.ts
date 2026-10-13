@@ -464,17 +464,22 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   }
 
   getBodyTransform(bodyId: string): PhysicsTransform | null {
+    const out = { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
+    return this.readBodyTransform(bodyId, out) ? out : null;
+  }
+
+  readBodyTransform(bodyId: string, out: PhysicsTransform): boolean {
     const record = this.bodies.get(bodyId);
-    if (!record) return null;
-    const q = record.node.rotationQuaternion ?? Quaternion.Identity();
-    return {
-      position: {
-        x: record.node.position.x,
-        y: record.node.position.y,
-        z: record.node.position.z,
-      },
-      rotation: { x: q.x, y: q.y, z: q.z, w: q.w },
-    };
+    if (!record) return false;
+    const { position, rotationQuaternion: q } = record.node;
+    out.position.x = position.x;
+    out.position.y = position.y;
+    out.position.z = position.z;
+    out.rotation.x = q?.x ?? 0;
+    out.rotation.y = q?.y ?? 0;
+    out.rotation.z = q?.z ?? 0;
+    out.rotation.w = q ? q.w : 1;
+    return true;
   }
 
   getBodyVelocity(bodyId: string): BodyVelocity | null {

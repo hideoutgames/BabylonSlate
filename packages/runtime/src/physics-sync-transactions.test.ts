@@ -207,4 +207,36 @@ describe("atomic runtime collider publication", () => {
       expect(sync.getBackend().getBodyTransform(`body:${actor.guid}`)!.position.x).toBeCloseTo(5, 4);
     } finally { sync.dispose(); }
   });
+
+  it.each([
+    { name: "recomposing the world", hookResult: true },
+    { name: "moving only its own bodies", hookResult: false },
+  ])("never writes a destroyed actor's body pose into a same-guid replacement spawned by the step hook ($name)", ({ hookResult }) => {
+    const { world, actor, backend, sync } = fixture();
+    collider(world, actor, "shape", 0);
+    try {
+      sync.step(1 / 60, world);
+      backend.setBodyLinearVelocity(`body:${actor.guid}`, { x: 6 });
+      let replacement: Actor | undefined;
+      sync.step(1 / 60, world, undefined, undefined, () => {
+        // A script destroys the actor and respawns its guid; both commit before the step's readback.
+        world.destroyActorInstance(actor);
+        world.flushPending();
+        replacement = world.createActor({
+          classId: "Actor", guid: actor.guid,
+          transform: { ...identityTransform(), position: { x: 50, y: 7, z: 0 } },
+        });
+        world.spawnActorNow(replacement);
+        return hookResult;
+      });
+      expect(world.findActor(actor.guid)).toBe(replacement);
+      // The old body did move, and the replacement kept its own pose.
+      expect(backend.getBodyTransform(`body:${actor.guid}`)!.position.x).toBeGreaterThan(0);
+      expect(replacement!.transform.position).toEqual({ x: 50, y: 7, z: 0 });
+      // The next pass retires the destroyed actor's body, since the replacement has no physics components.
+      sync.step(1 / 60, world);
+      expect(backend.getBodyTransform(`body:${actor.guid}`)).toBeNull();
+      expect(replacement!.transform.position).toEqual({ x: 50, y: 7, z: 0 });
+    } finally { sync.dispose(); }
+  });
 });

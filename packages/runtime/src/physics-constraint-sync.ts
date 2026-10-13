@@ -80,7 +80,8 @@ export class PhysicsConstraintSync {
   sync(options: {
     /** Whose constraint owners reconcile; none while no world is bound. */
     world: World | null;
-    actorById: ReadonlyMap<string, Actor>;
+    /** The live actor holding a guid, as `World.findActor` answers. */
+    findActor: (guid: string) => Actor | undefined;
     /** World scale of a connected actor; resolved only for constraint endpoints. */
     worldScale: (actor: Actor) => Vec3;
     bodies: ReadonlyMap<string, string>;
@@ -93,7 +94,7 @@ export class PhysicsConstraintSync {
     // reconcile and absent joints are released before the failure is reported.
     let failure: Error | undefined;
     for (const owner of options.world ? componentOwners(options.world, "PhysicsConstraintComponent") : []) {
-      if (owner.destroyed || options.actorById.get(owner.guid) !== owner || !options.eligible(owner)) continue;
+      if (owner.destroyed || options.findActor(owner.guid) !== owner || !options.eligible(owner)) continue;
       for (const component of owner.components) {
         if (component.destroyed || component.owner !== owner || component.classId !== "PhysicsConstraintComponent") continue;
         let identity = this.identities.get(component);
@@ -119,7 +120,7 @@ export class PhysicsConstraintSync {
             if (this.deferUnsupported) continue;
             throw new Error("Constraints require a native physics backend");
           }
-          const target = options.actorById.get(props.targetActorId);
+          const target = options.findActor(props.targetActorId);
           if (target === owner) throw new Error("A constraint must connect two different actors");
           if (target && !target.destroyed && !options.eligible(target)) {
             throw new Error("Connected actors must belong to the same physics world");

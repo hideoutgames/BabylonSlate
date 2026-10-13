@@ -43,6 +43,12 @@ export interface PhysicsBackend {
   teleportBody(bodyId: string, transform: PhysicsTransform, options?: TeleportOptions): void;
   setBodyTargetTransform(bodyId: string, transform: PhysicsTransform): void;
   getBodyTransform(bodyId: string): PhysicsTransform | null;
+  /**
+   * `getBodyTransform` into a caller-owned `out` for per-step readback: writes all seven pose fields and returns
+   * true, or returns false and leaves `out` untouched when there is no such body. No pose object is allocated
+   * (Rapier's native translation read still allocates its own vector).
+   */
+  readBodyTransform(bodyId: string, out: PhysicsTransform): boolean;
   getBodyVelocity(bodyId: string): BodyVelocity | null;
   /** Set only the supplied world velocity axes of a dynamic body. */
   setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void;

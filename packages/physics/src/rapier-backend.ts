@@ -424,18 +424,23 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   }
 
   getBodyTransform(bodyId: string): PhysicsTransform | null {
+    const out = { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
+    return this.readBodyTransform(bodyId, out) ? out : null;
+  }
+
+  readBodyTransform(bodyId: string, out: PhysicsTransform): boolean {
     const record = this.bodies.get(bodyId);
-    if (!record) return null;
+    if (!record) return false;
     const t = record.body.translation();
-    return {
-      position: { x: t.x, y: t.y, z: 0 },
-      rotation: {
-        x: 0,
-        y: 0,
-        z: Math.sin(record.body.rotation() / 2),
-        w: Math.cos(record.body.rotation() / 2),
-      },
-    };
+    const angle = record.body.rotation();
+    out.position.x = t.x;
+    out.position.y = t.y;
+    out.position.z = 0;
+    out.rotation.x = 0;
+    out.rotation.y = 0;
+    out.rotation.z = Math.sin(angle / 2);
+    out.rotation.w = Math.cos(angle / 2);
+    return true;
   }
 
   private setBodyMotionType(
