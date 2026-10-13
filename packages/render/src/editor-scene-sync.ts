@@ -95,6 +95,7 @@ export class EditorSceneSync {
   private lastModelSlotKey = "";
   private assetsNeedRebuild = false;
   private lastScene: SerializedScene | null = null;
+  private lastSceneActors: { actors: SerializedActor[]; length: number; byId: Map<string, SerializedActor> } | null = null;
   private stealActiveCamera = false;
   private restoreCamera: Camera | null = null;
   private drawMeshCollision = false;
@@ -443,6 +444,7 @@ export class EditorSceneSync {
 
   private completeApply(sceneData: SerializedScene, generation: number): void {
     this.lastScene = sceneData;
+    this.lastSceneActors = null;
     this.assetsNeedRebuild = false;
     this.onAfterApply?.();
     if (generation !== this.applyGeneration) return;
@@ -485,9 +487,28 @@ export class EditorSceneSync {
     return this.meshes.get(actorId) ?? null;
   }
 
+  /**
+   * `lastScene.actors.find` for an id, through an index built once per applied
+   * Scene so per-actor consumers (deformers, brushes) do not scan every actor.
+   * Applying drops the index, so a document edited in place between applies is
+   * read again; the actors array identity and length also guard it. The first
+   * actor with an id wins, like `find`.
+   */
+  private lastSceneActor(actorId: string): SerializedActor | undefined {
+    const actors = this.lastScene?.actors;
+    if (!actors) return undefined;
+    let index = this.lastSceneActors;
+    if (index?.actors !== actors || index.length !== actors.length) {
+      const byId = new Map<string, SerializedActor>();
+      for (const actor of actors) if (!byId.has(actor.id)) byId.set(actor.id, actor);
+      index = this.lastSceneActors = { actors, length: actors.length, byId };
+    }
+    return index.byId.get(actorId);
+  }
+
   /** Exact authored component visual; asset consumers never infer identity from mesh order. */
   meshForComponent(actorId: string, componentId: string): Mesh | null {
-    const actor = this.lastScene?.actors.find((entry) => entry.id === actorId);
+    const actor = this.lastSceneActor(actorId);
     const component = actor?.components.find((entry) => entry.id === componentId);
     const root = this.meshes.get(actorId);
     return root && component && ["MeshComponent", "LandscapeComponent", "FoliageComponent"].includes(component.classId)
@@ -497,7 +518,7 @@ export class EditorSceneSync {
   /** Authored visual boundaries, including attached non-Mesh components.
    * Imported subparts and another actor's visuals retain their own ownership. */
   visualComponentRootsForActor(actorId: string): Mesh[] {
-    const actor = this.lastScene?.actors.find((entry) => entry.id === actorId);
+    const actor = this.lastSceneActor(actorId);
     const root = this.meshes.get(actorId);
     if (!actor || !root) return [];
     if (!isEditorActorOrigin(root)) return [root];

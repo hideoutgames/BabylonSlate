@@ -89,6 +89,18 @@ it("enumerates an attached sprite as its own authored visual boundary without br
   sync.dispose();
 });
 
+it("resolves component visuals from the latest applied Scene even when its actor list was edited in place", () => {
+  const { sync } = fixture();
+  const data = document(2);
+  sync.apply(data);
+  expect(sync.meshForComponent("actor-1", "mesh-1")).not.toBeNull();
+  expect(sync.meshForComponent("actor-1", "replaced")).toBeNull();
+  data.actors[1] = createActor("actor-1", "Actor 1", { components: [createMeshComponent("replaced", "sphere")] });
+  sync.apply(data);
+  expect(sync.meshForComponent("actor-1", "mesh-1")).toBeNull();
+  expect(sync.meshForComponent("actor-1", "replaced")).not.toBeNull();
+});
+
 describe("cooperative editor realization", () => {
   it.each(["abort", "replace", "dispose"] as const)("discards a deferred material refresh after %s", async (action) => {
     let resolve = () => null as StandardMaterial | null;
