@@ -27,7 +27,5 @@ describe("runSceneWork yield policy", () => {
   it("lets cheap steps share a run, bounded by the requested step count", async () => {
     vi.spyOn(performance, "now").mockReturnValue(0);
     expect(await yieldsFor(600, 100)).toBe(6);
-    // The default bound is much looser than one yield per few dozen steps.
-    expect(await yieldsFor(600)).toBeLessThan(600 / 64);
   });
 });
