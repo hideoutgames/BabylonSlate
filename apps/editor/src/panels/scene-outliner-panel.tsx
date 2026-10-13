@@ -3,7 +3,17 @@ import { useSimulationInspectionStore } from "../context/simulation-inspection-c
 import { useOptionalPlay } from "../context/play-context";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { IndexedAsset } from "@babylonslate/assets";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  type ComponentProps,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   NamePromptDialog,
   NestedMenu,
@@ -86,6 +96,7 @@ import {
   duplicateSceneActors,
   nextActorId,
   prefabComponentsForGuid,
+  prefabComponentsResolver,
   projectPlaceActors,
   spawnPlacedActor,
   type PlaceActorItem,
@@ -105,6 +116,7 @@ import {
   outlinerTreeDropMoves,
 } from "../lib/outliner-drop";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { useRetainedValue } from "../lib/use-retained-value";
 import { prefabAssetTemplateKey, prefabAssetTemplates } from "../lib/prefab-instance-sync";
 
 const CLASS_KINDS = ["graph"] as const;
@@ -112,6 +124,204 @@ const PREFAB_KINDS = ["prefab"] as const;
 
 const QUIET_ROW_ACTION =
   "[@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:hover_&]:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:focus-within_&]:opacity-100";
+
+const NO_MENU_ITEMS: NestedMenuItem[] = [];
+const NO_PLACE_ACTOR_ITEMS: PlaceActorItem[] = [];
+
+const defaultParentOf = (id: string): string | null => engineParentOf(id) ?? null;
+
+/**
+ * Type glyph of an actor row. The row carries the actor's data and the glyph
+ * resolves when the row renders, so only the mounted window of a long
+ * Outliner pays for ancestry walks, and an unchanged actor skips rendering.
+ */
+const OutlinerActorIcon = memo(function OutlinerActorIcon({
+  actorId,
+  classId,
+  components,
+  parentOf,
+}: {
+  actorId: string;
+  classId: string;
+  components: SerializedActor["components"];
+  parentOf: (id: string) => string | null;
+}) {
+  return (
+    <TypeVisualIcon
+      visual={resolveActorTypeVisual({
+        classId,
+        components,
+        ancestry: walkAncestry(classId, parentOf),
+      })}
+      data-testid={`outliner-type-icon-${actorId}`}
+    />
+  );
+});
+
+/** The panel callbacks a row's controls run; each closes over the render that made it. */
+interface OutlinerRowHandlers {
+  toggleFlag: (actorId: string, flag: "visible" | "locked") => void;
+  actorMenuItems: (actorId: string) => NestedMenuItem[];
+  folderMenuItems: (folderId: string) => NestedMenuItem[];
+}
+
+/**
+ * What a row's controls call. The panel keeps one stable instance whose
+ * members run the latest handlers, so rows keep their elements while the
+ * selection, clipboard and scene callbacks change underneath them. A menu's
+ * items close over the scene and selection they were built from, so a row
+ * whose menu is open subscribes to `revision` and rebuilds them when that
+ * state changes: a click always acts on the current Scene.
+ */
+interface OutlinerRowActions extends OutlinerRowHandlers {
+  subscribe: (listener: () => void) => () => void;
+  getRevision: () => number;
+}
+
+type RowActionSize = "touch-icon" | "icon-sm";
+
+const subscribeToNothing = () => () => {};
+
+/**
+ * The items of a row menu: rebuilt from the latest handlers each time the
+ * menu opens or what they were built from changes, and kept while it fades
+ * out so the closing popup is not an empty box.
+ */
+function useRowMenuItems(
+  menuOpen: boolean,
+  actions: OutlinerRowActions,
+  build: () => NestedMenuItem[],
+): NestedMenuItem[] {
+  useSyncExternalStore(
+    menuOpen ? actions.subscribe : subscribeToNothing,
+    actions.getRevision,
+  );
+  return useRetainedValue(menuOpen ? build() : null, NO_MENU_ITEMS);
+}
+
+/**
+ * Visibility, lock and menu controls of an actor row. The menu's items are
+ * built when it opens rather than for every row on every selection change.
+ */
+const ActorRowActions = memo(function ActorRowActions({
+  actorId,
+  label,
+  muted,
+  locked,
+  phone,
+  actionSize,
+  actions,
+}: {
+  actorId: string;
+  label: string;
+  muted: boolean;
+  locked: boolean;
+  phone: boolean;
+  actionSize: RowActionSize;
+  actions: OutlinerRowActions;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuItems = useRowMenuItems(menuOpen, actions, () => actions.actorMenuItems(actorId));
+  return (
+    <>
+      <IconActionButton
+        label={`Toggle visibility of ${label}`}
+        size={actionSize}
+        variant="ghost"
+        onClick={() => actions.toggleFlag(actorId, "visible")}
+        data-testid={`outliner-visibility-${actorId}`}
+        aria-pressed={!muted}
+        className={muted ? undefined : QUIET_ROW_ACTION}
+      >
+        {muted ? <EyeOffIcon /> : <EyeIcon />}
+      </IconActionButton>
+      <Toggle
+        aria-label={`${locked ? "Unlock" : "Lock"} ${label}`}
+        title={`${locked ? "Unlock" : "Lock"} ${label}`}
+        size={phone ? "touch" : "sm"}
+        variant={locked ? "outline" : "default"}
+        onPressedChange={() => actions.toggleFlag(actorId, "locked")}
+        data-testid={`outliner-lock-${actorId}`}
+        pressed={locked}
+        className="px-0"
+      >
+        {locked ? <LockIcon /> : <UnlockIcon />}
+      </Toggle>
+      <NestedMenu
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        items={menuItems}
+        trigger={
+          <Button
+            type="button"
+            variant="ghost"
+            size={actionSize}
+            aria-label={`Actor menu for ${label}`}
+            className={QUIET_ROW_ACTION}
+            data-testid={`outliner-menu-${actorId}`}
+          >
+            <MoreHorizontalIcon />
+          </Button>
+        }
+      />
+    </>
+  );
+});
+
+/** The menu control of a folder row; its items are built when it opens. */
+const FolderRowActions = memo(function FolderRowActions({
+  rowId,
+  folderId,
+  label,
+  actionSize,
+  actions,
+}: {
+  rowId: string;
+  folderId: string;
+  label: string;
+  actionSize: RowActionSize;
+  actions: OutlinerRowActions;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuItems = useRowMenuItems(menuOpen, actions, () => actions.folderMenuItems(folderId));
+  return (
+    <NestedMenu
+      open={menuOpen}
+      onOpenChange={setMenuOpen}
+      items={menuItems}
+      trigger={
+        <Button
+          type="button"
+          variant="ghost"
+          size={actionSize}
+          aria-label={`Folder menu for ${label}`}
+          data-testid={`outliner-menu-${rowId}`}
+        >
+          <MoreHorizontalIcon />
+        </Button>
+      }
+    />
+  );
+});
+
+const MemoPlaceActorsDialog = memo(PlaceActorsDialog);
+
+/**
+ * Place Actors with its own thumbnail subscription: each captured thumbnail
+ * re-renders this host, not the Outliner, and the dialog sees the versions
+ * only while it is open (it loads thumbnails only then).
+ */
+function PlaceActorsDialogHost(
+  props: Omit<ComponentProps<typeof PlaceActorsDialog>, "thumbnailVersions">,
+) {
+  const { thumbnailVersions } = useEditorShellState();
+  return (
+    <MemoPlaceActorsDialog
+      {...props}
+      thumbnailVersions={props.open ? thumbnailVersions : undefined}
+    />
+  );
+}
 
 /**
  * The parent a row is listed under. A parent that is not in the scene, or a
@@ -147,16 +357,13 @@ export function flattenOutliner(
     parentOf?: (id: string) => string | null;
   },
 ): TreeViewNode[] {
-  const parentOf =
-    options.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
+  const parentOf = options.parentOf ?? defaultParentOf;
   const actorIcon = (actor: SerializedActor) => (
-    <TypeVisualIcon
-      visual={resolveActorTypeVisual({
-        classId: actor.classId,
-        components: actor.components,
-        ancestry: walkAncestry(actor.classId, parentOf),
-      })}
-      data-testid={`outliner-type-icon-${actor.id}`}
+    <OutlinerActorIcon
+      actorId={actor.id}
+      classId={actor.classId}
+      components={actor.components}
+      parentOf={parentOf}
     />
   );
   const folderIcon = (folder: SerializedOutlinerFolder) => (
@@ -356,7 +563,6 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     loadAssetThumbnail,
   } = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const { thumbnailVersions } = useEditorShellState();
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const prefabDocuments = useOpenDocumentsOfKinds(PREFAB_KINDS);
   const {
@@ -489,26 +695,34 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     [nodes, selectActor, selectedRowIds, setSelectedActorIds],
   );
 
-  const projectItems = useMemo(() => {
+  // The Place Actors list covers every placeable asset and Class graph, so it
+  // is built only while the dialog is open; closed, it keeps the last list so
+  // the dialog fades out intact, and the next open rebuilds it.
+  const openProjectItems = useMemo(() => {
+    if (!placeOpen) return null;
     void registryEpoch; // Registry headers mutate without replacing the registry.
     const assets = assetRegistry?.list() ?? [];
     // Prefab assets carry their components in the header; open tabs win.
     const prefabAssets = prefabAssetTemplates({ assets, openDocuments: prefabDocuments });
+    const openClassDocuments = new Map<string, (typeof classDocuments)[number]>();
+    for (const entry of classDocuments) {
+      if (!openClassDocuments.has(entry.ref.path)) openClassDocuments.set(entry.ref.path, entry);
+    }
+    const classPrefab = prefabComponentsResolver({
+      assets,
+      graphForPath: (path) => {
+        const open = openClassDocuments.get(path);
+        if (open?.content) return open.content as SerializedGraph;
+        return diskGraphs.get(path);
+      },
+    });
     return projectPlaceActors(
       assets,
-      (guid) =>
-        prefabAssets[prefabAssetTemplateKey(guid)] ??
-        prefabComponentsForGuid(guid, {
-          assets,
-          graphForPath: (path) => {
-            const open = classDocuments.find((entry) => entry.ref.path === path);
-            if (open?.content) return open.content as SerializedGraph;
-            return diskGraphs.get(path);
-          },
-        }),
+      (guid) => prefabAssets[prefabAssetTemplateKey(guid)] ?? classPrefab(guid),
       { overlay },
     );
-  }, [assetRegistry, classDocuments, diskGraphs, overlay, prefabDocuments, registryEpoch]);
+  }, [assetRegistry, classDocuments, diskGraphs, overlay, placeOpen, prefabDocuments, registryEpoch]);
+  const projectItems = useRetainedValue(openProjectItems, NO_PLACE_ACTOR_ITEMS);
 
   useEffect(() => {
     if (!placeOpen) return;
@@ -999,82 +1213,86 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     ? scene?.folders.find((folder) => folder.id === renameFolderId)
     : undefined;
 
+  // Row controls are rebuilt with the rows, not with the selection: they call
+  // the latest handlers through `rowActions`, so a click re-renders the tree
+  // without recreating every row's controls or its menu.
+  const latestRowHandlers = useRef<OutlinerRowHandlers>({
+    toggleFlag,
+    actorMenuItems,
+    folderMenuItems,
+  });
+  const menuRevision = useRef(0);
+  const menuListeners = useRef(new Set<() => void>());
+  useLayoutEffect(() => {
+    latestRowHandlers.current = { toggleFlag, actorMenuItems, folderMenuItems };
+  });
+  // The menu builders close over the scene, selection, clipboard and registry
+  // views; when any changes they are new callbacks. An open menu's items were
+  // built from the old ones, so tell its row to rebuild them before anything
+  // can be clicked: Duplicate or Delete then edits the current Scene.
+  useLayoutEffect(() => {
+    menuRevision.current += 1;
+    for (const listener of [...menuListeners.current]) listener();
+  }, [actorMenuItems, folderMenuItems]);
+  const rowActions = useMemo<OutlinerRowActions>(
+    () => ({
+      toggleFlag: (actorId, flag) => latestRowHandlers.current.toggleFlag(actorId, flag),
+      actorMenuItems: (actorId) => latestRowHandlers.current.actorMenuItems(actorId),
+      folderMenuItems: (folderId) => latestRowHandlers.current.folderMenuItems(folderId),
+      subscribe: (listener) => {
+        menuListeners.current.add(listener);
+        return () => {
+          menuListeners.current.delete(listener);
+        };
+      },
+      getRevision: () => menuRevision.current,
+    }),
+    [],
+  );
+  const treeNodes = useMemo(
+    () =>
+      nodes.map((node): TreeViewNode => {
+        const target = outlinerRowTarget(node.id);
+        if (target?.kind === "folder") {
+          return {
+            ...node,
+            trailing: (
+              <FolderRowActions
+                rowId={node.id}
+                folderId={target.id}
+                label={node.label}
+                actionSize={actionSize}
+                actions={rowActions}
+              />
+            ),
+          };
+        }
+        const actorId = target?.id ?? node.id;
+        return {
+          ...node,
+          trailing: (
+            <ActorRowActions
+              actorId={actorId}
+              label={node.label}
+              muted={node.muted === true}
+              locked={lockedIds.has(actorId)}
+              phone={phone}
+              actionSize={actionSize}
+              actions={rowActions}
+            />
+          ),
+        };
+      }),
+    [actionSize, lockedIds, nodes, phone, rowActions],
+  );
+
   // Other documents' edits re-render this panel through the document
   // context; an unchanged scene, selection and registry reuse every row.
   const tree = useMemo(
     () => (
       <TreeView
         rowHeight={phone ? 44 : undefined}
-        nodes={nodes.map((node) => {
-          const target = outlinerRowTarget(node.id);
-          if (target?.kind === "folder") {
-            return {
-              ...node,
-              trailing: (
-                <NestedMenu
-                  items={folderMenuItems(target.id)}
-                  trigger={
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size={actionSize}
-                      aria-label={`Folder menu for ${node.label}`}
-                      data-testid={`outliner-menu-${node.id}`}
-                    >
-                      <MoreHorizontalIcon />
-                    </Button>
-                  }
-                />
-              ),
-            };
-          }
-          const actorId = target?.id ?? node.id;
-          return {
-            ...node,
-            trailing: (
-              <>
-                <IconActionButton
-                  label={`Toggle visibility of ${node.label}`}
-                  size={actionSize}
-                  variant="ghost"
-                  onClick={() => toggleFlag(actorId, "visible")}
-                  data-testid={`outliner-visibility-${actorId}`}
-                  aria-pressed={!node.muted}
-                  className={node.muted ? undefined : QUIET_ROW_ACTION}
-                >
-                  {node.muted ? <EyeOffIcon /> : <EyeIcon />}
-                </IconActionButton>
-                <Toggle
-                  aria-label={`${lockedIds.has(actorId) ? "Unlock" : "Lock"} ${node.label}`}
-                  title={`${lockedIds.has(actorId) ? "Unlock" : "Lock"} ${node.label}`}
-                  size={phone ? "touch" : "sm"}
-                  variant={lockedIds.has(actorId) ? "outline" : "default"}
-                  onPressedChange={() => toggleFlag(actorId, "locked")}
-                  data-testid={`outliner-lock-${actorId}`}
-                  pressed={lockedIds.has(actorId)}
-                  className="px-0"
-                >
-                  {lockedIds.has(actorId) ? <LockIcon /> : <UnlockIcon />}
-                </Toggle>
-                <NestedMenu
-                  items={actorMenuItems(actorId)}
-                  trigger={
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size={actionSize}
-                      aria-label={`Actor menu for ${node.label}`}
-                      className={QUIET_ROW_ACTION}
-                      data-testid={`outliner-menu-${actorId}`}
-                    >
-                      <MoreHorizontalIcon />
-                    </Button>
-                  }
-                />
-              </>
-            ),
-          };
-        })}
+        nodes={treeNodes}
         selectedId={selectedRowId}
         selectedIds={selectedRowIds}
         onSelect={setSelectedRowId}
@@ -1108,15 +1326,10 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       />
     ),
     [
-      actionSize,
-      actorMenuItems,
       dropActorRow,
       finishRowRename,
-      folderMenuItems,
       frameActor,
-      lockedIds,
       moveActorDropHint,
-      nodes,
       phone,
       renamingRowId,
       reparentRow,
@@ -1125,7 +1338,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       selectedRowId,
       selectedRowIds,
       setSelectedRowId,
-      toggleFlag,
+      treeNodes,
     ],
   );
 
@@ -1180,14 +1393,13 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
           {tree}
         </div>
       </div>
-      <PlaceActorsDialog
+      <PlaceActorsDialogHost
         open={placeOpen}
         onOpenChange={setPlaceOpen}
         onSelect={addActor}
         projectItems={projectItems}
         overlay={overlay}
         loadThumbnail={loadAssetThumbnail}
-        thumbnailVersions={thumbnailVersions}
       />
       <GraphDropHint hint={dropHint} testId="outliner-drop-hint" />
       {deleteActorChoice && deletingActor ? (
