@@ -36,7 +36,7 @@ import {
   EditorDebugOverlay,
 } from "./editor-debug-overlay";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
-import { sceneRenderTargetCaptures } from "./render-target-capture";
+import { isRenderTargetCaptureCandidate, sceneRenderTargetCaptures } from "./render-target-capture";
 import { isViewportShadingTarget } from "./viewport-shading-mode";
 import { createEditorCameraModel } from "./editor-camera-model";
 
@@ -327,6 +327,11 @@ describe("EditorDebugOverlay", () => {
     const rings = frustumWorldPoints(root);
     expect(reach(rings)).toBeGreaterThan(8 * 0.99);
     expect(reach(rings)).toBeLessThanOrEqual(8 + 1e-4);
+    // The guide always lives in the scene, so no world consumer may treat it as content.
+    const [guide] = root.getChildMeshes() as LinesMesh[];
+    expect(guide!.isPickable).toBe(false);
+    expect(isViewportShadingTarget(guide!)).toBe(false);
+    expect(isRenderTargetCaptureCandidate(guide!)).toBe(false);
     overlay.sync({ sceneData, selectedActorIds: [] });
     expect(overlay.lightDebugMesh).toBeNull();
     expect(overlay.lightDebugKind).toBeNull();
