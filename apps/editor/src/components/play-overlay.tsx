@@ -14,7 +14,7 @@ import { formatSceneLoadReport } from "../lib/scene-load-report";
 import { nextStatGroups, type StatGroup } from "@babylonslate/debugger";
 import type { SceneLoadProgress } from "@babylonslate/render";
 import type { RenderDiagnostics } from "@babylonslate/render";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   resolveRenderingQuality,
   DEFAULT_PLAY_FRAME_CAP,
@@ -221,7 +221,7 @@ function emptyPlayResult(): PlaySessionResult {
   };
 }
 
-export function PlayOverlay({
+function PlayOverlayView({
   sessionOwner,
   sessionTicket,
   embedded = false,
@@ -1277,3 +1277,11 @@ export function PlayOverlay({
     </div>
   );
 }
+
+/**
+ * The provider re-renders for every document edit and thumbnail capture. The
+ * props of a running game (its session Scene, physics and registry lists) keep
+ * their identity across those, so the overlay skips them and renders for its
+ * own state only.
+ */
+export const PlayOverlay = memo(PlayOverlayView);

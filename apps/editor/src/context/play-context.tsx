@@ -98,6 +98,7 @@ import {
   playPhysicsFromOpenDocuments,
   playPhysicsFromSceneSettings,
   playSceneFromOpenDocuments,
+  playSceneRefFromOpenDocuments,
   playIsEnabled,
   resolvePlayScene,
   resolvePreviewStartupGuid,
@@ -616,7 +617,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       },
     };
   }, [assetRegistry, openDocuments]);
-  const openPlayScene = playSceneFromOpenDocuments(
+  // This provider renders for every document edit, so it identifies the Scene
+  // Play would run without normalizing it (every actor, on every render); the
+  // Scene itself is read only while a game is presented.
+  const openPlayScene = playSceneRefFromOpenDocuments(
     openDocuments,
     activeDocumentId,
   );
@@ -629,15 +633,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     ? assetRegistry?.getByGuid(projectStartupGuid)
     : undefined;
   const hasStartupScene = startupAsset?.header.type === "Scene";
-  const playScene =
-    sessionPlayScene ??
-    resolvePlayScene({
-      documents: openDocuments,
-      activeDocumentId,
-      playFromScene,
-    });
-  const playSceneGuid = playScene
-    ? canonicalPlaySceneGuid(playScene, guidForPath)
+  // A running session's own Scene, else the open one while Play from Scene is on.
+  const playSceneRef = sessionPlayScene ?? (playFromScene ? openPlayScene : null);
+  const playSceneGuid = playSceneRef
+    ? canonicalPlaySceneGuid(playSceneRef, guidForPath)
     : undefined;
   const canPlay = !sessionState.quarantined && playIsEnabled(openDocuments, activeDocumentId, {
     previewBuild,
@@ -662,9 +661,36 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     }).catch(error => { appendLog(`Could not release the game session before changing documents: ${String(error)}`); return false; });
   }), [registerBeforeTransition, sessionOwner, appendLog]);
   void simulationViewportRevision;
-  const playPhysics = playScene
-    ? playPhysicsFromSceneSettings(playScene.scene.settings)
-    : playPhysicsFromOpenDocuments(openDocuments, activeDocumentId);
+  // The game's Scene and physics, normalized only while it is presented. A
+  // session carries its own Scene, so its props depend on that alone and keep
+  // their identity across unrelated edits (the memoized overlay then skips
+  // them); only a game presented without a session Scene follows the open
+  // documents, and re-renders with them by design.
+  const sessionPresentation = useMemo(
+    () =>
+      sessionPlayScene
+        ? {
+            scene: sessionPlayScene.scene,
+            physics: playPhysicsFromSceneSettings(sessionPlayScene.scene.settings),
+          }
+        : null,
+    [sessionPlayScene],
+  );
+  const openPresentation = useMemo(() => {
+    if (!playOpen || sessionPlayScene) return null;
+    const scene = resolvePlayScene({
+      documents: openDocuments,
+      activeDocumentId,
+      playFromScene,
+    });
+    return {
+      scene: scene?.scene,
+      physics: scene
+        ? playPhysicsFromSceneSettings(scene.scene.settings)
+        : playPhysicsFromOpenDocuments(openDocuments, activeDocumentId),
+    };
+  }, [activeDocumentId, openDocuments, playFromScene, playOpen, sessionPlayScene]);
+  const presentedPlay = sessionPresentation ?? openPresentation;
 
   // Play requests read documents, dirty state and collectors as they are when
   // Play is pressed. Keeping that per-edit state out of the callbacks'
@@ -1624,6 +1650,38 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  // The running game's registry lists: rebuilt when the registry changes, not
+  // on every render of this provider, and only while a game is open.
+  const playRegistryViews = useMemo(() => {
+    if (!playOpen) return null;
+    void registryEpoch; // Registry headers mutate without replacing the registry.
+    const assets = assetRegistry?.list() ?? [];
+    return {
+      sceneCatalog: assets
+        .filter((asset) => asset.header.type === "Scene")
+        .map((asset) => ({ guid: asset.header.guid, name: asset.header.name })),
+      classAssetGuids: Object.fromEntries(
+        assets
+          .filter((asset) => asset.header.type === "Class")
+          .map((asset) => [classIdFromClassAsset(asset), asset.header.guid]),
+      ),
+      consoleCommands: assets.flatMap((asset) =>
+        asset.header.consoleCommand
+          ? [{
+              ...asset.header.consoleCommand,
+              classId: classIdFromClassAsset(asset),
+              assetGuid: asset.header.guid,
+              name: asset.header.consoleCommand.name || classIdFromClassAsset(asset).toLowerCase(),
+            }]
+          : [],
+      ),
+      audioAssetGuids: assets
+        .filter((asset) => asset.header.type === "Audio")
+        .map((asset) => asset.header.guid),
+      animClipCatalog: animClipCatalogFromAssets(assets),
+    };
+  }, [assetRegistry, playOpen, registryEpoch]);
+
   const gamePresentation = playOpen && !previewOpen && engineRef.current && sessionTicketRef.current && sessionTicketRef.current.mode !== "preview" ? (
           <PlayOverlay
             sessionOwner={sessionOwner}
@@ -1635,20 +1693,17 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             sharedEngine={engineRef.current}
             injectFixtureThrow={injectThrow}
             scripts={scripts}
-            physics={playPhysics}
+            physics={presentedPlay?.physics}
             sceneAssetGuid={playSceneGuid}
-            scene={playScene?.scene}
+            scene={presentedPlay?.scene}
             project={projectDocument?.metadata}
             saveGame={playSaveGame}
             gameInstanceClass={projectDocument?.settings.gameInstanceClass ?? undefined}
             scenes={playSceneLibrary}
-            sceneCatalog={(assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Scene").map((asset) => ({ guid: asset.header.guid, name: asset.header.name }))}
-            classAssetGuids={Object.fromEntries((assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Class").map((asset) => [classIdFromClassAsset(asset), asset.header.guid]))}
-            consoleCommands={(assetRegistry?.list() ?? []).flatMap(asset => asset.header.consoleCommand ? [{
-              ...asset.header.consoleCommand, classId: classIdFromClassAsset(asset), assetGuid: asset.header.guid,
-              name: asset.header.consoleCommand.name || classIdFromClassAsset(asset).toLowerCase(),
-            }] : [])}
-            audioAssetGuids={(assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Audio").map((asset) => asset.header.guid)}
+            sceneCatalog={playRegistryViews?.sceneCatalog}
+            classAssetGuids={playRegistryViews?.classAssetGuids}
+            consoleCommands={playRegistryViews?.consoleCommands}
+            audioAssetGuids={playRegistryViews?.audioAssetGuids}
             getAssetLoadState={documents.getAssetLoadState}
             getSourceControls={mergedSourceControls}
             acquireSceneSources={acquireSceneSources}
@@ -1683,7 +1738,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             retargetAnimationLoads={playRetargetAnimationLoads}
             loadAudioSourceBytes={playAudioSourceLoader}
             audioLibrary={playAudioLibrary}
-            animClipCatalog={animClipCatalogFromAssets(assetRegistry?.list() ?? [])}
+            animClipCatalog={playRegistryViews?.animClipCatalog}
             particleLibrary={playParticleLibrary}
             materialDocuments={playMaterialDocuments}
             materialFunctions={playMaterialFunctions}
