@@ -97,9 +97,10 @@ export interface SpatialStage {
    * chain's color unchanged. The graph then skips it (a stage with `mainInput`
    * passes that color through; one without draws nothing, so only its
    * idle-capable successor may read its output), and skips the geometry pass
-   * once no running stage reads it.
+   * once no running stage reads it. Stages that share a condition share one
+   * function, which the graph evaluates once per frame.
    */
-  idle?(): boolean;
+  idle?: () => boolean;
   bind(effect: Effect): void;
 }
 

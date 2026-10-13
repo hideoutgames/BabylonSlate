@@ -268,8 +268,17 @@ export class SpatialEffectsGraph {
    */
   syncIdle(): void {
     let geometryRead = false;
+    // The fog march and compose share one condition, and evaluating it scans
+    // the Fog Volumes: evaluate each distinct function once.
+    let evaluated: (() => boolean) | undefined;
+    let skipped = false;
     for (const task of this.tasks) {
-      task.disabled = task.stage.idle?.() === true;
+      const idle = task.stage.idle;
+      if (idle && idle !== evaluated) {
+        evaluated = idle;
+        skipped = idle();
+      }
+      task.disabled = idle !== undefined && skipped;
       if (!task.disabled && task.stage.geometry) geometryRead = true;
     }
     this.geometry.disabled = this.clear.disabled = !geometryRead;
