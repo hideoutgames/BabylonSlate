@@ -802,6 +802,8 @@ export function createEngine(
 
 /** Render-loop passes (about ten seconds at 60 Hz) that frame-phase timing outlives its last `renderDiagnostics()` read. */
 const FRAME_PHASE_LEASE_FRAMES = 600;
+/** Frames with no layer still presenting share this set instead of building one. */
+const NO_PRESENTING_LAYERS: ReadonlySet<string> = new Set();
 
 function initializeEngine(
   canvas: HTMLCanvasElement,
@@ -2620,7 +2622,12 @@ function initializeEngine(
         : "webGLVersion" in engine && engine.webGLVersion === 1 ? "webgl1" : "unknown",
     } }) : null;
     try {
-      const presentingLayers = new Set([...pendingPresentations.values()].flatMap((pending) => pending.owner ? [pending.owner.layerId] : []));
+      let presentingLayers = NO_PRESENTING_LAYERS;
+      if (pendingPresentations.size) {
+        const presenting = new Set<string>();
+        for (const pending of pendingPresentations.values()) if (pending.owner) presenting.add(pending.owner.layerId);
+        presentingLayers = presenting;
+      }
       const drawOwner = (key: string, draw: () => boolean, fallback?: () => void) => {
         const pending = pendingPresentations.get(key);
         if (!pending) { draw(); return; }
