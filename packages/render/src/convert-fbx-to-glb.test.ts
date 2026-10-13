@@ -3,10 +3,13 @@ import { convertFbxImportBatch } from "./convert-fbx-to-glb";
 
 type Posted = { message: { type: string; [key: string]: unknown }; transfer: Transferable[] };
 
-/** A worker that converts every FBX to `<name>.converted` bytes, or fails per scripted outcome. */
+/**
+ * A worker that converts every FBX to `<name>.converted` bytes, or fails per scripted outcome.
+ * "late-error" replies, then raises an error the worker could not attribute to the finished request.
+ */
 class FakeWorker {
   static instances: FakeWorker[] = [];
-  static outcomes: Array<"ok" | "error" | "crash"> = [];
+  static outcomes: Array<"ok" | "error" | "crash" | "late-error"> = [];
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: ((event: ErrorEvent) => void) | null = null;
   posted: Posted[] = [];
@@ -22,10 +25,12 @@ class FakeWorker {
     queueMicrotask(() => {
       if (outcome === "crash") this.onerror?.({ message: "worker crashed" } as ErrorEvent);
       else if (outcome === "error") this.onmessage?.({ data: { error: `cannot parse ${file.name}` } } as MessageEvent);
-      else
+      else {
         this.onmessage?.({
           data: { bytes: new TextEncoder().encode(`${file.name}.converted`), consumedSidecars: ["albedo.png"] },
         } as MessageEvent);
+        if (outcome === "late-error") this.onerror?.({ message: "late callback failed" } as ErrorEvent);
+      }
     });
   }
   terminate() {
@@ -99,6 +104,17 @@ describe("convertFbxImportBatch", () => {
 
     expect(result.errors).toEqual(["a.fbx: worker crashed"]);
     expect(result.files.map((entry) => entry.name)).toEqual(["albedo.png", "b.glb"]);
+    expect(FakeWorker.instances.map((worker) => worker.terminated)).toEqual([true, true]);
+    expect(FakeWorker.instances[1]!.posted[0]!.message).toEqual({ type: "sidecars", sidecars: [albedo] });
+  });
+
+  it("replaces a worker that errors after its request replied without failing that file or the next", async () => {
+    FakeWorker.outcomes = ["late-error", "ok"];
+    const albedo = file("albedo.png", new Uint8Array([9]));
+    const result = await convertFbxImportBatch([file("a.fbx"), albedo, file("b.fbx")]);
+
+    expect(result.errors).toEqual([]);
+    expect(result.files.map((entry) => entry.name)).toEqual(["a.glb", "albedo.png", "b.glb"]);
     expect(FakeWorker.instances.map((worker) => worker.terminated)).toEqual([true, true]);
     expect(FakeWorker.instances[1]!.posted[0]!.message).toEqual({ type: "sidecars", sidecars: [albedo] });
   });
