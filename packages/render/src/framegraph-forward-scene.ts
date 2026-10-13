@@ -866,6 +866,11 @@ export class ForwardSceneFrameGraph {
           this.graph,
           scene,
         );
+        // Babylon updates cameras, animations and world matrices after render()
+        // begins, so the spatial stages' demand follows them from inside the
+        // graph run: the first task every spatial task follows.
+        const spatial = this.effectsGraph?.spatial;
+        if (spatial) this.cull.onBeforeTaskExecute.add(() => spatial.syncIdle());
         this.objects = new ManagedShadowObjectRendererTask(
           "Forward objects",
           this.graph,
