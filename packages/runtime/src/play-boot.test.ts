@@ -177,7 +177,7 @@ describe("createPlayBootCoordinator", () => {
     let yielded = false;
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
-      cooperativeSceneLoading: { yieldControl: () => { yielded = true; return chunk.promise; } },
+      cooperativeSceneLoading: { stepsPerYield: 32, yieldControl: () => { yielded = true; return chunk.promise; } },
       onCommand: (command) => commands.push(command),
       playScene: { ...createDefaultScene(), actors: Array.from({ length: 65 }, (_, index) => createActor(`a${index}`, "Actor")) },
     });

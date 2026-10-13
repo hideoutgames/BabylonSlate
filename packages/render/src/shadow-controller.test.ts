@@ -35,7 +35,8 @@ const engines: NullEngine[] = [];
 afterEach(() => {
   for (const engine of engines.splice(0)) engine.dispose();
 });
-function fixture() {
+/** `beforeController` runs on the bare Scene, before anything observes its meshes. */
+function fixture(beforeController?: (scene: Scene) => void) {
   const engine = new NullEngine();
   engines.push(engine);
   Object.assign(engine.getCaps(), {
@@ -75,6 +76,7 @@ function fixture() {
   updateSceneRenderingSettings(scene, {
     shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1 }),
   });
+  beforeController?.(scene);
   return { scene, controller: sceneShadowController(scene) };
 }
 
@@ -275,6 +277,63 @@ describe("shared shadow lifecycle", () => {
     );
     controller.sync();
     expect(casters()).toEqual(["spawned", "sibling"]);
+  });
+  it("lets a removal win over Babylon's deferred add, and registers a mesh that returns to the Scene", async () => {
+    const { scene, controller } = fixture();
+    const light = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
+    controller.register(light, true);
+    controller.sync();
+    const casters = () => controller.generator(light)?.getShadowMap()?.renderList ?? [];
+    const added = (target: ReturnType<typeof MeshBuilder.CreateBox>) =>
+      new Promise<void>((resolve) =>
+        scene.onNewMeshAddedObservable.add((mesh) => {
+          if (mesh === target) resolve();
+        }),
+      );
+    // Leaves the Scene (still alive) before the add notification arrives.
+    const proxy = MeshBuilder.CreateBox("proxy", {}, scene);
+    const proxyAdded = added(proxy);
+    scene.removeMesh(proxy);
+    await proxyAdded;
+    controller.sync();
+    expect(casters()).not.toContain(proxy);
+    // Returning to the Scene registers it again.
+    const returned = added(proxy);
+    scene.addMesh(proxy);
+    await returned;
+    controller.sync();
+    expect(casters()).toContain(proxy);
+    scene.removeMesh(proxy);
+    expect(casters()).not.toContain(proxy);
+    const again = added(proxy);
+    scene.addMesh(proxy);
+    await again;
+    controller.sync();
+    expect(casters()).toContain(proxy);
+  });
+  it("does not queue a mesh that left the Scene before the controller existed when Babylon's deferred add arrives", async () => {
+    // Babylon's ClusteredLightContainer creates its ProxyMesh and removes it at once.
+    let proxy!: ReturnType<typeof MeshBuilder.CreateBox>;
+    const { scene, controller } = fixture((bare) => {
+      proxy = MeshBuilder.CreateBox("proxy", {}, bare);
+      bare.removeMesh(proxy);
+    });
+    const light = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
+    controller.register(light, true);
+    const added = (target: ReturnType<typeof MeshBuilder.CreateBox>) =>
+      new Promise<void>((resolve) =>
+        scene.onNewMeshAddedObservable.add((mesh) => {
+          if (mesh === target) resolve();
+        }),
+      );
+    // A mesh the controller does hear about while the older notice is still pending.
+    const receiver = MeshBuilder.CreateBox("receiver", {}, scene);
+    await Promise.all([added(proxy), added(receiver)]);
+    controller.sync();
+    const casters = (controller.generator(light)?.getShadowMap()?.renderList ?? []).map(
+      (caster) => caster.name,
+    );
+    expect(casters).toEqual(["receiver"]);
   });
   it("adapts Low to admitted map dimensions and updates projection and allocation in the current draw", () => {
     const { scene, controller } = fixture();

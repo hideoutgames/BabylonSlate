@@ -99,3 +99,23 @@ it("preserves the last foliage visual and reports a replacement failure even aft
   expect(sync.meshForComponent("stroke", "foliage")).toBe(previous);
   expect(previous.isDisposed()).toBe(false);
 });
+
+it("keeps an unchanged foliage visual across applies and rebuilds it when its properties are replaced", async () => {
+  const { scene, engine } = createTestEngine();
+  const sync = new EditorSceneSync(scene);
+  disposers.push(() => { sync.dispose(); scene.dispose(); engine.dispose(); });
+  sync.setMeshAssets({ modelSources: new Map([["tree", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]) });
+  const properties = { batches: [{ modelGuid: "tree", transforms: [identitySerializedTransform()] }] };
+  const foliage = (next: typeof properties) => ({ ...createDefaultScene(), actors: [createActor("stroke", "Stroke", { components: [{ id: "foliage", classId: "FoliageComponent", properties: next }] })] });
+  sync.apply(foliage(properties));
+  await sync.whenEditorModelsReady();
+  const first = sync.meshForComponent("stroke", "foliage")!;
+  sync.apply(foliage(properties));
+  await sync.whenEditorModelsReady();
+  expect(sync.meshForComponent("stroke", "foliage")).toBe(first);
+  sync.apply(foliage({ batches: [{ modelGuid: "tree", transforms: [identitySerializedTransform(), { ...identitySerializedTransform(), position: [4, 0, 0] }] }] }));
+  await sync.whenEditorModelsReady();
+  const rebuilt = sync.meshForComponent("stroke", "foliage")!;
+  expect(rebuilt).not.toBe(first);
+  expect(rebuilt.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances)?.thinInstanceCount).toBe(2);
+});

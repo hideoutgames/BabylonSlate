@@ -20,6 +20,7 @@ import {
   type Camera,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
+import { TimingTools } from "@babylonjs/core/Misc/timingTools";
 import {
   effectiveShadowSettings,
   SHADOW_CAPACITY_PROFILES,
@@ -247,6 +248,21 @@ export class SceneShadowController {
   private readonly pending = new Set<AbstractMesh>();
   /** Scene meshes already queued once; a removal forgets the mesh so a re-add is queued again. */
   private readonly known = new WeakSet<AbstractMesh>();
+  /**
+   * Meshes the Scene has announced as removed since they were last seen listed.
+   * Removal notifies synchronously, so any other mesh we have heard of since
+   * this controller began listening is still in scene.meshes without searching
+   * that list.
+   */
+  private readonly departed = new WeakSet<AbstractMesh>();
+  /**
+   * Babylon queues each add notice on one ordered task queue, so the Scene can
+   * still owe notices for meshes added before this controller listened, and one
+   * that left the Scene in that time is not in `departed`. A marker queued at
+   * construction runs after those notices and before any later one: from then
+   * on a notice can only follow a removal this controller saw.
+   */
+  private earlierAddsNotified = false;
   /** scene.meshes.length at the last scan, and synchronous removals since. */
   private knownMeshCount = 0;
   private removedSinceScan = 0;
@@ -279,17 +295,28 @@ export class SceneShadowController {
       }
     });
     this.queueUnknownMeshes();
+    TimingTools.SetImmediate(() => {
+      this.earlierAddsNotified = true;
+    });
     scene.onNewMeshAddedObservable.add((mesh) => {
       // Babylon defers this notification. RTT-only proxies can already have
       // left the Scene before it arrives; removal must win over a stale add.
       // sync() may already have queued the mesh through the count check.
-      if (!mesh.isDisposed() && !this.known.has(mesh) && scene.meshes.includes(mesh)) {
+      if (
+        !mesh.isDisposed() &&
+        !this.known.has(mesh) &&
+        // Until the notices queued before construction have run, only the list
+        // can tell a mesh that left before this controller listened.
+        (this.earlierAddsNotified ? this.listed(mesh) : scene.meshes.includes(mesh))
+      ) {
+        this.departed.delete(mesh);
         this.known.add(mesh);
         this.pending.add(mesh);
       }
     });
     scene.onMeshRemovedObservable.add((mesh) => {
       this.removedSinceScan++;
+      this.departed.add(mesh);
       this.known.delete(mesh);
       this.pending.delete(mesh);
       // Only casters own a spatial leaf or generator render-list membership.
@@ -457,9 +484,14 @@ export class SceneShadowController {
     }
     return { passes, bytes };
   }
+  /** Whether the Scene lists the mesh; only a mesh that has left needs the search. */
+  private listed(mesh: AbstractMesh): boolean {
+    return !this.departed.has(mesh) || this.scene.meshes.includes(mesh);
+  }
   private queueUnknownMeshes(): void {
     for (const mesh of this.scene.meshes) {
       if (this.known.has(mesh)) continue;
+      this.departed.delete(mesh);
       this.known.add(mesh);
       this.pending.add(mesh);
     }
@@ -486,7 +518,7 @@ export class SceneShadowController {
       this.queueUnknownMeshes();
     const hadPending = this.pending.size > 0;
     for (const mesh of this.pending) {
-      if (mesh.isDisposed() || !scene.meshes.includes(mesh)) continue;
+      if (mesh.isDisposed() || !this.listed(mesh)) continue;
       // Shadow maps draw the selected level through its master caster, and a
       // level mirrors its master's receiveShadows.
       if (mesh.isBlocked) {

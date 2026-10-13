@@ -288,6 +288,7 @@ describe("Play createEngine view", () => {
     // library publication callback and scene realization all remain in use.
     const scheduling = vi.spyOn(sceneWork, "runSceneWork").mockImplementation((steps, options) => run(steps, {
       ...options,
+      stepsPerYield: 32,
       yieldControl: async () => {
         const candidate = handle.scene.getMaterialByName("material:surface");
         if (!(candidate instanceof NodeMaterial) || completedDuringLoad) return;
