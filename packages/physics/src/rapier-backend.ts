@@ -246,8 +246,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   private readonly eventQueue: RapierEventQueue;
   private readonly collisionHooks: PhysicsHooks;
   private readonly pendingContacts: PhysicsContactEvent[] = [];
-  private readonly blockingKeys = new Set<string>();
-  private readonly triggerKeys = new Set<string>();
+  /** Open blocking pairs and trigger overlaps by contact key; the pair is parsed once, when it opens (null if an id is empty). */
+  private readonly blockingPairs = new Map<string, ContactPair | null>();
+  private readonly triggerPairs = new Map<string, ContactPair | null>();
   /** Open overlaps of replaced colliders, which the next step must re-confirm. */
   private readonly refreshingTriggerKeys = new Set<string>();
   private disposed = false;
@@ -287,8 +288,8 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.colliders.clear();
     this.bodies.clear();
     this.colliderIdByHandle.clear();
-    this.blockingKeys.clear();
-    this.triggerKeys.clear();
+    this.blockingPairs.clear();
+    this.triggerPairs.clear();
     this.refreshingTriggerKeys.clear();
     this.pendingContacts.length = 0;
     this.eventQueue.free();
@@ -663,14 +664,13 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   pollContacts(): PhysicsContactEvent[] {
     const events = [...this.pendingContacts];
     this.pendingContacts.length = 0;
-    for (const key of this.blockingKeys) {
-      const parsed = parseContactKey(key);
-      if (!parsed) continue;
-      const a = this.colliderTranslation(parsed.colliderAId);
-      const b = this.colliderTranslation(parsed.colliderBId);
+    for (const pair of this.blockingPairs.values()) {
+      if (!pair) continue;
+      const a = this.colliderTranslation(pair.colliderAId);
+      const b = this.colliderTranslation(pair.colliderBId);
       events.push({
         kind: "hit",
-        ...parsed,
+        ...pair,
         location: contactLocation(a, b),
         normal: contactNormal(a, b),
       });
@@ -685,8 +685,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.drainCollisionEvents();
     // A replaced collider's overlap that this step did not start again ended.
     for (const key of this.refreshingTriggerKeys) {
-      const pair = parseContactKey(key);
-      if (!pair || !this.triggerKeys.delete(key)) continue;
+      const pair = this.triggerPairs.get(key);
+      if (!pair) continue;
+      this.triggerPairs.delete(key);
       this.pendingContacts.push({ kind: "overlapEnd", ...pair });
     }
     this.refreshingTriggerKeys.clear();
@@ -1000,22 +1001,13 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       )
         this.pendingContacts.splice(i, 1);
     }
-    for (const key of this.blockingKeys) {
-      const pair = parseContactKey(key);
-      if (
-        pair &&
-        (pair.colliderAId === colliderId || pair.colliderBId === colliderId)
-      )
-        this.blockingKeys.delete(key);
+    for (const [key, pair] of this.blockingPairs) {
+      if (pair && (pair.colliderAId === colliderId || pair.colliderBId === colliderId))
+        this.blockingPairs.delete(key);
     }
-    for (const key of this.triggerKeys) {
-      const pair = parseContactKey(key);
-      if (
-        !pair ||
-        (pair.colliderAId !== colliderId && pair.colliderBId !== colliderId)
-      )
-        continue;
-      this.triggerKeys.delete(key);
+    for (const [key, pair] of this.triggerPairs) {
+      if (!pair || (pair.colliderAId !== colliderId && pair.colliderBId !== colliderId)) continue;
+      this.triggerPairs.delete(key);
       this.pendingContacts.push({ kind: "overlapEnd", ...pair });
     }
   }
@@ -1026,13 +1018,11 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
    * them, and the step ends the rest. Blocking pairs restart with that step.
    */
   private refreshColliderContacts(colliderId: string): void {
-    for (const key of this.blockingKeys) {
-      const pair = parseContactKey(key);
+    for (const [key, pair] of this.blockingPairs) {
       if (pair && (pair.colliderAId === colliderId || pair.colliderBId === colliderId))
-        this.blockingKeys.delete(key);
+        this.blockingPairs.delete(key);
     }
-    for (const key of this.triggerKeys) {
-      const pair = parseContactKey(key);
+    for (const [key, pair] of this.triggerPairs) {
       if (pair && (pair.colliderAId === colliderId || pair.colliderBId === colliderId))
         this.refreshingTriggerKeys.add(key);
     }
@@ -1084,12 +1074,12 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const isTrigger = colliderA.desc.isTrigger || colliderB.desc.isTrigger;
     if (isTrigger) {
       if (started) {
-        if (this.triggerKeys.has(key)) {
+        if (this.triggerPairs.has(key)) {
           // A replaced collider's overlap continues without a second begin.
           this.refreshingTriggerKeys.delete(key);
           return;
         }
-        this.triggerKeys.add(key);
+        this.triggerPairs.set(key, contactPair(actorAId, idA, actorBId, idB));
         this.pendingContacts.push({
           kind: "overlapBegin",
           actorAId,
@@ -1097,7 +1087,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
           colliderAId: idA,
           colliderBId: idB,
         });
-      } else if (this.triggerKeys.delete(key)) {
+      } else if (this.triggerPairs.delete(key)) {
         this.pendingContacts.push({
           kind: "overlapEnd",
           actorAId,
@@ -1108,8 +1098,8 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       }
       return;
     }
-    if (started) this.blockingKeys.add(key);
-    else this.blockingKeys.delete(key);
+    if (started) this.blockingPairs.set(key, contactPair(actorAId, idA, actorBId, idB));
+    else this.blockingPairs.delete(key);
   }
 
   private colliderTranslation(colliderId: string): { x: number; y: number } {
@@ -1192,13 +1182,15 @@ function contactKey(
   return `${actorAId}\t${colliderAId}\t${actorBId}\t${colliderBId}`;
 }
 
-function parseContactKey(key: string): {
+type ContactPair = {
   actorAId: string;
   actorBId: string;
   colliderAId: string;
   colliderBId: string;
-} | null {
-  const [actorAId, colliderAId, actorBId, colliderBId] = key.split("\t");
+};
+
+/** The pair a contact key names; null when an id is empty, which no event is reported for. */
+function contactPair(actorAId: string, colliderAId: string, actorBId: string, colliderBId: string): ContactPair | null {
   if (!actorAId || !colliderAId || !actorBId || !colliderBId) return null;
   return { actorAId, colliderAId, actorBId, colliderBId };
 }
