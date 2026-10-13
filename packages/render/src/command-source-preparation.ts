@@ -64,7 +64,7 @@ export class CommandSourcePreparation {
       return true;
     }
     if (command.type !== "assignMesh" && command.type !== "assignMaterial" && command.type !== "assignParticle") {
-      if ("slotId" in command && [...this.pending.values()].some((request) => request.slotId === command.slotId)) {
+      if ("slotId" in command && this.slotPending(command.slotId)) {
         const waiting = this.followers.get(command.slotId) ?? [];
         waiting.push({ command, apply });
         this.followers.set(command.slotId, waiting);
@@ -149,6 +149,12 @@ export class CommandSourcePreparation {
 
   dispose(): void { this.disposed = true; this.clear(); this.loader = null; }
 
+  /** True while the slot has a queued or running preparation. */
+  private slotPending(slotId: number): boolean {
+    for (const request of this.pending.values()) if (request.slotId === slotId) return true;
+    return false;
+  }
+
   /** True while the slot has a queued preparation or an unresolved failure. */
   private slotBusy(slotId: number): boolean {
     for (const request of this.pending.values()) if (request.slotId === slotId) return true;
@@ -231,7 +237,7 @@ export class CommandSourcePreparation {
   }
 
   private flushFollowers(slotId: number): void {
-    if ([...this.pending.values()].some((request) => request.slotId === slotId)) return;
+    if (this.slotPending(slotId)) return;
     const followers = this.followers.get(slotId) ?? [];
     this.followers.delete(slotId);
     for (const { command, apply } of followers) apply(command);

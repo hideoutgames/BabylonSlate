@@ -6,20 +6,36 @@ export interface LatticeBinding {
   bindEffect(effect: Effect): void;
   bindBuffer(buffer: UniformBuffer): void;
 }
-const roots = new WeakSet<Node>();
-const bindings = new WeakMap<Node, LatticeBinding>();
-export function markLatticeComponentRoot(root: AbstractMesh): void { roots.add(root); }
-export function isLatticeComponentRoot(node: Node): boolean { return roots.has(node); }
+/** One entry per marked node keeps the parent walk to a single lookup per level. */
+interface LatticeMark { root: boolean; binding?: LatticeBinding }
+const marks = new WeakMap<Node, LatticeMark>();
+/** Bound owners, active or not: a zero-strength or identity cage stays bound. While zero no mesh can resolve a binding, so the per-draw parent walk is skipped. */
+let liveBindings = 0;
+export function markLatticeComponentRoot(root: AbstractMesh): void {
+  const mark = marks.get(root);
+  if (mark) mark.root = true; else marks.set(root, { root: true });
+}
+export function isLatticeComponentRoot(node: Node): boolean { return marks.get(node)?.root === true; }
 export function setLatticeBinding(root: AbstractMesh, binding?: LatticeBinding): void {
-  if (binding) bindings.set(root, binding); else bindings.delete(root);
+  const mark = marks.get(root);
+  const bound = mark?.binding !== undefined;
+  if (binding) {
+    if (mark) mark.binding = binding; else marks.set(root, { root: false, binding });
+    if (!bound) liveBindings++;
+  } else if (bound) {
+    mark!.binding = undefined;
+    liveBindings--;
+  }
 }
 export function meshLatticeBinding(mesh?: AbstractMesh): LatticeBinding | undefined {
+  if (liveBindings === 0) return undefined;
   // Babylon LOD meshes borrow their master's world matrix even when parentless.
   const master = mesh?._masterMesh;
   for (let node: Node | null | undefined = master ?? mesh; node; node = node.parent) {
-    const binding = bindings.get(node);
-    if (binding) return binding;
-    if (roots.has(node)) return undefined;
+    const mark = marks.get(node);
+    if (!mark) continue;
+    if (mark.binding) return mark.binding;
+    if (mark.root) return undefined;
   }
   return undefined;
 }

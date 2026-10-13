@@ -444,6 +444,66 @@ describe("seekGameplayAnimation", () => {
     expect(missing).toEqual([]);
   });
 
+  it("resolves clips by name and clip asset in a slot with many groups, following group list changes", () => {
+    const seeks: string[] = [];
+    const group = (name: string, clipAssetGuid: string) => ({
+      name,
+      from: 0,
+      to: 10,
+      clipAssetGuid,
+      pause() {},
+      goToFrame() {
+        seeks.push(`${clipAssetGuid}/${name}`);
+      },
+    });
+    let groups = ["Idle", "Walk", "Run", "Jump", "Fall"].map((name) => group(name, "hero")).concat([group("Walk", "other"), group("Idle", "other")]);
+    const missing: string[] = [];
+    const host = {
+      getAnimationGroups: () => groups,
+      onMissingClip: (info: { clipName: string; clipAssetGuid?: string }) => {
+        missing.push(`${info.clipAssetGuid ?? ""}/${info.clipName}`);
+      },
+    };
+    const play = (clipName: string, clipAssetGuid?: string) =>
+      applyAnimStateToScene(host, {
+        type: "animState",
+        slotId: 1,
+        stateId: "s",
+        normalisedTime: 0.5,
+        blendWeights: { s: 1 },
+        clipName,
+        clipKind: "animation",
+        ...(clipAssetGuid ? { clipAssetGuid } : {}),
+      });
+    // Without a clip asset the first group of that name wins; with one, its owner does.
+    play("Walk");
+    play("Walk", "other");
+    play("Idle", "other");
+    play("Walk", "unknown");
+    play("Sprint");
+    expect(seeks).toEqual(["hero/Walk", "other/Walk", "other/Idle"]);
+    expect(missing).toEqual(["unknown/Walk", "/Sprint"]);
+    // A clip added to the same list is found, and a replacement list shadows the old groups.
+    seeks.length = 0;
+    groups.push(group("Sprint", "hero"));
+    play("Sprint");
+    groups = ["Walk", "A", "B", "C", "D", "E"].map((name) => group(name, "next"));
+    play("Walk");
+    play("Idle");
+    expect(seeks).toEqual(["hero/Sprint", "next/Walk"]);
+    expect(missing).toEqual(["unknown/Walk", "/Sprint", "/Idle"]);
+    // Replacing groups in place, keeping the length, is followed for hits and misses alike.
+    seeks.length = 0;
+    missing.length = 0;
+    groups[0] = group("Walk", "swapped");
+    play("Walk");
+    groups[2] = group("Dash", "swapped");
+    play("Dash");
+    play("B");
+    expect(seeks).toEqual(["swapped/Walk", "swapped/Dash"]);
+    expect(missing).toEqual(["/B"]);
+  });
+
   it("reports a missing animation clip instead of silently skipping it", () => {
     const missing: Array<{
       slotId: number;

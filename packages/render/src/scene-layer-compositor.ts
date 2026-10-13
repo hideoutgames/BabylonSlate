@@ -63,7 +63,16 @@ export interface SceneLayerCompositorOptions {
   ) => Pick<AttachedPostProcessStack, "dispose"> & Partial<Pick<AttachedPostProcessStack, "setParameter">> | null;
 }
 
+/** The pose bindHudCamera leaves; any other reading means another owner moved the camera. */
+interface HudCameraPose {
+  position: readonly [number, number, number];
+  rotation: readonly [number, number, number];
+  quaternion: readonly [number, number, number, number] | null;
+}
+
 type LayerRecord = SceneLayerView & {
+  /** Null until the first bind. */
+  hudPose: HudCameraPose | null;
   renderer: SceneRenderCoordinator;
   postProcessStack: SceneLayerPostProcessEntry[];
   rtt: RenderTargetTexture | null;
@@ -130,6 +139,7 @@ export class SceneLayerCompositor {
       camera,
       renderer: new SceneRenderCoordinator(scene),
       layerBounds: sceneLayerOrthoBounds(command.layerBounds),
+      hudPose: null,
       postProcessStack: command.postProcessStack.map((entry) => ({ ...entry })),
       rtt: null,
       blitMaterial: null,
@@ -260,7 +270,7 @@ export class SceneLayerCompositor {
     const height = Math.max(1, this.engine.getRenderHeight(true));
     if (width === this.outputWidth && height === this.outputHeight) return;
     for (const layer of this.byId.values()) {
-      this.bindHudCamera(layer);
+      this.bindHudCamera(layer, true);
       if (layer.rtt) {
         const previous = layer.rtt.getSize();
         if (previous.width !== width || previous.height !== height)
@@ -280,7 +290,7 @@ export class SceneLayerCompositor {
     this.resize();
     const layer = this.byId.get(layerId);
     if (!layer) throw new Error("SceneLayer was removed before rendering preparation.");
-    this.bindHudCamera(layer);
+    this.bindHudCamera(layer, true);
     await layer.renderer.prepare(assertCurrent);
     assertCurrent();
     if (this.byId.get(layerId) !== layer) throw new Error("SceneLayer rendering preparation was superseded.");
@@ -545,7 +555,17 @@ export class SceneLayerCompositor {
   /** Actual Scene/target release, including generations whose bounded wait failed. */
   whenReleased(): Promise<void> { return this.retiredLayers.whenReleased(); }
 
-  private bindHudCamera(layer: LayerRecord): void {
+  /**
+   * Pin the camera to the layer's fixed orthographic pose. Per-frame callers
+   * leave a camera alone while its parent, position, rotation, mode, active-camera
+   * status and orthographic bounds still match what the last bind wrote; Babylon
+   * re-derives its view and projection when anything they read changes. A
+   * mismatch, and create, resize and preparation (force), rebind those fields and
+   * force both matrices. Nothing else is restored (target lock, up vector, near
+   * and far planes), as before.
+   */
+  private bindHudCamera(layer: LayerRecord, force = false): void {
+    if (!force && this.hudCameraIntact(layer)) return;
     layer.camera.parent = null;
     layer.camera.position.set(0, 0, -10);
     layer.camera.rotation.set(0, 0, 0);
@@ -561,6 +581,27 @@ export class SceneLayerCompositor {
     // Scene.render establishes Babylon's floating-origin scene before uploading
     // the scene matrices. Updating them here would cache the previous world
     // scene's offset/projection in this layer's GPU uniform buffer.
+    const { position, rotation, rotationQuaternion: quaternion } = layer.camera;
+    layer.hudPose = {
+      position: [position.x, position.y, position.z],
+      rotation: [rotation.x, rotation.y, rotation.z],
+      quaternion: quaternion ? [quaternion.x, quaternion.y, quaternion.z, quaternion.w] : null,
+    };
+  }
+
+  private hudCameraIntact(layer: LayerRecord): boolean {
+    const { camera, scene, hudPose: pose } = layer;
+    if (!pose || camera.parent !== null || camera.mode !== Camera.ORTHOGRAPHIC_CAMERA || scene.activeCamera !== camera) return false;
+    const { position, rotation, rotationQuaternion: quaternion } = camera;
+    if (position.x !== pose.position[0] || position.y !== pose.position[1] || position.z !== pose.position[2] ||
+      rotation.x !== pose.rotation[0] || rotation.y !== pose.rotation[1] || rotation.z !== pose.rotation[2]) return false;
+    if (quaternion) {
+      const posed = pose.quaternion;
+      if (!posed || quaternion.x !== posed[0] || quaternion.y !== posed[1] || quaternion.z !== posed[2] || quaternion.w !== posed[3]) return false;
+    } else if (pose.quaternion) return false;
+    const halfW = layer.layerBounds.width / 2;
+    const halfH = layer.layerBounds.height / 2;
+    return camera.orthoTop === halfH && camera.orthoBottom === -halfH && camera.orthoLeft === -halfW && camera.orthoRight === halfW;
   }
 
   private applyOrtho(layer: LayerRecord): void {

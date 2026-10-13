@@ -218,7 +218,7 @@ import {
 } from "./snapshot-apply";
 import { applyAlbedoTexture, installModelSources, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
 import { FontRegistry, type FontAssetEntry } from "./font-registry";
-import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
+import { applyAnimStateToScene, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
 import { pickActorMeshName, pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
@@ -802,6 +802,8 @@ export function createEngine(
 
 /** Render-loop passes (about ten seconds at 60 Hz) that frame-phase timing outlives its last `renderDiagnostics()` read. */
 const FRAME_PHASE_LEASE_FRAMES = 600;
+/** Frames with no layer still presenting share this set instead of building one. */
+const NO_PRESENTING_LAYERS: ReadonlySet<string> = new Set();
 
 function initializeEngine(
   canvas: HTMLCanvasElement,
@@ -1346,6 +1348,20 @@ function initializeEngine(
       })
     : null;
   onRollback(() => particleService?.dispose());
+  // One adapter per binding, shared by every animState replay: sprite sources
+  // are read when a clip resolves, so applying a command allocates no host.
+  const animHostOptions = (onMissingClip?: (info: MissingAnimClip) => void): NonNullable<Parameters<typeof sceneAnimHostFromBinding>[1]> => ({
+    get spritePayloads() { return binding.spritePayloads ?? options.spritePayloads; },
+    get spriteAnimations() { return binding.spriteAnimations ?? options.spriteAnimations; },
+    applyTexture: (mesh, guid) => applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
+    onMissingClip,
+  });
+  const animHost = sceneAnimHostFromBinding(binding, animHostOptions());
+  const animHostReportingMissing = sceneAnimHostFromBinding(binding, animHostOptions((info) => {
+    const groups = binding.slotAnimationGroups?.get(info.slotId);
+    if (info.clipKind === "animation" && (!groups || groups.length === 0)) return;
+    console.warn(`[render] missing ${info.clipKind} clip "${info.clipName}" on slot ${info.slotId}`);
+  }));
   binding.slotVisualReady = (slotId, successor) => {
     // Move emitter nodes before recursive retirement of the old visual root.
     particleService?.bindSlot(slotId, successor);
@@ -1353,11 +1369,7 @@ function initializeEngine(
       if (successor.isDisposed() || binding.meshes.get(slotId) !== successor) return;
       appliedSnapshotIdentity = null;
       const pending = binding.pendingAnimState?.get(slotId);
-      if (pending) applyAnimStateToScene(sceneAnimHostFromBinding(binding, {
-        spritePayloads: binding.spritePayloads ?? options.spritePayloads,
-        spriteAnimations: binding.spriteAnimations ?? options.spriteAnimations,
-        applyTexture: (mesh, guid) => applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
-      }), pending);
+      if (pending) applyAnimStateToScene(animHost, pending);
       scheduler.invalidate("snapshot");
     });
   };
@@ -2610,7 +2622,12 @@ function initializeEngine(
         : "webGLVersion" in engine && engine.webGLVersion === 1 ? "webgl1" : "unknown",
     } }) : null;
     try {
-      const presentingLayers = new Set([...pendingPresentations.values()].flatMap((pending) => pending.owner ? [pending.owner.layerId] : []));
+      let presentingLayers = NO_PRESENTING_LAYERS;
+      if (pendingPresentations.size) {
+        const presenting = new Set<string>();
+        for (const pending of pendingPresentations.values()) if (pending.owner) presenting.add(pending.owner.layerId);
+        presentingLayers = presenting;
+      }
       const drawOwner = (key: string, draw: () => boolean, fallback?: () => void) => {
         const pending = pendingPresentations.get(key);
         if (!pending) { draw(); return; }
@@ -3517,18 +3534,7 @@ function initializeEngine(
           binding.meshes.get(command.slotId) ?? null,
         );
         const pending = binding.pendingAnimState?.get(command.slotId);
-        if (pending) {
-          applyAnimStateToScene(
-            sceneAnimHostFromBinding(binding, {
-              spritePayloads: binding.spritePayloads ?? options.spritePayloads,
-              spriteAnimations:
-                binding.spriteAnimations ?? options.spriteAnimations,
-              applyTexture: (mesh, guid) =>
-                applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
-            }),
-            pending,
-          );
-        }
+        if (pending) applyAnimStateToScene(animHost, pending);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "assignMaterial") {
@@ -3552,11 +3558,7 @@ function initializeEngine(
       if (command.type === "clearRagdollPose") {
         binding.ragdoll?.clear(command);
         const pending = binding.pendingAnimState?.get(command.slotId);
-        if (pending) applyAnimStateToScene(sceneAnimHostFromBinding(binding, {
-          spritePayloads: binding.spritePayloads ?? options.spritePayloads,
-          spriteAnimations: binding.spriteAnimations ?? options.spriteAnimations,
-          applyTexture: (mesh, guid) => applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
-        }), pending);
+        if (pending) applyAnimStateToScene(animHost, pending);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "setMaterialParameter") {
@@ -3610,28 +3612,7 @@ function initializeEngine(
         appliedSnapshotIdentity = null;
         if (!binding.pendingAnimState) binding.pendingAnimState = new Map();
         binding.pendingAnimState.set(command.slotId, command);
-        applyAnimStateToScene(
-          sceneAnimHostFromBinding(binding, {
-            spritePayloads: binding.spritePayloads ?? options.spritePayloads,
-            spriteAnimations:
-              binding.spriteAnimations ?? options.spriteAnimations,
-            applyTexture: (mesh, guid) =>
-              applyAlbedoTexture(mesh, mesh.getScene(), guid, binding),
-            onMissingClip: (info) => {
-              const groups = binding.slotAnimationGroups?.get(info.slotId);
-              if (
-                info.clipKind === "animation" &&
-                (!groups || groups.length === 0)
-              ) {
-                return;
-              }
-              console.warn(
-                `[render] missing ${info.clipKind} clip "${info.clipName}" on slot ${info.slotId}`,
-              );
-            },
-          }),
-          command,
-        );
+        applyAnimStateToScene(animHostReportingMissing, command);
         scheduler.invalidate("snapshot");
       }
       streamAdmission?.sync();
