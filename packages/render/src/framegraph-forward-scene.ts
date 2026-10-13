@@ -30,6 +30,7 @@ import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
+import { DriverCompileWatch } from "./driver-compile";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
 import { isManagedClusteredLight } from "./clustered-light-policy";
 import {
@@ -99,7 +100,7 @@ export class ForwardSceneFrameGraph {
 
   diagnostics() {
     this.measureWork = true;
-    return { ...this.work, strictReadinessChecks: this.strictReadinessChecks };
+    return { ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks };
   }
   private graph: FrameGraph | undefined;
   private readonly retainedGraphs = new Map<FrameGraph, { count: number; release?: () => void }>();
@@ -139,6 +140,11 @@ export class ForwardSceneFrameGraph {
   private renderingCamera: Camera | undefined;
   private suppressCameraMark = 0;
   private readinessDirtyFlag = true;
+  /** Only outline membership or style changed; the prepared graph's other tasks stay admitted. */
+  private outlineDirtyFlag = false;
+  /** The view's instance-source revision as of the last full graph probe. */
+  private probedOutlineSources = 0;
+  private outlineChecks = 0;
   private readinessRevision = 0;
   private readonly membership: number[] = [];
   private membershipRecorded = false;
@@ -247,6 +253,7 @@ export class ForwardSceneFrameGraph {
     outlineAttachments.set(view, this);
     this.outlineView = view;
     this.observedOutlineRevision = -1;
+    this.probedOutlineSources = view.sourceRevision;
     if (view.active) {
       invalidate();
       if (!this.pending) this.releaseGraph();
@@ -352,7 +359,7 @@ export class ForwardSceneFrameGraph {
     // Deferred entity observables may not have fired yet; membership diffs are
     // the synchronous backstop for mesh/material/light/texture changes.
     this.syncMembership();
-    return this.readinessDirtyFlag;
+    return this.readinessDirtyFlag || this.outlineDirtyFlag;
   }
 
   markReadinessDirty(): void {
@@ -360,9 +367,33 @@ export class ForwardSceneFrameGraph {
     this.readinessRevision += 1;
   }
 
+  private markOutlineDirty(): void {
+    this.outlineDirtyFlag = true;
+    // A frame whose callbacks changed the outline is still held, as for any invalidation.
+    this.readinessRevision += 1;
+  }
+
+  /** A graph-level probe passed: it covers the outline task along with every other task. */
+  private markGraphProbed(): void {
+    this.readinessDirtyFlag = false;
+    this.outlineDirtyFlag = false;
+    this.probedOutlineSources = this.outlineView?.sourceRevision ?? 0;
+  }
+
+  /** Clear a latched failure so a corrected outline contribution can retry; stales no readiness. */
+  clearFailure(): void {
+    this.failure = undefined;
+    this.failedOutput = undefined;
+  }
+
   /** Strict scene/graph probe invocations; steady-state frames add none. */
   get strictReadinessChecks(): number {
     return this.strictChecks;
+  }
+
+  /** Outline-only readiness probes; a selection change adds these, never a strict scene probe. */
+  get outlineReadinessChecks(): number {
+    return this.outlineChecks;
   }
 
   /**
@@ -374,7 +405,13 @@ export class ForwardSceneFrameGraph {
     const outlineRevision = this.outlineView?.revision ?? -1;
     if (outlineRevision !== this.observedOutlineRevision) {
       this.observedOutlineRevision = outlineRevision;
-      this.markReadinessDirty();
+      // Membership and style feed only the outline task's own passes, so a
+      // prepared task needs only its own re-probe. A gained or lost instance
+      // source dirties that mesh's attributes in the scene's draw too, and
+      // without a prepared outline task nothing narrower exists to probe.
+      const sourcesChanged = (this.outlineView?.sourceRevision ?? 0) !== this.probedOutlineSources;
+      if (sourcesChanged || !this.outlineTask) this.markReadinessDirty();
+      else this.markOutlineDirty();
     }
     const membership = this.membership;
     let changed = false;
@@ -411,8 +448,17 @@ export class ForwardSceneFrameGraph {
     // A settings change stales a prepared graph like a stack revision; with
     // no graph yet there is no baked chain to re-key.
     if (!this.readinessDirtyFlag &&
-      (!this.graph || this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches() && this.waterMatches(camera)))
-      return true;
+      (!this.graph || this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches() && this.waterMatches(camera))) {
+      // Outline membership or style alone: probe the outline task, not the scene.
+      if (!this.graph || !this.outlineDirtyFlag) return true;
+      if (!this.pending && this.outlineTask) {
+        this.assignCamera(camera);
+        this.syncSceneInputs();
+        if (!this.isOutlineReady()) return false;
+        this.outlineDirtyFlag = false;
+        return true;
+      }
+    }
     if (
       this.graph && !this.pending &&
       this.preparedPostProcessRevision === this.postProcessRevision &&
@@ -424,8 +470,9 @@ export class ForwardSceneFrameGraph {
     } else {
       this.strictChecks += 1;
       if (!isSceneFrameReady(this.scene)) return false;
+      // A graph that is pending or stale is fully probed when its preparation finishes.
     }
-    this.readinessDirtyFlag = false;
+    this.markGraphProbed();
     return true;
   }
 
@@ -517,10 +564,7 @@ export class ForwardSceneFrameGraph {
       return { path: "frameGraph", ready: false, preparationRequired: true };
     this.assignCamera(camera);
     this.syncSceneInputs();
-    if (this.readinessDirty) {
-      if (!this.isReady()) return { path: "frameGraph", ready: false };
-      this.readinessDirtyFlag = false;
-    }
+    if (!this.probeDirty()) return { path: "frameGraph", ready: false };
     return { path: "frameGraph", ready: true };
   }
 
@@ -559,10 +603,7 @@ export class ForwardSceneFrameGraph {
     const graph = this.graph!;
     this.assignCamera(camera);
     this.syncSceneInputs();
-    if (this.readinessDirty) {
-      if (!this.isReady()) return { path: "frameGraph", reason: "FrameGraph is not ready.", rendered: false };
-      this.readinessDirtyFlag = false;
-    }
+    if (!this.probeDirty()) return { path: "frameGraph", reason: "FrameGraph is not ready.", rendered: false };
     const cameras = this.scene.activeCameras;
     const ubo = this.scene.getSceneUniformBuffer();
     const renderPass = engine.currentRenderPassId;
@@ -693,7 +734,9 @@ export class ForwardSceneFrameGraph {
       this.setActiveCamera(camera);
       // Admit the conventional prefix before shadows spend shared texture units.
       syncSceneLighting(this.scene);
-      controller?.sync();
+      // Admission needs no caster state; ManagedShadowsTask walks the casters
+      // once, right before it consumes each map's refresh.
+      controller?.sync("admission");
       // Allocation/participation changes alter the material shadow layout.
       // Commit that layout before probing effects, so onBeforeRender cannot
       // invalidate the variants we just declared ready for the first frame.
@@ -932,18 +975,22 @@ export class ForwardSceneFrameGraph {
         this.water?.reconcile();
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
-      const deadline = performance.now() + 10_000;
+      let deadline = performance.now() + 10_000;
+      const compiles = new DriverCompileWatch(scene.getEngine());
       while (!this.disposed && !this.isReady()) {
         assertCurrent();
         // A failed shader never becomes ready; report it instead of timing out.
         const compileFailure = this.effectsGraph?.spatial?.compileFailure.message ?? this.outlineTask?.compileFailure.message;
         if (compileFailure) throw new Error(compileFailure);
-        if (performance.now() >= deadline)
-          throw new Error("Forward FrameGraph readiness timed out.");
+        if (performance.now() >= deadline) {
+          // A driver still compiling reports completion only, never progress.
+          if (!compiles.renew()) throw new Error("Forward FrameGraph readiness timed out.");
+          deadline = performance.now() + 10_000;
+        }
         await new Promise<void>((resolve) => setTimeout(resolve, 16));
       }
       if (this.disposed) throw new Error("FrameGraph coordinator is disposed.");
-      this.readinessDirtyFlag = false;
+      this.markGraphProbed();
       assertCurrent();
       this.preparedPostProcessRevision = postProcessRevision;
       this.preparedEffectsKey = effectsKey;
@@ -1041,8 +1088,12 @@ export class ForwardSceneFrameGraph {
         // own render-pass variants, without waiting on unrelated Engine effects.
         this.scene._activeCamera = camera;
         this.scene.getEngine().currentRenderPassId = camera.renderPassId;
+        const sources = this.outlineView?.sourceRevision ?? 0;
         const cameraReady = isSceneFrameReady(this.scene);
-        return this.graph!.isReady() && cameraReady;
+        const ready = this.graph!.isReady() && cameraReady;
+        // A mask admitting an instance source late dirties attributes that the
+        // earlier probes already accepted; the next probe sees the final state.
+        return ready && (this.outlineView?.sourceRevision ?? 0) === sources;
       });
     } finally {
       this.water?.endProbe();
@@ -1051,6 +1102,63 @@ export class ForwardSceneFrameGraph {
       if (spatial && spatialObjects) spatial.objectList = spatialObjects;
       // ObjectRenderer's shadow toggles also lack finally around readiness
       // hooks. The common guard owns camera/matrices/UBO/Engine state.
+      this.scene.activeCameras = cameras;
+      for (let index = 0; index < probeLights.length; index += 1)
+        probeLights[index]!.shadowEnabled = probeFlags[index]!;
+      probeLights.length = probeFlags.length = 0;
+      this.probeLights = probeLights;
+      this.probeFlags = probeFlags;
+    }
+  }
+
+  /** Re-probe what the pending invalidations stale: the whole graph, or only the outline task. */
+  private probeDirty(): boolean {
+    if (!this.readinessDirty) return true;
+    if (this.readinessDirtyFlag) {
+      if (!this.isReady()) return false;
+      this.markGraphProbed();
+    } else {
+      if (!this.isOutlineReady()) return false;
+      this.outlineDirtyFlag = false;
+    }
+    return true;
+  }
+
+  /**
+   * The outline task's own passes and programs, for a change that touches
+   * nothing else the graph draws. Unlike isReady it neither probes the scene's
+   * meshes, lights and shadows nor rebuilds a material variant; groups whose
+   * members were already probed are skipped.
+   */
+  private isOutlineReady(): boolean {
+    const task = this.outlineTask;
+    if (!task) return true;
+    this.outlineChecks += 1;
+    const cameras = this.scene.activeCameras;
+    const lights = this.scene.lights;
+    const probeLights = this.probeLights ?? [];
+    const probeFlags = this.probeFlags ?? [];
+    this.probeLights = this.probeFlags = undefined;
+    for (let index = 0; index < lights.length; index += 1) {
+      probeLights[index] = lights[index]!;
+      probeFlags[index] = lights[index]!.shadowEnabled;
+    }
+    probeLights.length = probeFlags.length = lights.length;
+    try {
+      const ready = withSceneReadinessState(this.scene, () => {
+        const camera = this.objects!.camera;
+        this.scene._activeCamera = camera;
+        this.scene.getEngine().currentRenderPassId = camera.renderPassId;
+        return task.isReadyAfterOutlineChange();
+      });
+      // A mask admitting an instance source late changes the scene's own draw state.
+      if (this.outlineView && this.outlineView.sourceRevision !== this.probedOutlineSources) {
+        this.markReadinessDirty();
+        return false;
+      }
+      return ready;
+    } finally {
+      // Same guard as isReady: readiness hooks must not leak camera or light state.
       this.scene.activeCameras = cameras;
       for (let index = 0; index < probeLights.length; index += 1)
         probeLights[index]!.shadowEnabled = probeFlags[index]!;
@@ -1128,6 +1236,7 @@ export class ForwardSceneFrameGraph {
     this.postProcessGraph = undefined;
     this.effectsGraph = undefined;
     this.outlineTask = undefined;
+    this.outlineDirtyFlag = false;
     this.preparedOutlineView = undefined;
     this.preparedEffectsKey = undefined;
     this.preparedWaterRevision = -1;

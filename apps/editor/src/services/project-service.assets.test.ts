@@ -31,7 +31,16 @@ import {
   snapshotIndexedMtimes,
   type EncodeFn,
 } from "@babylonslate/assets";
-import { AssetFormatVersionError, AUDIO_REVERB_CHUNK_ID } from "@babylonslate/assets";
+import {
+  AREA_EMISSION_CHUNK_KIND,
+  AREA_EMISSION_EDGE,
+  areaEmissionChunkId,
+  AssetFormatVersionError,
+  AUDIO_REVERB_CHUNK_ID,
+  decodeAreaEmission,
+  decodePackedAudioAsset,
+  encodeAreaEmission,
+} from "@babylonslate/assets";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
@@ -1630,6 +1639,100 @@ describe("project documents as .babasset", () => {
       navmesh: loaded.navmeshByGuid(guid),
       reverb: loaded.audioReverbByGuid(guid),
     }).toEqual({ position: 50, navmesh: new Uint8Array([20]), reverb: new Uint8Array([2]) });
+  });
+
+  /** Export's loaders for the asset at `path`, wired as `exportGameArtifact` wires them. */
+  const exportLoaders = (service: ProjectService, path: string) => ({
+    // The listing export starts from, before any Save lands.
+    assets: service.registry!.list().filter((asset) => asset.path === path),
+    loadDocument: (kind: string, path: string) =>
+      service.loadDocument(kind as Parameters<ProjectService["loadDocument"]>[0], path),
+    loadDocumentWithChunks: (kind: string, path: string, chunks: Parameters<ProjectService["loadDocumentWithChunks"]>[2]) =>
+      service.loadDocumentWithChunks(kind as Parameters<ProjectService["loadDocumentWithChunks"]>[0], path, chunks),
+    readAssetChunk: (path: string, chunkId: string) => service.readAssetChunk(path, chunkId),
+  });
+
+  /** Lands `save` once, just before the first read of a chunk `matches` selects. */
+  function saveBeforeChunkRead(service: ProjectService, matches: (chunkId: string) => boolean, save: () => Promise<void>) {
+    const registry = service.registry!;
+    let saved = false;
+    // Single chunk reads resolve their own locator; snapshot loads read against one.
+    for (const method of ["readChunk", "readLocatedChunk"] as const) {
+      const read = registry[method].bind(registry) as (...args: unknown[]) => Promise<Uint8Array>;
+      vi.spyOn(registry, method).mockImplementation((async (guid: string, chunkId: string, ...rest: unknown[]) => {
+        if (!saved && matches(chunkId)) {
+          saved = true;
+          await save();
+        }
+        return read(guid, chunkId, ...rest);
+      }) as never);
+    }
+    return () => saved;
+  }
+
+  it("packs an Audio's settings and clips from one saved version when a Save lands between export's reads", async () => {
+    const { storage, service } = await scaffolded();
+    const path = "assets/Jump.babasset";
+    await storage.writeBinary(path, await encodeBabasset({
+      header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
+        guid: "jump", type: "Audio", name: "Jump", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
+        payload: { volume: 0.25, clips: [{ chunkId: "source", name: "Old", weight: 1 }] },
+      },
+      chunks: [{ id: "source", kind: "audio", mime: "audio/wav", data: new Uint8Array([1, 1]) }],
+    }));
+    expect(await service.registry!.reindexPath(path)).not.toBeNull();
+    // Replacing the clip saves its bytes and settings together.
+    const saved = saveBeforeChunkRead(service, (chunkId) => chunkId === "source", () =>
+      service.writeAudioClipChunk(path, "source", new Uint8Array([2, 2]), "audio/wav",
+        { volume: 0.75, clips: [{ chunkId: "source", name: "New", weight: 1 }] }));
+    const loaded = await loadExportDocuments(exportLoaders(service, path));
+    expect(saved()).toBe(true);
+    const packed = decodePackedAudioAsset(loaded.bytesByGuid("jump")!)!;
+    expect({ volume: packed.payload.volume, clip: packed.payload.clips[0]!.name, sources: packed.sources })
+      .toEqual({ volume: 0.75, clip: "New", sources: [new Uint8Array([2, 2])] });
+  });
+
+  it("packs a Texture's variant, settings and area emission from one saved version when a Save lands between export's reads", async () => {
+    const { storage, service } = await scaffolded();
+    const path = "assets/Lamp.babasset";
+    const version = async (edge: number, ktx2ChunkId: string, emission: number) => {
+      const pixels = pngHeader(edge, edge);
+      const sourceHash = await sha256Hex(pixels);
+      return encodeBabasset({
+        header: {
+          dependencyMetadataVersion: 1, requiredDependencies: [],
+          guid: "lamp", type: "Texture", name: "Lamp", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
+          payload: { usage: "albedo", compressionState: "compressed", ktx2ChunkId, width: edge, height: edge },
+        },
+        chunks: [
+          { id: "pixels", kind: "pixels", mime: "image/png", data: pixels },
+          { id: ktx2ChunkId, kind: "ktx2", mime: "image/ktx2", data: ktx2Header(edge, edge) },
+          { id: areaEmissionChunkId(sourceHash), kind: AREA_EMISSION_CHUNK_KIND, mime: "application/x-babylonslate-area-emission",
+            data: await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(emission), sourceHash) },
+        ],
+      });
+    };
+    await storage.writeBinary(path, await version(4, "ktx2:four", 10));
+    expect(await service.registry!.reindexPath(path)).not.toBeNull();
+    // A re-import replaces the source, its encode and its prepared emission.
+    const reimported = await version(8, "ktx2:eight", 20);
+    const saved = saveBeforeChunkRead(service, (chunkId) => chunkId !== "document", async () => {
+      await storage.writeBinary(path, reimported);
+      await service.registry!.reindexPath(path);
+    });
+    const loaded = await loadExportDocuments(exportLoaders(service, path));
+    expect(saved()).toBe(true);
+    const emission = await decodeAreaEmission(loaded.areaEmissionBytesByGuid("lamp")!);
+    expect({
+      payload: loaded.payloadByGuid("lamp"),
+      bytes: loaded.bytesByGuid("lamp"),
+      emission: emission.rgba[0],
+    }).toEqual({
+      payload: expect.objectContaining({ ktx2ChunkId: "ktx2:eight", width: 8, height: 8 }),
+      bytes: ktx2Header(8, 8),
+      emission: 20,
+    });
   });
 
   it.each([

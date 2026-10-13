@@ -5,7 +5,6 @@ import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPass";
-import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import {
   beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal,
@@ -20,16 +19,19 @@ import {
 import { registerSharedOutlineShaders, SHARED_OUTLINE_COMPOSE_SHADER } from "./shared-outline-shaders";
 import { SharedOutlineMaskRenderer } from "./shared-outline-mask";
 import { EffectCompileFailure } from "./effect-compile-failure";
+import { LightNeutralObjectRendererTask } from "./light-neutral-tasks";
 
 type MaskRecord = {
   group: SharedOutlineGroup;
   mask: FrameGraphTextureHandle;
   depth: FrameGraphTextureHandle;
   clear: FrameGraphClearTextureTask;
-  objects: FrameGraphObjectRendererTask;
+  objects: LightNeutralObjectRendererTask;
   renderer: SharedOutlineMaskRenderer;
   clearPass?: FrameGraphRenderPass;
   drawPass?: FrameGraphRenderPass;
+  /** Mesh list whose programs were last probed ready, while the group stayed active. */
+  probed?: readonly unknown[];
 };
 
 /** Shared outline masks and composition with a bounded per-view pass budget. */
@@ -95,10 +97,12 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
         const clear = new FrameGraphClearTextureTask(`${this.name} ${group} Clear`, graph);
         clear.targetTexture = mask; clear.depthTexture = depth; clear.clearDepth = true; clear.clearStencil = false;
         clear.color = new Color4(0, 0, 0, 0);
-        const objects = new FrameGraphObjectRendererTask(`${this.name} ${group} Mask`, graph, graph.scene, { doNotChangeAspectRatio: false });
+        // Mask draws use pass-owned programs or authored outlineMask variants with
+        // no lighting, so the pass skips Babylon's per-pass light flag toggles.
+        const objects = new LightNeutralObjectRendererTask(`${this.name} ${group} Mask`, graph, graph.scene, { doNotChangeAspectRatio: false });
         objects.targetTexture = clear.outputTexture; objects.depthTexture = clear.outputDepthTexture;
         objects.camera = this.camera; objects.objectList = { meshes: [], particleSystems: [] };
-        objects.disableShadows = true; objects.disableImageProcessing = true;
+        objects.disableImageProcessing = true;
         objects.renderParticles = false; objects.renderSprites = false;
         objects.enableBoundingBoxRendering = false; objects.enableOutlineRendering = false;
         objects.depthTest = true; objects.depthWrite = true;
@@ -169,10 +173,29 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     }
     if (this.composePass) this.composePass.disabled = !this.view.active;
   }
-  override isReady(): boolean {
+  override isReady(): boolean { return this.probe(false); }
+  /**
+   * Readiness after only outline membership or style changed. A group whose mesh
+   * list is the one already probed ready is not probed again: its programs
+   * cannot have changed, since any scene or material change reaches the owner
+   * as a full probe. A selection change thus costs the newly selected meshes.
+   */
+  isReadyAfterOutlineChange(): boolean { return this.probe(true); }
+  private probe(skipProbedGroups: boolean): boolean {
     if (this.disposed) return false;
     this.sync();
-    return !this.view.active || this.compose.isReady() && this.masks.every((record) => !this.view.groupActive(record.group) || record.objects.isReady());
+    if (!this.view.active) return true;
+    // Probe every group even after a failure, so each starts its own compilation.
+    let ready = this.compose.isReady();
+    for (const record of this.masks) {
+      if (!this.view.groupActive(record.group)) { record.probed = undefined; continue; }
+      const meshes = record.objects.objectList.meshes ?? undefined;
+      if (skipProbedGroups && record.probed === meshes) continue;
+      const groupReady = record.objects.isReady();
+      record.probed = groupReady ? meshes : undefined;
+      if (!groupReady) ready = false;
+    }
+    return ready;
   }
   reconcileResources(): void {
     if (this.committed || !this.lease) return;

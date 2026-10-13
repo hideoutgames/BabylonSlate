@@ -33,7 +33,7 @@ interface Request {
 export class CommandSourcePreparation {
   private loader: CommandSourceLoader | null = null;
   private readonly pending = new Map<string, Request>();
-  private readonly retained = new Map<string, { slotId: number; release: () => void }>();
+  private readonly retained = new Map<string, { slotId: number; release: () => void; representationKey: string }>();
   private readonly failures = new Map<string, { slotId: number; error: Error }>();
   private readonly followers = new Map<number, Array<{ command: CommandMessage; apply: (command: CommandMessage) => void }>>();
   private readonly queue: Request[] = [];
@@ -79,6 +79,18 @@ export class CommandSourcePreparation {
     const existing = this.pending.get(key);
     if (existing && existing.representationKey === representationKey) {
       existing.command = command;
+      return true;
+    }
+    // The slot already holds exactly these sources and nothing is queued or failed
+    // for it, so re-preparing would only reacquire what is held: apply in place.
+    const held = this.retained.get(key);
+    if (held && held.representationKey === representationKey && !this.slotBusy(command.slotId)) {
+      try { apply(command); }
+      catch (cause) {
+        const error = new Error(`Prepared assignment for actor slot ${command.slotId} failed: ${String(cause)}`, { cause });
+        this.failures.set(key, { slotId: command.slotId, error });
+        this.onError(error);
+      }
       return true;
     }
     if (existing) this.cancel(existing);
@@ -136,6 +148,13 @@ export class CommandSourcePreparation {
   }
 
   dispose(): void { this.disposed = true; this.clear(); this.loader = null; }
+
+  /** True while the slot has a queued preparation or an unresolved failure. */
+  private slotBusy(slotId: number): boolean {
+    for (const request of this.pending.values()) if (request.slotId === slotId) return true;
+    for (const failure of this.failures.values()) if (failure.slotId === slotId) return true;
+    return false;
+  }
 
   private cancel(request: Request): void {
     request.controller.abort();
@@ -201,7 +220,7 @@ export class CommandSourcePreparation {
         return;
       }
       const previous = this.retained.get(request.key);
-      this.retained.set(request.key, { slotId, release });
+      this.retained.set(request.key, { slotId, release, representationKey: request.representationKey });
       request.preparedRelease = undefined;
       this.pending.delete(request.key);
       try { previous?.release(); }

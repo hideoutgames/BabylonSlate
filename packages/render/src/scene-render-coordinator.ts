@@ -5,6 +5,7 @@ import { ForwardSceneFrameGraph, type ForwardSceneGraphResult } from "./framegra
 import { onSceneReadinessDirty } from "./scene-perf";
 import type { SharedOutlineView } from "./shared-outline";
 import { flushSceneCables } from "./cable-mesh";
+import { DriverCompileWatch } from "./driver-compile";
 import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
@@ -124,6 +125,15 @@ export class SceneRenderCoordinator {
     let deadline = 0;
     let finalDeadline = Infinity;
     const restartDeadline = () => { deadline = Math.min(performance.now() + PREPARATION_TIMEOUT_MS, finalDeadline); };
+    const compiles = new DriverCompileWatch(this.scene.getEngine());
+    /** A driver still compiling reports completion only, so it renews both bounds. */
+    const expired = () => {
+      if (performance.now() < deadline) return false;
+      if (!compiles.renew()) return true;
+      finalDeadline = performance.now() + PREPARATION_TOTAL_TIMEOUT_MS;
+      restartDeadline();
+      return false;
+    };
     const check = () => {
       assertCurrent();
       if (this.disposed || this.scene.isDisposed)
@@ -145,7 +155,7 @@ export class SceneRenderCoordinator {
       for (;;) {
         check();
         flushSceneLatticeDeformers(this.scene);
-        if (performance.now() >= deadline)
+        if (expired())
           throw new Error("Scene rendering preparation timed out.");
         const camera = this.scene.activeCamera;
         if (!camera) throw new Error("Scene rendering requires an active camera.");
@@ -156,7 +166,7 @@ export class SceneRenderCoordinator {
           // An invalidated build is stale: abort it and rebuild for the new generation.
           if (pending.generation !== iteration)
             throw new PreparationChanged("Scene rendering was invalidated during preparation.");
-          if (performance.now() >= deadline)
+          if (expired())
             throw new Error("Scene rendering preparation timed out.");
           const current = outputSnapshot(this.scene, camera);
           if (this.scene.activeCamera !== camera || snapshot.some((value, index) => value !== current[index]))
@@ -193,6 +203,11 @@ export class SceneRenderCoordinator {
   /** Strict readiness probes the graph ran; unchanged frames add none. */
   get strictReadinessChecks(): number {
     return this.graph.strictReadinessChecks;
+  }
+
+  /** Outline-task-only probes; a selection change adds these and no strict scene probe. */
+  get outlineReadinessChecks(): number {
+    return this.graph.outlineReadinessChecks;
   }
 
   diagnostics() { return this.graph.diagnostics(); }
@@ -280,13 +295,14 @@ export class SceneRenderCoordinator {
     if (this.graph.readiness(camera).preparationRequired) this.requestPreparation();
   }
 
-  /** A corrected contribution may retry a failed preparation. Style changes
-   * clear failure/readiness only; they neither cancel nor rebuild a graph. */
+  /** A corrected contribution may retry a failed preparation. Membership and
+   * style changes neither cancel nor rebuild a graph; the graph notices the
+   * revision itself and re-probes only the outline task. */
   private refreshOutline(): void {
     const revision = this.outlineView?.revision ?? -1;
     if (revision === this.outlineRevision) return;
     this.outlineRevision = revision;
     this.failure = undefined;
-    this.graph.invalidate();
+    this.graph.clearFailure();
   }
 }

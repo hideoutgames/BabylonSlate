@@ -1,16 +1,17 @@
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { MaterialLibrary } from "./material-library";
-import { DirectionalLight, FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RawTexture, RenderTargetTexture, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
+import { DirectionalLight, Effect, FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RawTexture, RenderTargetTexture, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
+import { SceneOutlineHost } from "./scene-outline-host";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
-import { fogVolumeBindings, normalizeRenderingQuality, normalizeShadowSettings } from "@babylonslate/core";
+import { fogVolumeBindings, normalizeRenderingQuality, normalizeShadowSettings, outlineBindings } from "@babylonslate/core";
 import { sceneShadowController } from "./shadow-controller";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { hasFogVolumes, selectFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { markSceneReadinessDirty } from "./scene-perf";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTextureManager } from "@babylonjs/core/FrameGraph/frameGraphTextureManager";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
@@ -439,6 +440,51 @@ it("rejects the loading owner at the preparation deadline instead of accepting a
   renderer.dispose();
 });
 
+describe("preparation while the driver compiles", () => {
+  /** A scene that is not ready while one effect compiles on a parallel-compile driver. */
+  function compilingHost() {
+    const made = host();
+    made.engine.getCaps().parallelShaderCompile = { COMPLETION_STATUS_KHR: 0x91b1 };
+    let compiled = false;
+    (made.engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects["water"] =
+      { isReady: () => compiled, getCompilationError: () => "" };
+    // Polled by the readiness loop: the deadline clock only matters once it runs.
+    let polls = 0;
+    made.scene.addIsReadyCheck({ isReady: () => { polls += 1; return compiled; } });
+    const settled: { value: unknown } = { value: undefined };
+    const done = made.renderer.prepare().then(() => { settled.value = "ready"; }, (error: unknown) => { settled.value = error; });
+    const pass = () => new Promise<void>((resolve) => setTimeout(resolve, 60));
+    return { ...made, settled, done, finishCompile: () => { compiled = true; }, pass, polling: () => vi.waitFor(() => expect(polls).toBeGreaterThan(1)) };
+  }
+
+  it("outlasts the preparation deadline and finishes when the compile completes", async () => {
+    const { renderer, settled, done, finishCompile, pass, polling } = compilingHost();
+    await polling();
+    const start = performance.now();
+    vi.spyOn(performance, "now").mockReturnValue(start + 10_001);
+    await pass();
+    expect(settled.value).toBeUndefined();
+    finishCompile();
+    await done;
+    expect(settled.value).toBe("ready");
+    renderer.dispose();
+  });
+
+  it("rejects once the same compile has been pending for the driver bound", async () => {
+    const { renderer, settled, done, pass, polling } = compilingHost();
+    await polling();
+    const start = performance.now();
+    const clock = vi.spyOn(performance, "now");
+    clock.mockReturnValue(start + 10_001);
+    await pass();
+    expect(settled.value).toBeUndefined();
+    clock.mockReturnValue(start + 10_001 + 60_001);
+    await done;
+    expect(settled.value).toEqual(expect.objectContaining({ message: expect.stringContaining("timed out") }));
+    renderer.dispose();
+  });
+});
+
 it("rejects a frozen active-mesh queue instead of drawing it", async () => {
   const { scene, renderer } = host();
   const mesh = MeshBuilder.CreateBox("box", {}, scene);
@@ -684,4 +730,66 @@ it("rejects an outlined view on a scene the graph cannot draw without drawing it
   detach();
   renderer.dispose();
   view.dispose();
+});
+
+describe("selection outline changes", () => {
+  function outlinedScene(strictOutline = true) {
+    const setup = host();
+    const { scene, renderer } = setup;
+    const meshes = ["a", "b", "c"].map((name, index) => {
+      const mesh = MeshBuilder.CreateBox(name, {}, scene);
+      mesh.position.x = index - 1;
+      return mesh;
+    });
+    const instance = MeshBuilder.CreateBox("source", {}, scene).createInstance("instance");
+    const outlines = new SceneOutlineHost(scene, renderer, () => {});
+    // "c" carries an authored outline, so the strict occluder group is active too.
+    const ink = strictOutline
+      ? outlineBindings("c", [{ id: "ink", classId: "OutlineComponent", properties: { color: [1, 0, 0], width: 2 } }]) : [];
+    outlines.replaceActors([...meshes, instance].map((mesh) => ({ id: mesh.name, meshes: [mesh], bindings: mesh.name === "c" ? ink : [] })));
+    return { ...setup, outlines };
+  }
+
+  it("holds frames for the newly selected meshes alone, without a scene probe or graph rebuild", async () => {
+    const { renderer, outlines } = outlinedScene();
+    outlines.setSelection(["a"]);
+    await renderer.prepare();
+    expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
+    expect(renderer.taskNames()).toContain("Shared outlines");
+    const { graphBuilds } = renderer.diagnostics();
+    const strict = renderer.strictReadinessChecks;
+    const outline = renderer.outlineReadinessChecks;
+    // The new selection's mask program is still compiling: no frame may present before it is ready.
+    let compiled = false;
+    const isReady = Effect.prototype.isReady;
+    vi.spyOn(Effect.prototype, "isReady").mockImplementation(function (this: Effect) {
+      return (this.name === "babylonSlateSharedOutlineMask" ? compiled : true) && isReady.call(this);
+    });
+    outlines.setSelection(["b"]);
+    for (let frame = 0; frame < 3; frame += 1)
+      expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
+    compiled = true;
+    expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
+    expect(renderer.strictReadinessChecks).toBe(strict);
+    expect(renderer.diagnostics().graphBuilds).toBe(graphBuilds);
+    expect(renderer.outlineReadinessChecks).toBeGreaterThan(outline);
+    // Admitted again: steady frames add no probe of any kind.
+    const settled = renderer.outlineReadinessChecks;
+    expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
+    expect(renderer.outlineReadinessChecks).toBe(settled);
+    expect(renderer.strictReadinessChecks).toBe(strict);
+    renderer.dispose();
+  });
+
+  it("probes the scene again when a selection gives an instance source its identity stream", async () => {
+    const { renderer, outlines } = outlinedScene(false);
+    outlines.setSelection(["a"]);
+    await renderer.prepare();
+    expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
+    const strict = renderer.strictReadinessChecks;
+    outlines.setSelection(["instance"]);
+    expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
+    expect(renderer.strictReadinessChecks).toBeGreaterThan(strict);
+    renderer.dispose();
+  });
 });

@@ -637,3 +637,36 @@ describe("Havok explicit native motion", () => {
     }
   });
 });
+
+describe("Havok contact reports", () => {
+  it("reports one hit per actor pair per poll window, naming the owner's first collider in transaction order", async () => {
+    const backend = await create();
+    try {
+      body(backend, "pad");
+      backend.createCollider({ ...box("own"), bodyId: "pad" });
+      // A shape hosted for the pad on another body, created after the pad's own.
+      body(backend, "host", "kinematic", pose(50));
+      backend.createCollider({ ...box("hosted"), bodyId: "host", actorId: "pad" });
+      body(backend, "visitor", "dynamic", pose(0, 0.9));
+      backend.createCollider({ ...box("visitor-shape"), bodyId: "visitor" });
+      const hits = () =>
+        backend
+          .pollContacts()
+          .filter((event) => event.kind === "hit")
+          .map(({ actorAId, actorBId, colliderAId, colliderBId }) => ({ actorAId, actorBId, colliderAId, colliderBId }));
+      // Overlapping steps keep reporting the pair; only the first report of the window survives.
+      for (let i = 0; i < 3; i++) backend.step(1 / 60);
+      expect(hits()).toEqual([
+        { actorAId: "pad", actorBId: "visitor", colliderAId: "own", colliderBId: "visitor-shape" },
+      ]);
+      // A transaction on the pad's body re-lists "own" behind the host's shape, which the next report names first.
+      backend.createCollider({ ...box("extra", 3), bodyId: "pad" });
+      for (let i = 0; i < 3; i++) backend.step(1 / 60);
+      expect(hits()).toEqual([
+        { actorAId: "pad", actorBId: "visitor", colliderAId: "hosted", colliderBId: "visitor-shape" },
+      ]);
+    } finally {
+      backend.dispose();
+    }
+  });
+});

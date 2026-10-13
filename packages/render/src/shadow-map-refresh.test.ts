@@ -25,9 +25,11 @@ import { sceneShadowController } from "./shadow-controller";
 import { attachModelLods, generateModelLods } from "./model-lod";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
+import { ShadowMapRefresh } from "./shadow-map-refresh";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const engine of engines.splice(0)) engine.dispose();
 });
 
@@ -226,6 +228,24 @@ describe("local shadow refresh", () => {
     const { generator, render } = await fixture();
     vi.spyOn(generator, "isReady").mockReturnValueOnce(false);
     expect(render()).toBe(6);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+  });
+
+  it("walks the casters once per rendered frame and still sees edits made later in that frame", async () => {
+    const { scene, mesh, render } = await fixture();
+    const walk = vi.spyOn(ShadowMapRefresh.prototype, "syncCasters");
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    expect(walk).toHaveBeenCalledTimes(2);
+    // Scripts and animations edit casters after the controller's before-render admission.
+    scene.onBeforeRenderObservable.addOnce(() => {
+      mesh.isVisible = false;
+    });
+    expect(render()).toBe(6);
+    scene.onBeforeRenderObservable.addOnce(() => {
+      mesh.isVisible = true;
+    });
     expect(render()).toBe(6);
     expect(render()).toBe(0);
   });

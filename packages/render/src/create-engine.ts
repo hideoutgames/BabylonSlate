@@ -257,6 +257,7 @@ import {
   SCENE_FIRST_FRAME_TIMEOUT_MS,
   SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
+import { DriverCompileWatch } from "./driver-compile";
 
 export interface EditorSceneLoadOptions {
   signal: AbortSignal;
@@ -797,6 +798,9 @@ export function createEngine(
   }
 }
 
+/** Render-loop passes (about ten seconds at 60 Hz) that frame-phase timing outlives its last `renderDiagnostics()` read. */
+const FRAME_PHASE_LEASE_FRAMES = 600;
+
 function initializeEngine(
   canvas: HTMLCanvasElement,
   options: CreateEngineOptions,
@@ -1028,7 +1032,8 @@ function initializeEngine(
     preparationMs: 0, copyMs: 0,
     contextLosses: 0, contextRestorations: 0,
   };
-  let captureFramePhases = false;
+  /** Rendered-loop passes of preparation timing left; each `renderDiagnostics()` read renews it so a closed HUD stops the timing. */
+  let framePhaseLeaseFrames = 0;
   const performanceFeed = new RenderPerformanceFeed();
   const frameReportFeed = new RenderFrameReportFeed();
   let pendingFrameReportReceipt: RenderFrameReportReceipt | null = null;
@@ -2347,7 +2352,7 @@ function initializeEngine(
   // Engine-owned instrumentation is acquired only by a successfully returned handle.
   let readDiagnostics: ReturnType<typeof createRenderDiagnostics> | undefined;
   const renderDiagnostics = () => {
-    captureFramePhases = true;
+    framePhaseLeaseFrames = FRAME_PHASE_LEASE_FRAMES;
     const source = engine.getRenderingCanvas();
     // Babylon 9.29 exposes loop scheduling fields but keeps the native context
     // loss flag protected; this snapshot never mutates native ownership.
@@ -2535,7 +2540,8 @@ function initializeEngine(
     pendingPerformanceReceipt = null;
     pendingFrameReportReceipt = null;
     frameOwners.clear();
-    const measurePhases = captureFramePhases || performanceFeed.active;
+    const measurePhases = framePhaseLeaseFrames > 0 || performanceFeed.active;
+    if (framePhaseLeaseFrames > 0) framePhaseLeaseFrames--;
     const preparationStart = measurePhases ? performance.now() : 0;
     applyRenderingQuality();
     outlineHost.refreshSettings();
@@ -4055,7 +4061,15 @@ function initializeEngine(
       let resolve!: () => void;
       let reject!: (error: Error) => void;
       const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
-      const timer = setTimeout(() => expirePresentation(key), SCENE_FIRST_FRAME_TIMEOUT_MS);
+      // Pipelines the first draws request can still be building on the driver,
+      // which reports completion only; renew the budget while it makes progress.
+      const compiles = new DriverCompileWatch(engine);
+      const expire = () => {
+        const waiting = pendingPresentations.get(key);
+        if (waiting && !waiting.completionStarted && compiles.renew()) waiting.timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
+        else expirePresentation(key);
+      };
+      const timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
       pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false });
       return promise;
     },

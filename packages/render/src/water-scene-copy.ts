@@ -7,7 +7,7 @@ import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/cullObjectsTask";
-import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
+import type { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToTextureTask";
@@ -18,6 +18,7 @@ import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
 import "@babylonjs/core/ShadersWGSL/ShadersInclude/helperFunctions";
 import { clusteredLightTarget } from "./clustered-light-policy";
 import { ManagedShadowObjectRendererTask } from "./framegraph-managed-shadows";
+import { LightNeutralObjectRendererTask } from "./light-neutral-tasks";
 import {
   beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease,
 } from "./managed-render-resources";
@@ -355,14 +356,13 @@ class WaterSplitTask extends FrameGraphTask {
  * pass, and its shadow toggles, registered on the shared renderer, run for
  * these draws too.
  */
-class SharedObjectRendererTask extends FrameGraphObjectRendererTask {
+class SharedObjectRendererTask extends LightNeutralObjectRendererTask {
   constructor(name: string, graph: FrameGraph, owner: FrameGraphObjectRendererTask) {
     super(name, graph, graph.scene, undefined, owner.objectRenderer);
   }
   // The shared renderer keeps its owner's name for diagnostics and inspector lookups.
   override get name(): string { return this._name; }
   override set name(value: string) { this._name = value; }
-  protected override _setLightsForShadow(): void {}
   override isReady(): boolean { return true; }
 }
 

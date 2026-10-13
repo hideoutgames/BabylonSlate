@@ -1,8 +1,9 @@
-import { FrameGraphGeometryRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/geometryRendererTask";
+import type { FrameGraphGeometryRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/geometryRendererTask";
 import { Color4, Constants, type EngineCapabilities } from "@babylonjs/core";
 import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
 import type { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPass";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
+import { LightNeutralGeometryRendererTask } from "./light-neutral-tasks";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 
 /**
@@ -18,8 +19,12 @@ export function geometryDepthTextureType(
   return caps.textureHalfFloatRender ? Constants.TEXTURETYPE_HALF_FLOAT : undefined;
 }
 
-/** Pinned native task adapters; the caller's FrameGraph owns the attachments. */
-export class LogicalGeometryTask extends FrameGraphGeometryRendererTask {
+/**
+ * Pinned native task adapters; the caller's FrameGraph owns the attachments.
+ * Its attachments never depend on lighting, so it skips the per-pass light
+ * flag toggles ([light-neutral-tasks](./light-neutral-tasks.ts)).
+ */
+export class LogicalGeometryTask extends LightNeutralGeometryRendererTask {
   private pass: FrameGraphRenderPass | undefined;
 
   override record(...args: Parameters<FrameGraphGeometryRendererTask["record"]>): FrameGraphRenderPass {

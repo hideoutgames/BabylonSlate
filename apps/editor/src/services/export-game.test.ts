@@ -110,7 +110,7 @@ describe("collectAndExportGame", () => {
         guid: "scene", type: "Scene", name: "Main", engineVersion: "0.0.0", version: SCENE_SCHEMA_VERSION, mode: "thin",
         payload: scene as unknown as Record<string, unknown>, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, chunks: [],
       } },
-      // Audio packs from its header settings when its document cannot load.
+      // Audio keeps its settings in its header, and an old format still fails once reached.
       { rootId: "project", path: "assets/Clip.audio.babasset", header: {
         guid: "clip", type: "Audio", name: "Clip", engineVersion: "0.0.0", version: 0, mode: "thin",
         payload: { clips: [] }, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, chunks: [],
