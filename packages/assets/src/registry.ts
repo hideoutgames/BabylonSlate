@@ -9,6 +9,7 @@ import {
   type ChunkInput,
 } from "./babasset";
 import { createVfsBlobStore, type BlobStore } from "./blob-store";
+import { createReadAhead } from "./bounded-concurrency";
 import type { ContentRoot } from "./content-root";
 import { encodeJobMayWrite, type EncodeJobGuard, type EncodeJobResult, type EncodeQueue } from "./encode-queue";
 import { newAssetGuid } from "./guid";
@@ -54,6 +55,9 @@ import { buildClassAliasIndex, resolveDependenciesWithClassAliases, type ClassAl
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
+
+/** Header reads in flight at once while a root is scanned, per folder. */
+const SCAN_CATALOG_READS = 8;
 
 export type AreaEmissionProcessor = (request: { source: Uint8Array; sourceHash: string; mime?: string }, signal: AbortSignal, onProgress?: (progress: AreaEmissionProgress) => void) => Promise<Uint8Array>;
 
@@ -2042,6 +2046,14 @@ export class AssetRegistry {
       if (isStorageNotFound(error)) return;
       throw error;
     }
+    // The header reads of this folder's files overlap (bounded), but each result is consumed
+    // in directory order. Guid-conflict resolution (the first indexed file keeps a shared
+    // guid), folder registration and the first scan error therefore stay those of a serial scan.
+    const catalogFiles = entries
+      .filter((entry) => !entry.isDir && entry.name !== FOLDER_MARKER_NAME && `${dir}/${entry.name}`.endsWith(".babasset"))
+      .map((entry) => `${dir}/${entry.name}`);
+    const readCatalog = createReadAhead(SCAN_CATALOG_READS, (path: string) => readScannedCatalog(storage, path));
+    let nextCatalogFile = 0;
     for (const entry of entries) {
       const path = `${dir}/${entry.name}`;
       if (entry.isDir) {
@@ -2055,7 +2067,7 @@ export class AssetRegistry {
         continue;
       }
       if (!path.endsWith(".babasset")) continue;
-      const { header, locator } = await readScannedCatalog(storage, path);
+      const { header, locator } = await readCatalog(catalogFiles, nextCatalogFile++);
       const indexed = this.byGuid.get(header.guid);
       if (indexed && !indexed.placeholder && indexed.path !== path) {
         // A second file with an indexed guid (a copy made outside the editor)

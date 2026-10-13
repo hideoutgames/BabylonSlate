@@ -770,6 +770,37 @@ describe("AssetRegistry", () => {
     await expect(registry.deleteFolder("project", "copies")).rejects.toThrow(/copies\/hero\.babasset/);
   });
 
+  it("scans a folder's files concurrently within a bound yet resolves a shared guid in directory order", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/copy-a.babasset", { guid: "shared", type: "Material", name: "First" });
+    await writeAsset(storage, "assets/copy-b.babasset", { guid: "shared", type: "Material", name: "Second" });
+    for (let index = 0; index < 20; index++) {
+      await writeAsset(storage, `assets/item-${String(index).padStart(2, "0")}.babasset`, { guid: `item-${index}`, type: "Material", name: `Item ${index}` });
+    }
+    const listed = (await storage.readdir("assets")).map((entry) => `assets/${entry.name}`);
+    const firstCopy = listed.find((path) => path.includes("copy-"))!;
+    // The file listed first for the shared guid answers last, so a scan that indexes in completion order would keep the other copy.
+    const read = storage.readBinaryRange.bind(storage);
+    let inFlight = 0;
+    let peak = 0;
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, ...rest) => {
+      peak = Math.max(peak, ++inFlight);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, path === firstCopy ? 40 : 2));
+        return await read(path, ...rest);
+      } finally { inFlight--; }
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+
+    const secondCopy = listed.find((path) => path.includes("copy-") && path !== firstCopy)!;
+    expect(registry.getByGuid("shared")?.path).toBe(firstCopy);
+    expect(registry.listGuidConflicts().map((conflict) => [conflict.path, conflict.indexedPath])).toEqual([[secondCopy, firstCopy]]);
+    expect(registry.list()).toHaveLength(21);
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(8);
+  });
+
   it("reads a moved asset's chunks from its new path on storage whose revisions follow content", async () => {
     class ContentRevisionStorage extends MemoryStorageAdapter {
       override async readBinaryRange(path: string, offset: number, length: number, revision?: string, options?: StorageReadOptions) {
