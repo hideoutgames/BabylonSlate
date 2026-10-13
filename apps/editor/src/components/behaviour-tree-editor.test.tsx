@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   addDecorator,
   createDefaultBehaviourTree,
+  validateBehaviourTree,
   type BehaviourTreeDocument,
 } from "@babylonslate/behaviour-tree";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
@@ -28,6 +30,29 @@ if (typeof window !== "undefined") {
     value: PointerEventPolyfill,
   });
 }
+
+/** The graph context values the tree nodes have seen, and the last one. */
+const graphContext = vi.hoisted(() => ({
+  seen: new Set<unknown>(),
+  last: undefined as unknown,
+}));
+
+vi.mock("@babylonslate/graph-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@babylonslate/graph-ui")>();
+  const { createElement } = await import("react");
+  const ProbedTreeNode = (props: ComponentProps<typeof actual.TreeNode>) => {
+    const value = actual.useGraphEditorContext();
+    graphContext.seen.add(value);
+    graphContext.last = value;
+    return createElement(actual.TreeNode, props);
+  };
+  return { ...actual, treeNodeTypes: { ...actual.treeNodeTypes, "bt.node": ProbedTreeNode } };
+});
+
+vi.mock("@babylonslate/behaviour-tree", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@babylonslate/behaviour-tree")>();
+  return { ...actual, validateBehaviourTree: vi.fn(actual.validateBehaviourTree) };
+});
 
 const DOC_ID = "behaviour-tree:assets/Patrol.bt.babasset";
 const BB_ID = "blackboard:assets/Guard.blackboard.babasset";
@@ -228,6 +253,8 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  graphContext.seen.clear();
+  graphContext.last = undefined;
   livePlay.playing = false;
   livePlay.snapshot = null;
   store.applyAssetDocumentChange.mockClear();
@@ -308,6 +335,27 @@ function treeWithMisorderedSiblings(): BehaviourTreeDocument {
 }
 
 describe("BehaviourTreeEditor", () => {
+  it("leaves the graph context and validation alone when only the selection changes", async () => {
+    renderTree(treeWithWait());
+    await waitFor(() => expect(graphContext.last).toBeDefined());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    const context = graphContext.last;
+    const validations = vi.mocked(validateBehaviourTree).mock.calls.length;
+    graphContext.seen.clear();
+
+    fireEvent.click(screen.getByTestId("bt-node-task"));
+    await waitFor(() => expect(screen.getByTestId("property-durationMs")).toBeTruthy());
+
+    // A new context value re-renders every node, so selecting one node must not make one.
+    expect([...graphContext.seen].every((seen) => seen === context)).toBe(true);
+    expect(vi.mocked(validateBehaviourTree).mock.calls.length).toBe(validations);
+
+    // The menu and canvas callbacks still act on the tree as it is now.
+    fireEvent.contextMenu(screen.getByTestId("bt-node-task"));
+    fireEvent.click(screen.getByTestId("bt-menu-wrap"));
+    expect(lastCommit().nodes.find((node) => node.id === "sequence")?.children[0]).not.toBe("task");
+  });
+
   it("updates live node results and blackboard watches, then clears them when Play stops", async () => {
     livePlay.playing = true;
     livePlay.snapshot = {
