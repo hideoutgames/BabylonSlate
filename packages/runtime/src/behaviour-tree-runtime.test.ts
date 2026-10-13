@@ -100,7 +100,7 @@ describe("BehaviourTreeRuntime", () => {
     } finally { runtime.stop(); }
   });
 
-  it("publishes a Blackboard when a task replaces or edits a value in place, and nothing while it is unchanged", async () => {
+  it("publishes a Blackboard when a task replaces or edits a value in place, and nothing while it is unchanged", { timeout: 10_000 }, async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1, maxActors: 4, seedDemoActors: false, dt: 0.1, playScene: guardScene(),
@@ -120,6 +120,12 @@ describe("BehaviourTreeRuntime", () => {
           if (step === "deep") ctx.getBlackboard("nested").tags[0] = "changed";
           if (step === "reference") ctx.setBlackboard("target", ctx.self);
           if (step === "loop") { const loop = {}; loop.self = loop; ctx.setBlackboard("loop", loop); }
+          if (step === "fanout") { const node = {}; node.self = node; node.other = node; ctx.setBlackboard("fanout", node); }
+          if (step === "parents") {
+            const root = { children: [] };
+            for (const name of ["x", "y"]) root.children.push({ name, parent: root, siblings: root.children });
+            ctx.setBlackboard("tree", root);
+          }
           if (step === "map-edit") ctx.getBlackboard("lookup").set("a", 2);
         }`,
         entryPoints: [{ name: "onBtTick", event: "onBtTick", isAsync: false }] }]);
@@ -143,6 +149,11 @@ describe("BehaviourTreeRuntime", () => {
       expect(tickWith("reference")).toMatchObject({ target: { guid: "guard" } });
       expect(tickWith("none")).toBeUndefined();
       expect(tickWith("loop")).toMatchObject({ loop: expect.stringContaining("self") });
+      expect(tickWith("none")).toBeUndefined();
+      // Several back-references per node would take exponentially many steps to copy.
+      expect(tickWith("fanout")).toMatchObject({ fanout: expect.any(String) });
+      expect(tickWith("none")).toBeUndefined();
+      expect(tickWith("parents")).toMatchObject({ tree: expect.any(String) });
       expect(tickWith("none")).toBeUndefined();
       expect(tickWith("map-edit")).toMatchObject({ lookup: { a: 2 } });
       expect(tickWith("none")).toBeUndefined();

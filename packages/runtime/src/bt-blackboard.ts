@@ -19,32 +19,52 @@ export function snapshotBlackboard(values: BlackboardValues): BlackboardValues {
 
 /** What `copyBlackboard` leaves for a value it cannot copy exactly; it equals nothing. */
 const UNCOMPARABLE = Symbol("uncomparable");
-/** Deeper nesting than a blackboard value has (or a cycle) is never compared. */
+/** Deeper nesting than a blackboard value has is never compared. */
 const MAX_COPY_DEPTH = 32;
+/**
+ * More values than this in one Blackboard are never compared: the copy would cost
+ * as much as sanitizing, and a shared (acyclic) structure can expand exponentially.
+ */
+const MAX_COPY_NODES = 10_000;
 
 const isPlainObject = (value: object): boolean => {
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
 };
 
-function copyValue(value: unknown, depth: number): unknown {
+/** One `copyBlackboard` call: values visited so far, and the containers on the path being copied. */
+interface CopyState { nodes: number; ancestors: Set<object> }
+
+function copyValue(value: unknown, depth: number, state: CopyState): unknown {
+  if (++state.nodes > MAX_COPY_NODES) return UNCOMPARABLE;
   if (typeof value === "function") return UNCOMPARABLE;
   if (value === null || typeof value !== "object") return value;
   // A live object is compared by identity: its guid and class never change.
   if (value instanceof BObject) return value;
-  if (depth >= MAX_COPY_DEPTH) return UNCOMPARABLE;
-  if (Array.isArray(value)) {
-    const copy: unknown[] = [];
-    for (let index = 0; index < value.length; index++) copy.push(copyValue(value[index], depth + 1));
-    return copy;
-  }
+  // A container met again on its own path is a cycle; copying it again would not end.
+  if (depth >= MAX_COPY_DEPTH || state.ancestors.has(value)) return UNCOMPARABLE;
+  const array = Array.isArray(value);
   // Maps, Sets, Dates and class instances sanitize by their own rules; never claim them unchanged.
-  if (!isPlainObject(value)) return UNCOMPARABLE;
-  const copy: Record<string, unknown> = Object.create(null);
-  for (const key of Object.keys(value)) copy[key] = copyValue((value as Record<string, unknown>)[key], depth + 1);
+  if (!array && !isPlainObject(value)) return UNCOMPARABLE;
+  state.ancestors.add(value);
+  let copy: unknown;
+  if (array) {
+    const items: unknown[] = [];
+    for (let index = 0; index < value.length; index++) items.push(copyValue(value[index], depth + 1, state));
+    copy = items;
+  } else {
+    const fields: Record<string, unknown> = Object.create(null);
+    for (const key of Object.keys(value)) fields[key] = copyValue((value as Record<string, unknown>)[key], depth + 1, state);
+    copy = fields;
+  }
+  state.ancestors.delete(value);
   return copy;
 }
 
+/**
+ * Walks the baseline copy, a finite tree, with the live value beside it, so it
+ * visits at most the copy's nodes however the live value is shared or cyclic.
+ */
 function sameValue(baseline: unknown, live: unknown, depth: number): boolean {
   if (baseline === UNCOMPARABLE) return false;
   if (baseline === live) return true;
@@ -73,7 +93,16 @@ function sameValue(baseline: unknown, live: unknown, depth: number): boolean {
  */
 export function copyBlackboard(values: BlackboardValues): BlackboardValues {
   const copy: BlackboardValues = Object.create(null);
-  for (const key of Object.keys(values)) copy[key] = copyValue(values[key], 0);
+  const state: CopyState = { nodes: 0, ancestors: new Set() };
+  for (const key of Object.keys(values)) {
+    try {
+      copy[key] = copyValue(values[key], 0, state);
+    } catch {
+      // A throwing getter or proxy is for sanitizing to report, as it always has.
+      state.ancestors.clear();
+      copy[key] = UNCOMPARABLE;
+    }
+  }
   return copy;
 }
 
@@ -85,12 +114,16 @@ export function copyBlackboard(values: BlackboardValues): BlackboardValues {
  * it never descends into a live actor or component.
  */
 export function sameBlackboard(baseline: BlackboardValues, live: BlackboardValues): boolean {
-  const keys = Object.keys(baseline);
-  if (keys.length !== Object.keys(live).length) return false;
-  for (const key of keys) {
-    if (!Object.hasOwn(live, key) || !sameValue(baseline[key], live[key], 0)) return false;
+  try {
+    const keys = Object.keys(baseline);
+    if (keys.length !== Object.keys(live).length) return false;
+    for (const key of keys) {
+      if (!Object.hasOwn(live, key) || !sameValue(baseline[key], live[key], 0)) return false;
+    }
+    return true;
+  } catch {
+    return false;
   }
-  return true;
 }
 
 function inspectType(type: BlackboardDocument["keys"][number]["type"]): string {
