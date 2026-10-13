@@ -11,9 +11,20 @@ inheritance still follows reparented descendants before drawing.
 
 `SceneLayerOverlay` indexes World actors by Scene Layer and guid, rebuilt only when
 `World.structuralRevision` changes. Each layer's layout reads its own actors and
-virtualization its guid index, so a publishing tick without spawns or destroys
-does no world-wide grouping. Layout inputs are still rebuilt and compared every
-tick: transforms and component variables are not covered by the revision.
+virtualization receives that layer's actors and the guid index, so a publishing
+tick without spawns or destroys does no world-wide grouping or scan. Virtualization
+walks an actor's ancestors only when it owns a virtualized container.
+
+A layer's layout inputs are built only when something they read may have changed
+(`SceneLayerLayoutGate`, `packages/runtime/src/scene-layer-layout-gate.ts`). After
+each layout the gate records the listed actors and owners, each owner's
+`variablesRevision` and component `parentId`, the live transform numbers the
+layout left behind, pixels per unit, the safe-area insets and the texture sizes it
+measured. The next publishing tick re-reads exactly those without allocating; any
+difference (a variable write, an in-place transform mutation by scripts, physics or
+anchors, a resize, a texture size that loaded since) takes the full layout path,
+which still compares the built inputs and re-records. A write to any variable of
+an owner takes that path once, even for a non-layout variable.
 
 ## One world Scene, overlay stack
 
