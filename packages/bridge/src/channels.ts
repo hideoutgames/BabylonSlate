@@ -262,7 +262,15 @@ export type ControlMessage =
       /** Requested Models the host could not cook (source not loaded, or no triangles). */
       unavailable?: string[];
     }
-  | { type: "loadNavMesh"; bytes: ArrayBuffer }
+  | {
+      type: "loadNavMesh";
+      /**
+       * The Play scene's baked navmesh. The host posts it transferred, so it must be a
+       * private buffer. Omit it when `load.sceneNavmeshBytes` already carries the Play
+       * scene's mesh: the worker then imports that catalog entry instead of a second copy.
+       */
+      bytes?: ArrayBuffer;
+    }
   | { type: "play" }
   | { type: "step" }
   | { type: "stop" }

@@ -179,4 +179,27 @@ describe("RuntimeNavigation", () => {
       runtime.stop();
     }
   });
+
+  it("imports the Play scene's catalogued mesh when loadNavMesh carries no bytes", async () => {
+    const bytes = await generateNavMesh(ground);
+    const catalogued = createInProcessRuntime({
+      seed: 1, seedDemoActors: false, playScene: scene([]), playSceneGuid: "level", sceneNavmeshBytes: { level: bytes },
+    });
+    const uncatalogued = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene([]), playSceneGuid: "level" });
+    try {
+      await catalogued.loadNavMesh();
+      await uncatalogued.loadNavMesh();
+      for (const runtime of [catalogued, uncatalogued]) {
+        runtime.start();
+        runtime.realizePlayWorld();
+      }
+      // The mesh is still in place once the Play world has realized.
+      expect(catalogued.findNavPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 })).toHaveLength(2);
+      // A Scene without a baked mesh stays navigation-free.
+      expect(uncatalogued.findNavPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 })).toEqual([]);
+    } finally {
+      catalogued.stop();
+      uncatalogued.stop();
+    }
+  });
 });

@@ -471,6 +471,34 @@ describe("playSessionBootControls", () => {
     );
   });
 
+  it("imports the startup navmesh from the load catalog instead of sending it again", () => {
+    const startup = new Uint8Array([1, 2, 3, 4]);
+    const controls = playSessionBootControls({
+      load: { type: "load", sceneAssetGuid: "level-1", sceneNavmeshBytes: { "level-1": startup, "level-2": new Uint8Array([9]) } },
+      navmeshBytes: startup,
+    });
+    // The control stays between load and play, so the mesh imports before the world realizes.
+    expect(controls).toEqual([controls[0], { type: "loadNavMesh" }, { type: "play" }]);
+  });
+
+  it("sends one private buffer when the load catalog lacks the startup navmesh", () => {
+    const storage = new Uint8Array([0, 5, 6, 7, 0]);
+    const startup = storage.subarray(1, 4);
+    for (const catalog of [undefined, { "level-1": new Uint8Array([5, 6, 7]) }]) {
+      const controls = playSessionBootControls({
+        load: { type: "load", sceneAssetGuid: "level-1", ...(catalog ? { sceneNavmeshBytes: catalog } : {}) },
+        navmeshBytes: startup,
+      });
+      const navmesh = controls.find((control) => control.type === "loadNavMesh");
+      expect(navmesh).toEqual({ type: "loadNavMesh", bytes: expect.any(ArrayBuffer) });
+      const bytes = (navmesh as { bytes: ArrayBuffer }).bytes;
+      expect([...new Uint8Array(bytes)]).toEqual([5, 6, 7]);
+      // Transferring it must not detach the Play content the next session reuses.
+      expect(bytes).not.toBe(startup.buffer);
+      expect(startup.byteLength).toBe(3);
+    }
+  });
+
   it("sends loadModels before play", () => {
     const controls = playSessionBootControls({
       load: { type: "load", sceneAssetGuid: "play-scene" },

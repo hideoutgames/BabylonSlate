@@ -8,7 +8,9 @@ class FakeWorker {
   onmessage: ((event: MessageEvent<BridgeWorkerMessage>) => void) | null = null;
   terminate = vi.fn();
   constructor() { FakeWorker.instance = this; }
-  postMessage(message: BridgeHostMessage) {
+  posted: Array<{ message: BridgeHostMessage; transfer: Transferable[] }> = [];
+  postMessage(message: BridgeHostMessage, transfer: Transferable[] = []) {
+    this.posted.push({ message, transfer });
     if (message.channel === "snapshotLayoutAck") FakeWorker.events.push(`ack ${message.generation}`);
   }
   receive(message: BridgeWorkerMessage) {
@@ -47,4 +49,15 @@ it("hands the rest of a batch to nobody once a command's handler terminates the 
   host.onCommand((command) => { if (command.type === "log" && command.message === "a") host.terminate(); });
   FakeWorker.instance.receive({ channel: "commands", payload: [log("a"), log("b")] });
   expect(FakeWorker.events).toEqual(["a"]);
+});
+
+it("moves a navmesh buffer to the worker but still clones the load catalog the next session reuses", () => {
+  const host = createGameWorkerHost();
+  const startup = new Uint8Array([1, 2, 3]);
+  const buffer = new Uint8Array([4, 5, 6]).buffer;
+  host.postControl({ type: "load", sceneAssetGuid: "level", sceneNavmeshBytes: { level: startup } });
+  host.postControl({ type: "loadNavMesh", bytes: buffer });
+  host.postControl({ type: "loadNavMesh" });
+
+  expect(FakeWorker.instance.posted.map(({ transfer }) => transfer)).toEqual([[], [buffer], []]);
 });

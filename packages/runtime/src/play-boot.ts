@@ -18,7 +18,8 @@ export type PlayBootRuntime = {
   getWorld(): { getActors(): readonly { classId: string }[] };
   spawnScriptedActor(options: PlaySpawnEntry): unknown;
   loadPhysics(): Promise<void>;
-  loadNavMesh?(bytes: Uint8Array): Promise<void>;
+  /** `bytes` omitted: import the Play scene mesh `load` already catalogued. */
+  loadNavMesh?(bytes?: Uint8Array): Promise<void>;
   start(): void;
   resume(): void;
   reportError(error: unknown): void;
@@ -58,7 +59,7 @@ export function createPlayBootCoordinator() {
       });
       return ready;
     },
-    queueNavMesh(runtime: PlayBootRuntime, bytes: Uint8Array) {
+    queueNavMesh(runtime: PlayBootRuntime, bytes?: Uint8Array) {
       if (!runtime.loadNavMesh) return;
       const signal = cancellation.signal;
       navReady = runtime.loadNavMesh(bytes).catch((error) => {

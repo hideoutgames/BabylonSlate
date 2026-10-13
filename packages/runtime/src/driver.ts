@@ -1645,15 +1645,18 @@ class InProcessRuntime implements RuntimeDriver {
     this.physics.registerComplexCollisionMeshes(meshes, unavailable);
   }
 
-  async loadNavMesh(bytes: Uint8Array): Promise<void> {
+  async loadNavMesh(bytes?: Uint8Array): Promise<void> {
     const lifecycleId = this.lifecycleId;
     const sceneGuid = this.playSceneGuid;
-    this.navigation.setSceneNavMesh(sceneGuid, bytes);
+    // A host that already sent `sceneNavmeshBytes` omits the startup mesh here instead of sending it twice.
+    const navmesh = bytes ?? this.navigation.sceneNavMesh(sceneGuid);
+    if (!navmesh) return;
+    if (bytes) this.navigation.setSceneNavMesh(sceneGuid, bytes);
     await initNavigation();
     if (this.stopped || lifecycleId !== this.lifecycleId) throw sceneRealizationCancelled();
     this.navigation.markInitialized();
     if (sceneGuid !== this.playSceneGuid) return;
-    this.navigation.importNavMesh(sceneGuid, bytes);
+    this.navigation.importNavMesh(sceneGuid, navmesh);
     if (this.sceneRealizer.realized) {
       this.navigation.registerAgents();
       this.navigation.registerObstacles();

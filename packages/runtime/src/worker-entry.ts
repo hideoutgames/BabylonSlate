@@ -399,7 +399,7 @@ function handleControl(msg: ControlMessage): void {
     }
     case "loadNavMesh": {
       const rt = ensureRuntime();
-      boot.queueNavMesh(rt, new Uint8Array(msg.bytes));
+      boot.queueNavMesh(rt, msg.bytes ? new Uint8Array(msg.bytes) : undefined);
       return;
     }
     case "play": {
