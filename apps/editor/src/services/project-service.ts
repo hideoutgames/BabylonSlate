@@ -73,6 +73,7 @@ import {
   encodeBabasset,
   carryStoredChunks,
   storedBabassetMatches,
+  verifyChunksBeforeWrite,
   audioReverbChunk,
   isCarriedChunk,
   AUDIO_REVERB_CHUNK_ID,
@@ -2548,7 +2549,10 @@ export class ProjectService {
         ),
       },
     );
-    await this.storeDocumentBytes(path, stored, bytes);
+    await this.storeDocumentBytes(path, stored, bytes, this.assetRegistry, [
+      DOCUMENT_CHUNK_ID,
+      ...extraChunks.filter((chunk) => !isCarriedChunk(chunk)).map((chunk) => chunk.id),
+    ]);
     this.noteMigrated(path);
     if (pluginContentChanged && ownerPlugin) {
       // In the settings file's own write queue, so a PluginSettings save is
@@ -2698,19 +2702,34 @@ export class ProjectService {
    * is what it held): a save that changed nothing leaves the file, its mtime and
    * the registry's index alone, rather than invalidating everything keyed on the
    * registry's generation.
+   *
+   * `replaced` names the chunks whose bytes the caller supplied. Their stored
+   * bytes are verified first (`verifyChunksBeforeWrite`): a damaged inline copy
+   * is rewritten rather than skipped, and a damaged blob, which a write cannot
+   * repair, or a blob the container names that has gone missing, refuses the
+   * save as an unreadable asset always has, so the caller's copy stays dirty.
    */
   private async storeDocumentBytes(
     path: string,
     stored: AssetCatalogRead | null,
     bytes: Uint8Array,
     registry = this.assetRegistry,
+    replaced: readonly string[] = [DOCUMENT_CHUNK_ID],
   ): Promise<void> {
     const storage = this.storageForPath(path);
-    if (stored && await storedBabassetMatches(storage, stored, bytes)) {
-      const indexed = registry?.getByPath(path);
-      if (!registry || (indexed && stableStringify(indexed.header) === stableStringify(stored.header))) return;
-      await registry.reindexPath(path);
-      return;
+    if (stored) {
+      let intact: boolean;
+      try {
+        intact = await verifyChunksBeforeWrite(storage, this.blobsForPath(path), stored, bytes, replaced);
+      } catch (cause) {
+        throw new Error(`${path} could not be read, so it was not overwritten.`, { cause });
+      }
+      if (intact && await storedBabassetMatches(storage, stored, bytes)) {
+        const indexed = registry?.getByPath(path);
+        if (!registry || (indexed && stableStringify(indexed.header) === stableStringify(stored.header))) return;
+        await registry.reindexPath(path);
+        return;
+      }
     }
     await storage.writeBinary(path, bytes);
     await registry?.reindexPath(path);
@@ -2817,7 +2836,7 @@ export class ProjectService {
         chunks: [...kept, audioReverbChunk(baked.bytes)],
         writeBlob: (hash, data) => blobs.writeBlob(hash, data),
       });
-      await this.storeDocumentBytes(currentPath, stored, encoded, registry);
+      await this.storeDocumentBytes(currentPath, stored, encoded, registry, [AUDIO_REVERB_CHUNK_ID]);
     };
     if (asset) await registry!.withAssetWrite(asset.header.guid, write);
     else await write();

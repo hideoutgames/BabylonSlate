@@ -1,5 +1,4 @@
 import type { ProjectStorageReader } from "@babylonslate/core";
-import { SourceRevisionChangedError } from "@babylonslate/core";
 import {
   DEFAULT_BLOB_THRESHOLD,
   readBabassetHeader,
@@ -104,9 +103,11 @@ export async function carryStoredChunks(
 /**
  * True when writing `bytes` over the stored file would change nothing: the
  * same header, so the same identity, metadata, chunk digests, lengths and inline
- * layout, and the file is still the snapshot compared against. Every chunk
- * the new container names exists by then (an encode writes its blobs first), so
- * leaving the file alone is the same as rewriting it.
+ * layout, and the file is still the snapshot compared against. Call
+ * {@link verifyChunksBeforeWrite} first: it covers the blobs the container
+ * names and the stored bytes of the chunks the caller supplied. Any failure to
+ * confirm the snapshot (the file changed, was deleted, or cannot be read) is
+ * "does not match", so the caller writes.
  */
 export async function storedBabassetMatches(
   storage: ProjectStorageReader,
@@ -117,8 +118,78 @@ export async function storedBabassetMatches(
   try {
     await validateAssetSourceLocator(storage, stored.locator);
     return true;
-  } catch (error) {
-    if (error instanceof SourceRevisionChangedError) return false;
-    throw error;
+  } catch {
+    return false;
   }
+}
+
+/** Whether a stored chunk still has its recorded length and sha256 (a read that fails is not intact). */
+async function storedChunkIntact(
+  storage: ProjectStorageReader,
+  blobs: BlobStore,
+  stored: AssetCatalogRead,
+  entry: ChunkEntry,
+): Promise<boolean> {
+  try {
+    const span = inlineSpan(entry);
+    let data: Uint8Array;
+    if (span) {
+      const { locator } = stored;
+      data = (await storage.readBinaryRange(locator.path, locator.payloadOffset + span.offset, span.length, locator.storageRevision)).bytes;
+    } else {
+      const blob = "blob" in entry.locator ? entry.locator.blob : "";
+      if (blobs.blobByteLength && await blobs.blobByteLength(blob) !== entry.byteLength) return false;
+      data = await blobs.readBlob(blob);
+    }
+    return data.byteLength === entry.byteLength && await sha256Hex(data) === entry.sha256;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Checks `bytes`, the container about to replace the stored file, just before
+ * it is written (or skipped as a no-op):
+ *
+ * - Every blob it names must exist. {@link carryStoredChunks} confirmed the
+ *   carried ones earlier, and one deleted since would leave the asset
+ *   unreadable. Throws when one is missing. A blob deleted after this check
+ *   is not repaired.
+ * - `replaced` lists chunks whose bytes the caller supplied itself (the
+ *   document being saved, a fresh bake). When one keeps the digest the file
+ *   already stores, the stored bytes are kept in effect, not replaced: an
+ *   inline copy is rewritten from the supplied bytes, but a blob of the right
+ *   length with other bytes is never rewritten (a blob store keeps an existing
+ *   blob whose size matches), so a save would report success while the only
+ *   good copy lives in memory. Their stored bytes are verified: a damaged
+ *   stored blob throws, and a damaged or unreadable inline copy returns false.
+ *
+ * Resolves true when nothing stored needs repair, so leaving the file alone
+ * loses nothing; false when a write is needed to repair an inline copy.
+ */
+export async function verifyChunksBeforeWrite(
+  storage: ProjectStorageReader,
+  blobs: BlobStore,
+  stored: AssetCatalogRead,
+  bytes: Uint8Array,
+  replaced: readonly string[],
+): Promise<boolean> {
+  const next = readBabassetHeader(bytes);
+  for (const entry of next.chunks) {
+    if ("blob" in entry.locator && !(await blobs.hasBlob(entry.locator.blob))) {
+      throw new Error(`Blob ${entry.locator.blob} of chunk ${entry.id} is missing`);
+    }
+  }
+  let intact = true;
+  for (const id of replaced) {
+    const now = next.chunks.find((entry) => entry.id === id);
+    const before = stored.header.chunks.find((entry) => entry.id === id);
+    if (!now || !before || now.sha256 !== before.sha256) continue;
+    if (await storedChunkIntact(storage, blobs, stored, before)) continue;
+    if ("blob" in before.locator && "blob" in now.locator && before.locator.blob === now.locator.blob) {
+      throw new Error(`Stored blob of chunk ${id} is damaged and would be kept as it is`);
+    }
+    intact = false;
+  }
+  return intact;
 }

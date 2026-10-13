@@ -4,9 +4,11 @@ import {
   AUDIO_REVERB_CHUNK_ID,
   BLOBS_DIR,
   createVfsBlobStore,
+  decodeAssetDocument,
   decodeBabasset,
   DEFAULT_BLOB_THRESHOLD,
   encodeBabasset,
+  readAssetDocumentHeader,
   sha256Hex,
 } from "@babylonslate/assets";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
@@ -92,6 +94,10 @@ describe("a document save reuses what it stores", () => {
     const opened = (await service.loadDocument("texture", TEXTURE_PATH)) as Record<string, unknown>;
     const pixelsBlob = await blobPath(PIXELS);
     const reads = vi.spyOn(storage, "readBinary");
+    // Control: reading the chunk is seen through this spy.
+    await service.readAssetChunk(TEXTURE_PATH, "pixels");
+    expect(reads.mock.calls.map(([readPath]) => readPath)).toContain(pixelsBlob);
+    reads.mockClear();
 
     await service.saveDocument("texture", TEXTURE_PATH, { ...opened, usage: "pixelArt" });
 
@@ -117,6 +123,116 @@ describe("a document save reuses what it stores", () => {
   });
 });
 
+describe("a document save over damaged or changing storage", () => {
+  const path = "assets/Hero.class.babasset";
+  const content = { nodes: [], edges: [], properties: { label: "Hero" } };
+  const bigLabel = (letter: string) => letter.repeat(DEFAULT_BLOB_THRESHOLD + 10);
+
+  it("rewrites an identical save over a document chunk damaged at the same length, never reporting a clean no-op", async () => {
+    const { service, storage } = await scaffolded();
+    await service.saveDocument("graph", path, content, { parentClass: "Actor" });
+    const good = await storage.readBinary(path);
+    const damaged = good.slice();
+    // The document is the file's only chunk, stored inline at its end.
+    damaged[damaged.length - 1] ^= 0xff;
+    await storage.writeBinary(path, damaged);
+    const writes = vi.spyOn(storage, "writeBinary");
+
+    await service.saveDocument("graph", path, { ...content }, { parentClass: "Actor" });
+
+    expect(writes).toHaveBeenCalledTimes(1);
+    writes.mockRestore();
+    expect(await storage.readBinary(path)).toEqual(good);
+    await expect(decodeBabasset(await storage.readBinary(path))).resolves.toBeDefined();
+  });
+
+  it("refuses an identical save over a document blob damaged at the same length, yet still saves changed content", async () => {
+    const { service, storage } = await scaffolded();
+    const big = { ...content, properties: { label: bigLabel("x") } };
+    await service.saveDocument("graph", path, big, { parentClass: "Actor" });
+    const entry = readAssetDocumentHeader(await storage.readBinary(path)).chunks.find((chunk) => chunk.id === "document")!;
+    expect("blob" in entry.locator).toBe(true);
+    const blob = `${BLOBS_DIR}/${entry.sha256}`;
+    const damaged = (await storage.readBinary(blob)).slice();
+    damaged[0] ^= 0xff;
+    await storage.writeBinary(blob, damaged);
+    const before = await storage.readBinary(path);
+    const writes = vi.spyOn(storage, "writeBinary");
+
+    await expect(service.saveDocument("graph", path, { ...big }, { parentClass: "Actor" })).rejects.toThrow(/could not be read/);
+
+    expect(writes).not.toHaveBeenCalled();
+    writes.mockRestore();
+    expect(await storage.readBinary(path)).toEqual(before);
+    // The unsaved copy is not lost: changed content goes to a blob of its own.
+    await service.saveDocument("graph", path, { ...content, properties: { label: bigLabel("y") } }, { parentClass: "Actor" });
+    expect(await service.loadDocument("graph", path)).toMatchObject({ properties: { label: bigLabel("y") } });
+  });
+
+  it("refuses a save whose carried blob was deleted after the carry confirmed it", async () => {
+    const { service, storage } = await scaffolded();
+    await writeTexture(storage);
+    const opened = (await service.loadDocument("texture", TEXTURE_PATH)) as Record<string, unknown>;
+    const pixelsBlob = await blobPath(PIXELS);
+    const before = await storage.readBinary(TEXTURE_PATH);
+    const stat = storage.stat.bind(storage);
+    let deleted = false;
+    vi.spyOn(storage, "stat").mockImplementation(async (statPath) => {
+      const result = await stat(statPath);
+      // The carry has just confirmed the blob's size; now it disappears.
+      if (!deleted && statPath === pixelsBlob) {
+        deleted = true;
+        await storage.remove(pixelsBlob);
+      }
+      return result;
+    });
+
+    await expect(service.saveDocument("texture", TEXTURE_PATH, { ...opened, usage: "pixelArt" })).rejects.toThrow(/could not be read/);
+
+    expect(deleted).toBe(true);
+    expect(await storage.readBinary(TEXTURE_PATH)).toEqual(before);
+  });
+
+  it("refreshes the index when the file already holds the saved content but the registry describes another version", async () => {
+    const { service, storage } = await scaffolded();
+    await service.saveDocument("graph", path, content, { parentClass: "Actor" });
+    // Another session saves the same content under another parent Class; this registry has not rescanned.
+    const other = new ProjectService(storage);
+    await other.loadCurrentProject();
+    await other.saveDocument("graph", path, content, { parentClass: "Pawn" });
+    expect(service.registry!.getByPath(path)!.header.parentClass).toBe("Actor");
+    const writes = vi.spyOn(storage, "writeBinary");
+
+    await service.saveDocument("graph", path, { ...content }, { parentClass: "Pawn" });
+
+    expect(writes).not.toHaveBeenCalled();
+    expect(service.registry!.getByPath(path)!.header.parentClass).toBe("Pawn");
+  });
+
+  it("writes rather than skips when another writer changed the file after its header was read", async () => {
+    const { service, storage } = await scaffolded();
+    await service.saveDocument("graph", path, content, { parentClass: "Actor" });
+    const other = new ProjectService(storage);
+    await other.loadCurrentProject();
+    const read = storage.readBinaryRange.bind(storage);
+    let changed = false;
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (...args) => {
+      // The first zero-length read checks that the header read is still the file.
+      if (!changed && args[0] === path && args[2] === 0) {
+        changed = true;
+        await other.saveDocument("graph", path, { ...content, properties: { label: "Outside" } }, { parentClass: "Actor" });
+      }
+      return read(...args);
+    });
+
+    await service.saveDocument("graph", path, { ...content }, { parentClass: "Actor" });
+
+    expect(changed).toBe(true);
+    // Skipping against the stale snapshot would have left the outside version in place.
+    expect((await decodeAssetDocument(await storage.readBinary(path))).payload).toMatchObject({ properties: { label: "Hero" } });
+  });
+});
+
 describe("a Scene's reverb bake", () => {
   /** A Scene saved with a wall, read back as the bake sees it (its geometry fingerprint matches the file's). */
   async function savedScene(service: ProjectService): Promise<SerializedScene> {
@@ -130,14 +246,16 @@ describe("a Scene's reverb bake", () => {
     const scene = await savedScene(service);
     const stale = bigBytes(3);
     await service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, stale, asRecord(scene));
+    const reads = vi.spyOn(storage, "readBinary");
+    // Control: the stored chunk is there, and reading it is seen through this spy.
     expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(stale);
-    expect(await storage.exists(await blobPath(stale))).toBe(true);
+    expect(reads.mock.calls.map(([readPath]) => readPath)).toContain(await blobPath(stale));
+    reads.mockClear();
     const edited = structuredClone(scene);
     edited.actors[0]!.transform.position[0] = 50;
     const fresh = new Uint8Array([1, 2, 3]);
     // Baked for the edited geometry; it reaches the file with the Scene's Save.
     await service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, fresh, asRecord(edited));
-    const reads = vi.spyOn(storage, "readBinary");
 
     await service.saveDocument("scene", MAIN_SCENE_FILE, edited);
 
@@ -155,6 +273,10 @@ describe("a Scene's reverb bake", () => {
     const reopened = new ProjectService(storage);
     await reopened.loadCurrentProject();
     const reads = vi.spyOn(storage, "readBinary");
+    // Control: reading the stored chunk is seen through this spy.
+    expect(await reopened.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(reverb);
+    expect(reads.mock.calls.map(([readPath]) => readPath)).toContain(await blobPath(reverb));
+    reads.mockClear();
 
     await reopened.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "Renamed" });
 
@@ -171,6 +293,10 @@ describe("a Scene's reverb bake", () => {
     await service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, navmesh, asRecord(scene));
     const reverb = new Uint8Array([4, 5, 6]);
     const reads = vi.spyOn(storage, "readBinary");
+    // Control: reading the navmesh is seen through this spy.
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(navmesh);
+    expect(reads.mock.calls.map(([readPath]) => readPath)).toContain(await blobPath(navmesh));
+    reads.mockClear();
 
     await service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, reverb, asRecord(scene));
 
