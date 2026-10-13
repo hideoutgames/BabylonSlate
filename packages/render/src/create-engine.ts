@@ -253,6 +253,7 @@ import {
   applyEditorMaterialFreeze,
   pendingSceneTextures,
   prewarmSceneMaterials as warmSceneMaterials,
+  SCENE_DRIVER_COMPILE_TIMEOUT_MS,
   SCENE_LOOKUP_MAPS,
   SCENE_FIRST_FRAME_TIMEOUT_MS,
   SCENE_SHADER_WARM_TIMEOUT_MS,
@@ -2617,13 +2618,16 @@ function initializeEngine(
           // A validated draw is progress beyond shader readiness. Observed
           // software-GL completion can outlast that earlier budget even after
           // the canvas copy. Give completion its own bounded budget, without
-          // acknowledging before both this owner's fence and copy finish.
+          // acknowledging before both this owner's fence and copy finish. The
+          // fence is polled without blocking, so this budget also spans the
+          // driver compiling the draw's programs: the longest compile the
+          // loading budgets already tolerate.
           if (!pending.completionStarted) {
             pending.completionStarted = true;
             clearTimeout(pending.timer);
             pending.timer = setTimeout(() => {
               if (pendingPresentations.get(key) === pending) expirePresentation(key);
-            }, 15_000);
+            }, SCENE_DRIVER_COMPILE_TIMEOUT_MS);
           }
         }
         void submission.completed.then(() => {

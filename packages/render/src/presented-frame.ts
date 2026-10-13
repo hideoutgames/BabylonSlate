@@ -6,6 +6,9 @@ type SubmissionDevice = {
   queue: { onSubmittedWorkDone: () => Promise<void> };
 };
 
+/** Fence waits in flight per WebGL context, oldest first, that collect the errors raised since their draw. */
+const awaitingFence = new WeakMap<object, Array<{ errors: number[] }>>();
+
 /** A single owner's synchronous draw; scopes never survive into another owner. */
 export function submitPresentedFrame(engine: AbstractEngine, draw: () => void): {
   completed: Promise<void>;
@@ -70,19 +73,28 @@ export function submitPresentedFrame(engine: AbstractEngine, draw: () => void): 
       }
       throw new Error("The WebGL error state could not be cleared before scene presentation.");
     };
+    // A WebGL status query is a synchronous round trip that waits for every
+    // queued command. The driver compiles the draw's programs inside the draw's
+    // submission (over 20 s cold on D3D11), so no query may sit between the draw
+    // and its fence: the fence is created and flushed straight after the draw,
+    // polled without blocking, and the sticky error state is read once it signals.
     const previous = readErrors();
-    if (previous.length) console.warn(`[render] Pre-existing WebGL errors before scene presentation: ${previous.join(", ")}`);
-    draw();
-    const errors = readErrors();
-    if (errors.length) {
-      const message = `Scene presentation WebGL errors: ${errors.join(", ")}`;
-      console.warn(`[render] ${message}`);
-      throw new Error(message);
+    if (previous.length) {
+      // Errors found while an earlier owner still waits on its fence were raised
+      // after that owner's own pre-draw read, so they are its errors, not stale ones.
+      const earlier = gl && awaitingFence.get(gl)?.at(-1);
+      if (earlier) earlier.errors.push(...previous);
+      else console.warn(`[render] Pre-existing WebGL errors before scene presentation: ${previous.join(", ")}`);
     }
+    draw();
     if (gl?.fenceSync && gl.clientWaitSync) {
       const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
       if (!fence) throw new Error("The scene GPU completion fence could not be created.");
       try { gl.flush(); } catch (error) { gl.deleteSync(fence); throw error; }
+      const claim = { errors: [] as number[] };
+      const claims = awaitingFence.get(gl) ?? [];
+      claims.push(claim);
+      awaitingFence.set(gl, claims);
       work = new Promise<void>((resolve, reject) => {
         let timer: ReturnType<typeof setTimeout> | undefined;
         let settled = false;
@@ -91,6 +103,7 @@ export function submitPresentedFrame(engine: AbstractEngine, draw: () => void): 
           settled = true;
           if (timer !== undefined) clearTimeout(timer);
           controller.signal.removeEventListener("abort", abort);
+          claims.splice(claims.indexOf(claim), 1);
           try { gl.deleteSync(fence); } catch (cleanupError) { error = new AggregateError([error, cleanupError].filter((entry) => entry !== undefined), "Scene fence cleanup failed."); }
           if (error !== undefined) reject(error);
           else resolve();
@@ -101,14 +114,29 @@ export function submitPresentedFrame(engine: AbstractEngine, draw: () => void): 
             if (gl.isContextLost()) throw new Error("Rendering context was lost during scene presentation.");
             const status = gl.clientWaitSync(fence, 0, 0);
             if (status === gl.WAIT_FAILED) throw new Error("The scene GPU completion wait failed.");
-            if (status === gl.ALREADY_SIGNALED || status === gl.CONDITION_SATISFIED) finish();
-            else timer = setTimeout(poll, 4);
+            if (status === gl.ALREADY_SIGNALED || status === gl.CONDITION_SATISFIED) {
+              // The GPU is done with this draw, so the read no longer waits on it.
+              const errors = [...claim.errors, ...readErrors()];
+              if (errors.length) {
+                const message = `Scene presentation WebGL errors: ${errors.join(", ")}`;
+                console.warn(`[render] ${message}`);
+                throw new Error(message);
+              }
+              finish();
+            } else timer = setTimeout(poll, 4);
           } catch (error) { finish(error); }
         };
         controller.signal.addEventListener("abort", abort, { once: true });
         poll();
       });
     } else {
+      // No fence (WebGL1): finish() blocks until the draw completes anyway.
+      const errors = readErrors();
+      if (errors.length) {
+        const message = `Scene presentation WebGL errors: ${errors.join(", ")}`;
+        console.warn(`[render] ${message}`);
+        throw new Error(message);
+      }
       gl?.finish();
       work = Promise.resolve();
     }
