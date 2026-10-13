@@ -1770,9 +1770,7 @@ export class ProjectService {
       }
       return this.derivedStorage;
     }
-    const indexed = this.assetRegistry
-      ?.list()
-      .find((asset) => asset.path === path);
+    const indexed = this.assetRegistry?.getByPath(path);
     if (indexed && this.assetRegistry) {
       return this.assetRegistry.storageFor(indexed.rootId);
     }
@@ -1784,9 +1782,7 @@ export class ProjectService {
   }
 
   private blobsForPath(path: string): BlobStore {
-    const indexed = this.assetRegistry
-      ?.list()
-      .find((asset) => asset.path === path);
+    const indexed = this.assetRegistry?.getByPath(path);
     if (indexed && this.assetRegistry) {
       return this.assetRegistry.blobsFor(indexed.rootId);
     }
@@ -1887,7 +1883,7 @@ export class ProjectService {
     const before = registry?.getByGuid(guid);
     if (!registry || !before) throw new Error("The asset is unavailable.");
     const nextPath = renamedAssetPath(before.path, newName);
-    if (nextPath !== before.path && registry.list().some((asset) => asset.path === nextPath)) {
+    if (nextPath !== before.path && registry.getByPath(nextPath)) {
       throw new Error(`Target path already exists: ${nextPath}`);
     }
     if (before.header.type !== "Class") {

@@ -1,6 +1,6 @@
 import { createDefaultWaterDefinition, normalizeWaterDefinition, createDefaultRenderTargetPayload, createDefaultRenderTargetTexturePayload, normalizeRenderTargetTexturePayload, createDefaultRenderTargetCaptureProperties, renderTargetAssetGuidsFromGraph, type WaterStyle, type WaterStylizedLook } from "@babylonslate/core";
 import { createDataDefinitionAsset, createDataTreeAsset, type DataDefinitionAsset, type DataTreeAsset } from "@babylonslate/core";
-import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
+import type { AssetRegistry, ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
   collectAssetDependencyMetadata,
@@ -1506,6 +1506,23 @@ export function classParentLookup(
     if (isSceneAssetClassId(id) && id !== "Scene") return "Scene";
     return byId.get(id) ?? engineParentOf(id) ?? null;
   };
+}
+
+const registryParentLookups = new WeakMap<object, { generation: number; parentOf: (id: string) => string | null }>();
+
+/**
+ * `classParentLookup(registry.list())`, rebuilt only when the registry's catalog has
+ * changed since the last call. Callers on hot paths (Play preparation, dock layout
+ * changes) otherwise copy the catalog and re-derive every Class id on each call.
+ */
+export function registryClassParentLookup(registry: Pick<AssetRegistry, "generation" | "list"> | null | undefined): (id: string) => string | null {
+  if (!registry) return classParentLookup([]);
+  const generation = registry.generation;
+  const cached = registryParentLookups.get(registry);
+  if (cached?.generation === generation) return cached.parentOf;
+  const parentOf = classParentLookup(registry.list());
+  registryParentLookups.set(registry, { generation, parentOf });
+  return parentOf;
 }
 
 function isEngineClassId(classId: string): boolean {

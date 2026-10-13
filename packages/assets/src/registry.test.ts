@@ -1623,6 +1623,35 @@ describe("AssetRegistry generation", () => {
     expect(registry.requiredDependenciesFor("scene")).toEqual(["class-goblin"]);
     expect(registry.showReferences("class-goblin").inbound).toEqual(["scene"]);
   });
+
+  it("reports each Class's symbolic referrers together and follows referrers that are removed or added", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    const base = { dependencyMetadataVersion: 1, dependencies: [], requiredDependencies: [], requiredVariableNames: [] };
+    const writeClass = async (name: string, guid: string) => storage.writeBinary(`assets/${name}.class.babasset`, await encodeAssetDocument(
+      { type: "Class", name, guid, version: 1, payload: { members: [] } }, { parentClass: null, dependencyMetadata: base },
+    ));
+    const writeScene = async (guid: string, classes: string[]) => storage.writeBinary(`assets/${guid}.scene.babasset`, await encodeAssetDocument(
+      { type: "Scene", name: guid, guid, version: 1, payload: { name: guid, actors: classes.map((classId, index) => ({ id: `a${index}`, classId, components: [] })) } },
+      { parentClass: null, dependencyMetadata: { ...base, classReferences: classes, requiredClassReferences: classes } },
+    ));
+    await writeClass("Goblin", "class-goblin");
+    await writeClass("Orc", "class-orc");
+    await writeScene("scene-b", ["Goblin"]);
+    await writeScene("scene-a", ["Goblin", "Orc"]);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    expect(registry.showReferences("class-goblin").inbound).toEqual(["scene-a", "scene-b"]);
+    expect(registry.showReferences("class-orc").inbound).toEqual(["scene-a"]);
+    expect(registry.showReferences("scene-a").inbound).toEqual([]);
+
+    await registry.deleteAsset("scene-a");
+    expect(registry.showReferences("class-goblin").inbound).toEqual(["scene-b"]);
+    expect(registry.showReferences("class-orc").inbound).toEqual([]);
+    await writeScene("scene-c", ["Orc"]);
+    await registry.reindexPath("assets/scene-c.scene.babasset");
+    expect(registry.showReferences("class-orc").inbound).toEqual(["scene-c"]);
+  });
 });
 
 describe("ThumbnailDecodeLru", () => {

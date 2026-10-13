@@ -199,6 +199,8 @@ export class AssetRegistry {
   private readonly clock: RegistryGenerationClock;
   /** Class alias index of the catalog as of `generation`; dropped when any index change advances it. */
   private classAliasMemo: { generation: number; index: ClassAliasIndex } | null = null;
+  /** Symbolic inbound references of the catalog as of `generation`; dropped like `classAliasMemo`. */
+  private symbolicInboundMemo: { generation: number; index: ReadonlyMap<string, readonly string[]> } | null = null;
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
@@ -533,6 +535,29 @@ export class AssetRegistry {
     return this.classAliasMemo.index;
   }
 
+  /**
+   * Guid of each asset -> guids of the assets whose symbolic Class references resolve to it,
+   * from the catalog as of `generation`. One pass over the catalog answers `showReferences`
+   * for every asset, instead of one pass per asset asked about.
+   */
+  private symbolicInbound(): ReadonlyMap<string, readonly string[]> {
+    const generation = this.generation;
+    if (this.symbolicInboundMemo?.generation !== generation) {
+      const index = new Map<string, string[]>();
+      for (const asset of this.byGuid.values()) {
+        if (!asset.header.classReferences?.length) continue;
+        // `resolveDependenciesWithClassAliases` returns each target once.
+        for (const target of resolveDependenciesWithClassAliases({ ...asset.header, dependencies: [] }, () => this.classAliases())) {
+          const referrers = index.get(target);
+          if (referrers) referrers.push(asset.header.guid);
+          else index.set(target, [asset.header.guid]);
+        }
+      }
+      this.symbolicInboundMemo = { generation, index };
+    }
+    return this.symbolicInboundMemo.index;
+  }
+
   getByPath(path: string): IndexedAsset | undefined {
     return this.byPath.get(path);
   }
@@ -599,11 +624,7 @@ export class AssetRegistry {
 
   /** Resolve symbolic classes alongside GUID edges without reading any payloads. */
   showReferences(guid: string): { outbound: string[]; inbound: string[] } {
-    const symbolicInbound = this.byGuid.has(guid) ? this.list().filter(asset =>
-      asset.header.classReferences?.length && resolveDependenciesWithClassAliases(
-        { ...asset.header, dependencies: [] }, () => this.classAliases(),
-      ).includes(guid),
-    ).map(asset => asset.header.guid) : [];
+    const symbolicInbound = this.byGuid.has(guid) ? this.symbolicInbound().get(guid) ?? [] : [];
     return {
       outbound: this.dependenciesFor(guid),
       inbound: [...new Set([
