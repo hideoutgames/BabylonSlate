@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   applyTexturePixelSizesToSpriteAnimation,
   createDefaultSpriteAnimationPayload,
@@ -1030,6 +1030,45 @@ describe("PhysicsWorldSync MeshComponent collision", () => {
     expect(backend.sphereOverlap({ x: 0, y: 0, z: 0 }, 0.2).actorIds).toContain(
       "rock",
     );
+    sync.dispose();
+  });
+});
+
+describe("PhysicsWorldSync actor candidates", () => {
+  it("considers only actors that own a physics component class and creates bodies in world order as the world changes", () => {
+    const world = createWorld();
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const created = vi.spyOn(backend, "createBody");
+    const considered = new Set<string>();
+    const sync = new PhysicsWorldSync(backend, { actorFilter: (actor) => (considered.add(actor.guid), true) });
+    const spawnPlain = (guid: string) => {
+      const actor = world.createActor({ classId: "Actor", guid });
+      actor.attachComponent(world.createComponent({ classId: "LightComponent" }));
+      return world.spawnActorNow(actor);
+    };
+    const bodies = () => created.mock.calls.map(([desc]) => desc.actorId);
+    const light = spawnPlain("light-a");
+    spawnBoxActor(world, { guid: "box-a", motionType: "static" });
+    spawnPlain("light-b");
+    spawnBoxActor(world, { guid: "box-b", motionType: "static" });
+    sync.syncFromWorld(world);
+    expect(bodies()).toEqual(["box-a", "box-b"]);
+    expect([...considered].sort()).toEqual(["box-a", "box-b"]);
+
+    // A component attached to the first actor and a new actor last: each body appears, in world order.
+    created.mockClear();
+    light.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType: "static", mass: 0 } }));
+    light.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } }));
+    spawnBoxActor(world, { guid: "box-c", motionType: "static" });
+    sync.syncFromWorld(world);
+    expect(bodies()).toEqual(["light-a", "box-c"]);
+    expect([...considered].sort()).toEqual(["box-a", "box-b", "box-c", "light-a"]);
+
+    world.destroyActor("box-a");
+    world.flushPending();
+    sync.syncFromWorld(world);
+    expect(backend.getBodyTransform("body:box-a")).toBeNull();
+    expect(backend.getBodyTransform("body:box-b")).not.toBeNull();
     sync.dispose();
   });
 });

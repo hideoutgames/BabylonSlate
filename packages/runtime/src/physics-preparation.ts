@@ -1,4 +1,4 @@
-import type { Actor } from "@babylonslate/object-model";
+import type { Actor, World } from "@babylonslate/object-model";
 import type { Transform } from "@babylonslate/core";
 import {
   actorParentGuid,
@@ -125,6 +125,34 @@ const PARTICIPANT_CLASSES = new Set([
   "BlockingVolumeComponent",
   "TilemapComponent",
 ]);
+
+const participants = new WeakMap<World, { revision: number; actors: readonly Actor[] }>();
+
+/**
+ * The World's actors that own a component of a physics participant class, in World order: the only actors a
+ * physics pass can find a body or a transform source on. Ownership changes only with the world structure (spawn,
+ * destroy, attach), so one filter of the actor list serves every pass until the next structural change. The list
+ * is a superset of the live participants (a destroyed or disabled component keeps its owner listed); eligibility
+ * and `hasParticipantComponent` still decide each actor on every pass. A list is never mutated once built.
+ */
+export function physicsParticipantActors(world: World): readonly Actor[] {
+  const revision = world.structuralRevision;
+  let entry = participants.get(world);
+  if (entry?.revision !== revision) {
+    const actors: Actor[] = [];
+    for (const actor of world.getActors()) {
+      for (const component of actor.components) {
+        if (PARTICIPANT_CLASSES.has(component.classId)) {
+          actors.push(actor);
+          break;
+        }
+      }
+    }
+    entry = { revision, actors };
+    participants.set(world, entry);
+  }
+  return entry.actors;
+}
 
 /**
  * Containers and unparented poses one world's per-tick composition reuses, so a

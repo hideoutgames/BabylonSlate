@@ -210,6 +210,10 @@ export class WaterWorld {
   private readonly sourceBodies: Array<WaterBodyProperties | null> = [];
   private readonly composed: Actor[] = [];
   private readonly byGuid = new Map<string, Actor>();
+  /** The world whose own registry answers the current evaluation's guid lookups; null: `byGuid` indexes its actors. */
+  private lookupWorld: World | null = null;
+  private readonly actorByGuid = (guid: string): Actor | undefined =>
+    this.lookupWorld ? this.lookupWorld.findActor(guid) : this.byGuid.get(guid);
   private readonly defaultWater = createDefaultWaterDefinition();
   private readonly worldOf: (actors: readonly Actor[]) => World | null;
   /** The world structure last scanned for components water reacts to, and whether it held any. */
@@ -288,6 +292,7 @@ export class WaterWorld {
       // A throwing pass must not leave its actors in the next pass's scratch.
       this.sourceActors.length = this.sourceComponents.length = this.sourceBodies.length = this.composed.length = 0;
       this.byGuid.clear();
+      this.lookupWorld = null;
     }
   }
 
@@ -391,19 +396,23 @@ export class WaterWorld {
     for (let owner: Actor | undefined = actor; owner && !inputs.has(owner);) {
       inputs.record(owner);
       const parentId = actorParentGuid(owner);
-      owner = parentId ? this.byGuid.get(parentId) : undefined;
+      owner = parentId ? this.actorByGuid(parentId) : undefined;
     }
   }
 
   /** Compose the selected sources; a parent cycle falls back to the whole-world pass. */
   private composeSources(state: WaterState, actors: readonly Actor[]): Map<string, Transform> {
-    const byGuid = this.byGuid;
-    byGuid.clear();
-    for (const actor of actors) byGuid.set(actor.guid, actor);
+    // A world's own actor list is exactly what its guid registry holds (guids are fixed and unique), so the registry
+    // answers lookups and no index over every actor is built; any other list is indexed.
+    const world = this.lookupWorld = this.worldOf(actors);
+    if (!world) {
+      this.byGuid.clear();
+      for (const actor of actors) this.byGuid.set(actor.guid, actor);
+    }
     const transforms = state.transforms;
     transforms.clear();
     // A parent cycle makes poses depend on world order.
-    if (!composeActorWorldTransformsInto((guid) => byGuid.get(guid), this.composed, transforms)) return transforms;
+    if (!composeActorWorldTransformsInto(this.actorByGuid, this.composed, transforms)) return transforms;
     state.transforms = actorWorldTransforms(actors);
     return state.transforms;
   }

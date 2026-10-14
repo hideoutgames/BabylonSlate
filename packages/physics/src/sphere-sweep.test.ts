@@ -115,4 +115,57 @@ describe("Havok shape sweeps", () => {
         { position: { x: 2, y: 0, z: 0 }, rotation: { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 } })).toThrow(/rotation/);
     } finally { backend.dispose(); }
   });
+
+  it("keeps a bounded set of native shapes for repeated primitive sweeps and releases them with the backend", async () => {
+    const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
+    const shapes = (backend.plugin as unknown as { _shapes: Map<bigint, unknown> })._shapes;
+    const identity = { x: 0, y: 0, z: 0, w: 1 };
+    const pose = (x: number) => ({ position: { x, y: 0, z: 0 }, rotation: identity });
+    const sweep = (shape: Parameters<HavokPhysicsBackend["shapeSweep"]>[0]) => backend.shapeSweep(shape, pose(-2), pose(2));
+    try {
+      addWall(backend, "wall");
+      const baseline = shapes.size;
+      const sphere = { kind: "sphere" as const, radius: 0.2 };
+      const first = sweep(sphere);
+      expect(first).toMatchObject({ hit: true, bodyId: "wall" });
+      // The same kind and dimensions share one native shape, whatever the pose, and give the same answer.
+      for (let repeat = 0; repeat < 10; repeat++) expect(sweep({ ...sphere })).toEqual(first);
+      expect(shapes.size).toBe(baseline + 1);
+      for (const shape of [
+        { kind: "box" as const, halfExtents: { x: 0.2, y: 0.2, z: 0.2 } },
+        { kind: "capsule" as const, radius: 0.2, halfHeight: 0.3 },
+        { kind: "cylinder" as const, radius: 0.2, height: 0.6 },
+      ]) {
+        expect(sweep(shape).hit).toBe(true);
+        expect(sweep(shape).hit).toBe(true);
+      }
+      expect(shapes.size).toBe(baseline + 4);
+      // Sizes that never repeat cannot grow the set without bound.
+      for (let index = 1; index <= 40; index++) sweep({ kind: "sphere", radius: 0.01 * index });
+      const grown = shapes.size;
+      expect(grown).toBeLessThan(baseline + 40);
+      for (let index = 41; index <= 80; index++) sweep({ kind: "sphere", radius: 0.01 * index });
+      expect(shapes.size).toBe(grown);
+      expect(() => sweep({ kind: "sphere", radius: -1 })).toThrow();
+      expect(shapes.size).toBe(grown);
+      backend.dispose();
+      expect(shapes.size).toBe(0);
+    } finally { backend.dispose(); }
+  });
+
+  it("never lets a query filter mask the shape it casts", async () => {
+    const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
+    const identity = { x: 0, y: 0, z: 0, w: 1 };
+    const pose = (x: number) => ({ position: { x, y: 0, z: 0 }, rotation: identity });
+    const sphere = { kind: "sphere" as const, radius: 0.2 };
+    try {
+      addWall(backend, "wall");
+      addWall(backend, "trigger", -1, 0, true);
+      // Excluding the wall's actor and the trigger masks their shapes for that query only, and the cast shape stays whole.
+      expect(backend.shapeSweep(sphere, pose(-2), pose(2), { ignoreActorIds: ["wall-actor"], includeTriggers: false }).hit).toBe(false);
+      expect(backend.shapeSweep(sphere, pose(-2), pose(2), { ignoreActorIds: ["wall-actor"] })).toMatchObject({ hit: true, bodyId: "trigger" });
+      expect(backend.shapeSweep(sphere, pose(-2), pose(2), { includeTriggers: false })).toMatchObject({ hit: true, bodyId: "wall" });
+      expect(backend.shapeSweep(sphere, pose(-2), pose(2))).toMatchObject({ hit: true, bodyId: "trigger" });
+    } finally { backend.dispose(); }
+  });
 });

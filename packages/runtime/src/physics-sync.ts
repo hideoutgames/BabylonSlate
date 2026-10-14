@@ -42,6 +42,7 @@ import {
   PreparedColliderGeometry,
   sameDescriptor,
   physicsChainTransforms,
+  physicsParticipantActors,
   physicsWorldTransforms,
 } from "./physics-preparation";
 import { componentColliderPhysicsId, hostedColliderPhysicsId } from "./physics-collider-id";
@@ -68,11 +69,17 @@ export class PhysicsWorldSync {
   private readonly backend: PhysicsBackend;
   private readonly actorFilter: (actor: Actor) => boolean;
   private readonly skipEmptySteps: boolean;
+  private readonly actorsOf: ((world: World) => readonly Actor[]) | undefined;
   private readonly observesContacts: ((actor: Actor) => boolean) | undefined;
   /** Contact reporting last asked of the backend per actor guid; absent means the default, reporting. */
   private readonly contactReporting = new Map<string, boolean>();
   private readonly constraints: PhysicsConstraintSync;
   private readonly suppressedActors = new WeakSet<Actor>();
+  /**
+   * Actors whose ordinary body an active ragdoll replaced, by guid. The bones are dynamic bodies the ragdoll
+   * created under the actor's id, so they appear in no body map; channel queries classify them from here.
+   */
+  private readonly ragdollActors = new Map<string, Actor>();
   private readonly bodyByActor = new Map<string, string>();
   private readonly characterByActor = new Map<string, string>();
   private readonly movementControllerDescriptors = new Map<string, readonly unknown[]>();
@@ -206,6 +213,12 @@ export class PhysicsWorldSync {
        */
       skipEmptySteps?: boolean;
       /**
+       * The actors this world can simulate, in World order, read afresh at each use. Omitted: the World's actors
+       * that own a physics component class. `actorFilter` still decides eligibility; this only spares a world that
+       * admits few actors (a Scene Layer's) from walking the rest of the World each tick.
+       */
+      actorsOf?: (world: World) => readonly Actor[];
+      /**
        * Whether a hit or overlap event naming `actor` could be observed (a script handler on its class). Bodies of
        * actors that cannot observe any, and host no shape of one that can, are not asked for native contact
        * events (`PhysicsBackend.setContactReporting`). Omitted: every actor is observed.
@@ -216,6 +229,7 @@ export class PhysicsWorldSync {
     this.backend = backend;
     this.observesContacts = options?.observesContacts;
     this.skipEmptySteps = options?.skipEmptySteps ?? false;
+    this.actorsOf = options?.actorsOf;
     this.actorFilter = options?.actorFilter ?? (() => true);
     this.constraints = new PhysicsConstraintSync(backend, options?.deferUnsupportedConstraints);
   }
@@ -264,9 +278,11 @@ export class PhysicsWorldSync {
   suppressActorBody(actor: Actor, suppressed: boolean): void {
     if (suppressed) {
       this.suppressedActors.add(actor);
+      this.ragdollActors.set(actor.guid, actor);
       if (this.bodyOwnerByActor.get(actor.guid) === actor) this.retireActor(actor.guid);
     } else {
       this.suppressedActors.delete(actor);
+      if (this.ragdollActors.get(actor.guid) === actor) this.ragdollActors.delete(actor.guid);
       this.contactReporting.delete(actor.guid);
     }
   }
@@ -391,6 +407,7 @@ export class PhysicsWorldSync {
     this.movementControllerDescriptors.clear();
     this.preparedByActor.clear();
     this.bodyOwnerByActor.clear();
+    this.ragdollActors.clear();
     this.contactReporting.clear();
     this.staticPoses.clear();
     this.hostByActor.clear();
@@ -420,8 +437,9 @@ export class PhysicsWorldSync {
   /** Ensure every physics-bearing actor has backend bodies (idempotent). */
   syncFromWorld(world: World): void {
     this.bindWorld(world);
+    const candidates = this.candidateActors();
     this.worldTransforms = physicsWorldTransforms(
-      this.actors,
+      candidates,
       this.findLiveActor,
       this.backend.kind,
       this.actorFilter,
@@ -431,7 +449,7 @@ export class PhysicsWorldSync {
     this.passStale = false;
     const sources = this.passSources;
     sources.clear();
-    for (const actor of this.actors) {
+    for (const actor of candidates) {
       if (actor.destroyed) continue;
       if (!this.actorFilter(actor) || this.suppressedActors.has(actor)) continue;
       const source = this.classifyActor(actor);
@@ -801,6 +819,16 @@ export class PhysicsWorldSync {
   }
 
   /**
+   * The actors a pass walks to find bodies, in World order: those `actorsOf` names, else the World's actors that
+   * own a physics component class. Parent walks and water keep `actors`, the whole World, since a chain may leave
+   * the subset.
+   */
+  private candidateActors(): readonly Actor[] {
+    if (!this.world) return this.actors;
+    return this.actorsOf ? this.actorsOf(this.world) : physicsParticipantActors(this.world);
+  }
+
+  /**
    * The live actor holding `guid`: the World's own registry, which lists exactly the actors `World.getActors()`
    * does (a spawn or destroy updates both together). None before a world is bound.
    */
@@ -1037,7 +1065,7 @@ export class PhysicsWorldSync {
       }
       const world = recompose
         ? physicsWorldTransforms(
-            this.actors,
+            this.candidateActors(),
             this.findReadbackActor,
             this.backend.kind,
             this.actorFilter,
@@ -1129,6 +1157,8 @@ export class PhysicsWorldSync {
     // Hosted shapes, and a hosted actor's own triggers, answer as their host.
     for (const [actorId, host] of this.hostByActor)
       if (!matches(host)) ignored.add(actorId);
+    // An active ragdoll's bones are dynamic and no Movement drives them: WorldDynamic (and All) keep them.
+    if (channel === "WorldStatic" || channel === "Pawn") for (const actorId of this.ragdollActors.keys()) ignored.add(actorId);
     return { ...options, ignoreActorIds: [...ignored] };
   }
 
