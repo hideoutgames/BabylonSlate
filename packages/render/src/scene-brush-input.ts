@@ -1,6 +1,7 @@
 import { Color4, Matrix, Mesh, MeshBuilder, Quaternion, Ray, Vector3, type AbstractMesh, type LinesMesh } from "@babylonjs/core";
-import { appendFoliageInstance, chooseFoliageModel, createActor, identitySerializedTransform, LandscapeSculptSession, parseFoliageProperties, type FoliageGroup, type FoliageProperties, type LandscapeBrush, type SerializedActor, type SerializedScene } from "@babylonslate/core";
+import { appendFoliageInstance, chooseFoliageModel, createActor, identitySerializedTransform, LandscapeSculptSession, parseFoliageProperties, type FoliageGroup, type FoliageProperties, type LandscapeBrush, type SerializedActor, type SerializedComponent, type SerializedScene } from "@babylonslate/core";
 import type { EngineHandle } from "./create-engine";
+import { FoliageEraseSession } from "./foliage-erase";
 import { RENDERING_GROUP } from "./sorting";
 
 export interface SceneBrushState {
@@ -30,8 +31,12 @@ type Sculpt = {
   /** Resolved at an event's first dab; `null` when the component has no visual. */
   frame: LandscapeFrame | null | undefined;
 };
-type Stroke = { pointerId: number; before: SerializedScene; next: SerializedScene; state: SceneBrushState; last: Vector3 | null; foliage: FoliageProperties; actorId: string; componentId: string; occupied: Map<string, Vector3[]>;
+type Stroke = { pointerId: number; before: SerializedScene; next: SerializedScene; state: SceneBrushState; last: Vector3 | null; foliage: FoliageProperties; actorId: string; componentId: string;
+  /** Painted and existing instances by spacing cell; built when the first dab places foliage, since erasing never reads it. */
+  occupied: Map<string, Vector3[]> | null;
   sculpts: Sculpt[] | null;
+  /** Erase sessions by the component object they were created from; `null` for a component without a visual, which is left as is. */
+  erasing: Map<SerializedComponent, FoliageEraseSession | null> | null;
   /** A landscape dab changed the sculpts since `next` was last published and shown in the viewport. */
   unshown: boolean };
 
@@ -113,15 +118,27 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     handle.scheduler.invalidate("manual");
   };
   const cellKey = (p: Vector3, spacing: number) => `${Math.floor(p.x / spacing)}:${Math.floor(p.y / spacing)}:${Math.floor(p.z / spacing)}`;
-  const occupy = (current: Stroke, point: Vector3) => {
-    const key = cellKey(point, current.state.foliageBrush.spacing);
-    const cell = current.occupied.get(key) ?? []; cell.push(point); current.occupied.set(key, cell);
+  const occupy = (occupied: Map<string, Vector3[]>, spacing: number, point: Vector3) => {
+    const key = cellKey(point, spacing);
+    const cell = occupied.get(key) ?? []; cell.push(point); occupied.set(key, cell);
+  };
+  /** The scene's existing foliage, indexed on first use: only painting needs it, and the scene is fixed for the stroke. */
+  const occupancy = (current: Stroke) => {
+    if (current.occupied) return current.occupied;
+    const occupied = current.occupied = new Map<string, Vector3[]>();
+    for (const actor of current.before.actors) for (const component of actor.components) {
+      if (component.classId !== "FoliageComponent") continue;
+      const world = handle.editor?.sync.meshForComponent(actor.id, component.id)?.computeWorldMatrix(true); if (!world) continue;
+      for (const batch of parseFoliageProperties(component.properties).batches) for (const transform of batch.transforms) occupy(occupied, current.state.foliageBrush.spacing, Vector3.TransformCoordinates(Vector3.FromArray(transform.position), world));
+    }
+    return occupied;
   };
   const hasNeighbour = (current: Stroke, point: Vector3) => {
     const spacing = current.state.foliageBrush.spacing;
+    const occupied = occupancy(current);
     const x = Math.floor(point.x / spacing); const y = Math.floor(point.y / spacing); const z = Math.floor(point.z / spacing);
     for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      if (current.occupied.get(`${x + dx}:${y + dy}:${z + dz}`)?.some((other) => Vector3.DistanceSquared(other, point) < spacing * spacing)) return true;
+      if (occupied.get(`${x + dx}:${y + dy}:${z + dz}`)?.some((other) => Vector3.DistanceSquared(other, point) < spacing * spacing)) return true;
     }
     return false;
   };
@@ -143,17 +160,21 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
         });
       }
     } else if (state.foliageTool === "erase") {
+      // `next` tracks which components remain; their surviving instances live in the sessions until `settle`.
+      const erasing = current.erasing ??= new Map();
       current.next = { ...current.next, actors: current.next.actors.flatMap((actor) => {
         if (actor.locked || !actor.visible) return [actor];
         const components = actor.components.flatMap((component) => {
           if (component.classId !== "FoliageComponent") return [component];
-          const root = handle.editor?.sync.meshForComponent(actor.id, component.id);
-          if (!root) return [component];
-          const world = root.computeWorldMatrix(true);
-          const data = parseFoliageProperties(component.properties);
-          const batches = data.batches.map((batch) => ({ ...batch, transforms: batch.transforms.filter((transform) =>
-            Vector3.Distance(Vector3.TransformCoordinates(Vector3.FromArray(transform.position), world), point) > state.foliageBrush.radius) })).filter((batch) => batch.transforms.length);
-          return batches.length ? [{ ...component, properties: { ...data, batches } }] : [];
+          let session = erasing.get(component);
+          if (session === undefined) {
+            const root = handle.editor?.sync.meshForComponent(actor.id, component.id);
+            session = root ? new FoliageEraseSession(component.properties, root.computeWorldMatrix(true)) : null;
+            erasing.set(component, session);
+          }
+          if (!session) return [component];
+          session.erase(point, state.foliageBrush.radius);
+          return session.empty ? [] : [component];
         });
         return components.length || current.next.actors.some((child) => child.parentId === actor.id)
           ? [{ ...actor, components }] : actor.components.length ? [] : [actor];
@@ -173,7 +194,7 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
         const yaw = Quaternion.RotationAxis(Vector3.Up(), brush.randomYaw ? random() * Math.PI * 2 : 0);
         const rotation = brush.alignToNormal ? alignment(normal).multiply(yaw) : yaw;
         current.foliage = appendFoliageInstance(current.foliage, model, { position: [position.x, position.y, position.z], rotation: [rotation.x, rotation.y, rotation.z, rotation.w], scale: [scale, scale, scale] });
-        occupy(current, position);
+        occupy(occupancy(current), brush.spacing, position);
       }
       if (current.foliage.batches.length) current.next = { ...current.before, actors: [...current.before.actors, createActor(current.actorId, `${state.group.name} Stroke`, {
         components: [{ id: current.componentId, classId: "FoliageComponent", transform: identitySerializedTransform(), properties: { ...current.foliage } }],
@@ -201,6 +222,15 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     for (const sculpt of sculpts) sculpt.frame = undefined;
     handle.editor?.sync.apply(current.next);
   };
+  /** Gives the components that survived an erase stroke their remaining instances: nothing reads them while the stroke runs. */
+  const settleErase = (current: Stroke) => {
+    const erasing = current.erasing;
+    if (!erasing) return;
+    current.next = { ...current.next, actors: current.next.actors.map((actor) => ({ ...actor, components: actor.components.map((component) => {
+      const session = erasing.get(component);
+      return session ? { ...component, properties: { ...session.snapshot() } } : component;
+    }) })) };
+  };
   const finish = (cancel: boolean) => {
     const current = stroke; stroke = null;
     if (!current) return;
@@ -211,6 +241,7 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
       return;
     }
     if (current.next === current.before) return;
+    settleErase(current);
     pending = true;
     void options.commit(current.next, current.before).then((ok) => {
       if (!ok && options.getState().scene) handle.editor?.sync.apply(options.getState().scene!);
@@ -227,12 +258,7 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     if (pointers.size > 1) { finish(true); return; }
     if (pending || !state.scene || (state.mode === "foliage" && state.foliageTool === "paint" && !state.group?.models.length)) return;
     const hit = pick(event, state); if (!hit?.pickedPoint) return;
-    stroke = { pointerId: event.pointerId, before: state.scene, next: state.scene, state, last: hit.pickedPoint.clone(), foliage: { groupId: state.group?.id ?? "", batches: [] }, actorId: crypto.randomUUID(), componentId: crypto.randomUUID(), occupied: new Map(), sculpts: null, unshown: false };
-    if (state.mode === "foliage") for (const actor of state.scene.actors) for (const component of actor.components) {
-      if (component.classId !== "FoliageComponent") continue;
-      const world = handle.editor?.sync.meshForComponent(actor.id, component.id)?.computeWorldMatrix(true); if (!world) continue;
-      for (const batch of parseFoliageProperties(component.properties).batches) for (const transform of batch.transforms) occupy(stroke, Vector3.TransformCoordinates(Vector3.FromArray(transform.position), world));
-    }
+    stroke = { pointerId: event.pointerId, before: state.scene, next: state.scene, state, last: hit.pickedPoint.clone(), foliage: { groupId: state.group?.id ?? "", batches: [] }, actorId: crypto.randomUUID(), componentId: crypto.randomUUID(), occupied: null, sculpts: null, erasing: null, unshown: false };
     canvas.setPointerCapture(event.pointerId);
     dab(stroke, hit.pickedPoint);
     show(stroke);

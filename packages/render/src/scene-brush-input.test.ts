@@ -144,3 +144,70 @@ it("paints mixed Models as one component per stroke and erases them together wit
   f.state.scene = painted; f.sync.apply(painted);
   expect(f.sync.meshForComponent(painted.actors[1]!.id, components[0]!.id)).not.toBeNull();
 });
+
+type Instance = { position: [number, number, number]; rotation: [number, number, number, number]; scale: [number, number, number] };
+const instanceAt = (x: number, z: number): Instance => ({ position: [x, 0, z], rotation: [0, 0, 0, 1], scale: [1, 1, 1] });
+const foliageActor = (id: string, parentId: string | null, batches: Array<{ modelGuid: string; transforms: Instance[] }>) => createActor(id, id, {
+  parentId, components: [{ id: `${id}-foliage`, classId: "FoliageComponent", properties: { groupId: "trees", batches: batches.map((batch) => ({ ...batch, materialGuid: null })) } }],
+});
+/** Replaces the fixture scene with the landscape plus these actors, as an applied, committed document. */
+function populate(f: ReturnType<typeof fixture>, actors: ReturnType<typeof foliageActor>[]) {
+  const scene = { ...f.initial, actors: [...f.initial.actors, ...actors] };
+  f.state.scene = scene; f.sync.apply(scene);
+  for (const actor of actors) expect(f.sync.meshForComponent(actor.id, actor.components[0]!.id)).not.toBeNull();
+  return scene;
+}
+
+it("erases the instances along a drag, keeping the rest of each batch and dropping emptied batches", async () => {
+  const f = fixture("foliage");
+  const oak = Array.from({ length: 25 * 13 }, (_, i) => instanceAt(-6 + (i % 25) * 0.5, -3 + Math.floor(i / 25) * 0.5));
+  // Every pine stands within the swept corridor, so its whole batch goes.
+  const pine = [instanceAt(1, 0.25), instanceAt(0.5, -0.5), instanceAt(-2, 0.5), instanceAt(2.5, 0.25), instanceAt(0, 1)];
+  populate(f, [foliageActor("grove", null, [{ modelGuid: "oak", transforms: oak }, { modelGuid: "pine", transforms: pine }])]);
+  f.state.foliageTool = "erase"; f.state.foliageBrush.radius = 2;
+  // 6.2 units at a 0.4 spacing: dabs at -3, -2.6 ... 3 (15 interpolated), the last 0.2 short of the pointer.
+  f.pointer("pointerdown", -3, 0); f.pointer("pointermove", 3.2, 0); f.pointer("pointerup", 3.2, 0);
+  await Promise.resolve();
+  expect(f.committed).toHaveLength(1);
+  const erased = f.committed[0]!;
+  expect(erased.actors.map((actor) => actor.id)).toEqual(["land", "grove"]);
+  const properties = erased.actors[1]!.components[0]!.properties as { groupId: string; batches: Array<{ modelGuid: string; materialGuid: null; transforms: Instance[] }> };
+  expect(properties.groupId).toBe("trees");
+  expect(properties.batches.map((batch) => batch.modelGuid)).toEqual(["oak"]);
+  // Distance to the swept segment from (-3, 0) to (3, 0), where dabs of radius 2 fall every 0.4.
+  const toPath = ([x, , z]: Instance["position"]) => Math.hypot(x - Math.min(3, Math.max(-3, x)), z);
+  const survivors = properties.batches[0]!.transforms;
+  const kept = new Set(survivors.map((instance) => instance.position.join()));
+  expect(oak.filter((instance) => toPath(instance.position) > 2.01).every((instance) => kept.has(instance.position.join()))).toBe(true);
+  expect(survivors.every((instance) => toPath(instance.position) > 1.8)).toBe(true);
+  expect(survivors.length).toBeGreaterThan(100);
+  expect(survivors.length).toBeLessThan(oak.length);
+  const order = survivors.map((instance) => oak.findIndex((original) => original.position.join() === instance.position.join()));
+  expect(order).toEqual([...order].sort((a, b) => a - b));
+  expect(survivors.every((instance, i) => JSON.stringify(instance) === JSON.stringify(oak[order[i]!]))).toBe(true);
+});
+
+it("removes an emptied parent only once its own children are gone, keeping it while a child still existed", async () => {
+  const f = fixture("foliage");
+  // Child at -4 is emptied by the stroke's first dab, the parent at +4 by a later one: by then the child is gone, so the parent goes too.
+  populate(f, [foliageActor("parent", null, [{ modelGuid: "oak", transforms: [instanceAt(4, 0), instanceAt(4.5, 0.5)] }]),
+    foliageActor("child", "parent", [{ modelGuid: "oak", transforms: [instanceAt(-4, 0), instanceAt(-4.5, -0.5)] }])]);
+  f.state.foliageTool = "erase"; f.state.foliageBrush.radius = 1.5;
+  f.pointer("pointerdown", -4, 0); f.pointer("pointermove", 4.5, 0); f.pointer("pointerup", 4.5, 0);
+  await Promise.resolve();
+  expect(f.committed).toHaveLength(1);
+  expect(f.committed[0]!.actors.map((actor) => actor.id)).toEqual(["land"]);
+});
+
+it("keeps an emptied parent as an empty actor when its child was emptied in the same dab", async () => {
+  const f = fixture("foliage");
+  populate(f, [foliageActor("parent", null, [{ modelGuid: "oak", transforms: [instanceAt(0, 0), instanceAt(0.5, 0)] }]),
+    foliageActor("child", "parent", [{ modelGuid: "oak", transforms: [instanceAt(0, 0.5), instanceAt(-0.5, 0)] }])]);
+  f.state.foliageTool = "erase"; f.state.foliageBrush.radius = 1.5;
+  f.pointer("pointerdown", 0, 0); f.pointer("pointermove", 0.5, 0); f.pointer("pointerup", 0.5, 0);
+  await Promise.resolve();
+  const [result] = f.committed;
+  expect(f.committed).toHaveLength(1);
+  expect(result!.actors.map((actor) => actor.id)).toEqual(["land", "parent"]);
+  expect(result!.actors[1]!.components).toEqual([]);
+});
