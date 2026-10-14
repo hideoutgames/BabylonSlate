@@ -29,6 +29,9 @@ export interface PreparedFogVolume {
 type Volume = PreparedFogVolume & {
   local: Matrix;
   bounds: BoundingInfo;
+  /** Sphere about the volume's world centre holding all eight corners; set with `bounds` while `valid`. */
+  center: Vector3;
+  radius: number;
   valid: boolean;
   distance: number;
 };
@@ -59,6 +62,35 @@ function registryFor(scene: Scene): Registry {
     registries.delete(scene);
   });
   return registry;
+}
+
+/**
+ * Babylon's own bounding sphere scales by the longest axis only, which sheared parent/component
+ * transforms can outgrow. The unit box is centred on the origin, so its world centre is the
+ * matrix translation; the radius is the exact distance to the farthest transformed corner.
+ */
+function encloseVolume(volume: Volume, world: Matrix): void {
+  const center = volume.center.copyFromFloats(world.m[12]!, world.m[13]!, world.m[14]!);
+  let farthest = 0;
+  for (const corner of volume.bounds.boundingBox.vectorsWorld) farthest = Math.max(farthest, Vector3.DistanceSquared(corner, center));
+  volume.radius = Math.sqrt(farthest);
+}
+
+/**
+ * -1 when the sphere lies wholly outside one plane, 1 when wholly inside every plane, else 0.
+ * The margin absorbs float rounding, so a verdict never contradicts the exact corner test:
+ * -1 implies every corner is behind that plane and 1 implies every corner is in front of all.
+ */
+function sphereFrustumSide(planes: readonly Plane[], center: Vector3, radius: number): -1 | 0 | 1 {
+  const reach = radius + radius * 1e-6 + 1e-4;
+  let inside = true;
+  for (let index = 0; index < planes.length; index++) {
+    const distance = planes[index]!.dotCoordinate(center);
+    if (distance < -reach) return -1;
+    // Negated so a NaN distance falls back to the corner test.
+    if (!(distance >= reach)) inside = false;
+  }
+  return inside ? 1 : 0;
 }
 
 /** CPU-only owner: local fog does not allocate geometry, textures or shadow maps. */
@@ -112,6 +144,8 @@ export class FogVolumeRenderer {
         local,
         inverseWorld: Matrix.Identity(),
         bounds: new BoundingInfo(new Vector3(-1, -1, -1), new Vector3(1, 1, 1)),
+        center: Vector3.Zero(),
+        radius: 0,
         valid: false,
         distance: 0,
       });
@@ -134,7 +168,7 @@ export class FogVolumeRenderer {
         if (!volume.valid) continue;
         this.world.invertToRef(volume.inverseWorld);
         volume.valid = volume.inverseWorld.m.every(Number.isFinite);
-        if (volume.valid) volume.bounds.update(this.world);
+        if (volume.valid) { volume.bounds.update(this.world); encloseVolume(volume, this.world); }
       }
     }
     return true;
@@ -237,10 +271,14 @@ export function selectFogVolumes(
   for (const owner of registry.owners.values()) {
     if (!owner.prepare()) continue;
     for (const volume of owner.volumes) {
-      // Use the transformed eight corners directly: a scaled sphere test can
-      // underestimate bounds under sheared parent/component transforms.
+      // The exact test uses the transformed eight corners directly: a scaled sphere test can
+      // underestimate bounds under sheared parent/component transforms. The cached enclosing
+      // sphere settles volumes clearly outside or inside with six dot products and leaves only
+      // those straddling a plane to the corner test.
       const box = volume.bounds.boundingBox;
-      if (!volume.valid || !box.isInFrustum(registry.planes)) continue;
+      if (!volume.valid) continue;
+      const side = sphereFrustumSide(registry.planes, volume.center, volume.radius);
+      if (side < 0 || (side === 0 && !box.isInFrustum(registry.planes))) continue;
       if (orthographic) {
         let nearest = Infinity, farthest = -Infinity;
         for (const corner of box.vectorsWorld) {
