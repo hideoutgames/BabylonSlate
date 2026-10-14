@@ -2,6 +2,7 @@ import { parseMovementProperties, type MovementProperties } from "@babylonslate/
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import type { Vec3 } from "@babylonslate/physics";
 import { actorChainWorldTransform, rotateVector } from "./actor-world-transform";
+import { ParsedComponentProperties } from "./parsed-component-properties";
 import type { PhysicsWorldSync } from "./physics-sync";
 
 type MovementState = {
@@ -40,6 +41,8 @@ function publishValue(component: ActorComponent, name: string, value: number | b
 /** Fixed-tick intent, velocity and transitions; physics owns collision resolution. */
 export class MovementWorldSync {
   private readonly states = new Map<ActorComponent, MovementState>();
+  /** Each motor's settings, re-parsed only when one of its variables is written. */
+  private readonly settings = new ParsedComponentProperties((variables) => parseMovementProperties(variables));
   private readonly host: MovementHost;
   private scripted = false;
 
@@ -66,7 +69,7 @@ export class MovementWorldSync {
     const actor = component.owner;
     if (!actor || component.destroyed || actor.destroyed || !actor.components.includes(component) || !this.host.eligible(actor)) return {};
     if (name === "convertMovementInput") {
-      const props = parseMovementProperties(Object.fromEntries(component.variables));
+      const props = this.settings.get(component);
       return { direction: this.convert(actor, props, args.input, finite(args.yaw)) };
     }
     if (component.getVariable("enabled") === false) return {};
@@ -86,7 +89,7 @@ export class MovementWorldSync {
       }
       case "jumpMovement":
         state.jumpRequested = true;
-        state.jumpRemaining = parseMovementProperties(Object.fromEntries(component.variables)).jumpBufferTime;
+        state.jumpRemaining = this.settings.get(component).jumpBufferTime;
         break;
       case "stopMovementImmediately":
         state.input = zero(); state.addedInput = zero(); state.velocity = zero();
@@ -137,7 +140,7 @@ export class MovementWorldSync {
       // Keep later registrations available if the first motor is removed.
       // Physics rejects duplicates; only one motor may attempt to move the actor.
       if (actor.components.find((entry) => entry.classId === "MovementComponent" && !entry.destroyed && entry.owner === actor) !== component) continue;
-      const props = parseMovementProperties(Object.fromEntries(component.variables));
+      const props = this.settings.get(component);
       if (!props.enabled) {
         state.input = zero(); state.addedInput = zero(); state.velocity = zero();
         state.jumpRequested = false; state.jumpRemaining = 0;
@@ -202,18 +205,21 @@ export class MovementWorldSync {
   /**
    * Writes only values that differ from the live variable: other writers may have
    * changed it since, and readers retain the published velocity object, so it is
-   * replaced rather than mutated.
+   * replaced rather than mutated. None of these names is a movement setting, so
+   * publishing keeps the parsed settings current.
    */
   private publish(component: ActorComponent, state: MovementState): void {
-    const live = component.getVariable("velocity") as Partial<Vec3> | null | undefined;
-    const v = state.velocity;
-    if (typeof live !== "object" || live === null || !Object.is(live.x, v.x) || !Object.is(live.y, v.y) || !Object.is(live.z, v.z)) {
-      component.setVariable("velocity", { ...v });
-    }
-    publishValue(component, "speed", Math.hypot(v.x, v.z));
-    publishValue(component, "isGrounded", state.grounded);
-    publishValue(component, "isInAir", !state.grounded);
-    publishValue(component, "isMoving", state.moving);
+    this.settings.writeUnparsed(component, () => {
+      const live = component.getVariable("velocity") as Partial<Vec3> | null | undefined;
+      const v = state.velocity;
+      if (typeof live !== "object" || live === null || !Object.is(live.x, v.x) || !Object.is(live.y, v.y) || !Object.is(live.z, v.z)) {
+        component.setVariable("velocity", { ...v });
+      }
+      publishValue(component, "speed", Math.hypot(v.x, v.z));
+      publishValue(component, "isGrounded", state.grounded);
+      publishValue(component, "isInAir", !state.grounded);
+      publishValue(component, "isMoving", state.moving);
+    });
   }
 
   private transitions(component: ActorComponent, state: MovementState, grounded: boolean, moving: boolean, jumped = false): void {
