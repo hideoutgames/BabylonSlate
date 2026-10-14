@@ -1,5 +1,5 @@
 import { Color4, Matrix, Mesh, MeshBuilder, Quaternion, Ray, Vector3, type AbstractMesh, type LinesMesh } from "@babylonjs/core";
-import { appendFoliageInstance, chooseFoliageModel, createActor, identitySerializedTransform, parseFoliageProperties, parseLandscapeProperties, sculptLandscape, type FoliageGroup, type FoliageProperties, type LandscapeBrush, type SerializedActor, type SerializedScene } from "@babylonslate/core";
+import { appendFoliageInstance, chooseFoliageModel, createActor, identitySerializedTransform, LandscapeSculptSession, parseFoliageProperties, type FoliageGroup, type FoliageProperties, type LandscapeBrush, type SerializedActor, type SerializedScene } from "@babylonslate/core";
 import type { EngineHandle } from "./create-engine";
 import { RENDERING_GROUP } from "./sorting";
 
@@ -20,8 +20,19 @@ const RING_LIFT = 0.03;
 const RING_COLOR = new Color4(0.95, 0.65, 0.2, 1);
 const RING_INNER_COLOR = new Color4(0.95, 0.65, 0.2, 0.5);
 
+/** Maps a world-space point into a landscape's local X/Z, and a world radius into local units. */
+type LandscapeFrame = { inverse: Matrix; scale: number };
+/** A landscape component the stroke sculpts, located by position in the scene. */
+type Sculpt = {
+  actorIndex: number; componentIndex: number; actorId: string; componentId: string; properties: unknown;
+  /** Created at the first dab that reaches the component. */
+  session: LandscapeSculptSession | null;
+  /** Resolved at an event's first dab; `null` when the component has no visual. */
+  frame: LandscapeFrame | null | undefined;
+};
 type Stroke = { pointerId: number; before: SerializedScene; next: SerializedScene; state: SceneBrushState; last: Vector3 | null; foliage: FoliageProperties; actorId: string; componentId: string; occupied: Map<string, Vector3[]>;
-  /** A landscape dab changed `next` since it was last shown in the viewport. */
+  sculpts: Sculpt[] | null;
+  /** A landscape dab changed the sculpts since `next` was last published and shown in the viewport. */
   unshown: boolean };
 
 function alignment(normal: Vector3): Quaternion {
@@ -117,18 +128,20 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
   const dab = (current: Stroke, point: Vector3) => {
     const state = current.state;
     if (state.mode === "landscape") {
-      current.next = { ...current.next, actors: current.next.actors.map((actor) => ({ ...actor, components: actor.components.map((component) => {
-        if (`${actor.id}/${component.id}` !== state.landscapeSelection || component.classId !== "LandscapeComponent" || actor.locked) return component;
-        const root = handle.editor?.sync.meshForComponent(actor.id, component.id);
-        if (!root) return component;
-        const world = root.computeWorldMatrix(true);
-        const local = Vector3.TransformCoordinates(point, Matrix.Invert(world));
-        const scale = new Vector3(); world.decompose(scale);
-        const data = sculptLandscape(parseLandscapeProperties(component.properties), local.x, local.z, {
-          ...state.landscapeBrush, tool: state.landscapeTool as LandscapeBrush["tool"], radius: state.landscapeBrush.radius / Math.max(0.001, Math.abs(scale.x), Math.abs(scale.z)),
+      // Each dab sculpts a working heightfield; `show` publishes it into the scene once per pointer event.
+      current.sculpts ??= current.next.actors.flatMap((actor, actorIndex): Sculpt[] => actor.locked ? [] : actor.components.flatMap((component, componentIndex): Sculpt[] =>
+        `${actor.id}/${component.id}` === state.landscapeSelection && component.classId === "LandscapeComponent"
+          ? [{ actorIndex, componentIndex, actorId: actor.id, componentId: component.id, properties: component.properties, session: null, frame: undefined }] : []));
+      for (const sculpt of current.sculpts) {
+        // The scene document is fixed for the stroke and `apply` re-poses the actor from it, so the transform is constant within an event.
+        if (sculpt.frame === undefined) sculpt.frame = landscapeFrame(sculpt.actorId, sculpt.componentId);
+        if (!sculpt.frame) continue;
+        const local = Vector3.TransformCoordinates(point, sculpt.frame.inverse);
+        sculpt.session ??= new LandscapeSculptSession(sculpt.properties);
+        sculpt.session.dab(local.x, local.z, {
+          ...state.landscapeBrush, tool: state.landscapeTool as LandscapeBrush["tool"], radius: state.landscapeBrush.radius / sculpt.frame.scale,
         });
-        return { ...component, properties: { ...data } };
-      }) })) };
+      }
     } else if (state.foliageTool === "erase") {
       current.next = { ...current.next, actors: current.next.actors.flatMap((actor) => {
         if (actor.locked || !actor.visible) return [actor];
@@ -169,10 +182,23 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     // Foliage is published once on release; the footprint previews placement without repeatedly decoding models.
     if (state.mode === "landscape") current.unshown = true;
   };
-  /** Shows the landscape once per pointer event: a drag interpolates many dabs, and each full-scene apply would only be overwritten by the next. */
+  const landscapeFrame = (actorId: string, componentId: string): LandscapeFrame | null => {
+    const root = handle.editor?.sync.meshForComponent(actorId, componentId);
+    if (!root) return null;
+    const world = root.computeWorldMatrix(true);
+    const scale = new Vector3(); world.decompose(scale);
+    return { inverse: Matrix.Invert(world), scale: Math.max(0.001, Math.abs(scale.x), Math.abs(scale.z)) };
+  };
+  /** Publishes the sculpted landscape once per pointer event: a drag interpolates many dabs, and building and applying the scene per dab would only be overwritten by the next. */
   const show = (current: Stroke) => {
     if (!current.unshown) return;
     current.unshown = false;
+    const sculpts = current.sculpts ?? [];
+    current.next = { ...current.next, actors: current.next.actors.map((actor, actorIndex) => ({ ...actor, components: actor.components.map((component, componentIndex) => {
+      const session = sculpts.find((sculpt) => sculpt.actorIndex === actorIndex && sculpt.componentIndex === componentIndex)?.session;
+      return session ? { ...component, properties: { ...session.snapshot() } } : component;
+    }) })) };
+    for (const sculpt of sculpts) sculpt.frame = undefined;
     handle.editor?.sync.apply(current.next);
   };
   const finish = (cancel: boolean) => {
@@ -201,7 +227,7 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     if (pointers.size > 1) { finish(true); return; }
     if (pending || !state.scene || (state.mode === "foliage" && state.foliageTool === "paint" && !state.group?.models.length)) return;
     const hit = pick(event, state); if (!hit?.pickedPoint) return;
-    stroke = { pointerId: event.pointerId, before: state.scene, next: state.scene, state, last: hit.pickedPoint.clone(), foliage: { groupId: state.group?.id ?? "", batches: [] }, actorId: crypto.randomUUID(), componentId: crypto.randomUUID(), occupied: new Map(), unshown: false };
+    stroke = { pointerId: event.pointerId, before: state.scene, next: state.scene, state, last: hit.pickedPoint.clone(), foliage: { groupId: state.group?.id ?? "", batches: [] }, actorId: crypto.randomUUID(), componentId: crypto.randomUUID(), occupied: new Map(), sculpts: null, unshown: false };
     if (state.mode === "foliage") for (const actor of state.scene.actors) for (const component of actor.components) {
       if (component.classId !== "FoliageComponent") continue;
       const world = handle.editor?.sync.meshForComponent(actor.id, component.id)?.computeWorldMatrix(true); if (!world) continue;

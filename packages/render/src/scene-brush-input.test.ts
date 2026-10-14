@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { ArcRotateCamera, Matrix, Vector3, VertexBuffer } from "@babylonjs/core";
-import { createActor, createDefaultScene, parseLandscapeProperties, type SerializedScene } from "@babylonslate/core";
+import { createActor, createDefaultScene, parseLandscapeProperties, type SerializedScene, type SerializedTransform } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input";
@@ -20,17 +20,17 @@ class Canvas extends EventTarget {
 const dispose: Array<() => void> = [];
 afterEach(() => { while (dispose.length) dispose.pop()!(); vi.unstubAllGlobals(); });
 
-function fixture(mode: "landscape" | "foliage" = "landscape") {
+function fixture(mode: "landscape" | "foliage" = "landscape", options: { transform?: SerializedTransform; strength?: number } = {}) {
   const { scene, engine } = createTestEngine();
   const camera = new ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 4, 35, Vector3.Zero(), scene);
   scene.activeCamera = camera;
   const sync = new EditorSceneSync(scene);
-  const initial: SerializedScene = { ...createDefaultScene(), actors: [createActor("land", "Land", { components: [{ id: "surface", classId: "LandscapeComponent", properties: { ...parseLandscapeProperties({ width: 32, depth: 32, subdivisions: 32 }) } }] })] };
+  const initial: SerializedScene = { ...createDefaultScene(), actors: [createActor("land", "Land", { ...(options.transform ? { transform: options.transform } : {}), components: [{ id: "surface", classId: "LandscapeComponent", properties: { ...parseLandscapeProperties({ width: 32, depth: 32, subdivisions: 32 }) } }] })] };
   sync.apply(initial); scene.render();
   const canvas = new Canvas(); const windowTarget = new EventTarget(); vi.stubGlobal("window", windowTarget);
   const state: SceneBrushState = {
     scene: initial, mode, enabled: true, landscapeSelection: "land/surface", landscapeTool: "raise",
-    landscapeBrush: { tool: "raise", radius: 4, strength: 1, falloff: 0.5, height: 0, layer: 0 },
+    landscapeBrush: { tool: "raise", radius: 4, strength: options.strength ?? 1, falloff: 0.5, height: 0, layer: 0 },
     foliageTool: "paint", foliageBrush: { radius: 3, density: 1, spacing: 0.5, maxSlope: 60, alignToNormal: true, randomYaw: true },
     group: { id: "trees", name: "Trees", models: ["oak", "pine"].map((modelGuid) => ({ modelGuid, materialGuid: null, weight: 1, minScale: 1, maxScale: 1 })) },
   };
@@ -79,6 +79,39 @@ it("applies the scene once per pointer event however many dabs a drag interpolat
   await Promise.resolve();
   expect(f.committed).toHaveLength(1);
   expect(f.committed[0]).toBe(shown);
+});
+
+/** The 33 x 33 vertex grid of the fixture landscape, one local unit apart, under an actor moved to (6, -3) and scaled 2x on X/Z. */
+const SCALED: SerializedTransform = { position: [6, 0, -3], rotation: [0, 0, 0, 1], scale: [2, 1, 2] };
+const worldOfVertex = (index: number) => ({ x: 6 + 2 * (index % 33 - 16), z: -3 + 2 * (Math.floor(index / 33) - 16) });
+const heightsOf = (scene: SerializedScene) => parseLandscapeProperties(scene.actors[0]!.components[0]!.properties).heights;
+
+it("sculpts a moved and scaled landscape under the pointer, with the brush radius in world units", async () => {
+  const f = fixture("landscape", { transform: SCALED });
+  f.pointer("pointerdown", 10, 0); f.pointer("pointerup", 10, 0);
+  await Promise.resolve();
+  const raised = heightsOf(f.committed[0]!).flatMap((height, index) => height > 0 ? [index] : []);
+  // Radius 4 around the world point (10, 0); no vertex sits near the edge of that disc.
+  const inside = Array.from({ length: 33 * 33 }, (_, index) => index).filter((index) => {
+    const { x, z } = worldOfVertex(index);
+    return Math.hypot(x - 10, z) < 4;
+  });
+  expect(inside.length).toBeGreaterThan(3);
+  expect(raised).toEqual(inside);
+});
+
+it("sculpts the whole path of a drag across a moved and scaled landscape", async () => {
+  const f = fixture("landscape", { transform: SCALED, strength: 0.01 });
+  f.pointer("pointerdown", -2, 2); f.pointer("pointermove", 14, 2); f.pointer("pointerup", 14, 2);
+  await Promise.resolve();
+  const heights = heightsOf(f.committed[0]!);
+  const toPath = (index: number) => { const { x, z } = worldOfVertex(index); return Math.hypot(x - Math.min(14, Math.max(-2, x)), z - 2); };
+  const indices = heights.map((_, index) => index);
+  const near = indices.filter((index) => toPath(index) < 3.6);
+  const far = indices.filter((index) => toPath(index) > 4.25);
+  expect(near.length).toBeGreaterThan(30);
+  expect(near.every((index) => heights[index]! > 0)).toBe(true);
+  expect(far.every((index) => heights[index] === 0)).toBe(true);
 });
 
 it.each(["pointercancel", "second-touch", "escape"])("restores the landscape without a history entry on %s", (reason) => {
