@@ -1,11 +1,28 @@
 import { expect, it, vi } from "vitest";
-import { Matrix, MeshBuilder, NodeMaterial, NullEngine, RenderTargetTexture, Scene, Texture, type Effect } from "@babylonjs/core";
+import { Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, RenderTargetTexture, Scene, StandardMaterial, Texture, type Effect } from "@babylonjs/core";
 import { installAssetBytes } from "@babylonslate/assets";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { ResourceCache } from "./resource-cache";
 import { sceneRenderingSettings } from "./render-settings";
-import { QualityTextureBlock } from "./texture-quality";
+import { QualityTextureBlock, TextureQualityPlugin } from "./texture-quality";
+
+// Closing the project Engine (or unmounting the homepage Engine before the project's
+// exists) leaves Babylon with no Engine; it then drops every global material plugin
+// factory. Materials built for the next Engine must still carry the plugin that applies
+// the texture LOD bias, or Low quality silently stops biasing their mips.
+it("attaches the texture-quality plugin to native materials created after every Engine was disposed", () => {
+  for (let cycle = 0; cycle < 2; cycle++) {
+    new NullEngine().dispose();
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    try {
+      for (const material of [new StandardMaterial("standard", scene), new PBRMaterial("pbr", scene)]) {
+        expect(material.pluginManager?.getPlugin("SlateTextureQuality"), `${material.name} after close ${cycle + 1}`).toBeInstanceOf(TextureQualityPlugin);
+      }
+    } finally { scene.dispose(); engine.dispose(); }
+  }
+});
 
 it("retains renderer-owned sampling when a graph binds a render target", () => {
   const engine = new NullEngine();
