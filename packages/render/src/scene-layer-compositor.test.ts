@@ -1,4 +1,4 @@
-import { Camera, Constants, InternalTexture, InternalTextureSource, MeshBuilder, Matrix, NullEngine, RenderTargetTexture, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { Camera, Constants, InternalTexture, InternalTextureSource, MeshBuilder, Matrix, NullEngine, PickingInfo, RenderTargetTexture, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
@@ -512,6 +512,72 @@ describe("SceneLayerCompositor", () => {
     mesh.isVisible = true;
     mesh.setEnabled(false);
     expect(compositor.pickHits(missX, 128, floor)).toEqual([]);
+  });
+
+  describe("touch-target floor over a busy layer", () => {
+    const floor = { minTargetPx: 44, canvasCssHeight: 256 };
+    function busyLayer() {
+      const { engine, compositor } = world();
+      vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+      vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+      const layer = compositor.create({
+        type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0,
+        ownerSceneGuid: null, postProcessStack: [], layerBounds: { width: 9, height: 9 },
+      });
+      const plane = (name: string, x: number, y: number, metadata: Record<string, unknown>) => {
+        const mesh = MeshBuilder.CreatePlane(name, { width: 0.32, height: 0.32 }, layer.scene);
+        mesh.position.set(x, y, 0);
+        // Babylon reuses a mesh's matrix within a render id; no frame renders here.
+        mesh.computeWorldMatrix(true);
+        mesh.metadata = metadata;
+        return mesh;
+      };
+      return { compositor, layer, plane };
+    }
+
+    it("returns inflated button, joystick and control hits in scene order among bystanders, before Babylon announces the meshes", () => {
+      const { compositor, plane } = busyLayer();
+      const block = { overlayHitTest: "block" };
+      plane("first-button", -0.5, 0, { ...block, overlayActorGuid: "first", overlayHasButton: true });
+      plane("panel-a", 3, 3, { ...block, overlayActorGuid: "panel-a" });
+      plane("stick", 0.5, 0, { ...block, overlayActorGuid: "stick", overlayJoystickMeshName: "stick-mesh" });
+      plane("panel-b", -3, 3, { ...block, overlayActorGuid: "panel-b" });
+      plane("slider", 0, 0.5, { ...block, overlayActorGuid: "slider", overlayControlMeshName: "slider-mesh", overlayControlComponentId: "value" });
+      plane("last-button", 0, -0.5, { ...block, overlayActorGuid: "last", overlayHasButton: true, overlayButtonComponentId: "press" });
+      // The centre of the layer is half a unit from each target and misses all of their quads.
+      expect(compositor.pickHits(128, 128)).toEqual([]);
+      expect(compositor.pickHits(128, 128, floor)).toEqual([
+        { layerId: "hud", actorGuid: "first", hitTest: "block", hasButton: true },
+        { layerId: "hud", actorGuid: "stick", hitTest: "block", hasButton: false, joystickMeshName: "stick-mesh" },
+        { layerId: "hud", actorGuid: "slider", hitTest: "block", hasButton: false, componentId: "value", controlMeshName: "slider-mesh" },
+        { layerId: "hud", actorGuid: "last", hitTest: "block", hasButton: true, componentId: "press" },
+      ]);
+    });
+
+    it("adds no per-mesh work to the ray pick when widening touch targets", () => {
+      const { compositor, plane } = busyLayer();
+      plane("button", 0, 0, { overlayHitTest: "block", overlayActorGuid: "button", overlayHasButton: true });
+      const bystanders = Array.from({ length: 40 }, (_, index) =>
+        plane(`panel-${index}`, 3 + (index % 5) * 0.2, 3 - Math.floor(index / 5) * 0.2, { overlayHitTest: "block", overlayActorGuid: `panel-${index}` }));
+      const spies = bystanders.map((mesh) => vi.spyOn(mesh, "isEnabled"));
+      const visits = () => spies.reduce((total, spy) => total + spy.mock.calls.length, 0);
+      // 20 px right of the button's centre misses its quad but lands inside the 44 px floor.
+      compositor.pickHits(148, 128);
+      const rayOnly = visits();
+      // The ray pick must have examined the bystanders, or this comparison proves nothing.
+      expect(rayOnly).toBeGreaterThan(0);
+      spies.forEach((spy) => spy.mockClear());
+      expect(compositor.pickHits(148, 128, floor).map((hit) => hit.actorGuid)).toEqual(["button"]);
+      expect(visits()).toBe(rayOnly);
+    });
+
+    it("still finds touch targets when the ray pick does not offer every mesh", () => {
+      const { compositor, layer, plane } = busyLayer();
+      plane("button", 0, 0, { overlayHitTest: "block", overlayActorGuid: "button", overlayHasButton: true });
+      plane("panel", 3, 3, { overlayHitTest: "block", overlayActorGuid: "panel" });
+      vi.spyOn(layer.scene, "pick").mockReturnValue(new PickingInfo());
+      expect(compositor.pickHits(148, 128, floor).map((hit) => hit.actorGuid)).toEqual(["button"]);
+    });
   });
 
   it("keeps overlay NDC stable when the world camera translates", () => {
