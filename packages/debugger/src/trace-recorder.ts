@@ -122,6 +122,49 @@ export type TraceRecorderOptions = {
 const encoder = new TextEncoder();
 /** Evicted frames stay in the arrays until this many are dead and they outnumber the live ones. */
 const COMPACT_EVICTED_FRAMES = 1024;
+/** The ASCII `"snapshotText":` that precedes the value inside a frame's JSON. */
+const SNAPSHOT_MEMBER_NAME_BYTES = '"snapshotText":'.length;
+
+/**
+ * The UTF-8 size of `JSON.stringify(text)`, counted in one pass without building
+ * the escaped string or its bytes: quotes and backslashes take two bytes, control
+ * characters two or six, a lone surrogate is escaped to six, and every other
+ * character takes its UTF-8 length.
+ */
+function jsonStringBytes(text: string): number {
+  let bytes = 2;
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    if (code < 0x80) {
+      if (code >= 0x20 && code !== 0x22 && code !== 0x5c) bytes += 1;
+      else bytes += code === 0x22 || code === 0x5c || (code >= 8 && code <= 10) || code === 12 || code === 13 ? 2 : 6;
+    } else if (code < 0x800) {
+      bytes += 2;
+    } else if (code < 0xd800 || code > 0xdfff) {
+      bytes += 3;
+    } else if (code < 0xdc00 && index + 1 < text.length && (text.charCodeAt(index + 1) & 0xfc00) === 0xdc00) {
+      bytes += 4;
+      index += 1;
+    } else {
+      bytes += 6;
+    }
+  }
+  return bytes;
+}
+
+/**
+ * The UTF-8 size of `JSON.stringify(frame)`. A snapshot is the one large member
+ * and is itself JSON text, so it is counted in place instead of being escaped and
+ * encoded a second time.
+ */
+function frameJsonBytes(frame: TraceFrame): number {
+  const { snapshotText, ...rest } = frame;
+  if (typeof snapshotText !== "string") return encoder.encode(JSON.stringify(frame)).byteLength;
+  const members = JSON.stringify(rest);
+  // The member joins the others before the closing brace, after a comma unless it is the only one.
+  return encoder.encode(members).byteLength + (members === "{}" ? 0 : 1) +
+    SNAPSHOT_MEMBER_NAME_BYTES + jsonStringBytes(snapshotText);
+}
 
 export class TraceRecorder {
   private readonly byteBudget: number;
@@ -173,7 +216,7 @@ export class TraceRecorder {
 
   recordFrame(frame: TraceFrame): void {
     if (!this.recording || !this.payload) return;
-    const bytes = encoder.encode(JSON.stringify(frame)).byteLength;
+    const bytes = frameJsonBytes(frame);
     if (bytes > this.byteBudget - this.headerBytes) {
       this.recording = false;
       this.payload.retention.droppedFrames += 1;
