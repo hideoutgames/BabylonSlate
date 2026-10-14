@@ -62,7 +62,7 @@ describe("createText2DMesh", () => {
       { metrics: fixedMetrics() },
     );
     const children = mesh.getChildMeshes();
-    expect(children.length).toBeGreaterThanOrEqual(2);
+    expect(children.length).toBeGreaterThanOrEqual(1);
     expect(
       (mesh.metadata as { text2dWrapWidth?: number }).text2dWrapWidth,
     ).toBeGreaterThan(0);
@@ -71,9 +71,11 @@ describe("createText2DMesh", () => {
       expect(
         material.diffuseTexture ?? material.opacityTexture ?? material.emissiveTexture,
       ).toBeTruthy();
+      // Two letters share one batch: one atlas rectangle (4 vertices) per letter.
       const uvs = child.getVerticesData("uv");
-      expect(uvs?.length).toBe(8);
+      expect(uvs?.length).toBe(16);
       expect(uvs?.[0]).not.toBe(uvs?.[2]);
+      expect(uvs?.[8]).not.toBe(uvs?.[10]);
     }
   });
 
@@ -98,8 +100,11 @@ describe("createText2DMesh", () => {
     expect(size.y * 2).toBeCloseTo(0.16);
     expect((mesh.metadata as { text2dWrapWidth?: number }).text2dWrapWidth).toBe(32);
     expect((mesh.metadata as { text2dWrapHeight?: number }).text2dWrapHeight).toBe(16);
-    const glyphYs = mesh.getChildMeshes().map((child) => child.position.y);
-    expect(Math.max(...glyphYs) - Math.min(...glyphYs)).toBeGreaterThan(0.16);
+    // The drawn glyphs wrap onto two lines taller than the 0.16 pick plane.
+    const glyphs = mesh.getChildMeshes().map((child) => child.getBoundingInfo().boundingBox);
+    const top = Math.max(...glyphs.map((box) => box.maximum.y));
+    const bottom = Math.min(...glyphs.map((box) => box.minimum.y));
+    expect(top - bottom).toBeGreaterThan(0.16);
   });
 
   it("samples a glyph atlas for rich text color spans instead of a solid fill", () => {
@@ -113,7 +118,9 @@ describe("createText2DMesh", () => {
       { rich: true, metrics: fixedMetrics() },
     );
     const children = mesh.getChildMeshes();
-    expect(children.length).toBe(2);
+    // Both letters are static and share the atlas material, so they are one batch.
+    expect(children.length).toBe(1);
+    expect(children[0]!.getTotalVertices()).toBe(8);
     expect((mesh.metadata as { text2dRich?: boolean }).text2dRich).toBe(true);
     for (const child of children) {
       const material = child.material as StandardMaterial;
@@ -203,7 +210,7 @@ describe("createText2DMesh", () => {
     expect((mesh.metadata as { text2d?: boolean }).text2d).toBe(true);
     expect(mesh.isPickable).toBe(true);
     const children = mesh.getChildMeshes();
-    expect(children.length).toBeGreaterThanOrEqual(2);
+    expect(children.length).toBeGreaterThanOrEqual(1);
     expect(children.every((child) => child.isPickable === false)).toBe(true);
     expect(
       children.every((child) => (child.metadata as { text2dGlyph?: boolean }).text2dGlyph),
@@ -254,10 +261,10 @@ describe("createText2DMesh", () => {
     const sources = mesh.getChildMeshes().map(sourceOf);
     expect(sources).toContain("msdf");
     expect(sources).toContain("bitmap");
-    // Same-style MSDF glyphs share one material; another color gets its own.
+    // Same-style MSDF glyphs share one material and one batch mesh; another color gets its own.
     const msdfGlyphs = mesh.getChildMeshes().filter((child) => sourceOf(child) === "msdf");
-    expect(msdfGlyphs).toHaveLength(2);
-    expect(msdfGlyphs[0]!.material).toBe(msdfGlyphs[1]!.material);
+    expect(msdfGlyphs).toHaveLength(1);
+    expect(msdfGlyphs[0]!.getTotalVertices()).toBe(2 * 4);
     const rich = createText2DMesh(
       handle.scene,
       "msdf-rich",
@@ -291,19 +298,22 @@ describe("createText2DMesh", () => {
       undefined,
       { rich: true, metrics: fixedMetrics() },
     );
+    // The wave letter C is last in either structure: A and B are one static
+    // batch when no reveal mode is set, and a plane each otherwise.
     const children = mesh.getChildMeshes();
     const tick = (mesh.metadata as { tickText2DEffects: (time: number) => void }).tickText2DEffects;
     tick(0.25);
     const matrixVersions = children.map((child) => child.computeWorldMatrix().updateFlag);
-    const effectY = children[2]!.position.y;
+    const effect = children.length - 1;
+    const effectY = children[effect]!.position.y;
 
     tick(0.5);
     updateText2DAppear(mesh, progress);
     handle.scene.incrementRenderId();
-    expect(children.slice(0, 2).map((child) => child.computeWorldMatrix().updateFlag))
-      .toEqual(matrixVersions.slice(0, 2));
-    expect(children[2]!.position.y).not.toBeCloseTo(effectY);
-    expect(children[2]!.computeWorldMatrix().updateFlag).not.toBe(matrixVersions[2]);
+    expect(children.slice(0, effect).map((child) => child.computeWorldMatrix().updateFlag))
+      .toEqual(matrixVersions.slice(0, effect));
+    expect(children[effect]!.position.y).not.toBeCloseTo(effectY);
+    expect(children[effect]!.computeWorldMatrix().updateFlag).not.toBe(matrixVersions[effect]);
   });
 
   it("keeps completed glyph world matrices cached as later characters reveal", () => {

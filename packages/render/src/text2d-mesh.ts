@@ -40,6 +40,7 @@ import {
 } from "./text2d-bitmap";
 import { VisualBundle } from "./visual-bundle";
 import { bindTextMaterialGlyph } from "./text-material-block";
+import { glyphBatchVertexData, writeGlyphBatchPositions, type GlyphBatchQuad } from "./text2d-glyph-batch";
 import { applyOverlayVisualStyle, overlayVisualStyle } from "./overlay-visual-style";
 import {
   combineText2DEffects,
@@ -456,6 +457,7 @@ function attachEffects(
   scene: Scene,
   parent: Mesh,
   glyphs: Array<{ mesh: Mesh; item: Text2DLayoutItem; restRotation: number }>,
+  batches: readonly Mesh[],
   bundle: VisualBundle,
   properties: Text2DProperties,
   characterCount: number,
@@ -501,6 +503,12 @@ function attachEffects(
       entry.slideOffset = slide ? (1 - reveal) * item.style.size / pixelsPerUnit : 0;
       applyPose(entry);
     }
+    // Batches exist only while no reveal mode is set, and then every character
+    // is hidden until the whole timeline completes, so they share one sample.
+    if (batches.length > 0) {
+      const visibility = text2DCharacterReveal(value, 0, characterCount, properties) !== 0 ? 1 : 0;
+      for (const batch of batches) if (batch.visibility !== visibility) batch.visibility = visibility;
+    }
   };
   // Continuous effects visit only tagged glyphs and reuse their last reveal pose.
   const context: Text2DEffectContext = { time: 0, index: 0, fontSize: 0, hoverPhase: 0, rotatePhase: 0 };
@@ -540,7 +548,11 @@ function attachEffects(
   };
 }
 
-/** Overlay 2D text: AABB pick plane + per-glyph (and inline image) quads. */
+/**
+ * Overlay 2D text: an AABB pick plane plus the glyph quads. Static glyphs that
+ * share a material are one batch mesh per material; letter-effect, revealed,
+ * Text Material, image, underline and fallback glyphs are one plane each.
+ */
 export function createText2DMesh(
   scene: Scene,
   name: string,
@@ -649,9 +661,65 @@ export function createText2DMesh(
     // MSDF uniforms depend only on these style fields; bold and italic are
     // mesh transforms, so glyphs of one style share a bundle-owned material.
     const msdfMaterials = new Map<string, Material>();
+    const msdfMaterialFor = (item: Text2DLayoutItem, index: number): Material => {
+      const styleKey = `${item.style.color.join()}|${item.style.outline}|${item.style.outlineColor.join()}`;
+      let material = msdfMaterials.get(styleKey);
+      if (!material) {
+        material = msdfGlyphMaterial(
+          scene,
+          `${name}:glyph:${index}`,
+          item.style.color,
+          item.style.outline,
+          item.style.outlineColor,
+          atlasTexture,
+          bundle,
+        );
+        msdfMaterials.set(styleKey, material);
+      }
+      return material;
+    };
     const materialGlyphs: Array<{ mesh: Mesh; fallback: Material | null }> = [];
+    // Static glyphs that share a material draw as one mesh per material. A Text
+    // Material binds each glyph's own state and a reveal mode animates glyphs
+    // individually, so those texts keep one plane per glyph, as do letter
+    // effects, images, underlines and glyphs with a private fallback material.
+    const batchGlyphs = !parsed.materialGuid && (!rich || parsed.appearModes.length === 0);
+    const batches = new Map<Material, { mesh: Mesh; quads: GlyphBatchQuad[] }>();
     layout.items.forEach((item, index) => {
       if (item.kind === "glyph" && !(item.ch ?? "").trim()) return;
+      const msdf = item.source === "msdf" && renderer === "msdf";
+      const restRotation = item.style.italic && msdf ? MSDF_ITALIC_SHEAR : 0;
+      if (batchGlyphs && item.kind === "glyph" && !hasLetterEffects(item)) {
+        const bitmapKey = !msdf && item.ch ? bitmapGlyphKey(item.ch, item.style, fontStack) : null;
+        const material = msdf
+          ? msdfMaterialFor(item, index)
+          : bitmapKey && sharedBitmapMaterial && packedBitmap ? sharedBitmapMaterial : null;
+        if (material) {
+          let batch = batches.get(material);
+          if (!batch) {
+            // Created at its first glyph so draw and child order follow glyph order.
+            const mesh = new Mesh(`${name}:glyphs:${index}`, scene);
+            mesh.parent = parent;
+            mesh.isPickable = false;
+            mesh.material = material;
+            mesh.metadata = { text2dGlyph: true, text2dSource: item.source, text2dBatch: true };
+            batch = { mesh, quads: [] };
+            batches.set(material, batch);
+          }
+          const scale = item.style.bold && msdf ? 1.08 : 1;
+          batch.quads.push({
+            x: item.x,
+            y: item.y,
+            width: Math.max(item.width, 0.001),
+            height: Math.max(item.height, 0.001),
+            rotation: restRotation,
+            scaleX: scale,
+            scaleY: scale,
+            uvs: bitmapKey ? packedBitmap?.uvs.get(bitmapKey) : item.uvs,
+          });
+          return;
+        }
+      }
       const child = MeshBuilder.CreatePlane(
         `${name}:${item.kind}:${index}`,
         { width: Math.max(item.width, 0.001), height: Math.max(item.height, 0.001) },
@@ -661,25 +729,9 @@ export function createText2DMesh(
       child.position.x = item.x;
       child.position.y = item.y;
       child.isPickable = false;
-      const msdf = item.source === "msdf" && renderer === "msdf";
-      const restRotation = item.style.italic && msdf ? MSDF_ITALIC_SHEAR : 0;
       child.rotation.z = restRotation;
       if (msdf) {
-        const styleKey = `${item.style.color.join()}|${item.style.outline}|${item.style.outlineColor.join()}`;
-        let material = msdfMaterials.get(styleKey);
-        if (!material) {
-          material = msdfGlyphMaterial(
-            scene,
-            `${name}:glyph:${index}`,
-            item.style.color,
-            item.style.outline,
-            item.style.outlineColor,
-            atlasTexture,
-            bundle,
-          );
-          msdfMaterials.set(styleKey, material);
-        }
-        child.material = material;
+        child.material = msdfMaterialFor(item, index);
         applyGlyphUvs(child, item.uvs);
       } else if (item.kind === "image") {
         child.material = unlitMaterial(scene, `${name}:glyph:${index}`, item.style.color, false, bundle);
@@ -728,12 +780,37 @@ export function createText2DMesh(
       glyphMeshes.push({ mesh: child, item, restRotation });
     });
 
+    for (const { mesh, quads } of batches.values()) {
+      glyphBatchVertexData(quads).applyToMesh(mesh);
+      // An overlay-box resize counter-scales plane glyphs so letters keep their
+      // size while the box scales; a batch re-poses its baked quads to match.
+      mesh.metadata = {
+        ...mesh.metadata,
+        text2dCounterScale: (counterX: number, counterY: number) => {
+          const positions = new Float32Array(quads.length * 12);
+          writeGlyphBatchPositions(quads, positions, counterX, counterY);
+          if (mesh.isVertexBufferUpdatable(VertexBuffer.PositionKind)) mesh.updateVerticesData(VertexBuffer.PositionKind, positions, true);
+          else mesh.setVerticesData(VertexBuffer.PositionKind, positions, true);
+        },
+      };
+    }
+
     textMaterialVisuals.set(parent, { guid: parsed.materialGuid, glyphs: materialGlyphs });
     refreshText2DMaterials(parent, assets);
 
     if (rich) {
       const count = layout.items.reduce((total, item) => Math.max(total, item.index + 1), 0);
-      attachEffects(scene, parent, glyphMeshes, bundle, parsed, count, ppu, options.isPaused ?? (() => assets?.paused === true));
+      attachEffects(
+        scene,
+        parent,
+        glyphMeshes,
+        [...batches.values()].map((batch) => batch.mesh),
+        bundle,
+        parsed,
+        count,
+        ppu,
+        options.isPaused ?? (() => assets?.paused === true),
+      );
     }
     applyOverlayVisualStyle(parent, properties);
     textLayouts.set(parent, layout);
