@@ -445,7 +445,8 @@ export function applySetMaterialParameter(
   const restart = pendingMaterialPreparations.get(binding)?.get(command.slotId);
   if (restart) { restart(); return; }
   const root = binding.meshes.get(command.slotId);
-  if (root) applyMaterialToActorMeshes(binding, command.slotId, root);
+  // A component's private values reach only its own meshes; an empty id is a whole-actor write.
+  if (root) applyMaterialToActorMeshes(binding, command.slotId, root, command.componentId || undefined);
 }
 
 /** Unique Material guids currently recorded on Play meshes. */
