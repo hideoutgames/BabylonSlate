@@ -181,7 +181,7 @@ Visual components **2D Texture**, **2D Material**, **2D Panel**, **2D Text**, **
 
 Component motion likewise uses `setComponentTransforms`, retaining geometry, material and glyph resources while updating component poses and nonvisual ancestor transforms. The renderer applies the same samples to prepared replacements and retains them while a layer scene is loading. Optimized singleton visuals compose the latest component pose with each actor snapshot; a motion command invalidates the cached snapshot even when the actor itself has not moved.
 
-Overlay-only `2DTextComponent` / `2DRichTextComponent`. Shared per-glyph quads (not Babylon GUI / `TextRenderer.addParagraph`). **Renderer** is `bitmap` (default) or `msdf`.
+Overlay-only `2DTextComponent` / `2DRichTextComponent`. Glyph quads (not Babylon GUI / `TextRenderer.addParagraph`); static glyphs on one material are batched into a single mesh, see [Overlay 2D Text mesh](render.md#overlay-2d-text-mesh). **Renderer** is `bitmap` (default) or `msdf`.
 
 **Text Material** accepts the dedicated **Text** Material domain. Its **Text Output** Color (RGBA) multiplies the glyph's baked Bitmap color or MSDF fill/outline color; the engine preserves letter coverage and rich-text spans. Underlines receive the same material, while inline images keep their image textures. None, a missing asset, or another material domain uses the normal text renderer. **Material UV** defaults to **Text Box** (0–1 across the wrap box); **Each Glyph** repeats 0–1 on each letter. Atlas coordinates remain private to text rendering. Both properties have component Get/Set variables, and Play/player carry the same material and UV settings as the editor.
 

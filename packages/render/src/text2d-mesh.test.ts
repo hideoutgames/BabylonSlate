@@ -428,7 +428,7 @@ describe("2D text editor and Play wiring", () => {
       { pixelsPerUnit: 100 },
     );
     expect((mesh.metadata as { text2dRich?: boolean }).text2dRich).toBe(true);
-    expect(mesh.getChildMeshes().length).toBeGreaterThanOrEqual(2);
+    expect(mesh.getChildMeshes().length).toBeGreaterThanOrEqual(1);
     expect(mesh.getChildMeshes().every((glyph) => glyph.visibility === 1)).toBe(true);
     const material = mesh.getChildMeshes()[0]?.material as StandardMaterial;
     expect(material.emissiveTexture).toBeTruthy();
