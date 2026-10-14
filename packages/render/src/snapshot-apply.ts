@@ -382,7 +382,8 @@ export function applyAssignMaterial(
   }
   const root = binding.meshes.get(command.slotId);
   if (!root) return;
-  applyMaterialToActorMeshes(binding, command.slotId, root);
+  // An empty id records a whole-actor assignment above, so it is not scoped.
+  applyMaterialToActorMeshes(binding, command.slotId, root, componentId || undefined);
 }
 
 function materialInstanceKey(
@@ -527,17 +528,27 @@ function resolveAssignedMaterial(
   );
 }
 
+/**
+ * Bind the recorded Materials to every mesh of a slot's visual. `onlyComponentId`
+ * limits the pass to that component's meshes (including imported children and
+ * any added after realization, which are found by the walk): a component's own
+ * assignment cannot change what another component's meshes resolve to, so the
+ * other meshes are not re-resolved.
+ */
 export function applyMaterialToActorMeshes(
   binding: SnapshotSceneBinding,
   slotId: number,
   root: Mesh,
+  onlyComponentId?: string,
 ): void {
   const targets: Mesh[] = [root, ...root.getChildMeshes().filter(isMesh)];
+  const components = new Map<SceneNode, string | null>();
   for (const target of targets) {
     // Text Materials are composed with glyph coverage by the text builder.
     if (target.metadata?.text2d || target.metadata?.text2dGlyph) continue;
     if (isTilemapChunkMesh(target)) continue;
-    const componentId = componentIdForPlayMesh(target, slotId, binding);
+    const componentId = componentIdForPlayMesh(target, slotId, binding, components);
+    if (onlyComponentId !== undefined && componentId !== onlyComponentId) continue;
     const guid = assignedMaterialGuid(binding, slotId, componentId);
     if (guid === null) {
       if (!restoreAlbedoMaterial(target)) target.material = null;
@@ -555,21 +566,30 @@ export function applyMaterialToActorMeshes(
   }
 }
 
-/** Imported glTF child names are arbitrary; their component is on an ancestor. */
+type SceneNode = import("@babylonjs/core").Node;
+
+/**
+ * Imported glTF child names are arbitrary; their component is on an ancestor.
+ * A walk over one slot's meshes passes a shared `nearest` memo, so each node's
+ * name is parsed once rather than once per descendant.
+ */
 export function componentIdForPlayMesh(
   mesh: AbstractMesh,
   slotId: number,
   binding: SnapshotSceneBinding,
+  nearest?: Map<SceneNode, string | null>,
 ): string | null {
-  for (
-    let node: import("@babylonjs/core").Node | null = mesh;
-    node;
-    node = node.parent
-  ) {
-    const id = componentIdOfPlayMesh(node.name, slotId);
-    if (id) return id;
+  let id: string | null = null;
+  const climbed: SceneNode[] = [];
+  for (let node: SceneNode | null = mesh; node; node = node.parent) {
+    climbed.push(node);
+    const known = nearest?.get(node);
+    if (known !== undefined) { id = known; break; }
+    id = componentIdOfPlayMesh(node.name, slotId) || null;
+    if (id) break;
   }
-  return binding.primaryComponentIds.get(slotId) ?? null;
+  if (nearest) for (const node of climbed) nearest.set(node, id);
+  return id ?? binding.primaryComponentIds.get(slotId) ?? null;
 }
 
 function isMesh(value: AbstractMesh): value is Mesh {
