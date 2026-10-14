@@ -1,4 +1,4 @@
-import { Mesh, MeshBuilder, StandardMaterial, TransformNode } from "@babylonjs/core";
+import { Camera, Mesh, MeshBuilder, StandardMaterial, TransformNode, UniversalCamera, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene, createMeshComponent, identitySerializedTransform, resolveOverlayLayout } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
@@ -299,5 +299,114 @@ describe("SceneLayer layout rendering", () => {
     expectPosition(1);
     expect(content.parentId).toBe("nested");
     expect(content.transform.position).toEqual([0, 0, 0]);
+  });
+});
+
+describe("SceneLayer clip draw hooks", () => {
+  type Mode = "editor" | "runtime";
+  const modes: Mode[] = ["editor", "runtime"];
+  const rect = { x: 0, y: 0, width: 4, height: 4 };
+  // A 16-unit orthographic view on a 128 px target is 8 px per unit, so the
+  // 4-unit clip above covers pixels 48..80 on both axes (bottom-left origin).
+  const clipped = [48, 48, 32, 32];
+
+  function clippedPanel(mode: Mode) {
+    const { engine, scene } = createTestEngine();
+    const renderer = new OverlayLayoutRenderer(() => scene);
+    cleanup.push(() => { renderer.dispose(); scene.dispose(); engine.dispose(); });
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(128);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(128);
+    const scissor = vi.spyOn(engine, "enableScissor").mockImplementation(() => {});
+    vi.spyOn(engine, "disableScissor").mockImplementation(() => {});
+    const camera = new UniversalCamera("camera", new Vector3(0, 0, -10), scene);
+    camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+    camera.orthoLeft = -8; camera.orthoRight = 8; camera.orthoTop = 8; camera.orthoBottom = -8;
+    scene.activeCamera = camera;
+    scene.updateTransformMatrix(true);
+    const root = new Mesh(mode === "editor" ? "editorActor:panel" : "actor-1", scene);
+    const glyph = MeshBuilder.CreatePlane("glyph", {}, scene);
+    glyph.parent = root;
+    const apply = (clip: typeof rect | null) => {
+      const entry = { actorId: "panel", slotId: 1, rect, clip, scrollAncestors: [] };
+      if (mode === "editor") applyEditorLayoutClips(scene, new Map([["panel", entry]]));
+      else renderer.apply({ type: "sceneLayerLayout", layerId: "hud", entries: [entry] });
+    };
+    const frame = () => scene.onBeforeRenderObservable.notifyObservers(scene);
+    /** The scissor rectangle a draw of the mesh sets, or null when that draw is not clipped. */
+    const drawn = (mesh: Mesh) => {
+      scissor.mockClear();
+      mesh.onBeforeBindObservable.notifyObservers(mesh);
+      mesh.onAfterRenderObservable.notifyObservers(mesh);
+      return scissor.mock.calls.at(-1) ?? null;
+    };
+    return { scene, root, glyph, apply, frame, drawn };
+  }
+
+  it.each(modes)("does not walk the scene's meshes on frames where nothing changed (%s)", async (mode) => {
+    const { scene, apply, frame, drawn, glyph } = clippedPanel(mode);
+    apply(rect);
+    // Let Babylon announce the meshes created above, then settle on one frame.
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    frame();
+    expect(drawn(glyph)).toEqual(clipped);
+    let walks = 0;
+    const iterate = scene.meshes[Symbol.iterator].bind(scene.meshes);
+    Object.defineProperty(scene.meshes, Symbol.iterator, {
+      configurable: true,
+      value: () => { walks += 1; return iterate(); },
+    });
+    for (let index = 0; index < 5; index += 1) frame();
+    expect(walks).toBe(0);
+  });
+
+  it.each(modes)("clips a mesh that arrives under a clip before Babylon announces it (%s)", (mode) => {
+    const { scene, root, glyph, apply, frame, drawn } = clippedPanel(mode);
+    apply(rect);
+    frame();
+    const added = MeshBuilder.CreatePlane("added", {}, scene);
+    added.parent = root;
+    frame();
+    expect(drawn(added)).toEqual(clipped);
+    // One mesh leaves as another arrives, so the mesh count alone cannot show it.
+    const swapped = MeshBuilder.CreatePlane("swapped", {}, scene);
+    swapped.parent = root;
+    glyph.dispose();
+    frame();
+    expect(drawn(swapped)).toEqual(clipped);
+  });
+
+  it.each(modes)("follows meshes and transform nodes reparented into or out of a clip (%s)", (mode) => {
+    const { scene, root, glyph, apply, frame, drawn } = clippedPanel(mode);
+    const loose = MeshBuilder.CreatePlane("loose", {}, scene);
+    const carrier = new TransformNode("carrier", scene);
+    const carried = MeshBuilder.CreatePlane("carried", {}, scene);
+    carried.parent = carrier;
+    apply(rect);
+    frame();
+    expect(drawn(loose)).toBeNull();
+    expect(drawn(carried)).toBeNull();
+    loose.parent = root;
+    carrier.parent = root;
+    frame();
+    expect(drawn(loose)).toEqual(clipped);
+    expect(drawn(carried)).toEqual(clipped);
+    glyph.parent = null;
+    carrier.parent = null;
+    frame();
+    expect(drawn(glyph)).toBeNull();
+    expect(drawn(carried)).toBeNull();
+    expect(drawn(loose)).toEqual(clipped);
+  });
+
+  it.each(modes)("follows the layout when the clip moves, disappears or returns (%s)", (mode) => {
+    const { apply, glyph, drawn } = clippedPanel(mode);
+    apply(rect);
+    expect(drawn(glyph)).toEqual(clipped);
+    apply({ ...rect, x: 2 });
+    expect(drawn(glyph)).toEqual([64, 48, 16, 32]);
+    apply(null);
+    expect(drawn(glyph)).toBeNull();
+    apply(rect);
+    expect(drawn(glyph)).toEqual(clipped);
   });
 });
