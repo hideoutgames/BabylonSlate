@@ -2,11 +2,11 @@ import { installModelSources } from "./mesh-assets";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Material, Mesh, MeshBuilder, HemisphericLight, PointLight, Quaternion, Scene, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { DirectionalLight, Material, Mesh, MeshBuilder, HemisphericLight, PointLight, Quaternion, Scene, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
 import { createDefaultSpritePayload, createDefaultTilemapPayload, decodeBabasset, embedGlbExternalImages, encodeBabasset, normalizeTilesetPayload, setTile } from "@babylonslate/assets";
-import { createDefaultWaterDefinition, DEFAULT_SORTING_LAYERS, normalizeWaterBody, parseText2DProperties } from "@babylonslate/core";
+import { createDefaultWaterDefinition, DEFAULT_SORTING_LAYERS, identityTransform, normalizeWaterBody, parseText2DProperties } from "@babylonslate/core";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./create-null-engine";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
@@ -18,6 +18,7 @@ import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import {
   applyAssignMaterial,
   applyAssignMesh,
+  applyComponentTransformsCommand,
   applyMaterialToActorMeshes,
   applyPossessCamera,
   applySnapshotToScene,
@@ -1398,6 +1399,107 @@ describe("createPlayMesh", () => {
     const chunk = binding.meshes.get(1)!.getChildMeshes()[0]!;
     expect(chunk.position.x).toBeCloseTo(3.01, 6);
     expect(chunk.position.y).toBeCloseTo(1.03, 6);
+  });
+
+  describe("light and camera poses", () => {
+    const pose = (slotId: number, x: number, y = 0, z = 0, yaw = 0) => ({
+      slotId, flags: 1, position: { x, y, z }, scale: { x: 1, y: 1, z: 1 },
+      rotation: yaw ? { x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) } : { x: 0, y: 0, z: 0, w: 1 },
+    });
+    const frame = (...actors: ReturnType<typeof pose>[]) => ({ frameId: 1, tickIndex: 1, actorCount: actors.length, actors });
+
+    it("rewrites a light or camera only when its own pose changes, including a rebuilt light", () => {
+      const handle = createTestEngine();
+      handles.push(handle);
+      const { scene } = handle;
+      const binding = createSnapshotSceneBinding();
+      const lightCommand: AssignMeshCommand = { type: "assignMesh", slotId: 0, meshAssetGuid: null, meshKind: "light:directional",
+        light: { color: [1, 1, 1], intensity: 1, enabled: true } };
+      applyAssignMesh(scene, binding, lightCommand);
+      applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 1, meshAssetGuid: null, meshKind: "camera",
+        camera: { isDefault: false, projectionMode: "perspective" } });
+      const light = binding.lights.get(0) as DirectionalLight;
+      const camera = binding.cameras.get(1) as UniversalCamera;
+      const lightWrites = vi.spyOn(light.position, "set");
+      const cameraWrites = vi.spyOn(camera.position, "set");
+
+      applySnapshotToScene(scene, binding, frame(pose(0, 1, 2, 3, Math.PI / 2), pose(1, 4, 5, 6)));
+      expect([lightWrites.mock.calls.length, cameraWrites.mock.calls.length]).toEqual([1, 1]);
+      expect(light.position.asArray()).toEqual([1, 2, 3]);
+      expect(Math.abs(light.direction.x)).toBeCloseTo(1);
+      expect(light.direction.z).toBeCloseTo(0);
+      expect(camera.position.asArray()).toEqual([4, 5, 6]);
+
+      // Neither pose changed, so neither object is written again.
+      applySnapshotToScene(scene, binding, frame(pose(0, 1, 2, 3, Math.PI / 2), pose(1, 4, 5, 6)));
+      expect([lightWrites.mock.calls.length, cameraWrites.mock.calls.length]).toEqual([1, 1]);
+
+      // Moving the light leaves the camera alone.
+      applySnapshotToScene(scene, binding, frame(pose(0, 7, 2, 3, Math.PI / 2), pose(1, 4, 5, 6)));
+      expect([lightWrites.mock.calls.length, cameraWrites.mock.calls.length]).toEqual([2, 1]);
+      expect(light.position.x).toBe(7);
+
+      // Rotating it alone is a change too.
+      applySnapshotToScene(scene, binding, frame(pose(0, 7, 2, 3), pose(1, 4, 5, 6)));
+      expect(lightWrites.mock.calls.length).toBe(3);
+      expect(light.direction.z).toBeCloseTo(1);
+
+      // The camera moves on its own row.
+      applySnapshotToScene(scene, binding, frame(pose(0, 7, 2, 3), pose(1, 8, 5, 6)));
+      expect([lightWrites.mock.calls.length, cameraWrites.mock.calls.length]).toEqual([3, 2]);
+      expect(camera.position.x).toBe(8);
+
+      // A rebuilt light starts from the origin and must reach the unchanged pose.
+      applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshAssetGuid: null, meshKind: "light:point" });
+      const rebuilt = binding.lights.get(0) as PointLight;
+      expect(rebuilt).not.toBe(light);
+      applySnapshotToScene(scene, binding, frame(pose(0, 7, 2, 3), pose(1, 8, 5, 6)));
+      expect(rebuilt.position.asArray()).toEqual([7, 2, 3]);
+    });
+
+    it("moves a camera whose component pose changes while its actor row stays put", () => {
+      const handle = createTestEngine();
+      handles.push(handle);
+      const { scene } = handle;
+      const binding = createSnapshotSceneBinding();
+      applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshAssetGuid: null, meshKind: "camera", primaryComponentId: "cam",
+        camera: { isDefault: false, projectionMode: "perspective" } });
+      applySnapshotToScene(scene, binding, frame(pose(0, 10)));
+      const camera = binding.cameras.get(0) as UniversalCamera;
+      expect(camera.position.x).toBeCloseTo(10);
+      const writes = vi.spyOn(camera.position, "set");
+
+      applyComponentTransformsCommand(binding, { type: "setComponentTransforms", slotId: 0,
+        parts: [{ componentId: "cam", transform: { ...identityTransform(), position: { x: 2, y: 0, z: 0 } } }] });
+      expect(camera.position.x).toBeCloseTo(12);
+      expect(writes.mock.calls.length).toBe(1);
+
+      applySnapshotToScene(scene, binding, frame(pose(0, 10)));
+      expect(camera.position.x).toBeCloseTo(12);
+      expect(writes.mock.calls.length).toBe(1);
+    });
+
+    it("restores the unsnapped camera pose when pixel snapping is switched off with the row unchanged", () => {
+      const handle = createTestEngine();
+      handles.push(handle);
+      const { scene } = handle;
+      const binding = createSnapshotSceneBinding();
+      binding.pixelPerfect = true;
+      binding.pixelsPerUnit = 100;
+      applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 1, meshAssetGuid: null, meshKind: "camera",
+        camera: { isDefault: true, projectionMode: "orthographic" } });
+      const camera = binding.cameras.get(1) as UniversalCamera;
+
+      for (let applied = 0; applied < 2; applied++) {
+        applySnapshotToScene(scene, binding, frame(pose(1, 0.014, 0.026, -8)));
+        expect(camera.position.x).toBeCloseTo(0.01, 6);
+        expect(camera.position.y).toBeCloseTo(0.03, 6);
+      }
+      binding.pixelPerfect = false;
+      applySnapshotToScene(scene, binding, frame(pose(1, 0.014, 0.026, -8)));
+      expect(camera.position.x).toBeCloseTo(0.014, 6);
+      expect(camera.position.y).toBeCloseTo(0.026, 6);
+    });
   });
 
   it("prefers a possessed camera over the Default Camera", () => {

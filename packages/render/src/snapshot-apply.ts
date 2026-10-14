@@ -2122,10 +2122,45 @@ function finishPlayWorldMesh(mesh: Mesh): Mesh {
   return mesh;
 }
 
-/** Component meshes include every attachment and spring-arm socket transform. */
+/**
+ * World matrix behind the last transform written to each helper light or
+ * camera. The write is a pure function of it, so an identical matrix is
+ * skipped. Whatever else moves the driven object after the write must drop its
+ * entry, or the unchanged matrix would leave that move in place.
+ */
+const writtenIlluminationWorlds = new WeakMap<Light | Camera, Float64Array>();
+
+/** Whether `world` differs from the matrix last written to `driven`; records it when it does. */
+function illuminationWorldChanged(driven: Light | Camera, world: Matrix): boolean {
+  const next = world.m;
+  const last = writtenIlluminationWorlds.get(driven);
+  if (!last) {
+    const first = new Float64Array(16);
+    first.set(next);
+    writtenIlluminationWorlds.set(driven, first);
+    return true;
+  }
+  for (let i = 0; i < 16; i++) {
+    if (last[i] !== next[i]) {
+      last.set(next);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Component meshes include every attachment and spring-arm socket transform.
+ * Those ancestors are moved in place by other passes, so the matrix is always
+ * recomputed; only the decompose and the light or camera write are skipped
+ * when it matches what was last written.
+ */
 function updateComponentIllumination(root: Mesh): void {
   for (const helper of actorIllumination.get(root) ?? []) {
-    helper.mesh.computeWorldMatrix(true).decompose(scratchAnchorScale, scratchAnchorRotation, scratchAnchorPosition);
+    const world = helper.mesh.computeWorldMatrix(true);
+    const driven = helper.camera ?? helper.light;
+    if (driven && !illuminationWorldChanged(driven, world)) continue;
+    world.decompose(scratchAnchorScale, scratchAnchorRotation, scratchAnchorPosition);
     if (helper.light) updateAuthoredLightTransform(helper.light, scratchAnchorPosition, scratchAnchorRotation);
     if (helper.camera) updateAuthoredCameraTransform(helper.camera, scratchAnchorPosition, scratchAnchorRotation);
   }
@@ -2265,6 +2300,8 @@ export function applySnapshotToScene(
   sampleSceneWaterFrame(scene, snapshot.frameId);
   reconcileSnapshotVisuals(scene, binding, snapshot);
   const count = snapshot.actorCount ?? snapshot.actors.length;
+  // Without any light or camera there is nothing to look up for each actor.
+  const hasLightsOrCameras = binding.lights.size > 0 || binding.cameras.size > 0;
   for (let i = 0; i < count; i++) {
     const actor = snapshot.actors[i]!;
     const mesh = binding.snapshotMeshes[i];
@@ -2279,8 +2316,11 @@ export function applySnapshotToScene(
       mesh,
       (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE,
     );
-    if (actorIllumination.has(mesh)) continue;
+    if (!hasLightsOrCameras) continue;
     const light = binding.lights.get(actor.slotId);
+    const camera = binding.cameras.get(actor.slotId);
+    // The few slots with a light or camera are the only ones worth the weak lookup.
+    if ((!light && !camera) || actorIllumination.has(mesh)) continue;
     if (light) {
       const composed = composeSlotPartTransform(actor, binding, actor.slotId);
       updateAuthoredLightTransform(
@@ -2289,7 +2329,6 @@ export function applySnapshotToScene(
         composed.rotation,
       );
     }
-    const camera = binding.cameras.get(actor.slotId);
     if (camera) {
       const composed = composeSlotPartTransform(actor, binding, actor.slotId);
       updateAuthoredCameraTransform(
@@ -2344,8 +2383,13 @@ function snapPlayCameraToPixelGrid(
     binding.pixelsPerUnit && binding.pixelsPerUnit > 0
       ? binding.pixelsPerUnit
       : 100;
-  camera.position.x = snapToPixelGrid(camera.position.x, ppu);
-  camera.position.y = snapToPixelGrid(camera.position.y, ppu);
+  const { x, y } = camera.position;
+  const snappedX = snapToPixelGrid(x, ppu);
+  const snappedY = snapToPixelGrid(y, ppu);
+  camera.position.x = snappedX;
+  camera.position.y = snappedY;
+  // The snap moved the camera off its written pose; an unchanged pose must be rewritten.
+  if (snappedX !== x || snappedY !== y) writtenIlluminationWorlds.delete(camera);
 }
 
 export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
