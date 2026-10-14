@@ -178,12 +178,12 @@ class PickPass {
  * and awaits its object-ID variant, the expensive part of a tap.
  *
  * A proof is per mesh and is dropped when the mesh's material (or thin-instance
- * mode) changes. It is dropped for every mesh when the scene's shared inputs
- * change: lights, materials, textures, skeletons, the camera, or the project's
- * own rendering-definition signal (`markSceneReadinessDirty`), the same
- * invalidation the scene renderer's cached strict readiness follows. Babylon
- * defers its add/remove observables, so tap time also compares the collection
- * sizes and light states directly.
+ * mode) changes, so a new material or mesh costs only its own probe. It is
+ * dropped for every mesh when a shared input changes: lights, textures,
+ * skeletons, the camera, or the project's own rendering-definition signal
+ * (`markSceneReadinessDirty`), the same invalidation the scene renderer's
+ * cached strict readiness follows. Babylon defers its add/remove observables,
+ * so tap time also compares the collection sizes and light states directly.
  */
 class PickReadiness {
   private proven = new WeakMap<AbstractMesh, { material: Material | null; instanced: boolean }>();
@@ -197,8 +197,6 @@ class PickReadiness {
       const observer = observable.add(invalidate);
       this.detach.push(() => observable.remove(observer));
     };
-    watch(scene.onNewMaterialAddedObservable);
-    watch(scene.onMaterialRemovedObservable);
     watch(scene.onNewLightAddedObservable);
     watch(scene.onLightRemovedObservable);
     watch(scene.onNewTextureAddedObservable);
@@ -247,7 +245,6 @@ class PickReadiness {
       index += 1;
     };
     note(this.revision);
-    note(scene.materials.length);
     note(scene.lights.length);
     note(scene.textures.length);
     note(scene.skeletons.length);

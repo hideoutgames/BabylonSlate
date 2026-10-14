@@ -98,15 +98,17 @@ function pickFixture() {
   };
   const readback = vi.spyOn(engine, "_readTexturePixels")
     .mockImplementation(async (_texture, _width, _height, _face, _level, buffer) => writeHit(buffer!));
-  const passIds = vi.spyOn(engine, "createRenderPassId");
-  const releasedIds = vi.spyOn(engine, "releaseRenderPassId");
   disposers.push(() => { scene.dispose(); engine.dispose(); });
   return {
-    engine, scene, camera, meshes, readback, passIds, releasedIds, writeHit,
+    engine, scene, camera, meshes, readback, writeHit,
     hit: (value: number) => { id = value; },
     tap: () => gpuPickMesh(scene, WIDTH / 2, HEIGHT / 2),
-    /** Render pass ids created so far (the object renderer and its transparency helper). */
-    createdPassIds: () => passIds.mock.results.map((result) => result.value as number),
+    /**
+     * Live render pass ids of the pick graph: its object renderer and that
+     * renderer's depth-peeling helper. A leaked or rebuilt graph changes them.
+     */
+    livePickPassIds: () => engine.getRenderPassNames().flatMap((name, id) =>
+      name?.startsWith("GPU Pick") || name?.startsWith("DepthPeelingRenderer") ? [id] : []),
   };
 }
 type PickFixture = ReturnType<typeof pickFixture>;
@@ -132,12 +134,12 @@ describe("gpuPickMesh", () => {
     const f = pickFixture();
     f.hit(2);
     expect((await f.tap())?.name).toBe("Middle");
-    const built = f.createdPassIds();
+    const built = f.livePickPassIds();
     expect(built.length).toBeGreaterThan(0);
     for (let tap = 0; tap < 2; tap += 1) expect((await f.tap())?.name).toBe("Middle");
     f.hit(0);
     expect(await f.tap()).toBeNull();
-    expect(f.createdPassIds()).toEqual(built);
+    expect(f.livePickPassIds()).toEqual(built);
     expect(f.scene.objectRenderers).toHaveLength(1);
   });
 
@@ -147,12 +149,11 @@ describe("gpuPickMesh", () => {
     lod.isPickable = false;
     f.meshes[1]!.addLODLevel(20, lod);
     const [left, middle, right] = f.meshes as [AbstractMesh, AbstractMesh, AbstractMesh];
-    // The renderer's pass id is the first one the pick allocates.
-    const written = (mesh: AbstractMesh) =>
-      MaterialHelperGeometryRendering.GetConfiguration(f.createdPassIds()[0]!)!.objectIdProvider!(mesh);
-
     f.hit(3);
     expect((await f.tap())?.name).toBe("Right");
+    const renderPassId = f.scene.objectRenderers[0]!.renderPassId;
+    const written = (mesh: AbstractMesh) =>
+      MaterialHelperGeometryRendering.GetConfiguration(renderPassId)!.objectIdProvider!(mesh);
     expect([left, middle, right, lod].map(written)).toEqual([1, 2, 3, 2]);
 
     // The persistent pass must not keep the previous tap's numbering.
@@ -240,28 +241,24 @@ describe("gpuPickMesh", () => {
       const stuck = vi.spyOn(f.meshes[1]!, "isReady").mockImplementation(() => { now += 600; return false; });
       f.hit(1);
       expect(await f.tap()).toBeUndefined();
-      const built = f.createdPassIds();
+      const built = f.livePickPassIds();
+      expect(built.length).toBeGreaterThan(0);
       stuck.mockRestore();
       expect((await f.tap())?.name).toBe("Left");
-      expect(f.createdPassIds()).toEqual(built);
+      expect(f.livePickPassIds()).toEqual(built);
       expect(f.scene.objectRenderers).toHaveLength(1);
     });
   });
 
   describe("lifecycle", () => {
-    const expectReleased = (f: PickFixture, ids: number[]) => {
-      expect(ids.length).toBeGreaterThan(0);
-      for (const id of ids) expect(f.releasedIds).toHaveBeenCalledWith(id);
-    };
-
     it("falls back to the CPU ray after a failed read-back and rebuilds without leaking the failed pass", async () => {
       const f = pickFixture();
       f.readback.mockRejectedValueOnce(new Error("device lost"));
       expect(await f.tap()).toBeUndefined();
-      const failed = f.createdPassIds();
+      expect(f.livePickPassIds()).toEqual([]);
       f.hit(2);
       expect((await f.tap())?.name).toBe("Middle");
-      expectReleased(f, failed);
+      expect(f.livePickPassIds().length).toBeGreaterThan(0);
       expect(f.scene.objectRenderers).toHaveLength(1);
     });
 
@@ -269,8 +266,9 @@ describe("gpuPickMesh", () => {
       const f = pickFixture();
       f.hit(1);
       await f.tap();
+      expect(f.livePickPassIds().length).toBeGreaterThan(0);
       f.scene.dispose();
-      expectReleased(f, f.createdPassIds());
+      expect(f.livePickPassIds()).toEqual([]);
       expect(f.scene.objectRenderers).toHaveLength(0);
     });
 
@@ -283,7 +281,7 @@ describe("gpuPickMesh", () => {
       });
       f.hit(1);
       expect(await f.tap()).toBeUndefined();
-      expectReleased(f, f.createdPassIds());
+      expect(f.livePickPassIds()).toEqual([]);
       expect(f.scene.objectRenderers).toHaveLength(0);
     });
   });
