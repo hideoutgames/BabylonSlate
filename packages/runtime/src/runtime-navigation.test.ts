@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createActor,
   createDefaultSceneSettings,
@@ -12,9 +12,29 @@ import {
   mergeNavBakeMeshes,
   recastWalkableQuadFromXy,
   solidBlockerMesh,
+  type NavCostVolume,
 } from "@babylonslate/navigation";
 import { actorGuidIndex, actorWorldTransform } from "./actor-world-transform";
 import { createInProcessRuntime } from "./driver";
+
+const costVolumesReceived = vi.hoisted(() => [] as NavCostVolume[]);
+
+vi.mock("@babylonslate/navigation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@babylonslate/navigation")>();
+  return {
+    ...actual,
+    // The real backend, with each cost volume the runtime hands it recorded.
+    createNavigationBackend: () => {
+      const backend = actual.createNavigationBackend();
+      const applyCostVolume = backend.applyCostVolume.bind(backend);
+      backend.applyCostVolume = (volume) => {
+        costVolumesReceived.push(structuredClone(volume));
+        applyCostVolume(volume);
+      };
+      return backend;
+    },
+  };
+});
 
 const ground = {
   positions: [-10, 0, -10, 10, 0, -10, 10, 0, 10, -10, 0, 10],
@@ -70,6 +90,10 @@ function turn(rotation: { x: number; y: number; z: number; w: number }, axis: "y
 describe("RuntimeNavigation", () => {
   beforeAll(async () => {
     await initNavigation();
+  });
+
+  beforeEach(() => {
+    costVolumesReceived.length = 0;
   });
 
   it("keeps an idle agent's facing and turns a moving 2D agent toward its velocity", async () => {
@@ -175,6 +199,65 @@ describe("RuntimeNavigation", () => {
       // The volume rides with the cart, far from the corridor.
       expect(runtime.findNavPath({ x: -8, y: 0, z: 0 }, { x: 8, y: 0, z: 0 })
         .every((point) => Math.abs(point.z) < 2.5)).toBe(true);
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it("stops pricing the route once a cost blocker is switched to unwalkable", async () => {
+    const runtime = await play([
+      blocker("mud", { dynamic: false, kind: "box", area: "cost", cost: 10 }, {
+        position: [0, 1, 0], rotation: [0, 0, 0, 1], scale: [4, 2, 3],
+      }),
+    ], await generateNavMesh({ ...corridor, settings: fine }));
+    try {
+      const route = () => runtime.findNavPath({ x: -8, y: 0, z: 0 }, { x: 8, y: 0, z: 0 });
+      runtime.tick();
+      expect(route().some((point) => Math.abs(point.z) > 6)).toBe(true);
+      runtime.getWorld().findActor("mud")!.components[0]!.setVariable("area", "unwalkable");
+      runtime.tick();
+      expect(route().every((point) => Math.abs(point.z) < 2.5)).toBe(true);
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it("restamps a dynamic cost volume when its blocker moves or its settings change, and only then", async () => {
+    const runtime = await play([
+      blocker("mud", { dynamic: true, kind: "box", area: "cost", cost: 10 }, {
+        position: [0, 1, 0], rotation: [0, 0, 0, 1], scale: [4, 2, 3],
+      }),
+    ], await generateNavMesh({ ...corridor, settings: fine }));
+    try {
+      const mud = runtime.getWorld().findActor("mud")!;
+      const route = () => runtime.findNavPath({ x: -8, y: 0, z: 0 }, { x: 8, y: 0, z: 0 });
+      runtime.tick();
+      expect(route().some((point) => Math.abs(point.z) > 6)).toBe(true);
+      const settled = costVolumesReceived.length;
+      expect(settled).toBeGreaterThan(0);
+      for (let tick = 0; tick < 5; tick++) runtime.tick();
+      expect(costVolumesReceived).toHaveLength(settled);
+
+      // Writers mutate the transform in place, so the move is seen by value.
+      mud.transform.position.x = 100;
+      runtime.tick();
+      expect(costVolumesReceived).toHaveLength(settled + 1);
+      expect(costVolumesReceived.at(-1)!.pose.x).toBeCloseTo(100);
+      expect(route().every((point) => Math.abs(point.z) < 2.5)).toBe(true);
+      runtime.tick();
+      expect(costVolumesReceived).toHaveLength(settled + 1);
+
+      mud.transform.scale.x = 6;
+      runtime.tick();
+      expect(costVolumesReceived).toHaveLength(settled + 2);
+      expect(costVolumesReceived.at(-1)!.size.x).toBeCloseTo(6);
+
+      mud.components[0]!.setVariable("cost", 50);
+      runtime.tick();
+      expect(costVolumesReceived).toHaveLength(settled + 3);
+      expect(costVolumesReceived.at(-1)!.cost).toBe(50);
+      for (let tick = 0; tick < 3; tick++) runtime.tick();
+      expect(costVolumesReceived).toHaveLength(settled + 3);
     } finally {
       runtime.stop();
     }

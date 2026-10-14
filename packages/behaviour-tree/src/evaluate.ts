@@ -169,6 +169,18 @@ interface EvaluationTree {
    * (the last index when a missing child id repeats among its children).
    */
   childIndexUnder: Map<string, Map<string, number>>;
+  /**
+   * The nodes that carry a Cooldown, in tree order, with the memory key of each
+   * of their Cooldown decorators in decorator order. The per-tick countdown
+   * visits only these.
+   */
+  cooldowns: Array<{ nodeId: string; keys: string[] }>;
+  /**
+   * The nodes with a decorator whose `abortMode` is not `none`, in tree order,
+   * each with just those decorators in decorator order. The per-tick abort pass
+   * visits only these.
+   */
+  observers: Array<{ node: BtNode; decorators: BtDecorator[] }>;
 }
 
 /**
@@ -200,7 +212,9 @@ function buildEvaluationTree(tree: BehaviourTreeDocument): EvaluationTree {
   const nodes = new Map<string, BtNode>();
   const parents = new Map<string, string>();
   const childIndexUnder = new Map<string, Map<string, number>>();
-  if (!source.has(tree.rootId)) return { nodes, parents, childIndexUnder };
+  const cooldowns: EvaluationTree["cooldowns"] = [];
+  const observers: EvaluationTree["observers"] = [];
+  if (!source.has(tree.rootId)) return { nodes, parents, childIndexUnder, cooldowns, observers };
   const kept = new Map<string, string[]>();
   const pending: Array<{ id: string; parentId: string | null }> = [
     { id: tree.rootId, parentId: null },
@@ -231,7 +245,15 @@ function buildEvaluationTree(tree: BehaviourTreeDocument): EvaluationTree {
     }
     childIndexUnder.set(node.id, under);
   }
-  return { nodes, parents, childIndexUnder };
+  for (const node of nodes.values()) {
+    const keys = node.decorators
+      .filter((decorator) => builtinClassId(decorator.classId) === "bt.decorator.cooldown")
+      .map((decorator) => cooldownKey(decorator.id));
+    if (keys.length > 0) cooldowns.push({ nodeId: node.id, keys });
+    const observing = node.decorators.filter((decorator) => decorator.abortMode !== "none");
+    if (observing.length > 0) observers.push({ node, decorators: observing });
+  }
+  return { nodes, parents, childIndexUnder, cooldowns, observers };
 }
 
 function subtreeIds(nodes: Map<string, BtNode>, rootId: string): Set<string> {
@@ -371,15 +393,13 @@ function timeLimitKey(decoratorId: string): string {
 }
 
 function tickCooldowns(
-  nodes: Map<string, BtNode>,
+  cooldowns: EvaluationTree["cooldowns"],
   nodeMemory: Record<string, Record<string, unknown>>,
   dtSeconds: number,
 ): void {
-  for (const node of nodes.values()) {
-    for (const decorator of node.decorators) {
-      if (builtinClassId(decorator.classId) !== "bt.decorator.cooldown") continue;
-      const memory = (nodeMemory[node.id] ??= {});
-      const key = cooldownKey(decorator.id);
+  for (const { nodeId, keys } of cooldowns) {
+    const memory = (nodeMemory[nodeId] ??= {});
+    for (const key of keys) {
       const remaining = typeof memory[key] === "number" ? memory[key] : 0;
       memory[key] = Math.max(0, remaining - dtSeconds * 1000);
     }
@@ -611,6 +631,7 @@ function applyAborts(
   nodes: Map<string, BtNode>,
   parents: Map<string, string>,
   childIndexUnder: Map<string, Map<string, number>>,
+  observers: EvaluationTree["observers"],
   stack: BtStackFrame[],
   lastResults: Record<string, BtResult>,
   blackboard: BlackboardValues,
@@ -627,9 +648,8 @@ function applyAborts(
   }
   if (active.size === 0) return;
 
-  for (const node of nodes.values()) {
-    for (const decorator of node.decorators) {
-      if (decorator.abortMode === "none") continue;
+  for (const { node, decorators } of observers) {
+    for (const decorator of decorators) {
       const condition = decoratorCondition(
         decorator,
         node,
@@ -834,7 +854,7 @@ export function evaluateBehaviourTree(
   dtSeconds: number,
   options?: EvaluateBehaviourTreeOptions,
 ): BtEvalState {
-  const { nodes, parents, childIndexUnder } = evaluationTree(tree);
+  const { nodes, parents, childIndexUnder, cooldowns, observers } = evaluationTree(tree);
   const blackboard: BlackboardValues =
     options?.blackboard !== undefined
       ? { ...options.blackboard }
@@ -852,11 +872,12 @@ export function evaluateBehaviourTree(
 
   // Cooldowns count down before anything this tick can start one, so every
   // cooldown (finish, abort or TimeLimit) loses its first dt on the next tick.
-  tickCooldowns(nodes, nodeMemory, dtSeconds);
+  tickCooldowns(cooldowns, nodeMemory, dtSeconds);
   applyAborts(
     nodes,
     parents,
     childIndexUnder,
+    observers,
     stack,
     lastResults,
     blackboard,

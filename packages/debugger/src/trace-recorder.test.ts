@@ -133,6 +133,30 @@ describe("TraceRecorder", () => {
     expect(recorder.stop()?.frames.map((entry) => entry.tickIndex)).toEqual([2]);
   });
 
+  // A snapshot is JSON text, so what the budget counts is its escaped size.
+  it.each([
+    ["quotes and backslashes", '{"name":"C:\\\\temp","quote":"\\""}'],
+    ["control characters", "line\nbreak\ttab\r\u0008\u000c\u000b\u0000\u001f\u007f"],
+    ["two- and three-byte characters", "é中\u2028\u2029"],
+    ["surrogate pairs", "a\u{1F600}\u{10FFFF}b"],
+    ["lone surrogates", "\ud800 \udc00 \ud83d\ud83d\ude00 \ude00\ud83d"],
+  ])("accepts a frame exactly when its JSON size fits, with %s in the snapshot", (_name, snapshotText) => {
+    const encoded = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+    // The smallest budget that accepts a frame: the reserved metadata is the same for every
+    // frame at this many digits, so two frames' thresholds differ by their JSON sizes alone.
+    const threshold = (entry: TraceFrame) => {
+      for (let byteBudget = 200; byteBudget < 900; byteBudget++) {
+        const recorder = new TraceRecorder({ byteBudget });
+        recorder.start({ seed: 7, dt: 1 });
+        recorder.recordFrame(entry);
+        if (recorder.isRecording) return byteBudget;
+      }
+      throw new Error("No budget below 900 bytes accepts the frame.");
+    };
+    expect(threshold(frame(1, snapshotText)) - threshold(frame(1)))
+      .toBe(encoded(frame(1, snapshotText)) - encoded(frame(1)));
+  });
+
   it("stops before an oversized frame can evict complete frames or exceed the retained budget", () => {
     const recorder = new TraceRecorder({ byteBudget: 304 });
     recorder.start({ seed: 7, dt: 1 });

@@ -22,6 +22,7 @@ import {
   composeActorWorldTransforms,
   actorWorldTransforms,
 } from "./actor-world-transform";
+import { ParsedComponentProperties } from "./parsed-component-properties";
 import { actorLocalPhysicsTransform, type PhysicsWorldSync } from "./physics-sync";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import { componentOwners } from "./world-component-index";
@@ -65,7 +66,9 @@ export class RuntimeNavigation implements RuntimeSubsystem {
   /** Dynamic unwalkable blocker obstacles, removed when their blocker no longer applies. */
   private readonly navObstacleByActor = new Map<string, { actor: Actor; id: string }>();
   /** Blockers whose cost volume is applied, keyed like the volume by actor guid. */
-  private readonly navCostVolumeActors = new Map<string, Actor>();
+  private readonly navCostVolumes = new Map<string, AppliedCostVolume>();
+  /** NavMeshBlocker settings, re-parsed only when one of the component's variables is written. */
+  private readonly blockerSettings = new ParsedComponentProperties(parseNavMeshBlockerProperties);
   private readonly navTargetByActor = new Map<string, NavPoint>();
   private readonly navSteeredActors = new Set<string>();
   private readonly navPhysicalAgents = new Set<string>();
@@ -256,7 +259,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     const obstacle = this.navObstacleByActor.get(actorGuid);
     if (obstacle) this.nav?.removeObstacle(obstacle.id);
     this.navObstacleByActor.delete(actorGuid);
-    if (this.navCostVolumeActors.delete(actorGuid)) this.nav?.removeCostVolume(actorGuid);
+    if (this.navCostVolumes.delete(actorGuid)) this.nav?.removeCostVolume(actorGuid);
   }
 
   /**
@@ -318,7 +321,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
   /** Blocker obstacles and cost volumes belong to the navmesh they were added to. */
   private forgetBlockers(): void {
     this.navObstacleByActor.clear();
-    this.navCostVolumeActors.clear();
+    this.navCostVolumes.clear();
   }
 
   /**
@@ -466,11 +469,22 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     const component = actor.components.find(
       (entry) => entry.classId === "NavMeshBlockerComponent" && !entry.destroyed,
     );
-    return component ? parseNavMeshBlockerProperties(Object.fromEntries(component.variables)) : null;
+    return component ? this.blockerSettings.get(component) : null;
   }
 
-  /** Cost volumes price the world AABB of the blocker's volume. */
+  /**
+   * Cost volumes price the world AABB of the blocker's volume. A blocker whose
+   * kind, cost and pose (compared by value; transforms are mutated in place)
+   * match what the backend last received skips rebuilding the volume.
+   */
   private applyCostVolume(actor: Actor, props: NavMeshBlockerProperties, transform: Transform): void {
+    const twoD = this.host.worldKind() === "2d";
+    const applied = this.navCostVolumes.get(actor.guid);
+    if (applied && applied.kind === props.kind && applied.cost === props.cost && applied.twoD === twoD &&
+      sameCostVolumePose(applied.pose, transform)) {
+      applied.actor = actor;
+      return;
+    }
     const aabb = rotatedBoxWorldAabb(
       [transform.position.x, transform.position.y, transform.position.z],
       [transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w],
@@ -483,7 +497,11 @@ export class RuntimeNavigation implements RuntimeSubsystem {
       size: this.toNavObstacleSize(aabb.size),
       cost: props.cost,
     });
-    this.navCostVolumeActors.set(actor.guid, actor);
+    // Recorded only once the backend accepted the volume; it throws when out of cost areas.
+    const record = applied ?? { actor, kind: props.kind, cost: props.cost, twoD, pose: new Float64Array(COST_VOLUME_POSE_LENGTH) };
+    Object.assign(record, { actor, kind: props.kind, cost: props.cost, twoD });
+    storeCostVolumePose(record.pose, transform);
+    this.navCostVolumes.set(actor.guid, record);
   }
 
   /**
@@ -537,10 +555,10 @@ export class RuntimeNavigation implements RuntimeSubsystem {
       this.nav.removeObstacle(obstacle.id);
       this.navObstacleByActor.delete(actorGuid);
     }
-    for (const [actorGuid, actor] of this.navCostVolumeActors) {
-      if (applies(actor, "cost")) continue;
+    for (const [actorGuid, applied] of this.navCostVolumes) {
+      if (applies(applied.actor, "cost")) continue;
       this.nav.removeCostVolume(actorGuid);
-      this.navCostVolumeActors.delete(actorGuid);
+      this.navCostVolumes.delete(actorGuid);
     }
   }
 
@@ -774,6 +792,30 @@ export class RuntimeNavigation implements RuntimeSubsystem {
 const NO_TRANSFORMS: ReadonlyMap<string, Transform> = new Map();
 /** Quaternion components below this count as no tilt off the walk plane. */
 const UPRIGHT_EPSILON = 1e-5;
+/** Position (3), rotation (4) and scale (3). */
+const COST_VOLUME_POSE_LENGTH = 10;
+
+/** What the backend's cost volume was last built from: the blocker's settings, world kind and world pose. */
+interface AppliedCostVolume {
+  actor: Actor;
+  kind: NavObstacleKind;
+  cost: number;
+  twoD: boolean;
+  pose: Float64Array;
+}
+
+/** Strict equality, so a NaN component never matches and the volume is rebuilt as before. */
+function sameCostVolumePose(pose: Float64Array, { position, rotation, scale }: Transform): boolean {
+  return pose[0] === position.x && pose[1] === position.y && pose[2] === position.z &&
+    pose[3] === rotation.x && pose[4] === rotation.y && pose[5] === rotation.z && pose[6] === rotation.w &&
+    pose[7] === scale.x && pose[8] === scale.y && pose[9] === scale.z;
+}
+
+function storeCostVolumePose(pose: Float64Array, { position, rotation, scale }: Transform): void {
+  pose[0] = position.x; pose[1] = position.y; pose[2] = position.z;
+  pose[3] = rotation.x; pose[4] = rotation.y; pose[5] = rotation.z; pose[6] = rotation.w;
+  pose[7] = scale.x; pose[8] = scale.y; pose[9] = scale.z;
+}
 
 function normalizedQuat(rotation: Quat): Quat {
   const length = Math.hypot(rotation.x, rotation.y, rotation.z, rotation.w);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultSceneSettings, type SerializedActor } from "@babylonslate/core";
+import { createActor, createDefaultSceneSettings, DEFAULT_MOVEMENT_PROPERTIES, type SerializedActor } from "@babylonslate/core";
 import { ClassRegistry, World } from "@babylonslate/object-model";
 import { createSoftwarePhysicsBackend } from "@babylonslate/physics";
 import { createInProcessRuntime } from "./driver";
@@ -219,6 +219,40 @@ describe("Movement through the shared Play/player runtime", () => {
       expect(kept).toEqual({ x: 2, y: 0, z: 0 });
       expect(motor.getVariable("velocity")).toEqual({ x: 3, y: 0, z: 0 });
     } finally { runtime.stop(); }
+  });
+
+  it("applies a settings write on the next tick while the motor keeps publishing its outputs", async () => {
+    const { runtime, motor, call, tick } = await setup("3d", { gravityScale: 0, acceleration: 600, braking: 600, airControl: 1 });
+    try {
+      call("setMovementInput", { direction: { x: 1, y: 0, z: 0 } });
+      tick(3);
+      expect(motor.getVariable("speed")).toBeCloseTo(5);
+      motor.setVariable("maxSpeed", 2);
+      tick();
+      expect(motor.getVariable("speed")).toBeCloseTo(2);
+      motor.variables.set("maxSpeed", 8);
+      tick();
+      expect(motor.getVariable("speed")).toBeCloseTo(8);
+      // Rewriting the same value changes nothing; a motor command after a write must not hide the write.
+      motor.setVariable("maxSpeed", 8);
+      motor.setVariable("maxSpeed", 3);
+      call("addMovementInput", { direction: { x: 1, y: 0, z: 0 } });
+      tick();
+      expect(motor.getVariable("speed")).toBeCloseTo(3);
+      motor.setVariable("enabled", false);
+      tick();
+      expect(motor.getVariable("speed")).toBe(0);
+      motor.setVariable("enabled", true);
+      call("setMovementInput", { direction: { x: 1, y: 0, z: 0 } });
+      tick();
+      expect(motor.getVariable("speed")).toBeCloseTo(3);
+    } finally { runtime.stop(); }
+  });
+
+  it("never publishes a name that Movement parses as a setting", () => {
+    // Publishing keeps the parsed settings current only because none of its writes can change them.
+    const published = ["velocity", "speed", "isGrounded", "isInAir", "isMoving"];
+    expect(published.filter((name) => name in DEFAULT_MOVEMENT_PROPERTIES)).toEqual([]);
   });
 
   it("keeps motor input across pause and promotes a surviving replacement without stale velocity", async () => {
