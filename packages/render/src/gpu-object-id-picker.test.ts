@@ -10,6 +10,7 @@ import {
   StandardMaterial,
   Vector3,
   type AbstractMesh,
+  type Mesh,
 } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { afterEach, describe, expect, it, vi, type MockInstance } from "vitest";
@@ -78,7 +79,13 @@ afterEach(() => {
  * read-back, returns whatever id `hit` names.
  */
 function pickFixture() {
-  const engine = adaptNullEngineFrameGraph(new NullEngine({ renderWidth: WIDTH, renderHeight: HEIGHT }));
+  const engine = adaptNullEngineFrameGraph(new NullEngine({
+    renderWidth: WIDTH,
+    renderHeight: HEIGHT,
+    textureSize: 4,
+    deterministicLockstep: false,
+    lockstepMaxSteps: 1,
+  }));
   Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true });
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", new Vector3(0, 0, -8), scene);
@@ -148,7 +155,7 @@ describe("gpuPickMesh", () => {
     const lod = MeshBuilder.CreateBox("Middle LOD", {}, f.scene);
     lod.isPickable = false;
     f.meshes[1]!.addLODLevel(20, lod);
-    const [left, middle, right] = f.meshes as [AbstractMesh, AbstractMesh, AbstractMesh];
+    const [left, middle, right] = f.meshes as [Mesh, Mesh, Mesh];
     f.hit(3);
     expect((await f.tap())?.name).toBe("Right");
     const renderPassId = f.scene.objectRenderers[0]!.renderPassId;
