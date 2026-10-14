@@ -77,8 +77,9 @@ afterEach(() => {
 
 /**
  * A Scene with three pickable boxes (ids 1-3 in creation order) on an engine
- * that can build the pick graph headless. The one GPU boundary, the 1×1
- * read-back, returns whatever id `hit` names.
+ * that can build the pick graph headless. The boxes stand one behind another
+ * on the centre pixel's ray, so each reaches the tap unless a test moves it.
+ * The one GPU boundary, the 1×1 read-back, returns whatever id `hit` names.
  */
 function pickFixture() {
   const engine = adaptNullEngineFrameGraph(new NullEngine({
@@ -95,7 +96,7 @@ function pickFixture() {
   scene.activeCamera = camera;
   const meshes = ["Left", "Middle", "Right"].map((name, index) => {
     const mesh = MeshBuilder.CreateBox(name, {}, scene);
-    mesh.position.x = (index - 1) * 2;
+    mesh.position.z = (index - 1) * 2;
     mesh.material = new StandardMaterial(`${name} Material`, scene);
     return mesh;
   });
@@ -275,6 +276,111 @@ describe("gpuPickMesh", () => {
       expect((await f.tap())?.name).toBe("Left");
       expect(f.livePickPassIds()).toEqual(built);
       expect(f.scene.objectRenderers).toHaveLength(1);
+    });
+  });
+
+  describe("candidates", () => {
+    /** Names of the meshes each pick pass draws, read once the graph has executed. */
+    function drawnLists(f: PickFixture) {
+      const drawn: string[][] = [];
+      const execute = FrameGraph.prototype.execute;
+      vi.spyOn(FrameGraph.prototype, "execute").mockImplementation(function (this: FrameGraph) {
+        execute.call(this);
+        drawn.push((f.scene.objectRenderers[0]!.renderList ?? []).map((mesh) => mesh.name));
+      });
+      return drawn;
+    }
+
+    it("draws and probes only the meshes that can reach the tapped pixel", async () => {
+      const f = pickFixture();
+      f.meshes[0]!.position.x = -3;
+      f.meshes[2]!.position.x = 3;
+      const probes = probeTracker(f.meshes);
+      const drawn = drawnLists(f);
+      f.hit(2);
+      const picks: Array<AbstractMesh | null | undefined> = [];
+      expect(await probes.probedDuring(async () => { picks.push(await f.tap()); })).toEqual(["Middle"]);
+      // Ids still number every pickable mesh, so the read-back id keeps its meaning.
+      expect(picks.map((mesh) => mesh?.name)).toEqual(["Middle"]);
+      expect(drawn).toEqual([["Middle"]]);
+    });
+
+    it("answers a tap on empty space without building or drawing a pass", async () => {
+      const f = pickFixture();
+      for (const mesh of f.meshes) mesh.position.x = 3;
+      const drawn = drawnLists(f);
+      expect(await f.tap()).toBeNull();
+      expect(drawn).toEqual([]);
+      expect(f.livePickPassIds()).toEqual([]);
+    });
+
+    it("still draws a displaced mesh whose static bounds miss the pixel, and finds its hit", async () => {
+      const f = pickFixture();
+      const displaced = f.meshes[2]!;
+      displaced.position.x = 3;
+      displaced.material!.metadata = { boundsPadding: 1 };
+      f.meshes[0]!.position.x = -3;
+      const drawn = drawnLists(f);
+      f.hit(3);
+      expect((await f.tap())?.name).toBe("Right");
+      expect(drawn).toEqual([["Middle", "Right"]]);
+    });
+
+    describe("a mesh that outlasts the readiness wait", () => {
+      function stuckMiddle(f: PickFixture) {
+        let now = 1_000;
+        vi.spyOn(performance, "now").mockImplementation(() => now);
+        const middle = f.meshes[1]!;
+        const stuckMaterial = middle.material;
+        // Each strict probe costs 600 ms of the one-second budget, until the material is replaced.
+        const probe = vi.spyOn(middle, "isReady").mockImplementation(() => { now += 600; return middle.material !== stuckMaterial; });
+        return { middle, probe, sleeps: vi.spyOn(globalThis, "setTimeout") };
+      }
+      /** How often the readiness wait slept between polls. */
+      const pollSleeps = (sleeps: { mock: { calls: readonly (readonly unknown[])[] } }) => sleeps.mock.calls.filter((call) => call[1] === 16).length;
+
+      it("takes the CPU ray at once on the next tap that needs it, without waiting again", async () => {
+        const f = pickFixture();
+        const { probe, sleeps } = stuckMiddle(f);
+        expect(await f.tap()).toBeUndefined();
+        const waited = pollSleeps(sleeps);
+        const probed = probe.mock.calls.length;
+        expect(waited).toBeGreaterThan(0);
+        expect(await f.tap()).toBeUndefined();
+        expect(pollSleeps(sleeps)).toBe(waited);
+        // One probe, to notice if it became ready meanwhile.
+        expect(probe.mock.calls.length - probed).toBeGreaterThan(0);
+        expect(probe.mock.calls.length - probed).toBeLessThan(probed);
+      });
+
+      it("is waited for again, not skipped, once its material changes", async () => {
+        const f = pickFixture();
+        const { middle, probe } = stuckMiddle(f);
+        expect(await f.tap()).toBeUndefined();
+        const probed = probe.mock.calls.length;
+        middle.material = new StandardMaterial("Replacement", f.scene);
+        f.hit(2);
+        expect((await f.tap())?.name).toBe("Middle");
+        expect(probe.mock.calls.length).toBeGreaterThan(probed);
+      });
+
+      it("recovers on the next tap when it became ready by itself", async () => {
+        const f = pickFixture();
+        const { probe } = stuckMiddle(f);
+        expect(await f.tap()).toBeUndefined();
+        probe.mockRestore();
+        f.hit(1);
+        expect((await f.tap())?.name).toBe("Left");
+      });
+
+      it("does not hold up taps whose pixel it cannot reach", async () => {
+        const f = pickFixture();
+        const left = f.meshes[0]!;
+        left.position.x = -3;
+        vi.spyOn(left, "isReady").mockReturnValue(false);
+        f.hit(2);
+        expect((await f.tap())?.name).toBe("Middle");
+      });
     });
   });
 
