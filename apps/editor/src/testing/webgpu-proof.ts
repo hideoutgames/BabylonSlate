@@ -33,6 +33,7 @@ import {
   createText2DMesh,
   ResourceCache,
   setSceneRenderSettings,
+  text2DMeshLayout,
 } from "@babylonslate/render";
 import { normalizeShadowSettings } from "@babylonslate/core";
 import {
@@ -611,7 +612,9 @@ async function captureHelper(engine: AbstractEngine, kind: "grid" | "bounds" | "
         }))]]),
       });
       const glyph = text.getChildMeshes()[0]!;
-      glyph.position.setAll(0);
+      // The glyph's layout position is baked into its batch mesh; offset it back to the view centre.
+      const placed = text2DMeshLayout(text)!.items[0]!;
+      glyph.position.set(-placed.x, -placed.y, 0);
       if (!(glyph.material instanceof ShaderMaterial)) throw new Error("MSDF shader fell back");
     } else {
       const grid = createEditorGrid(scene, {
