@@ -326,10 +326,15 @@ describe("SceneLayer clip draw hooks", () => {
     const root = new Mesh(mode === "editor" ? "editorActor:panel" : "actor-1", scene);
     const glyph = MeshBuilder.CreatePlane("glyph", {}, scene);
     glyph.parent = root;
+    // A second clipped actor without children: it owns a clip but is no one's descendant.
+    const leaf = new Mesh(mode === "editor" ? "editorActor:leaf" : "actor-2", scene);
     const apply = (clip: typeof rect | null) => {
-      const entry = { actorId: "panel", slotId: 1, rect, clip, scrollAncestors: [] };
-      if (mode === "editor") applyEditorLayoutClips(scene, new Map([["panel", entry]]));
-      else renderer.apply({ type: "sceneLayerLayout", layerId: "hud", entries: [entry] });
+      const entries = [
+        { actorId: "panel", slotId: 1, rect, clip, scrollAncestors: [] },
+        { actorId: "leaf", slotId: 2, rect, clip, scrollAncestors: [] },
+      ];
+      if (mode === "editor") applyEditorLayoutClips(scene, new Map(entries.map((entry) => [entry.actorId, entry])));
+      else renderer.apply({ type: "sceneLayerLayout", layerId: "hud", entries });
     };
     const frame = () => scene.onBeforeRenderObservable.notifyObservers(scene);
     /** The scissor rectangle a draw of the mesh sets, or null when that draw is not clipped. */
@@ -339,7 +344,7 @@ describe("SceneLayer clip draw hooks", () => {
       mesh.onAfterRenderObservable.notifyObservers(mesh);
       return scissor.mock.calls.at(-1) ?? null;
     };
-    return { scene, root, glyph, apply, frame, drawn };
+    return { scene, root, glyph, leaf, apply, frame, drawn };
   }
 
   it.each(modes)("does not walk the scene's meshes on frames where nothing changed (%s)", async (mode) => {
@@ -360,7 +365,7 @@ describe("SceneLayer clip draw hooks", () => {
   });
 
   it.each(modes)("clips a mesh that arrives under a clip before Babylon announces it (%s)", (mode) => {
-    const { scene, root, glyph, apply, frame, drawn } = clippedPanel(mode);
+    const { scene, root, leaf, apply, frame, drawn } = clippedPanel(mode);
     apply(rect);
     frame();
     const added = MeshBuilder.CreatePlane("added", {}, scene);
@@ -370,7 +375,7 @@ describe("SceneLayer clip draw hooks", () => {
     // One mesh leaves as another arrives, so the mesh count alone cannot show it.
     const swapped = MeshBuilder.CreatePlane("swapped", {}, scene);
     swapped.parent = root;
-    glyph.dispose();
+    leaf.dispose();
     frame();
     expect(drawn(swapped)).toEqual(clipped);
   });
