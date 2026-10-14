@@ -227,7 +227,10 @@ describe("gpuPickMesh", () => {
       { name: "the project marks rendering definitions dirty", change: (f) => markSceneReadinessDirty(f.scene), probed: all },
       {
         name: "a mesh gains thin instances",
-        change: (f) => { f.meshes[1]!.thinInstanceAdd(Matrix.Identity()); },
+        change: (f) => {
+          f.engine.getCaps().instancedArrays = true; // NullEngine reports none; thin instances need it.
+          f.meshes[1]!.thinInstanceAdd(Matrix.Identity());
+        },
         probed: ["Middle"],
       },
       { name: "a light is added", change: (f) => { new HemisphericLight("Sun", Vector3.Up(), f.scene); }, probed: all },
