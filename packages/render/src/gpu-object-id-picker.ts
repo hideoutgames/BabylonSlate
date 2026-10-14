@@ -55,6 +55,7 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
  * here depends on the canvas size.
  */
 class PickPass {
+  private readonly scene: Scene;
   private graph: FrameGraph | undefined;
   private clear: FrameGraphClearTextureTask | undefined;
   private geometry: LogicalGeometryTask | undefined;
@@ -63,7 +64,8 @@ class PickPass {
   /** Refilled before each draw; the renderer's init hook binds it as the scene projection. */
   private readonly projection = new Matrix();
 
-  constructor(private readonly scene: Scene, camera: Camera, objects: AbstractMesh[]) {
+  constructor(scene: Scene, camera: Camera, objects: AbstractMesh[]) {
+    this.scene = scene;
     this.camera = camera;
     try {
       const graph = (this.graph = new FrameGraph(scene));
@@ -186,12 +188,14 @@ class PickPass {
  * so tap time also compares the collection sizes and light states directly.
  */
 class PickReadiness {
+  private readonly scene: Scene;
   private proven = new WeakMap<AbstractMesh, { material: Material | null; instanced: boolean }>();
   private revision = 0;
   private readonly seen: number[] = [];
   private readonly detach: Array<() => void> = [];
 
-  constructor(private readonly scene: Scene) {
+  constructor(scene: Scene) {
+    this.scene = scene;
     const invalidate = () => { this.revision += 1; };
     const watch = <T>(observable: Observable<T>) => {
       const observer = observable.add(invalidate);
@@ -258,12 +262,14 @@ class PickReadiness {
 
 /** Per-Scene state of `gpuPickMesh`: the lazily built persistent pass and the queue serialising taps. */
 class ScenePicker {
+  private readonly scene: Scene;
   private pass: PickPass | undefined;
   private readonly readiness: PickReadiness;
   private tail: Promise<unknown> = Promise.resolve();
   private disposed = false;
 
-  constructor(private readonly scene: Scene) {
+  constructor(scene: Scene) {
+    this.scene = scene;
     this.readiness = new PickReadiness(scene);
     scene.onDisposeObservable.add(() => this.dispose());
   }
