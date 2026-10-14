@@ -933,6 +933,58 @@ describe("ViewportPanel engine", () => {
     expect(handle.setMaterialDocuments).toHaveBeenCalledTimes(initialMaterials + 1);
   });
 
+  it("gives the engine each Tilemap's revision, which holds while other assets are saved and moves with its own save or open document", async () => {
+    const saved = async (type: string, guid: string, value: number) => ({
+      rootId: "project",
+      path: `assets/${guid}.babasset`,
+      header: readAssetDocumentHeader(await encodeAssetDocument({ type, guid, name: guid, version: 1, payload: { value } })),
+    });
+    const scene = {
+      id: "scene:S",
+      ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: createDefaultScene(),
+    };
+    const first = await saved("Tilemap", "map-first", 1);
+    const second = await saved("Tilemap", "map-second", 1);
+    let assets = [first, second, await saved("Material", "surface", 1)];
+    documents.assetRegistry = { list: () => assets, getByGuid: (guid: string) => assets.find((asset) => asset.header.guid === guid) } as never;
+    documents.openDocuments = [scene];
+    const { rerender } = renderViewport();
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    const revisions = (installed: unknown) => (installed as { payloadRevisions: Map<string, string> }).payloadRevisions;
+    const loadOptions = handle.loadSceneAsync.mock.lastCall as unknown as [unknown, { assets: unknown }];
+    const loaded = revisions(loadOptions[1].assets);
+    expect([...loaded.keys()].sort()).toEqual(["map-first", "map-second"]);
+
+    const change = async (update: () => Promise<void> | void) => {
+      const installs = handle.setMeshAssets.mock.calls.length;
+      await update();
+      documents.registryEpoch += 1;
+      rerender(<DocumentWorkspaceProvider documentId="scene:S">
+        <ViewportPanel {...({} as IDockviewPanelProps)} />
+      </DocumentWorkspaceProvider>);
+      await waitFor(() => expect(handle.setMeshAssets).toHaveBeenCalledTimes(installs + 1));
+      return revisions(handle.setMeshAssets.mock.lastCall![0]);
+    };
+
+    // Saving an unrelated resource re-collects everything, and the Tilemaps keep their revisions.
+    const afterMaterial = await change(async () => { assets = [first, second, await saved("Material", "surface", 2)]; });
+    expect(afterMaterial).toEqual(loaded);
+
+    // Saving a Tilemap moves only its revision.
+    const afterSave = await change(async () => { assets = [await saved("Tilemap", "map-first", 2), second, assets[2]!]; });
+    expect(afterSave.get("map-first")).not.toBe(loaded.get("map-first"));
+    expect(afterSave.get("map-second")).toBe(loaded.get("map-second"));
+
+    // An open Tilemap tab holds a newer document than the saved asset, and collection reads that one.
+    const afterOpen = await change(async () => {
+      documents.openDocuments = [scene, { id: "tilemap:second", ref: { kind: "tilemap", path: second.path, label: "second" }, content: { layers: [] } }];
+      assets = [assets[0]!, second, await saved("Material", "surface", 3)];
+    });
+    expect(afterOpen.get("map-second")).not.toBe(afterSave.get("map-second"));
+    expect(afterOpen.get("map-first")).toBe(afterSave.get("map-first"));
+  });
+
   it("swaps a committed Texture encode in place, and still reloads assets when the Texture's content changes", async () => {
     const chunk = textureChunk;
     const texture = (payload: Record<string, unknown>, chunks: Array<ReturnType<typeof chunk>>) => textureAsset("tex", payload, chunks);

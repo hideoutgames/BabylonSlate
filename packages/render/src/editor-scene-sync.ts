@@ -17,6 +17,7 @@ import {
   installTextureBytes,
   meshAssetFingerprintWithoutModels,
   modelSlotFingerprint,
+  PayloadFingerprints,
   refreshAlbedoTextures,
   type MeshAssetContext,
 } from "./mesh-assets";
@@ -121,6 +122,8 @@ export class EditorSceneSync {
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
   private assets: MeshAssetContext | undefined;
   private lastAssetFingerprint: string | null = null;
+  /** Remembers the serialized Tilemap, Tileset and Water payloads by revision, across installs. */
+  private readonly payloadFingerprints = new PayloadFingerprints();
   /** `meshAssetFingerprintWithoutModels(this.assets)`, kept with the assets. */
   private lastAssetContentFingerprint = meshAssetFingerprintWithoutModels(undefined);
   private lastModelSlotKey = "";
@@ -187,7 +190,7 @@ export class EditorSceneSync {
     if (this.disposed || !this.assets) return;
     const assets: MeshAssetContext = { ...this.assets, textureBytes };
     this.assets = assets;
-    this.lastAssetContentFingerprint = meshAssetFingerprintWithoutModels(assets);
+    this.lastAssetContentFingerprint = meshAssetFingerprintWithoutModels(assets, this.payloadFingerprints);
     this.lastAssetFingerprint = meshAssetFingerprint(assets, this.lastAssetContentFingerprint);
     const changed = new Set(guids);
     const pending: Promise<void>[] = [];
@@ -211,8 +214,9 @@ export class EditorSceneSync {
       textureBytes: installTextureBytes(assets.textureBytes),
       fontMsdfPng: installTextureBytes(assets.fontMsdfPng),
     };
-    // Serialize the tilemap, tileset and water payloads once per install.
-    const contentFingerprint = meshAssetFingerprintWithoutModels(assets);
+    // Serialize the tilemap, tileset and water payloads once per install, and
+    // not at all when the host reports their revisions unchanged.
+    const contentFingerprint = meshAssetFingerprintWithoutModels(assets, this.payloadFingerprints);
     const fingerprint = meshAssetFingerprint(assets, contentFingerprint);
     const slotKey = modelSlotFingerprint(assets?.modelPayloads);
     const onlyModelsChanged = contentFingerprint === this.lastAssetContentFingerprint;
