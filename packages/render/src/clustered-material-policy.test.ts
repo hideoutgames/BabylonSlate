@@ -250,7 +250,9 @@ describe("clustered material consumers", () => {
         },
       );
       const glyphs = text.getChildMeshes().filter((child) => (child.metadata as { text2dSource?: string }).text2dSource === "msdf");
-      expect(glyphs).toHaveLength(2);
+      // Both A glyphs share one style, so they draw as one batch mesh.
+      expect(glyphs).toHaveLength(1);
+      expect(glyphs[0]!.getTotalVertices()).toBe(2 * 4);
       // The program under test is the custom ShaderMaterial, not the Standard fallback.
       expect(glyphs[0]!.material).toBeInstanceOf(ShaderMaterial);
       expect(clusteredSceneMaterialReason(scene)).toBeUndefined();

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RichTextStyle } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
-import { createText2DMesh } from "./text2d-mesh";
+import { createText2DMesh, text2DMeshLayout } from "./text2d-mesh";
 import {
   bitmapGlyphKey,
   packBitmapGlyphAtlas,
@@ -130,12 +130,16 @@ describe("rasterizeBitmapGlyph", () => {
           wrapWidth: 0,
           wrapHeight: 0,
         }, { pixelsPerUnit: 100 }, { rich: true });
-        const [a, small, large, b] = mesh.getChildMeshes();
+        // The two letters are one batch mesh; each image is its own plane.
+        const images = mesh.getChildMeshes().filter((child) => child.metadata?.text2dSource === "image");
+        const letters = text2DMeshLayout(mesh)!.items.filter((item) => item.kind === "glyph");
+        expect(images).toHaveLength(2);
         // Ink center is 12 px from the top, so it sits 17 px above quad center.
-        expect(small?.position.y).toBeCloseTo(0.17);
-        expect(large?.position.y).toBeCloseTo(0.17);
-        expect(a?.position.y).toBeCloseTo(0);
-        expect(b?.position.y).toBeCloseTo(0);
+        expect(images[0]?.position.y).toBeCloseTo(0.17);
+        expect(images[1]?.position.y).toBeCloseTo(0.17);
+        expect(letters).toHaveLength(2);
+        expect(letters[0]!.y).toBeCloseTo(0);
+        expect(letters[1]!.y).toBeCloseTo(0);
       }, () => 16, true);
     } finally {
       scene.dispose();
