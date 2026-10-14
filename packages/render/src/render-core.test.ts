@@ -360,6 +360,42 @@ describe("snapshot sampler", () => {
     expect(sampled?.actors[0]?.position.x).toBe(1);
   });
 
+  it("decodes a buffered snapshot once however often it is sampled, and again after a push or clear", () => {
+    const frame = (frameId: number, x: number) => {
+      const buf = new Float32Array(snapshotFloatCount(2));
+      writeSnapshotHeader(buf, { frameId, tickIndex: frameId, actorCount: 1, scriptMs: 0, physicsMs: 0 });
+      writeActorSlot(buf, 0, {
+        slotId: 4, position: { x, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 }, flags: 1,
+      });
+      return buf;
+    };
+    const sampler = new SnapshotSampler(2);
+    sampler.push(frame(1, 10));
+    const sampled = sampler.sample()!;
+    // Rows are decoded in place, so a re-decode shows up as a write to the row.
+    let decodes = 0;
+    let x = sampled.actors[0]!.position.x;
+    Object.defineProperty(sampled.actors[0]!.position, "x", { get: () => x, set: (value: number) => { decodes++; x = value; } });
+    const revision = sampler.revision;
+
+    expect(sampler.sample()).toBe(sampled);
+    expect(sampler.sample()).toBe(sampled);
+    expect(decodes).toBe(0);
+    expect(sampler.revision).toBe(revision);
+
+    sampler.push(frame(2, 25));
+    expect(sampler.revision).not.toBe(revision);
+    expect(sampler.sample()?.frameId).toBe(2);
+    expect(decodes).toBe(1);
+    expect(sampled.actors[0]!.position.x).toBe(25);
+
+    sampler.clear();
+    expect(sampler.sample()).toBeNull();
+    sampler.push(frame(3, 7));
+    expect(sampler.sample()?.actors[0]?.position.x).toBe(7);
+  });
+
   it("samples a smaller snapshot without reading an earlier larger frame's rows", () => {
     const sampler = new SnapshotSampler(32);
     const push = (frameId: number, rows: Array<[slotId: number, x: number]>) => {

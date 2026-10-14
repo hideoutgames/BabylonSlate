@@ -1870,6 +1870,21 @@ describe("Play createEngine view", () => {
     }
   });
 
+  it("publishes actor positions as each snapshot lands, not only when it is applied", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    const renderLoop = runRenderLoop.mock.calls[0]![0]!;
+    handle.pushSnapshot(actorSnapshot(1, 3));
+    expect(handle.lastActorPositions()[0]).toMatchObject({ slotId: 0, x: 3, y: 1 });
+    renderLoop();
+    expect(handle.lastActorPositions()[0]?.x).toBe(3);
+    handle.pushSnapshot(actorSnapshot(2, 8));
+    expect(handle.lastActorPositions()[0]?.x).toBe(8);
+    renderLoop();
+    expect(handle.lastActorPositions()[0]?.x).toBe(8);
+  });
+
   it("applies component motion against the same snapshot without recreating the actor visual", () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");

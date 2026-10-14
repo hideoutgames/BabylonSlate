@@ -2365,6 +2365,14 @@ function initializeEngine(
   let admittedSnapshot: ReturnType<typeof prepareSnapshot> = null;
   let snapshotAdmitted = false;
   const lastPositions: PlayActorPosition[] = [];
+  // pushSnapshot publishes positions as soon as a snapshot lands; preparing the
+  // same buffered snapshot later finds them already current.
+  let positionsRevision = -1;
+  const publishPositions = (sampled: Parameters<typeof positionsFromSample>[0]) => {
+    if (positionsRevision === snapshots.revision) return;
+    positionsRevision = snapshots.revision;
+    positionsFromSample(sampled, lastPositions);
+  };
   const audioPoses: SampledAudioPose[] = [];
   const audioEmitterSlots = new Set<number>();
   const audioPoseRows = new Map<number, number>();
@@ -2507,7 +2515,7 @@ function initializeEngine(
     applySnapshotToScene(scene, binding, sampled);
     playViz?.refresh();
     rebuildIfActiveCameraChanged(previousCamera);
-    positionsFromSample(sampled, lastPositions);
+    publishPositions(sampled);
     // Pose/listener sync owns the applied snapshot, not render admission: a
     // capped or held frame must not leave spatial audio stale.
     if (audioService) {
@@ -3294,7 +3302,7 @@ function initializeEngine(
       snapshots.push(buffer);
       appliedSnapshotIdentity = null;
       const sampled = snapshots.sample();
-      if (sampled) positionsFromSample(sampled, lastPositions);
+      if (sampled) publishPositions(sampled);
       if (sampled && sampled.frameId !== lastRenderedSnapshotFrame) scheduler.requestPausedFrame();
       if (isPublishedSnapshot(buffer)) {
         playDebugDraw?.noteSimTick(readSnapshotHeader(buffer).tickIndex);

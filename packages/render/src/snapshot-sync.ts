@@ -36,6 +36,9 @@ export class SnapshotSampler {
   private scratch: ActorSlot[];
   private readonly sampled: SampledSnapshot;
   private generation = 0;
+  private buffered = 0;
+  private sampledAt = -1;
+  private sampledResult: SampledSnapshot | null = null;
 
   constructor(maxActors: number) {
     this.maxActors = maxActors;
@@ -51,6 +54,14 @@ export class SnapshotSampler {
 
   get layoutGeneration(): number {
     return this.generation;
+  }
+
+  /**
+   * Changes whenever the buffered snapshot or layout does, and only then: two
+   * reads under one revision see the same sample.
+   */
+  get revision(): number {
+    return this.buffered;
   }
 
   installLayout(capacity: number, generation: number): boolean {
@@ -76,15 +87,25 @@ export class SnapshotSampler {
     if (span > dest.length || snapshotFloatCount(header.actorCount) > buffer.length) return;
     dest.set(span === buffer.length ? buffer : buffer.subarray(0, span));
     this.latest = dest;
+    this.buffered++;
   }
 
   /** Drop the buffered snapshot so the next sample is null until a fresh push. */
   clear(): void {
     this.latest = null;
+    this.buffered++;
   }
 
+  /**
+   * Decode the buffered snapshot into the scratch rows. The buffer is private
+   * (`push` copies, `clear` and `installLayout` replace it) and the rows are
+   * read-only to callers, so sampling again under the same {@link revision}
+   * returns the same decoded result without decoding again.
+   */
   sample(): SampledSnapshot | null {
-    if (!this.latest || !isPublishedSnapshot(this.latest)) return null;
+    if (this.sampledAt === this.buffered) return this.sampledResult;
+    this.sampledAt = this.buffered;
+    if (!this.latest || !isPublishedSnapshot(this.latest)) return (this.sampledResult = null);
     const header = readSnapshotHeader(this.latest);
     const count = Math.min(header.actorCount, this.maxActors);
     for (let i = 0; i < count; i++) {
@@ -93,7 +114,7 @@ export class SnapshotSampler {
     this.sampled.frameId = header.frameId;
     this.sampled.tickIndex = header.tickIndex;
     this.sampled.actorCount = count;
-    return this.sampled;
+    return (this.sampledResult = this.sampled);
   }
 }
 
