@@ -333,7 +333,11 @@ describe("gpuPickMesh", () => {
         const middle = f.meshes[1]!;
         const stuckMaterial = middle.material;
         // Each strict probe costs 600 ms of the one-second budget, until the material is replaced.
-        const probe = vi.spyOn(middle, "isReady").mockImplementation(() => { now += 600; return middle.material !== stuckMaterial; });
+        const probe = vi.spyOn(middle, "isReady").mockImplementation(() => {
+          if (middle.material !== stuckMaterial) return true;
+          now += 600;
+          return false;
+        });
         return { middle, probe, sleeps: vi.spyOn(globalThis, "setTimeout") };
       }
       /** How often the readiness wait slept between polls. */
