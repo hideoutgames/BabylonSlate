@@ -51,7 +51,7 @@ describe("render bone attachment", () => {
       expect(child.getAbsolutePosition().y).toBeCloseTo(2);
       expect(child.getAbsolutePosition().z).toBeCloseTo(-x);
       const poses: SampledAudioPose[] = [];
-      writeSampledAudioPoses({ actors: [childSlot, targetSlot], actorCount: 2 }, poses);
+      writeSampledAudioPoses({ actors: [childSlot, targetSlot], actorCount: 2 }, poses, new Set([1, 2]));
       attachments.applyBoneAttachmentAudioPoses(binding, poses);
       expect(poses[0]!.position.x).toBeCloseTo(10);
       expect(poses[0]!.position.y).toBeCloseTo(2);
@@ -70,7 +70,7 @@ describe("render bone attachment", () => {
     attach("Hand");
     apply();
     const poses: SampledAudioPose[] = [];
-    writeSampledAudioPoses({ actors: [childSlot, targetSlot], actorCount: 2 }, poses);
+    writeSampledAudioPoses({ actors: [childSlot, targetSlot], actorCount: 2 }, poses, new Set([1, 2]));
     expect(attachments.applyBoneAttachmentAudioPoses).toBeTypeOf("function");
     attachments.applyBoneAttachmentAudioPoses(binding, poses);
     expect(poses[0]!.position.y).toBeCloseTo(3);

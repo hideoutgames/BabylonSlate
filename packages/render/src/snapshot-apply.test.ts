@@ -193,6 +193,82 @@ describe("createPlayMesh", () => {
     expect(a.computeWorldMatrix(true).getTranslation().x).toBeCloseTo(2);
   });
 
+  describe("component Material assignment", () => {
+    function materialFixture() {
+      const handle = createTestEngine();
+      handles.push(handle);
+      const { scene } = handle;
+      const binding = createSnapshotSceneBinding();
+      const materials = new Map(["slot", "a", "b", "c"].map((id) => [`mat-${id}`, new StandardMaterial(`mat-${id}`, scene)]));
+      const resolved: string[] = [];
+      binding.resolveMaterial = (guid) => {
+        resolved.push(guid);
+        return materials.get(guid) ?? null;
+      };
+      const assign = (slotId: number, materialAssetGuid: string | null, componentId?: string) =>
+        applyAssignMaterial(scene, binding, { type: "assignMaterial", slotId, materialAssetGuid, ...(componentId ? { componentId } : {}) });
+      const child = (name: string, parent: Mesh) => {
+        const mesh = MeshBuilder.CreateBox(name, {}, scene);
+        mesh.parent = parent;
+        return mesh;
+      };
+      return { scene, binding, materials, resolved, assign, child };
+    }
+
+    it("reaches only that component's meshes, imported children included, and leaves the rest of the actor alone", () => {
+      const { scene, binding, materials, resolved, assign, child } = materialFixture();
+      const part = (componentId: string) => ({
+        componentId, meshKind: "box", position: [0, 0, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [1, 1, 1] as [number, number, number],
+      });
+      applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshKind: "box", meshAssetGuid: null,
+        parts: [part("a"), part("b"), part("c")] });
+      const root = binding.meshes.get(0)!;
+      const a = scene.getMeshByName("actor-0|a") as Mesh, b = scene.getMeshByName("actor-0|b") as Mesh, c = scene.getMeshByName("actor-0|c") as Mesh;
+      // Imported model nodes carry arbitrary names; their component is an ancestor's.
+      const body = child("Body", b), pelvis = child("Pelvis", body), stray = child("Stray", root);
+
+      assign(0, "mat-slot");
+      for (const mesh of [root, a, b, c, body, pelvis, stray]) expect(mesh.material).toBe(materials.get("mat-slot"));
+
+      resolved.length = 0;
+      assign(0, "mat-a", "a");
+      expect(resolved).toEqual(["mat-a"]);
+      resolved.length = 0;
+      assign(0, "mat-b", "b");
+      expect(resolved).toEqual(["mat-b", "mat-b", "mat-b"]);
+      resolved.length = 0;
+      assign(0, "mat-c", "c");
+      expect(resolved).toEqual(["mat-c"]);
+
+      expect([a, b, body, pelvis, c].map((mesh) => mesh.material)).toEqual(
+        ["mat-a", "mat-b", "mat-b", "mat-b", "mat-c"].map((guid) => materials.get(guid)));
+      // The actor-wide Material still owns whatever no component claims.
+      expect(root.material).toBe(materials.get("mat-slot"));
+      expect(stray.material).toBe(materials.get("mat-slot"));
+
+      // Clearing one component's Material touches nothing else.
+      assign(0, null, "c");
+      expect(c.material).toBeNull();
+      expect(a.material).toBe(materials.get("mat-a"));
+      expect(body.material).toBe(materials.get("mat-b"));
+    });
+
+    it("reaches every imported mesh of a single-component actor, including ones added after realization", () => {
+      const { scene, binding, materials, assign, child } = materialFixture();
+      applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 1, meshKind: "box", meshAssetGuid: null, primaryComponentId: "visual" });
+      const root = binding.meshes.get(1)!;
+      const hull = child("Hull", root), turret = child("Turret", hull);
+
+      assign(1, "mat-a", "visual");
+      for (const mesh of [root, hull, turret]) expect(mesh.material).toBe(materials.get("mat-a"));
+
+      const late = child("LateWeapon", turret);
+      assign(1, "mat-b", "visual");
+      for (const mesh of [root, hull, turret, late]) expect(mesh.material).toBe(materials.get("mat-b"));
+    });
+  });
+
   it("builds a 9-slice 2DPanel play mesh from overlayPanel margins", () => {
     const handle = createTestEngine();
     handles.push(handle);

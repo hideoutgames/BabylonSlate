@@ -360,6 +360,42 @@ describe("snapshot sampler", () => {
     expect(sampled?.actors[0]?.position.x).toBe(1);
   });
 
+  it("decodes a buffered snapshot once however often it is sampled, and again after a push or clear", () => {
+    const frame = (frameId: number, x: number) => {
+      const buf = new Float32Array(snapshotFloatCount(2));
+      writeSnapshotHeader(buf, { frameId, tickIndex: frameId, actorCount: 1, scriptMs: 0, physicsMs: 0 });
+      writeActorSlot(buf, 0, {
+        slotId: 4, position: { x, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 }, flags: 1,
+      });
+      return buf;
+    };
+    const sampler = new SnapshotSampler(2);
+    sampler.push(frame(1, 10));
+    const sampled = sampler.sample()!;
+    // Rows are decoded in place, so a re-decode shows up as a write to the row.
+    let decodes = 0;
+    let x = sampled.actors[0]!.position.x;
+    Object.defineProperty(sampled.actors[0]!.position, "x", { get: () => x, set: (value: number) => { decodes++; x = value; } });
+    const revision = sampler.revision;
+
+    expect(sampler.sample()).toBe(sampled);
+    expect(sampler.sample()).toBe(sampled);
+    expect(decodes).toBe(0);
+    expect(sampler.revision).toBe(revision);
+
+    sampler.push(frame(2, 25));
+    expect(sampler.revision).not.toBe(revision);
+    expect(sampler.sample()?.frameId).toBe(2);
+    expect(decodes).toBe(1);
+    expect(sampled.actors[0]!.position.x).toBe(25);
+
+    sampler.clear();
+    expect(sampler.sample()).toBeNull();
+    sampler.push(frame(3, 7));
+    expect(sampler.sample()?.actors[0]?.position.x).toBe(7);
+  });
+
   it("samples a smaller snapshot without reading an earlier larger frame's rows", () => {
     const sampler = new SnapshotSampler(32);
     const push = (frameId: number, rows: Array<[slotId: number, x: number]>) => {
@@ -402,15 +438,69 @@ describe("writeSampledAudioPoses", () => {
       ],
     };
     const out: Parameters<typeof writeSampledAudioPoses>[1] = [];
-    writeSampledAudioPoses(sampled, out);
+    const slots = new Set([3]);
+    writeSampledAudioPoses(sampled, out, slots);
     const first = out[0];
     expect(first).toMatchObject({
       slotId: 3,
       position: { x: 1, y: 2, z: 3, qx: 0, qy: 0, qz: 0, qw: 1 },
     });
     sampled.actors[0]!.position.x = 8;
-    writeSampledAudioPoses(sampled, out);
+    writeSampledAudioPoses(sampled, out, slots);
     expect(out[0]).toBe(first);
     expect(out[0]?.position.x).toBe(8);
+  });
+
+  describe("for the emitter slots only", () => {
+    // Slot ids are not row indices: row i holds slot SLOTS[i].
+    const SLOTS = [5, 7, 9, 11];
+    const snapshot = (slotIds: number[]) => ({
+      actorCount: slotIds.length,
+      actors: slotIds.map((slotId) => ({
+        slotId,
+        position: { x: slotId * 10, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      })),
+    });
+    const written = (out: Parameters<typeof writeSampledAudioPoses>[1]) =>
+      out.map((row) => [row.slotId, row.position.x]).sort((a, b) => a[0]! - b[0]!);
+
+    it("poses just the requested actors and drops a slot that left the snapshot", () => {
+      const out: Parameters<typeof writeSampledAudioPoses>[1] = [];
+      const rows = new Map<number, number>();
+      expect(writeSampledAudioPoses(snapshot(SLOTS), out, new Set([7, 11]), rows)).toBe(2);
+      expect(written(out)).toEqual([[7, 70], [11, 110]]);
+
+      // Slot 7 despawns: slot 11 moves up a row, the memo must not return a neighbour.
+      expect(writeSampledAudioPoses(snapshot([5, 9, 11]), out, new Set([7, 11]), rows)).toBe(1);
+      expect(written(out)).toEqual([[11, 110]]);
+
+      // It spawns again later in the list and is found by the rescan.
+      expect(writeSampledAudioPoses(snapshot([5, 9, 11, 7]), out, new Set([7, 11]), rows)).toBe(2);
+      expect(written(out)).toEqual([[7, 70], [11, 110]]);
+      expect(writeSampledAudioPoses(snapshot(SLOTS), out, new Set(), rows)).toBe(0);
+      expect(out).toEqual([]);
+    });
+
+    it("does not read unrelated actors while the snapshot rows hold still", () => {
+      let reads = 0;
+      const actors = Array.from({ length: 200 }, (_, slotId) => ({
+        get slotId() { reads++; return slotId; },
+        position: { x: slotId * 10, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      }));
+      const sampled = { actorCount: actors.length, actors };
+      const out: Parameters<typeof writeSampledAudioPoses>[1] = [];
+      const rows = new Map<number, number>();
+      const slots = new Set([150, 3]);
+      writeSampledAudioPoses(sampled, out, slots, rows);
+      expect(reads).toBeGreaterThanOrEqual(actors.length);
+
+      reads = 0;
+      for (const actor of actors) actor.position.x += 1;
+      expect(writeSampledAudioPoses(sampled, out, slots, rows)).toBe(2);
+      expect(reads).toBeLessThanOrEqual(2 * slots.size);
+      expect(written(out)).toEqual([[3, 31], [150, 1501]]);
+    });
   });
 });

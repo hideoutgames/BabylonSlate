@@ -14,7 +14,7 @@ import { AudioService } from "./audio-service";
 import type { ParticleLibrary } from "./particle-service";
 import { ParticleService } from "./particle-service";
 import { acquireParticleMaterial } from "./particle-material";
-import type { AudioPlaybackBackend } from "./audio-playback-backend";
+import type { AudioPlaybackBackend, AudioPose } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
@@ -2376,7 +2376,33 @@ function initializeEngine(
   let admittedSnapshot: ReturnType<typeof prepareSnapshot> = null;
   let snapshotAdmitted = false;
   const lastPositions: PlayActorPosition[] = [];
+  // pushSnapshot publishes positions as soon as a snapshot lands; preparing the
+  // same buffered snapshot later finds them already current.
+  let positionsRevision = -1;
+  const publishPositions = (sampled: Parameters<typeof positionsFromSample>[0]) => {
+    if (positionsRevision === snapshots.revision) return;
+    positionsRevision = snapshots.revision;
+    positionsFromSample(sampled, lastPositions);
+  };
   const audioPoses: SampledAudioPose[] = [];
+  const audioEmitterSlots = new Set<number>();
+  const audioPoseRows = new Map<number, number>();
+  if (audioService) {
+    // A voice starting on an actor no snapshot has posed for audio yet is placed
+    // from the sampled snapshot now instead of one snapshot later.
+    const probeSlots = new Set<number>();
+    const probeRows = new Map<number, number>();
+    const probe: SampledAudioPose[] = [];
+    audioService.setEmitterPoseSource((slotId) => {
+      const sampled = snapshots.sample();
+      if (!sampled) return undefined;
+      probeSlots.clear();
+      probeSlots.add(slotId);
+      if (!writeSampledAudioPoses(sampled, probe, probeSlots, probeRows)) return undefined;
+      applyBoneAttachmentAudioPoses(binding, probe);
+      return probe[0]!.position;
+    });
+  }
   let lastDrawCalls = 0;
   let lastRenderCpuMs = 0;
   // Dynamic scaling input: whether this view presented the current and previous
@@ -2500,20 +2526,18 @@ function initializeEngine(
     applySnapshotToScene(scene, binding, sampled);
     playViz?.refresh();
     rebuildIfActiveCameraChanged(previousCamera);
-    positionsFromSample(sampled, lastPositions);
+    publishPositions(sampled);
     // Pose/listener sync owns the applied snapshot, not render admission: a
     // capped or held frame must not leave spatial audio stale.
     if (audioService) {
-      if (audioService.hasSpatialVoices()) {
-        writeSampledAudioPoses(sampled, audioPoses);
-        applyBoneAttachmentAudioPoses(binding, audioPoses);
-        audioService.syncSnapshot(audioPoses);
-      }
       const camera = simulationEditMode ? resolvePlayGameCamera(scene, binding) : scene.activeCamera;
+      let listener: AudioPose | null = null;
       if (camera && !gameTimePaused) {
         const pos = camera.globalPosition ?? camera.position;
         const rot = camera.absoluteRotation;
-        audioService.syncListener({
+        // A fresh object per snapshot: the service keeps the previous listener
+        // for Doppler until the next one arrives.
+        listener = {
           x: pos.x,
           y: pos.y,
           z: pos.z,
@@ -2521,7 +2545,21 @@ function initializeEngine(
           qy: rot.y,
           qz: rot.z,
           qw: rot.w,
-        });
+        };
+      }
+      if (audioService.hasSpatialVoices()) {
+        // Only the actors voices emit from are posed, not every actor.
+        writeSampledAudioPoses(
+          sampled,
+          audioPoses,
+          audioService.collectEmitterSlots(audioEmitterSlots),
+          audioPoseRows,
+        );
+        applyBoneAttachmentAudioPoses(binding, audioPoses);
+        // One refresh moves the voices and the listener together.
+        audioService.syncSnapshot(audioPoses, listener);
+      } else if (listener) {
+        audioService.syncListener(listener);
       }
     }
     appliedSnapshotIdentity = {
@@ -3275,7 +3313,7 @@ function initializeEngine(
       snapshots.push(buffer);
       appliedSnapshotIdentity = null;
       const sampled = snapshots.sample();
-      if (sampled) positionsFromSample(sampled, lastPositions);
+      if (sampled) publishPositions(sampled);
       if (sampled && sampled.frameId !== lastRenderedSnapshotFrame) scheduler.requestPausedFrame();
       if (isPublishedSnapshot(buffer)) {
         playDebugDraw?.noteSimTick(readSnapshotHeader(buffer).tickIndex);
