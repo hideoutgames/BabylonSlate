@@ -109,6 +109,8 @@ type CharacterRecord = {
 };
 
 /** Character solves shorter than this integrate their displacement over the nominal step. */
+/** Native shapes `shapeSweep` keeps for reuse; a script sweeping ever-changing sizes churns within this bound. */
+const QUERY_SHAPE_LIMIT = 16;
 const MIN_CHARACTER_SOLVE_DT = 1e-3;
 const NOMINAL_CHARACTER_SOLVE_DT = 1 / 60;
 
@@ -189,6 +191,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   private readonly queryMemberships = new Map<PhysicsShape, number>();
   private readonly characters = new Map<string, CharacterRecord>();
   private readonly sphereSweeps = new Set<SphereSweepQuery>();
+  /** Native shapes for primitive `shapeSweep` casts by kind and dimensions, least recently used first (`reusableQueryShape`). */
+  private readonly queryShapes = new Map<string, PhysicsShape>();
   private readonly constraints = new Map<string, { desc: ConstraintDesc; constraint: Physics6DoFConstraint }>();
   private readonly bodyIdByPhysicsBody = new Map<PhysicsBody, string>();
   /** Result holders the synchronous queries share; the plugin resets them at the start of every query. */
@@ -264,6 +268,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
     this.disposed = true;
     for (const query of this.sphereSweeps) query.dispose();
+    for (const shape of this.queryShapes.values()) shape.dispose();
+    this.queryShapes.clear();
     for (const remove of this.removeCollisionObservers) remove();
     this.removeCollisionObservers.length = 0;
     for (const character of this.characters.values()) {
@@ -970,7 +976,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     this.flushMutations();
     const sweep = linearSweepPoses(start, end);
     if (!sweep || !isShape3D(shape)) return miss();
-    const queryShape = this.createQueryShape(shape);
+    const reused = this.reusableQueryShape(shape);
+    const queryShape = reused ?? this.createQueryShape(shape);
     try {
       const rotation = toQuaternion(sweep.start.rotation);
       const from = toVector3(sweep.start.position);
@@ -998,8 +1005,52 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         return this.hitFromCast(hit, Vector3.Distance(from, to) * hit.hitFraction);
       });
     } finally {
-      queryShape.dispose();
+      if (!reused) queryShape.dispose();
     }
+  }
+
+  /**
+   * The cached native shape for a primitive query shape of these dimensions, created on first use; null for hulls
+   * and meshes, whose callers own a fresh shape. A cast only reads the native shape, so repeated sweeps share it.
+   * These shapes belong to no collider, so the query filter's masking never reaches them. The set is bounded:
+   * the least recently used shape is released when a new size arrives, and `dispose` releases the rest.
+   */
+  private reusableQueryShape(shape: ColliderShape): PhysicsShape | null {
+    let key: string;
+    switch (shape.kind) {
+      case "box":
+        key = `box:${shape.halfExtents.x}:${shape.halfExtents.y}:${shape.halfExtents.z}`;
+        break;
+      case "sphere":
+        key = `sphere:${shape.radius}`;
+        break;
+      case "capsule":
+        key = `capsule:${shape.radius}:${shape.halfHeight}`;
+        break;
+      case "cylinder":
+        key = `cylinder:${shape.radius}:${shape.height}`;
+        break;
+      default:
+        return null;
+    }
+    // After disposal nothing is kept: the caller builds and releases its own, as for any other shape.
+    if (this.disposed) return null;
+    validateColliderShape(shape);
+    const cached = this.queryShapes.get(key);
+    if (cached) {
+      // Reinserted last: iteration order is recency.
+      this.queryShapes.delete(key);
+      this.queryShapes.set(key, cached);
+      return cached;
+    }
+    const created = this.createQueryShape(shape);
+    if (this.queryShapes.size >= QUERY_SHAPE_LIMIT) {
+      const [oldest, evicted] = this.queryShapes.entries().next().value!;
+      this.queryShapes.delete(oldest);
+      evicted.dispose();
+    }
+    this.queryShapes.set(key, created);
+    return created;
   }
 
   createSphereSweep(radius: number): SphereSweepQuery {
