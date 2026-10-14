@@ -76,4 +76,29 @@ describe("Water world caching", () => {
     world.flushPending();
     expect(evaluate(2 / 60)).toBe(false);
   });
+
+  it("places a parented water through the world's guid registry without indexing its other actors", () => {
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    const water = new WaterWorld((actors) => actors === world.getActors() ? world : null);
+    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0 } });
+    let guidReads = 0;
+    for (let index = 0; index < 20; index++) {
+      const bystander = world.spawnActorNow(new Actor({ guid: `bystander-${index}`, classId: "Actor" }));
+      Object.defineProperty(bystander, "guid", { get: () => (guidReads++, `bystander-${index}`) });
+    }
+    const carrier = new Actor({ guid: "carrier", classId: "Actor" });
+    carrier.transform.position.x = 20;
+    world.spawnActorNow(carrier);
+    const lake = world.spawnActorNow(new Actor({ guid: "lake", classId: "Actor", variables: { parentId: "carrier" } }));
+    lake.attachComponent(new ActorComponent({ classId: "WaterLakeComponent", variables: { assetGuid: "water", width: 10, length: 10 } }));
+    guidReads = 0;
+    const actors = world.getActors();
+    water.update(actors, 0);
+    // The lake sits under its carrier, found through the chain, by the step and by a query alike.
+    expect(water.sample({ x: 24, y: -1, z: 0 }).found).toBe(true);
+    expect(water.sample({ x: 4, y: -1, z: 0 }).found).toBe(false);
+    expect(water.query(actors, 0, { x: 24, y: -1, z: 0 }).found).toBe(true);
+    expect(water.query(actors, 0, { x: 4, y: -1, z: 0 }).found).toBe(false);
+    expect(guidReads).toBe(0);
+  });
 });
