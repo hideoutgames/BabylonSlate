@@ -403,7 +403,8 @@ describe("SceneLayer clip draw hooks", () => {
     apply(rect);
     expect(drawn(glyph)).toEqual(clipped);
     apply({ ...rect, x: 2 });
-    expect(drawn(glyph)).toEqual([64, 48, 16, 32]);
+    // The clip is centred on x = 2, so it now covers world 0..4, pixels 64..96.
+    expect(drawn(glyph)).toEqual([64, 48, 32, 32]);
     apply(null);
     expect(drawn(glyph)).toBeNull();
     apply(rect);

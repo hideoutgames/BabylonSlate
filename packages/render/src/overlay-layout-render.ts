@@ -28,6 +28,26 @@ function inheritedClip(mesh: AbstractMesh): OverlayLayoutRect | null {
   }
   return null;
 }
+/**
+ * `inheritedClip` for the refresh pass: shares work between meshes with common
+ * ancestors and records every parent link the answer depends on, so a later
+ * frame can tell whether any of them was reparented.
+ */
+function watchedInheritedClip(
+  mesh: AbstractMesh,
+  resolved: Map<Node, OverlayLayoutRect | null>,
+  watched: Map<Node, Node | null>,
+): OverlayLayoutRect | null {
+  const path: Node[] = [];
+  let clip: OverlayLayoutRect | null = null;
+  for (let current: Node | null = mesh; current; current = current.parent) {
+    if (resolved.has(current)) { clip = resolved.get(current) ?? null; break; }
+    if (clips.has(current)) { clip = clips.get(current) ?? null; resolved.set(current, clip); break; }
+    path.push(current);
+  }
+  for (const node of path) { resolved.set(node, clip); watched.set(node, node.parent); }
+  return clip;
+}
 /** The same clip is checked by normal ray picks and enlarged touch targets. */
 export function overlayClipAllowsPoint(mesh: AbstractMesh, x: number, y: number): boolean {
   const clip = inheritedClip(mesh);
@@ -83,30 +103,62 @@ function setSceneClipOwner(scene: Scene, owner: object, enabled: boolean): void 
   const meshes = new Map<Mesh, () => void>();
   let beforeRender: Observer<Scene> | null = null;
   let onDispose: Observer<Scene> | null = null;
+  let addedMesh: Observer<AbstractMesh> | null = null;
+  let removedMesh: Observer<AbstractMesh> | null = null;
+  // A full refresh walks every mesh. Clip assignments change only in
+  // applyEditorLayoutClips and OverlayLayoutRenderer, which refresh explicitly.
+  // What else decides which meshes need a hook is the mesh list and the parent
+  // links the last refresh read. Babylon announces additions late and never
+  // announces reparenting, so each frame compares the mesh count, the
+  // added/removed flag and those links, and refreshes only when one differs.
+  let dirty = true;
+  let seenMeshCount = -1;
+  let watchedNodes: Node[] = [];
+  let watchedParents: (Node | null)[] = [];
+  const refresh = () => {
+    dirty = false;
+    seenMeshCount = scene.meshes.length;
+    const resolved = new Map<Node, OverlayLayoutRect | null>();
+    const watched = new Map<Node, Node | null>();
+    for (const [mesh, detach] of meshes) {
+      if (!mesh.isDisposed() && watchedInheritedClip(mesh, resolved, watched)) continue;
+      detach();
+      meshes.delete(mesh);
+    }
+    for (const mesh of scene.meshes) {
+      if (mesh instanceof Mesh && !meshes.has(mesh) && watchedInheritedClip(mesh, resolved, watched)) meshes.set(mesh, installClip(mesh));
+    }
+    watchedNodes = [...watched.keys()];
+    watchedParents = [...watched.values()];
+  };
+  const stale = () => {
+    if (dirty || seenMeshCount !== scene.meshes.length) return true;
+    for (let index = 0; index < watchedNodes.length; index += 1) {
+      if (watchedNodes[index]!.parent !== watchedParents[index]) return true;
+    }
+    return false;
+  };
   const hooks = {
     owners: new Set([owner]),
-    refresh: () => {
-      for (const [mesh, detach] of meshes) {
-        if (!mesh.isDisposed() && inheritedClip(mesh)) continue;
-        detach();
-        meshes.delete(mesh);
-      }
-      for (const mesh of scene.meshes) {
-        if (mesh instanceof Mesh && inheritedClip(mesh) && !meshes.has(mesh)) meshes.set(mesh, installClip(mesh));
-      }
-    },
+    refresh,
     dispose: () => {
       scene.onBeforeRenderObservable.remove(beforeRender);
       scene.onDisposeObservable.remove(onDispose);
+      scene.onNewMeshAddedObservable.remove(addedMesh);
+      scene.onMeshRemovedObservable.remove(removedMesh);
       for (const detach of meshes.values()) detach();
       meshes.clear();
+      watchedNodes = [];
+      watchedParents = [];
       sceneClips.delete(scene);
     },
   };
   sceneClips.set(scene, hooks);
-  beforeRender = scene.onBeforeRenderObservable.add(hooks.refresh);
+  addedMesh = scene.onNewMeshAddedObservable.add(() => { dirty = true; });
+  removedMesh = scene.onMeshRemovedObservable.add(() => { dirty = true; });
+  beforeRender = scene.onBeforeRenderObservable.add(() => { if (stale()) refresh(); });
   onDispose = scene.onDisposeObservable.addOnce(hooks.dispose);
-  hooks.refresh();
+  refresh();
 }
 export function applyEditorLayoutClips(scene: Scene, entries: ReadonlyMap<string, OverlayLayoutEntry>): void {
   // The first mesh of a name wins, like Scene.getMeshByName, without a scan per entry.
