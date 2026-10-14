@@ -1,8 +1,9 @@
-import type { AbstractMesh, Material, Observable, Scene } from "@babylonjs/core";
-import { Camera, Constants, Matrix } from "@babylonjs/core";
+import type { AbstractMesh, Material, Observable, Plane, Scene } from "@babylonjs/core";
+import { Camera, Constants, Frustum, Matrix } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
+import { pickCandidates } from "./gpu-pick-candidates";
 import { onSceneReadinessDirty } from "./scene-readiness-signal";
 
 /** Mesh hit by a GPU pick; `null` is background, `undefined` means use CPU picking. */
@@ -43,6 +44,15 @@ export function pickPixelProjection(
     -centreX * width, -centreY * height, 0, 1,
   );
   return projection.multiplyToRef(region, result);
+}
+
+/**
+ * The clip volume of pixel (`px`, `py`): the planes of the camera's view times its pick
+ * projection. Anything the pick pass rasterises into its one texel meets this volume.
+ */
+export function pickFrustumPlanes(camera: Camera, px: number, py: number, width: number, height: number): Plane[] {
+  const pick = pickPixelProjection(camera.getProjectionMatrix(), px, py, width, height);
+  return Frustum.GetPlanes(camera.getViewMatrix().multiply(pick));
 }
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -186,10 +196,14 @@ class PickPass {
  * (`markSceneReadinessDirty`), the same invalidation the scene renderer's
  * cached strict readiness follows. Babylon defers its add/remove observables,
  * so tap time also compares the collection sizes and light states directly.
+ *
+ * A mesh that outlasted the readiness wait is latched under the same terms, so
+ * the next tap that needs it re-probes it once instead of waiting again.
  */
 class PickReadiness {
   private readonly scene: Scene;
   private proven = new WeakMap<AbstractMesh, { material: Material | null; instanced: boolean }>();
+  private latched = new WeakMap<AbstractMesh, { material: Material | null; instanced: boolean }>();
   private revision = 0;
   private readonly seen: number[] = [];
   private readonly detach: Array<() => void> = [];
@@ -218,21 +232,37 @@ class PickReadiness {
   /** The meshes whose readiness for the pass is not proven. */
   unproven(meshes: readonly AbstractMesh[], camera: Camera): AbstractMesh[] {
     this.syncSharedInputs(camera);
-    return meshes.filter((mesh) => {
-      const proof = this.proven.get(mesh);
-      return !proof || proof.material !== (mesh.material ?? null) || proof.instanced !== mesh.hasThinInstances;
-    });
+    return meshes.filter((mesh) => !this.holds(this.proven, mesh));
+  }
+
+  /** The meshes among `meshes` that already outlasted the readiness wait and have not changed since. */
+  latchedAmong(meshes: readonly AbstractMesh[]): AbstractMesh[] {
+    return meshes.filter((mesh) => this.holds(this.latched, mesh));
   }
 
   /** Record `meshes` as proven, unless something changed since `stamp`. */
   prove(meshes: readonly AbstractMesh[], stamp: number): void {
     if (stamp !== this.revision) return;
-    for (const mesh of meshes) this.proven.set(mesh, { material: mesh.material ?? null, instanced: mesh.hasThinInstances });
+    for (const mesh of meshes) {
+      this.proven.set(mesh, { material: mesh.material ?? null, instanced: mesh.hasThinInstances });
+      this.latched.delete(mesh);
+    }
   }
 
-  /** Forget every proof, e.g. when the pass (and its render pass id) is replaced. */
+  /** Record `mesh` as not becoming ready within the wait, unless something changed since `stamp`. */
+  latch(mesh: AbstractMesh, stamp: number): void {
+    if (stamp === this.revision) this.latched.set(mesh, { material: mesh.material ?? null, instanced: mesh.hasThinInstances });
+  }
+
+  /** Forget every proof and latch, e.g. when the pass (and its render pass id) is replaced. */
   reset(): void {
     this.proven = new WeakMap();
+    this.latched = new WeakMap();
+  }
+
+  private holds(record: WeakMap<AbstractMesh, { material: Material | null; instanced: boolean }>, mesh: AbstractMesh): boolean {
+    const entry = record.get(mesh);
+    return !!entry && entry.material === (mesh.material ?? null) && entry.instanced === mesh.hasThinInstances;
   }
 
   dispose(): void {
@@ -299,6 +329,14 @@ class ScenePicker {
     pass?.dispose();
   }
 
+  /** The wait ran out: probe each unproven mesh alone to prove the ready ones and latch the stuck ones. */
+  private latchStuck(pass: PickPass, camera: Camera, unproven: readonly AbstractMesh[], stamp: number): void {
+    for (const mesh of unproven) {
+      if (pass.isReady(camera, [mesh])) this.readiness.prove([mesh], stamp);
+      else this.readiness.latch(mesh, stamp);
+    }
+  }
+
   private async run(x: number, y: number): Promise<GpuPickResult> {
     const { scene } = this;
     let pass: PickPass | undefined;
@@ -319,28 +357,43 @@ class ScenePicker {
       const meshes = gpuPickableMeshes(scene);
       if (meshes.length === 0) return null;
       if (meshes.length >= 0xffffff) return undefined;
+      // Ids number every pickable mesh, so an id means the same mesh whichever subset is drawn.
       const ids = new Map<AbstractMesh, number>(meshes.map((mesh, index) => [mesh, index + 1]));
+      // Only meshes that can reach this pixel are drawn and awaited; the others cannot change its result.
+      const candidates = pickCandidates(scene, meshes, pickFrustumPlanes(camera, px, py, width, height));
+      if (candidates.length === 0) return null;
 
       pass = this.pass;
       if (!pass) {
-        pass = this.pass = new PickPass(scene, camera, meshes);
+        pass = this.pass = new PickPass(scene, camera, candidates);
         await pass.build();
         if (this.disposed) return undefined;
       }
       const deadline = performance.now() + READY_TIMEOUT_MS;
       for (;;) {
-        const unproven = this.readiness.unproven(meshes, camera);
+        const unproven = this.readiness.unproven(candidates, camera);
         if (unproven.length === 0) break;
         const stamp = this.readiness.stamp;
+        const stuck = this.readiness.latchedAmong(unproven);
+        if (stuck.length > 0) {
+          // A candidate that already outlasted a full wait: probe it once, then take the CPU ray
+          // rather than wait again. Drawing without it could pick a mesh behind it.
+          if (performance.now() > deadline || !pass.isReady(camera, stuck)) return undefined;
+          this.readiness.prove(stuck, stamp);
+          continue;
+        }
         if (pass.isReady(camera, unproven)) {
           this.readiness.prove(unproven, stamp);
           break;
         }
-        if (performance.now() > deadline) return undefined;
+        if (performance.now() > deadline) {
+          this.latchStuck(pass, camera, unproven, stamp);
+          return undefined;
+        }
         await wait(READY_POLL_MS);
         if (this.disposed) return undefined;
       }
-      const texture = pass.render(camera, meshes, ids, px, py, width, height);
+      const texture = pass.render(camera, candidates, ids, px, py, width, height);
       if (!texture) return undefined;
       // One texel: WebGL's bottom-up and WebGPU's top-down rows coincide.
       const pixel = new Uint8Array(engine.isWebGPU ? 256 : 4);
@@ -369,9 +422,13 @@ const pickers = new WeakMap<Scene, ScenePicker>();
  * one texel regardless of viewport size. Coordinates are `scene.pick` pixels.
  *
  * The graph, its targets and its render pass id persist per Scene: the first
- * tap builds them and Scene disposal releases them. A tap strictly probes only
- * the meshes that are new or changed since the pass last proved them drawable,
- * and taps run one at a time in call order. `undefined` means use the CPU ray.
+ * tap builds them and Scene disposal releases them. A tap draws, and strictly
+ * probes, only the meshes that can reach its pixel (bounds meet the pixel's
+ * clip volume, or the mesh can draw outside its bounds) and that are new or
+ * changed since the pass last proved them drawable. A mesh that outlasts the
+ * one-second wait is latched until it changes: a tap that needs it probes it
+ * once and takes the CPU ray at once instead of waiting again. Taps run one at
+ * a time in call order. `undefined` means use the CPU ray.
  */
 export async function gpuPickMesh(scene: Scene, x: number, y: number): Promise<GpuPickResult> {
   if (scene.isDisposed) return undefined;
