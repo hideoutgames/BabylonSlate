@@ -313,8 +313,8 @@ export interface RuntimeDriver {
   }): void;
   /** Install host answers to `requestComplexCollision`; they survive later `loadModels` replacements. */
   registerComplexCollisionMeshes(meshes: ReadonlyMap<string, CollisionTriangleMesh>, unavailable?: readonly string[]): void;
-  /** Import a baked Scene navmesh chunk. Never generates. */
-  loadNavMesh(bytes: Uint8Array): Promise<void>;
+  /** Import a baked Scene navmesh chunk. Without `bytes`, the Play scene mesh `load` catalogued. Never generates. */
+  loadNavMesh(bytes?: Uint8Array): Promise<void>;
   setNavAgentTarget(actorGuid: string, target: NavPoint): boolean;
   findNavPath(from: NavPoint, to: NavPoint): NavPoint[];
   addNavObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint): string;

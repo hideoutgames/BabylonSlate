@@ -36,7 +36,7 @@ import {
   normalizeMaterialFunctionDocument,
   normalizeMaterialInstanceDocument,
 } from "@babylonslate/shader-graph";
-import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
+import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation/chunk";
 
 export function filterPlayScriptDocuments<
   T extends { path: string; content: SerializedGraph },

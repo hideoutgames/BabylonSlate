@@ -1,1 +1,1 @@
-export { attachLifecyclePause, type LifecyclePauseHandler } from "@babylonslate/render";
+export { attachLifecyclePause, type LifecyclePauseHandler } from "@babylonslate/render/lifecycle-pause";

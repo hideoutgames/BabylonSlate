@@ -25,6 +25,7 @@ import {
   type Text2DProperties,
 } from "@babylonslate/core";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
+import { registerClusteredUnlitMaterial } from "./clustered-material-policy";
 import {
   bitmapGlyphKey,
   DEFAULT_BITMAP_WORKING_BYTES,
@@ -387,6 +388,9 @@ function msdfGlyphMaterial(
       },
     ));
     material.backFaceCulling = false;
+    // The text2dMsdf program samples only the atlas and these colour uniforms;
+    // it declares no light, so clustered lighting need not fall back to Forward.
+    registerClusteredUnlitMaterial(material);
     material.setTexture("atlas", atlas);
     material.setColor3("fillColor", new Color3(color[0], color[1], color[2]));
     material.setColor3(

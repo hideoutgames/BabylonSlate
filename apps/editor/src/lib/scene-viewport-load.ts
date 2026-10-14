@@ -74,8 +74,8 @@ export function isSceneViewportRemountLoad(
   return engineGeneration !== completedGeneration;
 }
 
-export { waitForSceneLoadingPaint } from "@babylonslate/render";
-import { waitForSceneLoadingPaint } from "@babylonslate/render";
+export { waitForSceneLoadingPaint } from "@babylonslate/render/scene-load-readiness";
+import { waitForSceneLoadingPaint } from "@babylonslate/render/scene-load-readiness";
 
 export async function runSceneViewportBlockingLoad(options: {
   signal: AbortSignal;

@@ -25,7 +25,7 @@ import {
 import {
   parseColliderProperties,
   parseRigidBodyProperties,
-} from "@babylonslate/physics";
+} from "@babylonslate/physics/component-props";
 import {
   buildNewAssetResult,
   newAssetFileName,

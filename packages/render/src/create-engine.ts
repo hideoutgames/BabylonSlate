@@ -368,6 +368,17 @@ export interface EngineHandle {
   }>;
   /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
   setMeshAssets: (assets: MeshAssetContext) => void;
+  /**
+   * Swap the stored encoding (PNG to KTX2) of Textures already installed with
+   * `setMeshAssets`, when their pixels, sampler and settings are unchanged.
+   * Editor meshes and Materials stay alive; a guid whose installed bytes are
+   * already identical is left as it is, and a guid never installed is ignored.
+   * Returns the guids whose installed bytes match the given bytes afterwards:
+   * the replaced ones and the already-identical ones. A guid that is not
+   * returned still needs `setMeshAssets`, or a retry once it is installed.
+   * Content edits go through `setMeshAssets`.
+   */
+  replaceTextureBytes: (textureBytes: ReadonlyMap<string, Uint8Array | Blob>) => string[];
   /** Retain prepared source maps until the consuming runtime instance is retired. */
   acquireSceneSources: (sources: SceneSourceAssets, options?: { prepare?: boolean; signal?: AbortSignal; priority?: NativePreparationPriority }) => Promise<() => void>;
   nativePreparationStats: () => ReturnType<ReturnType<typeof nativePreparationForEngine>["snapshot"]>;
@@ -3879,6 +3890,28 @@ function initializeEngine(
       }
       // After any mesh rebuild, so a resized target re-parents to live meshes.
       debugOverlay?.refreshRenderTargets();
+    },
+    replaceTextureBytes: (textureBytes) => {
+      const current = binding.textureBytes;
+      if (!current) return [];
+      const next = new Map(current);
+      const changed: string[] = [];
+      const settled: string[] = [];
+      for (const [guid, source] of installTextureBytes(textureBytes) ?? []) {
+        const previous = current.get(guid);
+        // A Texture that was never installed changes what meshes sample: setMeshAssets owns that.
+        if (!previous) continue;
+        settled.push(guid);
+        // Already stored this way: nothing to apply, and nothing left to retry.
+        if (assetByteFingerprint(previous) === assetByteFingerprint(source)) continue;
+        next.set(guid, source);
+        changed.push(guid);
+      }
+      if (changed.length === 0) return settled;
+      // Before the sync call: the Material library reads these bytes for its texture identity.
+      binding.textureBytes = next;
+      editorSync?.replaceTextureEncodings(next, changed);
+      return settled;
     },
     acquireSceneSources: async (sources, preparation) => {
       if (disposed) throw new Error("The render Scene is disposed.");

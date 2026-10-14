@@ -29,12 +29,12 @@ import {
   parseColliderProperties,
   parseConstraintProperties,
   parseRigidBodyProperties,
-} from "@babylonslate/physics";
+} from "@babylonslate/physics/component-props";
 import {
   DEFAULT_NAV_AGENT_PARAMS,
   defaultNavMeshBlockerComponentProperties,
   defaultNavMeshComponentProperties,
-} from "@babylonslate/navigation";
+} from "@babylonslate/navigation/settings";
 import { normalizeSceneStreamingProperties, parseLandscapeProperties, parseFoliageProperties } from "@babylonslate/core";
 
 /** Canonical authorable fields shared by scene editing and final-state capture. */

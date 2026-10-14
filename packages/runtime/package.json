@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./worker-entry": "./src/worker-entry.ts"
+    "./worker-entry": "./src/worker-entry.ts",
+    "./component-authoring": "./src/component-authoring.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

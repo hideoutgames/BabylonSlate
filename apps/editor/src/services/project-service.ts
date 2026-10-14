@@ -145,7 +145,8 @@ import { processAreaEmissionInWorker } from "@babylonslate/assets/area-emission-
 import { onEncodeQueuePause } from "./encode-queue-pause";
 import { validateClassDeletionReplacements } from "../lib/class-deletion";
 import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
-import { extraChunksWithNavmesh, type NavMeshGenerateInput } from "@babylonslate/navigation";
+import { extraChunksWithNavmesh } from "@babylonslate/navigation/chunk";
+import type { NavMeshGenerateInput } from "@babylonslate/navigation";
 import {
   newAssetFileName,
   classIdFromClassAsset,
