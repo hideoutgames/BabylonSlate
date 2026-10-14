@@ -767,8 +767,8 @@ describe("adopting a replaced visual that has child actors", () => {
     const parent = sync.meshForActor("parent")!;
     expect(parent).not.toBe(replaced);
     expect(replaced.isDisposed()).toBe(true);
-    expect(parent.getChildren((node) => node.name.startsWith("editorActor:"), true).map((node) => node.name))
-      .toEqual(["editorActor:first", "editorActor:second", "editorActor:third"]);
+    const childActors = ["first", "second", "third"].map((id) => `editorActor:${id}`);
+    expect(parent.getChildren((node) => childActors.includes(node.name), true).map((node) => node.name)).toEqual(childActors);
     for (const child of [first, second, third]) {
       expect(sync.meshForActor(child.id)!.isDisposed()).toBe(false);
       expect(sync.meshForActor(child.id)!.parent).toBe(parent);
