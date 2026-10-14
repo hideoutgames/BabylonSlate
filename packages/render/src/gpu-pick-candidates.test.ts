@@ -32,9 +32,11 @@ function fixture() {
   camera.setTarget(Vector3.Zero());
   scene.activeCamera = camera;
   cleanups.push(() => { scene.dispose(); engine.dispose(); });
-  const box = (name: string, x: number, z = 0) => {
+  // Babylon re-reads a world matrix once per render id and nothing here renders, so placing a mesh recomputes it.
+  const box = (name: string, x: number, z = 0, y = 0) => {
     const mesh = MeshBuilder.CreateBox(name, {}, scene);
-    mesh.position.set(x, 0, z);
+    mesh.position.set(x, y, z);
+    mesh.computeWorldMatrix(true);
     mesh.material = new StandardMaterial(`${name} Material`, scene);
     return mesh;
   };
@@ -48,9 +50,8 @@ describe("pickCandidates", () => {
     const { camera, box, candidates } = fixture();
     const meshes = [
       box("ahead", 0, 0), box("behind the camera", 0, -20), box("beyond the far plane", 0, camera.maxZ + 50),
-      box("beside", 3), box("far beside", 50), box("above", 0), box("on the ray, nearer", 0, -3),
+      box("beside", 3), box("far beside", 50), box("above", 0, 0, 40), box("on the ray, nearer", 0, -3),
     ];
-    meshes[5]!.position.y = 40;
     expect(candidates(...meshes)).toEqual(["ahead", "on the ray, nearer"]);
   });
 

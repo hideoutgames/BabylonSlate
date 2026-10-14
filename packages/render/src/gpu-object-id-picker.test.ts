@@ -97,6 +97,7 @@ function pickFixture() {
   const meshes = ["Left", "Middle", "Right"].map((name, index) => {
     const mesh = MeshBuilder.CreateBox(name, {}, scene);
     mesh.position.z = (index - 1) * 2;
+    mesh.computeWorldMatrix(true);
     mesh.material = new StandardMaterial(`${name} Material`, scene);
     return mesh;
   });
@@ -113,6 +114,8 @@ function pickFixture() {
     engine, scene, camera, meshes, readback, writeHit,
     hit: (value: number) => { id = value; },
     tap: () => gpuPickMesh(scene, WIDTH / 2, HEIGHT / 2),
+    /** Babylon re-reads a world matrix once per render id and nothing here renders, so moving a mesh recomputes it. */
+    place: (mesh: AbstractMesh, x: number) => { mesh.position.x = x; mesh.computeWorldMatrix(true); },
     /**
      * Live render pass ids of the pick graph: its object renderer and that
      * renderer's depth-peeling helper. A leaked or rebuilt graph changes them.
@@ -293,8 +296,8 @@ describe("gpuPickMesh", () => {
 
     it("draws and probes only the meshes that can reach the tapped pixel", async () => {
       const f = pickFixture();
-      f.meshes[0]!.position.x = -3;
-      f.meshes[2]!.position.x = 3;
+      f.place(f.meshes[0]!, -3);
+      f.place(f.meshes[2]!, 3);
       const probes = probeTracker(f.meshes);
       const drawn = drawnLists(f);
       f.hit(2);
@@ -307,7 +310,7 @@ describe("gpuPickMesh", () => {
 
     it("answers a tap on empty space without building or drawing a pass", async () => {
       const f = pickFixture();
-      for (const mesh of f.meshes) mesh.position.x = 3;
+      for (const mesh of f.meshes) f.place(mesh, 3);
       const drawn = drawnLists(f);
       expect(await f.tap()).toBeNull();
       expect(drawn).toEqual([]);
@@ -317,9 +320,9 @@ describe("gpuPickMesh", () => {
     it("still draws a displaced mesh whose static bounds miss the pixel, and finds its hit", async () => {
       const f = pickFixture();
       const displaced = f.meshes[2]!;
-      displaced.position.x = 3;
+      f.place(displaced, 3);
       displaced.material!.metadata = { boundsPadding: 1 };
-      f.meshes[0]!.position.x = -3;
+      f.place(f.meshes[0]!, -3);
       const drawn = drawnLists(f);
       f.hit(3);
       expect((await f.tap())?.name).toBe("Right");
@@ -380,7 +383,7 @@ describe("gpuPickMesh", () => {
       it("does not hold up taps whose pixel it cannot reach", async () => {
         const f = pickFixture();
         const left = f.meshes[0]!;
-        left.position.x = -3;
+        f.place(left, -3);
         vi.spyOn(left, "isReady").mockReturnValue(false);
         f.hit(2);
         expect((await f.tap())?.name).toBe("Middle");
