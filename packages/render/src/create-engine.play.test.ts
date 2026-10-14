@@ -3590,6 +3590,56 @@ describe("Play createEngine view", () => {
     expect(placed.at(-1)).toBe(10);
   });
 
+  it("places a spatial voice and moves the listener once per applied snapshot", async () => {
+    const { createDefaultAudioPayload } = await import("@babylonslate/assets");
+    const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
+    const backend = new FakeAudioPlaybackBackend();
+    const placed: number[] = [];
+    vi.spyOn(backend, "setVoicePose").mockImplementation((_voiceId, pose) => { placed.push(pose.x); });
+    const listenerMoves = vi.spyOn(backend, "setListenerPose");
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      playMode: true,
+      audioBackend: backend,
+      audioBytes: new Map([["hum", new Uint8Array([1, 2, 3, 4])]]),
+      audioLibrary: {
+        mixerGuid: null,
+        mixers: new Map(),
+        channels: new Map(),
+        audio: new Map([["hum", { ...createDefaultAudioPayload(), soundAttenuationGuid: "near" }]]),
+        attenuations: new Map([["near", {
+          innerRadius: 1, maxRadius: 50, distanceModel: "linear", rolloff: 1,
+          spatialisation: "equalPower", cone: null, doppler: null,
+        }]]),
+      },
+    });
+    handles.push(handle);
+    await handle.unlockAudio();
+    const presentSlotAt = (frameId: number, x: number) => {
+      const buf = new Float32Array(snapshotFloatCount(8));
+      writeSnapshotHeader(buf, { frameId, tickIndex: frameId, actorCount: 1, scriptMs: 0, physicsMs: 0 });
+      writeActorSlot(buf, 0, {
+        slotId: 1, position: { x, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 }, flags: SNAPSHOT_FLAG_VISIBLE,
+      });
+      handle.pushSnapshot(buf);
+      runRenderLoop.mock.calls[0]![0]();
+    };
+    handle.applyCommand({ type: "spawn", slotId: 1, actorGuid: "speaker", classId: "Actor" });
+    handle.applyCommand({ type: "playSound", assetGuid: "hum", volume: 1, frameId: 1, voiceId: "v1", emitterActorGuid: "speaker" });
+    await vi.waitFor(() => {
+      presentSlotAt(1, 10);
+      expect(placed.at(-1)).toBe(10);
+    });
+    const placedBefore = placed.length;
+    const movesBefore = listenerMoves.mock.calls.length;
+    presentSlotAt(2, 12);
+    expect(placed.slice(placedBefore)).toEqual([12]);
+    expect(listenerMoves.mock.calls.length - movesBefore).toBe(1);
+  });
+
   it("syncs the Fake audio listener to the possessed camera world pose", async () => {
     const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
     const backend = new FakeAudioPlaybackBackend();

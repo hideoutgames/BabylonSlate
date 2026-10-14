@@ -14,7 +14,7 @@ import { AudioService } from "./audio-service";
 import type { ParticleLibrary } from "./particle-service";
 import { ParticleService } from "./particle-service";
 import { acquireParticleMaterial } from "./particle-material";
-import type { AudioPlaybackBackend } from "./audio-playback-backend";
+import type { AudioPlaybackBackend, AudioPose } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
@@ -2493,16 +2493,14 @@ function initializeEngine(
     // Pose/listener sync owns the applied snapshot, not render admission: a
     // capped or held frame must not leave spatial audio stale.
     if (audioService) {
-      if (audioService.hasSpatialVoices()) {
-        writeSampledAudioPoses(sampled, audioPoses);
-        applyBoneAttachmentAudioPoses(binding, audioPoses);
-        audioService.syncSnapshot(audioPoses);
-      }
       const camera = simulationEditMode ? resolvePlayGameCamera(scene, binding) : scene.activeCamera;
+      let listener: AudioPose | null = null;
       if (camera && !gameTimePaused) {
         const pos = camera.globalPosition ?? camera.position;
         const rot = camera.absoluteRotation;
-        audioService.syncListener({
+        // A fresh object per snapshot: the service keeps the previous listener
+        // for Doppler until the next one arrives.
+        listener = {
           x: pos.x,
           y: pos.y,
           z: pos.z,
@@ -2510,7 +2508,15 @@ function initializeEngine(
           qy: rot.y,
           qz: rot.z,
           qw: rot.w,
-        });
+        };
+      }
+      if (audioService.hasSpatialVoices()) {
+        writeSampledAudioPoses(sampled, audioPoses);
+        applyBoneAttachmentAudioPoses(binding, audioPoses);
+        // One refresh moves the voices and the listener together.
+        audioService.syncSnapshot(audioPoses, listener);
+      } else if (listener) {
+        audioService.syncListener(listener);
       }
     }
     appliedSnapshotIdentity = {

@@ -16,7 +16,7 @@ import type { CommandMessage } from "@babylonslate/bridge";
 import { createActor, createDefaultSceneSettings } from "@babylonslate/core";
 import { createInProcessRuntime } from "@babylonslate/test-kit";
 import { AudioBufferCache } from "./audio-buffer-cache";
-import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
+import { FakeAudioPlaybackBackend, type AudioPose } from "./audio-playback-backend";
 import { AudioService } from "./audio-service";
 
 function library(options?: {
@@ -1726,6 +1726,151 @@ describe("AudioService", () => {
     backend.finish("one-shot");
     backend.finish("looping");
     expect(ended).toEqual(["one-shot"]);
+    service.dispose();
+  });
+});
+
+/** Counts the per-voice writes one applied snapshot costs the backend. */
+class CountingBackend extends FakeAudioPlaybackBackend {
+  poseWrites = 0;
+  muffleWrites = 0;
+
+  override setVoicePose(voiceId: string, pose: AudioPose): void {
+    this.poseWrites += 1;
+    super.setVoicePose(voiceId, { ...pose });
+  }
+
+  override setVoiceMuffle(voiceId: string, factor: number): void {
+    this.muffleWrites += 1;
+    super.setVoiceMuffle(voiceId, factor);
+  }
+}
+
+describe("AudioService spatial refresh per applied snapshot", () => {
+  /**
+   * One Doppler emitter behind a wall grid: voxels are 2 units wide along x and
+   * the 2nd and 3rd are occupied, so a listener at x=3 hears one wall (0.5),
+   * x=5 hears two (1) and x<2 hears none.
+   */
+  async function dopplerEmitter(backend: FakeAudioPlaybackBackend, clock: { now: number }) {
+    const service = new AudioService({ backend, now: () => clock.now });
+    service.setLibrary(
+      library({
+        channels: {
+          sfx: {
+            parentChannelGuid: null,
+            effects: [
+              { kind: "environmentReverb", enabled: false },
+              { kind: "muffleThroughWalls", enabled: true },
+            ],
+          },
+        },
+        audio: { jump: { volume: 1, audioChannelGuid: "sfx", soundAttenuationGuid: "near" } },
+        attenuations: {
+          near: {
+            innerRadius: 1,
+            maxRadius: 50,
+            distanceModel: "linear",
+            rolloff: 1,
+            spatialisation: "equalPower",
+            cone: null,
+            doppler: { enabled: true, factor: 1 },
+          },
+        },
+      }),
+    );
+    const bits = new Uint8Array(1);
+    bits[0] = 0b0000_0110;
+    service.setReverbField(
+      encodeAudioReverbChunk({
+        version: AUDIO_REVERB_VERSION,
+        dryFallback: false,
+        geometryHash: "occ",
+        probes: [],
+        occupancy: {
+          originX: 0, originY: 0, originZ: 0,
+          voxelX: 2, voxelY: 2, voxelZ: 2,
+          sizeX: 4, sizeY: 1, sizeZ: 1,
+          bits,
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.noteActorSlot("speaker", 1);
+    service.handleCommand({
+      type: "playSound", assetGuid: "jump", volume: 1, frameId: 1,
+      voiceId: "v1", emitterActorGuid: "speaker",
+    });
+    await service.flush();
+    service.syncListener({ x: 5, y: 1, z: 1 });
+    return service;
+  }
+
+  // Each frame moves the emitter along x inside the wall-free first voxel and
+  // moves the listener across it, so Doppler (previous listener) and muffle
+  // (incoming listener) disagree about which side the listener is on.
+  const frames: Array<{ at: number; emitterX: number; listener: { x: number; y: number; z: number } | null }> = [
+    { at: 0, emitterX: 1.0, listener: { x: 5, y: 1, z: 1 } },
+    { at: 100, emitterX: 1.5, listener: { x: 0.25, y: 1, z: 1 } },
+    { at: 200, emitterX: 1.9, listener: { x: 5, y: 1, z: 1 } },
+    // Game time paused: the snapshot still applies, the listener does not move.
+    { at: 300, emitterX: 1.4, listener: null },
+  ];
+
+  const observe = (backend: CountingBackend, service: AudioService) => ({
+    rate: backend.playbackRates.get("v1"),
+    muffle: backend.muffles.get("v1"),
+    pose: backend.poses.get("v1")?.x,
+    listener: backend.listener.x,
+    distance: service.stats().lastDistance,
+  });
+
+  it("refreshes each voice once per snapshot and matches the sequential two-pass results", async () => {
+    const clock = { now: 0 };
+    const combinedBackend = new CountingBackend();
+    const baselineBackend = new CountingBackend();
+    const combined = await dopplerEmitter(combinedBackend, clock);
+    const baseline = await dopplerEmitter(baselineBackend, clock);
+    const writesBefore = { pose: combinedBackend.poseWrites, muffle: combinedBackend.muffleWrites };
+    const observed: Array<ReturnType<typeof observe>> = [];
+    for (const frame of frames) {
+      clock.now = frame.at;
+      const poses = [{ slotId: 1, position: { x: frame.emitterX, y: 1, z: 1 } }];
+      combined.syncSnapshot(poses, frame.listener);
+      baseline.syncSnapshot(poses);
+      if (frame.listener) baseline.syncListener(frame.listener);
+      observed.push(observe(combinedBackend, combined));
+      expect(observed.at(-1)).toEqual(observe(baselineBackend, baseline));
+    }
+
+    // Hand-derived: Doppler follows the listener the previous frame left, while
+    // muffle and distance follow the incoming one.
+    const c = AUDIO_SPEED_OF_SOUND;
+    expect(observed.map((entry) => entry.rate)).toEqual([
+      1,
+      expect.closeTo(1 + 5 / c, 5),
+      expect.closeTo(1 - 4 / c, 5),
+      expect.closeTo(1 - 5 / c, 5),
+    ]);
+    expect(observed.map((entry) => entry.muffle)).toEqual([1, 0, 1, 1]);
+    expect(observed.map((entry) => entry.pose)).toEqual([1.0, 1.5, 1.9, 1.4]);
+    expect(observed.map((entry) => entry.listener)).toEqual([5, 0.25, 5, 5]);
+    expect(observed.map((entry) => entry.distance)).toEqual([
+      expect.closeTo(4, 5), expect.closeTo(1.25, 5), expect.closeTo(3.1, 5), expect.closeTo(3.6, 5),
+    ]);
+    expect(combinedBackend.poseWrites - writesBefore.pose).toBe(frames.length);
+    expect(combinedBackend.muffleWrites - writesBefore.muffle).toBe(frames.length);
+    combined.dispose();
+    baseline.dispose();
+  });
+
+  it("still applies the incoming listener when no spatial voice exists to refresh", () => {
+    const backend = new CountingBackend();
+    const service = new AudioService({ backend });
+    service.syncSnapshot([{ slotId: 1, position: { x: 9, y: 0, z: 0 } }], { x: 2, y: 3, z: 4 });
+    expect(backend.listener).toEqual({ x: 2, y: 3, z: 4 });
+    expect(backend.poseWrites).toBe(0);
     service.dispose();
   });
 });
