@@ -42,6 +42,7 @@ import {
   PreparedColliderGeometry,
   sameDescriptor,
   physicsChainTransforms,
+  physicsParticipantActors,
   physicsWorldTransforms,
 } from "./physics-preparation";
 import { componentColliderPhysicsId, hostedColliderPhysicsId } from "./physics-collider-id";
@@ -212,9 +213,9 @@ export class PhysicsWorldSync {
        */
       skipEmptySteps?: boolean;
       /**
-       * The actors this world can simulate, in World order, read afresh at each use. Omitted: every World actor.
-       * `actorFilter` still decides eligibility; this only spares a world that admits few actors (a Scene Layer's)
-       * from walking the rest of the World each tick.
+       * The actors this world can simulate, in World order, read afresh at each use. Omitted: the World's actors
+       * that own a physics component class. `actorFilter` still decides eligibility; this only spares a world that
+       * admits few actors (a Scene Layer's) from walking the rest of the World each tick.
        */
       actorsOf?: (world: World) => readonly Actor[];
       /**
@@ -818,11 +819,13 @@ export class PhysicsWorldSync {
   }
 
   /**
-   * The actors a pass walks to find bodies: every World actor, or the subset `actorsOf` names. Parent walks and
-   * water keep `actors`, the whole World, since a chain may leave the subset.
+   * The actors a pass walks to find bodies, in World order: those `actorsOf` names, else the World's actors that
+   * own a physics component class. Parent walks and water keep `actors`, the whole World, since a chain may leave
+   * the subset.
    */
   private candidateActors(): readonly Actor[] {
-    return this.actorsOf && this.world ? this.actorsOf(this.world) : this.actors;
+    if (!this.world) return this.actors;
+    return this.actorsOf ? this.actorsOf(this.world) : physicsParticipantActors(this.world);
   }
 
   /**
