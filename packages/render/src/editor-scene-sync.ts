@@ -69,6 +69,13 @@ export type EditorSceneSyncOptions = {
  */
 export class EditorSceneSync {
   private readonly meshes = new Map<string, Mesh>();
+  /**
+   * Each registered actor root with its actor id and its place in `meshes`'
+   * insertion order, so a root's child actors are found through Babylon's own
+   * child list rather than by visiting every root. See `registerActorMesh`.
+   */
+  private readonly rootEntries = new Map<Mesh, { actorId: string; rank: number }>();
+  private nextRootRank = 0;
   private readonly meshKinds = new Map<string, string | null>();
   private readonly rejectedVisuals = new Map<string, string>();
   private readonly pendingVisuals = new Map<string, Mesh>();
@@ -367,8 +374,8 @@ export class EditorSceneSync {
                 // authored pose and must not undo that arrangement on adoption.
                 this.prepareActorVisual(actor, candidate);
                 candidate.parent = previous.parent;
-                for (const child of this.meshes.values()) if (child.parent === previous) child.parent = candidate;
-                this.meshes.set(actor.id, candidate);
+                this.moveChildActors(previous, candidate);
+                this.registerActorMesh(actor.id, candidate);
                 this.meshKinds.set(actor.id, nextKinds.get(actor.id) ?? null);
                 this.rejectedVisuals.delete(actor.id);
                 this.pendingVisuals.delete(actor.id);
@@ -411,7 +418,7 @@ export class EditorSceneSync {
           void textureReady?.catch(() => {});
           mesh = replacement;
           prepared = true;
-          this.meshes.set(actor.id, mesh);
+          this.registerActorMesh(actor.id, mesh);
           this.meshKinds.set(actor.id, nextKinds.get(actor.id) ?? null);
           this.rejectedVisuals.delete(actor.id);
           previous?.dispose();
@@ -436,7 +443,7 @@ export class EditorSceneSync {
     for (const [actorId, mesh] of oldMeshes) {
       if (!liveIds.has(actorId)) {
         mesh.dispose();
-        this.meshes.delete(actorId);
+        this.unregisterActorMesh(actorId);
         this.meshKinds.delete(actorId);
         this.rejectedVisuals.delete(actorId);
       }
@@ -619,6 +626,41 @@ export class EditorSceneSync {
 
   actorCount(): number {
     return this.meshes.size;
+  }
+
+  /**
+   * Registers an actor's root. A replacement keeps the id's place in `meshes`
+   * (a `Map` keeps a key's position when its value changes), and so its rank.
+   */
+  private registerActorMesh(actorId: string, mesh: Mesh): void {
+    const previous = this.meshes.get(actorId);
+    const rank = (previous ? this.rootEntries.get(previous)?.rank : undefined) ?? this.nextRootRank++;
+    if (previous) this.rootEntries.delete(previous);
+    this.rootEntries.set(mesh, { actorId, rank });
+    this.meshes.set(actorId, mesh);
+  }
+
+  private unregisterActorMesh(actorId: string): void {
+    const mesh = this.meshes.get(actorId);
+    if (mesh) this.rootEntries.delete(mesh);
+    this.meshes.delete(actorId);
+  }
+
+  /**
+   * Re-parents every registered actor root beneath `from` onto `to`, in the
+   * order the roots were registered, as a pass over all roots would. The
+   * children come from Babylon's own child list, which the `parent` setter keeps
+   * current, so the cost follows the number of children, not of actors.
+   */
+  private moveChildActors(from: Mesh, to: Mesh): void {
+    const children: Array<{ mesh: Mesh; rank: number }> = [];
+    for (const child of from.getChildren(undefined, true)) {
+      if (!(child instanceof Mesh)) continue;
+      const entry = this.rootEntries.get(child);
+      if (entry) children.push({ mesh: child, rank: entry.rank });
+    }
+    children.sort((a, b) => a.rank - b.rank);
+    for (const { mesh } of children) mesh.parent = to;
   }
 
   async whenEditorModelsReady(): Promise<void> {
@@ -984,6 +1026,7 @@ export class EditorSceneSync {
       mesh.dispose();
     }
     this.meshes.clear();
+    this.rootEntries.clear();
     this.meshKinds.clear();
     pruneEditorCables(this.scene);
   }

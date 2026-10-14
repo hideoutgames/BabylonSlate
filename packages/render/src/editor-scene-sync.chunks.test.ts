@@ -4,6 +4,7 @@ import {
   createDefaultScene,
   createMeshComponent,
   normalizeShadowSettings,
+  type SerializedActor,
   type SerializedScene,
 } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
@@ -551,6 +552,62 @@ describe("cooperative editor realization", () => {
     expect(root.isDisposed()).toBe(true);
     expect(sync.actorCount()).toBe(0);
     expect(onAfterApply).toHaveBeenCalledOnce();
+  });
+});
+
+describe("adopting a replaced visual that has child actors", () => {
+  function box(id: string, parentId: string | null = null, model = false) {
+    const component = createMeshComponent(`${id}-mesh`, "box");
+    if (model) component.properties.assetGuid = "model";
+    return createActor(id, id, { parentId, components: [component] });
+  }
+  /** A pass over every actor root reads each root's `parent` once; a lookup of the replaced root's children never does. */
+  function countParentReads(mesh: Mesh): () => number {
+    let owner: object | null = mesh;
+    while (owner && !Object.getOwnPropertyDescriptor(owner, "parent")) owner = Object.getPrototypeOf(owner);
+    const accessor = Object.getOwnPropertyDescriptor(owner!, "parent")!;
+    let reads = 0;
+    Object.defineProperty(mesh, "parent", {
+      configurable: true,
+      get() { reads += 1; return accessor.get!.call(mesh); },
+      set(value) { accessor.set!.call(mesh, value); },
+    });
+    return () => reads;
+  }
+
+  it("moves every child actor onto the adopted visual, in the order the actors were created, without visiting unrelated actors", async () => {
+    const { sync } = fixture();
+    const bystanders = Array.from({ length: 24 }, (_, index) => box(`bystander-${index}`));
+    const first = box("first", "parent");
+    const second = box("second", "parent");
+    const third = box("third", "parent");
+    const loner = box("loner", "other");
+    const scene = (model: boolean, children: SerializedActor[]): SerializedScene => ({
+      ...createDefaultScene(),
+      actors: [...bystanders, box("parent", null, model), box("other", null, model), ...children, loner],
+    });
+    sync.setMeshAssets({ modelBytes: new Map([["model", encodeTriangleGlb()]]) });
+    sync.apply(scene(false, [first, second, third]));
+    const replaced = sync.meshForActor("parent")!;
+
+    // Replacing the parent detaches its children and attaches them again in this document's order, which is not the order they were created in.
+    sync.apply(scene(true, [third, first, second]));
+    const reads = bystanders.map((actor) => countParentReads(sync.meshForActor(actor.id)!));
+    await sync.whenEditorModelsReady();
+
+    expect(reads.reduce((total, read) => total + read(), 0)).toBe(0);
+    const parent = sync.meshForActor("parent")!;
+    expect(parent).not.toBe(replaced);
+    expect(replaced.isDisposed()).toBe(true);
+    expect(parent.getChildren((node) => node.name.startsWith("editorActor:"), true).map((node) => node.name))
+      .toEqual(["editorActor:first", "editorActor:second", "editorActor:third"]);
+    for (const child of [first, second, third]) {
+      expect(sync.meshForActor(child.id)!.isDisposed()).toBe(false);
+      expect(sync.meshForActor(child.id)!.parent).toBe(parent);
+    }
+    expect(sync.meshForActor("loner")!.parent).toBe(sync.meshForActor("other"));
+    expect(sync.meshForActor("other")!.parent).toBeNull();
+    expect(sync.meshForActor("bystander-0")!.parent).toBeNull();
   });
 });
 
