@@ -105,6 +105,8 @@ function pickFixture() {
     engine, scene, camera, meshes, readback, passIds, releasedIds, writeHit,
     hit: (value: number) => { id = value; },
     tap: () => gpuPickMesh(scene, WIDTH / 2, HEIGHT / 2),
+    /** Render pass ids created so far (the object renderer and its transparency helper). */
+    createdPassIds: () => passIds.mock.results.map((result) => result.value as number),
   };
 }
 type PickFixture = ReturnType<typeof pickFixture>;
@@ -129,10 +131,13 @@ describe("gpuPickMesh", () => {
   it("serves every tap from one persistent pass instead of building and leaking one per tap", async () => {
     const f = pickFixture();
     f.hit(2);
-    for (let tap = 0; tap < 3; tap += 1) expect((await f.tap())?.name).toBe("Middle");
+    expect((await f.tap())?.name).toBe("Middle");
+    const built = f.createdPassIds();
+    expect(built.length).toBeGreaterThan(0);
+    for (let tap = 0; tap < 2; tap += 1) expect((await f.tap())?.name).toBe("Middle");
     f.hit(0);
     expect(await f.tap()).toBeNull();
-    expect(f.passIds).toHaveBeenCalledTimes(1);
+    expect(f.createdPassIds()).toEqual(built);
     expect(f.scene.objectRenderers).toHaveLength(1);
   });
 
@@ -142,8 +147,9 @@ describe("gpuPickMesh", () => {
     lod.isPickable = false;
     f.meshes[1]!.addLODLevel(20, lod);
     const [left, middle, right] = f.meshes as [AbstractMesh, AbstractMesh, AbstractMesh];
+    // The renderer's pass id is the first one the pick allocates.
     const written = (mesh: AbstractMesh) =>
-      MaterialHelperGeometryRendering.GetConfiguration(f.passIds.mock.results[0]!.value)!.objectIdProvider!(mesh);
+      MaterialHelperGeometryRendering.GetConfiguration(f.createdPassIds()[0]!)!.objectIdProvider!(mesh);
 
     f.hit(3);
     expect((await f.tap())?.name).toBe("Right");
@@ -151,6 +157,7 @@ describe("gpuPickMesh", () => {
 
     // The persistent pass must not keep the previous tap's numbering.
     left.dispose();
+    f.hit(1);
     expect((await f.tap())?.name).toBe("Middle");
     expect([middle, right, lod].map(written)).toEqual([1, 2, 1]);
   });
@@ -233,21 +240,28 @@ describe("gpuPickMesh", () => {
       const stuck = vi.spyOn(f.meshes[1]!, "isReady").mockImplementation(() => { now += 600; return false; });
       f.hit(1);
       expect(await f.tap()).toBeUndefined();
+      const built = f.createdPassIds();
       stuck.mockRestore();
       expect((await f.tap())?.name).toBe("Left");
-      expect(f.passIds).toHaveBeenCalledTimes(1);
+      expect(f.createdPassIds()).toEqual(built);
       expect(f.scene.objectRenderers).toHaveLength(1);
     });
   });
 
   describe("lifecycle", () => {
+    const expectReleased = (f: PickFixture, ids: number[]) => {
+      expect(ids.length).toBeGreaterThan(0);
+      for (const id of ids) expect(f.releasedIds).toHaveBeenCalledWith(id);
+    };
+
     it("falls back to the CPU ray after a failed read-back and rebuilds without leaking the failed pass", async () => {
       const f = pickFixture();
       f.readback.mockRejectedValueOnce(new Error("device lost"));
       expect(await f.tap()).toBeUndefined();
+      const failed = f.createdPassIds();
       f.hit(2);
       expect((await f.tap())?.name).toBe("Middle");
-      expect(f.releasedIds).toHaveBeenCalledWith(f.passIds.mock.results[0]!.value);
+      expectReleased(f, failed);
       expect(f.scene.objectRenderers).toHaveLength(1);
     });
 
@@ -256,7 +270,7 @@ describe("gpuPickMesh", () => {
       f.hit(1);
       await f.tap();
       f.scene.dispose();
-      expect(f.releasedIds).toHaveBeenCalledWith(f.passIds.mock.results[0]!.value);
+      expectReleased(f, f.createdPassIds());
       expect(f.scene.objectRenderers).toHaveLength(0);
     });
 
@@ -269,7 +283,7 @@ describe("gpuPickMesh", () => {
       });
       f.hit(1);
       expect(await f.tap()).toBeUndefined();
-      expect(f.releasedIds).toHaveBeenCalledWith(f.passIds.mock.results[0]!.value);
+      expectReleased(f, f.createdPassIds());
       expect(f.scene.objectRenderers).toHaveLength(0);
     });
   });
