@@ -1,7 +1,8 @@
 import { WaterWorld } from "./water-world";
 import { dynamicRuntimeGeometry } from "./dynamic-runtime-mesh";
 import { DynamicMeshCollisionCache, dynamicMeshCollisionDescriptor } from "./dynamic-mesh-collision";
-import { landscapeCollisionMesh, normalizeWaterBuoyancy, parseMovementProperties, sameCollisionTriangleMesh, type CollisionTriangleMesh, type MovementProperties, type Transform } from "@babylonslate/core";
+import { landscapeCollisionMesh, normalizeWaterBuoyancy, sameCollisionTriangleMesh, type CollisionTriangleMesh, type MovementProperties, type Transform } from "@babylonslate/core";
+import { parsedMovementProperties } from "./movement-settings";
 import type {
   ColliderDesc,
   ColliderLocalTransform,
@@ -1473,7 +1474,7 @@ export class PhysicsWorldSync {
     const descriptor = current.copy();
     const colliders = new Map<string, ColliderDesc>();
     if (movement) {
-      const props = parseMovementProperties(Object.fromEntries(movement.variables));
+      const props = parsedMovementProperties.get(movement);
       const id = componentColliderPhysicsId(actor.guid, movement.guid);
       const rotation = uprightCapsuleRotation(world.rotation);
       colliders.set(id, {

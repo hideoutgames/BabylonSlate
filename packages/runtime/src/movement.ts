@@ -1,8 +1,8 @@
-import { parseMovementProperties, type MovementProperties } from "@babylonslate/core";
+import type { MovementProperties } from "@babylonslate/core";
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import type { Vec3 } from "@babylonslate/physics";
 import { actorChainWorldTransform, rotateVector } from "./actor-world-transform";
-import { ParsedComponentProperties } from "./parsed-component-properties";
+import { parsedMovementProperties } from "./movement-settings";
 import type { PhysicsWorldSync } from "./physics-sync";
 
 type MovementState = {
@@ -41,8 +41,8 @@ function publishValue(component: ActorComponent, name: string, value: number | b
 /** Fixed-tick intent, velocity and transitions; physics owns collision resolution. */
 export class MovementWorldSync {
   private readonly states = new Map<ActorComponent, MovementState>();
-  /** Each motor's settings, re-parsed only when one of its variables is written. */
-  private readonly settings = new ParsedComponentProperties((variables) => parseMovementProperties(variables));
+  /** Each motor's settings, re-parsed only when one of its variables is written; physics collider sync reads the same parse. */
+  private readonly settings = parsedMovementProperties;
   private readonly host: MovementHost;
   private scripted = false;
 
