@@ -55,6 +55,8 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
     resourceCache: {},
     registerFonts: vi.fn(async () => {}),
     setMeshAssets: vi.fn(),
+    // The engine reports the guids whose installed bytes now match; by default that is every Texture it is given.
+    replaceTextureBytes: vi.fn((textureBytes: ReadonlyMap<string, unknown>) => [...textureBytes.keys()]),
     setRenderSettings: vi.fn(),
     setMaterialDocuments: vi.fn(),
     whenEditorModelsReady: vi.fn(async () => {}),
@@ -221,6 +223,22 @@ if (!("IntersectionObserver" in globalThis)) {
     IntersectionObserverStub as unknown as typeof IntersectionObserver;
 }
 
+const textureChunk = (id: string, kind: string, sha256: string) =>
+  ({ id, kind, mime: "application/octet-stream", sha256, byteLength: 4, locator: { inline: { offset: 0, length: 4 } } });
+
+/** A registry entry for a Texture; each registry write re-indexes it as a new object. */
+async function textureAsset(guid: string, payload: Record<string, unknown>, chunks: Array<ReturnType<typeof textureChunk>>) {
+  return {
+    rootId: "project",
+    path: `assets/${guid}.texture.babasset`,
+    header: {
+      ...readAssetDocumentHeader(await encodeAssetDocument({ type: "Texture", guid, name: guid, version: 1, payload })),
+      payload,
+      chunks,
+    },
+  };
+}
+
 function renderViewport() {
   return render(
     <DocumentWorkspaceProvider documentId="scene:S">
@@ -257,6 +275,7 @@ describe("ViewportPanel engine", () => {
     handle.loadScene.mockClear();
     handle.loadSceneAsync.mockReset().mockResolvedValue(undefined);
     handle.setMeshAssets.mockClear();
+    handle.replaceTextureBytes.mockClear();
     handle.setMaterialDocuments.mockClear();
     handle.dispose.mockClear();
     handle.engine.onContextRestoredObservable.add.mockClear();
@@ -912,6 +931,187 @@ describe("ViewportPanel engine", () => {
     );
     await Promise.resolve();
     expect(handle.setMaterialDocuments).toHaveBeenCalledTimes(initialMaterials + 1);
+  });
+
+  it("swaps a committed Texture encode in place, and still reloads assets when the Texture's content changes", async () => {
+    const chunk = textureChunk;
+    const texture = (payload: Record<string, unknown>, chunks: Array<ReturnType<typeof chunk>>) => textureAsset("tex", payload, chunks);
+    const png = new Uint8Array([1, 2, 3, 4]);
+    const ktx2 = new Uint8Array([9, 9, 9, 9, 9]);
+    const reimported = new Uint8Array([5, 6, 7, 8]);
+    let asset = await texture({ usage: "albedo", compressionState: "pending" }, [chunk("pixels", "pixels", "a")]);
+    documents.assetRegistry = { list: () => [asset], getByGuid: () => asset };
+    documents.openDocuments = [{
+      id: "scene:S",
+      ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: createDefaultScene(),
+    }];
+    documents.collectPlayTextureBytes.mockResolvedValue(new Map([["tex", png]]));
+    const { rerender } = renderViewport();
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    const refresh = () => rerender(<DocumentWorkspaceProvider documentId="scene:S">
+      <ViewportPanel {...({} as IDockviewPanelProps)} />
+    </DocumentWorkspaceProvider>);
+    const loads = handle.loadScene.mock.calls.length;
+    const installs = handle.setMeshAssets.mock.calls.length;
+    const libraries = documents.collectPlayMaterialLibrary.mock.calls.length;
+    const reads = documents.collectPlayTextureBytes.mock.calls.length;
+
+    // Encode progress rewrites the header without touching what the viewport shows.
+    asset = await texture({ usage: "albedo", compressionState: "encoding" }, [chunk("pixels", "pixels", "a")]);
+    documents.registryEpoch += 1;
+    refresh();
+    await act(async () => {});
+    expect(documents.collectPlayTextureBytes).toHaveBeenCalledTimes(reads);
+
+    // The commit swaps only that Texture, with nothing reloaded around it.
+    documents.collectPlayTextureBytes.mockResolvedValueOnce(new Map([["tex", ktx2]]));
+    asset = await texture(
+      { usage: "albedo", compressionState: "compressed", ktx2ChunkId: "ktx2:abc" },
+      [chunk("pixels", "pixels", "a"), chunk("ktx2:abc", "ktx2", "k")],
+    );
+    documents.registryEpoch += 1;
+    refresh();
+    await waitFor(() => expect(handle.replaceTextureBytes).toHaveBeenCalledWith(new Map([["tex", ktx2]])));
+    expect(documents.collectPlayTextureBytes).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), ["tex"]);
+    expect(documents.collectPlayTextureBytes).toHaveBeenCalledTimes(reads + 1);
+    expect(handle.setMeshAssets).toHaveBeenCalledTimes(installs);
+    expect(handle.loadScene).toHaveBeenCalledTimes(loads);
+    expect(documents.collectPlayMaterialLibrary).toHaveBeenCalledTimes(libraries);
+
+    // A reimport changes the pixels: the whole asset set is installed again, not swapped.
+    documents.collectPlayTextureBytes.mockResolvedValueOnce(new Map([["tex", reimported]]));
+    asset = await texture(
+      { usage: "albedo", compressionState: "compressed", ktx2ChunkId: "ktx2:abc" },
+      [chunk("pixels", "pixels", "b"), chunk("ktx2:abc", "ktx2", "k")],
+    );
+    documents.registryEpoch += 1;
+    refresh();
+    await waitFor(() => expect(handle.setMeshAssets).toHaveBeenCalledTimes(installs + 1));
+    await act(async () => {});
+    expect(handle.replaceTextureBytes).toHaveBeenCalledTimes(1);
+  });
+
+  /** Mounts a loaded viewport whose scene installed these Textures as PNG, with their encodes still pending in the registry. */
+  async function mountWithTextures(guids: readonly string[]) {
+    const png = new Uint8Array([1, 2, 3, 4]);
+    const ktx2 = (guid: string) => new Uint8Array([9, guid.charCodeAt(0)]);
+    const sha = new Map(guids.map((guid) => [guid, "a"]));
+    const entries = new Map<string, Awaited<ReturnType<typeof textureAsset>>>();
+    const write = async (guid: string, committed: boolean) => {
+      entries.set(guid, await textureAsset(
+        guid,
+        committed ? { usage: "albedo", compressionState: "compressed", ktx2ChunkId: "ktx2:abc" } : { usage: "albedo", compressionState: "pending" },
+        [textureChunk("pixels", "pixels", sha.get(guid)!), ...(committed ? [textureChunk("ktx2:abc", "ktx2", "k")] : [])],
+      ));
+    };
+    for (const guid of guids) await write(guid, false);
+    documents.assetRegistry = { list: () => [...entries.values()], getByGuid: (guid) => entries.get(guid) };
+    const doc = {
+      id: "scene:S",
+      ref: { kind: "scene" as const, path: "assets/S.scene.babasset", label: "S" },
+      content: { ...createDefaultScene(), actors: [createActor("probe", "Probe")] },
+    };
+    documents.openDocuments = [doc];
+    // A load asks for no extra guids and installs every Texture; a swap asks for the changed ones.
+    documents.collectPlayTextureBytes.mockImplementation(async (_sprites, _tilesets, requested) =>
+      requested?.length
+        ? new Map(requested.map((guid): [string, Uint8Array] => [guid, ktx2(guid)]))
+        : new Map(guids.map((guid): [string, Uint8Array] => [guid, png])));
+    const view = renderViewport();
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    handle.replaceTextureBytes.mockClear();
+    const refresh = () => view.rerender(<DocumentWorkspaceProvider documentId="scene:S">
+      <ViewportPanel {...({} as IDockviewPanelProps)} />
+    </DocumentWorkspaceProvider>);
+    const touch = () => { documents.registryEpoch += 1; refresh(); };
+    return {
+      ktx2,
+      /** The Texture reads a swap made, in order; the initial load asks for none by guid. */
+      swapReads: () => documents.collectPlayTextureBytes.mock.calls.flatMap((call) => call[2]?.length ? [[...call[2]]] : []),
+      commit: async (guid: string) => { await write(guid, true); touch(); },
+      reimport: async (guid: string) => { sha.set(guid, "b"); await write(guid, false); touch(); },
+      editScene: async () => {
+        const next = structuredClone(doc.content);
+        next.actors[0]!.transform.position[0] += 1;
+        doc.content = next;
+        documents.openDocuments = [{ ...doc }];
+        refresh();
+        await waitFor(() => expect(handle.loadScene).toHaveBeenLastCalledWith(next, expect.anything()));
+        await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+      },
+    };
+  }
+  const idle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+
+  it("never restarts a running Texture swap: a commit that lands during its read is swapped by the next pass", async () => {
+    const view = await mountWithTextures(["a", "b"]);
+    let finishRead!: () => void;
+    const reading = new Promise<void>((resolve) => { finishRead = resolve; });
+    const read = documents.collectPlayTextureBytes.getMockImplementation()!;
+    documents.collectPlayTextureBytes.mockImplementation(async (...args) => {
+      if (args[2]?.join() === "a") await reading;
+      return read(...args);
+    });
+
+    await view.commit("a");
+    await waitFor(() => expect(view.swapReads()).toEqual([["a"]]));
+    await view.commit("b");
+    await idle();
+    // The commit is not folded into a restarted read while the first one runs.
+    expect(view.swapReads()).toEqual([["a"]]);
+    expect(handle.replaceTextureBytes).not.toHaveBeenCalled();
+
+    finishRead();
+    await waitFor(() => expect(handle.replaceTextureBytes).toHaveBeenCalledTimes(2));
+    expect(view.swapReads()).toEqual([["a"], ["b"]]);
+    expect(handle.replaceTextureBytes).toHaveBeenNthCalledWith(1, new Map([["a", view.ktx2("a")]]));
+    expect(handle.replaceTextureBytes).toHaveBeenNthCalledWith(2, new Map([["b", view.ktx2("b")]]));
+  });
+
+  it("stands down while a load is in flight, then swaps what committed meanwhile", async () => {
+    const view = await mountWithTextures(["tex"]);
+    let finishLoad!: () => void;
+    const loading = new Promise<void>((resolve) => { finishLoad = resolve; });
+    documents.collectPlayMaterialLibrary.mockImplementationOnce(async () => {
+      await loading;
+      return { documents: new Map(), functions: new Map(), textureGuids: [] as string[] };
+    });
+    const libraries = documents.collectPlayMaterialLibrary.mock.calls.length;
+    const installs = handle.setMeshAssets.mock.calls.length;
+
+    // A reimport reloads the assets, and that load waits on its Material library.
+    await view.reimport("tex");
+    await waitFor(() => expect(documents.collectPlayMaterialLibrary).toHaveBeenCalledTimes(libraries + 1));
+    await view.commit("tex");
+    await idle();
+    expect(view.swapReads()).toEqual([]);
+    expect(handle.replaceTextureBytes).not.toHaveBeenCalled();
+
+    finishLoad();
+    await waitFor(() => expect(handle.replaceTextureBytes).toHaveBeenCalledWith(new Map([["tex", view.ktx2("tex")]])));
+    expect(handle.setMeshAssets).toHaveBeenCalledTimes(installs + 1);
+    expect(view.swapReads()).toEqual([["tex"]]);
+  });
+
+  it("keeps a Texture the engine did not take pending, retrying it with the next commit and not with a scene edit", async () => {
+    const view = await mountWithTextures(["a", "b"]);
+    // The engine has no such Texture installed yet, so it leaves it to setMeshAssets and returns nothing.
+    handle.replaceTextureBytes.mockImplementationOnce(() => []);
+
+    await view.commit("a");
+    await waitFor(() => expect(handle.replaceTextureBytes).toHaveBeenCalledTimes(1));
+    expect(view.swapReads()).toEqual([["a"]]);
+
+    // A scene edit re-runs the load effect, but no registry write has happened since the attempt.
+    await view.editScene();
+    await idle();
+    expect(view.swapReads()).toEqual([["a"]]);
+
+    await view.commit("b");
+    await waitFor(() => expect(handle.replaceTextureBytes).toHaveBeenCalledTimes(2));
+    expect(view.swapReads()).toEqual([["a"], ["a", "b"]]);
+    expect(handle.replaceTextureBytes).toHaveBeenLastCalledWith(new Map([["a", view.ktx2("a")], ["b", view.ktx2("b")]]));
   });
 
   it("updates transforms without collecting assets again and collects when a resource reference changes", async () => {
