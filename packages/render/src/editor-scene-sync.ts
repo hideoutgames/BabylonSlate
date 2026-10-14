@@ -17,6 +17,7 @@ import {
   installTextureBytes,
   meshAssetFingerprintWithoutModels,
   modelSlotFingerprint,
+  refreshAlbedoTextures,
   type MeshAssetContext,
 } from "./mesh-assets";
 import { applyModelMaterialSlots } from "./model-preview";
@@ -144,6 +145,36 @@ export class EditorSceneSync {
     if (change.rebuild) this.meshKinds.clear();
     if (change.reapply && this.lastScene) this.apply(this.lastScene);
     return change.rebuild;
+  }
+
+  /**
+   * Swap the stored encoding (PNG to KTX2) of installed Textures whose pixels,
+   * sampler and settings did not change, without rebuilding any mesh. Owned
+   * albedo bindings take a successor lease that replaces the working one once
+   * ready, and Materials re-resolve through the library, which keeps the
+   * previous generation until its replacement compiles. `textureBytes` is the
+   * complete installed map: later `setMeshAssets` calls compare against it, so
+   * an install carrying the same bytes stays a no-op.
+   */
+  replaceTextureEncodings(textureBytes: NonNullable<MeshAssetContext["textureBytes"]>, guids: readonly string[]): void {
+    if (this.disposed || !this.assets) return;
+    const assets: MeshAssetContext = { ...this.assets, textureBytes };
+    this.assets = assets;
+    this.lastAssetContentFingerprint = meshAssetFingerprintWithoutModels(assets);
+    this.lastAssetFingerprint = meshAssetFingerprint(assets, this.lastAssetContentFingerprint);
+    const changed = new Set(guids);
+    const pending: Promise<void>[] = [];
+    for (const root of this.meshes.values()) {
+      if (!root.isDisposed()) pending.push(...refreshAlbedoTextures(root, assets, changed));
+    }
+    this.refreshMaterials();
+    this.scheduler?.invalidate("asset");
+    // A successor publishes when its upload is ready, which no scene event announces.
+    if (pending.length > 0) {
+      void Promise.allSettled(pending).then(() => {
+        if (!this.disposed && !this.scene.isDisposed) this.scheduler?.invalidate("asset");
+      });
+    }
   }
 
   private installAssets(assets: MeshAssetContext | undefined): { rebuild: boolean; reapply: boolean } {

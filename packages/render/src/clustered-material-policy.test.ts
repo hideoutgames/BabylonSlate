@@ -19,6 +19,8 @@ import {
   registerClusteredSurfaceMaterial,
   registerClusteredUnlitMaterial,
 } from "./clustered-material-policy";
+import { ResourceCache } from "./resource-cache";
+import { createText2DMesh } from "./text2d-mesh";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -226,6 +228,38 @@ describe("clustered material consumers", () => {
     // GreasedLine's default is a lit StandardMaterial plus a plugin, not the color program.
     CreateGreasedLine("thick", { points }, { createAndAssignMaterial: true }, scene);
     expect(clusteredSceneMaterialReason(scene)).toContain('Material "thick"');
+  });
+
+  it("admits drawing Text 2D MSDF glyphs, which sample only their atlas, without admitting a lookalike", () => {
+    const { scene } = fixture();
+    const cache = new ResourceCache();
+    try {
+      const atlas = new TextEncoder().encode(JSON.stringify({
+        info: { size: 32 },
+        common: { scaleW: 64, scaleH: 64 },
+        chars: [{ id: 65, x: 0, y: 0, width: 16, height: 16, xoffset: 0, yoffset: 0, xadvance: 16 }],
+      }));
+      const text = createText2DMesh(
+        scene,
+        "msdf",
+        { text: "AA", renderer: "msdf", size: 32, fontAssetGuid: "font-1" },
+        {
+          resourceCache: cache,
+          fontMsdfJson: new Map([["font-1", atlas]]),
+          fontMsdfPng: new Map([["font-1", new Uint8Array([1, 2, 3])]]),
+        },
+      );
+      const glyphs = text.getChildMeshes().filter((child) => (child.metadata as { text2dSource?: string }).text2dSource === "msdf");
+      expect(glyphs).toHaveLength(2);
+      // The program under test is the custom ShaderMaterial, not the Standard fallback.
+      expect(glyphs[0]!.material).toBeInstanceOf(ShaderMaterial);
+      expect(clusteredSceneMaterialReason(scene)).toBeUndefined();
+      // A different shader on the same glyph is still judged on its own contract.
+      glyphs[0]!.material = new ShaderMaterial("lookalike", scene, { vertex: "custom", fragment: "custom" }, {});
+      expect(clusteredSceneMaterialReason(scene)).toContain('Material "lookalike"');
+    } finally {
+      cache.dispose();
+    }
   });
 
   it("lets only meshes that draw select Forward, rechecking enabled and visible state live", () => {

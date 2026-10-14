@@ -370,7 +370,7 @@ describe("project close requests", () => {
       await screen.findByTestId("dirty-close-dialog");
       fireEvent.click(screen.getByTestId("dirty-discard"));
       expect((await screen.findByTestId("close-project-error-dialog")).textContent).toContain("Journal unavailable");
-      expect(screen.queryByTestId("dirty-close-dialog")).toBeNull();
+      await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
     } finally {
       error.mockRestore();
     }

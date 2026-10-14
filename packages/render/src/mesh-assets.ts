@@ -245,6 +245,11 @@ function syncAlbedoTransparency(mesh: AbstractMesh, material: StandardMaterial):
   markSceneReadinessDirty(mesh.getScene());
 }
 
+/** Whether Babylon's StandardMaterial reads this texture straight from the UVs (an identity texture matrix). */
+function usesDirectUv(texture: Texture | CubeTexture): boolean {
+  return texture.getTextureMatrix().isIdentityAs3x2();
+}
+
 /** Weight changes preserve owned cutouts while opting fractional weights into blending. */
 export function applySpriteVisibility(mesh: AbstractMesh, visibility: number): void {
   const material = mesh.material;
@@ -335,6 +340,7 @@ export function applyAlbedoTexture(
       material.alphaCutOff = 0.4;
       binding.material = material;
     }
+    const replaced = binding.lease?.resource;
     material.diffuseTexture = next.resource;
     material.emissiveTexture = next.resource;
     // Preparation may finish after an authored assignment. Update only our
@@ -343,6 +349,15 @@ export function applyAlbedoTexture(
       mesh.material = material;
       enableOverlayVisualMaterial(mesh);
       syncAlbedoTransparency(mesh, material);
+      // Babylon samples a texture with an identity matrix straight from the UVs
+      // (DIFFUSEDIRECTUV / EMISSIVEDIRECTUV) and any other through the matrix, a
+      // different shader. A KTX2 is flipped on its wrapper, a PNG is not, so
+      // swapping one for the other recompiles the draw; none of Babylon's
+      // observables announce that, and without it the strict probe is skipped
+      // and the visual is not drawn while the new variant compiles.
+      if (replaced && replaced !== next.resource && usesDirectUv(replaced) !== usesDirectUv(next.resource)) {
+        markSceneReadinessDirty(scene);
+      }
     }
     const previous = binding.lease;
     binding.lease = next; binding.pending = undefined;
@@ -368,6 +383,28 @@ export function applyAlbedoTexture(
     void next.ready.then(publish, failed);
   } else if (next.resource.isReady()) publish();
 
+}
+
+/**
+ * Point the owned albedo bindings under `root` at the current bytes of Textures
+ * whose stored encoding changed (PNG to KTX2). Each binding takes a successor
+ * lease that replaces the working one only once it is ready, so a failed upload
+ * leaves the visual as it was. Returns the successor preparations.
+ */
+export function refreshAlbedoTextures(
+  root: AbstractMesh,
+  assets: MeshAssetContext,
+  changed: ReadonlySet<string>,
+): Promise<void>[] {
+  const pending: Promise<void>[] = [];
+  for (const mesh of [root, ...root.getChildMeshes()]) {
+    const binding = albedoBindings.get(mesh);
+    if (!binding?.guid || !changed.has(binding.guid)) continue;
+    const before = binding.preparation;
+    applyAlbedoTexture(mesh, mesh.getScene(), binding.guid, assets, { alwaysBlend: binding.alwaysBlend });
+    if (binding.preparation && binding.preparation !== before) pending.push(binding.preparation);
+  }
+  return pending;
 }
 
 /**
