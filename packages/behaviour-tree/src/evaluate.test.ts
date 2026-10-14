@@ -3,6 +3,8 @@ import {
   createDefaultBehaviourTree,
   evaluateBehaviourTree,
   type BehaviourTreeDocument,
+  type BtDecorator,
+  type BtEvalState,
   type BtNode,
 } from "./index";
 
@@ -1218,5 +1220,133 @@ describe("evaluateBehaviourTree", () => {
     const b = run(7);
     expect(a.blackboard.count).toBe(1);
     expect(a).toEqual(b);
+  });
+});
+
+describe("per-tick decorator scans", () => {
+  const decorator = (
+    id: string,
+    classId: string,
+    abortMode: BtDecorator["abortMode"],
+    properties: Record<string, unknown> = {},
+  ): BtDecorator => ({ id, classId, abortMode, observedKeys: [], properties });
+
+  it("evaluates host decorators that observe aborts once per tick, in tree order, and no others", () => {
+    const pad = node("pad", "task", "bt.task.succeed");
+    pad.decorators.push(decorator("padGate", "BTDecorator_Custom", "none"));
+    const guard = node("guard", "sequence", "bt.composite.sequence", ["guarded"]);
+    guard.decorators.push(decorator("g1", "BTDecorator_Custom", "self"));
+    const idle = node("idle", "task", "bt.task.wait");
+    idle.properties = { durationMs: 10_000 };
+    idle.decorators.push(
+      decorator("g2", "BTDecorator_Custom", "self"),
+      decorator("quiet", "BTDecorator_Custom", "none"),
+      decorator("g3", "BTDecorator_Custom", "lowerPriority"),
+    );
+    const doc = tree(
+      [
+        node("root", "sequence", "bt.composite.sequence", ["pad", "guard", "idle"]),
+        pad,
+        guard,
+        node("guarded", "task", "bt.task.succeed"),
+        idle,
+      ],
+      "root",
+    );
+    const calls: string[] = [];
+    const verdicts: Record<string, boolean> = {};
+    // Host code may write the blackboard while it evaluates, so each call counts.
+    const decoratorHost = {
+      evaluate: (entry: BtDecorator, _node: BtNode, board: Record<string, unknown>) => {
+        calls.push(entry.id);
+        board.evaluations = ((board.evaluations as number | undefined) ?? 0) + 1;
+        return verdicts[entry.id] ?? true;
+      },
+    };
+    const tick = (previous: BtEvalState | null) => {
+      calls.length = 0;
+      return evaluateBehaviourTree(doc, previous, 0.016, { decoratorHost });
+    };
+
+    // Entering nodes evaluates every decorator on them; the abort pass needs a running node first.
+    let state = tick(null);
+    expect(calls).toEqual(["padGate", "g1", "g2", "quiet", "g3"]);
+    state = tick(state);
+    expect(calls).toEqual(["g1", "g2", "g3"]);
+    state = tick(state);
+    expect(calls).toEqual(["g1", "g2", "g3"]);
+    expect(state.status).toBe("running");
+
+    // The first decorator that aborts ends the pass: the ones after it are not evaluated.
+    verdicts.g2 = false;
+    state = tick(state);
+    expect(calls).toEqual(["g1", "g2"]);
+    expect(state.status).toBe("failure");
+    expect(state.blackboard.evaluations).toBe(13);
+  });
+
+  it("counts every cooldown down on each tick, including a finished node the walk no longer visits", () => {
+    const pad = node("pad", "task", "bt.task.succeed");
+    pad.decorators.push(decorator("cd", "bt.decorator.cooldown", "none", { durationMs: 100 }));
+    const idle = node("idle", "task", "bt.task.wait");
+    idle.properties = { durationMs: 10_000 };
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["pad", "idle"]), pad, idle],
+      "root",
+    );
+    let state = evaluateBehaviourTree(doc, null, 0.05);
+    const remaining = [state.nodeMemory.pad!["__cd:cd"]];
+    for (let index = 0; index < 3; index += 1) {
+      state = evaluateBehaviourTree(doc, state, 0.05);
+      remaining.push(state.nodeMemory.pad!["__cd:cd"]);
+    }
+    expect(remaining).toEqual([100, 50, 0, 0]);
+    expect(state.status).toBe("running");
+  });
+
+  it("reads no more decorators per tick in a large tree than in a small one", () => {
+    // Per-tick work follows the nodes that carry a Cooldown or an abort mode,
+    // not the size of the tree: the filler nodes below are never visited.
+    const decoratorReadsPerTick = (fillers: number): number => {
+      const idle = node("idle", "task", "bt.task.wait");
+      idle.properties = { durationMs: 10_000 };
+      idle.decorators.push(
+        decorator("alive", "bt.decorator.blackboardIsSet", "self", { key: "ok" }),
+      );
+      const tail = node(
+        "tail",
+        "sequence",
+        "bt.composite.sequence",
+        Array.from({ length: fillers }, (_, index) => `filler-${index}`),
+      );
+      tail.decorators.push(decorator("cd", "bt.decorator.cooldown", "none", { durationMs: 100 }));
+      const nodes = [
+        node("root", "sequence", "bt.composite.sequence", ["idle", "tail"]),
+        idle,
+        tail,
+        ...Array.from({ length: fillers }, (_, index) =>
+          node(`filler-${index}`, "task", "bt.task.succeed"),
+        ),
+      ];
+      let reads = 0;
+      for (const entry of nodes) {
+        const decorators = entry.decorators;
+        Object.defineProperty(entry, "decorators", {
+          enumerable: true,
+          get: () => {
+            reads += 1;
+            return decorators;
+          },
+        });
+      }
+      const doc = tree(nodes, "root");
+      let state = evaluateBehaviourTree(doc, null, 0.016, { blackboard: { ok: true } });
+      state = evaluateBehaviourTree(doc, state, 0.016, { blackboard: { ok: true } });
+      reads = 0;
+      state = evaluateBehaviourTree(doc, state, 0.016, { blackboard: { ok: true } });
+      expect(state.status).toBe("running");
+      return reads;
+    };
+    expect(decoratorReadsPerTick(400)).toBe(decoratorReadsPerTick(8));
   });
 });
