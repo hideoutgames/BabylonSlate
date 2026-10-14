@@ -25,6 +25,7 @@ import { PhysicsWorldSync } from "./physics-sync";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import { sceneRealizationCancelled } from "./scene-realization-work";
 import type { ScriptHost } from "./script-host";
+import { sceneLayerActors } from "./world-layer-index";
 
 type Vec3Tuple = [number, number, number];
 
@@ -562,6 +563,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     const backend = this.nativeLayerBackend?.(vec3(gravity)) ?? createSoftwarePhysicsBackend("2d", vec3(gravity));
     const sync = new PhysicsWorldSync(backend, {
       actorFilter: (actor) => actor.sceneLayerId === layerGuid && this.host.overlayActorReady(actor),
+      actorsOf: (world) => sceneLayerActors(world, layerGuid),
       observesContacts: this.observesContacts,
       deferUnsupportedConstraints: !this.preferSoftwarePhysics && backend instanceof SoftwarePhysicsBackend,
       skipEmptySteps: true,

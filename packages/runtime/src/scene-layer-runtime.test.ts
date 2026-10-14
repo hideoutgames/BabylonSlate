@@ -167,6 +167,37 @@ describe("Scene Layer physics worlds", () => {
     expect(runtime.getSceneLayerPhysicsSync(layer!.guid)).toBeNull();
     runtime.stop();
   });
+
+  it("holds each instance's own actors, including a later instance's, and walks no main-world actor", () => {
+    const runtime = softwareLayerRuntime({ hud: physicsLayer("HUD", [0, -9.81, 0], [fallingChip("chip", 5)]) });
+    const first = runtime.createSceneLayer("hud", 0);
+    runtime.start();
+    runtime.tick();
+    const second = runtime.createSceneLayer("hud", 1);
+    runtime.tick();
+    const world = runtime.getWorld();
+    const backend = (layer: { guid: string } | null) => runtime.getSceneLayerPhysicsSync(layer!.guid)!.getBackend();
+    const chipBody = (layer: { guid: string } | null) => `body:${inLayer(layer, "chip")}`;
+    expect(backend(first).getBodyTransform(chipBody(first))).not.toBeNull();
+    expect(backend(first).getBodyTransform(chipBody(second))).toBeNull();
+    expect(backend(second).getBodyTransform(chipBody(second))).not.toBeNull();
+    expect(backend(second).getBodyTransform(chipBody(first))).toBeNull();
+    expect(world.findActor(inLayer(second, "chip"))?.transform.position.y).toBeLessThan(5);
+
+    // A layer's passes read the layer of its own actors only; the main world's are never visited.
+    let layerReads = 0;
+    for (let index = 0; index < 24; index++) {
+      const decoy = world.spawnActorNow(world.createActor({ classId: "Actor", guid: `decoy-${index}` }));
+      Object.defineProperty(decoy, "sceneLayerId", { get: () => (layerReads++, null) });
+    }
+    const sync = runtime.getSceneLayerPhysicsSync(first!.guid)!;
+    sync.syncFromWorld(world); // The spawns changed the World's structure: its layer membership is read afresh here.
+    layerReads = 0;
+    sync.syncFromWorld(world);
+    sync.step(1 / 60, world);
+    expect(layerReads).toBe(0);
+    runtime.stop();
+  });
 });
 
 /** A static wall: the same collider in whichever world its actor joins. */
