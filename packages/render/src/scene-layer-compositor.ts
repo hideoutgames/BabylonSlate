@@ -14,6 +14,7 @@ import {
   UniversalCamera,
   Vector3,
   type AbstractEngine,
+  type AbstractMesh,
 } from "@babylonjs/core";
 import type { CommandMessage } from "@babylonslate/bridge";
 import {
@@ -401,7 +402,28 @@ export class SceneLayerCompositor {
       if (!this.isLayerReady(layer.layerId)) continue;
       this.bindHudCamera(layer);
       const pickWorld = overlayCanvasToWorld(canvasX, canvasY, renderWidth, renderHeight, layer.layerBounds.width / 2, layer.layerBounds.height / 2);
-      const pick = layer.scene.pick(canvasX, canvasY, mesh => mesh.isEnabled() && mesh.isVisible && mesh.isPickable && overlayClipAllowsPoint(mesh, pickWorld.x, pickWorld.y), false);
+      const minWorld = overlayMinTargetWorldSize(
+        options?.minTargetPx ?? 0,
+        options?.canvasCssHeight ?? 0,
+        layer.layerBounds.height,
+      );
+      const touch = minWorld > 0;
+      const pickable = (mesh: AbstractMesh) => mesh.isEnabled() && mesh.isVisible && mesh.isPickable && overlayClipAllowsPoint(mesh, pickWorld.x, pickWorld.y);
+      // The ray pick already offers every mesh of the scene to its predicate, in
+      // scene order. Collect the interactive ones on that pass instead of walking
+      // scene.meshes a second time per pointer event. Metadata, parents and the
+      // mesh list change without any notification, so no cached list could be
+      // trusted; reading them during the pass can't go stale.
+      let offered = 0;
+      const touchTargets: AbstractMesh[] = [];
+      const pick = layer.scene.pick(canvasX, canvasY, (mesh, instance = -1) => {
+        const eligible = pickable(mesh);
+        if (touch && instance < 0) {
+          offered += 1;
+          if (eligible && isOverlayTouchTarget(overlayMetadataOf(mesh))) touchTargets.push(mesh);
+        }
+        return eligible;
+      }, false);
       if (pick?.hit && pick.pickedMesh) {
         let mesh: {
           name: string;
@@ -443,26 +465,13 @@ export class SceneLayerCompositor {
         }
       }
 
-      const minWorld = overlayMinTargetWorldSize(
-        options?.minTargetPx ?? 0,
-        options?.canvasCssHeight ?? 0,
-        layer.layerBounds.height,
-      );
-      if (!(minWorld > 0)) continue;
-      const world = overlayCanvasToWorld(
-        canvasX,
-        canvasY,
-        renderWidth,
-        renderHeight,
-        layer.layerBounds.width / 2,
-        layer.layerBounds.height / 2,
-      );
-      for (const mesh of layer.scene.meshes) {
+      if (!touch) continue;
+      // Should a Babylon version stop offering every mesh to the predicate, scan them all.
+      for (const mesh of offered === layer.scene.meshes.length ? touchTargets : layer.scene.meshes) {
         // Same eligibility as Babylon's default ray pick above.
-        if (!mesh.isEnabled() || !mesh.isVisible || !mesh.isPickable) continue;
-        if (!overlayClipAllowsPoint(mesh, world.x, world.y)) continue;
+        if (!pickable(mesh)) continue;
         const metadata = overlayMetadataOf(mesh);
-        if (!metadata?.overlayHasButton && !metadata?.overlayJoystickMeshName && !metadata?.overlayControlMeshName) continue;
+        if (!metadata || !isOverlayTouchTarget(metadata)) continue;
         const hitTest = parseSceneLayerHitTest(metadata.overlayHitTest, "ignore");
         if (hitTest === "ignore") continue;
         const slotMatch = /^actor-(\d+)$/.exec(mesh.name);
@@ -475,8 +484,8 @@ export class SceneLayerCompositor {
         const box = mesh.getBoundingInfo().boundingBox;
         if (
           !pointInInflatedWorldAabb(
-            world.x,
-            world.y,
+            pickWorld.x,
+            pickWorld.y,
             box.centerWorld.x,
             box.centerWorld.y,
             box.extendSizeWorld.x,
@@ -780,4 +789,9 @@ function overlayMetadataOf(
 ): OverlayMeshMetadata | null {
   if (!mesh?.metadata || typeof mesh.metadata !== "object") return null;
   return mesh.metadata as OverlayMeshMetadata;
+}
+
+/** Buttons, joysticks and controls get their pick area widened to the touch floor. */
+function isOverlayTouchTarget(metadata: OverlayMeshMetadata | null): boolean {
+  return !!(metadata?.overlayHasButton || metadata?.overlayJoystickMeshName || metadata?.overlayControlMeshName);
 }
