@@ -20,12 +20,12 @@ class Canvas extends EventTarget {
 const dispose: Array<() => void> = [];
 afterEach(() => { while (dispose.length) dispose.pop()!(); vi.unstubAllGlobals(); });
 
-function fixture(mode: "landscape" | "foliage" = "landscape", options: { transform?: SerializedTransform; strength?: number } = {}) {
+function fixture(mode: "landscape" | "foliage" = "landscape", options: { transform?: SerializedTransform; strength?: number; heights?: number[] } = {}) {
   const { scene, engine } = createTestEngine();
   const camera = new ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 4, 35, Vector3.Zero(), scene);
   scene.activeCamera = camera;
   const sync = new EditorSceneSync(scene);
-  const initial: SerializedScene = { ...createDefaultScene(), actors: [createActor("land", "Land", { ...(options.transform ? { transform: options.transform } : {}), components: [{ id: "surface", classId: "LandscapeComponent", properties: { ...parseLandscapeProperties({ width: 32, depth: 32, subdivisions: 32 }) } }] })] };
+  const initial: SerializedScene = { ...createDefaultScene(), actors: [createActor("land", "Land", { ...(options.transform ? { transform: options.transform } : {}), components: [{ id: "surface", classId: "LandscapeComponent", properties: { ...parseLandscapeProperties({ width: 32, depth: 32, subdivisions: 32, heights: options.heights }) } }] })] };
   sync.apply(initial); scene.render();
   const canvas = new Canvas(); const windowTarget = new EventTarget(); vi.stubGlobal("window", windowTarget);
   const state: SceneBrushState = {
@@ -47,7 +47,7 @@ function fixture(mode: "landscape" | "foliage" = "landscape", options: { transfo
     canvas.pointer(type, p.x, p.y, pointerType, id);
   };
   const centerHeight = () => sync.meshForComponent("land", "surface")!.getChildMeshes()[0]!.getVerticesData(VertexBuffer.PositionKind)![(16 * 33 + 16) * 3 + 1];
-  return { initial, state, committed, sync, canvas, windowTarget, pointer, centerHeight };
+  return { scene, initial, state, committed, sync, canvas, windowTarget, pointer, centerHeight };
 }
 
 it.each(["mouse", "touch", "pen"])("commits one undoable landscape stroke for %s, preserving the document until release", async (pointerType) => {
@@ -79,6 +79,21 @@ it("applies the scene once per pointer event however many dabs a drag interpolat
   await Promise.resolve();
   expect(f.committed).toHaveLength(1);
   expect(f.committed[0]).toBe(shown);
+});
+
+it("shows a footprint ring of the brush radius that follows the surface under the pointer", () => {
+  // Flat ground with a 2-unit plateau from x = 1; the ring around (-2, 0) reaches onto it.
+  const f = fixture("landscape", { heights: Array.from({ length: 33 * 33 }, (_, i) => i % 33 >= 17 ? 2 : 0) });
+  f.pointer("pointermove", -2, 0);
+  const positions = f.scene.getMeshByName("sceneBrushPreview")!.getVerticesData(VertexBuffer.PositionKind)!;
+  const outer = Array.from({ length: 49 }, (_, i) => ({ x: positions[i * 3]!, y: positions[i * 3 + 1]!, z: positions[i * 3 + 2]! }));
+  expect(outer.every(({ x, z }) => Math.abs(Math.hypot(x + 2, z) - 4) < 0.02)).toBe(true);
+  const ground = outer.filter(({ x }) => x < -0.5);
+  const plateau = outer.filter(({ x }) => x > 1.5);
+  expect(ground.length).toBeGreaterThan(20);
+  expect(plateau.length).toBeGreaterThan(4);
+  expect(ground.every(({ y }) => Math.abs(y - 0.03) < 0.02)).toBe(true);
+  expect(plateau.every(({ y }) => Math.abs(y - 2.03) < 0.02)).toBe(true);
 });
 
 /** The 33 x 33 vertex grid of the fixture landscape, one local unit apart, under an actor moved to (6, -3) and scaled 2x on X/Z. */

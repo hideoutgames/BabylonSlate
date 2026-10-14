@@ -71,7 +71,10 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     // Every ray tests each mesh: index the actors once, on first use. The first
     // actor of an id wins, as `find` would.
     let actorsById: Map<string, SerializedActor> | undefined;
-    return (mesh: AbstractMesh) => {
+    // A footprint ring casts ~100 rays and a foliage dab up to 256, each asking about every mesh in the
+    // scene; nothing a verdict reads changes while one gesture event runs, so each mesh is judged once.
+    const verdicts = new Map<AbstractMesh, boolean>();
+    const judge = (mesh: AbstractMesh) => {
       if (!mesh.isVisible || !mesh.isEnabled() || !mesh.isPickable || !mesh.getTotalVertices() || mesh.metadata?.foliageRoot) return false;
       const actorId = actorFor(mesh);
       if (actorId === null) return false;
@@ -86,22 +89,26 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
       return Boolean(root && actor.components.some((component) => component.classId === "LandscapeComponent" &&
         `${actor.id}/${component.id}` === state.landscapeSelection && handle.editor?.sync.meshForComponent(actor.id, component.id) === root));
     };
+    return (mesh: AbstractMesh) => {
+      let verdict = verdicts.get(mesh);
+      if (verdict === undefined) verdicts.set(mesh, verdict = judge(mesh));
+      return verdict;
+    };
   };
-  const pick = (event: PointerEvent, state: SceneBrushState) => {
+  const pick = (event: PointerEvent, state: SceneBrushState, surface = predicate(state)) => {
     const rect = canvas.getBoundingClientRect();
-    return handle.scene.pick(event.clientX - rect.left, event.clientY - rect.top, predicate(state));
+    return handle.scene.pick(event.clientX - rect.left, event.clientY - rect.top, surface);
   };
   const hideRing = () => {
     if (!ring) return;
     ring.dispose(); ring = null;
     handle.scheduler.invalidate("manual");
   };
-  const showRing = (point: Vector3, normal: Vector3, state: SceneBrushState) => {
+  const showRing = (point: Vector3, normal: Vector3, state: SceneBrushState, surface: (mesh: AbstractMesh) => boolean) => {
     const radius = radiusOf(state);
     const rotation = Matrix.Identity();
     alignment(normal).toRotationMatrix(rotation);
     const lift = Math.max(1, radius);
-    const surface = predicate(state);
     // The foreground group keeps world depth, so a flat circle would sink into sculpted relief.
     const circle = (circleRadius: number) => Array.from({ length: RING_SEGMENTS + 1 }, (_, i) => {
       const angle = i / RING_SEGMENTS * Math.PI * 2;
@@ -266,8 +273,10 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
   const move = (event: PointerEvent) => {
     const state = options.getState();
     if (!enabled(state)) { hideRing(); finish(true); return; }
-    const hit = pick(event, state);
-    if (hit?.pickedPoint) showRing(hit.pickedPoint, hit.getNormal(true, true)?.normalize() ?? Vector3.Up(), state);
+    // The pick and the ring's rays see the same scene, so they share one set of verdicts.
+    const surface = predicate(state);
+    const hit = pick(event, state, surface);
+    if (hit?.pickedPoint) showRing(hit.pickedPoint, hit.getNormal(true, true)?.normalize() ?? Vector3.Up(), state, surface);
     else hideRing();
     if (!stroke || stroke.pointerId !== event.pointerId) return;
     consume(event);
