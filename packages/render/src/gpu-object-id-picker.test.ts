@@ -1,11 +1,13 @@
 import {
   Camera,
+  Constants,
   FreeCamera,
   HemisphericLight,
   MaterialHelperGeometryRendering,
   Matrix,
   MeshBuilder,
   NullEngine,
+  RawTexture,
   Scene,
   StandardMaterial,
   Vector3,
@@ -223,7 +225,23 @@ describe("gpuPickMesh", () => {
         probed: ["Middle"],
       },
       { name: "the project marks rendering definitions dirty", change: (f) => markSceneReadinessDirty(f.scene), probed: all },
+      {
+        name: "a mesh gains thin instances",
+        change: (f) => { f.meshes[1]!.thinInstanceAdd(Matrix.Identity()); },
+        probed: ["Middle"],
+      },
       { name: "a light is added", change: (f) => { new HemisphericLight("Sun", Vector3.Up(), f.scene); }, probed: all },
+      {
+        name: "a light is disabled",
+        before: (f) => { new HemisphericLight("Sun", Vector3.Up(), f.scene); },
+        change: (f) => { f.scene.getLightByName("Sun")!.setEnabled(false); },
+        probed: all,
+      },
+      {
+        name: "a texture is added",
+        change: (f) => { new RawTexture(new Uint8Array(4), 1, 1, Constants.TEXTUREFORMAT_RGBA, f.scene); },
+        probed: all,
+      },
       { name: "the camera switches projection", change: (f) => { f.camera.mode = Camera.ORTHOGRAPHIC_CAMERA; }, probed: all },
     ];
 
