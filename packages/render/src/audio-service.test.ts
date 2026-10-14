@@ -1875,6 +1875,82 @@ describe("AudioService spatial refresh per applied snapshot", () => {
   });
 });
 
+describe("AudioService emitter poses", () => {
+  async function emitters() {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(
+      library({
+        audio: {
+          spatial: { ...createDefaultAudioPayload(), soundAttenuationGuid: "near" },
+          bed: createDefaultAudioPayload(),
+        },
+        attenuations: {
+          near: {
+            innerRadius: 1, maxRadius: 50, distanceModel: "linear", rolloff: 1,
+            spatialisation: "equalPower", cone: null, doppler: null,
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("spatial", new Uint8Array([1]));
+    service.setSourceBytes("bed", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.noteActorSlot("speaker", 1);
+    service.noteActorSlot("walker", 2);
+    service.noteActorSlot("bystander", 3);
+    const play = async (voiceId: string, assetGuid: string, emitterActorGuid: string) => {
+      service.handleCommand({ type: "playSound", assetGuid, volume: 1, frameId: 1, voiceId, emitterActorGuid });
+      await service.flush();
+    };
+    return { backend, service, play };
+  }
+
+  it("lists only the slots that live spatial voices emit from", async () => {
+    const { service, play } = await emitters();
+    await play("v1", "spatial", "speaker");
+    await play("v2", "spatial", "walker");
+    // Not spatial, and an emitter no spawn has announced: neither is read.
+    await play("v3", "bed", "bystander");
+    await play("v4", "spatial", "ghost");
+    const slots = new Set<number>();
+    expect(service.collectEmitterSlots(slots)).toBe(slots);
+    expect([...slots].sort()).toEqual([1, 2]);
+
+    service.handleCommand({ type: "stopSound", voiceId: "v2" });
+    await service.flush();
+    expect([...service.collectEmitterSlots(slots)]).toEqual([1]);
+
+    // Despawn drops the mapping; a respawn under the same guid is listed again.
+    service.forgetActorSlot("speaker", 1);
+    expect(service.collectEmitterSlots(slots).size).toBe(0);
+    service.noteActorSlot("speaker", 4);
+    expect([...service.collectEmitterSlots(slots)]).toEqual([4]);
+    service.dispose();
+  });
+
+  it("places a voice that starts on an unposed emitter from the host's current pose, and keeps the debug listing", async () => {
+    const { backend, service, play } = await emitters();
+    const source = vi.fn((slotId: number) => (slotId === 2 ? { x: 7, y: 0, z: 0 } : undefined));
+    service.setEmitterPoseSource(source);
+    service.setShowAudioDebug(true);
+    service.syncListener({ x: 0, y: 0, z: 0 });
+    await play("v1", "spatial", "speaker");
+    service.syncSnapshot([{ slotId: 1, position: { x: 3, y: 0, z: 0 } }]);
+    source.mockClear();
+
+    await play("v2", "spatial", "walker");
+    expect(backend.poses.get("v2")?.x).toBe(7);
+    // A new voice on the already posed emitter, and one the host cannot place, ask nothing new.
+    await play("v3", "spatial", "speaker");
+    await play("v4", "spatial", "bystander");
+    expect(source.mock.calls).toEqual([[2], [3]]);
+    expect(backend.poses.get("v4")).toBeUndefined();
+    expect(service.stats().debugVoices?.map((voice) => voice.distance)).toEqual([3, 7, 3, null]);
+    service.dispose();
+  });
+});
+
 describe("AudioService lifecycle events", () => {
   it("pauses on audio interruption begin and resumes on interruption end", async () => {
     const backend = new FakeAudioPlaybackBackend();

@@ -102,37 +102,69 @@ export type SampledAudioPose = {
   position: AudioPose;
 };
 
-/** Fill `out` with snapshot actor poses without allocating per actor. */
+type PoseSource = {
+  slotId: number;
+  position: { x: number; y: number; z: number };
+  rotation: { x: number; y: number; z: number; w: number };
+};
+
+function writePoseRow(out: SampledAudioPose[], index: number, actor: PoseSource): void {
+  const row =
+    out[index] ??
+    (out[index] = {
+      slotId: 0,
+      position: { x: 0, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1 },
+    });
+  row.slotId = actor.slotId;
+  const pose = row.position;
+  pose.x = actor.position.x;
+  pose.y = actor.position.y;
+  pose.z = actor.position.z;
+  pose.qx = actor.rotation.x;
+  pose.qy = actor.rotation.y;
+  pose.qz = actor.rotation.z;
+  pose.qw = actor.rotation.w;
+}
+
+/**
+ * Fill `out` with the poses of the `slots` that appear in the snapshot,
+ * without allocating per actor. Audio reads only the actors that spatial
+ * voices emit from, so the rest of the snapshot is left alone.
+ *
+ * `rows` is the caller's slot-to-row memo. A remembered row is trusted only
+ * after its slot id is re-read, so a steady snapshot costs one lookup per slot;
+ * when rows move (an earlier actor despawned) or a slot is missing, one scan of
+ * the snapshot's slot ids resolves every slot and refreshes the memo. Slot ids
+ * are unique within a snapshot.
+ */
 export function writeSampledAudioPoses(
-  sampled: {
-    actorCount: number;
-    actors: ReadonlyArray<{
-      slotId: number;
-      position: { x: number; y: number; z: number };
-      rotation: { x: number; y: number; z: number; w: number };
-    }>;
-  },
+  sampled: { actorCount: number; actors: ReadonlyArray<PoseSource> },
   out: SampledAudioPose[],
+  slots: ReadonlySet<number>,
+  rows: Map<number, number> = new Map(),
 ): number {
   const count = sampled.actorCount;
-  for (let i = 0; i < count; i++) {
-    const actor = sampled.actors[i]!;
-    const row =
-      out[i] ??
-      (out[i] = {
-        slotId: 0,
-        position: { x: 0, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1 },
-      });
-    row.slotId = actor.slotId;
-    const pose = row.position;
-    pose.x = actor.position.x;
-    pose.y = actor.position.y;
-    pose.z = actor.position.z;
-    pose.qx = actor.rotation.x;
-    pose.qy = actor.rotation.y;
-    pose.qz = actor.rotation.z;
-    pose.qw = actor.rotation.w;
+  const actors = sampled.actors;
+  let written = 0;
+  for (const slotId of slots) {
+    const row = rows.get(slotId);
+    const actor = row !== undefined && row < count ? actors[row] : undefined;
+    if (!actor || actor.slotId !== slotId) {
+      written = -1;
+      break;
+    }
+    writePoseRow(out, written++, actor);
   }
-  out.length = count;
-  return count;
+  if (written < 0) {
+    rows.clear();
+    written = 0;
+    for (let i = 0; i < count; i++) {
+      const actor = actors[i]!;
+      if (!slots.has(actor.slotId)) continue;
+      rows.set(actor.slotId, i);
+      writePoseRow(out, written++, actor);
+    }
+  }
+  out.length = written;
+  return written;
 }

@@ -2366,6 +2366,24 @@ function initializeEngine(
   let snapshotAdmitted = false;
   const lastPositions: PlayActorPosition[] = [];
   const audioPoses: SampledAudioPose[] = [];
+  const audioEmitterSlots = new Set<number>();
+  const audioPoseRows = new Map<number, number>();
+  if (audioService) {
+    // A voice starting on an actor no snapshot has posed for audio yet is placed
+    // from the sampled snapshot now instead of one snapshot later.
+    const probeSlots = new Set<number>();
+    const probeRows = new Map<number, number>();
+    const probe: SampledAudioPose[] = [];
+    audioService.setEmitterPoseSource((slotId) => {
+      const sampled = snapshots.sample();
+      if (!sampled) return undefined;
+      probeSlots.clear();
+      probeSlots.add(slotId);
+      if (!writeSampledAudioPoses(sampled, probe, probeSlots, probeRows)) return undefined;
+      applyBoneAttachmentAudioPoses(binding, probe);
+      return probe[0]!.position;
+    });
+  }
   let lastDrawCalls = 0;
   let lastRenderCpuMs = 0;
   // Dynamic scaling input: whether this view presented the current and previous
@@ -2511,7 +2529,13 @@ function initializeEngine(
         };
       }
       if (audioService.hasSpatialVoices()) {
-        writeSampledAudioPoses(sampled, audioPoses);
+        // Only the actors voices emit from are posed, not every actor.
+        writeSampledAudioPoses(
+          sampled,
+          audioPoses,
+          audioService.collectEmitterSlots(audioEmitterSlots),
+          audioPoseRows,
+        );
         applyBoneAttachmentAudioPoses(binding, audioPoses);
         // One refresh moves the voices and the listener together.
         audioService.syncSnapshot(audioPoses, listener);

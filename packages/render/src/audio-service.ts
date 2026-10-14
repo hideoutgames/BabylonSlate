@@ -170,7 +170,9 @@ export class AudioService {
   private readonly sourceLoads = new Map<string, Promise<Uint8Array | null>>();
   private readonly sessionChannelVolumes = new Map<string, number>();
   private readonly actorSlots = new Map<string, number>();
+  /** Latest pose of each emitter slot; see {@link collectEmitterSlots}. */
   private readonly slotPoses = new Map<number, AudioPose>();
+  private emitterPoseSource: ((slotId: number) => AudioPose | undefined) | null = null;
   private readonly voices = new Map<string, LiveVoice>();
   private queue: QueuedCommand[] = [];
   private unlocked = false;
@@ -503,7 +505,32 @@ export class AudioService {
   }
 
   /**
-   * Apply one admitted snapshot's emitter poses. Pass the frame's `listener` to
+   * Fill `out` with the slot ids that live spatial voices emit from. The host
+   * poses just these actors each snapshot; a snapshot lists every actor, but
+   * only emitters are read.
+   */
+  collectEmitterSlots(out: Set<number>): Set<number> {
+    out.clear();
+    for (const voice of this.voices.values()) {
+      if (!voice.spatial || voice.emitterActorGuid === null) continue;
+      const slotId = this.actorSlots.get(voice.emitterActorGuid);
+      if (slotId !== undefined) out.add(slotId);
+    }
+    return out;
+  }
+
+  /**
+   * Where a voice that starts on a not-yet-posed emitter finds its pose:
+   * `source(slotId)` is the host's current pose for the slot, or undefined when
+   * no snapshot lists it. The returned object may be reused by the next call.
+   */
+  setEmitterPoseSource(source: ((slotId: number) => AudioPose | undefined) | null): void {
+    this.emitterPoseSource = source;
+  }
+
+  /**
+   * Apply one admitted snapshot's emitter poses; `actors` need list only the
+   * slots from {@link collectEmitterSlots}. Pass the frame's `listener` to
    * move it in the same refresh, so each voice is placed once per snapshot:
    * Doppler still follows the listener the previous snapshot left, while
    * distance, muffle and reverb follow the incoming one. Omit it while game
@@ -578,6 +605,7 @@ export class AudioService {
     this.sessionChannelVolumes.clear();
     this.actorSlots.clear();
     this.slotPoses.clear();
+    this.emitterPoseSource = null;
     this.backend.dispose();
     this.cache.flushUnreferenced();
     if (this.ownedCache) this.cache.dispose();
@@ -847,9 +875,25 @@ export class AudioService {
       });
       return;
     }
+    const started = this.voices.get(voiceId);
+    if (started) this.adoptEmitterPose(started);
     this.refreshSpatialVoices(false);
     this.refreshReverbWet();
     this.publishStats();
+  }
+
+  /**
+   * Snapshots pose only the emitters of voices already playing, so a voice that
+   * starts on any other actor asks the host for that actor's current pose
+   * instead of waiting for the next snapshot to place it.
+   */
+  private adoptEmitterPose(voice: LiveVoice): void {
+    if (!voice.spatial || voice.emitterActorGuid === null || !this.emitterPoseSource) return;
+    const slotId = this.actorSlots.get(voice.emitterActorGuid);
+    if (slotId === undefined || this.slotPoses.has(slotId)) return;
+    const pose = this.emitterPoseSource(slotId);
+    // Copied: the host's row is scratch that its next sample overwrites.
+    if (pose) this.slotPoses.set(slotId, { ...pose });
   }
 
   private stopVoice(voiceId: string): void {
