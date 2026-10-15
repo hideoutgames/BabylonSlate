@@ -4,7 +4,7 @@ import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWater
 import { createEditorGrid } from "./editor-grid";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
-import { WATER_CONTACT_LAYER_OFFSETS, WaterContactField } from "./water-contact-field";
+import { minimumFilter, WATER_CONTACT_LAYER_OFFSETS, WaterContactField } from "./water-contact-field";
 import type { WaterFieldSurface } from "./water-field";
 
 type ContactView = { data: Uint8Array | null; width: number; height: number; bounds: number[]; range: number; amplitude: number; texture: unknown };
@@ -112,6 +112,21 @@ describe("Water contact field", () => {
     expect(Math.abs(contactAt(field, 1.52, 0, 0))).toBeLessThan(0.1);
     expect(Math.abs(contactAt(field, -1.52, 0, 0))).toBeLessThan(0.1);
     field.dispose();
+  });
+
+  it("takes the minimum over each cell's clamped (2r + 1)² window at any radius", () => {
+    let seed = 7;
+    const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (const [width, height, r] of [[9, 6, 1], [17, 11, 3], [5, 4, 9], [1, 7, 2]] as const) {
+      const values = Float32Array.from({ length: width * height }, () => random() * 2 - 1), expected = new Float32Array(values.length);
+      for (let z = 0; z < height; z++) for (let x = 0; x < width; x++) {
+        let low = Infinity;
+        for (let j = Math.max(0, z - r); j <= Math.min(height - 1, z + r); j++) for (let i = Math.max(0, x - r); i <= Math.min(width - 1, x + r); i++) low = Math.min(low, values[j * width + i]!);
+        expected[z * width + x] = low;
+      }
+      minimumFilter(values, width, height, r);
+      expect(Array.from(values)).toEqual(Array.from(expected));
+    }
   });
 
   it("stores each layer's own cross-section, so a sloped object's waterline moves with the wave height", () => {

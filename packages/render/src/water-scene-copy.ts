@@ -159,6 +159,16 @@ function copyTaps(scale: number): number {
   return scale >= 1 ? 1 : Math.min(4, Math.ceil(1 / scale - 1e-6));
 }
 
+/**
+ * Whether the copy's colour comes from one filtered tap at each texel's centre instead of the tap grid: a downsampled
+ * copy at a ratio that is not a whole number (High's 0.75), where the grid's taps fall between source texels and each
+ * is itself a bilinear blend, so the box of them blurred the refracted bed over two to three source texels. Depth
+ * keeps the grid, so silhouettes keep their nearest depth.
+ */
+function centredColor(scale: number): boolean {
+  return scale < 1 && Math.abs(1 / scale - Math.round(1 / scale)) > 1e-6;
+}
+
 /** Whether any sub-material of `mesh` draws in the transparent queue (RenderingGroup.dispatch's test). */
 function blendsForMesh(mesh: AbstractMesh, scene: Scene): boolean {
   const material = mesh.material ?? scene.defaultMaterial;
@@ -196,17 +206,25 @@ vec3 slateSceneColor(vec2 uv) {
 }
 void main(void) {
   // SLATE_COPY_TAPS² taps spread evenly over this texel's footprint: at integer ratios, the
-  // centre of every source texel it covers, so even a one-texel occluder keeps its depth.
+  // centre of every source texel it covers, so even a one-texel occluder keeps its depth. At other
+  // ratios (SLATE_COPY_CENTRED_COLOR) colour is one filtered tap at the centre: the grid's taps would
+  // each blend neighbouring source texels and blur the copy.
   vec3 rgb = vec3(0.0);
   float raw = reverseDepth > 0.5 ? 0.0 : 1.0;
   for (int y = 0; y < SLATE_COPY_TAPS; y++) {
     for (int x = 0; x < SLATE_COPY_TAPS; x++) {
       vec2 uv = vUV + ((vec2(float(x), float(y)) + 0.5) / float(SLATE_COPY_TAPS) - 0.5) * copyTexel;
+#ifndef SLATE_COPY_CENTRED_COLOR
       rgb += slateSceneColor(uv);
+#endif
       raw = slateNearer(raw, texture2D(sceneDepth, uv).r);
     }
   }
+#ifdef SLATE_COPY_CENTRED_COLOR
+  rgb = slateSceneColor(vUV);
+#else
   rgb /= float(SLATE_COPY_TAPS * SLATE_COPY_TAPS);
+#endif
   float sky = reverseDepth > 0.5 ? step(raw, 0.0) : step(1.0, raw);
   vec4 view = inverseProjection * vec4(vUV * 2.0 - 1.0, raw * depthRange.x + depthRange.y, 1.0);
   float w = abs(view.w) > 1e-8 ? view.w : 1e-8;
@@ -242,11 +260,17 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   for (var y: i32 = 0; y < SLATE_COPY_TAPS; y++) {
     for (var x: i32 = 0; x < SLATE_COPY_TAPS; x++) {
       let tap = uv + ((vec2f(f32(x), f32(y)) + 0.5) / taps - 0.5) * uniforms.copyTexel;
+#ifndef SLATE_COPY_CENTRED_COLOR
       rgb += slateSceneColor(tap);
+#endif
       raw = slateNearer(raw, slateSceneDepth(tap));
     }
   }
+#ifdef SLATE_COPY_CENTRED_COLOR
+  rgb = slateSceneColor(uv);
+#else
   rgb = rgb / (taps * taps);
+#endif
   let sky = select(step(1.0, raw), step(raw, 0.0), uniforms.reverseDepth > 0.5);
   let view = uniforms.inverseProjection * vec4f(uv * 2.0 - 1.0, raw * uniforms.depthRange.x + uniforms.depthRange.y, 1.0);
   let w = select(1e-8, view.w, abs(view.w) > 1e-8);
@@ -285,6 +309,7 @@ class WaterSceneCopyTask extends FrameGraphTask {
     sourceDepth: FrameGraphTextureHandle,
     output: FrameGraphTextureHandle,
     taps: number,
+    centred: boolean,
   ) {
     super(name, graph);
     this.sourceColor = sourceColor;
@@ -295,7 +320,7 @@ class WaterSceneCopyTask extends FrameGraphTask {
       name, engine: graph.engine, useShaderStore: true, fragmentShader: WATER_SCENE_COPY_SHADER,
       uniformNames: ["copyTexel", "inverseProjection", "depthRange", "reverseDepth", "decodeSrgb"],
       samplerNames: ["sceneColor", "sceneDepth"],
-      defines: `#define SLATE_COPY_TAPS ${taps}`,
+      defines: `#define SLATE_COPY_TAPS ${taps}${centred ? "\n#define SLATE_COPY_CENTRED_COLOR" : ""}`,
       shaderLanguage: graph.engine.isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
     });
   }
@@ -532,7 +557,7 @@ export class WaterSceneCopyGraph {
       opaque = this.ownOpaque;
       this.owned.push(this.ownClear, this.ownOpaque);
     }
-    this.copy = new WaterSceneCopyTask("Water scene copy", graph, source.color, source.depth, handles[0]!, copyTaps(options.scale));
+    this.copy = new WaterSceneCopyTask("Water scene copy", graph, source.color, source.depth, handles[0]!, copyTaps(options.scale), centredColor(options.scale));
     this.owned.push(this.copy);
     const transparent = new ManagedShadowObjectRendererTask("Forward transparent", graph, scene, { doNotChangeAspectRatio: false });
     this.transparent = transparent;
