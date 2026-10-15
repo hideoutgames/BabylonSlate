@@ -232,12 +232,11 @@ describe("texture encode state writes", () => {
     const { encode, calls } = gatedEncode();
     const { storage, service } = await openService(encode);
     const writes = recordTextureWrites(storage);
-    let guid = "";
-    // What each registry change would show, as the editor renders from it.
+    // Whether the Texture shows as encoding at each registry change, as the editor renders from it.
     const shown: boolean[] = [];
-    service.onRegistryChange(() => { shown.push(service.textureEncodingGuids.has(guid)); });
+    service.onRegistryChange(() => { shown.push(service.textureEncodingGuids.size > 0); });
     const [texture] = await service.registry!.importFile("project", "", "odd.png", pngHeader(1, 1));
-    guid = texture!.header.guid;
+    const guid = texture!.header.guid;
 
     await vi.waitFor(() => expect(service.textureEncodingGuids.has(guid)).toBe(true));
     expect(shown).toContain(true);
