@@ -40,7 +40,7 @@ function fixture() {
     mesh.material = new StandardMaterial(`${name} Material`, scene);
     return mesh;
   };
-  const planes = () => pickFrustumPlanes(camera, 120, 80, 240, 160);
+  const planes = () => pickFrustumPlanes(camera.getViewMatrix(), camera.getProjectionMatrix(), 120, 80, 240, 160);
   const candidates = (...meshes: AbstractMesh[]) => pickCandidates(scene, meshes, planes()).map((mesh) => mesh.name);
   return { engine, scene, camera, box, candidates };
 }

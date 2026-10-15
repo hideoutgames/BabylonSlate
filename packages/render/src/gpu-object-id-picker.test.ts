@@ -1,15 +1,11 @@
 import {
-  Camera,
-  Constants,
   FreeCamera,
-  HemisphericLight,
   MaterialHelperGeometryRendering,
   Matrix,
   Mesh,
   MeshBuilder,
   MorphTargetManager,
   NullEngine,
-  RawTexture,
   Scene,
   Skeleton,
   StandardMaterial,
@@ -240,69 +236,23 @@ describe("gpuPickMesh", () => {
   });
 
   describe("readiness", () => {
-    const all = ["Left", "Middle", "Right"];
-    const changes: Array<{
-      name: string;
-      before?: (f: PickFixture) => void;
-      change: (f: PickFixture, probes: ReturnType<typeof probeTracker>) => void;
-      probed: string[];
-    }> = [
-      { name: "nothing changes", change: () => {}, probed: [] },
-      {
-        name: "a mesh is added",
-        change: (f, probes) => {
-          const extra = MeshBuilder.CreateBox("Extra", {}, f.scene);
-          extra.material = new StandardMaterial("Extra Material", f.scene);
-          probes.watch(extra);
-        },
-        probed: ["Extra"],
-      },
-      {
-        name: "a mesh first becomes pickable",
-        before: (f) => { f.meshes[0]!.isPickable = false; },
-        change: (f) => { f.meshes[0]!.isPickable = true; },
-        probed: ["Left"],
-      },
-      {
-        name: "a mesh swaps its material",
-        change: (f) => { f.meshes[1]!.material = new StandardMaterial("Swapped", f.scene); },
-        probed: ["Middle"],
-      },
-      { name: "the project marks rendering definitions dirty", change: (f) => markSceneReadinessDirty(f.scene), probed: all },
-      {
-        name: "a mesh gains thin instances",
-        change: (f) => {
-          f.engine.getCaps().instancedArrays = true; // NullEngine reports none; thin instances need it.
-          f.meshes[1]!.thinInstanceAdd(Matrix.Identity());
-        },
-        probed: ["Middle"],
-      },
-      { name: "a light is added", change: (f) => { new HemisphericLight("Sun", Vector3.Up(), f.scene); }, probed: all },
-      {
-        name: "a light is disabled",
-        before: (f) => { new HemisphericLight("Sun", Vector3.Up(), f.scene); },
-        change: (f) => { f.scene.getLightByName("Sun")!.setEnabled(false); },
-        probed: all,
-      },
-      {
-        name: "a texture is added",
-        change: (f) => { new RawTexture(new Uint8Array(4), 1, 1, Constants.TEXTUREFORMAT_RGBA, f.scene); },
-        probed: all,
-      },
-      { name: "the camera switches projection", change: (f) => { f.camera.mode = Camera.ORTHOGRAPHIC_CAMERA; }, probed: all },
-    ];
-
-    it.each(changes)("re-probes only what needs it when $name", async ({ before, change, probed }) => {
+    it("strictly probes every mesh it draws on every tap, since a proof can go stale without any signal", async () => {
       const f = pickFixture();
-      before?.(f);
       const probes = probeTracker(f.meshes);
       f.hit(2);
       await f.tap();
-      expect(await probes.probedDuring(async () => { await f.tap(); })).toEqual([]);
-      change(f, probes);
-      expect(await probes.probedDuring(async () => { await f.tap(); })).toEqual(probed);
-      // And the tap after that is steady again.
-      expect(await probes.probedDuring(async () => { await f.tap(); })).toEqual([]);
+      for (let tap = 0; tap < 2; tap += 1)
+        expect(await probes.probedDuring(async () => { await f.tap(); })).toEqual(["Left", "Middle", "Right"]);
+    });
+
+    it("probes and draws a mesh that was added since the last tap", async () => {
+      const f = pickFixture();
+      f.hit(2);
+      await f.tap();
+      const extra = MeshBuilder.CreateBox("Extra", {}, f.scene);
+      extra.material = new StandardMaterial("Extra Material", f.scene);
+      const probes = probeTracker([extra]);
+      expect(await probes.probedDuring(async () => { await f.tap(); })).toEqual(["Extra"]);
     });
 
     it("answers undefined for the CPU fallback when a mesh is not ready in time, then recovers on the same pass", async () => {
@@ -411,6 +361,16 @@ describe("gpuPickMesh", () => {
         expect(probe.mock.calls.length).toBeGreaterThan(probed);
       });
 
+      it("is waited for again once the scene's readiness inputs change", async () => {
+        const f = pickFixture();
+        const { sleeps } = stuckMiddle(f);
+        expect(await f.tap()).toBeUndefined();
+        const waited = pollSleeps(sleeps);
+        markSceneReadinessDirty(f.scene);
+        expect(await f.tap()).toBeUndefined();
+        expect(pollSleeps(sleeps)).toBeGreaterThan(waited);
+      });
+
       it("recovers on the next tap when it became ready by itself", async () => {
         const f = pickFixture();
         const { probe } = stuckMiddle(f);
@@ -447,9 +407,11 @@ describe("gpuPickMesh", () => {
       });
       return () => { pending = 2; };
     }
-    const changes: Array<[string, (f: PickFixture, mesh: Mesh) => void]> = [
+    // A skeleton created after the first tap would join the scene's skeleton list, which already ends
+    // every readiness proof, so the rig exists beforehand and is only assigned later.
+    const changes: Array<[string, (f: PickFixture, mesh: Mesh, rig: Skeleton) => void]> = [
       ["a define-changing markDirty", (_f, mesh) => mesh.material!.markDirty(true)],
-      ["a skeleton is assigned", (f, mesh) => { mesh.skeleton = new Skeleton("rig", "rig", f.scene); }],
+      ["an existing skeleton is assigned", (_f, mesh, rig) => { mesh.skeleton = rig; }],
       ["a morph target manager is assigned", (f, mesh) => { mesh.morphTargetManager = new MorphTargetManager(f.scene); }],
       ["its vertex layout changes", (_f, mesh) => { mesh.setVerticesData(VertexBuffer.ColorKind, new Float32Array(mesh.getTotalVertices() * 4).fill(1)); }],
     ];
@@ -458,10 +420,11 @@ describe("gpuPickMesh", () => {
       const f = pickFixture();
       readBackNearestDrawn(f);
       const front = f.meshes[0]!;
+      const rig = new Skeleton("rig", "rig", f.scene);
       const recompile = recompilesAfterChange(front);
       expect((await f.tap())?.name).toBe("Left");
       expect((await f.tap())?.name).toBe("Left");
-      change(f, front);
+      change(f, front, rig);
       recompile();
       // The mesh in front must still win: the tap may not draw around it and select what lies behind.
       expect((await f.tap())?.name).toBe("Left");
