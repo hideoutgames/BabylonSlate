@@ -96,6 +96,56 @@ describe("ScriptContext members used apart from their context", () => {
   });
 });
 
+describe("ScriptContext shape", () => {
+  // Scripts can enumerate a context (`Object.keys`, spread, `for in`), so the per-call members and their
+  // order are part of what they observe, and a member dropped here would only fail when a script reads it.
+  const PER_CALL_KEYS = [
+    "registerSaveMigration", "getSaveMigrationField", "setSaveMigrationField", "data", "readDataEntryAsync",
+    "editorData", "self", "deltaSeconds", "tickIndex", "commandArgs", "args", "animFacts", "animExitTimeReached",
+    "flowState", "reportCommand", "random", "getVariable", "variableReference", "tweenValue", "tweenProperty",
+    "setVariable", "getVariableFrom", "setVariableOn", "setMeshMaterialAsync", "setMaterialTextureParameterAsync",
+    "destroyActor", "setActorLocation", "addActorWorldOffset", "setActorRotation", "setActorScale",
+    "setActorTransform", "attachToBone", "executeConsoleCommandAsync", "delay", "callInterface", "getComponent",
+    "getComponentById", "callComponentFunction", "addComponent", "spawnActor", "spawnActorAsync",
+    "requestAssetLoad", "requestClassLoad", "waitForAssetLoad", "unloadAsset", "prepareAssets",
+    "loadSceneBlocking", "unloadSceneBlocking", "getSceneReference", "invokeCustomEvent", "invokeEvent",
+    "invokeFunction", "isActionHeld", "inputBindings", "getInputState", "wasActionPressed", "wasActionReleased",
+    "getPressedKeys", "getAxis", "getAxis2D", "getCursorPosition", "setCursorVisible", "setGamepadRumble",
+    "gamepadConnections", "sampleWater", "lineTrace", "projectCursorToScene", "sphereOverlap", "shapeSweep",
+    "addImpulse", "moveCharacter", "playSound", "playParticles", "stopParticles", "createSceneLayerAsync",
+    "moveTo", "stopMovement", "btFinish", "btEvaluate", "getBlackboard", "setBlackboard",
+  ];
+
+  it("owns the per-call members in a fixed order and inherits the host's shared members", () => {
+    const host = new ScriptHost(services());
+    const first = host.createContext(null, 0, 0);
+    const second = host.createContext(new Actor({ classId: "Hero", guid: "a" }), 0.1, 1, { x: 1 });
+
+    expect(Object.keys(first)).toEqual(PER_CALL_KEYS);
+    expect(Object.keys(second)).toEqual(PER_CALL_KEYS);
+
+    const shared = Object.getPrototypeOf(first) as Record<string, unknown>;
+    expect(Object.getPrototypeOf(second)).toBe(shared);
+    expect(Object.getPrototypeOf(shared)).toBe(Object.prototype);
+    const hostKeys = Object.keys(shared);
+    expect(hostKeys).toEqual(expect.arrayContaining(["log", "print", "formatValue", "randomFloat", "isA"]));
+    expect(hostKeys.filter((key) => PER_CALL_KEYS.includes(key))).toEqual([]);
+    for (const key of hostKeys) expect(first[key as keyof typeof first]).toBe(shared[key]);
+
+    const otherHost = new ScriptHost(services()).createContext(null, 0, 0);
+    expect(Object.getPrototypeOf(otherHost)).not.toBe(shared);
+  });
+
+  it("keeps a detached member that calls back through its context working after createContext returns", () => {
+    const hero = new Actor({ classId: "Hero", guid: "hero" });
+    const { variableReference } = new ScriptHost(services()).createContext(hero, 0, 0);
+
+    variableReference(null, "hp", true)?.set(7);
+
+    expect(hero.getVariable("hp")).toBe(7);
+  });
+});
+
 describe("ScriptContext captured by a pending latent run", () => {
   it("keeps its own self, delta, tick index and input while other dispatches run, and skips its own re-entry", async () => {
     const gates: Array<() => void> = [];
