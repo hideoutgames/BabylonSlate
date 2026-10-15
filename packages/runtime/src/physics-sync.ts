@@ -38,6 +38,7 @@ import {
   type ColliderShape,
 } from "@babylonslate/physics";
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
+import { COLLISION_CHANNEL_MEMBERS } from "@babylonslate/scripting";
 import {
   PhysicsCompositionScratch,
   PreparedColliderGeometry,
@@ -58,6 +59,8 @@ import {
   rotateVector,
   type ActorTransformMap,
 } from "./actor-world-transform";
+
+const KNOWN_CHANNELS: ReadonlySet<string> = new Set(COLLISION_CHANNEL_MEMBERS);
 
 /**
  * Keeps `@babylonslate/physics` bodies in sync with World actors that carry
@@ -81,6 +84,8 @@ export class PhysicsWorldSync {
    * created under the actor's id, so they appear in no body map; channel queries classify them from here.
    */
   private readonly ragdollActors = new Map<string, Actor>();
+  /** Channel names already reported as unknown (`warnUnknownChannel`). */
+  private readonly unknownChannels = new Set<string>();
   private readonly bodyByActor = new Map<string, string>();
   private readonly characterByActor = new Map<string, string>();
   private readonly movementControllerDescriptors = new Map<string, readonly unknown[]>();
@@ -1142,9 +1147,24 @@ export class PhysicsWorldSync {
     return transform;
   }
 
+  /**
+   * A name that is no channel (a graph saved before the channels were renamed) is answered as All. It is reported
+   * once per name, so a query that runs every frame does not flood the console.
+   */
+  private warnUnknownChannel(channel: string): void {
+    const name = String(channel);
+    if (this.unknownChannels.has(name)) return;
+    this.unknownChannels.add(name);
+    console.warn(`[physics] Unknown collision channel "${name}": the query behaves as All. Use ${COLLISION_CHANNEL_MEMBERS.join(", ")}.`);
+  }
+
   private queryOptions(options?: LineTraceOptions & { channel?: string }): LineTraceOptions | undefined {
     const channel = options?.channel;
     if (!channel || channel === "All") return options;
+    if (!KNOWN_CHANNELS.has(channel)) {
+      this.warnUnknownChannel(channel);
+      return options;
+    }
     if (channel === "Solid") return { ...options, includeTriggers: false };
     const ignored = new Set(options?.ignoreActorIds);
     const matches = (actor: Actor) => {

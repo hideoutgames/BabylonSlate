@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { identityTransform } from "@babylonslate/core";
 import { ClassRegistry, World } from "@babylonslate/object-model";
 import { createPhysicsBackend, createSoftwarePhysicsBackend } from "@babylonslate/physics";
@@ -8,6 +8,41 @@ import { RagdollWorldSync } from "./ragdoll-sync";
 import { ScriptHost } from "./script-host";
 
 describe("script physics query channels", () => {
+  it("answers a name that is no channel as All and reports each such name once", () => {
+    const sync = new PhysicsWorldSync(createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 }));
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const wall = world.createActor({ classId: "Actor", guid: "wall", transform: { ...identityTransform(), position: { x: 3, y: 0, z: 0 } } });
+      wall.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType: "dynamic", gravityScale: 0 } }));
+      wall.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } }));
+      world.spawnActorNow(wall);
+      sync.syncFromWorld(world);
+      const from = { x: 0, y: 0, z: 0 }, to = { x: 10, y: 0, z: 0 };
+      // Known channels filter, and say nothing.
+      expect(sync.lineTrace(from, to, { channel: "Static" }).actorId).toBeNull();
+      expect(sync.lineTrace(from, to, { channel: "Dynamic" }).actorId).toBe("wall");
+      expect(sync.lineTrace(from, to, { channel: "" }).actorId).toBe("wall");
+      expect(sync.lineTrace(from, to).actorId).toBe("wall");
+      expect(warn).not.toHaveBeenCalled();
+      // Names from before the rename no longer filter: every query type sees the wall.
+      expect(sync.lineTrace(from, to, { channel: "WorldStatic" }).actorId).toBe("wall");
+      expect(sync.lineTrace(from, to, { channel: "WorldStatic" }).actorId).toBe("wall");
+      expect(sync.sphereOverlap({ x: 3, y: 0, z: 0 }, 1, { channel: "Pawn" }).actorIds).toEqual(["wall"]);
+      expect(sync.shapeSweep({ kind: "sphere", radius: 0.1 },
+        { position: from, rotation: { x: 0, y: 0, z: 0, w: 1 } }, { position: to, rotation: { x: 0, y: 0, z: 0, w: 1 } },
+        { channel: "Pawn" }).actorId).toBe("wall");
+      expect(warn.mock.calls.map(([message]) => message)).toEqual([
+        expect.stringContaining('"WorldStatic"'),
+        expect.stringContaining('"Pawn"'),
+      ]);
+      expect(warn.mock.calls[0]![0]).toContain("All, Static, Dynamic, Character, Solid");
+    } finally {
+      warn.mockRestore();
+      sync.dispose();
+    }
+  });
+
   it.each(["software", "rapier", "havok"] as const)("%s filters candidates before selecting hits", async (kind) => {
     const dimension = kind === "rapier" ? "2d" : "3d";
     const backend = kind === "software" ? createSoftwarePhysicsBackend(dimension, { x: 0, y: 0, z: 0 })
