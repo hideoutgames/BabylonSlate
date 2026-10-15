@@ -1109,6 +1109,31 @@ describe("EditorSceneSync", () => {
     expect(before!.isDisposed()).toBe(true);
   });
 
+  it("serializes a Tilemap payload once across installs while its revision holds, and rebuilds when the revision moves", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(sceneWith([createActor("a", "A")]));
+    let serialized = 0;
+    // The host re-reads and re-normalizes payloads, so each install brings new objects.
+    const install = (cell: number, revision: string) => sync.setMeshAssets({
+      tilemaps: new Map([["map", { toJSON: () => { serialized += 1; return { cell }; } } as never]]),
+      payloadRevisions: new Map([["map", revision]]),
+    });
+
+    expect(install(1, "r1")).toBe(true);
+    const built = sync.meshForActor("a");
+    serialized = 0;
+    expect(install(1, "r1")).toBe(false);
+    sync.replaceTextureEncodings(new Map(), []);
+    expect(serialized).toBe(0);
+    expect(sync.meshForActor("a")).toBe(built);
+
+    expect(install(2, "r2")).toBe(true);
+    expect(serialized).toBe(1);
+    expect(sync.meshForActor("a")).not.toBe(built);
+    expect(built!.isDisposed()).toBe(true);
+  });
+
   it("uses an empty named root for a Model instead of baking the first primitive", () => {
     const { scene } = createHandle();
     const mesh = createMeshComponent("c1", "box");

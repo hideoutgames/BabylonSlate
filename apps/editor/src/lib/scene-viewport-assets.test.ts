@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { encodeAssetDocument, readAssetDocumentHeader, type ChunkEntry, type IndexedAsset } from "@babylonslate/assets";
-import { changedTextureEncodings, sceneViewportAssetKey, sceneViewportTextureEncodings } from "./scene-viewport-assets";
+import {
+  changedTextureEncodings,
+  sceneViewportAssetKey,
+  sceneViewportTextureEncodings,
+  stableViewportPayloadRevisions,
+  viewportPayloadRevisions,
+} from "./scene-viewport-assets";
 
 function chunk(id: string, kind: string, sha256: string): ChunkEntry {
   return { id, kind, mime: "application/octet-stream", sha256, byteLength: 4, locator: { inline: { offset: 0, length: 4 } } };
@@ -38,6 +44,66 @@ describe("viewport Texture keys", () => {
     const material = (compressionState: string) => indexed("Material", "mat", { compressionState }, []);
     const key = (asset: IndexedAsset) => sceneViewportAssetKey(null, [asset]);
     expect(key(await material("a"))).not.toBe(key(await material("b")));
+  });
+});
+
+describe("viewport resource key", () => {
+  it("lists every resource by guid with its payload and chunks, and a Texture without its encode bookkeeping", async () => {
+    const material = await indexed("Material", "mat", { value: 1 }, []);
+    const texture = await indexed("Texture", "tex", { usage: "albedo", compressionState: "pending" }, [sourceChunk("a")]);
+    const sprite = await indexed("Sprite", "sprite", {}, [chunk("frames", "frames", "f")]);
+    const resources = sceneViewportAssetKey(null, [texture, material, sprite]).split("\n")[1];
+    expect(resources).toBe(
+      '[["mat","Material",{"value":1},[]],["sprite","Sprite",{},[["frames","f"]]],["tex","Texture",[["usage","albedo"]],["pixels:a"]]]',
+    );
+  });
+
+  it("serializes a resource whose header did not change once, however often the others change", async () => {
+    let serialized = 0;
+    const saved = await indexed("Material", "stable", {}, []);
+    const stable: IndexedAsset = {
+      ...saved,
+      header: { ...saved.header, payload: { toJSON: () => { serialized += 1; return { graph: 1 }; } } },
+    };
+    const key = async (value: number) => sceneViewportAssetKey(null, [stable, await indexed("Material", "other", { value }, [])]);
+
+    const first = await key(1);
+    const second = await key(2);
+    expect(second).not.toBe(first);
+    expect(second).toContain('["stable","Material",{"graph":1},[]]');
+    expect(second).toContain('["other","Material",{"value":2},[]]');
+    expect(serialized).toBe(1);
+  });
+});
+
+describe("viewport payload revisions", () => {
+  it("follow the saved header, or the open document that collection prefers", async () => {
+    const map = await indexed("Tilemap", "map", { layers: 1 }, []);
+    const water = await indexed("Water", "water", {}, []);
+    const material = await indexed("Material", "mat", {}, []);
+    const saved = viewportPayloadRevisions([map, water, material], []);
+    expect([...saved.keys()].sort()).toEqual(["map", "water"]);
+    expect(viewportPayloadRevisions([material, water, map], [])).toEqual(saved);
+
+    const edited = await indexed("Tilemap", "map", { layers: 2 }, []);
+    expect(viewportPayloadRevisions([edited], []).get("map")).not.toBe(saved.get("map"));
+
+    const tab = (content: unknown) => [{ ref: { kind: "tilemap", path: map.path }, content }];
+    const content = { layers: 3 };
+    const open = viewportPayloadRevisions([map], tab(content)).get("map");
+    expect(open).not.toBe(saved.get("map"));
+    expect(viewportPayloadRevisions([map], tab(content)).get("map")).toBe(open);
+    expect(viewportPayloadRevisions([map], tab({ layers: 4 })).get("map")).not.toBe(open);
+    // A tab with nothing loaded yet leaves collection reading the saved asset.
+    expect(viewportPayloadRevisions([map], tab(null)).get("map")).toBe(saved.get("map"));
+    // A tab holding something that is not a document gives no revision to remember.
+    expect(viewportPayloadRevisions([map], tab("text")).has("map")).toBe(false);
+  });
+
+  it("keep only the revisions that did not move across a collection", () => {
+    const before = new Map([["a", "1"], ["b", "1"], ["gone", "1"]]);
+    const after = new Map([["a", "1"], ["b", "2"], ["new", "1"]]);
+    expect(stableViewportPayloadRevisions(before, after)).toEqual(new Map([["a", "1"]]));
   });
 });
 

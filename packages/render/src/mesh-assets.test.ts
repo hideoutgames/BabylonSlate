@@ -7,7 +7,15 @@ import {
   StandardMaterial,
   Texture,
 } from "@babylonjs/core";
-import { applyAlbedoTexture, installTextureBytes, meshAssetFingerprint, modelSlotFingerprint } from "./mesh-assets";
+import {
+  applyAlbedoTexture,
+  installTextureBytes,
+  meshAssetFingerprint,
+  meshAssetFingerprintWithoutModels,
+  modelSlotFingerprint,
+  PayloadFingerprints,
+  type MeshAssetContext,
+} from "./mesh-assets";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 import { ktx2HeaderBytes } from "./texture-test-fixtures";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
@@ -60,6 +68,53 @@ describe("meshAssetFingerprint", () => {
         fontCssStackByGuid: new Map([["g", '"Other", sans-serif']]),
       }),
     );
+  });
+});
+
+describe("remembered payload fingerprints", () => {
+  const maps = (tilemaps: object, tilesets: object, waters: object) => ({
+    tilemaps: new Map(Object.entries(tilemaps)),
+    tilesets: new Map(Object.entries(tilesets)),
+    waters: new Map(Object.entries(waters)),
+  }) as unknown as MeshAssetContext;
+
+  it("give exactly the key that serializing every payload gives", () => {
+    const assets = maps({ "map-b": { layers: [2] }, "map-a": { layers: [1] } }, { set: { tiles: 4 } }, { lake: { depth: 3 } });
+    const withRevisions: MeshAssetContext = {
+      ...assets,
+      payloadRevisions: new Map([["map-a", "1"], ["map-b", "1"], ["set", "1"], ["lake", "1"]]),
+    };
+    const serialized = meshAssetFingerprintWithoutModels(assets);
+    const memory = new PayloadFingerprints();
+
+    expect(meshAssetFingerprintWithoutModels(withRevisions, memory)).toBe(serialized);
+    expect(meshAssetFingerprintWithoutModels(withRevisions, memory)).toBe(serialized);
+    expect(serialized).toContain('|tilemaps:[["map-a",{"layers":[1]}],["map-b",{"layers":[2]}]]|waters:[["lake",{"depth":3}]]|tilesets:[["set",{"tiles":4}]]|');
+  });
+
+  it("serialize a payload again only when its revision moved or none was given", () => {
+    let serialized = 0;
+    const payload = (cell: number) => ({ toJSON: () => { serialized += 1; return { cell }; } });
+    const memory = new PayloadFingerprints();
+    const key = (cell: number, revision?: string) => meshAssetFingerprintWithoutModels({
+      tilemaps: new Map([["map", payload(cell)]]),
+      ...(revision === undefined ? {} : { payloadRevisions: new Map([["map", revision]]) }),
+    } as unknown as MeshAssetContext, memory);
+
+    const first = key(1, "r1");
+    expect(key(1, "r1")).toBe(first);
+    expect(serialized).toBe(1);
+    const second = key(2, "r2");
+    expect(second).not.toBe(first);
+    expect(second).toContain('"cell":2');
+    expect(serialized).toBe(2);
+    key(2);
+    key(2);
+    expect(serialized).toBe(4);
+    // Without a revision nothing was remembered, so the same revision again is serialized once more.
+    key(2, "r2");
+    key(2, "r2");
+    expect(serialized).toBe(5);
   });
 });
 
