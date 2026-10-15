@@ -547,10 +547,11 @@ export class ProjectService {
         ),
       onState: (guid, state, job) => {
         if (state === "encoding") this.encodeWriteReleases.set(guid, this.writeAdmission.retain());
-        // `compressed` is written with the KTX2 chunk in onComplete. A guarded
+        // `compressed` is written with the KTX2 chunk in onComplete, and
+        // `encode_failed` once, with its message, by onError. A guarded
         // (alignment) job leaves the saved state alone until it commits, so
         // nothing on disk requeues it later, source control on or not.
-        if (state === "compressed" || job.guard) return;
+        if (state === "compressed" || state === "encode_failed" || job.guard) return;
         const registry = this.encodeRegistry();
         if (!registry) return;
         const session = this.sourceSession;
