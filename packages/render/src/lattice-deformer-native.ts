@@ -7,15 +7,17 @@ import { bumpFragment } from "@babylonjs/core/Shaders/ShadersInclude/bumpFragmen
 import { bumpFragmentWGSL } from "@babylonjs/core/ShadersWGSL/ShadersInclude/bumpFragment";
 import { bindMeshLatticeDeformerBuffer, hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { checkedShader } from "./checked-shader";
-import { registerPersistentMaterialPlugin } from "./material-plugin-registration";
 import { LATTICE_WORLD_POSITION_PATTERN, latticeNormalShaderFunction, latticeShaderDeclarations, latticeShaderFunctions, latticeWorldPositionCode } from "./lattice-deformer-shader";
 
-/** Registered before native material UBO layout freezes. Per-mesh defines keep
- * ordinary draws free of a vertex sampler, including shared/frozen materials. */
+/** Attached on demand to the materials an active cage draws. Per-mesh defines
+ * keep ordinary draws of a shared or frozen material free of a vertex sampler. */
 export class LatticeDeformerPlugin extends MaterialPluginBase {
   constructor(material: Material) {
     super(material, "SlateLattice", 220, { SLATE_LATTICE: false }, true, false);
     this.registerForExtraEvents = true;
+    // Material.clone rebuilds a serialized plugin as a bare MaterialPluginBase carrying this name, which
+    // would then pass for the real one. The owner attaches a fresh plugin to the clone instead.
+    this.doNotSerialize = true;
     this._enable(true);
   }
   override isCompatible(): boolean { return true; }
@@ -80,12 +82,13 @@ vTBN = mat3(slateLatticeBasisT,
   }
 }
 const supportedClasses = new Set(["StandardMaterial", "PBRMaterial", "PBRMetallicRoughnessMaterial", "PBRSpecularGlossinessMaterial", "CelMaterial"]);
-/** Materials built before this module loaded get the plugin on demand. Its public
- * constructor also rebuilds an existing native UBO layout, so the persistent
- * registration below attaches it at creation instead. */
+/** The only way this plugin reaches a material: no global factory, because one
+ * adds its code, sampler and uniforms to every Standard/PBR shader, cage or not.
+ * The cage owner calls this for each material it draws, then marks them dirty.
+ * Babylon's plugin constructor resets the draw cache and rebuilds the native UBO
+ * layout of a material that already compiled, so the next draw recompiles it. */
 export function ensureLatticeDeformerPlugin(material: Material): LatticeDeformerPlugin | null {
   const existing = material.pluginManager?.getPlugin<LatticeDeformerPlugin>("SlateLattice");
   if (existing) return existing;
   return supportedClasses.has(material.getClassName()) && (material instanceof PBRBaseMaterial || material instanceof StandardMaterial) ? new LatticeDeformerPlugin(material) : null;
 }
-registerPersistentMaterialPlugin("SlateLattice", ensureLatticeDeformerPlugin);
