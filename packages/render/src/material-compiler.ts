@@ -81,6 +81,7 @@ import { createGeometryCaptureOutput } from "./geometry-capture-output";
 import { AuthoredShadowFragmentOutput, createAuthoredShadowVertexOutput } from "./authored-shadow-output";
 import { AuthoredShadowDepthWrapper } from "./authored-shadow-depth-wrapper";
 import { applyLatticeDeformerPlumbing, LatticeDeformerBlock } from "./lattice-deformer-block";
+import { WaterWavesBlock } from "./water-waves-block";
 import { registerLatticeShadowAdapter } from "./lattice-deformer-binding";
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { LinearColorBlock } from "./linear-color-block";
@@ -321,6 +322,15 @@ export function compileMaterialPlan(
       outputNodes.push(
         ...createSurfacePlumbing(options.name, created, plumbing),
       );
+    }
+    // One Water Waves block per graph, at the rest point, whichever surface variant this is: every variant compiles the
+    // same plan, so the depth, shadow, outline and capture programs displace as the colour pass does.
+    if (plumbing.restWorldPosition && plan.operations.some((operation) => operation.nodeType === "input.waterWaves")) {
+      const waves = new WaterWavesBlock(`${options.name}_waterWaves`);
+      plumbing.restWorldPosition.connectTo(waves.worldPosition);
+      plumbing.worldNormal?.connectTo(waves.worldNormal);
+      created.push(waves);
+      plumbing.waterWaves = waves;
     }
     if (plan.domain === "text") {
       textGlyph = new TextMaterialBlock(`${options.name}_textGlyph`);
@@ -808,8 +818,8 @@ export function compileMaterialPlan(
   // Bone palettes, morph weights and text atlases belong to each mesh, even
   // when their material is static.
   const perMeshBlocks = created.filter(
-    (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock | LatticeDeformerBlock | OverlayStyleBlock =>
-      block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock || block instanceof LatticeDeformerBlock || block instanceof OverlayStyleBlock,
+    (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock | LatticeDeformerBlock | OverlayStyleBlock | WaterWavesBlock =>
+      block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock || block instanceof LatticeDeformerBlock || block instanceof OverlayStyleBlock || block instanceof WaterWavesBlock,
   );
   if (perMeshBlocks.length > 0) {
     material.onBindObservable.add((mesh) => {

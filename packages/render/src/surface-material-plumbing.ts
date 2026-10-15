@@ -110,6 +110,7 @@ export function createSurfacePlumbing(
   );
 
   plumbing.worldPosition = worldPosition.output;
+  plumbing.restWorldPosition = worldPosition.output;
   plumbing.position = morph.positionOutput;
   plumbing.localNormal = morph.normalOutput;
   plumbing.world = bones.output;

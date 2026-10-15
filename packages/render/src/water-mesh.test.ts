@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ArcRotateCamera, CubeTexture, FreeCamera, type Mesh, MeshBuilder, NullEngine, PBRMaterial, Quaternion, Ray, Scene, SphericalPolynomial, Texture, type UniformBuffer, Vector3, VertexBuffer } from "@babylonjs/core";
+import { ArcRotateCamera, CubeTexture, FreeCamera, Matrix, type Mesh, MeshBuilder, NullEngine, PBRMaterial, Quaternion, Ray, Scene, SphericalPolynomial, Texture, type NodeMaterial, type UniformBuffer, Vector3, VertexBuffer } from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, createWaterBlendSample, createWaterWaveOutput, DEFAULT_WATER_BLEND_DISTANCE, evaluateWaterBlend, evaluateWaterVertex,
   normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, WaterBlendIndex,
@@ -70,6 +70,31 @@ function bindWater(mesh: Mesh): Map<string, number[]> {
   const buffer = { updateFloat4: (name: string, ...values: number[]) => vectors.set(name, values), updateMatrix: () => {} } as unknown as UniformBuffer;
   (mesh.material as PBRMaterial).pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!.hardBindForSubMesh(buffer, mesh.getScene());
   return vectors;
+}
+
+/** A built Custom Material reading Water Surface, with a Water Waves node applied (Offset into World Position Offset) or without. */
+async function customWaterMaterial(scene: Scene, waves: boolean) {
+  const doc = createDefaultMaterialDocument(waves ? "Waves" : "Foam");
+  doc.shadingModel = "unlit";
+  doc.nodes.push({ id: "water", type: "input.waterSurface", position: { x: 0, y: 0 }, properties: {} });
+  doc.edges = [{ id: "foam", sourceNodeId: "water", sourcePinId: "bankDistance", targetNodeId: "output", targetPinId: "emissive" }];
+  if (waves) {
+    doc.nodes.push({ id: "waves", type: "input.waterWaves", position: { x: 0, y: 0 }, properties: {} });
+    doc.edges.push({ id: "offset", sourceNodeId: "waves", sourcePinId: "offset", targetNodeId: "output", targetPinId: "worldPositionOffset" });
+  }
+  const plan = lowerMaterialDocument(doc);
+  if (!plan.ok) throw new Error(JSON.stringify(plan.diagnostics));
+  const result = compileMaterialPlan(plan.plan, { scene, name: doc.name });
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  expect(await result.ready).toEqual([]);
+  return result.material;
+}
+
+/** Compiles `material` for `mesh` and returns the program its first sub-mesh draws with. */
+async function programFor(material: NodeMaterial, mesh: Mesh) {
+  await material.forceCompilationAsync(mesh);
+  expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
+  return mesh.subMeshes[0]!.effect!;
 }
 
 /** X coordinates of the first grid row, in order. */
@@ -478,6 +503,100 @@ describe("Water rendering", () => {
       expect(scene.materials).toContain(result.material);
       result.dispose();
     } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("displaces Custom Material water on the GPU when its graph holds a Water Waves node, and uploads displaced vertices as before otherwise", async () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    noBlending(scene);
+    try {
+      const plain = await customWaterMaterial(scene, false), waves = await customWaterMaterial(scene, true);
+      const water = createDefaultWaterDefinition("stylized"), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 128 });
+      const cpu = createWaterMesh(scene, "cpu", body, water, plain), gpu = createWaterMesh(scene, "gpu", body, water, waves);
+      const builtIn = createWaterMesh(scene, "builtIn", body, water);
+      setSceneWaterTime(scene, 2); updateSceneWater(scene);
+      const middle = centreVertex(gpu);
+      // The Water Waves graph keeps the static rest grid, like built-in water: spacing in `slateWaterData.x`, and no clock in the data.
+      expect(Vector3.FromArray(gpu.getVerticesData(VertexBuffer.PositionKind)!, middle * 3).length()).toBeCloseTo(0, 6);
+      const data = gpu.getVerticesData("slateWaterData")!;
+      expect(data[middle * 4]).toBeGreaterThan(0);
+      expect(data[middle * 4 + 3]).toBe(0);
+      // The same graph without the node is the CPU path it always was: displaced vertices, the clock in the data.
+      expect(Math.hypot(...Vector3.FromArray(cpu.getVerticesData(VertexBuffer.PositionKind)!, middle * 3).asArray())).toBeGreaterThan(0.01);
+      expect(cpu.getVerticesData("slateWaterData")![middle * 4 + 3]).toBe(2);
+      // A frame uploads nothing for the GPU surface; the clock is a uniform.
+      const uploads = vi.spyOn(gpu, "updateVerticesData"), cpuUploads = vi.spyOn(cpu, "updateVerticesData");
+      setSceneWaterTime(scene, 3); updateSceneWater(scene);
+      expect(uploads).not.toHaveBeenCalled();
+      expect(cpuUploads).toHaveBeenCalled();
+      // Its material binds this surface's clock and the swell built-in water binds for the same asset, body and time.
+      scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+      const effect = await programFor(waves, gpu), bound = new Map<string, number[]>();
+      vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { bound.set(name, [x, y, z, w]); return effect; });
+      waves.bindForSubMesh(gpu.computeWorldMatrix(true), gpu, gpu.subMeshes[0]!);
+      const reference = new Map<string, number[]>();
+      pluginOf(builtIn).bindVertexWaves({ setFloat4: (name: string, ...values: number[]) => reference.set(name, values), setTexture: () => {} } as unknown as Parameters<WaterMaterialPlugin["bindVertexWaves"]>[0], scene, builtIn);
+      expect(bound.get("slateWaterClock")).toEqual([3, 0, 0, 0]);
+      for (const name of ["slateWaterSwellAmp0", "slateWaterSwellDir1", "slateWaterSwellGroup2", "slateWaterSwellWarp0", "slateWaterSwellInfo", "slateWaterShape"]) {
+        expect(reference.get(name), name).toBeDefined();
+        expect(bound.get(name), name).toEqual(reference.get(name));
+      }
+      expect(bound.get("slateWaterSwellAmp0")![0]).toBeGreaterThan(0);
+      // Only built-in water has a plugin to switch paths with.
+      expect(setWaterGpuWaves(gpu, false)).toBe(false);
+      expect(setWaterGpuWaves(cpu, true)).toBe(false);
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
+  it("chooses Custom Material water's path again when its material is replaced, displacing the surface exactly once", async () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    noBlending(scene);
+    try {
+      const plain = await customWaterMaterial(scene, false), waves = await customWaterMaterial(scene, true);
+      const water = createDefaultWaterDefinition("stylized"), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 128 });
+      const lake = createWaterMesh(scene, "lake", body, water, plain), reference = createWaterMesh(scene, "reference", body, water, plain);
+      setSceneWaterTime(scene, 2); updateSceneWater(scene);
+      const positions = (mesh: Mesh) => Array.from(mesh.getVerticesData(VertexBuffer.PositionKind)!);
+      const middle = centreVertex(lake), rest = Array.from({ length: 3 }, () => 0);
+      expect(Vector3.FromArray(positions(lake), middle * 3).asArray()).not.toEqual(rest);
+      // A recompiled Material is rebound under the mesh (`MaterialLibrary`): the next water update lays the vertices out for it.
+      lake.material = waves; updateSceneWater(scene);
+      expect(Vector3.FromArray(positions(lake), middle * 3).length()).toBeCloseTo(0, 6);
+      expect(lake.getVerticesData("slateWaterData")![middle * 4 + 3]).toBe(0);
+      const uploads = vi.spyOn(lake, "updateVerticesData");
+      setSceneWaterTime(scene, 3); updateSceneWater(scene);
+      expect(uploads).not.toHaveBeenCalled();
+      uploads.mockRestore();
+      // Without the node again, the vertices are those a mesh that never left the CPU path has: displaced once, at the current time.
+      lake.material = plain; updateSceneWater(scene);
+      expect(positions(lake)).toEqual(positions(reference));
+      expect(lake.getVerticesData("slateWaterData")![middle * 4 + 3]).toBe(3);
+      expect(Vector3.FromArray(positions(lake), middle * 3).asArray()).not.toEqual(rest);
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
+  it("recentres Custom Material Global Water with a Water Waves node through the shader's grid offset, and picks it on the rest grid", async () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 4, 0), scene);
+    camera.maxZ = 100;
+    noBlending(scene);
+    try {
+      const waves = await customWaterMaterial(scene, true);
+      const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"), createDefaultWaterDefinition(), waves);
+      updateSceneWater(scene);
+      const before = Array.from(global.getVerticesData(VertexBuffer.PositionKind)!), uploads = [vi.spyOn(global, "updateVerticesData"), vi.spyOn(engine, "updateDynamicVertexBuffer")];
+      // The camera moves hundreds of cells: the uploaded lines stay, and nothing is uploaded.
+      camera.position.set(400, 4, 0); updateSceneWater(scene);
+      for (const spy of uploads) expect(spy).not.toHaveBeenCalled();
+      expect(Array.from(global.getVerticesData(VertexBuffer.PositionKind)!)).toEqual(before);
+      // The material binds the centre the shader adds back.
+      scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+      const effect = await programFor(waves, global), bound = new Map<string, number[]>();
+      vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { bound.set(name, [x, y, z, w]); return effect; });
+      waves.bindForSubMesh(global.computeWorldMatrix(true), global, global.subMeshes[0]!);
+      const cell = 0.5 / RENDER_QUALITY_PROFILES.medium.water.meshDensity;
+      expect(Math.abs(bound.get("slateWaterGridOffset")![0]! - 400)).toBeLessThanOrEqual(cell);
+      // Picks test the rest grid where the camera put it, not where the uploaded lines are.
+      const hit = scene.pickWithRay(new Ray(new Vector3(440.3, 20, -17.7), Vector3.Down()), (candidate) => candidate === global)!;
+      expect(hit.hit).toBe(true);
+      expect(hit.pickedPoint!.asArray()).toEqual([expect.closeTo(440.3, 3), expect.closeTo(0, 3), expect.closeTo(-17.7, 3)]);
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
   it("animates built-in water on the GPU from the clock alone, keeps the CPU path for parity, and releases owned resources", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
