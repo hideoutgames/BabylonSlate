@@ -60,8 +60,6 @@ import {
   type ActorTransformMap,
 } from "./actor-world-transform";
 
-const KNOWN_CHANNELS: ReadonlySet<string> = new Set(COLLISION_CHANNEL_MEMBERS);
-
 /**
  * Keeps `@babylonslate/physics` bodies in sync with World actors that carry
  * RigidBodyComponent / ColliderComponent, MeshComponent collision, tilemap
@@ -138,8 +136,18 @@ export class PhysicsWorldSync {
    * kinematic ancestor's body hosts, and each host's children in world order.
    * The per-tick pass rebuilds both; call-time paths adjust one actor.
    */
-  private readonly hostByActor = new Map<string, Actor>();
+  private hostByActor = new Map<string, Actor>();
+  /** The previous pass's `hostByActor`, kept only so `assignHosts` can tell whether hosting changed. */
+  private hostScratch = new Map<string, Actor>();
   private readonly hostedByHost = new Map<string, Actor[]>();
+  /**
+   * Each Static, Dynamic or Character query's ignore list, kept until something it derives from changes:
+   * `channelEpoch` for body creation and retirement, a motion change, hosting and ragdolls (`invalidateChannels`), and
+   * for Character the World's `structuralRevision`, which a Movement component joining or leaving bumps.
+   */
+  private readonly channelIgnores = new Map<string, { epoch: number; revision: number; ids: readonly string[] }>();
+  private channelEpoch = 0;
+  private channelRebuilds = 0;
   // Per-tick scratch. Descriptors are compared in place and copied only when
   // they change, so a stored descriptor is never a scratch array.
   private readonly passSources = new Map<Actor, ActorComponent | null>();
@@ -282,6 +290,7 @@ export class PhysicsWorldSync {
 
   /** An articulated ragdoll replaces the actor's ordinary body and colliders. */
   suppressActorBody(actor: Actor, suppressed: boolean): void {
+    this.invalidateChannels();
     if (suppressed) {
       this.suppressedActors.add(actor);
       this.ragdollActors.set(actor.guid, actor);
@@ -414,9 +423,12 @@ export class PhysicsWorldSync {
     this.preparedByActor.clear();
     this.bodyOwnerByActor.clear();
     this.ragdollActors.clear();
+    this.invalidateChannels();
+    this.channelIgnores.clear();
     this.contactReporting.clear();
     this.staticPoses.clear();
     this.hostByActor.clear();
+    this.hostScratch.clear();
     this.hostedByHost.clear();
     this.passSources.clear();
     this.passHosts.clear();
@@ -573,6 +585,9 @@ export class PhysicsWorldSync {
    * ancestors in between do not host; a destroyed parent ends the chain.
    */
   private assignHosts(sources: ReadonlyMap<Actor, ActorComponent | null>): void {
+    const previous = this.hostByActor;
+    this.hostByActor = this.hostScratch;
+    this.hostScratch = previous;
     this.hostByActor.clear();
     this.hostedByHost.clear();
     const memo = this.passHosts;
@@ -589,6 +604,11 @@ export class PhysicsWorldSync {
       if (host && this.hasSolidCollision(actor)) this.hostActor(actor, host);
     }
     memo.clear();
+    // The pass rebuilds hosting every tick; only a different assignment changes what channels ignore.
+    let changed = previous.size !== this.hostByActor.size;
+    if (!changed) for (const [guid, host] of this.hostByActor) if (previous.get(guid) !== host) { changed = true; break; }
+    if (changed) this.invalidateChannels();
+    previous.clear();
   }
 
   /**
@@ -649,6 +669,7 @@ export class PhysicsWorldSync {
         : null;
     const previous = this.hostByActor.get(actor.guid);
     if (previous === host) return host;
+    this.invalidateChannels();
     if (previous) {
       const hosted = this.hostedByHost.get(previous.guid);
       const index = hosted?.indexOf(actor) ?? -1;
@@ -820,6 +841,8 @@ export class PhysicsWorldSync {
   }
 
   private bindWorld(world: World): void {
+    // A different World counts structure revisions of its own.
+    if (this.world !== world) this.invalidateChannels();
     this.world = world;
     this.actors = world.getActors();
   }
@@ -973,6 +996,8 @@ export class PhysicsWorldSync {
   ): void {
     const applied = this.appliedBodyProperties.get(actorId);
     if (applied?.component === component && applied.value === value) return;
+    // Static and Dynamic follow the motion type; other tuning does not reach a channel.
+    if (applied?.value.motionType !== value.motionType) this.invalidateChannels();
     this.backend.updateBody(bodyId, value);
     this.appliedBodyProperties.set(actorId, { component, value });
     this.staticPoses.delete(actorId);
@@ -999,6 +1024,7 @@ export class PhysicsWorldSync {
   }
 
   private retireActor(actorId: string): void {
+    this.invalidateChannels();
     const bodyId = this.bodyByActor.get(actorId);
     if (bodyId) {
       this.constraints.retireBody(bodyId);
@@ -1158,22 +1184,47 @@ export class PhysicsWorldSync {
     console.warn(`[physics] Unknown collision channel "${name}": the query behaves as All. Use ${COLLISION_CHANNEL_MEMBERS.join(", ")}.`);
   }
 
+  /** The backend's options for a query on `options.channel`, whose meaning lives here and nowhere else. */
   private queryOptions(options?: LineTraceOptions & { channel?: string }): LineTraceOptions | undefined {
     const channel = options?.channel;
-    if (!channel || channel === "All") return options;
-    if (!KNOWN_CHANNELS.has(channel)) {
-      this.warnUnknownChannel(channel);
-      return options;
+    if (!channel) return options;
+    switch (channel) {
+      case "All":
+        return options;
+      case "Solid":
+        return { ...options, includeTriggers: false };
+      case "Triggers":
+        // Every backend filters trigger shapes itself, before the hit is chosen.
+        return { ...options, onlyTriggers: true };
+      case "Static":
+      case "Dynamic":
+      case "Character": {
+        const ids = this.channelIgnoreList(channel);
+        if (!ids.length) return options;
+        const own = options?.ignoreActorIds;
+        return { ...options, ignoreActorIds: own?.length ? [...own, ...ids] : ids };
+      }
+      default:
+        this.warnUnknownChannel(channel);
+        return options;
     }
-    if (channel === "Solid") return { ...options, includeTriggers: false };
-    // Every backend filters trigger shapes itself, before the hit is chosen.
-    if (channel === "Triggers") return { ...options, onlyTriggers: true };
-    const ignored = new Set(options?.ignoreActorIds);
+  }
+
+  /**
+   * The actors a Static, Dynamic or Character query ignores, from the bodies, hosting and ragdolls as they stand.
+   * Built on the first query after any of them changed (`invalidateChannels`, plus the World's structure for
+   * Character, whose Movement component has no hook) and reused until then, so a query walks no bodies.
+   */
+  private channelIgnoreList(channel: "Static" | "Dynamic" | "Character"): readonly string[] {
+    const revision = channel === "Character" ? this.world?.structuralRevision ?? 0 : 0;
+    const cached = this.channelIgnores.get(channel);
+    if (cached && cached.epoch === this.channelEpoch && cached.revision === revision) return cached.ids;
+    this.channelRebuilds++;
+    const ignored = new Set<string>();
     const matches = (actor: Actor) => {
       const motion = this.appliedBodyProperties.get(actor.guid)?.value.motionType ?? "static";
       return channel === "Static" ? motion === "static"
-        : channel === "Dynamic" ? motion !== "static"
-          : channel === "Character" ? this.movementComponent(actor) !== undefined : true;
+        : channel === "Dynamic" ? motion !== "static" : this.movementComponent(actor) !== undefined;
     };
     for (const [actorId, actor] of this.bodyOwnerByActor)
       if (!this.hostByActor.has(actorId) && !matches(actor)) ignored.add(actorId);
@@ -1181,8 +1232,20 @@ export class PhysicsWorldSync {
     for (const [actorId, host] of this.hostByActor)
       if (!matches(host)) ignored.add(actorId);
     // An active ragdoll's bones are dynamic and no Movement drives them: Dynamic (and All) keep them.
-    if (channel === "Static" || channel === "Character") for (const actorId of this.ragdollActors.keys()) ignored.add(actorId);
-    return { ...options, ignoreActorIds: [...ignored] };
+    if (channel !== "Dynamic") for (const actorId of this.ragdollActors.keys()) ignored.add(actorId);
+    const ids = Object.freeze([...ignored]);
+    this.channelIgnores.set(channel, { epoch: this.channelEpoch, revision, ids });
+    return ids;
+  }
+
+  /** The bodies, hosting, motion types or ragdolls behind the channels' ignore lists changed. */
+  private invalidateChannels(): void {
+    this.channelEpoch++;
+  }
+
+  /** How many times a channel's ignore list was built, so a test can tell a reused list from a rebuilt one. */
+  get channelListBuilds(): number {
+    return this.channelRebuilds;
   }
 
   lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions & { channel?: string }) {
@@ -1463,6 +1526,7 @@ export class PhysicsWorldSync {
         component: movement ?? rigid ?? null,
         value: movement || rigid ? props : STATIC_BODY_PROPERTIES,
       });
+      this.invalidateChannels();
       // Creation already installed this pose; caching it keeps later syncs
       // from teleporting an unchanged static body every tick.
       if (props.motionType === "static") this.staticPoses.set(actor.guid, physicsPoseDescriptor(pose));

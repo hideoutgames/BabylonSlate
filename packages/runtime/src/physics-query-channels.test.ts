@@ -152,3 +152,132 @@ describe("script physics query channels", () => {
     }
   });
 });
+
+describe("channel ignore lists", () => {
+  const box = { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } as const;
+  type Part = [classId: string, variables: Record<string, unknown>];
+  const rigid = (motionType: string): Part => ["RigidBodyComponent", { motionType, gravityScale: 0 }];
+  const collider: Part = ["ColliderComponent", { shape: box }];
+
+  function channelWorld() {
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    const spawn = (guid: string, x: number, parts: Part[], parentId?: string) => {
+      const actor = world.createActor({ classId: "Actor", guid, transform: { ...identityTransform(), position: { x, y: 0, z: 0 } },
+        variables: parentId ? { parentId } : {} });
+      for (const [classId, variables] of parts) actor.attachComponent(world.createComponent({ classId, variables }));
+      world.spawnActorNow(actor);
+      return actor;
+    };
+    // Every actor is in range, so a query lists exactly the actors its channel lets through.
+    const found = (channel: string, ignoreActorIds?: string[]) =>
+      [...sync.sphereOverlap({ x: 0, y: 0, z: 0 }, 100, { channel, ...(ignoreActorIds ? { ignoreActorIds } : {}) }).actorIds].sort();
+    return { backend, sync, world, spawn, found };
+  }
+
+  it("is reused until a body, its motion, its hosting or a ragdoll changes", () => {
+    const { sync, world, spawn, found } = channelWorld();
+    try {
+      spawn("rock", 2, [rigid("static"), collider]);
+      spawn("pallet", 6, [rigid("dynamic"), collider]);
+      spawn("plank", 3, [rigid("static"), collider], "pallet");
+      sync.syncFromWorld(world);
+      expect(found("Static")).toEqual(["rock"]);
+      expect(found("Dynamic")).toEqual(["pallet", "plank"]);
+      expect(sync.channelListBuilds).toBe(2);
+      // More queries, with and without actors to ignore, and passes that change nothing, rebuild nothing.
+      expect(found("Static", ["rock"])).toEqual([]);
+      expect(found("Dynamic", ["plank"])).toEqual(["pallet"]);
+      sync.syncFromWorld(world);
+      sync.syncFromWorld(world);
+      expect(found("Static")).toEqual(["rock"]);
+      expect(found("Dynamic")).toEqual(["pallet", "plank"]);
+      expect(sync.channelListBuilds).toBe(2);
+      // A new body is listed by the next query.
+      spawn("pebble", 4, [rigid("static"), collider]);
+      sync.syncFromWorld(world);
+      expect(found("Static")).toEqual(["pebble", "rock"]);
+      expect(sync.channelListBuilds).toBe(3);
+    } finally { sync.dispose(); }
+  });
+
+  it("follows a body's motion type", () => {
+    const { sync, world, spawn, found } = channelWorld();
+    try {
+      spawn("rock", 2, [rigid("static"), collider]);
+      const crate = spawn("crate", 4, [rigid("dynamic"), collider]);
+      sync.syncFromWorld(world);
+      expect([found("Static"), found("Dynamic")]).toEqual([["rock"], ["crate"]]);
+      crate.components.find((component) => component.classId === "RigidBodyComponent")!.setVariable("motionType", "static");
+      sync.syncFromWorld(world);
+      expect([found("Static"), found("Dynamic")]).toEqual([["crate", "rock"], []]);
+      crate.components.find((component) => component.classId === "RigidBodyComponent")!.setVariable("motionType", "kinematic");
+      sync.syncFromWorld(world);
+      expect([found("Static"), found("Dynamic")]).toEqual([["rock"], ["crate"]]);
+    } finally { sync.dispose(); }
+  });
+
+  it("follows a static child joining or leaving the compound of a moving parent", () => {
+    const { sync, world, spawn, found } = channelWorld();
+    try {
+      spawn("rock", 2, [rigid("static"), collider]);
+      spawn("pallet", 6, [rigid("dynamic"), collider]);
+      const plank = spawn("plank", 3, [rigid("static"), collider], "pallet");
+      sync.syncFromWorld(world);
+      expect([found("Static"), found("Dynamic")]).toEqual([["rock"], ["pallet", "plank"]]);
+      // A call-time reconcile of the one actor, as a script's reparent or teleport runs it.
+      plank.setVariable("parentId", "");
+      sync.syncActor(plank, world);
+      expect([found("Static"), found("Dynamic")]).toEqual([["plank", "rock"], ["pallet"]]);
+      // The per-tick pass hosts it again.
+      plank.setVariable("parentId", "pallet");
+      sync.syncFromWorld(world);
+      expect([found("Static"), found("Dynamic")]).toEqual([["rock"], ["pallet", "plank"]]);
+    } finally { sync.dispose(); }
+  });
+
+  it("follows a Movement component joining or leaving an actor, and no other structure change", () => {
+    const { sync, world, spawn, found } = channelWorld();
+    try {
+      const volume = spawn("volume", 2, [["BlockingVolumeComponent", {}]]);
+      sync.syncFromWorld(world);
+      expect([found("Static"), found("Character")]).toEqual([["volume"], []]);
+      expect(sync.channelListBuilds).toBe(2);
+      const movement = world.createComponent({ classId: "MovementComponent" });
+      volume.attachComponent(movement);
+      expect(found("Character")).toEqual(["volume"]);
+      // An unrelated spawn changes the structure, which only Character looks at.
+      spawn("bystander", 4, []);
+      expect(found("Static")).toEqual(["volume"]);
+      expect(sync.channelListBuilds).toBe(3);
+      // Destroying the component, as the World does for each component of a destroyed actor.
+      movement.destroyed = true;
+      movement.callOnDestroyed();
+      expect(found("Character")).toEqual([]);
+      expect(sync.channelListBuilds).toBe(4);
+    } finally { sync.dispose(); }
+  });
+
+  it("follows an active ragdoll, whose bones are bodies of its actor that no body map lists", () => {
+    const { backend, sync, world, spawn, found } = channelWorld();
+    try {
+      const ragdoll = spawn("ragdoll", 3, [rigid("static"), collider]);
+      spawn("rock", 6, [rigid("static"), collider]);
+      sync.syncFromWorld(world);
+      expect([found("Static"), found("Dynamic")]).toEqual([["ragdoll", "rock"], []]);
+      // The ordinary body is replaced by a dynamic bone under the actor's id.
+      sync.suppressActorBody(ragdoll, true);
+      backend.createBody({ id: "bone", actorId: "ragdoll", motionType: "dynamic", mass: 1, linearDamping: 0, angularDamping: 0,
+        gravityScale: 0, transform: { position: { x: 3, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } } });
+      backend.createCollider({ id: "bone-box", bodyId: "bone", shape: box, friction: 0.5, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
+      expect([found("Static"), found("Dynamic"), found("Character")]).toEqual([["rock"], ["ragdoll"], []]);
+      // The bone is no longer special the moment the ragdoll stops, before any pass recreates the ordinary body.
+      sync.suppressActorBody(ragdoll, false);
+      expect(found("Static")).toEqual(["ragdoll", "rock"]);
+      backend.destroyBody("bone");
+      sync.syncFromWorld(world);
+      expect([found("Static"), found("Dynamic")]).toEqual([["ragdoll", "rock"], []]);
+    } finally { sync.dispose(); }
+  });
+});
