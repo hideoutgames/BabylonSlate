@@ -99,10 +99,13 @@ import {
 import { useInspectWorldPoll } from "../lib/use-inspect-world-poll";
 import { useDebugConsoleLogs } from "../lib/use-debug-console-logs";
 import { usePlay } from "../context/play-context";
+import type { BtStateObservers } from "../lib/bt-state-observers";
 
 export interface PlayOverlayProps {
   sessionOwner?: GameSessionOwner<PlaySessionResult>;
   sessionTicket?: GameSessionTicket;
+  /** Behaviour Tree editor panels showing live state; the runtime publishes `btState` only while one does. */
+  btStateObservers?: BtStateObservers;
   embedded?: boolean;
   simulationSession?: SimulationSession;
   simulationAssetGuids?: readonly string[];
@@ -224,6 +227,7 @@ function emptyPlayResult(): PlaySessionResult {
 function PlayOverlayView({
   sessionOwner,
   sessionTicket,
+  btStateObservers,
   embedded = false,
   simulationSaveStorage,
   simulationSession,
@@ -840,6 +844,17 @@ function PlayOverlayView({
         return;
       }
       sessionRef.current = session;
+      // The runtime publishes `btState` only while a Behaviour Tree editor shows it.
+      let btStateSent = false;
+      const syncBtStateObserved = (observed: boolean) => {
+        if (observed === btStateSent) return;
+        btStateSent = observed;
+        session.setBehaviourTreeStateObserved(observed);
+        // The editor would flash this stale state when it next opens, before fresh state arrives.
+        if (!observed) reportBtState(null);
+      };
+      syncBtStateObserved(btStateObservers?.observed() ?? false);
+      const unsubscribeBtStateObservers = btStateObservers?.subscribe(syncBtStateObserved);
       if (simulationSession && sessionOwner && sessionTicket) {
         sessionOwner.setBeforeStop(sessionTicket, () => simulationSession.resolveStop(() => session.captureSimulationScene()));
       }
@@ -989,12 +1004,13 @@ function PlayOverlayView({
         resizeObserver.disconnect();
         window.clearInterval(movePoll);
         detachLifecycle();
+        unsubscribeBtStateObservers?.();
         reportBtState(null);
         finishSessionRef.current();
       };
     });
     return () => { cancelled = true; disposePresentation?.(); };
-  }, [sharedEngine, injectFixtureThrow, reportBtState, pushLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, simulationSession, diagnosticStore, testMode]);
+  }, [sharedEngine, injectFixtureThrow, reportBtState, btStateObservers, pushLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, simulationSession, diagnosticStore, testMode]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;

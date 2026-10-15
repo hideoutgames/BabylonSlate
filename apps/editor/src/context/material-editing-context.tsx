@@ -67,7 +67,7 @@ const FUNCTION_KINDS = ["material-function"] as const;
  * function of mesh, camera, screen and parameter inputs, which redraw through
  * gestures, resizes and edits.
  */
-const TIME_DRIVEN_NODE_TYPES: ReadonlySet<string> = new Set(["input.time", "input.waterSurface"]);
+const TIME_DRIVEN_NODE_TYPES: ReadonlySet<string> = new Set(["input.time", "input.waterSurface", "input.waterWaves"]);
 
 /** Trailing debounce: the last edit always compiles, unlike a rate limiter. */
 const IDLE_DEBOUNCE_MS = 220;

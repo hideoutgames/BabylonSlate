@@ -3,7 +3,13 @@ import { PAINTER_MAX_COMMANDS, PAINTER_MAX_MASK_DEPTH, PAINTER_MAX_PATH_SEGMENTS
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import { componentOwners } from "./world-component-index";
 
-type State = { commands: PainterCommand[]; path: PainterPathSegment[]; maskDepth: number; segments: number };
+/** `revision` names the current command stream; `sentRevision` is the one the last flush sent to the renderer. */
+type State = { commands: PainterCommand[]; path: PainterPathSegment[]; maskDepth: number; segments: number; revision: number; sentRevision?: number };
+
+/** One clock for every painter, so a revision never repeats across painters, components or runtimes in this realm. */
+let revisionClock = 0;
+/** Marks a command change: any payload stamped with an earlier revision is now stale. */
+function touch(state: State): void { state.revision = ++revisionClock; }
 
 /** Retained drawing belongs to the live component, never a debug overlay or a global canvas. */
 export class Painter2DRuntime {
@@ -16,11 +22,11 @@ export class Painter2DRuntime {
     const properties = parsePainter2DProperties(Object.fromEntries(component.variables));
     let state = this.states.get(component);
     if (!state) {
-      state = { commands: properties.commands, path: [], maskDepth: properties.commands.reduce((depth, command) => depth + (command.kind === "pushMask" ? 1 : command.kind === "popMask" ? -1 : 0), 0), segments: properties.commands.reduce((count, command) => count + (command.kind === "popMask" ? 0 : command.path.length), 0) };
+      state = { commands: properties.commands, path: [], maskDepth: properties.commands.reduce((depth, command) => depth + (command.kind === "pushMask" ? 1 : command.kind === "popMask" ? -1 : 0), 0), segments: properties.commands.reduce((count, command) => count + (command.kind === "popMask" ? 0 : command.path.length), 0), revision: ++revisionClock };
       this.states.set(component, state);
       if (state.commands.length) this.drawn.add(component);
     }
-    return { ...properties, commands: structuredClone(state.commands) };
+    return { ...properties, commands: structuredClone(state.commands), revision: state.revision };
   }
 
   execute(component: ActorComponent, name: string, args: Record<string, unknown>): boolean {
@@ -30,12 +36,13 @@ export class Painter2DRuntime {
     const properties = parsePainter2DProperties({ ...Object.fromEntries(component.variables), commands: [] });
     const state = this.states.get(component)!;
     if (name === "painterClear") {
+      if (state.commands.length) touch(state);
       state.commands = []; state.path = []; state.maskDepth = 0; state.segments = 0; this.dirty.add(component); return true;
     }
     if (name === "painterBeginPath") { state.path = []; return true; }
     if (name === "painterPopMask") {
       if (!state.maskDepth || state.commands.length >= PAINTER_MAX_COMMANDS) return false;
-      state.maskDepth--; state.commands.push({ kind: "popMask" }); this.dirty.add(component); return true;
+      state.maskDepth--; state.commands.push({ kind: "popMask" }); touch(state); this.dirty.add(component); return true;
     }
     const point = (key: string) => painterPoint(args[key]);
     const scalar = (key: string, fallback = 0): number | null => !Object.hasOwn(args, key) ? fallback
@@ -97,6 +104,7 @@ export class Painter2DRuntime {
     } else if (name === "painterCutOutPath") state.commands.push({ kind: "cutout", path, fillRule });
     else state.commands.push({ kind: "draw", path, fill, stroke, fillRule, style: { fillColor: properties.fillColor, strokeColor: properties.strokeColor, strokeWidth: properties.strokeWidth, lineCap: properties.lineCap, lineJoin: properties.lineJoin } });
     state.segments += path.length;
+    touch(state);
     this.dirty.add(component);
     return true;
   }
@@ -113,13 +121,21 @@ export class Painter2DRuntime {
         const state = this.states.get(component);
         this.drawn.delete(component);
         if (!state || (!state.commands.length && !state.path.length)) continue;
+        if (state.commands.length) touch(state);
         state.commands = []; state.path = []; state.maskDepth = 0; state.segments = 0; this.dirty.add(component);
       }
     }
   }
 
   flush(send: (component: ActorComponent, painter: Painter2DProperties) => void): void {
-    for (const component of this.dirty) if (!component.destroyed && component.owner && !component.owner.destroyed) send(component, this.payload(component));
+    for (const component of this.dirty) {
+      if (component.destroyed || !component.owner || component.owner.destroyed) continue;
+      // The last flush already sent this stream (the edits changed no command): nothing to clone or send.
+      const state = this.states.get(component);
+      if (!state || state.revision === state.sentRevision) continue;
+      state.sentRevision = state.revision;
+      send(component, this.payload(component));
+    }
     this.dirty.clear();
   }
 }

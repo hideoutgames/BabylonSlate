@@ -1,6 +1,6 @@
 /** Browser oracle: GPU object-ID picking follows shader-displaced geometry. */
 import {
-  Camera, Color4, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, Vector3,
+  Camera, Color4, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, Vector3, VertexBuffer,
 } from "@babylonjs/core";
 import {
   compileMaterialPlan, createAppWebGpuEngine, gpuPickMesh, pickAtCanvas, requestRenderPath,
@@ -107,7 +107,17 @@ export async function runGpuPickProof(backend: "webgl2" | "webgpu") {
     camera.fov = 2 * Math.atan(2 / CAMERA_DISTANCE);
     for (let frame = 0; frame < 2; frame++) await new Promise<void>((resolve) => scene.onAfterRenderObservable.addOnce(() => resolve()));
     const perspective = await pickAll();
-    const result = { orthographic, perspective, pickTargetSizes: [...pickTargetSizes] };
+    // In-place changes between taps, with no frame in between and no signal the pick listens to:
+    // the next tap must still draw the changed mesh instead of selecting what lies behind it.
+    const plainPixel = toPixel(-2, 0);
+    const plainMaterial = plain.material as StandardMaterial;
+    const before = await at(plainPixel);
+    plainMaterial.markDirty(true);
+    const afterMarkDirty = await at(plainPixel);
+    plain.setVerticesData(VertexBuffer.ColorKind, new Float32Array(plain.getTotalVertices() * 4).fill(1));
+    plain.useVertexColors = true;
+    const afterVertexColors = await at(plainPixel);
+    const result = { orthographic, perspective, inPlace: { before, afterMarkDirty, afterVertexColors }, pickTargetSizes: [...pickTargetSizes] };
     compiled.dispose();
     return { effectiveBackend: engine.isWebGPU ? "webgpu" : (engine as Engine).webGLVersion === 2 ? "webgl2" : "webgl1", ...result };
   } finally {

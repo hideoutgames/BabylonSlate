@@ -390,6 +390,7 @@ describe("runtime navmesh import and crowd", () => {
       await runtime.loadNavMesh(bytes);
       runtime.start();
       runtime.realizePlayWorld();
+      runtime.applyBehaviourTreeStateObserved(true);
       for (let i = 0; i < 30; i += 1) runtime.tick();
       const actor = runtime.getWorld().findActor("agent")!;
       expect(actor.transform.position.y).toBeLessThan(5.5);

@@ -109,6 +109,12 @@ export default defineConfig({
       ...(reactProfiling ? { "react-dom/client": "react-dom/profiling" } : {}),
     },
   },
+  // Workers build as ES modules, as in the player: the default IIFE inlines every dynamic import, which
+  // would pull the lazily loaded Rapier 2D and Recast backends into the game worker's entry file. Every
+  // bundled worker is constructed with `{ type: "module" }`; classic workers load from `public/` unbundled.
+  worker: {
+    format: "es",
+  },
   // Localhost only by default; `--host` opts in to LAN access (see README).
   server: {
     port: 5173,

@@ -417,9 +417,12 @@ it("disables every row's entry menu while a tree change is in flight and re-enab
   fireEvent.click(screen.getByRole("button", { name: "Entry Menu For Sword" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate Subtree" }));
   await waitFor(() => expect((screen.getByRole("button", { name: "Add Root" }) as HTMLButtonElement).disabled).toBe(true));
+  // A closing menu leaves the DOM after the click that closed it; opening the next while it lingers would match two menus.
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   fireEvent.click(screen.getByRole("button", { name: "Entry Menu For Axe" }));
   expect(screen.getByRole("menuitem", { name: "Rename" }).hasAttribute("data-disabled")).toBe(true);
   fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   await act(async () => { finish(true); });
   await waitFor(() => expect((screen.getByRole("button", { name: "Add Root" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Entry Menu For Axe" }));

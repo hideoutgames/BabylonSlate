@@ -4,6 +4,7 @@ import { EnvironmentSampleBlock } from "./environment-sample-block";
 import { LogicalSceneTextureBlock } from "./logical-scene-texture-block";
 import { SlateVoronoiNoiseBlock } from "./voronoi-noise-block";
 import { WaterSurfaceBlock } from "./water-surface-block";
+import type { WaterWavesBlock } from "./water-waves-block";
 import {
   AddBlock,
   ArcTan2Block,
@@ -95,6 +96,10 @@ export interface MaterialPlumbing {
   position?: NodeMaterialConnectionPoint;
   world?: NodeMaterialConnectionPoint;
   worldPosition?: NodeMaterialConnectionPoint;
+  /** The surface's world position before any displacement: the rest point a Water Waves node evaluates at. */
+  restWorldPosition?: NodeMaterialConnectionPoint;
+  /** The graph's one Water Waves block, when it holds a Water Waves node. */
+  waterWaves?: WaterWavesBlock;
   /** Offset used only to restore authored world-space graph input semantics. */
   worldOrigin?: NodeMaterialConnectionPoint;
   view?: NodeMaterialConnectionPoint;
@@ -609,9 +614,18 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     const block = new GameTimeInputBlock(name);
     return single(block, {}, { time: block.output });
   },
-  "input.waterSurface": ({ name }) => {
+  "input.waterSurface": ({ name, plumbing }) => {
     const block = new WaterSurfaceBlock(name);
+    // With a Water Waves node the water mesh uploads no displaced vertices: Wave Height and Simulation Time follow that node.
+    plumbing.waterWaves?.height.connectTo(block.gpuWaveHeight);
+    plumbing.waterWaves?.time.connectTo(block.gpuTime);
     return single(block, {}, Object.fromEntries(block.outputs.map((output) => [output.name, output])));
+  },
+  "input.waterWaves": ({ plumbing }) => {
+    // The compiler creates the one block, at the rest world position, before any node is realized.
+    const block = plumbing.waterWaves;
+    if (!block) throw new Error("Water Waves is only available in a Surface material");
+    return { blocks: [], inputs: {}, outputs: { offset: block.offset, height: block.height, normal: block.normal, time: block.time } };
   },
   "input.cameraPosition": ({ name, plumbing }) => {
     const relative: BlockRealization = plumbing.cameraPosition

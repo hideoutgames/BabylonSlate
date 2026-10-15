@@ -335,9 +335,10 @@ function ContentBrowserWorkspaceBody({
   useEffect(() => {
     if (hidden || !phone) setFoldersOpen(false);
   }, [hidden, phone]);
-  const { projectGuid, assetRegistry, registryEpoch, pluginDescriptors, showPluginContent } = registry;
+  const { projectGuid, assetRegistry, registryEpoch, encodingTextures, pluginDescriptors, showPluginContent } = registry;
   const {
     refreshAssetRegistry,
+    noteAssetsCreated,
     renameAsset,
     repathDocument,
     repathProjectFolder,
@@ -1250,7 +1251,8 @@ function ContentBrowserWorkspaceBody({
                 browse.relative ? `${browse.relative}/${fileName}` : fileName,
                 buildMaterialInstanceAssetResult(parent.header, newAssetGuid(), name),
               );
-              await refreshAssetRegistry();
+              // The mounted registry indexed the instance on write: no rescan.
+              noteAssetsCreated();
               await openOrFocusDocument(created);
             } catch (error) {
               setOperationError(error instanceof Error ? error.message : String(error));
@@ -1401,6 +1403,7 @@ function ContentBrowserWorkspaceBody({
       thumbnailsEnabled,
       openMoveForSnapshot,
       openOrFocusDocument,
+      noteAssetsCreated,
       refreshAssetRegistry,
       requestDeleteSnapshot,
       selectedFolderPath,
@@ -1769,7 +1772,8 @@ function ContentBrowserWorkspaceBody({
           : nameDialog.value.trim();
         if (!relative) return;
         await assetRegistry.createFolder(selectedRoot.rootId, relative);
-        await refreshAssetRegistry();
+        // The mounted registry recorded the folder on write: no rescan.
+        noteAssetsCreated();
         setSelectedFolderPath(`${selectedRoot.pathPrefix}/${relative}`);
       } else if (nameDialog.kind === "rename-folder") {
         const fromPath = nameDialog.path;
@@ -1836,6 +1840,7 @@ function ContentBrowserWorkspaceBody({
     busy,
     renameAsset,
     allAssets,
+    noteAssetsCreated,
     refreshAssetRegistry,
     refuseTheirsAssetPaths,
     repairDocumentPath,
@@ -2421,7 +2426,9 @@ function ContentBrowserWorkspaceBody({
             : undefined,
       });
       setNewAssetOpen(false);
-      await refreshAssetRegistry();
+      // The mounted registry indexed the asset on write; a remount would
+      // rescan every root while the new tile waits.
+      noteAssetsCreated();
       if (type === "Scene" || type === "DataDefinition" || type === "DataTree") {
         await openOrFocusDocument(created);
       }
@@ -2443,8 +2450,8 @@ function ContentBrowserWorkspaceBody({
     newWaterLook,
     newAssetType,
     getOpenDocuments,
+    noteAssetsCreated,
     openOrFocusDocument,
-    refreshAssetRegistry,
     selectedRoot,
   ]);
 
@@ -2904,6 +2911,7 @@ function ContentBrowserWorkspaceBody({
                 selectedFolderPaths={selectedFolderPaths}
                 thumbnailUrls={thumbnailUrls}
                 compileErrors={compileErrorGuids}
+                encodingTextures={encodingTextures}
                 typeVisualFor={typeVisualFor}
                 folderIcons={pluginRootIcons}
                 sourceControlEnabled={sourceControl.enabled}

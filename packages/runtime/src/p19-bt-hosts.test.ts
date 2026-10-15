@@ -132,6 +132,7 @@ describe("P19 behaviour tree task hosts", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     runtime.tick();
     expect(
       commands.filter((command) => command.type === "btState").at(-1),
@@ -166,6 +167,7 @@ describe("P19 behaviour tree task hosts", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     runtime.tick();
     const mid = commands.filter((command) => command.type === "animState");
     expect(mid).toEqual([
@@ -267,6 +269,7 @@ describe("P19 behaviour tree task hosts", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     runtime.tick();
     expect(commands.filter((command) => command.type === "animState")).toEqual([]);
     expect(
@@ -350,6 +353,7 @@ describe("P19 behaviour tree task hosts", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     runtime.tick();
     expect(commands.some((command) => command.type === "animState")).toBe(true);
     expect(
@@ -390,6 +394,7 @@ describe("P19 behaviour tree task hosts", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     runtime.tick();
     expect(commands.filter((command) => command.type === "animState")).toEqual([
       expect.objectContaining({

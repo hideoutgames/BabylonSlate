@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createDefaultBehaviourTree } from "@babylonslate/behaviour-tree";
 import { createActor, createDefaultScene, createDefaultSceneLayer, type SaveGameStorage } from "@babylonslate/core";
 import {
   readSnapshotHeader,
@@ -307,6 +308,31 @@ describe("worker entry snapshot transport", () => {
     expect(() => send!({ type: "step" })).toThrow("tick failed");
     runFrames(3);
     expect(runtime.getWorld().clock.tickIndex).toBe(tickIndex);
+  });
+
+  it("posts btState only while the host observes behaviour tree state, starting with the current state", async () => {
+    const guard = createActor("guard", "Guard", {
+      components: [{ id: "bt-1", classId: "BehaviourTreeComponent", properties: { treeGuid: "tree-1" } }],
+    });
+    const { posts, runFrames, kinds } = await bootWorker(
+      { type: "load", sceneAssetGuid: "main", scene: { ...createDefaultScene(), actors: [guard] } },
+      [{ type: "loadBehaviourTrees", trees: [{ guid: "tree-1", document: createDefaultBehaviourTree("Guard") }] }]);
+    const btStates = () => posts.flatMap((post) => post.kind === "command" && post.command.type === "btState" ? [post.command] : []);
+    for (let i = 0; i < 100 && !kinds().includes("sceneRealized"); i++) {
+      runFrames(1);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    runFrames(4);
+    expect(btStates()).toEqual([]);
+
+    send!({ type: "setBehaviourTreeStateObserved", observed: true });
+    expect(btStates()).toEqual([expect.objectContaining({ type: "btState", status: "success" })]);
+    runFrames(4);
+    expect(btStates()).toHaveLength(1);
+
+    send!({ type: "setBehaviourTreeStateObserved", observed: false });
+    send!({ type: "setBehaviourTreeStateObserved", observed: true });
+    expect(btStates()).toHaveLength(2);
   });
 
   it("reports the stop only after the host answers the save writes still in flight", async () => {

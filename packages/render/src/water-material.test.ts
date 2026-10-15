@@ -10,7 +10,10 @@ import {
 import { updateSceneRenderingSettings } from "./render-settings";
 import { waterFftDiagnostics, waterFftForSurface } from "./water-fft";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
-import { WATER_FFT_SAMPLER, WaterMaterialPlugin, stripShaderComments, waterHazeConstants, waterOutlineVertexSource, waterShaderSource, type WaterLook } from "./water-material";
+import {
+  WATER_CLOCK_UNIFORM, WATER_FFT_SAMPLER, WATER_SWELL_UNIFORMS, WaterMaterialPlugin, WaterVertexWaves, stripShaderComments, waterHazeConstants, waterOutlineVertexSource,
+  waterShaderSource, type WaterLook,
+} from "./water-material";
 import { createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater, updateWaterMeshDefinition } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 
@@ -735,6 +738,27 @@ describe("Water material binding", () => {
       expect(bound(pluginOf(a), a)).toEqual([0, 0, 0, 0]);
       setWaterGpuWaves(a, true); updateSceneWater(scene);
       expect(bound(pluginOf(a), a)).toEqual(offsetA);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
+  it("binds a surface without a plugin the same swell the plugin binds to another pass, plus its own clock", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      const { plugin } = water(scene), mesh = plugin.mesh!;
+      const waves = new WaterVertexWaves(plugin.water, plugin.body);
+      plugin.time = waves.time = 7.25;
+      const record = () => {
+        const vectors = new Map<string, number[]>();
+        return { vectors, sink: { setFloat4: (name: string, ...values: number[]) => { vectors.set(name, values); }, setTexture: () => {} } };
+      };
+      const pass = record(), own = record();
+      plugin.bindVertexWaves(pass.sink as unknown as Parameters<WaterMaterialPlugin["bindVertexWaves"]>[0], scene, mesh);
+      waves.bind(own.sink, scene, mesh);
+      // Every swell uniform the node's shader reads is bound, and bound to what the plugin binds; nothing else but the clock is.
+      expect([...own.vectors.keys()].sort()).toEqual([...WATER_SWELL_UNIFORMS, WATER_CLOCK_UNIFORM].sort());
+      for (const name of WATER_SWELL_UNIFORMS) expect(own.vectors.get(name), name).toEqual(pass.vectors.get(name));
+      expect(own.vectors.get(WATER_CLOCK_UNIFORM)).toEqual([7.25, 0, 0, 0]);
+      expect(own.vectors.get("slateWaterSwellAmp0")![0]).toBeGreaterThan(0);
     } finally { scene.dispose(); engine.dispose(); }
   });
 

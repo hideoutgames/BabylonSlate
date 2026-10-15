@@ -79,6 +79,7 @@ describe("BehaviourTreeRuntime", () => {
         entryPoints: [{ name: "activate", event: "onActivate", isAsync: false }] }]);
       runtime.start();
       runtime.realizePlayWorld();
+      runtime.applyBehaviourTreeStateObserved(true);
       runtime.tick();
       expect(btStates(commands).at(-1)).toMatchObject({ btNodeId: "wait", blackboard: { items: ["pushed"] } });
 
@@ -131,6 +132,7 @@ describe("BehaviourTreeRuntime", () => {
         entryPoints: [{ name: "onBtTick", event: "onBtTick", isAsync: false }] }]);
       runtime.start();
       runtime.realizePlayWorld();
+      runtime.applyBehaviourTreeStateObserved(true);
       const guard = runtime.getWorld().findActor("guard")!;
       const published = () => btStates(commands).length;
       /** Runs one tick doing `step` and returns the Blackboard published by it, if any. */

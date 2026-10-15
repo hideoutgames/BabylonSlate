@@ -36,8 +36,9 @@ function inlineSpan(entry: ChunkEntry): { offset: number; length: number } | nul
  *
  * Resolves null whenever carrying cannot be shown to be exactly what a full
  * decode and re-encode would write: a missing or short blob, a chunk that does
- * not match its digest, an inline chunk a re-encode would externalise, a
- * bundled asset, or a file that changed meanwhile. The caller then decodes the
+ * not match its digest, a chunk a re-encode would store the other way (an
+ * inline one it would externalise, a blob it would inline), a bundled asset,
+ * or a file that changed meanwhile. The caller then decodes the
  * whole file, which reports the real failure.
  */
 export async function carryStoredChunks(
@@ -51,8 +52,8 @@ export async function carryStoredChunks(
   const entries = header.chunks.filter((entry) => !options.omit?.has(entry.id));
   const wanted = (entry: ChunkEntry) => options.load?.(entry) === true;
 
-  // A re-encode moves an inline chunk this large to the blob store, so it cannot be copied as it is.
-  if (entries.some((entry) => inlineSpan(entry) && !wanted(entry) && entry.byteLength >= DEFAULT_BLOB_THRESHOLD)) return null;
+  // A re-encode moves an inline chunk this large to the blob store and keeps a smaller externalised one inline, so neither is copied as it is.
+  if (entries.some((entry) => !wanted(entry) && (inlineSpan(entry) ? entry.byteLength >= DEFAULT_BLOB_THRESHOLD : entry.byteLength < DEFAULT_BLOB_THRESHOLD))) return null;
 
   let region: Uint8Array = new Uint8Array(0);
   let regionStart = 0;

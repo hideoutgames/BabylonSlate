@@ -1314,10 +1314,11 @@ function initializeEngine(
     onTextureError: (diagnostic) => {
       options.onMaterialDiagnostic?.(diagnostic);
     },
-    onMaterialReady: (materialScene) => {
+    onMaterialReady: (materialScene, assetGuid) => {
       // Babylon completes deferred post-process effects on the attached pass.
       // Rebuilding here releases the ready material and starts compilation again.
-      if (materialScene === scene) editorSync?.refreshMaterialsCoalesced();
+      // Only the editor actors that resolved this Material are rebound.
+      if (materialScene === scene) editorSync?.refreshMaterialsCoalesced(assetGuid);
       for (const root of binding.meshes.values()) {
         if (root.getScene() === materialScene) { refreshText2DMaterials(root, binding); refreshJoystick2DMaterials(root, binding); refreshUIControl2DMaterials(root, binding); }
       }

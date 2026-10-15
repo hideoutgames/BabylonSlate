@@ -89,7 +89,8 @@ const WATER_STYLIZED_DEFINE = "SLATE_WATER_STYLIZED";
 const WATER_TOON_DEFINE = "SLATE_WATER_TOON";
 /**
  * Built-in water evaluates the swell in its vertex shader from the same uniforms the fragment uses: the mesh uploads a
- * static rest grid and only the clock advances. Custom Material water keeps CPU-displaced vertices.
+ * static rest grid and only the clock advances. Custom Material water keeps CPU-displaced vertices, unless its graph holds
+ * a Water Waves node, whose block sets this define for the meshes that have a `WaterVertexWaves`.
  */
 export const WATER_GPU_WAVES_DEFINE = "SLATE_WATER_GPU_WAVES";
 /**
@@ -4077,8 +4078,15 @@ if (swRemoved) { discard; }
  * GLSL-shaped: `A.` attributes, `U.` uniforms, `S.` the view matrix's owner and `O.` outputs are bound per language,
  * then `toWgsl` translates it. Other passes that draw built-in water with their own vertex shader (the shared outline
  * mask) include the same displacement through `waterOutlineVertexSource`, without the material's `vPositionW` output.
+ *
+ * `gradient` (a Custom Material's Water Waves node, `waterWaveBlockSource`) also leaves `swvNormal`, the Eulerian surface
+ * normal at the displaced point, which the built-in fragment shader derives for itself: it accumulates what
+ * `evaluateWaterWaves` does (∇₀H and S = Σ q·a·k·sin p·d ⊗ d, with the warp's M) and takes `waterEulerianGradient`
+ * against the rest slope of `slateWaterBaseNormal`. Like the kernel it divides by a Jacobian that holds the bank fade's
+ * gain but not that gain's own slope, so inside a finite body's fade band the normal is a touch off the CPU mesh's. The
+ * band's vertex part is not part of it.
  */
-function vertexWaveSource(materialOutputs: boolean): string {
+function vertexWaveSource(materialOutputs: boolean, gradient = false): string {
   const swell = Array.from({ length: WATER_WAVE_MAX_COMPONENTS }, (_, i) => `
 vec4 swvWD${i} = U.${SWELL_DIRECTION[i]};
 vec4 swvWA${i} = U.${SWELL_AMPLITUDE[i]};
@@ -4090,10 +4098,10 @@ float swvS${i} = sin(swvP${i});
 float swvC${i} = cos(swvP${i});
 float swvG${i} = (1.0 + swvWG${i}.w * cos(dot(swvWG${i}.xy, swvRestW) + swvWG${i}.z)) * (1.0 / sqrt(1.0 + 0.5 * swvWG${i}.w * swvWG${i}.w));
 swvH += mix(swvS${i}, (exp(swvS${i} - 1.0) - ${f(WATER_CREST_MEAN)}) / ${f(WATER_CREST_RANGE)}, swvChop) * (swvWA${i}.x * swvF${i} * swvG${i});
-swvD += swvWD${i}.xy * (swvWA${i}.z * swvF${i} * swvC${i});${ifFft(`
+swvD += swvWD${i}.xy * (swvWA${i}.z * swvF${i} * swvC${i});${gradient ? swellGradientSource(i) : ifFft(`
 swvShear += vec3(swvWD${i}.x * swvWD${i}.x, swvWD${i}.x * swvWD${i}.y, swvWD${i}.y * swvWD${i}.y) * (swvWA${i}.z * swvF${i} * swvWD${i}.z * swvS${i});`, 1, FFT_VERTEX)}`).join("");
   // With the band's vertex part: the warp's M = I + dW/drest for the swell's Jacobian (the band's fold limit).
-  const warpGradient = ifFft(`
+  const warpGradient = gradient ? "" : ifFft(`
 vec3 swvWarpG = vec3(0.0);${SWELL_WARP.map((_, t) => `
 swvWarpG -= vec3(swvWW${t}.x * swvWW${t}.x, swvWW${t}.x * swvWW${t}.y, swvWW${t}.y * swvWW${t}.y) * (swvWW${t}.z * sin(swvWP${t}));`).join("")}
 vec3 swvWarpM = vec3(1.0 + swvWarpG.x, swvWarpG.y, 1.0 + swvWarpG.z);`, 1, FFT_VERTEX);
@@ -4104,9 +4112,11 @@ float swvChop = U.slateWaterShape.x;
 worldPos = vec4(worldPos.xyz + U.slateWaterGridOffset.xyz, worldPos.w);
 vec2 swvRest = worldPos.xz;
 float swvH = 0.0;
-vec2 swvD = vec2(0.0);${ifFft(`
+vec2 swvD = vec2(0.0);${gradient ? `
+vec2 swvHg = vec2(0.0);
+vec3 swvJ = vec3(0.0);` : ifFft(`
 vec3 swvShear = vec3(0.0);`, 1, FFT_VERTEX)}
-// The shared kernel's warp: every component is evaluated at u = rest + W(rest) (\`waterSwellWarp\`).${swellWarpSource("swv", "swvRest", false)}${warpGradient}
+// The shared kernel's warp: every component is evaluated at u = rest + W(rest) (\`waterSwellWarp\`).${swellWarpSource("swv", "swvRest", gradient)}${warpGradient}
 vec2 swvRestW = swvRest + swvWarp;
 ${swell}
 float swvFade = U.slateWaterSwellInfo.x;
@@ -4114,15 +4124,56 @@ float swvFade = U.slateWaterSwellInfo.x;
 swvFade = swvFade * A.slateWaterBlend.y;
 #endif
 float swvBankT = clamp(A.slateWaterData.y / max(swvFade, 0.000001), 0.0, 1.0);
-float swvGain = mix(1.0, swvBankT * swvBankT * (3.0 - 2.0 * swvBankT), step(0.000001, swvFade));${fftVertexSource()}
+float swvGain = mix(1.0, swvBankT * swvBankT * (3.0 - 2.0 * swvBankT), step(0.000001, swvFade));${gradient ? "" : fftVertexSource()}
 #ifdef ${WATER_BLEND_DEFINE}
 swvH = swvH * A.slateWaterBlend.x;
 swvD = swvD * A.slateWaterBlend.y;
 #endif
 swvD = swvD * swvGain;
-worldPos = vec4(worldPos.xyz + vec3(swvD.x, swvH, swvD.y), worldPos.w);${materialOutputs ? "\nO.vPositionW = worldPos.xyz;" : ""}
+worldPos = vec4(worldPos.xyz + vec3(swvD.x, swvH, swvD.y), worldPos.w);${materialOutputs ? "\nO.vPositionW = worldPos.xyz;" : ""}${gradient ? swellNormalSource() : ""}
 #endif
 `;
+}
+
+/**
+ * Component `i`'s share of the swell's gradient terms (`vertexWaveSource` with `gradient`), as `evaluateWaterWaves`
+ * accumulates them: `swvHg` is ∇ᵤH before the warp's M (a·(g·k·d·slope − gs·∇group), gs the wave group's own slope times
+ * the wave value) and `swvJ` the offset's shear S = Σ d·k·sin p·(dx², dx·dz, dz²) with d = q·a, which is zero without
+ * Gerstner waves because the uniform's q·a is.
+ */
+function swellGradientSource(i: number): string {
+  return `
+float swvV${i} = mix(swvS${i}, (exp(swvS${i} - 1.0) - ${f(WATER_CREST_MEAN)}) / ${f(WATER_CREST_RANGE)}, swvChop);
+float swvL${i} = mix(swvC${i}, exp(swvS${i} - 1.0) * swvC${i} / ${f(WATER_CREST_RANGE)}, swvChop);
+float swvQ${i} = swvWG${i}.w * (1.0 / sqrt(1.0 + 0.5 * swvWG${i}.w * swvWG${i}.w)) * sin(dot(swvWG${i}.xy, swvRestW) + swvWG${i}.z) * swvV${i};
+swvHg += swvWD${i}.xy * (swvWA${i}.x * swvF${i} * swvG${i} * swvWD${i}.z * swvL${i}) - swvWG${i}.xy * (swvWA${i}.x * swvF${i} * swvQ${i});
+swvJ += vec3(swvWD${i}.x * swvWD${i}.x, swvWD${i}.x * swvWD${i}.y, swvWD${i}.y * swvWD${i}.y) * (swvWA${i}.z * swvF${i} * swvWD${i}.z * swvS${i});`;
+}
+
+/**
+ * The end of `vertexWaveSource` with `gradient`: the blend's height scale and offset scale (times the bank gain) scale
+ * the gradient and the shear as they scale H and D, the warp turns ∇ᵤH into ∇₀H, the rest slope of
+ * `slateWaterBaseNormal` joins it, and `waterEulerianGradient` (J = I − gain·S·M) makes it the slope of the displaced
+ * surface, from which the world normal follows.
+ */
+function swellNormalSource(): string {
+  return `
+float swvHs = 1.0;
+float swvDs = swvGain;
+#ifdef ${WATER_BLEND_DEFINE}
+swvHs = A.slateWaterBlend.x;
+swvDs = swvDs * A.slateWaterBlend.y;
+#endif
+vec2 swvHw = vec2(swvWarpM.x * swvHg.x + swvWarpM.y * swvHg.y, swvWarpM.y * swvHg.x + swvWarpM.z * swvHg.y) * swvHs;
+vec3 swvBase = A.slateWaterBaseNormal;
+vec2 swvSlope = swvHw - swvBase.xz / max(swvBase.y, 0.000001);
+float swvJa = 1.0 - swvDs * (swvJ.x * swvWarpM.x + swvJ.y * swvWarpM.y);
+float swvJb = -swvDs * (swvJ.x * swvWarpM.y + swvJ.y * swvWarpM.z);
+float swvJc = -swvDs * (swvJ.y * swvWarpM.x + swvJ.z * swvWarpM.y);
+float swvJd = 1.0 - swvDs * (swvJ.y * swvWarpM.y + swvJ.z * swvWarpM.z);
+float swvJi = 1.0 / max(swvJa * swvJd - swvJb * swvJc, 0.000001);
+vec2 swvEuler = vec2(swvJd * swvSlope.x - swvJc * swvSlope.y, swvJa * swvSlope.y - swvJb * swvSlope.x) * swvJi;
+vec3 swvNormal = normalize(vec3(-swvEuler.x, 1.0, -swvEuler.y));`;
 }
 
 /**
@@ -4186,12 +4237,19 @@ export function waterVertexSource(language: ShaderLanguage): { definitions: stri
 }
 
 /**
+ * Uniforms the vertex swell reads (`bindWaterSwellUniforms` sets them): the choppiness, the bank fade, the grid offset, and
+ * every component's and the warp's constants.
+ */
+export const WATER_SWELL_UNIFORMS: readonly string[] = [
+  "slateWaterShape", "slateWaterSwellInfo", "slateWaterGridOffset", ...SWELL_DIRECTION, ...SWELL_AMPLITUDE, ...SWELL_GROUP, ...SWELL_WARP,
+];
+/**
  * Uniforms the vertex swell and the band's vertex displacement read (`WaterMaterialPlugin.bindVertexWaves` sets them
  * on another pass's effect, with `WATER_FFT_SAMPLER`).
  */
-export const WATER_VERTEX_WAVE_UNIFORMS: readonly string[] = [
-  "slateWaterShape", "slateWaterSwellInfo", "slateWaterGridOffset", ...SWELL_DIRECTION, ...SWELL_AMPLITUDE, ...SWELL_GROUP, ...SWELL_WARP, "slateWaterFft", ...FFT_CASCADE_UNIFORMS,
-];
+export const WATER_VERTEX_WAVE_UNIFORMS: readonly string[] = [...WATER_SWELL_UNIFORMS, "slateWaterFft", ...FFT_CASCADE_UNIFORMS];
+/** The surface's water clock in seconds (x), for a Custom Material's Water Waves node (`WaterVertexWaves.bind`). */
+export const WATER_CLOCK_UNIFORM = "slateWaterClock";
 /** `vertexWaveDefines` per blend state (off, on) and cascades the vertex samples (0-3): built once. */
 const VERTEX_WAVE_DEFINES: ReadonlyArray<ReadonlyArray<readonly string[]>> = [false, true].map((blend) =>
   Array.from({ length: WATER_FFT_CASCADES_MAX + 1 }, (_, cascades) => [
@@ -4257,6 +4315,87 @@ export function waterGridOffset(mesh: AbstractMesh | null | undefined): Float64A
   const m = mesh!.getWorldMatrix().m, x = offset[0]!, z = offset[1]!;
   gridWorld[0] = x * m[0]! + z * m[8]!; gridWorld[1] = x * m[1]! + z * m[9]!; gridWorld[2] = x * m[2]! + z * m[10]!;
   return gridWorld;
+}
+
+/** Where a pass's float4 uniforms go: an `Effect`, or whatever records the vectors a pass would receive. */
+export interface WaterUniformSink {
+  setFloat4(name: string, x: number, y: number, z: number, w: number): unknown;
+}
+
+/**
+ * Sets `WATER_SWELL_UNIFORMS`: the grid offset (world X/Z translation of the uploaded rest grid), each component's constants
+ * (`swell`: three vec4s a slot) and the warp's (`warp`), the bank fade length and the choppiness. The material plugin binds
+ * them to another pass's effect (`WaterMaterialPlugin.bindVertexWaves`) and a surface without a plugin binds them to its
+ * Custom Material (`WaterVertexWaves.bind`), so both displace identically.
+ */
+export function bindWaterSwellUniforms(
+  sink: WaterUniformSink, grid: ArrayLike<number>, swell: Float32Array, warp: Float64Array, bankFade: number, choppiness: number,
+): void {
+  sink.setFloat4("slateWaterGridOffset", grid[0]!, grid[1]!, grid[2]!, 0);
+  for (let i = 0; i < WATER_WAVE_MAX_COMPONENTS; i++) {
+    const o = i * WATER_WAVE_SHADER_STRIDE;
+    sink.setFloat4(SWELL_DIRECTION[i]!, swell[o]!, swell[o + 1]!, swell[o + 2]!, swell[o + 3]!);
+    sink.setFloat4(SWELL_AMPLITUDE[i]!, swell[o + 4]!, swell[o + 5]!, swell[o + 6]!, swell[o + 7]!);
+    sink.setFloat4(SWELL_GROUP[i]!, swell[o + 8]!, swell[o + 9]!, swell[o + 10]!, swell[o + 11]!);
+  }
+  for (let t = 0; t < WATER_SWELL_WARP_TERMS; t++) {
+    const o = t * WATER_SWELL_WARP_STRIDE;
+    sink.setFloat4(SWELL_WARP[t]!, warp[o]!, warp[o + 1]!, warp[o + 2]!, warp[o + 3]!);
+  }
+  sink.setFloat4("slateWaterSwellInfo", bankFade, 0, 0, 0);
+  sink.setFloat4("slateWaterShape", choppiness, 0, 0, 0);
+}
+
+/**
+ * The swell of a water surface that has no `WaterMaterialPlugin`: Custom Material water whose graph holds a Water Waves
+ * node (`WaterWavesBlock`). The node's vertex stage displaces the surface's static rest grid with the same source as
+ * built-in shading (`waterWaveBlockSource`) from the same uniforms (`bindWaterSwellUniforms`), here from the surface's
+ * own definition, body and clock; the water mesh keeps `time` current. The FFT detail band is not part of it, as it is
+ * not part of the CPU path this replaces.
+ */
+export class WaterVertexWaves {
+  /** The surface's water clock in seconds. */
+  time = 0;
+  readonly water: WaterDefinition;
+  readonly body: WaterBodyProperties;
+  constructor(water: WaterDefinition, body: WaterBodyProperties) {
+    this.water = water;
+    this.body = body;
+  }
+  /** Sets the swell uniforms and the clock for a draw of `mesh`. Allocation-free. */
+  bind(sink: WaterUniformSink, scene: Scene, mesh: AbstractMesh): void {
+    const origin = scene.floatingOriginMode ? scene.floatingOriginOffset : Vector3.ZeroReadOnly, scale = this.body.waveScale;
+    const shared = sharedSwell(waterWaveSet(this.water), scale, DEFAULT_TIER, origin.x, origin.z, this.time);
+    bindWaterSwellUniforms(sink, waterGridOffset(mesh), shared.swell, shared.warp, this.body.kind === "global" ? 0 : waterBankFadeLength(this.water, scale), this.water.choppiness);
+    sink.setFloat4(WATER_CLOCK_UNIFORM, this.time, 0, 0, 0);
+  }
+}
+
+const meshWaves = new WeakMap<AbstractMesh, WaterVertexWaves>();
+/** Registers (or with null removes) the swell `mesh`'s Custom Material displaces it with; the water mesh owns it. */
+export function setMeshVertexWaves(mesh: AbstractMesh, waves: WaterVertexWaves | null): void {
+  if (waves) meshWaves.set(mesh, waves);
+  else meshWaves.delete(mesh);
+}
+/** The swell a Custom Material displaces `mesh` with (`setMeshVertexWaves`), or null. */
+export function meshVertexWaves(mesh: AbstractMesh | null | undefined): WaterVertexWaves | null {
+  return (mesh && meshWaves.get(mesh)) || null;
+}
+
+const blockWaveSources = new Map<ShaderLanguage, string>();
+/**
+ * The Water Waves node's vertex code for one language: `vertexWaveSource` with the gradient, bound and translated like the
+ * plugin's. It reads and writes a `worldPos` vec4 (rest point in, displaced point out) and leaves `swvH` (height),
+ * `swvD` (horizontal offset) and `swvNormal`, under `SLATE_WATER_GPU_WAVES`; it reads `slateWaterData` and
+ * `slateWaterBaseNormal`, and under `SLATE_WATER_BLEND` `slateWaterBlend`, as attributes. Built once.
+ */
+export function waterWaveBlockSource(language: ShaderLanguage): string {
+  let source = blockWaveSources.get(language);
+  if (!source) {
+    const wgsl = language === ShaderLanguage.WGSL, code = vertexWaveSource(false, true);
+    blockWaveSources.set(language, source = stripShaderComments(bindVertexSource(wgsl ? toWgsl(code) : code, wgsl)));
+  }
+  return source;
 }
 
 /** Translate the restricted GLSL-shaped source above. Only the constructs it uses are supported. */
@@ -5566,21 +5705,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
    * the drawn `mesh`'s grid offset.
    */
   bindVertexWaves(effect: Effect, scene: Scene, mesh: AbstractMesh): void {
-    const grid = waterGridOffset(mesh);
-    effect.setFloat4("slateWaterGridOffset", grid[0]!, grid[1]!, grid[2]!, 0);
-    const swell = this.swellConstants(scene), warp = this.warp;
-    for (let i = 0; i < WATER_WAVE_MAX_COMPONENTS; i++) {
-      const o = i * WATER_WAVE_SHADER_STRIDE;
-      effect.setFloat4(SWELL_DIRECTION[i]!, swell[o]!, swell[o + 1]!, swell[o + 2]!, swell[o + 3]!);
-      effect.setFloat4(SWELL_AMPLITUDE[i]!, swell[o + 4]!, swell[o + 5]!, swell[o + 6]!, swell[o + 7]!);
-      effect.setFloat4(SWELL_GROUP[i]!, swell[o + 8]!, swell[o + 9]!, swell[o + 10]!, swell[o + 11]!);
-    }
-    for (let t = 0; t < WATER_SWELL_WARP_TERMS; t++) {
-      const o = t * WATER_SWELL_WARP_STRIDE;
-      effect.setFloat4(SWELL_WARP[t]!, warp[o]!, warp[o + 1]!, warp[o + 2]!, warp[o + 3]!);
-    }
-    effect.setFloat4("slateWaterSwellInfo", this.bankFade(), 0, 0, 0);
-    effect.setFloat4("slateWaterShape", this.water.choppiness, 0, 0, 0);
+    bindWaterSwellUniforms(effect, waterGridOffset(mesh), this.swellConstants(scene), this.warp, this.bankFade(), this.water.choppiness);
     if (!this.fftVertex) return;
     const band = this.fftState(scene, this.fftCascades), v = this.fftValues;
     effect.setFloat4("slateWaterFft", v[0]!, v[1]!, v[2]!, v[3]!);

@@ -376,6 +376,16 @@ sampled radiance as a replacement contribution through emission. Ordinary Textur
 Parameter pins remain 2D. See [environment lighting](render.md) for ownership,
 orientation and irradiance preparation.
 
+**Water Waves** (Surface, Custom Material water) opts the water mesh into GPU
+displacement. Wire **Offset** into World Position Offset and **Normal** into
+Normal; Wave Height and Simulation Time are also available, and the Water
+Surface node in the same graph follows them. The compiler builds one block at
+the undisplaced world position, so the depth, authored shadow, outline and
+capture variants displace like the colour pass. Meshes that are not water
+surfaces (previews) get no displacement and their own normal. See
+[water rendering](render.md) for the vertex data, picking and limits (no FFT
+detail band).
+
 Clamp supports connected scalar/vector bounds; comparisons return component-wise
 numeric masks. Refract uses Vector 3 directions and scalar Eta. Split pads its
 numeric input to V4, so every missing channel returns `1`. World Tangent

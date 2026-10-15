@@ -10,15 +10,18 @@ import {
   arrayOf,
   enumRef,
   structRef,
+  COLLISION_CHANNEL_MEMBERS,
   ENGINE_COLLISION_CHANNEL_ENUM_ID,
   ENGINE_HIT_RESULT_STRUCT_ID,
   diagnostic,
   listValidationRules,
   registerValidationRule,
   readPinDefault,
+  type Diagnostic,
   type TypeContext,
   type LogicGraph,
 } from "@babylonslate/scripting";
+import { enumGuidOf, enumValueOf } from "./enum";
 
 const HIT_RESULT = structRef(ENGINE_HIT_RESULT_STRUCT_ID);
 const COLLISION_CHANNEL = enumRef(ENGINE_COLLISION_CHANNEL_ENUM_ID);
@@ -81,15 +84,66 @@ function validatePhysicsRadius(
   return out;
 }
 
-/** Register radius validation for sphere overlap / sphere shape sweep. */
-export function registerPhysicsValidationRules(): void {
-  if (listValidationRules().some((rule) => rule.id === "physics.radius")) {
-    return;
+const COLLISION_CHANNELS: readonly string[] = COLLISION_CHANNEL_MEMBERS;
+
+/**
+ * A query treats a channel name it does not know as All, so a stale literal (a graph saved before the channels were
+ * renamed, or a hand-edited name) would silently widen the query. Unwired Channel defaults and Make Enum values are
+ * the places a literal channel is authored; a wired value is checked where it is made.
+ */
+function validateCollisionChannels(
+  graphs: readonly LogicGraph[],
+  ctx: TypeContext,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const report = (graph: LogicGraph, nodeId: string, pinId: string | undefined, value: unknown) => {
+    if (value === undefined || value === null || value === "" || (typeof value === "string" && COLLISION_CHANNELS.includes(value))) return;
+    out.push(
+      diagnostic({
+        severity: "warning",
+        code: "physics.channel",
+        message: `Unknown collision channel "${String(value)}": the query treats it as All. Use ${COLLISION_CHANNEL_MEMBERS.join(", ")}.`,
+        assetGuid: ctx.assetGuid,
+        graphId: graph.id,
+        nodeId,
+        pinId,
+      }),
+    );
+  };
+  for (const graph of graphs) {
+    const wired = new Set(graph.edges.map((edge) => `${edge.targetNodeId}\t${edge.targetPinId}`));
+    for (const node of graph.nodes) {
+      if (node.typeId === "enum.make" && enumGuidOf(node.properties) === ENGINE_COLLISION_CHANNEL_ENUM_ID) {
+        report(graph, node.id, undefined, enumValueOf(node.properties));
+        continue;
+      }
+      for (const pin of node.pins) {
+        if (
+          pin.direction !== "in" || pin.kind !== "data" || pin.type.kind !== "enumRef" ||
+          pin.type.guid !== ENGINE_COLLISION_CHANNEL_ENUM_ID || wired.has(`${node.id}\t${pin.id}`)
+        ) continue;
+        report(graph, node.id, pin.id, readPinDefault(node.properties, pin.id));
+      }
+    }
   }
-  registerValidationRule({
-    id: "physics.radius",
-    run: validatePhysicsRadius,
-  });
+  return out;
+}
+
+/** Register radius validation for sphere overlap / sphere shape sweep, and collision channel validation. */
+export function registerPhysicsValidationRules(): void {
+  const registered = new Set(listValidationRules().map((rule) => rule.id));
+  if (!registered.has("physics.radius")) {
+    registerValidationRule({
+      id: "physics.radius",
+      run: validatePhysicsRadius,
+    });
+  }
+  if (!registered.has("physics.channel")) {
+    registerValidationRule({
+      id: "physics.channel",
+      run: validateCollisionChannels,
+    });
+  }
 }
 
 /** Physics query and impulse nodes — sync on the calling execution pin (P7). */
