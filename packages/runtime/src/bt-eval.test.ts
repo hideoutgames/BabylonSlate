@@ -249,8 +249,9 @@ describe("runtime behaviour tree evaluation", () => {
     runtime.tick();
     expect(states()).toEqual([expect.objectContaining({ status: "running", btNodeId: "wait" })]);
 
+    // The 500 ms wait finishes on the fifth tick, before the tree restarts.
     runtime.applyBehaviourTreeStateObserved(false);
-    for (let i = 0; i < 8; i += 1) runtime.tick();
+    for (let i = 0; i < 4; i += 1) runtime.tick();
     expect(states()).toHaveLength(1);
 
     runtime.applyBehaviourTreeStateObserved(true);
