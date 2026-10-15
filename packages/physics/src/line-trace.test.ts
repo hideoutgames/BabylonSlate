@@ -112,6 +112,68 @@ describe("Line Trace exclusions after collider changes", () => {
   });
 });
 
+describe("Trigger-only queries", () => {
+  it.each([
+    { label: "software 3D", kind: "3d" as const, preferSoftware: true },
+    { label: "Havok 3D", kind: "3d" as const, preferSoftware: false },
+    { label: "Rapier 2D", kind: "2d" as const, preferSoftware: false },
+  ])("$label hit only trigger shapes, past every solid shape in front of them", async (options) => {
+    const backend = await createPhysicsBackend({
+      ...options, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+    });
+    const body = (id: string, y: number) => backend.createBody({ id, actorId: id, motionType: "static", mass: 0,
+      linearDamping: 0, angularDamping: 0, gravityScale: 0,
+      transform: { position: { x: 0, y, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } } });
+    const box = (id: string, bodyId: string, isTrigger: boolean, y = 0) => backend.createCollider({
+      id, bodyId, translation: { x: 0, y, z: 0 }, friction: 0.5, restitution: 0, isTrigger, layer: 1, mask: 0xffffffff,
+      shape: options.kind === "2d" ? { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } }
+        : { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } });
+    const sweepShape = options.kind === "2d" ? { kind: "circle" as const, radius: 0.1 } : { kind: "sphere" as const, radius: 0.1 };
+    const pose = (y: number) => ({ position: { x: 0, y, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } });
+    const sorted = (ids: string[]) => [...ids].sort();
+    try {
+      // Top to bottom: two solids, a body whose solid shape is above its trigger shape, a solid, a trigger.
+      body("solid-a", 8);
+      box("solid-a-box", "solid-a", false);
+      body("solid-b", 7);
+      box("solid-b-box", "solid-b", false);
+      body("gate", 5);
+      box("gate-solid", "gate", false, 0.5);
+      box("gate-trigger", "gate", true, -0.5);
+      body("solid-c", 3);
+      box("solid-c-box", "solid-c", false);
+      body("low", 2);
+      box("low-trigger", "low", true);
+      backend.step(1 / 60);
+      const trace = (query?: LineTraceOptions) => backend.lineTrace({ x: 0, y: 10, z: 0 }, { x: 0, y: 0, z: 0 }, query);
+      const sweep = (query?: LineTraceOptions) => backend.shapeSweep(sweepShape, pose(10), pose(0), query);
+      const overlap = (query?: LineTraceOptions, y = 5, radius = 4.2) =>
+        sorted(backend.sphereOverlap({ x: 0, y, z: 0 }, radius, query).actorIds);
+      const only = { onlyTriggers: true };
+      const behindGate = { onlyTriggers: true, ignoreActorIds: ["gate"] };
+
+      expect(trace(only)).toMatchObject({ actorId: "gate", distance: expect.closeTo(5, 2) });
+      expect(sweep(only).actorId).toBe("gate");
+      expect(overlap(only)).toEqual(["gate", "low"]);
+      expect(trace(behindGate)).toMatchObject({ actorId: "low", distance: expect.closeTo(7.5, 2) });
+      expect(sweep(behindGate).actorId).toBe("low");
+      expect(overlap(behindGate)).toEqual(["low"]);
+      expect(trace({ ...only, ignoreActorIds: ["gate", "low"] }).hit).toBe(false);
+      expect(sweep({ ...only, ignoreActorIds: ["gate", "low"] }).hit).toBe(false);
+      // Only solid shapes are in range here.
+      expect(overlap(only, 8, 0.1)).toEqual([]);
+      expect(overlap(undefined, 8, 0.1)).toEqual(["solid-a"]);
+      // Trigger-only wins over a request to leave triggers out.
+      expect(trace({ ...only, includeTriggers: false }).actorId).toBe("gate");
+      // Nothing the queries masked stays masked.
+      expect(trace().actorId).toBe("solid-a");
+      expect(sweep().actorId).toBe("solid-a");
+      expect(trace({ ignoreActorIds: ["solid-a", "solid-b"] })).toMatchObject({ actorId: "gate", distance: expect.closeTo(4, 2) });
+      expect(trace({ includeTriggers: false, ignoreActorIds: ["solid-a", "solid-b", "gate"] }).actorId).toBe("solid-c");
+    } finally { backend.dispose(); }
+  });
+});
+
 describe("Line Trace surface normals", () => {
   it.each([
     { label: "software 3D", kind: "3d" as const, preferSoftware: true },

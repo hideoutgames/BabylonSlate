@@ -527,10 +527,11 @@ describe("collectEnumMemberNames", () => {
       "enum-2": ["Red", "Blue"],
       "engine:CollisionChannel": [
         "All",
-        "WorldStatic",
-        "WorldDynamic",
-        "Pawn",
-        "Visibility",
+        "Static",
+        "Dynamic",
+        "Character",
+        "Solid",
+        "Triggers",
       ],
     });
   });

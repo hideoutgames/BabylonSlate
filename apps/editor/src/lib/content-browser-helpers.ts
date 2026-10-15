@@ -85,6 +85,7 @@ import {
   type ClassAssetRef,
 } from "./class-asset-lookup";
 import { defaultPrefabComponents } from "./prefab-preview";
+import { shownCompressionState } from "./texture-encode-state";
 
 // Boot-path consumers import these from `class-asset-lookup` directly; the
 // re-export keeps every other importer of this module unchanged.
@@ -766,12 +767,14 @@ export function sortChildFolders<T extends { name: string }>(
   });
 }
 
+/** `encoding`: the Texture's encode is running, which only the editor's memory knows (`shownCompressionState`). */
 export function textureCompressionState(
   asset: IndexedAsset,
+  encoding = false,
 ): TextureCompressionState | null {
   if (asset.header.type !== "Texture") return null;
-  const state = asset.header.payload.compressionState;
-  if (typeof state !== "string") return null;
+  const state = shownCompressionState(asset.header.payload.compressionState, encoding);
+  if (state === null) return null;
   if (TEXTURE_COMPRESSION_STATES.includes(state as TextureCompressionState)) {
     return state as TextureCompressionState;
   }

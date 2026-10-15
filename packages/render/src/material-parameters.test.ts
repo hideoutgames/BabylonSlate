@@ -449,6 +449,104 @@ describe("runtime material parameters", () => {
     ).toMatchObject({ value: 0.5 });
   });
 
+  it("re-resolves only the written component's meshes and leaves the rest as a whole-actor pass would", () => {
+    const { scene, binding } = setup();
+    const root = new Mesh("actor-1", scene);
+    const body = new Mesh("actor-1|body", scene);
+    const imported = new Mesh("Imported Model Mesh", scene);
+    const hat = new Mesh("actor-1|hat", scene);
+    const stray = new Mesh("Stray", scene);
+    body.parent = root;
+    imported.parent = body;
+    hat.parent = root;
+    stray.parent = root;
+    binding.meshes.set(1, root);
+    const assign = (componentId?: string) =>
+      snapshots.applyAssignMaterial(scene, binding, {
+        type: "assignMaterial",
+        slotId: 1,
+        materialAssetGuid: "mat",
+        ...(componentId ? { componentId } : {}),
+      });
+    assign();
+    assign("body");
+    assign("hat");
+    const meshes = [root, body, imported, hat, stray];
+    const roughness = (mesh: Mesh) =>
+      (mesh.material as import("@babylonjs/core").NodeMaterial).getBlockByName("roughness");
+    const resolved: Array<string | undefined> = [];
+    const resolve = binding.resolveMaterial!;
+    binding.resolveMaterial = (guid, options) => {
+      resolved.push(options?.instanceKey);
+      return resolve(guid, options);
+    };
+
+    snapshots.applySetMaterialParameter(binding, {
+      type: "setMaterialParameter",
+      slotId: 1,
+      componentId: "body",
+      materialAssetGuid: "mat",
+      parameterName: "Roughness",
+      parameter: { kind: "float", value: 0.2 },
+    });
+
+    // Only the body and its imported child resolve, both against the private instance.
+    expect(resolved).toEqual(["1|body", "1|body"]);
+    expect(imported.material).toBe(body.material);
+    expect(roughness(body)).toMatchObject({ value: 0.2 });
+    for (const other of [root, hat, stray]) {
+      expect(other.material).not.toBe(body.material);
+      expect(roughness(other)).toMatchObject({ value: 0.5 });
+    }
+
+    // Re-applying the whole slot, as an unscoped write would, changes nothing.
+    const scoped = meshes.map((mesh) => mesh.material);
+    resolved.length = 0;
+    snapshots.applyMaterialToActorMeshes(binding, 1, root);
+    expect(resolved).toHaveLength(meshes.length);
+    meshes.forEach((mesh, index) => expect(mesh.material).toBe(scoped[index]));
+  });
+
+  it("reaches every imported mesh of a single-component actor, including ones added after realization", () => {
+    const { scene, binding } = setup();
+    snapshots.applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "box",
+      meshAssetGuid: null,
+      primaryComponentId: "visual",
+    });
+    const root = binding.meshes.get(1)!;
+    const hull = new Mesh("Hull", scene);
+    const turret = new Mesh("Turret", scene);
+    hull.parent = root;
+    turret.parent = hull;
+    snapshots.applyAssignMaterial(scene, binding, {
+      type: "assignMaterial",
+      slotId: 1,
+      componentId: "visual",
+      materialAssetGuid: "mat",
+    });
+    const late = new Mesh("LateWeapon", scene);
+    late.parent = turret;
+
+    snapshots.applySetMaterialParameter(binding, {
+      type: "setMaterialParameter",
+      slotId: 1,
+      componentId: "visual",
+      materialAssetGuid: "mat",
+      parameterName: "Roughness",
+      parameter: { kind: "float", value: 0.3 },
+    });
+
+    for (const mesh of [root, hull, turret, late]) {
+      expect(mesh.material).toBe(root.material);
+      expect(
+        (mesh.material as import("@babylonjs/core").NodeMaterial).getBlockByName("roughness"),
+      ).toMatchObject({ value: 0.3 });
+    }
+  });
+
   it("clears a private instance from the mesh when its material assignment is removed", () => {
     const { scene, binding } = setup();
     snapshots.applyAssignMesh(scene, binding, {

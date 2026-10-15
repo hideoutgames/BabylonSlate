@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultSceneSettings, DEFAULT_MOVEMENT_PROPERTIES, type SerializedActor } from "@babylonslate/core";
+import { createActor, createDefaultSceneSettings, DEFAULT_MOVEMENT_PROPERTIES, type MovementProperties, type SerializedActor } from "@babylonslate/core";
 import { ClassRegistry, World } from "@babylonslate/object-model";
-import { createSoftwarePhysicsBackend } from "@babylonslate/physics";
+import { createSoftwarePhysicsBackend, type Vec3 } from "@babylonslate/physics";
 import { createInProcessRuntime } from "./driver";
 import { MovementWorldSync } from "./movement";
 import { PhysicsWorldSync } from "./physics-sync";
@@ -102,6 +102,61 @@ it("reports the motor steps whose transition events ran scripts, so physics read
     tick();
     expect({ reported, events }).toEqual({ reported: [false, true, false], events: ["onMovementStarted"] });
   } finally { movement.dispose(); physics.dispose(); }
+});
+
+describe("the Movement component that moves an actor", () => {
+  /** A stub in place of physics, which rejects duplicate motors: each solved move names its motor by its `maxSpeed` setting. */
+  function motorWorld() {
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry(),
+      componentHooksFor: () => ({ onCreation: (component) => movement.initialize(component) }),
+    });
+    const moved: number[] = [];
+    const physics = {
+      getBackend: () => ({ kind: "3d" }),
+      moveMovement: (_actor: unknown, translation: Vec3, dt: number, props: MovementProperties) => {
+        moved.push(props.maxSpeed);
+        return { position: { x: 0, y: 0, z: 0 }, velocity: { x: translation.x / dt, y: 0, z: 0 }, grounded: true };
+      },
+    } as unknown as PhysicsWorldSync;
+    const movement = new MovementWorldSync({ world, physics: () => physics, gravity: () => 0,
+      eligible: () => true, event: () => {}, warn: () => {},
+    });
+    const actor = world.createActor({ classId: "Actor", guid: "moving" });
+    const motor = (maxSpeed: number) => world.createComponent({ classId: "MovementComponent", variables: { maxSpeed } });
+    const step = () => {
+      moved.length = 0;
+      movement.step(1 / 60, physics);
+      return [...moved];
+    };
+    return { world, actor, motor, step };
+  }
+
+  it("moves with the first live one only: motors attached later wait, and destroying the first hands motion on", () => {
+    const { world, actor, motor, step } = motorWorld();
+    const first = motor(1);
+    actor.attachComponent(first);
+    world.spawnActorNow(actor);
+    expect(step()).toEqual([1]);
+    actor.attachComponent(motor(2));
+    expect(step()).toEqual([1]);
+    actor.attachComponent(motor(3));
+    expect(step()).toEqual([1]);
+    // A direct flag write: no structural change tells the motors about it.
+    first.destroyed = true;
+    expect(step()).toEqual([2]);
+    expect(step()).toEqual([2]);
+  });
+
+  it("ranks them by their current order once an in-place edit of the component list marks the structure changed", () => {
+    const { world, actor, motor, step } = motorWorld();
+    actor.attachComponent(motor(1));
+    actor.attachComponent(motor(2));
+    world.spawnActorNow(actor);
+    expect(step()).toEqual([1]);
+    actor.components.reverse();
+    world.markStructureChanged();
+    expect(step()).toEqual([2]);
+  });
 });
 
 async function setup(kind: "3d" | "2d", properties: Record<string, unknown> = {}, floor = false) {

@@ -1,5 +1,5 @@
 import { Color3, CreatePlaneVertexData, DynamicTexture, MeshBuilder, StandardMaterial, Texture, type Mesh, type Scene } from "@babylonjs/core";
-import { painterTextureSize, parsePainter2DProperties, type Painter2DProperties, type PainterColor, type PainterCommand, type PainterPathSegment } from "@babylonslate/core";
+import { painterRevision, painterTextureSize, parsePainter2DProperties, type Painter2DProperties, type PainterColor, type PainterCommand, type PainterPathSegment } from "@babylonslate/core";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 
 type PaintContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -53,8 +53,8 @@ export function paint2DCommands(context: PaintContext, commands: readonly Painte
 type PainterVisual = {
   texture: DynamicTexture;
   properties: Painter2DProperties;
-  /** Inputs of the replay the canvas and its upload currently reflect; unset until one completes. */
-  painted?: { commands: readonly PainterCommand[]; width: number; height: number; textureWidth: number; textureHeight: number };
+  /** Inputs of the replay the canvas and its upload currently reflect; unset until one completes. `revision` is the runtime's stamp on those commands, when it sent one. */
+  painted?: { commands: PainterCommand[]; revision?: number; width: number; height: number; textureWidth: number; textureHeight: number };
 };
 const visuals = new WeakMap<Mesh, PainterVisual>();
 
@@ -94,7 +94,7 @@ export function createPainter2DMesh(scene: Scene, name: string, value: unknown):
     texture.wrapV = Texture.CLAMP_ADDRESSMODE;
     material.diffuseTexture = texture;
     visuals.set(mesh, { texture, properties });
-    updatePainter2DMesh(mesh, properties);
+    updatePainter2DMesh(mesh, value);
     applyOverlayVisualStyle(mesh, value);
     return mesh;
   } catch (error) { mesh.dispose(); throw error; }
@@ -104,12 +104,20 @@ export function createPainter2DMesh(scene: Scene, name: string, value: unknown):
  * Drawing updates retain the plane, material and texture rather than rebuilding
  * the actor. A new world size reshapes the plane, and a new texel size resizes
  * the canvas texture, before the stream is replayed. A stream the canvas already
- * shows at the same sizes is neither replayed nor uploaded again.
+ * shows at the same sizes is neither replayed nor uploaded again. The runtime
+ * stamps its payloads with a revision of the command stream: an equal revision
+ * is taken as the same stream, so its commands are neither parsed nor compared,
+ * and a payload with a different or no revision is compared with the canvas's.
  */
 export function updatePainter2DMesh(mesh: Mesh, value: unknown): boolean {
   const visual = visuals.get(mesh);
   if (!visual || mesh.isDisposed()) return false;
-  const properties = parsePainter2DProperties(value);
+  const painted = visual.painted;
+  const revision = painterRevision(value);
+  const sameRevision = painted !== undefined && revision !== undefined && painted.revision === revision;
+  const properties = sameRevision
+    ? { ...parsePainter2DProperties({ ...value as Record<string, unknown>, commands: [] }), commands: painted.commands }
+    : parsePainter2DProperties(value);
   if (properties.width !== visual.properties.width || properties.height !== visual.properties.height) {
     CreatePlaneVertexData({ width: properties.width, height: properties.height }).applyToMesh(mesh);
   }
@@ -117,11 +125,11 @@ export function updatePainter2DMesh(mesh: Mesh, value: unknown): boolean {
   const current = visual.texture.getSize();
   if (wanted.width !== current.width || wanted.height !== current.height) visual.texture.scaleTo(wanted.width, wanted.height);
   const size = visual.texture.getSize();
-  const painted = visual.painted;
   if (painted && painted.width === properties.width && painted.height === properties.height &&
     painted.textureWidth === size.width && painted.textureHeight === size.height &&
-    samePainterData(painted.commands, properties.commands)) {
+    (sameRevision || samePainterData(painted.commands, properties.commands))) {
     visual.properties = properties;
+    if (revision !== undefined) painted.revision = revision;
     return true;
   }
   // A replay that throws leaves the canvas partly drawn, so nothing counts as shown until the upload completes.
@@ -129,6 +137,6 @@ export function updatePainter2DMesh(mesh: Mesh, value: unknown): boolean {
   paint2DCommands(visual.texture.getContext() as PaintContext, properties.commands, size.width, size.height, properties.width, properties.height);
   visual.properties = properties;
   visual.texture.update();
-  visual.painted = { commands: properties.commands, width: properties.width, height: properties.height, textureWidth: size.width, textureHeight: size.height };
+  visual.painted = { commands: properties.commands, revision, width: properties.width, height: properties.height, textureWidth: size.width, textureHeight: size.height };
   return true;
 }

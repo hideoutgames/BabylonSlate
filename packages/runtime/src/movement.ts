@@ -1,8 +1,8 @@
-import { parseMovementProperties, type MovementProperties } from "@babylonslate/core";
+import type { MovementProperties } from "@babylonslate/core";
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import type { Vec3 } from "@babylonslate/physics";
 import { actorChainWorldTransform, rotateVector } from "./actor-world-transform";
-import { ParsedComponentProperties } from "./parsed-component-properties";
+import { parsedMovementProperties } from "./movement-settings";
 import type { PhysicsWorldSync } from "./physics-sync";
 
 type MovementState = {
@@ -15,7 +15,13 @@ type MovementState = {
   jumpRemaining: number;
   jumpRequested: boolean;
   unavailable: boolean;
+  placement: Placement;
 };
+
+/** The Movement components listed ahead of one in its actor's component list, as of one structural revision. */
+type Placement = { actor: Actor | null; revision: number; listed: boolean; ahead: readonly ActorComponent[] };
+
+const NO_MOTORS: readonly ActorComponent[] = [];
 
 interface MovementHost {
   world: World;
@@ -34,6 +40,12 @@ function vector(value: unknown): Vec3 {
   return { x: finite(v?.x), y: finite(v?.y), z: finite(v?.z) };
 }
 
+/** Whether one of `entries` still counts as a motor of `actor`: not destroyed, and still owned by it. */
+function anyLive(entries: readonly ActorComponent[], actor: Actor): boolean {
+  for (const entry of entries) if (!entry.destroyed && entry.owner === actor) return true;
+  return false;
+}
+
 function publishValue(component: ActorComponent, name: string, value: number | boolean): void {
   if (!Object.is(component.getVariable(name), value)) component.setVariable(name, value);
 }
@@ -41,8 +53,8 @@ function publishValue(component: ActorComponent, name: string, value: number | b
 /** Fixed-tick intent, velocity and transitions; physics owns collision resolution. */
 export class MovementWorldSync {
   private readonly states = new Map<ActorComponent, MovementState>();
-  /** Each motor's settings, re-parsed only when one of its variables is written. */
-  private readonly settings = new ParsedComponentProperties((variables) => parseMovementProperties(variables));
+  /** Each motor's settings, re-parsed only when one of its variables is written; physics collider sync reads the same parse. */
+  private readonly settings = parsedMovementProperties;
   private readonly host: MovementHost;
   private scripted = false;
 
@@ -58,7 +70,8 @@ export class MovementWorldSync {
     let state = this.states.get(component);
     if (!state) {
       state = { input: zero(), addedInput: zero(), velocity: zero(), grounded: false,
-        moving: false, sinceGround: Infinity, jumpRemaining: 0, jumpRequested: false, unavailable: false };
+        moving: false, sinceGround: Infinity, jumpRemaining: 0, jumpRequested: false, unavailable: false,
+        placement: { actor: null, revision: -1, listed: false, ahead: NO_MOTORS } };
       this.states.set(component, state);
       this.publish(component, state);
     }
@@ -132,14 +145,14 @@ export class MovementWorldSync {
     // Creation hooks register motors, so scenes without Movement pay no actor scan.
     for (const [component, state] of this.states) {
       const actor = component.owner;
-      if (component.destroyed || !actor || actor.destroyed || actor.world !== this.host.world || !actor.components.includes(component)) {
+      if (component.destroyed || !actor || actor.destroyed || actor.world !== this.host.world || !this.place(actor, component, state.placement).listed) {
         this.states.delete(component);
         continue;
       }
       if (this.host.physics(actor) !== physics || !this.host.eligible(actor)) continue;
       // Keep later registrations available if the first motor is removed.
       // Physics rejects duplicates; only one motor may attempt to move the actor.
-      if (actor.components.find((entry) => entry.classId === "MovementComponent" && !entry.destroyed && entry.owner === actor) !== component) continue;
+      if (component.classId !== "MovementComponent" || anyLive(state.placement.ahead, actor)) continue;
       const props = this.settings.get(component);
       if (!props.enabled) {
         state.input = zero(); state.addedInput = zero(); state.velocity = zero();
@@ -150,6 +163,31 @@ export class MovementWorldSync {
       this.advance(actor, component, state, props, dt);
     }
     return this.scripted;
+  }
+
+  /**
+   * Where `component` sits in `actor`'s component list. Which components the list
+   * holds, and in what order, changes only with the world structure (attach,
+   * destroy; code that edits `actor.components` in place must call
+   * `world.markStructureChanged()`), so one scan serves every tick until the next
+   * structural change. Entries after the component cannot outrank it. Whether an
+   * entry is live is no part of the cache: `destroyed` and `owner` change without
+   * a structural change, so each tick reads them.
+   */
+  private place(actor: Actor, component: ActorComponent, placement: Placement): Placement {
+    const revision = this.host.world.structuralRevision;
+    if (placement.actor === actor && placement.revision === revision) return placement;
+    let ahead: ActorComponent[] | undefined;
+    let listed = false;
+    for (const entry of actor.components) {
+      if (entry === component) { listed = true; break; }
+      if (entry.classId === "MovementComponent") (ahead ??= []).push(entry);
+    }
+    placement.actor = actor;
+    placement.revision = revision;
+    placement.listed = listed;
+    placement.ahead = ahead ?? NO_MOTORS;
+    return placement;
   }
 
   private advance(actor: Actor, component: ActorComponent, state: MovementState, props: MovementProperties, dt: number): void {

@@ -19,7 +19,15 @@ export type Painter2DProperties = PainterStyle & {
   width: number; height: number; pixelsPerUnit: number; clearEachFrame: boolean;
   fill: boolean; stroke: boolean; fillRule: PainterFillRule; hitTest: SceneLayerHitTest;
   commands: PainterCommand[];
+  /** Stamped by the runtime on the payloads it sends: payloads of one painter with an equal revision carry the same commands. Authored data has none, and parsing drops it. */
+  revision?: number;
 };
+
+/** The revision stamped on a runtime painter payload, or undefined when the value carries none. */
+export function painterRevision(value: unknown): number | undefined {
+  const revision = (value as { revision?: unknown } | null | undefined)?.revision;
+  return typeof revision === "number" && Number.isSafeInteger(revision) && revision >= 0 ? revision : undefined;
+}
 
 export const PAINTER_MAX_COMMANDS = 16_384;
 export const PAINTER_MAX_PATH_SEGMENTS = 8_192;

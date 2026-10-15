@@ -335,7 +335,7 @@ function ContentBrowserWorkspaceBody({
   useEffect(() => {
     if (hidden || !phone) setFoldersOpen(false);
   }, [hidden, phone]);
-  const { projectGuid, assetRegistry, registryEpoch, pluginDescriptors, showPluginContent } = registry;
+  const { projectGuid, assetRegistry, registryEpoch, encodingTextures, pluginDescriptors, showPluginContent } = registry;
   const {
     refreshAssetRegistry,
     renameAsset,
@@ -2904,6 +2904,7 @@ function ContentBrowserWorkspaceBody({
                 selectedFolderPaths={selectedFolderPaths}
                 thumbnailUrls={thumbnailUrls}
                 compileErrors={compileErrorGuids}
+                encodingTextures={encodingTextures}
                 typeVisualFor={typeVisualFor}
                 folderIcons={pluginRootIcons}
                 sourceControlEnabled={sourceControl.enabled}

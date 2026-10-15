@@ -15,6 +15,8 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
+/** The Textures whose encode runs now, which only the editor's memory knows. */
+const running = vi.hoisted(() => ({ guids: new Set<string>() }));
 const retryTextureEncoding = vi.hoisted(() => vi.fn(async () => true));
 const textureAlignmentStale = vi.hoisted(() => vi.fn<(guid: string, usage?: string) => Promise<boolean>>(async () => false));
 const textureUsageBlockedReason = vi.hoisted(() => vi.fn<(guid: string) => string | null>(() => null));
@@ -46,6 +48,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   readAssetChunk,
   assetRegistry,
   registryEpoch: 0,
+  encodingTextures: running.guids,
   openDocuments: [
     { id: "other", ref: { path: "assets/tex-other.babasset" }, content: {} },
     {
@@ -60,6 +63,7 @@ const ENVIRONMENT = { usage: "skybox", dimension: "cube", container: "dds", enco
 
 afterEach(() => {
   cleanup();
+  running.guids.clear();
   retryTextureEncoding.mockClear();
   textureAlignmentStale.mockReset();
   textureAlignmentStale.mockResolvedValue(false);
@@ -128,6 +132,19 @@ describe("Texture editor", () => {
     expect(screen.getByTestId("texture-encode-error").textContent).toContain("BasisEncoder.encode returned 0");
     fireEvent.click(screen.getByTestId("texture-retry-encode"));
     expect(retryTextureEncoding).toHaveBeenCalledWith("tex-albedo", { force: true, usage: "albedo" });
+  });
+
+  it("shows Encoding, not the last failure or Retry Encoding, while the Texture's encode runs", () => {
+    const payload = { usage: "albedo", compressionState: "encode_failed", encodeError: "BasisEncoder.encode returned 0" };
+    const { rerender } = render(<TextureDetails guid="tex-albedo" dependencies={[]} payload={payload} onChange={vi.fn()} />);
+    expect(screen.getByTestId("texture-compression-state").textContent).toBe("Failed");
+    expect(screen.getByTestId("texture-retry-encode")).toBeTruthy();
+
+    running.guids.add("tex-albedo");
+    rerender(<TextureDetails guid="tex-albedo" dependencies={[]} payload={{ ...payload }} onChange={vi.fn()} />);
+    expect(screen.getByTestId("texture-compression-state").textContent).toBe("Encoding");
+    expect(screen.queryByTestId("texture-encode-error")).toBeNull();
+    expect(screen.queryByTestId("texture-retry-encode")).toBeNull();
   });
 
   it.each([true, false])("offers Retry Encoding for a compressed Texture only while its encode breaks the size rule (stale=%s)", async (stale) => {

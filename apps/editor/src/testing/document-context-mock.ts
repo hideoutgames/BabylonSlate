@@ -91,6 +91,8 @@ function revisionsFollowingDocuments(): (documents: unknown) => DocumentRevision
   };
 }
 
+const NO_ENCODING_TEXTURES: ReadonlySet<string> = new Set();
+
 // useSyncExternalStore requires a stable snapshot.
 const UNLOCKED_AUTHORING = Object.freeze({ readOnly: false, reason: null, revision: 0 } as const);
 
@@ -116,6 +118,7 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     extensionService: inertExtensionService(),
     projectGuid: null,
     registryEpoch: 0,
+    encodingTextures: NO_ENCODING_TEXTURES,
     refreshAssetRegistry: resolved,
     noteAssetsCreated: noop,
     pluginDescriptors: [],
