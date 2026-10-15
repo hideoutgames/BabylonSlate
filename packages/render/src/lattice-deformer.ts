@@ -5,7 +5,7 @@ import { ensureNativeLatticeShadowDepthWrapper, releaseNativeLatticeShadowDepthW
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { materialBaseBounds, setMaterialBoundsExpansion } from "./material-bounds";
-import { ensureLatticeShadowAdapter, isLatticeComponentRoot, markLatticeComponentRoot, meshLatticeBinding, releaseLatticeShadowAdapter, setLatticeBinding } from "./lattice-deformer-binding";
+import { ensureLatticeShadowAdapter, isLatticeComponentRoot, latticeMarksRevision, markLatticeComponentRoot, meshLatticeBinding, releaseLatticeShadowAdapter, setLatticeBinding } from "./lattice-deformer-binding";
 import { ensureLatticeDeformerPlugin } from "./lattice-deformer-native";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 export { markLatticeComponentRoot, hasMeshLatticeDeformer, bindMeshLatticeDeformer } from "./lattice-deformer-binding";
@@ -63,6 +63,22 @@ type Part = {
   material: Material | null; slots: readonly (Material | null)[];
   materialObserver: ReturnType<AbstractMesh["onMaterialChangedObservable"]["add"]>;
 };
+/**
+ * One instance source's batch as `validateInstanceOwners` last accepted it. Babylon signals neither a
+ * re-parent nor an instance-array swap, so an unchanged batch is proven by identity: the same members
+ * in the same order, every binding walk starting at the same node, every walked parent link intact,
+ * and no ownership mark added or changed since.
+ */
+interface AcceptedBatch {
+  /** The source, then each of its instances in array order. */
+  readonly members: readonly AbstractMesh[];
+  /** Where each member's binding walk starts: a LOD borrows its master's chain. */
+  readonly origins: readonly Node[];
+  /** Every node those walks pass through, each once, with the parent it had. */
+  readonly nodes: readonly Node[];
+  readonly parents: readonly (Node | null)[];
+  readonly marks: number;
+}
 class CageResource {
   readonly root: AbstractMesh;
   readonly lattice: Lattice;
@@ -116,6 +132,10 @@ class LatticeOwner {
   private readonly maximum = Vector3.Zero();
   private fit?: { min: Vector3; max: Vector3 };
   private rootFlag = -1;
+  /** Scene frame and render ids at the last part-bounds pass, so repeat flushes in one frame skip it. */
+  private boundsFrame = -1;
+  private boundsRender = -1;
+  private readonly acceptedBatches = new Map<Mesh, AcceptedBatch>();
   private materialsDirty = false;
   private readonly disposeObserver;
   private frameObserver: Observer<Scene> | null = null;
@@ -123,9 +143,11 @@ class LatticeOwner {
     this.root = root;
     this.disposeObserver = root.onDisposeObservable.add(() => disposeMeshLatticeDeformer(root));
   }
+  /** Runs up to three times per frame (coordinator readiness, coordinator render, Scene.render). */
   readonly beforeFrame = (): void => {
       // MultiMaterial slot assignment has no Observable in Babylon. Compare
       // references only; unchanged frames create no cage data or GPU uploads.
+      // This scan runs on every call: a swap between two flushes of one frame must still be seen.
       if (this.resource) for (const [mesh, part] of this.parts) {
         const material = mesh.material;
         if (material !== part.material) this.materialsDirty = true;
@@ -135,8 +157,14 @@ class LatticeOwner {
         }
       }
       if (this.materialsDirty) this.refresh();
-      if (this.resource) this.validateInstanceOwners();
-      this.updateBounds(false);
+      if (!this.resource) return;
+      this.validateInstanceOwners();
+      // Babylon re-reads a node's world matrix once per render id, so a second pass with the same frame
+      // and render ids would only see the cached matrices again. Skip it unless the root's matrix changed;
+      // a Scene.render in between advances both ids, so animation is still picked up before drawing.
+      const scene = this.root.getScene();
+      if (scene.getFrameId() !== this.boundsFrame || scene.getRenderId() !== this.boundsRender || this.root.computeWorldMatrix().updateFlag !== this.rootFlag)
+        this.updateBounds(false);
   };
   configure(config: LatticeDeformerConfig): void {
     const previous = this.config;
@@ -173,6 +201,7 @@ class LatticeOwner {
       const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh instanceof Mesh ? mesh : undefined;
       if (source) this.instanceSources.add(source);
     }
+    for (const source of this.acceptedBatches.keys()) if (!this.instanceSources.has(source)) this.acceptedBatches.delete(source);
     const wasActive = !!this.resource;
     if (!effective(config) || !this.parts.size) {
       this.resource?.dispose(); this.resource = undefined;
@@ -229,12 +258,37 @@ class LatticeOwner {
   }
   private validateInstanceOwners(): void {
     for (const source of this.instanceSources) {
-      if (source.instances.length === 0) continue;
+      if (source.instances.length === 0) { this.acceptedBatches.delete(source); continue; }
+      const accepted = this.acceptedBatches.get(source);
+      if (accepted && this.batchUnchanged(source, accepted)) continue;
+      this.acceptedBatches.delete(source);
       if (meshLatticeBinding(source) !== this)
         throw new Error("A lattice cage cannot span a regular-instance batch owned by different components. Use component-owned model instances or separate Mesh clones sharing geometry.");
       for (const instance of source.instances) if (meshLatticeBinding(instance) !== this)
         throw new Error("A lattice cage cannot span a regular-instance batch owned by different components. Use component-owned model instances or separate Mesh clones sharing geometry.");
+      this.acceptedBatches.set(source, this.acceptBatch(source));
     }
+  }
+  private acceptBatch(source: Mesh): AcceptedBatch {
+    const members: AbstractMesh[] = [source, ...source.instances];
+    const origins = members.map((member) => member._masterMesh ?? member);
+    const nodes: Node[] = [], parents: (Node | null)[] = [], walked = new Set<Node>();
+    for (const origin of origins) for (let node: Node | null = origin; node && !walked.has(node); node = node.parent) {
+      walked.add(node); nodes.push(node); parents.push(node.parent);
+    }
+    return { members, origins, nodes, parents, marks: latticeMarksRevision() };
+  }
+  /** True when re-resolving every member's owner could not give a different answer. */
+  private batchUnchanged(source: Mesh, batch: AcceptedBatch): boolean {
+    if (batch.marks !== latticeMarksRevision()) return false;
+    const { instances } = source;
+    if (instances.length + 1 !== batch.members.length) return false;
+    for (let index = 0; index < batch.members.length; index++) {
+      const member = index === 0 ? source : instances[index - 1]!;
+      if (member !== batch.members[index] || (member._masterMesh ?? member) !== batch.origins[index]) return false;
+    }
+    for (let index = 0; index < batch.nodes.length; index++) if (batch.nodes[index]!.parent !== batch.parents[index]) return false;
+    return true;
   }
   private invalidateMaterials(): void {
     const materials = new Set<Material>();
@@ -288,6 +342,8 @@ class LatticeOwner {
     if (!lattice) return;
     const rootMatrix = this.root.computeWorldMatrix();
     force ||= this.rootFlag !== rootMatrix.updateFlag; this.rootFlag = rootMatrix.updateFlag;
+    const scene = this.root.getScene();
+    this.boundsFrame = scene.getFrameId(); this.boundsRender = scene.getRenderId();
     for (const [mesh, part] of this.parts) {
       if (mesh.isDisposed()) continue;
       mesh.computeWorldMatrix();
@@ -339,5 +395,6 @@ class LatticeOwner {
     for (const [mesh, part] of this.parts) { mesh.onMaterialChangedObservable.remove(part.materialObserver); setMaterialBoundsExpansion(mesh, null); }
     this.parts.clear();
     this.instanceSources.clear();
+    this.acceptedBatches.clear();
   }
 }

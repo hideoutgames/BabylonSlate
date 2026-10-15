@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BoundingInfo, Matrix, Mesh, MeshBuilder, MultiMaterial, NullEngine, PBRMaterial, Scene, StandardMaterial, Vector3, VertexBuffer, type Effect, type Material, type MaterialPluginBase, type UniformBuffer } from "@babylonjs/core";
+import { BoundingInfo, Matrix, Mesh, MeshBuilder, MultiMaterial, NullEngine, PBRMaterial, Scene, StandardMaterial, TransformNode, Vector3, VertexBuffer, type AbstractMesh, type Effect, type Material, type MaterialPluginBase, type UniformBuffer } from "@babylonjs/core";
 import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
 import { LatticeDeformerPlugin } from "./lattice-deformer-native";
@@ -7,6 +7,13 @@ import { bindMeshLatticeDeformer, disposeMeshLatticeDeformer, flushSceneLatticeD
 import { applyMaterialBounds, setMaterialBoundsExpansion, updateDynamicMaterialBounds } from "./material-bounds";
 import { managedRenderReservations } from "./managed-render-resources";
 import { onSceneReadinessDirty } from "./scene-readiness-signal";
+
+// Pass-through: records which meshes had their lattice owner resolved, so a test can show an unchanged batch is not re-resolved.
+const resolved = vi.hoisted(() => ({ meshes: [] as unknown[] }));
+vi.mock("./lattice-deformer-binding", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./lattice-deformer-binding")>();
+  return { ...actual, meshLatticeBinding: (mesh?: AbstractMesh) => { resolved.meshes.push(mesh); return actual.meshLatticeBinding(mesh); } };
+});
 
 const cleanups: (() => void)[] = [];
 const cagePlugin = (material: Material | null) => material?.pluginManager?.getPlugin("SlateLattice") ?? null;
@@ -189,6 +196,95 @@ describe("component lattice resource ownership", () => {
     expect(dirty).toHaveBeenCalledTimes(3);
     disposeMeshLatticeDeformer(root);
     expect(original.shadowDepthWrapper).toBeNull();
+  });
+});
+
+describe("repeat flushes", () => {
+  it("re-read part transforms once per frame pass, while a moved root or the next render still updates the bounds", () => {
+    const { root, mesh, scene } = fixture();
+    setMeshLatticeDeformer(root, cage());
+    const compute = vi.spyOn(mesh, "computeWorldMatrix"), invert = vi.spyOn(Matrix.prototype, "invertToRef");
+    flushSceneLatticeDeformers(scene); flushSceneLatticeDeformers(scene);
+    expect(compute).not.toHaveBeenCalled();
+    expect(invert).not.toHaveBeenCalled();
+    root.position.x = 3; root.computeWorldMatrix(true);
+    flushSceneLatticeDeformers(scene);
+    expect(compute).toHaveBeenCalled();
+    compute.mockClear();
+    scene.incrementRenderId();
+    flushSceneLatticeDeformers(scene);
+    expect(compute).toHaveBeenCalledTimes(1);
+  });
+
+  it("still carry an animated part's cage bounds to the next frame", () => {
+    const { root, mesh, scene } = fixture();
+    setMeshLatticeDeformer(root, cage());
+    const before = mesh.getBoundingInfo().boundingBox.minimum.x;
+    mesh.position.x = 5;
+    scene.incrementRenderId();
+    flushSceneLatticeDeformers(scene);
+    expect(mesh.getBoundingInfo().boundingBox.minimum.x).toBeLessThan(before);
+  });
+});
+
+describe("regular-instance ownership between flushes", () => {
+  function batch() {
+    const context = fixture();
+    const instance = context.mesh.createInstance("owned"); instance.parent = context.root;
+    setMeshLatticeDeformer(context.root, cage());
+    const other = new Mesh("otherComponent", context.scene); markLatticeComponentRoot(other);
+    return { ...context, instance, other };
+  }
+  const rejected = "different components";
+
+  it("rejects a foreign instance created after the batch was accepted, and accepts the batch once it is gone", () => {
+    const { mesh, scene, other } = batch();
+    flushSceneLatticeDeformers(scene);
+    const foreign = mesh.createInstance("foreign"); foreign.parent = other;
+    expect(() => flushSceneLatticeDeformers(scene)).toThrow(rejected);
+    expect(() => flushSceneLatticeDeformers(scene)).toThrow(rejected);
+    foreign.dispose();
+    expect(() => flushSceneLatticeDeformers(scene)).not.toThrow();
+  });
+
+  it("rejects an accepted instance re-parented into another component, directly or through an ancestor", () => {
+    const { root, scene, instance, other } = batch();
+    flushSceneLatticeDeformers(scene);
+    instance.parent = other;
+    expect(() => flushSceneLatticeDeformers(scene)).toThrow(rejected);
+    instance.parent = root;
+    expect(() => flushSceneLatticeDeformers(scene)).not.toThrow();
+    const group = new TransformNode("group", scene); group.parent = root; instance.parent = group;
+    expect(() => flushSceneLatticeDeformers(scene)).not.toThrow();
+    group.parent = other;
+    expect(() => flushSceneLatticeDeformers(scene)).toThrow(rejected);
+  });
+
+  it("rejects a foreign instance that replaced an owned one, though the batch size did not change", () => {
+    const { mesh, scene, instance, other } = batch();
+    flushSceneLatticeDeformers(scene);
+    instance.dispose();
+    const foreign = mesh.createInstance("foreign"); foreign.parent = other;
+    expect(() => flushSceneLatticeDeformers(scene)).toThrow(rejected);
+  });
+
+  it("rejects an owned instance once its ancestor becomes the root of another component", () => {
+    const { root, scene, instance } = batch();
+    const group = new Mesh("group", scene); group.parent = root; instance.parent = group;
+    flushSceneLatticeDeformers(scene);
+    markLatticeComponentRoot(group);
+    expect(() => flushSceneLatticeDeformers(scene)).toThrow(rejected);
+  });
+
+  it("does not resolve the owner of an unchanged batch again, but does once an instance moves", () => {
+    const { root, scene, instance } = batch();
+    flushSceneLatticeDeformers(scene);
+    resolved.meshes.length = 0;
+    flushSceneLatticeDeformers(scene); flushSceneLatticeDeformers(scene);
+    expect(resolved.meshes).not.toContain(instance);
+    const group = new TransformNode("group", scene); group.parent = root; instance.parent = group;
+    flushSceneLatticeDeformers(scene);
+    expect(resolved.meshes).toContain(instance);
   });
 });
 
