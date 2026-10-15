@@ -129,7 +129,8 @@ export function canCacheShadowMaterial(
     material.clipPlane6
   )
     return false;
-  if (material.constructor === CelMaterial) {
+  const constructor = material.constructor;
+  if (constructor === CelMaterial) {
     if (
       material.pluginManager?._plugins.some(
         (plugin) => !nativePlugins.has(plugin.constructor),

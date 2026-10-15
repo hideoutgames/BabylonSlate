@@ -31,7 +31,7 @@ export function boundsCertifyDrawnGeometry(mesh: AbstractMesh): boolean {
 }
 
 /** The mesh's world box, brought up to date the way drawing would, meets the frustum; corrupt bounds rule nothing out. */
-function boundsMeetFrustum(mesh: AbstractMesh, planes: readonly Plane[]): boolean {
+function boundsMeetFrustum(mesh: AbstractMesh, planes: Plane[]): boolean {
   mesh.computeWorldMatrix();
   // The box alone: Babylon's sphere scales by the longest axis, which a shear outgrows.
   const box = mesh.getBoundingInfo().boundingBox;
@@ -45,7 +45,7 @@ function boundsMeetFrustum(mesh: AbstractMesh, planes: readonly Plane[]): boolea
  * bounds meet it, plus every mesh whose bounds cannot be trusted. A mesh left out cannot cover the
  * pixel, so the nearest drawn fragment is the same as with every pickable mesh submitted.
  */
-export function pickCandidates(scene: Scene, meshes: readonly AbstractMesh[], planes: readonly Plane[]): AbstractMesh[] {
+export function pickCandidates(scene: Scene, meshes: readonly AbstractMesh[], planes: Plane[]): AbstractMesh[] {
   const degenerate = planes.some((plane) => !Number.isFinite(plane.normal.x + plane.normal.y + plane.normal.z + plane.d));
   if (degenerate || scene.forcePointsCloud) return [...meshes];
   return meshes.filter((mesh) => !boundsCertifyDrawnGeometry(mesh) || boundsMeetFrustum(mesh, planes));
