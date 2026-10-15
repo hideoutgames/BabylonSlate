@@ -108,6 +108,19 @@ describe("carrying stored chunks into a rewrite", () => {
     const loaded = await carryStoredChunks(storage, blobs, catalog, { load: (entry) => entry.id === "pixels" });
     expect((loaded![1] as ChunkInput).data).toEqual(BIG);
   });
+
+  it("does not carry an externalised chunk a re-encode would keep inline", async () => {
+    const { storage, blobs, writeBlob } = await stored();
+    // Written with a threshold under its size, so this small chunk sits in the blob store.
+    await storage.writeBinary(PATH, await encodeBabasset({
+      header: HEADER, chunks: [chunk("document", SMALL), chunk("note", SMALL)], blobThreshold: 1, writeBlob,
+    }));
+    const catalog = await readAssetCatalog(storage, PATH);
+    expect(catalog.header.chunks.map((entry) => "blob" in entry.locator)).toEqual([true, true]);
+    expect(await carryStoredChunks(storage, blobs, catalog)).toBeNull();
+    const loaded = await carryStoredChunks(storage, blobs, catalog, { load: () => true });
+    expect(loaded!.map((entry) => (entry as ChunkInput).data)).toEqual([SMALL, SMALL]);
+  });
 });
 
 describe("storedBabassetMatches", () => {
