@@ -416,6 +416,7 @@ describe("P11 §18 acceptance", () => {
     await runtime.loadNavMesh(tileBytes);
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     const open = runtime.findNavPath(
       { x: -4, y: 0, z: 0 },
       { x: 4, y: 0, z: 0 },
@@ -466,6 +467,7 @@ describe("P11 §18 acceptance", () => {
     await runtime.loadNavMesh(soloBytes);
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     runtime.executeConsoleCommand("snapshot start");
     for (let i = 0; i < 20; i += 1) runtime.tick();
     const running = commands.filter((command) => command.type === "btState").at(-1);
@@ -503,6 +505,7 @@ describe("P11 §18 acceptance", () => {
     await runtime.loadNavMesh(soloBytes);
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     for (let i = 0; i < 24; i += 1) runtime.tick();
     const running = commands.filter((command) => command.type === "btState").at(-1);
     expect(running).toMatchObject({ type: "btState", btNodeId: "move" });
@@ -583,6 +586,7 @@ describe("P11 §18 acceptance", () => {
         entryPoints: [{ name: "activate", event: "onActivate", isAsync: true }] }]);
       runtime.start();
       runtime.realizePlayWorld();
+      runtime.applyBehaviourTreeStateObserved(true);
       for (let i = 0; i < 8; i++) { runtime.tick(); await Promise.resolve(); }
       expect(commands.filter((command) => command.type === "btState")).toContainEqual(
         expect.objectContaining({ status: "success", blackboard: expect.objectContaining({ done: true }) }),
@@ -718,6 +722,7 @@ describe("P11 §18 acceptance", () => {
     await runtime.loadScripts([blockingDecoratorScript()]);
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     runtime.tick();
     const state = commands.filter((command) => command.type === "btState").at(-1);
     expect(state).toMatchObject({ type: "btState", status: "failure" });
@@ -777,6 +782,7 @@ describe("P11 §18 acceptance", () => {
     await runtime.loadScripts([abortHoldTaskScript()]);
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     runtime.executeConsoleCommand("snapshot start");
     runtime.tick();
     const running = commands.filter((command) => command.type === "btState").at(-1);
@@ -847,6 +853,7 @@ describe("P11 §18 acceptance", () => {
     await runtime.loadScripts([pulseServiceScript()]);
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     runtime.tick();
     const state = commands.filter((command) => command.type === "btState").at(-1);
     expect(state).toMatchObject({
