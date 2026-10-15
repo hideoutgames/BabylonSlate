@@ -40,7 +40,8 @@ export class WaterWavesBlock extends NodeMaterialBlock {
   get time() { return this._outputs[4]!; }
   override getClassName(): string { return "WaterWavesBlock"; }
   override prepareDefines(defines: NodeMaterialDefines, _material: NodeMaterial, mesh?: AbstractMesh): void {
-    const surface = isWaterSurfaceMesh(mesh), waves = surface && mesh!.isVerticesDataPresent("slateWaterBaseNormal") && meshVertexWaves(mesh) !== null;
+    // The water mesh uploads its base normals with the data and flow it is recognised by, and only it registers a swell.
+    const surface = isWaterSurfaceMesh(mesh), waves = surface && meshVertexWaves(mesh) !== null;
     defines.setValue(WATER_SURFACE_DEFINE, surface, true);
     defines.setValue(WATER_GPU_WAVES_DEFINE, waves, true);
     defines.setValue(WATER_BLEND_DEFINE, waves && mesh!.isVerticesDataPresent("slateWaterBlend"), true);

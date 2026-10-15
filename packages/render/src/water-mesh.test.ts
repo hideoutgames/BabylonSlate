@@ -598,6 +598,44 @@ describe("Water rendering", () => {
       expect(hit.pickedPoint!.asArray()).toEqual([expect.closeTo(440.3, 3), expect.closeTo(0, 3), expect.closeTo(-17.7, 3)]);
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
+  it("keeps frozen Custom Material water's blend define, attributes and effect in step as a neighbour comes and goes", async () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    new FreeCamera("camera", new Vector3(0, 30, -40), scene);
+    try {
+      const waves = await customWaterMaterial(scene, true);
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 24, length: 24, waveScale: 0.3, resolution: 24 }), createDefaultWaterDefinition(), waves);
+      updateSceneWater(scene);
+      // One frame: a new render id, the water update, then the draw's readiness check, which a frozen NodeMaterial answers from its last effect.
+      const drawn = async () => {
+        scene.incrementRenderId(); updateSceneWater(scene);
+        await vi.waitFor(() => expect(waves.isReadyForSubMesh(lake, lake.subMeshes[0]!)).toBe(true));
+        return { blended: lake.isVerticesDataPresent("slateWaterBlend"), effect: lake.subMeshes[0]!.effect!, defines: lake.subMeshes[0]!.effect!.defines as string };
+      };
+      const alone = await drawn();
+      waves.freeze();
+      expect(alone.blended).toBe(false);
+      expect(alone.defines).not.toContain("SLATE_WATER_BLEND");
+      // Frozen, the material answers from the effect it has: this is the state the rest of the test must get out of.
+      expect(waves.isFrozen).toBe(true);
+      expect((await drawn()).effect).toBe(alone.effect);
+      // A neighbour within the blend distance: the surface blends, so its vertex stage must scale by the per-vertex blend data.
+      const neighbour = createWaterMesh(scene, "neighbour", normalizeWaterBody({ width: 24, length: 24, waveScale: 0.9, resolution: 24 }));
+      neighbour.position.set(16, 0.5, 0);
+      const blending = await drawn();
+      expect(blending.blended).toBe(true);
+      expect(blending.defines).toMatch(/^#define SLATE_WATER_BLEND$/m);
+      expect(blending.effect).not.toBe(alone.effect);
+      // It leaves: the attribute is gone and no effect that reads it is still in use.
+      neighbour.dispose();
+      const apart = await drawn();
+      expect(apart.blended).toBe(false);
+      expect(apart.defines).not.toContain("SLATE_WATER_BLEND");
+      // Blending again compiles it back in: the frozen material is not stuck on either answer.
+      const returning = createWaterMesh(scene, "returning", normalizeWaterBody({ width: 24, length: 24, waveScale: 0.9, resolution: 24 }));
+      returning.position.set(16, 0.5, 0);
+      expect((await drawn()).defines).toMatch(/^#define SLATE_WATER_BLEND$/m);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
   it("animates built-in water on the GPU from the clock alone, keeps the CPU path for parity, and releases owned resources", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     // Half-metre cells resolve every swell component (the mesh filter fades none), so vertices sit on the queried surface.
