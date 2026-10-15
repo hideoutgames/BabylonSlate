@@ -1,6 +1,7 @@
 import {
   BoundingInfo,
   FreeCamera,
+  Material,
   Matrix,
   Mesh,
   MeshBuilder,
@@ -85,6 +86,21 @@ describe("pickCandidates", () => {
     expect(candidates(beside)).toEqual(["beside"]);
   });
 
+  it("keeps everything when the scene forces wireframe, since lines rasterise past their box", () => {
+    const { scene, box, candidates } = fixture();
+    const beside = box("beside", 50);
+    scene.forceWireframe = true;
+    expect(candidates(beside)).toEqual(["beside"]);
+  });
+
+  it("keeps a lines mesh even when it carries a stock triangle material", () => {
+    const { scene, candidates } = fixture();
+    const lines = MeshBuilder.CreateLines("lines", { points: [new Vector3(50, 0, 0), new Vector3(51, 0, 0)] }, scene);
+    lines.material = new StandardMaterial("lines material", scene);
+    lines.computeWorldMatrix(true);
+    expect(candidates(lines)).toEqual(["lines"]);
+  });
+
   describe("a mesh that can draw outside its bounds is always kept, however far from the ray", () => {
     type Arrange = (mesh: Mesh, context: ReturnType<typeof fixture>) => void;
     const cases: Array<[string, Arrange]> = [
@@ -116,6 +132,11 @@ describe("pickCandidates", () => {
         mesh.material = slots;
       }],
       ["is a point cloud", (mesh) => { mesh.material!.pointsCloud = true; }],
+      // Lines rasterise up to half a pixel past the box that holds their vertices.
+      ["is drawn as a wireframe", (mesh) => { mesh.material!.wireframe = true; }],
+      ["is drawn as a line list", (mesh) => { mesh.material!.fillMode = Material.LineListDrawMode; }],
+      ["is drawn as a line strip", (mesh) => { mesh.material!.fillMode = Material.LineStripDrawMode; }],
+      ["has its rendering fill mode overridden to lines", (mesh) => { mesh.overrideRenderingFillMode = Material.LineListDrawMode; }],
       ["leads a level-of-detail chain", (mesh, { box }) => { mesh.addLODLevel(10, box("lod", 50)); }],
     ];
 

@@ -172,10 +172,28 @@ function readBackNearestDrawn(f: PickFixture) {
   f.readback.mockImplementation(async (_texture, _width, _height, _face, _level, buffer) => {
     const reach = (mesh: Mesh) => Vector3.Distance(f.camera.position, mesh.getAbsolutePosition());
     const nearest = [...(executions.at(-1)?.drawn ?? [])].sort((a, b) => reach(a) - reach(b))[0];
-    f.hit(nearest ? f.meshes.indexOf(nearest) + 1 : 0);
+    // A level of detail is drawn for its master.
+    f.hit(nearest ? f.meshes.indexOf((nearest._masterMesh ?? nearest) as Mesh) + 1 : 0);
     return f.writeHit(buffer!);
   });
   return executions;
+}
+
+/**
+ * Babylon recompiles a changed material's variant asynchronously and a draw skips the mesh until it
+ * lands. Calling the returned function makes the next two readiness answers for `mesh`'s material
+ * "not ready", which stands in for that wait.
+ */
+function recompilesAfterChange(mesh: Mesh) {
+  const material = mesh.material!;
+  const isReady = material.isReadyForSubMesh.bind(material);
+  let pending = 0;
+  vi.spyOn(material, "isReadyForSubMesh").mockImplementation((...args) => {
+    if (pending === 0) return isReady(...args);
+    pending -= 1;
+    return false;
+  });
+  return () => { pending = 2; };
 }
 
 describe("gpuPickMesh", () => {
@@ -192,24 +210,34 @@ describe("gpuPickMesh", () => {
     expect(f.scene.objectRenderers).toHaveLength(1);
   });
 
-  it("writes ids for the current tap's pickable meshes, with a LOD level reporting its master", async () => {
+  it("writes ids for the current tap's pickable meshes, with a LOD level reporting its master, and keeps none while idle", async () => {
     const f = pickFixture();
     const lod = MeshBuilder.CreateBox("Middle LOD", {}, f.scene);
     lod.isPickable = false;
     f.meshes[1]!.addLODLevel(20, lod);
     const [left, middle, right] = f.meshes as [Mesh, Mesh, Mesh];
+    const written = (mesh: AbstractMesh) =>
+      MaterialHelperGeometryRendering.GetConfiguration(f.scene.objectRenderers[0]!.renderPassId)!.objectIdProvider!(mesh);
+    // The numbering as the draw sees it.
+    let probed: AbstractMesh[] = [left, middle, right, lod];
+    const numbering: number[][] = [];
+    const execute = FrameGraph.prototype.execute;
+    vi.spyOn(FrameGraph.prototype, "execute").mockImplementation(function (this: FrameGraph) {
+      numbering.push(probed.map(written));
+      execute.call(this);
+    });
     f.hit(3);
     expect((await f.tap())?.name).toBe("Right");
-    const renderPassId = f.scene.objectRenderers[0]!.renderPassId;
-    const written = (mesh: AbstractMesh) =>
-      MaterialHelperGeometryRendering.GetConfiguration(renderPassId)!.objectIdProvider!(mesh);
-    expect([left, middle, right, lod].map(written)).toEqual([1, 2, 3, 2]);
+    expect(numbering).toEqual([[1, 2, 3, 2]]);
+    // An idle pass holds no numbering, and with it no reference to every pickable mesh.
+    expect(probed.map(written)).toEqual([0, 0, 0, 0]);
 
     // The persistent pass must not keep the previous tap's numbering.
     left.dispose();
+    probed = [middle, right, lod];
     f.hit(1);
     expect((await f.tap())?.name).toBe("Middle");
-    expect([middle, right, lod].map(written)).toEqual([1, 2, 1]);
+    expect(numbering.at(-1)).toEqual([1, 2, 1]);
   });
 
   it("answers overlapping taps one at a time, each with its own read-back", async () => {
@@ -392,21 +420,6 @@ describe("gpuPickMesh", () => {
   });
 
   describe("a mesh changed in place after the pass drew it", () => {
-    /**
-     * Babylon recompiles a changed material's variant asynchronously and a draw skips the mesh
-     * until it lands. Two not-ready answers after each change stand in for that wait.
-     */
-    function recompilesAfterChange(mesh: Mesh) {
-      const material = mesh.material!;
-      const isReady = material.isReadyForSubMesh.bind(material);
-      let pending = 0;
-      vi.spyOn(material, "isReadyForSubMesh").mockImplementation((...args) => {
-        if (pending === 0) return isReady(...args);
-        pending -= 1;
-        return false;
-      });
-      return () => { pending = 2; };
-    }
     // A skeleton created after the first tap would join the scene's skeleton list, which already ends
     // every readiness proof, so the rig exists beforehand and is only assigned later.
     const changes: Array<[string, (f: PickFixture, mesh: Mesh, rig: Skeleton) => void]> = [
@@ -428,6 +441,24 @@ describe("gpuPickMesh", () => {
       recompile();
       // The mesh in front must still win: the tap may not draw around it and select what lies behind.
       expect((await f.tap())?.name).toBe("Left");
+    });
+  });
+
+  describe("an actor showing a level of detail whose variant is not ready", () => {
+    it("is waited for, so the tap still selects the actor instead of what lies behind it", async () => {
+      const f = pickFixture();
+      const executions = readBackNearestDrawn(f);
+      const front = f.meshes[0]!;
+      // The camera is 6 units from Left, so a level starting at 5 is the one a tap draws, not the master.
+      const level = MeshBuilder.CreateBox("Left LOD", {}, f.scene);
+      level.isPickable = false;
+      level.material = new StandardMaterial("Left LOD Material", f.scene);
+      front.addLODLevel(5, level);
+      // A blocked level is skipped by the renderer's own readiness check and by Mesh.isReady(true)'s
+      // LOD pass, which is not a complete check: only the pick can make sure its variant is there.
+      recompilesAfterChange(level)();
+      expect((await f.tap())?.name).toBe("Left");
+      expect(executions.at(-1)!.drawn).toContain(level);
     });
   });
 
