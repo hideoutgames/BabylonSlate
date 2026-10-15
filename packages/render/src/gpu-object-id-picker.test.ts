@@ -170,7 +170,8 @@ function readBackNearestDrawn(f: PickFixture) {
     return setTransform.call(this, view, projection, ...rest);
   });
   f.readback.mockImplementation(async (_texture, _width, _height, _face, _level, buffer) => {
-    const reach = (mesh: Mesh) => Vector3.Distance(f.camera.position, mesh.getAbsolutePosition());
+    // A level of detail is placed by its master.
+    const reach = (mesh: Mesh) => Vector3.Distance(f.camera.position, (mesh._masterMesh ?? mesh).getAbsolutePosition());
     const nearest = [...(executions.at(-1)?.drawn ?? [])].sort((a, b) => reach(a) - reach(b))[0];
     // A level of detail is drawn for its master.
     f.hit(nearest ? f.meshes.indexOf((nearest._masterMesh ?? nearest) as Mesh) + 1 : 0);
