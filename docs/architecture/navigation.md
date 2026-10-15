@@ -31,7 +31,7 @@ Do **not** use Babylon `RecastJSPlugin`. `@recast-navigation/core` + `generators
 - `syncAgentPosition` writes the corrected position; Detour moves the corridor there during the next `stepCrowd`.
 - `syncAgentPosition(id, position)` projects a resolved physics position onto the crowd corridor without resetting its destination or accumulated velocity.
 - `solidBlockerMesh` / `recastWalkableQuadFromXy` / `recastWallsFromXyChains`: bake solids (center pose, full size, cylinder X/Z diameters). Walls are thick boxes so Recast can voxelise them.
-- `navmeshChunk` / `extraChunksWithNavmesh` / `NAVMESH_CHUNK_ID = "navmesh"`. Pass the chunk as `extraChunks` on Scene save; `extraChunksFromDecoded` already preserves it. Readers load the bytes by chunk id (`readAssetChunk(path, NAVMESH_CHUNK_ID)`). Not a Content Browser type.
+- `navmeshChunk` / `extraChunksWithNavmesh` / `NAVMESH_CHUNK_ID = "navmesh"`. A Scene Save preserves the stored chunk; `writeSceneNavmeshChunk` writes `navmeshChunk` after the Scene's other chunks, carried over without being read ([rewrite path](asset-registry.md#rewrite-path-carrystoredchunks)). `extraChunksWithNavmesh` is for callers holding decoded chunks. Readers load the bytes by chunk id (`readAssetChunk(path, NAVMESH_CHUNK_ID)`). Not a Content Browser type.
 
 Recast settings (`NavMeshSettings`) are data in Recast's own units: cell size/height in world units and walkable slope in degrees; walkable height and climb in cell heights; walkable radius, edge length and simplification error in cells; region areas as a side length in cells; detail sample distance in cells and its max error in cell heights. The generators apply the cell-size conversions.
 
@@ -59,7 +59,7 @@ Bake modal phases:
 | Parent | Scene `.scene.babasset` (not a creatable NavMesh asset type) |
 | Chunk `id` / `kind` | `navmesh` |
 | Bytes | Solo: `exportNavMesh()`. Tile cache: `BSNT` + `exportTileCache()` |
-| Save | `extraChunksWithNavmesh` / `extraChunksFromDecoded` |
+| Save | `writeSceneNavmeshChunk` (other chunks carried); a Scene Save keeps the chunk |
 
 ## Scripting and BT MoveTo
 
