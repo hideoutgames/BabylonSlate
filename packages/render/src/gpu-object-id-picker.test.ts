@@ -5,14 +5,18 @@ import {
   HemisphericLight,
   MaterialHelperGeometryRendering,
   Matrix,
+  Mesh,
   MeshBuilder,
+  MorphTargetManager,
   NullEngine,
   RawTexture,
   Scene,
+  Skeleton,
   StandardMaterial,
   Vector3,
+  VertexBuffer,
+  Viewport,
   type AbstractMesh,
-  type Mesh,
 } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { afterEach, describe, expect, it, vi, type MockInstance } from "vitest";
@@ -109,9 +113,11 @@ function pickFixture() {
   };
   const readback = vi.spyOn(engine, "_readTexturePixels")
     .mockImplementation(async (_texture, _width, _height, _face, _level, buffer) => writeHit(buffer!));
+  // CPU fallbacks are reported through console.warn; keep the test log clean and let tests read what was said.
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   disposers.push(() => { scene.dispose(); engine.dispose(); });
   return {
-    engine, scene, camera, meshes, readback, writeHit,
+    engine, scene, camera, meshes, readback, writeHit, warn,
     hit: (value: number) => { id = value; },
     tap: () => gpuPickMesh(scene, WIDTH / 2, HEIGHT / 2),
     /** Babylon re-reads a world matrix once per render id and nothing here renders, so moving a mesh recomputes it. */
@@ -140,6 +146,40 @@ function probeTracker(meshes: readonly AbstractMesh[]) {
       return [...spies.keys()].filter((mesh) => strict(mesh) > before.get(mesh)!).map((mesh) => mesh.name);
     },
   };
+}
+
+/**
+ * Replace the 1×1 read-back with what the GPU would write: the id of the mesh nearest the camera
+ * that actually reached a draw call in the pick pass. A mesh the pass skips (its variant is not
+ * ready when drawn) leaves whatever lies behind it, which is how a stale mesh makes a tap select
+ * the wrong actor. Each execution also records the view matrices the pass drew through.
+ */
+function readBackNearestDrawn(f: PickFixture) {
+  const executions: Array<{ drawn: Mesh[]; views: Matrix[] }> = [];
+  let current: { drawn: Mesh[]; views: Matrix[] } | undefined;
+  const execute = FrameGraph.prototype.execute;
+  vi.spyOn(FrameGraph.prototype, "execute").mockImplementation(function (this: FrameGraph) {
+    current = { drawn: [], views: [] };
+    executions.push(current);
+    try { execute.call(this); } finally { current = undefined; }
+  });
+  const draw = Mesh.prototype._draw;
+  vi.spyOn(Mesh.prototype, "_draw").mockImplementation(function (this: Mesh, subMesh, fillMode, instancesCount) {
+    current?.drawn.push(this);
+    return draw.call(this, subMesh, fillMode, instancesCount);
+  });
+  const setTransform = Scene.prototype.setTransformMatrix;
+  vi.spyOn(Scene.prototype, "setTransformMatrix").mockImplementation(function (this: Scene, view, projection, ...rest) {
+    if (current) current.views.push(view.clone());
+    return setTransform.call(this, view, projection, ...rest);
+  });
+  f.readback.mockImplementation(async (_texture, _width, _height, _face, _level, buffer) => {
+    const reach = (mesh: Mesh) => Vector3.Distance(f.camera.position, mesh.getAbsolutePosition());
+    const nearest = [...(executions.at(-1)?.drawn ?? [])].sort((a, b) => reach(a) - reach(b))[0];
+    f.hit(nearest ? f.meshes.indexOf(nearest) + 1 : 0);
+    return f.writeHit(buffer!);
+  });
+  return executions;
 }
 
 describe("gpuPickMesh", () => {
@@ -388,6 +428,134 @@ describe("gpuPickMesh", () => {
         f.hit(2);
         expect((await f.tap())?.name).toBe("Middle");
       });
+    });
+  });
+
+  describe("a mesh changed in place after the pass drew it", () => {
+    /**
+     * Babylon recompiles a changed material's variant asynchronously and a draw skips the mesh
+     * until it lands. Two not-ready answers after each change stand in for that wait.
+     */
+    function recompilesAfterChange(mesh: Mesh) {
+      const material = mesh.material!;
+      const isReady = material.isReadyForSubMesh.bind(material);
+      let pending = 0;
+      vi.spyOn(material, "isReadyForSubMesh").mockImplementation((...args) => {
+        if (pending === 0) return isReady(...args);
+        pending -= 1;
+        return false;
+      });
+      return () => { pending = 2; };
+    }
+    const changes: Array<[string, (f: PickFixture, mesh: Mesh) => void]> = [
+      ["a define-changing markDirty", (_f, mesh) => mesh.material!.markDirty(true)],
+      ["a skeleton is assigned", (f, mesh) => { mesh.skeleton = new Skeleton("rig", "rig", f.scene); }],
+      ["a morph target manager is assigned", (f, mesh) => { mesh.morphTargetManager = new MorphTargetManager(f.scene); }],
+      ["its vertex layout changes", (_f, mesh) => { mesh.setVerticesData(VertexBuffer.ColorKind, new Float32Array(mesh.getTotalVertices() * 4).fill(1)); }],
+    ];
+
+    it.each(changes)("is still the mesh a tap selects after %s", async (_name, change) => {
+      const f = pickFixture();
+      readBackNearestDrawn(f);
+      const front = f.meshes[0]!;
+      const recompile = recompilesAfterChange(front);
+      expect((await f.tap())?.name).toBe("Left");
+      expect((await f.tap())?.name).toBe("Left");
+      change(f, front);
+      recompile();
+      // The mesh in front must still win: the tap may not draw around it and select what lies behind.
+      expect((await f.tap())?.name).toBe("Left");
+    });
+  });
+
+  describe("a tap made while an earlier one is still waiting", () => {
+    it("projects through the camera it was made with, not the one that has moved since", async () => {
+      const f = pickFixture();
+      const executions = readBackNearestDrawn(f);
+      const material = f.meshes[0]!.material!;
+      const isReady = material.isReadyForSubMesh.bind(material);
+      let released = false;
+      vi.spyOn(material, "isReadyForSubMesh").mockImplementation((...args) => released && isReady(...args));
+      const original = f.camera.getViewMatrix().clone();
+      const first = f.tap();
+      // The first tap is now polling for the front mesh.
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      f.camera.position.z -= 4;
+      const moved = f.camera.getViewMatrix(true).clone();
+      const second = f.tap();
+      released = true;
+      expect((await Promise.all([first, second])).map((mesh) => mesh?.name)).toEqual(["Left", "Left"]);
+      expect(original.equals(moved)).toBe(false);
+      expect(executions).toHaveLength(2);
+      expect(executions[0]!.views.length).toBeGreaterThan(0);
+      expect(executions[0]!.views.every((view) => view.equals(original))).toBe(true);
+      expect(executions[1]!.views.length).toBeGreaterThan(0);
+      expect(executions[1]!.views.every((view) => view.equals(moved))).toBe(true);
+    });
+  });
+
+  describe("falling back to the CPU ray", () => {
+    /** A clock the test owns, started far from every other test's so the rate limit never carries over. */
+    let epoch = 0;
+    function ownClock() {
+      epoch += 1e9;
+      let now = epoch;
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      return { advance: (ms: number) => { now += ms; } };
+    }
+    const said = (f: PickFixture) => f.warn.mock.calls.map((call) => String(call[0]));
+
+    it("says which mesh was not ready in time", async () => {
+      const f = pickFixture();
+      const clock = ownClock();
+      vi.spyOn(f.meshes[1]!, "isReady").mockImplementation(() => { clock.advance(600); return false; });
+      expect(await f.tap()).toBeUndefined();
+      expect(said(f)).toHaveLength(1);
+      expect(said(f)[0]).toMatch(/not ready/i);
+      expect(said(f)[0]).toContain("Middle");
+    });
+
+    it("says why a failed read-back fell back", async () => {
+      const f = pickFixture();
+      ownClock();
+      f.readback.mockRejectedValueOnce(new Error("device lost"));
+      expect(await f.tap()).toBeUndefined();
+      expect(said(f)).toHaveLength(1);
+      expect(said(f)[0]).toContain("device lost");
+    });
+
+    it("says when the camera viewport is not full-frame", async () => {
+      const f = pickFixture();
+      ownClock();
+      f.camera.viewport = new Viewport(0, 0, 0.5, 1);
+      expect(await f.tap()).toBeUndefined();
+      expect(said(f)).toHaveLength(1);
+      expect(said(f)[0]).toMatch(/viewport/i);
+    });
+
+    it("says when a mesh that timed out earlier lies under the pixel", async () => {
+      const f = pickFixture();
+      const clock = ownClock();
+      vi.spyOn(f.meshes[1]!, "isReady").mockImplementation(() => { clock.advance(600); return false; });
+      expect(await f.tap()).toBeUndefined();
+      clock.advance(10_000);
+      expect(await f.tap()).toBeUndefined();
+      expect(said(f)).toHaveLength(2);
+      expect(said(f)[1]).toMatch(/earlier/i);
+      expect(said(f)[1]).toContain("Middle");
+    });
+
+    it("reports a repeated cause once per interval", async () => {
+      const f = pickFixture();
+      const clock = ownClock();
+      f.readback.mockRejectedValue(new Error("device lost"));
+      await f.tap();
+      clock.advance(100);
+      await f.tap();
+      expect(said(f)).toHaveLength(1);
+      clock.advance(60_000);
+      await f.tap();
+      expect(said(f)).toHaveLength(2);
     });
   });
 
