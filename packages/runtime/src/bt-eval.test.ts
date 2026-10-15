@@ -91,6 +91,7 @@ describe("runtime behaviour tree evaluation", () => {
     }]);
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     runtime.executeConsoleCommand("behaviourtreedebug on");
     expect(() => runtime.tick()).not.toThrow();
     runtime.tick();
@@ -99,6 +100,7 @@ describe("runtime behaviour tree evaluation", () => {
     expect(snapshot).toMatchObject({ trees: [{ blackboard: { cycle: expect.stringContaining("self"), large: "5n", preserved: true } }] });
     expect(() => JSON.stringify(snapshot)).not.toThrow();
     const graphState = commands.filter((command) => command.type === "btState").at(-1);
+    expect(graphState).toMatchObject({ type: "btState", blackboard: { preserved: true } });
     expect(() => JSON.stringify(graphState)).not.toThrow();
     runtime.stop();
   });
@@ -175,6 +177,7 @@ describe("runtime behaviour tree evaluation", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     runtime.tick();
     const states = commands.filter((command) => command.type === "btState");
     expect(states).toHaveLength(1);
@@ -191,6 +194,72 @@ describe("runtime behaviour tree evaluation", () => {
     runtime.stop();
   });
 
+  it("publishes no btState until the editor observes it, then every evaluated tree's current state at once", () => {
+    const commands: CommandMessage[] = [];
+    const playScene = aiScene({ treeGuid: "tree-1" });
+    playScene.actors.push(createActor("scout", "Scout", {
+      components: [{ id: "bt-2", classId: "BehaviourTreeComponent", properties: { treeGuid: "tree-1" } }],
+    }));
+    const runtime = createInProcessRuntime({
+      seed: 1, maxActors: 4, seedDemoActors: false, playScene,
+      behaviourTrees: { "tree-1": createDefaultBehaviourTree("Guard") },
+      onCommand: (command) => commands.push(command),
+    });
+    const states = () => commands.filter((command) => command.type === "btState");
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    runtime.tick();
+    expect(states()).toEqual([]);
+
+    // A paused session has no next tick to publish on.
+    runtime.pause();
+    runtime.applyBehaviourTreeStateObserved(true);
+    expect(states()).toHaveLength(2);
+    expect(new Set(states().map((state) => state.slotId)).size).toBe(2);
+    expect(states()).toEqual([
+      expect.objectContaining({ status: "success", btNodeId: null }),
+      expect.objectContaining({ status: "success", btNodeId: null }),
+    ]);
+    runtime.applyBehaviourTreeStateObserved(true);
+    expect(states()).toHaveLength(2);
+
+    // A later observer starts blank, so it is sent both states again although nothing changed.
+    runtime.applyBehaviourTreeStateObserved(false);
+    runtime.applyBehaviourTreeStateObserved(true);
+    expect(states()).toHaveLength(4);
+    runtime.stop();
+  });
+
+  it("stops publishing btState when observation ends and sends the current state when it resumes", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1, maxActors: 4, seedDemoActors: false, dt: 0.1,
+      playScene: aiScene({ treeGuid: "tree-1" }),
+      behaviourTrees: { "tree-1": { name: "Wait", rootId: "wait", blackboardGuid: null, nodes: [{
+        id: "wait", kind: "task", classId: "bt.task.wait", children: [], decorators: [], services: [],
+        properties: { durationMs: 500 },
+      }] } },
+      onCommand: (command) => commands.push(command),
+    });
+    const states = () => commands.filter((command) => command.type === "btState");
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
+    runtime.tick();
+    expect(states()).toEqual([expect.objectContaining({ status: "running", btNodeId: "wait" })]);
+
+    // The 500 ms wait finishes on the fifth tick, before the tree restarts.
+    runtime.applyBehaviourTreeStateObserved(false);
+    for (let i = 0; i < 4; i += 1) runtime.tick();
+    expect(states()).toHaveLength(1);
+
+    runtime.applyBehaviourTreeStateObserved(true);
+    expect(states()).toHaveLength(2);
+    expect(states().at(-1)).toMatchObject({ status: "success", btNodeId: null });
+    runtime.stop();
+  });
+
   it("ticks a tree attached to a running actor after earlier ticks", () => {
     const commands: CommandMessage[] = [];
     const playScene = aiScene({ treeGuid: "tree-1" });
@@ -202,6 +271,7 @@ describe("runtime behaviour tree evaluation", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     runtime.tick();
     runtime.tick();
     expect(commands.filter((command) => command.type === "btState")).toHaveLength(1);
@@ -318,6 +388,7 @@ describe("runtime behaviour tree evaluation", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     runtime.tick();
     expect(commands.filter((command) => command.type === "playSound")).toEqual([]);
     expect(commands.filter((command) => command.type === "btState").at(-1)).toMatchObject({

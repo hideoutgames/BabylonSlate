@@ -83,9 +83,8 @@ import {
   encodeAssetDocument,
   encodeJobMayWrite,
   extraChunksFromDecoded,
-  extraChunksWithAudioReverb,
-  extraChunksWithAudioClip,
-  extraChunksWithoutAudioClip,
+  audioClipChunk,
+  audioClipChunkToDrop,
   exportProjectZip,
   fallbackParentClass,
   clearDeletedAssetRefs,
@@ -146,7 +145,7 @@ import { processAreaEmissionInWorker } from "@babylonslate/assets/area-emission-
 import { onEncodeQueuePause } from "./encode-queue-pause";
 import { validateClassDeletionReplacements } from "../lib/class-deletion";
 import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
-import { extraChunksWithNavmesh } from "@babylonslate/navigation/chunk";
+import { NAVMESH_CHUNK_ID, navmeshChunk } from "@babylonslate/navigation/chunk";
 import type { NavMeshGenerateInput } from "@babylonslate/navigation";
 import {
   newAssetFileName,
@@ -293,6 +292,14 @@ function withSavedTextureEncodeState(
 function committedKtx2Sha256(header: Pick<BabassetHeader, "payload" | "chunks"> | undefined): string | null {
   const id = header?.payload.ktx2ChunkId;
   return header?.chunks.find((chunk) => chunk.id === id)?.sha256 ?? null;
+}
+
+/**
+ * What a rewrite supplies itself, for `storeDocumentBytes` to verify against
+ * the file: the document body and every chunk it did not carry over.
+ */
+function suppliedChunkIds(chunks: readonly EncodableChunk[]): string[] {
+  return [DOCUMENT_CHUNK_ID, ...chunks.filter((chunk) => !isCarriedChunk(chunk)).map((chunk) => chunk.id)];
 }
 
 export interface ProjectLoadResult {
@@ -2665,10 +2672,7 @@ export class ProjectService {
         ),
       },
     );
-    await this.storeDocumentBytes(path, stored, bytes, this.assetRegistry, [
-      DOCUMENT_CHUNK_ID,
-      ...extraChunks.filter((chunk) => !isCarriedChunk(chunk)).map((chunk) => chunk.id),
-    ]);
+    await this.storeDocumentBytes(path, stored, bytes, this.assetRegistry, suppliedChunkIds(extraChunks));
     this.noteMigrated(path);
     if (pluginContentChanged && ownerPlugin) {
       // In the settings file's own write queue, so a PluginSettings save is
@@ -2743,39 +2747,23 @@ export class ProjectService {
     return new AccountedPayloadLoader(storage, { blobs }).loadChunk(locator, entry, blobs, storage, { signal: options.signal });
   }
 
-  /** Every Scene payload write must keep only probes matching that geometry. */
-  private async sceneExtraChunksForWrite(
-    path: string,
-    payload: SerializedScene | Record<string, unknown>,
-    guid: string,
-  ): Promise<ChunkInput[]> {
-    const extra = await this.extraChunksFor(path);
-    const fingerprint = staticAudioGeometryFingerprint(payload as SerializedScene);
-    const baked = this.sceneAudioReverb.get(guid)?.get(fingerprint);
-    if (baked) return extraChunksWithAudioReverb(extra, baked);
-    if (extra.some((chunk) => chunk.id === AUDIO_REVERB_CHUNK_ID)) {
-      const saved = await this.readAssetDocument(path, "Scene");
-      if (staticAudioGeometryFingerprint(normalizeScene(saved.payload)) !== fingerprint) {
-        return extra.filter((chunk) => chunk.id !== AUDIO_REVERB_CHUNK_ID);
-      }
-    }
-    return extra;
-  }
-
   /**
-   * {@link sceneExtraChunksForWrite} for a Scene document Save, carrying the
-   * stored chunks over from `stored` instead of reading them. A reverb result
-   * baked for this geometry replaces the stored chunk, which is then not read.
+   * The chunks a Scene payload write keeps, other than its document body and
+   * `omit` (which the caller replaces): the stored ones carried over from
+   * `stored` instead of read, and only probes matching the payload's geometry.
+   * A reverb result baked for this geometry replaces the stored chunk, which is
+   * then not read.
    */
   private async sceneChunksForSave(
     path: string,
     payload: SerializedScene | Record<string, unknown>,
     guid: string,
     stored: AssetCatalogRead | null,
+    omit: readonly string[] = [],
   ): Promise<EncodableChunk[]> {
     const fingerprint = staticAudioGeometryFingerprint(payload as SerializedScene);
     const baked = this.sceneAudioReverb.get(guid)?.get(fingerprint);
-    const kept = await this.keptChunksFor(path, stored, baked ? new Set([AUDIO_REVERB_CHUNK_ID]) : undefined);
+    const kept = await this.keptChunksFor(path, stored, new Set([...omit, ...(baked ? [AUDIO_REVERB_CHUNK_ID] : [])]));
     if (baked) return [...kept, audioReverbChunk(baked)];
     if (kept.some((chunk) => chunk.id === AUDIO_REVERB_CHUNK_ID)) {
       const saved = await this.readAssetDocument(path, "Scene");
@@ -2869,11 +2857,12 @@ export class ProjectService {
       throw new Error("Engine plugin assets are read-only");
     }
     this.assertMigrationApproved(path);
-    const storage = this.storageForPath(path);
     const guid = await this.guidForAsset(path);
-    const extra = extraChunksWithNavmesh(await this.sceneExtraChunksForWrite(path, payload, guid), bytes);
     const existing = await this.readExistingAssetMeta(path);
+    const stored = existing?.catalog ?? null;
     const type = existing?.type ?? "Scene";
+    // The stored chunks are carried over, not read; the navmesh it replaces is not read at all.
+    const chunks = [...await this.sceneChunksForSave(path, payload, guid, stored, [NAVMESH_CHUNK_ID]), navmeshChunk(bytes)];
     const encoded = await encodeAssetDocument(
       {
         type,
@@ -2884,13 +2873,12 @@ export class ProjectService {
       },
       {
         blobs: this.blobsForPath(path),
-        extraChunks: extra,
+        extraChunks: chunks,
         parentClass: existing?.parentClass ?? null,
         dependencyMetadata: assetHeaderDependencyMetadata(type, payload, this.assetRegistry?.list()),
       },
     );
-    await storage.writeBinary(path, encoded);
-    await this.assetRegistry?.reindexPath(path);
+    await this.storeDocumentBytes(path, stored, encoded, this.assetRegistry, suppliedChunkIds(chunks));
     this.noteMigrated(path);
   }
 
@@ -2978,14 +2966,8 @@ export class ProjectService {
     mime: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    return this.withDocumentWrite(path, async (currentPath) => {
-      const extra = extraChunksWithAudioClip(await this.extraChunksFor(currentPath), {
-        id: chunkId,
-        bytes,
-        mime,
-      });
-      await this.writeAssetDocumentWithExtra(currentPath, payload, extra);
-    });
+    return this.withDocumentWrite(path, (currentPath) =>
+      this.writeAudioClips(currentPath, payload, [chunkId], audioClipChunk({ id: chunkId, bytes, mime })));
   }
 
   /** Drop an extra Audio clip chunk. Never deletes the last `source`. */
@@ -2994,26 +2976,30 @@ export class ProjectService {
     chunkId: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    return this.withDocumentWrite(path, async (currentPath) => {
-      const extra = extraChunksWithoutAudioClip(
-        await this.extraChunksFor(currentPath),
-        chunkId,
-      );
-      await this.writeAssetDocumentWithExtra(currentPath, payload, extra);
-    });
+    const dropped = audioClipChunkToDrop(chunkId);
+    return this.withDocumentWrite(path, (currentPath) =>
+      this.writeAudioClips(currentPath, payload, dropped === null ? [] : [dropped]));
   }
 
-  private async writeAssetDocumentWithExtra(
+  /**
+   * Rewrite an Audio asset with `payload`: its stored chunks carried over from
+   * the chunk table instead of read (a clip's blob stays unread), except
+   * `omit`, which the caller replaces or drops, and `added` written after them.
+   */
+  private async writeAudioClips(
     path: string,
     payload: Record<string, unknown>,
-    extra: Array<{ id: string; kind: string; mime: string; data: Uint8Array }>,
+    omit: readonly string[],
+    added?: ChunkInput,
   ): Promise<void> {
     if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
     this.assertMigrationApproved(path);
-    const storage = this.storageForPath(path);
     const existing = await this.readExistingAssetMeta(path);
+    const stored = existing?.catalog ?? null;
+    const kept = await this.keptChunksFor(path, stored, new Set(omit));
+    const chunks = added ? [...kept, added] : kept;
     const type = existing?.type ?? "Audio";
     const storeInHeader = existing !== null && !existing.hasDocumentChunk;
     const encoded = await encodeAssetDocument(
@@ -3026,15 +3012,14 @@ export class ProjectService {
       },
       {
         blobs: this.blobsForPath(path),
-        extraChunks: extra,
+        extraChunks: chunks,
         parentClass: existing?.parentClass ?? null,
         headerPayload: storeInHeader ? payload : undefined,
         headerMeta: headerMetaForSave(type, payload),
         dependencyMetadata: assetHeaderDependencyMetadata(type, payload, this.assetRegistry?.list(), existing?.parentClass),
       },
     );
-    await storage.writeBinary(path, encoded);
-    await this.assetRegistry?.reindexPath(path);
+    await this.storeDocumentBytes(path, stored, encoded, this.assetRegistry, suppliedChunkIds(chunks));
     this.noteMigrated(path);
   }
 

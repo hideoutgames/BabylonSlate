@@ -78,6 +78,7 @@ describe("Move To Blackboard Key", () => {
     await runtime.loadNavMesh(bytes);
     runtime.start();
     runtime.realizePlayWorld();
+    runtime.applyBehaviourTreeStateObserved(true);
     return { runtime, commands };
   }
 

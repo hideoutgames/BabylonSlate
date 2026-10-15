@@ -60,6 +60,9 @@ const BB_PATH = "assets/Guard.blackboard.babasset";
 const openDocument = vi.hoisted(() => vi.fn());
 const loadAssetDocument = vi.hoisted(() => vi.fn());
 
+/** The document tab the host reports as active; a panel is on screen only for its own document. */
+const tabs = vi.hoisted(() => ({ active: null as string | null }));
+
 const defaultBlackboard = vi.hoisted(() => ({
   name: "Guard",
   keys: [
@@ -101,6 +104,7 @@ vi.mock("../context/document-context", async () => {
     const content = useSyncExternalStore(store.subscribe, store.getSnapshot);
     const blackboard = useSyncExternalStore(store.subscribe, store.getBlackboard);
     return {
+      activeDocumentId: tabs.active,
       openDocuments: [
         {
           id: DOC_ID,
@@ -237,14 +241,26 @@ vi.mock("../context/document-context", async () => {
 const livePlay = vi.hoisted(() => ({
   playing: false,
   snapshot: null as LiveBtState | null,
+  /** The panels counted as showing live state right now. */
+  observers: 0,
 }));
-vi.mock("../context/play-context", () => ({
-  usePlay: () => ({
-    playing: livePlay.playing,
-    focusedNodeId: null,
-  }),
-  useLiveBtState: () => livePlay.snapshot,
-}));
+vi.mock("../context/play-context", async () => {
+  const { useEffect } = await import("react");
+  return {
+    usePlay: () => ({
+      playing: livePlay.playing,
+      focusedNodeId: null,
+    }),
+    useLiveBtState: () => livePlay.snapshot,
+    useObserveBtState: (shown: boolean) => {
+      useEffect(() => {
+        if (!shown) return undefined;
+        livePlay.observers += 1;
+        return () => { livePlay.observers -= 1; };
+      }, [shown]);
+    },
+  };
+});
 
 afterEach(() => {
   cleanup();
@@ -255,8 +271,10 @@ afterEach(() => {
 beforeEach(() => {
   graphContext.seen.clear();
   graphContext.last = undefined;
+  tabs.active = DOC_ID;
   livePlay.playing = false;
   livePlay.snapshot = null;
+  livePlay.observers = 0;
   store.applyAssetDocumentChange.mockClear();
   loadAssetDocument.mockResolvedValue(defaultBlackboard);
   store.reset(
@@ -377,6 +395,23 @@ describe("BehaviourTreeEditor", () => {
     view.rerender(<TreePanels />);
     await waitFor(() => expect(task()?.getAttribute("data-bt-state")).toBe("idle"));
     expect(screen.queryByTestId("bt-blackboard-watch")).toBeNull();
+  });
+
+  it("counts only the Graph and Blackboard panels of the active tree as showing live Play state", () => {
+    const view = renderTree(treeWithWait());
+    // Details and Compiler Results show no live state.
+    expect(livePlay.observers).toBe(2);
+
+    // A background tab keeps its panels mounted but hidden.
+    tabs.active = "behaviour-tree:assets/Other.bt.babasset";
+    view.rerender(<TreePanels />);
+    expect(livePlay.observers).toBe(0);
+
+    tabs.active = DOC_ID;
+    view.rerender(<TreePanels />);
+    expect(livePlay.observers).toBe(2);
+    view.unmount();
+    expect(livePlay.observers).toBe(0);
   });
 
   it("adds Move To Blackboard Key and offers only spatial linked keys", async () => {

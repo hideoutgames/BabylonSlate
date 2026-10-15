@@ -12,6 +12,7 @@ import {
   applyPlaySnapshotTick,
   diagnosticFromCommand,
   applyPlaySessionStep,
+  applyPlayBehaviourTreeStateObserved,
   applyPlaySessionPausedCommand,
   applyPlayHudConsoleCommand,
   shouldForwardPlayEngineCommand,
@@ -408,6 +409,26 @@ describe("applyPlaySessionStep", () => {
     expect(resume).not.toHaveBeenCalled();
     expect(tick).not.toHaveBeenCalled();
     expect(pause).not.toHaveBeenCalled();
+  });
+});
+
+describe("applyPlayBehaviourTreeStateObserved", () => {
+  it("posts the observation control to the worker instead of touching the in-process runtime", () => {
+    const postControl = vi.fn();
+    const applyBehaviourTreeStateObserved = vi.fn();
+    applyPlayBehaviourTreeStateObserved({ worker: { postControl }, runtime: { applyBehaviourTreeStateObserved } }, true);
+    applyPlayBehaviourTreeStateObserved({ worker: { postControl }, runtime: { applyBehaviourTreeStateObserved } }, false);
+    expect(postControl.mock.calls).toEqual([
+      [{ type: "setBehaviourTreeStateObserved", observed: true }],
+      [{ type: "setBehaviourTreeStateObserved", observed: false }],
+    ]);
+    expect(applyBehaviourTreeStateObserved).not.toHaveBeenCalled();
+  });
+
+  it("applies the observation directly to the in-process runtime when there is no worker", () => {
+    const applyBehaviourTreeStateObserved = vi.fn();
+    applyPlayBehaviourTreeStateObserved({ worker: null, runtime: { applyBehaviourTreeStateObserved } }, true);
+    expect(applyBehaviourTreeStateObserved).toHaveBeenCalledExactlyOnceWith(true);
   });
 });
 
