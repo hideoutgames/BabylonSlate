@@ -10,7 +10,8 @@ import {
   within,
 } from "@testing-library/react";
 import type { IndexedAsset } from "@babylonslate/assets";
-import { createDefaultPluginSettings, projectContentRoot } from "@babylonslate/assets";
+import { AssetRegistry, createDefaultPluginSettings, projectContentRoot } from "@babylonslate/assets";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { subscribeModelThumbnailJobs, type ModelThumbnailJob } from "../lib/model-thumbnail-queue";
 import {
@@ -35,6 +36,7 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
     registryEpoch: 1,
     encodingTextures: new Set<string>(),
     refreshAssetRegistry: vi.fn(),
+    noteAssetsCreated: vi.fn(),
     renameAsset: (guid: string, name: string): Promise<IndexedAsset> =>
       (docs.assetRegistry as { renameAsset: (guid: string, name: string) => Promise<IndexedAsset> }).renameAsset(guid, name),
     repathDocument: vi.fn(),
@@ -197,6 +199,8 @@ afterEach(async () => {
   docs.repathDocument.mockClear();
   docs.repathProjectFolder.mockClear();
   docs.refreshAssetRegistry.mockClear();
+  docs.noteAssetsCreated.mockReset();
+  docs.registryEpoch = 1;
   docs.sourceControl.enabled = false;
   docs.sourceControl.lockStateForPath.mockReset().mockReturnValue(null);
   docs.sourceControl.transferLock.mockReset().mockResolvedValue(undefined);
@@ -1305,5 +1309,82 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(
       screen.queryByRole("button", { name: "Open Selected Item" }),
     ).toBeNull();
+  });
+});
+
+describe("ContentBrowserWorkspace creating assets", () => {
+  /**
+   * A real registry over memory storage. `noteAssetsCreated` advances the epoch
+   * and re-renders as the provider does, so what the grid and dialogs show
+   * after a create is exactly what the mounted registry indexed on write.
+   */
+  async function mountProject() {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("test.babproject");
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    docs.assetRegistry = registry;
+    docs.thumbnailsEnabled = false;
+    const view = render(<ContentBrowserWorkspace />);
+    docs.noteAssetsCreated.mockImplementation(() => {
+      docs.registryEpoch += 1;
+      act(() => view.rerender(<ContentBrowserWorkspace />));
+    });
+    return registry;
+  }
+
+  async function createAsset(type: string, name: string) {
+    fireEvent.click(screen.getByTestId("content-browser-new-asset"));
+    fireEvent.click(screen.getByTestId(`new-asset-type-${type}`));
+    fireEvent.change(screen.getByTestId("new-asset-name"), { target: { value: name } });
+    fireEvent.click(screen.getByTestId("content-browser-new-asset-create"));
+    await waitFor(() => expect(screen.queryByTestId("content-browser-new-asset-dialog")).toBeNull());
+  }
+
+  it("lists a created Class and offers it as a parent without remounting the registry", async () => {
+    await mountProject();
+    await createAsset("Class", "Hero");
+
+    expect(await screen.findByTestId("content-item-assets/Hero.class.babasset")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("content-browser-new-asset"));
+    fireEvent.click(screen.getByTestId("new-asset-type-Class"));
+    expect(screen.getByTestId("tree-row-Hero")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(docs.noteAssetsCreated).toHaveBeenCalledTimes(1);
+    expect(docs.refreshAssetRegistry).not.toHaveBeenCalled();
+  });
+
+  it("opens a created Scene without remounting the registry", async () => {
+    await mountProject();
+    await createAsset("Scene", "Level");
+
+    await waitFor(() =>
+      expect(docs.openDocument).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "scene", path: "assets/Level.scene.babasset" }),
+      ),
+    );
+    expect(docs.refreshAssetRegistry).not.toHaveBeenCalled();
+  });
+
+  it("enters a new folder and lists a Material Instance beside its parent without remounting the registry", async () => {
+    const registry = await mountProject();
+    fireEvent.click(screen.getByTestId("content-browser-new-folder"));
+    fireEvent.change(screen.getByTestId("content-browser-name-input"), { target: { value: "Looks" } });
+    fireEvent.click(screen.getByTestId("content-browser-name-confirm"));
+    const location = await screen.findByRole("navigation", { name: "Folder Location" });
+    await waitFor(() => expect(location.querySelector('[aria-current="page"]')?.textContent).toBe("Looks"));
+    expect(screen.getByTestId("tree-row-assets/Looks")).toBeTruthy();
+
+    await createAsset("Material", "Rock");
+    const rock = registry.list().find((asset) => asset.header.name === "Rock")!;
+    fireEvent.contextMenu(await screen.findByTestId(`content-item-${rock.path}`));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Create Material Instance" }));
+
+    await waitFor(() => expect(registry.list().some((asset) => asset.header.type === "MaterialInstance")).toBe(true));
+    const instance = registry.list().find((asset) => asset.header.type === "MaterialInstance")!;
+    expect(instance.path.startsWith("assets/Looks/")).toBe(true);
+    expect(await screen.findByTestId(`content-item-${instance.path}`)).toBeTruthy();
+    expect(docs.noteAssetsCreated).toHaveBeenCalledTimes(3);
+    expect(docs.refreshAssetRegistry).not.toHaveBeenCalled();
   });
 });
