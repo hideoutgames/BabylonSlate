@@ -1166,6 +1166,8 @@ export class PhysicsWorldSync {
       return options;
     }
     if (channel === "Solid") return { ...options, includeTriggers: false };
+    // Every backend filters trigger shapes itself, before the hit is chosen.
+    if (channel === "Triggers") return { ...options, onlyTriggers: true };
     const ignored = new Set(options?.ignoreActorIds);
     const matches = (actor: Actor) => {
       const motion = this.appliedBodyProperties.get(actor.guid)?.value.motionType ?? "static";

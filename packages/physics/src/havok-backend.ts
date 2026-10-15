@@ -62,6 +62,7 @@ import { attachHavokShape, detachHavokCharacterBodyShape, setHavokBodyPoseBefore
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { loadHavokModule } from "./havok-loader";
 import { rotateQuatVec } from "./collider-bake";
+import { queryHitsTriggers } from "./query-filter";
 import { copyConstraintDesc } from "./constraint-validation";
 import {
   CONTACT_SHAPE_TIE_TOLERANCE,
@@ -851,10 +852,43 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     this.tmpTo.copyFrom(toVector3(end));
     return this.withQueryFilter(options, () => {
       // Triggers are hit unless excluded, as on every backend (Babylon's default skips them).
-      const hit = engine.raycast(this.tmpFrom, this.tmpTo, { shouldHitTriggers: options?.includeTriggers !== false });
-      if (!hit.hasHit) return miss();
+      const shouldHitTriggers = queryHitsTriggers(options);
+      const hit = this.untilTrigger(options, () => engine.raycast(this.tmpFrom, this.tmpTo, { shouldHitTriggers }));
+      if (!hit?.hasHit) return miss();
       return this.hitFromCast(hit, hit.hitDistance);
     });
+  }
+
+  /**
+   * Runs `find`, one native query, and returns its hit. Havok cannot be asked for trigger shapes alone: all 32
+   * membership bits belong to the collision layers, so none can tag them, and the hit collector keeps one hit, so a
+   * solid hit cannot be dropped afterwards. A trigger-only query therefore masks each solid shape it reaches and
+   * repeats, until it finds a trigger or nothing. Its cost follows the solid shapes ahead of the first trigger, not the
+   * shapes in the world. `withQueryFilter` restores the masks. Null: no trigger could be proven hit.
+   */
+  private untilTrigger<T extends CastingResult>(options: LineTraceOptions | undefined, find: () => T): T | null {
+    for (;;) {
+      const result = find();
+      if (!options?.onlyTriggers || !result.hasHit) return result;
+      const bodyId = result.body ? this.bodyIdByPhysicsBody.get(result.body) : undefined;
+      const peeled = this.peelSolidHit(options, bodyId ? this.bodies.get(bodyId) : undefined, result.shape);
+      if (peeled === "keep") return result;
+      if (peeled === "stop") return null;
+    }
+  }
+
+  /**
+   * For a trigger-only query, what to do with the shape it just hit: keep it (a trigger), or mask it for a repeat
+   * ("peeled"), or give up when it cannot be classified or masking it again would not change the next result.
+   */
+  private peelSolidHit(options: LineTraceOptions | undefined, record: BodyRecord | undefined, shape: PhysicsShape | undefined): "keep" | "peeled" | "stop" {
+    if (!options?.onlyTriggers) return "keep";
+    const collider = record && this.shapeCollider(record, shape);
+    if (!collider) return "stop";
+    if (collider.desc.isTrigger) return "keep";
+    if (this.queryMemberships.has(collider.shape)) return "stop";
+    this.maskQueryShape(collider.shape);
+    return "peeled";
   }
 
   private withQueryFilter<T>(options: LineTraceOptions | undefined, query: () => T): T {
@@ -872,7 +906,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
           if (owned) for (const collider of owned) this.maskQueryShape(collider.shape);
         }
       }
-      if (options?.includeTriggers === false) {
+      if (!queryHitsTriggers(options)) {
         for (const collider of this.triggerColliders) this.maskQueryShape(collider.shape);
       }
       return query();
@@ -923,7 +957,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         position: toVector3(center),
         maxDistance: radius,
         collisionFilter: {},
-        shouldHitTriggers: options?.includeTriggers !== false,
+        shouldHitTriggers: queryHitsTriggers(options),
       };
       const result = this.proximityHit;
       this.withQueryFilter(options, () => {
@@ -934,6 +968,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
             const bodyId = result.hasHit && result.body ? this.bodyIdByPhysicsBody.get(result.body) : undefined;
             const record = bodyId ? this.bodies.get(bodyId) : undefined;
             if (!record) break;
+            // A trigger-only query masks the solid shapes in range, one at a time, as `untilTrigger` does.
+            const peeled = this.peelSolidHit(options, record, result.shape);
+            if (peeled === "stop") break;
+            if (peeled === "peeled") continue;
             const owner = this.shapeOwner(record, result.shape);
             const owners = found.get(record) ?? new Set<string>();
             if (owners.has(owner)) break;
@@ -982,27 +1020,33 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       const rotation = toQuaternion(sweep.start.rotation);
       const from = toVector3(sweep.start.position);
       const to = toVector3(sweep.end);
-      const shouldHitTriggers = options?.includeTriggers !== false;
+      const shouldHitTriggers = queryHitsTriggers(options);
       return this.withQueryFilter(options, () => {
-        // A cast alone misses shapes the swept shape already penetrates at its start.
-        const proximityInput = this.proximityInput;
-        const proximity = this.proximityHit;
-        this.plugin.shapeProximity(
-          { shape: queryShape, position: from, rotation, maxDistance: 0, shouldHitTriggers },
-          proximityInput,
-          proximity,
-        );
-        if (proximity.hasHit && proximity.hitDistance < -1e-6)
-          return this.hitFromCast(proximity, 0);
-        const input = this.castInput;
-        const hit = this.castHit;
-        this.plugin.shapeCast(
-          { shape: queryShape, rotation, startPosition: from, endPosition: to, shouldHitTriggers },
-          input,
-          hit,
-        );
-        if (!hit.hasHit) return miss();
-        return this.hitFromCast(hit, Vector3.Distance(from, to) * hit.hitFraction);
+        let distance = 0;
+        const found = this.untilTrigger(options, () => {
+          // A cast alone misses shapes the swept shape already penetrates at its start.
+          const proximityInput = this.proximityInput;
+          const proximity = this.proximityHit;
+          this.plugin.shapeProximity(
+            { shape: queryShape, position: from, rotation, maxDistance: 0, shouldHitTriggers },
+            proximityInput,
+            proximity,
+          );
+          if (proximity.hasHit && proximity.hitDistance < -1e-6) {
+            distance = 0;
+            return proximity;
+          }
+          const input = this.castInput;
+          const hit = this.castHit;
+          this.plugin.shapeCast(
+            { shape: queryShape, rotation, startPosition: from, endPosition: to, shouldHitTriggers },
+            input,
+            hit,
+          );
+          distance = Vector3.Distance(from, to) * hit.hitFraction;
+          return hit;
+        });
+        return found?.hasHit ? this.hitFromCast(found, distance) : miss();
       });
     } finally {
       if (!reused) queryShape.dispose();
@@ -1656,12 +1700,16 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   }
 
   private shapeOwner(record: BodyRecord, shape: PhysicsShape | undefined): string {
+    return this.shapeCollider(record, shape)?.desc.actorId ?? record.desc.actorId;
+  }
+
+  /** The collider a query hit named on this body; undefined when it names none and the body has several. */
+  private shapeCollider(record: BodyRecord, shape: PhysicsShape | undefined): ColliderRecord | undefined {
     if (shape)
       for (const collider of record.colliders.values())
-        if (collider.shape === shape) return collider.desc.actorId ?? record.desc.actorId;
+        if (collider.shape === shape) return collider;
     // Havok reports no child shape for a body with a single collider.
-    const only = record.colliders.size === 1 ? record.colliders.values().next().value : undefined;
-    return only?.desc.actorId ?? record.desc.actorId;
+    return record.colliders.size === 1 ? record.colliders.values().next().value : undefined;
   }
 
   private disposeBodyRecord(record: BodyRecord): void {

@@ -1,6 +1,7 @@
 import type { PhysicsBackend } from "./backend";
 import { copyColliderDesc, linearSweepPoses, normalizedPhysicsPose } from "./collider-validation";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
+import { queryAdmitsShape } from "./query-filter";
 import { isIdentityQuat, rotateQuatVec, multiplyQuat } from "./collider-bake";
 import type {
   CharacterControllerDesc,
@@ -695,7 +696,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       const body = this.bodies.get(collider.desc.bodyId);
       if (!body) continue;
       const actorId = collider.desc.actorId ?? body.desc.actorId;
-      if (ignored.has(actorId) || (options?.includeTriggers === false && collider.desc.isTrigger)) continue;
+      if (ignored.has(actorId) || !queryAdmitsShape(collider.desc.isTrigger, options)) continue;
       const box = aabbForCollider(collider.desc, body.transform);
       const intersection = rayAabb(start, dir, box.min, box.max);
       if (!intersection) continue;
@@ -729,7 +730,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       const body = this.bodies.get(collider.desc.bodyId);
       if (!body) continue;
       const actorId = collider.desc.actorId ?? body.desc.actorId;
-      if (ignored.has(actorId) || (options?.includeTriggers === false && collider.desc.isTrigger)) continue;
+      if (ignored.has(actorId) || !queryAdmitsShape(collider.desc.isTrigger, options)) continue;
       const box = aabbForCollider(collider.desc, body.transform);
       const cx = Math.max(box.min.x, Math.min(center.x, box.max.x));
       const cy = Math.max(box.min.y, Math.min(center.y, box.max.y));
@@ -773,7 +774,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       const body = this.bodies.get(collider.desc.bodyId);
       if (!body) continue;
       const actorId = collider.desc.actorId ?? body.desc.actorId;
-      if (ignored.has(actorId) || (options?.includeTriggers === false && collider.desc.isTrigger)) continue;
+      if (ignored.has(actorId) || !queryAdmitsShape(collider.desc.isTrigger, options)) continue;
       const box = aabbForCollider(collider.desc, body.transform);
       const grown = {
         min: vec(box.min.x - extents.max.x, box.min.y - extents.max.y, box.min.z - extents.max.z),

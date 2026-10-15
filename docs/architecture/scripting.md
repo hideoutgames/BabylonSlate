@@ -437,7 +437,7 @@ Authored defaults on types that **accept** literals clear `pin.missing_input`. A
 
 | Asset | Editor | Feeds |
 | --- | --- | --- |
-| Enum | Row editor | `enumRef` pin types; Make / Equal / Switch; variable and pin Defaults. Built-in engine enums (`engine:CollisionChannel` All / Static / Dynamic / Character / Solid) are **not** Content Browser assets; Inspector Select still lists their members. |
+| Enum | Row editor | `enumRef` pin types; Make / Equal / Switch; variable and pin Defaults. Built-in engine enums (`engine:CollisionChannel` All / Static / Dynamic / Character / Solid / Triggers) are **not** Content Browser assets; Inspector Select still lists their members. |
 | Structure | Field editor (Name, then `PinTypePicker`, nested Struct/Enum `AssetPicker`, then typed field defaults; `StructField.typeClassId` stores a nested guid) | `structRef` pin types; Make / Break; variable and pin Defaults |
 | Engine registry | `ENGINE_ENUMS` / `ENGINE_STRUCTS` in `@babylonslate/scripting` (`engine:` ids, no Content Browser file; `engine:CollisionChannel`, `engine:HitResult` live here) | Same Make/Break / picker paths as project assets. Engine **pin kinds** (`transform`, `rotator`, `quat`, `color`, `vec2/3/4`) stay first-class types, not fake Structure assets. |
 | ScriptInterface | Signature editor (parameter-list editor) | Interface call nodes + class "implements" |

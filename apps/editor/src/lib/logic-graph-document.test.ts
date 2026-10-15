@@ -597,6 +597,7 @@ describe("collectGraphTypeAssets", () => {
           { name: "Dynamic", value: 2 },
           { name: "Character", value: 3 },
           { name: "Solid", value: 4 },
+          { name: "Triggers", value: 5 },
         ],
       },
       expect.objectContaining({ guid: "engine:Key", name: "Key" }),

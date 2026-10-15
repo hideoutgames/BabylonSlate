@@ -36,7 +36,7 @@ describe("script physics query channels", () => {
         expect.stringContaining('"WorldStatic"'),
         expect.stringContaining('"Pawn"'),
       ]);
-      expect(warn.mock.calls[0]![0]).toContain("All, Static, Dynamic, Character, Solid");
+      expect(warn.mock.calls[0]![0]).toContain("All, Static, Dynamic, Character, Solid, Triggers");
     } finally {
       warn.mockRestore();
       sync.dispose();
@@ -50,12 +50,12 @@ describe("script physics query channels", () => {
     const sync = new PhysicsWorldSync(backend);
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     try {
-      for (const [guid, x, y] of [["static", 2, 0], ["dynamic", 4, 0], ["character", 6, 0], ["trigger", 1, 0]] as const) {
+      for (const [guid, x, y] of [["static", 2, 0], ["dynamic", 4, 0], ["character", 6, 0], ["trigger", 1, 0], ["trigger-far", 8, 0]] as const) {
         const actor = world.createActor({ classId: "Actor", guid, transform: { ...identityTransform(), position: { x, y, z: 0 } } });
         if (guid === "character") actor.attachComponent(world.createComponent({ classId: "MovementComponent" }));
         else {
           actor.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType: guid === "dynamic" ? "dynamic" : "static", gravityScale: 0 } }));
-          actor.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: { isTrigger: guid === "trigger",
+          actor.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: { isTrigger: guid.startsWith("trigger"),
             shape: dimension === "2d" ? { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } } : { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } }));
         }
         world.spawnActorNow(actor);
@@ -73,16 +73,25 @@ describe("script physics query channels", () => {
       const shape = dimension === "2d" ? { kind: "circle" as const, radius: 0.1 } : { kind: "sphere" as const, radius: 0.1 };
       // Every backend's traces and sweeps hit the trigger in front unless the channel excludes it.
       for (const [channel, first, actors] of [
-        ["All", "trigger", ["character", "dynamic", "static", "trigger"]],
-        ["Static", "trigger", ["static", "trigger"]],
+        ["All", "trigger", ["character", "dynamic", "static", "trigger", "trigger-far"]],
+        ["Static", "trigger", ["static", "trigger", "trigger-far"]],
         ["Dynamic", "dynamic", ["character", "dynamic"]],
         ["Character", "character", ["character"]],
         ["Solid", "static", ["character", "dynamic", "static"]],
+        ["Triggers", "trigger", ["trigger", "trigger-far"]],
       ] as const) {
         expect(ctx.lineTrace(start.position, end.position, channel, { drawDebug: false }).actor?.guid).toBe(first);
         expect(ctx.shapeSweep(shape, start, end, channel).actor?.guid).toBe(first);
         expect(ctx.sphereOverlap({ x: 4, y: 0, z: 0 }, 10, channel).actors.map((actor) => actor.guid).sort()).toEqual(actors);
       }
+      // Triggers passes the solids in front of a trigger, whichever shape is hit first, and leaves no shape masked.
+      const triggersBehind = { channel: "Triggers", ignoreActorIds: ["trigger"] };
+      expect(sync.lineTrace(start.position, end.position, triggersBehind).actorId).toBe("trigger-far");
+      expect(sync.shapeSweep(shape, start, end, triggersBehind).actorId).toBe("trigger-far");
+      expect(sync.sphereOverlap({ x: 4, y: 0, z: 0 }, 10, triggersBehind).actorIds).toEqual(["trigger-far"]);
+      expect(sync.lineTrace(start.position, end.position, { channel: "Triggers", ignoreActorIds: ["trigger", "trigger-far"] }).hit).toBe(false);
+      expect(sync.lineTrace(start.position, end.position, { channel: "Solid" }).actorId).toBe("static");
+      expect(sync.lineTrace(start.position, end.position).actorId).toBe("trigger");
     } finally { sync.dispose(); }
   });
 

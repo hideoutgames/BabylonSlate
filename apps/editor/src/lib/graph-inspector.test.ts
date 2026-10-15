@@ -531,6 +531,7 @@ describe("collectEnumMemberNames", () => {
         "Dynamic",
         "Character",
         "Solid",
+        "Triggers",
       ],
     });
   });
