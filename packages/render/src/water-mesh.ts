@@ -13,10 +13,11 @@ import { inActiveView } from "./active-view";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 import { sceneWaterBlendDistance, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
 import { requestWaterFft, updateSceneWaterFft } from "./water-fft";
-import { applyWaterMaterialScalars, configureWaterMaterial, contactRange, setWaterGridOffsetSource, waterGridOffset, WaterMaterialPlugin } from "./water-material";
+import { applyWaterMaterialScalars, configureWaterMaterial, contactRange, setMeshVertexWaves, setWaterGridOffsetSource, waterGridOffset, WaterMaterialPlugin, WaterVertexWaves } from "./water-material";
 import { WaterContactField } from "./water-contact-field";
 import { WaterField, type WaterFieldSurface } from "./water-field";
 import { WaterReflection } from "./water-reflection";
+import { materialHasWaterWaves } from "./water-waves-block";
 
 /**
  * Inputs of a built grid, compared each frame without building strings: the world rotation/scale (0-11), then the
@@ -30,10 +31,18 @@ type Surface = {
   field: WaterField | null; contacts: WaterContactField | null;
   world: Matrix; inverse: Matrix;
   /**
-   * The built-in material displaces the static rest grid in its vertex shader (`SLATE_WATER_GPU_WAVES`); Custom
-   * Material water (and `setWaterGpuWaves(mesh, false)`) uploads CPU-displaced vertices every simulation step.
+   * The built-in material displaces the static rest grid in its vertex shader (`SLATE_WATER_GPU_WAVES`), and so does a
+   * Custom Material whose graph holds a Water Waves node (`waves`, `syncCustomMaterial`); other Custom Material water
+   * (and `setWaterGpuWaves(mesh, false)`) uploads CPU-displaced vertices every simulation step.
    */
   gpu: boolean;
+  /**
+   * Custom Material water on the GPU path: the swell its Water Waves node binds for this mesh (`setMeshVertexWaves`).
+   * Null for built-in water, which has the plugin, and for CPU-path water.
+   */
+  waves: WaterVertexWaves | null;
+  /** The Custom Material the path was last chosen for; null for built-in water. */
+  material: Material | null;
   /** Inputs of the current grid (`LAYOUT_STATE`); NaN until built. */
   layoutState: Float64Array;
   /**
@@ -303,6 +312,7 @@ export function updateSceneWater(scene: Scene): void {
       continue;
     }
     surface.disabledSince = -1;
+    syncCustomMaterial(surface);
     placeSurface(surface, time, now);
     // Re-enabled water restores its textures after its placement, a few surfaces per frame (streaming in a section that
     // enables many bodies spreads the work); the rest draw without them until their turn.
@@ -902,6 +912,7 @@ function updateBounds(s: Surface, world: Matrix, inverse: Matrix, recentred: boo
  */
 function placeSurface(s: Surface, time: number, now: number): void {
   if (s.plugin) s.plugin.time = time;
+  else if (s.waves) s.waves.time = time;
   const placed = s.placed, m = s.mesh.computeWorldMatrix(!s.mesh.isSynchronized()).m;
   let linear = false, translated = false;
   for (let i = 0; i < 12; i++) if (placed[i] !== m[i]) { linear = true; break; }
@@ -1448,25 +1459,53 @@ export function updateWaterMeshBody(mesh: Mesh, input: unknown): boolean {
 
 /**
  * Switch a built-in water surface between GPU vertex waves (the default) and CPU-displaced vertices, e.g. for a
- * CPU-vs-GPU parity capture. Custom Material water always uses the CPU path. Returns false for other meshes.
+ * CPU-vs-GPU parity capture. Custom Material water takes its path from its graph (`syncCustomMaterial`) and is not
+ * switched here. Returns false for other meshes.
  */
 export function setWaterGpuWaves(mesh: Mesh, enabled: boolean): boolean {
   const surface = surfaceByMesh.get(mesh);
   if (!surface?.plugin) return false;
-  if (surface.gpu === enabled) return true;
-  surface.gpu = enabled;
-  surface.plugin.gpuWaves = enabled;
-  // The previous shader must never draw the new vertex layout (it would displace CPU-displaced vertices again): skip
-  // the surface while the new variant compiles, then restore shader hot swapping at its first bind.
-  const material = mesh.material;
-  if (material?.allowShaderHotSwapping) {
-    material.allowShaderHotSwapping = false;
-    material.onBindObservable.addOnce(() => { material.allowShaderHotSwapping = true; });
-  }
-  // The vertex data layout changes with the path: rewrite every static attribute.
-  surface.placed.fill(NaN);
-  refreshSurface(surface, sceneWaterTime(mesh.getScene()));
+  setSurfaceGpu(surface, enabled);
   return true;
+}
+
+/**
+ * Moves a surface between the GPU path (a static rest grid its vertex shader displaces) and the CPU path (vertices
+ * displaced and uploaded every simulation step). The vertex data layout changes with the path, so every static
+ * attribute is rewritten.
+ */
+function setSurfaceGpu(s: Surface, enabled: boolean): void {
+  if (s.gpu === enabled) return;
+  s.gpu = enabled;
+  if (s.plugin) {
+    s.plugin.gpuWaves = enabled;
+    // The previous shader must never draw the new vertex layout (it would displace CPU-displaced vertices again): skip
+    // the surface while the new variant compiles, then restore shader hot swapping at its first bind.
+    const material = s.mesh.material;
+    if (material?.allowShaderHotSwapping) {
+      material.allowShaderHotSwapping = false;
+      material.onBindObservable.addOnce(() => { material.allowShaderHotSwapping = true; });
+    }
+  } else {
+    // A Custom Material's Water Waves node reads this swell for the mesh it draws.
+    s.waves = enabled ? new WaterVertexWaves(s.water, s.body) : null;
+    setMeshVertexWaves(s.mesh, s.waves);
+  }
+  s.placed.fill(NaN);
+  refreshSurface(s, sceneWaterTime(s.mesh.getScene()));
+}
+
+/**
+ * Custom Material water follows its graph: a Water Waves node (`WaterWavesBlock`) puts the swell on the GPU path, any
+ * other graph keeps the CPU path. The mesh's material can be replaced under it (a Material edit recompiles and the
+ * library rebinds every mesh that held the old one, which may add or remove the node), so the path is chosen again
+ * whenever the mesh holds another material, in the frame update that precedes the draw: the new material never draws the
+ * other path's vertex data. An unchanged material costs one comparison.
+ */
+function syncCustomMaterial(s: Surface): void {
+  if (s.plugin || s.mesh.material === s.material) return;
+  s.material = s.mesh.material;
+  setSurfaceGpu(s, materialHasWaterWaves(s.material));
 }
 
 /**
@@ -1547,16 +1586,23 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   mesh.metadata = { ...(mesh.metadata ?? {}), slateWater: true };
   let plugin: WaterMaterialPlugin | null = null;
   const gridOffset = new Float64Array(2);
-  if (customMaterial) mesh.material = customMaterial;
-  else {
+  // A GPU Global grid is uploaded relative to its snapped centre, which the vertex shader (built-in or a Water Waves node)
+  // adds back: picks undo it, and it is zero for every surface that uploads absolute positions.
+  setWaterGridOffsetSource(mesh, gridOffset);
+  mesh.intersects = (ray, fastCheck, trianglePredicate, onlyBoundingInfo, worldToUse, skipBoundingInfo) =>
+    intersectGridOffset(mesh, gridOffset, ray, fastCheck, trianglePredicate, onlyBoundingInfo, worldToUse, skipBoundingInfo);
+  // A Custom Material with a Water Waves node displaces the rest grid on the GPU like built-in shading; any other
+  // Custom Material gets displaced vertices.
+  const waves = customMaterial && materialHasWaterWaves(customMaterial) ? new WaterVertexWaves(water, body) : null;
+  if (customMaterial) {
+    mesh.material = customMaterial;
+    setMeshVertexWaves(mesh, waves);
+  } else {
     const material = new PBRMaterial(`${name}:water`, scene);
     configureWaterMaterial(material, water);
     plugin = new WaterMaterialPlugin(material, water, body);
     plugin.mesh = mesh;
     plugin.gpuWaves = true;
-    setWaterGridOffsetSource(mesh, gridOffset);
-    mesh.intersects = (ray, fastCheck, trianglePredicate, onlyBoundingInfo, worldToUse, skipBoundingInfo) =>
-      intersectGridOffset(mesh, gridOffset, ray, fastCheck, trianglePredicate, onlyBoundingInfo, worldToUse, skipBoundingInfo);
     // Unlit Stylized water never samples a reflection.
     if (water.style !== "stylized") {
       let reflection = reflections.get(scene);
@@ -1568,7 +1614,8 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   }
   const empty = new Float32Array();
   const surface: Surface = {
-    mesh, water, body, plugin, field: null, contacts: null, world: Matrix.Identity(), inverse: Matrix.Identity(), gpu: plugin !== null,
+    mesh, water, body, plugin, field: null, contacts: null, world: Matrix.Identity(), inverse: Matrix.Identity(), gpu: plugin !== null || waves !== null,
+    waves, material: customMaterial ?? null,
     layoutState: new Float64Array(LAYOUT_STATE).fill(NaN), gridX: new Float64Array(), gridZ: new Float64Array(),
     restMin: new Vector3(), restMax: new Vector3(), shift: new Float64Array(2), gridOffset, placed: new Float64Array(16).fill(NaN), time: null, version: 0,
     qualityRevision: NaN, density: 1, drawn: true,

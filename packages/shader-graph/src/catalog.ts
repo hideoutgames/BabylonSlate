@@ -269,6 +269,23 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     cost: 0,
   },
   {
+    // Opt-in GPU displacement for Custom Material water: the water mesh keeps a static rest grid and the graph applies
+    // the waves (Offset into World Position Offset, Normal into Normal).
+    type: "input.waterWaves",
+    title: "Water Waves",
+    category: "Input",
+    searchAliases: ["water", "waves", "gerstner", "swell", "ocean", "displacement", "gpu"],
+    domains: ["surface"],
+    inputs: [],
+    outputs: [
+      { id: "offset", name: "Offset", type: VEC3 },
+      { id: "height", name: "Wave Height", type: FLOAT },
+      { id: "normal", name: "Normal", type: VEC3 },
+      { id: "time", name: "Simulation Time", type: FLOAT },
+    ],
+    cost: 8,
+  },
+  {
     type: "input.vertexColor",
     title: "Vertex Color",
     category: "Input",
