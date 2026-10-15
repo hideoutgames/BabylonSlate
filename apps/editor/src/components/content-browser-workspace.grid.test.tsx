@@ -33,6 +33,7 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
     } },
     assetRegistry: null as unknown,
     registryEpoch: 1,
+    encodingTextures: new Set<string>(),
     refreshAssetRegistry: vi.fn(),
     renameAsset: (guid: string, name: string): Promise<IndexedAsset> =>
       (docs.assetRegistry as { renameAsset: (guid: string, name: string) => Promise<IndexedAsset> }).renameAsset(guid, name),
@@ -190,6 +191,7 @@ afterEach(async () => {
   loadAssetThumbnail.mockClear();
   docs.thumbnailsEnabled = true;
   docs.thumbnailVersions = {};
+  docs.encodingTextures = new Set();
   layout.phone = false;
   docs.openDocument.mockClear();
   docs.repathDocument.mockClear();
@@ -934,6 +936,26 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(screen.getByTestId("content-item-assets/added.babasset")).toBeTruthy();
     expect(screen.getByTestId("content-item-assets/tex-0.babasset")).toBeTruthy();
     expect(screen.queryByTestId("content-item-assets/tex-299.babasset")).toBeNull();
+  });
+
+  it("badges a Texture as Encoding when its encode starts, though its indexed header did not change", () => {
+    docs.thumbnailsEnabled = false;
+    const assets = [texture(0), texture(1)];
+    installRegistry(assets);
+    const { rerender } = render(<ContentBrowserWorkspace />);
+    expect(screen.queryByTestId("texture-compression-tex-0")).toBeNull();
+
+    // An encode runs in memory: only the registry epoch and the running set tell the grid.
+    docs.encodingTextures = new Set(["tex-0"]);
+    docs.registryEpoch += 1;
+    rerender(<ContentBrowserWorkspace />);
+    expect(screen.getByTestId("texture-compression-tex-0").textContent).toBe("Encoding");
+    expect(screen.queryByTestId("texture-compression-tex-1")).toBeNull();
+
+    docs.encodingTextures = new Set();
+    docs.registryEpoch += 1;
+    rerender(<ContentBrowserWorkspace />);
+    expect(screen.queryByTestId("texture-compression-tex-0")).toBeNull();
   });
 
   it("filters the sorted grid in full sort order, including name ties", () => {
