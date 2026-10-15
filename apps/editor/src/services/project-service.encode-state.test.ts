@@ -206,4 +206,92 @@ describe("texture encode state writes", () => {
     expect(writes.filter((write) => write.state === "compressed").map((write) => write.chunk)).toEqual([newest]);
     expect(service.registry!.getByGuid(guid)!.header.payload.ktx2ChunkId).toBe(newest);
   });
+
+  it.each([
+    ["an import that encodes", "import", standInEncode, ["pending", "compressed"]],
+    ["an import whose encode fails", "import", failingEncode, ["pending", "encode_failed"]],
+    ["a re-encode", "re-encode", standInEncode, ["pending", "compressed"]],
+    ["a re-encode whose encode fails", "re-encode", failingEncode, ["pending", "encode_failed"]],
+  ] as const)("writes the Texture file only for its pending mark and the outcome: %s", async (_name, kind, encode, expected) => {
+    const path = "assets/odd.babasset";
+    const seed = kind === "re-encode" ? (seeded: MemoryStorageAdapter) => writeLegacyOddTexture(seeded, path, "odd") : undefined;
+    const { storage, service } = await openService(encode, seed);
+    const writes = recordTextureWrites(storage);
+
+    // An import's pending mark is its file's creation; a re-encode writes it when requested.
+    if (kind === "import") await service.registry!.importFile("project", "", "odd.png", pngHeader(1, 1));
+    else expect(await service.retryTextureEncoding("odd", { force: true })).toBe(true);
+    await vi.waitFor(() => expect(writes.at(-1)?.state).toBe(expected[1]));
+    await writesSettled(service);
+
+    expect(writes.map((write) => write.state)).toEqual(expected);
+    expect(service.textureEncodingGuids.size).toBe(0);
+  });
+
+  it("shows a running encode as encoding without writing it, and tells the editor when it starts and ends", async () => {
+    const { encode, calls } = gatedEncode();
+    const { storage, service } = await openService(encode);
+    const writes = recordTextureWrites(storage);
+    let guid = "";
+    // What each registry change would show, as the editor renders from it.
+    const shown: boolean[] = [];
+    service.onRegistryChange(() => { shown.push(service.textureEncodingGuids.has(guid)); });
+    const [texture] = await service.registry!.importFile("project", "", "odd.png", pngHeader(1, 1));
+    guid = texture!.header.guid;
+
+    await vi.waitFor(() => expect(service.textureEncodingGuids.has(guid)).toBe(true));
+    expect(shown).toContain(true);
+    expect(writes.map((write) => write.state)).toEqual(["pending"]);
+    expect(readAssetDocumentHeader(await storage.readBinary(texture!.path)).payload.compressionState).toBe("pending");
+
+    calls[0]!.finish();
+    await vi.waitFor(() => expect(service.registry!.getByGuid(guid)!.header.payload.compressionState).toBe("compressed"));
+    await writesSettled(service);
+    expect(service.textureEncodingGuids.size).toBe(0);
+    expect(shown.at(-1)).toBe(false);
+  });
+
+  it("does not show a background alignment re-encode as encoding", async () => {
+    const { encode, calls } = gatedEncode();
+    const { service } = await openService(encode, (seeded) => writeLegacyOddTexture(seeded, "assets/odd.babasset", "odd"));
+    expect(await service.reconcileTextureAlignment()).toBe(1);
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(service.textureEncodingGuids.size).toBe(0);
+
+    calls[0]!.finish();
+    await vi.waitFor(() => expect(service.registry!.getByGuid("odd")!.header.payload.ktx2Width).toBe(4));
+    await writesSettled(service);
+  });
+
+  it("keeps showing a Texture as encoding across the older encode a changed request replaced", async () => {
+    const { encode, calls } = gatedEncode();
+    const { service } = await openService(encode);
+    const [texture] = await service.registry!.importFile("project", "", "odd.png", pngHeader(1, 1));
+    const guid = texture!.header.guid;
+    await vi.waitFor(() => expect(service.textureEncodingGuids.has(guid)).toBe(true));
+
+    expect(await service.retryTextureEncoding(guid, { force: true, usage: "particle" })).toBe(true);
+    expect(service.textureEncodingGuids.has(guid)).toBe(true);
+    calls[0]!.finish();
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    expect(service.textureEncodingGuids.has(guid)).toBe(true);
+
+    calls[1]!.finish();
+    await vi.waitFor(() => expect(service.textureEncodingGuids.has(guid)).toBe(false));
+    await writesSettled(service);
+    expect(service.registry!.getByGuid(guid)!.header.payload.compressionState).toBe("compressed");
+  });
+
+  it("stops showing encodes once the project closes", async () => {
+    const { encode, calls } = gatedEncode();
+    const { service } = await openService(encode);
+    const [texture] = await service.registry!.importFile("project", "", "odd.png", pngHeader(1, 1));
+    await vi.waitFor(() => expect(service.textureEncodingGuids.has(texture!.header.guid)).toBe(true));
+
+    await service.closeProject();
+    expect(service.textureEncodingGuids.size).toBe(0);
+    calls[0]!.finish();
+    await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(0));
+    expect(service.textureEncodingGuids.size).toBe(0);
+  });
 });
