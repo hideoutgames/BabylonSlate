@@ -1,4 +1,4 @@
-import { InstancedMesh, Material, Mesh, MultiMaterial, TransformNode, type AbstractMesh, type Node, type Plane, type Scene } from "@babylonjs/core";
+import { InstancedMesh, LinesMesh, Material, Mesh, MultiMaterial, TransformNode, type AbstractMesh, type Node, type Plane, type Scene } from "@babylonjs/core";
 import { hasStockVertexStage } from "./shadow-material-policy";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 
@@ -6,10 +6,16 @@ function isWater(mesh: AbstractMesh): boolean {
   return (mesh.metadata as { slateWater?: unknown } | null)?.slateWater === true;
 }
 
-/** Points rasterise wider than the pixel their vertex lands in, so their bounds say nothing about coverage. */
-function keepsVertices(material: Material): boolean {
-  if (material instanceof MultiMaterial) return material.subMaterials.every((part) => !part || keepsVertices(part));
-  if (material.pointsCloud || material.fillMode === Material.PointFillMode || material.fillMode === Material.PointListDrawMode) return false;
+/**
+ * Points and lines rasterise wider than the pixel their vertices land in (a line up to half a
+ * pixel past the box that holds it), so the bounds of anything not drawn as plain triangles say
+ * nothing about coverage. The fill mode is the one the mesh will draw with, which a scene-wide
+ * wireframe or points switch and a per-mesh override both change.
+ */
+function keepsVertices(mesh: AbstractMesh, material: Material): boolean {
+  if (material instanceof MultiMaterial) return material.subMaterials.every((part) => !part || keepsVertices(mesh, part));
+  const fillMode = mesh instanceof Mesh ? mesh._getRenderingFillMode(material.fillMode) : material.fillMode;
+  if (material.pointsCloud || material.wireframe || fillMode !== Material.TriangleFillMode) return false;
   return hasStockVertexStage(material);
 }
 
@@ -18,16 +24,17 @@ function keepsVertices(material: Material): boolean {
  * it cannot cover. Anything the GPU may place elsewhere answers false and is always drawn:
  * skinned, morphed, baked-animation, lattice-deformed and padded-bounds meshes (the shadow
  * policy's deforming set), water, thin instances, regular-instance batches, LOD chains, meshes
- * whose world matrix follows the camera or whose bounds are not kept in sync, point clouds, and
- * any material that is not Babylon's stock vertex stage or a compiled static surface.
+ * whose world matrix follows the camera or whose bounds are not kept in sync, anything drawn as
+ * points or lines, and any material that is not Babylon's stock vertex stage or a compiled static
+ * surface.
  */
 export function boundsCertifyDrawnGeometry(mesh: AbstractMesh): boolean {
-  if (mesh.doNotSyncBoundingInfo || mesh._masterMesh || mesh instanceof InstancedMesh) return false;
+  if (mesh.doNotSyncBoundingInfo || mesh._masterMesh || mesh instanceof InstancedMesh || mesh instanceof LinesMesh) return false;
   if (mesh instanceof Mesh && (mesh.instances.length > 0 || mesh.hasThinInstances || mesh.getLODLevels().length > 0)) return false;
   if (hasDeformingShadowBounds(mesh) || isWater(mesh)) return false;
   for (let node: Node | null = mesh; node; node = node.parent)
     if (node instanceof TransformNode && node.isWorldMatrixCameraDependent()) return false;
-  return keepsVertices(mesh.material ?? mesh.getScene().defaultMaterial);
+  return keepsVertices(mesh, mesh.material ?? mesh.getScene().defaultMaterial);
 }
 
 /** The mesh's world box, brought up to date the way drawing would, meets the frustum; corrupt bounds rule nothing out. */
@@ -47,6 +54,6 @@ function boundsMeetFrustum(mesh: AbstractMesh, planes: Plane[]): boolean {
  */
 export function pickCandidates(scene: Scene, meshes: readonly AbstractMesh[], planes: Plane[]): AbstractMesh[] {
   const degenerate = planes.some((plane) => !Number.isFinite(plane.normal.x + plane.normal.y + plane.normal.z + plane.d));
-  if (degenerate || scene.forcePointsCloud) return [...meshes];
+  if (degenerate || scene.forcePointsCloud || scene.forceWireframe) return [...meshes];
   return meshes.filter((mesh) => !boundsCertifyDrawnGeometry(mesh) || boundsMeetFrustum(mesh, planes));
 }

@@ -1,5 +1,5 @@
 import type { AbstractMesh, Material, Observable, Plane, Scene } from "@babylonjs/core";
-import { Camera, Constants, Frustum, Matrix } from "@babylonjs/core";
+import { Camera, Constants, Frustum, Matrix, Mesh } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
@@ -167,10 +167,17 @@ class PickPass {
     await this.graph?.buildAsync(false);
   }
 
-  /** Strictly probe `objects`, the ones the next draw renders, under this pass's id and `tap`'s view. */
+  /**
+   * Strictly probe `objects`, the ones the next draw renders, and the levels of detail they may
+   * draw through, under this pass's id and `tap`'s view.
+   */
   isReady(tap: Tap, objects: AbstractMesh[]): boolean {
     this.aim(tap, objects);
-    return this.graph?.isReady() ?? false;
+    if (!this.graph) return false;
+    // Both probes run, so every missing variant is requested in the same poll.
+    const levels = this.levelsReady(objects);
+    const meshes = this.graph.isReady();
+    return levels && meshes;
   }
 
   /** Draw `meshes` through `tap`'s view into the targets for the tapped pixel. */
@@ -189,8 +196,9 @@ class PickPass {
     return graph.textureManager.getTextureFromHandle(geometry.geometryObjectIdTexture);
   }
 
-  /** Drop the object list so an idle pass keeps no mesh alive. */
+  /** Drop the object list and the id numbering so an idle pass keeps no mesh alive. */
   clearObjects(): void {
+    this.ids = new Map();
     if (!this.geometry) return;
     this.geometry.objectList = { meshes: [], particleSystems: [] };
     this.geometry.objectRenderer.renderList = [];
@@ -203,6 +211,30 @@ class PickPass {
     // task owns the ObjectRenderer, whose render pass ids are released here.
     for (const release of [() => geometry?.dispose(), () => clear?.dispose(), () => graph?.dispose()]) {
       try { release(); } catch { /* the remaining parts still have to be released */ }
+    }
+  }
+
+  /**
+   * A mesh is drawn through whichever level of detail the camera selects, and a level is blocked:
+   * the renderer's readiness check skips it and `Mesh.isReady(true)` only probes it without the
+   * complete check. Probe every level strictly here, under this pass's render pass id, so the level
+   * that gets drawn has its variant. Probing all of them leaves the choice (and the editor's
+   * hysteresis) to the draw.
+   */
+  private levelsReady(meshes: readonly AbstractMesh[]): boolean {
+    const renderer = this.geometry?.objectRenderer;
+    if (!renderer) return false;
+    const engine = this.scene.getEngine();
+    const previous = engine.currentRenderPassId;
+    engine.currentRenderPassId = renderer.renderPassId;
+    try {
+      let ready = true;
+      for (const mesh of meshes)
+        if (mesh instanceof Mesh)
+          for (const level of mesh.getLODLevels()) ready = (level.mesh?.isReady(true) ?? true) && ready;
+      return ready;
+    } finally {
+      engine.currentRenderPassId = previous;
     }
   }
 
