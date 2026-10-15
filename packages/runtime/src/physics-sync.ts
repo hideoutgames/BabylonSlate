@@ -1145,21 +1145,21 @@ export class PhysicsWorldSync {
   private queryOptions(options?: LineTraceOptions & { channel?: string }): LineTraceOptions | undefined {
     const channel = options?.channel;
     if (!channel || channel === "All") return options;
-    if (channel === "Visibility") return { ...options, includeTriggers: false };
+    if (channel === "Solid") return { ...options, includeTriggers: false };
     const ignored = new Set(options?.ignoreActorIds);
     const matches = (actor: Actor) => {
       const motion = this.appliedBodyProperties.get(actor.guid)?.value.motionType ?? "static";
-      return channel === "WorldStatic" ? motion === "static"
-        : channel === "WorldDynamic" ? motion !== "static"
-          : channel === "Pawn" ? this.movementComponent(actor) !== undefined : true;
+      return channel === "Static" ? motion === "static"
+        : channel === "Dynamic" ? motion !== "static"
+          : channel === "Character" ? this.movementComponent(actor) !== undefined : true;
     };
     for (const [actorId, actor] of this.bodyOwnerByActor)
       if (!this.hostByActor.has(actorId) && !matches(actor)) ignored.add(actorId);
     // Hosted shapes, and a hosted actor's own triggers, answer as their host.
     for (const [actorId, host] of this.hostByActor)
       if (!matches(host)) ignored.add(actorId);
-    // An active ragdoll's bones are dynamic and no Movement drives them: WorldDynamic (and All) keep them.
-    if (channel === "WorldStatic" || channel === "Pawn") for (const actorId of this.ragdollActors.keys()) ignored.add(actorId);
+    // An active ragdoll's bones are dynamic and no Movement drives them: Dynamic (and All) keep them.
+    if (channel === "Static" || channel === "Character") for (const actorId of this.ragdollActors.keys()) ignored.add(actorId);
     return { ...options, ignoreActorIds: [...ignored] };
   }
 

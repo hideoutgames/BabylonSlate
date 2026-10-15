@@ -15,9 +15,9 @@ describe("script physics query channels", () => {
     const sync = new PhysicsWorldSync(backend);
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     try {
-      for (const [guid, x, y] of [["static", 2, 0], ["dynamic", 4, 0], ["pawn", 6, 0], ["trigger", 1, 0]] as const) {
+      for (const [guid, x, y] of [["static", 2, 0], ["dynamic", 4, 0], ["character", 6, 0], ["trigger", 1, 0]] as const) {
         const actor = world.createActor({ classId: "Actor", guid, transform: { ...identityTransform(), position: { x, y, z: 0 } } });
-        if (guid === "pawn") actor.attachComponent(world.createComponent({ classId: "MovementComponent" }));
+        if (guid === "character") actor.attachComponent(world.createComponent({ classId: "MovementComponent" }));
         else {
           actor.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType: guid === "dynamic" ? "dynamic" : "static", gravityScale: 0 } }));
           actor.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: { isTrigger: guid === "trigger",
@@ -38,11 +38,11 @@ describe("script physics query channels", () => {
       const shape = dimension === "2d" ? { kind: "circle" as const, radius: 0.1 } : { kind: "sphere" as const, radius: 0.1 };
       // Every backend's traces and sweeps hit the trigger in front unless the channel excludes it.
       for (const [channel, first, actors] of [
-        ["All", "trigger", ["dynamic", "pawn", "static", "trigger"]],
-        ["WorldStatic", "trigger", ["static", "trigger"]],
-        ["WorldDynamic", "dynamic", ["dynamic", "pawn"]],
-        ["Pawn", "pawn", ["pawn"]],
-        ["Visibility", "static", ["dynamic", "pawn", "static"]],
+        ["All", "trigger", ["character", "dynamic", "static", "trigger"]],
+        ["Static", "trigger", ["static", "trigger"]],
+        ["Dynamic", "dynamic", ["character", "dynamic"]],
+        ["Character", "character", ["character"]],
+        ["Solid", "static", ["character", "dynamic", "static"]],
       ] as const) {
         expect(ctx.lineTrace(start.position, end.position, channel, { drawDebug: false }).actor?.guid).toBe(first);
         expect(ctx.shapeSweep(shape, start, end, channel).actor?.guid).toBe(first);
@@ -51,7 +51,7 @@ describe("script physics query channels", () => {
     } finally { sync.dispose(); }
   });
 
-  it("classifies the bones of an active ragdoll as dynamic, never static or pawn", async () => {
+  it("classifies the bones of an active ragdoll as dynamic, never static or character", async () => {
     const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
     const sync = new PhysicsWorldSync(backend);
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
@@ -60,9 +60,9 @@ describe("script physics query channels", () => {
       deferNative: false, emit: (command) => commands.push(command), error: (error) => { throw error; } });
     try {
       const box = { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } };
-      for (const [guid, x] of [["ragdoll", 3], ["static", 6], ["pawn", 9]] as const) {
+      for (const [guid, x] of [["ragdoll", 3], ["static", 6], ["character", 9]] as const) {
         const actor = world.createActor({ classId: "Actor", guid, transform: { ...identityTransform(), position: { x, y: 0.5, z: 0 } } });
-        if (guid === "pawn") actor.attachComponent(world.createComponent({ classId: "MovementComponent" }));
+        if (guid === "character") actor.attachComponent(world.createComponent({ classId: "MovementComponent" }));
         else {
           const motionType = guid === "static" ? "static" : "dynamic";
           actor.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType, gravityScale: 0 } }));
@@ -93,10 +93,10 @@ describe("script physics query channels", () => {
       const end = { ...identityTransform(), position: { x: 12, y: 0.5, z: 0 } };
       const shape = { kind: "sphere" as const, radius: 0.02 };
       for (const [channel, first, actors] of [
-        ["All", "ragdoll", ["pawn", "ragdoll", "static"]],
-        ["WorldStatic", "static", ["static"]],
-        ["WorldDynamic", "ragdoll", ["pawn", "ragdoll"]],
-        ["Pawn", "pawn", ["pawn"]],
+        ["All", "ragdoll", ["character", "ragdoll", "static"]],
+        ["Static", "static", ["static"]],
+        ["Dynamic", "ragdoll", ["character", "ragdoll"]],
+        ["Character", "character", ["character"]],
       ] as const) {
         expect(ctx.lineTrace(start.position, end.position, channel, { drawDebug: false }).actor?.guid, `${channel} trace`).toBe(first);
         expect(ctx.shapeSweep(shape, start, end, channel).actor?.guid, `${channel} sweep`).toBe(first);
