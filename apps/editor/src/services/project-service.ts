@@ -603,8 +603,16 @@ export class ProjectService {
         const release = this.encodeWriteReleases.get(guid);
         this.encodeWriteReleases.delete(guid);
         this.emitTextureEncodeDiagnostic(guid, error);
-        const message = error instanceof Error ? error.message : String(error);
         const registry = this.encodeRegistry();
+        if (job.guard) {
+          // A guarded (alignment) job writes nothing before its commit, so a
+          // failed one leaves the committed Texture as it was. Texture Details
+          // rechecks whether it is stale now that no job holds it.
+          release?.();
+          if (registry) this.emitRegistryChange();
+          return;
+        }
+        const message = error instanceof Error ? error.message : String(error);
         if (!registry) { release?.(); return; }
         const session = this.sourceSession;
         void this.writeAdmission.continue(async () => {

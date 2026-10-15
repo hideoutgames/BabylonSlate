@@ -1,8 +1,18 @@
 import { installMinimalProject } from "../../../../packages/assets/src/test-support/minimal-project";
 import { describe, expect, it, vi } from "vitest";
-import { readAssetDocumentHeader, type EncodeFn } from "@babylonslate/assets";
+import { encodeBabasset, readAssetDocumentHeader, type EncodeFn } from "@babylonslate/assets";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
+
+/** KTX2 identifier plus pixelWidth / pixelHeight. */
+function ktx2Header(width: number, height: number): Uint8Array {
+  const bytes = new Uint8Array(32);
+  bytes.set([0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(20, width, true);
+  view.setUint32(24, height, true);
+  return bytes;
+}
 
 /** PNG signature + IHDR size (enough for size sniffing). */
 function pngHeader(width: number, height: number): Uint8Array {
@@ -18,10 +28,27 @@ const failingEncode: EncodeFn = async () => {
   throw new Error("BasisEncoder.encode returned 0");
 };
 
-async function openService(encode: EncodeFn) {
+/** A compressed 1x1 Texture whose encode predates alignment: committed 1x1, nothing recorded. */
+async function writeLegacyOddTexture(storage: MemoryStorageAdapter, path: string, guid: string): Promise<void> {
+  const chunkId = "ktx2:legacy";
+  await storage.writeBinary(path, await encodeBabasset({
+    header: {
+      dependencyMetadataVersion: 1, requiredDependencies: [],
+      guid, type: "Texture", name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
+      payload: { usage: "albedo", compressionState: "compressed", ktx2ChunkId: chunkId, width: 1, height: 1 },
+    },
+    chunks: [
+      { id: "pixels", kind: "pixels", mime: "image/png", data: pngHeader(1, 1) },
+      { id: chunkId, kind: "ktx2", mime: "image/ktx2", data: ktx2Header(1, 1) },
+    ],
+  }));
+}
+
+async function openService(encode: EncodeFn, seed?: (storage: MemoryStorageAdapter) => Promise<void>) {
   const storage = new MemoryStorageAdapter("documents");
   await storage.openDocumentsProject("EncodeState.babproject");
   await installMinimalProject(storage);
+  await seed?.(storage);
   const service = new ProjectService(storage, { encode });
   await service.loadCurrentProject();
   return { storage, service };
@@ -65,5 +92,22 @@ describe("texture encode state writes", () => {
     const failures = writes.filter((write) => write.state === "encode_failed");
     expect(failures).toEqual([{ state: "encode_failed", error: "BasisEncoder.encode returned 0" }]);
     expect(service.registry!.getByGuid(texture!.header.guid)!.header.payload.encodeError).toBe("BasisEncoder.encode returned 0");
+  });
+
+  it("leaves a compressed Texture as it was when its background alignment re-encode fails", async () => {
+    const path = "assets/odd.babasset";
+    const { storage, service } = await openService(failingEncode, (seeded) => writeLegacyOddTexture(seeded, path, "odd"));
+    const before = await storage.readBinary(path);
+    const writes = recordTextureWrites(storage);
+
+    expect(await service.reconcileTextureAlignment()).toBe(1);
+    await writesSettled(service);
+
+    // The pass writes nothing before its commit, so a failed pass has nothing to undo.
+    expect(writes).toEqual([]);
+    expect(await storage.readBinary(path)).toEqual(before);
+    expect(service.registry!.getByGuid("odd")!.header.payload).toMatchObject({ compressionState: "compressed", ktx2ChunkId: "ktx2:legacy" });
+    expect(service.registry!.getByGuid("odd")!.header.payload).not.toHaveProperty("encodeError");
+    expect(service.sessionDiagnostics).toContain("Texture encode failed for odd (odd): BasisEncoder.encode returned 0");
   });
 });
