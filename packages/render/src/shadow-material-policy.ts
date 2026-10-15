@@ -54,6 +54,43 @@ const nativePlugins = new Set<unknown>([
   LatticeDeformerPlugin,
 ]);
 
+/**
+ * True when nothing the material or its plugins do can move vertices off the mesh's geometry:
+ * Babylon's stock PBR/Standard vertex stage with native or surface-only plugins, or a compiled
+ * opaque surface whose World Position Offset is the identity and whose build is unchanged.
+ * Custom, Cel, partly compiled and shader-authored materials are not.
+ */
+export function hasStockVertexStage(material: Material): boolean {
+  if (
+    material.pluginManager?._plugins.some(
+      (plugin) => !nativePlugins.has(plugin.constructor),
+    )
+  )
+    return false;
+  const constructor = material.constructor;
+  if (constructor === NodeMaterial) {
+    const node = material as NodeMaterial;
+    const shape = compiledShape.get(node);
+    return (
+      compiled.has(node) &&
+      node.mode === NodeMaterialModes.Material &&
+      !!shape &&
+      shape.buildId === node.buildId &&
+      shape.resolver === node.customShaderNameResolve &&
+      shape.observers.length === node.onBindObservable.observers.length &&
+      shape.observers.every(
+        (observer, index) =>
+          observer === node.onBindObservable.observers[index],
+      )
+    );
+  }
+  return (
+    (constructor === PBRMaterial || constructor === StandardMaterial) &&
+    !material.customShaderNameResolve &&
+    !material.onBindObservable.hasObservers()
+  );
+}
+
 /** Conservative shape eligibility; the refresh scheduler tracks mutable depth/culling state. */
 export function canCacheShadowMaterial(
   material: Material,
@@ -92,39 +129,18 @@ export function canCacheShadowMaterial(
     material.clipPlane6
   )
     return false;
-  if (
-    material.pluginManager?._plugins.some(
-      (plugin) => !nativePlugins.has(plugin.constructor),
-    )
-  )
-    return false;
-
   const constructor = material.constructor;
-  if (constructor === NodeMaterial) {
-    const node = material as NodeMaterial;
-    const shape = compiledShape.get(node);
-    return (
-      compiled.has(node) &&
-      node.mode === NodeMaterialModes.Material &&
-      !!shape &&
-      shape.buildId === node.buildId &&
-      shape.resolver === node.customShaderNameResolve &&
-      shape.observers.length === node.onBindObservable.observers.length &&
-      shape.observers.every(
-        (observer, index) =>
-          observer === node.onBindObservable.observers[index],
-      )
-    );
-  }
   if (constructor === CelMaterial) {
+    if (
+      material.pluginManager?._plugins.some(
+        (plugin) => !nativePlugins.has(plugin.constructor),
+      )
+    )
+      return false;
     const cel = material as CelMaterial;
     return (
       cel.hasOriginalShadowHooks() && canCacheShadowMaterial(cel.source, mesh)
     );
   }
-  return (
-    (constructor === PBRMaterial || constructor === StandardMaterial) &&
-    !material.customShaderNameResolve &&
-    !material.onBindObservable.hasObservers()
-  );
+  return hasStockVertexStage(material);
 }

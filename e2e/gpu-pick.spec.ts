@@ -33,6 +33,10 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       // Far draws after Near on the same edge pixel; depth keeps Near.
       expect(picks.leftEdgeOccluded, projection).toEqual({ gpu: "Near", cpu: "Near" });
     }
+    // Taps right after in-place changes still select the mesh in front.
+    expect(report.inPlace.before).toEqual({ gpu: "Plain", cpu: "Plain" });
+    expect(report.inPlace.afterMarkDirty).toEqual({ gpu: "Plain", cpu: "Plain" });
+    expect(report.inPlace.afterVertexColors).toEqual({ gpu: "Plain", cpu: "Plain" });
     // The pick renders only the tapped pixel: no full-view (240×160) targets.
     expect(report.pickTargetSizes).toEqual(["1x1"]);
   });
