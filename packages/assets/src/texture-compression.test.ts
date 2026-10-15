@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
-import { EncodeQueue } from "./encode-queue";
+import { EncodeQueue, type EncodeJob, type EncodeJobResult } from "./encode-queue";
 import {
   clampDimension,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
@@ -259,6 +259,149 @@ describe("EncodeQueue", () => {
   });
 });
 
+describe("EncodeQueue requests for one asset", () => {
+  const job = (assetGuid: string, quality: number, extra: Partial<EncodeJob> = {}): EncodeJob => ({
+    assetGuid,
+    source: new Uint8Array([quality]),
+    settings: { format: "uastc", quality, maxDimension: 2048, generateMipmaps: true },
+    usage: "albedo",
+    sourceSha256: `source-of-${assetGuid}`,
+    ...extra,
+  });
+  const background = { canWrite: () => true };
+  const reported = (result: EncodeJobResult) =>
+    `${result.assetGuid}:${result.settings.quality}:${result.guard ? "background" : "user"}`;
+
+  it("queues one job for a request the asset already has waiting or running", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const encoded: number[] = [];
+    const completed: string[] = [];
+    const queue = new EncodeQueue({
+      encode: async (source, settings) => {
+        encoded.push(settings.quality);
+        await gate;
+        return stubEncodeKtx2(source, settings);
+      },
+      onComplete: (result) => { completed.push(reported(result)); },
+    });
+
+    expect(queue.enqueue(job("a", 1))).toBe("queued");
+    await vi.waitFor(() => expect(encoded).toEqual([1]));
+    expect(queue.enqueue(job("a", 1))).toBe("duplicate");
+    expect(queue.enqueue(job("b", 1))).toBe("queued");
+    expect(queue.enqueue(job("b", 1))).toBe("duplicate");
+    release();
+    await vi.waitFor(() => expect(completed).toEqual(["a:1:user", "b:1:user"]));
+    expect(encoded).toEqual([1, 1]);
+  });
+
+  it("replaces a waiting job with a changed request, so only the newest runs", async () => {
+    const encoded: number[] = [];
+    const completed: string[] = [];
+    const queue = new EncodeQueue({
+      encode: async (source, settings) => {
+        encoded.push(settings.quality);
+        return stubEncodeKtx2(source, settings);
+      },
+      onComplete: (result) => { completed.push(reported(result)); },
+    });
+    queue.pause();
+
+    expect(queue.enqueue(job("a", 1))).toBe("queued");
+    expect(queue.enqueue(job("a", 2))).toBe("replaced");
+    expect(queue.depth).toBe(1);
+    queue.resume();
+    await vi.waitFor(() => expect(completed).toEqual(["a:2:user"]));
+    expect(encoded).toEqual([2]);
+  });
+
+  it.each(["result", "failure"] as const)("drops the %s of a running job that a changed request replaced", async (ending) => {
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => { finish = resolve; });
+    const encoded: number[] = [];
+    const states: string[] = [];
+    const completed: string[] = [];
+    const dropped: string[] = [];
+    const errors: string[] = [];
+    const queue = new EncodeQueue({
+      encode: async (source, settings) => {
+        encoded.push(settings.quality);
+        if (settings.quality === 1) {
+          await gate;
+          if (ending === "failure") throw new Error("The encoder stopped.");
+        }
+        return stubEncodeKtx2(source, settings);
+      },
+      onState: (guid, state, running) => { states.push(`${guid}:${running.settings.quality}:${state}`); },
+      onComplete: (result) => { completed.push(reported(result)); },
+      onError: (guid) => { errors.push(guid); },
+      onDrop: (dropping) => { dropped.push(`${dropping.assetGuid}:${dropping.settings.quality}`); },
+    });
+    queue.enqueue(job("a", 1));
+    await vi.waitFor(() => expect(encoded).toEqual([1]));
+
+    expect(queue.enqueue(job("a", 2))).toBe("replaced");
+    finish();
+    await vi.waitFor(() => expect(completed).toEqual(["a:2:user"]));
+    // The older job reports no state of its own once replaced, and no failure.
+    expect(dropped).toEqual(["a:1"]);
+    expect(errors).toEqual([]);
+    expect(states).toEqual(["a:1:encoding", "a:2:encoding", "a:2:compressed"]);
+  });
+
+  it("marks the job whose result is being reported as replaced when a changed request arrives", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const results: EncodeJobResult[] = [];
+    const queue = new EncodeQueue({
+      onComplete: async (result) => {
+        results.push(result);
+        if (results.length === 1) await gate;
+      },
+    });
+    queue.enqueue(job("a", 1));
+    await vi.waitFor(() => expect(results).toHaveLength(1));
+
+    expect(results[0]!.superseded?.()).toBe(false);
+    // The reported result answers the same request; a changed one outranks it.
+    expect(queue.enqueue(job("a", 1))).toBe("duplicate");
+    expect(queue.enqueue(job("a", 2))).toBe("replaced");
+    expect(results[0]!.superseded?.()).toBe(true);
+    release();
+    await vi.waitFor(() => expect(results.map((result) => result.settings.quality)).toEqual([1, 2]));
+  });
+
+  it("lets a background job give way to the asset's job, and the user's request replace a background job", async () => {
+    const completed: string[] = [];
+    const queue = new EncodeQueue({ onComplete: (result) => { completed.push(reported(result)); } });
+    queue.pause();
+
+    expect(queue.enqueue(job("a", 1))).toBe("queued");
+    expect(queue.enqueue(job("a", 1, { guard: background }))).toBe("yielded");
+    expect(queue.enqueue(job("b", 1, { guard: background }))).toBe("queued");
+    expect(queue.enqueue(job("b", 1, { guard: background }))).toBe("yielded");
+    // The same settings, but a background job answers no request of the user's.
+    expect(queue.enqueue(job("b", 1))).toBe("replaced");
+    queue.resume();
+    await vi.waitFor(() => expect(completed).toEqual(["a:1:user", "b:1:user"]));
+  });
+
+  it("lets the completion callback queue a background job for the asset it reports", async () => {
+    const completed: string[] = [];
+    const outcomes: string[] = [];
+    const queue = new EncodeQueue({
+      onComplete: (result) => {
+        completed.push(reported(result));
+        if (!result.guard) outcomes.push(queue.enqueue(job(result.assetGuid, 1, { guard: background })));
+      },
+    });
+    queue.enqueue(job("a", 1));
+    await vi.waitFor(() => expect(completed).toEqual(["a:1:user", "a:1:background"]));
+    expect(outcomes).toEqual(["queued"]);
+  });
+});
+
 describe("selectTextureChunk", () => {
   it("prefers KTX2 when transcoder is available", async () => {
     const bytes = await encodeBabasset({
@@ -344,6 +487,12 @@ async function mountSingleTexture(
   name: string,
   payload: Record<string, unknown>,
   extraChunks: { id: string; kind: string; mime: string; data: Uint8Array }[] = [],
+  hooks: {
+    /** Every encode waits for this. */
+    gateEncode?: Promise<void>;
+    /** Runs when a result is reported, before it is committed. */
+    beforeCommit?: (result: EncodeJobResult) => Promise<void>;
+  } = {},
 ) {
   const storage = new MemoryStorageAdapter("documents");
   await storage.openDocumentsProject(`${name}.babproject`);
@@ -372,15 +521,19 @@ async function mountSingleTexture(
   );
   const registry = new AssetRegistry(storage);
   const settings: TextureEncodeSettings[] = [];
+  /** What each commit reported: whether it wrote the file. */
+  const commits: boolean[] = [];
   const queue = new EncodeQueue({
     // Stand-in encoder: a KTX2 header at the size the real encoders produce.
     encode: async (_source, encodeSettings) => {
       settings.push(encodeSettings);
+      await hooks.gateEncode;
       const size = textureEncodeSize(1, 1, encodeSettings);
       return { ktx2: ktx2Header(size.width, size.height), wallMs: 0 };
     },
     onComplete: async (result) => {
-      await registry.commitCompressedTexture(result);
+      await hooks.beforeCommit?.(result);
+      commits.push(await registry.commitCompressedTexture(result));
     },
   });
   registry.setEncodePipeline(queue);
@@ -389,7 +542,13 @@ async function mountSingleTexture(
     const entry = registry.getByGuid(`${name}-tex`)!.header.chunks.find((chunk) => chunk.id === chunkId);
     return entry ? registry.readChunk(`${name}-tex`, entry.id) : null;
   };
-  return { registry, settings, readChunk, guid: `${name}-tex` };
+  return { registry, settings, commits, readChunk, guid: `${name}-tex` };
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
 }
 
 describe("registry encode pipeline", () => {
@@ -418,6 +577,75 @@ describe("registry encode pipeline", () => {
     expect(resolved?.chunkId).toBe(saved.payload.ktx2ChunkId);
     expect(resolved?.missingPreferred).toBe(false);
     expect(Array.from(resolved!.bytes.subarray(20, 28))).toEqual([4, 0, 0, 0, 4, 0, 0, 0]);
+  });
+
+  it("queues one encode for a retry of a Texture whose encode is already queued or running", async () => {
+    const encoding = deferred();
+    const { registry, settings, commits, guid } = await mountSingleTexture(
+      "again",
+      { usage: "albedo", width: 1, height: 1, compressionState: "pending" },
+      [],
+      { gateEncode: encoding.promise },
+    );
+    expect(await registry.retryTextureEncoding(guid)).toBe(true);
+    await vi.waitFor(() => expect(settings).toHaveLength(1));
+
+    expect(await registry.retryTextureEncoding(guid)).toBe(true);
+    expect(await registry.retryTextureEncoding(guid, { force: true })).toBe(true);
+    encoding.resolve();
+    await vi.waitFor(() => expect(registry.getByGuid(guid)!.header.payload.compressionState).toBe("compressed"));
+    expect(settings).toHaveLength(1);
+    expect(commits).toEqual([true]);
+  });
+
+  it("lets a retry with changed settings replace the running encode, whose result is never committed", async () => {
+    const encoding = deferred();
+    const { registry, settings, commits, guid } = await mountSingleTexture(
+      "changed",
+      { usage: "albedo", width: 1, height: 1, compressionState: "pending" },
+      [],
+      { gateEncode: encoding.promise },
+    );
+    expect(await registry.retryTextureEncoding(guid)).toBe(true);
+    await vi.waitFor(() => expect(settings).toHaveLength(1));
+
+    expect(await registry.retryTextureEncoding(guid, { force: true, usage: "particle" })).toBe(true);
+    encoding.resolve();
+    await vi.waitFor(() => expect(registry.getByGuid(guid)!.header.payload.compressionState).toBe("compressed"));
+    expect(settings).toHaveLength(2);
+    expect(commits).toEqual([true]);
+    expect(registry.getByGuid(guid)!.header.payload.ktx2ChunkId).toBe(await textureEncodeChunkId(settings[1]!, "particle"));
+  });
+
+  it("keeps the pending mark of a newer request when the older encode's result is reported late", async () => {
+    const reports = [deferred(), deferred()];
+    const gates = [deferred(), deferred()];
+    let reported = 0;
+    const { registry, commits, guid } = await mountSingleTexture(
+      "late",
+      { usage: "albedo", width: 1, height: 1, compressionState: "compressed", ktx2ChunkId: "ktx2:albedo" },
+      [{ id: "ktx2:albedo", kind: "ktx2", mime: "image/ktx2", data: ktx2Header(1, 1) }],
+      {
+        beforeCommit: async () => {
+          const report = reported++;
+          reports[report]!.resolve();
+          await gates[report]!.promise;
+        },
+      },
+    );
+    expect(await registry.retryTextureEncoding(guid, { force: true })).toBe(true);
+    await reports[0]!.promise;
+
+    // The first encode is done and waits to commit when the newer request arrives.
+    expect(await registry.retryTextureEncoding(guid, { force: true, usage: "particle" })).toBe(true);
+    gates[0]!.resolve();
+    await reports[1]!.promise;
+    expect(commits).toEqual([false]);
+    expect(registry.getByGuid(guid)!.header.payload).toMatchObject({ compressionState: "pending", ktx2ChunkId: "ktx2:albedo" });
+
+    gates[1]!.resolve();
+    await vi.waitFor(() => expect(registry.getByGuid(guid)!.header.payload.compressionState).toBe("compressed"));
+    expect(commits).toEqual([false, true]);
   });
 
   it("lets an unsaved Particle Usage encode a Texture saved as uncompressed Pixel Art", async () => {

@@ -109,6 +109,7 @@ import {
   type EncodableChunk,
   type BlobStore,
   type EncodeFn,
+  type EncodeJob,
   stubEncodeKtx2,
   type MigrationPending,
   type MigrationRegistry,
@@ -370,7 +371,8 @@ export class ProjectService {
   private readonly storage: ProjectStorage;
   private readonly publicStorage: ProjectStorage;
   private readonly registryViews = new WeakMap<AssetRegistry, AssetRegistry>();
-  private readonly encodeWriteReleases = new Map<string, () => void>();
+  /** The write admission each running encode retains, from its start until its commit or failure ends. */
+  private readonly encodeWriteReleases = new Map<EncodeJob, () => void>();
   private externalEncodePause = false;
   private manualEncodePause = false;
   readonly extensions: EditorExtensionService;
@@ -551,7 +553,7 @@ export class ProjectService {
           signal,
         ),
       onState: (guid, state, job) => {
-        if (state === "encoding") this.encodeWriteReleases.set(guid, this.writeAdmission.retain());
+        if (state === "encoding") this.encodeWriteReleases.set(job, this.writeAdmission.retain());
         // `compressed` is written with the KTX2 chunk in onComplete, and
         // `encode_failed` once, with its message, by onError. A guarded
         // (alignment) job leaves the saved state alone until it commits, so
@@ -566,9 +568,7 @@ export class ProjectService {
           await this.refreshTextureWrite(guid, registry, session);
         }).catch(error => this.emitTextureEncodeDiagnostic(guid, error));
       },
-      onComplete: async (result) => {
-        const release = this.encodeWriteReleases.get(result.assetGuid);
-        this.encodeWriteReleases.delete(result.assetGuid);
+      onComplete: async (result, job) => {
         let succeeded = false;
         try {
           const registry = this.encodeRegistry();
@@ -580,7 +580,8 @@ export class ProjectService {
             if (this.textureCommit === commit) this.textureCommit = null;
           });
           if (!committedHere) {
-            // Refused guarded jobs leave the committed file unchanged.
+            // A refused commit (a guarded job, or one a newer request replaced)
+            // leaves the committed file unchanged.
             if (session === this.sourceSession) this.emitRegistryChange();
             succeeded = true;
             return;
@@ -599,14 +600,13 @@ export class ProjectService {
           }
           succeeded = true;
         } finally {
-          if (succeeded) release?.();
-          // The queue's error callback owns the failed-state commit.
-          else if (release) this.encodeWriteReleases.set(result.assetGuid, release);
+          // Otherwise the queue's error callback owns the failed-state commit,
+          // and ends the write with it.
+          if (succeeded) this.releaseEncodeWrite(job);
         }
       },
       onError: (guid, error, job) => {
-        const release = this.encodeWriteReleases.get(guid);
-        this.encodeWriteReleases.delete(guid);
+        const release = this.takeEncodeWriteRelease(job);
         this.emitTextureEncodeDiagnostic(guid, error);
         const registry = this.encodeRegistry();
         if (job.guard) {
@@ -629,11 +629,10 @@ export class ProjectService {
         }).catch(failure => this.emitTextureEncodeDiagnostic(guid, failure)).finally(() => release?.()));
       },
       // A guarded job dropped unencoded may leave its Texture stale for the
-      // user. A closed project's encode ends the write it retained here.
+      // user. A closed project's encode, and one a newer request replaced,
+      // end the write they retained here.
       onDrop: (job) => {
-        const release = this.encodeWriteReleases.get(job.assetGuid);
-        this.encodeWriteReleases.delete(job.assetGuid);
-        release?.();
+        this.releaseEncodeWrite(job);
         this.emitRegistryChange();
       },
     });
@@ -717,6 +716,17 @@ export class ProjectService {
     return () => {
       this.diagnosticListeners.delete(listener);
     };
+  }
+
+  /** The write admission `job` retained when its encode started, which the caller now ends. */
+  private takeEncodeWriteRelease(job: EncodeJob): (() => void) | undefined {
+    const release = this.encodeWriteReleases.get(job);
+    this.encodeWriteReleases.delete(job);
+    return release;
+  }
+
+  private releaseEncodeWrite(job: EncodeJob): void {
+    this.takeEncodeWriteRelease(job)?.();
   }
 
   /** Lets Close Project wait for `write` (see `textureStateWrites`); returns it unchanged. */
