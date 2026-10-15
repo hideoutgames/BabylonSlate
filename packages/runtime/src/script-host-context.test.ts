@@ -1,7 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { createSeededRng } from "@babylonslate/core";
 import { Actor, type TickContext } from "@babylonslate/object-model";
-import { ScriptHost, type CompiledScript, type ScriptHostServices } from "./script-host";
+import {
+  ScriptHost,
+  type CompiledScript,
+  type HostContextKey,
+  type ScriptContext,
+  type ScriptHostServices,
+} from "./script-host";
 
 function services(extras: Partial<ScriptHostServices> = {}): ScriptHostServices {
   return {
@@ -98,7 +104,8 @@ describe("ScriptContext members used apart from their context", () => {
 
 describe("ScriptContext shape", () => {
   // Scripts can enumerate a context (`Object.keys`, spread, `for in`), so the per-call members and their
-  // order are part of what they observe, and a member dropped here would only fail when a script reads it.
+  // order are part of what they observe. `createContext` assigns them one by one, so the compiler no longer
+  // checks that it covers every member that is not inherited; the type check below does.
   const PER_CALL_KEYS = [
     "registerSaveMigration", "getSaveMigrationField", "setSaveMigrationField", "data", "readDataEntryAsync",
     "editorData", "self", "deltaSeconds", "tickIndex", "commandArgs", "args", "animFacts", "animExitTimeReached",
@@ -114,22 +121,25 @@ describe("ScriptContext shape", () => {
     "gamepadConnections", "sampleWater", "lineTrace", "projectCursorToScene", "sphereOverlap", "shapeSweep",
     "addImpulse", "moveCharacter", "playSound", "playParticles", "stopParticles", "createSceneLayerAsync",
     "moveTo", "stopMovement", "btFinish", "btEvaluate", "getBlackboard", "setBlackboard",
-  ];
+  ] as const satisfies readonly (keyof ScriptContext)[];
+  const perCallKeys: readonly string[] = PER_CALL_KEYS;
 
   it("owns the per-call members in a fixed order and inherits the host's shared members", () => {
+    // Every ScriptContext member is either inherited from the host or listed above.
+    expectTypeOf<Exclude<keyof ScriptContext, HostContextKey | (typeof PER_CALL_KEYS)[number]>>().toBeNever();
     const host = new ScriptHost(services());
     const first = host.createContext(null, 0, 0);
     const second = host.createContext(new Actor({ classId: "Hero", guid: "a" }), 0.1, 1, { x: 1 });
 
-    expect(Object.keys(first)).toEqual(PER_CALL_KEYS);
-    expect(Object.keys(second)).toEqual(PER_CALL_KEYS);
+    expect(Object.keys(first)).toEqual(perCallKeys);
+    expect(Object.keys(second)).toEqual(perCallKeys);
 
     const shared = Object.getPrototypeOf(first) as Record<string, unknown>;
     expect(Object.getPrototypeOf(second)).toBe(shared);
     expect(Object.getPrototypeOf(shared)).toBe(Object.prototype);
     const hostKeys = Object.keys(shared);
     expect(hostKeys).toEqual(expect.arrayContaining(["log", "print", "formatValue", "randomFloat", "isA"]));
-    expect(hostKeys.filter((key) => PER_CALL_KEYS.includes(key))).toEqual([]);
+    expect(hostKeys.filter((key) => perCallKeys.includes(key))).toEqual([]);
     for (const key of hostKeys) expect(first[key as keyof typeof first]).toBe(shared[key]);
 
     const otherHost = new ScriptHost(services()).createContext(null, 0, 0);
