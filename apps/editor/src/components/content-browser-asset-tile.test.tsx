@@ -168,6 +168,14 @@ describe("ContentBrowserAssetTile", () => {
     expect(setData).not.toHaveBeenCalled();
   });
 
+  it("badges a Texture as Encoding while its encode runs, though its file shows no state", () => {
+    const { unmount } = renderTile();
+    expect(screen.queryByTestId("texture-compression-hero-1")).toBeNull();
+    unmount();
+    renderTile({ encoding: true });
+    expect(screen.getByTestId("texture-compression-hero-1").textContent).toBe("Encoding");
+  });
+
   it("keeps the lock slot hidden when source control is off", () => {
     renderTile();
     const slot = document.querySelector("[data-lock-slot]");

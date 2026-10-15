@@ -127,6 +127,8 @@ export type LineTraceOptions = {
   ignoreActorIds?: readonly string[];
   /** False excludes sensor/trigger geometry; omitted, every backend hits triggers. */
   includeTriggers?: boolean;
+  /** True hits only sensor/trigger geometry, and wins over `includeTriggers: false`. */
+  onlyTriggers?: boolean;
 };
 
 export type HitResult = {

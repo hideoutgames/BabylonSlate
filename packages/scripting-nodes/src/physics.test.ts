@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import {
+  COLLISION_CHANNEL_MEMBERS,
   clearValidationRules,
   compileGraph,
   createEmptyLogicGraph,
@@ -197,6 +198,44 @@ describe("physics nodes", () => {
     };
     const diags = validateGraphs([graph], { assetGuid: "a" });
     expect(diags.some((d) => d.code === "physics.radius")).toBe(true);
+  });
+
+  describe("collision channel literals", () => {
+    const registry = createDefaultNodeRegistry();
+    const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode => ({
+      id, typeId, position: { x: 0, y: 0 }, pins: registry.get(typeId)!.pins(properties), properties,
+    });
+    const channelDiagnostics = (nodes: GraphNode[], edges: LogicGraph["edges"] = []) =>
+      validateGraphs([{ id: "g", kind: "event", nodes, edges }], { assetGuid: "a" })
+        .filter((d) => d.code === "physics.channel");
+
+    it.each(["physics.lineTrace", "physics.sphereOverlap", "physics.shapeSweep", "input.projectCursorToScene"])(
+      "warns that an unknown %s Channel default would behave as All", (typeId) => {
+        const found = channelDiagnostics([node("query", typeId, { "default:channel": "WorldStatic", "default:radius": 1 })]);
+        expect(found).toEqual([expect.objectContaining({
+          severity: "warning", nodeId: "query", pinId: "channel", message: expect.stringContaining('"WorldStatic"'),
+        })]);
+        expect(found[0]!.message).toContain("All");
+      });
+
+    it("accepts every member, an unset default and a wired pin whose stale default no longer applies", () => {
+      expect(channelDiagnostics([
+        ...COLLISION_CHANNEL_MEMBERS.map((channel, index) =>
+          node(`member-${index}`, "physics.lineTrace", { "default:channel": channel })),
+        node("unset", "physics.lineTrace"),
+        node("empty", "physics.lineTrace", { "default:channel": "" }),
+        node("wired", "physics.lineTrace", { "default:channel": "Pawn" }),
+        node("source", "enum.make", { enumGuid: "engine:CollisionChannel", value: "Solid" }),
+      ], [{ id: "e", sourceNodeId: "source", sourcePinId: "out", targetNodeId: "wired", targetPinId: "channel" }])).toEqual([]);
+    });
+
+    it("warns about a Make Enum that names a channel that does not exist, and ignores other enums", () => {
+      const found = channelDiagnostics([
+        node("stale", "enum.make", { enumGuid: "engine:CollisionChannel", value: "Visibility" }),
+        node("other", "enum.make", { enumGuid: "engine:Key", value: "Visibility" }),
+      ]);
+      expect(found).toEqual([expect.objectContaining({ nodeId: "stale", severity: "warning" })]);
+    });
   });
 
   it.each([undefined, false])("compiled LineTrace returns on the same tick with Draw Debug %s", (drawDebug) => {

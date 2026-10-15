@@ -183,10 +183,7 @@ describe("ProjectService lifecycle", () => {
     await service.registry!.reindexPath("assets/test.babasset");
     service.textureEncodeQueue.enqueue({ assetGuid: "encode-late", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
     await vi.waitFor(() => expect(finishEncode).toBeTypeOf("function"));
-    await vi.waitFor(async () => {
-      const header = (await decodeBabasset(await storage.readBinary("assets/test.babasset"))).header;
-      expect(header.payload.compressionState).toBe("encoding");
-    });
+    await vi.waitFor(() => expect(service.textureEncodingGuids.has("encode-late")).toBe(true));
     const release = storage.releaseFolder.bind(storage);
     let resumeRelease!: () => void;
     const releasePaused = new Promise<void>(resolve => { resumeRelease = resolve; });

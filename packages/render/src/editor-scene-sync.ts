@@ -17,6 +17,7 @@ import {
   installTextureBytes,
   meshAssetFingerprintWithoutModels,
   modelSlotFingerprint,
+  PayloadFingerprints,
   refreshAlbedoTextures,
   type MeshAssetContext,
 } from "./mesh-assets";
@@ -62,6 +63,15 @@ export type EditorSceneSyncOptions = {
   onAfterApply?: () => void;
 };
 
+/** The Materials a refresh covers: the actors using these guids, or every actor (`null`). */
+type MaterialScope = ReadonlySet<string> | null;
+
+function mergeMaterialScopes(current: MaterialScope | undefined, next: MaterialScope): MaterialScope {
+  if (current === undefined) return next;
+  if (current === null || next === null) return null;
+  return new Set([...current, ...next]);
+}
+
 /**
  * Applies scene document edits to the Babylon editor scene incrementally, so a
  * gizmo drag touches one mesh instead of rebuilding the scene, and marks the
@@ -69,6 +79,13 @@ export type EditorSceneSyncOptions = {
  */
 export class EditorSceneSync {
   private readonly meshes = new Map<string, Mesh>();
+  /**
+   * Each registered actor root with its actor id and its place in `meshes`'
+   * insertion order, so a root's child actors are found through Babylon's own
+   * child list rather than by visiting every root. See `registerActorMesh`.
+   */
+  private readonly rootEntries = new Map<Mesh, { actorId: string; rank: number }>();
+  private nextRootRank = 0;
   private readonly meshKinds = new Map<string, string | null>();
   private readonly rejectedVisuals = new Map<string, string>();
   private readonly pendingVisuals = new Map<string, Mesh>();
@@ -78,9 +95,20 @@ export class EditorSceneSync {
   private realization: Promise<void> | null = null;
   private applyingScene: SerializedScene | null = null;
   private materialRefreshGeneration: number | null = null;
+  /** What the refresh owed once the running apply completes covers (see `refreshMaterialScope`). */
+  private owedMaterialRefresh: MaterialScope | undefined;
   private materialsRefreshable = false;
   private materialRefreshTurn = false;
-  private materialRefreshDeferred = false;
+  /** What the publications after a turn's first cover, refreshed together once the turn ends. */
+  private deferredMaterialRefresh: MaterialScope | undefined;
+  /**
+   * The Material guids each actor's last binding resolved, and the actors that
+   * resolved each guid, so a Material that finished compiling rebinds only its
+   * users (see `actorsToRefresh`). Maintained by `recordMaterialUses`.
+   */
+  private readonly actorMaterials = new Map<string, Set<string>>();
+  private readonly materialActors = new Map<string, Set<string>>();
+  private materialSession: { actorId: string; found: Set<string> } | null = null;
   private disposed = false;
 
   private readonly scene: Scene;
@@ -94,6 +122,8 @@ export class EditorSceneSync {
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
   private assets: MeshAssetContext | undefined;
   private lastAssetFingerprint: string | null = null;
+  /** Remembers the serialized Tilemap, Tileset and Water payloads by revision, across installs. */
+  private readonly payloadFingerprints = new PayloadFingerprints();
   /** `meshAssetFingerprintWithoutModels(this.assets)`, kept with the assets. */
   private lastAssetContentFingerprint = meshAssetFingerprintWithoutModels(undefined);
   private lastModelSlotKey = "";
@@ -160,7 +190,7 @@ export class EditorSceneSync {
     if (this.disposed || !this.assets) return;
     const assets: MeshAssetContext = { ...this.assets, textureBytes };
     this.assets = assets;
-    this.lastAssetContentFingerprint = meshAssetFingerprintWithoutModels(assets);
+    this.lastAssetContentFingerprint = meshAssetFingerprintWithoutModels(assets, this.payloadFingerprints);
     this.lastAssetFingerprint = meshAssetFingerprint(assets, this.lastAssetContentFingerprint);
     const changed = new Set(guids);
     const pending: Promise<void>[] = [];
@@ -184,8 +214,9 @@ export class EditorSceneSync {
       textureBytes: installTextureBytes(assets.textureBytes),
       fontMsdfPng: installTextureBytes(assets.fontMsdfPng),
     };
-    // Serialize the tilemap, tileset and water payloads once per install.
-    const contentFingerprint = meshAssetFingerprintWithoutModels(assets);
+    // Serialize the tilemap, tileset and water payloads once per install, and
+    // not at all when the host reports their revisions unchanged.
+    const contentFingerprint = meshAssetFingerprintWithoutModels(assets, this.payloadFingerprints);
     const fingerprint = meshAssetFingerprint(assets, contentFingerprint);
     const slotKey = modelSlotFingerprint(assets?.modelPayloads);
     const onlyModelsChanged = contentFingerprint === this.lastAssetContentFingerprint;
@@ -237,6 +268,7 @@ export class EditorSceneSync {
     this.realization = null;
     const generation = ++this.applyGeneration;
     this.materialRefreshGeneration = null;
+    this.owedMaterialRefresh = undefined;
     this.materialsRefreshable = false;
     this.resetModelReadiness();
     this.applyingScene = sceneData;
@@ -247,7 +279,7 @@ export class EditorSceneSync {
       }
       while (this.materialRefreshGeneration === generation) {
         this.materialRefreshGeneration = null;
-        for (const _progress of this.materialRefreshSteps(sceneData)) void _progress;
+        for (const _progress of this.materialRefreshSteps(sceneData, this.takeOwedMaterialRefresh())) void _progress;
       }
       this.completeApply(sceneData, generation);
     } finally {
@@ -260,6 +292,7 @@ export class EditorSceneSync {
     const controller = new AbortController();
     const generation = ++this.applyGeneration;
     this.materialRefreshGeneration = null;
+    this.owedMaterialRefresh = undefined;
     this.materialsRefreshable = false;
     this.resetModelReadiness();
     this.pendingApply = controller;
@@ -277,7 +310,7 @@ export class EditorSceneSync {
         await runSceneWork(this.applySteps(sceneData, rebuild), work);
         while (this.materialRefreshGeneration === generation) {
           this.materialRefreshGeneration = null;
-          await runSceneWork(this.materialRefreshSteps(sceneData), work);
+          await runSceneWork(this.materialRefreshSteps(sceneData, this.takeOwedMaterialRefresh()), work);
         }
         controller.signal.throwIfAborted();
         this.completeApply(sceneData, generation);
@@ -290,6 +323,7 @@ export class EditorSceneSync {
         this.pendingApply = null;
         this.applyingScene = null;
         this.materialRefreshGeneration = null;
+        this.owedMaterialRefresh = undefined;
       }
     }
   }
@@ -367,8 +401,8 @@ export class EditorSceneSync {
                 // authored pose and must not undo that arrangement on adoption.
                 this.prepareActorVisual(actor, candidate);
                 candidate.parent = previous.parent;
-                for (const child of this.meshes.values()) if (child.parent === previous) child.parent = candidate;
-                this.meshes.set(actor.id, candidate);
+                this.moveChildActors(previous, candidate);
+                this.registerActorMesh(actor.id, candidate);
                 this.meshKinds.set(actor.id, nextKinds.get(actor.id) ?? null);
                 this.rejectedVisuals.delete(actor.id);
                 this.pendingVisuals.delete(actor.id);
@@ -411,7 +445,7 @@ export class EditorSceneSync {
           void textureReady?.catch(() => {});
           mesh = replacement;
           prepared = true;
-          this.meshes.set(actor.id, mesh);
+          this.registerActorMesh(actor.id, mesh);
           this.meshKinds.set(actor.id, nextKinds.get(actor.id) ?? null);
           this.rejectedVisuals.delete(actor.id);
           previous?.dispose();
@@ -436,7 +470,8 @@ export class EditorSceneSync {
     for (const [actorId, mesh] of oldMeshes) {
       if (!liveIds.has(actorId)) {
         mesh.dispose();
-        this.meshes.delete(actorId);
+        this.unregisterActorMesh(actorId);
+        this.forgetMaterialUses(actorId);
         this.meshKinds.delete(actorId);
         this.rejectedVisuals.delete(actorId);
       }
@@ -490,51 +525,174 @@ export class EditorSceneSync {
     this.scheduler?.invalidate("asset");
   }
 
-  /** A material publication belongs to the current load, not a new document edit. */
+  /**
+   * Rebinds the Materials of every actor. A material publication belongs to the
+   * current load, not a new document edit.
+   */
   refreshMaterials(): void {
-    if (this.disposed || this.scene.isDisposed || this.pendingApply?.signal.aborted) return;
-    if (this.applyingScene) {
-      this.materialRefreshGeneration = this.applyGeneration;
-      return;
-    }
-    // An aborted/failed apply retains partial roots for the next reconciliation.
-    // Late material publication must not reactivate that partial generation.
-    if (!this.materialsRefreshable || !this.lastScene) return;
-    for (const _progress of this.materialRefreshSteps(this.lastScene)) void _progress;
-    this.onAfterApply?.();
-    this.scheduler?.invalidate("asset");
+    this.refreshMaterialScope(null);
   }
 
   /**
    * `refreshMaterials` for Material publications, which arrive one at a time and
-   * each cost a pass over every actor. The first publication of a microtask turn
-   * refreshes at once; those settling in the same turn share one more pass, run
-   * after them, so the last publication's binding still lands.
+   * each used to cost a pass over every actor. A publication names the Material
+   * that finished compiling, and only the actors that resolved it are rebound.
+   * The first publication of a microtask turn refreshes at once; those settling
+   * in the same turn share one more pass, run after them, so the last
+   * publication's binding still lands. Without a guid every actor is rebound.
    */
-  refreshMaterialsCoalesced(): void {
+  refreshMaterialsCoalesced(guid?: string): void {
+    const scope: MaterialScope = guid === undefined ? null : new Set([guid]);
     if (this.materialRefreshTurn) {
-      this.materialRefreshDeferred = true;
+      this.deferredMaterialRefresh = mergeMaterialScopes(this.deferredMaterialRefresh, scope);
       return;
     }
     this.materialRefreshTurn = true;
     queueMicrotask(() => {
       this.materialRefreshTurn = false;
-      if (!this.materialRefreshDeferred) return;
-      this.materialRefreshDeferred = false;
-      this.refreshMaterials();
+      const deferred = this.deferredMaterialRefresh;
+      if (deferred === undefined) return;
+      this.deferredMaterialRefresh = undefined;
+      this.refreshMaterialScope(deferred);
     });
-    this.refreshMaterials();
+    this.refreshMaterialScope(scope);
   }
 
-  private *materialRefreshSteps(sceneData: SerializedScene): Generator<number, void, unknown> {
+  private refreshMaterialScope(scope: MaterialScope): void {
+    if (this.disposed || this.scene.isDisposed || this.pendingApply?.signal.aborted) return;
+    if (this.applyingScene) {
+      this.materialRefreshGeneration = this.applyGeneration;
+      this.owedMaterialRefresh = mergeMaterialScopes(this.owedMaterialRefresh, scope);
+      return;
+    }
+    // An aborted/failed apply retains partial roots for the next reconciliation.
+    // Late material publication must not reactivate that partial generation.
+    if (!this.materialsRefreshable || !this.lastScene) return;
+    for (const _progress of this.materialRefreshSteps(this.lastScene, scope)) void _progress;
+    this.onAfterApply?.();
+    this.scheduler?.invalidate("asset");
+  }
+
+  private takeOwedMaterialRefresh(): MaterialScope {
+    const owed = this.owedMaterialRefresh ?? null;
+    this.owedMaterialRefresh = undefined;
+    return owed;
+  }
+
+  private *materialRefreshSteps(sceneData: SerializedScene, scope: MaterialScope): Generator<number, void, unknown> {
+    const only = scope && this.actorsToRefresh(scope);
     for (const actor of sceneData.actors) {
+      if (only && !only.has(actor.id)) continue;
       const root = this.meshes.get(actor.id);
       if (root && !root.isDisposed()) {
-        this.refreshEnvironmentComponents(actor, root, this.meshAssetsForScene(sceneData));
-        this.bindActorMaterials(actor, root);
+        this.recordMaterialUses(actor.id, () => {
+          this.refreshEnvironmentComponents(actor, root, () => this.meshAssetsForScene(sceneData));
+          this.bindActorMaterials(actor, root);
+        });
       }
       yield 0.99;
     }
+  }
+
+  /**
+   * The actors to rebind when these Materials finished compiling: those whose
+   * last binding resolved one, plus every actor in the same tree of roots.
+   *
+   * A binding assigns Materials to every mesh beneath the visual it binds, and
+   * that can include a child actor's meshes (a parent that is its own single
+   * visual). A full pass puts a child's Materials back when the child, bound
+   * after its parent in Scene order, restores or overrides them. A refresh that
+   * rebound the parent alone would leave the child with the parent's Material,
+   * so a user's whole tree (the topmost registered ancestor and everything
+   * beneath it) is rebound, in Scene order like a full pass.
+   */
+  private actorsToRefresh(guids: ReadonlySet<string>): Set<string> {
+    const actors = new Set<string>();
+    const walked = new Set<Mesh>();
+    for (const guid of guids) {
+      for (const actorId of this.materialActors.get(guid) ?? []) {
+        let top = this.meshes.get(actorId);
+        if (!top || top.isDisposed()) continue;
+        for (let node = top.parent; node; node = node.parent) {
+          if (node instanceof Mesh && this.rootEntries.has(node)) top = node;
+        }
+        if (walked.has(top)) continue;
+        walked.add(top);
+        for (const root of [top, ...top.getChildMeshes(false)]) {
+          const entry = root instanceof Mesh ? this.rootEntries.get(root) : undefined;
+          if (entry) actors.add(entry.actorId);
+        }
+      }
+    }
+    return actors;
+  }
+
+  /**
+   * Runs one actor's binding and records the Material guids it resolved,
+   * replacing what the actor's previous binding recorded. A guid resolved after
+   * the binding returned (an asynchronous continuation of it) is added to the
+   * record as it happens.
+   */
+  private recordMaterialUses(actorId: string, bind: () => void): void {
+    const outer = this.materialSession;
+    const session = { actorId, found: new Set<string>() };
+    this.materialSession = session;
+    try {
+      bind();
+    } finally {
+      this.materialSession = outer;
+      const previous = this.actorMaterials.get(actorId);
+      if (previous) for (const guid of previous) if (!session.found.has(guid)) this.unindexMaterialUse(guid, actorId);
+      for (const guid of session.found) if (!previous?.has(guid)) this.indexMaterialUse(guid, actorId);
+      this.actorMaterials.set(actorId, session.found);
+    }
+  }
+
+  private noteMaterialUse(actorId: string, guid: string): void {
+    if (this.materialSession?.actorId === actorId) {
+      this.materialSession.found.add(guid);
+      return;
+    }
+    const known = this.actorMaterials.get(actorId);
+    if (known && !known.has(guid)) {
+      known.add(guid);
+      this.indexMaterialUse(guid, actorId);
+    }
+  }
+
+  private indexMaterialUse(guid: string, actorId: string): void {
+    const actors = this.materialActors.get(guid);
+    if (actors) actors.add(actorId);
+    else this.materialActors.set(guid, new Set([actorId]));
+  }
+
+  private unindexMaterialUse(guid: string, actorId: string): void {
+    const actors = this.materialActors.get(guid);
+    if (!actors?.delete(actorId) || actors.size > 0) return;
+    this.materialActors.delete(guid);
+  }
+
+  private forgetMaterialUses(actorId: string): void {
+    const guids = this.actorMaterials.get(actorId);
+    if (!guids) return;
+    for (const guid of guids) this.unindexMaterialUse(guid, actorId);
+    this.actorMaterials.delete(actorId);
+  }
+
+  /** `resolve`, noting each guid it is asked for as one `actorId` resolved. */
+  private notingUses(actorId: string, resolve: MeshAssetContext["resolveMaterial"]): MeshAssetContext["resolveMaterial"] {
+    return resolve && ((guid, options) => {
+      this.noteMaterialUse(actorId, guid);
+      return resolve(guid, options);
+    });
+  }
+
+  /** This sync's resolver, then the installed assets', noting each guid as one `actorId` resolved. */
+  private resolverFor(actorId: string): NonNullable<MeshAssetContext["resolveMaterial"]> {
+    return (guid, options) => {
+      this.noteMaterialUse(actorId, guid);
+      return this.resolveMaterial?.(guid, options) ?? this.assets?.resolveMaterial?.(guid, options) ?? null;
+    };
   }
 
   serializedScene(): SerializedScene | null {
@@ -621,6 +779,41 @@ export class EditorSceneSync {
     return this.meshes.size;
   }
 
+  /**
+   * Registers an actor's root. A replacement keeps the id's place in `meshes`
+   * (a `Map` keeps a key's position when its value changes), and so its rank.
+   */
+  private registerActorMesh(actorId: string, mesh: Mesh): void {
+    const previous = this.meshes.get(actorId);
+    const rank = (previous ? this.rootEntries.get(previous)?.rank : undefined) ?? this.nextRootRank++;
+    if (previous) this.rootEntries.delete(previous);
+    this.rootEntries.set(mesh, { actorId, rank });
+    this.meshes.set(actorId, mesh);
+  }
+
+  private unregisterActorMesh(actorId: string): void {
+    const mesh = this.meshes.get(actorId);
+    if (mesh) this.rootEntries.delete(mesh);
+    this.meshes.delete(actorId);
+  }
+
+  /**
+   * Re-parents every registered actor root beneath `from` onto `to`, in the
+   * order the roots were registered, as a pass over all roots would. The
+   * children come from Babylon's own child list, which the `parent` setter keeps
+   * current, so the cost follows the number of children, not of actors.
+   */
+  private moveChildActors(from: Mesh, to: Mesh): void {
+    const children: Array<{ mesh: Mesh; rank: number }> = [];
+    for (const child of from.getChildren(undefined, true)) {
+      if (!(child instanceof Mesh)) continue;
+      const entry = this.rootEntries.get(child);
+      if (entry) children.push({ mesh: child, rank: entry.rank });
+    }
+    children.sort((a, b) => a.rank - b.rank);
+    for (const { mesh } of children) mesh.parent = to;
+  }
+
   async whenEditorModelsReady(): Promise<void> {
     await this.realization;
     const loads = [...(this.modelLoadBinding.slotAnimLoads?.values() ?? []), ...this.pendingTextureLoads];
@@ -664,24 +857,28 @@ export class EditorSceneSync {
     void load.catch((error: unknown) => console.warn(`[render] Foliage preparation failed: ${String(error)}`));
   }
 
-  private refreshEnvironmentComponents(actor: SerializedActor, root: Mesh, assets?: MeshAssetContext): void {
+  private refreshEnvironmentComponents(actor: SerializedActor, root: Mesh, assets: () => MeshAssetContext | undefined): void {
     for (const component of actor.components) {
       const visual = visualForMeshComponent(root, actor.id, component.id);
       if (!visual) continue;
-      const context = { ...assets, resolveMaterial: this.resolveMaterial ?? assets?.resolveMaterial };
+      if (component.classId !== "LandscapeComponent" && component.classId !== "FoliageComponent") continue;
+      const installed = assets();
+      const context = { ...installed, resolveMaterial: this.notingUses(actor.id, this.resolveMaterial ?? installed?.resolveMaterial) };
       if (component.classId === "LandscapeComponent") updateLandscapeMesh(visual, component.properties, context);
-      if (component.classId === "FoliageComponent") refreshFoliageMaterials(visual, context);
+      else refreshFoliageMaterials(visual, context);
     }
   }
 
   private prepareActorVisual(actor: SerializedActor, mesh: Mesh): void {
-    this.refreshEnvironmentComponents(actor, mesh, this.assets);
-    applyActorTransform(mesh, actor);
-    applyComponentChildTransforms(mesh, actor);
-    applyEditorBillboardFromActor(mesh, actor);
-    for (const child of visualMeshesOfActorRoot(mesh)) applyEditorBillboardFromActor(child, actor);
-    applyActorComponentSorting(mesh, actor, this.sortingLayers);
-    this.bindActorMaterials(actor, mesh);
+    this.recordMaterialUses(actor.id, () => {
+      this.refreshEnvironmentComponents(actor, mesh, () => this.assets);
+      applyActorTransform(mesh, actor);
+      applyComponentChildTransforms(mesh, actor);
+      applyEditorBillboardFromActor(mesh, actor);
+      for (const child of visualMeshesOfActorRoot(mesh)) applyEditorBillboardFromActor(child, actor);
+      applyActorComponentSorting(mesh, actor, this.sortingLayers);
+      this.bindActorMaterials(actor, mesh);
+    });
   }
 
   /**
@@ -690,11 +887,29 @@ export class EditorSceneSync {
    * nothing and does not make the renderer re-probe its shader variants.
    */
   private bindActorMaterials(actor: SerializedActor, root: Mesh): void {
+    this.noteDeclaredMaterials(actor);
     withNetMaterialChanges([root, ...root.getChildMeshes(false)], () => {
       this.restoreMeshComponentConstruction(actor, root);
       this.applyModelSlots(actor, root);
       this.bindActorMeshMaterials(actor, root);
     });
+  }
+
+  /**
+   * The Materials the actor's document names, noted even where the binding does
+   * not get as far as resolving them (a visual or model not built yet, a saved
+   * instance still preparing), so a Material that finishes compiling in the
+   * meantime still reaches the actor.
+   */
+  private noteDeclaredMaterials(actor: SerializedActor): void {
+    for (const component of actor.components) {
+      const guid = authoredMaterialGuid(component.properties.materialGuid);
+      if (guid) this.noteMaterialUse(actor.id, guid);
+    }
+    const model = this.meshComponentAssetGuid(actor);
+    for (const slot of (model ? this.assets?.modelPayloads?.get(model)?.materialSlots : undefined) ?? []) {
+      if (slot.materialGuid) this.noteMaterialUse(actor.id, slot.materialGuid);
+    }
   }
 
   pendingModelLoadCount(): number {
@@ -807,10 +1022,11 @@ export class EditorSceneSync {
     const guid = this.meshComponentAssetGuid(actor);
     const payload = guid ? this.assets?.modelPayloads?.get(guid) : undefined;
     if (!payload) return;
+    const resolve = this.notingUses(actor.id, this.resolveMaterial);
     applyModelMaterialSlots(
       editorModelLoadTarget(root, actor),
       payload.materialSlots,
-      (materialGuid) => this.resolveMaterial?.(materialGuid) ?? null,
+      (materialGuid) => resolve?.(materialGuid) ?? null,
     );
   }
 
@@ -888,15 +1104,13 @@ export class EditorSceneSync {
   }
 
   private bindActorMeshMaterials(actor: SerializedActor, root: Mesh): void {
-    refreshJoystick2DMaterials(root, {
-      resolveMaterial: (guid, options) => this.resolveMaterial?.(guid, options) ?? this.assets?.resolveMaterial?.(guid, options) ?? null,
-    });
-    refreshText2DMaterials(root, {
-      resolveMaterial: (guid, options) => this.resolveMaterial?.(guid, options) ?? this.assets?.resolveMaterial?.(guid, options) ?? null,
-    });
+    const resolveMaterial = this.resolverFor(actor.id);
+    refreshJoystick2DMaterials(root, { resolveMaterial });
+    refreshText2DMaterials(root, { resolveMaterial });
     for (const component of actor.components) {
       if (component.classId === "2DMaterialComponent") {
         this.bindMaterialOverride(
+          actor.id,
           root,
           authoredMaterialGuid(component.properties.materialGuid),
           { unlit: true },
@@ -907,6 +1121,7 @@ export class EditorSceneSync {
         const source = component.properties.source;
         if (source === "material") {
           this.bindMaterialOverride(
+            actor.id,
             root,
             authoredMaterialGuid(component.properties.materialGuid),
             { unlit: true },
@@ -930,13 +1145,14 @@ export class EditorSceneSync {
         continue;
       }
       this.bindMaterialOverride(
+        actor.id,
         visual,
         authoredMaterialGuid(component.properties.materialGuid),
       );
     }
     applyAuthoredActorMaterialInstances(root, actor, {
       ...this.assets,
-      resolveMaterial: (guid, options) => this.resolveMaterial?.(guid, options) ?? this.assets?.resolveMaterial?.(guid, options) ?? null,
+      resolveMaterial,
       releaseMaterialInstance: this.releaseMaterialInstance ?? this.assets?.releaseMaterialInstance,
       validateMaterialParameter: this.validateMaterialParameter ?? this.assets?.validateMaterialParameter,
     }, () => {
@@ -946,6 +1162,7 @@ export class EditorSceneSync {
   }
 
   private bindMaterialOverride(
+    actorId: string,
     visual: Mesh,
     guid: string | null,
     options?: { unlit?: boolean },
@@ -960,6 +1177,7 @@ export class EditorSceneSync {
         this.constructionMaterials.set(target, target.material);
       }
     }
+    this.noteMaterialUse(actorId, guid);
     const material =
       this.resolveMaterial?.(guid, { ...options, scene: this.scene }) ?? null;
     if (!material) return;
@@ -974,6 +1192,7 @@ export class EditorSceneSync {
     this.disposed = true;
     this.materialsRefreshable = false;
     this.materialRefreshGeneration = null;
+    this.owedMaterialRefresh = undefined;
     this.pendingApply?.abort(new Error("Scene realization was disposed."));
     this.pendingApply = null;
     this.realization = null;
@@ -984,6 +1203,9 @@ export class EditorSceneSync {
       mesh.dispose();
     }
     this.meshes.clear();
+    this.rootEntries.clear();
+    this.actorMaterials.clear();
+    this.materialActors.clear();
     this.meshKinds.clear();
     pruneEditorCables(this.scene);
   }

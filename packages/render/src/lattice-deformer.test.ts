@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BoundingInfo, Matrix, Mesh, MeshBuilder, MultiMaterial, NullEngine, Scene, StandardMaterial, Vector3, VertexBuffer, type Effect, type MaterialPluginBase, type UniformBuffer } from "@babylonjs/core";
+import { BoundingInfo, Matrix, Mesh, MeshBuilder, MultiMaterial, NullEngine, PBRMaterial, Scene, StandardMaterial, Vector3, VertexBuffer, type Effect, type Material, type MaterialPluginBase, type UniformBuffer } from "@babylonjs/core";
 import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
 import { LatticeDeformerPlugin } from "./lattice-deformer-native";
@@ -9,6 +9,7 @@ import { managedRenderReservations } from "./managed-render-resources";
 import { onSceneReadinessDirty } from "./scene-readiness-signal";
 
 const cleanups: (() => void)[] = [];
+const cagePlugin = (material: Material | null) => material?.pluginManager?.getPlugin("SlateLattice") ?? null;
 afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); vi.restoreAllMocks(); });
 function fixture() {
   const engine = new NullEngine(), scene = new Scene(engine);
@@ -92,12 +93,36 @@ describe("component lattice resource ownership", () => {
     expect(bound(plain).has("slateLatticeEnabled")).toBe(false);
   });
 
-  it("attaches the cage plugin when a material is created, even after every Engine was disposed", () => {
-    // Babylon drops its global plugin factories at that point. A plugin added only when a cage is
-    // assigned would rebuild the already-frozen native UBO layout of a material that has drawn.
+  it("attaches the cage plugin only to the materials an active cage draws, even after every Engine was disposed", () => {
+    // Babylon drops its global plugin factories here, and none is registered for this plugin: a
+    // plain material carries no lattice code, sampler or uniform until a cage needs it.
     new NullEngine().dispose();
-    const { mesh } = fixture();
-    expect(mesh.material!.pluginManager?.getPlugin("SlateLattice")).toBeInstanceOf(LatticeDeformerPlugin);
+    const { root, mesh, scene } = fixture();
+    const bystander = new PBRMaterial("bystander", scene);
+    expect(cagePlugin(mesh.material)).toBeNull();
+    expect(cagePlugin(bystander)).toBeNull();
+    setMeshLatticeDeformer(root, cage());
+    expect(cagePlugin(mesh.material)).toBeInstanceOf(LatticeDeformerPlugin);
+    expect(cagePlugin(bystander)).toBeNull();
+  });
+
+  it("recompiles a material that already drew when the cage first attaches its plugin", () => {
+    const { root, mesh } = fixture();
+    const material = mesh.material!, subMesh = mesh.subMeshes[0]!;
+    material.isReadyForSubMesh(mesh, subMesh);
+    expect(subMesh.materialDefines?.toString()).not.toContain("SLATE_LATTICE");
+    setMeshLatticeDeformer(root, cage());
+    material.isReadyForSubMesh(mesh, subMesh);
+    expect(subMesh.materialDefines?.toString()).toContain("#define SLATE_LATTICE");
+  });
+
+  it("gives a clone of a cage-drawn material its own plugin when the clone is assigned", () => {
+    const { root, mesh, scene } = fixture();
+    setMeshLatticeDeformer(root, cage());
+    const clone = (mesh.material as StandardMaterial).clone("clone");
+    mesh.material = clone;
+    flushSceneLatticeDeformers(scene);
+    expect(cagePlugin(clone)).toBeInstanceOf(LatticeDeformerPlugin);
   });
 
   it("allocates nothing for an identity cage and rolls back an unsupported device assignment", () => {
@@ -153,6 +178,7 @@ describe("component lattice resource ownership", () => {
     const replacement = new StandardMaterial("replacement", scene);
     const slots = new MultiMaterial("slots", scene); slots.subMaterials = [replacement]; mesh.material = slots;
     flushSceneLatticeDeformers(scene);
+    expect(cagePlugin(replacement)).toBeInstanceOf(LatticeDeformerPlugin);
     expect(original.shadowDepthWrapper).toBeNull();
     expect(replacement.shadowDepthWrapper).not.toBeNull();
     slots.subMaterials[0] = original;

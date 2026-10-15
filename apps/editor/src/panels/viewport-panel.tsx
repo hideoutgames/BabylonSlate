@@ -88,6 +88,8 @@ import {
   sceneViewportAssetKey,
   sceneViewportRequiredAssets,
   sceneViewportTextureEncodings,
+  stableViewportPayloadRevisions,
+  viewportPayloadRevisions,
 } from "../lib/scene-viewport-assets";
 import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
 import { sceneStreamingEditorScene } from "../lib/scene-streaming-editor-labels";
@@ -148,6 +150,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
+    getOpenDocuments,
     readAssetChunk,
   } = useDocumentActions();
   const { projectDocument } = useProjectState();
@@ -814,6 +817,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         // while they load is swapped in afterwards.
         const encodings = textureEncodingsRef.current;
         const catalog = assetRegistry?.list() ?? [];
+        // Read before collecting, and again after: a payload whose revision moved meanwhile has none.
+        const payloadRevisionsBefore = viewportPayloadRevisions(catalog, getOpenDocuments());
         const fontSources = catalog.map((asset) => ({ guid: asset.header.guid, path: asset.path, type: asset.header.type, payload: asset.header.payload }));
         const bitmapFonts = new Set(fontGuidsForSceneRepresentation([scene], fontSources, "source", projectDocument?.settings.fonts.defaultFontGuid));
         const required = sceneViewportRequiredAssets(scene, catalog, [
@@ -874,6 +879,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           spritePayloads: sprites,
           tilemaps: tileContent.tilemaps,
           waters,
+          payloadRevisions: stableViewportPayloadRevisions(
+            payloadRevisionsBefore,
+            viewportPayloadRevisions(assetRegistry?.list() ?? [], getOpenDocuments()),
+          ),
           ...renderTargetAssets,
           tilesets: tileContent.tilesets,
           textureBytes,
@@ -1004,6 +1013,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
+    getOpenDocuments,
     projectDocument?.settings.twoD.pixelsPerUnit,
     projectDocument?.settings.twoD.sortingLayers,
     projectDocument?.settings.fonts.defaultFontGuid,

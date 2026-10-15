@@ -231,6 +231,7 @@ import type {
 } from "@babylonslate/shader-graph";
 import { useDebugMode } from "./app-settings-context";
 import { formatSceneLoadReport } from "../lib/scene-load-report";
+import { shownCompressionState, unfinishedTextureEncodePaths } from "../lib/texture-encode-state";
 export type AppRoute = "home" | "editor";
 
 /**
@@ -268,6 +269,13 @@ interface DocumentContextValue {
    * Monotonic; never repeats.
    */
   registryEpoch: number;
+  /**
+   * Textures whose encode is running. The file stays `pending` until the
+   * encode commits, so this memory-only set is the only record that it started
+   * (`shownCompressionState`). A new set at each change, which also advances
+   * `registryEpoch`.
+   */
+  encodingTextures: ReadonlySet<string>;
   refreshAssetRegistry: () => Promise<void>;
   /**
    * Re-reads the project's scene/graph lists and re-renders after assets were
@@ -671,6 +679,7 @@ export type RegistryState = Pick<
   DocumentContextValue,
   | "assetRegistry"
   | "registryEpoch"
+  | "encodingTextures"
   | "projectGuid"
   | "extensionService"
   | "pluginDescriptors"
@@ -3381,22 +3390,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       lastNavBake: () => lastNavBakeSaveResult(),
       textureAlignment: () => projectService.textureAlignmentState,
       pendingTextureEncodes: () =>
-        (projectService.registry?.list() ?? [])
-          .filter((entry) => {
-            const state = entry.header.payload.compressionState;
-            return entry.header.type === "Texture" && (state === "pending" || state === "encoding");
-          })
-          .map((entry) => entry.path),
+        unfinishedTextureEncodePaths(projectService.registry?.list() ?? [], projectService.textureEncodingGuids),
       textureEncodeState: (path: string) => {
         const asset = projectService.registry
           ?.list()
           .find((entry) => entry.path === path);
         if (!asset) return null;
-        const state = asset.header.payload.compressionState;
+        const state = shownCompressionState(
+          asset.header.payload.compressionState,
+          projectService.textureEncodingGuids.has(asset.header.guid),
+        );
         const encodeError = asset.header.payload.encodeError;
         const ktx2ChunkId = asset.header.payload.ktx2ChunkId;
         return {
-          compressionState: typeof state === "string" ? state : null,
+          compressionState: state,
           encodeError: typeof encodeError === "string" ? encodeError : null,
           hasPixels: asset.header.chunks.some(
             (chunk) => chunk.kind === "pixels" || chunk.id === "pixels",
@@ -4084,10 +4091,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const pluginDiagnostics = projectService.pluginGraphDiagnostics;
   const showPluginContent = documentService.getState().showPluginContent === true;
   const searchIndex = projectService.searchIndex;
+  const encodingTextures = projectService.textureEncodingGuids;
   const registryState = useMemo<RegistryState>(
     () => ({
       assetRegistry,
       registryEpoch,
+      encodingTextures,
       projectGuid,
       extensionService,
       pluginDescriptors,
@@ -4095,7 +4104,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       showPluginContent,
       searchIndex,
     }),
-    [assetRegistry, registryEpoch, projectGuid, extensionService, pluginDescriptors, pluginDiagnostics, showPluginContent, searchIndex],
+    [assetRegistry, registryEpoch, encodingTextures, projectGuid, extensionService, pluginDescriptors, pluginDiagnostics, showPluginContent, searchIndex],
   );
   const projectDirty = projectSaveState.current.isDirty(projectDocument);
   const saveState = useMemo<SaveState>(

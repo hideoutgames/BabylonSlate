@@ -45,6 +45,8 @@ export type ContentBrowserGridTilesProps = {
   thumbnailUrls: Readonly<Record<string, string>>;
   /** Asset guids and paths with compile errors. */
   compileErrors: ReadonlySet<string>;
+  /** Texture guids whose encode is running (memory only: their headers do not change). */
+  encodingTextures: ReadonlySet<string>;
   typeVisualFor: (asset: IndexedAsset) => TypeVisual;
   folderIcons: ReadonlyMap<string, LucideIcon | undefined>;
   sourceControlEnabled: boolean;
@@ -68,6 +70,7 @@ export const ContentBrowserGridTiles = memo(function ContentBrowserGridTiles({
   selectedFolderPaths,
   thumbnailUrls,
   compileErrors,
+  encodingTextures,
   typeVisualFor,
   folderIcons,
   sourceControlEnabled,
@@ -106,6 +109,7 @@ export const ContentBrowserGridTiles = memo(function ContentBrowserGridTiles({
         thumbnailUrl={thumbnailUrls[guid] ?? null}
         typeVisual={typeVisualFor(asset)}
         hasCompileError={compileErrors.has(guid) || compileErrors.has(asset.path)}
+        encoding={encodingTextures.has(guid)}
         sourceControlEnabled={sourceControlEnabled}
         lockState={lock?.state ?? null}
         lockOwnerName={lock?.ownerName}
@@ -171,6 +175,7 @@ const AssetGridCell = memo(function AssetGridCell({
   thumbnailUrl,
   typeVisual,
   hasCompileError,
+  encoding,
   sourceControlEnabled,
   lockState,
   lockOwnerName,
@@ -183,6 +188,7 @@ const AssetGridCell = memo(function AssetGridCell({
   thumbnailUrl: string | null;
   typeVisual: TypeVisual;
   hasCompileError: boolean;
+  encoding: boolean;
   sourceControlEnabled: boolean;
   lockState: "mine" | "theirs" | null;
   lockOwnerName: string | undefined;
@@ -207,6 +213,7 @@ const AssetGridCell = memo(function AssetGridCell({
         thumbnailUrl={thumbnailUrl}
         typeVisual={typeVisual}
         hasCompileError={hasCompileError}
+        encoding={encoding}
         onSelect={onSelect}
         consumeSelectClick={actions.consumeSelectClick}
         onOpen={onOpen}

@@ -4,6 +4,7 @@ import {
   createDefaultScene,
   createMeshComponent,
   normalizeShadowSettings,
+  type SerializedActor,
   type SerializedScene,
 } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
@@ -137,6 +138,174 @@ it("refreshes at once for the first Material publication and shares one more pas
   expect(bound()).toEqual([first, first, first]);
   await Promise.resolve();
   expect(onAfterApply).toHaveBeenCalledTimes(3);
+});
+
+describe("a Material publication that names its Material", () => {
+  /** One box per entry, bound to that Material guid (none for `null`). */
+  function boxesUsing(guids: Array<string | null>): SerializedScene {
+    const data = document(guids.length);
+    guids.forEach((guid, index) => {
+      if (guid) data.actors[index]!.components[0]!.properties.materialGuid = guid;
+    });
+    return data;
+  }
+  function resolver() {
+    const materials = new Map<string, StandardMaterial>();
+    const resolveMaterial = vi.fn<(guid: string, options?: unknown) => StandardMaterial | null>((guid) => materials.get(guid) ?? null);
+    const asked = () => resolveMaterial.mock.calls.map(([guid]) => guid);
+    return { materials, resolveMaterial, asked };
+  }
+
+  it("rebinds only the actors that resolved it", () => {
+    const { materials, resolveMaterial, asked } = resolver();
+    const { sync, scene, onAfterApply } = fixture({ resolveMaterial });
+    const data = boxesUsing(["wood", "metal", "wood", null]);
+    materials.set("wood", new StandardMaterial("wood-1", scene));
+    materials.set("metal", new StandardMaterial("metal-1", scene));
+    sync.apply(data);
+    const names = () => data.actors.map((actor) => sync.meshForActor(actor.id)!.material?.name);
+    const unbound = sync.meshForActor("actor-3")!.material;
+    expect(names().slice(0, 3)).toEqual(["wood-1", "metal-1", "wood-1"]);
+
+    materials.set("wood", new StandardMaterial("wood-2", scene));
+    materials.set("metal", new StandardMaterial("metal-2", scene));
+    resolveMaterial.mockClear();
+    onAfterApply.mockClear();
+    sync.refreshMaterialsCoalesced("wood");
+
+    expect(names().slice(0, 3)).toEqual(["wood-2", "metal-1", "wood-2"]);
+    expect(sync.meshForActor("actor-3")!.material).toBe(unbound);
+    expect(asked()).toEqual(["wood", "wood"]);
+    // Whatever compiled, the host still hears that the scene was refreshed.
+    expect(onAfterApply).toHaveBeenCalledTimes(1);
+  });
+
+  it("follows an actor whose Material assignment changed, and drops the one it gave up", async () => {
+    const { materials, resolveMaterial, asked } = resolver();
+    const { sync, scene } = fixture({ resolveMaterial });
+    materials.set("wood", new StandardMaterial("wood-1", scene));
+    materials.set("metal", new StandardMaterial("metal-1", scene));
+    sync.apply(boxesUsing(["wood"]));
+    sync.apply(boxesUsing(["metal"]));
+    expect(sync.meshForActor("actor-0")!.material?.name).toBe("metal-1");
+    materials.set("wood", new StandardMaterial("wood-2", scene));
+    materials.set("metal", new StandardMaterial("metal-2", scene));
+    resolveMaterial.mockClear();
+
+    sync.refreshMaterialsCoalesced("wood");
+    expect(asked()).toEqual([]);
+    expect(sync.meshForActor("actor-0")!.material?.name).toBe("metal-1");
+    await Promise.resolve();
+    sync.refreshMaterialsCoalesced("metal");
+    expect(asked()).toEqual(["metal"]);
+    expect(sync.meshForActor("actor-0")!.material?.name).toBe("metal-2");
+  });
+
+  it("rebinds the actors with a saved instance of the Material that compiled, through the instance's key", async () => {
+    const { materials, resolveMaterial } = resolver();
+    const releaseMaterialInstance = vi.fn();
+    const { sync, scene } = fixture({ resolveMaterial, releaseMaterialInstance });
+    materials.set("parent", new StandardMaterial("parent-1", scene));
+    materials.set("other", new StandardMaterial("other-1", scene));
+    const data = boxesUsing(["parent", "other"]);
+    data.actors[0]!.components[0]!.materialInstance = {
+      materialGuid: "parent",
+      parameters: { Roughness: { kind: "float", value: 0.2 } },
+    };
+    sync.apply(data);
+    await sync.whenEditorModelsReady();
+    expect(sync.meshForActor("actor-0")!.material?.name).toBe("parent-1");
+
+    materials.set("parent", new StandardMaterial("parent-2", scene));
+    resolveMaterial.mockClear();
+    sync.refreshMaterialsCoalesced("parent");
+
+    expect(resolveMaterial).toHaveBeenCalledWith("parent", expect.objectContaining({ instanceKey: expect.any(String) }));
+    expect(sync.meshForActor("actor-0")!.material?.name).toBe("parent-2");
+    expect(resolveMaterial).not.toHaveBeenCalledWith("other", expect.anything());
+    expect(sync.meshForActor("actor-1")!.material?.name).toBe("other-1");
+  });
+
+  it("covers every guid published in one turn with the one pass after the first", async () => {
+    const { materials, resolveMaterial, asked } = resolver();
+    const { sync, scene, onAfterApply } = fixture({ resolveMaterial });
+    for (const guid of ["wood", "metal", "glass"]) materials.set(guid, new StandardMaterial(`${guid}-1`, scene));
+    const data = boxesUsing(["wood", "metal", "glass", "stone"]);
+    sync.apply(data);
+    const names = () => data.actors.slice(0, 3).map((actor) => sync.meshForActor(actor.id)!.material?.name);
+    for (const guid of ["wood", "metal", "glass"]) materials.set(guid, new StandardMaterial(`${guid}-2`, scene));
+    resolveMaterial.mockClear();
+    onAfterApply.mockClear();
+
+    sync.refreshMaterialsCoalesced("wood");
+    sync.refreshMaterialsCoalesced("metal");
+    sync.refreshMaterialsCoalesced("glass");
+    expect(names()).toEqual(["wood-2", "metal-1", "glass-1"]);
+    expect(onAfterApply).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    expect(names()).toEqual(["wood-2", "metal-2", "glass-2"]);
+    expect(onAfterApply).toHaveBeenCalledTimes(2);
+    expect(asked()).toEqual(["wood", "metal", "glass"]);
+  });
+
+  it("leaves a child actor with its own Material when its parent's Material compiles", () => {
+    const { materials, resolveMaterial } = resolver();
+    const { sync, scene } = fixture({ resolveMaterial });
+    materials.set("parent", new StandardMaterial("parent-1", scene));
+    const data = boxesUsing(["parent", null]);
+    data.actors[1]!.parentId = "actor-0";
+    // The parent is one visual, so binding it assigns its Material to every mesh beneath it, children included.
+    // The child, bound after it, takes its own back; rebinding the parent alone would leave the child with the parent's.
+    sync.apply(data);
+    sync.apply(structuredClone(data));
+    const child = sync.meshForActor("actor-1")!;
+    const own = child.material;
+    expect(sync.meshForActor("actor-0")!.material?.name).toBe("parent-1");
+    expect(child.parent).toBe(sync.meshForActor("actor-0"));
+    expect(own?.name).not.toBe("parent-1");
+
+    materials.set("parent", new StandardMaterial("parent-2", scene));
+    sync.refreshMaterialsCoalesced("parent");
+
+    expect(sync.meshForActor("actor-0")!.material?.name).toBe("parent-2");
+    expect(child.material).toBe(own);
+  });
+
+  it("applies a publication that arrived during a chunked apply to its users once the apply completes", async () => {
+    const realize = async (publishDuringApply: boolean) => {
+      const { materials, resolveMaterial, asked } = resolver();
+      const { sync, scene } = fixture({ resolveMaterial });
+      materials.set("surface", new StandardMaterial("surface-1", scene));
+      materials.set("other", new StandardMaterial("other-1", scene));
+      const data = boxesUsing(Array.from({ length: 80 }, (_, index) => (index < 40 ? "surface" : "other")));
+      let published = false;
+      await sync.applyAsync(data, {
+        signal: new AbortController().signal,
+        ...fine,
+        yieldControl: async () => {
+          if (!publishDuringApply || published || sync.actorCount() < 2) return;
+          published = true;
+          materials.set("surface", new StandardMaterial("surface-2", scene));
+          sync.refreshMaterialsCoalesced("surface");
+        },
+      });
+      const nameOf = (actor: SerializedActor) => sync.meshForActor(actor.id)!.material?.name;
+      return {
+        published,
+        surface: data.actors.slice(0, 40).map(nameOf),
+        other: data.actors.slice(40).map(nameOf),
+        otherAsks: asked().filter((guid) => guid === "other").length,
+      };
+    };
+    const quiet = await realize(false);
+    const publishing = await realize(true);
+
+    expect(publishing.published).toBe(true);
+    expect(publishing.surface.every((name) => name === "surface-2")).toBe(true);
+    expect(publishing.other.every((name) => name === "other-1")).toBe(true);
+    // The refresh owed to the publication rebound its users and never asked for the other 40 actors again.
+    expect(publishing.otherAsks).toBe(quiet.otherAsks);
+  });
 });
 
 describe("cooperative editor realization", () => {
@@ -551,6 +720,62 @@ describe("cooperative editor realization", () => {
     expect(root.isDisposed()).toBe(true);
     expect(sync.actorCount()).toBe(0);
     expect(onAfterApply).toHaveBeenCalledOnce();
+  });
+});
+
+describe("adopting a replaced visual that has child actors", () => {
+  function box(id: string, parentId: string | null = null, model = false) {
+    const component = createMeshComponent(`${id}-mesh`, "box");
+    if (model) component.properties.assetGuid = "model";
+    return createActor(id, id, { parentId, components: [component] });
+  }
+  /** A pass over every actor root reads each root's `parent` once; a lookup of the replaced root's children never does. */
+  function countParentReads(mesh: Mesh): () => number {
+    let owner: object | null = mesh;
+    while (owner && !Object.getOwnPropertyDescriptor(owner, "parent")) owner = Object.getPrototypeOf(owner);
+    const accessor = Object.getOwnPropertyDescriptor(owner!, "parent")!;
+    let reads = 0;
+    Object.defineProperty(mesh, "parent", {
+      configurable: true,
+      get() { reads += 1; return accessor.get!.call(mesh); },
+      set(value) { accessor.set!.call(mesh, value); },
+    });
+    return () => reads;
+  }
+
+  it("moves every child actor onto the adopted visual, in the order the actors were created, without visiting unrelated actors", async () => {
+    const { sync } = fixture();
+    const bystanders = Array.from({ length: 24 }, (_, index) => box(`bystander-${index}`));
+    const first = box("first", "parent");
+    const second = box("second", "parent");
+    const third = box("third", "parent");
+    const loner = box("loner", "other");
+    const scene = (model: boolean, children: SerializedActor[]): SerializedScene => ({
+      ...createDefaultScene(),
+      actors: [...bystanders, box("parent", null, model), box("other", null, model), ...children, loner],
+    });
+    sync.setMeshAssets({ modelBytes: new Map([["model", encodeTriangleGlb()]]) });
+    sync.apply(scene(false, [first, second, third]));
+    const replaced = sync.meshForActor("parent")!;
+
+    // Replacing the parent detaches its children and attaches them again in this document's order, which is not the order they were created in.
+    sync.apply(scene(true, [third, first, second]));
+    const reads = bystanders.map((actor) => countParentReads(sync.meshForActor(actor.id)!));
+    await sync.whenEditorModelsReady();
+
+    expect(reads.reduce((total, read) => total + read(), 0)).toBe(0);
+    const parent = sync.meshForActor("parent")!;
+    expect(parent).not.toBe(replaced);
+    expect(replaced.isDisposed()).toBe(true);
+    const childActors = ["first", "second", "third"].map((id) => `editorActor:${id}`);
+    expect(parent.getChildren((node) => childActors.includes(node.name), true).map((node) => node.name)).toEqual(childActors);
+    for (const child of [first, second, third]) {
+      expect(sync.meshForActor(child.id)!.isDisposed()).toBe(false);
+      expect(sync.meshForActor(child.id)!.parent).toBe(parent);
+    }
+    expect(sync.meshForActor("loner")!.parent).toBe(sync.meshForActor("other"));
+    expect(sync.meshForActor("other")!.parent).toBeNull();
+    expect(sync.meshForActor("bystander-0")!.parent).toBeNull();
   });
 });
 

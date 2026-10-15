@@ -1240,7 +1240,7 @@ describe("project documents as .babasset", () => {
     expect(encode).toHaveBeenCalledTimes(1);
   });
 
-  it("refreshes a remount that captured encoding before the encoder committed to the previous registry", async () => {
+  it("refreshes a remount that captured the pending state before the encoder committed to the previous registry", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("EncodingRemount.babproject");
     await installMinimalProject(storage);
@@ -1256,7 +1256,8 @@ describe("project documents as .babasset", () => {
     const [imported] = await previous.importFile("project", "", "remount.png", pngHeader(1, 1));
     const guid = imported!.header.guid;
     const path = imported!.path;
-    await vi.waitFor(() => expect(previous.getByGuid(guid)?.header.payload.compressionState).toBe("encoding"));
+    await vi.waitFor(() => expect(service.textureEncodingGuids.has(guid)).toBe(true));
+    expect(previous.getByGuid(guid)?.header.payload.compressionState).toBe("pending");
 
     let capturedHeader!: () => void;
     const captured = new Promise<void>((resolve) => { capturedHeader = resolve; });

@@ -100,6 +100,65 @@ describe("2D Painter retained drawing", () => {
     ] });
   });
 
+  it("gives a painter a new revision for every command change and for nothing else", () => {
+    const runtime = new Painter2DRuntime(), { actor, component } = painter("revisions", true);
+    const revision = () => runtime.payload(component).revision;
+    const seen = [revision()];
+    const changes = (name: string, args: Record<string, unknown> = {}) => {
+      const before = revision();
+      expect(runtime.execute(component, name, args)).toBe(true);
+      expect(revision()).not.toBe(before);
+      seen.push(revision()!);
+    };
+    const keeps = (name: string, args: Record<string, unknown>, accepted: boolean) => {
+      const before = revision();
+      expect(runtime.execute(component, name, args)).toBe(accepted);
+      expect(revision()).toBe(before);
+    };
+    keeps("painterClear", {}, true);
+    keeps("painterBeginPath", {}, true);
+    keeps("painterMoveTo", { point: [0, 0] }, true);
+    keeps("painterLineTo", { point: [2, 0] }, true);
+    keeps("painterPopMask", {}, false);
+    keeps("painterDrawCircle", { center: [0, 0], radius: NaN }, false);
+    changes("painterStrokePath");
+    changes("painterDrawRectangle", { center: [0, 0], size: [2, 2] });
+    changes("painterPushMask");
+    changes("painterCutOutPath");
+    changes("painterPopMask");
+    changes("painterClear");
+    changes("painterDrawLine", { start: [0, 0], end: [1, 1] });
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    world.spawnActorNow(actor);
+    runtime.beginFrame(world, () => true);
+    expect(runtime.payload(component).commands).toEqual([]);
+    seen.push(revision()!);
+    expect(new Set(seen).size).toBe(seen.length);
+  });
+
+  it("sends a painter only when its commands changed since the last send", () => {
+    const runtime = new Painter2DRuntime(), { component } = painter("sent");
+    const sent: Painter2DProperties[] = [];
+    const flush = () => runtime.flush((_component, payload) => sent.push(payload));
+    runtime.execute(component, "painterDrawLine", { start: [0, 0], end: [1, 1] });
+    flush();
+    expect(sent).toHaveLength(1);
+    runtime.execute(component, "painterClear", {});
+    flush();
+    expect(sent).toHaveLength(2);
+    expect(sent[1]!.commands).toEqual([]);
+    // Clearing a painter that holds nothing marks it dirty but changes no command.
+    runtime.execute(component, "painterClear", {});
+    runtime.execute(component, "painterBeginPath", {});
+    flush();
+    expect(sent).toHaveLength(2);
+    runtime.execute(component, "painterDrawLine", { start: [0, 0], end: [1, 1] });
+    flush();
+    expect(sent).toHaveLength(3);
+    expect(sent[2]!.commands).toHaveLength(1);
+    expect(new Set(sent.map((payload) => payload.revision)).size).toBe(3);
+  });
+
   it("sends native graph drawing to both Play hosts and clears before Tick without rebuilding meshes", async () => {
     const commands: CommandMessage[] = [];
     const layer = createDefaultSceneLayer();
@@ -116,12 +175,12 @@ describe("2D Painter retained drawing", () => {
       const updates = commands.filter((command) => command.type === "setPainter2D");
       expect(updates.length).toBeGreaterThanOrEqual(2);
       expect(isPlayEngineCommandType("setPainter2D")).toBe(true);
-      expect(updates.at(-1)).toMatchObject({ componentId: "ink", painter: { commands: [
+      expect(updates.at(-1)).toMatchObject({ componentId: "ink", painter: { revision: expect.any(Number), commands: [
         { kind: "draw", path: [{ kind: "ellipse", center: [1, 2], radius: [0.5, 0.5] }, { kind: "close" }] },
         { kind: "draw", fill: false, path: [{ kind: "move", point: [0, 0] }, { kind: "line", point: [1, 1] }] },
       ] } });
       expect(commands.filter((command) => command.type === "assignMesh")).toHaveLength(assignmentCount);
-      expect(commands.find((command) => command.type === "assignMesh" && command.actorGuid === `${canvas.guid}:canvas`)).toMatchObject({ meshKind: "2dpainter", parts: [{ componentId: "ink", painter: { width: 10, height: 10 } }] });
+      expect(commands.find((command) => command.type === "assignMesh" && command.actorGuid === `${canvas.guid}:canvas`)).toMatchObject({ meshKind: "2dpainter", parts: [{ componentId: "ink", painter: { width: 10, height: 10, revision: expect.any(Number) } }] });
     } finally { runtime.stop(); }
   });
 });

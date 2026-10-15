@@ -108,6 +108,7 @@ import {
   type EncodableChunk,
   type BlobStore,
   type EncodeFn,
+  type EncodeJob,
   stubEncodeKtx2,
   type MigrationPending,
   type MigrationRegistry,
@@ -377,7 +378,11 @@ export class ProjectService {
   private readonly storage: ProjectStorage;
   private readonly publicStorage: ProjectStorage;
   private readonly registryViews = new WeakMap<AssetRegistry, AssetRegistry>();
-  private readonly encodeWriteReleases = new Map<string, () => void>();
+  /** The write admission each running encode retains, from its start until its commit or failure ends. */
+  private readonly encodeWriteReleases = new Map<EncodeJob, () => void>();
+  /** The running encode of each Texture the editor shows as `encoding`: memory only, never saved. */
+  private readonly encodingJobs = new Map<string, EncodeJob>();
+  private encodingSnapshot: ReadonlySet<string> = new Set();
   private externalEncodePause = false;
   private manualEncodePause = false;
   readonly extensions: EditorExtensionService;
@@ -398,6 +403,11 @@ export class ProjectService {
   private readonly publicEncodeQueue: EncodeQueue;
   /** The encode result being committed, which Close Project lets finish in its own folder. */
   private textureCommit: Promise<unknown> | null = null;
+  /**
+   * Texture state writes in flight (a failed encode's `encode_failed`, a retry's
+   * `pending`), which Close Project lets finish in their own folder like `textureCommit`.
+   */
+  private readonly textureStateWrites = new Set<Promise<unknown>>();
   /** The last queued write of each file the registry does not index. */
   private readonly unindexedWrites = new Map<string, Promise<void>>();
   private readonly emissionJobs = new Set<AbortController>();
@@ -552,24 +562,19 @@ export class ProjectService {
           mime,
           signal,
         ),
-      onState: (guid, state, job) => {
-        if (state === "encoding") this.encodeWriteReleases.set(guid, this.writeAdmission.retain());
-        // `compressed` is written with the KTX2 chunk in onComplete. A guarded
-        // (alignment) job leaves the saved state alone until it commits, so
-        // nothing on disk requeues it later, source control on or not.
-        if (state === "compressed" || job.guard) return;
-        const registry = this.encodeRegistry();
-        if (!registry) return;
-        const session = this.sourceSession;
-        void this.writeAdmission.continue(async () => {
-          // Nothing lands on a file whose pixels were replaced after this job read them.
-          await registry.setCompressionState(guid, state, { canWrite: (_guid, current) => encodeJobMayWrite(job, current) });
-          await this.refreshTextureWrite(guid, registry, session);
-        }).catch(error => this.emitTextureEncodeDiagnostic(guid, error));
+      // A running encode writes nothing: the file stays `pending` until the
+      // job commits `compressed` (onComplete) or `encode_failed` with its
+      // message (onError), and the editor shows `encoding` from memory
+      // (`textureEncodingGuids`). A guarded (alignment) job also shows nothing:
+      // the Texture keeps its saved state until the job commits, so nothing on
+      // disk requeues it later, source control on or not.
+      onState: (_guid, state, job) => {
+        if (state !== "encoding") return;
+        this.encodeWriteReleases.set(job, this.writeAdmission.retain());
+        if (job.guard || !this.encodeRegistry()) return;
+        if (this.setTextureEncoding(job, true)) this.emitRegistryChange();
       },
-      onComplete: async (result) => {
-        const release = this.encodeWriteReleases.get(result.assetGuid);
-        this.encodeWriteReleases.delete(result.assetGuid);
+      onComplete: async (result, job) => {
         let succeeded = false;
         try {
           const registry = this.encodeRegistry();
@@ -581,7 +586,8 @@ export class ProjectService {
             if (this.textureCommit === commit) this.textureCommit = null;
           });
           if (!committedHere) {
-            // Refused guarded jobs leave the committed file unchanged.
+            // A refused commit (a guarded job, or one a newer request replaced)
+            // leaves the committed file unchanged.
             if (session === this.sourceSession) this.emitRegistryChange();
             succeeded = true;
             return;
@@ -600,33 +606,51 @@ export class ProjectService {
           }
           succeeded = true;
         } finally {
-          if (succeeded) release?.();
-          // The queue's error callback owns the failed-state commit.
-          else if (release) this.encodeWriteReleases.set(result.assetGuid, release);
+          // Otherwise the queue's error callback owns the failed-state commit,
+          // and ends the write with it.
+          if (succeeded) {
+            if (this.setTextureEncoding(job, false)) this.emitRegistryChange();
+            this.releaseEncodeWrite(job);
+          }
         }
       },
       onError: (guid, error, job) => {
-        const release = this.encodeWriteReleases.get(guid);
-        this.encodeWriteReleases.delete(guid);
+        const release = this.takeEncodeWriteRelease(job);
         this.emitTextureEncodeDiagnostic(guid, error);
-        const message = error instanceof Error ? error.message : String(error);
         const registry = this.encodeRegistry();
-        if (!registry) { release?.(); return; }
+        if (job.guard) {
+          // A guarded (alignment) job writes nothing before its commit, so a
+          // failed one leaves the committed Texture as it was. Texture Details
+          // rechecks whether it is stale now that no job holds it.
+          release?.();
+          if (registry) this.emitRegistryChange();
+          return;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        if (!registry) {
+          this.setTextureEncoding(job, false);
+          release?.();
+          return;
+        }
         const session = this.sourceSession;
-        void this.writeAdmission.continue(async () => {
+        // The Texture keeps showing as encoding until its failure is saved.
+        void this.trackTextureStateWrite(this.writeAdmission.continue(async () => {
           await registry.setCompressionState(guid, "encode_failed", {
             error: message,
             canWrite: (_guid, current) => encodeJobMayWrite(job, current),
           });
           await this.refreshTextureWrite(guid, registry, session);
-        }).catch(failure => this.emitTextureEncodeDiagnostic(guid, failure)).finally(() => release?.());
+        }).catch(failure => this.emitTextureEncodeDiagnostic(guid, failure)).finally(() => {
+          if (this.setTextureEncoding(job, false) && session === this.sourceSession) this.emitRegistryChange();
+          release?.();
+        }));
       },
       // A guarded job dropped unencoded may leave its Texture stale for the
-      // user. A closed project's encode ends the write it retained here.
+      // user. A closed project's encode, and one a newer request replaced,
+      // end the write they retained here and no longer show as encoding.
       onDrop: (job) => {
-        const release = this.encodeWriteReleases.get(job.assetGuid);
-        this.encodeWriteReleases.delete(job.assetGuid);
-        release?.();
+        this.setTextureEncoding(job, false);
+        this.releaseEncodeWrite(job);
         this.emitRegistryChange();
       },
     });
@@ -710,6 +734,50 @@ export class ProjectService {
     return () => {
       this.diagnosticListeners.delete(listener);
     };
+  }
+
+  /** The write admission `job` retained when its encode started, which the caller now ends. */
+  private takeEncodeWriteRelease(job: EncodeJob): (() => void) | undefined {
+    const release = this.encodeWriteReleases.get(job);
+    this.encodeWriteReleases.delete(job);
+    return release;
+  }
+
+  private releaseEncodeWrite(job: EncodeJob): void {
+    this.takeEncodeWriteRelease(job)?.();
+  }
+
+  /**
+   * Whether the editor shows the Texture of `job` as `encoding`. Returns
+   * whether that changed; the caller tells the editor (`emitRegistryChange`).
+   * A job ends its own mark only, so a replaced job's end never clears the
+   * newer job's.
+   */
+  private setTextureEncoding(job: EncodeJob, encoding: boolean): boolean {
+    const guid = job.assetGuid;
+    const shown = this.encodingJobs.get(guid) === job;
+    if (shown === encoding) return false;
+    if (encoding) this.encodingJobs.set(guid, job);
+    else this.encodingJobs.delete(guid);
+    this.encodingSnapshot = new Set(this.encodingJobs.keys());
+    return true;
+  }
+
+  /**
+   * Textures whose encode is running now. The file says `pending` until the
+   * encode commits, so this is the only record that it started. A new set at
+   * each change, and every change is reported by `onRegistryChange`.
+   */
+  get textureEncodingGuids(): ReadonlySet<string> {
+    return this.encodingSnapshot;
+  }
+
+  /** Lets Close Project wait for `write` (see `textureStateWrites`); returns it unchanged. */
+  private trackTextureStateWrite<T>(write: Promise<T>): Promise<T> {
+    this.textureStateWrites.add(write);
+    const forget = () => { this.textureStateWrites.delete(write); };
+    void write.then(forget, forget);
+    return write;
   }
 
   private emitTextureEncodeDiagnostic(guid: string, error: unknown, failure = "encode failed"): void {
@@ -858,9 +926,9 @@ export class ProjectService {
     guid: string,
     options?: { maxDimension?: number; force?: boolean; usage?: string },
   ): Promise<boolean> {
-    return (
-      (await this.assetRegistry?.retryTextureEncoding(guid, options)) ?? false
-    );
+    const registry = this.assetRegistry;
+    if (!registry) return false;
+    return this.trackTextureStateWrite(registry.retryTextureEncoding(guid, options));
   }
 
   /**
@@ -980,8 +1048,11 @@ export class ProjectService {
 
   async retryAllFailedTextureEncoding(): Promise<number> {
     if (!this.assetRegistry) return 0;
+    const session = this.sourceSession;
     let count = 0;
     for (const asset of this.assetRegistry.list({ type: "Texture" })) {
+      // Close Project waits for the retry running, not for the rest of the list.
+      if (session !== this.sourceSession || !this.assetRegistry) break;
       const state = asset.header.payload.compressionState;
       if (
         state === "encode_failed" ||
@@ -989,7 +1060,7 @@ export class ProjectService {
         state === "pending" ||
         state === "encoding"
       ) {
-        if (await this.assetRegistry.retryTextureEncoding(asset.header.guid)) {
+        if (await this.trackTextureStateWrite(this.assetRegistry.retryTextureEncoding(asset.header.guid))) {
           count += 1;
         }
       }
@@ -1335,6 +1406,9 @@ export class ProjectService {
     // Queued encodes belong to this project's registry: none may commit into
     // the next one. Their Textures stay pending for Retry Encoding.
     this.encodeQueue.clear();
+    // The dropped encode ends its own mark when it settles; none is shown meanwhile.
+    this.encodingJobs.clear();
+    this.encodingSnapshot = new Set();
     this.sessionEncodes.clear();
     await this.extensions.close();
     this.cancelEmissionJobs();
@@ -1342,6 +1416,9 @@ export class ProjectService {
     // released: the next project would reuse it, and the late write would land
     // in that project's folder. The session bump above ends its follow-up work.
     await this.textureCommit?.catch(() => {});
+    // So must a state write already running (a failed encode's, a retry's):
+    // none starts once the queue is cleared, but a retry may begin meanwhile.
+    while (this.textureStateWrites.size > 0) await Promise.allSettled([...this.textureStateWrites]);
     await this.storage.releaseFolder();
     this.projectGuid = null;
     this.migrationPending = [];
