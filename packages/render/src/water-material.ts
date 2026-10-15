@@ -4276,7 +4276,7 @@ export function toWgsl(source: string): string {
  *
  * Realistic colour is premultiplied by coverage: undo it for Babylon's non-premultiplied blend, fog and image
  * processing. In an 8-bit display target, light brighter than the coverage raises it instead of clipping, and the raised
- * coverage hides that much more of the background behind the blend. With the refracted copy (`swUnder`: the copy at this
+ * coverage hides that much more of the background behind the blend. With the refracted copy (`swBehindCopy`: the copy at this
  * pixel, the background the blend would show) the share it hides is added back as refracted light, and the coverage
  * solves for that too (per channel, (light − copy · a) / (1 − copy)): glints, foam and bright reflections over shallows
  * add to the bed seen through them instead of replacing it with a darker ring. Without the copy the raise stays as it is
@@ -4306,11 +4306,11 @@ function beforeFogSource(wgsl: boolean): string {
     "#ifdef IMAGEPROCESSINGPOSTPROCESS",
     declare(f1, "swCover", "clamp(finalColor.a, 0.02, 1.0)"),
     `#elif defined(${REFRACTION})`,
-    declare(v3, "swUnder", "swSceneColor(swScreenUv)"),
-    declare(v3, "swNeed", `(finalColor.rgb + swRefracted - swUnder * finalColor.a) / max(${v3}(1.0) - swUnder, ${v3}(0.001))`),
+    declare(v3, "swBehindCopy", "swSceneColor(swScreenUv)"),
+    declare(v3, "swNeed", `(finalColor.rgb + swRefracted - swBehindCopy * finalColor.a) / max(${v3}(1.0) - swBehindCopy, ${v3}(0.001))`),
     declare(f1, "swCover", `clamp(max(finalColor.a, ${brightest("swNeed")}), 0.02, 1.0)`),
     declare(f1, "swRaised", "max(swCover - finalColor.a, 0.0)"),
-    "swRefracted += swUnder * swRaised;",
+    "swRefracted += swBehindCopy * swRaised;",
     "swRefractedWeight += swRaised;",
     "#else",
     declare(f1, "swCover", `clamp(max(finalColor.a, ${brightest("finalColor")}), 0.02, 1.0)`),
