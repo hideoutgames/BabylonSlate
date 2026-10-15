@@ -391,6 +391,11 @@ export class ProjectService {
   private readonly publicEncodeQueue: EncodeQueue;
   /** The encode result being committed, which Close Project lets finish in its own folder. */
   private textureCommit: Promise<unknown> | null = null;
+  /**
+   * Texture state writes in flight (a failed encode's `encode_failed`, a retry's
+   * `pending`), which Close Project lets finish in their own folder like `textureCommit`.
+   */
+  private readonly textureStateWrites = new Set<Promise<unknown>>();
   /** The last queued write of each file the registry does not index. */
   private readonly unindexedWrites = new Map<string, Promise<void>>();
   private readonly emissionJobs = new Set<AbortController>();
@@ -615,13 +620,13 @@ export class ProjectService {
         const message = error instanceof Error ? error.message : String(error);
         if (!registry) { release?.(); return; }
         const session = this.sourceSession;
-        void this.writeAdmission.continue(async () => {
+        void this.trackTextureStateWrite(this.writeAdmission.continue(async () => {
           await registry.setCompressionState(guid, "encode_failed", {
             error: message,
             canWrite: (_guid, current) => encodeJobMayWrite(job, current),
           });
           await this.refreshTextureWrite(guid, registry, session);
-        }).catch(failure => this.emitTextureEncodeDiagnostic(guid, failure)).finally(() => release?.());
+        }).catch(failure => this.emitTextureEncodeDiagnostic(guid, failure)).finally(() => release?.()));
       },
       // A guarded job dropped unencoded may leave its Texture stale for the
       // user. A closed project's encode ends the write it retained here.
@@ -712,6 +717,14 @@ export class ProjectService {
     return () => {
       this.diagnosticListeners.delete(listener);
     };
+  }
+
+  /** Lets Close Project wait for `write` (see `textureStateWrites`); returns it unchanged. */
+  private trackTextureStateWrite<T>(write: Promise<T>): Promise<T> {
+    this.textureStateWrites.add(write);
+    const forget = () => { this.textureStateWrites.delete(write); };
+    void write.then(forget, forget);
+    return write;
   }
 
   private emitTextureEncodeDiagnostic(guid: string, error: unknown, failure = "encode failed"): void {
@@ -860,9 +873,9 @@ export class ProjectService {
     guid: string,
     options?: { maxDimension?: number; force?: boolean; usage?: string },
   ): Promise<boolean> {
-    return (
-      (await this.assetRegistry?.retryTextureEncoding(guid, options)) ?? false
-    );
+    const registry = this.assetRegistry;
+    if (!registry) return false;
+    return this.trackTextureStateWrite(registry.retryTextureEncoding(guid, options));
   }
 
   /**
@@ -982,8 +995,11 @@ export class ProjectService {
 
   async retryAllFailedTextureEncoding(): Promise<number> {
     if (!this.assetRegistry) return 0;
+    const session = this.sourceSession;
     let count = 0;
     for (const asset of this.assetRegistry.list({ type: "Texture" })) {
+      // Close Project waits for the retry running, not for the rest of the list.
+      if (session !== this.sourceSession || !this.assetRegistry) break;
       const state = asset.header.payload.compressionState;
       if (
         state === "encode_failed" ||
@@ -991,7 +1007,7 @@ export class ProjectService {
         state === "pending" ||
         state === "encoding"
       ) {
-        if (await this.assetRegistry.retryTextureEncoding(asset.header.guid)) {
+        if (await this.trackTextureStateWrite(this.assetRegistry.retryTextureEncoding(asset.header.guid))) {
           count += 1;
         }
       }
@@ -1344,6 +1360,9 @@ export class ProjectService {
     // released: the next project would reuse it, and the late write would land
     // in that project's folder. The session bump above ends its follow-up work.
     await this.textureCommit?.catch(() => {});
+    // So must a state write already running (a failed encode's, a retry's):
+    // none starts once the queue is cleared, but a retry may begin meanwhile.
+    while (this.textureStateWrites.size > 0) await Promise.allSettled([...this.textureStateWrites]);
     await this.storage.releaseFolder();
     this.projectGuid = null;
     this.migrationPending = [];

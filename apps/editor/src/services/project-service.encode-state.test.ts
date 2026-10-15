@@ -1,6 +1,6 @@
 import { installMinimalProject } from "../../../../packages/assets/src/test-support/minimal-project";
 import { describe, expect, it, vi } from "vitest";
-import { encodeBabasset, readAssetDocumentHeader, type EncodeFn } from "@babylonslate/assets";
+import { decodeBabasset, encodeBabasset, readAssetDocumentHeader, type EncodeFn } from "@babylonslate/assets";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
 
@@ -109,5 +109,36 @@ describe("texture encode state writes", () => {
     expect(service.registry!.getByGuid("odd")!.header.payload).toMatchObject({ compressionState: "compressed", ktx2ChunkId: "ktx2:legacy" });
     expect(service.registry!.getByGuid("odd")!.header.payload).not.toHaveProperty("encodeError");
     expect(service.sessionDiagnostics).toContain("Texture encode failed for odd (odd): BasisEncoder.encode returned 0");
+  });
+
+  it("lets a failure write that is already running finish before Close Project releases the folder", async () => {
+    const { storage, service } = await openService(failingEncode);
+    const write = storage.writeBinary.bind(storage);
+    let resumeWrite!: () => void;
+    const gate = new Promise<void>((resolve) => { resumeWrite = resolve; });
+    let writeStarted!: () => void;
+    const started = new Promise<void>((resolve) => { writeStarted = resolve; });
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      if (path.endsWith(".babasset") && readAssetDocumentHeader(bytes).payload.compressionState === "encode_failed") {
+        writeStarted();
+        await gate;
+      }
+      return write(path, bytes);
+    });
+    const release = vi.spyOn(storage, "releaseFolder");
+    const [texture] = await service.registry!.importFile("project", "", "odd.png", pngHeader(1, 1));
+    await started;
+
+    const closing = service.closeProject();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The next project reuses this storage, so a late write would land in its folder.
+    expect(release).not.toHaveBeenCalled();
+    resumeWrite();
+    await closing;
+    expect(release).toHaveBeenCalledTimes(1);
+
+    await storage.openDocumentsProject("EncodeState.babproject");
+    const saved = await decodeBabasset(await storage.readBinary(texture!.path));
+    expect(saved.header.payload).toMatchObject({ compressionState: "encode_failed", encodeError: "BasisEncoder.encode returned 0" });
   });
 });
