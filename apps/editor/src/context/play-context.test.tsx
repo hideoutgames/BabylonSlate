@@ -8,6 +8,7 @@ import { DocumentWorkspaceProvider } from "./document-workspace-context";
 import {
   PlayProvider,
   useLiveBtState,
+  useObserveBtState,
   useOptionalPlay,
   useOutputLog,
   usePlay,
@@ -149,6 +150,41 @@ it("delivers logs and BT snapshots only to their subscribers while Play controls
   expect(controls.reportBtState).toBe(writer);
   view.unmount();
   expect(host.diagnostics.size).toBe(0);
+});
+
+it("reports behaviour tree state as observed while any panel showing it is mounted and shown", () => {
+  let controls!: ReturnType<typeof usePlay>;
+  function Controls() {
+    controls = usePlay();
+    return null;
+  }
+  function Panel({ shown }: { shown: boolean }) {
+    useObserveBtState(shown);
+    return null;
+  }
+  const panels = (graph: boolean, blackboard: boolean | null) => (
+    <PlayProvider>
+      <Controls />
+      <Panel shown={graph} />
+      {blackboard === null ? null : <Panel shown={blackboard} />}
+    </PlayProvider>
+  );
+  const view = render(panels(false, null));
+  const changes: boolean[] = [];
+  controls.btStateObservers.subscribe((observed) => changes.push(observed));
+  expect(controls.btStateObservers.observed()).toBe(false);
+
+  view.rerender(panels(true, null));
+  expect(controls.btStateObservers.observed()).toBe(true);
+  // A second panel, and the first one leaving, change nothing while one remains.
+  view.rerender(panels(true, true));
+  view.rerender(panels(false, true));
+  expect(controls.btStateObservers.observed()).toBe(true);
+  expect(changes).toEqual([true]);
+
+  view.rerender(panels(false, null));
+  expect(controls.btStateObservers.observed()).toBe(false);
+  expect(changes).toEqual([true, false]);
 });
 
 it("keeps Play controls stable across document edits while Play saves the newest dirty documents", async () => {

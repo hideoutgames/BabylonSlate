@@ -38,6 +38,8 @@ export interface ContentBrowserAssetTileProps {
   sourceControlEnabled?: boolean;
   lockState?: "mine" | "theirs" | null;
   lockOwnerName?: string;
+  /** The Texture's encode is running, which its saved header does not say. */
+  encoding?: boolean;
 }
 
 export function ContentBrowserAssetTile({
@@ -53,8 +55,9 @@ export function ContentBrowserAssetTile({
   sourceControlEnabled = false,
   lockState = null,
   lockOwnerName,
+  encoding = false,
 }: ContentBrowserAssetTileProps) {
-  const compression = textureCompressionState(asset);
+  const compression = textureCompressionState(asset, encoding);
   const thumbAccent = typeColorThumbAccent(typeVisual.colorVar);
   const lockLabel =
     lockState === "mine"

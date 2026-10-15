@@ -761,7 +761,7 @@ type LoadedScript = {
  * builds them once and every context inherits them, so none may read the context's `this` (compiled and
  * user code detaches them: `const { log } = ctx`). Every other member is built per call by `createContext`.
  */
-type HostContextKey =
+export type HostContextKey =
   | "getSaveData" | "getSaveField" | "setSaveField" | "newGame" | "saveGame" | "loadGame" | "listSaves"
   | "deleteSave" | "registerSaveActor" | "assetRegistry" | "formatValue" | "checkInfiniteLoop" | "log" | "print"
   | "drawDebug" | "getPostProcessEntry" | "getMaterialFloatParameter" | "getMaterialColorParameter"
@@ -785,7 +785,6 @@ type HostContextKey =
   | "setCameraOrthographicSize" | "setLightEnabled" | "setLightColor" | "setLightIntensity" | "findPathTo"
   | "isPathValid" | "getClosestNavigablePoint" | "getRandomPointInRadius" | "addObstacle" | "removeObstacle";
 type HostContextMembers = Pick<ScriptContext, HostContextKey>;
-type CallContextMembers = Omit<ScriptContext, HostContextKey>;
 
 /**
  * Loads compiled graph modules and binds their entry points to actor
@@ -1743,6 +1742,8 @@ export class ScriptHost {
    * calling object's defaults) and inherits the rest from the host's shared members, so it allocates
    * only the closures that need the call's values. Inherited members never use `this`, so detaching one
    * (`const { log } = ctx`) works. Own properties are therefore only the per-call members.
+   * Adding a `ScriptContext` member that is not a `HostContextKey` means assigning it here, and listing it in
+   * `script-host-context.test.ts`, whose type check fails until you do.
    */
   createContext(
     self: BObject | null,
@@ -1763,45 +1764,49 @@ export class ScriptHost {
       if (!data) throw new SaveGameError("invalid", "Migration fields are available only inside Event Save Migration.");
       return data;
     };
-    const call: CallContextMembers = {
-      registerSaveMigration: (fromVersion, migrate) => {
+    // Created from the host members and filled in place: a literal given its prototype afterwards
+    // (`Object.setPrototypeOf`) costs about twice as much per context in V8. The block only groups the
+    // assignments; they are the context's own members, and their order is the order `Object.keys(ctx)` lists.
+    const context = Object.create(this.hostMembers) as ScriptContext;
+    {
+      context.registerSaveMigration = (fromVersion, migrate) => {
         const service = this.saveGameService();
         if (typeof migrate === "function") service.registerMigration(fromVersion, migrate);
         else {
           if (!self) throw new SaveGameError("invalid", "Visual save migrations require an owning object.");
           service.registerMigration(fromVersion, (snapshot) => this.invokeSaveMigration(self, migrate, snapshot));
         }
-      },
+      };
       // Actor identities remain IDs here: staged actors do not exist yet.
-      getSaveMigrationField: (id) => migrationData().fields[id] ?? null,
-      setSaveMigrationField: (id, value) => {
+      context.getSaveMigrationField = (id) => migrationData().fields[id] ?? null;
+      context.setSaveMigrationField = (id, value) => {
         const fields = cloneSaveGameValue({ [id]: value }) as Record<string, SaveGameValue>;
         Object.assign(migrationData().fields, fields);
-      },
-      data: services.data ?? EMPTY_DATA,
-      readDataEntryAsync: async (tree, path, definitionGuid) => {
+      };
+      context.data = services.data ?? EMPTY_DATA;
+      context.readDataEntryAsync = async (tree, path, definitionGuid) => {
         if (services.prepareAssets) await services.prepareAssets([tree, ...(definitionGuid ? [definitionGuid] : [])], self);
         else if (!services.data?.hasTree(tree)) throw new Error(`Data Tree ${tree} is not prepared; this host cannot load cold data.`);
         if (self?.destroyed) throw Object.assign(new Error("The data reader was destroyed"), { name: "AbortError" });
         return services.data?.readEntry(tree, path, definitionGuid) ?? null;
-      },
-      editorData: services.editorData ?? UNAVAILABLE_EDITOR_DATA,
-      self,
-      deltaSeconds,
-      tickIndex,
-      commandArgs,
-      args: commandArgs,
-      animFacts: extras?.animFacts,
-      animExitTimeReached: (exitTime) =>
-        extras?.animFacts ? animExitTimeReached(extras.animFacts, Number(exitTime)) : false,
-      flowState: (nodeId: string) =>
-        this.flowStateFor(contextOwner, String(nodeId), flowNamespace),
-      reportCommand: (success, output) => {
+      };
+      context.editorData = services.editorData ?? UNAVAILABLE_EDITOR_DATA;
+      context.self = self;
+      context.deltaSeconds = deltaSeconds;
+      context.tickIndex = tickIndex;
+      context.commandArgs = commandArgs;
+      context.args = commandArgs;
+      context.animFacts = extras?.animFacts;
+      context.animExitTimeReached = (exitTime) =>
+        extras?.animFacts ? animExitTimeReached(extras.animFacts, Number(exitTime)) : false;
+      context.flowState = (nodeId: string) =>
+        this.flowStateFor(contextOwner, String(nodeId), flowNamespace);
+      context.reportCommand = (success, output) => {
         if (extras?.commandResult) Object.assign(extras.commandResult, { success: Boolean(success), output: String(output) });
-      },
+      };
       // Own per context, as before: a script that patches its `ctx.random` changes only that context. Every
       // context draws from the host RNG, in call order.
-      random: {
+      context.random = {
         float: () => this.rng.nextFloat(),
         int: (min, max) => {
           const a = Number(min) | 0;
@@ -1812,9 +1817,9 @@ export class ScriptHost {
           return lo + (this.rng.next() % (hi - lo + 1));
         },
         bool: () => this.rng.nextFloat() < 0.5,
-      },
-      getVariable: (name) => store?.getVariable(name),
-      variableReference: (target, name, implicitSelf = false) => {
+      };
+      context.getVariable = (name) => store?.getVariable(name);
+      context.variableReference = (target, name, implicitSelf = false) => {
         const object = implicitSelf ? store : target;
         if (!object || typeof name !== "string" || !name ||
           (object instanceof BObject && (object.destroyed || isReadOnlyTweenProperty(object, name)))) return null;
@@ -1826,25 +1831,25 @@ export class ScriptHost {
             else object.setVariable(name, value);
           },
         };
-      },
-      tweenValue: (reference, type, a, b, duration, curve) => {
+      };
+      context.tweenValue = (reference, type, a, b, duration, curve) => {
         if (!reference) return Promise.resolve(false);
         if (!services.tween) return Promise.reject(new Error("Tween actions are unavailable in this script host."));
         return services.tween({ reference, type, a, b, duration, curve, owner: contextOwner }).then(completed =>
           completed && tweenOwnerAlive(contextOwner) && tweenOwnerAlive(reference.owner) && services.isTweenSessionActive?.() !== false);
-      },
-      tweenProperty: (target, property, type, a, b, duration, curve, space) => {
+      };
+      context.tweenProperty = (target, property, type, a, b, duration, curve, space) => {
         const reference = propertyTweenReference(target, property, type, space, services);
         return context.tweenValue(reference, type, a, b, duration, curve);
-      },
-      setVariable: (name, value) => {
+      };
+      context.setVariable = (name, value) => {
         if (store instanceof Actor && name === "parentId") {
           writeParentId(services, store, value);
           return;
         }
         store?.setVariable(name, value);
-      },
-      getVariableFrom: (target, name) => {
+      };
+      context.getVariableFrom = (target, name) => {
         const object = target ?? self;
         if (object instanceof ActorComponent && object.classId === "2DRichTextComponent" &&
           (name === "appearProgress" || name === "isRevealed")) {
@@ -1855,8 +1860,8 @@ export class ScriptHost {
           return this.canInvokeOwner(object) ? captureActorReferences(object, (id) => services.findActor?.(id)) : [];
         }
         return object?.getVariable(name);
-      },
-      setVariableOn: (target, name, value) => {
+      };
+      context.setVariableOn = (target, name, value) => {
         const object = target ?? self;
         if (object instanceof ActorComponent && object.classId === "DeformerComponent" &&
           (DEFORMER_PROPERTY_KEYS as readonly string[]).includes(name)) {
@@ -1888,8 +1893,8 @@ export class ScriptHost {
         if (object instanceof ActorComponent) {
           this.applyComponentVariable(object, String(name ?? ""), value, previous);
         }
-      },
-      setMeshMaterialAsync: async (component, materialGuid) => {
+      };
+      context.setMeshMaterialAsync = async (component, materialGuid) => {
         const target = asActorComponent(component);
         if (!target || (target.classId !== "MeshComponent" && target.classId !== "DynamicRuntimeMeshComponent") || !this.canInvokeOwner(target)) return null;
         const version = this.beginMaterialReplacement(target, "material");
@@ -1907,8 +1912,8 @@ export class ScriptHost {
         } finally {
           if (preload) services.releaseAcquiredAssets?.(preload);
         }
-      },
-      setMaterialTextureParameterAsync: async (material, name, value) => {
+      };
+      context.setMaterialTextureParameterAsync = async (material, name, value) => {
         if (!this.materialAvailable(material) || typeof name !== "string" || !name.trim()) return;
         const key = `texture:${name.trim()}`;
         const version = this.beginMaterialReplacement(material, key);
@@ -1925,19 +1930,19 @@ export class ScriptHost {
         } finally {
           if (preload) services.releaseAcquiredAssets?.(preload);
         }
-      },
-      destroyActor: (actor) => {
+      };
+      context.destroyActor = (actor) => {
         const target = asActor(actor ?? self);
         if (target) services.destroyActor(target);
-      },
-      setActorLocation: (actor, location) => {
+      };
+      context.setActorLocation = (actor, location) => {
         const target = transformTarget(actor ?? self);
         const position = finiteVector(location, 0);
         if (!target || !position) return;
         Object.assign(target.transform.position, position);
         services.teleportActor?.(target);
-      },
-      addActorWorldOffset: (actor, offset) => {
+      };
+      context.addActorWorldOffset = (actor, offset) => {
         const target = transformTarget(actor ?? self);
         const delta = finiteVector(offset, 0);
         if (!target || !delta) return;
@@ -1949,22 +1954,22 @@ export class ScriptHost {
         if (!position) return;
         Object.assign(target.transform.position, position);
         services.teleportActor?.(target);
-      },
-      setActorRotation: (actor, rotation) => {
+      };
+      context.setActorRotation = (actor, rotation) => {
         const target = transformTarget(actor ?? self);
         const rotator = finiteRotator(rotation);
         if (!target || !rotator) return;
         Object.assign(target.transform.rotation, rotatorToQuat(rotator));
         services.teleportActor?.(target);
-      },
-      setActorScale: (actor, scale) => {
+      };
+      context.setActorScale = (actor, scale) => {
         const target = transformTarget(actor ?? self);
         const next = finiteVector(scale, 1);
         if (!target || !next) return;
         Object.assign(target.transform.scale, next);
         services.teleportActor?.(target);
-      },
-      setActorTransform: (actor, transform, options) => {
+      };
+      context.setActorTransform = (actor, transform, options) => {
         const target = transformTarget(actor ?? self);
         if (!target || !transform) return;
         // Every supplied part is checked first, so a non-finite part changes nothing.
@@ -1976,8 +1981,8 @@ export class ScriptHost {
         if (rotation) Object.assign(target.transform.rotation, rotation);
         if (scale) Object.assign(target.transform.scale, scale);
         services.teleportActor?.(target, options);
-      },
-      attachToBone: (actor, target, boneName) => {
+      };
+      context.attachToBone = (actor, target, boneName) => {
         const child = asActor(actor ?? self);
         const parent = asActor(target);
         if (!child || child.destroyed || !parent || parent.destroyed ||
@@ -1989,14 +1994,14 @@ export class ScriptHost {
         child.setVariable("parentId", parent.guid);
         child.transform.position = { x: 0, y: 0, z: 0 };
         child.transform.rotation = { x: 0, y: 0, z: 0, w: 1 };
-      },
-      executeConsoleCommandAsync: async (command) => {
+      };
+      context.executeConsoleCommandAsync = async (command) => {
         const result = await (services.executeConsoleCommandAsync?.(String(command ?? "")) ?? services.executeConsoleCommand(String(command ?? "")));
         if (self?.destroyed) throw Object.assign(new Error("The console command caller was destroyed"), { name: "AbortError" });
         return result;
-      },
-      delay: (seconds) => services.delay(seconds, self),
-      callInterface: (target, interfaceGuid, method, args) => {
+      };
+      context.delay = (seconds) => services.delay(seconds, self);
+      context.callInterface = (target, interfaceGuid, method, args) => {
         const registry = services.interfaceRegistry;
         if (!registry) return {};
         const receiver = (target ?? self) as InterfaceDispatchTarget | null;
@@ -2011,11 +2016,11 @@ export class ScriptHost {
         } finally {
           this.interfaceCaller = previous;
         }
-      },
-      getComponent: (actor, classId) =>
+      };
+      context.getComponent = (actor, classId) =>
         asActor(actor ?? self)?.components.find((c) => c.classId === classId && !c.destroyed) ??
-        null,
-      getComponentById: (actor, componentId) => {
+        null;
+      context.getComponentById = (actor, componentId) => {
         const target = actor ?? self;
         // Spawned prefabs resolve their own sourceId before an authored scene
         // component with the same id can claim the stream-wide translation.
@@ -2027,55 +2032,55 @@ export class ScriptHost {
           services.getActors?.(),
           services.getSceneReference?.(target) ?? null,
         );
-      },
-      callComponentFunction: (target, name, args) =>
-        this.callNativeComponentFunction(target ?? self, String(name ?? ""), args ?? {}),
-      addComponent: (actor, classId, transform) => {
+      };
+      context.callComponentFunction = (target, name, args) =>
+        this.callNativeComponentFunction(target ?? self, String(name ?? ""), args ?? {});
+      context.addComponent = (actor, classId, transform) => {
         const target = asActor(actor ?? self);
         if (!target) return null;
         return services.addComponent?.(target, classId, transform) ?? null;
-      },
-      spawnActor: (classId, transform) =>
-        services.spawnActor?.(String(classId), transform, self) ?? null,
-      spawnActorAsync: async (classId, transform) => {
+      };
+      context.spawnActor = (classId, transform) =>
+        services.spawnActor?.(String(classId), transform, self) ?? null;
+      context.spawnActorAsync = async (classId, transform) => {
         if (!services.spawnActorAsync) throw new Error("This host cannot prepare a cold actor; use a runtime with asset loading");
         const actor = await services.spawnActorAsync(String(classId), transform, self);
         if (self?.destroyed) throw Object.assign(new Error("The spawn caller was destroyed"), { name: "AbortError" });
         return actor;
-      },
+      };
       // A destroyed owner's handle would never be released, so it gets none. A host
       // without load handles hands out "" too and fails every wait and state read.
-      requestAssetLoad: (assets, options) => self?.destroyed ? "" : services.requestAssetLoad?.(assets, self, options) ?? "",
-      requestClassLoad: (classId, options) => self?.destroyed ? "" : services.requestClassLoad?.(String(classId ?? ""), self, options) ?? "",
-      waitForAssetLoad: async (handle, options) => {
+      context.requestAssetLoad = (assets, options) => self?.destroyed ? "" : services.requestAssetLoad?.(assets, self, options) ?? "";
+      context.requestClassLoad = (classId, options) => self?.destroyed ? "" : services.requestClassLoad?.(String(classId ?? ""), self, options) ?? "";
+      context.waitForAssetLoad = async (handle, options) => {
         const result = await services.waitForAssetLoad?.(handle, self, options?.blocking === true) ?? {
           success: false, errorMessage: ASSET_LOADING_UNAVAILABLE,
         };
         if (self?.destroyed) throw Object.assign(new Error("The asset load caller was destroyed"), { name: "AbortError" });
         return result;
-      },
-      unloadAsset: (asset, options) => services.unloadAsset?.(String(asset ?? ""), self, options),
-      prepareAssets: async (assets) => {
+      };
+      context.unloadAsset = (asset, options) => services.unloadAsset?.(String(asset ?? ""), self, options);
+      context.prepareAssets = async (assets) => {
         if (self?.destroyed) throw Object.assign(new Error("The asset consumer was destroyed"), { name: "AbortError" });
         if (!services.prepareAssets) throw new Error("This host cannot prepare cold assets");
         await services.prepareAssets(assets, self);
         if (self?.destroyed) throw Object.assign(new Error("The asset consumer was destroyed"), { name: "AbortError" });
-      },
-      loadSceneBlocking: async (target) => {
+      };
+      context.loadSceneBlocking = async (target) => {
         await services.loadScene?.(target, true);
         await services.waitForSimulation?.(self);
         if (self?.destroyed) throw Object.assign(new Error("The streaming caller was destroyed."), { name: "AbortError" });
-      },
-      unloadSceneBlocking: async (target) => {
+      };
+      context.unloadSceneBlocking = async (target) => {
         await services.unloadScene?.(target, true);
         await services.waitForSimulation?.(self);
         if (self?.destroyed) throw Object.assign(new Error("The streaming caller was destroyed."), { name: "AbortError" });
-      },
-      getSceneReference: () => {
+      };
+      context.getSceneReference = () => {
         const scene = services.getSceneReference?.(self) ?? null;
         return scene && !scene.destroyed ? scene : null;
-      },
-      invokeCustomEvent: (target, eventName, eventArgs) => {
+      };
+      context.invokeCustomEvent = (target, eventName, eventArgs) => {
         const receiver = (target ?? self) as BObject | null;
         if (!receiver || !this.canInvokeOwner(receiver) || typeof eventName !== "string" || !eventName) return;
         // The event runs inside the caller's frame: delta, tick index and input
@@ -2088,8 +2093,8 @@ export class ScriptHost {
         };
         dispatch(receiver);
         if (receiver instanceof ActorComponent && receiver.owner) dispatch(receiver.owner, receiver.guid);
-      },
-      invokeEvent: (classId, eventName, eventArgs) => {
+      };
+      context.invokeEvent = (classId, eventName, eventArgs) => {
         if (self && !this.canInvokeOwner(self)) return;
         if (typeof classId !== "string" || !classId.trim()) return;
         if (typeof eventName !== "string" || !eventName) return;
@@ -2106,8 +2111,8 @@ export class ScriptHost {
           tick,
           extras,
         );
-      },
-      invokeFunction: (target, functionName, fnArgs) => {
+      };
+      context.invokeFunction = (target, functionName, fnArgs) => {
         if (typeof functionName !== "string" || !functionName) {
           if (extras?.saveMigrationData) throw new SaveGameError("incompatible", "A save migration called an invalid function.");
           return {};
@@ -2175,35 +2180,35 @@ export class ScriptHost {
           return record(result);
         };
         return run(0, {});
-      },
-      isActionHeld: (action) => tick?.isActionHeld?.(action) ?? false,
-      inputBindings: services.inputBindings,
-      getInputState: services.getInputState,
-      wasActionPressed: (action) => tick?.wasActionPressed?.(action) ?? false,
-      wasActionReleased: (action) =>
-        tick?.wasActionReleased?.(action) ?? false,
-      getPressedKeys: () => tick?.getPressedKeys?.() ?? [],
-      getAxis: (axis) => tick?.getAxis?.(axis) ?? 0,
-      getAxis2D: (axis) => tick?.getAxis2D?.(axis) ?? { x: 0, y: 0 },
-      getCursorPosition: () =>
-        tick?.getCursorPosition?.() ?? { x: 0, y: 0, pressed: false },
-      setCursorVisible: (visible) => {
+      };
+      context.isActionHeld = (action) => tick?.isActionHeld?.(action) ?? false;
+      context.inputBindings = services.inputBindings;
+      context.getInputState = services.getInputState;
+      context.wasActionPressed = (action) => tick?.wasActionPressed?.(action) ?? false;
+      context.wasActionReleased = (action) =>
+        tick?.wasActionReleased?.(action) ?? false;
+      context.getPressedKeys = () => tick?.getPressedKeys?.() ?? [];
+      context.getAxis = (axis) => tick?.getAxis?.(axis) ?? 0;
+      context.getAxis2D = (axis) => tick?.getAxis2D?.(axis) ?? { x: 0, y: 0 };
+      context.getCursorPosition = () =>
+        tick?.getCursorPosition?.() ?? { x: 0, y: 0, pressed: false };
+      context.setCursorVisible = (visible) => {
         if (services.setCursorVisible) {
           services.setCursorVisible(visible === true);
         } else {
           tick?.setCursorVisible?.(visible === true);
         }
-      },
-      setGamepadRumble: (gamepadIndex, intensity, durationMs) => {
+      };
+      context.setGamepadRumble = (gamepadIndex, intensity, durationMs) => {
         tick?.setGamepadRumble?.(gamepadIndex, intensity, durationMs);
-      },
-      gamepadConnections: tick?.gamepadConnections ?? [],
-      sampleWater: (position, waterActor) => {
+      };
+      context.gamepadConnections = tick?.gamepadConnections ?? [];
+      context.sampleWater = (position, waterActor) => {
         if (waterActor?.destroyed) return { ...emptyWaterSample(), actor: null };
         const sample = services.sampleWater?.(position, waterActor?.guid ?? null, contextOwner);
         return sample ? { ...sample, actor: resolveLiveActor(services, sample.actorId) } : { ...emptyWaterSample(), actor: null };
-      },
-      lineTrace: (start, end, channel, options) => {
+      };
+      context.lineTrace = (start, end, channel, options) => {
         const ignoreActorIds = [
           ...new Set(
             (options?.actorsToIgnore ?? [])
@@ -2249,8 +2254,8 @@ export class ScriptHost {
           distance: hit.distance ?? 0,
           actor: resolveLiveActor(services, hit.actorId),
         };
-      },
-      projectCursorToScene: (channel, options) => {
+      };
+      context.projectCursorToScene = (channel, options) => {
         const hit = services.projectCursorToScene?.(channel, options, contextOwner) ?? {
           hit: false,
           location: null,
@@ -2270,8 +2275,8 @@ export class ScriptHost {
           worldOrigin: hit.worldOrigin ?? { x: 0, y: 0, z: 0 },
           worldDirection: hit.worldDirection ?? { x: 0, y: 0, z: 0 },
         };
-      },
-      sphereOverlap: (center, radius, channel) => {
+      };
+      context.sphereOverlap = (center, radius, channel) => {
         const overlap = services.sphereOverlap?.(center, radius, channel, contextOwner) ?? {
           actorIds: [],
           bodyIds: [],
@@ -2281,8 +2286,8 @@ export class ScriptHost {
           bodyIds: overlap.bodyIds,
           actors: resolveLiveActors(services, overlap.actorIds),
         };
-      },
-      shapeSweep: (shape, start, end, channel) => {
+      };
+      context.shapeSweep = (shape, start, end, channel) => {
         const hit = services.shapeSweep?.(shape, start, end, channel, contextOwner) ?? {
           hit: false,
           location: null,
@@ -2298,13 +2303,13 @@ export class ScriptHost {
           distance: hit.distance ?? 0,
           actor: resolveLiveActor(services, hit.actorId),
         };
-      },
-      addImpulse: (actor, impulse, strength) => {
+      };
+      context.addImpulse = (actor, impulse, strength) => {
         const target = asActor(actor ?? self);
         if (!target) return;
         services.addImpulse?.(target, impulse, strength);
-      },
-      moveCharacter: (actor, translation, offset) => {
+      };
+      context.moveCharacter = (actor, translation, offset) => {
         const target = asActor(actor ?? self);
         if (!target) return;
         services.moveCharacter?.(
@@ -2313,44 +2318,43 @@ export class ScriptHost {
           deltaSeconds,
           offset,
         );
-      },
-      playSound: (asset, volume) => {
+      };
+      context.playSound = (asset, volume) => {
         services.playSound?.(String(asset ?? ""), Number(volume ?? 1), {
           emitterActorGuid: self?.guid ?? null,
         });
-      },
-      playParticles: (actor) => {
+      };
+      context.playParticles = (actor) => {
         const target = asActor(actor ?? self);
         if (!target) return;
         services.setParticlePlaying?.(target.guid, true);
-      },
-      stopParticles: (actor) => {
+      };
+      context.stopParticles = (actor) => {
         const target = asActor(actor ?? self);
         if (!target) return;
         services.setParticlePlaying?.(target.guid, false);
-      },
-      createSceneLayerAsync: async (assetGuid, zOrder) => {
+      };
+      context.createSceneLayerAsync = async (assetGuid, zOrder) => {
         if (!services.createSceneLayerAsync) throw new Error("This host cannot prepare a cold SceneLayer");
         const layer = await services.createSceneLayerAsync(String(assetGuid ?? ""), Number(zOrder) || 0, self);
         if (self?.destroyed) throw Object.assign(new Error("The SceneLayer caller was destroyed"), { name: "AbortError" });
         return layer;
-      },
-      moveTo: (actor, destination) => {
+      };
+      context.moveTo = (actor, destination) => {
         const target = asActor(actor ?? self);
         if (!target) return;
         services.moveTo?.(target, destination);
-      },
-      stopMovement: (actor) => {
+      };
+      context.stopMovement = (actor) => {
         const target = asActor(actor ?? self);
         if (!target) return;
         services.stopMovement?.(target);
-      },
-      btFinish: extras?.btFinish ?? NO_BT_HOOK,
-      btEvaluate: extras?.btEvaluate ?? NO_BT_HOOK,
-      getBlackboard: extras?.getBlackboard ?? NO_BT_HOOK,
-      setBlackboard: extras?.setBlackboard ?? NO_BT_HOOK,
-    };
-    const context = Object.setPrototypeOf(call, this.hostMembers) as ScriptContext;
+      };
+      context.btFinish = extras?.btFinish ?? NO_BT_HOOK;
+      context.btEvaluate = extras?.btEvaluate ?? NO_BT_HOOK;
+      context.getBlackboard = extras?.getBlackboard ?? NO_BT_HOOK;
+      context.setBlackboard = extras?.setBlackboard ?? NO_BT_HOOK;
+    }
     return context;
   }
 

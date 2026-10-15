@@ -35,6 +35,14 @@ export interface MeshAssetContext {
   spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
   tilemaps?: ReadonlyMap<string, TilemapPayload>;
   tilesets?: ReadonlyMap<string, TilesetPayload>;
+  /**
+   * A revision per Tilemap, Tileset and Water guid: a payload whose revision is
+   * unchanged is unchanged, however many times a host re-read or re-normalized
+   * it. The editor remembers the serialized form of each by revision rather than
+   * serializing every payload to compare installs. A guid without a revision is
+   * serialized every time.
+   */
+  payloadRevisions?: ReadonlyMap<string, string>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   /** Immutable installed content used by scene-local decoded model generations. */
   modelSources?: ReadonlyMap<string, Blob>;
@@ -95,6 +103,43 @@ function payloadMapFingerprint(map: ReadonlyMap<string, unknown> | undefined): s
   return JSON.stringify([...map.entries()].sort(([a], [b]) => a.localeCompare(b)));
 }
 
+type PayloadKind = "tilemaps" | "waters" | "tilesets";
+
+/**
+ * `payloadMapFingerprint` that remembers each payload's serialized form under
+ * the revision the host reported for it (`MeshAssetContext.payloadRevisions`),
+ * so a payload whose revision is unchanged is not serialized again. Only the
+ * payloads of the latest call are kept. The strings it returns are exactly
+ * `payloadMapFingerprint`'s: that is `JSON.stringify` of the sorted
+ * `[guid, payload]` entries, whose array is the entries' own serializations
+ * joined by commas.
+ */
+export class PayloadFingerprints {
+  private readonly remembered = new Map<PayloadKind, Map<string, { revision: string; json: string }>>();
+
+  fingerprint(
+    kind: PayloadKind,
+    map: ReadonlyMap<string, unknown> | undefined,
+    revisions: ReadonlyMap<string, string> | undefined,
+  ): string {
+    if (!map || map.size === 0) {
+      this.remembered.delete(kind);
+      return "";
+    }
+    const before = this.remembered.get(kind);
+    const after = new Map<string, { revision: string; json: string }>();
+    const entries = [...map.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([guid, payload]) => {
+      const revision = revisions?.get(guid);
+      const known = revision === undefined ? undefined : before?.get(guid);
+      const json = known && known.revision === revision ? known.json : JSON.stringify([guid, payload]);
+      if (revision !== undefined) after.set(guid, { revision, json });
+      return json;
+    });
+    this.remembered.set(kind, after);
+    return `[${entries.join(",")}]`;
+  }
+}
+
 import { copyTextureBytesForUpload, environmentTextureContainer, installAssetBytes, isKtx2Bytes } from "@babylonslate/assets";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { snapshotByteFingerprint } from "./asset-byte-fingerprint";
@@ -127,18 +172,23 @@ function sortedStringMapFingerprint(
 
 /**
  * Key of the inputs whose change rebuilds editor meshes: everything except
- * Model bytes and area-light emission, which reapply in place.
+ * Model bytes and area-light emission, which reapply in place. With `payloads`,
+ * a Tilemap, Tileset or Water whose revision (`payloadRevisions`) is unchanged
+ * since the last call with it is not serialized again; the key is the same.
  */
 export function meshAssetFingerprintWithoutModels(
   assets: MeshAssetContext | undefined,
+  payloads?: PayloadFingerprints,
 ): string {
+  const payloadFingerprint = (kind: PayloadKind, map: ReadonlyMap<string, unknown> | undefined) =>
+    payloads ? payloads.fingerprint(kind, map, assets?.payloadRevisions) : payloadMapFingerprint(map);
   return [
     `ppu:${assets?.pixelsPerUnit ?? ""}`,
     `sprites:${sortedMapKeys(assets?.spritePayloads)}`,
     `spriteAnims:${sortedMapKeys(assets?.spriteAnimations)}`,
-    `tilemaps:${payloadMapFingerprint(assets?.tilemaps)}`,
-    `waters:${payloadMapFingerprint(assets?.waters)}`,
-    `tilesets:${payloadMapFingerprint(assets?.tilesets)}`,
+    `tilemaps:${payloadFingerprint("tilemaps", assets?.tilemaps)}`,
+    `waters:${payloadFingerprint("waters", assets?.waters)}`,
+    `tilesets:${payloadFingerprint("tilesets", assets?.tilesets)}`,
     `tex:${byteMapFingerprint(assets?.textureBytes)}`,
     `texPx:${
       assets?.texturePixelSizes

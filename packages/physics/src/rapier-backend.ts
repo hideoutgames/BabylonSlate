@@ -27,6 +27,7 @@ import type {
 } from "./types";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { quatToPlanarAngle } from "./collider-bake";
+import { queryAdmitsEveryShape, queryAdmitsShape } from "./query-filter";
 import { copyColliderDesc, linearSweepPoses, normalizedPhysicsPose } from "./collider-validation";
 import { copyConstraintDesc } from "./constraint-validation";
 
@@ -795,15 +796,14 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     };
   }
 
-  /** Collider predicate for `ignoreActorIds` and `includeTriggers: false`; undefined when neither applies. */
+  /** Collider predicate for `ignoreActorIds`, `includeTriggers: false` and `onlyTriggers`; undefined when none applies. */
   private queryFilter(options?: LineTraceOptions): ((collider: RapierCollider) => boolean) | undefined {
     const ignored = new Set(options?.ignoreActorIds);
-    if (!ignored.size && options?.includeTriggers !== false) return undefined;
+    if (!ignored.size && queryAdmitsEveryShape(options)) return undefined;
     return (collider) => {
       const actorId = this.colliderActorId(collider);
       const desc = this.colliders.get(this.colliderIdByHandle.get(collider.handle) ?? "")?.desc;
-      return (actorId === null || !ignored.has(actorId)) &&
-        !(options?.includeTriggers === false && desc?.isTrigger);
+      return (actorId === null || !ignored.has(actorId)) && queryAdmitsShape(desc?.isTrigger === true, options);
     };
   }
 

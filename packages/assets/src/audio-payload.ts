@@ -331,28 +331,35 @@ function keepAudioExtraChunks(
   return next;
 }
 
+/** The chunk an Audio clip is stored in. */
+export function audioClipChunk(clip: { id: string; bytes: Uint8Array; mime: string }): {
+  id: string;
+  kind: string;
+  mime: string;
+  data: Uint8Array;
+} {
+  return { id: clip.id, kind: "audio", mime: clip.mime, data: clip.bytes };
+}
+
 export function extraChunksWithAudioClip(
   extra: Iterable<AudioExtraChunkLike>,
   clip: { id: string; bytes: Uint8Array; mime: string },
 ): Array<{ id: string; kind: string; mime: string; data: Uint8Array }> {
   const next = keepAudioExtraChunks(extra, clip.id);
-  next.push({
-    id: clip.id,
-    kind: "audio",
-    mime: clip.mime,
-    data: clip.bytes,
-  });
+  next.push(audioClipChunk(clip));
   return next;
+}
+
+/** The chunk removing clip `chunkId` drops: none for the default `source`, which is never removed. */
+export function audioClipChunkToDrop(chunkId: string): string | null {
+  return chunkId === AUDIO_DEFAULT_SOURCE_CHUNK ? null : chunkId;
 }
 
 export function extraChunksWithoutAudioClip(
   extra: Iterable<AudioExtraChunkLike>,
   chunkId: string,
 ): Array<{ id: string; kind: string; mime: string; data: Uint8Array }> {
-  if (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK) {
-    return keepAudioExtraChunks(extra);
-  }
-  return keepAudioExtraChunks(extra, chunkId);
+  return keepAudioExtraChunks(extra, audioClipChunkToDrop(chunkId) ?? undefined);
 }
 
 function normalizeChannelEffect(value: unknown): AudioChannelEffect | null {

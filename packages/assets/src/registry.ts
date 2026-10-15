@@ -1511,7 +1511,12 @@ export class AssetRegistry {
    * the file's source pixels changed. A `guard`ed re-encode (the alignment
    * pass) also writes no state before its commit, and its guard is asked
    * again when the job starts and before each write. A Texture in a
-   * read-only root is never queued.
+   * read-only root is never queued. A Texture has one job: repeating the
+   * request it already has queues nothing, a request with changed settings
+   * supersedes the older job (`EncodeQueue.enqueue`), and a guarded request
+   * gives way to any job. Resolves false when nothing was requested (including
+   * that last case), true when the Texture is queued, running or about to be
+   * committed for this request.
    */
   async retryTextureEncoding(
     guid: string,
@@ -1535,9 +1540,6 @@ export class AssetRegistry {
     }
     const usage = options?.usage ?? String(asset.header.payload.usage ?? "albedo");
     if (isEnvironmentTexturePayload(asset.header.payload) || !shouldCompressTexture(usage)) return false;
-    if (state !== "pending" && !options?.guard) {
-      await this.setCompressionState(guid, "pending");
-    }
     const latest = this.byGuid.get(guid) ?? asset;
     // A guarded job wrote no state, so a missing source leaves the Texture as it was.
     const source = options?.guard ? await this.loadSourcePixels(latest) : await this.encodeSource(latest);
@@ -1551,7 +1553,7 @@ export class AssetRegistry {
     const chunkId = await textureEncodeChunkId(settings, usage);
     const queue = this.encodeQueue;
     if (!queue) return false;
-    queue.enqueue({
+    const outcome = queue.enqueue({
       assetGuid: guid,
       source: source.bytes,
       mime: source.mime,
@@ -1561,6 +1563,17 @@ export class AssetRegistry {
       sourceSha256: source.sha256,
       ...(options?.guard ? { guard: options.guard } : {}),
     });
+    if (outcome === "yielded") return false;
+    // The queue chose the job synchronously above, so an older encode it
+    // replaced can no longer commit over the pending mark written here (its
+    // commit is refused, or already landed ahead of this write in the
+    // Texture's write order). A request the Texture already has needs no mark
+    // of its own: its job wrote it, or is about to commit past it.
+    if (outcome !== "duplicate" && !options?.guard) {
+      await this.setCompressionState(guid, "pending", {
+        canWrite: (_guid, current) => current.payload.compressionState !== "pending",
+      });
+    }
     return true;
   }
 

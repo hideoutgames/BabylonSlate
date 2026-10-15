@@ -678,7 +678,7 @@ function overlayPhysicsLayer(refs: LayerRefs): SerializedSceneLayer {
 const PIT = { center: [0, -5] as const, radius: 2.6 } as const;
 
 /**
- * Tick runs Sphere Overlap Actors (World Dynamic) over the pit. A Scene Layer
+ * Tick runs Sphere Overlap Actors (Dynamic) over the pit. A Scene Layer
  * actor's query reads its own layer's world, so it counts the layer's boxes
  * and never the main Scene's bodies at the same coordinates. The label is set
  * only when the count changes.
@@ -695,7 +695,7 @@ async function savePitCounter(ctx: FeatureTestContext, refs: ClassBase): Promise
     nodes: [
       gNode("tick", "flow.event.tick", 0, 0),
       gNode("center", "vector.make3", 0, 200, { "default:x": PIT.center[0], "default:y": PIT.center[1], "default:z": 0 }),
-      gNode("overlap", "physics.sphereOverlap", 240, 0, { "default:radius": PIT.radius, "default:channel": "WorldDynamic" }),
+      gNode("overlap", "physics.sphereOverlap", 240, 0, { "default:radius": PIT.radius, "default:channel": "Dynamic" }),
       getVar("get-shown", shown, 240, 300),
       gNode("changed", "math.notEquals", 480, 220),
       gNode("branch", "flow.branch", 680, 0),

@@ -256,6 +256,8 @@ export interface RuntimeDriver {
   ): void;
   applySceneLayerControl(message: Extract<ControlMessage, { type: "sceneLayerControl" }>): void;
   applySceneLayerFocusNavigate(reverse: boolean): void;
+  /** The Behaviour Tree editor shows live state: publish `btState` (off by default), starting with every tree's current state. */
+  applyBehaviourTreeStateObserved(observed: boolean): void;
   applySceneLayerScroll(layerId: string, actorId: string, componentId: string, deltaX: number, deltaY: number): void;
   applyAudioVoiceEnded(
     message: Extract<ControlMessage, { type: "audioVoiceEnded" }>,

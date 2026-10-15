@@ -46,6 +46,7 @@ import {
   TEXTURE_DOWNSAMPLE_LABELS,
   TEXTURE_USAGE_OPTIONS,
 } from "../lib/asset-settings";
+import { shownCompressionState } from "../lib/texture-encode-state";
 
 const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 const CHECKERBOARD =
@@ -371,7 +372,7 @@ export function TextureDetails({
     textureUsageBlockedReason,
     prepareAreaEmission,
   } = useDocumentActions();
-  const { assetRegistry, registryEpoch } = useRegistryState();
+  const { assetRegistry, registryEpoch, encodingTextures } = useRegistryState();
   // `textureUsageBlockedReason` reads source control locks and whether this
   // Texture's tab is open, so re-render when either changes.
   useSourceControl();
@@ -427,8 +428,9 @@ export function TextureDetails({
   }
 
   const usage = typeof payload.usage === "string" ? payload.usage : "albedo";
-  const compression = typeof payload.compressionState === "string" ? payload.compressionState : "none";
-  const encodeError = typeof payload.encodeError === "string" ? payload.encodeError : "";
+  // A running encode is known only to memory; the earlier failure it replaces is stale.
+  const compression = shownCompressionState(payload.compressionState, guid !== undefined && encodingTextures.has(guid)) ?? "none";
+  const encodeError = compression !== "encoding" && typeof payload.encodeError === "string" ? payload.encodeError : "";
   const compressed = shouldCompressTexture(usage);
   const importRows: PropertyRow[] = [
     {

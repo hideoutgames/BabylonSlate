@@ -72,4 +72,33 @@ describe("Painter2D mesh", () => {
     updatePainter2DMesh(mesh, painter(0.25, { width: 4, pixelsPerUnit: 50 }));
     expect(replays()).toBe(initial + 3);
   });
+
+  it("takes the revision the runtime stamps as the stream shown, and replays when it or the sizes change", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const circle = (radius: number) => ({ kind: "draw", fill: true, stroke: false,
+      path: [{ kind: "ellipse", center: [0, 0], radius: [radius, radius], rotation: 0, start: 0, end: 6.28, anticlockwise: false }] });
+    const painter = (radius: number, revision?: number, size: Record<string, number> = {}) =>
+      ({ width: 2, height: 1, pixelsPerUnit: 100, commands: [circle(radius)], ...(revision === undefined ? {} : { revision }), ...size });
+    const replays = () => canvasCalls.filter((call) => call === "clearRect").length;
+    const mesh = createPainter2DMesh(handle.scene, "painter", painter(0.5, 1));
+    const initial = replays();
+
+    // One revision names one stream, so its commands are trusted without being compared: a differing list stays unseen.
+    updatePainter2DMesh(mesh, painter(0.25, 1));
+    expect(replays()).toBe(initial);
+    updatePainter2DMesh(mesh, painter(0.25, 2));
+    expect(replays()).toBe(initial + 1);
+    // A new revision for the stream already on the canvas (a painter redrawn each frame with the same shapes) is compared and not replayed.
+    updatePainter2DMesh(mesh, painter(0.25, 3));
+    expect(replays()).toBe(initial + 1);
+    // An equal revision never skips a resize.
+    updatePainter2DMesh(mesh, painter(0.25, 3, { pixelsPerUnit: 50 }));
+    expect(replays()).toBe(initial + 2);
+    // Authored data carries no revision, so it is compared with the canvas's stream.
+    updatePainter2DMesh(mesh, painter(0.25, undefined, { pixelsPerUnit: 50 }));
+    expect(replays()).toBe(initial + 2);
+    updatePainter2DMesh(mesh, painter(0.5, undefined, { pixelsPerUnit: 50 }));
+    expect(replays()).toBe(initial + 3);
+  });
 });
