@@ -275,6 +275,12 @@ export type ControlMessage =
   | { type: "step" }
   | { type: "stop" }
   | { type: "setPaused"; paused: boolean }
+  /**
+   * The Behaviour Tree editor starts or stops showing live state. The runtime publishes `btState`
+   * only while observed (off by default), sending every evaluated tree's current state when
+   * observation starts.
+   */
+  | { type: "setBehaviourTreeStateObserved"; observed: boolean }
   | { type: "console"; line: string }
   | { type: "inspect" }
   | { type: "sceneLayerFocusNavigate"; reverse: boolean }

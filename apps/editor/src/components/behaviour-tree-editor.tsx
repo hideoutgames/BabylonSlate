@@ -84,8 +84,9 @@ import {
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useBehaviourTreeEditing } from "../context/behaviour-tree-editing-context";
-import { useLiveBtState, usePlay } from "../context/play-context";
+import { useLiveBtState, useObserveBtState, usePlay } from "../context/play-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
+import { useDockPanelShown } from "../lib/use-dock-panel-shown";
 
 /** Org-chart wires: a trunk from the parent splits into square drops to each child. */
 const BT_EDGE_OPTIONS = { type: "smoothstep", pathOptions: { borderRadius: 8 } };
@@ -357,8 +358,9 @@ function useBehaviourTreeDocument() {
   };
 }
 
-export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
-  void _props;
+export function BehaviourTreeGraphPanel({ api }: IDockviewPanelProps) {
+  // The running-branch overlay is live Play state, which Play publishes only while an editor shows it.
+  useObserveBtState(useDockPanelShown(api));
   const {
     doc,
     commit,
@@ -632,8 +634,9 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
   );
 }
 
-export function BehaviourTreeBlackboardPanel(_props: IDockviewPanelProps) {
-  void _props;
+export function BehaviourTreeBlackboardPanel({ api }: IDockviewPanelProps) {
+  // The Blackboard watch is live Play state, which Play publishes only while an editor shows it.
+  useObserveBtState(useDockPanelShown(api));
   const {
     doc,
     commit,

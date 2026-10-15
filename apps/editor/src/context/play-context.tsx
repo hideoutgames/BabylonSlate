@@ -36,6 +36,7 @@ import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
 import { emptyPlayAudioLibrary, type PlayAudioLibrary, type PlayAudioSourceLoader } from "../lib/play-audio";
 import { appendOutputLogLines, OUTPUT_LOG_RING_CAP } from "../lib/output-log-ring";
+import { createBtStateObservers, type BtStateObservers } from "../lib/bt-state-observers";
 import { createFrameFlush } from "../lib/use-debug-console-logs";
 import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { PlayFailedDialog, PlayPrepareDialog } from "../components/play-prepare-dialog";
@@ -199,6 +200,8 @@ interface PlayContextValue {
   clearFocusedNode: () => void;
   appendLog: (line: string) => void;
   reportBtState: (state: LiveBtState | null) => void;
+  /** Behaviour Tree editor panels showing live state; the running session publishes `btState` only while one does. */
+  btStateObservers: BtStateObservers;
 }
 
 const PlayContext = createContext<PlayContextValue | null>(null);
@@ -208,7 +211,7 @@ const PlaySimulationDocumentIdContext = createContext<string | null>(null);
 const PlayFocusedNodeIdContext = createContext<string | null>(null);
 const OutputLogContext = createContext<{ lines: string[] }>({ lines: [] });
 const LiveBtStateContext = createContext<LiveBtState | null>(null);
-type PlayDiagnosticsActions = Pick<PlayContextValue, "appendLog" | "reportBtState"> & {
+type PlayDiagnosticsActions = Pick<PlayContextValue, "appendLog" | "reportBtState" | "btStateObservers"> & {
   /** Counts a visible Output Log window until the returned release runs. */
   showOutputLogWindow: () => () => void;
   outputLogWindowVisible: () => boolean;
@@ -220,6 +223,7 @@ function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
   const [logLines, setLogLines] = useState<string[]>([]);
   const [liveBtState, setLiveBtState] = useState<LiveBtState | null>(null);
   const outputLogWindows = useRef(0);
+  const [btStateObservers] = useState(createBtStateObservers);
   // A burst of lines (engine logs, session diagnostics) commits once per frame, in arrival order.
   const [logFeed] = useState(() => {
     let pending: string[] = [];
@@ -248,13 +252,14 @@ function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
     () => ({
       appendLog,
       reportBtState: setLiveBtState,
+      btStateObservers,
       showOutputLogWindow: () => {
         outputLogWindows.current += 1;
         return () => { outputLogWindows.current -= 1; };
       },
       outputLogWindowVisible: () => outputLogWindows.current > 0,
     }),
-    [appendLog],
+    [appendLog, btStateObservers],
   );
   const outputLog = useMemo(() => ({ lines: logLines }), [logLines]);
   return (
@@ -297,7 +302,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
 }
 
 function PlaySessionProvider({ children }: { children: ReactNode }) {
-  const { appendLog, reportBtState, outputLogWindowVisible } = useContext(PlayDiagnosticsActionsContext)!;
+  const { appendLog, reportBtState, btStateObservers, outputLogWindowVisible } = useContext(PlayDiagnosticsActionsContext)!;
   const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
   const engineRef = useRef<AbstractEngine | null>(null);
   const providerMountRef = useRef(0);
@@ -1629,6 +1634,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       clearFocusedNode: () => setFocusedNodeId(null),
       appendLog,
       reportBtState,
+      btStateObservers,
     }),
     [
       sessionState,
@@ -1669,6 +1675,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       focusedNodeId,
       appendLog,
       reportBtState,
+      btStateObservers,
     ],
   );
 
@@ -1708,6 +1715,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           <PlayOverlay
             sessionOwner={sessionOwner}
             sessionTicket={sessionTicketRef.current}
+            btStateObservers={btStateObservers}
             simulationSaveStorage={simulationRef.current?.storage}
             simulationSession={simulationRef.current ?? undefined}
             simulationAssetGuids={simulationAssetGuids}
@@ -2057,4 +2065,14 @@ export function useOutputLogWindow(visible: boolean): void {
 /** Subscribe only the behaviour-tree debugger to live snapshots. */
 export function useLiveBtState(): LiveBtState | null {
   return useContext(LiveBtStateContext);
+}
+
+/**
+ * Counts the caller as showing live behaviour tree state while it is mounted and `shown`. The
+ * Play runtime publishes `btState` only while at least one caller does, and sends every tree's
+ * current state when the first one starts.
+ */
+export function useObserveBtState(shown: boolean): void {
+  const actions = useContext(PlayDiagnosticsActionsContext);
+  useEffect(() => (shown ? actions?.btStateObservers.observe() : undefined), [actions, shown]);
 }

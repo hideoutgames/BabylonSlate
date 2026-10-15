@@ -247,6 +247,20 @@ export function applyPlaySessionStep(target: PlaySessionStepTarget): boolean {
   return false;
 }
 
+export type PlaySessionBtObservationTarget = {
+  worker?: { postControl: (message: ControlMessage) => void } | null;
+  runtime?: { applyBehaviourTreeStateObserved(observed: boolean): void } | null;
+};
+
+/** Start or stop the runtime's `btState` stream: a worker control, or the in-process runtime directly. */
+export function applyPlayBehaviourTreeStateObserved(
+  target: PlaySessionBtObservationTarget,
+  observed: boolean,
+): void {
+  if (target.worker) target.worker.postControl({ type: "setBehaviourTreeStateObserved", observed });
+  else target.runtime?.applyBehaviourTreeStateObserved(observed);
+}
+
 export function playSessionBootControls(options: {
   load: Extract<ControlMessage, { type: "load" }>;
   scripts?: readonly ScriptBundleEntry[];
@@ -355,6 +369,11 @@ export interface PlaySession {
   setPauseReason: (reason: import("@babylonslate/bridge").SessionPauseReason, paused: boolean) => Promise<import("@babylonslate/bridge").SessionBoundaryResult>;
   setInputMode: (mode: "game" | "edit") => Promise<void>;
   setEditorInputSuppressed: (suppressed: boolean) => Promise<void>;
+  /**
+   * Start or stop the runtime's `btState` stream, which only the Behaviour Tree editor reads (off by
+   * default). Starting it publishes every tree's current state at once.
+   */
+  setBehaviourTreeStateObserved: (observed: boolean) => void;
   requestPausedRedraw: () => { accepted: boolean; reason?: string };
   /** Last resolved Move.x from the in-process runtime; null on the worker path. */
   lastMoveX: () => number | null;
@@ -1824,6 +1843,9 @@ export function startPlaySession(options: {
           if (reset) handle.setSimulationEditMode(mode === "edit");
         }
       }
+    },
+    setBehaviourTreeStateObserved: (observed) => {
+      if (!stopped) applyPlayBehaviourTreeStateObserved({ worker, runtime }, observed);
     },
     requestPausedRedraw: () => handle.requestPausedRedraw(),
     lastMoveX: () => {
