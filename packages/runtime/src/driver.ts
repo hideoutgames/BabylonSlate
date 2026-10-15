@@ -1359,6 +1359,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.overlay.focusNavigate(reverse);
   }
 
+  applyBehaviourTreeStateObserved(observed: boolean): void {
+    this.behaviourTrees.setStateObserved(observed);
+  }
+
   applySceneLayerControl(message: Extract<ControlMessage, { type: "sceneLayerControl" }>): void {
     this.overlay.control(message);
   }

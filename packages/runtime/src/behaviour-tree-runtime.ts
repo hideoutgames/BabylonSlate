@@ -84,6 +84,8 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
    * unchanged tick is recognised without sanitizing (a JSON round trip) the live values.
    */
   private readonly blackboardBaseline = new Map<number, BlackboardValues>();
+  /** The Behaviour Tree editor is showing live state; `btState` is published only then. */
+  private stateObserved = false;
   private debug = false;
   private lastDebugMs = -Infinity;
   private readonly host: BehaviourTreeRuntimeHost;
@@ -653,6 +655,28 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     this.evalBySlot.set(slotId, next);
     this.nodeId = null;
     this.assetGuid = null;
+    if (this.stateObserved) this.publishState(slotId, next);
+  }
+
+  /**
+   * `btState` feeds only the Behaviour Tree editor's Play overlay and Blackboard watch, so an
+   * unobserved session sanitizes, compares and sends nothing. Turning observation on publishes
+   * every evaluated tree's current state at once, so the editor is not blank until the next
+   * change; turning it off forgets what was published, so a later observer is sent fresh state.
+   */
+  setStateObserved(observed: boolean): void {
+    if (observed === this.stateObserved) return;
+    this.stateObserved = observed;
+    if (observed) {
+      for (const [slotId, state] of this.evalBySlot) this.publishState(slotId, state);
+      return;
+    }
+    this.lastState.clear();
+    this.blackboardBaseline.clear();
+  }
+
+  /** Emit the slot's `btState` unless it equals the one last published. */
+  private publishState(slotId: number, next: BtEvalState): void {
     const last = this.lastState.get(slotId);
     const baseline = this.blackboardBaseline.get(slotId);
     // The sanitized Blackboard last published equals the sanitized baseline copy (below), so
