@@ -320,8 +320,10 @@ export class SharedOutlineView {
   private readonly maximumWidths = new Map<SharedOutlineGroup, number>();
   private occluders: readonly AbstractMesh[] | null = null;
   private readonly meshLists = new Map<SharedOutlineGroup, { revision: number; sceneRevision: number; meshes: AbstractMesh[] }>();
-  /** Reused per-frame strict occluder list. */
+  /** The strict occluder list Babylon observes; rewritten only when the culled occluders change. */
   private readonly strictOccluders: AbstractMesh[] = [];
+  /** This view's working list for the cull; see `cullStrictOccluders`. */
+  private readonly strictOccluderScratch: AbstractMesh[] = [];
   private styleUploads = 0;
   tableWidth = 1;
   tableHeight = 1;
@@ -513,7 +515,7 @@ export class SharedOutlineView {
     const isMember = (mesh: AbstractMesh) => (data?.[this.owner.identityFor(mesh) * 4 + 3] ?? 0) > 0 ||
       mesh.instancedBuffers?.[SHARED_OUTLINE_ATTRIBUTE] !== undefined;
     return cullStrictOccluders(candidates, isMember, camera, widthPx, heightPx,
-      Math.ceil(this.maximumWidthForGroup("strict")) + 1, this.strictOccluders);
+      Math.ceil(this.maximumWidthForGroup("strict")) + 1, this.strictOccluders, this.strictOccluderScratch);
   }
   diagnostics() {
     return { revision: this.revision, consumerCount: this.contributions.size,
@@ -528,6 +530,8 @@ export class SharedOutlineView {
   dispose(): void {
     if (this.isDisposed) return; this.isDisposed = true;
     this.contributions.clear(); this.meshLists.clear(); this.releaseStyles(); this.owner.removeView(this); this.revision++;
+    // Neither list may keep the last frame's occluders, disposed ones included, reachable.
+    this.strictOccluders.length = 0; this.strictOccluderScratch.length = 0;
   }
 }
 function sameContribution(a: SharedOutlineContribution, b: SharedOutlineContribution): boolean {
