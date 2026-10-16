@@ -20,7 +20,7 @@ import {
 } from "./audio-reverb";
 import { createActor, createMeshComponent, identitySerializedTransform } from "@babylonslate/core";
 
-/** `audioReverb` chunk budget from docs/architecture/audio.md (A16 budgets). */
+/** `audioReverb` chunk budget from .agents/reference/architecture/audio.md. */
 const REVERB_CHUNK_BUDGET_BYTES = 64 * 1024;
 
 function boxActor(

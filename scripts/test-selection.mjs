@@ -43,7 +43,6 @@ function isRepositoryMetadata(file) {
     file === ".gitattributes" ||
     file === ".gitignore" ||
     file.startsWith(".agents/") ||
-    file.startsWith(".cursor/") ||
     file.startsWith(".github/")
   );
 }

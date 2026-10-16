@@ -4,7 +4,7 @@ import type { ParticleBillboardMode, ParticleBlendMode } from "@babylonslate/cor
 /**
  * The one numeric mapping for particle Blend Mode and Billboard ids. Documents store
  * only the string ids; Babylon's constants are read by name so a Babylon upgrade can
- * never swap them (docs/design/particle-emitters.md D7). Shared by the Basic apply and
+ * never swap them (.agents/reference/architecture/particles.md, "Decisions"). Shared by the Basic apply and
  * Particle Graph lowering.
  */
 export const PARTICLE_BLEND_MODES: Readonly<Record<ParticleBlendMode, number>> = {

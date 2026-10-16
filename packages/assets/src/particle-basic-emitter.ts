@@ -1,7 +1,7 @@
 /**
  * Basic Particle Emitter payload: a module stack nested by stage, its normalizer, and
  * the Babylon-free plan that `@babylonslate/render` applies onto a GPU (or CPU
- * fallback) particle system (docs/design/particle-emitters.md, "Basic Particle Emitter").
+ * fallback) particle system (.agents/reference/architecture/particles.md, "Basic Particle Emitter").
  * The plan carries semantic ids only; render maps them to Babylon constants by name.
  */
 import {
@@ -688,7 +688,7 @@ function shapeClass(shape: ParticleEmitterShape): string {
 }
 
 /**
- * How a running preview applies an edit (docs/design/particle-emitters.md, "Live edits"):
+ * How a running preview applies an edit (.agents/reference/architecture/particles.md, "Runtime"):
  * - `live`: uniforms, owner-driven curves, bursts and same-count gradient keys; particles survive.
  * - `respawn`: shape class, gradient key counts, or a blend change into or out of Multiply
  *   (WebGL2 records its vertex arrays per program); GPU particles restart.

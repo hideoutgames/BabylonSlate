@@ -1,5 +1,5 @@
 /**
- * Particle Graph value types (docs/design/particle-emitters.md, "Particle Graph").
+ * Particle Graph value types (.agents/reference/architecture/particles.md, "Particle Graph").
  *
  * `color` is RGBA (Babylon `Color4`); `particle` is the spine that carries the
  * system from Create Particle to Emitter Output. There is no `int`: Babylon Int
