@@ -18,14 +18,13 @@ import {
 import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { RENDERING_GROUP } from "./sorting";
-import { distanceTransform, type WaterFieldSurface } from "./water-field";
+import type { WaterContactJobMessage, WaterContactWorkerReply } from "./water-contact-jobs";
+import { fillContactWindow, WATER_CONTACT_LAYER_OFFSETS, type ContactGrid, type ContactPiece, type ContactRect, type ContactWindow } from "./water-contact-kernel";
+import { attachWaterContactWorker, type WaterContactWorkerLink } from "./water-contact-offthread";
+import type { WaterFieldSurface } from "./water-field";
 
-/**
- * Contact layers: RGBA8 channel `k` stores the signed distance to objects at rest height
- * + `WATER_CONTACT_LAYER_OFFSETS[k]` x amplitude. The shader blends the two layers around each
- * fragment's rendered (wave-displaced) height, so foam follows the real waterline without rebakes.
- */
-export const WATER_CONTACT_LAYER_OFFSETS: readonly number[] = [-1, -1 / 3, 1 / 3, 1];
+export { minimumFilter, smoothContacts, WATER_CONTACT_LAYER_OFFSETS } from "./water-contact-kernel";
+
 const LAYERS = WATER_CONTACT_LAYER_OFFSETS.length;
 /**
  * Most texels per side (the Contact Resolution cap, `WaterFieldSurface.contactCells`); beyond it the cells grow
@@ -55,12 +54,15 @@ const MOVE_WAIT_MS = 100;
  * skipped (this frame's, and the previous frame's, which has priority now).
  */
 const rebuildBudgets = new WeakMap<Scene, { frame: number; spent: number; moving: number; oldest: number; priority: number }>();
-/** Surfaces above or below a layer count a little more than horizontal ones, so nearness is not contact. */
-const VERTICAL_WEIGHT = 1.5;
+/**
+ * Milliseconds an off-thread rebuild may take before its worker counts as hung: every field then rebuilds on the main
+ * thread. Far above any real job (a full 1024² rebuild takes well under a second), and measured with the frame clock,
+ * so a paused render loop does not count.
+ */
+export const WATER_CONTACT_WORKER_TIMEOUT_MS = 10_000;
 /** Most rest-height samples per side over an object on a sloped body (rivers, tilted volumes), bilinearly interpolated. */
 const REST_GRID = 17;
 const REST_SPACING = 1;
-const INF = 1e20;
 
 /** Meshes that can meet the water: visible world geometry, not editor helpers, terrain or water. */
 export function isWaterContactMesh(mesh: AbstractMesh): boolean {
@@ -75,12 +77,14 @@ export function isWaterContactMesh(mesh: AbstractMesh): boolean {
   return mesh.getTotalIndices() > 0;
 }
 
-type Rect = { minX: number; minZ: number; maxX: number; maxZ: number };
-/** Inclusive-exclusive cell window. */
-type Window = { x0: number; z0: number; x1: number; z1: number };
+type Rect = ContactRect;
+type Window = ContactWindow;
 
-/** One rigid placement of a mesh's geometry: a mesh, an instance, or one thin instance. */
-type Piece = {
+/**
+ * One rigid placement of a mesh's geometry: a mesh, an instance, or one thin instance, with its cuts through the wave
+ * envelope (`ContactPiece`). Off the thread, the cuts' arrays move to the worker once sent and are empty here.
+ */
+type Piece = ContactPiece & {
   mesh: AbstractMesh;
   /** Thin-instance index, or -1. */
   instance: number;
@@ -89,15 +93,12 @@ type Piece = {
   geometry: Geometry | null;
   revision: number;
   stale: boolean;
-  /** XZ bounds of the triangles inside the wave envelope; null when none reach it. */
-  bounds: Rect | null;
-  /** Per layer: x0, z0, x1, z1 cross-section segments at that layer's height. */
-  contours: Float64Array[];
-  /** Per layer: the cross-section closes, so its interior is known. */
-  closed: boolean[];
-  /** Triangles within the envelope: world x, height above the local rest height, world z for three corners. */
-  triangles: Float64Array;
 };
+
+/** The contact texture's cells: its world rectangle (whole 16-cell blocks), cell size and texels per side. */
+type Layout = { rect: Rect; cell: number; width: number; height: number };
+/** One rebuild: the layout and windows it fills and the envelope its objects were cut for. */
+type ContactJob = { id: number; layout: Layout; windows: Window[]; full: boolean; amplitude: number; range: number; sent: number };
 
 /**
  * The last scan's placements of one thin-instanced mesh. They are reused until its transform, geometry or
@@ -166,10 +167,6 @@ const CANDIDATE_MS = SCAN_MS / 2;
 const SCAN_PHASES = 6;
 let scanPhases = 0;
 
-/** `WaterContactField.fill`'s per-window seeds, inside flags and scanline rows, shared and grown on demand. */
-let scratchSeed = new Float32Array(0), scratchInside = new Uint8Array(0);
-const scratchRows: number[][] = [];
-
 function sceneContactMeshes(scene: Scene, now: number, fresh: boolean): readonly AbstractMesh[] {
   let entry = contactMeshes.get(scene);
   if (!entry) { entry = { meshes: [], builtAt: -Infinity, count: -1 }; contactMeshes.set(scene, entry); }
@@ -193,23 +190,45 @@ const union = (a: Rect | null, b: Rect | null): Rect | null => !a ? b : !b ? a
  * shallow hulls, rafts and deck undersides between layers still meet the rising and falling water.
  * Rebuilt only when objects move, deform, appear or disappear, or the surface or wave envelope
  * changes; waves never rebake it.
+ *
+ * Objects are cut on the main thread; the distance passes (`fillContactWindow`) run on a contact worker where one can
+ * start (`attachWaterContactWorker`), else here. Off the thread, one rebuild per surface is in flight at a time: what
+ * changes meanwhile rebuilds once it lands, at the first `update` after its reply, and until then the texture, `bounds`,
+ * `amplitude` and `range` stay those of the last landed rebuild, so the shader never reads a half-applied one.
  */
 export class WaterContactField {
   texture: RawTexture | null = null;
-  /** minX, minZ, 1 / sizeX, 1 / sizeZ in world metres. */
+  /** minX, minZ, 1 / sizeX, 1 / sizeZ in world metres, of the texture drawn. */
   readonly bounds = [0, 0, 1, 1];
-  /** The wave envelope (metres either side of rest) the current layers were built for. */
+  /** The wave envelope (metres either side of rest) the texture's layers were built for. */
   amplitude = 0;
-  /** Distances are clamped to +/- this many metres. */
+  /** The texture's distances are clamped to +/- this many metres. */
   range = 1;
+  /** The texture's layout and distances, replaced as rebuilds land (`place`). */
   private data: Uint8Array | null = null;
   private width = 0;
   private height = 0;
   private cell = 1;
+  private rect: Rect | null = null;
+  /** The wave envelope and contact range objects are cut for now (`syncSurface`); the next rebuild uses them. */
+  private cutAmplitude = 0;
+  private cutRange = 1;
   /** Texels per side this surface may use (Contact Resolution). */
   private maxCells = MAX_CELLS;
-  private rect: Rect | null = null;
   private readonly pieces = new Map<string, Piece>();
+  /** The off-thread path: tried at the first rebuild, then kept until `dispose`; `offthread` turns off on a failure. */
+  private link: WaterContactWorkerLink | null = null;
+  private linkTried = false;
+  private offthread = false;
+  private jobs = 0;
+  /** The rebuild the worker is filling, and its reply's blocks once they arrive (landed by the next `update`). */
+  private inflight: ContactJob | null = null;
+  private arrived: Uint8Array[] | null = null;
+  /** Keys cut again since the worker last received them, and keys gone since then. */
+  private readonly unsent = new Set<string>();
+  private removed: string[] = [];
+  /** A full rebuild is owed: requested while another was in flight, or the worker failed. */
+  private fullPending = false;
   private readonly thin = new Map<Mesh, ThinPlacements>();
   private scans = 0;
   /** Bumped when the surface changes, which invalidates every cached thin-instance placement. */
@@ -238,25 +257,33 @@ export class WaterContactField {
    * Track objects and rebuild what changed. Returns true when the texture changed. A changed wave envelope, contact
    * range or cell cap cuts every object again at once; so does a moved surface, but while it keeps moving (a dragged,
    * animated or tide-driven body) at most every `SURFACE_MOVE_MS`: its contacts lag its pose by that much at most, and
-   * its last pose always lands. A released texture (`releaseTexture`) waits for `restore`.
+   * its last pose always lands. A released texture (`releaseTexture`) waits for `restore`. Off the thread, a finished
+   * rebuild lands first, and a new one starts only once none is in flight.
    */
   update(now: number, force = false): boolean {
+    const landed = this.arrived !== null && this.land();
+    if (this.inflight && now - this.inflight.sent >= WATER_CONTACT_WORKER_TIMEOUT_MS) this.link?.fail("timed out");
     const surface = this.syncSurface();
     if (surface === SURFACE_MOVED) this.surfaceMoved = true;
-    if (this.released && !force) return false;
+    if (this.released && !force) return landed;
     const full = force || surface === SURFACE_CHANGED
       || (this.surfaceMoved && (this.lastBuild === -Infinity || now - this.lastBuild >= SURFACE_MOVE_MS));
-    if (full) this.surfaceMoved = false;
-    if (full) { this.surfaceEpoch++; for (const piece of this.pieces.values()) piece.stale = true; }
+    if (full) {
+      this.surfaceMoved = false; this.fullPending = true; this.surfaceEpoch++;
+      for (const piece of this.pieces.values()) piece.stale = true;
+    }
     if (full || now - this.lastScan >= SCAN_MS) {
       // The first scan sets this surface's phase; later ones keep their spacing.
       this.lastScan = this.lastScan === -Infinity ? now - this.scanPhase : now;
       this.scan(now, full);
     }
     else this.track();
-    let stale = full || this.dirty.length > 0;
+    let stale = this.fullPending || this.dirty.length > 0;
     for (const piece of this.pieces.values()) stale ||= piece.stale;
-    if (!stale || (!full && now - this.lastBuild < MOVE_MS)) return false;
+    // One rebuild per surface is in flight at a time; what changed meanwhile waits for it to land.
+    if (!stale || this.inflight) return landed;
+    const rebuildFull = this.fullPending;
+    if (!rebuildFull && now - this.lastBuild < MOVE_MS) return landed;
     // Many surfaces with moving objects share a per-frame budget (`WATER_CONTACT_FRAME_BUDGET_MS`).
     let budget = rebuildBudgets.get(this.scene);
     if (!budget) { budget = { frame: NaN, spent: 0, moving: 0, oldest: Infinity, priority: -Infinity }; rebuildBudgets.set(this.scene, budget); }
@@ -265,17 +292,18 @@ export class WaterContactField {
       budget.frame = frame; budget.spent = 0; budget.moving = 0;
       budget.priority = budget.oldest === Infinity ? -Infinity : budget.oldest; budget.oldest = Infinity;
     }
-    if (!full && budget.moving > 0 && budget.spent >= WATER_CONTACT_FRAME_BUDGET_MS
+    if (!rebuildFull && budget.moving > 0 && budget.spent >= WATER_CONTACT_FRAME_BUDGET_MS
       && now - this.lastBuild < Math.max(MOVE_WAIT_MS, 2 * this.scene.getEngine().getDeltaTime()) && this.lastBuild > budget.priority) {
       budget.oldest = Math.min(budget.oldest, this.lastBuild);
-      return false;
+      return landed;
     }
-    if (!full) budget.moving++;
-    this.lastBuild = now;
-    const start = performance.now(), changed = this.rebuild(full);
+    if (!rebuildFull) budget.moving++;
+    this.lastBuild = now; this.fullPending = false;
+    // Off the thread this is the cutting and posting only.
+    const start = performance.now(), changed = this.rebuild(rebuildFull, now);
     // At least a hair per rebuild, so a clock that does not advance within a frame still spreads them.
     budget.spent += Math.max(performance.now() - start, 0.25);
-    return changed;
+    return landed || changed;
   }
 
   /**
@@ -290,7 +318,7 @@ export class WaterContactField {
     let moved = false, changed = false;
     for (let i = 0; i < 16; i++) if (state[i] !== m[i]) { state[i] = m[i]!; moved = true; }
     if (state[16] !== amplitude || state[17] !== range || state[18] !== cells) { state[16] = amplitude; state[17] = range; state[18] = cells; changed = true; }
-    this.amplitude = amplitude; this.range = range; this.maxCells = cells;
+    this.cutAmplitude = amplitude; this.cutRange = range; this.maxCells = cells;
     return changed ? SURFACE_CHANGED : moved ? SURFACE_MOVED : SURFACE_SAME;
   }
 
@@ -310,11 +338,33 @@ export class WaterContactField {
     this.update(now, this.surfaceMoved || !this.data);
   }
 
+  /** Releases the texture and leaves the contact worker, which drops this surface's pieces (and exits if it was the last). */
   dispose(): void {
     this.release();
+    this.link?.detach();
+    this.link = null; this.linkTried = true; this.offthread = false; this.inflight = null; this.arrived = null;
+    this.unsent.clear(); this.removed = [];
     for (const piece of this.pieces.values()) if (piece.geometry) unwatchGeometry(piece.geometry);
     for (const placements of this.thin.values()) unwatchGeometry(placements.geometry);
     this.pieces.clear(); this.thin.clear();
+  }
+
+  /** A reply from the contact worker: the blocks of the rebuild in flight wait for the next `update` to land them. */
+  private receive(reply: WaterContactWorkerReply): void {
+    if (reply.job !== this.inflight?.id) return;
+    if (reply.type === "error") this.link?.fail(reply.message);
+    else this.arrived = reply.blocks;
+  }
+
+  /**
+   * The off-thread path failed (`attachWaterContactWorker`): the worker held the cuts, whose arrays were transferred to
+   * it, so every object is cut again and rebuilt here in full at the next `update`.
+   */
+  private fallBack(): void {
+    this.offthread = false; this.inflight = null; this.arrived = null;
+    this.unsent.clear(); this.removed = [];
+    for (const piece of this.pieces.values()) piece.stale = true;
+    this.fullPending = true;
   }
 
   /** True when the mesh now draws another geometry or its positions were rewritten since the last slice. */
@@ -338,7 +388,7 @@ export class WaterContactField {
   private scan(now: number, fresh: boolean): void {
     const scan = ++this.scans;
     const seen = new Set<string>();
-    const box = this.surface.mesh.getBoundingInfo().boundingBox, margin = this.range, amplitude = this.amplitude;
+    const box = this.surface.mesh.getBoundingInfo().boundingBox, margin = this.cutRange, amplitude = this.cutAmplitude;
     // The rendered surface's world box bounds every rest height, so most meshes need no height query.
     const near = (min: Vector3, max: Vector3) => max.y >= box.minimumWorld.y - amplitude && min.y <= box.maximumWorld.y + amplitude
       && (this.surface.unbounded || (max.x >= box.minimumWorld.x - margin && min.x <= box.maximumWorld.x + margin && max.z >= box.minimumWorld.z - margin && min.z <= box.maximumWorld.z + margin));
@@ -415,6 +465,8 @@ export class WaterContactField {
       if (piece.bounds) this.dirty.push(piece.bounds);
       if (piece.geometry) unwatchGeometry(piece.geometry);
       this.pieces.delete(key);
+      this.unsent.delete(key);
+      if (this.offthread) this.removed.push(key);
     }
     for (const [mesh, placements] of this.thin) {
       if (placements.scan === scan) continue;
@@ -468,7 +520,7 @@ export class WaterContactField {
     const placed = worldBox(local.min, local.max, matrix);
     const levels = this.levelsIn(placed.min, placed.max);
     if (levels === null) return;
-    const amplitude = this.amplitude, low = -amplitude, high = amplitude;
+    const amplitude = this.cutAmplitude, low = -amplitude, high = amplitude;
     const heights = WATER_CONTACT_LAYER_OFFSETS.map((offset) => offset * amplitude);
     const rest = this.restHeights(placed.min, placed.max, levels[0]);
     const world = new Float64Array(positions.length), point = new Vector3();
@@ -568,11 +620,19 @@ export class WaterContactField {
     };
   }
 
-  private rebuild(full: boolean): boolean {
-    for (const piece of this.pieces.values()) {
+  /**
+   * Cuts the stale objects again and rebuilds the windows they touched, or everything for a full rebuild or a new
+   * layout. With a contact worker the job is posted and lands at a later `update`; otherwise it is filled here and
+   * lands at once. Returns true when the texture changed now.
+   */
+  private rebuild(full: boolean, now: number): boolean {
+    // Cuts are recorded for the worker until it is known whether there is one.
+    const record = this.offthread || !this.linkTried;
+    for (const [key, piece] of this.pieces) {
       if (!piece.stale) continue;
       const before = piece.bounds;
       this.slice(piece);
+      if (record) this.unsent.add(key);
       if (before) this.dirty.push(before);
       if (piece.bounds) this.dirty.push(piece.bounds);
     }
@@ -583,8 +643,9 @@ export class WaterContactField {
       this.release(); this.dirty = [];
       return had;
     }
-    const target = Math.max(MIN_CELL, Math.min(MAX_TARGET_CELL, this.range / 24));
-    const margin = this.range + 2 * target;
+    const range = this.cutRange;
+    const target = Math.max(MIN_CELL, Math.min(MAX_TARGET_CELL, range / 24));
+    const margin = range + 2 * target;
     const needed = { minX: reach.minX - margin, minZ: reach.minZ - margin, maxX: reach.maxX + margin, maxZ: reach.maxZ + margin };
     // Widely spread objects coarsen the cells in doublings, so small moves keep the allocation. Snapping to 16-cell
     // blocks adds under 32 cells per side, so the cap leaves room for it.
@@ -595,114 +656,84 @@ export class WaterContactField {
       && current.minX <= needed.minX && current.minZ <= needed.minZ && current.maxX >= needed.maxX && current.maxZ >= needed.maxZ
       // Release most of an oversized field once objects leave.
       && (current.maxX - current.minX) * (current.maxZ - current.minZ) <= 4 * (needed.maxX - needed.minX + 16 * cell) * (needed.maxZ - needed.minZ + 16 * cell);
-    if (!fits) { this.allocate(needed, cell); full = true; }
+    const layout: Layout = fits && current ? { rect: current, cell, width: this.width, height: this.height } : planLayout(needed, cell);
+    if (!fits) full = true;
     const windows: Window[] = [];
-    if (full) windows.push({ x0: 0, z0: 0, x1: this.width, z1: this.height });
+    if (full) windows.push({ x0: 0, z0: 0, x1: layout.width, z1: layout.height });
     else {
-      const grow = this.range + this.cell;
-      for (const rect of this.dirty) this.addWindow(windows, this.toWindow(rect, grow));
+      const grow = range + layout.cell;
+      for (const rect of this.dirty) addWindow(windows, toWindow(layout, rect, grow));
     }
     this.dirty = [];
-    for (const window of windows) this.fill(window);
-    this.upload(windows, full);
+    const job: ContactJob = { id: ++this.jobs, layout, windows, full, amplitude: this.cutAmplitude, range, sent: now };
+    if (this.dispatch(job)) return false;
+    // Here: fill the current distances in place, or a new layout's into a new array, and land at once.
+    const data = fits && this.data ? this.data : new Uint8Array(layout.width * layout.height * 4);
+    for (const window of windows) fillContactWindow(gridOf(job), this.pieces.values(), window, data, layout.width);
+    return this.place(job, data, null);
+  }
+
+  /**
+   * Posts a rebuild to the contact worker with the cuts it has not received (their arrays are transferred) and the
+   * keys gone; joins a worker at the first rebuild. False when the rebuild runs here instead.
+   */
+  private dispatch(job: ContactJob): boolean {
+    if (!this.linkTried) {
+      this.linkTried = true;
+      this.link = attachWaterContactWorker({ reply: (reply) => this.receive(reply), fail: () => this.fallBack() }, job.layout.width * job.layout.height);
+      this.offthread = this.link !== null;
+    }
+    if (!this.offthread || !this.link) { this.unsent.clear(); return false; }
+    const updated: WaterContactJobMessage["updated"] = [], transfer = new Set<ArrayBuffer>();
+    for (const key of this.unsent) {
+      const piece = this.pieces.get(key);
+      if (!piece) continue;
+      updated.push({ key, piece: { bounds: piece.bounds, contours: piece.contours, closed: piece.closed, triangles: piece.triangles } });
+      transfer.add(piece.triangles.buffer as ArrayBuffer);
+      for (const segments of piece.contours) transfer.add(segments.buffer as ArrayBuffer);
+    }
+    const removed = this.removed;
+    this.unsent.clear(); this.removed = [];
+    this.inflight = job;
+    this.link.post({ type: "job", field: this.link.field, job: job.id, removed, updated, grid: gridOf(job), windows: job.windows }, [...transfer]);
+    // A post that failed fell back (`fallBack`): this rebuild runs here.
+    return this.offthread;
+  }
+
+  /** Lands the worker's reply to the rebuild in flight (`receive`): a full one brings its whole layout's distances. */
+  private land(): boolean {
+    const job = this.inflight!, blocks = this.arrived!;
+    this.inflight = null; this.arrived = null;
+    if (job.full) return this.place(job, blocks[0]!, blocks);
+    const data = this.data;
+    // Windows always follow the layout they were cut in; should it be gone, everything rebuilds.
+    if (!data || this.rect !== job.layout.rect) { this.fullPending = true; return false; }
+    for (let i = 0; i < job.windows.length; i++) {
+      const w = job.windows[i]!, block = blocks[i]!, rowBytes = (w.x1 - w.x0) * 4;
+      for (let z = w.z0; z < w.z1; z++) data.set(block.subarray((z - w.z0) * rowBytes, (z - w.z0 + 1) * rowBytes), (z * this.width + w.x0) * 4);
+    }
+    return this.place(job, data, blocks);
+  }
+
+  /**
+   * Puts a finished rebuild in place: its layout and distances, what the shader reads with them (`bounds`, `amplitude`,
+   * `range`) and, unless released, the texture. True when the texture changed.
+   */
+  private place(job: ContactJob, data: Uint8Array, blocks: Uint8Array[] | null): boolean {
+    const { rect, cell, width, height } = job.layout;
+    if (this.texture && (width !== this.width || height !== this.height)) { this.texture.dispose(); this.texture = null; }
+    this.rect = rect; this.cell = cell; this.width = width; this.height = height; this.data = data;
+    this.bounds[0] = rect.minX; this.bounds[1] = rect.minZ;
+    this.bounds[2] = 1 / (width * cell); this.bounds[3] = 1 / (height * cell);
+    this.amplitude = job.amplitude; this.range = job.range;
+    // A released surface keeps the distances for `restore` to upload.
+    if (this.released) return false;
+    this.upload(job.windows, job.full, blocks);
     return true;
   }
 
-  private allocate(needed: Rect, cell: number): void {
-    // Snap to 16-cell blocks so small moves stay inside the allocation.
-    const block = cell * 16;
-    const rect = {
-      minX: Math.floor(needed.minX / block) * block, minZ: Math.floor(needed.minZ / block) * block,
-      maxX: Math.ceil(needed.maxX / block) * block, maxZ: Math.ceil(needed.maxZ / block) * block,
-    };
-    const width = Math.max(2, Math.round((rect.maxX - rect.minX) / cell)), height = Math.max(2, Math.round((rect.maxZ - rect.minZ) / cell));
-    if (this.texture && (width !== this.width || height !== this.height)) { this.texture.dispose(); this.texture = null; }
-    this.rect = rect; this.cell = cell; this.width = width; this.height = height;
-    this.data = new Uint8Array(width * height * 4).fill(255);
-    this.bounds[0] = rect.minX; this.bounds[1] = rect.minZ;
-    this.bounds[2] = 1 / (width * cell); this.bounds[3] = 1 / (height * cell);
-  }
-
-  private toWindow(rect: Rect, grow: number): Window {
-    const r = this.rect!, cell = this.cell;
-    return {
-      x0: Math.max(0, Math.floor((rect.minX - grow - r.minX) / cell)), z0: Math.max(0, Math.floor((rect.minZ - grow - r.minZ) / cell)),
-      x1: Math.min(this.width, Math.ceil((rect.maxX + grow - r.minX) / cell) + 1), z1: Math.min(this.height, Math.ceil((rect.maxZ + grow - r.minZ) / cell) + 1),
-    };
-  }
-
-  /** Overlapping windows merge, so a cell is never computed twice in one rebuild. */
-  private addWindow(windows: Window[], next: Window): void {
-    if (next.x0 >= next.x1 || next.z0 >= next.z1) return;
-    for (let i = 0; i < windows.length; i++) {
-      const w = windows[i]!;
-      if (w.x0 <= next.x1 && next.x0 <= w.x1 && w.z0 <= next.z1 && next.z0 <= w.z1) {
-        windows.splice(i, 1);
-        this.addWindow(windows, { x0: Math.min(w.x0, next.x0), z0: Math.min(w.z0, next.z0), x1: Math.max(w.x1, next.x1), z1: Math.max(w.z1, next.z1) });
-        return;
-      }
-    }
-    windows.push(next);
-  }
-
-  /** Recompute every layer inside `target`, seeding from all objects within range of it. */
-  private fill(target: Window): void {
-    const r = this.rect!, cell = this.cell, data = this.data!;
-    const reachCells = Math.ceil(this.range / cell) + 2;
-    const w: Window = { x0: Math.max(0, target.x0 - reachCells), z0: Math.max(0, target.z0 - reachCells), x1: Math.min(this.width, target.x1 + reachCells), z1: Math.min(this.height, target.z1 + reachCells) };
-    const cw = w.x1 - w.x0, ch = w.z1 - w.z0;
-    // Shared scratch, grown on demand: moving objects rebuild windows many times a second.
-    if (scratchSeed.length < cw * ch) { scratchSeed = new Float32Array(cw * ch); scratchInside = new Uint8Array(cw * ch); }
-    while (scratchRows.length < ch) scratchRows.push([]);
-    const seed = scratchSeed.subarray(0, cw * ch), inside = scratchInside.subarray(0, cw * ch), rows = scratchRows;
-    const reach = { minX: r.minX + w.x0 * cell - this.range, minZ: r.minZ + w.z0 * cell - this.range, maxX: r.minX + w.x1 * cell + this.range, maxZ: r.minZ + w.z1 * cell + this.range };
-    const pieces = Array.from(this.pieces.values()).filter(({ bounds: b }) => b && b.maxX >= reach.minX && b.minX <= reach.maxX && b.maxZ >= reach.minZ && b.minZ <= reach.maxZ);
-    // Cell-centre coordinates: cell (i, j) of the window has its centre at u = i, v = j.
-    const u = (x: number) => (x - r.minX) / cell - 0.5 - w.x0, v = (z: number) => (z - r.minZ) / cell - 0.5 - w.z0;
-    const rangeCells = this.range / cell, spacing = this.amplitude * 2 / (LAYERS - 1);
-    // Only the target cells are read, and distances beyond the range all encode alike.
-    const region = { x0: target.x0 - w.x0, z0: target.z0 - w.z0, x1: target.x1 - w.x0, z1: target.z1 - w.z0, cap: rangeCells * rangeCells };
-    for (let k = 0; k < LAYERS; k++) {
-      seed.fill(INF); inside.fill(0);
-      for (const piece of pieces) {
-        const y = WATER_CONTACT_LAYER_OFFSETS[k]! * this.amplitude;
-        const segments = piece.contours[k]!;
-        for (let s = 0; s < segments.length; s += 4) {
-          seedSegment(seed, cw, ch, u(segments[s]!), v(segments[s + 1]!), u(segments[s + 2]!), v(segments[s + 3]!));
-        }
-        const t = piece.triangles;
-        for (let s = 0; s < t.length; s += 9) {
-          const dy0 = t[s + 1]! - y, dy1 = t[s + 4]! - y, dy2 = t[s + 7]! - y;
-          if (Math.min(dy0, dy1, dy2) > spacing || Math.max(dy0, dy1, dy2) < -spacing) continue;
-          seedTriangle(seed, cw, ch, u(t[s]!), v(t[s + 2]!), dy0, u(t[s + 3]!), v(t[s + 5]!), dy1, u(t[s + 6]!), v(t[s + 8]!), dy2, VERTICAL_WEIGHT / cell, spacing / cell * VERTICAL_WEIGHT);
-        }
-        if (piece.closed[k]) fillInside(inside, rows, cw, ch, segments, u, v);
-      }
-      distanceTransform(seed, cw, ch, region);
-      // Signed distance over the target (negative inside), rounded where objects' distances meet (`smoothContacts`).
-      const tw = target.x1 - target.x0, th = target.z1 - target.z0, signed = contactScratch(tw * th);
-      for (let z = 0; z < th; z++) for (let x = 0; x < tw; x++) {
-        const i = (z + target.z0 - w.z0) * cw + (x + target.x0 - w.x0);
-        const distance = Math.min(rangeCells, Math.sqrt(seed[i]!)) / rangeCells;
-        signed[z * tw + x] = inside[i] ? -distance : distance;
-      }
-      const exact = contactExact(tw * th), floor = contactFloor(tw * th), radius = Math.max(1, Math.round(this.range / CONTACT_SMOOTH / cell));
-      exact.set(signed); floor.set(signed);
-      smoothContacts(signed, tw, th, radius);
-      // The smallest exact distance under each cell's blur kernel: where any part of an object is that near (a hull, or
-      // a face just above or below the layer) the exact distance stands, so waterlines keep their place; the rounding
-      // takes over where everything under the kernel is three radii away or more, where creases between objects form.
-      minimumFilter(floor, tw, th, radius * 2);
-      const near = radius * 3 / rangeCells, far = near * 2;
-      for (let z = 0; z < th; z++) for (let x = 0; x < tw; x++) {
-        const i = z * tw + x, e = exact[i]!, t = Math.max(0, Math.min(1, (floor[i]! - near) / (far - near)));
-        const value = e + (signed[i]! - e) * t * t * (3 - 2 * t);
-        data[((z + target.z0) * this.width + x + target.x0) * 4 + k] = Math.round(Math.max(0, Math.min(1, 0.5 + value * 0.5)) * 255);
-      }
-    }
-  }
-
-  private upload(windows: Window[], full: boolean): void {
+  /** `blocks`, when given, hold each window's distances already packed (the worker's reply). */
+  private upload(windows: Window[], full: boolean, blocks: Uint8Array[] | null = null): void {
     const data = this.data!;
     if (!this.texture) {
       this.texture = RawTexture.CreateRGBATexture(data, this.width, this.height, this.scene, false, false, Texture.BILINEAR_SAMPLINGMODE, Constants.TEXTURETYPE_UNSIGNED_BYTE);
@@ -715,95 +746,50 @@ export class WaterContactField {
     const area = windows.reduce((sum, w) => sum + (w.x1 - w.x0) * (w.z1 - w.z0), 0);
     if (full || !internal || !engine.updateTextureData || engine instanceof NullEngine || area * 2 > this.width * this.height) { this.texture.update(data); return; }
     // Moving objects only re-upload their neighbourhood.
-    for (const w of windows) {
-      const rowBytes = (w.x1 - w.x0) * 4, part = new Uint8Array(rowBytes * (w.z1 - w.z0));
-      for (let z = w.z0; z < w.z1; z++) part.set(data.subarray((z * this.width + w.x0) * 4, (z * this.width + w.x1) * 4), (z - w.z0) * rowBytes);
+    for (let i = 0; i < windows.length; i++) {
+      const w = windows[i]!, rowBytes = (w.x1 - w.x0) * 4;
+      let part = blocks?.[i];
+      if (!part) {
+        part = new Uint8Array(rowBytes * (w.z1 - w.z0));
+        for (let z = w.z0; z < w.z1; z++) part.set(data.subarray((z * this.width + w.x0) * 4, (z * this.width + w.x1) * 4), (z - w.z0) * rowBytes);
+      }
       engine.updateTextureData(internal, part, w.x0, w.z0, w.x1 - w.x0, w.z1 - w.z0);
     }
   }
 }
 
-/**
- * The smoothing radius of the contact distances is the contact range over this (about half the Contact Foam Width):
- * where two objects' distances meet, the hard minimum of a distance transform creases along their bisector, and every
- * contour drawn from it (rings, lines) kinks into a straight crack there. Two box passes of radius r (a tent of
- * radius 2r) round the crease like a smooth minimum where everything under the kernel is far from any object; near
- * objects the exact distance stands, so thin objects keep their waterline (`minimumFilter`).
- */
-const CONTACT_SMOOTH = 12;
-let smoothLine = new Float32Array(0), smoothValues = new Float32Array(0);
-let exactValues = new Float32Array(0), floorValues = new Float32Array(0);
-function contactFloor(size: number): Float32Array {
-  if (floorValues.length < size) floorValues = new Float32Array(size);
-  return floorValues.subarray(0, size);
-}
-function contactExact(size: number): Float32Array {
-  if (exactValues.length < size) exactValues = new Float32Array(size);
-  return exactValues.subarray(0, size);
-}
-function contactScratch(size: number): Float32Array {
-  if (smoothValues.length < size) smoothValues = new Float32Array(size);
-  return smoothValues.subarray(0, size);
+const gridOf = ({ layout, range, amplitude }: ContactJob): ContactGrid =>
+  ({ minX: layout.rect.minX, minZ: layout.rect.minZ, cell: layout.cell, width: layout.width, height: layout.height, range, amplitude });
+
+/** A layout covering `needed`, snapped to 16-cell blocks so small moves stay inside it. */
+function planLayout(needed: Rect, cell: number): Layout {
+  const block = cell * 16;
+  const rect = {
+    minX: Math.floor(needed.minX / block) * block, minZ: Math.floor(needed.minZ / block) * block,
+    maxX: Math.ceil(needed.maxX / block) * block, maxZ: Math.ceil(needed.maxZ / block) * block,
+  };
+  return { rect, cell, width: Math.max(2, Math.round((rect.maxX - rect.minX) / cell)), height: Math.max(2, Math.round((rect.maxZ - rect.minZ) / cell)) };
 }
 
-/** Two separable box blurs of radius `r` over a `width` × `height` grid in place, clamped at its edges. Allocation-free once grown. */
-export function smoothContacts(values: Float32Array, width: number, height: number, r: number): void {
-  const size = Math.max(width, height);
-  if (smoothLine.length < size) smoothLine = new Float32Array(size);
-  for (let n = 0; n < 2; n++) { boxPass(values, width, height, width, 1, r); boxPass(values, height, width, 1, width, r); }
+function toWindow({ rect: r, cell, width, height }: Layout, rect: Rect, grow: number): Window {
+  return {
+    x0: Math.max(0, Math.floor((rect.minX - grow - r.minX) / cell)), z0: Math.max(0, Math.floor((rect.minZ - grow - r.minZ) / cell)),
+    x1: Math.min(width, Math.ceil((rect.maxX + grow - r.minX) / cell) + 1), z1: Math.min(height, Math.ceil((rect.maxZ + grow - r.minZ) / cell) + 1),
+  };
 }
 
-let minimumQueue = new Int32Array(0);
-/**
- * The minimum over a (2r + 1)² window of a `width` × `height` grid in place (separable, clamped at its edges), in time
- * independent of `r`. Allocation-free once grown.
- */
-export function minimumFilter(values: Float32Array, width: number, height: number, r: number): void {
-  const size = Math.max(width, height);
-  if (smoothLine.length < size) smoothLine = new Float32Array(size);
-  if (minimumQueue.length < size) minimumQueue = new Int32Array(size);
-  minimumPass(values, width, height, width, 1, r);
-  minimumPass(values, height, width, 1, width, r);
-}
-
-/**
- * One sliding minimum along `lines` lines of `count` values: a queue of indices whose values increase from its head,
- * each entering once and leaving once, so a cell costs the same at any radius (a full rebuild filters up to four
- * million layer cells).
- */
-function minimumPass(values: Float32Array, count: number, lines: number, stride: number, step: number, r: number): void {
-  const line = smoothLine, queue = minimumQueue;
-  for (let l = 0; l < lines; l++) {
-    const base = l * stride;
-    for (let i = 0; i < count; i++) line[i] = values[base + i * step]!;
-    let head = 0, tail = 0, next = 0;
-    for (let i = 0; i < count; i++) {
-      for (const end = Math.min(count - 1, i + r); next <= end; next++) {
-        const value = line[next]!;
-        while (tail > head && line[queue[tail - 1]!]! >= value) tail--;
-        queue[tail++] = next;
-      }
-      while (queue[head]! < i - r) head++;
-      values[base + i * step] = line[queue[head]!]!;
+/** Overlapping windows merge, so a cell is never computed twice in one rebuild. */
+function addWindow(windows: Window[], next: Window): void {
+  if (next.x0 >= next.x1 || next.z0 >= next.z1) return;
+  for (let i = 0; i < windows.length; i++) {
+    const w = windows[i]!;
+    if (w.x0 <= next.x1 && next.x0 <= w.x1 && w.z0 <= next.z1 && next.z0 <= w.z1) {
+      windows.splice(i, 1);
+      addWindow(windows, { x0: Math.min(w.x0, next.x0), z0: Math.min(w.z0, next.z0), x1: Math.max(w.x1, next.x1), z1: Math.max(w.z1, next.z1) });
+      return;
     }
   }
-}
-
-/** One box blur along `lines` lines of `count` values (line l starts at l × `stride`, values `step` apart). */
-function boxPass(values: Float32Array, count: number, lines: number, stride: number, step: number, r: number): void {
-  const line = smoothLine, last = count - 1, scale = 1 / (2 * r + 1);
-  for (let l = 0; l < lines; l++) {
-    const base = l * stride;
-    for (let i = 0; i < count; i++) line[i] = values[base + i * step]!;
-    // Running sum over [i - r, i + r], clamped at the ends.
-    let sum = 0;
-    for (let j = -r; j <= r; j++) sum += line[j < 0 ? 0 : j > last ? last : j]!;
-    for (let i = 0; i < count; i++) {
-      values[base + i * step] = sum * scale;
-      const add = i + r + 1, drop = i - r;
-      sum += line[add > last ? last : add]! - line[drop < 0 ? 0 : drop]!;
-    }
-  }
+  windows.push(next);
 }
 
 /** The same thin-instance matrix values, in the same order. */
@@ -814,74 +800,4 @@ function sameInstances(a: Float64Array, b: readonly Matrix[]): boolean {
     for (let j = 0; j < 16; j++) if (a[i * 16 + j] !== m[j]) return false;
   }
   return true;
-}
-
-/** Exact squared distances (cell units) from nearby cell centres to a cross-section segment. */
-function seedSegment(seed: Float32Array, width: number, height: number, u0: number, v0: number, u1: number, v1: number): void {
-  const du = u1 - u0, dv = v1 - v0, length2 = du * du + dv * dv;
-  const alongU = Math.abs(du) >= Math.abs(dv);
-  const [a0, a1] = alongU ? [Math.min(u0, u1), Math.max(u0, u1)] : [Math.min(v0, v1), Math.max(v0, v1)];
-  const first = Math.max(0, Math.floor(a0) - 1), last = Math.min((alongU ? width : height) - 1, Math.ceil(a1) + 1);
-  for (let major = first; major <= last; major++) {
-    // The segment's cross coordinate at this column (or row), clamped to its extent.
-    const t = alongU ? (du === 0 ? 0 : (major - u0) / du) : (dv === 0 ? 0 : (major - v0) / dv);
-    const c = t <= 0 ? (alongU ? v0 : u0) : t >= 1 ? (alongU ? v1 : u1) : (alongU ? v0 + dv * t : u0 + du * t);
-    const lo = Math.max(0, Math.ceil(c - 1.5)), hi = Math.min((alongU ? height : width) - 1, Math.floor(c + 1.5));
-    for (let minor = lo; minor <= hi; minor++) {
-      const i = alongU ? major : minor, j = alongU ? minor : major;
-      const s = length2 > 0 ? Math.max(0, Math.min(1, ((i - u0) * du + (j - v0) * dv) / length2)) : 0;
-      const x = i - u0 - du * s, y = j - v0 - dv * s, h2 = x * x + y * y;
-      if (h2 <= 1) {
-        const index = j * width + i;
-        if (h2 < seed[index]!) seed[index] = h2;
-      }
-    }
-  }
-}
-
-/**
- * Surfaces between layers: each covered cell centre gets the weighted vertical gap to the
- * triangle, so the distance transform yields an anisotropic 3D distance at the layer's height.
- */
-function seedTriangle(seed: Float32Array, width: number, height: number,
-  u0: number, v0: number, y0: number, u1: number, v1: number, y1: number, u2: number, v2: number, y2: number, weight: number, limit: number): void {
-  const area = (u1 - u0) * (v2 - v0) - (u2 - u0) * (v1 - v0);
-  if (Math.abs(area) < 1e-9) return;
-  const iMin = Math.max(0, Math.ceil(Math.min(u0, u1, u2))), iMax = Math.min(width - 1, Math.floor(Math.max(u0, u1, u2)));
-  const jMin = Math.max(0, Math.ceil(Math.min(v0, v1, v2))), jMax = Math.min(height - 1, Math.floor(Math.max(v0, v1, v2)));
-  for (let j = jMin; j <= jMax; j++) for (let i = iMin; i <= iMax; i++) {
-    const b1 = ((i - u0) * (v2 - v0) - (u2 - u0) * (j - v0)) / area;
-    const b2 = ((u1 - u0) * (j - v0) - (i - u0) * (v1 - v0)) / area;
-    if (b1 < 0 || b2 < 0 || b1 + b2 > 1) continue;
-    const gap = Math.abs(y0 + (y1 - y0) * b1 + (y2 - y0) * b2) * weight;
-    if (gap > limit) continue;
-    const index = j * width + i;
-    if (gap * gap < seed[index]!) seed[index] = gap * gap;
-  }
-}
-
-/** Even-odd scanline fill of a closed cross-section at cell centres. */
-function fillInside(inside: Uint8Array, rows: number[][], width: number, height: number, segments: Float64Array, u: (x: number) => number, v: (z: number) => number): void {
-  let used = false;
-  for (let s = 0; s < segments.length; s += 4) {
-    const u0 = u(segments[s]!), v0 = v(segments[s + 1]!), u1 = u(segments[s + 2]!), v1 = v(segments[s + 3]!);
-    const first = Math.max(0, Math.ceil(Math.min(v0, v1))), last = Math.min(height - 1, Math.floor(Math.max(v0, v1)));
-    for (let j = first; j <= last; j++) {
-      if ((v0 <= j) === (v1 <= j)) continue;
-      rows[j]!.push(u0 + (u1 - u0) * (j - v0) / (v1 - v0));
-      used = true;
-    }
-  }
-  if (!used) return;
-  for (let j = 0; j < height; j++) {
-    const row = rows[j]!;
-    // An odd count means a gap the endpoint check could not see; leave that row unsigned.
-    if (row.length < 2 || row.length % 2 === 1) { row.length = 0; continue; }
-    row.sort((a, b) => a - b);
-    for (let p = 0; p + 1 < row.length; p += 2) {
-      const from = Math.max(0, Math.ceil(row[p]!)), to = Math.min(width - 1, Math.floor(row[p + 1]!));
-      for (let i = from; i <= to; i++) inside[j * width + i] = 1;
-    }
-    row.length = 0;
-  }
 }
