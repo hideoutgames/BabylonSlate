@@ -22,7 +22,7 @@ The editor starts every listed class when the project opens. Changing the list s
 
 Editor Utility Objects have no **Event Begin Play** or **Event Tick**.
 
-## Editor Function Libraries
+## Editor function libraries
 
 An **EditorFunctionLibrary** is a [Function Library](functions.md#function-libraries) for editor tools. Its functions appear in **Add Node** only in Editor Utility Object and Editor Function Library graphs.
 

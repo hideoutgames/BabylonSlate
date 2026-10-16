@@ -33,7 +33,7 @@ Pin names are case-sensitive variable names. Each must be a valid JavaScript ide
 
 ## Errors
 
-Syntax errors in the body appear in **Compiler Results** with their line and column. Tap the result to go to the node.
+Syntax errors in the body appear in **Compiler Results**. Tap the result to go to the node.
 
 ## Notes
 

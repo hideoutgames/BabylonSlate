@@ -41,7 +41,7 @@ Type in **Search Nodes** or browse the categories. **Context Sensitive** is on b
 
 The graph toolbar also has **Copy**, **Paste**, **Delete**, **Break Links** (removes the wires of the selected nodes) and **Format** (tidies the selected chains). Gestures are listed in [Touch gestures](../start/gestures.md).
 
-**Engine Settings > Graph** controls the connection assistant (suggests wires when you move a node near compatible pins), its **Connection Distance (Pixels)** (48 by default), **Shake Nodes To Disconnect**, **Read-Only Pin Defaults** and **Graph Default Zoom**.
+**Engine Settings > Graph** controls the **Node Connection Assistant** (suggests wires when you move a node near compatible pins), its **Connection Distance (Pixels)** (48 by default), **Shake Nodes To Disconnect**, **Read-Only Pin Defaults** and **Graph Default Zoom**.
 
 ## Compile and play
 

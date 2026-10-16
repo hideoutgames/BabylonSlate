@@ -22,7 +22,7 @@ Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Joy
 ## Notes
 
 - Scene Layers only.
-- To use it, add a matching Touch binding to an [Input Axis](../assets/input-axis.md) asset, then read that axis as you would any other input. Right and up are positive.
+- Scripts read it through an [Input Axis](../assets/input-axis.md) with a matching Touch binding. Right and up are positive. **Add Control** can't create Touch bindings yet; the **Feature Test** starter's Input Axis assets include them.
 - The Material pickers accept a [Material](../assets/material.md) or a [Material Instance](../assets/material-instance.md). Materials are square, so use the Material's alpha to cut a round shape.
 - Mouse, touch and pen use the same path. A finger or pointer owns the joystick until it is released, even outside the base, and another finger cannot take it over. Release, cancel, pause or hiding the joystick returns the axes to zero.
 - To drive two independent sticks, give the second one D-Pad X and D-Pad Y.
