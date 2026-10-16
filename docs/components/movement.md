@@ -27,7 +27,7 @@ Select an actor, then choose **Add Component > General > Movement**. Place the a
 | Max Slope Angle | Steepest surface treated as ground, in degrees. Default 50. |
 | Ground Snap Distance | Stays attached to ground over small drops. Default 0.1. |
 | Coyote Time | Allows a jump briefly after walking off an edge, in seconds. Default 0.1. |
-| Jump Buffer Time | Remembers a jump pressed just before landing, in seconds. Default 0.1. |
+| Jump Buffer Time | Remembers a jump pressed right before landing, in seconds. Default 0.1. |
 
 ## Drive it from a graph
 

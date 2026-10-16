@@ -16,10 +16,10 @@ Select an actor, then choose **Add Component > AI > Behaviour Tree**.
 ## Notes
 
 - Works in world scenes and in Scene Layers.
-- The tree starts when Play begins and ticks every frame.
+- The tree starts when Play begins.
 - If you change the tree or the Blackboard during Play, the running tasks are aborted and the new tree starts from its root with fresh Blackboard defaults.
 - Tasks that move the actor, such as [Move To](../scripting/behaviour-tree/move-to.md), need a [Nav Agent](nav-agent.md) on the actor and a baked [NavMesh](nav-mesh.md).
-- Read and write Blackboard values from other graphs with [Set Blackboard](../scripting/class/set-blackboard.md) and [Get Blackboard](../scripting/class/get-blackboard.md).
+- Custom tasks, decorators and services read and write Blackboard values with [Get Blackboard](../scripting/class/get-blackboard.md) and [Set Blackboard](../scripting/class/set-blackboard.md).
 
 ## Related
 

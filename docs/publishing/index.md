@@ -57,8 +57,11 @@ If a script finds assets at runtime by path, folder or class instead of by refer
 
 Your own console commands work in both.
 
+## In this section
+
+- [Preview Build](preview-build.md): test the packaged game inside the editor before you publish.
+
 ## Related
 
-- [Preview Build](preview-build.md)
 - [Settings](../editor/settings.md)
 - [Undo and Saving](../editor/undo-and-saving.md)

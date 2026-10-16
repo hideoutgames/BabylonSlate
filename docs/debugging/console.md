@@ -5,8 +5,10 @@ The console runs commands that change quality, control time, show debug views an
 ## Open the console
 
 - **Play:** turn on **Debug > Play Overlay > Console** before you play, then tap **Console** in the Play toolbar.
-- **Preview Build:** tap **Console** over the game.
+- **Preview Build:** with the same Debug menu item on, tap **Console** over the game.
 - **Any graph:** [Execute Console Command](../scripting/class/execute-console-command.md) runs a command line and returns its **Success** and **Output**.
+
+Exported games have no console window. They still run commands from **Execute Console Command**.
 
 The game keeps running while the console is open. As you type, a list suggests commands, arguments and values: use the arrow keys to choose, <kbd>Tab</kbd> or a tap to complete, and <kbd>Enter</kbd> to run. With no suggestions showing, the arrow keys step through earlier commands. **Clear** empties the transcript and **Copy Transcript** copies it.
 
