@@ -31,7 +31,7 @@ export function useTexturePreview(textureGuid: string | null | undefined) {
       setLoaded({
         sourceKey,
         error:
-          "The texture image could not be decoded. Reimport the texture or pick a replacement in Details.",
+          "The texture image could not be decoded. Reimport the texture or pick a replacement in the Inspector.",
       });
   }, [path, sourceKey]);
 
@@ -46,7 +46,7 @@ export function useTexturePreview(textureGuid: string | null | undefined) {
         if (cancelled) return;
         if (!bytes?.byteLength)
           throw new Error(
-            "Texture image data is missing. Reimport the texture or pick a replacement in Details.",
+            "Texture image data is missing. Reimport the texture or pick a replacement in the Inspector.",
           );
         objectUrl = URL.createObjectURL(
           new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" }),
@@ -105,9 +105,9 @@ export function TexturePreviewStatus({
           : "Loading Texture…";
   const description =
     status === "empty"
-      ? "Pick a Texture in Details to see the preview."
+      ? "Pick a Texture in the Inspector to see the preview."
       : status === "missing"
-        ? "The selected Texture could not be found. Pick a replacement in Details."
+        ? "The selected Texture could not be found. Pick a replacement in the Inspector."
         : status === "failed"
           ? (error ??
             "Texture preview is unavailable. Reopen the document to try again.")

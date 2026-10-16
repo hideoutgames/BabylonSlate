@@ -49,5 +49,5 @@ Font assets, optional facetype/MSDF chunks, CSS fallback stacks and the main-thr
 ## Overlay 2D Text
 
 - Renderer `bitmap` (default): canvas `FontFace` glyphs packed onto a shared RGBA atlas when the paint is letter-shaped; blank or solid tofu output (Node, NullEngine, broken headless 2D) falls back to the bundled 5×7 bitmap.
-- Renderer `msdf` is enabled only when the Font has both JSON and PNG; Details writes `renderer` back to `bitmap` if the pair becomes incomplete. Missing atlas glyphs fall back to Bitmap cells.
+- Renderer `msdf` is enabled only when the Font has both JSON and PNG; the Inspector writes `renderer` back to `bitmap` if the pair becomes incomplete. Missing atlas glyphs fall back to Bitmap cells.
 - MSDF import paths (Content Browser Import, Font document, tile context menu) all use the platform picker (`pickImportFiles`).

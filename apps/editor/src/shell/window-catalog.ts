@@ -257,7 +257,7 @@ const SCENE_WINDOWS: DockWindowDefinition[] = [
   {
     id: "scene-details",
     component: "scene-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "viewport",
       direction: "right",
@@ -402,7 +402,7 @@ const ENUM_WINDOWS: DockWindowDefinition[] = [
   {
     id: "enum-details",
     component: "type-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "enum-members",
       direction: "right",
@@ -416,7 +416,7 @@ const STRUCTURE_WINDOWS: DockWindowDefinition[] = [
   {
     id: "structure-details",
     component: "type-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "structure-members",
       direction: "right",
@@ -444,7 +444,7 @@ const SCRIPT_INTERFACE_WINDOWS: DockWindowDefinition[] = [
   {
     id: "script-interface-details",
     component: "script-interface-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "script-interface-preview",
       direction: "right",
@@ -468,7 +468,7 @@ const MODEL_WINDOWS: DockWindowDefinition[] = [
   {
     id: "model-details",
     component: "model-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "model-preview",
       direction: "right",
@@ -482,7 +482,7 @@ const SKELETON_WINDOWS: DockWindowDefinition[] = [
   {
     id: "skeleton-details",
     component: "skeleton-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "skeleton-preview",
       direction: "right",
@@ -496,7 +496,7 @@ const ANIMATION_WINDOWS: DockWindowDefinition[] = [
   {
     id: "animation-details",
     component: "animation-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "animation-preview",
       direction: "right",
@@ -534,7 +534,7 @@ const SPRITE_WINDOWS: DockWindowDefinition[] = [
   {
     id: "sprite-details",
     component: "sprite-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "sprite-preview",
       direction: "right",
@@ -548,7 +548,7 @@ const AUDIO_WINDOWS: DockWindowDefinition[] = [
   {
     id: "audio-details",
     component: "audio-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "audio-preview",
       direction: "right",
@@ -576,7 +576,7 @@ const PARTICLE_EMITTER_WINDOWS: DockWindowDefinition[] = [
   {
     id: "particle-emitter-details",
     component: "particle-emitter-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "particle-emitter-preview",
       direction: "right",
@@ -587,7 +587,7 @@ const PARTICLE_EMITTER_WINDOWS: DockWindowDefinition[] = [
 
 const WATER_WINDOWS: DockWindowDefinition[] = [
   { id: "water-preview", component: "water-preview", title: "Preview" },
-  { id: "water-details", component: "water-details", title: "Details", defaultPosition: { referencePanelId: "water-preview", direction: "right", initialWidth: 300 } },
+  { id: "water-details", component: "water-details", title: "Inspector", defaultPosition: { referencePanelId: "water-preview", direction: "right", initialWidth: 300 } },
 ];
 
 const PARTICLE_SYSTEM_WINDOWS: DockWindowDefinition[] = [
@@ -599,7 +599,7 @@ const PARTICLE_SYSTEM_WINDOWS: DockWindowDefinition[] = [
   {
     id: "particle-system-details",
     component: "particle-system-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "particle-system-preview",
       direction: "right",
@@ -626,7 +626,7 @@ const SKYBOX_CREATOR_WINDOWS: DockWindowDefinition[] = [
   {
     id: "skybox-creator-details",
     component: "skybox-creator-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "skybox-creator-preview",
       direction: "right",
@@ -640,7 +640,7 @@ const TEXTURE_WINDOWS: DockWindowDefinition[] = [
   {
     id: "texture-details",
     component: "texture-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "texture-preview",
       direction: "right",
@@ -658,7 +658,7 @@ const SPRITE_ANIMATION_WINDOWS: DockWindowDefinition[] = [
   {
     id: "sprite-animation-details",
     component: "sprite-animation-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "sprite-animation-preview",
       direction: "right",
@@ -672,7 +672,7 @@ const TILESET_WINDOWS: DockWindowDefinition[] = [
   {
     id: "tileset-details",
     component: "tileset-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "tileset-preview",
       direction: "right",
@@ -696,7 +696,7 @@ const TILEMAP_WINDOWS: DockWindowDefinition[] = [
   {
     id: "tilemap-details",
     component: "tilemap-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "tilemap-paint",
       direction: "right",
@@ -720,7 +720,7 @@ const MATERIAL_WINDOWS: DockWindowDefinition[] = [
   {
     id: "material-details",
     component: "material-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "material-preview",
       direction: "below",
@@ -744,7 +744,7 @@ const MATERIAL_INSTANCE_WINDOWS: DockWindowDefinition[] = [
   {
     id: "material-instance-details",
     component: "material-instance-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "material-instance-preview",
       direction: "right",
@@ -753,7 +753,7 @@ const MATERIAL_INSTANCE_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
-/** The Material layout: Graph primary, Preview and Details stacked on the left. */
+/** The Material layout: Graph primary, Preview and Inspector stacked on the left. */
 const PARTICLE_GRAPH_WINDOWS: DockWindowDefinition[] = [
   {
     id: "particle-graph-canvas",
@@ -773,7 +773,7 @@ const PARTICLE_GRAPH_WINDOWS: DockWindowDefinition[] = [
   {
     id: "particle-graph-details",
     component: "particle-graph-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "particle-graph-preview",
       direction: "below",
@@ -810,7 +810,7 @@ const MATERIAL_FUNCTION_WINDOWS: DockWindowDefinition[] = [
   {
     id: "material-details",
     component: "material-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "material-function-graph",
       direction: "right",
@@ -833,7 +833,7 @@ const PLUGIN_SETTINGS_WINDOWS: DockWindowDefinition[] = [
   {
     id: "plugin-settings-details",
     component: "plugin-settings-details",
-    title: "Details",
+    title: "Inspector",
   },
 ];
 
@@ -841,7 +841,7 @@ const AUDIO_MIXER_WINDOWS: DockWindowDefinition[] = [
   {
     id: "audio-mixer-details",
     component: "audio-mixer-details",
-    title: "Details",
+    title: "Inspector",
   },
 ];
 
@@ -849,7 +849,7 @@ const AUDIO_CHANNEL_WINDOWS: DockWindowDefinition[] = [
   {
     id: "audio-channel-details",
     component: "audio-channel-details",
-    title: "Details",
+    title: "Inspector",
   },
 ];
 
@@ -857,7 +857,7 @@ const SOUND_ATTENUATION_WINDOWS: DockWindowDefinition[] = [
   {
     id: "sound-attenuation-details",
     component: "sound-attenuation-details",
-    title: "Details",
+    title: "Inspector",
   },
 ];
 
@@ -876,7 +876,7 @@ const ANIM_GRAPH_STATE_WINDOWS: DockWindowDefinition[] = [
   {
     id: "anim-graph-details",
     component: "anim-graph-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "anim-graph-graph",
       direction: "right",
@@ -910,7 +910,7 @@ const ANIM_GRAPH_OBJECT_WINDOWS: DockWindowDefinition[] = [
   {
     id: "anim-object-inspector",
     component: "anim-object-inspector",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "anim-object-graph",
       direction: "right",
@@ -948,7 +948,7 @@ const BEHAVIOUR_TREE_WINDOWS: DockWindowDefinition[] = [
   {
     id: "behaviour-tree-details",
     component: "behaviour-tree-details",
-    title: "Details",
+    title: "Inspector",
     defaultPosition: {
       referencePanelId: "behaviour-tree-graph",
       direction: "right",
@@ -969,12 +969,12 @@ const BEHAVIOUR_TREE_WINDOWS: DockWindowDefinition[] = [
 
 const SAVE_GAME_WINDOWS: DockWindowDefinition[] = [
   { id: "save-game-fields", component: "save-game-fields", title: "Fields" },
-  { id: "save-game-definition", component: "save-game-definition", title: "Details", defaultPosition: { referencePanelId: "save-game-fields", direction: "right", initialWidth: 300 } },
+  { id: "save-game-definition", component: "save-game-definition", title: "Inspector", defaultPosition: { referencePanelId: "save-game-fields", direction: "right", initialWidth: 300 } },
 ];
 
 const INPUT_WINDOWS: DockWindowDefinition[] = [
   { id: "input-bindings", component: "input-bindings", title: "Bindings" },
-  { id: "input-details", component: "input-details", title: "Details", defaultPosition: { referencePanelId: "input-bindings", direction: "right", initialWidth: 300 } },
+  { id: "input-details", component: "input-details", title: "Inspector", defaultPosition: { referencePanelId: "input-bindings", direction: "right", initialWidth: 300 } },
 ];
 
 export function listDockWindows(
@@ -992,7 +992,7 @@ export function listDockWindows(
   if (kind === "enum") return withOptionalLocks(kind, ENUM_WINDOWS, options);
   if (kind === "data-definition") return withOptionalLocks(kind, [
     { id: "data-definition-fields", component: "data-definition-fields", title: "Fields" },
-    { id: "data-definition-details", component: "data-definition-details", title: "Details", defaultPosition: { referencePanelId: "data-definition-fields", direction: "right", initialWidth: 320 } },
+    { id: "data-definition-details", component: "data-definition-details", title: "Inspector", defaultPosition: { referencePanelId: "data-definition-fields", direction: "right", initialWidth: 320 } },
   ], options);
   if (kind === "data-tree") return withOptionalLocks(kind, [
     { id: "data-tree-entries", component: "data-tree-entries", title: "Entries" },
@@ -1022,8 +1022,8 @@ export function listDockWindows(
     return withOptionalLocks(kind, PARTICLE_GRAPH_WINDOWS, options);
   }
   if (kind === "water") return withOptionalLocks(kind, WATER_WINDOWS, options);
-  if (kind === "render-target") return withOptionalLocks(kind, [{ id: "render-target-details", component: "render-target-details", title: "Details" }], options);
-  if (kind === "render-target-texture") return withOptionalLocks(kind, [{ id: "render-target-texture-details", component: "render-target-texture-details", title: "Details" }], options);
+  if (kind === "render-target") return withOptionalLocks(kind, [{ id: "render-target-details", component: "render-target-details", title: "Inspector" }], options);
+  if (kind === "render-target-texture") return withOptionalLocks(kind, [{ id: "render-target-texture-details", component: "render-target-texture-details", title: "Inspector" }], options);
   if (kind === "particle-system") {
     return withOptionalLocks(kind, PARTICLE_SYSTEM_WINDOWS, options);
   }

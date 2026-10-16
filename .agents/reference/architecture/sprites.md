@@ -51,5 +51,5 @@ Pivot is normalized with v down; the quad is offset so the pivot sits on the act
 
 ## Editor
 
-- Sprite and Sprite Animation documents are DockView shells (Preview + Details), composed from catalog components. The Texture picker shows the asset identity (icon, name, type), never a raw guid.
+- Sprite and Sprite Animation documents are DockView shells (Preview + Inspector), composed from catalog components. The Texture picker shows the asset identity (icon, name, type), never a raw guid.
 - Preview crops the frame on a checkerboard with pivot crosshair and a draggable collision AABB overlay.

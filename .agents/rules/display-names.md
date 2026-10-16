@@ -9,12 +9,12 @@ User-facing names are **Title Case** (each word capitalized, spaces kept). That 
 - Format typed or generated names with `formatEventMemberName` / `formatEventTitle` from `@babylonslate/editor-kit`.
 - Catalog ids stay dotted camelCase (`flow.event.beginPlay`); codegen names stay camelCase (`onBeginPlay`).
 
-## Details and options
+## Inspector and options
 
 - Property grid labels and enum option labels: `2D Camera Width`, `Mesh Kind`, `Tile Size`, `3D (Havok)`.
 - Never `2 d camera width`, `2D camera width`, or a raw camelCase key as a visible label.
 - Run keys and free-typed labels through `humanizePropertyLabel` so `2D`, `3D`, `UI`, and `ID` stay acronyms.
-- Hardcoded `label:` strings in Details should already be Title Case.
+- Hardcoded `label:` strings in the Inspector should already be Title Case.
 
 ## Nodes and pins
 

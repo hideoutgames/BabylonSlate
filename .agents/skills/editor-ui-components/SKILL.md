@@ -21,7 +21,7 @@ Match the task to a row:
 | --- | --- |
 | Asset document workspace | DockView via `DockviewShell` + `window-catalog.ts` (not shadcn `Tabs`). Wire **Windows**. Rule: `.agents/rules/dockview-editor-tabs.md` |
 | Docked panel chrome | `PanelFrame`, optional `ToolbarStrip` |
-| Details / typed properties | `PropertyGrid`, `NumericDragField`, `NumberField` |
+| Inspector / typed properties | `PropertyGrid`, `NumericDragField`, `NumberField` |
 | Hierarchy / folders | `TreeView` |
 | Searchable pick lists | `SearchInput`, `SearchDialog`, `SearchDropdown`, `AssetPicker`, `CatalogDialog`, `CatalogItemButton` |
 | Forms / settings | `Field` + `Input` / `Select` / `Switch` / `Checkbox` / `Textarea` |

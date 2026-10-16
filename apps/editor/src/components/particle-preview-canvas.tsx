@@ -640,7 +640,7 @@ function previewState(options: {
   if (failure) {
     return {
       status: "error",
-      description: `${failure.message} Check the emitter settings in Details.`,
+      description: `${failure.message} Check the emitter settings in the Inspector.`,
       onRetry: retry,
     };
   }

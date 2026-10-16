@@ -11,14 +11,14 @@ World Scene documents in the Haptic editor: schema, selection, command path, vie
 | Editor camera, gizmos, outline, grid, placement, gestures, 2D sorting, `EditorSceneSync` | [`packages/render/src/`](../../../packages/render/src/) (`editor-camera.ts`, `gizmo-host.ts`, `overlay-transform-box.ts`, `scene-outline-host.ts`, `editor-grid.ts`, `editor-place.ts`, `viewport-gestures.ts`, `two-d.ts`, `sorting.ts`, `editor-scene-sync.ts`) |
 | PropertyGrid, TreeView, pickers, PanelFrame | [`packages/editor-kit/src/`](../../../packages/editor-kit/src/) |
 | Selection provider, session view state | [`apps/editor/src/context/`](../../../apps/editor/src/context/) (`scene-editing-context.tsx`, `editor-session-state-context.tsx`) |
-| Panels, Place Actors, Outliner drops, typed Details rows | [`apps/editor/src/panels/`](../../../apps/editor/src/panels/), [`apps/editor/src/lib/`](../../../apps/editor/src/lib/) (`place-actors.ts`, `outliner-drop.ts`, `component-property-rows.ts`) |
+| Panels, Place Actors, Outliner drops, typed Inspector rows | [`apps/editor/src/panels/`](../../../apps/editor/src/panels/), [`apps/editor/src/lib/`](../../../apps/editor/src/lib/) (`place-actors.ts`, `outliner-drop.ts`, `component-property-rows.ts`) |
 | Simulation capture | [`packages/runtime/src/simulation-scene-capture.ts`](../../../packages/runtime/src/simulation-scene-capture.ts), [`component-authoring.ts`](../../../packages/runtime/src/component-authoring.ts) |
 
 ## Document invariants
 
 - One world Scene tab at a time; opening another closes the previous (Save / Discard / Cancel). Graphs, Content Browser and SceneLayer tabs stay. Closing the Scene disposes its viewport `Scene`, never the project Engine.
 - SceneLayer is a separate 2D overlay document ([scene-layers.md](scene-layers.md)). Scene Streaming places a `SceneStreamingActor`; the editor never realizes the target scene's actors, only an `editorOnly` label.
-- Load always runs `normalizeScene`. Additive settings keys never bump `SCENE_SCHEMA_VERSION`; files are not rewritten on load. Old scenes without this step crashed Details.
+- Load always runs `normalizeScene`. Additive settings keys never bump `SCENE_SCHEMA_VERSION`; files are not rewritten on load. Old scenes without this step crashed the Inspector.
 - Actor ids are unique runtime GUIDs ([object-model.md](object-model.md#guids-and-identity)): `assertUniqueSceneActorIds` rejects duplicates (never renames). Place, Duplicate, Paste and drag-copy mint fresh ids; Add Component allocates an unused actor-local component id.
 - Rotation is a quaternion `[x,y,z,w]` on disk; UI shows Euler degrees. Missing component `transform` normalizes to identity.
 - Folders (`folders[]`, `actor.folderId`) are editor-only and ignored by runtime. Transform hierarchy is `actor.parentId`; `wouldCreateCycle` refuses self-ancestry.
@@ -28,7 +28,7 @@ World Scene documents in the Haptic editor: schema, selection, command path, vie
 
 ## Command path
 
-- Every Details / Outliner / viewport mutation: `applySceneChange` → `planSceneChange` → undo stack + crash journal ([command-layer.md](command-layer.md)). Nothing bypasses it.
+- Every Inspector / Outliner / viewport mutation: `applySceneChange` → `planSceneChange` → undo stack + crash journal ([command-layer.md](command-layer.md)). Nothing bypasses it.
 - `diffSceneCommands` must produce a delta for every authored field; anything it cannot express becomes one `scene.replace`. Add a command when adding an authored field.
 - Optional settings reset by deleting their key; diffs record removals so inheritance survives Undo/Redo/recovery.
 - Gizmo drags coalesce on `transform:{actorId}` / `transforms:{sortedIds}` (one undo per gesture). `commitGizmoTransform` only runs after `onGizmoDragStart`; a drag-less `onDragEnd` must not write TRS (it re-dirtied after Save All).

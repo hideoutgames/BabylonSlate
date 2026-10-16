@@ -26,7 +26,7 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 ## Document and editor
 
 - Content Browser type `SceneLayer` → document kind `scene-layer`: actors, folders, 2D gravity, `physicsEnabled` (default false), post-process stack, `layerBounds` (default 32×18). Always 2D.
-- The editor tab converts to a locked 2D `SerializedScene` so Viewport / Outliner / Details reuse the scene shell; Save converts back. `physicsEnabled` travels as editor-only `layerPhysicsEnabled`.
+- The editor tab converts to a locked 2D `SerializedScene` so Viewport / Outliner / Inspector reuse the scene shell; Save converts back. `physicsEnabled` travels as editor-only `layerPhysicsEnabled`.
 - The tab is one locked 2D Unlit viewport with an opaque black clear, not the Play compositor. It hides the 3D/2D toggle, Move/Rotate/Scale and shading menu, and omits Default Camera, fog/IBL, lights and the physics-world picker.
 - Layer Width/Height (the orange frame, `cameraBounds2D` in editor, `layerBounds` on disk) is the design canvas. Play stretches it to the full viewport; authoring is WYSIWYG.
 - Selection uses the 2D transform box (`overlay-box`). Resize writes actor XY scale; on 2D Text / Rich Text it writes `wrapWidth` / `wrapHeight` instead.

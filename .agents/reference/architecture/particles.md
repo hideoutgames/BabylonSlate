@@ -34,7 +34,7 @@ Basic Particle Emitter, Particle Graph and Particle System assets, `ParticleComp
 | Particle Graph | `ParticleGraph`, `.particlegraph.babasset` | `schemaVersion: 1` graph + settings | Its Material |
 | Particle System | `ParticleSystem`, `.particles.babasset` | `emitterGuids` (≤ 8, ordered, duplicates allowed), `space` (`world`/`local` → `isLocal` on every slot), `previewSkybox` | Its emitters |
 
-- The registry runs no normalizer at v1, so every read site normalizes (Play/preview `particleLibraryFromAssets`, player hydrate, Details).
+- The registry runs no normalizer at v1, so every read site normalizes (Play/preview `particleLibraryFromAssets`, player hydrate, Inspector).
 - `ParticleComponent`: `particleSystemGuid`, `playOnStart`, sorting layer/order. The sorting layer maps to `renderingGroupId`; `applySortingToParticleSystem` keeps `scene.particleSystems` in sort-key order because Babylon draws a group's systems in list order.
 - `particleLibraryEmitterKey` keys a graph by compile key + `materialGuid`, so node moves and renames never rebuild.
 

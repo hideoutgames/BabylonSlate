@@ -89,7 +89,7 @@ describe("input asset editor", () => {
       expect(
         screen.getByRole("button", { name: "Press a Key · Esc Cancels" }),
       ).toBeTruthy();
-      expect(screen.queryByRole("button", { name: "Details" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Inspector" })).toBeNull();
     },
   );
 

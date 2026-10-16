@@ -16,7 +16,7 @@ Do all of these in the same change:
 6. Map the asset type in `documentKindForAssetType` (`packages/core/src/document.ts`).
 7. Cover the catalog in `window-catalog.test.ts`.
 
-`WindowsMenu` lists `listDockWindows(kind)` automatically. `registerDockviewApi` persists placements in `layout.json`. Default layouts and the Focus fallback use `primaryDockPanel(kind)`; `layout-ops.ts` needs no per-kind entry.
+`WindowsMenu` lists `listDockWindows(kind)` automatically. `registerDockviewApi` persists placements in `layout.json`; a restored layout takes each window's current catalog `title`. Default layouts and the Focus fallback use `primaryDockPanel(kind)`; `layout-ops.ts` needs no per-kind entry.
 
 ## Animation Graph exception
 
@@ -29,7 +29,7 @@ Animation Graph documents host a chrome **State Machine | Animation Object** `To
 <Tabs>
   <TabsList>
     <TabsTrigger>Preview</TabsTrigger>
-    <TabsTrigger>Details</TabsTrigger>
+    <TabsTrigger>Inspector</TabsTrigger>
   </TabsList>
 </Tabs>
 ```
@@ -40,7 +40,7 @@ Animation Graph documents host a chrome **State Machine | Animation Object** `To
 {
   id: "sprite-details",
   component: "sprite-details",
-  title: "Details",
+  title: "Inspector",
   defaultPosition: {
     referencePanelId: "sprite-preview",
     direction: "right",

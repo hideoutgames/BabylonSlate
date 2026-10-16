@@ -54,6 +54,6 @@ Behaviour Tree and Blackboard documents, the deterministic evaluator, runtime ta
 
 ## Editor
 
-- DockView kind `behaviour-tree`: Graph (primary, created first), Blackboard, Details, Compiler Results; Focus keeps Graph only.
+- DockView kind `behaviour-tree`: Graph (primary, created first), Blackboard, Inspector, Compiler Results; Focus keeps Graph only.
 - Root (`__protected`) has no parent pin and cannot be duplicated or deleted; Wrap In Sequence moves `__protected` to the wrapper.
-- Details value rows follow the selected Blackboard key's `PinType`; changing the key writes that type's default. Blackboard keys are edited only in the Blackboard document.
+- Inspector value rows follow the selected Blackboard key's `PinType`; changing the key writes that type's default. Blackboard keys are edited only in the Blackboard document.

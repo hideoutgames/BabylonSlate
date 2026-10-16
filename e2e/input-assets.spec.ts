@@ -39,7 +39,7 @@ test(
     await selectedControl.click({ position: { x: 4, y: 4 } });
     await expect(selectedControl).toHaveAttribute("aria-current", "true");
     await expect(
-      workspace.getByRole("button", { name: "Details", exact: true }),
+      workspace.getByRole("button", { name: "Inspector", exact: true }),
     ).toHaveCount(0);
     const removeControl = selectedControl.getByRole("button", {
       name: "Remove Control 2",
