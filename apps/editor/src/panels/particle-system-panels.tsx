@@ -172,7 +172,7 @@ export function ParticleSystemPreview({
         state={{
           status: "empty",
           title: "No Emitters",
-          description: "Add Basic Particle Emitters or Particle Graphs in Details.",
+          description: "Add Basic Particle Emitters or Particle Graphs in the Inspector.",
         }}
       />
     ) : loadError ? (
@@ -180,7 +180,7 @@ export function ParticleSystemPreview({
         {...idleControls}
         state={{
           status: "error",
-          description: `${loadError} Check the linked emitters in Details.`,
+          description: `${loadError} Check the linked emitters in the Inspector.`,
           onRetry: () => setAttempt((value) => value + 1),
         }}
       />

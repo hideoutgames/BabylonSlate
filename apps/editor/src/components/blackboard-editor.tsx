@@ -179,7 +179,7 @@ export function BlackboardEditor({
           </Button>
         </div>
       </PanelFrame>
-      <PanelFrame className="flex-1" title="Details">
+      <PanelFrame className="flex-1" title="Inspector">
         {key ? (
           <div className="flex flex-col gap-3 p-2" data-testid="blackboard-details">
             {nameRows.length > 0 ? <PropertyGrid rows={nameRows} /> : null}

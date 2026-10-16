@@ -233,7 +233,7 @@ test.describe("Particle Graph", () => {
     for (const [id, title] of [
       ["canvas", "Graph"],
       ["preview", "Preview"],
-      ["details", "Details"],
+      ["details", "Inspector"],
       ["compiler-results", "Compiler Results"],
     ] as const) {
       await expect(page.getByTestId(`windows-menu-particle-graph-${id}`)).toContainText(title);

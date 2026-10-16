@@ -546,7 +546,7 @@ const UTILITY_NODES: ParticleNodeDefinition[] = [
     title: "Gradient",
     category: "Utility",
     role: "value",
-    description: "Samples 2 to 8 stops at Ratio (clamped to 0–1). Edit the stops in Details.",
+    description: "Samples 2 to 8 stops at Ratio (clamped to 0–1). Edit the stops in the Inspector.",
     inputs: [{ id: "ratio", name: "Ratio", type: FLOAT, defaultValue: [0], min: 0, max: 1 }],
     outputs: [{ id: "out", name: "Value", type: COLOR, followsValueType: true }],
   },

@@ -72,7 +72,7 @@ export function physicsConstraintPropertyRows(
       disabled: !context.onPickActor,
       description: context.onPickActor
         ? "Choose another physics actor in this scene. None leaves the constraint unconnected."
-        : "Choose the target in Scene Details after placing this Class in a scene.",
+        : "Choose the target in the scene's Inspector after placing this Class in a scene.",
       onPick: () => context.onPickActor?.(component.id),
       onChange: (value) => update("targetActorId", value ?? ""),
     },

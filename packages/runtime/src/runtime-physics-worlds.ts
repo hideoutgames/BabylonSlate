@@ -213,7 +213,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     const frameId = this.host.frameId();
     const diag: RuntimeDiagnostic = {
       code: "physics.scene_layer_physics_disabled",
-      message: `Scene Layer ${assetGuid} has Rigid Body, Collider or Blocking Volume components, but Enable Physics is off. Its actors do not simulate or collide and fire no Hit or Overlap events; turn on Enable Physics in the Scene Layer's Details.`,
+      message: `Scene Layer ${assetGuid} has Rigid Body, Collider or Blocking Volume components, but Enable Physics is off. Its actors do not simulate or collide and fire no Hit or Overlap events; turn on Enable Physics in the Scene Layer's Inspector.`,
       severity: "warning",
       assetGuid,
       frameId,

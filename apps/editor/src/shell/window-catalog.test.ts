@@ -150,8 +150,8 @@ describe("material dock catalog", () => {
     );
   });
 
-  it("opens a Material Instance on its Preview with Details beside it", () => {
-    expect(listDockWindows("material-instance").map((entry) => entry.title)).toEqual(["Preview", "Details"]);
+  it("opens a Material Instance on its Preview with the Inspector beside it", () => {
+    expect(listDockWindows("material-instance").map((entry) => entry.title)).toEqual(["Preview", "Inspector"]);
     expect(primaryDockPanel("material-instance")).toBe("material-instance-preview");
   });
 

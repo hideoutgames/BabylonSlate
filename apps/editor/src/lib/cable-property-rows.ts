@@ -82,7 +82,7 @@ export function cablePropertyRows(
       disabled: !context.onPickActor,
       description: context.onPickActor
         ? "Choose an actor for the cable end. Self uses this cable's frame unless a Target Component is selected."
-        : "Use a component in this Class, or choose another actor in Scene Details after placing the Class.",
+        : "Use a component in this Class, or choose another actor in the scene's Inspector after placing the Class.",
       onPick: () => context.onPickActor?.(component.id),
       onChange: (value) => update("targetActorId", value || null),
     },

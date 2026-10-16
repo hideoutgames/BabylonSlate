@@ -28,7 +28,7 @@ export function DataDefinitionFieldsPanel(_props: IDockviewPanelProps) {
         classEntries={catalog.classEntries} readOnly={readOnly}
         testIdPrefix="definition-field" data-testid="data-definition-fields"
       />
-      {definition.fields.length === 0 ? <Empty><EmptyHeader><EmptyTitle>No Fields</EmptyTitle><EmptyDescription>Add a field above, then edit its type, default and rules in Details. Reopen Details from the Windows menu.</EmptyDescription></EmptyHeader></Empty> : null}
+      {definition.fields.length === 0 ? <Empty><EmptyHeader><EmptyTitle>No Fields</EmptyTitle><EmptyDescription>Add a field above, then edit its type, default and rules in the Inspector. Reopen the Inspector from the Windows menu.</EmptyDescription></EmptyHeader></Empty> : null}
     </div>
   </PanelFrame>;
 }

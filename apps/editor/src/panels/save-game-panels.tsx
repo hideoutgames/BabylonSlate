@@ -128,7 +128,7 @@ export function SaveGameFieldsPanel(_props: IDockviewPanelProps) {
       </div>
       <SearchInput value={query} onChange={setQuery} placeholder="Search Fields" aria-label="Search Fields" data-testid="save-game-fields-search" />
       {error ? <Alert variant="destructive"><AlertTitle>Invalid Save Definition</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
-      {definition?.fields.length === 0 ? <Empty><EmptyHeader><EmptyTitle>No Save Fields</EmptyTitle><EmptyDescription>Add progress such as Score, Level, or Unlocked Items, then edit its type and starting value in Details.</EmptyDescription></EmptyHeader></Empty> : <TreeView
+      {definition?.fields.length === 0 ? <Empty><EmptyHeader><EmptyTitle>No Save Fields</EmptyTitle><EmptyDescription>Add progress such as Score, Level, or Unlocked Items, then edit its type and starting value in the Inspector.</EmptyDescription></EmptyHeader></Empty> : <TreeView
         nodes={fields.map((field) => ({
           id: field.id, label: field.name, depth: 0, hasChildren: false, expanded: false,
           icon: field.array ? <PinShapeGlyph shape="list" connected outlined={false} color={pinPickerColorVar(fieldPickerType(field.type))} size={12} /> : <TypeColorMark colorVar={pinPickerColorVar(fieldPickerType(field.type))} />,
