@@ -1,3 +1,7 @@
+---
+node: function.output
+---
+
 # Function Outputs
 
 Collects the results of a Material Function, with one input pin per declared output.

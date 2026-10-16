@@ -1,3 +1,7 @@
+---
+node: literal.toStringVec3
+---
+
 # To String (Vector 3)
 
 Converts a Vector 3 to text that lists its x, y and z values.

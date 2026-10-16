@@ -1,3 +1,7 @@
+---
+node: tween.textColor
+---
+
 # Tween Text Color
 
 Blends the text colour of a 2D text component from A to B over Duration seconds.

@@ -1,3 +1,7 @@
+---
+node: render-target.getEveryFrame
+---
+
 # Get Capture Every Frame
 
 Returns whether a Render Target Capture actor updates every frame.

@@ -1,3 +1,7 @@
+---
+node: actor.detach
+---
+
 # Detach Actor
 
 Removes an actor's parent so it no longer follows another actor.

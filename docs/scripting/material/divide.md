@@ -1,3 +1,7 @@
+---
+node: math.divide
+---
+
 # Divide
 
 Divides one value by another, component by component.

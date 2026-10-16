@@ -1,3 +1,7 @@
+---
+node: flow.event.beginPlay
+---
+
 # Event Begin Play
 
 Runs once when an actor or one of its components starts playing.

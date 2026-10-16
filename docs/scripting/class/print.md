@@ -1,3 +1,7 @@
+---
+node: debug.print
+---
+
 # Print
 
 Shows any value as on-screen text while the game runs.

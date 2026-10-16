@@ -1,3 +1,7 @@
+---
+node: navigation.getClosestNavigablePoint
+---
+
 # Get Closest Navigable Point
 
 Finds the point on the navigation mesh nearest to a position.

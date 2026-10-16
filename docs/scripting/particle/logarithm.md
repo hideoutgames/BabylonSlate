@@ -1,3 +1,7 @@
+---
+node: math.log
+---
+
 # Logarithm
 
 Returns the natural logarithm of the input.

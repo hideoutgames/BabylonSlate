@@ -1,3 +1,7 @@
+---
+node: tags.matches
+---
+
 # Matches Tag
 
 Returns true when a Tag is the same as, or a child of, a query Tag.

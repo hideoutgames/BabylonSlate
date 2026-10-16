@@ -1,3 +1,7 @@
+---
+node: array.removeIndex
+---
+
 # Remove At
 
 Returns a copy of an array with the item at an index removed.

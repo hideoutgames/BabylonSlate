@@ -1,3 +1,7 @@
+---
+node: tween.textWrapSize
+---
+
 # Tween Text Wrap Size
 
 Changes the wrap width and height of a 2D text component from A to B over Duration seconds.

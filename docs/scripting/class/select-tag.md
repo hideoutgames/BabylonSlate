@@ -1,3 +1,7 @@
+---
+node: select.tag
+---
+
 # Select Tag
 
 Returns one of two Tag values, chosen by a Boolean condition.

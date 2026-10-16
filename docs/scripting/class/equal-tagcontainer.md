@@ -1,3 +1,7 @@
+---
+node: tags.containerEquals
+---
+
 # Equal TagContainer
 
 Returns true when two TagContainers hold exactly the same Tags.

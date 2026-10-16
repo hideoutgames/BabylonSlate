@@ -1,3 +1,7 @@
+---
+node: bt.task.playSound
+---
+
 # Play Sound
 
 Plays an Audio asset from the actor and succeeds.

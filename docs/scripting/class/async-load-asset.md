@@ -1,3 +1,7 @@
+---
+node: assets.asyncLoad
+---
+
 # Async Load Asset
 
 Loads an asset and its required dependencies in the background while gameplay continues.

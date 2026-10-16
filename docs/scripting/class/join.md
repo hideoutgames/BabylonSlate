@@ -1,3 +1,7 @@
+---
+node: string.join
+---
+
 # Join
 
 Combines an array of strings into one string with a separator between items.

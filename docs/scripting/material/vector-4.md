@@ -1,3 +1,7 @@
+---
+node: const.vec4
+---
+
 # Vector 4
 
 Outputs a fixed Vector 4 value set in the **Inspector**.

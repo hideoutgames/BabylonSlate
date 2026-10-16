@@ -1,3 +1,7 @@
+---
+node: math.sub_int
+---
+
 # Subtract Int
 
 Returns the first whole number minus the second.

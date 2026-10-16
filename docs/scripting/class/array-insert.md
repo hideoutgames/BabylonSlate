@@ -1,3 +1,7 @@
+---
+node: array.insert
+---
+
 # Array Insert
 
 Returns a copy of an array with an item inserted at an index.

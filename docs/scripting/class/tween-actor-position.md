@@ -1,3 +1,7 @@
+---
+node: tween.actorPosition
+---
+
 # Tween Actor Position
 
 Moves an actor from position A to position B over Duration seconds.

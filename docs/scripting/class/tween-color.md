@@ -1,3 +1,7 @@
+---
+node: tween.color
+---
+
 # Tween Color
 
 Animates a Color variable from A to B, blending every colour channel.

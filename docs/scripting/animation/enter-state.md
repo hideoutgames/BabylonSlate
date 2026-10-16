@@ -1,3 +1,7 @@
+---
+node: anim.rule.enterState
+---
+
 # Enter State
 
 Decides whether the transition may enter its target state.

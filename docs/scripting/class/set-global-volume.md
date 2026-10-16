@@ -1,3 +1,7 @@
+---
+node: audio.setGlobalVolume
+---
+
 # Set Global Volume
 
 Sets the master volume of the selected Audio Mixer for the current session.

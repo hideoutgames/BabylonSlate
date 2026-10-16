@@ -1,3 +1,7 @@
+---
+node: array.first
+---
+
 # Array First
 
 Returns the first item of an array.

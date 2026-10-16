@@ -1,3 +1,7 @@
+---
+node: render-target.getFarClip
+---
+
 # Get Capture Far Clip
 
 Returns the far clip distance of a capture actor's camera.

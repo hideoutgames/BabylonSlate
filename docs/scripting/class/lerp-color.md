@@ -1,3 +1,7 @@
+---
+node: color.lerp
+---
+
 # Lerp Color
 
 Returns a colour blended between two colours, using Alpha as the mix amount.

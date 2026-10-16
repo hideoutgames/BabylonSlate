@@ -1,3 +1,7 @@
+---
+node: debug.reportCommand
+---
+
 # Report Command
 
 Sets the success flag and output text returned by the running console command.

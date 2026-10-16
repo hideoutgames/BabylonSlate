@@ -1,3 +1,7 @@
+---
+node: bt.blackboard.set
+---
+
 # Set Blackboard
 
 Stores a value under a key in the tree's Blackboard.

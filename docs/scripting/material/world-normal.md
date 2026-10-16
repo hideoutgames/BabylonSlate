@@ -1,3 +1,7 @@
+---
+node: input.worldNormal
+---
+
 # World Normal
 
 Returns the surface normal in world space.

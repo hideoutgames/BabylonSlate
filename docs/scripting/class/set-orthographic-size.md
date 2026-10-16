@@ -1,3 +1,7 @@
+---
+node: camera.setOrthographicSize
+---
+
 # Set Orthographic Size
 
 Sets half the height of an orthographic camera's view, in world units.

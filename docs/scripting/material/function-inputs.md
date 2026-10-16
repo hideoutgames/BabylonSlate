@@ -1,3 +1,7 @@
+---
+node: function.input
+---
+
 # Function Inputs
 
 Provides the values passed into a Material Function, with one output pin per declared input.

@@ -1,3 +1,7 @@
+---
+node: enum.select
+---
+
 # Select
 
 Returns the value wired to the option that matches an enum member.

@@ -1,3 +1,7 @@
+---
+node: flow.event.audioFinished
+---
+
 # Event On Audio Finished
 
 Runs when an Audio component finishes playing a sound.

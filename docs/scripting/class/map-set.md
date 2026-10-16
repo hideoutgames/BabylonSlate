@@ -1,3 +1,7 @@
+---
+node: map.set
+---
+
 # Map Set
 
 Returns a copy of a map with a key set to a value.

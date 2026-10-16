@@ -1,3 +1,7 @@
+---
+node: select.vec2
+---
+
 # Select Vector 2
 
 Returns one of two Vector 2 values, chosen by a Boolean condition.

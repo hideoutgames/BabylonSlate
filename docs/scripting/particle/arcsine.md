@@ -1,3 +1,7 @@
+---
+node: math.asin
+---
+
 # Arcsine
 
 Returns the arcsine of the input as an angle in radians.

@@ -1,3 +1,7 @@
+---
+node: color.nearlyEqual
+---
+
 # Color Nearly Equal
 
 Returns true when two colours are equal within a small tolerance.

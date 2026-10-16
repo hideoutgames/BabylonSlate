@@ -1,3 +1,7 @@
+---
+node: debug.drawSquare
+---
+
 # Draw Debug Square
 
 Draws a square outline at a world position.

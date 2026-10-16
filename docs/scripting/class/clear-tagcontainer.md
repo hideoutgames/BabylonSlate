@@ -1,3 +1,7 @@
+---
+node: tags.clear
+---
+
 # Clear TagContainer
 
 Returns a new, empty TagContainer, whatever the input holds.

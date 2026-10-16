@@ -1,3 +1,7 @@
+---
+node: const.vec2
+---
+
 # Vector 2
 
 Returns a fixed Vector 2 that you set in the **Inspector**.

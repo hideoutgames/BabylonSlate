@@ -1,3 +1,7 @@
+---
+node: string.toUpper
+---
+
 # To Upper
 
 Converts every letter in a string to upper case.

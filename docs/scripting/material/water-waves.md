@@ -1,3 +1,7 @@
+---
+node: input.waterWaves
+---
+
 # Water Waves
 
 Calculates animated wave displacement on the GPU, returning offset, height, normal and time for a water surface.

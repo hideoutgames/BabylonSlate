@@ -1,3 +1,7 @@
+---
+node: tween.vector4
+---
+
 # Tween Vector4
 
 Animates a Vector 4 variable from A to B over Duration seconds.

@@ -1,3 +1,7 @@
+---
+node: input.vertexPosition
+---
+
 # Vertex Position (Local)
 
 Returns the vertex position in the mesh's local space, including morph target changes.

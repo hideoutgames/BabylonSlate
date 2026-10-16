@@ -1,3 +1,7 @@
+---
+node: assets.unload
+---
+
 # Unload Asset
 
 Releases the load handles that include an asset and belong to the calling object.

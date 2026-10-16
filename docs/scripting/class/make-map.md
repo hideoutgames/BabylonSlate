@@ -1,3 +1,7 @@
+---
+node: map.make
+---
+
 # Make Map
 
 Builds a map from key and value pairs.

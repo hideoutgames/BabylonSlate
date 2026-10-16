@@ -1,3 +1,7 @@
+---
+node: math.randomBool
+---
+
 # Random Bool
 
 Returns true or false with equal chance.

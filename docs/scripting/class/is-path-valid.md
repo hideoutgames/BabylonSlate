@@ -1,3 +1,7 @@
+---
+node: navigation.isPathValid
+---
+
 # Is Path Valid
 
 Checks whether a walkable route exists between two points.

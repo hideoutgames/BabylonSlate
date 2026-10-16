@@ -1,3 +1,7 @@
+---
+node: flow.event.streamedSceneUnloaded
+---
+
 # Event On Streamed Scene Unloaded
 
 Runs on a Scene Subsystem when a streamed sub-scene is unloaded.

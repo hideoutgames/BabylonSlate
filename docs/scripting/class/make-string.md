@@ -1,3 +1,7 @@
+---
+node: literal.makeString
+---
+
 # Make String
 
 Returns a String value that you set on the node.

@@ -1,3 +1,7 @@
+---
+node: bt.task.fail
+---
+
 # Fail
 
 Finishes immediately and reports failure to its parent.

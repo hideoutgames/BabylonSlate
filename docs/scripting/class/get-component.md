@@ -1,3 +1,7 @@
+---
+node: component.get
+---
+
 # Get Component
 
 Returns the component of a given type on one actor.

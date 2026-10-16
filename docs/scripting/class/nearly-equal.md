@@ -1,3 +1,7 @@
+---
+node: math.compare
+---
+
 # Nearly Equal
 
 Returns true when two numbers differ by less than a very small amount.

@@ -1,3 +1,7 @@
+---
+node: tags.isValid
+---
+
 # Is Valid Tag
 
 Returns true when a Tag exists in the project's Tags.

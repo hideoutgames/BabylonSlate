@@ -1,3 +1,7 @@
+---
+node: math.min
+---
+
 # Minimum
 
 Returns the smaller of two values, component by component.

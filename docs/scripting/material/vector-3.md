@@ -1,3 +1,7 @@
+---
+node: const.vec3
+---
+
 # Vector 3
 
 Returns a fixed Vector 3 that you set in the **Inspector**.

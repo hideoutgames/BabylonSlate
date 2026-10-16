@@ -1,3 +1,7 @@
+---
+node: input.resetInput
+---
+
 # Reset Input Bindings
 
 Restores one Input Action or Input Axis to its authored bindings.

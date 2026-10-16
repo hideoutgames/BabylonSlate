@@ -1,3 +1,7 @@
+---
+node: tween.componentRotation
+---
+
 # Tween Component Rotation
 
 Rotates a component from rotation A to rotation B over Duration seconds.

@@ -1,3 +1,7 @@
+---
+node: render-target.getEnabled
+---
+
 # Get Capture Enabled
 
 Returns whether a Render Target Capture actor is allowed to capture.

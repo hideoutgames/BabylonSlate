@@ -1,3 +1,7 @@
+---
+node: render-target.setEveryFrame
+---
+
 # Set Capture Every Frame
 
 Sets whether a Render Target Capture actor updates every frame.

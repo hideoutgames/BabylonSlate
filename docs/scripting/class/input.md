@@ -1,3 +1,7 @@
+---
+node: flow.function.input
+---
+
 # Input
 
 Starts a function and provides the values its caller passed in.

@@ -1,3 +1,7 @@
+---
+node: tween.componentPosition
+---
+
 # Tween Component Position
 
 Moves a component from position A to position B over Duration seconds.

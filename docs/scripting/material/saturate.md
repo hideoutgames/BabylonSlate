@@ -1,3 +1,7 @@
+---
+node: math.saturate
+---
+
 # Saturate
 
 Limits Value to the range 0 to 1.

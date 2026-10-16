@@ -1,3 +1,7 @@
+---
+node: tween.textOutline
+---
+
 # Tween Text Outline
 
 Changes the outline width of a 2D text component from A to B over Duration seconds.

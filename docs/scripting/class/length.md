@@ -1,3 +1,7 @@
+---
+node: string.length
+---
+
 # Length
 
 Returns the number of characters in a string.

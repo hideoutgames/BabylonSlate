@@ -1,3 +1,7 @@
+---
+node: input.setGamepadRumble
+---
+
 # Set Gamepad Rumble
 
 Vibrates a gamepad for a set time.

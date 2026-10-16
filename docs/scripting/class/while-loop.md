@@ -1,3 +1,7 @@
+---
+node: flow.whileLoop
+---
+
 # While Loop
 
 Repeats Loop Body for as long as Condition is true.

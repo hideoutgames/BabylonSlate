@@ -1,3 +1,7 @@
+---
+node: input.cameraPosition
+---
+
 # Camera Position
 
 Returns the position of the camera in world space.

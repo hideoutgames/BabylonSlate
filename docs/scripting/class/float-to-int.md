@@ -1,3 +1,7 @@
+---
+node: casting.floatToInt
+---
+
 # Float To Int
 
 Converts a Float to an Integer by dropping the fractional part.

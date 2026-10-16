@@ -1,3 +1,7 @@
+---
+node: select.int
+---
+
 # Select Int
 
 Returns one of two Integer values, chosen by a Boolean condition.

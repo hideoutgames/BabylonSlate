@@ -1,3 +1,7 @@
+---
+node: flow.event.focusLeave
+---
+
 # Event On Focus Leave
 
 Runs when a 2D element loses focus.

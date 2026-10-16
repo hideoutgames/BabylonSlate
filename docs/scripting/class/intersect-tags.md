@@ -1,3 +1,7 @@
+---
+node: tags.intersection
+---
+
 # Intersect Tags
 
 Returns a TagContainer with only the Tags found in both TagContainers.

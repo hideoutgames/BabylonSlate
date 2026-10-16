@@ -1,3 +1,7 @@
+---
+node: assets.getHandleState
+---
+
 # Get Load Handle State
 
 Returns whether a load handle is Loading, Loaded, Failed or Released.

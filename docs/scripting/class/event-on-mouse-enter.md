@@ -1,3 +1,7 @@
+---
+node: flow.event.onMouseEnter
+---
+
 # Event On Mouse Enter
 
 Runs when the pointer moves onto a 2D Button.

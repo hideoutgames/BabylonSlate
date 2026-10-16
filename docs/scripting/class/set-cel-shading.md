@@ -1,3 +1,7 @@
+---
+node: scalability.setCelShading
+---
+
 # Set CEL Shading
 
 Changes CEL banding, specular highlights, light mixing and outlines.

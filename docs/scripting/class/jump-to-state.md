@@ -1,3 +1,7 @@
+---
+node: anim.actor.jumpToState
+---
+
 # Jump To State
 
 Switches an Animation Graph to a named state, skipping its transitions.

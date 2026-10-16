@@ -1,3 +1,7 @@
+---
+node: map.break
+---
+
 # Break Map
 
 Splits a map into an array of keys and an array of values.

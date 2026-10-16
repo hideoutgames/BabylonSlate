@@ -1,3 +1,7 @@
+---
+node: string.format
+---
+
 ::: v-pre
 # Format String
 

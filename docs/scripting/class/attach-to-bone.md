@@ -1,3 +1,7 @@
+---
+node: actor.attachToBone
+---
+
 # Attach To Bone
 
 Attaches an actor to a named bone of another actor's model so it follows that bone.

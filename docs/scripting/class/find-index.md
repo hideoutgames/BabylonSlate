@@ -1,3 +1,7 @@
+---
+node: array.find
+---
+
 # Find Index
 
 Returns the index of the first item equal to the given item.

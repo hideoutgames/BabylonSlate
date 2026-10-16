@@ -1,3 +1,7 @@
+---
+node: literal.toStringRotator
+---
+
 # To String (Rotator)
 
 Converts a Rotator to text that lists its pitch, roll and yaw.

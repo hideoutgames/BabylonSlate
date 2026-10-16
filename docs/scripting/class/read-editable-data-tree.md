@@ -1,3 +1,7 @@
+---
+node: editorData.readTree
+---
+
 # Read Editable Data Tree
 
 Returns the paths of every entry in a Data Tree, including unsaved edits.

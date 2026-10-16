@@ -1,3 +1,7 @@
+---
+node: flow.event.uiTextChanged
+---
+
 # Event On Text Changed
 
 Runs when the text in a 2D Text Input control changes.

@@ -1,3 +1,7 @@
+---
+node: rotator.lerp
+---
+
 # Lerp Rotator
 
 Blends between two rotators along the shortest turn, using Alpha as the amount.

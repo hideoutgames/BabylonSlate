@@ -1,3 +1,7 @@
+---
+node: array.length
+---
+
 # Array Length
 
 Returns how many items an array holds.

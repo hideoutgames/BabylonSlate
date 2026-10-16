@@ -1,3 +1,7 @@
+---
+node: render-target.getTextureTarget
+---
+
 # Get Texture Render Target
 
 Returns the Render Target that a Render Target Texture displays.

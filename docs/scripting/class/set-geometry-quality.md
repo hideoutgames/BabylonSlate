@@ -1,3 +1,7 @@
+---
+node: scalability.setGeometryQuality
+---
+
 # Set Geometry Quality
 
 Turns automatic Model level of detail on or off and scales when simpler levels take over.

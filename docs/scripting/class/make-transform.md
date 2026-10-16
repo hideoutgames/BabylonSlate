@@ -1,3 +1,7 @@
+---
+node: struct.makeTransform
+---
+
 # Make Transform
 
 Builds a transform from a location, a rotation and an optional scale.

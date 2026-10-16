@@ -1,3 +1,7 @@
+---
+node: boolean.not
+---
+
 # Boolean Not
 
 Returns the opposite of the input: true becomes false and false becomes true.

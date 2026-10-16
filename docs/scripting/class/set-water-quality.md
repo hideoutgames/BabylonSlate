@@ -1,3 +1,7 @@
+---
+node: scalability.setWaterQuality
+---
+
 # Set Water Quality
 
 Caps the rendering cost of water, including shading, mesh density, reflections and wave detail.

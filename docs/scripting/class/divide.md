@@ -1,3 +1,7 @@
+---
+node: math.div
+---
+
 # Divide
 
 Returns the first number divided by the second.

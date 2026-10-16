@@ -1,3 +1,7 @@
+---
+node: light.setIntensity
+---
+
 # Set Light Intensity
 
 Sets how bright a light is.

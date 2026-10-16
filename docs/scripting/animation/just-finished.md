@@ -1,3 +1,7 @@
+---
+node: anim.state.justFinished
+---
+
 # Just Finished
 
 Returns true only in the update where a non-looping clip reaches its end.

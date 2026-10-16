@@ -1,3 +1,7 @@
+---
+node: flow.event.sceneActorDestroyed
+---
+
 # Event On Scene Actor Destroyed
 
 Runs on a Scene Subsystem when an actor it saw spawn is destroyed.

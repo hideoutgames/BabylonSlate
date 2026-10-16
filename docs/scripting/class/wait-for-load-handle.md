@@ -1,3 +1,7 @@
+---
+node: assets.waitForHandle
+---
+
 # Wait For Load Handle
 
 Waits for a load handle to finish loading while gameplay continues.

@@ -1,3 +1,7 @@
+---
+node: vector.normalize4
+---
+
 # Normalize Vector4
 
 Returns the vector scaled to a length of 1, keeping its direction.

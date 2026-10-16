@@ -1,3 +1,7 @@
+---
+node: param.float
+---
+
 # Float Parameter
 
 Outputs a named Float that can be changed at runtime or overridden per Material Instance.

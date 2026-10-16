@@ -12,7 +12,7 @@ Two audiences, two places:
 Docs are part of the definition of done. Update them in the same branch/PR; never defer them.
 
 - **User-visible change** (feature, setting, UI name, menu path, default, limit) → update the affected `docs/` pages.
-- **Node added, removed, renamed or changed** → update its page under `docs/scripting/<graph>/` (`class`, `material`, `particle`, `animation`, `behaviour-tree`) and the graph's `index.md`. Pin tables must match the catalog.
+- **Node added, removed, renamed or changed** → update its page under `docs/scripting/<graph>/` (`class`, `material`, `particle`, `animation`, `behaviour-tree`) and the graph's `index.md`. Each node page names its catalog node in `node:` frontmatter, and its Inputs and Outputs rows must be that node's pins ([docs site](docs-site.md#node-reference-pages)).
 - **Engine component or asset type added or removed** → add or remove its page under `docs/components/` or `docs/assets/` and its row in that folder's `index.md`.
 - **Architecture, data format, invariant or integration change** → update the matching file in `.agents/reference/` (`engine-plan.md`, `architecture.md`, `architecture/<subsystem>.md`).
 - **Reusable Editor UI** change → update `.agents/reference/components.md` ([editor-ui-components.md](editor-ui-components.md)).

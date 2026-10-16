@@ -1,3 +1,7 @@
+---
+node: bt.finish
+---
+
 # Finish Execute
 
 Ends the running task and reports success or failure to the Behaviour Tree.

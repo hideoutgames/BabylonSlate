@@ -1,3 +1,7 @@
+---
+node: rotator.forward
+---
+
 # Get Forward Vector
 
 Returns the forward direction of a rotator as a unit vector.

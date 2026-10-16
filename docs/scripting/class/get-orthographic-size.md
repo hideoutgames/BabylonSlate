@@ -1,3 +1,7 @@
+---
+node: camera.getOrthographicSize
+---
+
 # Get Orthographic Size
 
 Returns half the height of an orthographic camera's view, in world units.

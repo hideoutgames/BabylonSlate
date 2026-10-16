@@ -1,3 +1,7 @@
+---
+node: tags.equals
+---
+
 # Equal Tag
 
 Returns true when two Tags are the same Tag.

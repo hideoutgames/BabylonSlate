@@ -1,3 +1,7 @@
+---
+node: anim.event.update
+---
+
 # Event Update Animation
 
 Runs every update, before the state machine checks its transitions.

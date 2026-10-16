@@ -1,3 +1,7 @@
+---
+node: scalability.setTextureQuality
+---
+
 # Set Texture Quality
 
 Sets texture detail bias, anisotropic filtering and the texture memory budget.

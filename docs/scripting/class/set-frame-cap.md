@@ -1,3 +1,7 @@
+---
+node: scalability.setFrameCap
+---
+
 # Set Frame Cap
 
 Limits how many frames per second the game presents.

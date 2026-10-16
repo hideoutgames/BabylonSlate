@@ -1,3 +1,7 @@
+---
+node: array.removeItem
+---
+
 # Remove Item
 
 Returns a copy of an array with the first matching item removed.

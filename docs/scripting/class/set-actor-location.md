@@ -1,3 +1,7 @@
+---
+node: transform.setLocation
+---
+
 # Set Actor Location
 
 Moves an actor to a new location.

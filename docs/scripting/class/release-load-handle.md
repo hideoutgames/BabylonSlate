@@ -1,3 +1,7 @@
+---
+node: assets.releaseHandle
+---
+
 # Release Load Handle
 
 Cancels a load that is still pending and releases the handle's hold on its assets.

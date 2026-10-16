@@ -1,3 +1,7 @@
+---
+node: component.getNamed
+---
+
 # Get Component Ref
 
 Returns a component of an actor as a typed reference.

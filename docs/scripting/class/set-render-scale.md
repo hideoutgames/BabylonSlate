@@ -1,3 +1,7 @@
+---
+node: scalability.setRenderScale
+---
+
 # Set Render Scale
 
 Sets a fixed render scale and turns off dynamic resolution.

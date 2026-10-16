@@ -1,3 +1,7 @@
+---
+node: input.system.cameraPosition
+---
+
 # Camera Position
 
 Returns the world-space position of the active camera.

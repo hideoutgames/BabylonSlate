@@ -1,3 +1,7 @@
+---
+node: quat.break
+---
+
 # Break Quaternion
 
 Splits a quaternion into its X, Y, Z and W components.

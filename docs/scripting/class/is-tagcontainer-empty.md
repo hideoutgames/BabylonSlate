@@ -1,3 +1,7 @@
+---
+node: tags.isEmpty
+---
+
 # Is TagContainer Empty
 
 Returns true when a TagContainer holds no Tags.

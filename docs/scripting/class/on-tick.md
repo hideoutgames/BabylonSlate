@@ -1,3 +1,7 @@
+---
+node: bt.event.tick
+---
+
 # On Tick
 
 Runs every update while a task is active, or at each interval for a service.

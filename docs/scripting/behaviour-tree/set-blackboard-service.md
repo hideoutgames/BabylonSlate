@@ -1,3 +1,7 @@
+---
+node: bt.service.setBlackboard
+---
+
 # Set Blackboard
 
 Writes a value to a Blackboard key at regular intervals while its node is active.

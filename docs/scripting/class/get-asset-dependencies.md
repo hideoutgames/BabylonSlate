@@ -1,3 +1,7 @@
+---
+node: assetRegistry.getDependencies
+---
+
 # Get Asset Dependencies
 
 Lists the catalog assets that an asset references, sorted by path.

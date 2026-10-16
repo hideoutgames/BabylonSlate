@@ -1,3 +1,7 @@
+---
+node: editorData.addEntry
+---
+
 # Add Data Entry
 
 Adds a new entry to a Data Tree under a parent entry.

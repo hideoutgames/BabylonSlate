@@ -1,3 +1,7 @@
+---
+node: bt.composite.sequence
+---
+
 # Sequence
 
 Runs its children from left to right until one fails.

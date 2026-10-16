@@ -1,3 +1,7 @@
+---
+node: select.bool
+---
+
 # Select Bool
 
 Returns one of two Boolean values, chosen by a Boolean condition.

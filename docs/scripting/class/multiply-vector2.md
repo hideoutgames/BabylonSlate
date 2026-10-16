@@ -1,3 +1,7 @@
+---
+node: vector.mul2
+---
+
 # Multiply Vector2
 
 Multiplies two vectors together, component by component.

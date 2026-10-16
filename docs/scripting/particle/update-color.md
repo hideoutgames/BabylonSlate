@@ -1,3 +1,7 @@
+---
+node: update.color
+---
+
 # Update Color
 
 Sets the colour of every particle each frame.

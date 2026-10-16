@@ -1,3 +1,7 @@
+---
+node: logic.greaterThan
+---
+
 # Greater Than
 
 Returns 1 where A is greater than B and 0 otherwise.

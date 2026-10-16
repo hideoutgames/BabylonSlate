@@ -1,3 +1,7 @@
+---
+node: transform.get
+---
+
 # Get Actor Transform
 
 Returns an actor's location, rotation and scale as one transform.

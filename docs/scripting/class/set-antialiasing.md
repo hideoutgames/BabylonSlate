@@ -1,3 +1,7 @@
+---
+node: scalability.setAntialiasing
+---
+
 # Set Antialiasing
 
 Turns FXAA antialiasing on or off for the current session.

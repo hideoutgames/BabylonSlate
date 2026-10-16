@@ -1,3 +1,7 @@
+---
+node: flow.event.scalabilityChanged
+---
+
 # Event Scalability Changed
 
 Runs when the renderer confirms or rejects the latest quality request.

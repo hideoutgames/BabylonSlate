@@ -1,3 +1,7 @@
+---
+node: input.system.time
+---
+
 # Time
 
 Returns the seconds since the emitter started.

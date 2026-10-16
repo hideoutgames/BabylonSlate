@@ -1,3 +1,7 @@
+---
+node: scalability.setShadowQuality
+---
+
 # Set Shadow Quality
 
 Sets shadow map size, filtering, distance and the limits for local-light shadows.

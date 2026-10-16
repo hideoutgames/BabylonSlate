@@ -1,3 +1,7 @@
+---
+node: struct.makeColor
+---
+
 # Make Color
 
 Builds a colour from red, green, blue and alpha values.

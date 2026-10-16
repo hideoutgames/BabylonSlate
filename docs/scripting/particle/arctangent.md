@@ -1,3 +1,7 @@
+---
+node: math.atan
+---
+
 # Arctangent
 
 Returns the arctangent of the input as an angle in radians.

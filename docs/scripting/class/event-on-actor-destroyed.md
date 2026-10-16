@@ -1,3 +1,7 @@
+---
+node: flow.event.destroyed
+---
+
 # Event On Actor Destroyed
 
 Runs when the actor this graph belongs to is destroyed.

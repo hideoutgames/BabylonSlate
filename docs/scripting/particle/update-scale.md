@@ -1,3 +1,7 @@
+---
+node: update.scale
+---
+
 # Update Scale
 
 Sets the width and height scale of every particle each frame.

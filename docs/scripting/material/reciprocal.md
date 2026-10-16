@@ -1,3 +1,7 @@
+---
+node: math.reciprocal
+---
+
 # Reciprocal
 
 Returns the result of dividing 1 by the input.

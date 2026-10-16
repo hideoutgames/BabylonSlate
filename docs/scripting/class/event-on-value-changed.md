@@ -1,3 +1,7 @@
+---
+node: flow.event.uiValueChanged
+---
+
 # Event On Value Changed
 
 Runs when the value of a slider, numeric input or progress bar changes.

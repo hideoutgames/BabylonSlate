@@ -1,3 +1,7 @@
+---
+node: vector.break4
+---
+
 # Break Vector4
 
 Splits a Vector 4 into its X, Y, Z and W numbers.

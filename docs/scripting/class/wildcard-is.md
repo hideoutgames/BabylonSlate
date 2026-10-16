@@ -1,3 +1,7 @@
+---
+node: wildcard.is
+---
+
 # Wildcard Is
 
 Returns true when a value's type name matches the given tag.

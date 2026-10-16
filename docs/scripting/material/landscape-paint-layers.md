@@ -1,3 +1,7 @@
+---
+node: landscape.layers
+---
+
 # Landscape Paint Layers
 
 Returns the paint weight of each of the four landscape paint layers at each point.

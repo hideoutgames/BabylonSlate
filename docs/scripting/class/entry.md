@@ -1,3 +1,7 @@
+---
+node: flow.entry
+---
+
 # Entry
 
 Starts an execution chain that no game event triggers.

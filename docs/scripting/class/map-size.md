@@ -1,3 +1,7 @@
+---
+node: map.size
+---
+
 # Map Size
 
 Returns how many key and value pairs a map holds.

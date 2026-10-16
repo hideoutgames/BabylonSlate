@@ -1,3 +1,7 @@
+---
+node: saveGame.deleteSave
+---
+
 # Delete Save
 
 Deletes a saved slot, including the older copies kept for migration.

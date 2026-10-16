@@ -1,3 +1,7 @@
+---
+node: input.sceneNormal
+---
+
 # Scene Normal
 
 Returns the world-space normal of the scene geometry at a position on the screen.

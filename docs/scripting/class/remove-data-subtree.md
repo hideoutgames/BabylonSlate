@@ -1,3 +1,7 @@
+---
+node: editorData.removeEntry
+---
+
 # Remove Data Subtree
 
 Removes an entry and everything below it from a Data Tree.

@@ -1,3 +1,7 @@
+---
+node: physics.lineTrace
+---
+
 # Line Trace
 
 Casts a ray from a start point to an end point and reports the first thing it hits.

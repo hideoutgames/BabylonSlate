@@ -1,3 +1,7 @@
+---
+node: texture.sample
+---
+
 # Texture Sample
 
 Samples a texture at UV and returns its colour, its separate channels and the texture itself.

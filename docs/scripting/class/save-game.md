@@ -1,3 +1,7 @@
+---
+node: saveGame.saveGame
+---
+
 # Save Game
 
 Writes the current save data to a slot.

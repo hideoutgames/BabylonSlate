@@ -1,3 +1,7 @@
+---
+node: math.notEquals
+---
+
 # Not Equal
 
 Returns true when two numbers are not exactly equal.

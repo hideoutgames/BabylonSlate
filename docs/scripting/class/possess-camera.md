@@ -1,3 +1,7 @@
+---
+node: camera.possess
+---
+
 # Possess Camera
 
 Makes the camera on an actor the view the player sees.

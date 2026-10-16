@@ -1,3 +1,7 @@
+---
+node: bt.blackboard.get
+---
+
 # Get Blackboard
 
 Returns the value stored under a key in the tree's Blackboard.

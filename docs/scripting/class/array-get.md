@@ -1,3 +1,7 @@
+---
+node: array.get
+---
+
 # Array Get
 
 Returns the item at an index, and whether that index exists.

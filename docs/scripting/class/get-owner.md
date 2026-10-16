@@ -1,3 +1,7 @@
+---
+node: actor.getOwner
+---
+
 # Get Owner
 
 Returns the actor that owns another actor.

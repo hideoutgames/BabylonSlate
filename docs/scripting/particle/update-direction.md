@@ -1,3 +1,7 @@
+---
+node: update.direction
+---
+
 # Update Direction
 
 Sets the velocity of every particle each frame.

@@ -1,3 +1,7 @@
+---
+node: navigation.addObstacle
+---
+
 # Add Obstacle
 
 Blocks part of the navigation mesh with an unwalkable box or cylinder.

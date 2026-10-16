@@ -1,3 +1,7 @@
+---
+node: math.floor
+---
+
 # Floor
 
 Rounds the input down to the nearest whole number.

@@ -1,3 +1,7 @@
+---
+node: scene-layer.clear
+---
+
 # Clear Scene Layer
 
 Removes every Scene Layer and all of their actors.

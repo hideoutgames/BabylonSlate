@@ -1,3 +1,7 @@
+---
+node: input.removeActionBinding
+---
+
 # Remove Input Action Binding
 
 Removes every binding of a key from an Input Action.

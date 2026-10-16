@@ -1,3 +1,7 @@
+---
+node: input.vertexNormalWS
+---
+
 # VertexNormalWS
 
 Returns the vertex normal in world space, scaled to a length of 1.

@@ -1,3 +1,7 @@
+---
+node: struct.makeRotator
+---
+
 # Make Rotator
 
 Builds a rotator from pitch, yaw and roll angles in degrees.

@@ -1,3 +1,7 @@
+---
+node: data.getChildren
+---
+
 # Get Data Children
 
 Returns the paths of an entry's immediate children, in sibling order.

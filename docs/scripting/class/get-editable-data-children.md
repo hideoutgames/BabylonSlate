@@ -1,3 +1,7 @@
+---
+node: editorData.getChildren
+---
+
 # Get Editable Data Children
 
 Returns the paths of an entry's immediate children in order, including unsaved edits.

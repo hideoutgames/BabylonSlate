@@ -1,3 +1,7 @@
+---
+node: anim.state.normalisedTime
+---
+
 # Normalised Time
 
 Returns how far through its clip the current state is, from 0 to 1.

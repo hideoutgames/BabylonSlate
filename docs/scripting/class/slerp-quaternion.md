@@ -1,3 +1,7 @@
+---
+node: quat.slerp
+---
+
 # Slerp Quaternion
 
 Blends between two quaternions along the shortest path, using Alpha as the amount.

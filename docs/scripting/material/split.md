@@ -1,3 +1,7 @@
+---
+node: vector.split
+---
+
 # Split
 
 Splits a Vector 2, Vector 3 or Color into separate Float components.

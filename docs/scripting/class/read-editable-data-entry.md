@@ -1,3 +1,7 @@
+---
+node: editorData.readEntry
+---
+
 # Read Editable Data Entry
 
 Reads the values of one Data Tree entry, including unsaved edits.

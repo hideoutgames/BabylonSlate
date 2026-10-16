@@ -1,3 +1,7 @@
+---
+node: render-target.setOnlyActors
+---
+
 # Set Capture Only Actors
 
 Sets whether a capture draws only the actors in its list.

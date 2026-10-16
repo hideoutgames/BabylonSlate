@@ -1,3 +1,7 @@
+---
+node: debug.drawFrustum
+---
+
 # Draw Debug Frustum
 
 Draws a camera view frustum from a position and rotation.

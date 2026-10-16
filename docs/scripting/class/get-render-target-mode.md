@@ -1,3 +1,7 @@
+---
+node: render-target.getMode
+---
+
 # Get Render Target Mode
 
 Returns what a Render Target records: Scene Color, Depth Pass or World Normal.

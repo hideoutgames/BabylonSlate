@@ -1,3 +1,7 @@
+---
+node: transform.getLocation
+---
+
 # Get Actor Location
 
 Returns an actor's location as a vector.

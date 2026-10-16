@@ -1,3 +1,7 @@
+---
+node: debug.drawPoint
+---
+
 # Draw Debug Point
 
 Draws a small three-axis cross at a world position.

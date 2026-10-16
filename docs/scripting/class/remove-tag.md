@@ -1,3 +1,7 @@
+---
+node: tags.remove
+---
+
 # Remove Tag
 
 Returns a new TagContainer without a given Tag.

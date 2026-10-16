@@ -1,3 +1,7 @@
+---
+node: array.isValidIndex
+---
+
 # Is Valid Index
 
 Returns true when an index points at an item in an array.

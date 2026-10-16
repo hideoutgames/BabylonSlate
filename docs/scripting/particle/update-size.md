@@ -1,3 +1,7 @@
+---
+node: update.size
+---
+
 # Update Size
 
 Sets the size of every particle each frame.

@@ -1,3 +1,7 @@
+---
+node: flow.event.sceneActorSpawned
+---
+
 # Event On Scene Actor Spawned
 
 Runs on a Scene Subsystem when an actor in the scene is about to begin play.

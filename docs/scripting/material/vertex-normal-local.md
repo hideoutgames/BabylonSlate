@@ -1,3 +1,7 @@
+---
+node: input.vertexNormal
+---
+
 # Vertex Normal (Local)
 
 Returns the vertex normal in the mesh's local space, including morph target changes.

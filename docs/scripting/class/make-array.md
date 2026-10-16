@@ -1,3 +1,7 @@
+---
+node: array.make
+---
+
 # Make Array
 
 Builds an array from the item inputs you add.

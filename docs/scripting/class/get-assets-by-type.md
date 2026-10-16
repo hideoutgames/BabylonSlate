@@ -1,3 +1,7 @@
+---
+node: assetRegistry.getAssetsByType
+---
+
 # Get Assets By Type
 
 Lists the assets of one type, sorted by path.

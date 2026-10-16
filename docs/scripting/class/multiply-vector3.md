@@ -1,3 +1,7 @@
+---
+node: vector.mul3
+---
+
 # Multiply Vector3
 
 Multiplies two vectors together, component by component.

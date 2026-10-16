@@ -1,3 +1,7 @@
+---
+node: transform.getRotation
+---
+
 # Get Actor Rotation
 
 Returns an actor's rotation as a rotator in degrees.

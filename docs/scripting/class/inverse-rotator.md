@@ -1,3 +1,7 @@
+---
+node: rotator.inverse
+---
+
 # Inverse Rotator
 
 Returns the rotation that undoes a given rotator.

@@ -1,3 +1,7 @@
+---
+node: particles.stop
+---
+
 # Stop Particles
 
 Stops the particle systems on an actor from emitting.

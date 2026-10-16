@@ -1,3 +1,7 @@
+---
+node: quat.inverse
+---
+
 # Inverse Quaternion
 
 Returns the quaternion that undoes a rotation.

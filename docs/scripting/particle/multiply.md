@@ -1,3 +1,7 @@
+---
+node: math.multiply
+---
+
 # Multiply
 
 Multiplies two values together, component by component.

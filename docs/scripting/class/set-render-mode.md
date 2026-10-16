@@ -1,3 +1,7 @@
+---
+node: scalability.setRenderMode
+---
+
 # Set Render Mode
 
 Switches between PBR and CEL rendering for the current session.

@@ -1,3 +1,7 @@
+---
+node: anim.state.durationSeconds
+---
+
 # Duration Seconds
 
 Returns the length in seconds of the current state's clip.

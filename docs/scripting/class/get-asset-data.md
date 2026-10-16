@@ -1,3 +1,7 @@
+---
+node: assetRegistry.getAssetData
+---
+
 # Get Asset Data
 
 Looks up an asset in the packaged asset catalog and returns its details.

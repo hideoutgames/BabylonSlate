@@ -1,3 +1,7 @@
+---
+node: flow.event.movementStarted
+---
+
 # Event On Movement Started
 
 Runs when the actor's Movement component starts moving horizontally.

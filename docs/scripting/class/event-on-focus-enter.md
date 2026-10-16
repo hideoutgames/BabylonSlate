@@ -1,3 +1,7 @@
+---
+node: flow.event.focusEnter
+---
+
 # Event On Focus Enter
 
 Runs when a 2D element gains focus.

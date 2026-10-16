@@ -1,3 +1,7 @@
+---
+node: flow.event.sceneOpen
+---
+
 # Event On Scene Open
 
 Runs when a scene is opened in the editor.

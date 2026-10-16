@@ -1,3 +1,7 @@
+---
+node: flow.event.editorBeginPlay
+---
+
 # Event Editor On Begin Play
 
 Runs when the editor loads an Editor Utility Object.

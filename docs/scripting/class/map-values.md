@@ -1,3 +1,7 @@
+---
+node: map.values
+---
+
 # Map Values
 
 Returns all values of a map as an array.

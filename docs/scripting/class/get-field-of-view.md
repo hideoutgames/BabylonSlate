@@ -1,3 +1,7 @@
+---
+node: camera.getFieldOfView
+---
+
 # Get Field Of View
 
 Returns a camera's field of view in degrees.

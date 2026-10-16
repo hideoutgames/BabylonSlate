@@ -1,3 +1,7 @@
+---
+node: assets.getLoadState
+---
+
 # Get Asset Load State
 
 Returns whether an asset is Unloaded, Loading, Loaded or Failed.

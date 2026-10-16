@@ -1,3 +1,7 @@
+---
+node: tags.add
+---
+
 # Add Tag
 
 Returns a new TagContainer with a Tag added.

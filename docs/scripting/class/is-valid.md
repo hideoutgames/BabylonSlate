@@ -1,3 +1,7 @@
+---
+node: actor.isValid
+---
+
 # Is Valid
 
 Returns true when an object reference points to an object, and false when it is empty.

@@ -1,3 +1,7 @@
+---
+node: particle.create
+---
+
 # Create Particle
 
 Starts the Particle chain and sets each new particle's speed, lifetime, colour, size and angle.

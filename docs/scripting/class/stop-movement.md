@@ -1,3 +1,7 @@
+---
+node: navigation.stopMovement
+---
+
 # Stop Movement
 
 Stops an actor that is walking along a navigation path.

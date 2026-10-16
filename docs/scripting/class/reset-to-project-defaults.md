@@ -1,3 +1,7 @@
+---
+node: scalability.reset
+---
+
 # Reset to Project Defaults
 
 Clears all temporary quality and rendering changes made during this session.

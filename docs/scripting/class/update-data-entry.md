@@ -1,3 +1,7 @@
+---
+node: editorData.updateEntry
+---
+
 # Update Data Entry
 
 Changes the values of an existing Data Tree entry.

@@ -1,3 +1,7 @@
+---
+node: material.setMaterialInstance
+---
+
 # Set Material Instance
 
 Assigns a Material Instance to a mesh component and returns its Material Object.

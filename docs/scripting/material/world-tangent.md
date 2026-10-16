@@ -1,3 +1,7 @@
+---
+node: input.worldTangent
+---
+
 # World Tangent
 
 Returns the surface tangent direction in world space, scaled to a length of 1.

@@ -1,3 +1,7 @@
+---
+node: actor.getParent
+---
+
 # Get Parent
 
 Returns the actor that another actor is attached to.

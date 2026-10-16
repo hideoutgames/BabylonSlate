@@ -1,3 +1,7 @@
+---
+node: anim.state.looping
+---
+
 # Is Looping
 
 Returns whether the current state's clip loops.

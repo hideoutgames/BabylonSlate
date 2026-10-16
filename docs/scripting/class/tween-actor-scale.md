@@ -1,3 +1,7 @@
+---
+node: tween.actorScale
+---
+
 # Tween Actor Scale
 
 Scales an actor from scale A to scale B over Duration seconds.

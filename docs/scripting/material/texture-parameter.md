@@ -1,3 +1,7 @@
+---
+node: param.texture
+---
+
 # Texture Parameter
 
 Outputs a named texture that can be changed at runtime or overridden per Material Instance.

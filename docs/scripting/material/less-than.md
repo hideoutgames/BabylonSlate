@@ -1,3 +1,7 @@
+---
+node: logic.lessThan
+---
+
 # Less Than
 
 Returns 1 where A is less than B and 0 otherwise.

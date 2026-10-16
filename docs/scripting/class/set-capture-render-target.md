@@ -1,3 +1,7 @@
+---
+node: render-target.setRenderTarget
+---
+
 # Set Capture Render Target
 
 Changes the Render Target that a Render Target Capture actor draws into.

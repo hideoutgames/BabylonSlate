@@ -1,3 +1,7 @@
+---
+node: literal.toStringColor
+---
+
 # To String (Color)
 
 Converts a Color to text that lists its four components.

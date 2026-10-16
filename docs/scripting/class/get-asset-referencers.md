@@ -1,3 +1,7 @@
+---
+node: assetRegistry.getReferencers
+---
+
 # Get Asset Referencers
 
 Lists the catalog assets that reference an asset, sorted by path.

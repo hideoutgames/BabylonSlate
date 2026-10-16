@@ -1,3 +1,7 @@
+---
+node: array.lastIndex
+---
+
 # Last Index
 
 Returns the index of the last item in an array.

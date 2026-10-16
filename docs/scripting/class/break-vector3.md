@@ -1,3 +1,7 @@
+---
+node: vector.break3
+---
+
 # Break Vector3
 
 Splits a Vector 3 into its X, Y and Z numbers.

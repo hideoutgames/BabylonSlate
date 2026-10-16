@@ -1,3 +1,7 @@
+---
+node: saveGame.registerMigration
+---
+
 # Register Save Migration
 
 Registers a step that upgrades saves from an older Save Game schema version.

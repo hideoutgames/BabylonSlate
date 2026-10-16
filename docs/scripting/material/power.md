@@ -1,3 +1,7 @@
+---
+node: math.pow
+---
+
 # Power
 
 Raises a base to the power of an exponent.

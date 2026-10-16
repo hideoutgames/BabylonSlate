@@ -1,3 +1,7 @@
+---
+node: math.mod
+---
+
 # Modulo
 
 Returns the remainder after dividing one Float by another.

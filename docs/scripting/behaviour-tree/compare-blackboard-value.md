@@ -1,3 +1,7 @@
+---
+node: bt.decorator.compareBlackboardValue
+---
+
 # Compare Blackboard Value
 
 Lets a node run only while a Blackboard key compares true against a value.

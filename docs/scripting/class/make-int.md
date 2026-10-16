@@ -1,3 +1,7 @@
+---
+node: literal.makeInt
+---
+
 # Make Int
 
 Returns an Integer value that you set on the node.

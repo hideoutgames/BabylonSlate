@@ -1,3 +1,7 @@
+---
+node: flow.event.uiSelectionChanged
+---
+
 # Event On Selection Changed
 
 Runs when the selected option of a 2D Dropdown changes.

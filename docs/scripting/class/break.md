@@ -1,3 +1,7 @@
+---
+node: flow.break
+---
+
 # Break
 
 Leaves the loop it is inside and continues from that loop's Completed output.

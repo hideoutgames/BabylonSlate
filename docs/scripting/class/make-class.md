@@ -1,3 +1,7 @@
+---
+node: literal.makeClass
+---
+
 # Make Class
 
 Returns a class that you pick on the node.

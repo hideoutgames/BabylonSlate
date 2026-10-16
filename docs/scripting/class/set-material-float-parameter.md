@@ -1,3 +1,7 @@
+---
+node: material.setFloatParameter
+---
+
 # Set Material Float Parameter
 
 Sets a named Float parameter on a Material Object.

@@ -1,3 +1,7 @@
+---
+node: array.slice
+---
+
 # Array Slice
 
 Returns a new array holding the items from a start index up to an end index.

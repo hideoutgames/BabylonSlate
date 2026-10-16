@@ -1,3 +1,7 @@
+---
+node: particle.output
+---
+
 # Emitter Output
 
 Ends the Particle chain and sets how many particles the emitter spawns each second.

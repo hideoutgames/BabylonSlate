@@ -1,3 +1,7 @@
+---
+node: flow.gate
+---
+
 # Gate
 
 Passes execution through only while the gate is open.

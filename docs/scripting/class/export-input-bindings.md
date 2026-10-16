@@ -1,3 +1,7 @@
+---
+node: input.exportBindings
+---
+
 # Export Input Bindings
 
 Returns the player's binding changes as text that can be saved.

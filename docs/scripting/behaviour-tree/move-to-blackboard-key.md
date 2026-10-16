@@ -1,3 +1,7 @@
+---
+node: bt.task.moveToBlackboardKey
+---
+
 # Move To Blackboard Key
 
 Moves the actor to the position stored in a Blackboard key.

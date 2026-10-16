@@ -1,3 +1,7 @@
+---
+node: assetRegistry.folderHasAssets
+---
+
 # Folder Has Assets
 
 Returns true when a folder holds at least one packaged asset.

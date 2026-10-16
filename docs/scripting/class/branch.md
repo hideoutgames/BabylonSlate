@@ -1,3 +1,7 @@
+---
+node: flow.branch
+---
+
 # Branch
 
 Runs one of two paths depending on a condition.

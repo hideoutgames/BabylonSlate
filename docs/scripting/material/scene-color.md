@@ -1,3 +1,7 @@
+---
+node: input.sceneColor
+---
+
 # Scene Color
 
 Returns the colour of the rendered scene at a position on the screen.

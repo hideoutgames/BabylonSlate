@@ -1,3 +1,7 @@
+---
+node: render-target.getFieldOfView
+---
+
 # Get Capture Field Of View
 
 Returns the field of view of a capture actor's camera, in degrees.

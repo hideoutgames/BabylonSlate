@@ -1,3 +1,7 @@
+---
+node: input.worldPosition
+---
+
 # World Position
 
 Returns the position of the surface point in world space, in metres.

@@ -1,3 +1,7 @@
+---
+node: editorData.moveEntry
+---
+
 # Move Data Subtree
 
 Moves an entry and its children under a new parent in a Data Tree.

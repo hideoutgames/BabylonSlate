@@ -1,3 +1,7 @@
+---
+node: scalability.setResolutionQuality
+---
+
 # Set Resolution Quality
 
 Sets render scale, dynamic resolution limits and the target frame rate.

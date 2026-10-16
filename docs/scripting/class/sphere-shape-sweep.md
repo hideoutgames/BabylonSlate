@@ -1,3 +1,7 @@
+---
+node: physics.shapeSweep
+---
+
 # Sphere Shape Sweep
 
 Sweeps a sphere from a start point to an end point and reports the first hit.

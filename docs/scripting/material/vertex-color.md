@@ -1,3 +1,7 @@
+---
+node: input.vertexColor
+---
+
 # Vertex Color
 
 Returns the vertex colour painted on the mesh, including alpha.

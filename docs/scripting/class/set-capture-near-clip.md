@@ -1,3 +1,7 @@
+---
+node: render-target.setNearClip
+---
+
 # Set Capture Near Clip
 
 Sets the near clip distance of a capture actor's camera.

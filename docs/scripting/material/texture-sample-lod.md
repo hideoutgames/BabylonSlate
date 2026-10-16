@@ -1,3 +1,7 @@
+---
+node: texture.sampleLod
+---
+
 # Texture Sample LOD
 
 Samples a texture at a chosen mip level instead of the level the GPU would pick.

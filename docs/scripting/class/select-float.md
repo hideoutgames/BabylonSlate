@@ -1,3 +1,7 @@
+---
+node: select.float
+---
+
 # Select Float
 
 Returns one of two Float values, chosen by a Boolean condition.

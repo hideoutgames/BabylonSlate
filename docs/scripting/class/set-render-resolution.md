@@ -1,3 +1,7 @@
+---
+node: scalability.setResolution
+---
+
 # Set Render Resolution
 
 Locks the rendered output to a fixed width and height, with black bars if needed.

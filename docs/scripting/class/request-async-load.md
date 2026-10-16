@@ -1,3 +1,7 @@
+---
+node: assets.requestLoad
+---
+
 # Request Async Load
 
 Starts loading assets in the background and returns a handle at once, without waiting.

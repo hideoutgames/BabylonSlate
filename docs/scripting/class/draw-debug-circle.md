@@ -1,3 +1,7 @@
+---
+node: debug.drawCircle
+---
+
 # Draw Debug Circle
 
 Draws a circle outline at a world position.

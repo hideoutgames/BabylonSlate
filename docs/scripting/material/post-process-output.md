@@ -1,3 +1,7 @@
+---
+node: output.postProcess
+---
+
 # Post Process Output
 
 Sets the colour of each pixel in a post-process pass.

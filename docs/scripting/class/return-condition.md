@@ -1,3 +1,7 @@
+---
+node: bt.returnCondition
+---
+
 # Return Condition
 
 Sets whether a decorator allows its branch to run.

@@ -1,3 +1,7 @@
+---
+node: input.axisEvent
+---
+
 # Event Input Axis
 
 Runs when a chosen Input Axis moves away from zero, stays active or returns to zero.

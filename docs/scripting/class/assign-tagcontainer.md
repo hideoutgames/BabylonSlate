@@ -1,3 +1,7 @@
+---
+node: tags.assignContainer
+---
+
 # Assign TagContainer
 
 Assigns a TagContainer to a variable and returns the assigned TagContainer.

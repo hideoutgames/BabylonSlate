@@ -1,3 +1,7 @@
+---
+node: input.uv
+---
+
 # UV
 
 Returns the texture coordinates of the surface, particle quad or text glyph being drawn.

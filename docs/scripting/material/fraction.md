@@ -1,3 +1,7 @@
+---
+node: math.fract
+---
+
 # Fraction
 
 Returns the part of the input after the decimal point.

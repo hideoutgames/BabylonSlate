@@ -1,3 +1,7 @@
+---
+node: anim.state.loopCount
+---
+
 # Loop Count
 
 Returns how many times the current clip has looped since the state started.

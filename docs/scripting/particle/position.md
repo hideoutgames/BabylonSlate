@@ -1,3 +1,7 @@
+---
+node: input.contextual.position
+---
+
 # Position
 
 Returns the current position of the particle in world space.

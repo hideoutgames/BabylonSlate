@@ -1,3 +1,7 @@
+---
+node: flow.event.uiTextSubmitted
+---
+
 # Event On Text Submitted
 
 Runs when the player confirms the text in a 2D Text Input control.

@@ -1,3 +1,7 @@
+---
+node: flow.event.sceneSaved
+---
+
 # Event On Scene Saved
 
 Runs when a scene is saved in the editor.

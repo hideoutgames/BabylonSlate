@@ -1,3 +1,7 @@
+---
+node: math.mul
+---
+
 # Multiply
 
 Returns the product of two numbers.

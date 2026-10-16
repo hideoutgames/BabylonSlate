@@ -1,3 +1,7 @@
+---
+node: gameInstance.getSceneReference
+---
+
 # Get Scene Reference
 
 Returns the main Scene, or null while no Scene is loaded.

@@ -1,3 +1,7 @@
+---
+node: flow.event.init
+---
+
 # Event On Init
 
 Runs once when the Game Instance or a subsystem is created.

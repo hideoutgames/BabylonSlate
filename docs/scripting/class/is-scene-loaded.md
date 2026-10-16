@@ -1,3 +1,7 @@
+---
+node: sceneStreaming.isSceneLoaded
+---
+
 # Is Scene Loaded
 
 Returns true once all actors and render resources of a streamed Scene are ready.

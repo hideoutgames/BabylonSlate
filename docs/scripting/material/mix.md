@@ -1,3 +1,7 @@
+---
+node: math.mix
+---
+
 # Mix
 
 Blends from A to B by the amount in Alpha.

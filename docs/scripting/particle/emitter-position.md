@@ -1,3 +1,7 @@
+---
+node: input.system.emitterPosition
+---
+
 # Emitter Position
 
 Returns the world-space position of the emitter.

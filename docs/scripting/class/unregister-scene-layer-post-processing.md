@@ -1,3 +1,7 @@
+---
+node: scene-layer.unregisterPostProcess
+---
+
 # Unregister Scene Layer Post-Processing
 
 Removes a post-process Material from the effects applied to a Scene Layer.

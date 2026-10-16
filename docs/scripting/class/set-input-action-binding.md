@@ -1,3 +1,7 @@
+---
+node: input.setActionBinding
+---
+
 # Set Input Action Binding
 
 Changes the key of an existing Input Action binding.

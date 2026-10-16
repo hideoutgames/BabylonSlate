@@ -1,3 +1,7 @@
+---
+node: math.randomInt
+---
+
 # Random Int
 
 Returns a random whole number between **Min** and **Max**.

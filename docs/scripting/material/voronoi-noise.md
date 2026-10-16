@@ -1,3 +1,7 @@
+---
+node: noise.voronoi
+---
+
 # Voronoi Noise
 
 Returns a cell pattern: the distance to the nearest cell point and a random value for each cell.

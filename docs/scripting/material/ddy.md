@@ -1,3 +1,7 @@
+---
+node: derivative.ddy
+---
+
 # DDY
 
 Returns how much Value changes between neighbouring pixels in the vertical screen direction.

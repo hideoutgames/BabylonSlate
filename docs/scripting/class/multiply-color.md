@@ -1,3 +1,7 @@
+---
+node: color.multiply
+---
+
 # Multiply Color
 
 Multiplies two colours channel by channel.

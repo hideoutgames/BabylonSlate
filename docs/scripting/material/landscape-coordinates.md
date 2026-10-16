@@ -1,3 +1,7 @@
+---
+node: landscape.uv
+---
+
 # Landscape Coordinates
 
 Returns texture coordinates from the world X and Z position, for tiling textures across a landscape.

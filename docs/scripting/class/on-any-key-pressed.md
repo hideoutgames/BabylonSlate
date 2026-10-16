@@ -1,3 +1,7 @@
+---
+node: input.onAnyKeyPressed
+---
+
 # On Any Key Pressed
 
 Runs for each key, mouse button or gamepad control that is newly pressed.

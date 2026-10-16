@@ -1,3 +1,7 @@
+---
+node: bt.composite.parallel
+---
+
 # Parallel
 
 Runs all of its children at the same time.

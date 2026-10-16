@@ -1,3 +1,7 @@
+---
+node: flow.event.movementJumped
+---
+
 # Event On Movement Jumped
 
 Runs when the actor's Movement component starts a jump.

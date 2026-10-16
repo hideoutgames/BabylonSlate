@@ -1,3 +1,7 @@
+---
+node: flow.event.editorShutdown
+---
+
 # Event On Editor Shutdown
 
 Runs when the project closes or its Editor Utility Objects are reloaded.

@@ -1,3 +1,7 @@
+---
+node: shading.normalMap
+---
+
 # Normal Map
 
 Turns a normal map colour into a world-space normal that follows the surface's shape.

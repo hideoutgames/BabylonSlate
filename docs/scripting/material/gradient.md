@@ -1,3 +1,7 @@
+---
+node: color.gradient
+---
+
 # Gradient
 
 Maps a Value from 0 to 1 onto a colour gradient that you edit in the **Inspector**.

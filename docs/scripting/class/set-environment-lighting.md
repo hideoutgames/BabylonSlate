@@ -1,3 +1,7 @@
+---
+node: scalability.setEnvironmentLighting
+---
+
 # Set Environment Lighting
 
 Changes image-based lighting: whether it is on, its intensity, rotation and CEL strength.

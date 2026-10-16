@@ -1,3 +1,7 @@
+---
+node: math.add_int
+---
+
 # Add Int
 
 Returns the sum of two whole numbers.

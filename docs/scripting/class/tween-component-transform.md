@@ -1,3 +1,7 @@
+---
+node: tween.componentTransform
+---
+
 # Tween Component Transform
 
 Moves, rotates and scales a component from Transform A to Transform B together.

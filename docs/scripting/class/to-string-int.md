@@ -1,3 +1,7 @@
+---
+node: literal.toStringInt
+---
+
 # To String (Int)
 
 Converts an Integer to its text form, such as 42.

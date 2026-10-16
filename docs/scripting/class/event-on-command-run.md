@@ -1,3 +1,7 @@
+---
+node: flow.event.commandRun
+---
+
 # Event On Command Run
 
 Runs when the command it defines is entered in the console.

@@ -1,3 +1,7 @@
+---
+node: anim.actor.getCurrentState
+---
+
 # Get Current State
 
 Returns the name and ID of the state an Animation Graph is in.

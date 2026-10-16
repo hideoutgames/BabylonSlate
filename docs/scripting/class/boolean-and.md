@@ -1,3 +1,7 @@
+---
+node: boolean.and
+---
+
 # Boolean And
 
 Returns true only when both inputs are true.

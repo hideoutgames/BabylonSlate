@@ -1,3 +1,7 @@
+---
+node: navigation.getRandomPointInRadius
+---
+
 # Get Random Point In Radius
 
 Picks a random walkable point within a radius of a position.

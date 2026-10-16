@@ -1,3 +1,7 @@
+---
+node: gameInstance.get
+---
+
 # Get Game Instance
 
 Returns the Game Instance that lives for the whole play session.

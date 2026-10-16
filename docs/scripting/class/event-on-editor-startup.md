@@ -1,3 +1,7 @@
+---
+node: flow.event.editorStartup
+---
+
 # Event On Editor Startup
 
 Runs when the editor starts the project's Editor Utility Objects.

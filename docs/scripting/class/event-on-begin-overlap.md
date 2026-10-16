@@ -1,3 +1,7 @@
+---
+node: flow.event.beginOverlap
+---
+
 # Event On Begin Overlap
 
 Runs when the actor's collider starts overlapping another actor, where one of the two is a trigger.

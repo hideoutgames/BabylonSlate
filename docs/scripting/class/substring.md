@@ -1,3 +1,7 @@
+---
+node: string.substring
+---
+
 # Substring
 
 Returns part of a string, from a start position up to an end position.

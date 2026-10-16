@@ -1,3 +1,7 @@
+---
+node: scalability.setEffects
+---
+
 # Set Rendering Effects
 
 Sets the colour pipeline, tone mapping, exposure, bloom, vignette and FXAA.

@@ -1,3 +1,7 @@
+---
+node: tags.count
+---
+
 # Tag Count
 
 Returns how many Tags a TagContainer holds.

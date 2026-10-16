@@ -1,3 +1,7 @@
+---
+node: flow.event.movementStopped
+---
+
 # Event On Movement Stopped
 
 Runs when the actor's Movement component stops moving horizontally.

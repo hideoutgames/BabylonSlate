@@ -1,3 +1,7 @@
+---
+node: material.resetTextureParameter
+---
+
 # Reset Material Texture Parameter
 
 Restores a Texture parameter on a Material Object to its original Texture.

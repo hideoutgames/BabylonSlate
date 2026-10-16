@@ -1,3 +1,7 @@
+---
+node: tags.union
+---
+
 # Union Tags
 
 Returns a TagContainer with every Tag from either of two TagContainers.

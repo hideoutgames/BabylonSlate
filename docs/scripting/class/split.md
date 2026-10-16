@@ -1,3 +1,7 @@
+---
+node: string.split
+---
+
 # Split
 
 Splits a string into an array of pieces at each separator.

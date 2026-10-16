@@ -1,3 +1,7 @@
+---
+node: gradient.sample
+---
+
 # Gradient
 
 Returns a value sampled from a gradient of 2 to 8 stops at a position from 0 to 1.

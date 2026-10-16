@@ -1,3 +1,7 @@
+---
+node: navigation.removeObstacle
+---
+
 # Remove Obstacle
 
 Removes an obstacle that Add Obstacle placed, making the area walkable again.

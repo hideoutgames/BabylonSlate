@@ -1,3 +1,7 @@
+---
+node: custom.glsl
+---
+
 # Custom GLSL
 
 Runs your own GLSL function body, with the inputs and outputs you define in the **Inspector**.

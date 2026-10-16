@@ -1,3 +1,7 @@
+---
+node: enum.toString
+---
+
 # Enum to String
 
 Returns the name of an enum member as text.

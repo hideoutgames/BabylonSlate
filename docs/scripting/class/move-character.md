@@ -1,3 +1,7 @@
+---
+node: physics.moveCharacter
+---
+
 # Move Character
 
 Moves an actor by a distance, sliding along solid colliders instead of passing through them.

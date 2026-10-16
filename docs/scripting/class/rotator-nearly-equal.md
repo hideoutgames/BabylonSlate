@@ -1,3 +1,7 @@
+---
+node: rotator.nearlyEqual
+---
+
 # Rotator Nearly Equal
 
 Returns true when two rotators are equal within a small tolerance.

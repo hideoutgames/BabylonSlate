@@ -1,3 +1,7 @@
+---
+node: input.contextual.angle
+---
+
 # Angle
 
 Returns the current rotation of the particle in radians.

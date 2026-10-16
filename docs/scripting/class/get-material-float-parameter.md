@@ -1,3 +1,7 @@
+---
+node: material.getFloatParameter
+---
+
 # Get Material Float Parameter
 
 Returns the current value of a named Float parameter on a Material Object.

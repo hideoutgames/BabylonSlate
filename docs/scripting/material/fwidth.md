@@ -1,3 +1,7 @@
+---
+node: derivative.fwidth
+---
+
 # Fwidth
 
 Returns the total change of Value across neighbouring pixels: the absolute DDX plus the absolute DDY.

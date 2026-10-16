@@ -1,3 +1,7 @@
+---
+node: input.contextual.color
+---
+
 # Particle Color
 
 Returns the current colour of the particle.

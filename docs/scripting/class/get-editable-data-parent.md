@@ -1,3 +1,7 @@
+---
+node: editorData.getParent
+---
+
 # Get Editable Data Parent
 
 Returns the path of an entry's parent, including unsaved edits.

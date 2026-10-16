@@ -1,3 +1,7 @@
+---
+node: vector.lerp3
+---
+
 # Lerp Vector3
 
 Blends between two vectors using a factor from 0 to 1.

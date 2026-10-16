@@ -1,3 +1,7 @@
+---
+node: transform.addWorldOffset
+---
+
 # Add World Offset
 
 Moves an actor by adding an offset to its current location.

@@ -1,3 +1,7 @@
+---
+node: sceneStreaming.getTargetSceneName
+---
+
 # Get Target Scene Name
 
 Returns the name of the Scene that a Scene Streaming Actor loads.

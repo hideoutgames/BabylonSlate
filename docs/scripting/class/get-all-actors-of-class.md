@@ -1,3 +1,7 @@
+---
+node: actor.getAllOfClass
+---
+
 # Get All Actors Of Class
 
 Returns every actor in the game that is an instance of a Class.

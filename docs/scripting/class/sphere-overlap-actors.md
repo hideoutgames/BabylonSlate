@@ -1,3 +1,7 @@
+---
+node: physics.sphereOverlap
+---
+
 # Sphere Overlap Actors
 
 Returns the actors whose colliders overlap a sphere at a given point.

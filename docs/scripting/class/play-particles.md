@@ -1,3 +1,7 @@
+---
+node: particles.play
+---
+
 # Play Particles
 
 Starts the particle systems on an actor.

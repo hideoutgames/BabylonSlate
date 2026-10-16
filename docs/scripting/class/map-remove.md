@@ -1,3 +1,7 @@
+---
+node: map.remove
+---
+
 # Map Remove
 
 Returns a copy of a map without the given key.

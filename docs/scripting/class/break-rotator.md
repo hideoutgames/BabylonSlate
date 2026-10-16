@@ -1,3 +1,7 @@
+---
+node: struct.breakRotator
+---
+
 # Break Rotator
 
 Splits a rotator into its pitch, yaw and roll angles in degrees.

@@ -1,3 +1,7 @@
+---
+node: vector.refract
+---
+
 # Refract
 
 Bends the Incident direction as it passes through a surface with the given Normal and Eta.

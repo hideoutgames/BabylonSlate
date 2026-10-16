@@ -1,3 +1,7 @@
+---
+node: bt.task.rotateToFace
+---
+
 # Rotate To Face
 
 Turns the actor to face a world position.

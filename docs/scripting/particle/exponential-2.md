@@ -1,3 +1,7 @@
+---
+node: math.exp2
+---
+
 # Exponential 2
 
 Returns 2 raised to the power of the input.

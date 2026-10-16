@@ -1,3 +1,7 @@
+---
+node: quat.fromRotator
+---
+
 # Rotator To Quaternion
 
 Converts a rotator in degrees into a quaternion.

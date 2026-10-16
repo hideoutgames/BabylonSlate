@@ -1,3 +1,7 @@
+---
+node: vector.make4
+---
+
 # Make Vector4
 
 Builds a Vector 4 from X, Y, Z and W numbers.

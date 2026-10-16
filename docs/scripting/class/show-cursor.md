@@ -1,3 +1,7 @@
+---
+node: input.showCursor
+---
+
 # Show Cursor
 
 Shows the mouse pointer over the game view.

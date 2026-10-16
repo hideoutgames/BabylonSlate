@@ -1,3 +1,7 @@
+---
+node: tags.notEquals
+---
+
 # Not Equal Tag
 
 Returns true when two Tags are different Tags.

@@ -1,3 +1,7 @@
+---
+node: vector.make3
+---
+
 # Make Vector3
 
 Builds a Vector 3 from X, Y and Z numbers.

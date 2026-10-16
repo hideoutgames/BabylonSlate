@@ -1,3 +1,7 @@
+---
+node: tags.fromArray
+---
+
 # Make TagContainer From Array
 
 Returns a TagContainer built from an array of Tags.

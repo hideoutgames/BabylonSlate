@@ -1,3 +1,7 @@
+---
+node: assetRegistry.getSubFolders
+---
+
 # Get Sub Folders
 
 Lists the full paths of the folders below a folder.

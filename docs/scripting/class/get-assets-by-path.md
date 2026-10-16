@@ -1,3 +1,7 @@
+---
+node: assetRegistry.getAssetsByPath
+---
+
 # Get Assets By Path
 
 Lists the assets in a folder, sorted by path.

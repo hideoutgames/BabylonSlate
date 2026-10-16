@@ -1,3 +1,7 @@
+---
+node: render-target.getActors
+---
+
 # Get Capture Actors
 
 Returns the list of actors that a capture is limited to.

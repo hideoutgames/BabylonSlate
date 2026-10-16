@@ -1,3 +1,7 @@
+---
+node: assetRegistry.findAssets
+---
+
 # Find Assets
 
 Lists the assets that match every part of a filter, sorted by path.

@@ -1,3 +1,7 @@
+---
+node: scalability.setVignetteColor
+---
+
 # Set Vignette Color
 
 Sets the vignette tint colour for the current session.

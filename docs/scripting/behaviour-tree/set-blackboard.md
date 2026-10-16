@@ -1,3 +1,7 @@
+---
+node: bt.task.setBlackboard
+---
+
 # Set Blackboard
 
 Writes a value to a Blackboard key and succeeds.

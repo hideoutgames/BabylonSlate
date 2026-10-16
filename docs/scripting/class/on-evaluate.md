@@ -1,3 +1,7 @@
+---
+node: bt.event.evaluate
+---
+
 # On Evaluate
 
 Runs when the Behaviour Tree checks this decorator's condition.

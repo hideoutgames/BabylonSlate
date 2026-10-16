@@ -1,3 +1,7 @@
+---
+node: shape.cylinder
+---
+
 # Cylinder Shape
 
 Spawns particles inside a cylinder along the emitter's Y axis and launches them outwards.

@@ -1,3 +1,7 @@
+---
+node: input.addActionBinding
+---
+
 # Add Input Action Binding
 
 Adds a key binding to an Input Action while the game runs.

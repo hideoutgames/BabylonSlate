@@ -1,3 +1,7 @@
+---
+node: vector.dot4
+---
+
 # Dot Vector4
 
 Returns the dot product of two vectors.

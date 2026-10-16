@@ -1,3 +1,7 @@
+---
+node: vector.lengthSquared4
+---
+
 # Vector4 Length Squared
 
 Returns the length of a vector multiplied by itself.

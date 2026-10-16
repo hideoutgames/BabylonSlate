@@ -1,3 +1,7 @@
+---
+node: wildcard.to_string
+---
+
 # Wildcard To String
 
 Converts any value to text and never fails.

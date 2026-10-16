@@ -1,3 +1,7 @@
+---
+node: light.setColor
+---
+
 # Set Light Color
 
 Sets the colour of a light.

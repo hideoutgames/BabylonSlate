@@ -1,3 +1,7 @@
+---
+node: render-target.getOnlyActors
+---
+
 # Get Capture Only Actors
 
 Returns whether a capture draws only the actors in its list.

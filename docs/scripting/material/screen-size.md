@@ -1,3 +1,7 @@
+---
+node: input.screenSize
+---
+
 # Screen Size
 
 Returns the width and height of the screen in pixels.

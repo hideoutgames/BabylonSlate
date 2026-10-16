@@ -1,3 +1,7 @@
+---
+node: debug.executeConsoleCommand
+---
+
 # Execute Console Command
 
 Runs a console command and waits for it to finish.

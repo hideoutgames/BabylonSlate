@@ -1,3 +1,7 @@
+---
+node: output.surface
+---
+
 # Material Output
 
 Receives the final surface settings of a material, such as colour, roughness and opacity.

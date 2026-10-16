@@ -1,3 +1,7 @@
+---
+node: render-target.getRenderTarget
+---
+
 # Get Capture Render Target
 
 Returns the Render Target that a Render Target Capture actor draws into.

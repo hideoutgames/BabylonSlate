@@ -1,3 +1,7 @@
+---
+node: shape.sphere
+---
+
 # Sphere Shape
 
 Spawns particles inside a sphere around the emitter and launches them outwards.

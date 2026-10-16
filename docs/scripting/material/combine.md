@@ -1,3 +1,7 @@
+---
+node: vector.combine
+---
+
 # Combine
 
 Builds a Vector 2, Vector 3 or Color from separate Float values.

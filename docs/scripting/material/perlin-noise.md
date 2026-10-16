@@ -1,3 +1,7 @@
+---
+node: noise.perlin
+---
+
 # Perlin Noise
 
 Returns smooth 3D noise for a position, with values from about -1 to 1.

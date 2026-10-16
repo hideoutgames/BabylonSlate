@@ -1,3 +1,7 @@
+---
+node: tween.anchorOffset
+---
+
 # Tween Anchor Offset
 
 Moves a 2D Anchor component's offset from A to B over Duration seconds.

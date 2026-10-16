@@ -1,3 +1,7 @@
+---
+node: data.readEntryAsync
+---
+
 # Read Data Entry Async
 
 Loads a Data Tree and its Data Definition in the background, then reads one entry from it.

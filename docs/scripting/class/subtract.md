@@ -1,3 +1,7 @@
+---
+node: math.sub
+---
+
 # Subtract
 
 Returns the first number minus the second.

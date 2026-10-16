@@ -1,3 +1,7 @@
+---
+node: wildcard.to_vec4
+---
+
 # Wildcard To vec4
 
 Converts an Any value to a Vector 4 and reports whether it worked.
