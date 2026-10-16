@@ -94,7 +94,7 @@ Contributor reference for Haptic's main-thread Babylon renderer: Engine ownershi
 - Editor apply is incremental through `EditorSceneSync` ([`editor-scene-sync.ts`](../../../packages/render/src/editor-scene-sync.ts)); work stays proportional to the change. Material rebinding reports net changes only (`withNetMaterialChanges`); unchanged post-process stacks and in-place light uniform edits keep the prepared graph.
 - Editor canvases render continuously at the viewport cap and freeze when hidden, off-screen, resizing, under a Dialog/AlertDialog/Sheet, or while Play/Preview Build runs ([`render-scheduler.ts`](../../../packages/render/src/render-scheduler.ts), [`apps/editor/src/lib/viewport-render-gate.ts`](../../../apps/editor/src/lib/viewport-render-gate.ts)). Static previews idle after a ready frame.
 - Picking: viewport taps use a 1×1 GPU object-ID pass ([`gpu-object-id-picker.ts`](../../../packages/render/src/gpu-object-id-picker.ts)) that follows skinning, morphs and WPO; marquee, Play `pickAt`, brushes and transform tools use the CPU ray ([`picking.ts`](../../../packages/render/src/picking.ts)).
-- Meshes without a Material draw `installEngineDefaultMaterial` (lit grey checker PBR); primitives keep `mesh.material === null` so Details shows None.
+- Meshes without a Material draw `installEngineDefaultMaterial` (lit grey checker PBR); primitives keep `mesh.material === null` so the Inspector shows None.
 - Editor selection, gizmos and debug overlays never change Scene membership (pre-created hidden guides, entity-free cameras/RTTs); a membership change costs a whole-scene readiness probe.
 
 ## Feature owners

@@ -41,7 +41,7 @@ Simulation in the game worker: the `PhysicsBackend` port, Havok / Rapier / softw
 
 | Component | Rule |
 | --- | --- |
-| `RigidBodyComponent` | `motionType` `static`/`kinematic`/`dynamic`, mass (Details ≥ 0.001; backends floor ≤ 0 at 1e-6), damping, `gravityScale` |
+| `RigidBodyComponent` | `motionType` `static`/`kinematic`/`dynamic`, mass (Inspector ≥ 0.001; backends floor ≤ 0 at 1e-6), damping, `gravityScale` |
 | `ColliderComponent` | 3D or 2D `shape`, friction, restitution, `isTrigger`, `layer`, `mask`, `renderInGame` (default false). Component transform is baked into the `ColliderDesc` |
 | `MeshComponent` | `collisionMode` `simple`/`complex`/`none`; **new components default `none`** (opt-in), a missing value parses as `simple`. 3D only |
 | `LandscapeComponent` | `collisionsEnabled` default false; triangle mesh from the heightfield |

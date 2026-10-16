@@ -22,7 +22,7 @@ Docs are part of the definition of done. Update them in the same branch/PR; neve
 
 - Plain, calm, concise. Second person, present tense, active voice. Short paragraphs, bullets and small tables.
 - One `#` heading per page; `##` sections in sentence case; UI names exactly as the editor shows them, in **bold** on first use.
-- Call every editor's side panel for the selection the **Inspector**, including panels whose tab still reads "Details".
+- Call every editor's side panel for the selection the **Inspector**.
 - Say "Haptic" or "the editor". Never mention package names, source paths, internal ids, codegen, phase labels, PR numbers or unfinished work.
 - Link relatively between `.md` pages; never link source code. No generated images ([no-ai-artwork.md](no-ai-artwork.md)).
 - Prefer updating an existing page over adding one. New pages follow [docs-site.md](docs-site.md).

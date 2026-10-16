@@ -50,7 +50,7 @@ Tileset and Tilemap assets, chunked geometry, merged chain collision, animated t
 
 ## Editor rules
 
-- Tileset and Tilemap are DockView documents with Windows enabled (Tileset: Preview + Details; Tilemap: Paint primary, Palette, Details). Default tool is Move; two-finger pinch/pan works in every tool and a second finger drops an in-progress stroke without committing.
+- Tileset and Tilemap are DockView documents with Windows enabled (Tileset: Preview + Inspector; Tilemap: Paint primary, Palette, Inspector). Default tool is Move; two-finger pinch/pan works in every tool and a second finger drops an in-progress stroke without committing.
 - One document edit per stroke: the stroke previews locally and commits on release or cancel with merge key `tilemap-stroke:<id>`. Unchanged strokes commit nothing. `setTiles` copies each touched chunk once and returns the same map when nothing changed.
 - Tile Width/Height use local drafts committed by **Confirm Tile Size** to avoid rebuilding the atlas per keystroke.
 - Panels share one Tileset payload map from `TilemapEditingProvider`, cached per source object; painting never reads Tilesets from storage.
