@@ -1,3 +1,7 @@
+---
+node: scalability.setPreset
+---
+
 # Set Scalability Preset
 
 Applies a Low, Medium, High or Ultra quality tier to the current session.

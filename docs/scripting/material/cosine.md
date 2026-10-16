@@ -1,3 +1,7 @@
+---
+node: math.cos
+---
+
 # Cosine
 
 Returns the cosine of an angle in radians.

@@ -1,3 +1,7 @@
+---
+node: vector.lerp4
+---
+
 # Lerp Vector4
 
 Blends between two vectors using a factor from 0 to 1.

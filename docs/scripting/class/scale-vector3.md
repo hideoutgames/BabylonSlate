@@ -1,3 +1,7 @@
+---
+node: vector.scale3
+---
+
 # Scale Vector3
 
 Multiplies every component of a vector by one number.

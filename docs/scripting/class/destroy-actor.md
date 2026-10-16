@@ -1,3 +1,7 @@
+---
+node: actor.destroy
+---
+
 # Destroy Actor
 
 Removes an actor, and all of its components, from the game.

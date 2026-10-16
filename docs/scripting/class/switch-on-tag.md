@@ -1,3 +1,7 @@
+---
+node: tags.switch
+---
+
 # Switch On Tag
 
 Runs the output for the case that matches a Tag.

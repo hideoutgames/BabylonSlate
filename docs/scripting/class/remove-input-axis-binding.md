@@ -1,3 +1,7 @@
+---
+node: input.removeAxisBinding
+---
+
 # Remove Input Axis Binding
 
 Removes every binding of a key from an Input Axis.

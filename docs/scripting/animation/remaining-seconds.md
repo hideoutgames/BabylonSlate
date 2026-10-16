@@ -1,3 +1,7 @@
+---
+node: anim.state.remainingSeconds
+---
+
 # Remaining Seconds
 
 Returns how many seconds are left before the current clip ends or loops.

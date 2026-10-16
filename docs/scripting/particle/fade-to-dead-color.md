@@ -1,3 +1,7 @@
+---
+node: update.basicColor
+---
+
 # Fade To Dead Color
 
 Blends each particle from its colour to its dead colour over its lifetime.

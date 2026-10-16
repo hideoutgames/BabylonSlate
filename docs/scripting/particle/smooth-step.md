@@ -1,3 +1,7 @@
+---
+node: math.smoothstep
+---
+
 # Smooth Step
 
 Returns 0 below the first edge, 1 above the second, and a smooth curve in between.

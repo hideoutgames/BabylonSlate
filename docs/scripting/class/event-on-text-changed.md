@@ -1,3 +1,7 @@
+---
+node: flow.event.textChanged
+---
+
 # Event On Text Changed
 
 Runs when the text of a text display component changes.

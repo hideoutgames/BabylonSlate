@@ -1,3 +1,7 @@
+---
+node: actor.getSelf
+---
+
 # Get Self
 
 Returns a reference to the actor that is running this graph.

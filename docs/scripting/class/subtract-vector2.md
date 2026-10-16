@@ -1,3 +1,7 @@
+---
+node: vector.sub2
+---
+
 # Subtract Vector2
 
 Returns the first vector minus the second, component by component.

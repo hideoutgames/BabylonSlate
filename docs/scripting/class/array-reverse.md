@@ -1,3 +1,7 @@
+---
+node: array.reverse
+---
+
 # Array Reverse
 
 Returns a copy of an array with its items in reverse order.

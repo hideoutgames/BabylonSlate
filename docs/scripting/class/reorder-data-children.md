@@ -1,3 +1,7 @@
+---
+node: editorData.reorderChildren
+---
+
 # Reorder Data Children
 
 Sets the order of an entry's immediate children in a Data Tree.

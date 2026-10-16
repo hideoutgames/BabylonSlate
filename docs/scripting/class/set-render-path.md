@@ -1,3 +1,7 @@
+---
+node: scalability.setRenderPath
+---
+
 # Set Render Path
 
 Requests the render path: Auto, Forward or Clustered Forward.

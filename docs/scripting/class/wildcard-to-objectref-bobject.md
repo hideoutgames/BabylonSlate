@@ -1,3 +1,7 @@
+---
+node: wildcard.to_objectRef_BObject
+---
+
 # Wildcard To objectRef:BObject
 
 Converts an Any value to an Object Reference and reports whether it worked.

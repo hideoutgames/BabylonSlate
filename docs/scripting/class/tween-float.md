@@ -1,3 +1,7 @@
+---
+node: tween.float
+---
+
 # Tween Float
 
 Animates a Float variable from A to B over Duration seconds.

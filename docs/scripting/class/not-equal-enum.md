@@ -1,3 +1,7 @@
+---
+node: enum.notEquals
+---
+
 # Not Equal Enum
 
 Returns true when two enum values are different members.

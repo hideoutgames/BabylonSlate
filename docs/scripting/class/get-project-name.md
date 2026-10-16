@@ -1,3 +1,7 @@
+---
+node: project.getName
+---
+
 # Get Project Name
 
 Returns the name of the project.

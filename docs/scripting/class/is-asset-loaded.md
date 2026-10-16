@@ -1,3 +1,7 @@
+---
+node: assets.isLoaded
+---
+
 # Is Asset Loaded
 
 Returns true when an asset is loaded and ready to use right now.

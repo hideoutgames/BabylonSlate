@@ -1,3 +1,7 @@
+---
+node: flow.event.focusActivate
+---
+
 # Event On Focus Activate
 
 Runs when the focused 2D element is activated from the keyboard or gamepad.

@@ -1,3 +1,7 @@
+---
+node: transform.setRotation
+---
+
 # Set Actor Rotation
 
 Sets an actor's rotation from pitch, yaw and roll angles in degrees.

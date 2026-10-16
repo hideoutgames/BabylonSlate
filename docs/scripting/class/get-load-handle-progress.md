@@ -1,3 +1,7 @@
+---
+node: assets.getHandleProgress
+---
+
 # Get Load Handle Progress
 
 Returns how much of a load has finished, from 0 to 1.

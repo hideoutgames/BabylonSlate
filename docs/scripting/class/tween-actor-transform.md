@@ -1,3 +1,7 @@
+---
+node: tween.actorTransform
+---
+
 # Tween Actor Transform
 
 Moves, rotates and scales an actor from Transform A to Transform B together.

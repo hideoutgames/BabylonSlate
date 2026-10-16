@@ -1,3 +1,7 @@
+---
+node: math.greater
+---
+
 # Greater Than
 
 Returns true when **A** is greater than **B**.

@@ -1,3 +1,7 @@
+---
+node: render-target.setActors
+---
+
 # Set Capture Actors
 
 Sets the list of actors that a capture is limited to.

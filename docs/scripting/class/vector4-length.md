@@ -1,3 +1,7 @@
+---
+node: vector.length4
+---
+
 # Vector4 Length
 
 Returns the length of a vector.

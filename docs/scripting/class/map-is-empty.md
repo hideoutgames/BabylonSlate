@@ -1,3 +1,7 @@
+---
+node: map.isEmpty
+---
+
 # Is Empty
 
 Returns true when a map has no entries.

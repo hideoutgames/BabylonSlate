@@ -1,3 +1,7 @@
+---
+node: tween.rotator
+---
+
 # Tween Rotator
 
 Animates a Rotator variable from A to B by blending pitch, yaw and roll.

@@ -1,3 +1,7 @@
+---
+node: casting.intToFloat
+---
+
 # Int To Float
 
 Converts an Integer to a Float with the same value.

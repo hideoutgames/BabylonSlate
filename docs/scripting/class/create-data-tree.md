@@ -1,3 +1,7 @@
+---
+node: editorData.createTree
+---
+
 # Create Data Tree
 
 Creates a new, empty Data Tree asset in the project.

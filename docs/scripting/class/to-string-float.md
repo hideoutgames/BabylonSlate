@@ -1,3 +1,7 @@
+---
+node: literal.toStringFloat
+---
+
 # To String (Float)
 
 Converts a Float to its text form, such as 1.5.

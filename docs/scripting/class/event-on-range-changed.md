@@ -1,3 +1,7 @@
+---
+node: flow.event.uiRangeChanged
+---
+
 # Event On Range Changed
 
 Runs when the lower or upper value of a 2D Range Slider changes.

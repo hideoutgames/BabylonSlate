@@ -1,3 +1,7 @@
+---
+node: transform.up
+---
+
 # Get Actor Up Vector
 
 Returns the direction above an actor, as a unit vector along its up axis.

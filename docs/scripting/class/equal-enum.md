@@ -1,3 +1,7 @@
+---
+node: enum.equals
+---
+
 # Equal Enum
 
 Returns true when two enum values are the same member.

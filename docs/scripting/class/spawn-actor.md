@@ -1,3 +1,7 @@
+---
+node: actor.spawn
+---
+
 # Spawn Actor
 
 Creates a new actor from a Class and returns a reference to it.

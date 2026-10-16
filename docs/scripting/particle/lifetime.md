@@ -1,3 +1,7 @@
+---
+node: input.contextual.lifetime
+---
+
 # Lifetime
 
 Returns the total lifetime of the particle in seconds.

@@ -1,3 +1,7 @@
+---
+node: navigation.moveTo
+---
+
 # Move To
 
 Sends an actor toward a destination along the navigation mesh.

@@ -1,3 +1,7 @@
+---
+node: material.getColorParameter
+---
+
 # Get Material Color Parameter
 
 Returns the current value of a named Color parameter on a Material Object.

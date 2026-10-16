@@ -1,3 +1,7 @@
+---
+node: anim.actor.setVariable
+---
+
 # Set Anim Graph Variable
 
 Sets a variable on an Animation Graph component.

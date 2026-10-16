@@ -1,3 +1,7 @@
+---
+node: string.endsWith
+---
+
 # Ends With
 
 Returns true when a string finishes with a given suffix.

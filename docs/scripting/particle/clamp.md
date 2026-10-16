@@ -1,3 +1,7 @@
+---
+node: math.clamp
+---
+
 # Clamp
 
 Limits a value so that it stays between a minimum and a maximum.

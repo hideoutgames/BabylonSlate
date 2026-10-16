@@ -1,3 +1,7 @@
+---
+node: rotator.up
+---
+
 # Get Up Vector
 
 Returns the up direction of a rotator as a unit vector.

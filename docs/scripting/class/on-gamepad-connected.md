@@ -1,3 +1,7 @@
+---
+node: input.onGamepadConnected
+---
+
 # On Gamepad Connected
 
 Runs when a gamepad connects, with its index.

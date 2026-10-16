@@ -1,3 +1,7 @@
+---
+node: debug.log
+---
+
 # Log
 
 Writes a message to the Output Log with a chosen severity and category.

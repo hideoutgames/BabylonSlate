@@ -1,3 +1,7 @@
+---
+node: input.projectCursorToScene
+---
+
 # Project Cursor To Scene
 
 Casts a ray from the active camera through the cursor and returns what it hits.

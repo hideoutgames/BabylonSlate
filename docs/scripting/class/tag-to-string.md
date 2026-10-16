@@ -1,3 +1,7 @@
+---
+node: tags.toString
+---
+
 # Tag To String
 
 Returns the full dotted path of a Tag as text.

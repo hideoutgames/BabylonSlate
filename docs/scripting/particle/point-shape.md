@@ -1,3 +1,7 @@
+---
+node: shape.point
+---
+
 # Point Shape
 
 Spawns particles at the emitter and launches them in a direction picked between two vectors.

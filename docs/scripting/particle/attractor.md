@@ -1,3 +1,7 @@
+---
+node: force.attractor
+---
+
 # Attractor
 
 Pulls every particle towards a point, more strongly the closer it gets.

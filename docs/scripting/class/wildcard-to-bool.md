@@ -1,3 +1,7 @@
+---
+node: wildcard.to_bool
+---
+
 # Wildcard To bool
 
 Converts an Any value to a Boolean and reports whether it worked.

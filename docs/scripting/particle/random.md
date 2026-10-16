@@ -1,3 +1,7 @@
+---
+node: random.range
+---
+
 # Random
 
 Returns a random value between a minimum and a maximum.

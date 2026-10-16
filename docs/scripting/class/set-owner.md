@@ -1,3 +1,7 @@
+---
+node: actor.setOwner
+---
+
 # Set Owner
 
 Records an actor as the owner of another actor, without attaching or moving it.

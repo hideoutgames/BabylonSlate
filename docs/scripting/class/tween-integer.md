@@ -1,3 +1,7 @@
+---
+node: tween.integer
+---
+
 # Tween Integer
 
 Animates an Integer variable from A to B in whole-number steps.

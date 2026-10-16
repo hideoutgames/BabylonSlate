@@ -1,3 +1,7 @@
+---
+node: math.remap
+---
+
 # Remap
 
 Rescales Value from the range From Min to From Max into the range To Min to To Max.

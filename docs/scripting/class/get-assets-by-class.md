@@ -1,3 +1,7 @@
+---
+node: assetRegistry.getAssetsByClass
+---
+
 # Get Assets By Class
 
 Lists the Class assets of a chosen Class, and optionally of Classes that inherit from it.

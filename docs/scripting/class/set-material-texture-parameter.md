@@ -1,3 +1,7 @@
+---
+node: material.setTextureParameter
+---
+
 # Set Material Texture Parameter
 
 Sets a named Texture parameter on a Material Object, loading the Texture first.

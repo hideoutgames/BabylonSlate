@@ -1,3 +1,7 @@
+---
+node: math.step
+---
+
 # Step
 
 Returns 0 when a value is below an edge, and 1 otherwise.

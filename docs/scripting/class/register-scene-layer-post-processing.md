@@ -1,3 +1,7 @@
+---
+node: scene-layer.registerPostProcess
+---
+
 # Register Scene Layer Post-Processing
 
 Adds a post-process Material to the effects applied to a Scene Layer.

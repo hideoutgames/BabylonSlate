@@ -1,3 +1,7 @@
+---
+node: bt.decorator.blackboardIsSet
+---
+
 # Blackboard Is Set
 
 Lets a node run only while a Blackboard key has a value.

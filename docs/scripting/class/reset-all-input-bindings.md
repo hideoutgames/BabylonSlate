@@ -1,3 +1,7 @@
+---
+node: input.resetAllBindings
+---
+
 # Reset All Input Bindings
 
 Removes all player binding changes and restores every authored binding.

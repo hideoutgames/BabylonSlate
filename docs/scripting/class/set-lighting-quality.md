@@ -1,3 +1,7 @@
+---
+node: scalability.setLightingQuality
+---
+
 # Set Lighting Quality
 
 Chooses automatic or manual limits on how many local lights are drawn.

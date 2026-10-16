@@ -1,3 +1,7 @@
+---
+node: shading.fresnel
+---
+
 # Fresnel
 
 Returns a value that is 0 where the surface faces the camera and rises to 1 at its edges, for rim lighting.

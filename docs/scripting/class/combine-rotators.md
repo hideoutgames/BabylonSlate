@@ -1,3 +1,7 @@
+---
+node: rotator.combine
+---
+
 # Combine Rotators
 
 Combines two rotators into a single rotation.

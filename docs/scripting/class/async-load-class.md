@@ -1,3 +1,7 @@
+---
+node: assets.asyncLoadClass
+---
+
 # Async Load Class
 
 Loads a Class, with its scripts and required resources, in the background while gameplay continues.

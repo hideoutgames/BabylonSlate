@@ -1,3 +1,7 @@
+---
+node: math.inverseSqrt
+---
+
 # Inverse Square Root
 
 Returns 1 divided by the square root of Value.

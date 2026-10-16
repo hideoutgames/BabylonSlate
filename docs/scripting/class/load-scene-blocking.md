@@ -1,3 +1,7 @@
+---
+node: sceneStreaming.loadSceneBlocking
+---
+
 # Load Scene Blocking
 
 Loads a Scene Streaming Actor's Scene and waits until it is ready, pausing the game.

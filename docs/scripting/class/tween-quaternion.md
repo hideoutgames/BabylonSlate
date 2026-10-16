@@ -1,3 +1,7 @@
+---
+node: tween.quaternion
+---
+
 # Tween Quaternion
 
 Animates a Quaternion variable from A to B along the shortest rotation.

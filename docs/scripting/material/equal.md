@@ -1,3 +1,7 @@
+---
+node: logic.equal
+---
+
 # Equal
 
 Returns 1 where A equals B and 0 where it does not.

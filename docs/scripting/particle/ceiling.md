@@ -1,3 +1,7 @@
+---
+node: math.ceil
+---
+
 # Ceiling
 
 Rounds the input up to the nearest whole number.

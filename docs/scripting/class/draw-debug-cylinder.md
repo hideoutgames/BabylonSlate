@@ -1,3 +1,7 @@
+---
+node: debug.drawCylinder
+---
+
 # Draw Debug Cylinder
 
 Draws a wireframe cylinder between two world positions.

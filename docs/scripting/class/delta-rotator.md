@@ -1,3 +1,7 @@
+---
+node: rotator.delta
+---
+
 # Delta Rotator
 
 Returns the rotation that turns one rotator into another.

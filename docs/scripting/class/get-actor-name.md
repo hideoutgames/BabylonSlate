@@ -1,3 +1,7 @@
+---
+node: actor.getName
+---
+
 # Get Actor Name
 
 Returns the name of an actor as text.

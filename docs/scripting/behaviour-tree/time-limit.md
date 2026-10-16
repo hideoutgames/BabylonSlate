@@ -1,3 +1,7 @@
+---
+node: bt.decorator.timeLimit
+---
+
 # Time Limit
 
 Fails a node if it runs for longer than a set time.

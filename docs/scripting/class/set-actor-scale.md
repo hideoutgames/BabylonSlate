@@ -1,3 +1,7 @@
+---
+node: transform.setScale
+---
+
 # Set Actor Scale
 
 Sets the scale of an actor on each axis.

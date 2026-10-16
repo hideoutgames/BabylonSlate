@@ -1,3 +1,7 @@
+---
+node: math.exp
+---
+
 # Exponential
 
 Returns e raised to the power of the input.

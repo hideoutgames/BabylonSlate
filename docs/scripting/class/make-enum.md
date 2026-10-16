@@ -1,3 +1,7 @@
+---
+node: enum.make
+---
+
 # Make Enum
 
 Returns a member of an enum that you choose on the node.

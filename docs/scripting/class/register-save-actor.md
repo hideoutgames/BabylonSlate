@@ -1,3 +1,7 @@
+---
+node: saveGame.registerActor
+---
+
 # Register Save Actor
 
 Registers a spawned actor so its state is saved and restored with the game.

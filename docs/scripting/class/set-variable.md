@@ -1,3 +1,7 @@
+---
+node: variables.set
+---
+
 # Set Variable
 
 Sets a variable to a new value and passes that value on.

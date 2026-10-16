@@ -1,3 +1,7 @@
+---
+node: bt.task.moveTo
+---
+
 # Move To
 
 Moves the actor to a world position along the navigation mesh.

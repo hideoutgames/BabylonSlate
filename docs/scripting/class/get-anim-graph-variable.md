@@ -1,3 +1,7 @@
+---
+node: anim.actor.getVariable
+---
+
 # Get Anim Graph Variable
 
 Returns the value of a variable on an Animation Graph component.

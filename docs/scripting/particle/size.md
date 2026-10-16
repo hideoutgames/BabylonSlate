@@ -1,3 +1,7 @@
+---
+node: input.contextual.size
+---
+
 # Size
 
 Returns the current size of the particle.

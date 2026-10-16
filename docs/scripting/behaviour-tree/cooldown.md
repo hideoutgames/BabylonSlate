@@ -1,3 +1,7 @@
+---
+node: bt.decorator.cooldown
+---
+
 # Cooldown
 
 Stops a node from running again for a set time after it finishes.

@@ -1,3 +1,7 @@
+---
+node: vector.distance2
+---
+
 # Distance Vector2
 
 Returns the distance between two points.

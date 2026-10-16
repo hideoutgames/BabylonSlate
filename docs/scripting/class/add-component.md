@@ -1,3 +1,7 @@
+---
+node: component.add
+---
+
 # Add Component
 
 Adds a new component of a chosen type to an actor and returns it.

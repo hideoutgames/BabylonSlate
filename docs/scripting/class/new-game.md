@@ -1,3 +1,7 @@
+---
+node: saveGame.newGame
+---
+
 # New Game
 
 Resets the game's save data to its defaults, ready for a fresh playthrough.

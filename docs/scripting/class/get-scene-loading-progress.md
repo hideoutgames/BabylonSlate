@@ -1,3 +1,7 @@
+---
+node: gameInstance.getSceneLoadingProgress
+---
+
 # Get Scene Loading Progress
 
 Returns how far the main Scene has loaded, from 0 to 1.

@@ -1,3 +1,7 @@
+---
+node: tween.componentScale
+---
+
 # Tween Component Scale
 
 Scales a component from scale A to scale B over Duration seconds.

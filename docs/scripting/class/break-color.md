@@ -1,3 +1,7 @@
+---
+node: struct.breakColor
+---
+
 # Break Color
 
 Splits a colour into its red, green, blue and alpha values.

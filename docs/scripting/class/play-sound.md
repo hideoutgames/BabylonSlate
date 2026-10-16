@@ -1,3 +1,7 @@
+---
+node: audio.play
+---
+
 # Play Sound
 
 Plays an Audio asset, positioned at the actor running the graph when the sound is spatial.

@@ -1,3 +1,7 @@
+---
+node: debug.drawCoordinateSystem
+---
+
 # Draw Debug Coordinate System
 
 Draws red, green and blue axis lines for a position and rotation.

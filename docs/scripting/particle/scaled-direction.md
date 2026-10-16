@@ -1,3 +1,7 @@
+---
+node: input.contextual.scaledDirection
+---
+
 # Scaled Direction
 
 Returns the particle's direction multiplied by the seconds simulated this frame.

@@ -1,3 +1,7 @@
+---
+node: data.readEntry
+---
+
 # Read Data Entry
 
 Reads an entry's values from a Data Tree that is already loaded and returns a copy.

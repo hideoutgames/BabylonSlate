@@ -1,3 +1,7 @@
+---
+node: anim.state.exitTimeReached
+---
+
 # Exit Time Reached
 
 Returns true in the update where the clip passes a given point in time.

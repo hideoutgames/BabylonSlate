@@ -1,3 +1,7 @@
+---
+node: input.importBindings
+---
+
 # Import Input Bindings
 
 Applies binding changes exported earlier, replacing the current changes.

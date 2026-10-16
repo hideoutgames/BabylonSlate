@@ -1,3 +1,7 @@
+---
+node: input.environmentSample
+---
+
 # Environment Sample
 
 Returns the colour of the scene's environment lighting in a direction, blurred by roughness.

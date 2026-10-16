@@ -1,3 +1,7 @@
+---
+node: transform.set
+---
+
 # Set Actor Transform
 
 Sets an actor's location, rotation and scale from one transform.

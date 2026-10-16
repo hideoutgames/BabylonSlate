@@ -1,3 +1,7 @@
+---
+node: array.contains
+---
+
 # Array Contains
 
 Returns true when an array holds an item equal to the given item.

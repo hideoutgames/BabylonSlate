@@ -1,3 +1,7 @@
+---
+node: wildcard.to_actorRef_Actor
+---
+
 # Wildcard To actorRef:Actor
 
 Converts an Any value to an Actor Reference and reports whether it worked.

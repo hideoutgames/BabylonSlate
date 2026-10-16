@@ -1,3 +1,7 @@
+---
+node: material.getPostProcessEntry
+---
+
 # Get Post Process Entry
 
 Returns the Material Object of one post-process pass on a Scene or Scene Layer.

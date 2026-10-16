@@ -1,3 +1,7 @@
+---
+node: project.getVersion
+---
+
 # Get Project Version
 
 Returns the version of the project as text.

@@ -1,3 +1,7 @@
+---
+node: math.acos
+---
+
 # Arccosine
 
 Returns the arccosine of the input as an angle in radians.

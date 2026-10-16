@@ -1,3 +1,7 @@
+---
+node: tween.textOutlineColor
+---
+
 # Tween Text Outline Color
 
 Blends the outline colour of a 2D text component from A to B over Duration seconds.

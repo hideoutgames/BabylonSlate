@@ -1,3 +1,7 @@
+---
+node: math.max
+---
+
 # Maximum
 
 Returns the larger of two values, component by component.

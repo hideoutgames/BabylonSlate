@@ -1,3 +1,7 @@
+---
+node: texture.transformUv
+---
+
 # Transform UV
 
 Scales and offsets UV coordinates, for tiling and scrolling textures.

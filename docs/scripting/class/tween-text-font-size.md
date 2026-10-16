@@ -1,3 +1,7 @@
+---
+node: tween.textFontSize
+---
+
 # Tween Text Font Size
 
 Changes the font size of a 2D text component from A to B over Duration seconds.

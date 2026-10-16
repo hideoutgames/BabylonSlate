@@ -1,3 +1,7 @@
+---
+node: water.sampleSurface
+---
+
 # Sample Water Surface
 
 Samples the rendered water surface at a world position, including wave motion.

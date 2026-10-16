@@ -1,3 +1,7 @@
+---
+node: sceneStreaming.getSceneLoadProgress
+---
+
 # Get Scene Load Progress
 
 Returns how far a streamed Scene has loaded, from 0 to 1.

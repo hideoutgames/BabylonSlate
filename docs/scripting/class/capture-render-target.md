@@ -1,3 +1,7 @@
+---
+node: render-target.capture
+---
+
 # Capture Render Target
 
 Requests one capture from a Render Target Capture actor.

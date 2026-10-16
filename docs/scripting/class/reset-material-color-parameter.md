@@ -1,3 +1,7 @@
+---
+node: material.resetColorParameter
+---
+
 # Reset Material Color Parameter
 
 Restores a Color parameter on a Material Object to its original value.

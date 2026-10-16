@@ -1,3 +1,7 @@
+---
+node: input.contextual.deadColor
+---
+
 # Dead Color
 
 Returns the dead colour that the particle was created with.

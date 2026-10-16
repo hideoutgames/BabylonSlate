@@ -1,3 +1,7 @@
+---
+node: scalability.getEffective
+---
+
 # Get Effective Scalability
 
 Returns the quality settings you requested and the ones the renderer is using.

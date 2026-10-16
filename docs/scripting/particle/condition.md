@@ -1,3 +1,7 @@
+---
+node: logic.condition
+---
+
 # Condition
 
 Returns one of two values depending on how two numbers compare.

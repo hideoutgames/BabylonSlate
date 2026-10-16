@@ -1,3 +1,7 @@
+---
+node: light.setEnabled
+---
+
 # Set Light Enabled
 
 Turns a light on or off.

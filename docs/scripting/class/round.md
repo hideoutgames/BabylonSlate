@@ -1,3 +1,7 @@
+---
+node: math.round
+---
+
 # Round
 
 Rounds the input to the nearest whole number.

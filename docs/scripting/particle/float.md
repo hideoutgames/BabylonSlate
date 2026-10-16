@@ -1,3 +1,7 @@
+---
+node: const.float
+---
+
 # Float
 
 Returns a fixed number that you set in the **Inspector**.

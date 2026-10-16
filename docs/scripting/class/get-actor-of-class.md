@@ -1,3 +1,7 @@
+---
+node: actor.getOfClass
+---
+
 # Get Actor Of Class
 
 Returns one actor of a Class, or an empty reference when none exists.

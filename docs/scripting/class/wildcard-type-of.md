@@ -1,3 +1,7 @@
+---
+node: wildcard.typeOf
+---
+
 # Wildcard Type Of
 
 Returns the name of the type a value holds, such as int or vec3.

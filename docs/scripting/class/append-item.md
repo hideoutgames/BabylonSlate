@@ -1,3 +1,7 @@
+---
+node: array.append
+---
+
 # Append Item
 
 Returns a copy of an array with one item added to the end.

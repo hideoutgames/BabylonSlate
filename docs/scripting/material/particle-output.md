@@ -1,3 +1,7 @@
+---
+node: output.particle
+---
+
 # Particle Output
 
 Sets the colour and alpha of each particle drawn with the material.

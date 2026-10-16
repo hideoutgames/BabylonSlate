@@ -1,3 +1,7 @@
+---
+node: tags.has
+---
+
 # Has Tag
 
 Returns true when a TagContainer holds a Tag, or a child of that Tag.

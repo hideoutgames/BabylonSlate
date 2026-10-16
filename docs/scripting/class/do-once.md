@@ -1,3 +1,7 @@
+---
+node: flow.doOnce
+---
+
 # Do Once
 
 Lets execution through the first time only, until it is reset.

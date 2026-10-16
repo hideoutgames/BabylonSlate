@@ -1,3 +1,7 @@
+---
+node: map.has
+---
+
 # Map Has
 
 Returns true when a map contains a key.

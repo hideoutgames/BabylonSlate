@@ -1,3 +1,7 @@
+---
+node: scalability.setShadowsEnabled
+---
+
 # Set Shadows Enabled
 
 Turns shadows on or off for the current session without losing their settings.

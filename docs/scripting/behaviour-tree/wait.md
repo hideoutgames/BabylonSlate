@@ -1,3 +1,7 @@
+---
+node: bt.task.wait
+---
+
 # Wait
 
 Waits for a set time, then succeeds.

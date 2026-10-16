@@ -1,3 +1,7 @@
+---
+node: rotator.right
+---
+
 # Get Right Vector
 
 Returns the right direction of a rotator as a unit vector.

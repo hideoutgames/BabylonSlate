@@ -1,3 +1,7 @@
+---
+node: flow.event.end
+---
+
 # Event On End
 
 Runs once when the Game Instance or a subsystem shuts down.

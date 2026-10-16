@@ -1,3 +1,7 @@
+---
+node: string.equals
+---
+
 # Equals
 
 Returns true when two strings are exactly the same.

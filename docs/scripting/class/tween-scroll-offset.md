@@ -1,3 +1,7 @@
+---
+node: tween.scrollOffset
+---
+
 # Tween Scroll Offset
 
 Scrolls a 2D Scroll Box from offset A to offset B over Duration seconds.

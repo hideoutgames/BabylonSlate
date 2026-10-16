@@ -1,3 +1,7 @@
+---
+node: debug.drawCone
+---
+
 # Draw Debug Cone
 
 Draws a wireframe cone from a tip point along a direction.

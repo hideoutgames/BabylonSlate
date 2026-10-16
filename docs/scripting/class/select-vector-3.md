@@ -1,3 +1,7 @@
+---
+node: select.vec3
+---
+
 # Select Vector 3
 
 Returns one of two Vector 3 values, chosen by a Boolean condition.

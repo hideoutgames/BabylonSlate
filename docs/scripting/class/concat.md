@@ -1,3 +1,7 @@
+---
+node: string.concat
+---
+
 # Concat
 
 Joins two strings end to end, with A first and B second.

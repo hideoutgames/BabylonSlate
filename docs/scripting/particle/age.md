@@ -1,3 +1,7 @@
+---
+node: input.contextual.age
+---
+
 # Age
 
 Returns the seconds since the particle was born.

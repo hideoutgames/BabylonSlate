@@ -1,3 +1,7 @@
+---
+node: quat.normalize
+---
+
 # Normalize Quaternion
 
 Scales a quaternion to a length of 1 so it is a valid rotation.

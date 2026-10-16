@@ -1,3 +1,7 @@
+---
+node: struct.breakTransform
+---
+
 # Break Transform
 
 Splits a transform into its location, rotation and scale.

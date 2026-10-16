@@ -1,3 +1,7 @@
+---
+node: math.subtract
+---
+
 # Subtract
 
 Subtracts one value from another, component by component.

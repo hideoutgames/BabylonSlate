@@ -1,3 +1,7 @@
+---
+node: editorData.getDescendants
+---
+
 # Get Editable Data Descendants
 
 Returns the paths of every entry below an entry, including unsaved edits.

@@ -1,3 +1,7 @@
+---
+node: struct.break
+---
+
 # Break Structure
 
 Splits a structure value into its individual fields.

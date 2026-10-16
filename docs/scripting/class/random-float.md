@@ -1,3 +1,7 @@
+---
+node: math.random
+---
+
 # Random Float
 
 Returns a random number from 0 up to, but not including, 1.

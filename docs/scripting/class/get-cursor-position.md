@@ -1,3 +1,7 @@
+---
+node: input.getCursorPosition
+---
+
 # Get Cursor Position
 
 Returns the pointer position over the game view.

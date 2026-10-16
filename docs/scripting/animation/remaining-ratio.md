@@ -1,3 +1,7 @@
+---
+node: anim.state.remainingRatio
+---
+
 # Remaining Ratio
 
 Returns the fraction of the current clip still to play, from 1 down to 0.

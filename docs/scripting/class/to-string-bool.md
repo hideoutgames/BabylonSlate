@@ -1,3 +1,7 @@
+---
+node: literal.toStringBool
+---
+
 # To String (Bool)
 
 Converts a Boolean to the text true or false.

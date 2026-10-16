@@ -1,3 +1,7 @@
+---
+node: string.parseFloat
+---
+
 # Parse Float
 
 Converts text such as 3.5 into a Float and reports whether it worked.

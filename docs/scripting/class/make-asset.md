@@ -1,3 +1,7 @@
+---
+node: literal.makeAsset
+---
+
 # Make Asset
 
 Returns a reference to an asset that you pick on the node.

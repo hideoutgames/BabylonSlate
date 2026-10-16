@@ -1,3 +1,7 @@
+---
+node: math.mul_int
+---
+
 # Multiply Int
 
 Returns the product of two whole numbers.

@@ -1,3 +1,7 @@
+---
+node: wildcard.to_quat
+---
+
 # Wildcard To quat
 
 Converts an Any value to a Quaternion and reports whether it worked.

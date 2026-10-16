@@ -1,3 +1,7 @@
+---
+node: force.gravity
+---
+
 # Gravity
 
 Accelerates every particle by changing its direction each frame.

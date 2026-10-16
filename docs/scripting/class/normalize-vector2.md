@@ -1,3 +1,7 @@
+---
+node: vector.normalize2
+---
+
 # Normalize Vector2
 
 Returns the vector scaled to a length of 1, keeping its direction.

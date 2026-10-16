@@ -1,3 +1,7 @@
+---
+node: transform.getScale
+---
+
 # Get Actor Scale
 
 Returns an actor's scale on each axis as a vector.

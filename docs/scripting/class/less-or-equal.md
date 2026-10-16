@@ -1,3 +1,7 @@
+---
+node: math.lessEqual
+---
+
 # Less or Equal
 
 Returns true when **A** is less than or equal to **B**.

@@ -1,3 +1,7 @@
+---
+node: array.isEmpty
+---
+
 # Is Empty
 
 Returns true when an array has no items.

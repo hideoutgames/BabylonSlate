@@ -1,3 +1,7 @@
+---
+node: flow.event.callParent
+---
+
 # Call Parent Event
 
 Runs the parent class's version of an event that this graph overrides.

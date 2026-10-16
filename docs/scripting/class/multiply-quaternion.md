@@ -1,3 +1,7 @@
+---
+node: quat.multiply
+---
+
 # Multiply Quaternion
 
 Combines two quaternion rotations into one.

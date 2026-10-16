@@ -1,3 +1,7 @@
+---
+node: shape.cone
+---
+
 # Cone Shape
 
 Spawns particles inside a cone that opens along the emitter's Y axis and launches them outwards.

@@ -1,3 +1,7 @@
+---
+node: tween.tint
+---
+
 # Tween 2D Tint
 
 Blends the tint colour of a 2D component from A to B over Duration seconds.

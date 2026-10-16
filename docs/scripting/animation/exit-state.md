@@ -1,3 +1,7 @@
+---
+node: anim.rule.exitState
+---
+
 # Exit State
 
 Decides whether the transition may leave its source state.

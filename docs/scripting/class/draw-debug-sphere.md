@@ -1,3 +1,7 @@
+---
+node: debug.drawSphere
+---
+
 # Draw Debug Sphere
 
 Draws a wireframe sphere at a world position.

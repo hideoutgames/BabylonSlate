@@ -1,3 +1,7 @@
+---
+node: param.color
+---
+
 # Color Parameter
 
 Outputs a named colour that can be changed at runtime or overridden per Material Instance.

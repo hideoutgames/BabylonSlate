@@ -1,3 +1,7 @@
+---
+node: debug.drawBox
+---
+
 # Draw Debug Box
 
 Draws a wireframe box at a world position.

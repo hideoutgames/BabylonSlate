@@ -1,3 +1,7 @@
+---
+node: tween.opacity
+---
+
 # Tween 2D Opacity
 
 Fades the opacity of a 2D component from A to B over Duration seconds.

@@ -1,3 +1,7 @@
+---
+node: audio.setChannelVolume
+---
+
 # Set Channel Volume
 
 Sets the volume of an Audio Channel for the current session.

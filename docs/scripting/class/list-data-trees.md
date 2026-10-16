@@ -1,3 +1,7 @@
+---
+node: editorData.listTrees
+---
+
 # List Data Trees
 
 Lists the Data Trees in the project, optionally only those that use a chosen Data Definition.

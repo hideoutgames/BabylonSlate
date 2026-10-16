@@ -1,3 +1,7 @@
+---
+node: render-target.setEnabled
+---
+
 # Set Capture Enabled
 
 Turns a Render Target Capture actor on or off.

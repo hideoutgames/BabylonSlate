@@ -1,3 +1,7 @@
+---
+node: debug.executeJavaScript
+---
+
 # Execute JavaScript
 
 Runs your own JavaScript function body inline, with custom input and output pins.

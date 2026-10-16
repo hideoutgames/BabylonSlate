@@ -1,3 +1,7 @@
+---
+node: scalability.setCelOutlines
+---
+
 # Set CEL Outlines
 
 Turns global CEL outlines on or off and sets their colour and width.

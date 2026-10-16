@@ -1,3 +1,7 @@
+---
+node: literal.toStringVec2
+---
+
 # To String (Vector 2)
 
 Converts a Vector 2 to text that lists its x and y values.

@@ -1,3 +1,7 @@
+---
+node: flow.event.onClick
+---
+
 # Event On Click
 
 Runs when a 2D Button is clicked or tapped.

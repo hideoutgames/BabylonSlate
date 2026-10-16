@@ -1,3 +1,7 @@
+---
+node: debug.drawArrow
+---
+
 # Draw Debug Arrow
 
 Draws an arrow from a start position to an end position.

@@ -1,3 +1,7 @@
+---
+node: saveGame.listSaves
+---
+
 # List Saves
 
 Lists the saved slots of a profile.

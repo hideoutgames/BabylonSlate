@@ -1,3 +1,7 @@
+---
+node: vector.distance3
+---
+
 # Distance Vector3
 
 Returns the distance between two points.

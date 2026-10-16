@@ -1,3 +1,7 @@
+---
+node: flow.event.sceneExit
+---
+
 # Event On Scene Exit
 
 Runs when the current scene is removed, for a scene change or when Play ends.

@@ -1,3 +1,7 @@
+---
+node: logic.select
+---
+
 # Select
 
 Chooses between When True and When False using Condition.

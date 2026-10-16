@@ -1,3 +1,7 @@
+---
+node: navigation.findPathTo
+---
+
 # Find Path To
 
 Finds a walkable route between two points on the navigation mesh.

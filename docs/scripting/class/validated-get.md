@@ -1,3 +1,7 @@
+---
+node: variables.getValidated
+---
+
 # Validated Get
 
 Reads an object variable and runs **Is Valid** only if it holds an object.

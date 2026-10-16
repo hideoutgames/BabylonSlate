@@ -1,3 +1,7 @@
+---
+node: render-target.setFieldOfView
+---
+
 # Set Capture Field Of View
 
 Sets the field of view of a capture actor's camera, in degrees.

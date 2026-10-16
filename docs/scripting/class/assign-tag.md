@@ -1,3 +1,7 @@
+---
+node: tags.assign
+---
+
 # Assign Tag
 
 Assigns a Tag to a variable and returns the assigned Tag.

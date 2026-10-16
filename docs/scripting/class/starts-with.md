@@ -1,3 +1,7 @@
+---
+node: string.startsWith
+---
+
 # Starts With
 
 Returns true when a string begins with a given prefix.

@@ -1,3 +1,7 @@
+---
+node: debug.drawLine
+---
+
 # Draw Debug Line
 
 Draws a line between two world positions.

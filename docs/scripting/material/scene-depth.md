@@ -1,3 +1,7 @@
+---
+node: input.sceneDepth
+---
+
 # Scene Depth
 
 Returns the linear depth of the rendered scene at a position on the screen.

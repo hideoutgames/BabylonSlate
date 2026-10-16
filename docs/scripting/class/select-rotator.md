@@ -1,3 +1,7 @@
+---
+node: select.rotator
+---
+
 # Select Rotator
 
 Returns one of two Rotator values, chosen by a Boolean condition.

@@ -1,3 +1,7 @@
+---
+node: scene.change
+---
+
 # Change Scene
 
 Leaves the current Scene and loads another one.

@@ -1,3 +1,7 @@
+---
+node: vector.cross3
+---
+
 # Cross Vector3
 
 Returns a vector perpendicular to both input vectors.

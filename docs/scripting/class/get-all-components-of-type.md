@@ -1,3 +1,7 @@
+---
+node: component.getAllOfType
+---
+
 # Get All Components Of Type
 
 Returns every component of a type across all actors in the game.

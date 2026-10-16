@@ -1,3 +1,7 @@
+---
+node: flow.event.endOverlap
+---
+
 # Event On End Overlap
 
 Runs when the actor's collider stops overlapping another actor it was overlapping.

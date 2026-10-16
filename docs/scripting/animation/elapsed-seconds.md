@@ -1,3 +1,7 @@
+---
+node: anim.state.elapsedSeconds
+---
+
 # Elapsed Seconds
 
 Returns how many seconds the current state's clip has played.

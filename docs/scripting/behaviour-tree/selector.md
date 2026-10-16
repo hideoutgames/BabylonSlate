@@ -1,3 +1,7 @@
+---
+node: bt.composite.selector
+---
+
 # Selector
 
 Runs its children from left to right until one succeeds.

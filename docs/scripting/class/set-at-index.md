@@ -1,3 +1,7 @@
+---
+node: array.set
+---
+
 # Set At Index
 
 Returns a copy of an array with the item at an index replaced.

@@ -1,3 +1,7 @@
+---
+node: subsystem.get
+---
+
 # Get Subsystem
 
 Returns the running subsystem of a chosen class, or null if none is alive.

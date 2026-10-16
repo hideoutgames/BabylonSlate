@@ -1,3 +1,7 @@
+---
+node: flow.event.streamedSceneLoaded
+---
+
 # Event On Streamed Scene Loaded
 
 Runs on a Scene Subsystem when a streamed sub-scene becomes ready.

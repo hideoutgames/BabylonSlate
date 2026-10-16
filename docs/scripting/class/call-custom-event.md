@@ -1,3 +1,7 @@
+---
+node: flow.event.call
+---
+
 # Call Custom Event
 
 Runs a custom event on a target object, then continues.

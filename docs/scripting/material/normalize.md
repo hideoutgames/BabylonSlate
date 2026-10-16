@@ -1,3 +1,7 @@
+---
+node: vector.normalize
+---
+
 # Normalize
 
 Scales a vector to a length of 1 without changing its direction.

@@ -1,3 +1,7 @@
+---
+node: string.replace
+---
+
 # Replace
 
 Replaces every occurrence of the search text in a string with new text.

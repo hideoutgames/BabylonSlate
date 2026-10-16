@@ -1,3 +1,7 @@
+---
+node: array.appendArray
+---
+
 # Append Array
 
 Returns a copy of an array with the items of a second array added to the end.

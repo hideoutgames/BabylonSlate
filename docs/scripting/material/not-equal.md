@@ -1,3 +1,7 @@
+---
+node: logic.notEqual
+---
+
 # Not Equal
 
 Returns 1 where A differs from B and 0 where it is equal.

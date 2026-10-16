@@ -1,3 +1,7 @@
+---
+node: debug.printString
+---
+
 # Print String
 
 Shows a string as on-screen text while the game runs.

@@ -1,3 +1,7 @@
+---
+node: component.getFirstOfType
+---
+
 # Get First Component Of Type
 
 Returns the first component of a type found on any actor in the game.

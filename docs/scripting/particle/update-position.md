@@ -1,3 +1,7 @@
+---
+node: update.position
+---
+
 # Update Position
 
 Sets the position of every particle each frame.

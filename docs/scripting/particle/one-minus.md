@@ -1,3 +1,7 @@
+---
+node: math.oneMinus
+---
+
 # One Minus
 
 Returns the result of subtracting the input from 1.

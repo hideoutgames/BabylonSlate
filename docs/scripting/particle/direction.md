@@ -1,3 +1,7 @@
+---
+node: input.contextual.direction
+---
+
 # Direction
 
 Returns the current velocity of the particle in metres per second.

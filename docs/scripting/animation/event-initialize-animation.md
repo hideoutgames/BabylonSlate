@@ -1,3 +1,7 @@
+---
+node: anim.event.initialize
+---
+
 # Event Initialize Animation
 
 Runs once when an Animation Graph component first starts running this graph.

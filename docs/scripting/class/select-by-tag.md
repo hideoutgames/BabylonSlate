@@ -1,3 +1,7 @@
+---
+node: tags.select
+---
+
 # Select By Tag
 
 Returns the value that belongs to the case matching a Tag.

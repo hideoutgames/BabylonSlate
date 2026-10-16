@@ -1,3 +1,7 @@
+---
+node: actor.attach
+---
+
 # Attach Actor
 
 Makes an actor a child of another actor so it follows its parent.

@@ -1,3 +1,7 @@
+---
+node: flow.event.onMouseLeave
+---
+
 # Event On Mouse Leave
 
 Runs when the pointer moves off a 2D Button.

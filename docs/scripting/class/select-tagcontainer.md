@@ -1,3 +1,7 @@
+---
+node: select.tagContainer
+---
+
 # Select TagContainer
 
 Returns one of two TagContainer values, chosen by a Boolean condition.

@@ -1,3 +1,7 @@
+---
+node: saveGame.loadGame
+---
+
 # Load Game
 
 Restores the game from a saved slot.

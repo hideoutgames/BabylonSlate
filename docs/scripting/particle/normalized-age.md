@@ -1,3 +1,7 @@
+---
+node: input.contextual.normalizedAge
+---
+
 # Normalized Age
 
 Returns how far through its life the particle is, from 0 at birth to 1 at death.

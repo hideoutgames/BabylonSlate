@@ -1,3 +1,7 @@
+---
+node: math.equals
+---
+
 # Equal
 
 Returns true when two numbers are exactly equal.

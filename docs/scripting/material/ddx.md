@@ -1,3 +1,7 @@
+---
+node: derivative.ddx
+---
+
 # DDX
 
 Returns how much Value changes between neighbouring pixels in the horizontal screen direction.

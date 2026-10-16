@@ -1,3 +1,7 @@
+---
+node: component.has
+---
+
 # Has Component
 
 Returns true when an actor has a component of a given type.

@@ -1,3 +1,7 @@
+---
+node: transform.forward
+---
+
 # Get Actor Forward Vector
 
 Returns the direction an actor faces, as a unit vector along its forward axis.

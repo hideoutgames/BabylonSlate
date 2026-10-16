@@ -1,3 +1,7 @@
+---
+node: assetRegistry.getAssetByPath
+---
+
 # Get Asset By Path
 
 Looks up an asset by its full storage path and returns its details.

@@ -1,3 +1,7 @@
+---
+node: function.call
+---
+
 # Material Function
 
 Runs a Material Function, with pins that match the function's inputs and outputs.

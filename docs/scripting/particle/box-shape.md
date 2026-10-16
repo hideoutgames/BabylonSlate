@@ -1,3 +1,7 @@
+---
+node: shape.box
+---
+
 # Box Shape
 
 Spawns particles at random points inside a box and launches them between two directions.

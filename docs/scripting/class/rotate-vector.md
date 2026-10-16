@@ -1,3 +1,7 @@
+---
+node: quat.rotateVector
+---
+
 # Rotate Vector
 
 Rotates a vector by a quaternion and returns the result.

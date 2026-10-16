@@ -1,3 +1,7 @@
+---
+node: array.clear
+---
+
 # Array Clear
 
 Returns an empty array, leaving the input array unchanged.

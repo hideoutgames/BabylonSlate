@@ -1,3 +1,7 @@
+---
+node: bt.decorator.loop
+---
+
 # Loop
 
 Repeats the node it is attached to.

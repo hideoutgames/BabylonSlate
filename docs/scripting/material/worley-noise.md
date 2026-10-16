@@ -1,3 +1,7 @@
+---
+node: noise.worley
+---
+
 # Worley Noise
 
 Returns 3D cell noise as distances to the nearest and second-nearest feature points.

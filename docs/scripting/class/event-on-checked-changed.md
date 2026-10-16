@@ -1,3 +1,7 @@
+---
+node: flow.event.uiCheckedChanged
+---
+
 # Event On Checked Changed
 
 Runs when a checkbox, radio button or toggle changes its checked state.

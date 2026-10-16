@@ -1,3 +1,7 @@
+---
+node: material.setColorParameter
+---
+
 # Set Material Color Parameter
 
 Sets a named Color parameter on a Material Object.

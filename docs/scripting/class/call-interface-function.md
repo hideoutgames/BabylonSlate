@@ -1,3 +1,7 @@
+---
+node: interface.call
+---
+
 # Call Interface Function
 
 Calls a Script Interface method on another object and continues when it returns.

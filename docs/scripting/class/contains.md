@@ -1,3 +1,7 @@
+---
+node: string.contains
+---
+
 # Contains
 
 Returns true when a string includes the search text anywhere.

@@ -1,3 +1,7 @@
+---
+node: landscape.blend
+---
+
 # Landscape Layer Blend
 
 Mixes a Base colour toward a Layer colour by a weight.

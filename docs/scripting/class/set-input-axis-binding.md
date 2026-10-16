@@ -1,3 +1,7 @@
+---
+node: input.setAxisBinding
+---
+
 # Set Input Axis Binding
 
 Changes the key of an existing Input Axis binding.

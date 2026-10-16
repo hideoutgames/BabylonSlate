@@ -1,3 +1,7 @@
+---
+node: struct.make
+---
+
 # Make Structure
 
 Builds a structure value from its fields.

@@ -1,3 +1,7 @@
+---
+node: math.mod_int
+---
+
 # Modulo Int
 
 Returns the remainder after dividing one whole number by another.

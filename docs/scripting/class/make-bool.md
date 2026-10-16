@@ -1,3 +1,7 @@
+---
+node: literal.makeBool
+---
+
 # Make Bool
 
 Returns a Boolean value that you set on the node.

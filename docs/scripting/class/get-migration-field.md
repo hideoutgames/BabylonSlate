@@ -1,3 +1,7 @@
+---
+node: saveGame.migrationGetField
+---
+
 # Get Migration Field
 
 Reads a field of the save being migrated, chosen by its permanent field ID.

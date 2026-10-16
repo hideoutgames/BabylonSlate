@@ -1,3 +1,7 @@
+---
+node: vector.add3
+---
+
 # Add Vector3
 
 Returns the sum of two vectors, added component by component.

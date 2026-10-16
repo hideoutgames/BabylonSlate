@@ -1,3 +1,7 @@
+---
+node: update.alignAngle
+---
+
 # Align Angle
 
 Rotates each particle so its up direction follows its direction of travel on screen.

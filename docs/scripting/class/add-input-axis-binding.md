@@ -1,3 +1,7 @@
+---
+node: input.addAxisBinding
+---
+
 # Add Input Axis Binding
 
 Adds a key binding to an Input Axis while the game runs.

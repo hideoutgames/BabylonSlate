@@ -1,3 +1,7 @@
+---
+node: sceneStreaming.getSceneState
+---
+
 # Get Scene State
 
 Returns whether a streamed Scene is unloaded, loading, loaded or unloading.

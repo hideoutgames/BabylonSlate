@@ -1,3 +1,7 @@
+---
+node: input.onGamepadDisconnected
+---
+
 # On Gamepad Disconnected
 
 Runs when a gamepad disconnects, with its index.

@@ -1,3 +1,7 @@
+---
+node: input.bindings
+---
+
 # Get Input Bindings
 
 Returns the current bindings of an Input Action or Input Axis.

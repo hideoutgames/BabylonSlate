@@ -1,3 +1,7 @@
+---
+node: wildcard.to_vec3
+---
+
 # Wildcard To vec3
 
 Converts an Any value to a Vector 3 and reports whether it worked.

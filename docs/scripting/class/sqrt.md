@@ -1,3 +1,7 @@
+---
+node: math.sqrt
+---
+
 # Sqrt
 
 Returns the square root of the input.

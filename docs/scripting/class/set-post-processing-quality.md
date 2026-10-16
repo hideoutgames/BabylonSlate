@@ -1,3 +1,7 @@
+---
+node: scalability.setPostProcessingQuality
+---
+
 # Set Post Processing Quality
 
 Scales the resolution of post-process passes that allow scalable resolution.

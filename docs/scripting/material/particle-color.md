@@ -1,3 +1,7 @@
+---
+node: input.particleColor
+---
+
 # Particle Color
 
 Returns the colour and alpha the emitter gives to the particle being drawn.

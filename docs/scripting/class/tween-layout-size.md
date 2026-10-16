@@ -1,3 +1,7 @@
+---
+node: tween.layoutSize
+---
+
 # Tween Layout Size
 
 Resizes a 2D layout component from size A to size B over Duration seconds.

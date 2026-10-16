@@ -1,3 +1,7 @@
+---
+node: bt.task.playAnimation
+---
+
 # Play Animation
 
 Plays an Animation or Sprite Animation asset once, then succeeds.

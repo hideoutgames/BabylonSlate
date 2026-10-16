@@ -1,3 +1,7 @@
+---
+node: math.negate
+---
+
 # Negate
 
 Flips the sign of the input.

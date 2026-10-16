@@ -1,3 +1,7 @@
+---
+node: input.contextual.scale
+---
+
 # Scale
 
 Returns the current width and height scale of the particle.

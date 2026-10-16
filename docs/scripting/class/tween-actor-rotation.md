@@ -1,3 +1,7 @@
+---
+node: tween.actorRotation
+---
+
 # Tween Actor Rotation
 
 Rotates an actor from rotation A to rotation B over Duration seconds.

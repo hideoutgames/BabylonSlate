@@ -1,3 +1,7 @@
+---
+node: timers.delay
+---
+
 # Delay
 
 Waits for a number of seconds, then continues.

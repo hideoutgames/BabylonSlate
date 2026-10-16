@@ -1,3 +1,7 @@
+---
+node: render-target.getNearClip
+---
+
 # Get Capture Near Clip
 
 Returns the near clip distance of a capture actor's camera.

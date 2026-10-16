@@ -1,3 +1,7 @@
+---
+node: math.div_int
+---
+
 # Divide Int
 
 Returns the first whole number divided by the second, rounded toward zero.

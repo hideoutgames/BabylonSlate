@@ -1,3 +1,7 @@
+---
+node: flow.event.tick
+---
+
 # Event Tick
 
 Runs on every simulation step, giving the time since the previous one.

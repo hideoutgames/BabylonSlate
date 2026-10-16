@@ -1,3 +1,7 @@
+---
+node: anim.state.justLooped
+---
+
 # Just Looped
 
 Returns true only in the update where a looping clip wraps back to the start.

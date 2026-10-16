@@ -1,3 +1,7 @@
+---
+node: flow.event.sceneLayerActorSwitched
+---
+
 # Event On Scene Layer Actor Switched
 
 Runs on a Scene Layer Actor Switcher after it has changed the actor on display.

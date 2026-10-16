@@ -1,3 +1,7 @@
+---
+node: transform.right
+---
+
 # Get Actor Right Vector
 
 Returns the direction to an actor's right, as a unit vector along its right axis.

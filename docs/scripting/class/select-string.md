@@ -1,3 +1,7 @@
+---
+node: select.string
+---
+
 # Select String
 
 Returns one of two String values, chosen by a Boolean condition.

@@ -1,3 +1,7 @@
+---
+node: const.color
+---
+
 # Color
 
 Returns a fixed colour, including alpha, that you set in the **Inspector**.

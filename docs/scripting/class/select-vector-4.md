@@ -1,3 +1,7 @@
+---
+node: select.vec4
+---
+
 # Select Vector 4
 
 Returns one of two Vector 4 values, chosen by a Boolean condition.

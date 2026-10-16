@@ -1,3 +1,7 @@
+---
+node: input.time
+---
+
 # Time
 
 Returns the elapsed time in seconds, for animating a material.

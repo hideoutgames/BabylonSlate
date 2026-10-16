@@ -1,3 +1,7 @@
+---
+node: bt.event.activate
+---
+
 # On Activate
 
 Runs once when the Behaviour Tree starts this task.

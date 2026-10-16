@@ -1,3 +1,7 @@
+---
+node: saveGame.getSaveData
+---
+
 # Get Save Data
 
 Returns the current values of the default Save Game as one record.

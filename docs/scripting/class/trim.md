@@ -1,3 +1,7 @@
+---
+node: string.trim
+---
+
 # Trim
 
 Removes spaces and other whitespace from both ends of a string.

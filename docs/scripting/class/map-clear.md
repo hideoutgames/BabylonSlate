@@ -1,3 +1,7 @@
+---
+node: map.clear
+---
+
 # Map Clear
 
 Returns an empty map, leaving the input map unchanged.

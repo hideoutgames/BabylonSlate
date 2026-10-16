@@ -1,3 +1,7 @@
+---
+node: vector.break2
+---
+
 # Break Vector2
 
 Splits a Vector 2 into its X and Y numbers.

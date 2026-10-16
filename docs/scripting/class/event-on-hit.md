@@ -1,3 +1,7 @@
+---
+node: flow.event.hit
+---
+
 # Event On Hit
 
 Runs on each physics step that the actor's collider touches another solid collider.

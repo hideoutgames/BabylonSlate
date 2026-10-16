@@ -1,3 +1,7 @@
+---
+node: assets.asyncLoadMany
+---
+
 # Async Load Assets
 
 Loads several assets and their required dependencies as one request while gameplay continues.

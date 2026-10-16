@@ -1,3 +1,7 @@
+---
+node: flow.event.firstSceneLoaded
+---
+
 # Event On First Scene Loaded
 
 Runs once per session when the first scene has finished loading.

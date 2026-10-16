@@ -1,3 +1,7 @@
+---
+node: flow.event.sceneFinishLoading
+---
+
 # Event On Scene Finish Loading
 
 Runs each time a scene has finished loading.

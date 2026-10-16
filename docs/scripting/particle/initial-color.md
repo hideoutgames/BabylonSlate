@@ -1,3 +1,7 @@
+---
+node: input.contextual.initialColor
+---
+
 # Initial Color
 
 Returns the colour the particle was created with.

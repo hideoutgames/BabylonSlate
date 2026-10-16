@@ -1,3 +1,7 @@
+---
+node: flow.event.sceneLayerAdded
+---
+
 # Event On Scene Layer Added
 
 Runs on a Scene Subsystem when a Scene Layer is created while the subsystem exists.

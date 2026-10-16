@@ -1,3 +1,7 @@
+---
+node: math.radians
+---
+
 # Radians
 
 Converts the input from degrees to radians.

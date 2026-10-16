@@ -1,3 +1,7 @@
+---
+node: bt.task.succeed
+---
+
 # Succeed
 
 Finishes immediately and reports success to its parent.

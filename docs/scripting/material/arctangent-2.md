@@ -1,3 +1,7 @@
+---
+node: math.atan2
+---
+
 # Arctangent 2
 
 Returns the angle in radians of the point (X, Y), measured from the positive X axis.

@@ -1,3 +1,7 @@
+---
+node: flow.function.output
+---
+
 # Output
 
 Returns values to the caller and ends the function.

@@ -1,3 +1,7 @@
+---
+node: render-target.setFarClip
+---
+
 # Set Capture Far Clip
 
 Sets the far clip distance of a capture actor's camera.

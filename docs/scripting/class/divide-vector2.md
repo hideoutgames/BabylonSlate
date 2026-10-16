@@ -1,3 +1,7 @@
+---
+node: vector.div2
+---
+
 # Divide Vector2
 
 Divides the first vector by the second, component by component.

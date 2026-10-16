@@ -1,3 +1,7 @@
+---
+node: material.resetFloatParameter
+---
+
 # Reset Material Float Parameter
 
 Restores a Float parameter on a Material Object to its original value.

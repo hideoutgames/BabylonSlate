@@ -1,3 +1,7 @@
+---
+node: vector.cross
+---
+
 # Cross Product
 
 Returns the vector perpendicular to both A and B.

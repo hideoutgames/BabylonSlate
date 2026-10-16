@@ -1,3 +1,7 @@
+---
+node: quat.make
+---
+
 # Make Quaternion
 
 Builds a quaternion from X, Y, Z and W components.

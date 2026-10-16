@@ -1,3 +1,7 @@
+---
+node: math.tan
+---
+
 # Tangent
 
 Returns the tangent of an angle in radians.

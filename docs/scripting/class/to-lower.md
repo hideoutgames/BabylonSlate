@@ -1,3 +1,7 @@
+---
+node: string.toLower
+---
+
 # To Lower
 
 Converts every letter in a string to lower case.

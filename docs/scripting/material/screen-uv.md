@@ -1,3 +1,7 @@
+---
+node: input.screenUv
+---
+
 # Screen UV
 
 Returns where the current pixel sits on the screen, from 0 to 1 on each axis.

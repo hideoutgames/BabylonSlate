@@ -1,3 +1,7 @@
+---
+node: scene-layer.create
+---
+
 # Create Scene Layer
 
 Creates a Scene Layer from an asset and waits until it is ready.

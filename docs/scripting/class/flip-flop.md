@@ -1,3 +1,7 @@
+---
+node: flow.flipFlop
+---
+
 # Flip Flop
 
 Alternates between two outputs each time it runs, starting with A.

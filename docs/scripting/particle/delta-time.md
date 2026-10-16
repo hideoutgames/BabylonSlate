@@ -1,3 +1,7 @@
+---
+node: input.system.deltaTime
+---
+
 # Delta Time
 
 Returns the seconds simulated in the current frame.

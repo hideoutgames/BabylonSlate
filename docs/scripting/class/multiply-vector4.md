@@ -1,3 +1,7 @@
+---
+node: vector.mul4
+---
+
 # Multiply Vector4
 
 Multiplies two vectors together, component by component.

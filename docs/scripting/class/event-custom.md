@@ -1,3 +1,7 @@
+---
+node: flow.event.custom
+---
+
 # Event Custom
 
 Defines an event of your own that other graphs can call by name.

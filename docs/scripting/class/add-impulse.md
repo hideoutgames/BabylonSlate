@@ -1,3 +1,7 @@
+---
+node: physics.addImpulse
+---
+
 # Add Impulse
 
 Applies an instant push to an actor's dynamic Rigid Body.

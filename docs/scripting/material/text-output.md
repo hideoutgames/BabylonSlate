@@ -1,3 +1,7 @@
+---
+node: output.text
+---
+
 # Text Output
 
 Sets the colour of text drawn with a Text material.

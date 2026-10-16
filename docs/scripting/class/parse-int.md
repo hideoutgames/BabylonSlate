@@ -1,3 +1,7 @@
+---
+node: string.parseInt
+---
+
 # Parse Int
 
 Converts text such as 42 into an Integer and reports whether it worked.

@@ -1,3 +1,7 @@
+---
+node: variables.get
+---
+
 # Get Variable
 
 Returns the current value of a variable.

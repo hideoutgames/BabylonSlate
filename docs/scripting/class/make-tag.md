@@ -1,3 +1,7 @@
+---
+node: tags.make
+---
+
 # Make Tag
 
 Returns a Tag chosen from the project's Tags.

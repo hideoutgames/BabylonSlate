@@ -1,3 +1,7 @@
+---
+node: data.getParent
+---
+
 # Get Data Parent
 
 Returns the path of an entry's parent.

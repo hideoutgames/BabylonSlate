@@ -1,3 +1,7 @@
+---
+node: wildcard.to_rotator
+---
+
 # Wildcard To rotator
 
 Converts an Any value to a Rotator and reports whether it worked.

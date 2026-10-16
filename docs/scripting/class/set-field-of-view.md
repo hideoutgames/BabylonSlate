@@ -1,3 +1,7 @@
+---
+node: camera.setFieldOfView
+---
+
 # Set Field Of View
 
 Sets a camera's field of view in degrees.

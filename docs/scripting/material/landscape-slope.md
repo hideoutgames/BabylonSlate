@@ -1,3 +1,7 @@
+---
+node: landscape.slope
+---
+
 # Landscape Slope
 
 Returns how steep the ground is, from 0 on flat ground to 1 on a vertical face.

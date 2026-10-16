@@ -1,3 +1,7 @@
+---
+node: sceneStreaming.unloadSceneBlocking
+---
+
 # Unload Scene Blocking
 
 Unloads a Scene Streaming Actor's Scene and waits until it is gone, pausing the game.

@@ -1,3 +1,7 @@
+---
+node: flow.event.sceneLayerRemoved
+---
+
 # Event On Scene Layer Removed
 
 Runs on a Scene Subsystem when a Scene Layer it saw added is removed.

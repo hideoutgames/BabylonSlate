@@ -1,3 +1,7 @@
+---
+node: flow.event.gameLoaded
+---
+
 # Event On Game Loaded
 
 Runs after Load Game restores saved world state and references, before gameplay continues.

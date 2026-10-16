@@ -1,3 +1,7 @@
+---
+node: bt.event.abort
+---
+
 # On Abort
 
 Runs when the Behaviour Tree stops this task before it finishes.

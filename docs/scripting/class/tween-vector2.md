@@ -1,3 +1,7 @@
+---
+node: tween.vector2
+---
+
 # Tween Vector2
 
 Animates a Vector 2 variable from A to B over Duration seconds.

@@ -1,3 +1,7 @@
+---
+node: select.color
+---
+
 # Select Color
 
 Returns one of two Color values, chosen by a Boolean condition.

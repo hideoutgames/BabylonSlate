@@ -1,3 +1,7 @@
+---
+node: data.getDescendants
+---
+
 # Get Data Descendants
 
 Returns the paths of every entry below an entry, with parents listed before their children.

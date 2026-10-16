@@ -1,3 +1,7 @@
+---
+node: tween.transform
+---
+
 # Tween Transform
 
 Animates a Transform variable from A to B, blending location, rotation and scale.

@@ -1,3 +1,7 @@
+---
+node: color.desaturate
+---
+
 # Desaturate
 
 Blends a colour toward grey by the amount set in Level.

@@ -1,3 +1,7 @@
+---
+node: casting.cast
+---
+
 # Cast To
 
 Tests whether an object belongs to a class and returns it as that class if so.

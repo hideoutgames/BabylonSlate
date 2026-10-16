@@ -1,3 +1,7 @@
+---
+node: math.lerp
+---
+
 # Lerp
 
 Blends from one value to another by an amount between 0 and 1.

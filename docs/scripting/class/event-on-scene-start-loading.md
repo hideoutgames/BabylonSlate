@@ -1,3 +1,7 @@
+---
+node: flow.event.sceneStartLoading
+---
+
 # Event On Scene Start Loading
 
 Runs when the game begins loading a scene.

@@ -1,3 +1,7 @@
+---
+node: tags.hasAll
+---
+
 # Has All Tags
 
 Returns true when a TagContainer matches every Tag in a second TagContainer.

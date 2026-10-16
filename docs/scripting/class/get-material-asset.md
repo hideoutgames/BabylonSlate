@@ -1,3 +1,7 @@
+---
+node: material.getMaterialAsset
+---
+
 # Get Material Asset
 
 Returns the Material or Material Instance asset that a Material Object renders.

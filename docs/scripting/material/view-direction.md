@@ -1,3 +1,7 @@
+---
+node: input.viewDirection
+---
+
 # View Direction
 
 Returns the direction from the surface point toward the camera, scaled to a length of 1.

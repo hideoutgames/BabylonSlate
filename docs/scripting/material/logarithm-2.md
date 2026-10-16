@@ -1,3 +1,7 @@
+---
+node: math.log2
+---
+
 # Logarithm 2
 
 Returns the base-2 logarithm of Value.

@@ -1,3 +1,7 @@
+---
+node: wildcard.to_vec2
+---
+
 # Wildcard To vec2
 
 Converts an Any value to a Vector 2 and reports whether it worked.

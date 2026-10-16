@@ -1,3 +1,7 @@
+---
+node: material.getTextureParameter
+---
+
 # Get Material Texture Parameter
 
 Returns the Texture assigned to a named Texture parameter on a Material Object.

@@ -1,3 +1,7 @@
+---
+node: rotator.lookAt
+---
+
 # Find Look At Rotation
 
 Returns the rotation that makes forward point from one location toward another.

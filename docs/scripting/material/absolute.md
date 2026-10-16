@@ -1,3 +1,7 @@
+---
+node: math.abs
+---
+
 # Absolute
 
 Returns the input with any negative sign removed.

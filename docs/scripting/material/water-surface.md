@@ -1,3 +1,7 @@
+---
+node: input.waterSurface
+---
+
 # Water Surface
 
 Returns water data for the current point: wave height, bank distance, depth, time and flow.

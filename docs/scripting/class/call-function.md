@@ -1,3 +1,7 @@
+---
+node: functions.call
+---
+
 # Call Function
 
 Calls a function defined on a class and continues when it returns.

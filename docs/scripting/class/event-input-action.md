@@ -1,3 +1,7 @@
+---
+node: input.actionEvent
+---
+
 # Event Input Action
 
 Runs when a chosen Input Action starts, stays held or is released.

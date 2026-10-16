@@ -1,3 +1,7 @@
+---
+node: debug.drawRectangle
+---
+
 # Draw Debug Rectangle
 
 Draws a rectangle outline at a world position.

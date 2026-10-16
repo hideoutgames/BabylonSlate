@@ -1,3 +1,7 @@
+---
+node: flow.sequence
+---
+
 # Sequence
 
 Runs its outputs one after another, from the first to the last.
