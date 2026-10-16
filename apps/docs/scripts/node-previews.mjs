@@ -1,7 +1,8 @@
-// Builds the node page previews: renders every catalog node with the editor's
-// graph components (src/node-previews/render.tsx) and compiles the Tailwind
-// utilities and editor tokens they use, scoped to `.haptic-graph`. The docs
-// Markdown plugin and theme read the output from .vitepress/cache/node-previews.
+// Builds the node page previews: renders Class and Material nodes with the
+// editor's graph components and every node's pin glyphs
+// (src/node-previews/render.tsx), and compiles the Tailwind utilities and editor
+// tokens they use, scoped to `.haptic-graph`. The docs Markdown plugin and theme
+// read the output from .vitepress/cache/node-previews.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -32,7 +33,7 @@ const { renderNodePreviews } = await import(pathToFileURL(bundle).href);
 const previews = renderNodePreviews();
 
 const markup = Object.values(previews).flatMap((preview) => [
-  preview.html,
+  preview.html ?? "",
   ...[...preview.inputs, ...preview.outputs].map((pin) => pin.glyph),
 ]);
 const candidates = [

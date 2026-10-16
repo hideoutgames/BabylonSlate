@@ -2,8 +2,8 @@
 export type DocsPin = { label: string; glyph: string };
 
 export type NodePreview = {
-  /** The node drawn by the editor's node component. */
-  html: string;
+  /** The node drawn by the editor's node component; Class and Material nodes only. */
+  html?: string;
   inputs: DocsPin[];
   outputs: DocsPin[];
 };

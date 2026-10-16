@@ -29,8 +29,9 @@ function inlineAfter(tokens: Token[], index: number): Token | undefined {
 
 /**
  * Node reference pages name their catalog node in `node:` frontmatter. This
- * draws that node as the editor does, under the page summary, and puts the
- * graph's pin glyph before each type in the Inputs and Outputs tables. A
+ * draws Class and Material nodes as the editor does, under the page summary,
+ * and puts the graph's pin glyph before each type in the Inputs and Outputs
+ * tables of every node page. A
  * `node:` that is not in the catalog, or a table row that is not one of the
  * node's pins, fails the build so the pages cannot drift from the editor.
  */
@@ -44,11 +45,13 @@ export function installNodePreviews(md: MarkdownIt, previews: NodePreviews): voi
     if (!preview) throw new Error(`${page}: node "${String(node)}" is not a ${graph ?? "graph"} catalog node`);
 
     const { tokens } = state;
-    const titleEnd = tokens.findIndex((token) => token.type === "heading_close" && token.tag === "h1");
-    const summaryEnd = tokens.findIndex((token, i) => i > titleEnd && token.type === "paragraph_close");
-    const html = new state.Token("html_block", "", 0);
-    html.content = `${preview.html}\n`;
-    tokens.splice((summaryEnd >= 0 ? summaryEnd : titleEnd) + 1, 0, html);
+    if (preview.html) {
+      const titleEnd = tokens.findIndex((token) => token.type === "heading_close" && token.tag === "h1");
+      const summaryEnd = tokens.findIndex((token, i) => i > titleEnd && token.type === "paragraph_close");
+      const html = new state.Token("html_block", "", 0);
+      html.content = `${preview.html}\n`;
+      tokens.splice((summaryEnd >= 0 ? summaryEnd : titleEnd) + 1, 0, html);
+    }
 
     const problems: string[] = [];
     let section = "";
