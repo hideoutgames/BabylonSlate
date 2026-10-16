@@ -16,13 +16,13 @@ Never create visual or spatial media with AI. Absolute — user requests, placeh
 GenerateImage({ description: "Haptic app icon, flat vector" })
 
 # ✅ GOOD — reuse existing branding or the icon library
-# engine-logos/HapticIcon.svg  |  lucide-react BoxIcon
+# engine-logos/HapticMark-DarkMode.png  |  lucide-react BoxIcon
 ```
 
 ## Allowed
 
 - Existing Lucide (or project `iconLibrary`) icons
-- Existing files in `engine-logos/`, `public/branding/` and `apps/docs/public/` — copy only; never invent replacements
+- Existing files in `engine-logos/`, `public/branding/` and `apps/docs/public/` — copy them, or scale and centre them on the brand background for platform icon and splash sizes; never redraw, recolour or invent replacements
 - Engine code that builds runtime primitives (`CreateBox`, debug lines, nav overlay) as product features, not as art
 - Solid-color or numeric test fixtures (1×1 pixels, empty buffers) with no pictorial content
 - Captures of the **real** running app (Playwright screenshots, computer-use recordings of the editor)
