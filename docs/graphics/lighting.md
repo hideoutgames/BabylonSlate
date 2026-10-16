@@ -31,9 +31,7 @@ Only one directional light lights a scene at a time: the first enabled one in th
 
 | Setting | Description |
 | --- | --- |
-| **Enabled** | Turns the light on or off. |
-| **Color**, **Intensity** | Light colour and brightness. New lights use white at intensity 1. |
-| **Light Kind** | Point, Spot or Directional. |
+| **Color**, **Intensity** | New lights use white at intensity 1. **Light Kind** switches between Point, Spot and Directional. |
 | **Cast Shadows** | Off for new lights. See [Shadows](shadows.md). |
 | **Shadow Priority** | Which lights keep their shadows when the shadow budget is full. |
 | **Range** | Point and spot only. Default 10. |
@@ -46,7 +44,7 @@ For a textured **Rectangular Area Light**, open a Texture asset, choose **Prepar
 Light icons in the viewport show each light's state:
 
 - **White**: working as configured.
-- **Yellow**: limited. The light is over the device's light capacity, or its requested shadows are unavailable.
+- **Yellow**: limited. The light is over the light budget or the device's light capacity, or its requested shadows are unavailable.
 - **Red**: disabled, or intensity is 0.
 
 ## Light budget
@@ -57,11 +55,17 @@ Each scene can light a limited number of local (point, spot and area) lights at 
 - The directional sun and fill lights use separate slots.
 - The device's GPU can lower the budget further.
 
-When more local lights are on than the budget allows, Haptic keeps the lights nearest the camera and turns the rest off until they come back into range. Disabled lights and lights with zero intensity do not count. Their **Enabled** setting is not changed.
+When more local lights are on than the budget allows, Haptic keeps the lights nearest the camera and switches the rest off until the camera moves closer to them. Disabled lights and lights with zero intensity do not count. Their **Enabled** setting is not changed.
 
 ## Environment lighting
 
-Image-based lighting lights surfaces from a prefiltered environment texture. Pick the texture per scene in the **Inspector** with nothing selected, under **Environment Lighting > Environment Texture**. It is separate from the Skybox, which is only a backdrop.
+Image-based lighting lights surfaces from a prefiltered environment texture.
+
+1. Import a prefiltered environment cube as a `.env` or `.dds` file. See [Importing](../editor/importing.md).
+2. Open the scene and clear the selection so the **Inspector** shows the scene's settings.
+3. Under **Environment Lighting**, pick the texture in **Environment Texture**.
+
+Environment lighting is separate from the Skybox, which is only a backdrop. Without an Environment Texture, the scene has no image-based lighting.
 
 | Setting | Description |
 | --- | --- |

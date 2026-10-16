@@ -34,7 +34,7 @@ When Play starts, Haptic picks the active camera in this order:
 3. The first camera with **Attempt Possess View Target** on.
 4. A default Play camera.
 
-Haptic never picks the first camera in the scene on its own. If the Default Camera is deleted, set a new one.
+If you delete the Default Camera's actor, pick a new one.
 
 ## Preview the game camera
 

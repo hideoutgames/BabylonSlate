@@ -2,7 +2,7 @@
 
 Haptic renders with Babylon.js. Project-wide rendering choices live in **Project Settings > Rendering**, and each scene can override some of them in the **Inspector** when nothing is selected. The same settings drive the editor viewport, asset previews, Play and exported games.
 
-Open **Settings > Project Settings** and choose **Rendering**. Changes apply together when you close the dialog with **Done**. The editor then reloads open scenes and previews; if the renderer has to restart it shows **Updating Rendering**. Open documents and unsaved edits are kept.
+Open **Settings > Project Settings** and choose **Rendering**. Rendering changes apply together when you close the dialog, for example with **Done**. The editor then reloads open scenes and previews; if the renderer has to restart it shows **Updating Rendering**. Open documents and unsaved edits are kept.
 
 ## Render Mode
 
