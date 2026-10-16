@@ -7,8 +7,7 @@ aside: false
 
 <div class="haptic-home">
 <div class="haptic-hero">
-<h1 class="haptic-wordmark" data-text="HAPTIC">HAPTIC</h1>
-<img class="haptic-wordmark-image" src="/branding/HapticWordmark-DarkMode.png" alt="" aria-hidden="true">
+<h1 class="haptic-wordmark"><img class="light-only" src="/branding/HapticWordmark-LightMode.png" alt="Haptic"><img class="dark-only" src="/branding/HapticWordmark-DarkMode.png" alt="Haptic"></h1>
 <p class="haptic-tagline">the <strong>portable</strong> game engine</p>
 <p class="haptic-lead">Build 2D and 3D games on iPad, iPhone, Android, Mac, Windows and Linux. Build from anywhere, anytime.</p>
 <div class="haptic-actions">

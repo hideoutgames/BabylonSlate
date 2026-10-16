@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 export function validateAppIcon(bytes) {
   const placeholder = "29e4777e319de3ee5a52c3a8004ec19d0568414004257e36d7c94a077d71c93b";
-  if (bytes.length < 33 || bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a" || bytes.readUInt32BE(16) !== 1024 || bytes.readUInt32BE(20) !== 1024 || ![0, 2].includes(bytes[25]) || createHash("sha256").update(bytes).digest("hex") === placeholder) throw new Error("Supply a real opaque 1024x1024 BabylonSlate PNG app icon; the Capacitor placeholder is not distributable");
+  if (bytes.length < 33 || bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a" || bytes.readUInt32BE(16) !== 1024 || bytes.readUInt32BE(20) !== 1024 || ![0, 2].includes(bytes[25]) || createHash("sha256").update(bytes).digest("hex") === placeholder) throw new Error("Supply a real opaque 1024x1024 Haptic PNG app icon; the Capacitor placeholder is not distributable");
   let offset = 8;
   while (offset + 12 <= bytes.length) {
     const length = bytes.readUInt32BE(offset);

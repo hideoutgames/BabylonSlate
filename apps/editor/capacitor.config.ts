@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "no.hideout.babylonslate",
-  appName: "BabylonSlate",
+  appName: "Haptic",
   webDir: "dist",
   server: {
     androidScheme: "https",

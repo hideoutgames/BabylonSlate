@@ -8,7 +8,7 @@ How Haptic desktop and mobile builds are versioned, signed, uploaded and publish
 - Standard GitHub-hosted runners only (Ubuntu, Windows, macOS). All logs, summaries, caches and GitHub artifacts are public: never put credentials, session links, Apple binaries, signing logs or tester data in inputs, artifacts, summaries or releases. Secret masking alone is insufficient; sensitive commands clean up on success and failure (a timed-out or cancelled Apple stage stops every process it started; a keychain that cannot be deleted fails cleanup).
 - Never provide credentials in chat, issues, workflow inputs or commits; provision them in GitHub environment settings.
 - Never move a tag, never promote a Test package by flipping its prerelease flag, never rerun publication for an already-published GitHub Release or replace its assets, never substitute an unverified package after artifact expiry (artifacts live one day).
-- Do not add native packaging to recursive workspace `build` or to ordinary Verify. Do not add Apple ID passwords or unverified signing modes. No icon or splash art may be generated: replace placeholders only with human-supplied images.
+- Do not add native packaging to recursive workspace `build` or to ordinary Verify. Do not add Apple ID passwords or unverified signing modes. No icon or splash art may be generated. Platform icons and splash screens are the human-made marks in `engine-logos/`, scaled and centred on Haptic's warm black (`#0b0a08`); regenerate them the same way when the marks change.
 - Report each platform independently. Dispatch acceptance is not build success; upload success is not tester availability. Never report a partially successful request as complete.
 
 ## Version contract
@@ -55,7 +55,7 @@ Every platform builds from a clean checkout without credentials; only signing, n
 | Android | Debug APK via `android:build` (**Inspect Android toolchain**) | Signed release APK and publication (`android-signing`) |
 | iPadOS | Unsigned iPad simulator build via `ios:build` (**Inspect Apple toolchain** `ipados-build` job) | Archive, signing, TestFlight upload (`testflight`) |
 
-`platforms=all` or `mobile` dispatches fail the Android and iPadOS jobs until their environments are provisioned; `desktop` needs no secrets. Create all four environments with branch restrictions before the first dispatch, even while empty. The Capacitor placeholder AppIcon is rejected by distribution (supply an opaque 1024x1024 human-made PNG before the first Apple upload); desktop packages use electron-builder's default icon until a human-made image of at least 512x512 exists.
+`platforms=all` or `mobile` dispatches fail the Android and iPadOS jobs until their environments are provisioned; `desktop` needs no secrets. Create all four environments with branch restrictions before the first dispatch, even while empty. The iOS AppIcon and the desktop `apps/desktop/build/icon.png` are `engine-logos/HapticAppIcon.png` (opaque 1024x1024); distribution still rejects the Capacitor placeholder (kept as a test fixture in `scripts/distribution/fixtures/`). The iOS and Android display names are **Haptic** (the Apple contract checks `CFBundleDisplayName`); the App Store Connect record and Play listing names are changed in the stores, and the bundle identifier stays `no.hideout.babylonslate`.
 
 ## Implemented paths
 
