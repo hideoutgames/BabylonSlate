@@ -9,6 +9,10 @@ import { InputAssetEditingProvider } from "../context/input-asset-editing-contex
 
 const apply = vi.hoisted(() => vi.fn(async () => true));
 const documentKind = vi.hoisted(() => ({ value: "input-action" }));
+const documentExtra = vi.hoisted(() => ({
+  valueType: undefined as string | undefined,
+  bindings: [] as Array<Record<string, unknown>>,
+}));
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: "jump" }),
 }));
@@ -19,10 +23,13 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
       id: "jump",
       ref: { kind: documentKind.value, path: "Jump.inputaction.babasset" },
       content: {
-        valueType: documentKind.value === "input-axis" ? "1d" : "button",
+        valueType:
+          documentExtra.valueType ??
+          (documentKind.value === "input-axis" ? "1d" : "button"),
         bindings: [
           { id: "keyboard", device: "key", code: "Space" },
           { id: "pad", device: "gamepadButton", code: "0:0" },
+          ...documentExtra.bindings,
         ],
       },
     },
@@ -33,6 +40,8 @@ afterEach(() => {
   cleanup();
   apply.mockClear();
   documentKind.value = "input-action";
+  documentExtra.valueType = undefined;
+  documentExtra.bindings = [];
 });
 const Editor = () => (
   <InputAssetEditingProvider>
@@ -49,7 +58,6 @@ describe("input asset editor", () => {
       render(<Editor />);
       fireEvent.click(screen.getByRole("button", { name: "Add Control" }));
       expect(screen.queryByTestId("search-item-pointer")).toBeNull();
-      expect(screen.queryByTestId("search-item-touch")).toBeNull();
       fireEvent.click(screen.getByTestId("search-item-mouseButton"));
       expect(apply).toHaveBeenLastCalledWith(
         "jump",
@@ -63,6 +71,38 @@ describe("input asset editor", () => {
       );
     },
   );
+
+  it("authors Touch axis controls the way it authors Gamepad Axis controls", () => {
+    documentKind.value = "input-axis";
+    documentExtra.valueType = "2d";
+    documentExtra.bindings = [
+      { id: "stick", device: "touch", code: "joystick-y", component: "y" },
+    ];
+    render(<Editor />);
+    fireEvent.click(screen.getByRole("button", { name: "Add Control" }));
+    fireEvent.click(screen.getByTestId("search-item-touch"));
+    expect(apply).toHaveBeenLastCalledWith(
+      "jump",
+      expect.objectContaining({
+        bindings: [
+          expect.objectContaining({ id: "keyboard" }),
+          expect.objectContaining({ id: "pad" }),
+          expect.objectContaining({ id: "stick" }),
+          expect.objectContaining({ device: "touch", code: "", scale: 1 }),
+        ],
+      }),
+    );
+
+    const touch = screen.getByRole("group", { name: "Control 3" });
+    expect(touch.textContent).toContain("Touch");
+    expect(screen.getByTestId("input-control-stick").textContent).toContain(
+      "Joystick Y",
+    );
+    fireEvent.click(touch);
+    expect(screen.getByText("Direction")).toBeTruthy();
+    expect(screen.getByText("Dead Zone")).toBeTruthy();
+    expect(screen.queryByText("Value When Held")).toBeNull();
+  });
 
   it.each(["input-action", "input-axis"])(
     "selects %s controls from the whole row or keyboard without trapping child controls",

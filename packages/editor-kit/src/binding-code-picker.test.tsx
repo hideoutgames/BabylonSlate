@@ -98,4 +98,29 @@ describe("BindingCodePicker", () => {
     screen.getByTestId("search-item-1").click();
     expect(onChange).toHaveBeenCalledWith("1");
   });
+
+  it("lists the touch axes the 2D Joystick drives", () => {
+    const onChange = vi.fn();
+    render(
+      <BindingCodePicker
+        device="touch"
+        code=""
+        onChange={onChange}
+        open
+        onOpenChange={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("binding-code-picker").textContent).toContain(
+      "Choose Control",
+    );
+    expect(screen.getByTestId("search-item-joystick-x").textContent).toContain(
+      "Joystick X",
+    );
+    expect(screen.getByTestId("search-item-dpad-y").textContent).toContain(
+      "D-Pad Y",
+    );
+    expect(screen.queryByTestId("search-item-KeyW")).toBeNull();
+    screen.getByTestId("search-item-joystick-y").click();
+    expect(onChange).toHaveBeenCalledWith("joystick-y");
+  });
 });

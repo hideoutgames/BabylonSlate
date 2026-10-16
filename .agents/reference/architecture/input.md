@@ -22,7 +22,7 @@ Input Action / Input Axis assets, the `@babylonslate/input` mapping model and re
 - Inputs are assets (`InputAction`, `InputAxis`), not Project Settings rows. Project settings carry no input mappings.
 - Identity is the asset GUID. There are no name aliases or conversion markers; the name-keyed `actions` / `axes` views combine every asset sharing a display name (held if any is held; axis values add and clamp to ±1).
 - Loading a project never synthesizes input assets or recreates deleted ones. Only the 3D template ships Jump / Confirm / Move / Look; an explicit empty catalog means no defaults. A runtime started without `inputAssets` falls back to starter controls.
-- Touch Control is no longer an authoring option; primary touch is Mouse Left. Synthetic touch controls are not in starter defaults.
+- Primary touch is Mouse Left. `touch` bindings are authored with **Add Control > Touch**; their codes are the 2D Joystick's axes (`joystick-x`/`-y`, `dpad-x`/`-y`, read as analog axes like `gamepadAxis`). Synthetic touch controls are not in starter defaults.
 - The obsolete string-based input nodes, Input Control / Input Device types and capture-status workflow are removed; do not re-add them.
 - The resolver is pure with respect to the browser: test it with synthetic event streams and the deterministic harness, not by driving a browser.
 

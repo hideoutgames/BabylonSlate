@@ -1,6 +1,6 @@
 # Input
 
-Input Actions and Input Axes turn keys, mouse buttons and gamepad controls into named inputs your graphs respond to.
+Input Actions and Input Axes turn keys, mouse buttons, gamepad controls and on-screen joysticks into named inputs your graphs respond to.
 
 ## Actions and axes
 
@@ -15,7 +15,7 @@ Create them in the **Content Browser** with **New Asset > Input > Input Action**
 
 Open the asset. The **Bindings** window lists its controls; the **Inspector** edits the selected one.
 
-1. Tap **Add Control** and choose **Keyboard**, **Mouse Button**, **Gamepad Button** or **Gamepad Axis**.
+1. Tap **Add Control** and choose **Keyboard**, **Mouse Button**, **Gamepad Button**, **Gamepad Axis** or **Touch**.
 2. Pick the control from its list. For a key, you can tap **Listen** and press it instead; <kbd>Esc</kbd> cancels.
 3. Add more controls as needed. Any of them can trigger the input.
 
@@ -26,16 +26,16 @@ For an Input Axis, set **Value** to **1D · Number** or **2D · X and Y**. **Add
 | Shift Required, Control Required, Alt Required, Command / Windows Required | Keyboard only. The control counts only while that modifier is held, on either side of the keyboard. |
 | Direction | 2D axes. Whether the control drives **X · Horizontal** or **Y · Vertical**. |
 | Value When Held | Axes, for keys and buttons. The value while held, such as -1 for left and 1 for right. |
-| Scale | Axes, for sticks. Multiplies the stick value. |
-| Dead Zone | Axes, for sticks. Small movements below this are ignored. |
-| Sensitivity | Axes, for sticks. An extra multiplier, useful for look controls. |
+| Scale | Axes, for sticks and Touch controls. Multiplies the stick value. |
+| Dead Zone | Axes, for sticks and Touch controls. Small movements below this are ignored. |
+| Sensitivity | Axes, for sticks and Touch controls. An extra multiplier, useful for look controls. |
 | Invert | Axes. Flips the sign. |
 
 ## Devices
 
 - **Gamepads:** up to four. Buttons use layout-neutral names such as **Face Button Down**, **Left Bumper** and **D-Pad Up**, so one binding works for any standard controller.
 - **Mouse:** Left, Middle, Right, Back and Forward buttons.
-- **Touch:** the first finger on the screen acts as **Mouse Left**, so a Mouse Left binding also responds to taps. For on-screen controls, build a [Scene Layer](../scenes/scene-layers.md) with buttons.
+- **Touch:** the first finger on the screen acts as **Mouse Left**, so a Mouse Left binding also responds to taps. For on-screen controls, build a [Scene Layer](../scenes/scene-layers.md) with buttons, or add a [2D Joystick](../components/2d-joystick.md) and bind its **Joystick X**, **Joystick Y**, **D-Pad X** or **D-Pad Y** axis with a **Touch** control.
 
 ## Respond to input in a graph
 

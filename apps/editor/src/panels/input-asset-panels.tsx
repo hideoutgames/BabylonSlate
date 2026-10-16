@@ -36,6 +36,7 @@ const DEVICES: Array<{ id: InputDevice; label: string }> = [
   { id: "mouseButton", label: "Mouse Button" },
   { id: "gamepadButton", label: "Gamepad Button" },
   { id: "gamepadAxis", label: "Gamepad Axis" },
+  { id: "touch", label: "Touch" },
 ];
 
 function useInputDocument() {
@@ -230,7 +231,7 @@ export function InputBindingsPanel(_props: IDockviewPanelProps) {
             <EmptyHeader>
               <EmptyTitle>No Controls</EmptyTitle>
               <EmptyDescription>
-                Add a keyboard, mouse, or gamepad control
+                Add a keyboard, mouse, gamepad or touch control
                 {isAxis ? ", or start with a preset" : ""}.
               </EmptyDescription>
             </EmptyHeader>

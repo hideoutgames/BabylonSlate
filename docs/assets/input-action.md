@@ -10,7 +10,7 @@ In the **Content Browser**, choose **New Asset > Input > Input Action**.
 
 Double-tap the asset to open it. The window has **Bindings** and an **Inspector**.
 
-- **Bindings** lists the action's controls. Tap **Add Control** and choose **Keyboard**, **Mouse Button**, **Gamepad Button** or **Gamepad Axis**.
+- **Bindings** lists the action's controls. Tap **Add Control** and choose **Keyboard**, **Mouse Button**, **Gamepad Button**, **Gamepad Axis** or **Touch**. A Gamepad Axis control holds the action while the stick is pushed more than halfway; a Touch control while its [2D Joystick](../components/2d-joystick.md) axis is pushed more than halfway right or up.
 - For a key, tap **Listen** and press the key you want. <kbd>Esc</kbd> cancels.
 - Select a control to edit it in the **Inspector**. Any control can trigger the action.
 
