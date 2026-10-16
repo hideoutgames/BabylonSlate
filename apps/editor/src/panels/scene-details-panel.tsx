@@ -773,18 +773,6 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
       },
       {
         kind: "number",
-        id: "scene-fixed-timestep",
-        label: "Timestep",
-        value: scene.settings.fixedTimestepMs,
-        defaultValue: defaults.fixedTimestepMs,
-        onChange: (fixedTimestepMs) =>
-          mutate({
-            ...scene,
-            settings: { ...scene.settings, fixedTimestepMs },
-          }),
-      },
-      {
-        kind: "number",
         id: "scene-snap-translate",
         label: "Snap Step",
         value: scene.settings.grid.snapTranslate,
@@ -881,7 +869,6 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
         (row) =>
           row.id === "scene-name" ||
           row.id === "scene-gravity" ||
-          row.id === "scene-fixed-timestep" ||
           row.id === "scene-camera-bounds-width" ||
           row.id === "scene-camera-bounds-height",
       )

@@ -274,27 +274,6 @@ export function EngineSettingsForm({
               </SelectContent>
             </Select>
           </Field>
-          <Field className="settings-field">
-            <FieldLabel htmlFor="setting-pointer-scale">
-              Touch Target Scale
-            </FieldLabel>
-            <NumberField
-              id="setting-pointer-scale"
-              min={1}
-              step={0.1}
-              className="min-h-[var(--chrome-row,28px)]"
-              data-testid="setting-pointer-scale"
-              value={settings.appearance.coarsePointerTargetScale}
-              onChange={(coarsePointerTargetScale) =>
-                void onChange({
-                  appearance: {
-                    ...settings.appearance,
-                    coarsePointerTargetScale,
-                  },
-                })
-              }
-            />
-          </Field>
         </FieldSet>
       ) : null}
 
