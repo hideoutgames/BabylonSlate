@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Rejects things that must never appear in a public repository: links to agent
-// sessions (outside pull-request descriptions), credential markers, and
-// developer-specific Apple signing identifiers.
+// sessions, agent attribution, credential markers, and developer-specific Apple
+// signing identifiers.
 //
 // gitleaks (.gitleaks.toml) covers generic high-entropy credentials. This check
 // covers the repository's own policy, which gitleaks has no notion of, and runs
@@ -64,18 +64,20 @@ export const contentRules = [
     // Session and attachment URLs of agent tools. These are private, expire, and
     // leak internal workflow into a public repo.
     regex:
-      /https?:\/\/[^\s"'`<>)\]]*(?:devin\.ai|cursor\.(?:com|sh))\/(?:sessions?|attachments?|agents?)\//i,
+      /https?:\/\/[^\s"'`<>)\]]*(?:(?:devin\.ai|cursor\.(?:com|sh))\/(?:sessions?|attachments?|agents?)\/|claude\.ai\/code\/session_)/i,
     hint: "Remove the agent session/attachment link; describe the change instead.",
   },
   {
     id: "agent-attribution",
     regex:
-      /\[(?:written|generated|created) by (?:devin|cursor|copilot)[^\]]*\]|🤖\s*generated with/i,
+      /\[(?:written|generated|created) by (?:devin|cursor|copilot)[^\]]*\]|(?:generated|written|created) (?:with|by) \[?claude\b|🤖\s*generated with/i,
     hint: "Remove the agent attribution footer.",
   },
   {
     id: "agent-request-attribution",
-    regex: /co-authored-by:\s*(?:devin|cursor|copilot)|requested by:\s*@/i,
+    // Commit trailers and footers that credit an agent or its requester.
+    regex:
+      /co-authored-by:\s*(?:claude|devin|cursor|copilot)|co-authored-by:[^\n]*@anthropic\.com|claude-session:|requested by:\s*@/i,
     hint: "Remove the agent/requester attribution footer.",
   },
   {
@@ -145,15 +147,8 @@ export const forbiddenPathRules = [
   },
 ];
 
-/**
- * Pull-request descriptions may link the agent session that produced them; the
- * link grants no access by itself. Tracked content, commit messages, titles, and
- * comments still reject it.
- */
-export const pullRequestBodyAllowedRules = new Set(["agent-session-link"]);
-
 /** @returns {{path: string, line: number, rule: string, hint: string}[]} */
-export function scanText(path, text, allowedRules = new Set()) {
+export function scanText(path, text) {
   if (selfReferentialPaths.has(path)) {
     return [];
   }
@@ -161,7 +156,6 @@ export function scanText(path, text, allowedRules = new Set()) {
   const lines = text.split("\n");
   for (const [index, line] of lines.entries()) {
     for (const rule of contentRules) {
-      if (allowedRules.has(rule.id)) continue;
       if (rule.regex.test(line)) {
         violations.push({
           path,
@@ -303,11 +297,7 @@ export function scanEventMetadata(event) {
   if (event.pull_request) {
     violations.push(
       ...scanText("pull-request:title", event.pull_request.title ?? ""),
-      ...scanText(
-        "pull-request:body",
-        event.pull_request.body ?? "",
-        pullRequestBodyAllowedRules,
-      ),
+      ...scanText("pull-request:body", event.pull_request.body ?? ""),
     );
   }
   if (event.review) {
