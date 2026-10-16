@@ -23,7 +23,9 @@
 | Item | Group |
 | --- | --- |
 | `SelectItem`, `SelectLabel` | `SelectGroup` |
-| `DropdownMenuItem`, `DropdownMenuLabel`, `DropdownMenuSub` | `DropdownMenuGroup` |
+| `DropdownMenuItem`, `DropdownMenuLabel` | `DropdownMenuGroup` |
+
+Menus with submenus use the editor-kit `NestedMenu` rather than a hand-built `DropdownMenuSub`.
 
 ## Overlays need a title
 
@@ -40,7 +42,7 @@
 
 ## Full Card and Tabs composition
 
-Use `CardHeader`, `CardTitle`, `CardDescription`, `CardContent` and `CardFooter` instead of putting everything in `CardContent`. `TabsTrigger` always sits inside `TabsList`.
+Use `CardHeader`, `CardTitle`, `CardDescription`, `CardContent` and `CardFooter` instead of putting everything in `CardContent`. `TabsTrigger` always sits inside `TabsList`. Tabs is gallery-only; asset documents use DockView ([components.md](../../../reference/components.md#rules)).
 
 ```tsx
 <Tabs defaultValue="general">
