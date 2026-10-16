@@ -51,6 +51,7 @@ Baseline: 11-inch A16 iPad, 6 GB RAM, WebGL2, WKWebView. Budgets target it; desk
 ### Threading model
 
 - Main thread: React editor UI, the Babylon renderer (editor and Play views), the bridge host. Game worker: fixed-step scheduler, World, compiled scripts, physics, navigation queries and crowd, Animation Graph and behaviour-tree evaluators. The runtime also runs in-process so tests drive it deterministically without workers.
+- Render helper workers are Babylon-free, exchange transferable buffers and fall back to the main thread: automatic Model LOD simplification and water contact distances ([render.md](architecture/render.md#water)).
 - Two transport classes. Hot transforms use a double-buffered `Float32Array`: `SharedArrayBuffer` + `Atomics` seq-lock when `crossOriginIsolated`, else transferable ping-pong (the worker currently always transfers; at most two pose snapshots in flight). Structural changes (spawn, despawn, mesh/material assignment, audio, particles) use a reliable ordered message channel, never the snapshot buffer.
 - Cross-origin isolation is not guaranteed (GitHub Pages cannot set COOP/COEP): `coi-serviceworker.js` is vendored in `public/`. SAB is an optimisation, never a requirement; both transports are tested.
 - **Physics lives in the game worker** because `LineTrace`, overlaps and sweeps must return on the calling pin; across a worker boundary every one becomes latent. The physics backend interface stays transport-agnostic so a split stays possible. The shared tick budget is the accepted trade.
