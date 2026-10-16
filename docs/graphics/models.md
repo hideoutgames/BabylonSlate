@@ -4,7 +4,7 @@ Models are imported 3D meshes. Importing one can also create its Materials, Text
 
 ## Import a model
 
-Import `.glb` or `.gltf` files, or `.obj` files, which are converted on import. See [Importing](../editor/importing.md) for import settings.
+Import `.glb` or `.gltf` files, or `.fbx`, `.obj` and `.stl` files, which are converted on import. See [Importing](../editor/importing.md) for import settings.
 
 | Created asset | When |
 | --- | --- |

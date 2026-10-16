@@ -1,0 +1,37 @@
+# Sprite
+
+A 2D image built from a Texture: size, pivot and optional collision.
+
+## Create
+
+In the **Content Browser**, choose **New Asset > 2D > Sprite**. Import your image first, so you can pick it as a Texture. See [Importing](../editor/importing.md).
+
+## Editor
+
+Double-tap a Sprite to open it.
+
+- **Preview**: the image with a crosshair at the pivot and a dashed box for the collision. Drag the box or its handles to change the collision.
+- **Inspector**: the Sprite's settings.
+
+## Settings
+
+| Setting | Description |
+| --- | --- |
+| Texture | The image to show. |
+| Pixels Per Unit | Image pixels per world unit, which sets the sprite's size in the world. Default 100. |
+| Pivot | The point of the image that sits at the actor's position, as fractions of the image. 0.5, 0.5 is the centre and 0, 0 the top-left corner. |
+| Frame Duration MS | Length of the frame in milliseconds. Default 100. |
+| Collision | The collision box as fractions of the image: X, Y, W and H. The default covers the whole image. |
+
+## Notes
+
+- Sprites sample their Texture with nearest-neighbour filtering, so pixel art stays sharp.
+- A [Collider](../components/collider.md) with the **Box 2D** shape takes its size and position from the Sprite's collision box and pivot.
+- To play several images in turn, use a [Sprite Animation](sprite-animation.md).
+
+## Related
+
+- [Sprites](../2d/sprites.md)
+- [Sprite component](../components/sprite.md)
+- [Sprite Animation](sprite-animation.md)
+- [Texture](texture.md)

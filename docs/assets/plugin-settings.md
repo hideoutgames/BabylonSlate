@@ -24,7 +24,7 @@ In **Project Settings > Plugins**, choose **Open** on a plugin. The document has
 | Experimental | Marks the plugin Experimental. Enabling it asks for confirmation. |
 | Beta | Marks the plugin Beta. Enabling it asks for confirmation. |
 | Enabled By Default | Whether new projects turn the plugin on. |
-| Editor Utility Objects | Classes that run in the editor while the plugin is enabled. **Add Class** picks a class. |
+| Editor Utility Objects | Classes that run in the editor while the plugin is enabled. **Add Class** picks a class, or creates a new one. |
 | Plugin Dependencies | Other plugins this one needs. **Add Dependency** records the plugin's current version. **Remove Dependency** deletes the entry. |
 
 ## Related

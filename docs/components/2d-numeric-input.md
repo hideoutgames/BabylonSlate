@@ -27,8 +27,8 @@ Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Num
 ## Notes
 
 - Scene Layers only.
-- Tap the left side to type a number. <kbd>Enter</kbd> confirms and <kbd>Escape</kbd> puts back the previous value. Text that is not a number is ignored.
-- Tap the upper right (+) to add one Step and the lower right (-) to subtract one.
+- Tap the number to type a value. <kbd>Enter</kbd> confirms and <kbd>Escape</kbd> puts back the previous value. Text that is not a number is ignored.
+- Tap the + button at the upper right to add one Step, and the - button below it to subtract one.
 - With focus, the arrow keys change the value by one Step. <kbd>Home</kbd> and <kbd>End</kbd> jump to Min and Max.
 - Read and write the value from a graph with **Set Value** and **Increment**.
 - [Event On Value Changed](../scripting/class/event-on-value-changed.md) runs each time the value changes.

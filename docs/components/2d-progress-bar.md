@@ -24,7 +24,7 @@ Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Pro
 
 - Scene Layers only.
 - The bar does not react to taps or keys and cannot take focus.
-- Drive it from a graph with the **Value** variable or **Set Value**. Use [Tween Float](../scripting/class/tween-float.md) for a smooth change.
+- Drive it from a graph with the **Value** variable or **Set Value**.
 - [Event On Value Changed](../scripting/class/event-on-value-changed.md) runs when the value changes.
 
 ## Related

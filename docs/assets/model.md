@@ -10,7 +10,7 @@ Models are not created from **New Asset**. In the **Content Browser**, choose **
 
 Double-tap the asset to open it. The window has **Preview**, **Colliders** and an **Inspector**.
 
-- **Preview** shows the mesh. A menu at the top right sets the shading to **PBR**, **Unlit** or **Wireframe**. Preview supports glTF and GLB models only; other formats show **Preview Unavailable**.
+- **Preview** shows the mesh. A menu at the top right sets the shading to **PBR**, **Unlit** or **Wireframe**.
 - **Show Collision** draws the model's colliders. With a collider selected, **Move**, **Rotate** and **Scale** set the gizmo.
 - **Colliders** lists the simple collision shapes. **Add** offers **Box**, **Sphere**, **Capsule**, **Cylinder**, **Cone** and **Generated Collision**, a convex shape built from the mesh. **Delete** removes the selected one. Select a shape to edit its **Name**, **Position**, **Rotation**, **Scale** and its size (**Half Extents**, **Radius**, **Half Height** or **Height**).
 - The **Inspector** has the material slots, **Level Of Detail** and **Clips**.

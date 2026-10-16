@@ -15,7 +15,7 @@ Under the settings, the **Options** list holds the choices. Type a name and tap 
 | Enabled | Turns input on or off. Default on. |
 | Width, Height | Size of the closed control, and of each row in the open list, in layer units. Default 4 by 0.6. |
 | Placeholder | Shown while nothing is selected. |
-| Selected Index | The chosen option, counting from 0. -1 selects nothing. Default 0 once there are options. |
+| Selected Index | The chosen option, counting from 0. -1 selects nothing and shows the Placeholder. Default -1. |
 | Font Size | Size of the text in layer units. Default 0.32. |
 | Text Color | Colour of the text. Default white. |
 | Opacity | Fades the whole control, from 0 to 1. Default 1. |
