@@ -160,7 +160,7 @@ const EMPTY_TEXTURE = new ThinTexture(null);
 /**
  * How far along the reflected ray (times the eye's distance to the water point) the planar lookup follows it: content
  * that far away moves with half the ray's tilt, the sky (beyond) somewhat less than it should and objects at the
- * waterline somewhat more.
+ * waterline somewhat more (within the contact range of an object in the water the reach shortens toward its distance).
  */
 const PLANAR_REACH = 1;
 /** Refraction: screen offset per unit of view-space tilt, per metre of water behind the surface, at Refraction 1. */
@@ -210,6 +210,11 @@ const FFT_FADED = 1e9;
  * Fresnel, both far from linear in the normal, alias them into crawling diagonal hatching across the sun path.
  */
 const FFT_FRAGMENT_FADE = [0.45, 1.4] as const;
+/**
+ * Metres of ownership margin over which a blending surface's vertex stage eases the band's displacement out toward the
+ * seam (`fftVertexSource`): neighbours' grids resolve the band differently, so at the seam neither displaces by it.
+ */
+const FFT_SEAM_FADE = 2;
 /** Lowest tier evaluating each realistic chop octave, capillary, and Stylized chop octave. */
 const CHOP_TIER = [0, 0, 1, 1, 2, 2] as const;
 const CAPILLARY_TIER = [1, 2, 2, 2] as const;
@@ -489,6 +494,11 @@ const GLITTER_NORM = 1 / ((Math.PI * 4 / 5) * GLITTER_SIGMA * GLITTER_SIGMA * GL
 const GLITTER_BASE = 0.18;
 const GLITTER_MAX = 12;
 /**
+ * The `swSunReach` below which Realistic skips the glitter field (its mean, 1, stands in): every light the field
+ * redistributes is scaled by that reach, so even a mirror-calm lobe's peak keeps under a thousandth of its light there.
+ */
+const GLITTER_REACH_MIN = 1e-6;
+/**
  * Realistic upper-column in-scatter (`swColumn`): the sunlit top metre of the water, which still shows its blue-green at
  * grazing angles where the Fresnel mirror would take the whole body. `REAL_COLUMN_GAIN` scales the body colour's own light,
  * `REAL_COLUMN_TEAL` the share of Shallow Color's teal (blue held to green) added over shallows and in deep water, the facet's Fresnel
@@ -624,7 +634,8 @@ float ${prefix}${i} = (1.0 - smoothstep(${f(edge[0])}, ${f(edge[1])}, ${k} * swF
  * Refraction (`SLATE_WATER_REFRACTION`), right after the bottom estimate: the view ray bends by the surface tilt (in
  * view space), more through thicker water and less far away, and reads the view's scene copy there. A shifted ray
  * that lands on something in front of the water (an object above it) keeps the straight ray, so nothing above the
- * surface leaks into it. The copy's depth also bounds the bottom estimate (similar triangles along the view ray), so
+ * surface leaks into it, and a downsampled copy texel holding a foreground silhouette hands over to a neighbour that lies
+ * behind the water. The copy's depth also bounds the bottom estimate (similar triangles along the view ray), so
  * absorption follows whatever actually lies below: the bed shows through shallows, deep water fades to its colour.
  * Orthographic views (`projection[3][3]` is 1) bend by the same view-space amount at every distance, and their view
  * rays are parallel: the bound follows the camera's forward axis instead of the ray through the eye. `scale` shortens
@@ -647,9 +658,21 @@ float swSceneZ1 = swSceneDepth(swRefrUv);
 float swLeak = step(swSceneZ1, swWaterZ);
 swRefrUv = mix(swRefrUv, swScreenUv, swLeak);
 float swSceneZ = mix(swSceneZ1, swSceneZ0, swLeak);
+// Beside the silhouette of something in front of the water, a downsampled copy texel holds that object (its nearest
+// depth): there the copy is not what lies behind this point. The nearest neighbouring texel that does lie behind the
+// water stands in for it (its colour and depth, at most one copy texel away), so silhouettes keep refracting instead of
+// dropping a texel-sized block of pixels back to the blended surface. Only there: four depth loads.
+vec2 swCopyTexel = swSceneTexelUv();
+if (swSceneZ < swWaterZ && swCopyTexel.x > U.slateWaterScreen.x * 1.01) {
+  float swBehind = ${f(WATER_SCENE_COPY_SKY_DEPTH * 2)};
+  vec2 swBehindUv = swRefrUv;${[[-1, 0], [1, 0], [0, -1], [0, 1]].map(([x, y], k) => `
+  vec2 swNearUv${k} = swRefrUv + swCopyTexel * vec2(${f(x!)}, ${f(y!)});
+  float swNearZ${k} = swSceneDepth(swNearUv${k});
+  if (swNearZ${k} >= swWaterZ && swNearZ${k} < swBehind) { swBehind = swNearZ${k}; swBehindUv = swNearUv${k}; }`).join("")}
+  if (swBehind < ${f(WATER_SCENE_COPY_SKY_DEPTH * 2)}) { swRefrUv = swBehindUv; swSceneZ = swBehind; }
+}
 vec3 swBackground = swSceneColor(swRefrUv);
-// Beside the silhouette of something in front of the water, a downsampled copy texel holds that object (its
-// nearest depth): there the copy is not what lies behind this point, so the pixel keeps the blended surface.
+// Where no neighbour lies behind it either, the pixel keeps the blended surface.
 float swRefracts = step(swWaterZ, swSceneZ);
 // Height lost per metre of view depth along this pixel's view ray.
 float swDropPerDepth = mix(abs(S.vEyePosition.y - IN.vPositionW.y) / max(swWaterZ, 0.001), abs(S.view[1][2]), swOrtho);
@@ -663,8 +686,10 @@ swDepth = mix(swDepth, min(swDepth, max(swSceneZ - swWaterZ, 0.0) * swDropPerDep
  * eye-relative position, projects through the mirrored view-projection, at the uv the planar browser proof reads back
  * on both backends (0.5 + 0.5·clip.xy/clip.w). On flat water the reflected ray continues the mirrored view ray, so
  * this is the fragment's own mirror point at any reach; on waves the lookup moves with the reflected ray, as the
- * environment and the march do, rather than by a small fixed shift that left wavy water mirror-flat. Its alpha is
- * coverage and display views store it display-encoded. Without it (another body is the view's dominant one), the
+ * environment and the march do, rather than by a small fixed shift that left wavy water mirror-flat. Near an object in
+ * the water (the contact field) the reach shortens toward the object's distance, so its reflection meets it at the
+ * waterline, and a lookup carried past the target's edge is pulled back toward the fragment's own mirror point. Its
+ * alpha is coverage and display views store it display-encoded. Without it (another body is the view's dominant one), the
  * screen-space march runs. Sharp hits fade out as the surface gets rough.
  */
 function objectReflectionSource(ray: string, roughness: string): string {
@@ -675,8 +700,20 @@ vec3 swReflRay = ${ray};
 swReflRay = normalize(vec3(swReflRay.x, max(swReflRay.y, 0.02), swReflRay.z));${ifDefined(PLANAR, `
 if (U.slateWaterPlanar.x > 0.5) {
   float swPlanarReach = length(S.vEyePosition.xyz - IN.vPositionW) * U.slateWaterPlanar.z;
+  // Beside an object standing in the water (within the contact range), what this point mirrors is mostly that object, a
+  // short way along the ray: the lookup follows the ray only about as far as the object is, so the object's reflection
+  // meets it at the waterline instead of swinging with the full tilt.
+  swPlanarReach = mix(min(swPlanarReach, swObject * 2.0), swPlanarReach, smoothstep(0.5, 1.0, swObject / max(U.slateWaterContactInfo.y, 0.001)));
   vec4 swPlanarClip = U.slateWaterPlanarMatrix * vec4(IN.vPositionW + swReflRay * swPlanarReach, 1.0);
   vec2 swPlanarUv = swPlanarClip.xy / max(swPlanarClip.w, 0.000001) * 0.5 + vec2(0.5);
+  // The tilt can carry the lookup past the mirrored view's edge, where the clamped target would smear its border texels
+  // across the water: it is pulled back along the tilt toward this fragment's own mirror point (inside the view) until
+  // it lies within the target.
+  vec4 swPlanarClip0 = U.slateWaterPlanarMatrix * vec4(IN.vPositionW, 1.0);
+  vec2 swPlanarUv0 = clamp(swPlanarClip0.xy / max(swPlanarClip0.w, 0.000001) * 0.5 + vec2(0.5), vec2(0.0), vec2(1.0));
+  vec2 swPlanarD = swPlanarUv - swPlanarUv0;
+  vec2 swPlanarRoom = mix(swPlanarUv0, vec2(1.0) - swPlanarUv0, step(vec2(0.0), swPlanarD)) / max(abs(swPlanarD), vec2(0.000001));
+  swPlanarUv = swPlanarUv0 + swPlanarD * clamp(min(swPlanarRoom.x, swPlanarRoom.y), 0.0, 1.0);
   vec4 swPlanarHit = swPlanarTexel(swPlanarUv);
   vec3 swPlanarColor = swPlanarHit.rgb / max(swPlanarHit.a, 0.001);
   // A point behind the mirrored camera has no projection (its uv would clamp to an edge texel): the sky stays.
@@ -870,6 +907,13 @@ vec3 swvFftJ = vec3(0.0);${cascades}
 float swvFoldGain = swvGain;
 #ifdef ${WATER_BLEND_DEFINE}
 swvFoldGain = swvFoldGain * A.slateWaterBlend.y;
+// A blend seam joins two meshes that resolve the band differently (or one compiles none of it): both ease its
+// displacement out over the last \`FFT_SEAM_FADE\` metres of their ownership margin, so their edges meet at the swell's
+// height and no crack opens. The fragment keeps the band's slopes in the shading there.
+float swvFftSeam = smoothstep(0.0, ${f(FFT_SEAM_FADE)}, abs(A.slateWaterBlend.z));
+swvFftH = swvFftH * swvFftSeam;
+swvFftD = swvFftD * swvFftSeam;
+swvFftJ = swvFftJ * swvFftSeam;
 #endif
 float swvJxx = 1.0 - swvFoldGain * (swvShear.x * swvWarpM.x + swvShear.y * swvWarpM.y);
 float swvJxz = -swvFoldGain * (swvShear.x * swvWarpM.y + swvShear.y * swvWarpM.z);
@@ -893,7 +937,8 @@ swvD += swvFftD * (swvFft.x * swvFft.y * swvKeep);`, 1, FFT_VERTEX);
  * - When the ray only passes the depth the previous sample saw while this sample sees something farther (the far
  *   side of a face, such as the top of a wall, shorter on screen than one step), one probe where the ray reached
  *   that depth catches it.
- * - Bisection refines the hit, which stands only on the surface its texel holds (within `SSR_THICKNESS`) and takes
+ * - Bisection refines the hit, taken where the depth gaps at its bracketing samples interpolate to zero (so it never
+ *   depends on where the steps fell), which stands only on the surface its texel holds (within `SSR_THICKNESS`) and takes
  *   that texel's colour: a refinement that settles beside a silhouette misses (the sky stays) instead of reflecting
  *   the background there. A downsampled copy (below full resolution) averages each texel's colour but keeps its
  *   nearest depth, so a silhouette texel blends the object with what lies behind it: the hit then takes the colour
@@ -929,16 +974,19 @@ fn swMarch(swOrigin: vec3f, swRay: vec3f) -> vec4f {
   var swPrevScene: f32 = 65000.0;
   var swA: f32 = 0.0;
   var swB: f32 = -1.0;
+  var swDA: f32 = -1.0;
+  var swDB: f32 = 0.0;
   for (var swI: i32 = 1; swI <= ${steps}; swI++) {
     let swU = swEnd * f32(swI) / f32(${steps});
     let swRayZ = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swU));
     let swSceneZ = swSceneDepth(mix(swN0, swN1, swU) * 0.5 + 0.5);
     let swThick = ${base} + ${slope} * swRayZ;
     if (swRayZ > swSceneZ) {
-      if (swSceneZ > swPrevZ - swThick) { swA = swPrevU; swB = swU; break; }
+      if (swSceneZ > swPrevZ - swThick) { swA = swPrevU; swB = swU; swDA = swPrevZ - swPrevScene; swDB = swRayZ - swSceneZ; break; }
     } else if (swRayZ > swPrevScene && swPrevZ <= swPrevScene) {
       let swProbeU = swMarchAt(swC1.w, swC0.w, clamp((swPrevScene - swD0) / max(swD1 - swD0, 0.000001), 0.0, 1.0));
-      if (abs(swPrevScene - swSceneDepth(mix(swN0, swN1, swProbeU) * 0.5 + 0.5)) < swThick) { swA = swPrevU; swB = swProbeU; break; }
+      let swProbeD = swPrevScene - swSceneDepth(mix(swN0, swN1, swProbeU) * 0.5 + 0.5);
+      if (abs(swProbeD) < swThick) { swA = swPrevU; swB = swProbeU; swDA = swPrevZ - swPrevScene; swDB = swProbeD; break; }
     }
     swPrevU = swU;
     swPrevZ = swRayZ;
@@ -947,11 +995,12 @@ fn swMarch(swOrigin: vec3f, swRay: vec3f) -> vec4f {
   if (swB < 0.0) { return vec4f(0.0); }
   for (var swJ: i32 = 0; swJ < ${refine}; swJ++) {
     let swM = 0.5 * (swA + swB);
-    let swMidZ = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swM));
-    if (swMidZ > swSceneDepth(mix(swN0, swN1, swM) * 0.5 + 0.5)) { swB = swM; } else { swA = swM; }
+    let swMidD = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swM)) - swSceneDepth(mix(swN0, swN1, swM) * 0.5 + 0.5);
+    if (swMidD > 0.0) { swB = swM; swDB = swMidD; } else { swA = swM; swDA = swMidD; }
   }
-  let swUv = mix(swN0, swN1, swB) * 0.5 + 0.5;
-  let swS = swMarchAt(swC0.w, swC1.w, swB);
+  let swCross = mix(swA, swB, clamp(swDA / min(swDA - swDB, -0.000001), 0.0, 1.0));
+  let swUv = mix(swN0, swN1, swCross) * 0.5 + 0.5;
+  let swS = swMarchAt(swC0.w, swC1.w, swCross);
   let swRayZ = mix(swD0, swD1, swS);
   let swThickHit = ${base} + ${slope} * swRayZ;
   var swHit: vec4f = swSceneTexel(swUv);
@@ -995,16 +1044,20 @@ vec4 swMarch(vec3 swOrigin, vec3 swRay) {
   float swPrevScene = 65000.0;
   float swA = 0.0;
   float swB = -1.0;
+  // Depth gaps (ray minus scene) at A, in front of the surface, and B, behind it.
+  float swDA = -1.0;
+  float swDB = 0.0;
   for (int swI = 1; swI <= ${steps}; swI++) {
     float swU = swEnd * float(swI) / float(${steps});
     float swRayZ = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swU));
     float swSceneZ = swSceneDepth(mix(swN0, swN1, swU) * 0.5 + 0.5);
     float swThick = ${base} + ${slope} * swRayZ;
     if (swRayZ > swSceneZ) {
-      if (swSceneZ > swPrevZ - swThick) { swA = swPrevU; swB = swU; break; }
+      if (swSceneZ > swPrevZ - swThick) { swA = swPrevU; swB = swU; swDA = swPrevZ - swPrevScene; swDB = swRayZ - swSceneZ; break; }
     } else if (swRayZ > swPrevScene && swPrevZ <= swPrevScene) {
       float swProbeU = swMarchAt(swC1.w, swC0.w, clamp((swPrevScene - swD0) / max(swD1 - swD0, 0.000001), 0.0, 1.0));
-      if (abs(swPrevScene - swSceneDepth(mix(swN0, swN1, swProbeU) * 0.5 + 0.5)) < swThick) { swA = swPrevU; swB = swProbeU; break; }
+      float swProbeD = swPrevScene - swSceneDepth(mix(swN0, swN1, swProbeU) * 0.5 + 0.5);
+      if (abs(swProbeD) < swThick) { swA = swPrevU; swB = swProbeU; swDA = swPrevZ - swPrevScene; swDB = swProbeD; break; }
     }
     swPrevU = swU;
     swPrevZ = swRayZ;
@@ -1013,11 +1066,16 @@ vec4 swMarch(vec3 swOrigin, vec3 swRay) {
   if (swB < 0.0) { return vec4(0.0); }
   for (int swJ = 0; swJ < ${refine}; swJ++) {
     float swM = 0.5 * (swA + swB);
-    float swMidZ = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swM));
-    if (swMidZ > swSceneDepth(mix(swN0, swN1, swM) * 0.5 + 0.5)) { swB = swM; } else { swA = swM; }
+    float swMidD = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swM)) - swSceneDepth(mix(swN0, swN1, swM) * 0.5 + 0.5);
+    if (swMidD > 0.0) { swB = swM; swDB = swMidD; } else { swA = swM; swDA = swMidD; }
   }
-  vec2 swUv = mix(swN0, swN1, swB) * 0.5 + 0.5;
-  float swS = swMarchAt(swC0.w, swC1.w, swB);
+  // The hit is where the depth gaps at A and B interpolate to zero: on a continuous surface the ray meets it there, so
+  // the thickness test below measures the copy's own texel error rather than how far the bisection's last step fell
+  // from the surface (that residual follows the march's step spacing and drew sloped hills and beaches as rings).
+  // Across a silhouette the gaps are large on both sides and the test still rejects the hit.
+  float swCross = mix(swA, swB, clamp(swDA / min(swDA - swDB, -0.000001), 0.0, 1.0));
+  vec2 swUv = mix(swN0, swN1, swCross) * 0.5 + 0.5;
+  float swS = swMarchAt(swC0.w, swC1.w, swCross);
   float swRayZ = mix(swD0, swD1, swS);
   float swThickHit = ${base} + ${slope} * swRayZ;
   vec4 swHit = swSceneTexel(swUv);
@@ -1625,9 +1683,14 @@ swSharp = 1.0 - swHaze;
 #if ${SAMPLES_COPY}
 // From Medium the last half degree above the horizon takes the sky actually drawn there (the scene copy: a damped
 // average of the row just above the horizon around this pixel's azimuth, \`horizonCopySource\`; applied in
-// \`beforeFogSource\`), so the sea never ends in a line whatever the environment mirrors there.${horizonCopySource()}
-vec3 swHorC = swHorLocal;
-float swHorW = swHorOn * swHorHave * smoothstep(0.9905, 0.999, swGraze);
+// \`beforeFogSource\`), so the sea never ends in a line whatever the environment mirrors there. Nothing else reads the
+// copy's horizon, so the rest of the water skips its taps.
+vec3 swHorC = vec3(0.0);
+float swHorW = 0.0;
+if (swGraze > 0.9905) {${horizonCopySource("true")}
+  swHorC = swHorLocal;
+  swHorW = swHorOn * swHorHave * smoothstep(0.9905, 0.999, swGraze);
+}
 #endif
 // Fresnel sees this facet normal; the shading normal below only steers the reflected sky lookup.
 vec3 swFresN = normalW;
@@ -1803,36 +1866,11 @@ vec2 swWarp = swSlope / (1.0 + length(swSlope)) * 0.3;
 vec2 swFoamUv = vec2(dot(swFlowed, swWindDir) * mix(0.75, 0.36, smoothstep(0.5, 0.95, U.slateWaterShape.z)), dot(swFlowed, vec2(-swWindDir.y, swWindDir.x)) * 1.5) + swWarp + vec2(swMedium - 0.5, swFine - 0.5) * 0.8;
 float swFoamFade = smoothstep(0.3, 0.9, swFoot * 1.6);
 float swClump = swNoise(swFoamUv * 0.5 + vec2(7.3, swTime * 0.02));${fromTier(1, `
-float swBlob = swNoise(swFoamUv * 1.7 + vec2(1.9, swTime * -0.05));${fromTier(2, `
-// Churn: two phases of the web crossfade, each re-seeded while it is invisible, so foam evolves in place.
-float swChurnT = swTime * 0.12;
-float swChurnA = fract(swChurnT);
-float swChurnB = fract(swChurnT + 0.5);
-vec2 swChurnDrift = vec2(0.22, -0.13);
-vec2 swWebUv = swFoamUv + (vec2(swBlob, swClump) - vec2(0.5)) * 0.5;
-vec2 swWebA = swWeb(swWebUv + vec2(0.37, 0.71) * (floor(swChurnT) * 7.0) + swChurnDrift * swChurnA);
-vec2 swWebB = swWeb(swWebUv + vec2(0.37, 0.71) * (floor(swChurnT + 0.5) * 7.0 + 3.0) + swChurnDrift * swChurnB);
-float swChurnMix = 1.0 - abs(1.0 - 2.0 * swChurnA);
-// Dense foam opens round holes around the web's points; thinning foam keeps only the web's borders, so it frays into
-// thin strands of lace (streaked along the wind with the domain) instead of thick, flat worms.
-float swLaceRaw = max(0.9 * smoothstep(0.36, 0.88, mix(swWebB.x, swWebA.x, swChurnMix)), 1.0 - smoothstep(0.0, 0.18, mix(swWebB.y, swWebA.y, swChurnMix)));
-float swWebX = mix(swWebB.x, swWebA.x, swChurnMix);
-float swWebScale = 1.0;
-// Small bubbles: a web about a third the size, averaged out before it would alias.
-float swBubbles = mix(smoothstep(0.28, 0.8, swWeb(swFoamUv * 2.7 + vec2(3.1, swTime * 0.07)).x), 0.45, smoothstep(0.1, 0.3, swFoot * 3.0));`, `
-// Medium's single web, at about twice the large web's scale and a little thicker.
-vec2 swWebM = swWeb(swFoamUv * 1.8 + (vec2(swBlob, swClump) - vec2(0.5)) * 0.9 + vec2(3.1, swTime * 0.07));
-float swLaceRaw = max(0.9 * smoothstep(0.33, 0.88, swWebM.x), 1.0 - smoothstep(0.0, 0.24, swWebM.y));
-float swWebX = swWebM.x;
-float swWebScale = 1.8;
-float swBubbles = 0.45;`)}
-// The web: 0 at its jittered points, rising to 1 between them, so thresholding it opens round holes of their own sizes
-// that grow as the foam thins until strands thick at their junctions and thin between them are left, as decaying foam
-// does. (Thresholding the cells' borders drew thin, even veins: a network of cracks.) The cells curve with the blob
-// noise. Before a cell shrinks to a few pixels it gives way to a mottle of the blob noise, so mid-distance foam keeps
-// texture instead of thresholding into flat polygons.
-float swLace = mix(swLaceRaw, 0.3 + 0.5 * swBlob, smoothstep(0.12, 0.35, swFoot * 1.1 * swWebScale));
-float swFoamTex = clamp(swLace * 0.6 + swClump * 0.22 + swBlob * 0.08 + swBubbles * 0.15 - 0.02, 0.0, 1.0);`, `
+float swBlob = swNoise(swFoamUv * 1.7 + vec2(1.9, swTime * -0.05));
+// The bubble web (\`swLace\`, \`swBubbles\`) is evaluated once the foam it could texture is known (below, before
+// \`swFoamTex\`); where there is none it keeps these resting values: the blob mottle it gives way to far away.
+float swLace = 0.3 + 0.5 * swBlob;
+float swBubbles = 0.45;`, `
 // Low evaluates no cell pattern: a ridged noise, stretched a little along the wind, draws one network of wiggly lines
 // (several bands of a noise would draw nested contour rings) that breaks the clumps into streaky lace, fading to its
 // mean before it would alias.
@@ -1914,9 +1952,6 @@ float swStormOn = swStorm * U.slateWaterTerms.y;
 swCap = max(swCap, max(smoothstep(1.0 - swStormK, 1.7 - swStormK, swStormDrive) * (0.55 + 0.45 * smoothstep(0.25, 0.65, swClump)),
   smoothstep(0.7 - swStormK, 1.4 - swStormK, swStormDrive) * 0.35) * swStormOn);
 swCapCore = max(swCapCore, smoothstep(1.5 - swStormK, 2.3 - swStormK, swStormDrive) * swStormOn);${fromTier(1, `
-// Cores ease in and keep the pattern's holes (more faintly), so dense caps never read as flat paint with a hard rim.
-// Below a storm's Crest Foam a lone cap stays lace; dense cores belong to real breakers only.
-swCapCore *= swCapCore * (0.15 + 0.85 * smoothstep(0.25, 0.6, swFoamTex)) * smoothstep(0.35, 0.8, U.slateWaterShape.z);
 // The residue is drawn out downwind into streaks about five times longer than wide that drift with the wind.
 vec2 swTrailUv = swWindUv * vec2(0.16, 0.8) + vec2(swTime * -0.05, (swMedium - 0.5) * 0.6) + swWarp;
 float swTrailTex = swNoise(swTrailUv) * 0.65 + swNoise(swTrailUv * vec2(2.3, 2.1) + vec2(4.1, 1.7)) * 0.35;
@@ -1958,6 +1993,56 @@ float swStreakD = 0.0;`)}
 ${fromTier(1, `
 float swDensity = clamp(max(swCap, max(swTrail * mix(0.6, 0.85, swStorm), swStreakD)), 0.0, 1.0);`, `
 float swDensity = clamp(max(max(swWash, swCap), max(max(swTrail * mix(0.6, 0.85, swStorm), swStreakD), swSurfFoam)), 0.0, 1.0) * min(swSwashCover * 4.0, 1.0);`)}
+float swWake = 0.0;${fromTier(2, `
+// Wake: a point downstream of an object trails its foam. Two contact-field taps upstream (at 0.4 and 0.8 of the contact
+// range) find the object; the plume widens with distance at about the Kelvin angle and thins as it trails.
+if (swContactOn > 0.5) {
+  float swRange = U.slateWaterContactInfo.y;
+  vec2 swWakeUv = swWakeDir * (swRange * 0.4) * U.slateWaterContactBounds.zw;
+  float swWakeD1 = (dot(swContactAt(swContactUv - swWakeUv), swLayerW) * 2.0 - 1.0) * swRange;
+  float swWakeD2 = (dot(swContactAt(swContactUv - swWakeUv * 2.0), swLayerW) * 2.0 - 1.0) * swRange;
+  float swWakeW = swContactW * 0.35 + swRange * 0.1;
+  swWake = max((1.0 - smoothstep(swWakeW * 0.2, swWakeW, swWakeD1)) * 0.5, (1.0 - smoothstep(swWakeW * 0.4, swWakeW * 1.7, swWakeD2)) * 0.3);
+  swWake = swWake * smoothstep(0.0, 0.3, swContactSigned) * (0.2 + 0.8 * swClump);
+}`)}
+${fromTier(1, `
+// The bubble web textures foam alone: the sea's density (caps, trails, streaks), the swash line, contact foam (within the
+// contact range, or a wake trailing past it) and the shore's foam. Open water outside all of them (most of a calm or
+// moderate sea) keeps the web's resting values and skips its cell evaluations; nothing inside takes a derivative.
+if (swDensity > 0.0 || swBank < (0.35 * swFoamWidth + 0.1) * (0.6 + swSwashRun) || swObject < U.slateWaterContactInfo.y * 0.999 || swWake > 0.0
+  || max(swWash, swSurfFoam * 0.85) > 0.001 || swSwashEdgeS < 12.0) {${fromTier(2, `
+  // Churn: two phases of the web crossfade, each re-seeded while it is invisible, so foam evolves in place.
+  float swChurnT = swTime * 0.12;
+  float swChurnA = fract(swChurnT);
+  float swChurnB = fract(swChurnT + 0.5);
+  vec2 swChurnDrift = vec2(0.22, -0.13);
+  vec2 swWebUv = swFoamUv + (vec2(swBlob, swClump) - vec2(0.5)) * 0.5;
+  vec2 swWebA = swWeb(swWebUv + vec2(0.37, 0.71) * (floor(swChurnT) * 7.0) + swChurnDrift * swChurnA);
+  vec2 swWebB = swWeb(swWebUv + vec2(0.37, 0.71) * (floor(swChurnT + 0.5) * 7.0 + 3.0) + swChurnDrift * swChurnB);
+  float swChurnMix = 1.0 - abs(1.0 - 2.0 * swChurnA);
+  // Dense foam opens round holes around the web's points; thinning foam keeps only the web's borders, so it frays into
+  // thin strands of lace (streaked along the wind with the domain) instead of thick, flat worms.
+  float swLaceRaw = max(0.9 * smoothstep(0.36, 0.88, mix(swWebB.x, swWebA.x, swChurnMix)), 1.0 - smoothstep(0.0, 0.18, mix(swWebB.y, swWebA.y, swChurnMix)));
+  float swWebX = mix(swWebB.x, swWebA.x, swChurnMix);
+  float swWebScale = 1.0;
+  // Small bubbles: a web about a third the size, averaged out before it would alias.
+  swBubbles = mix(smoothstep(0.28, 0.8, swWeb(swFoamUv * 2.7 + vec2(3.1, swTime * 0.07)).x), 0.45, smoothstep(0.1, 0.3, swFoot * 3.0));`, `
+  // Medium's single web, at about twice the large web's scale and a little thicker.
+  vec2 swWebM = swWeb(swFoamUv * 1.8 + (vec2(swBlob, swClump) - vec2(0.5)) * 0.9 + vec2(3.1, swTime * 0.07));
+  float swLaceRaw = max(0.9 * smoothstep(0.33, 0.88, swWebM.x), 1.0 - smoothstep(0.0, 0.24, swWebM.y));
+  float swWebX = swWebM.x;
+  float swWebScale = 1.8;`)}
+  // The web: 0 at its jittered points, rising to 1 between them, so thresholding it opens round holes of their own sizes
+  // that grow as the foam thins until strands thick at their junctions and thin between them are left, as decaying foam
+  // does. (Thresholding the cells' borders drew thin, even veins: a network of cracks.) The cells curve with the blob
+  // noise. Before a cell shrinks to a few pixels it gives way to a mottle of the blob noise, so mid-distance foam keeps
+  // texture instead of thresholding into flat polygons.
+  swLace = mix(swLaceRaw, 0.3 + 0.5 * swBlob, smoothstep(0.12, 0.35, swFoot * 1.1 * swWebScale));
+}
+float swFoamTex = clamp(swLace * 0.6 + swClump * 0.22 + swBlob * 0.08 + swBubbles * 0.15 - 0.02, 0.0, 1.0);${ifDefined(crestFoam, `
+// Cores ease in and keep the pattern's holes (more faintly), so dense caps never read as flat paint with a hard rim.
+// Below a storm's Crest Foam a lone cap stays lace; dense cores belong to real breakers only.
+swCapCore *= swCapCore * (0.15 + 0.85 * smoothstep(0.25, 0.6, swFoamTex)) * smoothstep(0.35, 0.8, U.slateWaterShape.z);`)}`)}
 // Thinning foam softens: its holes open gradually, over at least a couple of pixels.
 float swFoamSoft = 0.07 + 0.15 * (1.0 - swDensity) + fwidth(swFoamTex) * 1.5;
 // Even the densest foam keeps a few bubble holes.
@@ -2037,18 +2122,6 @@ swRealFoam = max(swRealFoam, swShoreLine * (0.5 + 0.4 * smoothstep(0.2, 0.5, mix
 // current where the water flows, otherwise downwind) into a trail. Low keeps the band and line only.
 float swObjectW = swObject / (1.0 + 1.4 * max(dot(swContactDir, swWakeDir), 0.0));
 float swContactLine = 1.0 - smoothstep(0.0, 0.1 * swContactW + 0.05 + fwidth(swObject), swObject + (swBlob - 0.5) * 0.06 * swContactW);
-float swWake = 0.0;${fromTier(2, `
-// Wake: a point downstream of an object trails its foam. Two contact-field taps upstream (at 0.4 and 0.8 of the contact
-// range) find the object; the plume widens with distance at about the Kelvin angle and thins as it trails.
-if (swContactOn > 0.5) {
-  float swRange = U.slateWaterContactInfo.y;
-  vec2 swWakeUv = swWakeDir * (swRange * 0.4) * U.slateWaterContactBounds.zw;
-  float swWakeD1 = (dot(swContactAt(swContactUv - swWakeUv), swLayerW) * 2.0 - 1.0) * swRange;
-  float swWakeD2 = (dot(swContactAt(swContactUv - swWakeUv * 2.0), swLayerW) * 2.0 - 1.0) * swRange;
-  float swWakeW = swContactW * 0.35 + swRange * 0.1;
-  swWake = max((1.0 - smoothstep(swWakeW * 0.2, swWakeW, swWakeD1)) * 0.5, (1.0 - smoothstep(swWakeW * 0.4, swWakeW * 1.7, swWakeD2)) * 0.3);
-  swWake = swWake * smoothstep(0.0, 0.3, swContactSigned) * (0.2 + 0.8 * swClump);
-}`)}
 // The collar pulses with the swell at the hull: it pushes out and thickens as the water climbs, and as it drops a wider,
 // thinner ring of foam clings briefly before it drains (\`swHullPulse\`, \`swHullCling\`).
 float swHullW = swContactW * (0.55 + 0.8 * swHullPulse);${fromTier(2, `
@@ -2146,10 +2219,16 @@ vec2 swGlitterP = swRest + U.slateWaterOrigin.xz - IN.vSlateWaterFlow.xy * swTim
 float swGlitterLevel = max(log2(max(length(swFootX), length(swFootY)) * ${f(GLITTER_CELL_PX / GLITTER_CELL_MIN)}), 0.0);
 float swGlitterL = floor(swGlitterLevel) + 1.0;
 float swGlitterScale = exp2(-swGlitterL) * ${f(1 / GLITTER_CELL_MIN)};
-float swGlitterField = mix(
-  swGlitter(swGlitterP * swGlitterScale, swFootX * swGlitterScale, swFootY * swGlitterScale, swTime, swGlitterL),
-  swGlitter(swGlitterP * (swGlitterScale * 0.5), swFootX * (swGlitterScale * 0.5), swFootY * (swGlitterScale * 0.5), swTime, swGlitterL + 1.0),
-  fract(swGlitterLevel));
+// The field only redistributes light that \`swSunReach\` scales (the lobe, every light's specular, and the facet glints):
+// where that is negligible (facets would have to tilt about 47 degrees to mirror the sun) its mean, 1, stands in and the
+// two levels are skipped.
+float swGlitterField = 1.0;
+if (swSunReach > ${f(GLITTER_REACH_MIN)}) {
+  swGlitterField = mix(
+    swGlitter(swGlitterP * swGlitterScale, swFootX * swGlitterScale, swFootY * swGlitterScale, swTime, swGlitterL),
+    swGlitter(swGlitterP * (swGlitterScale * 0.5), swFootX * (swGlitterScale * 0.5), swFootY * (swGlitterScale * 0.5), swTime, swGlitterL + 1.0),
+    fract(swGlitterLevel));
+}
 float swGlitterMod = min(${f(GLITTER_BASE)} + ${f(1 - GLITTER_BASE)} * swGlitterField, ${f(GLITTER_MAX)});${fromTier(1, `
 // Facet glints: a lobe about three degrees wide around the sun's mirror direction on the resolved facets (chop and
 // capillaries). The facet normal's own variation across the pixel (its slope's screen derivatives) widens the lobe, so
@@ -2331,9 +2410,11 @@ vec4 ${name} = swSceneTexel(vec2(${f(x)}, ${y}));`;
  * the real sky just above the horizon, read at fixed points across the screen on the row where the camera's heading
  * meets the horizon, so every pixel reads the same texels (no seams where rounding changes rows). Declares `swFwdH`,
  * `swHorOn` (0 with the horizon off screen), `swHorY` (that row) and `swHorSum` / `swHorN`, the sky taps' colour sum
- * and count (taps behind objects drop out): two taps, two more from High.
+ * and count (taps behind objects drop out): two taps, two more from High. `swHorLocal` / `swHorHave` read three more
+ * taps (five from High) around this pixel's azimuth only where `local` (a GLSL condition) holds: the looks weight them
+ * in only within about a degree of the horizon, so most of the water skips those reads.
  */
-function horizonCopySource(): string {
+function horizonCopySource(local: string): string {
   return `
 vec2 swFwdH = vec2(S.view[0][2], S.view[2][2]);
 swFwdH = swFwdH / max(length(swFwdH), 0.0001);
@@ -2346,24 +2427,29 @@ float swHorN = ${skyHit("swHorT0")} + ${skyHit("swHorT1")};${fromTier(2, `${skyT
 swHorSum += swHorT2.rgb * ${skyHit("swHorT2")} + swHorT3.rgb * ${skyHit("swHorT3")};
 swHorN += ${skyHit("swHorT2")} + ${skyHit("swHorT3")};`)}
 vec3 swHorAvg = swHorSum / max(swHorN, 0.001);
-vec2 swHorAz = -viewDirectionW.xz / max(length(viewDirectionW.xz), 0.0001);
-vec4 swHorLC = S.viewProjection * vec4(swHorAz.x, 0.004, swHorAz.y, 0.0);
-vec2 swHorUv = clamp(swHorLC.xy / max(swHorLC.w, 0.0001) * 0.5 + 0.5, vec2(0.002), vec2(0.998));
-vec4 swHorL0 = swSceneTexel(vec2(clamp(swHorUv.x - 0.035, 0.002, 0.998), swHorUv.y));
-vec4 swHorL1 = swSceneTexel(swHorUv);
-vec4 swHorL2 = swSceneTexel(vec2(clamp(swHorUv.x + 0.035, 0.002, 0.998), swHorUv.y));
-vec3 swLocSum = swHorL0.rgb * ${skyHit("swHorL0")} + swHorL1.rgb * ${skyHit("swHorL1")} + swHorL2.rgb * ${skyHit("swHorL2")};
-float swLocN = ${skyHit("swHorL0")} + ${skyHit("swHorL1")} + ${skyHit("swHorL2")};${fromTier(2, `
-vec4 swHorL3 = swSceneTexel(vec2(clamp(swHorUv.x - 0.07, 0.002, 0.998), swHorUv.y));
-vec4 swHorL4 = swSceneTexel(vec2(clamp(swHorUv.x + 0.07, 0.002, 0.998), swHorUv.y));
-swLocSum += swHorL3.rgb * ${skyHit("swHorL3")} + swHorL4.rgb * ${skyHit("swHorL4")};
-swLocN += ${skyHit("swHorL3")} + ${skyHit("swHorL4")};`)}
 // The sky's colour at the horizon below this pixel: a horizontal average of the row just above the horizon (taps behind
 // geometry drop out), damped by the fixed-point average so the clouds' texture never streaks across columns. \`swHorHave\`
-// is 0 where no tap read sky (the average is then empty too).
-float swLocK = min(swLocN, 1.0) * step(0.0001, swHorLC.w) * step(abs(swHorUv.y - 0.5), 0.49);
-vec3 swHorLocal = mix(swHorAvg, swLocSum / max(swLocN, 0.001), swLocK * mix(1.0, 0.5, min(swHorN, 1.0)));
-float swHorHave = max(min(swHorN, 1.0), swLocK);`;
+// is 0 where no tap read sky (the average is then empty too). Read only where the look uses it (\`local\`, the last
+// degree or so above the horizon); elsewhere it keeps the fixed-point average, which carries no weight there.
+vec3 swHorLocal = swHorAvg;
+float swHorHave = min(swHorN, 1.0);
+if (${local}) {
+  vec2 swHorAz = -viewDirectionW.xz / max(length(viewDirectionW.xz), 0.0001);
+  vec4 swHorLC = S.viewProjection * vec4(swHorAz.x, 0.004, swHorAz.y, 0.0);
+  vec2 swHorUv = clamp(swHorLC.xy / max(swHorLC.w, 0.0001) * 0.5 + 0.5, vec2(0.002), vec2(0.998));
+  vec4 swHorL0 = swSceneTexel(vec2(clamp(swHorUv.x - 0.035, 0.002, 0.998), swHorUv.y));
+  vec4 swHorL1 = swSceneTexel(swHorUv);
+  vec4 swHorL2 = swSceneTexel(vec2(clamp(swHorUv.x + 0.035, 0.002, 0.998), swHorUv.y));
+  vec3 swLocSum = swHorL0.rgb * ${skyHit("swHorL0")} + swHorL1.rgb * ${skyHit("swHorL1")} + swHorL2.rgb * ${skyHit("swHorL2")};
+  float swLocN = ${skyHit("swHorL0")} + ${skyHit("swHorL1")} + ${skyHit("swHorL2")};${fromTier(2, `
+  vec4 swHorL3 = swSceneTexel(vec2(clamp(swHorUv.x - 0.07, 0.002, 0.998), swHorUv.y));
+  vec4 swHorL4 = swSceneTexel(vec2(clamp(swHorUv.x + 0.07, 0.002, 0.998), swHorUv.y));
+  swLocSum += swHorL3.rgb * ${skyHit("swHorL3")} + swHorL4.rgb * ${skyHit("swHorL4")};
+  swLocN += ${skyHit("swHorL3")} + ${skyHit("swHorL4")};`)}
+  float swLocK = min(swLocN, 1.0) * step(0.0001, swHorLC.w) * step(abs(swHorUv.y - 0.5), 0.49);
+  swHorLocal = mix(swHorAvg, swLocSum / max(swLocN, 0.001), swLocK * mix(1.0, 0.5, min(swHorN, 1.0)));
+  swHorHave = max(swHorHave, swLocK);
+}`;
 }
 
 /**
@@ -2652,7 +2738,7 @@ vec3 swHorizonSky = mix((U.slateWaterHorizon.rgb * vec3(1.0, 1.1, 1.08) + vec3(0
 // sky's colours replace both: read just above the horizon and near the top of the view, at fixed points across the
 // screen, so the reflection is a smooth painted gradient of the real sky. (Reading the reflected direction itself
 // mirrored every cloud through the waves: marbling up close and a comb of streaks along the horizon.) Taps behind
-// objects drop out; with the horizon off screen the analytic sky stays.${horizonCopySource()}
+// objects drop out; with the horizon off screen the analytic sky stays.${horizonCopySource("swGraze > 0.991")}
 vec4 swTopClip = S.viewProjection * vec4(swFwdH.x * 0.66, 0.75, swFwdH.y * 0.66, 0.0);
 float swTopY = max(mix(clamp(swTopClip.y / max(swTopClip.w, 0.0001) * 0.5 + 0.5, 0.002, 0.998), 0.998, step(swTopClip.w, 0.0001)), min(swHorY + 0.04, 0.998));${skyTap("swTopT0", 0.5, "swTopY")}
 vec3 swTopSum = swTopT0.rgb * ${skyHit("swTopT0")};
@@ -3597,7 +3683,7 @@ float swAirBand = 0.35 * smoothstep(0.1 - swAirAA, 0.1 + swAirAA, swAirT) + 0.3 
 swAirBand *= smoothstep(0.6, 0.95, swDepthTone);
 swHaze = max(swHaze, swAirBand);
 vec3 swHazeC = swFarC;
-#if ${SAMPLES_COPY}${horizonCopySource()}
+#if ${SAMPLES_COPY}${horizonCopySource("swUp < 0.009")}
 swHazeC = mix(mix(swFarC, swHorAvg, swHorOn * min(swHorN, 1.0) * (0.7 - 0.45 * swEve)), swHorLocal, swHorOn * swHorHave * (1.0 - smoothstep(0.0, 0.009, swUp)));
 #endif
 
@@ -4091,8 +4177,17 @@ vec3 swvNormal = normalize(vec3(-swvEuler.x, 1.0, -swvEuler.y));`;
 }
 
 /**
+ * Blending surfaces on the GPU path cull vertices this many of their own grid spacings, plus `BLEND_CULL_MARGIN` metres,
+ * inside water they never draw (`VERTEX_VARYINGS`). A triangle's other vertices are at most √2 spacings away, and both
+ * the ownership margin and the bank distance change by about a metre per metre (the margin's fit is approximate, hence
+ * the slack), so they lie in that water too.
+ */
+const BLEND_CULL_CELLS = 2;
+const BLEND_CULL_MARGIN = 1;
+
+/**
  * Varyings at CUSTOM_VERTEX_MAIN_END, which runs after the world-position hook: GPU waves pass their own height and
- * offset, so the attribute copy must not overwrite them.
+ * offset, so the attribute copy must not overwrite them. `SW_CLIP_POSITION` is the clip position, bound per language.
  */
 const VERTEX_VARYINGS = `
 #ifdef ${WATER_GPU_WAVES_DEFINE}
@@ -4105,6 +4200,18 @@ O.vSlateWaterFlow = vec4(A.slateWaterFlow.xz, A.slateWaterOffset);
 O.vSlateWaterBaseNormal = A.slateWaterBaseNormal;
 #ifdef ${WATER_BLEND_DEFINE}
 O.vSlateWaterBlend = A.slateWaterBlend;
+#ifdef ${WATER_GPU_WAVES_DEFINE}
+// Water this blending surface never draws (a neighbour's share, or past the blended shoreline) is discarded fragment by
+// fragment, but only after the whole look has run on it, and where it overlaps the neighbour's surface the depth test
+// cannot reject it. A vertex deeper in it than \`BLEND_CULL_CELLS\` of its own spacing plus \`BLEND_CULL_MARGIN\` metres
+// belongs only to triangles all of whose vertices lie in it too (by the same attribute: both fields are distances), so
+// every fragment of those triangles would discard: its clip depth moves past the far side of the clip volume (x, y and w
+// unchanged, so the triangles it starts clip to within their own outline) and they rasterize nothing, in the depth
+// pre-pass and the colour pass alike.
+if (min(A.slateWaterData.y, A.slateWaterBlend.z) < -(${f(BLEND_CULL_CELLS)} * A.slateWaterData.x + ${f(BLEND_CULL_MARGIN)})) {
+  SW_CLIP_POSITION.z = 2.0 * SW_CLIP_POSITION.w;
+}
+#endif
 #endif
 `;
 
@@ -4125,8 +4232,8 @@ export function waterVertexSource(language: ShaderLanguage): { definitions: stri
   const wgsl = language === ShaderLanguage.WGSL;
   const definitions = `\n#ifdef ${WATER_GPU_WAVES_DEFINE}${fftHelpers(wgsl, FFT_VERTEX)}#endif\n`;
   return wgsl
-    ? { definitions, worldPosition: bindVertexSource(toWgsl(vertexWaveSource(true)), true), end: bindVertexSource(toWgsl(VERTEX_VARYINGS), true) }
-    : { definitions, worldPosition: bindVertexSource(vertexWaveSource(true), false), end: bindVertexSource(VERTEX_VARYINGS, false) };
+    ? { definitions, worldPosition: bindVertexSource(toWgsl(vertexWaveSource(true)), true), end: bindVertexSource(toWgsl(VERTEX_VARYINGS), true).replace(/\bSW_CLIP_POSITION\b/g, "vertexOutputs.position") }
+    : { definitions, worldPosition: bindVertexSource(vertexWaveSource(true), false), end: bindVertexSource(VERTEX_VARYINGS, false).replace(/\bSW_CLIP_POSITION\b/g, "gl_Position") };
 }
 
 /**
@@ -4306,8 +4413,14 @@ export function toWgsl(source: string): string {
  * CUSTOM_FRAGMENT_BEFORE_FOG. The colour pass first discards removed water (`swRemoved`, see `cutSource`): the look's
  * derivatives ran with every fragment of the quad alive, and nothing from here on takes one.
  *
- * Realistic colour is premultiplied by coverage: undo it for Babylon's non-premultiplied
- * blend, fog and image processing. Bright glints and reflections raise coverage instead of clipping in 8-bit targets.
+ * Realistic colour is premultiplied by coverage: undo it for Babylon's non-premultiplied blend, fog and image
+ * processing. In an 8-bit display target, light brighter than the coverage raises it instead of clipping, and the raised
+ * coverage hides that much more of the background behind the blend. With the refracted copy (`swBehindCopy`: the copy at this
+ * pixel, the background the blend would show) the share it hides is added back as refracted light, and the coverage
+ * solves for that too (per channel, (light − copy · a) / (1 − copy)): glints, foam and bright reflections over shallows
+ * add to the bed seen through them instead of replacing it with a darker ring. Without the copy the raise stays as it is
+ * (the least coverage that keeps the light from clipping). In Scene Linear (`IMAGEPROCESSINGPOSTPROCESS`, a half-float
+ * target that never clips at 1) coverage is the water's own and nothing is raised.
  *
  * The refracted scene (`swRefracted`; `SLATE_WATER_REFRACTION`) is light from behind the surface, already fogged by its
  * own materials. Its share `swRefractedWeight` is the coverage the water's own light leaves it (the output's coverage
@@ -4316,10 +4429,7 @@ export function toWgsl(source: string): string {
  * refracted light is pre-divided by the fog factor, less the fog colour at its share, so the result equals blending
  * (the water's fog on its own light only). The factor is the weight Babylon's PBR fog mixes with
  * (`toLinearSpace(CalcFogFactor())` under `PBR`, which water materials are).
- * In Scene Linear (`IMAGEPROCESSINGPOSTPROCESS`, an HDR target that never clips at 1) it stays
- * out of the coverage, so a refracted background brighter than 1 never raises coverage and dims what the shore fade
- * blends over; 8-bit display targets keep counting it (their background never exceeds 1). Stylized water is opaque
- * where it refracts and only adds it.
+ * Stylized water is opaque where it refracts and only adds it.
  */
 function beforeFogSource(wgsl: boolean): string {
   const v3 = wgsl ? "vec3f" : "vec3", v4 = wgsl ? "vec4f" : "vec4", f1 = wgsl ? "f32" : "float";
@@ -4329,6 +4439,21 @@ function beforeFogSource(wgsl: boolean): string {
     // Removed water leaves the colour pass here, after every derivative of the look (the depth pre-pass left in `cutSource`).
     "#ifndef DEPTHPREPASS",
     "if (swRemoved) { discard; }",
+    "#endif",
+    // Realistic coverage, before the refracted light takes its fog: the raise below can add to it.
+    `#ifndef ${WATER_STYLIZED_DEFINE}`,
+    "#ifdef IMAGEPROCESSINGPOSTPROCESS",
+    declare(f1, "swCover", "clamp(finalColor.a, 0.02, 1.0)"),
+    `#elif defined(${REFRACTION})`,
+    declare(v3, "swBehindCopy", "swSceneColor(swScreenUv)"),
+    declare(v3, "swNeed", `(finalColor.rgb + swRefracted - swBehindCopy * finalColor.a) / max(${v3}(1.0) - swBehindCopy, ${v3}(0.001))`),
+    declare(f1, "swCover", `clamp(max(finalColor.a, ${brightest("swNeed")}), 0.02, 1.0)`),
+    declare(f1, "swRaised", "max(swCover - finalColor.a, 0.0)"),
+    "swRefracted += swBehindCopy * swRaised;",
+    "swRefractedWeight += swRaised;",
+    "#else",
+    declare(f1, "swCover", `clamp(max(finalColor.a, ${brightest("finalColor")}), 0.02, 1.0)`),
+    "#endif",
     "#endif",
     `#ifdef ${REFRACTION}`,
     declare(v3, "swRefractedOut", "swRefracted"),
@@ -4345,12 +4470,6 @@ function beforeFogSource(wgsl: boolean): string {
     "finalColor.a *= swShoreSoft;",
     "#endif",
     "#else",
-    `#if defined(${REFRACTION}) && !defined(IMAGEPROCESSINGPOSTPROCESS)`,
-    declare(v3, "swCovered", "finalColor.rgb + swRefracted"),
-    declare(f1, "swCover", `clamp(max(finalColor.a, ${brightest("swCovered")}), 0.02, 1.0)`),
-    "#else",
-    declare(f1, "swCover", `clamp(max(finalColor.a, ${brightest("finalColor")}), 0.02, 1.0)`),
-    "#endif",
     `#ifdef ${REFRACTION}`,
     `finalColor = ${v4}(finalColor.rgb + swRefractedOut, finalColor.a);`,
     "#endif",

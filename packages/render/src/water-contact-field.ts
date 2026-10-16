@@ -753,23 +753,38 @@ export function smoothContacts(values: Float32Array, width: number, height: numb
   for (let n = 0; n < 2; n++) { boxPass(values, width, height, width, 1, r); boxPass(values, height, width, 1, width, r); }
 }
 
-/** The minimum over a (2r + 1)² window of a `width` × `height` grid in place (separable, clamped at its edges). */
+let minimumQueue = new Int32Array(0);
+/**
+ * The minimum over a (2r + 1)² window of a `width` × `height` grid in place (separable, clamped at its edges), in time
+ * independent of `r`. Allocation-free once grown.
+ */
 export function minimumFilter(values: Float32Array, width: number, height: number, r: number): void {
   const size = Math.max(width, height);
   if (smoothLine.length < size) smoothLine = new Float32Array(size);
+  if (minimumQueue.length < size) minimumQueue = new Int32Array(size);
   minimumPass(values, width, height, width, 1, r);
   minimumPass(values, height, width, 1, width, r);
 }
 
+/**
+ * One sliding minimum along `lines` lines of `count` values: a queue of indices whose values increase from its head,
+ * each entering once and leaving once, so a cell costs the same at any radius (a full rebuild filters up to four
+ * million layer cells).
+ */
 function minimumPass(values: Float32Array, count: number, lines: number, stride: number, step: number, r: number): void {
-  const line = smoothLine;
+  const line = smoothLine, queue = minimumQueue;
   for (let l = 0; l < lines; l++) {
     const base = l * stride;
     for (let i = 0; i < count; i++) line[i] = values[base + i * step]!;
+    let head = 0, tail = 0, next = 0;
     for (let i = 0; i < count; i++) {
-      let low = line[i]!;
-      for (let j = Math.max(0, i - r), end = Math.min(count - 1, i + r); j <= end; j++) if (line[j]! < low) low = line[j]!;
-      values[base + i * step] = low;
+      for (const end = Math.min(count - 1, i + r); next <= end; next++) {
+        const value = line[next]!;
+        while (tail > head && line[queue[tail - 1]!]! >= value) tail--;
+        queue[tail++] = next;
+      }
+      while (queue[head]! < i - r) head++;
+      values[base + i * step] = line[queue[head]!]!;
     }
   }
 }
