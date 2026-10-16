@@ -5,7 +5,7 @@ description: Wait quietly for local verification or test scripts, pull-request V
 
 # Wait efficiently
 
-`scripts/agent-wait.mjs` keeps process monitoring, polling and full logs out of the conversation. Waiting never relaxes the [delivery workflow](../../rules/agent-workflow.md) or the [PR cadence](../../rules/github-actions-pr-cadence.md); what to run is set by the [verification rules](../../rules/agent-workflow.md#verification).
+`scripts/agent-wait.mjs` keeps process monitoring, polling and full logs out of the conversation. Waiting never relaxes the [delivery workflow](../../rules/agent-workflow.md#workflow), including its four-ready-PR cadence; what to run is set by the [verification rules](../../rules/agent-workflow.md#verification).
 
 ## Launch once
 

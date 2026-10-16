@@ -13,7 +13,7 @@ description: "Babylon.js engine work in Haptic: packages/render and engine code 
 
 - [render.md](../../reference/architecture/render.md): Engine ownership, the frame path, resources, lighting, Play presentation, and the patch and workarounds to review when the pin moves.
 - [physics.md](../../reference/architecture/physics.md), [shader-graph.md](../../reference/architecture/shader-graph.md), [particles.md](../../reference/architecture/particles.md) and [scene-layers.md](../../reference/architecture/scene-layers.md) for those subsystems.
-- Package import boundaries: [agent-workflow.md](../../rules/agent-workflow.md#architecture).
+- Package import boundaries: `no-restricted-imports` in `eslint.config.js`.
 
 ## Invariants
 
