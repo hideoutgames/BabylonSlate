@@ -46,7 +46,7 @@ A Ground shape placed from **Place Actors** does not stop anything until you giv
 
 ## Check your setup
 
-- **Compiler Results** warns when a Collider has no Rigid Body ("ColliderComponent needs a RigidBodyComponent on the same actor.") or a Rigid Body has no Collider.
+- **Compiler Results** warns when a Collider has no Rigid Body or a Rigid Body has no Collider.
 - The editor always draws Collider outlines. Turn on **Show Collisions** in **Viewport Settings** (<kbd>Alt</kbd>+<kbd>C</kbd>) to also see Mesh collision.
 - Turn on a Collider's **Render In Game** to draw its outline during Play, or type `showcollision` in the [console](../debugging/console.md).
 
