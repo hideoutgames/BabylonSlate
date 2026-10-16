@@ -149,7 +149,7 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 
 | Node | Description |
 | --- | --- |
-| [Fresnel](fresnel.md) | Returns a value that is 1 where the surface faces the camera and falls toward its edges. |
+| [Fresnel](fresnel.md) | Returns a value that is 0 where the surface faces the camera and rises to 1 at its edges, for rim lighting. |
 | [Normal Map](normal-map.md) | Turns a normal map colour into a world-space normal that follows the surface's shape. |
 
 ## Color

@@ -35,6 +35,7 @@ import {
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialSystemValues,
   NormalizeBlock,
+  OneMinusBlock,
   PerturbNormalBlock,
   PowBlock,
   ReciprocalBlock,
@@ -689,15 +690,38 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     block.colorSteps = stops.sort((a, b) => a.position - b.position).map((stop) => new GradientBlockColorStep(stop.position, Color3.FromArray(stop.color)));
     return single(block, { value: block.gradient }, { out: block.output });
   },
+  /**
+   * Rim Fresnel: saturate(pow(saturate(Bias + 1 - |N·V|), Power)), 0 facing the camera and 1 at the
+   * silhouette. Babylon's FresnelBlock is the opposite (1 facing); with bias 0 and power 1 it supplies
+   * |N·V| from the shared view plumbing. The inner saturate keeps a negative Bias out of pow.
+   */
   "shading.fresnel": ({ name, plumbing }) => {
-    const block = new FresnelBlock(name);
-    plumbing.worldNormal4?.connectTo(block.worldNormal);
-    plumbing.viewDirection?.connectTo(block.viewDirection);
-    return single(
-      block,
-      { bias: block.bias, power: block.power },
-      { out: block.fresnel },
-    );
+    const facing = new FresnelBlock(name);
+    plumbing.worldNormal4?.connectTo(facing.worldNormal);
+    plumbing.viewDirection?.connectTo(facing.viewDirection);
+    const facingBias = createConstantBlock(`${name}_facingBias`, "float", [0]);
+    const facingPower = createConstantBlock(`${name}_facingPower`, "float", [1]);
+    facingBias.output.connectTo(facing.bias);
+    facingPower.output.connectTo(facing.power);
+    const edge = new OneMinusBlock(`${name}_edge`);
+    facing.fresnel.connectTo(edge.input);
+    const biased = new AddBlock(`${name}_bias`);
+    edge.output.connectTo(biased.left);
+    const base = new ClampBlock(`${name}_base`);
+    const rim = new ClampBlock(`${name}_rim`);
+    for (const clamp of [base, rim]) {
+      clamp.minimum = 0;
+      clamp.maximum = 1;
+    }
+    biased.output.connectTo(base.value);
+    const shaped = new PowBlock(`${name}_power`);
+    base.output.connectTo(shaped.value);
+    shaped.output.connectTo(rim.value);
+    return {
+      blocks: [facing, facingBias, facingPower, edge, biased, base, shaped, rim],
+      inputs: { bias: biased.right, power: shaped.power },
+      outputs: { out: rim.output },
+    };
   },
   "shading.normalMap": ({ name, plumbing, operation }) => {
     const block = new PerturbNormalBlock(name);

@@ -8,6 +8,7 @@ Material, Material Function and Material Instance documents: the Babylon-free IR
 - Values are `float`, `vec2`, `vec3`, `vec4`, `texture`. Colors are float vectors with a pin hint and booleans are floats, so the catalog stays inside Babylon's portable block set; the Babylon boundary picks `Color3/4` vs `Vector3/4`.
 - Material Function calls are **inlined** at lowering under `callNodeId/innerNodeId` ids, because Babylon has no runtime function object. Each inlined operation maps back to its call node for diagnostics.
 - Blocks Babylon lacks are composed from existing blocks (`fwidth` = derivatives + abs + add, `log2` = scaled ln, `inversesqrt` = reciprocal sqrt), never raw source.
+- Fresnel (`shading.fresnel`) is a rim term like Unreal's and Unity's: `saturate(pow(saturate(Bias + 1 - |N·V|), Power))`, 0 facing the camera and 1 at the silhouette. Babylon's `FresnelBlock` is the inverse (1 facing), so render uses it only for `|N·V|` (bias 0, power 1) and composes the rest.
 - The **Particle Texture** node is removed (emitters have no texture). Old graphs that contain `input.particleTexture` report `material.unknownNode` and do not compile; there is no migration.
 - Not implemented: Decal domain, motion vectors, object IDs. Custom GLSL has no WebGPU path: a material closure containing it forces WebGL2 ([render.md](render.md)).
 
