@@ -101,6 +101,7 @@ describe("Playwright iPad project filter", () => {
       "slider-touch.spec.ts",
       "touch-shell.spec.ts",
       "tree-view-touch.spec.ts",
+      "viewport-tap-pick.spec.ts",
     ]);
     expect(landscape.map((test) => test.title).sort()).toEqual([
       "@ipad SceneLayer joystick touch moves its custom material and resets on cancellation in Play",
@@ -110,6 +111,7 @@ describe("Playwright iPad project filter", () => {
       "Touch shell UX › project long-press stays open after release and can edit",
       "TreeView native touch swipes scroll and a short hold reparents without scrolling",
       "a touch swipe on a slider track scrolls the panel; only the thumb drags",
+      "a viewport tap selects the actor under it, not the one at the view centre",
       "tall overlays › dialog and sheet keep Close visible and usable after scrolling",
     ]);
     const desktopKeys = new Set(desktop.map((test) => `${test.file} › ${test.title}`));
