@@ -130,7 +130,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setPhase({ kind: "done", report: { mode, startedAt: Date.now(), durationMs: 0, cancelled: true, scenes: [], pageErrors: [message] },
-        text: `BabylonSlate Feature Test Check failed to run: ${message}` });
+        text: `Haptic Feature Test Check failed to run: ${message}` });
     } finally {
       window.removeEventListener("error", onError);
       window.removeEventListener("unhandledrejection", onRejection);

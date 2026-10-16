@@ -52,7 +52,7 @@ export function normalizeImportedProject(
   }
   const manifest = result.find(({ path }) => path === "project.json");
   if (!manifest)
-    throw new Error("Choose a Slate project containing project.json.");
+    throw new Error("Choose a Haptic project containing project.json.");
   const project: unknown = JSON.parse(new TextDecoder().decode(manifest.data));
   if (!project || typeof project !== "object" || Array.isArray(project))
     throw new Error("Invalid project manifest.");

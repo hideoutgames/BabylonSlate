@@ -197,7 +197,7 @@ export function Homepage({
       cancelled = true;
     };
   }, [dataReady, projects.length, artReady, transition.ready]);
-  const launch = async (action: () => Promise<void>, label = "Slate") => {
+  const launch = async (action: () => Promise<void>, label = "Haptic") => {
     transition.begin(label);
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
@@ -346,7 +346,7 @@ export function Homepage({
       <header className="homepage-titlebar">
         <div className="homepage-brand">
           <img src={brandIconSrc(scheme)} alt="" />
-          <h1>Slate</h1>
+          <h1>Haptic</h1>
         </div>
         <ToggleGroup
           className="homepage-navigation"

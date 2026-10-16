@@ -198,7 +198,7 @@ export function EngineSettingsForm({
     <FieldGroup data-testid="engine-settings-sheet">
       {categoryId === "about" ? (
         <FieldSet data-testid="build-identity">
-          <FieldLegend>BabylonSlate</FieldLegend>
+          <FieldLegend>Haptic</FieldLegend>
           {identity ? (
             <>
               <FieldDescription>
@@ -230,7 +230,7 @@ export function EngineSettingsForm({
               <FieldContent>
                 <FieldLabel htmlFor="setting-automatic-updates">Automatic Updates</FieldLabel>
                 <FieldDescription>
-                  Download new releases from GitHub and install them when you exit BabylonSlate. Applies to desktop release builds.
+                  Download new releases from GitHub and install them when you exit Haptic. Applies to desktop release builds.
                 </FieldDescription>
               </FieldContent>
               <Switch id="setting-automatic-updates" checked={settings.automaticUpdatesEnabled} onCheckedChange={automaticUpdatesEnabled => void onChange({ automaticUpdatesEnabled })} />
