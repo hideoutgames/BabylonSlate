@@ -11,7 +11,7 @@ Select an actor, then choose **Add Component > Physics > Rigid Body**. It needs 
 | Setting | Description |
 | --- | --- |
 | Motion Type | **Static**, **Kinematic** or **Dynamic**. Static never moves. Kinematic is moved by scripts, not by forces. Dynamic is moved by physics. Default Dynamic. |
-| Mass | Weight of the body, at least 0.001. Default 1. |
+| Mass | Mass of the body, at least 0.001. Default 1. |
 | Gravity Scale | Multiplies the scene's gravity, 0 to 10. Default 1. |
 | Linear Damping | Slows movement over time, 0 to 10. Default 0. |
 | Angular Damping | Slows spinning over time, 0 to 10. Default 0. |

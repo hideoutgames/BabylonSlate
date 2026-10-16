@@ -31,4 +31,4 @@ Select an actor, then choose **Add Component > Water > Water Ocean**. You can al
 ## Related
 
 - [Water](../graphics/water.md)
-- [Water](../assets/water.md)
+- [Water asset](../assets/water.md)
