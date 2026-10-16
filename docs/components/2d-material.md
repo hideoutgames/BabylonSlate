@@ -10,7 +10,7 @@ Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Mat
 
 | Setting | Description |
 | --- | --- |
-| Material | The [Material](../assets/material.md) or Material Instance to draw. Use a Material with the **Surface** domain. |
+| Material | The [Material](../assets/material.md) or Material Instance to draw. |
 | Hit Test | Whether taps hit the square. Ignore (default) lets them pass through. Block takes the tap and stops it. Pass Through takes it and lets it continue to what is behind. |
 
 ## Notes
