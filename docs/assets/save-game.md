@@ -40,7 +40,7 @@ Double-tap a Save Game to open it.
 
 ## Notes
 
-- Only the project default Save Game gives scripts its **Get Save** and **Set Save** nodes. You can also pick it in **Project Settings > Save Games > Default Definition**.
+- Only the project default Save Game adds per-field **Get Save** and **Set Save** nodes, such as **Get Save Coins**, to **Add Node**. You can also pick it in **Project Settings > Save Games > Default Definition**.
 - To save an actor's position and variables, add a [Save Game component](../components/save-game.md) to it.
 
 ## Related

@@ -39,7 +39,7 @@ Unloading removes only that actor's copy, including anything it streamed in itse
 ## Things to know
 
 - The streamed scene must use the same **Physics World** (3D or 2D) as the parent. Otherwise the load fails with an error in the **Output Log**.
-- A scene cannot stream itself, directly or through another streamed scene.
+- A streamed scene cannot stream in the scene that contains it, or any scene above it.
 - Scene Streaming works in world scenes only, not in Scene Layers.
 - If a blocking load fails, the graph stops at the node and **Then** does not run. An async load logs the error and continues.
 

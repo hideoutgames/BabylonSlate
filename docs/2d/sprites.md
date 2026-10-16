@@ -50,7 +50,7 @@ Give the actor a [Rigid Body](../components/rigid-body.md) and a [Collider](../c
 
 ## Things to know
 
-- Sprites sample their textures with nearest-neighbour filtering, so pixel art stays sharp.
+- With **Pixel-Perfect Mode** on, sprites sample their textures with nearest-neighbour filtering, so pixel art stays sharp.
 - Transparent parts of the image are cut out.
 - Circle and capsule colliders keep the size you set; only box2d follows the sprite.
 

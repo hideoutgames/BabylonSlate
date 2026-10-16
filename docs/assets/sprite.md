@@ -25,7 +25,7 @@ Double-tap a Sprite to open it.
 
 ## Notes
 
-- Sprites sample their Texture with nearest-neighbour filtering, so pixel art stays sharp.
+- With **Pixel-Perfect Mode** on (**Project Settings > Game > 2D**), sprites sample their Texture with nearest-neighbour filtering, so pixel art stays sharp.
 - A [Collider](../components/collider.md) with the **Box 2D** shape takes its size and position from the Sprite's collision box and pivot.
 - To play several images in turn, use a [Sprite Animation](sprite-animation.md).
 

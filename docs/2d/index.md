@@ -27,7 +27,7 @@ See [Your First Project](../start/first-project.md) and [Scenes](../scenes/index
 | Pixel-Perfect Mode | Frames the 2D editor view 1:1 with nearest sampling. Play and exported games snap the game camera to the pixel grid. |
 | Sorting Layers | Named draw layers, ordered back to front. Default **Background**, **Default**, **Foreground** and **UI**. |
 
-Sprites and tiles always sample their textures with nearest-neighbour filtering, so pixel art stays crisp.
+With **Pixel-Perfect Mode** on, sprites and tiles sample their textures with nearest-neighbour filtering, so pixel art stays crisp.
 
 ## Draw order
 
