@@ -33,7 +33,7 @@ Unsupported code is reported before anything is created. See [Materials](../grap
 
 1. In **Project Settings > Project Extensions**, choose **New Extension**.
 2. Enter a **Display Name** and choose **Create**. **Edit Extension** opens.
-3. Fill in the details and write the code under **Entry Source**, then choose **Save**. Saving reloads enabled extensions.
+3. Fill in the fields and write the code under **Entry Source**, then choose **Save**. Saving reloads enabled extensions.
 
 | Field | Description |
 | --- | --- |

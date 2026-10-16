@@ -22,7 +22,7 @@ Select an actor, then choose **Add Component > Water > Global Water Volume**. Yo
 
 - World scenes only.
 - It has no Width or Length. The surface extends to the horizon and the mesh detail follows the camera.
-- The actor's height sets the water level. Select the actor to show a handle that you drag to change Depth.
+- The water surface sits at the actor's position, with Depth running below it. Select the actor to show a handle that you drag to change Depth.
 - To cut a hole in it, such as inside a boat hull, use a [Water Removal Volume](water-removal-volume.md).
 - Use [Water Ocean](water-ocean.md) when you want a bounded rectangle.
 

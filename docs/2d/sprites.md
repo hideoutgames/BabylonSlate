@@ -13,7 +13,7 @@ The **Preview** shows the image with a crosshair at the pivot and a dashed colli
 | Setting | Description |
 | --- | --- |
 | Texture | The image to show. |
-| Pixels Per Unit | Image pixels per world unit, which sets the sprite's size in the world. Default 100. |
+| Pixels Per Unit | Scales the sprite in the world: a higher value makes it smaller. Default 100. |
 | Pivot | The point of the image that sits at the actor's position, as fractions of the image: 0.5, 0.5 is the centre and 0, 0 the top-left corner. |
 | Collision | The collision box as fractions of the image (X, Y, width, height). The default covers the whole image. |
 

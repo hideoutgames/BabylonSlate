@@ -35,7 +35,7 @@ To brush, drag with one finger, the mouse or a pen. A ring on the surface shows 
 
 Sculpting only changes the landscape selected in **Landscape Outliner**.
 
-### Landscape materials
+## Landscape materials
 
 Set a Material's **Domain** to **Landscape** to unlock [Landscape Coordinates](../scripting/material/landscape-coordinates.md), [Landscape Height](../scripting/material/landscape-height.md), [Landscape Slope](../scripting/material/landscape-slope.md), [Landscape Paint Layers](../scripting/material/landscape-paint-layers.md) and [Landscape Layer Blend](../scripting/material/landscape-layer-blend.md). Use them to texture by height or slope, or to blend the four painted layers. See [Materials](../graphics/materials.md).
 

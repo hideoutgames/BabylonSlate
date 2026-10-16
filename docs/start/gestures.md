@@ -1,6 +1,6 @@
 # Touch Gestures
 
-Haptic is built for touch first. Every action has a tap or gesture; a mouse and keyboard add right-click and shortcuts.
+Haptic is built for touch first: buttons, taps and gestures cover the editor, and a mouse and keyboard add right-click and shortcuts.
 
 ## Everywhere
 

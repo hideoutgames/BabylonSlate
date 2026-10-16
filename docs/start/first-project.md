@@ -32,7 +32,7 @@ Installed templates appear under **Installed**. To add one, choose **Add Templat
 | Resolution | The game's design size for Play and exported games. Default 1920 × 1080. |
 | Black Bars | Adds bars to keep the design size. Off, the game fills the window without stretching. |
 
-Change these later in **Project Settings > Rendering**. See [Where Projects Live](../projects/storage.md) for storage details.
+Change the resolution later in **Project Settings > Rendering**. See [Where Projects Live](../projects/storage.md) for more on storage.
 
 ## Open a project
 

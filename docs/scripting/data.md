@@ -43,5 +43,5 @@ A Data Definition also works as a type. Choose **Structure / Data Definition** a
 
 - **Value** is a copy. Changing it in a script never changes the Data Tree asset.
 - Restart Play to pick up changes you make to Data Trees.
-- Editor tools can create and edit Data Trees with the editable data nodes; see [Editor Scripting](editor-scripting.md).
+- Editor tools can create and edit Data Trees with the editable data nodes; see [Editor scripting](editor-scripting.md).
 - For one small record type, a [Structure](structures-and-enums.md) is simpler.

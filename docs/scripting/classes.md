@@ -26,7 +26,7 @@ The **Parent Class** list shows engine classes by their class names.
 | **GameSubsystem**, **SceneSubsystem** | Objects the engine creates once per session or once per scene. See [Game Instance and Subsystems](game-instance.md). |
 | **FunctionLibrary** | Functions that any graph can call. See [Functions](functions.md#function-libraries). |
 | **BDebugCommand** | A console command. See [Console commands](#console-commands). |
-| **EditorUtilityObject**, **EditorFunctionLibrary** | Tools that run only in the editor. See [Editor Scripting](editor-scripting.md). |
+| **EditorUtilityObject**, **EditorFunctionLibrary** | Tools that run only in the editor. See [Editor scripting](editor-scripting.md). |
 | **BTTask**, **BTDecorator**, **BTService**, **BTComposite** | Behaviour Tree nodes you script yourself. See [Behaviour Trees](../ai/behaviour-trees.md). |
 
 For components without any logic, a [Prefab](../assets/prefab.md) is lighter than an Actor class.

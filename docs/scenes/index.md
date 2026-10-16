@@ -49,7 +49,7 @@ Tap empty space in the viewport, or clear the selection, to show **Scene Setting
 | Default Camera | The camera Play looks through. See [Cameras](../graphics/cameras.md). |
 | Joystick | Shows the on-screen joystick for the editor camera. |
 | Gravity | Default 0, −9.81, 0. |
-| Snap Step, Tile Size, Tile Subdivisions | Grid Snap, Grid Size and the number of minor lines per grid cell. |
+| Snap Step, Tile Size, Tile Subdivisions | Grid Snap, Grid Size, and how many subdivisions each grid cell has. |
 | 2D Camera Width, 2D Camera Height | Size of the orange guide frame drawn in 2D. Default 16 × 9. |
 
 Below the settings are **Post Processing** passes, **Environment Lighting**, **Shadows** and, in the CEL render mode, **CEL Shading** overrides for this scene, and the **Scene Layers** that appear with it. See [Post-Processing](../graphics/post-processing.md), [Shadows](../graphics/shadows.md) and [Scene Layers](scene-layers.md).

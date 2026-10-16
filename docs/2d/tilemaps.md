@@ -11,7 +11,7 @@ Paint 2D levels from a grid of tiles. A **Tileset** slices an image into tiles a
 
 Tiles are numbered from 1, starting at the top-left of the image. In the **Preview**, **Move** pans with one finger and **Select** drags a box to select several tiles. Pinch or scroll to zoom in either tool.
 
-### Tile settings
+## Tile settings
 
 Select one or more tiles, then edit them in the **Inspector**. Edits apply to every selected tile.
 

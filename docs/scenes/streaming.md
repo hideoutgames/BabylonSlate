@@ -26,7 +26,7 @@ Nothing loads by itself. Call these nodes with the Scene Streaming actor as **Ta
 
 To check on a load, use [Is Scene Loaded](../scripting/class/is-scene-loaded.md), [Get Scene State](../scripting/class/get-scene-state.md) (Unloaded, Loading, Loaded or Unloading), [Get Scene Load Progress](../scripting/class/get-scene-load-progress.md) (0 to 1) and [Get Target Scene Name](../scripting/class/get-target-scene-name.md). A Scene Subsystem receives [Event On Streamed Scene Loaded](../scripting/class/event-on-streamed-scene-loaded.md) and [Event On Streamed Scene Unloaded](../scripting/class/event-on-streamed-scene-unloaded.md).
 
-To get the **Target**, find the actor with [Get Actor Of Class](../scripting/class/get-actor-of-class.md), or make a Class whose parent is **Scene Streaming Actor**, place that instead, and use [Get Self](../scripting/class/get-self.md) in its graph.
+To get the **Target**, find the Scene Streaming actor with [Get Actor Of Class](../scripting/class/get-actor-of-class.md).
 
 ## What a streamed scene brings
 

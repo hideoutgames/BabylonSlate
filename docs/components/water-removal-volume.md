@@ -22,7 +22,6 @@ Each size is 0.01 to 10,000.
 
 - World scenes only.
 - Water inside the shape is removed from every water body. It affects drawing, water queries and buoyancy.
-- The shape is set by the component. Actor and component scale also apply.
 - Disabling it brings the water back.
 
 ## Related

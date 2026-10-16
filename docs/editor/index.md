@@ -41,7 +41,7 @@ On phones, and in narrow windows, the editor switches to a compact layout:
 - The Content Browser button and the **Open Documents** menu replace the tab strip.
 - **More Tools** (the ⋯ button) holds the Debug menu, Windows, Search Project and Settings.
 
-Rotate the device or widen the window to return to the full layout. Your full layout is kept.
+Widening the window, for example leaving Split View on iPad, returns to the full layout.
 
 ## In this section
 

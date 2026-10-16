@@ -55,7 +55,7 @@ A Ragdoll turns a skinned Model's skeleton into connected physics bodies, starti
 While the ragdoll is active:
 
 - The bones replace the actor's usual collision, and the actor follows the ragdoll's root.
-- **Add Impulse** on the Ragdoll pushes the whole body. An impulse sent just after enabling still applies.
+- **Add Impulse** on the Ragdoll pushes the whole body. An impulse sent right after enabling still applies.
 - Bones outside **Bone Names** hold their captured pose.
 
 Turning the ragdoll off resumes animation where the game is now. There is no built-in get-up animation or blend.

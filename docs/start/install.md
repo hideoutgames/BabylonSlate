@@ -20,7 +20,7 @@ Every platform opens the same project format, so you can move a project between 
 
 - **Source Control** (Git LFS file locking) is available in the iPad, iPhone, Android and desktop apps, not on the web.
 - **Choose Folder** (keeping a project in a folder you pick, such as iCloud Drive or a Git working copy) is available in the apps. On the web, use **Export Project** and **Import ZIP** to move projects in and out.
-- Narrow windows and phones in landscape use the phone layout, which shows one window at a time. See [Windows and Layout](../editor/index.md).
+- Phones and narrow windows use the phone layout, which shows one window at a time. See [Windows and Layout](../editor/index.md).
 
 ## Accounts and sign-in
 

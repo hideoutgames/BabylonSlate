@@ -51,4 +51,4 @@ A Function Library holds functions that every Class graph in the project can cal
 2. Add functions as usual. A library has only **Functions** and **Local Variables**: no variables, events or interfaces.
 3. In any other graph, open **Add Node** and choose **Call** followed by the function's name.
 
-An **EditorFunctionLibrary** works the same way, but its functions can be called only from editor tools. See [Editor Scripting](editor-scripting.md).
+An **EditorFunctionLibrary** works the same way, but its functions can be called only from editor tools. See [Editor scripting](editor-scripting.md).

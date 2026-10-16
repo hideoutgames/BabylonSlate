@@ -31,7 +31,7 @@ Overlay components work only in Scene Layers. Add them with **Add Component > Ov
 | Layout | [2D Anchor](../components/2d-anchor.md), [2D Vertical Box](../components/2d-vertical-box.md), [2D Horizontal Box](../components/2d-horizontal-box.md), [2D Overlay Box](../components/2d-overlay-box.md), [2D Scroll Box](../components/2d-scroll-box.md), [2D Padding](../components/2d-padding.md), [2D Spacer](../components/2d-spacer.md), [2D Safe Area](../components/2d-safe-area.md) |
 | Clip and repeat | [2D Mask Panel](../components/2d-mask-panel.md), [2D Mask](../components/2d-mask.md), [2D Virtualized List](../components/2d-virtualized-list.md), [2D Virtualized Grid](../components/2d-virtualized-grid.md) |
 
-Sprites, tilemaps, meshes, 3D text, sound, particles and physics components also work on a layer. Lights, cameras, skyboxes, water, fog volumes and Scene Streaming do not.
+Sprites, tilemaps, meshes, 3D text, sound, particles, Rigid Bodies, Colliders and Physics Constraints also work on a layer. Lights, cameras, skyboxes, water, fog volumes and Scene Streaming do not.
 
 To script layer elements, make a Class whose parent is **Scene Layer Actor**. Such Classes appear in **Place Actors** only while a Scene Layer is open. The **2D Scene Layer Actor Switcher** shows one Scene Layer Actor Class at a time from its list; **Initial Index** picks the first one (−1 starts empty), and the **Switch Scene Layer Actor** function changes it.
 
