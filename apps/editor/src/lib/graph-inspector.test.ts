@@ -173,13 +173,15 @@ describe("containerConstructorPropertyRows", () => {
       value: 3,
       defaultValue: 0,
       min: 0,
-      max: 64,
+      max: 32,
     });
 
     const row = rows[0]!;
     if (row.kind !== "number") throw new Error("expected number row");
     row.onChange(5);
     expect(onPatch).toHaveBeenCalledWith({ count: 5 });
+    row.onChange(40);
+    expect(onPatch).toHaveBeenLastCalledWith({ count: 32 });
   });
 
   it("returns no rows for static node types", () => {
