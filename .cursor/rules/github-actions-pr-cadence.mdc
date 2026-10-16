@@ -1,8 +1,0 @@
----
-description: Pass the focused local preflight before opening PRs; wait for a CI slot; monitor, repair, and merge with at most 2 counted ready PRs
-alwaysApply: true
----
-
-# Cursor compatibility
-
-Read and follow [the canonical rule](../../.agents/rules/github-actions-pr-cadence.md) in full. Start with [AGENTS.md](../../AGENTS.md) for shared policies and skill routing. Edit the canonical file when changing policy.

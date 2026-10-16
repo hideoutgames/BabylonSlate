@@ -16,4 +16,4 @@ Explicit request examples:
 - “Make and publish a Windows-only release from commit `<sha>`, version `<version>`.”
 - “Upload an iPadOS release candidate from commit `<sha>`, version `<version>`, to Release Candidates. Do not submit to the App Store.”
 
-Setup, commands, and acceptance: [Distribution guide](../../docs/development/distribution.md).
+Setup, commands, and recovery: [distribution reference](../reference/distribution.md).

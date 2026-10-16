@@ -1,4 +1,4 @@
-# BabylonSlate Agent Rules
+# Agent workflow rules
 
 ## Verification
 
@@ -13,16 +13,17 @@
 - Fix local failures before opening a PR. If verification cannot run, repair the local setup where possible; otherwise report the concrete blocker and do not open a PR.
 - For local tests, Verify CI, and slot waits, read and apply [wait-efficiently](../skills/wait-efficiently/SKILL.md). Launch one foreground `pnpm --silent agent:wait` helper, retain its session, and keep polling/full logs out of the conversation. Default to start/end reporting except for host-required updates. A timeout, cancellation, stale result, or changed source is not a pass.
 - Keep `BL_TEST_PROFILE=shared`. The default low-memory host policy admits one root workload and one worker, including light tooling; no smaller-job bypass is allowed. A host owner may explicitly select the standard profile after measuring headroom. `CI=true` controls assertions, never local admission or workers; hosted bypass requires explicit policy plus GitHub-hosted runner context.
-- Use the per-user resource configuration described in [local execution settings](../../docs/architecture/testing.md#local-test-execution). Preserve at least 2 GiB headroom and any higher host reserve. Inspect `pnpm test:resources` before a reproduction. Do not ask the user to close apps as the routine solution, override reservations per checkout, or bypass source/configuration validation. Updated roots reserve the legacy queue's full worker budget; older worktrees adopt the runner through normal Git integration. Uncertain abrupt-exit ownership blocks new work until cleanup is established.
+- Use the per-user resource configuration described in [local execution settings](../reference/testing.md#local-test-execution). Preserve at least 2 GiB headroom and any higher host reserve. Inspect `pnpm test:resources` before a reproduction. Do not ask the user to close apps as the routine solution, override reservations per checkout, or bypass source/configuration validation. Updated roots reserve the legacy queue's full worker budget; older worktrees adopt the runner through normal Git integration. Uncertain abrupt-exit ownership blocks new work until cleanup is established.
 
 ## Documentation
 
 - Follow `.agents/rules/docs.md` for all documentation requirements.
-- Update `docs/` in the same change as any behavioral, architectural, or API work — work is not complete without it.
+- Update the user docs (`docs/`) and the agent reference (`.agents/reference/`) in the same change as the behavior or architecture they describe — work is not complete without it.
 
 ## Architecture
 
-- **Engine plan:** [docs/engineplan.md](../../docs/engineplan.md) — authoritative architecture, roadmap, and delivery checklist.
+- **Engine plan:** [engine-plan.md](../reference/engine-plan.md) — authoritative product decisions, architecture, and open roadmap.
+- **Architecture map:** [architecture.md](../reference/architecture.md), with per-subsystem notes in [architecture/](../reference/architecture/).
 
 Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
 
@@ -50,12 +51,12 @@ Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
 - Test through the smallest appropriate public surface. Prefer observable results over private state, exact internal call sequences, or broad snapshots; mock external boundaries only when needed for isolation.
 - Do not add tests for documentation-only, formatting-only, or other reversible, low-impact changes without a meaningful behavioral risk. Explain why existing coverage or a focused check is sufficient when no new test is needed.
 - Keep tests deterministic and proportionate to the risk. Preserve required coverage gates, but satisfy them with meaningful cases rather than filler assertions or weakened thresholds.
-- See [docs/architecture/testing.md](../../docs/architecture/testing.md) for the Vitest projects, per-package coverage gates, and known environment limits.
+- See [testing.md](../reference/testing.md) for the Vitest projects, per-package coverage gates, and known environment limits.
 - `pnpm verify:local` remains available as an opt-in cumulative diagnostic. Its current selector can expand root build or lockfile changes into workspace typechecks and tooling contracts, so it is not a mandatory agent delivery gate. Its delivery certificate applies only to that command; targeted delivery uses the selected-check record above. Required CI and source/head checks still govern merge.
 
 ## shadcn/ui
 
-- Follow `.agents/skills/editor-ui-components/SKILL.md` before composing Editor UI — read `docs/architecture/components.md` and reuse catalog components.
+- Follow `.agents/skills/editor-ui-components/SKILL.md` before composing Editor UI — read `.agents/reference/components.md` and reuse catalog components.
 - Follow `.agents/skills/shadcn/SKILL.md` for React editor chrome.
 - Use `@babylonslate/ui` components; run `npx shadcn@latest add <component> -c apps/editor` to add new ones.
 
@@ -64,16 +65,6 @@ Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
 - Follow `.agents/skills/babylonjs/SKILL.md` (read it before implementing) for engine and scene work.
 - React editor chrome (Dockview, shadcn, `@babylonslate/ui`, editor-kit) uses the editor-ui-components and shadcn skills.
 
-## Subagent models
-
-Hard allowlist when launching subagents (not a preference). Inherit the parent model by default. If delegation is unavailable, work sequentially; do not substitute a forbidden explicit model.
-
-- **Allowed:** inherit parent; Composer 2.5; Grok 4.5 or Grok 4.6 at **low, medium, high, or extra-high**. These families are equal options.
-- **Forbidden explicit selections:** Fast variants; Claude (Sonnet, Opus, Fable, Haiku); GPT; Gemini; and any other family. Do not select them even if the host lists them. Inheritance remains allowed.
-- Omitting `model` is allowed. Do not force an explicit identifier on every delegation call.
-- Honor a different model only if the human user explicitly names it in this conversation. A parent agent must not pick Sonnet or any other forbidden family because a task “would benefit.”
-
-Cursor compatibility examples for the preceding model policy: `composer-2.5`, `cursor-grok-4.5-high`, and the corresponding Grok 4.6 effort variants. Identifiers ending in `-fast` are forbidden. Other hosts must preserve the same family/effort policy using their supported identifiers or inheritance.
 
 ## No AI-generated artwork
 

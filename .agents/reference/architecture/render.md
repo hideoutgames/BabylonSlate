@@ -1,0 +1,154 @@
+# Render
+
+Contributor reference for Haptic's main-thread Babylon renderer: Engine ownership, the frame path, resources, lighting, Play presentation, feature owners and the Babylon 9.29 workarounds that must survive upgrades.
+
+## Ownership and boundaries
+
+| Area | Owner |
+| --- | --- |
+| Every Babylon object (Engine, Scenes, materials, textures, FrameGraphs, particles, audio voices) | [`packages/render/src/`](../../../packages/render/src/) (`@babylonslate/render`) |
+| Engine/session construction | [`create-engine.ts`](../../../packages/render/src/create-engine.ts) (`createEngine`, `createAppEngine`), [`apps/editor/src/lib/project-engine.ts`](../../../apps/editor/src/lib/project-engine.ts) (`createProjectEngineSession`), [`backend-engine-session.ts`](../../../packages/render/src/backend-engine-session.ts), [`webgpu-engine.ts`](../../../packages/render/src/webgpu-engine.ts) |
+| Render path, color pipeline, scalability, shadow presets (Babylon-free) | [`packages/core/src/`](../../../packages/core/src/) (`render-path.ts`, `render-effects.ts`, `scalability.ts`, `shadows.ts`, `render-setting-ownership.ts`) |
+| Water/cable/wave math shared with the worker | [`packages/core/src/`](../../../packages/core/src/) (`water.ts`, `water-blend.ts`, `cable-simulation.ts`), [`packages/runtime/src/water-world.ts`](../../../packages/runtime/src/water-world.ts) |
+
+- The game worker ([`packages/runtime/`](../../../packages/runtime/)) never imports Babylon. It sends render commands (`assignMesh`, `assignMaterial`, `assignParticle`, `debugDraw`, …) and snapshot buffers through [`packages/bridge/`](../../../packages/bridge/); render applies them.
+- UI packages (`ui`, `editor-kit`, `graph-ui`) never import Babylon (ESLint `boundary/ui-packages`); they talk through the engine command bus.
+- Babylon-free IR packages (`shader-graph`, `particle-graph`, `assets`) own schemas; render lowers or applies them. Never store Babylon serialization as an asset payload.
+- Construct `Texture` only in [`resource-cache.ts`](../../../packages/render/src/resource-cache.ts) (ESLint `boundary/render-texture-cache`).
+- The game HUD / UserInterface system is removed; Print HUD is DOM (`print-hud` in core). SceneLayers are the only in-game UI path ([scene-layers.md](scene-layers.md)).
+
+## One Engine per project
+
+- One project Engine on a hidden constructor canvas. **Never create a second WebGL/WebGPU context** (context caps). Scene viewport and Play bind visible canvases with `registerView(canvas, undefined, true)` and 2D-blit; Material/Model/Animation/Skeleton/Particle/Prefab previews and thumbnails render to an RTT and blit (`createRttCanvasBlitter`, `flipReadPixelsRgba` in [`flip-read-pixels.ts`](../../../packages/render/src/flip-read-pixels.ts)). Editor code obtains it with `ensureSharedEngine`.
+- Only exceptions: Preview Build's iframe (its own cold Engine) and the Homepage launcher sculpture (before a project opens; disposed with its context on unmount). Do not add preview Engines.
+- Previews must not `registerView` or `scene.render()` to the default framebuffer; Scene/Play own it. Do not move the Scene viewport to an RTT: Play blits from the Scene Engine framebuffer.
+- Closing a Scene tab disposes its Scene and cache retains, never the Engine. Closing the project disposes the Engine.
+- Shared views size the framebuffer with `engine.setSize` from the view's CSS box, never `engine.resize()` (it follows the hidden constructor canvas). Resize only on integer CSS size change; ignore zero sizes.
+- Backend is project-wide (`settings.render.gpuBackend`: `auto | webgl2 | webgpu`, normalized default `webgl2`). A Scene never changes backend in place; `createBackendEngineSession` falls back WebGPU→WebGL2 on a fresh canvas. Custom GLSL in the emitted material closure forces WebGL2 (`webGpuMaterialCompatibilityReason`). Backend changes wait for Play/Preview Build to stop; uncertain cleanup blocks any new allocation (never publish a partially released context).
+- NodeMaterials and built-in helpers (grid, camera bounds, MSDF text) compile in the Engine's native language (GLSL or WGSL). Never depend on a downloaded GLSL→WGSL translator.
+- Large-world rendering on, context MSAA off; `adaptToDeviceRatio: false`, resolution via `setHardwareScalingLevel` ([`hardware-scaling.ts`](../../../packages/render/src/hardware-scaling.ts)). Engine Settings scaling is both initial level and floor; only the Engine's sole rendering view feeds the dynamic-resolution valve.
+
+## Frame path
+
+- [`framegraph-forward-scene.ts`](../../../packages/render/src/framegraph-forward-scene.ts) (`ForwardSceneFrameGraph`) is the **only** scene draw path; there is no native `Scene.render` fallback. Every Play world, SceneLayer, editor viewport, preview and thumbnail owns a `SceneRenderCoordinator` ([`scene-render-coordinator.ts`](../../../packages/render/src/scene-render-coordinator.ts)). Native shader warm precedes graph preparation; preparation builds and probes, never draws.
+- Task order (`taskNames()`): `Forward admitted shadows`, `Clustered light mask` → `Forward clear` → `Forward cull` → geometry tasks when a chain needs them → `Forward objects` → authored post-process, settings effects, shared outlines → `Scene post-process output` (only when a chain exists; then it is the view's only output writer). Water scene copy splits the object pass ([Water](#water)).
+- Unsupported, so preparation rejects and nothing draws: frozen active-mesh queues, camera post-processes, rig/multiple cameras, multisample/cube/array or caller-bound targets, custom render functions, unmanaged shadow generators. Editor scenes therefore freeze world matrices and materials but never the active-mesh queue.
+- Strict readiness is probed only after invalidation, never per steady frame. Anything that changes shader-relevant state outside Scene observables must call `markSceneReadinessDirty` ([`scene-readiness-signal.ts`](../../../packages/render/src/scene-readiness-signal.ts)). Readiness probes restore camera, matrices, UBO, viewport and render pass even when callbacks throw.
+- Mask, geometry and pick passes are light-neutral ([`light-neutral-tasks.ts`](../../../packages/render/src/light-neutral-tasks.ts)): never toggle `light.shadowEnabled` around a pass; each toggle dirties every material's light defines.
+- Blended materials with `needDepthPrePass` draw their depth pre-pass under their own render pass id ([`transparent-depth-pre-pass.ts`](../../../packages/render/src/transparent-depth-pre-pass.ts)); sharing one draw wrapper made frozen materials draw the depth variant as colour.
+- Presentation: the visible canvas changes only after a coherent draw; rebuilds, resizes and skipped frames hold the last image. First frame waits for GPU submission (WebGL2 polls an owned fence non-blockingly; never read GL errors before it signals) and the canvas copy. Budgets live in [`stall-deadline.ts`](../../../packages/render/src/stall-deadline.ts) (shader warm stall 4 s, first frame 20 s, driver compile 60 s); `DriverCompileWatch` renews waits while parallel-compile effects are pending.
+- Opaque world visuals, models, the grid and debug draws share `RENDERING_GROUP.world` with no group depth clear (`configureEditorRenderingGroups`, [`sorting.ts`](../../../packages/render/src/sorting.ts)); helpers/billboards use `foreground`.
+- SceneLayers are extra unlit orthographic Scenes on the same Engine, composited after the world output ([`scene-layer-compositor.ts`](../../../packages/render/src/scene-layer-compositor.ts)); world post-processing never touches them. Their camera preparation updates matrices only; never upload scene uniforms while another Scene's floating-origin context is current.
+
+## Loading and readiness
+
+- Play and the exported player share `createSceneLoadReadiness` ([`scene-load-readiness.ts`](../../../packages/render/src/scene-load-readiness.ts)): `sceneLoading` opens a transaction with a monotonic load ID, `sceneRealized` closes the worker's assignment batch, then models, sample-ready textures, shader warm and first-frame presentation complete before `sceneModelsReady` acknowledges that ID. Superseded loads never acknowledge or report failures. Streamed instances use `createSceneStreamingReadiness`.
+- Editor Play shows the loading dialog; Preview Build and exported players show no host loading UI (games author loading with SceneLayers) and only mirror phase/progress on `data-scene-load-*` attributes.
+- Asset sources are scoped: Scene catalogs, `EngineHandle.acquireSceneSources` and script load handles acquire through one loader; unread deferred scenes stay unread. Source/CPU budgets and GPU budgets are separate.
+- Native work (model decode/LOD, audio decode, cold texture/material/font preparation) shares one admission queue per Engine (`nativePreparationForEngine`, [`native-preparation.ts`](../../../packages/render/src/native-preparation.ts); defaults 2 concurrent, 64 MiB temporary). Priority order: gameplay (High), preload (Normal), background (Low). Later commands for a slot wait behind its cold assignment and apply in order.
+- Editor blocking loads realize in cooperative chunks (`runSceneWork`; yield after about 8 ms or 256 steps). Hidden Scene tabs defer construction until their canvas has a nonzero size.
+
+## Rendering settings
+
+- Render path is project-owned `settings.render.renderPath` (`auto | forward | clusteredForward`, default `forward`). A per-Engine session request (`EngineHandle.setRenderPath`, console `renderpath`) overrides it and is never persisted; Scene documents carry no path. Auto/clustered admission: [`scene-render-path.ts`](../../../packages/render/src/scene-render-path.ts), [`clustered-material-policy.ts`](../../../packages/render/src/clustered-material-policy.ts). Owned unlit helper ShaderMaterials must call `registerClusteredUnlitMaterial` or they force Forward.
+- `settings.render.mode` is PBR or CEL. CEL is display-space with hard steps for bands, shadow visibility and highlights; there is no softness or Smooth option. CEL material replacement is event-driven (no per-frame `scene.meshes` scan) and invalidates readiness only when it actually replaces something.
+- Color pipeline (`render.effects.colorPipeline`, v1): `legacyDisplay` default; `sceneLinear` only for PBR. Babylon's image-processing pass is the only display encoding; each Display Color task owns its own `ImageProcessingConfiguration` (sharing the Scene's corrupts per-material processing). ACES hue shifts are expected; `neutral` holds hues.
+- Scalability categories, presets and the ownership registry are in core; `ScalabilitySession` holds non-persistent session overrides. Readback separates requested from effective; effective changes only after a renderer-confirmed ready frame. Backend changes reject with `restartRequired`. Artistic settings (CEL, IBL, outlines, render path, output size) never mark a category Custom. Tiers are authored targets (Low budget Android, Medium A16, High desktop, Ultra high-end), not qualifications.
+
+## Lighting and shadows
+
+- Conventional light slots are bounded by device uniform-block limits before shaders compile ([`forward-light-budget.ts`](../../../packages/render/src/forward-light-budget.ts), [`scene-lighting.ts`](../../../packages/render/src/scene-lighting.ts); three blocks reserved). Admission keeps sun/fill, then priority, camera distance with incumbent bonus, stable identity. Exclusion never changes authored Enabled.
+- Only the first enabled directional light in scene order illuminates.
+- Material, lighting, shadow, area-light and water samplers share `MATERIAL_SAMPLER_RESERVE` (8) ([`light-sampler-budget.ts`](../../../packages/render/src/light-sampler-budget.ts)).
+- `SceneShadowController` ([`shadow-controller.ts`](../../../packages/render/src/shadow-controller.ts)) owns all shadow maps in editor and Play; the managed bridge renders them unmanaged before `Forward objects`. Local maps render once and refresh on caster revision; point/spot maps are pooled `ReusableShadowGenerator`s that retarget or stand by instead of reallocating. Shadow maps keep anisotropy 1. Helpers (`isEditorHelperMesh`), skyboxes, debug overlays and water never cast.
+- Directional Auto Bias adapts to the current projection and admitted map size; derived values are never serialized. Point/spot automatic bias is unsupported (authored offsets only). If the owning engine or Babylon's last-created-engine gate rejects cascades, the sun keeps a single map without touching authored settings.
+- Shadow admission lowers resolution to fit (256 px floor) and retries at half size on allocation failure; it never changes authored values. Quality presets and per-tier ceilings live in core [`shadows.ts`](../../../packages/core/src/shadows.ts).
+- Editor light billboards are a status palette, not the light colour: white operating, yellow limited (Forward capacity or missing shadow allocation), red disabled/non-illuminating. Tint multiplies the diffuse texture (emissive would wash it white).
+- Membership or shadow changes must dirty frozen materials' light/shadow defines; WebGPU graph materials rebind through [`webgpu-node-material-rebind.ts`](../../../packages/render/src/webgpu-node-material-rebind.ts).
+- GPU allocations (shadow, cluster, water, area light, post-process, geometry) reserve in one Engine ledger before construction (`beginManagedRenderAllocation`, [`managed-render-resources.ts`](../../../packages/render/src/managed-render-resources.ts)); WebGPU releases after the end-frame destruction drain (`releaseManagedRenderLeaseAfterDisposal`). Uncertain cleanup keeps the lease. Estimates, not measured VRAM.
+- Rectangular area lights are unshadowed (no generator, light through walls). LTC tables are bundled ([`resources/`](../../../packages/render/src/resources/), CC BY 4.0, no CDN). Emission textures are prepared at authoring time into a versioned derived chunk; gameplay never runs the processor; missing data disables the emitter with a diagnostic.
+
+## Resources
+
+- One `ResourceCache` per Engine (`resourceCacheForEngine`) shared by world, SceneLayer and preview Scenes. Exact-generation leases with idempotent `release()`; reading a held resource never re-acquires. Default 2 GiB accounted ceiling, trims unreferenced entries to 80% ([`perf-ceilings.ts`](../../../packages/render/src/perf-ceilings.ts)); live leases are never evicted; the largest live view cap wins. Geometry is accounted (`GEOMETRY_BYTE_CEILING`) but never evicted.
+- Content identity is the SHA-256 of an immutable installed Blob. Never fragment `blob:` URLs (Babylon escapes the fragment into the identity). Different upload keys (`invertY`, sampling, mips, cube) get separate wrappers from the same Blob.
+- KTX2 block-compressed uploads ignore `invertY`, so `prepareTexture` builds them unflipped and flips V on the wrapper (`vScale = -1`, `vOffset = 1`). Samplers must apply the texture matrix. A Babylon change that sets `_invertVScale` for KTX2 would double-flip.
+- WebGPU rejects ASTC/BC7 off the 4×4 grid: the patch decodes those Basis KTX2 to RGBA per texture; `configureKtx2DecoderRuntime` must leave `forceRGBA` undefined (not false) so the per-texture value wins. Compressed Textures encode block-aligned except atlases.
+- Six-face cubes are created on the Engine, not the Scene; skybox materials null `reflectionTexture` on dispose so Play teardown cannot drop a cached cube. The skybox never calls `createDefaultSkybox`, never sets `scene.environmentTexture`, is not `infiniteDistance`.
+- Publication of materials, texture parameters and sprite/skybox/model replacements waits for full lease preparation (byte accounting and budget admission). `Texture.isReady()` is not enough: Babylon's error sampler reports ready.
+- Replacements are transactional: prepare the successor, keep the working predecessor, publish only on success; generation/owner checks drop late completions; failed requests stay latched until their inputs change.
+- Models: canonical bytes are GLB; [`gltf-loader.ts`](../../../packages/render/src/gltf-loader.ts) registers the glTF 2.0 loader and its extensions only. Draco/meshopt decoders are self-hosted, never a CDN. OBJ/FBX/STL are converted to GLB at import (`convert-*-to-glb.ts`). Per-Scene template containers instantiate per actor with Babylon automatic material cloning disabled; construction materials are keyed by mesh, not `mesh.metadata` (clones share metadata). Model slots map by glTF `/materials/N` pointer, then name, then next unused index, never child visit order.
+- MeshComponent geometry and Material are separate references: a primitive with a Material keeps a null `meshAssetGuid`. `materialSource: "override"` distinguishes an explicit None (engine checker) from inherited Model slots; the picker's "Model Materials" value is UI-only and never saved.
+- Runtime parameters (`setMaterialParameter`) share the compiled default until a component's first write, then `MaterialLibrary` compiles a private instance for that component only; saved assets and siblings never change. A None texture binds a neutral white sampler.
+- The scene environment controller leases one cache source and clones only its CubeTexture view ([`environment-lighting.ts`](../../../packages/render/src/environment-lighting.ts)); intensity goes through `scene.iblIntensity`. Missing irradiance is derived once per cube; pending or failed uploads join readiness and are never thrown from a frame.
+- Automatic LOD ([`model-lod.ts`](../../../packages/render/src/model-lod.ts)): index-only levels sharing the master's vertex buffers, generated off-thread by meshoptimizer, never persisted or exported; selection in `customLODSelector`. No texture streaming (Babylon has no residency API).
+
+## Play presentation and editor views
+
+- The Play Scene starts with camera and light only; actors come from `assignMesh` plus snapshots. Play always draws the latest published snapshot, no interpolation (render and tick share the ~60 Hz cap). `SnapshotSampler` ([`snapshot-sync.ts`](../../../packages/render/src/snapshot-sync.ts)) ignores unpublished buffers and is cleared on scene change; snapshot TRS is world space; new geometry stays hidden until a snapshot poses it. One slot is one visual.
+- Snapshot apply runs once per applied snapshot identity (`{frameId, layoutGeneration}`); audio pose and listener sync live there, not in render admission.
+- Overlay Play: size from the overlay box with `engine.setSize`; `clearBeforeCopy`; disable other enabled Scene views until Play closes (restore exactly those); `scene.autoClear = true`; `skipPointerMovePicking` on world scenes. Custom resolution with Black Bars locks the framebuffer and letterboxes with `fitContainedRect`, never CSS `object-fit: fill`; Play restores the hardware scale captured before it started.
+- Engine Settings `postProcessingEnabled` gates only editor viewports and in-editor Play, never exported games or the Material editor preview.
+- `visibilitychange` (and Capacitor app state) pauses the render scheduler, game tick and texture encode queue. A blocking overlay counts as closed only with `data-closed` or `hidden`; Base UI marks open backdrops `aria-hidden`.
+- Editor scenes use `ScenePerformancePriority.BackwardCompatible` plus `applyEditorMaterialFreeze`; Play uses `Intermediate` and `playMode` skips the editor freeze so packed textures can rebuild. A texture-load rebuild must unfreeze → build → reapply authored blend → mark dirty with dirty-block off → refreeze.
+- Editor apply is incremental through `EditorSceneSync` ([`editor-scene-sync.ts`](../../../packages/render/src/editor-scene-sync.ts)); work stays proportional to the change. Material rebinding reports net changes only (`withNetMaterialChanges`); unchanged post-process stacks and in-place light uniform edits keep the prepared graph.
+- Editor canvases render continuously at the viewport cap and freeze when hidden, off-screen, resizing, under a Dialog/AlertDialog/Sheet, or while Play/Preview Build runs ([`render-scheduler.ts`](../../../packages/render/src/render-scheduler.ts), [`apps/editor/src/lib/viewport-render-gate.ts`](../../../apps/editor/src/lib/viewport-render-gate.ts)). Static previews idle after a ready frame.
+- Picking: viewport taps use a 1×1 GPU object-ID pass ([`gpu-object-id-picker.ts`](../../../packages/render/src/gpu-object-id-picker.ts)) that follows skinning, morphs and WPO; marquee, Play `pickAt`, brushes and transform tools use the CPU ray ([`picking.ts`](../../../packages/render/src/picking.ts)).
+- Meshes without a Material draw `installEngineDefaultMaterial` (lit grey checker PBR); primitives keep `mesh.material === null` so Details shows None.
+- Editor selection, gizmos and debug overlays never change Scene membership (pre-created hidden guides, entity-free cameras/RTTs); a membership change costs a whole-scene readiness probe.
+
+## Feature owners
+
+| Feature | Source | Rules |
+| --- | --- | --- |
+| Post-process stacks | `scene-post-process-*.ts`, `framegraph-post-process.ts`, `owned-post-process.ts` | Each entry owns its Material instance; stable entry IDs survive reorder. `whenDisposed()` is a bounded report; only `whenReleased()` permits host Scene/library disposal. Missing buffer or failed pass skips only that pass. |
+| Settings effects | `scene-effects-graph.ts`, `spatial-effects*.ts`, `temporal-anti-aliasing.ts`, `fsr1-tasks.ts`, `color-grading.ts` | AO/SSR/volumetrics/TAA before bloom and Display Color; FSR after; LUT is display-referred. Unsupported devices keep base rendering. |
+| Render targets | `render-target-capture*.ts` | One producer per target per frame; self-sampling double-buffers; captures exclude helpers; no recursive RTT draws. |
+| Outlines | `shared-outline*.ts`, `scene-outline-host.ts` | One bounded FrameGraph owner for selection, Outline components and CEL; at most three mask passes plus one compose per view; IDs ≤ 65,535, never recycled. |
+| Particles | `particle-*.ts`, `node-material-particles.ts` | See [particles.md](particles.md). |
+| Water | `water-*.ts` | See [Water](#water). |
+| Text | `text2d-*.ts`, `text3d-mesh.ts` | Not GUI `TextBlock` or `DynamicTexture`; 3D text is a flat TypeFace mesh with injected `earcut`. See [fonts.md](fonts.md). |
+| Lattice deformer | `lattice-deformer*.ts` | Order morph → skin → WPO → lattice; `SlateLattice` plugin attaches only to materials an active cage draws, never globally. |
+| Cable, spring arm | `cable-mesh.ts`, `spring-arm.ts`; core `cable-*.ts` | Play simulates cables in the worker; editor steps them on the main thread. |
+| Dynamic runtime mesh, fog volumes | `dynamic-runtime-mesh.ts`, `fog-volumes.ts` | Limits live in core (1M vertices / 6M indices; 8 admitted fog volumes). |
+| Play debug draw | `play-debug-draw.ts` | Duration 0 is one sim tick, not one present. |
+| Audio | `audio-service.ts`, `babylon-audio-backend.ts` | AudioV2 behind `AudioPlaybackBackend`; PCM cache separate from `ResourceCache`. |
+| Scene streaming | `scene-stream-*.ts`, `scene-streaming-readiness.ts` | Pending instances stay out of visible/readiness sets until their batch is ready; children use the parent's physics kind, navmesh and environment. |
+
+## Water
+
+- One `WaterDefinition` is shared by renderer, worker and editor (core `water.ts`). Physics, queries and buoyancy read only analytic waves: never quality, the FFT band or GPU state.
+- `WaterClock` (runtime driver) advances with the simulation step; the renderer pairs water time with the applied snapshot frame (`setSceneWaterTime` / `sampleSceneWaterFrame`). Editor and previews use real time.
+- Rendering gates on the device-effective `sceneWaterQualityDeviceClamp(scene)`, never requested values; `sceneWaterQualityRevision` change re-plans each FrameGraph ([`render-settings.ts`](../../../packages/render/src/render-settings.ts)). `clampWaterQualityToDevice` is the single device gate.
+- `WaterMaterialPlugin` ([`water-material.ts`](../../../packages/render/src/water-material.ts)) compiles one look per material through defines; tiers use numeric `SLATE_WATER_QUALITY` with one `#if … >= n` per line so Babylon's define-keyed cache stays correct; zero-valued features compile out. Defines change only on quality, pipeline, asset or flatness changes, never per frame.
+- Refraction/screen-space reflections read a per-view scene copy ([`water-scene-copy.ts`](../../../packages/render/src/water-scene-copy.ts)) registered by render pass id before the first readiness probe; copy-sampling water draws only in `Forward transparent`. Planar mirror ([`water-planar-reflection.ts`](../../../packages/render/src/water-planar-reflection.ts)) is drawn capture-style, entity-free. FFT detail ([`water-fft.ts`](../../../packages/render/src/water-fft.ts)) is fragment-shader passes on both backends, render-only, demand-driven. All reserve in the ledger's `water` category.
+- Bodies within Water Blend Distance blend via core `water-blend.ts`; only the owning body draws and answers queries.
+- Built-in water displaces on the GPU from a static rest grid (`evaluateWaterVertex` in core is the CPU reference); Custom Material water opts in only through a **Water Waves** node. CPU picking hits the rest grid. Water meshes never cast shadows (`neverCastsShadows`).
+- Grid geometry (except Global Water Volume) is world-anchored and never depends on the camera. The worker's `WaterWorld` keeps step and script-query evaluations in separate states.
+
+## Babylon pin and workarounds
+
+`@babylonjs/core` is pinned at **9.29.0** with one pnpm patch (`pnpm-workspace.yaml` → [`patches/@babylonjs__core@9.29.0.patch`](../../../patches/@babylonjs__core@9.29.0.patch)). Review every item below when moving the pin; drop a patch hunk only when upstream fixed it.
+
+| Patched file | Why |
+| --- | --- |
+| `Physics/v2/Plugins/havokPlugin.js` | `setShape(body, null)` passes Havok 1.3.14's `[0n]` tuple; failed native attach/teleport throws |
+| `Engines/WebGPU/webgpuCacheRenderPipeline.js` | Zero `depthBias` for line/point topology (biased outline lines failed Dawn validation) |
+| `Materials/Node/Blocks/Input/inputBlock.pure.js` | Define-gate optional vertex color/instance/bone attributes (no WebGPU slot when absent) |
+| `Materials/effect.pure.js`, `Misc/rgbdTextureTools.js` | Disposal guards; owned, cancellable RGBD decode with caller-state restore |
+| `assetContainer.js` | `dispose()` removes its Scene dispose observer (otherwise every replaced generation leaks) |
+| `Materials/Node/nodeMaterial.pure.js` | Pass `shaderLanguage` to `createEffectForParticles` (WGSL particles) |
+| `Misc/khronosTextureContainer2.js` | WebGPU Basis KTX2 off the 4×4 grid decodes to RGBA |
+| `Particles/gpuParticleSystem.pure.*` | `paused`: draw last buffers without simulating |
+| `scene.pure.*` | `render(…, ignoreActions)` for render-only frames |
+
+- Runtime member replacements (restore the original only while their wrapper is installed): `framegraph-forward-scene` (cull-task target, depth retain on borrowed targets, record abort, camera-update pin), `framegraph-managed-shadows` (`ObjectRenderer.render` intermediate flag), `registered-view-admission` (`_renderViewStep` / `_renderViews`), `water-material` (`_injectCustomCode`), `node-material-particles` (`_createEffectForParticles`), `owned-post-process` (`Effect._isReadyInternal`), `clustered-material-bindings`, `webgpu-node-material-rebind`, `shared-outline` (`_processInstancedBuffers`), `shadow-controller` (`prepareDefines`), `overlay-visual-style`, `particle-graph-realize`, `particle-preview`, `environment-irradiance`, and floating-origin `getScene` swaps for manual draws.
+- Re-inventory internals first: `rg '\._[a-zA-Z]' packages/render/src packages/physics/src apps/editor/src` plus member replacements. Access through casts or string names is invisible to `tsc`; read the new Babylon source.
+- Layout guards that throw `Unsupported Babylon … layout` (`node-material-particles`, `clustered-light-order`, `clustered-camera-bounds`, `particle-system-factory`) must be re-derived, never relaxed.
+- Clustered admission trusts that Babylon's `color` ShaderMaterial (LinesMesh) reads no light data (`shaderPath === "color"`); re-read its GLSL/WGSL on a pin move.
+- `SlateTextureQuality` registers through `registerPersistentMaterialPlugin` ([`material-plugin-registration.ts`](../../../packages/render/src/material-plugin-registration.ts)) because Babylon unregisters global plugins when the last Engine disposes.
+- Authored PBR/CEL graphs bind the cascaded-shadow vertex include to their View input ([`node-shadow-view.ts`](../../../packages/render/src/node-shadow-view.ts)); the stock WGSL include names an absent `uniforms.view`.
+- Rectangular area lights register their textured-emission define when a slot changes light type ([`area-rect-light.ts`](../../../packages/render/src/area-rect-light.ts)); app-owned light blocks refresh dynamic samplers likewise. Authored forward is +Z, native emission −Z.
+- `LogicalGeometryTask` clears view depth with its own target rebound (Babylon's base clear ends on the backbuffer, an MRT `INVALID_OPERATION`). Borrowed shadow/cluster draws restore caller state through [`framegraph-borrowed-draw.ts`](../../../packages/render/src/framegraph-borrowed-draw.ts) / [`engine-drawing-state.ts`](../../../packages/render/src/engine-drawing-state.ts) because 9.29 draws lack `finally`. [`allocation-checkpoint.ts`](../../../packages/render/src/allocation-checkpoint.ts) is the only reader of the private render-target wrapper cache.
+- NullEngine test hosts need the `clearAttachments` adapter in `framegraph-test-fixtures.ts`; NullEngine never proves GPU output.
+- Draw calls come from `engine._drawCalls` reset around `scene.render()` (Babylon 9 has no public count); WebGPU encoder timestamps return zero, so whole-frame WebGPU GPU time is reported unsupported.

@@ -1,7 +1,0 @@
----
-alwaysApply: true
----
-
-# Cursor compatibility
-
-Read and follow [the canonical rule](../../.agents/rules/agent-workflow.md) in full. Start with [AGENTS.md](../../AGENTS.md) for shared policies and skill routing. Edit the canonical file when changing policy.

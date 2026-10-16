@@ -13,16 +13,16 @@ Never create visual or spatial media with AI. Absolute — user requests, placeh
 
 ```text
 # ❌ BAD — invent a mark or call an image generator
-GenerateImage({ description: "BabylonSlate app icon, flat vector" })
+GenerateImage({ description: "Haptic app icon, flat vector" })
 
 # ✅ GOOD — reuse existing branding or the icon library
-# engine-logos/SlateIconDark.png  |  lucide-react BoxIcon
+# engine-logos/HapticIcon.svg  |  lucide-react BoxIcon
 ```
 
 ## Allowed
 
 - Existing Lucide (or project `iconLibrary`) icons
-- Existing files in `engine-logos/` and `public/branding/` — copy only; never invent replacements
+- Existing files in `engine-logos/`, `public/branding/` and `apps/docs/public/` — copy only; never invent replacements
 - Engine code that builds runtime primitives (`CreateBox`, debug lines, nav overlay) as product features, not as art
 - Solid-color or numeric test fixtures (1×1 pixels, empty buffers) with no pictorial content
 - Captures of the **real** running app (Playwright screenshots, computer-use recordings of the editor)

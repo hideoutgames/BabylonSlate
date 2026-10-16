@@ -1,8 +1,0 @@
----
-globs: apps/editor/**,packages/ui/**
-alwaysApply: false
----
-
-# Cursor compatibility
-
-Read and follow [the canonical rule](../../.agents/rules/touch-editor.md) in full. Start with [AGENTS.md](../../AGENTS.md) for shared policies and skill routing. Edit the canonical file when changing policy.

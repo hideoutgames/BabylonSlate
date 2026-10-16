@@ -1,33 +1,32 @@
-# Documentation Rules
+# Documentation
+
+Two audiences, two places:
+
+| Place | Audience | Holds |
+| --- | --- | --- |
+| `docs/` | People making games with Haptic | How to use the editor and engine: guides, component, asset and node reference. Published as the docs site. |
+| `.agents/reference/` | Agents and engine contributors | Architecture, invariants, formats, decisions, catalogs agents maintain. Not published. |
 
 ## Mandatory updates
 
-- Any change that adds, removes, or alters behavior, architecture, public APIs, data formats, or integration points **must** include `docs/` updates in the **same branch/PR**.
-- Documentation is part of the definition of done — on par with required verification and tests.
-- Never defer documentation to a follow-up task or PR.
+Docs are part of the definition of done. Update them in the same branch/PR; never defer them.
 
-## Location and scope
+- **User-visible change** (feature, setting, UI name, menu path, default, limit) → update the affected `docs/` pages.
+- **Node added, removed, renamed or changed** → update its page under `docs/scripting/<graph>/` (`class`, `material`, `particle`, `animation`, `behaviour-tree`) and the graph's `index.md`. Pin tables must match the catalog.
+- **Engine component or asset type added or removed** → add or remove its page under `docs/components/` or `docs/assets/` and its row in that folder's `index.md`.
+- **Architecture, data format, invariant or integration change** → update the matching file in `.agents/reference/` (`engine-plan.md`, `architecture.md`, `architecture/<subsystem>.md`).
+- **Reusable Editor UI** change → update `.agents/reference/components.md` ([editor-ui-components.md](editor-ui-components.md)).
+- **Removed feature** → delete its pages and every link to them. No stale docs.
 
-- All project documentation lives in `docs/` at the repository root.
-- **Engine is the priority** (`packages/render`: scene lifecycle, loaders, command-bus integration, Babylon abstractions).
-- Also document meaningful changes in other packages (`graph-ui`, `core`, `vfs`, `ui`) and `apps/editor` when they affect how the system works.
+## Writing user docs
 
-## Style
+- Plain, calm, concise. Second person, present tense, active voice. Short paragraphs, bullets and small tables.
+- One `#` heading per page; `##` sections in sentence case; UI names exactly as the editor shows them, in **bold** on first use.
+- Say "Haptic" or "the editor". Never mention package names, source paths, internal ids, codegen, phase labels, PR numbers or unfinished work.
+- Link relatively between `.md` pages; never link source code. No generated images ([no-ai-artwork.md](no-ai-artwork.md)).
+- Prefer updating an existing page over adding one. New pages follow [docs-site.md](docs-site.md).
 
-- Keep entries **short and concise**: bullet lists, brief tables, minimal prose.
-- Prefer updating an existing doc over creating a duplicate.
-- Document *what* changed and *why it matters* — not line-by-line implementation dumps.
+## Writing agent reference
 
-## When to add vs update
-
-- **New feature or subsystem** → add or extend the relevant doc under `docs/`. A **new** `docs/**/*.md` file must also get a VitePress sidebar entry in the same change — see [docs-site.md](docs-site.md).
-- **Reusable Editor UI** (new, changed, or removed primitive / editor-kit composite / graph shell / multi-call-site app wrapper) → update [`docs/architecture/components.md`](../../docs/architecture/components.md) in the same change — see [editor-ui-components.md](editor-ui-components.md).
-- **Changed behavior or API** → update the affected doc in the same change.
-- **Removed feature** → remove or strike-through obsolete sections; do not leave stale docs.
-
-## Structure (guidance for future docs)
-
-- `docs/engineplan.md` — authoritative engine architecture, feature spec, roadmap, and delivery checklist
-- `docs/architecture/render.md` — BabylonSlate engine internals
-- `docs/architecture/overview.md` — monorepo boundaries, command bus, package dependencies
-- Top-level topic files as needed; avoid deep nesting without reason
+- Terse: invariants, ownership, data flow, formats, decisions with one-line reasons, pointers to source.
+- No history, dates, status logs or measurement records; git history keeps those.
