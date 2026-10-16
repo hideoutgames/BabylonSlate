@@ -1,6 +1,6 @@
 # Icons
 
-**Always use the project's configured `iconLibrary` for imports.** Check the `iconLibrary` field from project context: `lucide` → `lucide-react`, `tabler` → `@tabler/icons-react`, etc. Never assume `lucide-react`.
+**Import icons from `lucide-react`**, the `iconLibrary` (`lucide`) in both `components.json` files. Replace icons from any other library in upstream examples.
 
 ---
 
@@ -90,7 +90,6 @@ function StatusBadge({ icon }: { icon: string }) {
 **Correct:**
 
 ```tsx
-// Import from the project's configured iconLibrary (e.g. lucide-react, @tabler/icons-react).
 import { CheckIcon } from "lucide-react"
 
 function StatusBadge({ icon: Icon }: { icon: React.ComponentType }) {

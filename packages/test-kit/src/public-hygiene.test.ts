@@ -21,6 +21,7 @@ const fakeAwsKey = `AKIA${"Q".repeat(16)}`;
 const fakeGithubToken = `ghp_${"a".repeat(36)}`;
 const fakeSlackToken = `xoxb-${"1".repeat(12)}`;
 const sessionLink = `https://app.${"devin"}.ai/sessions/0123456789abcdef`;
+const claudeSessionLink = `https://${"claude"}.ai/code/session_01ABCdef0123456789`;
 
 describe("public repository hygiene", () => {
   // Allow the full tracked-tree I/O scan to finish under coverage and concurrent builds.
@@ -41,6 +42,23 @@ describe("public repository hygiene", () => {
     ).toEqual([]);
   });
 
+  it("flags Claude Code session links, trailers and footers", () => {
+    const flagged = [
+      [claudeSessionLink, "agent-session-link"],
+      [`${"Claude"}-Session: ${claudeSessionLink}`, "agent-session-link"],
+      [`${"Co-Authored"}-By: Claude Opus <noreply@${"anthropic"}.com>`, "agent-request-attribution"],
+      [`${"Co-authored"}-by: Someone <noreply@${"anthropic"}.com>`, "agent-request-attribution"],
+      [`${"Claude"}-Session: pending`, "agent-request-attribution"],
+      [`\u{1F916} ${"Generated"} with [Claude Code](https://example.com)`, "agent-attribution"],
+      [`${"Generated"} by [Claude Code](https://example.com)`, "agent-attribution"],
+    ];
+    for (const [text, rule] of flagged) {
+      expect(scanText("docs/x.md", text).map((violation: { rule: string }) => violation.rule)).toContain(rule);
+    }
+    expect(scanText("docs/x.md", "Claude Code reads AGENTS.md from the repository root.")).toEqual([]);
+    expect(scanText("docs/x.md", "See https://claude.ai/code for the web app.")).toEqual([]);
+  });
+
   it("scans pull request metadata without printing its contents", () => {
     expect(
       scanEventMetadata({
@@ -59,12 +77,12 @@ describe("public repository hygiene", () => {
     ]);
   });
 
-  it("allows a session link in the pull request description but not other secrets", () => {
+  it("rejects session links and attribution in the pull request description", () => {
     expect(
       scanEventMetadata({
-        pull_request: { title: "A change", body: `Summary\n\n${sessionLink}` },
+        pull_request: { title: "A change", body: `Summary\n\n${claudeSessionLink}` },
       }),
-    ).toEqual([]);
+    ).toMatchObject([{ path: "pull-request:body", rule: "agent-session-link" }]);
     expect(
       scanEventMetadata({
         pull_request: {
@@ -73,6 +91,7 @@ describe("public repository hygiene", () => {
         },
       }),
     ).toMatchObject([
+      { path: "pull-request:body", rule: "agent-session-link" },
       { path: "pull-request:body", rule: "agent-attribution" },
       { path: "pull-request:body", rule: "github-token" },
     ]);
@@ -101,7 +120,7 @@ describe("public repository hygiene", () => {
       execFileSync("git", ["add", "file.txt"], { cwd: directory });
       execFileSync(
         "git",
-        ["commit", "--quiet", "-m", "Change", "-m", "Co-authored-by: Devin AI"],
+        ["commit", "--quiet", "-m", "Change", "-m", `${"Co-Authored"}-By: Claude <noreply@${"anthropic"}.com>`],
         { cwd: directory },
       );
 
@@ -118,7 +137,6 @@ describe("public repository hygiene", () => {
     const config = readFileSync(join(repoRoot, ".gitleaks.toml"), "utf8");
     expect(config).not.toContain("pnpm-lock.yaml");
     expect(config).not.toContain("Podfile.lock");
-    expect(config).not.toContain("skills-lock.json");
     expect(config).not.toMatch(/glb\|gltf|gltf\|/);
   });
 

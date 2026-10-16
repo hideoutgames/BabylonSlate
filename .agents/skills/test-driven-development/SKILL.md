@@ -5,40 +5,25 @@ description: Use when implementing features or bug fixes to select focused tests
 
 # Regression-focused development
 
-Use tests to protect the behavior people rely on in the editor and game runtime. The skill retains its existing name for compatibility; strict test-first ordering is not a local requirement.
+Use tests to protect the behaviour people rely on in the editor and game runtime. The skill keeps its name for compatibility; strict test-first ordering is not required here.
 
-## Choose the order that helps the task
+## Order
 
-- Read the relevant implementation and existing coverage, then identify the behavior that could regress.
-- For a reproducible bug, prefer a small failing regression test when it helps confirm the cause. Tests may also be written or extended after implementation; no permission or exception is needed for that ordering.
-- Do not discard working implementation, add redundant tests, or stop useful implementation work solely because no test has failed yet.
-- If local checks are queued or unavailable, continue implementation and review within the authorized scope. Keep the selected verification pending and report the actual limitation. A queue, timeout, or unexecuted test is never a pass.
+- Read the implementation and its existing coverage, then name the behaviour that could regress.
+- Tests may be written before or after the implementation. Do not discard working code, add redundant tests or stall implementation because no test has failed yet.
 
 ## Test the production contract
 
-Before adding a test, identify a plausible incorrect behavior it would detect. Prioritize observable outcomes, important invariants, persisted data, public APIs, and directly affected consumers.
+Before adding a test, name a plausible incorrect behaviour it would detect.
 
-- Bug fix: cover the reported failure and any relevant boundary that could reintroduce it.
-- New behavior: verify its useful outcome and meaningful error or cancellation paths.
-- Runtime or integration change: exercise the real resolver, compiler, serialization, or host boundary involved. When Play and the exported player use different paths, cover the affected paths rather than assuming one proves the other.
-- UI behavior: test user interaction and state changes through the real component. Use a targeted browser check when layout, rendered pixels, touch sizing, or focus cannot be established in a DOM unit test.
-- Reversible cosmetic changes and documentation usually need focused inspection, not new application tests. Reuse existing coverage when it already protects the contract.
+- Bug fix: add a regression test only where existing tests leave a genuine behaviour gap; when you add one, confirm it fails before the fix.
+- New behaviour: verify its useful outcome and its meaningful error or cancellation paths.
+- Runtime or integration change: exercise the real resolver, compiler, serialisation or host boundary. When Play and the exported player take different paths, cover each affected path.
+- UI behaviour: test interaction through the real component. Use a targeted browser check when layout, pixels, touch sizing or focus cannot be established in a DOM test.
+- Cosmetic changes and documentation usually need inspection, not new tests.
 
-Read [writing-good-tests.md](writing-good-tests.md) when writing or changing tests. Avoid implementation-mirroring assertions, duplicate cases, trivial constant checks, and tests added only to raise coverage. Mock external boundaries only where needed; preserve the production behavior being checked.
+Read [writing-good-tests.md](writing-good-tests.md) when writing or changing tests. Vitest projects, the shared mocks and the jsdom traps that produce false passes are in [testing.md](../../reference/testing.md).
 
-## Keep local verification proportionate
+## Verification
 
-Follow the [repository workflow](../../rules/agent-workflow.md) and [wait-efficiently skill](../wait-efficiently/SKILL.md):
-
-1. Select explicit test files or cases for the changed behavior and directly affected consumers. Inspect command selectors before running them.
-2. Run relevant scoped lint or typechecks when justified. Instruction/prose-only changes use diff and link checks.
-3. Preserve shared resource admission and `BL_TEST_PROFILE=shared`. Do not change reservations, bypass the queue, increase workers, or stop other agents' processes to make a test run sooner.
-4. Diagnose failures and rerun only checks affected by the repair. Reuse results for unchanged behavior with a recorded scope and revision.
-
-Do not automatically run full suites, coverage sweeps, all browser tests, workspace-wide typechecks, or cumulative preflight. Broader local verification requires an explicit user request. Required CI and merge gates remain unchanged.
-
-## Report evidence accurately
-
-Record the selected commands, scope, revision, and results. Distinguish observed failing regressions, passing checks, and checks that did not run. Never claim a test failed before implementation if it was first executed afterward.
-
-Before delivery, assess whether the selected evidence protects the actual production behavior and whether any relevant path remains unverified. Follow the repository's PR and merge requirements; permitting implementation before tests does not waive verification or authorize distribution.
+Select, run and record checks as [agent-workflow.md](../../rules/agent-workflow.md#verification) requires.

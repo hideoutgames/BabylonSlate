@@ -54,7 +54,6 @@ test("agent guidance and repository prose remain diff-only locally", () => {
     ".github/PULL_REQUEST_TEMPLATE.md",
     "README.md",
     "packages/core/README.md",
-    "skills-lock.json",
   ]) {
     const result = selectChecks([file], packages, tests);
     assert.deepEqual(result.packages, [], file);

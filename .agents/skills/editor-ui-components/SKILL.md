@@ -5,44 +5,11 @@ description: Look up the Editor UI component catalog before building editor chro
 
 # Editor UI components
 
-Do not invent Editor chrome. **Read the catalog first**, then compose from what is already there.
+Do not invent editor chrome. Read the catalog first, then compose from what is already there.
 
 ## Required first step
 
-Read [`.agents/reference/components.md`](../../reference/components.md) in full. That file is the live inventory of reusable Editor UI: what each component does and where it is used.
-
-Do not rely on memory of an older catalog. Do not copy the tables into this skill.
-
-## Choose from the catalog
-
-Match the task to a row:
-
-| Need | Typical catalog pick |
-| --- | --- |
-| Asset document workspace | DockView via `DockviewShell` + `window-catalog.ts` (not shadcn `Tabs`). Wire **Windows**. Rule: `.agents/rules/dockview-editor-tabs.md` |
-| Docked panel chrome | `PanelFrame`, optional `ToolbarStrip` |
-| Inspector / typed properties | `PropertyGrid`, `NumericDragField`, `NumberField` |
-| Hierarchy / folders | `TreeView` |
-| Searchable pick lists | `SearchInput`, `SearchDialog`, `SearchDropdown`, `AssetPicker`, `CatalogDialog`, `CatalogItemButton` |
-| Forms / settings | `Field` + `Input` / `Select` / `Switch` / `Checkbox` / `Textarea` |
-| Actions / pressed tools | `Button` (outline vs ghost), `Toggle` / `ToggleGroup`, `IconActionButton` |
-| Confirm / blocking | `AlertDialog`; inline status `Alert` |
-| Empty / loading | `Empty`, `Skeleton` |
-| Type glyphs | `TypeVisualIcon` |
-| Graph canvas | `GraphEditor`, `NodePalette` |
-| Readable copy in the shell | `SelectableText` |
-| Nested chrome / context menus | `NestedMenu` (not hand-rolled `DropdownMenuSub`) |
-| Long-press menus | `ContextMenuOverlay` + `useContextMenu` |
-
-If several rows could fit, prefer the **more specific composite** (`CatalogDialog` over a one-off `Dialog` + search field).
-
-## Do not
-
-- Raw styled `<input>`, `<select>`, `<textarea>`, or `<button>` in `apps/editor/src`
-- A new widget when the catalog already covers the job
-- One-off screens treated as kit (Homepage, Play overlay, Settings modals, dock panels)
-
-If nothing in the catalog fits, add a real reusable component in the right package, then update the catalog in the **same change** (`.agents/rules/editor-ui-components.md`). Kit primitives/composites also go in the Component Gallery (`/?test=1&gallery=1`).
+Read [components.md](../../reference/components.md) in full, including its Rules section. It is the live inventory of reusable editor UI: what each component does and where it is used. Do not rely on memory of an older catalog.
 
 ## Imports
 
@@ -53,8 +20,9 @@ If nothing in the catalog fits, add a real reusable component in the right packa
 
 ## Related
 
-- Styling / shadcn composition: `.agents/skills/shadcn/SKILL.md`
-- Tokens: `.agents/reference/architecture/theming.md`
-- Touch targets: `.agents/rules/touch-editor.md`
-- Title Case labels: `.agents/rules/display-names.md`
-- Asset document docks: `.agents/rules/dockview-editor-tabs.md`
+- Adding or changing a reusable component: [components.md](../../reference/components.md#rules)
+- shadcn composition and styling: [shadcn skill](../shadcn/SKILL.md)
+- Tokens and density: [theming.md](../../reference/architecture/theming.md)
+- Touch and gestures: [architecture.md](../../reference/architecture.md#gesture-rules)
+- Title Case labels: [display-names.md](../../rules/display-names.md)
+- Asset document docks: [dockview-editor-tabs.md](../../rules/dockview-editor-tabs.md)

@@ -1,166 +1,47 @@
-# Babylon.js Documentation URL Map
+# Babylon.js documentation URLs
 
-Use this to fetch specific documentation on-demand from `https://doc.babylonjs.com`.
+Pages on `https://doc.babylonjs.com` that this repository's engine work uses. Each returned HTTP 200 when checked. The docs track the latest Babylon release, so compare any API against the installed 9.29.0 typings.
 
-The GitHub source for all docs is at `https://github.com/BabylonJS/Documentation/tree/master/content`.
+## API
 
-## API Reference (TypeDoc)
-- Full API: `https://doc.babylonjs.com/typedoc`
+- TypeDoc reference: https://doc.babylonjs.com/typedoc/modules/BABYLON
 
-## Features Deep Dive
+## Materials and shaders
 
-### Meshes
-- Overview: `/features/featuresDeepDive/mesh`
-- Creating meshes: `/features/featuresDeepDive/mesh/creation`
-  - Set shapes: `/features/featuresDeepDive/mesh/creation/set`
-  - Parametric shapes: `/features/featuresDeepDive/mesh/creation/param`
-  - Custom meshes (vertex data): `/features/featuresDeepDive/mesh/creation/custom`
-- Transforms: `/features/featuresDeepDive/mesh/transforms`
-  - Position/rotation/scaling: `/features/featuresDeepDive/mesh/transforms/center_origin`
-  - Parent/child: `/features/featuresDeepDive/mesh/transforms/parent_pivot`
-- Copies: `/features/featuresDeepDive/mesh/copies`
-  - Instances: `/features/featuresDeepDive/mesh/copies/instances`
-  - Thin instances: `/features/featuresDeepDive/mesh/copies/thinInstances`
-  - Clones: `/features/featuresDeepDive/mesh/copies/clones`
-- Merging: `/features/featuresDeepDive/mesh/mergeMeshes`
-- CSG (legacy): `/features/featuresDeepDive/mesh/copies/csg`
-- CSG2 (Manifold, Babylon 8+): `/features/featuresDeepDive/mesh/copies/csgPart1`
-- Interactions/picking: `/features/featuresDeepDive/mesh/interactions`
-- Gizmos: `/features/featuresDeepDive/mesh/gizmo`
-- Node Geometry: `/features/featuresDeepDive/mesh/nodeGeometry`
-- Bounding boxes: `/features/featuresDeepDive/mesh/displayBoundingBoxes`
-- Billboard mode: `/features/featuresDeepDive/mesh/billboardMode`
-- Decals: `/features/featuresDeepDive/mesh/decals`
-- Facet data: `/features/featuresDeepDive/mesh/facetData`
+- Node Material: https://doc.babylonjs.com/features/featuresDeepDive/materials/node_material
+- Shaders: https://doc.babylonjs.com/features/featuresDeepDive/materials/shaders
+- ShaderMaterial: https://doc.babylonjs.com/features/featuresDeepDive/materials/shaders/shaderMaterial
+- Shader code in Babylon.js: https://doc.babylonjs.com/features/featuresDeepDive/materials/shaders/shaderCodeInBjs
+- Material plugins: https://doc.babylonjs.com/features/featuresDeepDive/materials/using/materialPlugins
+- KTX2 compression: https://doc.babylonjs.com/features/featuresDeepDive/materials/using/ktx2Compression
+- WebGPU: https://doc.babylonjs.com/setup/support/webGPU
+- WGSL: https://doc.babylonjs.com/setup/support/webGPU/webGPUWGSL
 
-### Materials
-- Overview: `/features/featuresDeepDive/materials`
-- Using materials: `/features/featuresDeepDive/materials/using`
-  - Introduction: `/features/featuresDeepDive/materials/using/materials_introduction`
-  - PBR: `/features/featuresDeepDive/materials/using/HDREnvironment`
-  - Fresnel: `/features/featuresDeepDive/materials/using/FresnelParameters`
-- Node materials: `/features/featuresDeepDive/materials/node_material`
-- Shaders: `/features/featuresDeepDive/materials/shaders`
-  - Introduction: `/features/featuresDeepDive/materials/shaders/shaderIntro`
-  - ShaderMaterial: `/features/featuresDeepDive/materials/shaders/shaderMaterial`
-- Advanced: `/features/featuresDeepDive/materials/advanced`
+## Rendering
 
-### Animation
-- Overview: `/features/featuresDeepDive/animation`
-- Introduction: `/features/featuresDeepDive/animation/animation_introduction`
-- Animation groups: `/features/featuresDeepDive/animation/group`
-- Advanced: `/features/featuresDeepDive/animation/advanced_animations`
-- Combining: `/features/featuresDeepDive/animation/combining`
+- Frame Graph: https://doc.babylonjs.com/features/featuresDeepDive/frameGraph
+- Frame Graph task list: https://doc.babylonjs.com/features/featuresDeepDive/frameGraph/frameGraphClassFramework/frameGraphTaskList
+- Shadows: https://doc.babylonjs.com/features/featuresDeepDive/lights/shadows
+- Particle System: https://doc.babylonjs.com/features/featuresDeepDive/particles/particle_system
+- GPU particles: https://doc.babylonjs.com/features/featuresDeepDive/particles/particle_system/gpu_particles
 
-### Cameras
-- Overview: `/features/featuresDeepDive/cameras`
-- Camera introduction: `/features/featuresDeepDive/cameras/camera_introduction`
-- Camera behaviors: `/features/featuresDeepDive/cameras/camera_behaviors`
-- Customizing inputs: `/features/featuresDeepDive/cameras/customizingCameraInputs`
-- Multiview: `/features/featuresDeepDive/cameras/multiViewsPart1`
+## Loading
 
-### Lights
-- Overview: `/features/featuresDeepDive/lights`
-- Introduction: `/features/featuresDeepDive/lights/lights_introduction`
-- Shadows: `/features/featuresDeepDive/lights/shadows`
-- Cascaded shadows: `/features/featuresDeepDive/lights/shadows_csm`
-- Global illumination: `/features/featuresDeepDive/lights/global_illumination`
+- Loading file types: https://doc.babylonjs.com/features/featuresDeepDive/importers/loadingFileTypes
+- glTF: https://doc.babylonjs.com/features/featuresDeepDive/importers/glTF
+- Asset containers: https://doc.babylonjs.com/features/featuresDeepDive/importers/assetContainers
 
-### GUI
-- 2D GUI: `/features/featuresDeepDive/gui/gui`
-- 3D GUI: `/features/featuresDeepDive/gui/gui3D`
-- HTML GUI: `/features/featuresDeepDive/gui/htmlGui`
-- Dat.GUI: `/features/featuresDeepDive/gui/datGUI`
+## Physics
 
-### Physics
-- Overview: `/features/featuresDeepDive/physics`
-- Physics V2 (Havok): `/features/featuresDeepDive/physics/usingPhysicsEngine`
-- Aggregates: `/features/featuresDeepDive/physics/aggregates`
-- Constraints/joints: `/features/featuresDeepDive/physics/constraints`
-- Ragdoll: `/features/featuresDeepDive/physics/ragdoll`
-- Legacy V1: `/features/featuresDeepDive/physics/v1`
+- Physics V2: https://doc.babylonjs.com/features/featuresDeepDive/physics/usingPhysicsEngine
+- Havok plugin: https://doc.babylonjs.com/features/featuresDeepDive/physics/havokPlugin
 
-### Particles
-- Overview: `/features/featuresDeepDive/particles`
-- Particle system: `/features/featuresDeepDive/particles/particle_system`
-- Solid particle system: `/features/featuresDeepDive/particles/solid_particle_system`
-- Points cloud: `/features/featuresDeepDive/particles/point_cloud_system`
-- GPU particles: `/features/featuresDeepDive/particles/gpu_particles`
-- Fluid rendering: `/features/featuresDeepDive/particles/fluid_renderer`
+## Meshes and performance
 
-### Scene
-- Overview: `/features/featuresDeepDive/scene`
-- Optimization: `/features/featuresDeepDive/scene/optimize_your_scene`
-- Scene ready: `/features/featuresDeepDive/scene/scene_ready`
-- Fast build: `/features/featuresDeepDive/scene/fast_build`
+- Instances: https://doc.babylonjs.com/features/featuresDeepDive/mesh/copies/instances
+- Thin instances: https://doc.babylonjs.com/features/featuresDeepDive/mesh/copies/thinInstances
+- Optimising a scene: https://doc.babylonjs.com/features/featuresDeepDive/scene/optimize_your_scene
 
-### Environment
-- Overview: `/features/featuresDeepDive/environment`
-- Skybox: `/features/featuresDeepDive/environment/environment_introduction`
-- Background: `/features/featuresDeepDive/environment/backgroundMaterial`
-- Fog: `/features/featuresDeepDive/environment/fog`
-- Lens effects: `/features/featuresDeepDive/environment/lensFlare`
+## Raw Markdown
 
-### Post Processes
-- Overview: `/features/featuresDeepDive/postProcesses`
-- Default pipeline: `/features/featuresDeepDive/postProcesses/defaultRenderingPipeline`
-- Bloom/glow: `/features/featuresDeepDive/postProcesses/usePostProcesses`
-
-### WebXR
-- Overview: `/features/featuresDeepDive/webXR`
-- Experience helpers: `/features/featuresDeepDive/webXR/webXRExperienceHelpers`
-- Input: `/features/featuresDeepDive/webXR/webXRInputControllerSupport`
-
-### Importers
-- Loading files: `/features/featuresDeepDive/importers/loadingFileTypes`
-- glTF: `/features/featuresDeepDive/importers/glTF`
-
-### Events
-- Actions: `/features/featuresDeepDive/events/actions`
-- Observables: `/features/featuresDeepDive/events/observables`
-
-### Behaviors
-- Camera behaviors: `/features/featuresDeepDive/behaviors/cameraBehaviors`
-- Mesh behaviors: `/features/featuresDeepDive/behaviors/meshBehaviors`
-
-### Sprites
-- Overview: `/features/featuresDeepDive/sprites`
-- Sprite manager: `/features/featuresDeepDive/sprites/sprite_manager`
-
-### Crowd Navigation
-- Overview: `/features/featuresDeepDive/crowdNavigation`
-
-### Frame Graph
-- Overview: `/features/featuresDeepDive/frameGraph`
-
-### Smart Filters
-- Overview: `/features/featuresDeepDive/smartFilters`
-
-### Flow Graph
-- Overview: `/features/featuresDeepDive/flowGraph`
-
-### Occlusion Queries
-- Overview: `/features/featuresDeepDive/occlusionQueries`
-
-## Setup
-- Templates: `/setup/templates`
-- Starter HTML: `/setup/starterHTML`
-- NPM/ES6 packages: `/setup/frameworkPackages`
-  - ES6 modules: `/setup/frameworkPackages/es6Support`
-  - NPM: `/setup/frameworkPackages/npmSupport`
-
-## Tools & Resources
-- Inspector: `/toolsAndResources/inspector`
-- Playground: https://playground.babylonjs.com
-- Node Material Editor: https://nme.babylonjs.com
-- Sandbox: https://sandbox.babylonjs.com
-
-## What's New
-- Latest: `/whats-new`
-
-## GitHub Source
-Raw markdown for any page can be fetched from:
-`https://raw.githubusercontent.com/BabylonJS/Documentation/master/content/{path}.md`
-
-Example: for `/features/featuresDeepDive/mesh/creation/set`, fetch:
-`https://raw.githubusercontent.com/BabylonJS/Documentation/master/content/features/featuresDeepDive/mesh/creation/set.md`
+Every page's source is `https://raw.githubusercontent.com/BabylonJS/Documentation/master/content/<path>.md`, where `<path>` is the page path after the domain. For example, `/features/featuresDeepDive/frameGraph` is https://raw.githubusercontent.com/BabylonJS/Documentation/master/content/features/featuresDeepDive/frameGraph.md

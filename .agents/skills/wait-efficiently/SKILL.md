@@ -5,7 +5,7 @@ description: Wait quietly for local verification or test scripts, pull-request V
 
 # Wait efficiently
 
-Use the repository helper to keep process monitoring, CLI polling, and full logs outside the conversation. Read the [delivery workflow](../../rules/agent-workflow.md) and [PR cadence](../../rules/github-actions-pr-cadence.md); waiting does not relax their gates.
+`scripts/agent-wait.mjs` keeps process monitoring, polling and full logs out of the conversation. Waiting never relaxes the [delivery workflow](../../rules/agent-workflow.md#workflow), including its four-ready-PR cadence; what to run is set by the [verification rules](../../rules/agent-workflow.md#verification).
 
 ## Launch once
 
@@ -17,29 +17,18 @@ pnpm --silent agent:wait ci --pr 123
 pnpm --silent agent:wait slot --pr 123
 ```
 
-The default deadline is two hours; set `--timeout-seconds 10800` before the argument separator when a longer wait is explicitly needed. CI discovery has a separate ten-minute limit. The helper runs in the foreground, reports start and result records, and stores complete logs plus `result.json` in the unique OS temporary directory printed at start. Node, pnpm, git, and (for CI/slots) authenticated `gh` must already be available. The helper inherits the environment and configured package-script shell; it does not repair global configuration. See [testing guidance](../../reference/testing.md#quiet-agent-waits) for Windows setup and result meanings.
+- Arguments after `--` go to the package script. On PowerShell, quote the separator as `'--'` when invoking `pnpm.ps1`.
+- The default deadline is two hours; pass `--timeout-seconds <n>` before the separator for a longer wait. CI run discovery has its own ten-minute limit.
+- The helper prints a start record with the log path, then one result record. Full output goes to `output.log` and the summary to `result.json` in a new temporary directory.
+- Node, pnpm, git and, for `ci` and `slot`, an authenticated `gh` must already work. The helper inherits the environment and does not repair global configuration.
+- Local runs still pass through the shared admission queue. Resource settings: [testing.md](../../reference/testing.md#local-test-execution); result details: [testing.md](../../reference/testing.md#quiet-agent-waits).
 
-## Choose the smallest required command
-
-- Run explicit test files/cases for the changed behavior and directly affected consumers. Inspect the package script first so a filter is not rejected or silently ignored. On PowerShell, quote the separator as `'--'` when invoking `pnpm.ps1`.
-- Before opening/updating a PR, use that targeted set and relevant scoped lint/typechecks. Do not automatically invoke cumulative `verify:local`, full `verify`, coverage, an unfiltered editor/browser suite, or workspace-wide typechecking. These require an explicit user request, even for public API, lockfile, infrastructure or CI repairs.
-- Instruction/prose-only edits need diff/link checks, not application tests or a docs build. After a repair, rerun only affected checks and retain justified results for unchanged behavior.
-- Required GitHub CI still runs its configured exhaustive checks. Do not change CI gates to match local scope.
-- Keep `BL_TEST_PROFILE=shared`. Low-memory mode is the unconfigured local default: one root workload, one test worker, at least 2 GiB headroom, and no lightweight bypass. Reservation slots are separate from worker counts: each low-memory root occupies all three legacy slots so older compatible callers cannot overlap it. Node tooling reserves 0.75 GiB, selected tests/typechecks/docs 1.5 GiB, application builds 2 GiB, and coverage 3 GiB. Do not reduce estimates or reserves to escape a queue.
-- Read the machine settings from the common [local resource configuration](../../reference/testing.md#local-test-execution); `pnpm test:resources` remains available while substantive work waits. `fast` and local `CI=true` cannot relax the low-memory policy. Shared artifacts still require source, environment, toolchain, and integrity checks. Uncertain ownership is a blocker, never a successful cleanup; older worktrees adopt the runner through normal Git integration.
-
-## Retain the session
-
-- Launch one helper and retain the host's returned process/session ID. Continue waiting on that same session; do not launch duplicate tests or watchers.
-- Prefer a host-supported completion notification or a pending tool call. Otherwise use the longest process wait the host permits, with minimal output. Obey any host limit on blocking waits and required user updates.
-- Report start, failure/blocker, and completion only, except when the host explicitly requires intermediate updates. Avoid repeated `gh` queries, log tails, and reasoning about unchanged progress. The helper owns individual polls.
-- Do not invent a wakeup mechanism. A host that requires periodic tool wakeups still consumes some tokens. This workflow reduces output and model work, not necessarily to zero.
-- On interruption, cancel the existing session gracefully when supported. The helper handles SIGINT/SIGTERM and stops only its child tree. Never kill unrelated processes by executable name.
+Run the helper in the foreground, keep its session until it returns, and never start a duplicate test or watcher.
 
 ## Act on the terminal result
 
-- `success` with exit code 0 means only the selected operation passed. Record its command, scope and revision, and confirm it still covers the current change. Targeted checks intentionally do not produce the cumulative preflight certificate (`deliveryEligible: true`); that flag is not required for targeted PR delivery. If the user explicitly requests cumulative verification, its certificate still requires a clean unchanged head. Never reuse a result after relevant source/configuration changes.
-- `failure`, `cancellation`, `timeout`, and `stale` never satisfy a gate. Read only bounded failure output or the necessary portion of the saved log when action is needed. Full logs are local artifacts; do not paste them into public PRs.
-- A free slot is an observation, not a reservation: recheck capacity immediately before marking ready. The helper never opens, readies, or merges a PR.
-- CI success covers the captured head's latest pull-request Verify run and all six jobs. Still check other required checks, reviews, mergeability, and the current PR head immediately before merge.
-- Continue fix → commit → targeted verification of the repair → push → CI → merge as required by the delivery workflow. Do not automatically rerun tests or retry failed workflows without investigating the result.
+- `success` (exit code 0) means only the selected operation passed; confirm it still covers the current change. Targeted checks do not produce the cumulative preflight certificate (`deliveryEligible: true`), and targeted delivery does not need it.
+- `failure`, `cancellation`, `timeout` and `stale` never satisfy a gate. Read the bounded failure output, or only the part of `output.log` you need.
+- A free slot is an observation, not a reservation: recheck capacity immediately before marking ready. The helper never opens, readies or merges a PR.
+- CI success covers the captured head's latest pull-request Verify run and all six jobs. Other required checks, reviews, mergeability and the current head still need checking before merge.
+- To interrupt, cancel the session gracefully: the helper handles SIGINT and SIGTERM and stops only its own child processes. Never kill processes by executable name.

@@ -3,7 +3,7 @@
 Authoritative product and architecture plan for Haptic: goals, non-goals, binding decisions with their reasons, open work and deliberate behaviour.
 
 - The product is **Haptic**. Code identifiers are not renamed yet: keep `@babylonslate/*`, `.babasset` / `.babplugin` / `.babtrace` / `.babextension`, `BL_*` env vars and `babylonslate:` URLs verbatim.
-- Package map, data flow and contributor rules: [architecture.md](architecture.md). Per-subsystem notes: [architecture/](architecture/). Import boundaries: [agent-workflow.md](../rules/agent-workflow.md#architecture).
+- Package map, data flow and contributor rules: [architecture.md](architecture.md). Per-subsystem notes: [architecture/](architecture/). Import boundaries: `no-restricted-imports` in `eslint.config.js`.
 - When this file and the code disagree, the code wins; fix this file in the same change.
 
 ## Overview and goals
@@ -251,7 +251,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 
 ## Touch-first design system
 
-- Canonical shadcn theme tokens live only in [tokens.css](../../packages/ui/src/styles/tokens.css), which [globals.css](../../packages/ui/src/styles/globals.css) imports; Scene, Prefab and graph canvases stay dark regardless of theme. Rules: [touch-editor.md](../rules/touch-editor.md).
+- Canonical shadcn theme tokens live only in [tokens.css](../../packages/ui/src/styles/tokens.css), which [globals.css](../../packages/ui/src/styles/globals.css) imports; Scene, Prefab and graph canvases stay dark regardless of theme. Rules: [gesture rules](architecture.md#gesture-rules).
 - Compose chrome from `@babylonslate/ui` and `@babylonslate/editor-kit`; no raw styled `<input>`, `<select>` or `<button>` in `apps/editor/src`. Pick lists use `SearchDialog` / `SearchDropdown`; no full-width bottom Sheets.
 - Density: `--chrome-row` 28px for chrome, rows and tree items; `--touch-target` 44px for graph pin rows and grips. Dock tab strips 26px fine / 30px coarse. Compact desktop controls stay compact.
 - Rounded radius token scale; no square corners and no hardcoded radii.

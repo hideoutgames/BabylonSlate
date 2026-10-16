@@ -1,6 +1,6 @@
 ---
 name: babylonjs
-description: "Babylon.js engine and scene work in BabylonSlate: rendering and render pipelines (FrameGraph, post-processing, shadows, WebGL2 and WebGPU, GLSL/WGSL shaders, and material plugins such as water), scene lifecycle, viewport and Play/player engine integration, meshes and instancing, materials, cameras, lights, animation, glTF and asset loading, physics, and GPU/CPU performance, with curated references and live-doc URLs. Use it for any change, bug or investigation in packages/render or in engine code inside editor files, even when Babylon.js is not named; React editor chrome alone uses the editor UI skills instead. Repository artwork and removed-UI restrictions override imported examples."
+description: "Babylon.js engine work in Haptic: packages/render and engine code inside editor files, including rendering, shaders, scene lifecycle, meshes, materials, cameras, animation, asset loading and physics. Use it for any such change, bug or investigation, even when Babylon is not named; editor chrome alone uses the editor UI skills."
 ---
 
 # Compatibility entry point
