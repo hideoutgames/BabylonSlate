@@ -15,10 +15,8 @@ export type PhysicsActorLike = {
   }[];
 };
 
-const COLLIDER_WITHOUT_BODY =
-  "ColliderComponent needs a RigidBodyComponent on the same actor.";
-const BODY_WITHOUT_COLLIDER =
-  "RigidBodyComponent needs a ColliderComponent on the same actor.";
+const COLLIDER_WITHOUT_BODY = "Collider needs a Rigid Body on the same actor.";
+const BODY_WITHOUT_COLLIDER = "Rigid Body needs a Collider on the same actor.";
 
 const MOVEMENT_CONFLICTS = new Map([
   ["RigidBodyComponent", "Rigid Body"],

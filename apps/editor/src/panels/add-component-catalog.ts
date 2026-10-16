@@ -99,7 +99,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
   engineComponent(
     "Text3DComponent",
     "3D Text",
-    "Extruded world-space text",
+    "Flat, unlit world-space text",
     "Rendering",
   ),
   engineComponent("CameraComponent", "Camera", "Scene camera", "Camera"),

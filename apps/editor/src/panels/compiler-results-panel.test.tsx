@@ -16,7 +16,7 @@ const clearFocusedNode = vi.hoisted(() => vi.fn());
 const pairingWarning: Diagnostic = {
   severity: "warning",
   code: "physics.body_without_collider",
-  message: "RigidBodyComponent needs a ColliderComponent on the same actor.",
+  message: "Rigid Body needs a Collider on the same actor.",
   assetGuid: "assets/Main.scene.babasset",
   graphId: "scene:assets/Main.scene.babasset",
   actorId: "hero",
@@ -128,7 +128,7 @@ describe("CompilerResultsPanel", () => {
       render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
       fireEvent.click(screen.getByTestId("compiler-result-row"));
       const details = within(screen.getByRole("region", { name: "Diagnostic Details" }));
-      expect(details.getByText(/RigidBodyComponent needs a ColliderComponent on the same actor/)).toBeTruthy();
+      expect(details.getByText(/Rigid Body needs a Collider on the same actor/)).toBeTruthy();
       fireEvent.click(details.getByRole("button", { name: "Copy" }));
       await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining(pairingWarning.message)));
       expect(selectActor).toHaveBeenCalledWith("hero");
