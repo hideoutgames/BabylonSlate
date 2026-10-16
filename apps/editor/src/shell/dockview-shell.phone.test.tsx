@@ -44,6 +44,75 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/**
+ * A desktop scene layout saved while its Inspector tab was titled Details,
+ * with that tab floating and a function graph tab open.
+ */
+function sceneLayoutSavedAsDetails(): Record<string, unknown> {
+  device.phone = false;
+  let dock: DockviewApi | undefined;
+  const desktop = render(
+    <DockviewShell
+      documentKind="scene"
+      onReady={(api) => {
+        dock = api;
+      }}
+    />,
+  );
+  act(() => {
+    dock!.addPanel({
+      id: "function-graph:fn-jump",
+      component: "function-graph",
+      title: "Jump",
+    });
+    dock!.addFloatingGroup(dock!.getPanel("scene-details")!);
+  });
+  const saved = dock!.toJSON();
+  saved.panels["scene-details"]!.title = "Details";
+  desktop.unmount();
+  return saved as unknown as Record<string, unknown>;
+}
+
+describe("saved layout titles", () => {
+  it("restores a saved window under its current title and keeps function graph titles", () => {
+    const saved = sceneLayoutSavedAsDetails();
+    let dock: DockviewApi | undefined;
+    render(
+      <DockviewShell
+        documentKind="scene"
+        initialLayout={saved}
+        onReady={(api) => {
+          dock = api;
+        }}
+      />,
+    );
+    expect(dock!.getPanel("scene-details")!.api.title).toBe("Inspector");
+    expect(dock!.getPanel("function-graph:fn-jump")!.api.title).toBe("Jump");
+    expect(dock!.toJSON().panels["scene-details"]!.title).toBe("Inspector");
+  });
+
+  it("keeps the current title in the desktop layout a phone saves", () => {
+    const saved = sceneLayoutSavedAsDetails();
+    device.phone = true;
+    let dock: DockviewApi | undefined;
+    render(
+      <DockviewShell
+        documentKind="scene"
+        initialLayout={saved}
+        onReady={(api) => {
+          dock = api;
+        }}
+      />,
+    );
+    const panels = captureAdaptiveDockviewLayout(dock!).panels as Record<
+      string,
+      { title?: string }
+    >;
+    expect(panels["scene-details"]!.title).toBe("Inspector");
+    expect(panels["function-graph:fn-jump"]!.title).toBe("Jump");
+  });
+});
+
 describe("phone window navigation", () => {
   it("selects a full-window dock panel through the accessible chooser", () => {
     let dock: DockviewApi | undefined;

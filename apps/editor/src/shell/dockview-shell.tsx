@@ -38,6 +38,8 @@ import {
 } from "./function-graph-panels";
 import { profileComponents } from "../lib/render-profile";
 
+type DockviewLayout = ReturnType<DockviewApi["toJSON"]>;
+
 const SPACED_THEME: DockviewTheme = { ...themeAbyss, gap: 4 };
 let dockPanelComponents:
   | Record<string, FunctionComponent<IDockviewPanelProps>>
@@ -69,6 +71,26 @@ function closeHiddenWindows(
     api.getPanel("actor-prefab")?.api.close();
   }
   if (!sourceControl) api.getPanel(LOCKS_WINDOW_ID)?.api.close();
+}
+
+/**
+ * A saved layout keeps each tab's title from when it was saved. Catalog
+ * windows show their current title instead, so a renamed window reads the
+ * same in older projects; other tabs, such as function graphs, keep theirs.
+ */
+function withCatalogTitles(
+  layout: DockviewLayout,
+  windows: readonly DockWindowDefinition[],
+): DockviewLayout {
+  if (!layout?.panels) return layout;
+  const panels = { ...layout.panels };
+  for (const window of windows) {
+    const saved = panels[window.id];
+    if (saved && saved.title !== window.title) {
+      panels[window.id] = { ...saved, title: window.title };
+    }
+  }
+  return { ...layout, panels };
 }
 
 function sameWindows(
@@ -128,17 +150,25 @@ export function DockviewShell({
     (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
 
-      const originalLayout = initialLayoutRef.current;
+      // Retitled before the phone keeps it as the layout to return to.
+      const savedLayout = initialLayoutRef.current;
+      const originalLayout = savedLayout
+        ? withCatalogTitles(
+            savedLayout as unknown as DockviewLayout,
+            listDockWindows(documentKind, {
+              actorPrefab,
+              sourceControl,
+              animEditorMode,
+              sceneMode,
+            }),
+          )
+        : undefined;
       const hostLayout =
         originalLayout && platformOptions.disableFloatingGroups
-          ? inlineDetachedDockviewLayout(
-              originalLayout as unknown as ReturnType<DockviewApi["toJSON"]>,
-            )
+          ? inlineDetachedDockviewLayout(originalLayout)
           : originalLayout;
       if (hostLayout) {
-        event.api.fromJSON(
-          hostLayout as unknown as ReturnType<DockviewApi["toJSON"]>,
-        );
+        event.api.fromJSON(hostLayout);
       } else {
         createDefaultLayoutForKind(
           event.api,
@@ -151,9 +181,7 @@ export function DockviewShell({
       // A phone returns to the saved floating and popout groups, not the
       // inlined grid; hidden windows close again after that restore.
       if (platformOptions.singleWindow && hostLayout !== originalLayout) {
-        initialDesktopLayoutRef.current = originalLayout as unknown as ReturnType<
-          DockviewApi["toJSON"]
-        >;
+        initialDesktopLayoutRef.current = originalLayout;
       }
 
       setApi(event.api);
