@@ -3,7 +3,7 @@ import test from "node:test";
 import { archiveArguments, exportOptions, validateAppleBundle, validateAppleConfiguration, validateAppleProvisioningProfile, appleAvailability } from "./apple-contract.mjs";
 
 const identity = { applicationVersion: "0.0.1", appleMarketingVersion: "0.0.1", appleBuildNumber: "417.0.1", channel: "test" };
-const info = { CFBundleIdentifier: "no.hideout.babylonslate", CFBundleShortVersionString: "0.0.1", CFBundleVersion: "417.0.1", UIDeviceFamily: [1, 2], CFBundleDisplayName: "BabylonSlate", DTSDKName: "iphoneos26.5", ITSAppUsesNonExemptEncryption: false };
+const info = { CFBundleIdentifier: "no.hideout.babylonslate", CFBundleShortVersionString: "0.0.1", CFBundleVersion: "417.0.1", UIDeviceFamily: [1, 2], CFBundleDisplayName: "Haptic", DTSDKName: "iphoneos26.5", ITSAppUsesNonExemptEncryption: false };
 const entitlements = {
   "application-identifier": "TEAM123456.no.hideout.babylonslate",
   "com.apple.developer.team-identifier": "TEAM123456",
@@ -35,7 +35,7 @@ test("archive targets Release generic iOS devices and export never changes the a
 
 test("exported app must have the intended identity, universal device family and distribution entitlements", () => {
   assert.doesNotThrow(() => validateAppleBundle(identity, info, entitlements, "TEAM123456"));
-  for (const patch of [{ UIDeviceFamily: [2] }, { CFBundleVersion: "418.0.1" }, { CFBundleIdentifier: "other" }, { DTSDKName: "iphoneos18.5" }, { CFBundleDisplayName: "BabylonSlate TEST" }]) {
+  for (const patch of [{ UIDeviceFamily: [2] }, { CFBundleVersion: "418.0.1" }, { CFBundleIdentifier: "other" }, { DTSDKName: "iphoneos18.5" }, { CFBundleDisplayName: "Haptic TEST" }]) {
     assert.throws(() => validateAppleBundle(identity, { ...info, ...patch }, entitlements, "TEAM123456"));
   }
   assert.throws(() => validateAppleBundle(identity, info, { ...entitlements, "get-task-allow": true }, "TEAM123456"));

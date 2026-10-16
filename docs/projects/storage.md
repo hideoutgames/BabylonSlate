@@ -8,7 +8,7 @@ The Homepage status bar names the default location for your platform.
 
 | Platform | Location | Notes |
 | --- | --- | --- |
-| iPad and iPhone | **App Documents** | The app's own folder. It also appears in the Files app under On My iPad (or On My iPhone). |
+| iPad and iPhone | **App Documents** | The app's own folder. It also appears in the Files app as **Haptic** under On My iPad (or On My iPhone). |
 | Android | **App Documents** | Private to the app. Other apps cannot see it, and Android's cloud backup does not include it. |
 | Mac, Windows and Linux | **Projects Folder** | A folder inside the app's data folder. |
 | Web | **Browser Storage** | Kept by this browser on this device. Clearing the browser's site data removes it. |
