@@ -1,11 +1,9 @@
-<p align="center">
+<h1 align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="engine-logos/HapticWordmark-DarkMode.png">
-    <img src="engine-logos/HapticIcon.svg" height="88" alt="Haptic">
+    <img src="engine-logos/HapticWordmark-LightMode.png" width="360" alt="Haptic">
   </picture>
-</p>
-
-<h1 align="center">Haptic</h1>
+</h1>
 
 <p align="center">
   The portable game engine.<br>

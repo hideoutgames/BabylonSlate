@@ -1,11 +1,11 @@
-/** Public paths for the editor brand icons in `public/branding/` (still the Slate artwork). */
+/** Public paths for the Haptic marks copied from `engine-logos/` into `public/branding/`. */
 
 export const BRAND_NAME = "Haptic";
 
-/** Dark-ink mark — use on light chrome. */
-export const BRAND_ICON_ON_LIGHT = "branding/SlateIconDark.png";
-/** Light-ink mark — use on dark chrome. */
-export const BRAND_ICON_ON_DARK = "branding/SlateIconLight.png";
+/** Light-mode mark (dark ink) — use on light chrome. */
+export const BRAND_ICON_ON_LIGHT = "branding/HapticMark-LightMode.png";
+/** Dark-mode mark (light ink) — use on dark chrome. */
+export const BRAND_ICON_ON_DARK = "branding/HapticMark-DarkMode.png";
 
 export function publicAssetUrl(pathFromPublic: string): string {
   const base = import.meta.env.BASE_URL ?? "/";

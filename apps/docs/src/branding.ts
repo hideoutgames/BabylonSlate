@@ -1,9 +1,10 @@
 export const docsBrand = {
-  favicon: "/favicon.svg",
+  favicon: "/favicon.png",
+  faviconIco: "/favicon.ico",
+  appleTouchIcon: "/apple-touch-icon.png",
   navLogo: {
-    light: "/favicon.svg",
-    dark: "/branding/HapticMark-DarkMode.png",
+    light: "/branding/HapticWordmark-LightMode.png",
+    dark: "/branding/HapticWordmark-DarkMode.png",
     alt: "Haptic",
   },
-  wordmarkDark: "/branding/HapticWordmark-DarkMode.png",
 } as const;

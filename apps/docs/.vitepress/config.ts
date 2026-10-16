@@ -25,28 +25,13 @@ export default defineConfig({
   title: "Haptic",
   description: "Documentation for Haptic, the portable game engine.",
   head: [
-    [
-      "link",
-      {
-        rel: "icon",
-        type: "image/svg+xml",
-        href: `${base}${docsBrand.favicon.replace(/^\//, "")}`,
-      },
-    ],
-    [
-      "link",
-      {
-        rel: "preload",
-        href: `${base}fonts/licensed/block-berthold.woff2`,
-        as: "font",
-        type: "font/woff2",
-        crossorigin: "",
-      },
-    ],
+    ["link", { rel: "icon", type: "image/png", href: `${base}${docsBrand.favicon.replace(/^\//, "")}` }],
+    ["link", { rel: "icon", href: `${base}${docsBrand.faviconIco.replace(/^\//, "")}`, sizes: "any" }],
+    ["link", { rel: "apple-touch-icon", href: `${base}${docsBrand.appleTouchIcon.replace(/^\//, "")}` }],
   ],
   themeConfig: {
     logo: docsBrand.navLogo,
-    siteTitle: "Haptic",
+    siteTitle: false,
     nav: [
       { text: "Get Started", link: "/start/", activeMatch: "^/start/" },
       { text: "Scripting", link: "/scripting/", activeMatch: "^/scripting/" },

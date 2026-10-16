@@ -1,16 +1,9 @@
 /*
  * Haptic docs theme: Apple HIG structure (quiet chrome, clear hierarchy) with
- * Haptic's identity (Onest type, warm black, orange tint, Block Berthold
- * wordmark with chromatic fringes). Fonts and icons ship with the site so it
- * looks the same on every platform.
+ * Haptic's identity (Onest type, warm black, orange tint, the Haptic wordmark
+ * artwork). Fonts and icons ship with the site so it looks the same on every
+ * platform.
  */
-
-@font-face {
-  font-family: "Block Berthold";
-  src: url("/fonts/licensed/block-berthold.woff2") format("woff2");
-  font-weight: 400 900;
-  font-display: block;
-}
 
 @font-face {
   font-family: "Haptic Serif";
@@ -20,9 +13,6 @@
 }
 
 :root {
-  --haptic-red: #ff4400;
-  --haptic-amber: #ffb300;
-  --haptic-display: "Block Berthold", "Arial Black", "Helvetica Neue", sans-serif;
   --haptic-serif: "Haptic Serif", Georgia, serif;
 
   --vp-font-family-base: "Onest Variable", "Onest", ui-sans-serif, system-ui, sans-serif;
@@ -103,20 +93,9 @@
   -webkit-backdrop-filter: saturate(1.8) blur(20px);
 }
 
-.VPNavBarTitle .title {
-  font-family: var(--haptic-display);
-  font-size: 19px;
-  font-weight: 400;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  /* Block Berthold's C overhangs its advance width. */
-  padding-right: 0.12em;
-  overflow: visible;
-}
-
 .VPNavBarTitle .logo {
   width: auto;
-  height: 26px;
+  height: 22px;
 }
 
 .VPSidebarItem.level-0 > .item .text {
@@ -234,60 +213,23 @@
 }
 
 .haptic-home .haptic-wordmark {
-  position: relative;
-  isolation: isolate;
-  display: inline-block;
   margin: 0;
-  font-family: var(--haptic-display);
-  font-size: clamp(72px, 15vw, 152px);
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: 0;
-  color: var(--vp-c-text-1);
+  line-height: 0;
 }
 
-.haptic-home .haptic-wordmark-image {
-  display: none;
+.haptic-home .haptic-wordmark img {
+  display: inline-block;
   width: min(100%, 560px);
   height: auto;
-  margin: 0 auto;
 }
 
-/* Dark mode shows the official wordmark artwork; the live-type wordmark
-   stands in on light backgrounds until light-mode artwork exists. */
-.dark .haptic-home .haptic-wordmark {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+.haptic-home .haptic-wordmark .dark-only,
+.dark .haptic-home .haptic-wordmark .light-only {
+  display: none;
 }
 
-.dark .haptic-home .haptic-wordmark-image {
-  display: block;
-  margin-bottom: 12px;
-}
-
-.haptic-home .haptic-wordmark::before,
-.haptic-home .haptic-wordmark::after {
-  content: attr(data-text);
-  position: absolute;
-  inset: 0;
-  filter: blur(1.5px);
-  pointer-events: none;
-}
-
-.haptic-home .haptic-wordmark::before {
-  z-index: -1;
-  color: var(--haptic-amber);
-  transform: scaleX(1.045);
-}
-
-.haptic-home .haptic-wordmark::after {
-  z-index: -2;
-  color: var(--haptic-red);
-  transform: scaleX(1.08);
+.dark .haptic-home .haptic-wordmark .dark-only {
+  display: inline-block;
 }
 
 .haptic-home .haptic-tagline {
