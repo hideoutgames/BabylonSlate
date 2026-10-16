@@ -1,6 +1,24 @@
 import type { Scene } from "@babylonjs/core";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 
+/**
+ * Select `scene` as Babylon's floating-origin context and return the call that restores the previous one.
+ * `Scene.render` selects it per frame; a draw that bypasses it (an RTT probe, a manual capture, the GPU
+ * pick pass) otherwise inherits whichever scene rendered last, which in the editor is the gizmo's utility
+ * layer. Babylon then recomputes every viewProjection a material or scene UBO receives from that scene's
+ * matrices, discarding the ones the draw set.
+ */
+export function pinFloatingOrigin(scene: Scene): () => void {
+  const previousScene = FloatingOriginCurrentScene.getScene;
+  const previousEyeAtCamera = FloatingOriginCurrentScene.eyeAtCamera;
+  FloatingOriginCurrentScene.getScene = () => scene.floatingOriginMode ? scene : undefined;
+  FloatingOriginCurrentScene.eyeAtCamera = true;
+  return () => {
+    FloatingOriginCurrentScene.getScene = previousScene;
+    FloatingOriginCurrentScene.eyeAtCamera = previousEyeAtCamera;
+  };
+}
+
 /** Preserve shared render state even when Babylon's RTT probe throws mid-pass. */
 export function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
   const engine = scene.getEngine();
@@ -14,10 +32,7 @@ export function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
   const renderPassId = engine.currentRenderPassId;
   const colorWrite = engine.getColorWrite();
   const imageProcessing = scene.imageProcessingConfiguration.applyByPostProcess;
-  const previousScene = FloatingOriginCurrentScene.getScene;
-  const previousEyeAtCamera = FloatingOriginCurrentScene.eyeAtCamera;
-  FloatingOriginCurrentScene.getScene = () => scene.floatingOriginMode ? scene : undefined;
-  FloatingOriginCurrentScene.eyeAtCamera = true;
+  const unpin = pinFloatingOrigin(scene);
   let failed = false;
   let failure: unknown;
   let result!: T;
@@ -44,8 +59,7 @@ export function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
     restore(() => engine.setColorWrite(colorWrite));
     engine.currentRenderPassId = renderPassId;
     restore(() => scene.resetCachedMaterial());
-    FloatingOriginCurrentScene.getScene = previousScene;
-    FloatingOriginCurrentScene.eyeAtCamera = previousEyeAtCamera;
+    unpin();
   }
   if (errors.length) throw new AggregateError(failed ? [failure, ...errors] : errors,
     "Scene readiness state restoration failed.", failed ? { cause: failure } : undefined);

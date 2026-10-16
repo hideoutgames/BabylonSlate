@@ -1,6 +1,6 @@
 /** Browser oracle: GPU object-ID picking follows shader-displaced geometry. */
 import {
-  Camera, Color4, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, Vector3, VertexBuffer,
+  Camera, Color4, Engine, FreeCamera, MeshBuilder, Scene, StandardMaterial, UtilityLayerRenderer, Vector3, VertexBuffer,
 } from "@babylonjs/core";
 import {
   compileMaterialPlan, createAppWebGpuEngine, gpuPickMesh, pickAtCanvas, requestRenderPath,
@@ -13,12 +13,19 @@ const WIDTH = 240, HEIGHT = 160;
 const toPixel = (x: number, y: number) => ({ x: WIDTH / 2 + x * 40, y: HEIGHT / 2 - y * 40 });
 const CAMERA_DISTANCE = 8;
 
-export async function runGpuPickProof(backend: "webgl2" | "webgpu") {
+/**
+ * `bare` is a plain engine and scene. `editor` matches the editor viewport: a floating-origin
+ * engine (`useLargeWorldRendering`, always on for WebGPU) and the gizmo's utility layer rendered
+ * after the scene every frame, so the last scene to render is not the one being picked.
+ */
+export type GpuPickProofVariant = "bare" | "editor";
+
+export async function runGpuPickProof(backend: "webgl2" | "webgpu", variant: GpuPickProofVariant = "bare") {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH; canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
   const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: variant === "editor" });
   engine.setSize(WIDTH, HEIGHT);
   requestRenderPath(engine, { renderPath: "forward" });
   const scene = new Scene(engine); scene.clearColor = new Color4(0, 0, 0, 1);
@@ -68,8 +75,9 @@ export async function runGpuPickProof(backend: "webgl2" | "webgpu") {
     box("Far", 1.5, -2.75, 0, 1);
 
     await scene.whenReadyAsync();
+    const gizmoLayer = variant === "editor" ? new UtilityLayerRenderer(scene, true, true) : undefined;
     // Picks run between frames of the editor's render loop.
-    engine.runRenderLoop(() => scene.render());
+    engine.runRenderLoop(() => { scene.render(); gizmoLayer?.render(); });
     for (let frame = 0; frame < 3; frame++) await new Promise<void>((resolve) => scene.onAfterRenderObservable.addOnce(() => resolve()));
     const name = (mesh: { name: string } | null | undefined) => mesh === undefined ? "unavailable" : mesh?.name ?? null;
     // Every texture the pick allocates; the render loop allocates none once warm.
@@ -119,7 +127,11 @@ export async function runGpuPickProof(backend: "webgl2" | "webgpu") {
     const afterVertexColors = await at(plainPixel);
     const result = { orthographic, perspective, inPlace: { before, afterMarkDirty, afterVertexColors }, pickTargetSizes: [...pickTargetSizes] };
     compiled.dispose();
-    return { effectiveBackend: engine.isWebGPU ? "webgpu" : (engine as Engine).webGLVersion === 2 ? "webgl2" : "webgl1", ...result };
+    return {
+      effectiveBackend: engine.isWebGPU ? "webgpu" : (engine as Engine).webGLVersion === 2 ? "webgl2" : "webgl1",
+      floatingOriginWithGizmoLayer: scene.floatingOriginMode && !!gizmoLayer?.utilityLayerScene.floatingOriginMode,
+      ...result,
+    };
   } finally {
     engine.stopRenderLoop(); scene.dispose(); engine.dispose(); canvas.remove();
   }

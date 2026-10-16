@@ -1,5 +1,6 @@
 import { activeRenderFrameCapture } from "./render-frame-report";
 import { isSceneGameTimePaused } from "./scene-game-time";
+import { pinFloatingOrigin } from "./scene-readiness-signal";
 import {
   Color4, Constants, LinesMesh, Material, Matrix, MultiMaterial, Quaternion, RawTexture,
   RenderTargetTexture, Texture, UniversalCamera, Vector3,
@@ -527,12 +528,9 @@ export class RenderTargetCaptures {
     const outlinesEnabled = outlines?.enabled;
     const imageProcessing = scene.imageProcessingConfiguration;
     const applyByPostProcess = imageProcessing.applyByPostProcess;
-    const previousScene = FloatingOriginCurrentScene.getScene;
-    const previousEyeAtCamera = FloatingOriginCurrentScene.eyeAtCamera;
     // Manual RTT draws bypass Scene.render(), which normally selects this
     // global context. A sibling scene may still own it (or have no matrices).
-    FloatingOriginCurrentScene.getScene = () => scene.floatingOriginMode ? scene : undefined;
-    FloatingOriginCurrentScene.eyeAtCamera = true;
+    const unpin = pinFloatingOrigin(scene);
     drawing.add(scene);
     try {
       // Match authored unlit surfaces: Scene Color is display/gamma encoded.
@@ -554,8 +552,7 @@ export class RenderTargetCaptures {
         if (outlines) outlines.enabled = outlinesEnabled!;
         if (viewport) engine.setViewport(viewport, width, height);
       } finally {
-        FloatingOriginCurrentScene.getScene = previousScene;
-        FloatingOriginCurrentScene.eyeAtCamera = previousEyeAtCamera;
+        unpin();
         drawing.delete(scene);
       }
     }

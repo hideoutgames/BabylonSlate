@@ -4,7 +4,7 @@ import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { pickCandidates } from "./gpu-pick-candidates";
-import { onSceneReadinessDirty } from "./scene-readiness-signal";
+import { onSceneReadinessDirty, pinFloatingOrigin } from "./scene-readiness-signal";
 
 /** Mesh hit by a GPU pick; `null` is background, `undefined` means use CPU picking. */
 export type GpuPickResult = AbstractMesh | null | undefined;
@@ -186,12 +186,20 @@ class PickPass {
     if (!graph || !geometry) return null;
     this.ids = ids;
     this.aim(tap, meshes);
+    // Between frames Babylon's floating-origin context is the last scene to render, in the editor the
+    // gizmo's utility layer, whose full-view matrices would replace the pick projection and make every
+    // tap sample the viewport centre. Select this scene for the draw, as the readiness probes do.
+    const unpin = pinFloatingOrigin(scene);
     try {
       graph.execute();
     } finally {
-      // The pass rendered through the tap's matrices, not the scene's camera, so Babylon does not
-      // restore the scene matrices; put the camera's current ones back.
-      scene.setTransformMatrix(tap.camera.getViewMatrix(), tap.camera.getProjectionMatrix());
+      try {
+        // The pass rendered through the tap's matrices, not the scene's camera, so Babylon does not
+        // restore the scene matrices; put the camera's current ones back.
+        scene.setTransformMatrix(tap.camera.getViewMatrix(), tap.camera.getProjectionMatrix());
+      } finally {
+        unpin();
+      }
     }
     return graph.textureManager.getTextureFromHandle(geometry.geometryObjectIdTexture);
   }

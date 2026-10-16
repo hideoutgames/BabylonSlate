@@ -15,6 +15,7 @@ import {
   type AbstractMesh,
 } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
+import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { afterEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { gpuPickMesh, pickPixelProjection } from "./gpu-object-id-picker";
@@ -80,8 +81,9 @@ afterEach(() => {
  * that can build the pick graph headless. The boxes stand one behind another
  * on the centre pixel's ray, so each reaches the tap unless a test moves it.
  * The one GPU boundary, the 1×1 read-back, returns whatever id `hit` names.
+ * `floatingOrigin` makes the scene floating-origin, like the editor's engine.
  */
-function pickFixture() {
+function pickFixture({ floatingOrigin = false } = {}) {
   const engine = adaptNullEngineFrameGraph(new NullEngine({
     renderWidth: WIDTH,
     renderHeight: HEIGHT,
@@ -90,6 +92,7 @@ function pickFixture() {
     lockstepMaxSteps: 1,
   }));
   Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true });
+  if (floatingOrigin) vi.spyOn(engine, "getCreationOptions").mockReturnValue({ useLargeWorldRendering: true });
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", new Vector3(0, 0, -8), scene);
   camera.setTarget(Vector3.Zero());
@@ -552,6 +555,32 @@ describe("gpuPickMesh", () => {
       await f.tap();
       expect(said(f)).toHaveLength(2);
     });
+  });
+
+  it("draws in its own scene's floating-origin context, not the one of the scene that rendered last", async () => {
+    const f = pickFixture({ floatingOrigin: true });
+    // Between frames Babylon's context is the last scene to render, in the editor the gizmo layer, and it
+    // recomputes every viewProjection a draw uploads from that scene's matrices: a pick drawn in it would
+    // rasterise the full view into its 1×1 target. This scene stands for the gizmo layer.
+    const gizmoLayer = new Scene(f.engine);
+    disposers.push(() => gizmoLayer.dispose());
+    gizmoLayer.activeCamera = new FreeCamera("gizmo camera", new Vector3(0, 0, -8), gizmoLayer);
+    gizmoLayer.render();
+    const context = FloatingOriginCurrentScene.getScene;
+    expect(context()).toBe(gizmoLayer);
+
+    const contexts: Array<Scene | undefined> = [];
+    const setTransform = Scene.prototype.setTransformMatrix;
+    vi.spyOn(Scene.prototype, "setTransformMatrix").mockImplementation(function (this: Scene, ...args) {
+      if (this === f.scene) contexts.push(FloatingOriginCurrentScene.getScene());
+      return setTransform.apply(this, args);
+    });
+    f.hit(2);
+    expect((await f.tap())?.name).toBe("Middle");
+    // The pass's init hook, the restore of the camera's matrices and every readiness probe.
+    expect(contexts.length).toBeGreaterThan(0);
+    expect(contexts.every((scene) => scene === f.scene)).toBe(true);
+    expect(FloatingOriginCurrentScene.getScene).toBe(context);
   });
 
   describe("lifecycle", () => {

@@ -5,18 +5,27 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
+// `editor` renders like the editor viewport: a floating-origin engine with the gizmo's utility layer
+// drawn after the scene each frame, which leaves Babylon's floating-origin context on the gizmo scene.
+const VARIANTS = {
+  bare: "1×1 GPU object-ID pick follows drawn geometry at any pixel on",
+  editor: "1×1 GPU object-ID pick follows drawn geometry at any pixel with the editor's floating origin and gizmo layer on",
+} as const;
+
 for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`1×1 GPU object-ID pick follows drawn geometry at any pixel on ${backend}`, async ({ page }) => {
+  for (const variant of ["bare", "editor"] as const) test(`${VARIANTS[variant]} ${backend}`, async ({ page }) => {
     test.setTimeout(120_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto("/?test=1&gpuPickProof=1");
     await page.waitForFunction(() => "__gpuPickProof" in window);
-    const report = await page.evaluate((backend) => (window as unknown as {
+    const report = await page.evaluate(([backend, variant]) => (window as unknown as {
       __gpuPickProof: typeof runGpuPickProof;
-    }).__gpuPickProof(backend), backend);
+    }).__gpuPickProof(backend, variant), [backend, variant] as const);
     expect(errors).toEqual([]);
     expect(report.effectiveBackend).toBe(backend);
+    // The editor variant must really be floating-origin with a floating-origin gizmo scene, or it proves nothing the bare one does not.
+    if (variant === "editor") expect(report.floatingOriginWithGizmoLayer).toBe(true);
     for (const projection of ["orthographic", "perspective"] as const) {
       const picks = report[projection];
       expect(picks.plain, projection).toEqual({ gpu: "Plain", cpu: "Plain" });

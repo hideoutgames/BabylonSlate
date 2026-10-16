@@ -1183,6 +1183,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         commitGizmoNudge: () => Promise<boolean>;
         commitMultiSelectGizmoNudge: () => Promise<boolean>;
         activeSceneMeshPosition: () => [number, number, number] | null;
+        actorCanvasFraction: (actorId: string) => { x: number; y: number } | null;
         sceneTexturePixels: () => Promise<unknown>;
         sceneVisuals: () => Array<
           MaterialViewportTestSnapshot & {
@@ -1466,6 +1467,19 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         const mesh = engineRef.current?.editor?.sync.meshForActor(actorId);
         if (!mesh) return null;
         return [mesh.position.x, mesh.position.y, mesh.position.z];
+      },
+      // Where the actor's mesh centre falls in the canvas, as 0-1 fractions of its width and height
+      // (top-left origin), for a test to tap it.
+      actorCanvasFraction: (actorId) => {
+        const mesh = engineRef.current?.editor?.sync.meshForActor(actorId);
+        const camera = mesh?.getScene().activeCamera;
+        if (!mesh || !camera) return null;
+        mesh.computeWorldMatrix(true);
+        const ndc = Vector3.TransformCoordinates(
+          mesh.getBoundingInfo().boundingBox.centerWorld,
+          camera.getViewMatrix().multiply(camera.getProjectionMatrix()),
+        );
+        return { x: (ndc.x + 1) / 2, y: (1 - ndc.y) / 2 };
       },
       hardwareScalingLevel: () => engineRef.current?.scaling.getLevel() ?? null,
       postProcessPassCount: () =>
