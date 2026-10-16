@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { githubHeadingSlug } from "./rewrite-repo-links";
 
 export type SidebarItem = {
   text: string;
@@ -44,26 +45,49 @@ function section(text: string, dir: string, pages: string[]): SidebarItem {
   };
 }
 
+export type IndexGroup = { title: string; pages: SidebarItem[] };
+
+/** The `## Group` headings of a reference folder's `index.md` and the folder pages linked under each. */
+export function indexGroups(dir: string): IndexGroup[] {
+  const source = readFileSync(path.join(docsRoot, dir, "index.md"), "utf8");
+  const groups: IndexGroup[] = [];
+  for (const line of source.split("\n")) {
+    const heading = line.match(/^## (.+)$/);
+    if (heading) {
+      groups.push({ title: heading[1].trim(), pages: [] });
+      continue;
+    }
+    for (const match of line.matchAll(/\[([^\]]+)\]\((?:\.\/)?([a-z0-9-]+)\.md\)/g)) {
+      groups.at(-1)?.pages.push({ text: match[1].replace(/\*\*/g, ""), link: `/${dir}/${match[2]}` });
+    }
+  }
+  return groups.filter((group) => group.pages.length);
+}
+
 /**
  * Sidebar for a reference folder, built from its `index.md`: every `## Group`
  * heading becomes a collapsed group holding the folder pages linked under it.
  */
 export function referenceSidebar(dir: string, title: string): SidebarItem[] {
-  const source = readFileSync(path.join(docsRoot, dir, "index.md"), "utf8");
-  const groups: SidebarItem[] = [];
-  let current: SidebarItem | undefined;
-  for (const line of source.split("\n")) {
-    const heading = line.match(/^## (.+)$/);
-    if (heading) {
-      current = { text: heading[1].trim(), collapsed: true, items: [] };
-      groups.push(current);
-      continue;
-    }
-    for (const match of line.matchAll(/\[([^\]]+)\]\((?:\.\/)?([a-z0-9-]+)\.md\)/g)) {
-      current?.items?.push({ text: match[1].replace(/\*\*/g, ""), link: `/${dir}/${match[2]}` });
-    }
-  }
-  return [{ text: title, link: `/${dir}/` }, ...groups.filter((group) => group.items?.length)];
+  return [
+    { text: title, link: `/${dir}/` },
+    ...indexGroups(dir).map(({ title: text, pages }) => ({ text, collapsed: true, items: pages })),
+  ];
+}
+
+/**
+ * Sidebar for a node reference: one link per node family into the graph's
+ * index. Listing every node would repeat hundreds of links in every page.
+ */
+export function nodeGraphSidebar(dir: string, title: string): SidebarItem[] {
+  return [
+    { text: "Scripting", link: "/scripting/" },
+    {
+      text: title,
+      link: `/${dir}/`,
+      items: indexGroups(dir).map(({ title: text }) => ({ text, link: `/${dir}/#${githubHeadingSlug(text)}` })),
+    },
+  ];
 }
 
 export const NODE_GRAPHS = [
@@ -140,7 +164,7 @@ export function docsSidebar(): Sidebar {
     "/assets/": referenceSidebar("assets", "Assets"),
   };
   for (const { dir, title } of NODE_GRAPHS) {
-    sidebar[`/${dir}/`] = referenceSidebar(dir, title);
+    sidebar[`/${dir}/`] = nodeGraphSidebar(dir, title);
   }
   sidebar["/"] = guideSidebar();
   return sidebar;

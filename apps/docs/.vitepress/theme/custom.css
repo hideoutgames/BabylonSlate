@@ -109,6 +109,9 @@
   font-weight: 400;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+  /* Block Berthold's C overhangs its advance width. */
+  padding-right: 0.12em;
+  overflow: visible;
 }
 
 .VPNavBarTitle .logo {
@@ -263,6 +266,7 @@
 
 .dark .haptic-home .haptic-wordmark-image {
   display: block;
+  margin-bottom: 12px;
 }
 
 .haptic-home .haptic-wordmark::before,

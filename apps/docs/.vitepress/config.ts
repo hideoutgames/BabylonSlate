@@ -19,6 +19,8 @@ export default defineConfig({
   cacheDir: path.resolve(appRoot, ".vitepress/cache"),
   base,
   cleanUrls: true,
+  // Keep the page map out of every HTML file; the site has about a thousand pages.
+  metaChunk: true,
   ignoreDeadLinks: false,
   title: "Haptic",
   description: "Documentation for Haptic, the portable game engine.",

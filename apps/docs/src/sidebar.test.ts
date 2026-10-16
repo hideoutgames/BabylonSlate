@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { collectSidebarLinks, docsRoot, docsSidebar } from "./sidebar";
+import { collectSidebarLinks, docsRoot, docsSidebar, indexGroups, NODE_GRAPHS } from "./sidebar";
 
 function listMarkdownFiles(dir: string, rel = ""): string[] {
   const entries = readdirSync(dir, { withFileTypes: true });
@@ -27,17 +27,20 @@ function docFileToLink(relPosix: string): string {
 }
 
 function normalizeLink(link: string): string {
-  return `/${link.replace(/^\//, "").replace(/\/index$/, "").replace(/\/$/, "")}`;
+  const page = link.replace(/#.*$/, "");
+  return `/${page.replace(/^\//, "").replace(/\/index$/, "").replace(/\/$/, "")}`;
 }
 
 function linkToFile(link: string): string {
-  const rel = link.replace(/^\//, "");
+  const rel = link.replace(/#.*$/, "").replace(/^\//, "");
   return path.join(docsRoot, rel.endsWith("/") ? `${rel}index.md` : `${rel}.md`);
 }
 
 describe("docsSidebar", () => {
   const sidebar = docsSidebar();
   const listed = Object.values(sidebar).flatMap((items) => collectSidebarLinks(items));
+  // Node pages are reached through their graph's index, which the sidebar links.
+  const nodePages = NODE_GRAPHS.flatMap(({ dir }) => indexGroups(dir).flatMap((group) => collectSidebarLinks(group.pages)));
 
   it("reaches every docs page except the home page", () => {
     const required = listMarkdownFiles(docsRoot)
@@ -45,11 +48,11 @@ describe("docsSidebar", () => {
       .map(docFileToLink)
       .map(normalizeLink)
       .sort();
-    expect(listed.map(normalizeLink)).toEqual(expect.arrayContaining(required));
+    expect([...listed, ...nodePages].map(normalizeLink)).toEqual(expect.arrayContaining(required));
     expect(required.length).toBeGreaterThan(0);
   });
 
   it("links only to pages that exist", () => {
-    expect(listed.filter((link) => !existsSync(linkToFile(link)))).toEqual([]);
+    expect([...listed, ...nodePages].filter((link) => !existsSync(linkToFile(link)))).toEqual([]);
   });
 });
