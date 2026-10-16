@@ -1,192 +1,68 @@
-# Forms & Inputs
+# Forms and inputs
 
-## Contents
+## FieldGroup and Field
 
-- Forms use FieldGroup + Field
-- InputGroup requires InputGroupInput/InputGroupTextarea
-- Buttons inside inputs use InputGroup + InputGroupAddon
-- Option sets (2–7 choices) use ToggleGroup
-- FieldSet + FieldLegend for grouping related fields
-- Field validation and disabled states
+**Incorrect:**
 
----
+```tsx
+<div className="space-y-4">
+  <Label htmlFor="name">Name</Label>
+  <Input id="name" />
+</div>
+```
 
-## Forms use FieldGroup + Field
-
-Always use `FieldGroup` + `Field` — never raw `div` with `space-y-*`:
+**Correct:**
 
 ```tsx
 <FieldGroup>
   <Field>
-    <FieldLabel htmlFor="email">Email</FieldLabel>
-    <Input id="email" type="email" />
-  </Field>
-  <Field>
-    <FieldLabel htmlFor="password">Password</FieldLabel>
-    <Input id="password" type="password" />
+    <FieldLabel htmlFor="name">Name</FieldLabel>
+    <Input id="name" />
   </Field>
 </FieldGroup>
 ```
 
-Use `Field orientation="horizontal"` for settings pages. Use `FieldLabel className="sr-only"` for visually hidden labels.
+Settings rows use `Field orientation="horizontal"`. Related checkboxes or switches go in a `FieldSet` with a `FieldLegend`, not a `div` with a heading.
 
-**Choosing form controls:**
-
-- Simple text input → `Input`
-- Dropdown with predefined options → `Select`
-- Searchable dropdown → `Combobox`
-- Native HTML select (no JS) → `native-select`
-- Boolean toggle → `Switch` (for settings) or `Checkbox` (for forms)
-- Single choice from few options → `RadioGroup`
-- Toggle between 2–5 options → `ToggleGroup` + `ToggleGroupItem`
-- OTP/verification code → `InputOTP`
-- Multi-line text → `Textarea`
-
----
-
-## InputGroup requires InputGroupInput/InputGroupTextarea
-
-Never use raw `Input` or `Textarea` inside an `InputGroup`.
+## Option sets use ToggleGroup
 
 **Incorrect:**
 
 ```tsx
-<InputGroup>
-  <Input placeholder="Search..." />
-</InputGroup>
-```
-
-**Correct:**
-
-```tsx
-import { InputGroup, InputGroupInput } from "@/components/ui/input-group"
-
-<InputGroup>
-  <InputGroupInput placeholder="Search..." />
-</InputGroup>
-```
-
----
-
-## Buttons inside inputs use InputGroup + InputGroupAddon
-
-Never place a `Button` directly inside or adjacent to an `Input` with custom positioning.
-
-**Incorrect:**
-
-```tsx
-<div className="relative">
-  <Input placeholder="Search..." className="pr-10" />
-  <Button className="absolute right-0 top-0" size="icon">
-    <SearchIcon />
+{modes.map((mode) => (
+  <Button key={mode} variant={mode === selected ? "default" : "outline"} onClick={() => setSelected(mode)}>
+    {mode}
   </Button>
-</div>
+))}
 ```
 
 **Correct:**
 
 ```tsx
-import { InputGroup, InputGroupInput, InputGroupAddon } from "@/components/ui/input-group"
-
-<InputGroup>
-  <InputGroupInput placeholder="Search..." />
-  <InputGroupAddon>
-    <Button size="icon">
-      <SearchIcon data-icon="inline-start" />
-    </Button>
-  </InputGroupAddon>
-</InputGroup>
-```
-
----
-
-## Option sets (2–7 choices) use ToggleGroup
-
-Don't manually loop `Button` components with active state.
-
-**Incorrect:**
-
-```tsx
-const [selected, setSelected] = useState("daily")
-
-<div className="flex gap-2">
-  {["daily", "weekly", "monthly"].map((option) => (
-    <Button
-      key={option}
-      variant={selected === option ? "default" : "outline"}
-      onClick={() => setSelected(option)}
-    >
-      {option}
-    </Button>
+<ToggleGroup variant="outline" size="sm" spacing={0} value={[selected]} onValueChange={(v) => v[0] && setSelected(v[0])}>
+  {modes.map((mode) => (
+    <ToggleGroupItem key={mode} value={mode}>{mode}</ToggleGroupItem>
   ))}
-</div>
-```
-
-**Correct:**
-
-```tsx
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-
-<ToggleGroup spacing={2}>
-  <ToggleGroupItem value="daily">Daily</ToggleGroupItem>
-  <ToggleGroupItem value="weekly">Weekly</ToggleGroupItem>
-  <ToggleGroupItem value="monthly">Monthly</ToggleGroupItem>
 </ToggleGroup>
 ```
 
-Combine with `Field` for labelled toggle groups:
+Value handling is in [base-ui.md](base-ui.md#togglegroup).
+
+## Invalid and disabled states
+
+Set both attributes: the `data-*` attribute styles the field's label and description, and the control attribute styles the control.
 
 ```tsx
-<Field orientation="horizontal">
-  <FieldTitle id="theme-label">Theme</FieldTitle>
-  <ToggleGroup aria-labelledby="theme-label" spacing={2}>
-    <ToggleGroupItem value="light">Light</ToggleGroupItem>
-    <ToggleGroupItem value="dark">Dark</ToggleGroupItem>
-    <ToggleGroupItem value="system">System</ToggleGroupItem>
-  </ToggleGroup>
-</Field>
-```
-
-> **Note:** `defaultValue` and `type`/`multiple` props differ between base and radix. See [base-vs-radix.md](./base-vs-radix.md#togglegroup).
-
----
-
-## FieldSet + FieldLegend for grouping related fields
-
-Use `FieldSet` + `FieldLegend` for related checkboxes, radios, or switches — not `div` with a heading:
-
-```tsx
-<FieldSet>
-  <FieldLegend variant="label">Preferences</FieldLegend>
-  <FieldDescription>Select all that apply.</FieldDescription>
-  <FieldGroup className="gap-3">
-    <Field orientation="horizontal">
-      <Checkbox id="dark" />
-      <FieldLabel htmlFor="dark" className="font-normal">Dark mode</FieldLabel>
-    </Field>
-  </FieldGroup>
-</FieldSet>
-```
-
----
-
-## Field validation and disabled states
-
-Both attributes are needed — `data-invalid`/`data-disabled` styles the field (label, description), while `aria-invalid`/`disabled` styles the control.
-
-```tsx
-// Invalid.
 <Field data-invalid>
-  <FieldLabel htmlFor="email">Email</FieldLabel>
-  <Input id="email" aria-invalid />
-  <FieldDescription>Invalid email address.</FieldDescription>
+  <FieldLabel htmlFor="name">Name</FieldLabel>
+  <Input id="name" aria-invalid />
+  <FieldError>Name is required.</FieldError>
 </Field>
 
-// Disabled.
 <Field data-disabled>
-  <FieldLabel htmlFor="email">Email</FieldLabel>
-  <Input id="email" disabled />
+  <FieldLabel htmlFor="path">Path</FieldLabel>
+  <Input id="path" disabled />
 </Field>
 ```
 
-Works for all controls: `Input`, `Textarea`, `Select`, `Checkbox`, `RadioGroupItem`, `Switch`, `Slider`, `NativeSelect`, `InputOTP`.
+This applies to `Input`, `Textarea`, `Select`, `Checkbox`, `Switch` and `Slider`.
