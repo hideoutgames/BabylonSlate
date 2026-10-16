@@ -165,7 +165,7 @@ function saveLayout(id: string): string[] {
 
 function closeSpriteDetails() {
   const sprite = screen.getByTestId("document-workspace-sprite");
-  fireEvent.click(within(sprite).getByRole("button", { name: "Close Details" }));
+  fireEvent.click(within(sprite).getByRole("button", { name: "Close Inspector" }));
   expect(within(sprite).queryByTestId("panel-sprite-details")).toBeNull();
 }
 
