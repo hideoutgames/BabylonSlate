@@ -24,7 +24,7 @@ Choose a view:
 | Timeline | Every sample as a table. Switch between **Completed Frames**, **Runtime Ticks** and, when available, **GPU Queries**. **Previous Over Budget** and **Next Over Budget** jump between slow samples. |
 | Frame Report | The result of **Capture Frame**. |
 
-Only one recording or frame capture runs at a time. The window keeps the latest result. **Copy** and **Export** save it as JSON, and **Open Profile** loads a saved one.
+Only one recording or frame capture runs at a time. The window keeps the latest result. **Copy** puts it on the clipboard as JSON, **Export** downloads it as a file, and **Open Profile** loads a saved one.
 
 ## Capture a frame
 
@@ -58,7 +58,7 @@ When Play ends, the trace opens as a read-only document with three windows:
 - **Snapshot** shows the game instance, subsystems, actors, components and their variables at the selected frame. **Changes** lists what was added, removed or changed since the previous frame.
 - **Log** shows the logs and prints of the selected frame and up to 29 frames before it.
 
-**Engine Settings > Debugger > Trace > Trace Memory Budget (MiB)** limits a trace, from 1 to 256. Default 128. When the trace is full, the oldest frames are discarded and recording continues.
+**Engine Settings > Debugger > Trace > Trace Memory Budget (MiB)** limits a trace, from 1 to 256. Default 128. When the trace is full, the oldest frames are discarded and recording continues. A single frame larger than the whole budget stops recording; the frames before it are kept.
 
 ## Related
 
