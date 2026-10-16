@@ -4,9 +4,9 @@ Editor and launcher theme tokens, semantic color families, density, canvas and o
 
 ## Token location
 
-- Canonical tokens: [`packages/ui/src/styles/globals.css`](../../../packages/ui/src/styles/globals.css) (`:root` light, `.dark` dark). Tailwind v4 maps them through `@theme inline`.
+- Canonical tokens: [`packages/ui/src/styles/tokens.css`](../../../packages/ui/src/styles/tokens.css) (`:root` light, `.dark` dark), imported by `globals.css`. Tailwind v4 maps them through `@theme inline`. Keep `:root` and `.dark` as top-level blocks: the docs build re-roots them on its node previews.
 - Use semantic utilities only (`bg-background`, `bg-sidebar`, `text-primary`, `bg-node-event`, `text-axis-x`, …). No raw hex or ad-hoc oklch in app code, and no preset imported over the editor-function tokens.
-- Kind → token maps live in [`packages/ui/src/lib/data-types.ts`](../../../packages/ui/src/lib/data-types.ts) (`pinColorVar`, `PIN_COLOR_VAR`, `assetColorVar`, `PARTICLE_STAGE_ROLE`, `typeColorThumbAccent`). `graph-ui` `pinCssVar` and editor-kit `TypeColorMark` read that module; never add a local color table. Change a hue in `globals.css`; change which kind uses which token in `data-types.ts`.
+- Kind → token maps live in [`packages/ui/src/lib/data-types.ts`](../../../packages/ui/src/lib/data-types.ts) (`pinColorVar`, `PIN_COLOR_VAR`, `assetColorVar`, `PARTICLE_STAGE_ROLE`, `typeColorThumbAccent`). `graph-ui` `pinCssVar` and editor-kit `TypeColorMark` read that module; never add a local color table. Change a hue in `tokens.css`; change which kind uses which token in `data-types.ts`.
 - Icons resolve through `resolveTypeVisual` in [`packages/editor-kit/src/type-visuals.tsx`](../../../packages/editor-kit/src/type-visuals.tsx). Color is by kind, icon by concrete type; user classes reuse their first engine ancestor's icon. Icon sizes: 16 in chrome/lists, 40 on tiles with `absoluteStrokeWidth`.
 - Tailwind scans sources relative to the CSS entry, so `globals.css` lists each UI-rendering package with `@source`. Add an `@source` line when a new package renders components, or its utilities silently produce no CSS.
 - Dockview theming: [`apps/editor/src/shell/dockview-theme.css`](../../../apps/editor/src/shell/dockview-theme.css). The overflow popover mounts outside `.dockview-theme-babylonslate` and is styled from editor tokens directly.

@@ -251,7 +251,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 
 ## Touch-first design system
 
-- Canonical shadcn theme tokens live only in [globals.css](../../packages/ui/src/styles/globals.css); Scene, Prefab and graph canvases stay dark regardless of theme. Rules: [touch-editor.md](../rules/touch-editor.md).
+- Canonical shadcn theme tokens live only in [tokens.css](../../packages/ui/src/styles/tokens.css), which [globals.css](../../packages/ui/src/styles/globals.css) imports; Scene, Prefab and graph canvases stay dark regardless of theme. Rules: [touch-editor.md](../rules/touch-editor.md).
 - Compose chrome from `@babylonslate/ui` and `@babylonslate/editor-kit`; no raw styled `<input>`, `<select>` or `<button>` in `apps/editor/src`. Pick lists use `SearchDialog` / `SearchDropdown`; no full-width bottom Sheets.
 - Density: `--chrome-row` 28px for chrome, rows and tree items; `--touch-target` 44px for graph pin rows and grips. Dock tab strips 26px fine / 30px coarse. Compact desktop controls stay compact.
 - Rounded radius token scale; no square corners and no hardcoded radii.

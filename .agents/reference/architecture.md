@@ -88,7 +88,7 @@ TypeScript
 React and editor UI
 
 - Compose from `@babylonslate/ui` and `@babylonslate/editor-kit`; forms use `Field` + shadcn inputs; docked panels use `PanelFrame` / `ToolbarStrip`. No raw styled `<input>`, `<select>`, `<textarea>` or `<button>` in `apps/editor/src`.
-- Semantic tokens only (no raw hex); edit tokens only in `packages/ui/src/styles/globals.css`. Radius tokens only. `flex` + `gap-*`, not `space-y-*`.
+- Semantic tokens only (no raw hex); edit tokens only in `packages/ui/src/styles/tokens.css` (imported by `globals.css`). Radius tokens only. `flex` + `gap-*`, not `space-y-*`.
 - `--chrome-row` 28px for chrome and rows; graph pin rows 44px. Keep compact desktop density.
 - Wrap copyable read-only text in `SelectableText`.
 - Follow the Rules of React even though lint enables only `rules-of-hooks` and `exhaustive-deps`: no ref reads or global mutation during render, no `setState`-in-effect to mirror props.
