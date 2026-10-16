@@ -1,162 +1,32 @@
 ---
 name: babylonjs
-description: "Babylon.js engine and scene work in BabylonSlate: rendering and render pipelines (FrameGraph, post-processing, shadows, WebGL2 and WebGPU, GLSL/WGSL shaders, and material plugins such as water), scene lifecycle, viewport and Play/player engine integration, meshes and instancing, materials, cameras, lights, animation, glTF and asset loading, physics, and GPU/CPU performance, with curated references and live-doc URLs. Use it for any change, bug or investigation in packages/render or in engine code inside editor files, even when Babylon.js is not named; React editor chrome alone uses the editor UI skills instead. Repository artwork and removed-UI restrictions override imported examples."
+description: "Babylon.js engine work in Haptic: packages/render and engine code inside editor files, including rendering, shaders, scene lifecycle, meshes, materials, cameras, animation, asset loading and physics. Use it for any such change, bug or investigation, even when Babylon is not named; editor chrome alone uses the editor UI skills."
 ---
 
-# Babylon.js 8
+# Babylon.js
 
-## Repository constraints
+## Version
 
-Read [AGENTS.md](../../../AGENTS.md) and [the artwork policy](../../rules/no-ai-artwork.md) before applying examples. This imported reference describes Babylon.js 8; check the repository's installed package versions before relying on version-specific APIs. Engine runtime primitives and debug geometry are allowed product features; procedural references do not authorize creating decorative art assets. Do not re-add the removed game HUD / UserInterface system or Babylon GUI application in Play/player. React editor chrome uses the editor-ui-components and shadcn skills.
+`@babylonjs/core`, `@babylonjs/loaders` and `@babylonjs/serializers` are **9.29.0**; `@babylonjs/havok` is 1.3.14. Core is pinned with one pnpm patch (`pnpm-workspace.yaml`, `patches/@babylonjs__core@9.29.0.patch`). There is no `@babylonjs/gui`, `@babylonjs/inspector` or `@babylonjs/materials`. Online docs and examples may describe another version: check the typings in `node_modules/@babylonjs/core` before using an API.
 
-## Quick Reference
+## Read first
 
-Babylon.js is a powerful open-source 3D engine for the web. Version 8 supports WebGL2 and WebGPU.
+- [render.md](../../reference/architecture/render.md): Engine ownership, the frame path, resources, lighting, Play presentation, and the patch and workarounds to review when the pin moves.
+- [physics.md](../../reference/architecture/physics.md), [shader-graph.md](../../reference/architecture/shader-graph.md), [particles.md](../../reference/architecture/particles.md) and [scene-layers.md](../../reference/architecture/scene-layers.md) for those subsystems.
+- Package import boundaries: [agent-workflow.md](../../rules/agent-workflow.md#architecture).
 
-**Coordinate system:** Left-handed (X=right, Y=up, Z=forward). Rotations in radians.
+## Invariants
 
-**NPM packages:**
-- `@babylonjs/core` - Engine, scene, meshes, materials, cameras, lights
-- `@babylonjs/loaders` - glTF, OBJ, STL loaders
-- `@babylonjs/materials` - Extra material types
-- `@babylonjs/inspector` - Debug inspector
+- **One Engine per project** (`packages/render/src/create-engine.ts`). Previews and thumbnails render to an RTT on it; never create a second WebGL or WebGPU context. The only exceptions are the Preview Build iframe and the Homepage launcher ([render.md](../../reference/architecture/render.md#one-engine-per-project)).
+- **Draw only through the forward FrameGraph** (`ForwardSceneFrameGraph` in `framegraph-forward-scene.ts`). There is no `Scene.render` fallback; render.md lists what graph preparation rejects.
+- **Construct textures only in `ResourceCache`** (`resource-cache.ts`). The ESLint rule `boundary/render-texture-cache` rejects `new Texture` elsewhere in `packages/render`; renderer-owned targets reserve through `beginManagedRenderAllocation`.
+- **Create shadows only through `SceneShadowController`** (`shadow-controller.ts`). An unmanaged shadow generator makes graph preparation reject.
+- **Models are GLB.** `gltf-loader.ts` is the only place the glTF 2.0 loader and its extensions are registered, and model assets load through `loadModelContainer` in `model-container.ts`. OBJ, FBX and STL convert to GLB at import.
+- **No Babylon GUI.** Editor chrome is React, in-game UI is SceneLayers, and the removed game HUD / UserInterface system stays removed.
+- **Babylon stays out of the game worker**, except physics on its private NullEngine ([architecture.md](../../reference/architecture.md#threading-and-data-flow)). Graph execution emits commands and never touches Babylon.
+- **Coordinates**: Babylon is left-handed and Y-up, and its APIs take radians; `scene.useRightHandedSystem` stays false (`editor-camera.ts`). Scene documents store rotation as a quaternion `[x, y, z, w]`, and the UI shows Euler degrees ([scene-editing.md](../../reference/architecture/scene-editing.md)).
+- **No generated artwork.** Runtime primitives and debug geometry are product features, but textures, models and icons are never generated ([no-ai-artwork.md](../../rules/no-ai-artwork.md)).
 
-**Tree-shaking:** Import from deep paths for minimal bundles:
-```typescript
-import { Scene } from "@babylonjs/core/scene";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
-import { Mesh } from "@babylonjs/core/Meshes/mesh";
-import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
-import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
-```
+## Documentation
 
-**Side-effect imports** (enable features without referencing exports):
-```typescript
-import "@babylonjs/core/Meshes/thinInstanceMesh";
-import "@babylonjs/core/Rendering/edgesRenderer";
-import "@babylonjs/core/Collisions/collisionCoordinator";
-import "@babylonjs/loaders/glTF/2.0/glTFLoader";
-```
-
-## Minimal Scene Setup
-
-```typescript
-import { Engine } from "@babylonjs/core/Engines/engine";
-import { Scene } from "@babylonjs/core/scene";
-import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
-import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
-import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder";
-
-const engine = new Engine(canvas, true);
-const scene = new Scene(engine);
-const camera = new ArcRotateCamera("cam", 0, Math.PI/4, 10, Vector3.Zero(), scene);
-camera.attachControl(canvas, true);
-const light = new HemisphericLight("light", new Vector3(0, 1, 0), scene);
-const sphere = CreateSphere("sphere", { diameter: 2 }, scene);
-const ground = CreateGround("ground", { width: 6, height: 6 }, scene);
-sphere.position.y = 1;
-
-engine.runRenderLoop(() => scene.render());
-window.addEventListener("resize", () => engine.resize());
-```
-
-## Key Patterns
-
-### PBR Material (most common for realistic rendering)
-```typescript
-const pbr = new PBRMaterial("pbr", scene);
-pbr.albedoColor = new Color3(1.0, 0.766, 0.336);
-pbr.metallic = 0.3;
-pbr.roughness = 0.7;
-// Optional: connect to environment for reflections
-pbr.reflectionTexture = scene.environmentTexture;
-mesh.material = pbr;
-```
-
-### Thin Instances (high-performance batching)
-```typescript
-import "@babylonjs/core/Meshes/thinInstanceMesh";
-const buffer = new Float32Array(16 * count);
-for (let i = 0; i < count; i++) {
-  Matrix.Translation(x, y, z).copyToArray(buffer, i * 16);
-}
-mesh.thinInstanceSetBuffer("matrix", buffer, 16, false);
-mesh.thinInstanceBufferUpdated("matrix");
-```
-
-### Asset Loading (glTF)
-```typescript
-import "@babylonjs/loaders/glTF/2.0/glTFLoader";
-const container = await BABYLON.LoadAssetContainerAsync("model.glb", scene);
-container.addAllToScene();
-```
-
-### Observable Pattern (Babylon's event system)
-```typescript
-scene.onBeforeRenderObservable.add(() => { /* per frame */ });
-const observer = scene.onPointerObservable.add((info) => { /* pointer events */ });
-scene.onPointerObservable.remove(observer); // unsubscribe
-```
-
-### Procedural Modeling — Animation-Ready Hierarchy
-Build complex models from primitives by placing a `TransformNode` at every joint *before* attaching geometry. One pivot per degree of freedom; geometry's local position is its offset from the joint.
-```typescript
-const robotRoot = new TransformNode("robotRoot", scene);
-const shoulderPivot = new TransformNode("shoulderPivot", scene);
-shoulderPivot.parent = robotRoot;                  // pivot lives at the joint axis
-const upperArm = CreateCapsule("upperArm", { height: 1.2, radius: 0.16 }, scene);
-upperArm.parent = shoulderPivot;
-upperArm.position.y = 0.6;                          // geometry sticks out from joint
-// Animation later: shoulderPivot.rotation.y = ...  // rotates whole arm cleanly
-```
-For booleans (drilled holes, carved slots), use **CSG2** (Babylon 8). For rotationally symmetric parts (bottles, hubs, columns) use `CreateLathe`. For path-swept parts (cables, rails) use `CreateTube` or `ExtrudeShape`. See [procedural-parametric-modeling.md](references/procedural-parametric-modeling.md).
-
-## Reference Files
-
-Read these files for detailed API patterns on specific topics:
-
-- **[core-concepts.md](references/core-concepts.md)** - Engine/Scene setup, cameras, lights, shadows, observables, coordinate system
-- **[meshes.md](references/meshes.md)** - Mesh builders, transforms, TransformNode, instances, thin instances, clones, merging, picking
-- **[procedural-parametric-modeling.md](references/procedural-parametric-modeling.md)** - Building high-quality 3D models in code from primitives. Full primitive catalog (lathe, tube, extrude, polyhedra, geodesics, CSG2 booleans, custom VertexData), quality techniques (tessellation, bevels, edges, material palettes), and a complete animation-ready parent/pivot hierarchy pattern with a worked robot-arm example. **Read this when asked to build any non-trivial model in code or when a model will need to animate.**
-- **[materials.md](references/materials.md)** - PBR, Standard, textures, environment/HDR, Node Material, Shader Material
-- **[animation-loading.md](references/animation-loading.md)** - Animation API, groups, easing, skeletal animation, asset loading, AssetContainer
-- **[performance.md](references/performance.md)** - Scene/mesh/material optimization, instancing strategy comparison, monitoring, memory management
-
-## On-Demand Documentation
-
-For topics not covered in the reference files, fetch from the live docs:
-
-- **Doc site:** `https://doc.babylonjs.com`
-- **GitHub raw markdown:** `https://raw.githubusercontent.com/BabylonJS/Documentation/master/content/{path}.md`
-- **[doc-urls.md](references/doc-urls.md)** - Complete URL map for all doc sections
-
-To fetch a specific topic, read the URL map to find the path, then use WebFetch on the doc site URL or fetch raw markdown from GitHub.
-
-### Topics covered only in live docs (not in reference files)
-- Physics V2 (Havok): `/features/featuresDeepDive/physics`
-- WebXR/VR/AR: `/features/featuresDeepDive/webXR`
-- Post-processing pipelines: `/features/featuresDeepDive/postProcesses`
-- Solid Particle System: `/features/featuresDeepDive/particles/solid_particle_system`
-- Crowd navigation: `/features/featuresDeepDive/crowdNavigation`
-- Node Geometry (procedural): `/features/featuresDeepDive/mesh/nodeGeometry`
-- Frame Graph: `/features/featuresDeepDive/frameGraph`
-- Flow Graph: `/features/featuresDeepDive/flowGraph`
-- Smart Filters: `/features/featuresDeepDive/smartFilters`
-- Gaussian Splatting: `/features/featuresDeepDive/importers` (splat/ply formats)
-
-## Common Gotchas
-
-1. **Quaternion vs Euler:** Setting `mesh.rotationQuaternion` disables `mesh.rotation`. To switch back: `mesh.rotationQuaternion = null`.
-2. **Side-effect imports:** Features like thin instances, edge rendering, loaders, and collisions require importing their module even if you don't use the export directly.
-3. **Dispose everything:** Babylon.js doesn't garbage-collect GPU resources. Always call `.dispose()` on meshes, materials, textures when done.
-4. **Material sharing:** Modifying a shared material affects all meshes using it. Clone or create new materials for independent changes.
-5. **TransformNode vs Mesh:** Use TransformNode for grouping/hierarchy. Empty Mesh objects waste CPU on frustum evaluation.
-6. **Left-handed coordinates:** glTF is right-handed; Babylon auto-converts on import. Manual coordinate math may need adjustment.
-7. **Alpha sorting:** Transparent meshes require proper render ordering. Use `mesh.alphaIndex` or rendering groups.
-8. **Thin instance limitations:** All-or-nothing visibility, single bounding box, no per-instance material. Use regular instances when individual control is needed.
-9. **Pivot before geometry:** When code-building animated models, create and parent the joint's `TransformNode` first, then attach geometry as a child with a local offset. Retro-fitting pivots after `MergeMeshes` is painful — merge only after the hierarchy works.
-10. **CSG2 setup:** Babylon 8's `CSG2` (boolean ops backed by Manifold) requires `await InitializeCSG2Async()` once before use and operates in world space. Always dispose intermediate `CSG2.FromMesh` objects — they hold WASM memory.
-11. **Negative scaling flips winding:** Mirroring a hierarchy via `scaling.x *= -1` inverts triangle winding and breaks backface culling. Fix with `material.sideOrientation = Mesh.DOUBLESIDE` or rebake.
+[references/doc-urls.md](references/doc-urls.md) lists checked documentation pages and the raw-markdown pattern for fetching them.
