@@ -1,103 +1,96 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
-import { withMermaid } from "vitepress-plugin-mermaid";
 import { docsBrand } from "../src/branding";
 import {
   githubHeadingSlug,
   installRepoLinkRewriter,
 } from "../src/rewrite-repo-links";
-import { docsSidebar } from "../src/sidebar";
+import { docsSidebar, NODE_GRAPHS } from "../src/sidebar";
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(appRoot, "../..");
 const rawBase = process.env.VITEPRESS_BASE ?? "/";
 const base = rawBase.endsWith("/") ? rawBase : `${rawBase}/`;
 
-export default withMermaid(
-  defineConfig({
-    srcDir: path.resolve(repoRoot, "docs"),
-    srcExclude: ["README.md"],
-    outDir: path.resolve(appRoot, ".vitepress/dist"),
-    cacheDir: path.resolve(appRoot, ".vitepress/cache"),
-    base,
-    cleanUrls: true,
-    ignoreDeadLinks: false,
-    title: "BabylonSlate",
-    description:
-      "Touch-first Babylon.js engine — architecture, design notes, and contributor docs.",
-    head: [
-      [
-        "link",
-        {
-          rel: "icon",
-          type: "image/svg+xml",
-          href: `${base}${docsBrand.favicon.replace(/^\//, "")}`,
-        },
-      ],
-      [
-        "link",
-        {
-          rel: "apple-touch-icon",
-          href: `${base}${docsBrand.appleTouchIcon.replace(/^\//, "")}`,
-        },
-      ],
+export default defineConfig({
+  srcDir: path.resolve(repoRoot, "docs"),
+  outDir: path.resolve(appRoot, ".vitepress/dist"),
+  cacheDir: path.resolve(appRoot, ".vitepress/cache"),
+  base,
+  cleanUrls: true,
+  ignoreDeadLinks: false,
+  title: "Haptic",
+  description: "Documentation for Haptic, the portable game engine.",
+  head: [
+    [
+      "link",
+      {
+        rel: "icon",
+        type: "image/svg+xml",
+        href: `${base}${docsBrand.favicon.replace(/^\//, "")}`,
+      },
     ],
-    lastUpdated: true,
-    themeConfig: {
-      logo: docsBrand.navLogo,
-      siteTitle: "BabylonSlate",
-      nav: [
-        { text: "Docs", link: "/engineplan" },
-        { text: "Architecture", link: "/architecture/overview" },
-        {
-          text: "Editor preview",
-          link: "https://hideoutgames.github.io/BabylonSlate/",
-        },
-        {
-          text: "GitHub",
-          link: "https://github.com/hideoutgames/BabylonSlate",
-        },
-      ],
-      sidebar: docsSidebar,
-      search: { provider: "local" },
-      outline: [2, 3],
-      editLink: {
-        pattern:
-          "https://github.com/hideoutgames/BabylonSlate/edit/main/docs/:path",
-        text: "Edit this page on GitHub",
+    [
+      "link",
+      {
+        rel: "preload",
+        href: `${base}fonts/licensed/block-berthold.woff2`,
+        as: "font",
+        type: "font/woff2",
+        crossorigin: "",
       },
-      socialLinks: [
-        { icon: "github", link: "https://github.com/hideoutgames/BabylonSlate" },
-      ],
+    ],
+  ],
+  themeConfig: {
+    logo: docsBrand.navLogo,
+    siteTitle: "Haptic",
+    nav: [
+      { text: "Get Started", link: "/start/", activeMatch: "^/start/" },
+      { text: "Scripting", link: "/scripting/", activeMatch: "^/scripting/" },
+      {
+        text: "Reference",
+        items: [
+          { text: "Components", link: "/components/" },
+          { text: "Assets", link: "/assets/" },
+          {
+            text: "Nodes",
+            items: NODE_GRAPHS.map(({ dir, title }) => ({ text: title, link: `/${dir}/` })),
+          },
+        ],
+      },
+    ],
+    sidebar: docsSidebar(),
+    search: { provider: "local" },
+    outline: { level: [2, 3], label: "On this page" },
+    docFooter: { prev: false, next: false },
+    socialLinks: [
+      { icon: "github", link: "https://github.com/hideoutgames/BabylonSlate" },
+    ],
+  },
+  markdown: {
+    anchor: { slugify: githubHeadingSlug },
+    config(md) {
+      installRepoLinkRewriter(md);
     },
-    markdown: {
-      anchor: { slugify: githubHeadingSlug },
-      config(md) {
-        installRepoLinkRewriter(md);
+  },
+  vite: {
+    publicDir: path.resolve(appRoot, "public"),
+    resolve: {
+      dedupe: ["vue"],
+      alias: {
+        vue: path.dirname(
+          fileURLToPath(import.meta.resolve("vue/package.json")),
+        ),
       },
     },
-    vite: {
-      publicDir: path.resolve(appRoot, "public"),
-      resolve: {
-        dedupe: ["vue"],
-        alias: {
-          vue: path.dirname(
-            fileURLToPath(import.meta.resolve("vue/package.json")),
-          ),
-        },
-      },
-      ssr: {
-        noExternal: ["vue", "vitepress"],
-      },
-      server: {
-        fs: {
-          allow: [repoRoot],
-        },
+    ssr: {
+      noExternal: ["vue", "vitepress"],
+    },
+    server: {
+      fs: {
+        allow: [repoRoot],
       },
     },
-    mermaid: {
-      theme: "neutral",
-    },
-  }),
-);
+  },
+});

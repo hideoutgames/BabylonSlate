@@ -1,82 +1,371 @@
+/*
+ * Haptic docs theme: Apple HIG structure (system type, quiet chrome, clear
+ * hierarchy) with Haptic's identity (warm black, orange tint, Block Berthold
+ * wordmark with chromatic fringes).
+ */
+
+@font-face {
+  font-family: "Block Berthold";
+  src: url("/fonts/licensed/block-berthold.woff2") format("woff2");
+  font-weight: 400 900;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Haptic Serif";
+  src: url("/fonts/haptic-serif.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
 :root {
-  --vp-font-family-base: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
-  --vp-font-family-mono: ui-monospace, "SFMono-Regular", menlo, consolas, monospace;
+  --haptic-red: #ff4400;
+  --haptic-amber: #ffb300;
+  --haptic-display: "Block Berthold", "Arial Black", "Helvetica Neue", sans-serif;
+  --haptic-serif: "Haptic Serif", "New York", "Iowan Old Style", Georgia, serif;
 
-  --vp-c-bg: oklch(1 0 0);
-  --vp-c-bg-alt: oklch(0.985 0 0);
-  --vp-c-bg-elv: oklch(1 0 0);
-  --vp-c-bg-soft: oklch(0.97 0 0);
-  --vp-c-gutter: oklch(0.97 0 0);
+  --vp-font-family-base: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui,
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --vp-font-family-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
-  --vp-c-text-1: oklch(0.145 0 0);
-  --vp-c-text-2: oklch(0.145 0 0 / 0.72);
-  --vp-c-text-3: oklch(0.145 0 0 / 0.5);
+  --vp-c-bg: #ffffff;
+  --vp-c-bg-alt: #ffffff;
+  --vp-c-bg-elv: #ffffff;
+  --vp-c-bg-soft: #f5f5f7;
+  --vp-c-gutter: #f5f5f7;
 
-  --vp-c-brand-1: oklch(0.145 0 0);
-  --vp-c-brand-2: oklch(0.269 0 0);
-  --vp-c-brand-3: oklch(0.371 0 0);
-  --vp-c-brand-soft: oklch(0.145 0 0 / 0.08);
+  --vp-c-text-1: #1d1d1f;
+  --vp-c-text-2: #6e6e73;
+  --vp-c-text-3: #86868b;
 
-  --vp-c-divider: oklch(0.145 0 0 / 0.12);
-  --vp-c-border: oklch(0.145 0 0 / 0.12);
-  --vp-c-default-soft: oklch(0.97 0 0);
+  --vp-c-divider: rgb(0 0 0 / 0.1);
+  --vp-c-border: rgb(0 0 0 / 0.14);
+  --vp-c-default-soft: #f5f5f7;
+
+  /* Haptic orange, darkened in light mode to keep 4.5:1 text contrast. */
+  --vp-c-brand-1: #c63a00;
+  --vp-c-brand-2: #a83100;
+  --vp-c-brand-3: #c63a00;
+  --vp-c-brand-soft: rgb(255 68 0 / 0.1);
+
+  --vp-button-brand-bg: #1d1d1f;
+  --vp-button-brand-hover-bg: #424245;
+  --vp-button-brand-active-bg: #1d1d1f;
+  --vp-button-brand-text: #ffffff;
+  --vp-button-brand-hover-text: #ffffff;
+  --vp-button-brand-active-text: #ffffff;
+  --vp-button-alt-bg: #f5f5f7;
+  --vp-button-alt-hover-bg: #e8e8ed;
 
   --vp-home-hero-name-color: var(--vp-c-text-1);
-  --vp-button-brand-bg: oklch(0.145 0 0);
-  --vp-button-brand-hover-bg: oklch(0.269 0 0);
-  --vp-button-brand-text: oklch(0.985 0 0);
-  --vp-button-brand-hover-text: oklch(0.985 0 0);
-  --vp-button-brand-active-bg: oklch(0.145 0 0);
-  --vp-button-brand-active-text: oklch(0.985 0 0);
+  --vp-sidebar-bg-color: var(--vp-c-bg);
+  --vp-local-search-highlight-bg: var(--vp-c-brand-soft);
 }
 
 .dark {
-  --vp-c-bg: oklch(0.145 0 0);
-  --vp-c-bg-alt: oklch(0.205 0 0);
-  --vp-c-bg-elv: oklch(0.205 0 0);
-  --vp-c-bg-soft: oklch(0.269 0 0);
-  --vp-c-gutter: oklch(0.145 0 0);
+  --vp-c-bg: #0b0a08;
+  --vp-c-bg-alt: #0b0a08;
+  --vp-c-bg-elv: #161412;
+  --vp-c-bg-soft: #161412;
+  --vp-c-gutter: #000000;
 
-  --vp-c-text-1: oklch(0.985 0 0);
-  --vp-c-text-2: oklch(0.985 0 0 / 0.72);
-  --vp-c-text-3: oklch(0.985 0 0 / 0.5);
+  --vp-c-text-1: #f5f5f7;
+  --vp-c-text-2: rgb(245 245 247 / 0.64);
+  --vp-c-text-3: rgb(245 245 247 / 0.44);
 
-  --vp-c-brand-1: oklch(0.985 0 0);
-  --vp-c-brand-2: oklch(0.9 0 0);
-  --vp-c-brand-3: oklch(0.371 0 0);
-  --vp-c-brand-soft: oklch(0.985 0 0 / 0.12);
+  --vp-c-divider: rgb(255 255 255 / 0.09);
+  --vp-c-border: rgb(255 255 255 / 0.14);
+  --vp-c-default-soft: #1d1b18;
 
-  --vp-c-divider: oklch(0.985 0 0 / 0.12);
-  --vp-c-border: oklch(0.985 0 0 / 0.12);
-  --vp-c-default-soft: oklch(0.269 0 0);
+  --vp-c-brand-1: #ff6a2e;
+  --vp-c-brand-2: #ff8552;
+  --vp-c-brand-3: #ff4400;
+  --vp-c-brand-soft: rgb(255 68 0 / 0.16);
 
-  --vp-button-brand-bg: oklch(0.985 0 0);
-  --vp-button-brand-hover-bg: oklch(0.9 0 0);
-  --vp-button-brand-text: oklch(0.145 0 0);
-  --vp-button-brand-hover-text: oklch(0.145 0 0);
-  --vp-button-brand-active-bg: oklch(0.985 0 0);
-  --vp-button-brand-active-text: oklch(0.145 0 0);
+  --vp-button-brand-bg: #f5f5f7;
+  --vp-button-brand-hover-bg: #ffffff;
+  --vp-button-brand-active-bg: #f5f5f7;
+  --vp-button-brand-text: #0b0a08;
+  --vp-button-brand-hover-text: #0b0a08;
+  --vp-button-brand-active-text: #0b0a08;
+  --vp-button-alt-bg: #1d1b18;
+  --vp-button-alt-hover-bg: #2a2723;
+}
+
+/* Chrome: one surface, hairline dividers. */
+
+.VPNavBar,
+.VPNavBar.has-sidebar .content,
+.VPNavBar:not(.home) .divider-line,
+.VPLocalNav {
+  background-color: color-mix(in srgb, var(--vp-c-bg) 86%, transparent) !important;
+  backdrop-filter: saturate(1.8) blur(20px);
+  -webkit-backdrop-filter: saturate(1.8) blur(20px);
+}
+
+.VPNavBarTitle .title {
+  font-family: var(--haptic-display);
+  font-size: 19px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.VPNavBarTitle .logo {
+  width: 26px;
+  height: 26px;
+}
+
+.VPSidebarItem.level-0 > .item .text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+}
+
+.VPSidebarItem .text {
+  font-size: 14px;
+}
+
+.VPSidebarItem.is-active > .item .link > .text {
+  color: var(--vp-c-brand-1);
+  font-weight: 500;
+}
+
+/* Content: SF-like hierarchy. */
+
+.vp-doc h1 {
+  font-size: 34px;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.vp-doc h2 {
+  margin-top: 40px;
+  padding-top: 0;
+  border-top: none;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.vp-doc h3 {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.vp-doc p,
+.vp-doc li {
+  line-height: 1.6;
 }
 
 .vp-doc a {
+  font-weight: 400;
+  text-decoration: none;
+}
+
+.vp-doc a:hover {
   text-decoration: underline;
   text-underline-offset: 0.2em;
 }
 
-.VPHome {
+.vp-doc table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.vp-doc tr,
+.vp-doc tr:nth-child(2n) {
+  background: transparent;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.vp-doc th,
+.vp-doc td {
+  border: none;
+  padding: 8px 12px 8px 0;
+  vertical-align: top;
+}
+
+.vp-doc th {
+  background: transparent;
+  color: var(--vp-c-text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.vp-doc kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 0.4em;
+  border: 1px solid var(--vp-c-border);
+  border-radius: 5px;
+  font-family: var(--vp-font-family-base);
+  font-size: 0.85em;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.vp-doc .custom-block {
+  border: none;
+  border-radius: 12px;
+}
+
+.vp-doc [class*="language-"],
+.vp-doc :not(pre) > code {
+  border-radius: 8px;
+}
+
+/* Home */
+
+.haptic-home {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 72px 24px 96px;
+}
+
+.haptic-home .haptic-hero {
+  text-align: center;
+}
+
+.haptic-home .haptic-wordmark {
+  position: relative;
+  isolation: isolate;
+  display: inline-block;
+  margin: 0;
+  font-family: var(--haptic-display);
+  font-size: clamp(72px, 15vw, 152px);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--vp-c-text-1);
+}
+
+.haptic-home .haptic-wordmark::before,
+.haptic-home .haptic-wordmark::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  filter: blur(1.5px);
+  pointer-events: none;
+}
+
+.haptic-home .haptic-wordmark::before {
+  z-index: -1;
+  color: var(--haptic-amber);
+  transform: scaleX(1.045);
+}
+
+.haptic-home .haptic-wordmark::after {
+  z-index: -2;
+  color: var(--haptic-red);
+  transform: scaleX(1.08);
+}
+
+.haptic-home .haptic-tagline {
+  margin: 20px 0 0;
+  font-family: var(--haptic-serif);
+  font-size: clamp(22px, 3.2vw, 30px);
+  line-height: 1.3;
+  color: var(--vp-c-text-1);
+}
+
+.haptic-home .haptic-tagline strong {
+  font-family: var(--vp-font-family-base);
+  font-weight: 800;
+}
+
+.haptic-home .haptic-lead {
+  max-width: 560px;
+  margin: 16px auto 0;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--vp-c-text-2);
+}
+
+.haptic-home .haptic-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.haptic-home .haptic-actions a {
+  padding: 10px 22px;
+  border-radius: 980px;
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  background: var(--vp-button-alt-bg);
+  color: var(--vp-c-text-1);
+  transition: background-color 0.2s;
+}
+
+.haptic-home .haptic-actions a:hover {
+  background: var(--vp-button-alt-hover-bg);
+}
+
+.haptic-home .haptic-actions a.primary {
+  background: var(--vp-button-brand-bg);
+  color: var(--vp-button-brand-text);
+}
+
+.haptic-home .haptic-actions a.primary:hover {
+  background: var(--vp-button-brand-hover-bg);
+}
+
+.haptic-home .haptic-topics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1px;
+  margin-top: 80px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--vp-c-divider);
+  border: 1px solid var(--vp-c-divider);
+}
+
+.haptic-home .haptic-topics a {
+  display: block;
+  padding: 20px 22px;
   background: var(--vp-c-bg);
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 0.2s;
 }
 
-.VPNavBarTitle .logo {
-  height: 28px;
-  width: auto;
+.haptic-home .haptic-topics a:hover {
+  background: var(--vp-c-bg-soft);
 }
 
-.VPHero.has-image .image-bg {
-  display: none;
+.haptic-home .haptic-topics strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
 }
 
-.VPHero.has-image .image-src {
-  max-width: min(100%, 22rem);
-  height: auto;
+.haptic-home .haptic-topics span {
+  display: block;
+  margin-top: 4px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vp-c-text-2);
+}
+
+.haptic-home .haptic-legal {
+  margin-top: 64px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--vp-c-text-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .haptic-home .haptic-actions a,
+  .haptic-home .haptic-topics a {
+    transition: none;
+  }
 }
