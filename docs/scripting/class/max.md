@@ -1,0 +1,21 @@
+# Max
+
+Returns the larger of two values, component by component.
+
+## Inputs
+
+| Pin | Type |
+| --- | --- |
+| A | Float |
+| B | Float |
+
+## Outputs
+
+| Pin | Type |
+| --- | --- |
+| Out | Float |
+
+## Notes
+
+- Accepts a Float, Vector 2 or Vector 3, but not a Color. A Float is applied to every component of the other input.
+- Two different vector types cannot be mixed; use [**Split**](split.md) and **Combine** to convert.

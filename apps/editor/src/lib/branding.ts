@@ -1,6 +1,6 @@
-/** Public paths for Slate brand artwork copied from `engine-logos/`. */
+/** Public paths for the editor brand icons in `public/branding/` (still the Slate artwork). */
 
-export const BRAND_NAME = "Slate";
+export const BRAND_NAME = "Haptic";
 
 /** Dark-ink mark — use on light chrome. */
 export const BRAND_ICON_ON_LIGHT = "branding/SlateIconDark.png";

@@ -8,9 +8,9 @@ Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 - **Standards** — does the code conform to this repo's documented coding standards?
 - **Spec** — does the code faithfully implement the originating issue / spec?
 
-When delegation is available and authorized, run both axes as parallel sub-agents and aggregate their findings. Otherwise perform separate sequential passes and keep the two reports distinct. Inherit the parent model by default; explicit selections follow [the model policy](../../rules/agent-workflow.md#subagent-models). A review request is read-only: report findings without editing files, recording tracker rows, or publishing comments unless the user requests those actions.
+When delegation is available and authorized, run both axes as parallel sub-agents and aggregate their findings. Otherwise perform separate sequential passes and keep the two reports distinct. A review request is read-only: report findings without editing files, recording tracker rows, or publishing comments unless the user requests those actions.
 
-Read `docs/agents/issue-tracker.md` for the spec-source workflow. If it is missing, use the source order below and disclose the missing file; do not invoke an unavailable setup command or create files during a review.
+Read `.agents/reference/issue-workflow.md` for the spec-source workflow. If it is missing, use the source order below and disclose the missing file; do not invoke an unavailable setup command or create files during a review.
 
 ## Process
 
@@ -26,7 +26,7 @@ Before going further, confirm the fixed point resolves (`git rev-parse <fixed-po
 
 Look for the originating spec, in this order:
 
-1. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.) — fetch via the workflow in `docs/agents/issue-tracker.md`.
+1. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.) — fetch via the workflow in `.agents/reference/issue-workflow.md`.
 2. A path the user passed as an argument.
 3. A spec file under `docs/`, `specs/`, or `.scratch/` matching the branch name or feature.
 4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".

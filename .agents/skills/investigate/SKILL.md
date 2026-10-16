@@ -46,11 +46,11 @@ You are the coordinator, not a second explorer who dumps the whole tree into one
 
 Each sub-agent prompt must include: the user question, that slice's scope, paths to start from, "read-only — do not modify files", and what to return (files, symbols, data flow, uncertainties). Sub-agents have no parent conversation — paste the brief.
 
-**Delegation capabilities:** choose an available read-only code-search agent; include git or documentation access only when the slice needs it. Do not require particular tool names or agent types. Inherit the parent model by default; explicit selections follow [the model policy](../../rules/agent-workflow.md#subagent-models). If delegation is unavailable, use sequential passes.
+**Delegation capabilities:** choose an available read-only code-search agent; include git or documentation access only when the slice needs it. Do not require particular tool names or agent types. If delegation is unavailable, use sequential passes.
 
 ## How to investigate
 
-- Start from the user's terms, then follow imports, command-bus events, and package boundaries (`docs/architecture/overview.md`, `docs/engineplan.md`).
+- Start from the user's terms, then follow imports, command-bus events, and package boundaries (`.agents/reference/architecture.md`, `.agents/reference/engine-plan.md`).
 - Confirm behavior in code, not only docs. When they disagree, say so and cite both.
 - Prefer primary sources: types, exporters, tests that name the behavior.
 - Record file paths and symbol names. Quote small hunks when they settle a claim.

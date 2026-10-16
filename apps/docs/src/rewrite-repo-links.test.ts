@@ -22,7 +22,7 @@ describe("rewriteRepoSourceHref", () => {
     ).toBe(`${GITHUB_BLOB_BASE}packages/ui/src/styles/globals.css`);
   });
 
-  it("maps apps/ and .cursor/ root-style paths to GitHub blob URLs", () => {
+  it("maps apps/ and .agents/ root-style paths to GitHub blob URLs", () => {
     expect(
       rewriteRepoSourceHref(
         "apps/editor/src/shell/dockview-shell.tsx",
@@ -30,8 +30,8 @@ describe("rewriteRepoSourceHref", () => {
       ),
     ).toBe(`${GITHUB_BLOB_BASE}apps/editor/src/shell/dockview-shell.tsx`);
     expect(
-      rewriteRepoSourceHref(".cursor/rules/touch-editor.md", "engineplan.md"),
-    ).toBe(`${GITHUB_BLOB_BASE}.cursor/rules/touch-editor.md`);
+      rewriteRepoSourceHref(".agents/rules/touch-editor.md", "engineplan.md"),
+    ).toBe(`${GITHUB_BLOB_BASE}.agents/rules/touch-editor.md`);
   });
 
   it("rejects a relative link that resolves outside the repository", () => {

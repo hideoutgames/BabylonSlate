@@ -1,24 +1,23 @@
-# Docs site sidebar
+# Docs site
 
-Markdown in `docs/` is the VitePress content root. A new page is not on the site until it is listed in [`apps/docs/src/sidebar.ts`](../../apps/docs/src/sidebar.ts).
+`docs/` is the VitePress content root; the site app lives in `apps/docs/`. URLs mirror folders: `docs/scripting/class/branch.md` → `/scripting/class/branch`.
 
-## When adding a file
+## Structure
 
-In the **same change** as a new `docs/**/*.md` file:
+- `docs/index.md` is the home page. Each category folder has an `index.md` landing page (`/physics/`).
+- Guide categories: `start`, `editor`, `projects`, `scenes`, `scripting`, `graphics`, `physics`, `audio`, `2d`, `ai`, `input`, `debugging`, `publishing`.
+- Reference folders, one page per item: `components/`, `assets/`, `scripting/class/`, `scripting/material/`, `scripting/particle/`, `scripting/animation/`, `scripting/behaviour-tree/`.
 
-1. Add a sidebar item in `apps/docs/src/sidebar.ts` (correct group: Architecture, Design, Contributing, or top-level).
-2. Add a row to the catalog table in [`docs/README.md`](../../docs/README.md) (GitHub index; excluded from the site).
+## Sidebar
 
-Skip the sidebar for `docs/README.md` and `docs/index.md` (home). A section `index.md` (for example `docs/architecture/index.md`) uses the parent group's `link` (`/architecture/`), not a nested item.
+[`apps/docs/src/sidebar.ts`](../../apps/docs/src/sidebar.ts) builds it:
 
-## Link shape
+- **Guide pages** are listed by name in `guideSidebar()`. Adding or removing a guide page means editing that list. Labels come from each page's `#` heading.
+- **Reference folders** build their sidebar from the folder's `index.md`: each `## Group` heading becomes a group holding the folder pages linked under it. Adding a reference page means adding its link to the right group in that `index.md`.
 
-| File | Sidebar `link` |
-| --- | --- |
-| `docs/engineplan.md` | `/engineplan` |
-| `docs/architecture/vfs.md` | `/architecture/vfs` |
-| `docs/architecture/index.md` | `/architecture/` on the Architecture group |
+`apps/docs/src/sidebar.test.ts` fails when a page is unreachable from the sidebar or a sidebar link has no page. The build fails on dead links.
 
-Prefer updating an existing doc over adding a file. Do not copy markdown into `apps/docs/`.
+## Checks
 
-`apps/docs/src/sidebar.test.ts` fails `pnpm verify` if a required page is missing from the sidebar.
+- Prose-only edits: review the diff and links.
+- New, moved or deleted pages, or `apps/docs/` changes: run `apps/docs/src/sidebar.test.ts` and `apps/docs/src/heading-fragments.test.ts`, then `pnpm --filter docs-site build`.

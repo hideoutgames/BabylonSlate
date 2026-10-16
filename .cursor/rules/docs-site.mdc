@@ -1,9 +1,0 @@
----
-description: Add a VitePress sidebar entry when creating a new docs/ markdown file
-globs: docs/**/*.md,apps/docs/src/sidebar.ts
-alwaysApply: false
----
-
-# Cursor compatibility
-
-Read and follow [the canonical rule](../../.agents/rules/docs-site.md) in full. Start with [AGENTS.md](../../AGENTS.md) for shared policies and skill routing. Edit the canonical file when changing policy.

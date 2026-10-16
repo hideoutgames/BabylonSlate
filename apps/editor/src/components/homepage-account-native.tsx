@@ -178,7 +178,7 @@ export default function HomepageNativeAccount({
           : mode === "sign-up"
             ? "Make Yourself at Home"
             : optional
-              ? "Your Slate Account"
+              ? "Your Haptic Account"
               : "Your Studio. Everywhere."}
       </h1>
       <p>
@@ -186,7 +186,7 @@ export default function HomepageNativeAccount({
           ? `Enter the code sent to ${challenge.email}.`
           : optional
             ? "Sign in with an email code, or keep creating as a guest."
-            : "Sign in to use Slate on this device. Every editor feature is included."}
+            : "Sign in to use Haptic on this device. Every editor feature is included."}
       </p>
       <form
         className="homepage-native-auth-form"

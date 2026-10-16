@@ -1,6 +1,6 @@
 # Editor UI component catalog
 
-Any change that **adds, removes, or changes the purpose or typical use** of a reusable Editor UI component **must** update [`docs/architecture/components.md`](../../docs/architecture/components.md) in the **same branch/PR**. Do not defer the catalog to a follow-up.
+Any change that **adds, removes, or changes the purpose or typical use** of a reusable Editor UI component **must** update [`.agents/reference/components.md`](../reference/components.md) in the **same branch/PR**. Do not defer the catalog to a follow-up.
 
 ## What counts as reusable
 
@@ -21,4 +21,4 @@ Do **not** catalog one-off screens (Homepage, Play overlay, Settings modals, doc
 - **New primitive or editor-kit composite** → also add it to the Component Gallery (`/?test=1&gallery=1`) when it is kit-level.
 - Hooks and helpers (`useContextMenu`, `humanizePropertyLabel`) stay in the short “Related hooks” line, not the component table.
 
-Keep rows short. Style: [docs.md](docs.md).
+Keep rows short. Style: [docs.md](docs.md#writing-agent-reference).

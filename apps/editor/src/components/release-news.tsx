@@ -48,7 +48,7 @@ export function ReleaseNews({
         <DialogHeader>
           <DialogTitle>{news ? "What's New" : "Changelog"}</DialogTitle>
           <DialogDescription>
-            {news ? `Welcome To BabylonSlate ${version}` : "BabylonSlate Release History"}
+            {news ? `Welcome To Haptic ${version}` : "Haptic Release History"}
           </DialogDescription>
         </DialogHeader>
         <div className="flex max-h-[60dvh] min-h-0 flex-col gap-5 overflow-y-auto overscroll-contain">

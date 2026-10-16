@@ -1,15 +1,7 @@
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { collectSidebarLinks, docsSidebar } from "./sidebar";
-
-const docsRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../../docs",
-);
-
-const EXCLUDED = new Set(["README.md", "index.md"]);
+import { collectSidebarLinks, docsRoot, docsSidebar, indexGroups, NODE_GRAPHS } from "./sidebar";
 
 function listMarkdownFiles(dir: string, rel = ""): string[] {
   const entries = readdirSync(dir, { withFileTypes: true });
@@ -35,18 +27,32 @@ function docFileToLink(relPosix: string): string {
 }
 
 function normalizeLink(link: string): string {
-  return `/${link.replace(/^\//, "").replace(/\/index$/, "").replace(/\/$/, "")}`;
+  const page = link.replace(/#.*$/, "");
+  return `/${page.replace(/^\//, "").replace(/\/index$/, "").replace(/\/$/, "")}`;
+}
+
+function linkToFile(link: string): string {
+  const rel = link.replace(/#.*$/, "").replace(/^\//, "");
+  return path.join(docsRoot, rel.endsWith("/") ? `${rel}index.md` : `${rel}.md`);
 }
 
 describe("docsSidebar", () => {
-  it("includes every docs markdown file except README.md and the home index", () => {
+  const sidebar = docsSidebar();
+  const listed = Object.values(sidebar).flatMap((items) => collectSidebarLinks(items));
+  // Node pages are reached through their graph's index, which the sidebar links.
+  const nodePages = NODE_GRAPHS.flatMap(({ dir }) => indexGroups(dir).flatMap((group) => collectSidebarLinks(group.pages)));
+
+  it("reaches every docs page except the home page", () => {
     const required = listMarkdownFiles(docsRoot)
-      .filter((rel) => !EXCLUDED.has(rel))
+      .filter((rel) => rel !== "index.md")
       .map(docFileToLink)
       .map(normalizeLink)
       .sort();
-    const listed = collectSidebarLinks(docsSidebar).map(normalizeLink).sort();
-    expect(listed).toEqual(expect.arrayContaining(required));
+    expect([...listed, ...nodePages].map(normalizeLink)).toEqual(expect.arrayContaining(required));
     expect(required.length).toBeGreaterThan(0);
+  });
+
+  it("links only to pages that exist", () => {
+    expect([...listed, ...nodePages].filter((link) => !existsSync(linkToFile(link)))).toEqual([]);
   });
 });

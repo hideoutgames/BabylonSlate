@@ -107,7 +107,7 @@ export const contentRules = [
   {
     id: "apple-signing-identity",
     // A team ID or profile UUID identifies the developer account and is never
-    // needed for a simulator build; see SECURITY.md. A complete quoted Xcode
+    // needed for a simulator build; see .agents/rules/public-repository.md. A complete quoted Xcode
     // variable reference carries no identifier; literal prefixes/suffixes do.
     // Conditional settings such as `"DEVELOPMENT_TEAM[sdk=iphoneos*]" = …` are
     // checked like the plain setting.

@@ -1,3 +1,8 @@
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { githubHeadingSlug } from "./rewrite-repo-links";
+
 export type SidebarItem = {
   text: string;
   link?: string;
@@ -5,77 +10,165 @@ export type SidebarItem = {
   items?: SidebarItem[];
 };
 
-export const docsSidebar: SidebarItem[] = [
-  { text: "Engine plan", link: "/engineplan" },
-  { text: "Coding standards", link: "/CODING_STANDARDS" },
-  {
-    text: "Architecture",
-    link: "/architecture/",
-    collapsed: false,
-    items: [
-      { text: "Overview", link: "/architecture/overview" },
-      { text: "Containers", link: "/architecture/containers" },
-      { text: "VFS", link: "/architecture/vfs" },
-      { text: "Command layer", link: "/architecture/command-layer" },
-      { text: "Asset registry", link: "/architecture/asset-registry" },
-      { text: "Plugins", link: "/architecture/plugins" },
-      { text: "Global search", link: "/architecture/global-search" },
-      { text: "Keybinds", link: "/architecture/keybinds" },
-      { text: "Object model", link: "/architecture/object-model" },
-      { text: "Bridge", link: "/architecture/bridge" },
-      { text: "Render", link: "/architecture/render" },
-      { text: "Scripting", link: "/architecture/scripting" },
-      { text: "Save Games", link: "/save-games" },
-      { text: "Scene editing", link: "/architecture/scene-editing" },
-      { text: "Scene layers", link: "/architecture/scene-layers" },
-      { text: "Input", link: "/architecture/input" },
-      { text: "Physics", link: "/architecture/physics" },
-      { text: "Debugger", link: "/architecture/debugger" },
-      { text: "Console commands", link: "/architecture/console-commands" },
-      { text: "Fonts", link: "/architecture/fonts" },
-      { text: "Sprites", link: "/architecture/sprites" },
-      { text: "Tilemaps", link: "/architecture/tilemaps" },
-      { text: "Animation graph", link: "/architecture/anim-graph" },
-      { text: "Behaviour tree", link: "/architecture/behaviour-tree" },
-      { text: "Navigation", link: "/architecture/navigation" },
-      { text: "Audio", link: "/architecture/audio" },
-      { text: "Particles", link: "/architecture/particles" },
-      { text: "Materials", link: "/architecture/shader-graph" },
-      { text: "Theming", link: "/architecture/theming" },
-      { text: "Components", link: "/architecture/components" },
-      { text: "Editor extensions", link: "/architecture/editor-extensions" },
-      { text: "Exporter", link: "/architecture/exporter" },
-      { text: "Source control", link: "/architecture/source-control" },
-      { text: "Testing", link: "/architecture/testing" },
-      { text: "CI performance", link: "/ci-performance" },
-    ],
-  },
-  {
-    text: "Design",
-    collapsed: false,
-    items: [
-      { text: "Performance budget", link: "/design/perf-budget" },
-      {
-        text: "Renderer qualification",
-        link: "/design/renderer-qualification",
-      },
-      { text: "Gestures", link: "/design/gestures" },
-      { text: "Particle emitters", link: "/design/particle-emitters" },
-    ],
-  },
-  {
-    text: "Contributing",
-    collapsed: false,
-    items: [
-      { text: "Issue tracker", link: "/agents/issue-tracker" },
-      { text: "Agent instructions", link: "/agents/instructions" },
-      { text: "Distribution", link: "/development/distribution" },
-      { text: "Feature Test project", link: "/development/feature-test" },
-      { text: "September QA register", link: "/agents/qa-2026-09-register" },
-      { text: "October QA retest", link: "/agents/qa-2026-10-retest" },
-    ],
-  },
-];
+export type Sidebar = Record<string, SidebarItem[]>;
+
+export const docsRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../docs",
+);
+
+/** Markdown file behind a site link (`/start/` → `start/index.md`). */
+function fileForLink(link: string): string {
+  const rel = link.replace(/^\//, "");
+  return path.join(docsRoot, rel === "" || rel.endsWith("/") ? `${rel}index.md` : `${rel}.md`);
+}
+
+/** The page's `# Heading`, so sidebar labels follow the page. */
+export function pageTitle(link: string): string {
+  const file = fileForLink(link);
+  if (!existsSync(file)) {
+    throw new Error(`Sidebar link ${link} has no page at ${path.relative(docsRoot, file)}.`);
+  }
+  const heading = readFileSync(file, "utf8").match(/^# (.+)$/m);
+  return heading ? heading[1].trim() : link;
+}
+
+function page(link: string, text?: string): SidebarItem {
+  return { text: text ?? pageTitle(link), link };
+}
+
+function section(text: string, dir: string, pages: string[]): SidebarItem {
+  return {
+    text,
+    collapsed: true,
+    items: [page(`/${dir}/`, "Overview"), ...pages.map((name) => page(`/${dir}/${name}`))],
+  };
+}
+
+export type IndexGroup = { title: string; pages: SidebarItem[] };
+
+/** The `## Group` headings of a reference folder's `index.md` and the folder pages linked under each. */
+export function indexGroups(dir: string): IndexGroup[] {
+  const source = readFileSync(path.join(docsRoot, dir, "index.md"), "utf8");
+  const groups: IndexGroup[] = [];
+  for (const line of source.split("\n")) {
+    const heading = line.match(/^## (.+)$/);
+    if (heading) {
+      groups.push({ title: heading[1].trim(), pages: [] });
+      continue;
+    }
+    for (const match of line.matchAll(/\[([^\]]+)\]\((?:\.\/)?([a-z0-9-]+)\.md\)/g)) {
+      groups.at(-1)?.pages.push({ text: match[1].replace(/\*\*/g, ""), link: `/${dir}/${match[2]}` });
+    }
+  }
+  return groups.filter((group) => group.pages.length);
+}
+
+/**
+ * Sidebar for a reference folder, built from its `index.md`: every `## Group`
+ * heading becomes a collapsed group holding the folder pages linked under it.
+ */
+export function referenceSidebar(dir: string, title: string): SidebarItem[] {
+  return [
+    { text: title, link: `/${dir}/` },
+    ...indexGroups(dir).map(({ title: text, pages }) => ({ text, collapsed: true, items: pages })),
+  ];
+}
+
+/**
+ * Sidebar for a node reference: one link per node family into the graph's
+ * index. Listing every node would repeat hundreds of links in every page.
+ */
+export function nodeGraphSidebar(dir: string, title: string): SidebarItem[] {
+  return [
+    { text: "Scripting", link: "/scripting/" },
+    {
+      text: title,
+      link: `/${dir}/`,
+      items: indexGroups(dir).map(({ title: text }) => ({ text, link: `/${dir}/#${githubHeadingSlug(text)}` })),
+    },
+  ];
+}
+
+export const NODE_GRAPHS = [
+  { dir: "scripting/class", title: "Class Nodes" },
+  { dir: "scripting/material", title: "Material Nodes" },
+  { dir: "scripting/particle", title: "Particle Graph Nodes" },
+  { dir: "scripting/animation", title: "Animation Graph Nodes" },
+  { dir: "scripting/behaviour-tree", title: "Behaviour Tree Nodes" },
+] as const;
+
+export function guideSidebar(): SidebarItem[] {
+  return [
+    {
+      text: "Get Started",
+      items: [
+        page("/start/", "Overview"),
+        ...["install", "first-project", "editor-tour", "gestures", "shortcuts"].map((name) =>
+          page(`/start/${name}`),
+        ),
+      ],
+    },
+    section("Editor", "editor", ["content-browser", "importing", "search", "undo-and-saving", "settings"]),
+    section("Projects", "projects", ["storage", "plugins", "extensions", "source-control"]),
+    section("Scenes", "scenes", ["actors", "prefabs", "streaming", "scene-layers", "landscape"]),
+    section("Scripting", "scripting", [
+      "classes",
+      "variables",
+      "functions",
+      "events",
+      "pin-types",
+      "interfaces",
+      "structures-and-enums",
+      "tags",
+      "data",
+      "save-games",
+      "game-instance",
+      "editor-scripting",
+      ...(existsSync(path.join(docsRoot, "scripting/javascript.md")) ? ["javascript"] : []),
+    ]),
+    section("Graphics", "graphics", [
+      "lighting",
+      "shadows",
+      "cameras",
+      "sky-and-fog",
+      "post-processing",
+      "materials",
+      "water",
+      "particles",
+      "render-targets",
+      "models",
+      "geometry",
+    ]),
+    section("Physics", "physics", ["collision", "movement", "constraints"]),
+    section("Audio", "audio", ["mixing", "spatial-audio"]),
+    section("2D", "2d", ["sprites", "tilemaps"]),
+    section("AI", "ai", ["behaviour-trees", "navigation"]),
+    section("Input", "input", ["rebinding"]),
+    section("Debugging", "debugging", ["console", "profiler"]),
+    section("Publishing", "publishing", ["preview-build"]),
+    {
+      text: "Reference",
+      items: [
+        { text: "Components", link: "/components/" },
+        { text: "Assets", link: "/assets/" },
+        ...NODE_GRAPHS.map(({ dir, title }) => ({ text: title, link: `/${dir}/` })),
+      ],
+    },
+  ];
+}
+
+export function docsSidebar(): Sidebar {
+  const sidebar: Sidebar = {
+    "/components/": referenceSidebar("components", "Components"),
+    "/assets/": referenceSidebar("assets", "Assets"),
+  };
+  for (const { dir, title } of NODE_GRAPHS) {
+    sidebar[`/${dir}/`] = nodeGraphSidebar(dir, title);
+  }
+  sidebar["/"] = guideSidebar();
+  return sidebar;
+}
 
 export function collectSidebarLinks(items: SidebarItem[]): string[] {
   const links: string[] = [];

@@ -1,9 +1,0 @@
----
-description: Title Case user-facing Event names, Details labels, node titles, and pin labels
-globs: apps/editor/**,packages/editor-kit/**,packages/graph-ui/**,packages/scripting-nodes/**
-alwaysApply: false
----
-
-# Cursor compatibility
-
-Read and follow [the canonical rule](../../.agents/rules/display-names.md) in full. Start with [AGENTS.md](../../AGENTS.md) for shared policies and skill routing. Edit the canonical file when changing policy.
