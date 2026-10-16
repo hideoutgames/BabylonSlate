@@ -70,7 +70,8 @@ function renderNode(id: string, type: string, data: Record<string, unknown>, sel
       </GraphEditorProvider>
     </ReactFlowProvider>,
   );
-  return `<div class="${GRAPH_SCOPE} haptic-node-preview" inert aria-hidden="true">${markup}</div>`;
+  // Graph canvases stay dark in every theme, as GraphEditor's colorMode="dark" does in the editor.
+  return `<div class="dark ${GRAPH_SCOPE} haptic-node-preview" inert aria-hidden="true">${markup}</div>`;
 }
 
 function glyph(type: PinTypeRef): string {

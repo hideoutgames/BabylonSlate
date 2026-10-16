@@ -39,11 +39,13 @@ const candidates = [
   ...new Set(markup.flatMap((html) => [...html.matchAll(/class="([^"]+)"/g)].flatMap((match) => match[1].split(/\s+/)))),
 ];
 
-// The editor's light (:root) and dark (.dark) tokens, re-rooted on the preview.
+// The editor's light (:root) and dark (.dark) tokens, re-rooted on `.haptic-graph`. Node
+// previews carry `.dark` themselves, so they stay dark like the editor's graph canvas; the
+// table glyphs follow the page theme.
 const tokens = readFileSync(path.join(repoRoot, "packages/ui/src/styles/tokens.css"), "utf8")
   .replace(/^:root \{/m, `${SCOPE} {`)
-  .replace(/^\.dark \{/m, `.dark ${SCOPE} {`);
-if (!tokens.includes(`.dark ${SCOPE} {`)) throw new Error("tokens.css no longer has top-level :root and .dark blocks");
+  .replace(/^\.dark \{/m, `.dark ${SCOPE}, ${SCOPE}.dark {`);
+if (!tokens.includes(`${SCOPE}.dark {`)) throw new Error("tokens.css no longer has top-level :root and .dark blocks");
 const graphCss = readFileSync(path.join(repoRoot, "packages/graph-ui/src/graph-editor.css"), "utf8");
 const input = [
   '@import "tailwindcss/theme.css";',

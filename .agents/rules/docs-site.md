@@ -19,7 +19,7 @@
 
 ## Node reference pages
 
-Pages under `scripting/<graph>/` (except `index.md`) start with frontmatter naming their catalog node, such as `node: flow.branch`. The build draws that node with the editor's own graph components under the page summary, and puts the graph's pin glyph before each type in the Inputs and Outputs tables.
+Pages under `scripting/<graph>/` (except `index.md`) start with frontmatter naming their catalog node, such as `node: flow.branch`. The build draws that node with the editor's own graph components under the page summary, always in the dark graph theme like the editor's canvas, and puts the graph's pin glyph before each type in the Inputs and Outputs tables.
 
 - [`apps/docs/scripts/node-previews.mjs`](../../apps/docs/scripts/node-previews.mjs) renders every catalog node ([`src/node-previews/render.tsx`](../../apps/docs/src/node-previews/render.tsx)) and compiles the Tailwind utilities and editor tokens they use, scoped to `.haptic-graph`, into `.vitepress/cache/node-previews/`. The `dev` and `build` scripts run it first.
 - [`src/node-previews/markdown.ts`](../../apps/docs/src/node-previews/markdown.ts) fails the build when a page's `node:` is not in its graph's catalog or a table row is not one of the node's pins. Class and Animation flow pins named `exec` and `then` are listed as **In** and **Out**; other rows use the editor's pin name.
