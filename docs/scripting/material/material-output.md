@@ -19,5 +19,5 @@ Receives the final surface settings of a material, such as colour, roughness and
 ## Notes
 
 - Every Surface and Landscape material needs exactly one.
-- Shading Model, Blend Mode, Two Sided and Alpha Cutoff are set in Details when no node is selected.
+- Shading Model, Blend Mode, Two Sided and Alpha Cutoff are set in the **Inspector** when no node is selected.
 - Displacement from World Position Offset does not enlarge the mesh bounds. Raise Bounds Padding (Local) if the mesh disappears near the screen edge.

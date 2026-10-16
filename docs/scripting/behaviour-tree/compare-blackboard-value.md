@@ -15,4 +15,4 @@ Lets a node run only while a Blackboard key compares true against a value.
 
 - Equal and Not Equal also compare vectors and other structured values field by field, while the other tests compare numbers.
 - If the comparison is false the node fails without running; set **Abort Mode** to also interrupt a running node.
-- Attach it to a node with **Add Decorator** in Details.
+- Attach it to a node with **Add Decorator** in the **Inspector**.

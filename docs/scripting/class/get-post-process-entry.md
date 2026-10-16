@@ -18,5 +18,5 @@ Returns the Material Object of one post-process pass on a Scene or Scene Layer.
 ## Notes
 
 - Returns none when the Entry ID is empty or unknown, or the owner is not ready.
-- Copy the Entry ID from the pass's Entry ID button in the **Post Processing** list of Scene Details.
+- Copy the Entry ID from the pass's Entry ID button in the **Post Processing** list of the scene's **Inspector**.
 - Reordering passes keeps their Entry IDs, while removing or replacing a pass makes its Material Object invalid.

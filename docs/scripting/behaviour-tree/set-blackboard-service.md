@@ -13,5 +13,5 @@ Writes a value to a Blackboard key at regular intervals while its node is active
 
 ## Notes
 
-- Attach it to a node with **Add Service** in Details.
+- Attach it to a node with **Add Service** in the **Inspector**.
 - It runs while that node, or any of its children, is running.

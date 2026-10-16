@@ -20,4 +20,4 @@ Finds a walkable route between two points on the navigation mesh.
 ## Notes
 
 - **Path** lists the corner points from **From** to **To**. It is empty when no route exists, or when a point is more than 4 units from the mesh.
-- Needs a baked navigation mesh in the current scene; use **Bake NavMesh** in the NavMesh actor's **Details**.
+- Needs a baked navigation mesh in the current scene; use **Bake NavMesh** in the NavMesh actor's **Inspector**.

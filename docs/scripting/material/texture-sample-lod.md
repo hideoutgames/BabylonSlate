@@ -6,7 +6,7 @@ Samples a texture at a chosen mip level instead of the level the GPU would pick.
 
 | Pin | Type | Default | Description |
 | --- | --- | --- | --- |
-| Texture | Texture |  | Connect a [**Texture Parameter**](texture-parameter.md) or another node's Texture output. Leave it unconnected to use the texture picked in Details. |
+| Texture | Texture |  | Connect a [**Texture Parameter**](texture-parameter.md) or another node's Texture output. Leave it unconnected to use the texture picked in the **Inspector**. |
 | UV | Vector 2 |  | Where to sample. When unconnected, uses the mesh UV, the particle UV or [**Screen UV**](screen-uv.md), depending on the material's domain. |
 | LOD | Float | 0 | Mip level to sample; 0 is the full-resolution image. |
 

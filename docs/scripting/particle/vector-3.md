@@ -1,6 +1,6 @@
 # Vector 3
 
-Returns a fixed Vector 3 that you set in Details.
+Returns a fixed Vector 3 that you set in the **Inspector**.
 
 ## Outputs
 

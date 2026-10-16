@@ -1,6 +1,6 @@
 # Float
 
-Returns a fixed number that you set in Details.
+Returns a fixed number that you set in the **Inspector**.
 
 ## Outputs
 

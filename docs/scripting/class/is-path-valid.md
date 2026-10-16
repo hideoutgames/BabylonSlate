@@ -20,4 +20,4 @@ Checks whether a walkable route exists between two points.
 ## Notes
 
 - **Valid** is false when no route exists, or when a point is more than 4 units from the mesh.
-- Needs a baked navigation mesh in the current scene; use **Bake NavMesh** in the NavMesh actor's **Details**.
+- Needs a baked navigation mesh in the current scene; use **Bake NavMesh** in the NavMesh actor's **Inspector**.

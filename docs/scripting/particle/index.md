@@ -70,10 +70,10 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 
 | Node | Description |
 | --- | --- |
-| [Color](color.md) | Returns a fixed colour, including alpha, that you set in Details. |
-| [Float](float.md) | Returns a fixed number that you set in Details. |
-| [Vector 2](vector-2.md) | Returns a fixed Vector 2 that you set in Details. |
-| [Vector 3](vector-3.md) | Returns a fixed Vector 3 that you set in Details. |
+| [Color](color.md) | Returns a fixed colour, including alpha, that you set in the **Inspector**. |
+| [Float](float.md) | Returns a fixed number that you set in the **Inspector**. |
+| [Vector 2](vector-2.md) | Returns a fixed Vector 2 that you set in the **Inspector**. |
+| [Vector 3](vector-3.md) | Returns a fixed Vector 3 that you set in the **Inspector**. |
 
 ## Utility
 

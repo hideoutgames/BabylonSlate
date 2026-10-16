@@ -24,4 +24,4 @@ Ends the Particle chain and sets how many particles the emitter spawns each seco
 ## Notes
 
 - Every Particle Graph has exactly one Emitter Output, and you cannot delete it.
-- Select it, or select nothing, to edit the emitter settings in Details.
+- Select it, or select nothing, to edit the emitter settings in the **Inspector**.

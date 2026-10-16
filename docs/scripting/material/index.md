@@ -40,11 +40,11 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 
 | Node | Description |
 | --- | --- |
-| [Color](color.md) | Returns a fixed colour, including alpha, that you set in Details. |
-| [Float](float.md) | Returns a fixed number that you set in Details. |
-| [Vector 2](vector-2.md) | Returns a fixed Vector 2 that you set in Details. |
-| [Vector 3](vector-3.md) | Returns a fixed Vector 3 that you set in Details. |
-| [Vector 4](vector-4.md) | Outputs a fixed Vector 4 value set in Details. |
+| [Color](color.md) | Returns a fixed colour, including alpha, that you set in the **Inspector**. |
+| [Float](float.md) | Returns a fixed number that you set in the **Inspector**. |
+| [Vector 2](vector-2.md) | Returns a fixed Vector 2 that you set in the **Inspector**. |
+| [Vector 3](vector-3.md) | Returns a fixed Vector 3 that you set in the **Inspector**. |
+| [Vector 4](vector-4.md) | Outputs a fixed Vector 4 value set in the **Inspector**. |
 
 ## Parameters
 
@@ -157,7 +157,7 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | Node | Description |
 | --- | --- |
 | [Desaturate](desaturate.md) | Blends a colour toward grey by the amount set in Level. |
-| [Gradient](gradient.md) | Maps a Value from 0 to 1 onto a colour gradient that you edit in Details. |
+| [Gradient](gradient.md) | Maps a Value from 0 to 1 onto a colour gradient that you edit in the **Inspector**. |
 
 ## Landscape
 
@@ -181,4 +181,4 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 
 | Node | Description |
 | --- | --- |
-| [Custom GLSL](custom-glsl.md) | Runs your own GLSL function body, with the inputs and outputs you define in Details. |
+| [Custom GLSL](custom-glsl.md) | Runs your own GLSL function body, with the inputs and outputs you define in the **Inspector**. |

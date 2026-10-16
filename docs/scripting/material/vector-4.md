@@ -1,6 +1,6 @@
 # Vector 4
 
-Outputs a fixed Vector 4 value set in Details.
+Outputs a fixed Vector 4 value set in the **Inspector**.
 
 ## Outputs
 

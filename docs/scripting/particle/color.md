@@ -1,6 +1,6 @@
 # Color
 
-Returns a fixed colour, including alpha, that you set in Details.
+Returns a fixed colour, including alpha, that you set in the **Inspector**.
 
 ## Outputs
 
