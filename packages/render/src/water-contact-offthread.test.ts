@@ -92,7 +92,7 @@ describe("Water contact field off the main thread", () => {
     vi.unstubAllGlobals(); vi.restoreAllMocks();
   });
 
-  it("fills the same distances as the main thread, in full and for a moved object", () => {
+  it("fills the same distances as the main thread, in full, for a moved object and for one that leaves", () => {
     setup();
     // A frame's rebuilds share a time budget: a still clock keeps both surfaces' rebuilds inside it.
     vi.spyOn(performance, "now").mockReturnValue(0);
@@ -130,6 +130,11 @@ describe("Water contact field off the main thread", () => {
     runWorkers();
     expect(there.update(216)).toBe(true);
     expect(differing(view(there).data, before)).toBeGreaterThan(0);
+    expect(differing(view(there).data, view(here).data)).toBe(0);
+    // A raft lifted out of the water leaves the worker's pieces too: no waterline stays behind.
+    raft.position.y = 20; frame();
+    here.update(400); there.update(400); runWorkers(); there.update(416);
+    expect(contactAt(there, 1.32, 0, 0)).toBeGreaterThan(1.9);
     expect(differing(view(there).data, view(here).data)).toBe(0);
   });
 

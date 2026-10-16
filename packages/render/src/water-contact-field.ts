@@ -56,8 +56,8 @@ const MOVE_WAIT_MS = 100;
 const rebuildBudgets = new WeakMap<Scene, { frame: number; spent: number; moving: number; oldest: number; priority: number }>();
 /**
  * Milliseconds an off-thread rebuild may take before its worker counts as hung: every field then rebuilds on the main
- * thread. Far above any real job (a full 1024² rebuild takes well under a second), and measured with the frame clock,
- * so a paused render loop does not count.
+ * thread. Far above any real job, queued behind other surfaces' (a full 1024² rebuild takes a fraction of a second on
+ * desktop), and measured with the frame clock: a reply that arrived while the render loop was paused lands first.
  */
 export const WATER_CONTACT_WORKER_TIMEOUT_MS = 10_000;
 /** Most rest-height samples per side over an object on a sloped body (rivers, tilted volumes), bilinearly interpolated. */
