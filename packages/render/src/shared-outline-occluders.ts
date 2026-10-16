@@ -28,12 +28,30 @@ function measure(mesh: AbstractMesh, viewProjection: ArrayLike<number>, view: Ar
 const bounds: ScreenBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0, near: 0, far: 0, front: 0, behind: 0 };
 
 /**
+ * Babylon observes the object renderer's list and, on the first push into an empty list, marks every Scene mesh's
+ * lights dirty. Leave `out` alone when the occluders are unchanged so that happens only when they change.
+ */
+function commit(fresh: readonly AbstractMesh[], out: AbstractMesh[]): AbstractMesh[] {
+  let same = fresh.length === out.length;
+  for (let index = 0; same && index < fresh.length; index++) same = fresh[index] === out[index];
+  if (same) return out;
+  out.length = 0;
+  for (const mesh of fresh) out.push(mesh);
+  return out;
+}
+
+/**
  * Strict-group occluders worth drawing this frame. The strict mask only needs
  * depth where a member or its stroke can appear: every member is kept, and any
  * other mesh whose screen bounds overlap the members' bounds (padded by the
  * widest stroke) and that starts nearer than the members' farthest point. A
  * mesh beside the members on screen or entirely behind them hides neither a
  * member pixel nor a stroke pixel. Bounds crossing the camera plane are kept.
+ *
+ * `out` is the array Babylon observes and is written only when the result
+ * differs from what it holds. `scratch` is the working list, reused so a frame
+ * allocates nothing; it is not `out`, and it keeps the last cull's meshes alive,
+ * so its owner clears it together with `out`.
  */
 export function cullStrictOccluders(
   candidates: readonly AbstractMesh[],
@@ -43,8 +61,10 @@ export function cullStrictOccluders(
   heightPx: number,
   paddingPx: number,
   out: AbstractMesh[] = [],
+  scratch: AbstractMesh[] = [],
 ): AbstractMesh[] {
-  out.length = 0;
+  const fresh = scratch;
+  fresh.length = 0;
   // getTransformationMatrix only multiplies the cached view and projection.
   const view = camera.getViewMatrix().m;
   camera.getProjectionMatrix();
@@ -53,7 +73,7 @@ export function cullStrictOccluders(
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, far = -Infinity;
   for (const mesh of candidates) {
     if (!isMember(mesh) || !mesh.isEnabled() || !mesh.isVisible) continue;
-    out.push(mesh);
+    fresh.push(mesh);
     measure(mesh, viewProjection, view, handedness, bounds);
     if (!bounds.front) continue;
     far = Math.max(far, bounds.far);
@@ -61,17 +81,17 @@ export function cullStrictOccluders(
     minX = Math.min(minX, bounds.minX); maxX = Math.max(maxX, bounds.maxX);
     minY = Math.min(minY, bounds.minY); maxY = Math.max(maxY, bounds.maxY);
   }
-  if (far === -Infinity) return out;
+  if (far === -Infinity) return commit(fresh, out);
   const padX = (2 * paddingPx) / Math.max(1, widthPx), padY = (2 * paddingPx) / Math.max(1, heightPx);
   minX = Math.max(-1, minX - padX); maxX = Math.min(1, maxX + padX);
   minY = Math.max(-1, minY - padY); maxY = Math.min(1, maxY + padY);
-  if (minX > maxX || minY > maxY) return out;
+  if (minX > maxX || minY > maxY) return commit(fresh, out);
   for (const mesh of candidates) {
     if (isMember(mesh) || !mesh.isEnabled() || !mesh.isVisible) continue;
     measure(mesh, viewProjection, view, handedness, bounds);
     if (!bounds.front || bounds.near >= far) continue;
     if (!bounds.behind && (bounds.maxX < minX || bounds.minX > maxX || bounds.maxY < minY || bounds.minY > maxY)) continue;
-    out.push(mesh);
+    fresh.push(mesh);
   }
-  return out;
+  return commit(fresh, out);
 }
