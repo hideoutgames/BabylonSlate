@@ -38,7 +38,6 @@ function isRepositoryMetadata(file) {
   return (
     file.endsWith(".md") ||
     file.endsWith(".mdc") ||
-    file === "skills-lock.json" ||
     file === ".editorconfig" ||
     file === ".gitattributes" ||
     file === ".gitignore" ||

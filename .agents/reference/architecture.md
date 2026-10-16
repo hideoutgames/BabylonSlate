@@ -2,7 +2,7 @@
 
 One-page map of Haptic for contributors: where code lives, how data flows, and the coding, performance and gesture rules every change must keep.
 
-Product decisions and their reasons: [engine-plan.md](engine-plan.md). Per-subsystem notes: [architecture/](architecture/). Import boundaries (enforced by `eslint.config.js`): the table in [agent-workflow.md](../rules/agent-workflow.md#architecture); do not restate it elsewhere. Code identifiers keep the `@babylonslate/*` scope.
+Product decisions and their reasons: [engine-plan.md](engine-plan.md). Per-subsystem notes: [architecture/](architecture/). Package import boundaries are enforced by `no-restricted-imports` in `eslint.config.js`; read them there. Code identifiers keep the `@babylonslate/*` scope.
 
 ## Package map
 
@@ -102,7 +102,7 @@ Tests and delivery
 - Behaviour changes need meaningful tests in the owning package; goldens for byte-exact surfaces (containers, compiler output); TDD for new pure logic.
 - Never lower a coverage threshold to go green; split out the untestable part instead.
 - jsdom lacks `PointerEvent` and `ResizeObserver`: make DOM and gesture tests assert something real.
-- Before opening or updating a PR, run **targeted** local checks only: explicit test files for the changed behaviour and directly affected consumers, plus scoped lint/typecheck. Do not run `pnpm verify:local`, full suites, coverage or workspace typechecks unless the user asks; CI owns exhaustive checks ([agent-workflow.md](../rules/agent-workflow.md#verification)).
+- Local checks are targeted only; CI owns exhaustive checks ([agent-workflow.md](../rules/agent-workflow.md#verification)).
 - One roadmap slice per PR. Behavioural, API and format changes update documentation in the same change ([docs.md](../rules/docs.md)); engine feature changes also update the Feature Test starter ([feature-test.md](../rules/feature-test.md)).
 
 ## Performance rules
@@ -126,6 +126,8 @@ Budgets and defaults live in [engine-plan.md](engine-plan.md#baseline-device-and
 ## Gesture rules
 
 Touch is primary; never assume hover or right-click. Hooks live in [editor-kit](../../packages/editor-kit/src/).
+
+- Coarse pointers get 44pt hit areas or a touch-specific layout, never larger desktop controls. Expanded hit areas must not overlap neighbouring controls; switch to a touch layout when dense controls leave no room.
 
 - Long-press (500 ms, cancelled by 8px movement or scroll, matching Dockview) opens context menus; `contextmenu` is the mouse path. The native menu is suppressed app-wide (`useSuppressNativeContextMenu`); inputs, `contenteditable` and `SelectableText` keep the platform menu.
 - iOS three-finger undo/redo is suppressed outside text editing (`useSuppressIosEditingGestures`); editor canvases `preventDefault` touch with non-passive listeners and use `touch-none`.

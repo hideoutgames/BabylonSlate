@@ -1,33 +1,28 @@
 # Documentation
 
-Two audiences, two places:
-
 | Place | Audience | Holds |
 | --- | --- | --- |
-| `docs/` | People making games with Haptic | How to use the editor and engine: guides, component, asset and node reference. Published as the docs site. |
-| `.agents/reference/` | Agents and engine contributors | Architecture, invariants, formats, decisions, catalogs agents maintain. Not published. |
+| `docs/` | People making games with Haptic | How to use the editor and engine: guides and component, asset and node reference. Published as the docs site. |
+| `.agents/reference/` | Agents and engine contributors | Architecture, invariants, formats, decisions and catalogs. Not published. |
 
-## Mandatory updates
+## Update in the same PR
 
-Docs are part of the definition of done. Update them in the same branch/PR; never defer them.
+Docs are part of done; never defer them.
 
-- **User-visible change** (feature, setting, UI name, menu path, default, limit) → update the affected `docs/` pages.
-- **Node added, removed, renamed or changed** → update its page under `docs/scripting/<graph>/` (`class`, `material`, `particle`, `animation`, `behaviour-tree`) and the graph's `index.md`. Each node page names its catalog node in `node:` frontmatter, and its Inputs and Outputs rows must be that node's pins ([docs site](docs-site.md#node-reference-pages)).
-- **Engine component or asset type added or removed** → add or remove its page under `docs/components/` or `docs/assets/` and its row in that folder's `index.md`.
-- **Architecture, data format, invariant or integration change** → update the matching file in `.agents/reference/` (`engine-plan.md`, `architecture.md`, `architecture/<subsystem>.md`).
-- **Reusable Editor UI** change → update `.agents/reference/components.md` ([editor-ui-components.md](editor-ui-components.md)).
-- **Removed feature** → delete its pages and every link to them. No stale docs.
+- **User-visible change** (feature, setting, UI name, menu path, default, limit): update the affected `docs/` pages.
+- **Node added, removed, renamed or changed**: update its page under `docs/scripting/<graph>/` and the graph's `index.md` ([node reference pages](docs-site.md#node-reference-pages)).
+- **Engine component or asset type added or removed**: add or remove its page under `docs/components/` or `docs/assets/` and its row in that folder's `index.md`.
+- **Architecture, data format, invariant or integration change**: update the matching file in `.agents/reference/`.
+- **Reusable Editor UI change**: update [components.md](../reference/components.md#rules).
+- **Removed feature**: delete its pages and every link to them.
 
 ## Writing user docs
 
-- Plain, calm, concise. Second person, present tense, active voice. Short paragraphs, bullets and small tables.
-- One `#` heading per page; `##` sections in sentence case; UI names exactly as the editor shows them, in **bold** on first use.
-- Call every editor's side panel for the selection the **Inspector**.
-- Say "Haptic" or "the editor". Never mention package names, source paths, internal ids, codegen, phase labels, PR numbers or unfinished work.
-- Link relatively between `.md` pages; never link source code. No generated images ([no-ai-artwork.md](no-ai-artwork.md)).
-- Prefer updating an existing page over adding one. New pages follow [docs-site.md](docs-site.md).
+- Plain, calm and concise: second person, present tense, active voice, short paragraphs, bullets and small tables.
+- One `#` heading per page and `##` sections in sentence case. UI names exactly as the editor shows them, in **bold** on first use; the side panel for the selection is always the **Inspector**.
+- Say "Haptic" or "the editor"; never mention package names, source paths, internal ids, phase labels, PR numbers or unfinished work. Link relatively between pages, never to source code.
+- Prefer updating an existing page to adding one; new pages follow [docs-site.md](docs-site.md).
 
 ## Writing agent reference
 
-- Terse: invariants, ownership, data flow, formats, decisions with one-line reasons, pointers to source.
-- No history, dates, status logs or measurement records; git history keeps those.
+Terse: invariants, ownership, data flow, formats and decisions with one-line reasons, plus pointers to source. No history, dates, status logs or measurements; git keeps those.

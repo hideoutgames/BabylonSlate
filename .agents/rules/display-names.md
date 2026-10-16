@@ -1,32 +1,7 @@
 # Display names
 
-User-facing names are **Title Case** (each word capitalized, spaces kept). That is the Unreal-style “Pascal Case” for labels — not `EventBeginPlay` and not sentence case.
+Every user-facing name is **Title Case**: each word capitalized, spaces kept, acronyms preserved (`2D Camera Width`, `Mesh Kind`, `3D (Havok)`, `Reload Scene`). Never sentence case, `2 d camera width` or a raw camelCase key. Identifiers stay as they are: catalog ids are dotted camelCase (`flow.event.beginPlay`), pin ids and codegen names camelCase (`deltaSeconds`, `onBeginPlay`).
 
-## Events
-
-- Node titles: `Event Begin Play`, `Event Tick`, `Event On Actor Destroyed`, `Event On Hit`.
-- Class member names store the body only: `Begin Play`, `On Hit`.
-- Format typed or generated names with `formatEventMemberName` / `formatEventTitle` from `@babylonslate/editor-kit`.
-- Catalog ids stay dotted camelCase (`flow.event.beginPlay`); codegen names stay camelCase (`onBeginPlay`).
-
-## Inspector and options
-
-- Property grid labels and enum option labels: `2D Camera Width`, `Mesh Kind`, `Tile Size`, `3D (Havok)`.
-- Never `2 d camera width`, `2D camera width`, or a raw camelCase key as a visible label.
-- Run keys and free-typed labels through `humanizePropertyLabel` so `2D`, `3D`, `UI`, and `ID` stay acronyms.
-- Hardcoded `label:` strings in the Inspector should already be Title Case.
-
-## Nodes and pins
-
-- Scripting node `title` values: `Get Actor Location`, `Get Axis 2D`, `Execute JavaScript`.
-- Pin **display** is Title Case (`Delta Seconds`); pin `id` and codegen names stay camelCase (`deltaSeconds`).
-
-## Other chrome
-
-Buttons, menus, and catalog titles follow the same Title Case (`Reload Scene`, `Frame Selection`, `Prefab Root`).
-
-| Do | Don't |
-| --- | --- |
-| Event Begin Play | Event begin play, eventBeginPlay |
-| 2D Camera Width | 2D camera width, 2 d camera width |
-| Mesh Kind | Mesh kind, meshKind |
+- Event node titles read `Event Begin Play`, `Event On Hit`; class member names store only the body (`Begin Play`). Format typed or generated names with `formatEventMemberName` / `formatEventTitle` from `@babylonslate/editor-kit`.
+- Run property keys and free-typed labels through `humanizePropertyLabel` so `2D`, `3D`, `UI` and `ID` stay acronyms. Hardcoded Inspector `label:` strings are written in Title Case.
+- Scripting node `title` values (`Get Actor Location`, `Execute JavaScript`), pin display names (`Delta Seconds`), buttons, menus and catalog titles follow the same rule.

@@ -137,7 +137,6 @@ describe("public repository hygiene", () => {
     const config = readFileSync(join(repoRoot, ".gitleaks.toml"), "utf8");
     expect(config).not.toContain("pnpm-lock.yaml");
     expect(config).not.toContain("Podfile.lock");
-    expect(config).not.toContain("skills-lock.json");
     expect(config).not.toMatch(/glb\|gltf|gltf\|/);
   });
 

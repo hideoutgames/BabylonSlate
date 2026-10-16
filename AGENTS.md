@@ -1,33 +1,24 @@
 # Agent instructions
 
-This is the entry point for every agent working in this repository. The engine is **Haptic** (formerly BabylonSlate); the repository, package scope `@babylonslate/*`, file extensions and other code identifiers keep the old name until a dedicated rename. Paths below are relative to the repository root. `.agents/rules/` is a repository convention: read the files explicitly; do not assume your host loads them. Repository policies take precedence over imported skill examples, subject to higher-priority host and user instructions.
+This is the entry point for every agent working in this repository. The engine is **Haptic** (formerly BabylonSlate); the repository, package scope `@babylonslate/*`, file extensions and other code identifiers keep the old name until a dedicated rename. Paths are relative to the repository root. `.agents/rules/` is a repository convention: read the files explicitly; do not assume your host loads them.
 
 ## Working agreements
 
-- If the user's instructions are ambiguous, ask them to clarify before proceeding.
-- Treat requests for explanations, investigations, reviews, and plans as read-only unless the user explicitly requests changes. Planning may produce an implementation plan without authorizing implementation.
-- Reuse existing components and conventions, and preserve the project's established design.
-- Tautological tests considered harmful.  
-- Change-detector tests considered harmful.  
-- Do not create regression tests for bug fixes without a genuine gap in behavior testing.
-- Never report repository changes as finished or complete until the PR is confirmed merged into `main`. If ending work or a session with unmerged changes, prominently warn that unmerged work remains, identify the branch and PR (or state that no PR exists), and explain what remains before merge. See the workflow's completion reporting rules below.
+- If the user's instructions are ambiguous, ask before proceeding.
+- Explanations, investigations, reviews and plans are read-only unless the user explicitly asks for changes. Confirm behaviour in the code, not only in docs.
+- Tautological tests and change-detector tests are harmful. Do not add a regression test for a bug fix unless existing tests leave a genuine behaviour gap.
+- Keep the editor's compact desktop density (small controls, including Primary buttons, and tight margins); never enlarge it to follow imported design guidance. Touch gets hit areas or a touch layout instead ([gesture rules](.agents/reference/architecture.md#gesture-rules)).
+- Use standard GitHub-hosted runners only, never larger ones; `scripts/workflow-runner-policy.test.mjs` enforces it. Shrink or split a slow job instead.
+- Never report repository changes as complete until the PR is merged into `main`; warn prominently about unmerged work ([completion reporting](.agents/rules/agent-workflow.md#completion-reporting)).
+- Do not re-add the removed game HUD / UserInterface system.
 
 ## Required reading
 
 Read these rules in full at the start of each task:
 
-- [Workflow, architecture, verification, and git](.agents/rules/agent-workflow.md)
+- [Workflow: verification, testing, git, PRs and merging](.agents/rules/agent-workflow.md)
 - [Public repository hygiene](.agents/rules/public-repository.md)
 - [No AI-generated artwork](.agents/rules/no-ai-artwork.md)
-- [Standard GitHub runners only](.agents/rules/github-actions-standard-runners.md)
-- [PR cadence](.agents/rules/github-actions-pr-cadence.md)
-- [DockView asset editor tabs](.agents/rules/dockview-editor-tabs.md)
-
-Never generate artwork or use larger GitHub runners. Agents run only targeted local tests and relevant scoped static checks before opening or updating a PR. Select explicit test files/cases for changed behavior and directly affected consumers; do not automatically run full suites, coverage, all browser tests, workspace-wide typechecks, or the cumulative `pnpm verify:local` preflight. A broader local run requires an explicit user request, including after public API, lockfile, infrastructure, or CI-repair changes. Instruction/prose-only edits need diff/link checks rather than application tests. See the workflow rule for scope selection and reuse of unaffected results. Required GitHub CI and merge gates remain in place. Mark ready once when fewer than four counted non-draft PRs target `main` (#271 is excluded); otherwise keep the draft and wait. Public PR descriptions contain a short change summary and may include the agent session link, but no attribution footers, secrets, or logs.
-
-Local execution defaults to the per-user low-memory policy: at least 2 GiB host headroom, one active root workload, one test worker, and no lightweight bypass. Keep `BL_TEST_PROFILE=shared`; neither `fast`, `CI=true`, nor a config override may relax the host policy. Use `pnpm test:resources` for a read-only snapshot. Build artifacts retain source, environment, toolchain, and integrity checks. Do not change reservations or lower reserves to escape a queue. See [local execution settings](.agents/reference/testing.md#local-test-execution), including remaining Windows supervision limitations.
-
-The authoritative product and architecture plan is [.agents/reference/engine-plan.md](.agents/reference/engine-plan.md). Do not re-add the removed game HUD / UserInterface system.
 
 ## Agent reference
 
@@ -35,8 +26,8 @@ The authoritative product and architecture plan is [.agents/reference/engine-pla
 
 | File | Contents |
 | --- | --- |
-| [engine-plan.md](.agents/reference/engine-plan.md) | Product decisions, non-goals, architecture, open roadmap |
-| [architecture.md](.agents/reference/architecture.md) | Package map, data flow, coding standards |
+| [engine-plan.md](.agents/reference/engine-plan.md) | Product decisions, non-goals, architecture, open roadmap (authoritative) |
+| [architecture.md](.agents/reference/architecture.md) | Package map, data flow, coding standards, gesture rules |
 | [architecture/](.agents/reference/architecture/) | Per-subsystem invariants and formats |
 | [components.md](.agents/reference/components.md) | Reusable Editor UI component catalog |
 | [testing.md](.agents/reference/testing.md) | Test projects, coverage gates, local execution, CI shape |
@@ -47,45 +38,34 @@ The authoritative product and architecture plan is [.agents/reference/engine-pla
 
 ## Scoped rules
 
-Distribution implementation and explicitly requested packaging/upload/publication must follow [Distribution](.agents/rules/distribution.md). Ordinary delivery never implies permission to distribute.
-
-Before working on matching files or tasks, read the corresponding rule in full. Patterns are relative to the repository root; `**` includes descendants. Apply every matching row, including task triggers when no path matches yet.
+Before working on matching files or tasks, read the matching rule in full. Apply every matching row.
 
 | Paths or task | Required rule |
 | --- | --- |
-| Any behavioral, architectural, public API, data-format, or integration change, even outside `docs/` | [Documentation](.agents/rules/docs.md) |
+| Any behavioural, architectural, public API, data-format or integration change | [Documentation](.agents/rules/docs.md) |
 | `docs/**`, `apps/docs/**`; creating, moving or deleting documentation pages | [Docs site](.agents/rules/docs-site.md) |
 | `apps/editor/**`, `packages/editor-kit/**`, `packages/graph-ui/**`, `packages/scripting-nodes/**` | [Display names](.agents/rules/display-names.md) |
-| `packages/ui/src/components/**`, `packages/editor-kit/src/**`, `packages/graph-ui/src/**`, `apps/editor/src/components/**`, `.agents/reference/components.md`; reusable editor component changes | [Component catalog](.agents/rules/editor-ui-components.md) |
-| `apps/editor/**`, `packages/ui/**` | [Touch editor](.agents/rules/touch-editor.md) |
-| Adding, removing, or changing an engine component, asset type, engine base class, node family, console command, Play feature, or project/scene setting; `apps/editor/src/lib/feature-test/**`, `packages/core/src/engine-components.ts`, `.agents/reference/feature-test.md` | [FeatureTest starter](.agents/rules/feature-test.md) |
+| `packages/ui/src/components/**`, `packages/editor-kit/src/**`, `packages/graph-ui/src/**`, `apps/editor/src/components/**`; reusable editor component changes | [Component catalog rules](.agents/reference/components.md#rules) |
+| New asset editor tabs or document kinds; `apps/editor/src/shell/window-catalog.ts`, `apps/editor/src/components/document-workspace.tsx` | [DockView asset editor tabs](.agents/rules/dockview-editor-tabs.md) |
+| Adding, removing or changing an engine component, asset type, engine base class, node family, console command, Play feature, or project or scene setting; `apps/editor/src/lib/feature-test/**`, `packages/core/src/engine-components.ts` | [FeatureTest starter](.agents/rules/feature-test.md) |
+| Distribution implementation, or an explicit request to package, upload or publish (ordinary delivery never implies it) | [Distribution](.agents/rules/distribution.md) |
 
 ## Skills
 
-Read the matching `SKILL.md` before task work, then load its supporting references as needed. If the host does not discover `.agents/skills/`, use this table directly. Explicit skill requests select the named skill. Planning requests remain read-only and may produce implementation plans; they do not activate the ask skill's prohibition on planning.
-
-At the start of development, check this table against both the requested behavior and the files involved, read every applicable skill, and briefly identify the skills being used. Recheck when scope changes. Discovery alone does not count as reading or applying a skill. Load supporting references only for the current task.
-
-BabylonJS is required for rendering, scene lifecycle, viewport engine integration, meshes, materials, cameras, animation, asset loading, and Babylon physics work, including engine integration inside editor files. Work spanning engine and React UI uses both BabylonJS and the editor UI skills. Apply repository architecture and installed API versions when using imported examples.
-
-Preserve the editor's compact desktop controls, including small Primary buttons, and its tight margins and spacing. Imported design guidance must not enlarge these defaults; follow the input-specific guidance in the touch editor rule.
+At the start of development, read every skill that matches the requested behaviour or the files involved, and say which you are using. Recheck when the scope changes. Load a skill's supporting files only when the task needs them.
 
 | Task | Skill |
 | --- | --- |
-| Short read-only question or explanation | [ask](.agents/skills/ask/SKILL.md) |
-| Deep read-only investigation, tracing, mapping, or audit | [investigate](.agents/skills/investigate/SKILL.md) |
-| Engine or scene work | [babylonjs](.agents/skills/babylonjs/SKILL.md) |
-| React editor chrome, panels, dialogs, forms, trees, or graph UI | [editor-ui-components](.agents/skills/editor-ui-components/SKILL.md) and [shadcn](.agents/skills/shadcn/SKILL.md) |
-| Feature, bugfix, or behavior implementation | [test-driven-development](.agents/skills/test-driven-development/SKILL.md) |
-| Diff review against standards and originating requirements | [code-review](.agents/skills/code-review/SKILL.md) |
-| Unit tests, mocking, coverage, or Vitest configuration | [vitest](.agents/skills/vitest/SKILL.md) |
-| Waiting for local tests/verification, PR Verify CI, or a free CI slot | [wait-efficiently](.agents/skills/wait-efficiently/SKILL.md) |
-| Handing work to another agent or a fresh session (handoff, new chat, context running out) | [handoff](.agents/skills/handoff/SKILL.md) |
+| Engine or scene work: rendering, scene lifecycle, viewport, meshes, materials, cameras, animation, asset loading, Babylon physics, including engine code inside editor files | [babylonjs](.agents/skills/babylonjs/SKILL.md) |
+| React editor chrome, panels, dialogs, forms, trees or graph UI | [editor-ui-components](.agents/skills/editor-ui-components/SKILL.md) and [shadcn](.agents/skills/shadcn/SKILL.md) |
+| Feature, bug fix or behaviour implementation | [test-driven-development](.agents/skills/test-driven-development/SKILL.md) |
+| Waiting for local tests, PR Verify CI or a free CI slot | [wait-efficiently](.agents/skills/wait-efficiently/SKILL.md) |
+| Handing work to another agent or a fresh session | [handoff](.agents/skills/handoff/SKILL.md) |
 
-Delegate only when available and authorized. Use sequential passes when delegation is unavailable.
+Work spanning engine and React UI uses both the BabylonJS and the editor UI skills. Delegate only when delegation is available and authorized.
 
 ## Maintenance
 
-- Edit the canonical rules and skills in `.agents/`. `.claude/skills/babylonjs/SKILL.md` and `.claude/skills/handoff/SKILL.md` are only discovery entry points for Claude Code; keep their names and descriptions in step with the canonical skills.
-- `skills-lock.json` records the upstream sources of the imported code-review, shadcn, test-driven-development and vitest skills. Merge upstream updates by hand in a separate diff and keep local overrides; do not reinstall over local changes.
+- The rules and skills in `.agents/` are canonical and maintained in this repository; none track an upstream copy.
+- `.claude/skills/babylonjs/SKILL.md` and `.claude/skills/handoff/SKILL.md` are discovery entry points for Claude Code; keep their names and descriptions identical to the canonical skills.
 - After changing rules or skills, check that every relative link resolves with exact filename case.
