@@ -86,6 +86,6 @@ Delegate only when available and authorized. Use sequential passes when delegati
 
 ## Maintenance
 
-- Edit the canonical rules and skills in `.agents/`. `.claude/skills/handoff/SKILL.md` is only a discovery entry point for Claude Code; keep its name and description in step with the canonical skill.
+- Edit the canonical rules and skills in `.agents/`. `.claude/skills/babylonjs/SKILL.md` and `.claude/skills/handoff/SKILL.md` are only discovery entry points for Claude Code; keep their names and descriptions in step with the canonical skills.
 - `skills-lock.json` records the upstream sources of the imported code-review, shadcn, test-driven-development and vitest skills. Merge upstream updates by hand in a separate diff and keep local overrides; do not reinstall over local changes.
 - After changing rules or skills, check that every relative link resolves with exact filename case.
