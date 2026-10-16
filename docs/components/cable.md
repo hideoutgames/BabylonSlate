@@ -13,7 +13,7 @@ Select an actor, then choose **Add Component > Physics > Cable**. You can also p
 | Enabled | Simulates and draws the cable. Default on. |
 | Material | The Material for the tube. |
 | Cable Length | Rest length in units. A length longer than the gap between the ends makes the cable sag. Default 4. |
-| Segments | Simulation segments, 1 to 64. More cost more. Default 16. |
+| Segments | Simulation segments, 1 to 64. More segments cost more. Default 16. |
 | Cable Width | Tube diameter. Default 0.05. |
 | Sides | Sides around the tube, 3 to 12. Default 6. |
 | Tile Material | Texture repeats along the cable. Default 1. |
