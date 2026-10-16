@@ -21,7 +21,7 @@ Double-tap a Class to open it.
 - **Compiler Results**: errors and warnings for this class.
 - **Prefab** and **Components**: for classes that descend from Actor. Build the actor's components here.
 
-Classes that do not place components in a scene, such as Function Libraries, open without **Prefab** and **Components**.
+Classes that do not descend from Actor, such as Actor Component and Function Library classes, open without **Prefab** and **Components**.
 
 ## Settings
 

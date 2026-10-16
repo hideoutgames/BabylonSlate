@@ -24,7 +24,7 @@ Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Che
 - Scene Layers only.
 - With focus, <kbd>Space</kbd> or <kbd>Enter</kbd> toggles it.
 - Read and write the state from a graph with the **Checked** variable and **Set Checked**.
-- [Event On Checked Changed](../scripting/class/event-on-checked-changed.md) runs when the state changes, whether the player or a script changed it.
+- [Event On Checked Changed](../scripting/class/event-on-checked-changed.md) runs when the state changes, whether the player or **Set Checked** changed it.
 - To pick one option from several, use a [2D Radio Button](2d-radio-button.md). For a switch, use a [2D Toggle](2d-toggle.md).
 
 ## Related

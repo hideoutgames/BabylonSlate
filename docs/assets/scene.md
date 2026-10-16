@@ -54,5 +54,6 @@ Below the settings are collapsible sections:
 - [Actors](../scenes/actors.md)
 - [Scene Layers](../scenes/scene-layers.md)
 - [Post-Processing](../graphics/post-processing.md)
+- [Lighting](../graphics/lighting.md)
 - [Shadows](../graphics/shadows.md)
 - [Sky and Fog](../graphics/sky-and-fog.md)

@@ -20,8 +20,9 @@ A button draws nothing itself. It uses the actor's visual as its tap area: a [2D
 ## Notes
 
 - Scene Layers only.
-- In a Scene Layer Actor class, the button adds [Event On Click](../scripting/class/event-on-click.md), [Event On Press Start](../scripting/class/event-on-press-start.md), [Event On Press End](../scripting/class/event-on-press-end.md), [Event On Mouse Enter](../scripting/class/event-on-mouse-enter.md) and [Event On Mouse Leave](../scripting/class/event-on-mouse-leave.md). They fire for mouse, touch and pen.
-- A press that ends over the button is a click. Moving away before release cancels it.
+- In a Scene Layer Actor class, the button adds [Event On Click](../scripting/class/event-on-click.md), [Event On Press Start](../scripting/class/event-on-press-start.md), [Event On Press End](../scripting/class/event-on-press-end.md), [Event On Mouse Enter](../scripting/class/event-on-mouse-enter.md) and [Event On Mouse Leave](../scripting/class/event-on-mouse-leave.md). They fire for mouse and touch.
+- Releasing always runs On Press End. On Click runs only when the pointer is still over the button at release.
+- Pressing a button also gives it focus.
 - Focus adds [Event On Focus Enter](../scripting/class/event-on-focus-enter.md), [Event On Focus Leave](../scripting/class/event-on-focus-leave.md) and [Event On Focus Activate](../scripting/class/event-on-focus-activate.md), the read-only **Focused** variable, and the **Set Focus** and **Clear Focus** functions.
 - The Hit Test value is also a variable, so a graph can change it. An actor with several buttons gets one set of events per button.
 - Navigation keys and inputs are set in **Project Settings > Focus Navigation**.

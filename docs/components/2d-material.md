@@ -18,7 +18,6 @@ Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Mat
 - Scene Layers only.
 - There is no size setting. The square is one unit across until you resize it with the box around the actor in the viewport.
 - The Material is drawn unlit, so lights have no effect on it.
-- Change the Material at run time with **Set Material Instance**, or the Material parameter nodes such as **Set Material Float Parameter**.
 - The component has **Opacity** and **Tint** variables for graphs. Animate them with [Tween 2D Opacity](../scripting/class/tween-2d-opacity.md) and [Tween 2D Tint](../scripting/class/tween-2d-tint.md).
 - Add a [2D Button](2d-button.md) to the same actor to make the square clickable.
 
