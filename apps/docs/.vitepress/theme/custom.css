@@ -1,7 +1,8 @@
 /*
- * Haptic docs theme: Apple HIG structure (system type, quiet chrome, clear
- * hierarchy) with Haptic's identity (warm black, orange tint, Block Berthold
- * wordmark with chromatic fringes).
+ * Haptic docs theme: Apple HIG structure (quiet chrome, clear hierarchy) with
+ * Haptic's identity (Onest type, warm black, orange tint, Block Berthold
+ * wordmark with chromatic fringes). Fonts and icons ship with the site so it
+ * looks the same on every platform.
  */
 
 @font-face {
@@ -22,11 +23,10 @@
   --haptic-red: #ff4400;
   --haptic-amber: #ffb300;
   --haptic-display: "Block Berthold", "Arial Black", "Helvetica Neue", sans-serif;
-  --haptic-serif: "Haptic Serif", "New York", "Iowan Old Style", Georgia, serif;
+  --haptic-serif: "Haptic Serif", Georgia, serif;
 
-  --vp-font-family-base: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui,
-    Roboto, "Helvetica Neue", Arial, sans-serif;
-  --vp-font-family-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --vp-font-family-base: "Onest Variable", "Onest", ui-sans-serif, system-ui, sans-serif;
+  --vp-font-family-mono: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
 
   --vp-c-bg: #ffffff;
   --vp-c-bg-alt: #ffffff;
@@ -112,7 +112,7 @@
 }
 
 .VPNavBarTitle .logo {
-  width: 26px;
+  width: auto;
   height: 26px;
 }
 
@@ -131,7 +131,7 @@
   font-weight: 500;
 }
 
-/* Content: SF-like hierarchy. */
+/* Content: large, tight titles; calm body text. */
 
 .vp-doc h1 {
   font-size: 34px;
@@ -243,6 +243,28 @@
   color: var(--vp-c-text-1);
 }
 
+.haptic-home .haptic-wordmark-image {
+  display: none;
+  width: min(100%, 560px);
+  height: auto;
+  margin: 0 auto;
+}
+
+/* Dark mode shows the official wordmark artwork; the live-type wordmark
+   stands in on light backgrounds until light-mode artwork exists. */
+.dark .haptic-home .haptic-wordmark {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.dark .haptic-home .haptic-wordmark-image {
+  display: block;
+}
+
 .haptic-home .haptic-wordmark::before,
 .haptic-home .haptic-wordmark::after {
   content: attr(data-text);
@@ -339,6 +361,12 @@
 
 .haptic-home .haptic-topics a:hover {
   background: var(--vp-c-bg-soft);
+}
+
+.haptic-home .haptic-topics .haptic-icon {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--vp-c-brand-1);
 }
 
 .haptic-home .haptic-topics strong {

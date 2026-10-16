@@ -11,7 +11,9 @@
     "test": "node ../../scripts/run-tests.mjs unit apps/docs"
   },
   "devDependencies": {
+    "@fontsource-variable/onest": "^5.3.1",
     "@types/node": "^22.13.10",
+    "lucide-vue-next": "^0.552.0",
     "typescript": "~6.0.3",
     "vitepress": "^1.6.4",
     "vue": "^3.5.41"
