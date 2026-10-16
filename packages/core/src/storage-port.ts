@@ -80,7 +80,7 @@ export type ProjectStorageReader = Pick<ProjectStorage, "readText" | "readBinary
  * Binary-capable project filesystem. UI never calls Capacitor directly.
  * Reads, `readdir`, `stat` and `remove` of a missing path reject with
  * `StorageNotFoundError` (message `File not found: <path>`).
- * @see docs/architecture/vfs.md
+ * @see .agents/reference/architecture/vfs.md
  */
 export interface ProjectStorage {
   /** Opt-in external folder (picker) or web OPFS project creation. */

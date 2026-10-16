@@ -19,7 +19,7 @@ const manifestPath = path.join(rootDir, "public/build-manifest.json");
 const distributionBuild = process.env.BABYLONSLATE_DISTRIBUTION === "true";
 const queryTestPermitted = process.env.VITE_TEST_QUERY === "true";
 // Editor-edit profiling builds use React's profiling renderer so test-mode
-// Profilers report commit timings (docs/architecture/testing.md).
+// Profilers report commit timings (.agents/reference/testing.md).
 const reactProfiling = process.env.VITE_REACT_PROFILING === "true";
 if (
   distributionBuild &&

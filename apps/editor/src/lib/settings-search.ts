@@ -193,7 +193,6 @@ export const ENGINE_SETTING_FIELDS = fields([
   ["about", "Version And Build"],
   ["about", "Automatic Updates", "setting-automatic-updates"],
   ["appearance", "Theme", "setting-theme"],
-  ["appearance", "Pointer Target Scale", "setting-pointer-scale"],
   ["undo", "Undo History Length", "setting-undo-length"],
   ["debugger", "Trace Memory Budget (MiB)", "setting-trace-budget-mib"],
   ["debugger", "Keep Simulation Changes", "setting-keep-simulation-changes"],

@@ -89,7 +89,7 @@ function canvasRect(from: PointerSample, to: PointerSample): CanvasRect {
 }
 
 /**
- * Gesture contract from docs/design/gestures.md: one-finger tap picks;
+ * Gesture contract from .agents/reference/architecture.md ("Gesture rules"): one-finger tap picks;
  * one-finger drag looks in 3D (or orbits when `pivotAroundCenter`) and pans
  * in 2D; hold then move marquees in 2D; drag-select marquees immediately in
  * both modes; pinch zooms; three fingers fly the 3D camera (look + right)

@@ -342,7 +342,7 @@ function colliderShapeRows(
       id: rowId(actorId, component.id, "shape-kind"),
       label: "Shape Kind",
       value: shape.kind,
-      options: kinds.map((kind) => ({ value: kind, label: kind })),
+      options: kinds.map((kind) => ({ value: kind, label: humanizePropertyLabel(kind) })),
       onChange: (next) =>
         update("shape", fittedColliderShape(next, siblings) ?? defaultShape(next)),
     },

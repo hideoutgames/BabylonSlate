@@ -1050,7 +1050,8 @@ describe("componentPropertyRows", () => {
     const kind = polygon.rows.find((row) => row.id.endsWith("-shape-kind"));
     expect(kind).toMatchObject({ kind: "enum", value: "polygon" });
     if (kind?.kind === "enum") {
-      expect(kind.options.map((option) => option.value)).toContain("box2d");
+      expect(kind.options).toContainEqual({ value: "box2d", label: "Box 2D" });
+      expect(kind.options).toContainEqual({ value: "capsule2d", label: "Capsule 2D" });
       expect(kind.options.map((option) => option.value)).toContain("circle");
     }
   });

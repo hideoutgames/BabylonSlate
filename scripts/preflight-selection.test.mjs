@@ -51,7 +51,6 @@ test("agent guidance and repository prose remain diff-only locally", () => {
   for (const file of [
     "AGENTS.md",
     ".agents/rules/agent-workflow.md",
-    ".cursor/rules/agent-workflow.mdc",
     ".github/PULL_REQUEST_TEMPLATE.md",
     "README.md",
     "packages/core/README.md",

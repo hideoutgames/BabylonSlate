@@ -59,7 +59,7 @@ function toFileStat(stat: NativeFileStat): FileStat {
 /**
  * Opt-in external-folder tier via our own Capacitor scoped-storage plugin.
  * Native scope identities are kept in native storage under a stable folder id.
- * @see docs/architecture/vfs.md
+ * @see .agents/reference/architecture/vfs.md
  */
 export class ScopedStorageAdapter implements ProjectStorage {
   private reads = new StorageReadCounter();

@@ -4245,8 +4245,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
  *
  * @deprecated The value changes after every edit, tab change and save, so
  * every caller re-renders with it. Use `useDocumentActions()` for callbacks
- * and the narrow hooks below for state (see "Document subscriptions" in
- * docs/architecture/command-layer.md).
+ * and the narrow hooks below for state (see "Document revisions and
+ * subscriptions" in .agents/reference/architecture/command-layer.md).
  */
 export function useDocuments(): DocumentContextValue {
   const context = useContext(DocumentContext);

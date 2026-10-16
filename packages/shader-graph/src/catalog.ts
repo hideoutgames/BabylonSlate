@@ -30,7 +30,7 @@ export type MaterialPinType =
 
 export interface MaterialPinDefinition {
   id: string;
-  /** Title Case display name (`.cursor/rules/display-names.mdc`). */
+  /** Title Case display name (`.agents/rules/display-names.md`). */
   name: string;
   type: MaterialPinType;
   /** Literal used when nothing is wired in. Length matches the resolved type. */

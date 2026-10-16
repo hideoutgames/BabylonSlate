@@ -58,7 +58,7 @@ describe("physicsActorDiagnostics", () => {
       {
         severity: "warning",
         code: "physics.collider_without_body",
-        message: "ColliderComponent needs a RigidBodyComponent on the same actor.",
+        message: "Collider needs a Rigid Body on the same actor.",
         actorId: "lone-col",
         componentId: "col",
       },
@@ -75,7 +75,7 @@ describe("physicsActorDiagnostics", () => {
       {
         severity: "warning",
         code: "physics.body_without_collider",
-        message: "RigidBodyComponent needs a ColliderComponent on the same actor.",
+        message: "Rigid Body needs a Collider on the same actor.",
         actorId: "lone-rb",
         componentId: "rb",
       },
@@ -207,7 +207,7 @@ describe("physicsActorDiagnostics", () => {
       {
         severity: "warning",
         code: "physics.body_without_collider",
-        message: "RigidBodyComponent needs a ColliderComponent on the same actor.",
+        message: "Rigid Body needs a Collider on the same actor.",
         actorId: "deco-rb",
         componentId: "rb",
       },

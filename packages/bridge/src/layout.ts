@@ -1,4 +1,4 @@
-/** Snapshot Float32Array layout — locked in docs/architecture/bridge.md */
+/** Snapshot Float32Array layout — locked in .agents/reference/architecture/bridge.md */
 
 export const SNAPSHOT_HEADER_FLOATS = 16;
 export const SNAPSHOT_ACTOR_STRIDE = 16;

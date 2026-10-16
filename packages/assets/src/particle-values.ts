@@ -1,6 +1,6 @@
 /**
- * Value modes for Basic Particle Emitter properties (docs/design/particle-emitters.md,
- * "Value modes"). `PARTICLE_VALUE_SPECS` is the single table of allowed modes, ranges,
+ * Value modes for Basic Particle Emitter properties (.agents/reference/architecture/particles.md,
+ * "Basic Particle Emitter"). `PARTICLE_VALUE_SPECS` is the single table of allowed modes, ranges,
  * units and curve axes that the normalizer, the plan and the editor all read.
  */
 import { PARTICLE_CURVE_MAX_KEYS, PARTICLE_CURVE_MIN_KEYS } from "@babylonslate/core";

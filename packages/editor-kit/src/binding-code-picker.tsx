@@ -22,6 +22,8 @@ function emptyPrompt(device: InputDevice): string {
       return "Choose Key…";
     case "gamepadAxis":
       return "Choose Axis…";
+    case "touch":
+      return "Choose Control…";
     default:
       return "Choose Button…";
   }
@@ -37,13 +39,14 @@ function pickerTitle(device: InputDevice): string {
       return "Gamepad Button";
     case "gamepadAxis":
       return "Gamepad Axis";
+    case "touch":
+      return "Touch";
     default:
       return "Input";
   }
 }
 
 function catalogItems(device: InputDevice): SearchDialogItem[] {
-  if (device === "touch") return [];
   return bindingCodesForDevice(device).map((entry) => ({
     id: entry.code,
     label: entry.label,

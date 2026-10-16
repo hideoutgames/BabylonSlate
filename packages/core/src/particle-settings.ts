@@ -2,7 +2,7 @@
  * Particle literals and budgets shared by the Basic Particle Emitter schema
  * (`@babylonslate/assets`) and the Babylon-free Particle Graph IR, which cannot
  * import assets. Documents store only these string ids; `@babylonslate/render`
- * maps them to Babylon constants by name (docs/design/particle-emitters.md D7).
+ * maps them to Babylon constants by name (.agents/reference/architecture/particles.md, "Decisions").
  */
 
 /** Additive = Babylon ONEONE, Normal = STANDARD, Alpha Additive = ADD. */

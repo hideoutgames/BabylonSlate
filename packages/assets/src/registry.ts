@@ -162,7 +162,7 @@ export interface AssetRegistryOptions {
 const BLOBS_DIR_NAME = ".blobs";
 
 /**
- * Content-root-aware asset registry (engineplan §10.2, docs/architecture/asset-registry.md).
+ * Content-root-aware asset registry (.agents/reference/architecture/asset-registry.md).
  * Scanning and browsing only ever call `readBabassetHeader`; payload bytes
  * load on demand through `payloadLoader`.
  */

@@ -3,7 +3,7 @@ import { ASSET_DOCUMENT_KINDS, assetTypeForDocumentKind } from "./document";
 /**
  * One packaged authored asset as the NodeGraph Asset Registry sees it. Editor
  * Play, Preview Build, exported games and editor graph hosts all answer asset
- * queries from a list of these (docs/architecture/asset-registry.md).
+ * queries from a list of these (.agents/reference/architecture/asset-registry.md).
  */
 export interface RuntimeAssetCatalogEntry {
   guid: string;

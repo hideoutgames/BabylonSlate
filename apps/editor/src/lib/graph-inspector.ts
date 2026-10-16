@@ -761,6 +761,9 @@ export function inputEventPropertyRows(
   return rows;
 }
 
+/** Make Array and Make Map build at most this many item inputs or pairs. */
+const MAKE_CONTAINER_MAX_COUNT = 32;
+
 export function containerConstructorPropertyRows(
   typeId: string,
   data: Record<string, unknown>,
@@ -775,12 +778,12 @@ export function containerConstructorPropertyRows(
       kind: "number",
       id: "count",
       label: typeId === "array.make" ? "Items" : "Pairs",
-      value: Math.max(0, Math.min(64, Math.floor(raw))),
+      value: Math.max(0, Math.min(MAKE_CONTAINER_MAX_COUNT, Math.floor(raw))),
       defaultValue: 0,
       min: 0,
-      max: 64,
+      max: MAKE_CONTAINER_MAX_COUNT,
       onChange: (value) =>
-        onPatch({ count: Math.max(0, Math.min(64, Math.floor(value))) }),
+        onPatch({ count: Math.max(0, Math.min(MAKE_CONTAINER_MAX_COUNT, Math.floor(value))) }),
     },
   ];
 }

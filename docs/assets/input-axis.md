@@ -11,7 +11,7 @@ In the **Content Browser**, choose **New Asset > Input > Input Axis**.
 Double-tap the asset to open it. The window has **Bindings** and an **Inspector**.
 
 - Set **Value** to **1D · Number** or **2D · X and Y**.
-- **Add Control** adds a **Keyboard**, **Mouse Button**, **Gamepad Button** or **Gamepad Axis** control. **Add Preset** adds **WASD**, **Arrow Keys**, **Left Stick** or **Right Stick** in one step.
+- **Add Control** adds a **Keyboard**, **Mouse Button**, **Gamepad Button**, **Gamepad Axis** or **Touch** control. Touch controls are the axes a [2D Joystick](../components/2d-joystick.md) drives: **Joystick X**, **Joystick Y**, **D-Pad X** and **D-Pad Y**. **Add Preset** adds **WASD**, **Arrow Keys**, **Left Stick** or **Right Stick** in one step.
 - Select a control to edit it in the **Inspector**. The values of all active controls add up and are clamped to -1 to 1.
 
 ## Settings
@@ -21,9 +21,9 @@ Double-tap the asset to open it. The window has **Bindings** and an **Inspector*
 | Shift Required, Control Required, Alt Required, Command / Windows Required | Keyboard controls only. The control counts only while that modifier is held. |
 | Direction | 2D axes. Whether the control drives **X · Horizontal** or **Y · Vertical**. |
 | Value When Held | Keyboard, Mouse Button and Gamepad Button controls. The value while held, such as -1 for left and 1 for right. |
-| Scale | Gamepad Axis controls. Multiplies the stick value. |
-| Dead Zone | Gamepad Axis controls. Movements below this are ignored. |
-| Sensitivity | Gamepad Axis controls. An extra multiplier, useful for look controls. |
+| Scale | Gamepad Axis and Touch controls. Multiplies the stick value. |
+| Dead Zone | Gamepad Axis and Touch controls. Movements below this are ignored. |
+| Sensitivity | Gamepad Axis and Touch controls. An extra multiplier, useful for look controls. |
 | Invert | Flips the sign. |
 
 ## Use it

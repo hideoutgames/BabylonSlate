@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, ParticleBlendMultiplyBlock, ParticleSystem, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock, type InputBlock } from "@babylonjs/core";
+import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, ParticleBlendMultiplyBlock, ParticleSystem, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock, type ClampBlock, type InputBlock, type NodeMaterialConnectionPoint } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -797,6 +797,61 @@ describe("material compiler", () => {
         (block) => block instanceof PBRMetallicRoughnessBlock,
       ),
     ).toBe(false);
+  });
+
+  it("brightens Fresnel toward the silhouette, shaped by Bias and Power", () => {
+    // Walks the realized blocks feeding Metallic. `facing` is |N·V|: what Babylon's
+    // FresnelBlock reduces to with bias 0 and power 1 (1 facing the camera, 0 at grazing).
+    const evaluate = (point: NodeMaterialConnectionPoint, facing: number): number => {
+      const block = point.ownerBlock;
+      const input = (name: string) => {
+        const source = block.getInputByName(name)?.connectedPoint;
+        if (!source) throw new Error(`${block.getClassName()}.${name} is not connected`);
+        return evaluate(source, facing);
+      };
+      switch (block.getClassName()) {
+        case "InputBlock":
+          return (block as InputBlock).value as number;
+        case "FresnelBlock":
+          return Math.min(1, Math.max(0, (input("bias") + facing) ** input("power")));
+        case "OneMinusBlock":
+          return 1 - input("input");
+        case "AddBlock":
+          return input("left") + input("right");
+        case "PowBlock":
+          return input("value") ** input("power");
+        case "ClampBlock": {
+          const clamp = block as ClampBlock;
+          return Math.min(clamp.maximum, Math.max(clamp.minimum, input("value")));
+        }
+        case "ElbowBlock":
+          return input("input");
+        default:
+          throw new Error(`Unexpected ${block.getClassName()} in the Fresnel output`);
+      }
+    };
+    const rim = (properties: Record<string, unknown>) => {
+      const scene = host();
+      const doc = createDefaultMaterialDocument();
+      doc.nodes.push({ id: "rim", type: "shading.fresnel", position: { x: 0, y: 0 }, properties });
+      doc.edges.push({ id: "e-rim-out", sourceNodeId: "rim", sourcePinId: "out", targetNodeId: "output", targetPinId: "metallic" });
+      const result = compileMaterialPlan(planFor(doc), { scene, name: "test" });
+      if (!result.ok) throw new Error("Fresnel material did not compile");
+      disposers.push(() => result.material.dispose());
+      const pbr = result.material.attachedBlocks.find((block) => block instanceof PBRMetallicRoughnessBlock) as PBRMetallicRoughnessBlock;
+      return (facing: number) => evaluate(pbr.metallic.connectedPoint!, facing);
+    };
+
+    const tight = rim({ "default:power": [3] });
+    expect(tight(1)).toBeCloseTo(0);
+    expect(tight(0)).toBeCloseTo(1);
+    expect(tight(Math.SQRT1_2)).toBeCloseTo((1 - Math.SQRT1_2) ** 3);
+    const biased = rim({ "default:bias": [0.25] });
+    expect(biased(1)).toBeCloseTo(0.25);
+    expect(biased(0.5)).toBeCloseTo(0.75);
+    expect(biased(0)).toBeCloseTo(1);
+    // A negative Bias must not reach pow with a negative base (undefined on the GPU).
+    expect(rim({ "default:bias": [-0.5], "default:power": [0.5] })(1)).toBe(0);
   });
 
   it("composes fwidth from derivatives instead of custom source", () => {
