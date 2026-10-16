@@ -1,6 +1,6 @@
 # Tilemap
 
-Draws a Tilemap asset: a grid of tiles in chunks, with optional collision.
+Draws a Tilemap asset: a grid of tiles, with optional collision.
 
 ## Add it
 
