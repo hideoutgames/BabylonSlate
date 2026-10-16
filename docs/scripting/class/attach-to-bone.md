@@ -1,0 +1,24 @@
+# Attach To Bone
+
+Attaches an actor to a named bone of another actor's model so it follows that bone.
+
+## Inputs
+
+| Pin | Type | Description |
+| --- | --- | --- |
+| Exec | Exec |  |
+| Actor | Actor Reference | The actor to attach. Leave empty to use the actor running the graph. |
+| Target | Actor Reference | The actor whose model has the bone. |
+| Bone Name | String |  |
+
+## Outputs
+
+| Pin | Type |
+| --- | --- |
+| Then | Exec |
+
+## Notes
+
+- **Bone Name** must match the bone exactly, including capitalisation. Nothing happens if the name is empty or either actor is invalid.
+- The actor snaps to the bone's origin and keeps its scale. Use [**Set Actor Transform**](set-actor-transform.md) afterwards to add an offset from the bone.
+- [**Detach Actor**](detach-actor.md) releases the attachment.

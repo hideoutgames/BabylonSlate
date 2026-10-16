@@ -65,7 +65,7 @@ export function LauncherTransitionProvider({
   );
   const [transition, setTransition] = useState<Transition | null>(() => ({
     target: route === "home" ? "home" : "editor",
-    label: "Slate",
+    label: "Haptic",
     status: "Loading application",
     since: performance.now(),
     mounted: false,
@@ -209,14 +209,14 @@ export function LauncherTransitionProvider({
               aria-live="polite"
               aria-label={
                 transition.target === "home"
-                  ? "Loading Slate"
+                  ? "Loading Haptic"
                   : `Opening ${transition.label}`
               }
             >
               <section className="slate-splash-card">
                 <div className="slate-splash-titlebar">
                   <img src={brandIconSrc(scheme)} alt="" />
-                  <span>Slate</span>
+                  <span>Haptic</span>
                   <span className="slate-splash-version">{version}</span>
                 </div>
                 <div className="slate-splash-art" aria-hidden="true">

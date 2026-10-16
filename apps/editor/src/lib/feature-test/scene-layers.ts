@@ -225,7 +225,7 @@ function addHeader(refs: LayerRefs, add: AddActor): void {
     }),
   ], { position: [0, 7.95, BACK_Z], scale: [16, 1.7], folderId }));
   add(layerActor("ft-ui-title", "Title", [
-    ui("ft-ui-title-text", "2DTextComponent", text(refs, "BabylonSlate Feature Test", 44, [900, 60], {
+    ui("ft-ui-title-text", "2DTextComponent", text(refs, "Haptic Feature Test", 44, [900, 60], {
       bold: true,
       alignment: "center",
       outline: 2,

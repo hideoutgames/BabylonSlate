@@ -17,7 +17,7 @@ pnpm --silent agent:wait ci --pr 123
 pnpm --silent agent:wait slot --pr 123
 ```
 
-The default deadline is two hours; set `--timeout-seconds 10800` before the argument separator when a longer wait is explicitly needed. CI discovery has a separate ten-minute limit. The helper runs in the foreground, reports start and result records, and stores complete logs plus `result.json` in the unique OS temporary directory printed at start. Node, pnpm, git, and (for CI/slots) authenticated `gh` must already be available. The helper inherits the environment and configured package-script shell; it does not repair global configuration. See [testing guidance](../../../docs/architecture/testing.md#quiet-agent-waits) for Windows setup and result meanings.
+The default deadline is two hours; set `--timeout-seconds 10800` before the argument separator when a longer wait is explicitly needed. CI discovery has a separate ten-minute limit. The helper runs in the foreground, reports start and result records, and stores complete logs plus `result.json` in the unique OS temporary directory printed at start. Node, pnpm, git, and (for CI/slots) authenticated `gh` must already be available. The helper inherits the environment and configured package-script shell; it does not repair global configuration. See [testing guidance](../../reference/testing.md#quiet-agent-waits) for Windows setup and result meanings.
 
 ## Choose the smallest required command
 
@@ -26,14 +26,14 @@ The default deadline is two hours; set `--timeout-seconds 10800` before the argu
 - Instruction/prose-only edits need diff/link checks, not application tests or a docs build. After a repair, rerun only affected checks and retain justified results for unchanged behavior.
 - Required GitHub CI still runs its configured exhaustive checks. Do not change CI gates to match local scope.
 - Keep `BL_TEST_PROFILE=shared`. Low-memory mode is the unconfigured local default: one root workload, one test worker, at least 2 GiB headroom, and no lightweight bypass. Reservation slots are separate from worker counts: each low-memory root occupies all three legacy slots so older compatible callers cannot overlap it. Node tooling reserves 0.75 GiB, selected tests/typechecks/docs 1.5 GiB, application builds 2 GiB, and coverage 3 GiB. Do not reduce estimates or reserves to escape a queue.
-- Read the machine settings from the common [local resource configuration](../../../docs/architecture/testing.md#local-test-execution); `pnpm test:resources` remains available while substantive work waits. `fast` and local `CI=true` cannot relax the low-memory policy. Shared artifacts still require source, environment, toolchain, and integrity checks. Uncertain ownership is a blocker, never a successful cleanup; older worktrees adopt the runner through normal Git integration.
+- Read the machine settings from the common [local resource configuration](../../reference/testing.md#local-test-execution); `pnpm test:resources` remains available while substantive work waits. `fast` and local `CI=true` cannot relax the low-memory policy. Shared artifacts still require source, environment, toolchain, and integrity checks. Uncertain ownership is a blocker, never a successful cleanup; older worktrees adopt the runner through normal Git integration.
 
 ## Retain the session
 
 - Launch one helper and retain the host's returned process/session ID. Continue waiting on that same session; do not launch duplicate tests or watchers.
 - Prefer a host-supported completion notification or a pending tool call. Otherwise use the longest process wait the host permits, with minimal output. Obey any host limit on blocking waits and required user updates.
 - Report start, failure/blocker, and completion only, except when the host explicitly requires intermediate updates. Avoid repeated `gh` queries, log tails, and reasoning about unchanged progress. The helper owns individual polls.
-- Do not invent a wakeup mechanism. T3 Code is unchanged; a host that requires periodic tool wakeups still consumes some tokens. This workflow reduces output and model work, not necessarily to zero.
+- Do not invent a wakeup mechanism. A host that requires periodic tool wakeups still consumes some tokens. This workflow reduces output and model work, not necessarily to zero.
 - On interruption, cancel the existing session gracefully when supported. The helper handles SIGINT/SIGTERM and stops only its child tree. Never kill unrelated processes by executable name.
 
 ## Act on the terminal result

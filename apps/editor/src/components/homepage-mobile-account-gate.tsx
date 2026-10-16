@@ -50,7 +50,7 @@ export function HomepageMobileAccountFrame({
       <style data-slate-home-styles>{homepageStyles}</style>
       <div className="homepage-mobile-auth-brand">
         <img src={brandIconSrc(scheme)} alt="" />
-        <span>Slate</span>
+        <span>Haptic</span>
       </div>
       <section className="homepage-mobile-auth-content">
         {children}

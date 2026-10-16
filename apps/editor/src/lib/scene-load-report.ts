@@ -38,7 +38,7 @@ export function formatSceneLoadReport(
     ? `FAILED (${input.rendering ? "Rendering Update Failed" : "Scene Loading Failed"})`
     : "still loading";
   const lines = [
-    `BabylonSlate Scene Load Report · ${new Date().toISOString()}`,
+    `Haptic Scene Load Report · ${new Date().toISOString()}`,
     `Status: ${status} · ${input.surface}${input.scene ? ` · ${input.scene}` : ""}`,
     `Phase: ${input.phase}${input.progress === null ? "" : ` (${Math.round(input.progress)}%)`}${input.elapsedMs === null ? "" : ` · ${(input.elapsedMs / 1000).toFixed(1)} s since loading started`}`,
     ...formatDiagnosticEnvironment(environment),

@@ -1,8 +1,0 @@
----
-description: Documentation requirements for behavioral, architectural, and API changes in docs/
-alwaysApply: false
----
-
-# Cursor compatibility
-
-Read and follow [the canonical rule](../../.agents/rules/docs.md) in full. Start with [AGENTS.md](../../AGENTS.md) for shared policies and skill routing. Edit the canonical file when changing policy.

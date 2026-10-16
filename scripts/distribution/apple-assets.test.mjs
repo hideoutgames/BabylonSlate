@@ -6,7 +6,7 @@ import { validateAppIcon, validatePrivacyManifest } from "./apple-assets.mjs";
 test("distribution rejects the Capacitor placeholder and undersized or transparent app icons", async () => {
   const placeholder = await readFile("apps/editor/ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png");
   assert.throws(() => validateAppIcon(placeholder), /icon/i);
-  const small = await readFile("engine-logos/SlateIconDark.png");
+  const small = await readFile("apps/editor/public/branding/SlateIconDark.png");
   assert.throws(() => validateAppIcon(small), /icon/i);
 });
 

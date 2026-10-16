@@ -1,155 +1,47 @@
-# BabylonSlate
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="engine-logos/HapticWordmark-DarkMode.png">
+    <img src="engine-logos/HapticIcon.svg" height="88" alt="Haptic">
+  </picture>
+</p>
 
-BabylonJS Editor optimised for Touch Devices — an iPad-first game engine with a shadcn React UI, Dockview panel layout, React Flow visual scripting, and Capacitor native shells.
+<h1 align="center">Haptic</h1>
 
-**Engine plan:** [docs/engineplan.md](docs/engineplan.md) — architecture, roadmap, and delivery checklist. Appendix A is the slice checklist.
+<p align="center">
+  The portable game engine.<br>
+  Build 2D and 3D games on iPad, iPhone, Android, Mac, Windows and Linux.
+</p>
 
-**Docs site:** [https://hideoutgames.github.io/BabylonSlate/docs/](https://hideoutgames.github.io/BabylonSlate/docs/) — VitePress site generated from `docs/`.
+<p align="center">
+  <a href="https://hideoutgames.github.io/BabylonSlate/docs/">Documentation</a>
+  &nbsp;·&nbsp;
+  <a href="https://haptic.no">haptic.no</a>
+  &nbsp;·&nbsp;
+  <a href="https://hideoutgames.github.io/BabylonSlate/">Web preview</a>
+</p>
 
-## Stack
+---
 
-- **Monorepo**: pnpm workspaces
-- **App**: `apps/editor` — Vite + React + Capacitor 8
-- **UI**: shadcn/ui (`packages/ui`) + Dockview
-- **Engine**: Babylon.js 9 (`packages/render`)
-- **Graph**: React Flow (`packages/graph-ui`) + `@babylonslate/scripting`
-- **Storage**: OPFS on web; Capacitor Filesystem / scoped storage on iOS (`packages/vfs`)
+**Touch first.** A full editor designed for iPad and iPhone, just as comfortable with a keyboard and mouse.
 
-## Project structure
+**Visual scripting.** Classes, events and functions built from nodes, plus graphs for materials, particles, animation and AI.
 
-```
-apps/editor/          Capacitor shell, Homepage, Dockview, Play overlay
-apps/docs/            VitePress site (content lives in docs/)
-packages/core/        GUIDs, schemas, command bus, storage port
-packages/vfs/         File adapters, platform detection, app settings
-packages/assets/      .babasset / project folder zip, registry, importers
-packages/edit/        Per-document undo
-packages/object-model/ World, actors, tick, class registry
-packages/physics/     Havok 3D + Rapier 2D (game worker)
-packages/bridge/      SAB + transferable transports
-packages/runtime/     Game worker + in-process driver
-packages/debugger/    Console command registry, BDebugCommand, stats HUD helpers, trace recorder (P8)
-packages/anim-graph/  AnimationGraph evaluator (P9)
-packages/shader-graph/ Shader IR (P9)
-packages/input/       Action/axis mappings
-packages/render/      Snapshot sync, resource cache, editor tools, FontFace registry
-packages/scripting/   Graph IR, validator, JS codegen
-packages/scripting-nodes/ Node catalog
-packages/graph-ui/    React Flow graph editor
-packages/ui/          shadcn primitives
-packages/editor-kit/  Property grid, tree view, sheets
-packages/test-kit/    Fixtures and deterministic harness
-```
+**2D and 3D.** Physically based or cel-shaded rendering, sprites and tilemaps, water, particles and post-processing, rendered with [Babylon.js](https://www.babylonjs.com).
 
-See [docs/architecture/overview.md](docs/architecture/overview.md) for the live package map.
+**Physics, audio and AI.** Rigid bodies and ragdolls, spatial audio and mixing, behaviour trees and navigation.
 
-## Project file format
+**Your files.** A project is a plain folder you can keep in Files, sync with Git or share as a zip.
 
-Projects are ordinary folders (or a `.zip` of that folder). Editor scenes and graphs are `.babasset` files under `assets/`, with large payloads in `assets/.blobs/<sha256>`. Details: [docs/architecture/containers.md](docs/architecture/containers.md).
+**Ship to the web.** Export a game as a single zip, ready for itch.io.
 
-## Development
+## Build from source
 
 ```bash
 pnpm install
-pnpm dev            # start Vite dev server on localhost only
-pnpm dev --host     # also expose it on your local network (opt-in)
-pnpm docs:dev       # VitePress docs site from docs/
-pnpm verify:local   # path-aware local PR preflight
-pnpm verify         # explicit full local diagnostic, including Playwright
-pnpm test <files>   # focused unit tests; omit files to run all
-pnpm test:e2e       # Playwright integration tests (run in CI; perf routes use playwright.perf.config.ts)
+pnpm dev          # editor on localhost:5173
+pnpm docs:dev     # documentation site
 ```
 
-GitHub Verify remains the exhaustive merge gate: full workspace typechecking, tooling and distribution contracts, coverage, and all four browser partitions. See [testing architecture](docs/architecture/testing.md) for local selection details.
+Contributors and agents start with [AGENTS.md](AGENTS.md).
 
-## Testing on iPad (no Mac)
-
-Automated tests run in GitHub Actions — you do not need a Mac or local terminal.
-
-### GitHub Pages preview
-
-After pushes to `main`, the app deploys to:
-
-**https://hideoutgames.github.io/BabylonSlate/**
-
-Open that URL in **Safari on your iPad**. The Pages build has test mode on (`VITE_TEST_MODE`) — no folder prompts, and Create Project prefills TestProject.
-
-Documentation is on the same Pages site at **[/docs/](https://hideoutgames.github.io/BabylonSlate/docs/)**. Do not switch Pages source to “Deploy from a `/docs` folder” — that would replace the editor with Jekyll-rendered markdown.
-
-You can also append `?test=1` if needed; both URLs behave the same on the deployed preview.
-
-#### One-time setup (repo admin)
-
-If the **Preview** workflow fails with a 404 deployment error, GitHub Pages is not enabled yet:
-
-1. Open [BabylonSlate → Settings → Pages](https://github.com/hideoutgames/BabylonSlate/settings/pages)
-2. Under **Build and deployment**, set **Source** to **GitHub Actions**
-3. Re-run the failed **Preview** workflow (Actions → Preview → Re-run all jobs), or push any commit to `main`
-
-To verify the Pages build locally:
-
-```bash
-pnpm build:pages
-```
-
-That builds the editor and the VitePress docs site, then copies docs into `apps/editor/dist/docs/`.
-
-### Local dev server on a physical iPad
-
-The editor (5173) and player (5174) dev servers listen on localhost only. To open a local build on an iPad on the same trusted network:
-
-1. Run `pnpm dev --host` (or `pnpm --filter player dev --host` for the player).
-2. Open the **Network** URL that Vite prints (`http://<computer-LAN-IP>:5173/`) in Safari on the iPad. Allow incoming connections in the computer's firewall if prompted.
-3. Stop the server when finished. Do not use `--host` on untrusted networks: anyone on the network can reach the dev server.
-
-A plain-HTTP LAN origin is not a secure context, so secure-context features such as service workers (and the cross-origin isolation shim that uses one) can behave differently from the HTTPS Pages preview.
-
-### Manual checklist (~5 min)
-
-1. Homepage with test mode on; Create Project prefills TestProject
-2. Toolbar: Save All, Undo/Redo, Play, Windows, Focus, Search, Settings
-3. Scene Viewport (2D/3D toggle) and Graph document tabs
-4. Content Browser lists project assets
-5. Play overlay opens and closes with **Stop**
-6. Long-press a tab header to drag panels
-7. Two-finger pan/orbit in the Viewport; pan/pinch on a graph
-
-### Automated coverage
-
-| Layer | Tool | What it tests |
-|-------|------|----------------|
-| Packages | Vitest (node / jsdom / babylon) | VFS, assets, object model, physics, bridge, runtime, scripting, render (`NullEngine`) |
-| Editor shell | Playwright (CI) | Homepage, chrome, Play, Content Browser, graph, scene editing |
-| Docs | VitePress build + sidebar tests | `docs/` pages listed in `apps/docs/src/sidebar.ts` |
-
-See [docs/architecture/testing.md](docs/architecture/testing.md). iOS Capacitor / Files App device spikes remain under `p1-device-spikes`.
-
-## iOS and Android (Capacitor)
-
-```bash
-# iOS — requires a Mac with Xcode
-pnpm --filter editor ios:sync
-pnpm --filter editor exec cap open ios
-
-# Android — requires the Android SDK
-pnpm --filter editor android:sync
-pnpm --filter editor exec cap open android
-```
-
-- `ios:sync` / `android:sync` build the editor (and embedded player) and run `cap sync`. `ios:sync` then restores the custom Secrets, ScopedStorage, AudioLifecycle and Memory plugin classes in `capacitor.config.json`, so do not run `cap sync ios` directly.
-- `ios:build` / `android:build` add an unsigned simulator / debug APK compile. Signing, archives and uploads are separate distribution operations; see [docs/development/distribution.md](docs/development/distribution.md).
-
-The scoped-storage plugin needs these `Info.plist` keys:
-
-```xml
-<key>LSSupportsOpeningDocumentsInPlace</key>
-<true/>
-<key>UISupportsDocumentBrowser</key>
-<false/>
-```
-
-## Adding shadcn components
-
-```bash
-npx shadcn@latest add <component> -c apps/editor
-```
+<p align="center"><sub>© 2026 Bru Development ENK. Haptic™ is a trademark of Bru Development ENK.</sub></p>

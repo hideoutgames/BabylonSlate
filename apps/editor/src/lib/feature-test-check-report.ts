@@ -109,7 +109,7 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
     ?? report.scenes.map((scene) => scene.editor.gpu).find(Boolean);
   const pipeline = report.scenes.map((scene) => scene.play.snapshot?.rendering?.pipeline.effective).find(Boolean);
   const lines = [
-    `BabylonSlate Feature Test Check (${MODE_LABELS[report.mode]}) · ${new Date(report.startedAt).toISOString()}`,
+    `Haptic Feature Test Check (${MODE_LABELS[report.mode]}) · ${new Date(report.startedAt).toISOString()}`,
     `Result: ${passed}/${report.scenes.length} scenes passed${report.cancelled ? " · CANCELLED" : ""} · took ${s(report.durationMs)}`,
     ...formatDiagnosticEnvironment(environment),
     `GPU: ${adapter ? `${adapter.api} · ${adapter.vendor ?? "?"} · ${adapter.renderer ?? "?"}` : "unknown (no viewport or Play engine reported one)"}${pipeline ? ` · ${pipeline.gpuBackend} ${pipeline.renderPath}` : ""}`,

@@ -15,7 +15,7 @@ function githubRepoUrl(repoPath: string, suffix: string): string {
 const REPO_ROOT_PREFIXES = [
   "apps/",
   "packages/",
-  ".cursor/",
+  ".agents/",
   ".github/",
   "e2e/",
 ];

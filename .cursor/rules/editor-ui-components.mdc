@@ -1,9 +1,0 @@
----
-description: Keep docs/architecture/components.md current when reusable Editor UI changes
-globs: packages/ui/src/components/**,packages/editor-kit/src/**,packages/graph-ui/src/**,apps/editor/src/components/**,docs/architecture/components.md
-alwaysApply: false
----
-
-# Cursor compatibility
-
-Read and follow [the canonical rule](../../.agents/rules/editor-ui-components.md) in full. Start with [AGENTS.md](../../AGENTS.md) for shared policies and skill routing. Edit the canonical file when changing policy.

@@ -1,0 +1,74 @@
+# Scripting
+
+Haptic uses visual scripting: you build game logic by placing nodes in a graph and connecting their pins with wires. Gameplay logic lives in **Class** assets, whose graphs hold events, functions and variables. Materials, particle effects, animation and AI each have their own kind of graph that works the same way.
+
+## Graph types
+
+| Graph | Lives in | Node reference |
+| --- | --- | --- |
+| Class graph | [Class](../assets/class.md) assets | [Class Nodes](class/index.md) |
+| Material graph | [Material](../assets/material.md) and [Material Function](../assets/material-function.md) assets | [Material Nodes](material/index.md) |
+| Particle Graph | [Particle Graph](../assets/particle-graph.md) assets | [Particle Graph Nodes](particle/index.md) |
+| Animation Graph | [Animation Graph](../assets/animation-graph.md) assets | [Animation Graph Nodes](animation/index.md) |
+| Behaviour Tree | [Behaviour Tree](../assets/behaviour-tree.md) assets | [Behaviour Tree Nodes](behaviour-tree/index.md) |
+
+The pages in this section cover Class graphs.
+
+## Nodes and pins
+
+- **Execution pins** (diamonds) set the order things happen. An event such as [Event Begin Play](class/event-begin-play.md) starts a chain; each node runs, then passes execution on through its output.
+- **Data pins** (coloured circles) carry values. The colour shows the [pin type](pin-types.md).
+- **Pure nodes** have no execution pins, such as [Add](class/add.md) or [Get Actor Location](class/get-actor-location.md). They produce a value when a connected node needs it.
+- **Latent nodes**, such as [Delay](class/delay.md), finish later without pausing the rest of the game. They show a clock icon.
+
+## Add a node
+
+Open **Add Node** in any of these ways:
+
+- Double-tap or right-click (long-press on touch) empty canvas.
+- Tap **Add Node** (**+**) in the graph toolbar.
+- Drag a wire from a pin and release it on empty canvas. The new node connects to that pin.
+
+Type in **Search Nodes** or browse the categories. **Context Sensitive** is on by default: it hides nodes that need a target object from another class, and when you drag from a pin it shows only compatible nodes. Turn it off to see every node the graph allows.
+
+## Connect pins
+
+- Drag from one pin to another, or tap a pin and then tap the pin to connect.
+- A data input takes one wire. Connecting a new wire replaces the old one.
+- An execution output drives one wire; an execution input accepts several.
+- Most unconnected data inputs show an inline value you can edit on the node or in the **Inspector**. Object and actor inputs must be wired.
+- Shake a node while dragging it to disconnect all its wires.
+
+The graph toolbar also has **Copy**, **Paste**, **Delete**, **Break Links** (removes the wires of the selected nodes) and **Format** (tidies the selected chains). Gestures are listed in [Touch gestures](../start/gestures.md).
+
+**Engine Settings > Graph** controls the **Node Connection Assistant** (suggests wires when you move a node near compatible pins), its **Connection Distance (Pixels)** (48 by default), **Shake Nodes To Disconnect**, **Read-Only Pin Defaults** and **Graph Default Zoom**.
+
+## Compile and play
+
+Graphs are checked as you edit. Problems appear in **Compiler Results** and as red badges on nodes; tap a result to jump to the node.
+
+1. Tap **Compile** in the toolbar, or press <kbd>F7</kbd>. **Compilation Error** appears next to it while a graph has errors.
+2. Press Play. Play compiles every graph in the project first.
+3. If any graph has errors, the **Compile errors** dialog lists them. Tap a row to go to the node, or choose **Play Anyway**.
+
+Warnings never block Play. A loop that never ends stops Play and reports **Infinite loop detected**.
+
+::: tip
+[Print](class/print.md), [Print String](class/print-string.md) and the Draw Debug nodes are **Development Only** by default: they run in the editor but are left out of an exported game unless **Project Settings > Export > Bundle Debugger** is on. You can set **Development Only** on any node in the **Inspector**.
+:::
+
+## In this section
+
+- [Classes](classes.md)
+- [Variables](variables.md)
+- [Functions](functions.md)
+- [Events](events.md)
+- [Pin Types](pin-types.md)
+- [Script Interfaces](interfaces.md)
+- [Structures and Enums](structures-and-enums.md)
+- [Tags](tags.md)
+- [Data Definitions and Data Trees](data.md)
+- [Save Games](save-games.md)
+- [Game Instance and Subsystems](game-instance.md)
+- [Editor Scripting](editor-scripting.md)
+- [Execute JavaScript](javascript.md)

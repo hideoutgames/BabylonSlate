@@ -36,7 +36,7 @@ Record the snapshot time. Copy times, IDs and quoted text from tool output rathe
 | Weak | Strong |
 | --- | --- |
 | "PR is nearly ready" | "PR #123 head `abc1234`: static and unit passed, e2e shards 1–4 running at 17:20 UTC" |
-| "Fixed the conflicts" | "Merged `origin/main` into `agent/example-1a2b` as `def5678`; resolved `docs/engineplan.md` by keeping both paragraphs" |
+| "Fixed the conflicts" | "Merged `origin/main` into `agent/example-1a2b` as `def5678`; resolved `.agents/reference/engine-plan.md` by keeping both paragraphs" |
 | "Tests pass" | "`pnpm --silent agent:wait local --script test -- packages/x/src/y.test.ts` passed (14 tests) on `0a1b2c3`; e2e not run locally" |
 
 ## 3. Write the handoff
