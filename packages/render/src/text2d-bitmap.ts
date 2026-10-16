@@ -229,7 +229,11 @@ function glyphCanvas(scratch?: BitmapCanvasScratch): { canvas: HTMLCanvasElement
   }
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 1;
-  const ctx = canvas.getContext("2d");
+  // Every rasterized glyph is read back with getImageData. Declaring that keeps
+  // this scratch canvas in software and its readbacks out of Chromium's
+  // heuristic, which would otherwise create later default 2D contexts (the
+  // Scene and Play view canvases) unaccelerated.
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (scratch) {
     scratch.canvas = canvas;
     scratch.ctx = ctx;

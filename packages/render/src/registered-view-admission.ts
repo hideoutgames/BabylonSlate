@@ -14,6 +14,15 @@ const presenters = new WeakMap<AbstractEngine, {
   release: () => void;
 }>();
 
+/**
+ * 2D context attributes for a registered view canvas. A view is only drawn
+ * into (one copy of the Engine canvas per frame) and never read back, so it
+ * opts out of Chromium's readback heuristic: after a page has read back other
+ * default 2D canvases, Chromium creates later default contexts unaccelerated,
+ * and every view copy then becomes a synchronous GPU readback.
+ */
+export const VIEW_CANVAS_2D_ATTRIBUTES: CanvasRenderingContext2DSettings = { willReadFrequently: false };
+
 /** Babylon's native view step copies even when a scene declines to draw. Keep
  * its dispatch/camera contract, but commit the visible bitmap only after the
  * owner produced a valid frame. No staging canvas or extra GPU readback. */
@@ -27,7 +36,7 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       const host = views.get(current);
       if (!host) return original.call(this, current);
       const canvas = current.target;
-      const context = canvas.getContext("2d");
+      const context = canvas.getContext("2d", VIEW_CANVAS_2D_ATTRIBUTES);
       const source = this.getRenderingCanvas();
       if (!context || !source) return true;
       host.begin();

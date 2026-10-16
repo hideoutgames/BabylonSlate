@@ -18,7 +18,7 @@ import type { AudioPlaybackBackend, AudioPose } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
-import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled } from "./registered-view-admission";
+import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled, VIEW_CANVAS_2D_ATTRIBUTES } from "./registered-view-admission";
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
@@ -852,10 +852,11 @@ function initializeEngine(
   const presentRtt = options.present === "rtt";
   // The visible bitmap must survive skipped/loading frames and backend RTT
   // work. Keep owned browser engines on a private constructor canvas, using
-  // the same admitted native view copy as project-shared handles.
+  // the same admitted native view copy as project-shared handles. The 2D
+  // context is created here, before registerView, with the view attributes.
   const visibleContext = typeof canvas.getContext === "function" &&
     (options.sharedEngine || typeof document !== "undefined")
-    ? canvas.getContext("2d") : null;
+    ? canvas.getContext("2d", VIEW_CANVAS_2D_ATTRIBUTES) : null;
   const constructorCanvas = ownsEngine && visibleContext && typeof document !== "undefined"
     ? document.createElement("canvas") : canvas;
   const engine =
