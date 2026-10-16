@@ -1,4 +1,4 @@
-# Pin types
+# Pin Types
 
 Every data pin and variable has a type. A wire connects two pins only when their types are compatible, and pins and wires are coloured by type.
 

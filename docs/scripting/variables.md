@@ -14,7 +14,7 @@ Variables store values on each object of a class, such as health, a score or a t
 | --- | --- |
 | Name | The name shown on its nodes. Renaming updates every Get and Set node. |
 | Category | Groups variables into folders in the **Class** window. Separate subfolders with a vertical bar, for example `Combat\|AI`. |
-| Type | The kind of value. See [Pin types](pin-types.md). |
+| Type | The kind of value. See [Pin Types](pin-types.md). |
 | Container | **Single** (one value), **Array** (an ordered list) or **Map** (values looked up by key). |
 | Key Type | Maps only: the type of the keys. |
 | Class Type | Object, Actor and Class variables: the class they accept. Subclasses are accepted too. |

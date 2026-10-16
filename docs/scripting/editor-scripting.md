@@ -1,4 +1,4 @@
-# Editor scripting
+# Editor Scripting
 
 Editor Utility Objects and Editor Function Libraries are classes that run inside the editor, so you can build your own tools with visual scripting. They never run in Play or in exported games.
 
