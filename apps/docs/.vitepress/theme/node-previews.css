@@ -1,0 +1,50 @@
+/*
+ * Node reference pages: the editor's node card on its graph canvas, and the
+ * pin glyph before each type in the Inputs and Outputs tables. The node's own
+ * styles come from the generated node-previews.css, scoped to `.haptic-graph`.
+ */
+
+.haptic-graph {
+  font-family: var(--vp-font-family-base);
+}
+
+.vp-doc .haptic-node-preview {
+  display: flex;
+  justify-content: center;
+  margin: 24px 0 32px;
+  padding: 40px 24px;
+  overflow-x: auto;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  background-color: var(--graph-canvas);
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-position: center;
+  line-height: normal;
+}
+
+.vp-doc .haptic-node-preview > * {
+  flex: none;
+}
+
+.vp-doc .haptic-pin-type {
+  /* The editor's 22px pin has 0.3rem corners; keep that proportion at text size. */
+  --radius: 0.36em;
+  display: inline-block;
+  margin-right: 0.45em;
+  vertical-align: -0.1em;
+  font-size: 0.95em;
+  line-height: 1;
+}
+
+.vp-doc td:has(> .haptic-pin-type) {
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .vp-doc .haptic-node-preview {
+    justify-content: flex-start;
+    margin: 16px 0 24px;
+    padding: 24px 16px;
+  }
+}

@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
@@ -7,11 +8,20 @@ import {
   installRepoLinkRewriter,
 } from "../src/rewrite-repo-links";
 import { docsSidebar, NODE_GRAPHS } from "../src/sidebar";
+import { installNodePreviews } from "../src/node-previews/markdown";
+import type { NodePreviews } from "../src/node-previews/types";
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(appRoot, "../..");
 const rawBase = process.env.VITEPRESS_BASE ?? "/";
 const base = rawBase.endsWith("/") ? rawBase : `${rawBase}/`;
+
+// Written by scripts/node-previews.mjs, which the dev and build scripts run first.
+const nodePreviewsFile = path.resolve(appRoot, ".vitepress/cache/node-previews/previews.json");
+if (!existsSync(nodePreviewsFile)) {
+  throw new Error("Node previews are missing: run `pnpm --filter docs-site build` or `node scripts/node-previews.mjs`.");
+}
+const nodePreviews = JSON.parse(readFileSync(nodePreviewsFile, "utf8")) as NodePreviews;
 
 export default defineConfig({
   srcDir: path.resolve(repoRoot, "docs"),
@@ -59,6 +69,7 @@ export default defineConfig({
     anchor: { slugify: githubHeadingSlug },
     config(md) {
       installRepoLinkRewriter(md);
+      installNodePreviews(md, nodePreviews);
     },
   },
   vite: {

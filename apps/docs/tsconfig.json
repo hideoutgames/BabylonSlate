@@ -3,7 +3,15 @@
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "dist",
-    "types": ["node", "vitepress/client"]
+    "types": [
+      "node",
+      "vitepress/client"
+    ],
+    "jsx": "react-jsx"
   },
-  "include": ["src", ".vitepress/config.ts", ".vitepress/theme/index.ts"]
+  "include": [
+    "src",
+    ".vitepress/config.ts",
+    ".vitepress/theme/index.ts"
+  ]
 }

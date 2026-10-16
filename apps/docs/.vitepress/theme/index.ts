@@ -16,6 +16,8 @@ import {
   Workflow,
 } from "lucide-vue-next";
 import "./custom.css";
+import "../cache/node-previews/node-previews.css";
+import "./node-previews.css";
 
 /** Lucide icons available to Markdown pages as `<IconName />`. */
 const icons = {
