@@ -24,7 +24,7 @@ import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
-import { setSceneWaterTime } from "./water-mesh";
+import { isBuiltInWaterMesh, setSceneWaterTime } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
@@ -109,7 +109,6 @@ import {
 } from "./viewport-shading-mode";
 import { createGizmoHost, type GizmoHost } from "./gizmo-host";
 import { createWaterHandles } from "./water-handles";
-import { waterMeshDrawsInSceneCopyPass } from "./water-scene-copy";
 import { createSplineHandles } from "./spline-handles";
 import { selectedShapeComponent } from "./shape-edit-target";
 import type { ComponentShapeEdit } from "./shape-handles";
@@ -4122,9 +4121,9 @@ function initializeEngine(
     prewarmSceneMaterials: async (owner) => {
       const scope = loadingScope(owner);
       applyRenderingQuality();
-      // Water the view draws through a scene copy compiles its drawn variant when the graph below prepares.
-      const target = scope.target;
-      await warmSceneMaterials(target, scope.assert, (mesh) => waterMeshDrawsInSceneCopyPass(target, target.activeCamera, mesh));
+      // Built-in water compiles the variant its pass draws when the graph below prepares: which one that is depends on
+      // the view's plan, so a warm-up here would compile one nothing draws, and wait for its link.
+      await warmSceneMaterials(scope.target, scope.assert, isBuiltInWaterMesh);
       scope.assert();
       freezeLibraryMaterials();
       outlineHost.refreshSettings();

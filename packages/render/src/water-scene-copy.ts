@@ -142,18 +142,6 @@ export function waterSceneCopyScale(scene: Scene, camera: Camera): number {
   return scale > 0 && clusteredLightTarget(scene, camera) ? 0 : scale;
 }
 
-/**
- * Whether `mesh` is built-in water that `camera`'s view draws only in its scene-copy pass (planned, see
- * `waterSceneCopyScale`): the pass-less colour variant is never drawn there. For the shader warm-up, which runs
- * before the view's graph is prepared; the graph's own probes (`WaterSceneCopyGraph.drawsInCopyPass`) decide
- * from the plan itself.
- */
-export function waterMeshDrawsInSceneCopyPass(scene: Scene, camera: Camera | null, mesh: AbstractMesh): boolean {
-  const clamp = sceneWaterQualityDeviceClamp(scene);
-  return waterMeshSamplesSceneCopy(mesh, refractionDemand(clamp), screenSpaceDemand(clamp)) &&
-    camera !== null && waterSceneCopyScale(scene, camera) > 0;
-}
-
 /** Copy taps per axis: every source texel a downsampled texel covers at integer ratios (4×4 at 0.25). */
 function copyTaps(scale: number): number {
   return scale >= 1 ? 1 : Math.min(4, Math.ceil(1 / scale - 1e-6));

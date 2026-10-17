@@ -13,7 +13,8 @@ import type { SharedOutlineView } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { sceneRenderingSettings, sceneWaterQualityRevision } from "./render-settings";
-import { WaterSceneCopyGraph, waterMeshDrawsInSceneCopyPass, waterSceneCopyDemand, waterSceneCopyScale } from "./water-scene-copy";
+import { isBuiltInWaterMesh } from "./water-mesh";
+import { WaterSceneCopyGraph, waterSceneCopyDemand, waterSceneCopyScale } from "./water-scene-copy";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
 import { Constants } from "@babylonjs/core";
 import type { AbstractMesh, Camera, FrameGraphObjectList, InternalTexture, Light, Observable, Observer, Scene } from "@babylonjs/core";
@@ -472,8 +473,9 @@ export class ForwardSceneFrameGraph {
       if (!this.isReady()) return false;
     } else {
       this.strictChecks += 1;
-      // The next preparation plans from the current demand, not from a stale plan.
-      if (!isSceneFrameReady(this.scene, [], (mesh) => waterMeshDrawsInSceneCopyPass(this.scene, camera, mesh))) return false;
+      // Built-in water is left out: which variant it draws depends on the plan the next preparation makes from the
+      // current demand, and that preparation's own probe compiles it under the pass that draws it.
+      if (!isSceneFrameReady(this.scene, [], isBuiltInWaterMesh)) return false;
       // A graph that is pending or stale is fully probed when its preparation finishes.
     }
     this.markGraphProbed();
