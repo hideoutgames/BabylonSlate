@@ -10,7 +10,8 @@ import { openMainScene, openTestProject, waitForSceneViewportReady } from "./ope
 
 type Presentation = { direct?: boolean; held: number; drawn: number };
 type Baseline = { backend?: string; render?: { presentation?: Presentation } };
-type Sample = { source: "engine" | "view"; minAlpha: number; spread: number; width: number };
+type Sample = { source: "engine" | "view" | "screen"; minAlpha: number; spread: number; width: number };
+type Probe = { stop: () => Promise<Sample[]> };
 
 declare global {
   interface Window {
@@ -47,7 +48,7 @@ async function presentation(page: Page): Promise<Presentation | undefined> {
  * layout resize: the Engine canvas while it covers the view canvas, else the
  * view canvas. A blank image is transparent or a single flat colour.
  */
-async function startProbe(page: Page) {
+async function startFrameProbe(page: Page): Promise<Probe> {
   await page.evaluate(() => {
     const probe = { samples: [] as Sample[], stop: false };
     window.__directPresentationProbe = probe;
@@ -86,6 +87,50 @@ async function startProbe(page: Page) {
     resized.observe(view);
     resized.observe(engine);
   });
+  return {
+    stop: () => page.evaluate(() => {
+      const probe = window.__directPresentationProbe!;
+      probe.stop = true;
+      return probe.samples;
+    }),
+  };
+}
+
+/**
+ * Samples the composited viewport with screenshots. A page reads a WebGPU
+ * canvas back only in the task that drew it, while the screen keeps showing
+ * its last presented frame, so the WebGPU path is checked on screen.
+ */
+function startScreenProbe(page: Page): Probe {
+  const samples: Sample[] = [];
+  const canvas = page.getByTestId("viewport-canvas");
+  let stopped = false;
+  const loop = (async () => {
+    while (!stopped) {
+      const box = await canvas.boundingBox();
+      if (!box) continue;
+      const png = (await page.screenshot({ clip: box })).toString("base64");
+      const spread = await page.evaluate(async (data) => {
+        const bytes = Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
+        const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+        const sampler = document.createElement("canvas");
+        sampler.width = sampler.height = 16;
+        const context = sampler.getContext("2d", { willReadFrequently: true })!;
+        context.drawImage(bitmap, 0, 0, 16, 16);
+        const pixels = context.getImageData(0, 0, 16, 16).data;
+        let low = 255;
+        let high = 0;
+        for (let index = 0; index < pixels.length; index += 4) {
+          const luma = (2 * pixels[index]! + 5 * pixels[index + 1]! + pixels[index + 2]!) / 8;
+          low = Math.min(low, luma);
+          high = Math.max(high, luma);
+        }
+        return high - low;
+      }, png);
+      samples.push({ source: "screen", minAlpha: 255, spread, width: box.width });
+    }
+  })();
+  return { stop: async () => { stopped = true; await loop; return samples; } };
 }
 
 async function switchToWebGpu(page: Page) {
@@ -119,7 +164,7 @@ export async function directViewportStaysNonBlank(page: Page, backend: "webgl2" 
   );
   await expect(page.getByTestId("tree-row-actor:probe-box")).toBeVisible();
   await expect.poll(async () => (await presentation(page))?.direct).toBe(true);
-  await startProbe(page);
+  const probe = backend === "webgpu" ? startScreenProbe(page) : await startFrameProbe(page);
 
   // A render mode change rebuilds the FrameGraph asynchronously; its frames are held.
   const before = (await presentation(page))!;
@@ -139,12 +184,8 @@ export async function directViewportStaysNonBlank(page: Page, backend: "webgl2" 
   await expect.poll(async () => (await presentation(page))!.drawn).toBeGreaterThan(afterResize.drawn + 5);
   expect((await presentation(page))!.direct).toBe(true);
 
-  const samples = await page.evaluate(() => {
-    const probe = window.__directPresentationProbe!;
-    probe.stop = true;
-    return probe.samples;
-  });
-  expect(samples.length).toBeGreaterThan(20);
+  const samples = await probe.stop();
+  expect(samples.length).toBeGreaterThan(backend === "webgpu" ? 5 : 20);
   expect(new Set(samples.map((sample) => sample.width)).size, "the probe saw the resize").toBeGreaterThan(1);
   const blank = samples.filter((sample) => sample.minAlpha < 250 || sample.spread < 8);
   expect(blank, JSON.stringify(samples.slice(0, 40))).toEqual([]);
