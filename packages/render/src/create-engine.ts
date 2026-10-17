@@ -1,4 +1,5 @@
 import { applyGamepadRumble } from "./gamepad-rumble";
+import { drainEngineAfterRelease } from "./idle-engine-drain";
 import { acquireEngineGpuTiming, observeEngineGpuTiming, type EngineGpuTimingLease, type EngineGpuTimingObservation, type EngineGpuTimingSample } from "./engine-gpu-timing";
 import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest, type RuntimeMaterialCommitCommand } from "./runtime-material-edit";
 import { drainFinalAuthoringResources } from "./final-authoring-drain";
@@ -3242,7 +3243,11 @@ function initializeEngine(
         // resources. Stop the view immediately, but release these owners only
         // after actual release confirms; a rejected release quarantines them.
         void retired.catch(reportRetirementFailure);
-        void released.then(releaseSceneResources).catch(reportReleaseFailure);
+        const sceneReleased = released.then(releaseSceneResources);
+        void sceneReleased.catch(reportReleaseFailure);
+        // Frame-gated releases and the Scene's deferred GPU destruction need end
+        // frames even when this was the shared Engine's last rendering client.
+        drainEngineAfterRelease(engine, sceneReleased);
       } else {
         void retired.catch(reportRetirementFailure);
         void released.catch(reportReleaseFailure);

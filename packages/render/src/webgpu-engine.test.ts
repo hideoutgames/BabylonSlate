@@ -89,6 +89,27 @@ describe("WebGPU project Engine initialization", () => {
     expect(canvas.listeners.size).toBe(0);
   });
 
+  it("requests the adapter's inter-stage variable limit and leaves other limits at their defaults", async () => {
+    const stop = new Error("Device request inspected");
+    const requested: unknown[] = [];
+    const { element } = host(async () => ({
+      features: new Set(),
+      limits: {
+        maxInterStageShaderVariables: 28,
+        maxUniformBuffersPerShaderStage: 24,
+        maxBindGroups: 8,
+      },
+      info: {},
+      requestDevice: async (descriptor: GPUDeviceDescriptor) => {
+        // The browser converts the descriptor when requestDevice is called.
+        requested.push({ ...descriptor.requiredLimits });
+        throw stop;
+      },
+    }));
+    await expect(createAppWebGpuEngine(element)).rejects.toBe(stop);
+    expect(requested).toEqual([{ maxInterStageShaderVariables: 28 }]);
+  });
+
   it("does not allocate or request an adapter for an already cancelled transition", async () => {
     const requestAdapter = vi.fn(async () => null);
     const { element } = host(requestAdapter);

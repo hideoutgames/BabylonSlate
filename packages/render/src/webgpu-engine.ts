@@ -36,7 +36,7 @@ export async function createAppWebGpuEngine(
     dracoBasePath: options.dracoBasePath,
     meshoptBasePath: options.meshoptBasePath,
   });
-  const engine = new WebGPUEngine(canvas, {
+  const engine: WebGPUEngine = new WebGPUEngine(canvas, {
     antialias: false,
     stencil: true,
     adaptToDeviceRatio: false,
@@ -56,6 +56,11 @@ export async function createAppWebGpuEngine(
         "float32-blendable",
         "timestamp-query",
       ],
+      // Babylon 9.29 reads this after storing the adapter's limits and
+      // before requesting the device.
+      get requiredLimits(): Record<string, number> {
+        return adapterRequiredLimits(engine.supportedLimits);
+      },
     },
   });
   let initialized = false;
@@ -89,6 +94,23 @@ export async function createAppWebGpuEngine(
       );
     throw error;
   }
+}
+
+/**
+ * Limits the device takes at the adapter's maximum; every other limit keeps
+ * its WebGPU default. Babylon's WGSL fragment input struct always declares
+ * `@builtin(front_facing)`, which Chromium counts against
+ * maxInterStageShaderVariables, so the default 16 leaves 15 user varyings,
+ * fewer than a shadowed PBR material can need.
+ */
+function adapterRequiredLimits(
+  supported: GPUSupportedLimits | undefined,
+): Record<string, number> {
+  const limits: Record<string, number> = {};
+  const interStage = supported?.maxInterStageShaderVariables;
+  if (typeof interStage === "number")
+    limits.maxInterStageShaderVariables = interStage;
+  return limits;
 }
 
 /**
