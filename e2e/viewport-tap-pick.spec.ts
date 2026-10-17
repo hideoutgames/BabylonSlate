@@ -77,6 +77,18 @@ test("a viewport tap selects the actor under it, not the one at the view centre"
 
   const canvas = page.getByTestId("viewport-canvas");
   const box = (await canvas.boundingBox())!;
+  // The sole Scene viewport shows the Engine canvas itself over its view canvas;
+  // taps still reach the view canvas, so pick coordinates are unchanged.
+  await expect.poll(() => page.evaluate(() => (
+    globalThis as unknown as {
+      __babylonslateViewportTest: { renderingBaseline: () => { render?: { presentation?: { direct?: boolean } } } | null };
+    }
+  ).__babylonslateViewportTest.renderingBaseline()?.render?.presentation?.direct)).toBe(true);
+  const shown = (await page.getByTestId("project-engine-canvas").boundingBox())!;
+  for (const key of ["x", "y", "width", "height"] as const) expect(Math.abs(shown[key] - box[key])).toBeLessThan(1);
+  expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.getAttribute("data-testid"), {
+    x: box.x + box.width / 2, y: box.y + box.height / 2,
+  })).toBe("viewport-canvas");
   for (const [tapped, other] of [["left-box", "right-box"], ["right-box", "left-box"]] as const) {
     // Mesh sync trails the document change, so wait for the actor to be placed.
     await expect.poll(() => actorCanvasFraction(page, tapped)).not.toBeNull();
