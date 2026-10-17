@@ -2,37 +2,53 @@ import { activeRenderFrameCapture } from "./render-frame-report";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { pinFloatingOrigin } from "./scene-readiness-signal";
 import {
-  Color4, Constants, LinesMesh, Material, Matrix, MultiMaterial, Quaternion, RawTexture,
+  Color4, Constants, Material, Matrix, MultiMaterial, Quaternion, RawTexture,
   RenderTargetTexture, Texture, UniversalCamera, Vector3,
-  type AbstractMesh, type InternalTexture, type IParticleSystem, type Node, type NodeMaterial, type Observer, type Scene,
+  type AbstractMesh, type Camera, type FrameGraphObjectList, type InternalTexture, type IParticleSystem, type Node,
+  type NodeMaterial, type Observer, type Scene,
 } from "@babylonjs/core";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import {
   normalizeRenderTargetCaptureProperties, normalizeRenderTargetPayload,
-  type RenderTargetCaptureProperties, type RenderTargetPayload,
+  type RenderTargetCaptureProperties, type RenderTargetCaptureQuality, type RenderTargetPayload,
   type RenderTargetTexturePayload, type SerializedScene, type SerializedTransform,
 } from "@babylonslate/core";
 import { authoredActorMatrices, authoredComponentActorTransform, authoredTransformMatrix } from "./authored-transform-matrices";
-import { beginManagedRenderAllocation, type ManagedRenderLease } from "./managed-render-resources";
+import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 import { managedRenderTargetResources, renderTargetAllocationBytes } from "./render-target-resource-cost";
 import { drawBorrowedTarget } from "./framegraph-borrowed-draw";
 import { createRenderTargetDepthMaterial, createRenderTargetNormalMaterial } from "./render-target-normal-material";
 import type { ResourceLease } from "./resource-cache";
-import { renderTargetCaptureDrawing } from "./render-target-capture-state";
-import { isEditorHelperMesh } from "./helper-mesh";
+import { isRenderTargetCaptureCandidate, renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { particleMaterialForSystem } from "./node-material-particles";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 import { acquireAuthoredMaterialVariant, type AuthoredMaterialVariant } from "./material-compiler";
 import { retireOwnedEffect } from "./owned-effect-retirement";
+import type { AttachedPostProcessStack } from "./post-process-material";
+import { SceneRenderCoordinator } from "./scene-render-coordinator";
+
+export { isRenderTargetCaptureCandidate } from "./render-target-capture-state";
 
 /**
- * Whether a mesh may appear in a Render Target Capture: world geometry only,
- * never lines, editor helpers or Play debug visuals. The editor's capture
- * preview uses the same rule so it shows what the capture lens records.
+ * Attaches the scene's authored post-process stack to a Full Quality capture's
+ * view, or null when the scene's own view runs none.
  */
-export function isRenderTargetCaptureCandidate(mesh: AbstractMesh): boolean {
-  return !(mesh instanceof LinesMesh) && !isEditorHelperMesh(mesh);
-}
+export type RenderTargetCapturePostProcess = (renderer: SceneRenderCoordinator, camera: Camera) => AttachedPostProcessStack | null;
+
+/** One capture output's rendering state, for proofs and performance checks. */
+export type RenderTargetCaptureDiagnostics = {
+  actorId: string;
+  renderTargetGuid: string;
+  /** Effective quality: Depth Pass and World Normal targets always record with the fast pass. */
+  quality: RenderTargetCaptureQuality;
+  published: boolean;
+  /** A Full Quality view's prepared graph tasks; [] for Fast or before preparation. */
+  taskNames: string[];
+  /** Render pass id of a Full Quality view's water scene copy, or null when it plans none. */
+  waterSceneCopyPass: number | null;
+  /** A Full Quality view's strict readiness probes so far; steady frames add none. */
+  strictReadinessChecks: number;
+};
 
 const controllers = new WeakMap<Scene, RenderTargetCaptures>();
 const drawing = renderTargetCaptureDrawing;
@@ -88,11 +104,24 @@ type Capture = {
   requested: boolean;
 };
 type CaptureBuffer = { texture: CaptureRenderTarget; lease: ManagedRenderLease };
+/**
+ * A Full Quality capture's own forward view: the scene's FrameGraph pipeline
+ * for the capture camera, drawing the target's candidate lists into `texture`.
+ */
+type FullQualityView = {
+  renderer: SceneRenderCoordinator;
+  camera: UniversalCamera;
+  postProcess: AttachedPostProcessStack | null;
+  /** The controller's post-process source revision this view attached; -1 before the first. */
+  postProcessRevision: number;
+};
 type Target = CaptureBuffer & {
   key: string;
   definition: RenderTargetPayload;
+  quality: RenderTargetCaptureQuality;
   /** Allocated only after a capture needs to sample its published attachment. */
   spare?: CaptureBuffer;
+  fullQuality?: FullQualityView;
   owner: string;
   depth?: NodeMaterial;
   normals?: NodeMaterial;
@@ -126,6 +155,11 @@ export class RenderTargetCaptures {
   private readonly consumerScenes = new Map<Scene, Observer<Scene>>();
   private fallback: RawTexture | undefined;
   private fallbackLease: ManagedRenderLease | undefined;
+  private postProcess: RenderTargetCapturePostProcess | null = null;
+  private postProcessRevision = 0;
+  /** Full Quality views awaiting confirmed native release before their output and lease go. */
+  private readonly releases = new Set<Promise<void>>();
+  private releaseFailure: unknown;
   private readonly beforeRender: Observer<Scene>;
   private disposed = false;
   private readonly position = new Vector3();
@@ -148,9 +182,21 @@ export class RenderTargetCaptures {
     // old mode, old size or deleted asset alive until another capture request.
     for (const [guid, target] of this.targets) {
       const definition = targets.get(guid);
-      if (!definition || target.key !== this.targetKey(definition, target.owner)) this.retire(guid);
+      if (!definition || target.key !== this.targetKey(definition, target.owner, target.quality)) this.retire(guid);
     }
     this.publishTextures();
+  }
+  /**
+   * The scene view's authored post-process stack for Full Quality captures.
+   * Each live view re-attaches on its next capture; null detaches.
+   */
+  setPostProcess(source: RenderTargetCapturePostProcess | null): void {
+    this.postProcess = source;
+    this.postProcessRevision += 1;
+  }
+  /** Runtime parameter writes reach every Full Quality view's live stack, as they reach the scene view's. */
+  setPostProcessParameter(...args: Parameters<AttachedPostProcessStack["setParameter"]>): void {
+    for (const target of this.targets.values()) target.fullQuality?.postProcess?.setParameter(...args);
   }
   registerActor(actorId: string, root: () => AbstractMesh | null): void { this.actorRoots.set(actorId, root); this.rootsDirty = true; }
   removeActor(actorId: string): void {
@@ -178,7 +224,8 @@ export class RenderTargetCaptures {
     camera.fov = settings.fieldOfView * Math.PI / 180;
     camera.minZ = settings.nearClip;
     camera.maxZ = settings.farClip;
-    if (!settings.enabled || previous?.settings.renderTargetGuid !== settings.renderTargetGuid)
+    if (!settings.enabled || previous?.settings.renderTargetGuid !== settings.renderTargetGuid ||
+      previous?.settings.quality !== settings.quality)
       for (const [guid, target] of this.targets) if (target.owner === actorId) this.retire(guid);
   }
   syncAuthored(data: SerializedScene): void {
@@ -235,7 +282,9 @@ export class RenderTargetCaptures {
       if (!this.world.decompose(this.scale, this.rotation, this.position)) continue;
       capture.camera.position.copyFrom(this.position);
       capture.camera.rotationQuaternion!.copyFrom(this.rotation);
-      const target = this.ensureTarget(guid, definition, actorId, capture.camera);
+      // Full Quality renders the lit scene; data passes always record with the fast pass.
+      const quality = normalizeRenderTargetPayload(definition).mode === "SceneColor" ? settings.quality : "fast";
+      const target = this.ensureTarget(guid, definition, actorId, capture.camera, quality);
       if (!target) continue;
       const meshes = this.renderList(capture, target);
       // Even with renderParticles=false Babylon probes particleSystemList
@@ -251,6 +300,15 @@ export class RenderTargetCaptures {
         }
       }
       target.particles.length = particleCount;
+      const view = target.fullQuality;
+      if (view) {
+        // Culling reads bounds: refresh this frame's transforms (cached, so the
+        // scene view's own evaluation reuses them).
+        for (const mesh of meshes) mesh.computeWorldMatrix();
+        if (!this.stageDraw(target, guid, actorId, () => this.drawFullQuality(view))) continue;
+        this.published(capture, target);
+        continue;
+      }
       if (!target.depth && !target.normals && !target.spare && this.samplesAttachment(target, target.texture)) {
         target.spare = this.createBuffer(`${guid}:history`, definition, capture.camera);
         // Keep the previous image and pending manual request if admission fails.
@@ -282,24 +340,55 @@ export class RenderTargetCaptures {
           this.retireCaptureMaterial(target, material);
         }
       }
-      const frameCapture = activeRenderFrameCapture(this.scene.getEngine());
-      const drawn = frameCapture
-        ? frameCapture.stage(this.scene, { name: `Render Target Capture: ${guid}`, kind: "auxiliary",
-          actorGuid: actorId, detail: `${destination.getSize().width} × ${destination.getSize().height}; output asset ${guid}` },
-          () => this.draw(target, destination))
-        : this.draw(target, destination);
-      if (!drawn) continue;
-      capture.requested = false;
-      const wasPublished = target.published;
+      if (!this.stageDraw(target, guid, actorId, () => this.draw(() => this.drawReady(destination), !target.depth && !target.normals))) continue;
       if (target.spare) {
         const previous = { texture: target.texture, lease: target.lease };
         target.texture = target.spare.texture;
         target.lease = target.spare.lease;
         target.spare = previous;
       }
-      target.published = true;
-      if (!wasPublished || target.spare) this.publishTextures(wasPublished);
+      this.published(capture, target);
     }
+  }
+  /** Rendering state of every capture output, in insertion order. */
+  diagnostics(): RenderTargetCaptureDiagnostics[] {
+    return [...this.targets].map(([renderTargetGuid, target]) => ({
+      actorId: target.owner, renderTargetGuid, quality: target.quality, published: target.published,
+      taskNames: target.fullQuality?.renderer.taskNames() ?? [],
+      waterSceneCopyPass: target.fullQuality?.renderer.waterSceneCopyDiagnostics()?.renderPassId ?? null,
+      strictReadinessChecks: target.fullQuality?.renderer.strictReadinessChecks ?? 0,
+    }));
+  }
+  /** Settles once every retired Full Quality view's native release confirmed and its output and lease are freed. */
+  async whenReleased(): Promise<void> {
+    while (this.releases.size) await Promise.allSettled([...this.releases]);
+    if (this.releaseFailure !== undefined) throw this.releaseFailure;
+  }
+  private stageDraw(target: Target, guid: string, actorId: string, draw: () => boolean): boolean {
+    const frameCapture = activeRenderFrameCapture(this.scene.getEngine());
+    if (!frameCapture) return draw();
+    const { width, height } = target.texture.getSize();
+    return frameCapture.stage(this.scene, { name: `Render Target Capture: ${guid}`, kind: "auxiliary",
+      actorGuid: actorId, detail: `${width} × ${height}; ${target.fullQuality ? "Full Quality; " : ""}output asset ${guid}` }, draw);
+  }
+  /** A drawn frame consumes the manual request and publishes the front buffer. */
+  private published(capture: Capture, target: Target): void {
+    capture.requested = false;
+    const wasPublished = target.published;
+    target.published = true;
+    if (!wasPublished || target.spare) this.publishTextures(wasPublished);
+  }
+  /** Re-attach the scene's authored stack when it changed, then draw the view if it is ready. */
+  private drawFullQuality(view: FullQualityView): boolean {
+    if (view.postProcessRevision !== this.postProcessRevision) {
+      view.postProcess?.dispose();
+      view.postProcess = null;
+      view.postProcessRevision = this.postProcessRevision;
+      view.postProcess = this.postProcess?.(view.renderer, view.camera) ?? null;
+    }
+    // Shader and graph preparation run asynchronously; until the view is ready
+    // the target keeps its last image (or the transparent fallback).
+    return this.draw(() => view.renderer.render(false).rendered, false);
   }
   private createCamera(actorId: string): UniversalCamera {
     const previous = this.scene.activeCamera;
@@ -309,16 +398,18 @@ export class RenderTargetCaptures {
     this.scene.activeCamera = previous;
     return camera;
   }
-  private targetKey(definition: RenderTargetPayload, owner: string): string {
+  private targetKey(definition: RenderTargetPayload, owner: string, quality: RenderTargetCaptureQuality): string {
     const value = normalizeRenderTargetPayload(definition);
-    return JSON.stringify([owner, value.mode, value.width, value.height]);
+    return JSON.stringify([owner, value.mode, value.width, value.height, quality]);
   }
-  private ensureTarget(guid: string, definition: RenderTargetPayload, owner: string, camera: UniversalCamera): Target | undefined {
+  private ensureTarget(guid: string, definition: RenderTargetPayload, owner: string, camera: UniversalCamera,
+    quality: RenderTargetCaptureQuality): Target | undefined {
     const previous = this.targets.get(guid);
-    if (previous && previous.owner === owner && previous.definition === definition) return previous;
-    const key = this.targetKey(definition, owner);
+    if (previous && previous.owner === owner && previous.definition === definition && previous.quality === quality) return previous;
+    const key = this.targetKey(definition, owner, quality);
     if (previous?.key === key) { previous.definition = definition; return previous; }
     if (previous) this.retire(guid);
+    if (quality === "fullQuality") return this.createFullQualityTarget(guid, definition, owner, camera, key);
     const buffer = this.createBuffer(guid, definition, camera);
     if (!buffer) return undefined;
     let normals: NodeMaterial | undefined;
@@ -327,7 +418,7 @@ export class RenderTargetCaptures {
       if (definition.mode === "DepthPass") depth = createRenderTargetDepthMaterial(this.scene);
       if (definition.mode === "WorldNormal") normals = createRenderTargetNormalMaterial(this.scene);
       const target: Target = {
-        key, definition, ...buffer, owner, depth, normals,
+        key, definition, quality, ...buffer, owner, depth, normals,
         normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(), materialRetirement: Promise.resolve(),
         overrides: new Set(), pendingOverrides: new Set(), meshes: [], particles: [], published: false,
       };
@@ -338,6 +429,54 @@ export class RenderTargetCaptures {
       normals?.dispose();
       buffer.texture.dispose();
       buffer.lease.release();
+      throw error;
+    }
+  }
+  /**
+   * The output (display-encoded colour plus a sampleable depth texture the
+   * graph borrows) and the capture camera's own forward view. Over budget or
+   * beyond the device's texture size, the target keeps the transparent fallback.
+   */
+  private createFullQualityTarget(guid: string, definition: RenderTargetPayload, owner: string, camera: UniversalCamera, key: string): Target | undefined {
+    const { width, height } = normalizeRenderTargetPayload(definition);
+    const engine = this.scene.getEngine();
+    const caps = engine.getCaps();
+    if (width > caps.maxTextureSize || height > caps.maxTextureSize || !caps.depthTextureExtension) return undefined;
+    const lease = beginManagedRenderAllocation(engine,
+      renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_RGBA, type: Constants.TEXTURETYPE_UNSIGNED_BYTE }) +
+      renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_DEPTH24 }));
+    if (!lease) return undefined;
+    let texture: CaptureRenderTarget | undefined;
+    let renderer: SceneRenderCoordinator | undefined;
+    try {
+      texture = new CaptureRenderTarget(`renderTarget:${guid}`, { width, height }, this.scene, {
+        generateMipMaps: false, doNotChangeAspectRatio: false, type: Constants.TEXTURETYPE_UNSIGNED_BYTE,
+        format: Constants.TEXTUREFORMAT_RGBA, samplingMode: Texture.NEAREST_SAMPLINGMODE,
+        generateDepthBuffer: false, generateStencilBuffer: false, gammaSpace: true,
+      });
+      texture.createDepthStencilTexture(0, false, false, 1, Constants.TEXTUREFORMAT_DEPTH24);
+      // Only the view's graph writes this target; its own renderer never probes or draws the scene.
+      texture.renderList = [];
+      lease.commit(managedRenderTargetResources(texture.renderTarget!, { colorCategory: "sceneColor" }));
+      const meshes: AbstractMesh[] = [];
+      const particles: IParticleSystem[] = [];
+      const objects: FrameGraphObjectList = { meshes, particleSystems: particles };
+      camera.outputRenderTarget = texture;
+      // Planar water mirrors are per scene view; capture water keeps its other reflections.
+      renderer = new SceneRenderCoordinator(this.scene, { waterPlanarReflections: false, auxiliary: { camera, objects } });
+      const target: Target = {
+        key, definition, quality: "fullQuality", texture, lease, owner,
+        fullQuality: { renderer, camera, postProcess: null, postProcessRevision: -1 },
+        normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(), materialRetirement: Promise.resolve(),
+        overrides: new Set(), pendingOverrides: new Set(), meshes, particles, published: false,
+      };
+      this.targets.set(guid, target);
+      return target;
+    } catch (error) {
+      renderer?.dispose();
+      if (texture && camera.outputRenderTarget === texture) camera.outputRenderTarget = null;
+      texture?.dispose();
+      lease.release();
       throw error;
     }
   }
@@ -508,7 +647,11 @@ export class RenderTargetCaptures {
     }
     return undefined;
   }
-  private draw(target: Target, destination: CaptureRenderTarget): boolean {
+  /**
+   * Runs a capture draw outside the scene view's own pass, then restores that
+   * view's camera, matrices, UBO, pass, viewport and floating-origin context.
+   */
+  private draw(run: () => boolean, materialImageProcessing: boolean): boolean {
     const scene = this.scene;
     const camera = scene.activeCamera;
     const cameras = scene.activeCameras;
@@ -536,8 +679,9 @@ export class RenderTargetCaptures {
       // Match authored unlit surfaces: Scene Color is display/gamma encoded.
       // Like Babylon's ObjectRenderer, avoid the setter's scene-wide shader
       // invalidation; the capture has its own material render-pass defines.
-      if (!target.depth && !target.normals) imageProcessing._applyByPostProcess = false;
-      return this.drawReady(destination);
+      // A Full Quality view keeps the scene's pipeline and its Display Color stage.
+      if (materialImageProcessing) imageProcessing._applyByPostProcess = false;
+      return run();
     } finally {
       try {
         imageProcessing._applyByPostProcess = applyByPostProcess;
@@ -625,6 +769,7 @@ export class RenderTargetCaptures {
     if (!target) return;
     this.targets.delete(guid);
     this.publishTextures();
+    if (target.fullQuality) { this.retireFullQuality(target, target.fullQuality); return; }
     for (const mesh of target.overrides) if (!mesh.isDisposed()) target.texture.setMaterialForRendering(mesh, undefined);
     target.depth?.dispose();
     for (const material of target.normalSlots.values()) material.dispose(false, false);
@@ -634,6 +779,33 @@ export class RenderTargetCaptures {
     target.lease.release();
     target.spare?.texture.dispose();
     target.spare?.lease.release();
+  }
+  /**
+   * The view's graph borrows the output: free the output and its lease only
+   * after the graph confirms native release (WebGPU destroys at frame end).
+   * An uncertain release keeps both, quarantined.
+   */
+  private retireFullQuality(target: Target, view: FullQualityView): void {
+    if (view.camera.outputRenderTarget === target.texture) view.camera.outputRenderTarget = null;
+    const engine = this.scene.getEngine();
+    let released: Promise<void>;
+    try {
+      view.postProcess?.dispose();
+      view.renderer.dispose();
+      released = view.renderer.whenReleased().then(() => {
+        // Scene disposal already released every texture it owns.
+        if (!this.scene.isDisposed) target.texture.dispose();
+        return releaseManagedRenderLeaseAfterDisposal(engine, target.lease);
+      });
+    } catch (error) {
+      released = Promise.reject(error);
+    }
+    this.releases.add(released);
+    void released.then(() => { this.releases.delete(released); }, (error: unknown) => {
+      this.releases.delete(released);
+      this.releaseFailure ??= error;
+      console.warn(`[render] Full Quality capture resources are retained until native release: ${String(error)}`);
+    });
   }
   clear(): void {
     for (const guid of [...this.targets.keys()]) this.retire(guid);
