@@ -1,13 +1,20 @@
-import { Constants, FreeCamera, Mesh, MeshBuilder, NullEngine, NullEngineOptions, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import {
+  Constants, DirectionalLight, FreeCamera, Mesh, MeshBuilder, NullEngine, NullEngineOptions, Scene, SpotLight,
+  StandardMaterial, UniversalCamera, Vector3,
+} from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
 import {
-  createDefaultRenderTargetCaptureProperties, createDefaultWaterDefinition, normalizeWaterBody,
+  createDefaultRenderTargetCaptureProperties, createDefaultWaterDefinition, normalizeShadowSettings, normalizeWaterBody,
   type RenderTargetCaptureQuality,
 } from "@babylonslate/core";
+import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { managedRenderReservations } from "./managed-render-resources";
 import { RenderTargetCaptures } from "./render-target-capture";
+import { updateSceneRenderingSettings } from "./render-settings";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { sceneShadowController } from "./shadow-controller";
+import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { configureEditorRenderingGroups } from "./sorting";
 import { createWaterMesh } from "./water-mesh";
 import { isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
@@ -136,6 +143,79 @@ it("renders Full Quality through the forward pipeline with its own scene copy, w
   for (let frame = 0; frame < 3; frame += 1) expect(view.render()).toMatchObject({ rendered: true, readyForPresentation: true });
   expect(view.strictReadinessChecks).toBe(checks);
   expect(captures.diagnostics()[0]).toMatchObject({ published: true, strictReadinessChecks: captureChecks });
+  view.dispose();
+});
+
+it("keeps the scene view's shadow maps cached in a static scene while a Full Quality capture draws", async () => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 96;
+  options.renderHeight = 64;
+  const engine = adaptNullEngineFrameGraph(new NullEngine(options));
+  engines.push(engine);
+  Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16 });
+  enableHeadlessCascades(engine);
+  const allocate = engine.createRenderTargetTexture.bind(engine);
+  engine.createRenderTargetTexture = (size, creation) => {
+    const target = allocate(size, creation);
+    // NullEngine does not record the requested format.
+    target.texture!.format = typeof creation === "object" && creation.format !== undefined ? creation.format : Constants.TEXTUREFORMAT_RGBA;
+    return target;
+  };
+  const scene = new Scene(engine);
+  configureEditorRenderingGroups(scene);
+  const camera = new UniversalCamera("Main Camera", new Vector3(0, 3, -12), scene);
+  camera.setTarget(Vector3.Zero());
+  scene.activeCamera = camera;
+  updateSceneRenderingSettings(scene, {
+    shadows: normalizeShadowSettings({ cascades: 2, distance: 40, mapSize: 256, localMapSize: 256, maxLocalLights: 1 }),
+  });
+  const material = new StandardMaterial("opaque", scene);
+  const box = MeshBuilder.CreateBox("caster", {}, scene);
+  box.position.y = 1;
+  box.material = material;
+  const floor = MeshBuilder.CreateGround("floor", { width: 20, height: 20 }, scene);
+  floor.material = material;
+  const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene);
+  // Unbounded range: its depth range comes from the camera unless fitted explicitly.
+  const spot = new SpotLight("spot", new Vector3(0, 4, -2), new Vector3(0, -1, 0.4), Math.PI / 2, 1, scene);
+  const controller = sceneShadowController(scene);
+  controller.register(sun, true);
+  controller.register(spot, true);
+  controller.sync();
+  const maps = [sun, spot].map((light) => controller.generator(light)!.getShadowMap()!);
+  let draws = 0;
+  const bind = engine.bindFramebuffer.bind(engine);
+  vi.spyOn(engine, "bindFramebuffer").mockImplementation((target, ...args) => {
+    if (maps.some((map) => map.renderTarget === target)) draws++;
+    bind(target, ...args);
+  });
+  const view = new SceneRenderCoordinator(scene);
+  const captures = new RenderTargetCaptures(scene);
+  captures.setAssets(new Map([["target", { mode: "SceneColor", width: 32, height: 16 }]]),
+    new Map([["texture", { renderTargetGuid: "target" }]]));
+  const lens = new Mesh("Lens", scene);
+  lens.position.set(6, 4, -6);
+  lens.lookAt(Vector3.Zero());
+  // A visible geometry-less caster would keep the maps redrawing by itself.
+  lens.isVisible = false;
+  // A different lens and clip range from the scene camera's.
+  captures.configure("capture", { ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: "target",
+    quality: "fullQuality", fieldOfView: 40, nearClip: 0.5, farClip: 60 }, () => lens);
+  captures.acquireTexture("texture");
+  // Each frame executes the scene view's graph and, inside its frame, the capture's.
+  // (A render hook on a caster would make the maps redraw every frame by themselves.)
+  const executes = vi.spyOn(FrameGraph.prototype, "execute");
+  await untilPublished(scene, view, captures);
+  // Settle: a map's first draws feed its next snapshot once.
+  for (let frame = 0; frame < 5; frame++) view.render();
+  const before = { draws, executes: executes.mock.calls.length };
+  for (let frame = 0; frame < 4; frame++) expect(view.render()).toMatchObject({ rendered: true });
+  expect(executes.mock.calls.length - before.executes).toBe(8);
+  expect(draws - before.draws).toBe(0);
+  // The capture's receivers bind the depth range its borrowed spot map was drawn with.
+  const captureCamera = scene.cameras.find((entry) => entry.name === "renderTargetCapture:capture")!;
+  expect([spot.getDepthMinZ(captureCamera), spot.getDepthMaxZ(captureCamera)])
+    .toEqual([spot.getDepthMinZ(camera), spot.getDepthMaxZ(camera)]);
   view.dispose();
 });
 

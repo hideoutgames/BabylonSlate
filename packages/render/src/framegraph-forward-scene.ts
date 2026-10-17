@@ -74,8 +74,6 @@ function endGraphCameraWrite(scene: Scene): void {
   if (writes > 0) graphCameraWrites.set(scene, writes);
   else graphCameraWrites.delete(scene);
 }
-/** An auxiliary view's per-mesh variants are its own passes'; it never probes the scene camera's. */
-const skipSceneVariants = (): boolean => true;
 export type ForwardSceneGraphReadiness = ForwardSceneGraphResult & {
   ready: boolean;
   /** Why the scene cannot draw yet, or at all. */
@@ -510,8 +508,10 @@ export class ForwardSceneFrameGraph {
     } else {
       this.strictChecks += 1;
       // The next preparation plans from the current demand, not from a stale plan.
-      if (!isSceneFrameReady(this.scene, [], this.auxiliary ? skipSceneVariants
-        : (mesh) => waterMeshDrawsInSceneCopyPass(this.scene, camera, mesh))) return false;
+      // An auxiliary view draws only inside the scene view's ready frames, and
+      // the scene probe would bind (refit) shadow maps for its camera.
+      if (!this.auxiliary &&
+        !isSceneFrameReady(this.scene, [], (mesh) => waterMeshDrawsInSceneCopyPass(this.scene, camera, mesh))) return false;
       // A graph that is pending or stale is fully probed when its preparation finishes.
     }
     this.markGraphProbed();
@@ -975,7 +975,7 @@ export class ForwardSceneFrameGraph {
         const jitter = this.effectsGraph?.spatial?.jitter;
         jitter?.jitterRenderer(this.objects.objectRenderer);
         if (this.water) jitter?.jitterRenderer(this.water.transparent.objectRenderer);
-        this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects);
+        this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects, { borrowOnly: this.auxiliary !== undefined });
         for (const receiver of this.water?.shadowReceivers ?? []) this.shadows.addReceiver(receiver);
         this.clustered = new FrameGraphClusteredLightsTask(
           this.graph,
@@ -1214,7 +1214,8 @@ export class ForwardSceneFrameGraph {
         this.scene._activeCamera = camera;
         this.scene.getEngine().currentRenderPassId = camera.renderPassId;
         const sources = this.outlineView?.sourceRevision ?? 0;
-        const cameraReady = isSceneFrameReady(this.scene, [], this.auxiliary ? skipSceneVariants : this.water && this.skipCopyWater);
+        // An auxiliary view's own passes are its readiness; the scene view gates the scene.
+        const cameraReady = this.auxiliary || isSceneFrameReady(this.scene, [], this.water && this.skipCopyWater);
         const ready = this.graph!.isReady() && cameraReady;
         // A mask admitting an instance source late dirties attributes that the
         // earlier probes already accepted; the next probe sees the final state.

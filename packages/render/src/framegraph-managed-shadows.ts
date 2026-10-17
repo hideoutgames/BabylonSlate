@@ -222,15 +222,24 @@ export class ManagedShadowsTask extends FrameGraphTask {
   private readonly objects: ManagedShadowObjectRendererTask;
   /** Further main-view passes (a split object pass) that receive the same maps. */
   private readonly receivers: ManagedShadowObjectRendererTask[] = [];
+  /**
+   * Receive the maps as the scene view last drew them, never refreshing,
+   * refitting, probing or drawing them. One map holds one image: a second
+   * camera refitting the sun cascades or a local depth range would redraw it
+   * for both views every frame and defeat its render-once caching.
+   */
+  private readonly borrowOnly: boolean;
 
   constructor(
     graph: FrameGraph,
     scene: Scene,
     objects: ManagedShadowObjectRendererTask,
+    options: { borrowOnly?: boolean } = {},
   ) {
     super("Forward admitted shadows", graph);
     this.scene = scene;
     this.objects = objects;
+    this.borrowOnly = options.borrowOnly === true;
   }
 
   /** Bind another main-view pass to the admitted maps, before the graph builds. */
@@ -307,6 +316,10 @@ export class ManagedShadowsTask extends FrameGraphTask {
     this.bind();
     this.recorded = true;
     this._frameGraph.addPass(this.name).setExecuteFunc((context) => {
+      if (this.borrowOnly) {
+        this.bind();
+        return;
+      }
       // Babylon's graph scene path updates world matrices after the ordinary
       // target observable, so the controller skips its walk there (a graph
       // scene) and this is the frame's only one, before consuming the RTT gate.
@@ -379,10 +392,14 @@ export class ManagedShadowsTask extends FrameGraphTask {
     // never turn a render-once map into an uninitialized cached allocation.
     for (const generator of this.generators()) {
       const map = generator.getShadowMap();
-      if (
-        !map ||
-        !withSceneReadinessState(this.scene, () => map.isReadyForRendering())
-      )
+      if (!map) return false;
+      // A probe binds the map, which refits cascades to the probing camera:
+      // borrowed maps are the scene view's to probe and draw.
+      if (this.borrowOnly) {
+        if (!map.getInternalTexture()) return false;
+        continue;
+      }
+      if (!withSceneReadinessState(this.scene, () => map.isReadyForRendering()))
         return false;
     }
     this.changedDuringFrame = false;
