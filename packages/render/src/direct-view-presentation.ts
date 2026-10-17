@@ -219,6 +219,21 @@ export function createEngineCanvasPlacement(canvas: HTMLCanvasElement, isDispose
   };
 }
 
+const directEngines = new WeakSet<AbstractEngine>();
+
+/**
+ * Declare that views of `engine` may show its canvas directly (the editor's
+ * project Engine). Every other Engine, the exported player's included, keeps
+ * copying into its view canvases, whose pixels the player and its checks read.
+ */
+export function allowDirectViewPresentation(engine: AbstractEngine): void {
+  directEngines.add(engine);
+}
+
+export function directViewPresentationAllowed(engine: AbstractEngine): boolean {
+  return directEngines.has(engine);
+}
+
 let directEnabled = true;
 
 /** Direct presentation switch (on by default); off forces the copy path, e.g. for an A/B. */

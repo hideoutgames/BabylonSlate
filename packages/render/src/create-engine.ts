@@ -18,6 +18,7 @@ import type { AudioPlaybackBackend, AudioPose } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
+import { directViewPresentationAllowed } from "./direct-view-presentation";
 import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled, VIEW_CANVAS_2D_ATTRIBUTES, viewCanvasHasLayoutBox, viewPresentedDirectly } from "./registered-view-admission";
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
@@ -1132,6 +1133,9 @@ function initializeEngine(
       canCopy: () => frameCopyReady && !disposed && !contextLost,
       // renderLoop counts an attempt once it passes shouldRenderFrame, before it touches the framebuffer.
       dirty: () => presentationStats.attempted !== attemptedAtStep,
+      // Only the editor's project Engine presents directly. The exported player and Preview Build run their own
+      // Engine session, whose view canvas keeps receiving copies: the player and its checks read those pixels.
+      allowDirect: () => directViewPresentationAllowed(engine),
       copied: (milliseconds) => {
         presentationStats.copyMs = milliseconds;
         acknowledgeFrameCopy(undefined, pendingPerformanceReceipt, milliseconds);

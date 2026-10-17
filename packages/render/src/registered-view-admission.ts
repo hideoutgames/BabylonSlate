@@ -18,6 +18,8 @@ type Presentation = {
   copied: (milliseconds: number) => void;
   /** Whether this step drew into the Engine's default framebuffer at all (absent: assume it did). */
   dirty?: () => boolean;
+  /** Whether this view may show the Engine canvas directly while it is the sole view (absent: it may). */
+  allowDirect?: () => boolean;
 };
 const presenters = new WeakMap<AbstractEngine, {
   views: Map<EngineView, Presentation>;
@@ -137,8 +139,8 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       const source = this.getRenderingCanvas();
       if (!context || !source) return true;
       // A popout window's view copies: the Engine canvas cannot leave its document.
-      const presentDirectly = direct !== null && directViewPresentationEnabled() && soleShownView(this) === current &&
-        direct.placement.canCover(current);
+      const presentDirectly = direct !== null && directViewPresentationEnabled() && host.allowDirect?.() !== false &&
+        soleShownView(this) === current && direct.placement.canCover(current);
       if (!presentDirectly) leaveDirect();
       else {
         // The previous sole view keeps its last frame in its own canvas.

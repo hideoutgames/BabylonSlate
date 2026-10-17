@@ -110,13 +110,13 @@ function host() {
     frame();
   };
   /** A view canvas in its own panel, admitted while it has a layout box (a hidden dock tab has none). */
-  const view = (target = new FakeCanvas()) => {
+  const view = (target = new FakeCanvas(), options: { allowDirect?: () => boolean } = {}) => {
     const panel = target.parentNode ?? new FakeParent();
     if (!target.parentNode) panel.insertBefore(target, null);
     const registered = engine.registerView(target as unknown as HTMLCanvasElement, undefined, true);
     let copies = 0;
     const release = admitRegisteredViewFrames(engine, registered, () => target.clientWidth > 0, {
-      begin: () => { state.drew = false; }, canCopy: () => state.coherent, dirty: () => state.drew, copied: () => { copies++; },
+      begin: () => { state.drew = false; }, canCopy: () => state.coherent, dirty: () => state.drew, allowDirect: options.allowDirect, copied: () => { copies++; },
     });
     return { panel, target, view: registered, release, copies: () => copies };
   };
@@ -313,6 +313,21 @@ describe("direct view presentation", () => {
       off.draw(0x10ff10);
       expect(off.source.parentNode).toBe(b.panel);
     } finally { b.release(); off.engine.dispose(); }
+  });
+
+  it("keeps copying a view whose presentation disallows direct presentation", () => {
+    useFakeHeldImages();
+    let allowed = false;
+    const { engine, body, source, draw, view } = host();
+    const a = view(undefined, { allowDirect: () => allowed });
+    try {
+      // An Engine not declared for direct presentation (the exported player's): the Engine canvas stays parked and the view canvas gets the pixels.
+      draw(0xff8040);
+      expect([source.parentNode, a.target.pixel]).toEqual([body, 0xff8040]);
+      allowed = true;
+      draw(0x40a0ff);
+      expect(source.parentNode).toBe(a.panel);
+    } finally { a.release(); engine.dispose(); }
   });
 
   it("writes the presented image into a directly presented view canvas on request", () => {
