@@ -898,6 +898,17 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     void projectEngine.sync(renderingRequest);
   }, [projectEngine, renderingRequest, sessionOwner, sessionState]);
 
+  const retryRendering = useCallback(async () => {
+    // Retry replaces the Engine. A game still on the old one (for example
+    // after its device was lost) stops first and must release it.
+    if (!sessionOwner.canStart()) {
+      const stopped = await sessionOwner.stop();
+      if (stopped) await stopped.released.catch(() => undefined);
+      if (!sessionOwner.canStart()) return;
+    }
+    await projectEngine.sync(renderingRequest, true);
+  }, [projectEngine, renderingRequest, sessionOwner]);
+
   useEffect(() => {
     const engine = projectEngineState.session?.engine ?? null;
     ownedEngineRef.current = engine;
@@ -1826,7 +1837,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         {projectOpen && (projectEngineState.phase === "preparing" || projectEngineState.phase === "initializing" ||
           (projectEngineState.phase === "failed" && !renderingFailureDismissed)) ? (
           <ProjectRenderingDialog state={projectEngineState}
-            onRetry={() => { setRenderingFailureDismissed(false); void projectEngine.sync(renderingRequest, true); }}
+            onRetry={() => { setRenderingFailureDismissed(false); void retryRendering(); }}
             onDismiss={() => setRenderingFailureDismissed(true)} />
         ) : null}
         {previewPhase || previewPreparationError ? (

@@ -12,6 +12,8 @@ import {
   configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
 } from "./ktx2-transcoder";
+import { pruneReleasedWebGpuCacheEntries } from "./webgpu-cache-pruning";
+import { releaseDeletedWebGpuPipelineContexts } from "./webgpu-resource-release";
 
 /** A fully initialized project Engine, with the same offline assets as WebGL2. */
 export async function createAppWebGpuEngine(
@@ -40,6 +42,10 @@ export async function createAppWebGpuEngine(
     adaptToDeviceRatio: false,
     useLargeWorldRendering: true,
     useExactSrgbConversions: true,
+    // Babylon 9.29's WebGPU restore rebuilds every resource before its new
+    // device exists, so a lost Engine is replaced instead (`whenWebGpuDeviceLost`).
+    // This also stops textures keeping their source bytes for that restore.
+    doNotHandleContextLost: true,
     // Babylon intersects this list with the actual adapter's features.
     deviceDescriptor: {
       requiredFeatures: [
@@ -68,7 +74,9 @@ export async function createAppWebGpuEngine(
       caps: engine.getCaps(),
       renderer: engine.getInfo().renderer,
     });
-    reportWebGpuDeviceProblems(engine);
+    watchWebGpuDevice(engine);
+    releaseDeletedWebGpuPipelineContexts(engine);
+    pruneReleasedWebGpuCacheEntries(engine);
     return engine;
   } catch (error) {
     const failures: unknown[] = [error];
@@ -156,18 +164,48 @@ type DiagnosedDevice = {
   addEventListener?: (type: "uncapturederror", listener: (event: { error?: { message?: string } }) => void) => void;
 };
 
+export interface WebGpuDeviceLoss {
+  reason: string;
+  message: string;
+}
+
+const deviceLosses = new WeakMap<AbstractEngine, Promise<WebGpuDeviceLoss>>();
+
+/**
+ * Settles when the WebGPU device of an Engine from `createAppWebGpuEngine` is
+ * lost while the Engine is still in use; never for its own disposal. A lost
+ * Engine cannot recover in place: release it and create a new one.
+ */
+export function whenWebGpuDeviceLost(engine: AbstractEngine): Promise<WebGpuDeviceLoss> | null {
+  return deviceLosses.get(engine) ?? null;
+}
+
 /**
  * A lost device makes every later call fail with an unrelated-looking
- * InvalidStateError. Log the loss reason and uncaptured errors so copied
- * load reports name the cause; our own disposal ("destroyed") is not logged.
+ * InvalidStateError. Log the loss and uncaptured errors so copied load reports
+ * name the cause, mark the Engine lost and notify its context-lost observers
+ * (Babylon does neither with `doNotHandleContextLost`). Disposal destroys the
+ * device after marking the Engine disposed, so it is not a loss.
  */
-function reportWebGpuDeviceProblems(engine: WebGPUEngine): void {
+export function watchWebGpuDevice(engine: WebGPUEngine): void {
   // Pinned Babylon 9.29 owning-device boundary.
   const device = (engine as unknown as { _device?: DiagnosedDevice })._device;
-  void device?.lost?.then((info) => {
-    if (info.reason === "destroyed") return;
-    console.error(`[render] WebGPU device lost (${info.reason ?? "unknown"}): ${info.message || "no message"}`);
-  }, () => undefined);
+  if (device?.lost) {
+    deviceLosses.set(engine, new Promise<WebGpuDeviceLoss>((resolve) => {
+      void device.lost!.then((info) => {
+        if (engine.isDisposed) return;
+        const loss = { reason: info.reason ?? "unknown", message: info.message || "no message" };
+        console.error(`[render] WebGPU device lost (${loss.reason}): ${loss.message}`);
+        (engine as unknown as { _contextWasLost: boolean })._contextWasLost = true;
+        try {
+          engine.onContextLostObservable.notifyObservers(engine);
+        } catch (error) {
+          console.error(`[render] A context-lost observer failed: ${String(error)}`);
+        }
+        resolve(loss);
+      }, () => undefined);
+    }));
+  }
   device?.addEventListener?.("uncapturederror", (event) => {
     console.warn(`[render] WebGPU uncaptured error: ${event.error?.message ?? "unknown"}`);
   });

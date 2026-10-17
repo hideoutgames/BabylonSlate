@@ -23,6 +23,8 @@ export type ProjectEngineController = {
   dispose(): void;
 };
 
+const DEVICE_LOST_MESSAGE = "Rendering stopped because the graphics device was lost, for example when the device ran out of graphics memory. Retry to restart rendering. Open documents and unsaved edits are kept.";
+
 /** Hidden constructor canvas + initialized Engine for one open project. */
 export async function createProjectEngineSession(
   backend: GpuBackend,
@@ -115,6 +117,12 @@ export function createProjectEngineController(): ProjectEngineController {
             return;
           }
           publish({ phase: "ready", session });
+          // A lost WebGPU device cannot recover in place: detach every client
+          // and offer Retry, which replaces the Engine.
+          void session.deviceLost?.then(() => {
+            if (owned !== session || state.session !== session) return;
+            publish({ phase: "failed", session: null, retryable: true, error: new Error(DEVICE_LOST_MESSAGE) });
+          });
         } catch (error) {
           if (error instanceof AggregateError) quarantine(error);
           if (!signal.aborted) publish({ phase: "failed", session: null,

@@ -117,6 +117,45 @@ describe("project Engine transitions", () => {
     await host.sync(null);
   });
 
+  it("detaches clients when the WebGPU device is lost and replaces the Engine on Retry", async () => {
+    const host = createProjectEngineController();
+    const lost = deferred<{ reason: string; message: string }>();
+    const factory = createSession.getMockImplementation()!;
+    createSession.mockImplementationOnce(async (options: BackendEngineSessionOptions) =>
+      Object.assign(await factory(options), { deviceLost: lost.promise }));
+    await host.sync(request("webgpu"));
+    const lostSession = host.getSnapshot().session!;
+
+    lost.resolve({ reason: "unknown", message: "Out of memory" });
+    await vi.waitFor(() => expect(host.getSnapshot()).toMatchObject({ phase: "failed", session: null, retryable: true }));
+    expect(String(host.getSnapshot().error)).toContain("graphics device was lost");
+    // The authored request is unchanged, so only Retry may allocate again.
+    await host.sync(request("webgpu"));
+    expect(createSession).toHaveBeenCalledTimes(1);
+
+    await host.sync(request("webgpu"), true);
+    expect(lostSession.engine.isDisposed).toBe(true);
+    expect(host.getSnapshot().phase).toBe("ready");
+    expect(host.getSnapshot().session).not.toBe(lostSession);
+    await host.sync(null);
+  });
+
+  it("ignores the loss of a device it already replaced", async () => {
+    const host = createProjectEngineController();
+    const lost = deferred<{ reason: string; message: string }>();
+    const factory = createSession.getMockImplementation()!;
+    createSession.mockImplementationOnce(async (options: BackendEngineSessionOptions) =>
+      Object.assign(await factory(options), { deviceLost: lost.promise }));
+    await host.sync(request("webgpu"));
+    await host.sync(request("webgl2"));
+    const current = host.getSnapshot().session;
+
+    lost.resolve({ reason: "destroyed", message: "" });
+    await Promise.resolve();
+    expect(host.getSnapshot()).toMatchObject({ phase: "ready", session: current });
+    await host.sync(null);
+  });
+
   it("closes during preparation without creating an Engine and permits a later project", async () => {
     const host = createProjectEngineController();
     const paint = deferred<string | undefined>();
