@@ -58,13 +58,14 @@ class FakeCanvas {
 }
 
 /** Held images are the Engine canvas pixel at snapshot time, per view. */
-function useFakeHeldImages() {
+function useFakeHeldImages(extra: Pick<HeldImageStore, "engage" | "usable"> = {}) {
   const blits = { count: 0 };
   setHeldImageStoreFactoryForTests((engine) => {
     const source = engine.getRenderingCanvas() as unknown as FakeCanvas;
     const held = new Map<EngineView, { pixel: number; width: number; height: number }>();
     const store: HeldImageStore = {
-      snapshot: (view, width, height) => { blits.count++; held.set(view, { pixel: source.pixel, width, height }); },
+      ...extra,
+      snapshot: (view, width, height) => { blits.count++; held.set(view, { pixel: source.pixel, width, height }); return true; },
       restore: (view) => { const entry = held.get(view); if (!entry) return false; blits.count++; source.pixel = entry.pixel; return true; },
       size: (view) => { const entry = held.get(view); return entry ? { width: entry.width, height: entry.height } : null; },
       release: (view) => { held.delete(view); },
@@ -313,6 +314,21 @@ describe("direct view presentation", () => {
       off.draw(0x10ff10);
       expect(off.source.parentNode).toBe(b.panel);
     } finally { b.release(); off.engine.dispose(); }
+  });
+
+  it("engages the store before a direct step draws, and copies once the store reports it cannot work", () => {
+    let usable = true;
+    const order: string[] = [];
+    useFakeHeldImages({ engage: () => { order.push("engage"); }, usable: () => usable });
+    const { engine, body, source, draw, view } = host();
+    const a = view();
+    try {
+      draw(0xff8040, true, () => order.push("draw"));
+      expect([order, source.parentNode]).toEqual([["engage", "draw"], a.panel]);
+      usable = false; // e.g. the WebGPU main pass stopped rendering into the store's target
+      draw(0x40a0ff);
+      expect([source.parentNode, a.target.pixel, order.length]).toEqual([body, 0x40a0ff, 2]);
+    } finally { a.release(); engine.dispose(); }
   });
 
   it("writes the presented image into a directly presented view canvas on request", () => {

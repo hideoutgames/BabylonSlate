@@ -7,6 +7,7 @@ import {
   type EngineCanvasPlacement,
   type HeldImageStore,
 } from "./direct-view-presentation";
+import { createWebGpuHeldImageStore } from "./webgpu-held-image-store";
 
 type Admission = { requestedEnabled: boolean; held: boolean };
 const admissions = new WeakMap<EngineView, Admission>();
@@ -75,10 +76,13 @@ function soleShownView(engine: AbstractEngine): EngineView | null {
   return sole;
 }
 
-/** Store factory override for tests (node has no WebGL). */
-let heldImageStoreFactory: (engine: AbstractEngine) => HeldImageStore | null = createWebGl2HeldImageStore;
+const createHeldImageStore = (engine: AbstractEngine) =>
+  engine.isWebGPU ? createWebGpuHeldImageStore(engine) : createWebGl2HeldImageStore(engine);
+
+/** Store factory override for tests (node has no GPU). */
+let heldImageStoreFactory: (engine: AbstractEngine) => HeldImageStore | null = createHeldImageStore;
 export function setHeldImageStoreFactoryForTests(factory: ((engine: AbstractEngine) => HeldImageStore | null) | null): void {
-  heldImageStoreFactory = factory ?? createWebGl2HeldImageStore;
+  heldImageStoreFactory = factory ?? createHeldImageStore;
 }
 
 /** Whether `view` is presented by showing the Engine canvas itself (diagnostics and tests). */
@@ -104,7 +108,7 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       const target = current.target;
       const context = target.getContext("2d", VIEW_CANVAS_2D_ATTRIBUTES);
       if (!direct || !size || !source?.width || !source.height || !context) return;
-      direct.store.restore(current, source.width, source.height);
+      direct.store.restore(current, source.width, source.height, true);
       engine.flushFramebuffer();
       if (target.width !== size.width) target.width = size.width;
       if (target.height !== size.height) target.height = size.height;
@@ -137,13 +141,15 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       const source = this.getRenderingCanvas();
       if (!context || !source) return true;
       // A popout window's view copies: the Engine canvas cannot leave its document.
-      const presentDirectly = direct !== null && directViewPresentationEnabled() && soleShownView(this) === current &&
-        direct.placement.canCover(current);
+      const presentDirectly = direct !== null && directViewPresentationEnabled() && direct.store.usable?.() !== false &&
+        soleShownView(this) === current && direct.placement.canCover(current);
       if (!presentDirectly) leaveDirect();
       else {
         // The previous sole view keeps its last frame in its own canvas.
         const covered = direct.placement.view;
         if (covered && covered !== current) stopCovering(covered, true);
+        direct.active = true;
+        direct.store.engage?.();
       }
       host.begin();
       this.onBeforeViewRenderObservable.notifyObservers(current);
@@ -170,12 +176,10 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
         if (!source.width || !source.height) return true;
         this._renderFrame();
         if (presentDirectly) {
-          direct.active = true;
           // A resize reallocates (clears) the default framebuffer even when nothing draws.
           const wrote = source.width !== startSize.width || source.height !== startSize.height || host.dirty?.() !== false;
-          if (host.canCopy()) {
-            const started = performance.now();
-            direct.store.snapshot(current, source.width, source.height);
+          const started = performance.now();
+          if (host.canCopy() && direct.store.snapshot(current, source.width, source.height)) {
             // The view canvas keeps the presented image's dimensions; it is drawn into only when it stops being covered.
             if (canvas.width !== source.width) canvas.width = source.width;
             if (canvas.height !== source.height) canvas.height = source.height;
@@ -235,6 +239,7 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
         leaveDirect();
         direct.placement.park();
         direct.store.clear();
+        direct.store.dispose?.();
         engine.onContextLostObservable.remove(lost);
         if (engine.setSize === resizeWhileCovering) {
           if (sizeDescriptor) Object.defineProperty(engine, "setSize", sizeDescriptor);

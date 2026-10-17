@@ -18,14 +18,31 @@ import type { AbstractEngine, EngineView } from "@babylonjs/core";
 
 /** GPU copies of each view's last coherent frame. */
 export interface HeldImageStore {
-  /** Copy the Engine's default framebuffer (`width` × `height`) into the view's held image. */
-  snapshot(view: EngineView, width: number, height: number): void;
-  /** Copy the view's held image into the default framebuffer, scaled to `width` × `height`. False when it has none. */
-  restore(view: EngineView, width: number, height: number): boolean;
+  /**
+   * The step about to draw is presented directly (WebGPU then draws into its
+   * own target instead of the canvas). Stays in effect until `clear`.
+   */
+  engage?(): void;
+  /**
+   * The frame just drawn (`width` × `height`) is coherent: hold it as the
+   * view's image and present it. False when nothing was drawn to hold.
+   */
+  snapshot(view: EngineView, width: number, height: number): boolean;
+  /**
+   * Make the Engine canvas show the view's held image again, scaled to
+   * `width` × `height`, after something else drew or a resize. `forRead`
+   * also makes it readable in this task (a `drawImage` of the canvas).
+   * False when the view has no held image.
+   */
+  restore(view: EngineView, width: number, height: number, forRead?: boolean): boolean;
   size(view: EngineView): { width: number; height: number } | null;
   release(view: EngineView): void;
-  /** Forget every held image; `lost` skips GL deletes after a context loss. */
+  /** Forget every held image and stop drawing for direct presentation; `lost` skips GPU deletes after a context loss. */
   clear(lost?: boolean): void;
+  /** False once the store found it cannot work on this Engine; presentation then copies. */
+  usable?(): boolean;
+  /** Undo what the store installed on the Engine (the presenter is going away). */
+  dispose?(): void;
 }
 
 type WebGlEngine = AbstractEngine & {
@@ -85,6 +102,8 @@ export function createWebGl2HeldImageStore(engine: AbstractEngine): HeldImageSto
     snapshot(view, width, height) {
       const entry = allocate(view, width, height);
       if (entry) blit(null, entry.framebuffer, entry, { width, height });
+      // The default framebuffer is shown either way.
+      return true;
     },
     restore(view, width, height) {
       const entry = held.get(view);
