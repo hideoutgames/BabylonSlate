@@ -163,7 +163,7 @@ async function createRenderTargets(ctx: FeatureTestContext): Promise<RenderingRe
 }
 
 /** Unlit surface sampling a Render Target Texture into Base Color. */
-function monitorMaterial(name: string, textureGuid: string): Record<string, unknown> {
+export function monitorMaterial(name: string, textureGuid: string): Record<string, unknown> {
   const doc = createDefaultMaterialDocument(name);
   const output = doc.nodes.find((node) => node.type === "output.surface");
   if (!output) throw new Error("FeatureTest monitor Material has no surface output.");
