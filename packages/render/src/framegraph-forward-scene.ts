@@ -35,6 +35,12 @@ import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
 import { isManagedClusteredLight } from "./clustered-light-policy";
 import { whenPresentationFenceClear } from "./presented-frame";
 import {
+  beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal,
+  type ManagedRenderCategory, type ManagedRenderLease,
+} from "./managed-render-resources";
+import { managedRenderTextureResource, renderTargetAllocationBytes } from "./render-target-resource-cost";
+import { drawSceneAuxiliaryViews } from "./scene-auxiliary-views";
+import {
   ManagedShadowObjectRendererTask,
   ManagedShadowsTask,
   unsupportedManagedShadows,
@@ -42,6 +48,33 @@ import {
 
 /** The FrameGraph is the only scene renderer; a frame it cannot draw is skipped. */
 export type ForwardSceneGraphResult = { path: "frameGraph" };
+export type ForwardSceneFrameGraphOptions = {
+  /**
+   * An auxiliary view (a Full Quality Render Target Capture) drawn inside the
+   * scene's own view frame. It executes its graph without Scene.render, so no
+   * animation, particle step or render observer runs twice; it never admits
+   * lights or shadows (the scene's view does, for its camera); it draws only
+   * `objects`, the owner's candidate list; and it draws the scene into its own
+   * targets, writing the camera's output only in a final copy, so a material
+   * in view may sample that output without a feedback loop.
+   */
+  auxiliary?: { objects: FrameGraphObjectList };
+};
+/**
+ * Graph renders and camera assignments in progress, per scene. Babylon clears
+ * and restores activeCamera inside a graph render, and auxiliary views swap it
+ * inside the scene view's frame: none of those writes is an authored change
+ * for any graph of the scene.
+ */
+const graphCameraWrites = new WeakMap<Scene, number>();
+function beginGraphCameraWrite(scene: Scene): void {
+  graphCameraWrites.set(scene, (graphCameraWrites.get(scene) ?? 0) + 1);
+}
+function endGraphCameraWrite(scene: Scene): void {
+  const writes = (graphCameraWrites.get(scene) ?? 1) - 1;
+  if (writes > 0) graphCameraWrites.set(scene, writes);
+  else graphCameraWrites.delete(scene);
+}
 export type ForwardSceneGraphReadiness = ForwardSceneGraphResult & {
   ready: boolean;
   /** Why the scene cannot draw yet, or at all. */
@@ -141,7 +174,9 @@ export class ForwardSceneFrameGraph {
   private failure: string | undefined;
   private failedOutput: ReturnType<ForwardSceneFrameGraph["output"]> & { camera: Camera } | undefined;
   private renderingCamera: Camera | undefined;
-  private suppressCameraMark = 0;
+  private readonly auxiliary: ForwardSceneFrameGraphOptions["auxiliary"];
+  /** An auxiliary view's own scene targets, charged to the shared ledger. */
+  private ownScene: { color: FrameGraphTextureHandle; depth: FrameGraphTextureHandle; lease: ManagedRenderLease; committed: boolean } | undefined;
   private readinessDirtyFlag = true;
   /** Only outline membership or style changed; the prepared graph's other tasks stay admitted. */
   private outlineDirtyFlag = false;
@@ -172,12 +207,13 @@ export class ForwardSceneFrameGraph {
   private readonly readinessDetach: (() => void)[] = [];
   private readonly meshMaterialObservers = new Map<AbstractMesh, Observer<AbstractMesh>>();
   private readonly lightEnabledObservers = new Map<Light, Observer<boolean>>();
-  private readonly beforeRender: Observer<Scene>;
+  private readonly beforeRender: Observer<Scene> | null;
   private readonly onDispose: Observer<Scene>;
   private readonly scene: Scene;
 
-  constructor(scene: Scene) {
+  constructor(scene: Scene, options: ForwardSceneFrameGraphOptions = {}) {
     this.scene = scene;
+    this.auxiliary = options.auxiliary;
     // Strict readiness probes rebuild every light/material variant. Cache the
     // result and re-probe only after scene or rendering-definition changes.
     const mark = () => this.markReadinessDirty();
@@ -198,8 +234,7 @@ export class ForwardSceneFrameGraph {
     // Babylon clears and restores activeCamera inside its own graph render;
     // the coordinator also pins it per frame. Only authored changes count.
     watch(scene.onActiveCameraChanged, () => {
-      if (this.renderingCamera === undefined && this.suppressCameraMark === 0 && !renderTargetCaptureDrawing.has(scene))
-        mark();
+      if (!graphCameraWrites.has(scene) && !renderTargetCaptureDrawing.has(scene)) mark();
     });
     watch(scene.onNewSkeletonAddedObservable, mark);
     watch(scene.onSkeletonRemovedObservable, mark);
@@ -207,7 +242,8 @@ export class ForwardSceneFrameGraph {
     for (const light of scene.lights) this.watchLight(light);
     // Babylon 9.29 clears activeCamera at the start of its graph render method.
     // Restore it before existing lighting/floating-origin/lifecycle observers.
-    this.beforeRender = scene.onBeforeRenderObservable.add(
+    // An auxiliary view never runs Scene.render.
+    this.beforeRender = this.auxiliary ? null : scene.onBeforeRenderObservable.add(
       () => {
         if (this.renderingCamera) scene.activeCamera = this.renderingCamera;
       },
@@ -429,13 +465,13 @@ export class ForwardSceneFrameGraph {
     this.membershipRecorded = true;
   }
 
-  /** Assign activeCamera without tripping the readiness-dirty subscription. */
+  /** Assign activeCamera without tripping any graph's readiness-dirty subscription. */
   private setActiveCamera(camera: Camera | null): void {
-    this.suppressCameraMark += 1;
+    beginGraphCameraWrite(this.scene);
     try {
       this.scene.activeCamera = camera;
     } finally {
-      this.suppressCameraMark -= 1;
+      endGraphCameraWrite(this.scene);
     }
   }
 
@@ -473,7 +509,10 @@ export class ForwardSceneFrameGraph {
     } else {
       this.strictChecks += 1;
       // The next preparation plans from the current demand, not from a stale plan.
-      if (!isSceneFrameReady(this.scene, [], (mesh) => waterMeshDrawsInSceneCopyPass(this.scene, camera, mesh))) return false;
+      // An auxiliary view draws only inside the scene view's ready frames, and
+      // the scene probe would bind (refit) shadow maps for its camera.
+      if (!this.auxiliary &&
+        !isSceneFrameReady(this.scene, [], (mesh) => waterMeshDrawsInSceneCopyPass(this.scene, camera, mesh))) return false;
       // A graph that is pending or stale is fully probed when its preparation finishes.
     }
     this.markGraphProbed();
@@ -578,7 +617,8 @@ export class ForwardSceneFrameGraph {
   render(camera: Camera, updateCameras = true, reuseAdmission = false): ForwardSceneGraphResult & { rendered?: false; reason?: string } {
     const admitted = this.admittedCamera;
     this.admittedCamera = undefined;
-    const unavailable = this.unavailable(camera) ?? pausedSceneRedrawIssue(this.scene);
+    // An auxiliary view steps no animation or particles, so a paused scene can draw it.
+    const unavailable = this.unavailable(camera) ?? (this.auxiliary ? undefined : pausedSceneRedrawIssue(this.scene));
     if (unavailable) return { path: "frameGraph", reason: unavailable, rendered: false };
     this.syncMembership();
     if (!reuseAdmission || admitted !== camera || this.admittedRevision !== this.readinessRevision ||
@@ -601,13 +641,15 @@ export class ForwardSceneFrameGraph {
         ? "FrameGraph preparation is required."
         : undefined);
     if (this.graph && !outputCurrent) this.markReadinessDirty();
-    this.setActiveCamera(camera);
+    // The scene's view keeps its camera active; an auxiliary view leaves the owner's in place.
+    if (!this.auxiliary) this.setActiveCamera(camera);
     if (reason) return { path: "frameGraph", reason, rendered: false };
 
     const graph = this.graph!;
     this.assignCamera(camera);
     this.syncSceneInputs();
     if (!this.probeDirty()) return { path: "frameGraph", reason: "FrameGraph is not ready.", rendered: false };
+    const previousCamera = this.scene.activeCamera;
     const cameras = this.scene.activeCameras;
     const ubo = this.scene.getSceneUniformBuffer();
     const renderPass = engine.currentRenderPassId;
@@ -622,22 +664,36 @@ export class ForwardSceneFrameGraph {
       shadowFlags[index] = lights[index]!.shadowEnabled;
     }
     shadowLights.length = shadowFlags.length = lights.length;
+    beginGraphCameraWrite(this.scene);
     try {
       this.renderingCamera = camera;
-      this.scene.frameGraph = graph;
-      this.scene.activeCamera = camera;
-      this.graphRender = this.scene.customRenderFunction!;
-      this.scene.customRenderFunction = this.pinnedGraphRender;
       const revision = this.readinessRevision;
       const capture = activeRenderFrameCapture(engine);
-      if (capture) capture.frameGraph(this.scene, graph, this.work.graphBuilds,
-        () => renderSceneWithGameTime(this.scene, updateCameras));
-      else renderSceneWithGameTime(this.scene, updateCameras);
+      if (this.auxiliary) {
+        // Inside the owning view's frame: its Scene.render already stepped
+        // animation and particles and ran the render observers this frame.
+        this.scene.activeCamera = camera;
+        const execute = () => graph.execute();
+        if (capture) capture.frameGraph(this.scene, graph, this.work.graphBuilds, execute);
+        else execute();
+        // WebGPU writes texture uploads on the queue ahead of the frame's
+        // commands. The cluster light data is sorted per camera: submit this
+        // view's draws before the scene view uploads its own.
+        if (engine.isWebGPU && this.clustered?.drawsMask) engine.flushFramebuffer();
+      } else {
+        this.scene.frameGraph = graph;
+        this.scene.activeCamera = camera;
+        this.graphRender = this.scene.customRenderFunction!;
+        this.scene.customRenderFunction = this.pinnedGraphRender;
+        if (capture) capture.frameGraph(this.scene, graph, this.work.graphBuilds,
+          () => renderSceneWithGameTime(this.scene, updateCameras));
+        else renderSceneWithGameTime(this.scene, updateCameras);
+      }
       this.syncMembership();
       return { path: "frameGraph", ...(revision === this.readinessRevision ? {} : { rendered: false }) };
     } finally {
-      this.scene.frameGraph = null;
-      this.scene.activeCamera = camera;
+      if (!this.auxiliary) this.scene.frameGraph = null;
+      this.scene.activeCamera = this.auxiliary ? previousCamera : camera;
       this.scene.activeCameras = cameras;
       this.scene.setSceneUniformBuffer(ubo);
       this.scene._depthPeelingRenderer = oit;
@@ -646,6 +702,7 @@ export class ForwardSceneFrameGraph {
       for (let index = 0; index < shadowLights.length; index += 1)
         shadowLights[index]!.shadowEnabled = shadowFlags[index]!;
       this.renderingCamera = undefined;
+      endGraphCameraWrite(this.scene);
     }
   }
 
@@ -698,10 +755,13 @@ export class ForwardSceneFrameGraph {
       )
     )
       return "Unmanaged clustered light masks are not supported.";
-    if (scene.frameGraph || scene.customRenderFunction)
+    // An auxiliary view executes inside the owning view's frame.
+    if (!this.auxiliary && (scene.frameGraph || scene.customRenderFunction))
       return "Scene already has a render owner.";
     if (scene.activeCameras?.length || camera.cameraRigMode !== 0)
       return "Multiple and rig cameras are not supported.";
+    if (this.auxiliary && !camera.outputRenderTarget)
+      return "An auxiliary view requires an output render target.";
     // Native freezing retains a submesh/LOD render queue, not just mesh
     // membership. A new ObjectRenderer would re-filter it for the new camera.
     if (scene._activeMeshesFrozen)
@@ -731,6 +791,10 @@ export class ForwardSceneFrameGraph {
   }
 
   private syncShadowAdmission(camera: Camera): void {
+    // Light and shadow admission is scene-wide and ranks by camera. Only the
+    // scene's own view admits, so an auxiliary camera never churns it (or
+    // every material's light defines) once per frame.
+    if (this.auxiliary) return;
     const started = this.measureWork ? performance.now() : 0;
     if (this.measureWork) this.work.shadowAdmissions += 1;
     const controller = findSceneShadowController(this.scene);
@@ -761,7 +825,7 @@ export class ForwardSceneFrameGraph {
         this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
         this.clustered?.needsPreparation(camera) ||
         this.outputColor !== output.color || this.outputDepth !== output.depth ||
-        (this.postProcessGraph || this.effectsGraph || this.outlineTask) &&
+        (this.postProcessGraph || this.effectsGraph || this.outlineTask || this.ownScene) &&
           (this.preparedWidth !== output.width || this.preparedHeight !== output.height))
         this.releaseGraph();
       // A water scene copy follows a backbuffer resize in place: like the
@@ -833,6 +897,10 @@ export class ForwardSceneFrameGraph {
           task.targetTexture = target;
           return { task, outputTexture: task.outputTexture };
         };
+        // An auxiliary view without a chain still draws offscreen: only the
+        // final copy writes its output, which a material in view may sample.
+        if (this.auxiliary && !this.postProcessGraph && !effectsPlan)
+          this.ownScene = this.declareOwnSceneTargets(this.graph, renderSize.width, renderSize.height);
         if (effectsPlan) {
           this.effectsGraph = new SceneEffectsGraph({
             frameGraph: this.graph,
@@ -847,7 +915,7 @@ export class ForwardSceneFrameGraph {
             beforeAntialiasing: this.preparedOutlineView ? composeOutline : undefined,
           });
         } else if (this.preparedOutlineView) {
-          composeOutline(this.postProcessGraph?.outputTexture ?? color);
+          composeOutline(this.postProcessGraph?.outputTexture ?? this.ownScene?.color ?? color);
         }
         this.clear = new FrameGraphClearTextureTask(
           "Forward clear",
@@ -856,8 +924,10 @@ export class ForwardSceneFrameGraph {
         this.clear.targetTexture =
           this.postProcessGraph?.sceneColorTexture ??
           this.effectsGraph?.sceneColorTexture ??
+          this.ownScene?.color ??
           color;
-        this.clear.depthTexture = this.postProcessGraph?.depthTexture ?? this.effectsGraph?.depthTexture ?? depth;
+        this.clear.depthTexture = this.postProcessGraph?.depthTexture ?? this.effectsGraph?.depthTexture ??
+          this.ownScene?.depth ?? depth;
         // The authored clear color is display-space; a Scene Linear scene
         // color holds linear HDR that the Display Color stage encodes once.
         this.clear.convertColorToLinearSpace = effectsPlan?.sceneLinear === true;
@@ -888,8 +958,8 @@ export class ForwardSceneFrameGraph {
         if (waterScale > 0) {
           // Sample the chain's scene targets or an imported output directly;
           // only the backbuffer (or a stencil depth) needs an own pair.
-          const sceneColor = this.postProcessGraph?.sceneColorTexture ?? this.effectsGraph?.sceneColorTexture;
-          const sceneDepth = this.postProcessGraph?.depthTexture ?? this.effectsGraph?.depthTexture;
+          const sceneColor = this.postProcessGraph?.sceneColorTexture ?? this.effectsGraph?.sceneColorTexture ?? this.ownScene?.color;
+          const sceneDepth = this.postProcessGraph?.depthTexture ?? this.effectsGraph?.depthTexture ?? this.ownScene?.depth;
           const sampleable = sceneColor != null && sceneDepth != null
             ? { color: sceneColor, depth: sceneDepth }
             : output.color && output.depth && !HasStencilAspect(output.depth.format) ? { color, depth } : undefined;
@@ -906,13 +976,17 @@ export class ForwardSceneFrameGraph {
         const jitter = this.effectsGraph?.spatial?.jitter;
         jitter?.jitterRenderer(this.objects.objectRenderer);
         if (this.water) jitter?.jitterRenderer(this.water.transparent.objectRenderer);
-        this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects);
+        this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects, { borrowOnly: this.auxiliary !== undefined });
         for (const receiver of this.water?.shadowReceivers ?? []) this.shadows.addReceiver(receiver);
         this.clustered = new FrameGraphClusteredLightsTask(
           this.graph,
           scene,
           this.objects,
         );
+        // The scene view draws its auxiliary views here: after Babylon's
+        // evaluation and its own shadow maps, before the cluster mask that each
+        // view redraws for its camera.
+        if (!this.auxiliary) this.clustered.onBeforeTaskExecute.add(() => drawSceneAuxiliaryViews(scene));
         this.graph.addTask(this.shadows);
         this.graph.addTask(this.clustered);
         if (this.water?.splitsClear) {
@@ -940,10 +1014,11 @@ export class ForwardSceneFrameGraph {
         // feeds this copy; nothing else writes the view's output.
         const chainOutput =
           this.effectsGraph?.outputTexture ??
-          (this.postProcessGraph ? this.outlineTask?.outputTexture ?? this.postProcessGraph.outputTexture : undefined);
+          (this.postProcessGraph ? this.outlineTask?.outputTexture ?? this.postProcessGraph.outputTexture : undefined) ??
+          (this.ownScene ? this.outlineTask?.outputTexture ?? this.ownScene.color : undefined);
         if (chainOutput) {
           if (output.color) {
-            const copy = new FrameGraphCopyToTextureTask("Scene post-process output", this.graph);
+            const copy = new FrameGraphCopyToTextureTask(this.ownScene ? "Capture output" : "Scene post-process output", this.graph);
             copy.sourceTexture = chainOutput;
             copy.targetTexture = color;
             this.outputCopy = copy;
@@ -983,6 +1058,7 @@ export class ForwardSceneFrameGraph {
         this.effectsGraph?.spatial?.reconcile();
         this.outlineTask?.reconcileResources();
         this.water?.reconcile();
+        this.commitOwnSceneTargets();
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
       let deadline = performance.now() + 10_000;
@@ -1023,6 +1099,46 @@ export class ForwardSceneFrameGraph {
       this.failedOutput = { ...this.output(camera), camera };
       throw new Error(`FrameGraph preparation failed: ${this.failure}`, { cause: error });
     }
+  }
+
+  /**
+   * An auxiliary view's offscreen colour and depth, reserved in the shared
+   * ledger before the graph allocates them. Colour keeps the materials'
+   * display or linear encoding; depth is sampleable for the water scene copy.
+   */
+  private declareOwnSceneTargets(graph: FrameGraph, width: number, height: number) {
+    const engine = this.scene.getEngine();
+    const colorType = this.scene.imageProcessingConfiguration.applyByPostProcess
+      ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
+    const lease = beginManagedRenderAllocation(engine,
+      renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_RGBA, type: colorType }) +
+      renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_DEPTH32_FLOAT, type: Constants.TEXTURETYPE_FLOAT }));
+    if (!lease) throw new Error("Capture scene targets exceed the shared rendering budget.");
+    const target = (name: string, type: number, format: number) => graph.textureManager.createRenderTargetTexture(name, {
+      size: { width, height },
+      sizeIsPercentage: false,
+      options: { createMipMaps: false, types: [type], formats: [format], samples: 1, useSRGBBuffers: [false] },
+    });
+    return {
+      color: target("Capture scene color", colorType, Constants.TEXTUREFORMAT_RGBA),
+      depth: target("Capture scene Z", Constants.TEXTURETYPE_FLOAT, Constants.TEXTUREFORMAT_DEPTH32_FLOAT),
+      lease,
+      committed: false,
+    };
+  }
+
+  /** Charge the built graph's actual own-target allocations. */
+  private commitOwnSceneTargets(): void {
+    const own = this.ownScene;
+    if (!own || own.committed) return;
+    const textures = this.graph!.textureManager;
+    const resource = (handle: FrameGraphTextureHandle, category: ManagedRenderCategory) => {
+      const texture = textures.getTextureFromHandle(handle);
+      if (!texture) throw new Error("Capture scene target is not allocated.");
+      return managedRenderTextureResource(texture, category, { samples: 1, allocatedMipLevels: 1 });
+    };
+    own.lease.commit([resource(own.color, "sceneColor"), resource(own.depth, "depth")]);
+    own.committed = true;
   }
 
   /** The live settings key baked into the prepared graph's effect tasks. The
@@ -1103,7 +1219,8 @@ export class ForwardSceneFrameGraph {
         this.scene._activeCamera = camera;
         this.scene.getEngine().currentRenderPassId = camera.renderPassId;
         const sources = this.outlineView?.sourceRevision ?? 0;
-        const cameraReady = isSceneFrameReady(this.scene, [], this.water && this.skipCopyWater);
+        // An auxiliary view's own passes are its readiness; the scene view gates the scene.
+        const cameraReady = this.auxiliary || isSceneFrameReady(this.scene, [], this.water && this.skipCopyWater);
         const ready = this.graph!.isReady() && cameraReady;
         // A mask admitting an instance source late dirties attributes that the
         // earlier probes already accepted; the next probe sees the final state.
@@ -1189,8 +1306,10 @@ export class ForwardSceneFrameGraph {
     this.clear!.clearDepth = this.scene.autoClearDepthAndStencil;
     this.clear!.clearStencil = this.scene.autoClearDepthAndStencil;
     // Reference the live scene arrays; membership changes do not rebuild tasks.
-    this.sceneObjects.meshes = admittedSceneMeshes(this.scene) ?? this.scene.meshes;
-    this.sceneObjects.particleSystems = admittedSceneParticles(this.scene) ?? this.scene.particleSystems;
+    // An auxiliary view draws its owner's candidates (no editor helpers).
+    const objects = this.auxiliary?.objects;
+    this.sceneObjects.meshes = objects?.meshes ?? admittedSceneMeshes(this.scene) ?? this.scene.meshes;
+    this.sceneObjects.particleSystems = objects?.particleSystems ?? admittedSceneParticles(this.scene) ?? this.scene.particleSystems;
     this.cull!.objectList = this.sceneObjects;
     this.objects!.objectList = this.cull!.outputObjectList;
     this.water?.syncInputs();
@@ -1226,7 +1345,7 @@ export class ForwardSceneFrameGraph {
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.postProcessOwner?.clearGraph();
-    const { graph, postProcessGraph, effectsGraph, outlineTask, outputCopy, objects, shadows, clustered, clear, cull, water } = this;
+    const { graph, postProcessGraph, effectsGraph, outlineTask, outputCopy, objects, shadows, clustered, clear, cull, water, ownScene } = this;
     const release = () => {
       postProcessGraph?.disposeTasks();
       effectsGraph?.disposeTasks();
@@ -1243,6 +1362,11 @@ export class ForwardSceneFrameGraph {
       if (outlineTask) this.postProcessRetirement.add(outlineTask);
       if (water) this.postProcessRetirement.add(water);
       void water?.releaseAfterGraphDisposal().catch((error: unknown) => { this.cleanupFailure = error; });
+      if (ownScene) {
+        // The graph disposed the targets; WebGPU destroys them at the end of its frame.
+        const released = releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), ownScene.lease);
+        this.postProcessRetirement.add({ whenDisposed: () => released, whenReleased: () => released });
+      }
     };
     const retained = graph && this.retainedGraphs.get(graph);
     if (retained && !this.disposed) retained.release = release;
@@ -1256,6 +1380,7 @@ export class ForwardSceneFrameGraph {
     this.preparedWaterRevision = -1;
     this.preparedWaterDemand = -1;
     this.water = undefined;
+    this.ownScene = undefined;
     this.outputCopy = undefined;
     this.objects = undefined;
     this.shadows = undefined;

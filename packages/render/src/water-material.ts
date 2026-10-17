@@ -5315,6 +5315,9 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     changed = setDefine(defines, REFRACTION, this.refracts && copy) || changed;
     changed = setDefine(defines, SSR, this.marches && copy) || changed;
     changed = setDefine(defines, SSR_STEPS, this.marches && copy ? this.marchSteps : 0) || changed;
+    // Every pass at Planar quality compiles it, Render Target Capture passes included: their planar lookup is null
+    // (mirrors are per scene view), so the per-draw uniform selects the march or sky fallback. Gating it per pass would
+    // need a registry of planar-drawing pass ids, as the scene copy has.
     changed = setDefine(defines, PLANAR, this.mirrors) || changed;
     changed = setDefine(defines, FFT, this.fftCascades) || changed;
     changed = setDefine(defines, FFT_VERTEX, this.fftVertex) || changed;

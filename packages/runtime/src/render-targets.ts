@@ -1,6 +1,7 @@
 import {
   createDefaultRenderTargetCaptureProperties,
   normalizeRenderTargetCaptureProperties,
+  RENDER_TARGET_CAPTURE_QUALITIES,
   springArmChildOffset,
   type RenderTargetCaptureProperties,
   type RenderTargetCaptureProperty,
@@ -48,6 +49,8 @@ export function setCaptureProperty(
     if (value !== null && typeof value !== "string") return false;
   } else if (key === "enabled" || key === "captureEveryFrame" || key === "captureOnlyActors") {
     if (typeof value !== "boolean") return false;
+  } else if (key === "quality") {
+    if (!(RENDER_TARGET_CAPTURE_QUALITIES as readonly unknown[]).includes(value)) return false;
   } else if (typeof value !== "number" || !Number.isFinite(value)) return false;
   const normalized = normalizeRenderTargetCaptureProperties({ ...captureProperties(component), [key]: value });
   // Clip limits are coupled, so write the normalized tuple together.

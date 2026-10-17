@@ -1,4 +1,5 @@
 import {
+  createDefaultRenderTargetCaptureProperties,
   createDefaultScene,
   createSeededRng,
   DEFAULT_SCENE_SUN_ACTOR_ID,
@@ -6,10 +7,12 @@ import {
   lookAtRotation,
   normalizeWaterBody,
   parseLandscapeProperties,
+  RENDER_TARGET_CAPTURE_QUALITY_LABELS,
   waterRiverCentreline,
   type FoliageBatch,
   type FoliageGroup,
   type LandscapeProperties,
+  type RenderTargetCaptureQuality,
   type SerializedActor,
   type SerializedComponent,
   type SerializedScene,
@@ -19,7 +22,7 @@ import {
   type WaterStyle,
   type WaterStylizedLook,
 } from "@babylonslate/core";
-import { newAssetFileName } from "../content-browser-helpers";
+import { newAssetFileName, type CreatableAssetType } from "../content-browser-helpers";
 import {
   actor,
   comp,
@@ -32,6 +35,7 @@ import {
 } from "./context";
 import type { FeatureTestHolidayModel } from "./engine-content-files";
 import { stressPoint } from "./layout";
+import { monitorMaterial } from "./rendering";
 
 /**
  * `FT_World` scene: an island Landscape (painted layers, collision,
@@ -69,6 +73,21 @@ export const FEATURE_TEST_WORLD_WATER = {
 } as const;
 
 type WaterKey = keyof typeof FEATURE_TEST_WORLD_WATER;
+
+/**
+ * An every-frame Full Quality Scene Color capture of the Lake from the south
+ * shore, on a monitor facing the world camera: it refracts the lake bed through
+ * its own scene copy, as the world camera does. The Fast comparison is the main
+ * scene's Render Targets zone (`rendering.ts`). World is the heaviest scene:
+ * keep this one capture at 256². Perf knob.
+ */
+const LAKE_CAPTURES: ReadonlyArray<{ quality: RenderTargetCaptureQuality; slug: string; asset: string; x: number }> = [
+  { quality: "fullQuality", slug: "full-quality", asset: "FullQuality", x: 12 },
+];
+const LAKE_CAPTURE_SIZE = 256;
+/** Landscape-local z of the monitors, on the south shore in front of the world camera. */
+const LAKE_MONITOR_Z = -33;
+const LAKE_MONITOR_SIZE = 7;
 
 const WATER_LOOKS: Record<WaterKey, { style: WaterStyle; look: WaterStylizedLook; patch: Partial<WaterDefinition> }> = {
   // Ray-marched reflections over the whole horizon are the costliest pixels on software GL; the Ocean keeps them.
@@ -154,7 +173,10 @@ const FOLIAGE_GROUP_ID = "ft-world-foliage-group";
 const STRESS_FOLIAGE_GRID = 72;
 const STRESS_FOLIAGE_SPACING = 0.42;
 
-/** Water assets: Realistic classic and ocean spectrum, Stylized Painted and Toon. */
+/**
+ * Water assets: Realistic classic and ocean spectrum, Stylized Painted and
+ * Toon; and the Lake captures' Render Targets, textures and monitor Materials.
+ */
 export async function buildFeatureTestWorld(ctx: FeatureTestContext): Promise<void> {
   for (const key of Object.keys(FEATURE_TEST_WORLD_WATER) as WaterKey[]) {
     const { style, look, patch } = WATER_LOOKS[key];
@@ -162,6 +184,16 @@ export async function buildFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
       build: { waterStyle: style, waterStylizedLook: look },
       payload: (payload) => ({ ...payload, ...patch }),
     });
+  }
+  for (const { asset } of LAKE_CAPTURES) {
+    const target = await ctx.createAsset("RenderTarget", FEATURE_TEST_WORLD_FOLDER, `FT_WorldLakeCapture${asset}`, {
+      payload: { mode: "SceneColor", width: LAKE_CAPTURE_SIZE, height: LAKE_CAPTURE_SIZE },
+    });
+    const texture = await ctx.createAsset("RenderTargetTexture", FEATURE_TEST_WORLD_FOLDER, `FT_WorldLakeTexture${asset}`, {
+      payload: { renderTargetGuid: target.guid },
+    });
+    const monitor = `FT_WorldLakeMonitor${asset}`;
+    await ctx.createAsset("Material", FEATURE_TEST_WORLD_FOLDER, monitor, { payload: monitorMaterial(monitor, texture.guid) });
   }
 }
 
@@ -222,6 +254,8 @@ export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
     comp("ft-world-puddle-water", "WaterPuddleComponent", { width: 3, length: 2 }),
   ]));
   add(dryDock(at(DRY_DOCK.x, SEA, DRY_DOCK.z), seabed(DRY_DOCK.x, DRY_DOCK.z)));
+  lakeCaptures(ctx, add, land, ground);
+  for (const { x } of LAKE_CAPTURES) keepOut.push([x, LAKE_MONITOR_Z, LAKE_MONITOR_SIZE / 2]);
 
   // Buoyant presents: free in the ocean, moored to piles by Cables, and one in the lake.
   OCEAN_PRESENTS.forEach(([x, z, yaw], index) => {
@@ -394,9 +428,54 @@ function createWorldScene(): SerializedScene {
 }
 
 function waterGuid(ctx: FeatureTestContext, key: WaterKey): string {
-  const name = FEATURE_TEST_WORLD_WATER[key];
-  const asset = ctx.registry.getByPath(ctx.storagePath(FEATURE_TEST_WORLD_FOLDER, newAssetFileName("Water", name)));
-  return requireRef(asset?.header.guid, `the ${name} Water`);
+  return worldAssetGuid(ctx, "Water", FEATURE_TEST_WORLD_WATER[key]);
+}
+
+function worldAssetGuid(ctx: FeatureTestContext, type: CreatableAssetType, name: string): string {
+  const asset = ctx.registry.getByPath(ctx.storagePath(FEATURE_TEST_WORLD_FOLDER, newAssetFileName(type, name)));
+  return requireRef(asset?.header.guid, `the ${name} ${type}`);
+}
+
+/**
+ * The Lake captures (same south-shore lens, Fast and Full Quality) and their
+ * monitors on the south shore, each facing the world camera under its caption.
+ */
+function lakeCaptures(
+  ctx: FeatureTestContext,
+  add: (next: SerializedActor) => void,
+  land: (x: number, y: number, z: number) => Vec3,
+  ground: (x: number, z: number) => number,
+): void {
+  const aim = land(LAKE.x, LAKE.surface - 1, LAKE.z + 1);
+  LAKE_CAPTURES.forEach(({ quality, slug, asset, x }, index) => {
+    const label = RENDER_TARGET_CAPTURE_QUALITY_LABELS[quality];
+    const lens = land(LAKE.x - 1 + index * 2, LAKE.surface + 5.5, LAKE.z - LAKE.length / 2 - 4);
+    add(actor(`ft-world-lake-capture-${slug}`, `Lake ${label} Capture`, tf(lens, { rotation: lookAtRotation(lens, aim) }), [
+      comp(`ft-world-lake-capture-${slug}-lens`, "RenderTargetCaptureComponent", {
+        ...createDefaultRenderTargetCaptureProperties(),
+        renderTargetGuid: worldAssetGuid(ctx, "RenderTarget", `FT_WorldLakeCapture${asset}`),
+        quality,
+        fieldOfView: 55,
+        nearClip: 0.3,
+        farClip: 120,
+      }),
+    ], { classId: "RenderTargetCapture" }));
+    // The plane's front faces local -Z: turn +Z away from the world camera.
+    const base = land(x, Math.max(SEA, ground(x, LAKE_MONITOR_Z)), LAKE_MONITOR_Z);
+    const center: Vec3 = [base[0], base[1] + 5, base[2]];
+    const away: Vec3 = [2 * center[0] - WORLD_CAMERA.position[0], 2 * center[1] - WORLD_CAMERA.position[1], 2 * center[2] - WORLD_CAMERA.position[2]];
+    const facing = lookAtRotation(center, away);
+    const id = `ft-world-lake-monitor-${slug}`;
+    const screen = meshComp(`${id}-screen`, "plane", { materialGuid: worldAssetGuid(ctx, "Material", `FT_WorldLakeMonitor${asset}`) });
+    screen.properties.castShadows = false;
+    add(actor(id, `Lake ${label} Monitor`, tf(base), [
+      postMesh(`${id}-post`, 5 - LAKE_MONITOR_SIZE / 2, 0.4),
+      { ...screen, transform: tf([0, 5, 0], { rotation: facing, scale: [LAKE_MONITOR_SIZE, LAKE_MONITOR_SIZE, 1] }) },
+      comp(`${id}-caption`, "Text3DComponent", {
+        text: label, size: 1.2, color: [0.95, 0.95, 0.95], alignment: "center", fontAssetGuid: null,
+      }, tf([0, 5 + LAKE_MONITOR_SIZE / 2 + 0.9, 0], { rotation: facing })),
+    ]));
+  });
 }
 
 // ---------------------------------------------------------------------------

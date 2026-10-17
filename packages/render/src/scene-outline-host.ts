@@ -56,6 +56,11 @@ export class SceneOutlineHost {
   private readonly detach: () => void;
   private readonly scene: Scene;
   private readonly invalidate: () => void;
+  /** Full Quality capture views: the gameplay contributions, never the selection. */
+  private readonly captureViews = new Map<SharedOutlineView, () => void>();
+  private captureViewCount = 0;
+  private gameplay: ReadonlyMap<string, SharedOutlineContribution> = new Map();
+  private occluders: AbstractMesh[] = [];
 
   constructor(scene: Scene, renderer: SceneRenderCoordinator, invalidate: () => void) {
     this.scene = scene; this.invalidate = invalidate;
@@ -143,14 +148,51 @@ export class SceneOutlineHost {
       color: [0.42, 0.78, 1], width: 1, throughMeshes: true });
     // Publish a complete validated snapshot before committing host state. A
     // rejected registration/capacity request preserves all previous consumers.
-    this.view.replaceContributions(contributions, targets.flatMap((target) => target.meshes));
+    const occluders = targets.flatMap((target) => target.meshes);
+    this.view.replaceContributions(contributions, occluders);
     this.actors = actors; this.selectedActors = selectedActors;
+    contributions.delete("selection");
+    this.gameplay = contributions;
+    this.occluders = occluders;
+    for (const view of this.captureViews.keys()) this.publishCaptureView(view);
     if (revision !== this.view.revision) this.invalidate();
+  }
+
+  /**
+   * A Full Quality capture's view of the scene's gameplay outlines (Outline
+   * components and CEL outlines); the editor selection never reaches it.
+   * Returns the detach, which also disposes the view.
+   */
+  attachCaptureView(renderer: SceneRenderCoordinator): () => void {
+    if (this.disposed) return () => {};
+    const view = SharedOutlineOwner.forScene(this.scene).createView(`capture:${++this.captureViewCount}`);
+    let detach: () => void;
+    try {
+      detach = renderer.attachSharedOutline(view);
+    } catch (error) {
+      view.dispose();
+      throw error;
+    }
+    this.captureViews.set(view, detach);
+    this.publishCaptureView(view);
+    return () => {
+      if (!this.captureViews.delete(view)) return;
+      detach();
+      view.dispose();
+    };
+  }
+
+  /** A capture view that cannot take the snapshot keeps its previous outlines; the scene view is unaffected. */
+  private publishCaptureView(view: SharedOutlineView): void {
+    try { view.replaceContributions(this.gameplay, this.occluders); }
+    catch (error) { console.warn(`[render] Capture outlines kept their previous state: ${String(error)}`); }
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    for (const [view, detach] of this.captureViews) { detach(); view.dispose(); }
+    this.captureViews.clear();
     this.detach(); this.view.dispose(); this.actors.clear();
   }
   whenReleased(): Promise<void> { return this.view.owner.whenReleased(); }

@@ -177,15 +177,21 @@ function generatorPasses(generator: ShadowGenerator): number {
  * A point/spot map's depth ends at the light's range, not the camera's far
  * plane: casters beyond it have no light to block, and the shorter range both
  * culls them per face and spends the depth precision where the light reaches.
- * A range at or beyond the camera's far plane keeps Babylon's camera default.
+ * A range at or beyond the camera's far plane uses the camera's values, written
+ * explicitly: Babylon reads unset values from whichever camera renders, so a
+ * second view (a Full Quality capture) would otherwise bind another depth range
+ * than the one the map was drawn with. Only the scene view's camera fits.
  */
 export function fitLocalShadowDepth(light: Light, camera: Camera | null): void {
   if (!(light instanceof PointLight || light instanceof SpotLight)) return;
   const far = camera?.maxZ || 10000;
-  const maxZ = Number.isFinite(light.range) && light.range > 0 && light.range < far ? light.range : undefined;
-  // Babylon 9.29 reads an unset (undefined) shadowMaxZ as the camera default.
-  const depth = light as { shadowMaxZ: number | undefined };
+  const ranged = Number.isFinite(light.range) && light.range > 0 && light.range < far;
+  // Babylon 9.29's camera defaults, the same values the unset fields resolve to.
+  const maxZ = ranged ? light.range : camera ? far : undefined;
+  const minZ = camera ? camera.minZ || 0 : undefined;
+  const depth = light as { shadowMinZ: number | undefined; shadowMaxZ: number | undefined };
   if (depth.shadowMaxZ !== maxZ) depth.shadowMaxZ = maxZ;
+  if (depth.shadowMinZ !== minZ) depth.shadowMinZ = minZ;
 }
 
 function shadowLightRow(light: Light, entry?: Entry) {

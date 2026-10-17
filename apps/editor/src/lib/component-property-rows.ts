@@ -14,6 +14,8 @@ import {
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   normalizeRenderTargetCaptureProperties,
+  RENDER_TARGET_CAPTURE_QUALITIES,
+  RENDER_TARGET_CAPTURE_QUALITY_LABELS,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   quaternionToEulerDegrees,
   isEditorGraphClass,
@@ -636,6 +638,13 @@ export function componentPropertyRows(
       const capture = normalizeRenderTargetCaptureProperties(component.properties);
       return [
         assetRow(actorId, component, "renderTargetGuid", "Render Target", ["RenderTarget"], update, context, "Pick Render Target"),
+        {
+          kind: "enum", id: rowId(actorId, component.id, "quality"), label: "Quality", value: capture.quality,
+          defaultValue: "fast",
+          options: RENDER_TARGET_CAPTURE_QUALITIES.map((value) => ({ value, label: RENDER_TARGET_CAPTURE_QUALITY_LABELS[value] })),
+          description: "Full Quality renders like a camera here, with water refraction, post-processing and outlines. It differs only in planar water mirrors, in which lights shine when more ask than the device allows, and in sun shadows, which follow the main camera's view. It costs about a second camera: keep its Render Target at 512 × 512 or smaller, and turn off Capture Every Frame for images that rarely change. Scene Color targets only.",
+          onChange: (value) => update("quality", value),
+        },
         ...(["enabled", "captureEveryFrame", "captureOnlyActors"] as const).map((key): PropertyRow => ({
           kind: "boolean", id: rowId(actorId, component.id, key), label: humanizePropertyLabel(key), value: capture[key],
           defaultValue: key !== "captureOnlyActors",
