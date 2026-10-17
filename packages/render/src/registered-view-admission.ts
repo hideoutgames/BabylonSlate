@@ -53,6 +53,14 @@ function createDirectPresenter(engine: AbstractEngine, storeFactory: (engine: Ab
 }
 
 /**
+ * Whether a view canvas is laid out (a hidden dock tab's canvas, or a detached
+ * one, has no box). Such a view is not admitted and has nothing to present.
+ */
+export function viewCanvasHasLayoutBox(canvas: HTMLCanvasElement): boolean {
+  return canvas.clientWidth > 0 && canvas.clientHeight > 0;
+}
+
+/**
  * The only enabled view whose canvas has a layout box, or null. Admission
  * keeps a hidden dock tab's view enabled (held, not drawn) every frame; it
  * must not push the view on screen back to copying.
@@ -60,8 +68,7 @@ function createDirectPresenter(engine: AbstractEngine, storeFactory: (engine: Ab
 function soleShownView(engine: AbstractEngine): EngineView | null {
   let sole: EngineView | null = null;
   for (const view of engine.views ?? []) {
-    const target = view.target;
-    if (!registeredViewIsEnabled(view) || !target.isConnected || !target.clientWidth || !target.clientHeight) continue;
+    if (!registeredViewIsEnabled(view) || !viewCanvasHasLayoutBox(view.target)) continue;
     if (sole) return null;
     sole = view;
   }

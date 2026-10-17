@@ -18,7 +18,7 @@ import type { AudioPlaybackBackend, AudioPose } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
-import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled, VIEW_CANVAS_2D_ATTRIBUTES, viewPresentedDirectly } from "./registered-view-admission";
+import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled, VIEW_CANVAS_2D_ATTRIBUTES, viewCanvasHasLayoutBox, viewPresentedDirectly } from "./registered-view-admission";
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
@@ -1117,8 +1117,9 @@ function initializeEngine(
       // A canvas with no layout box (a hidden dock tab) has nothing to present, yet the scheduler only learns
       // that from an IntersectionObserver callback a frame or more later. Until then, `css` floors to 1×1:
       // neither resize the shared Engine to that for it nor draw it, since a 1×1 frame re-plans the graph
-      // (the water scene copy is off at that size) and compiles the variants it then draws.
-      const noLayout = !locked && (canvas.clientWidth <= 0 || canvas.clientHeight <= 0);
+      // (the water scene copy is off at that size) and compiles the variants it then draws. Direct
+      // presentation does not count such a view either.
+      const noLayout = !locked && !viewCanvasHasLayoutBox(canvas);
       if (!noLayout && (engine.getRenderWidth(true) !== size.width || engine.getRenderHeight(true) !== size.height))
         engine.setSize(size.width, size.height);
       admittedSnapshot = prepareSnapshot();
