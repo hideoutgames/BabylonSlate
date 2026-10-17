@@ -64,6 +64,19 @@ describe("releaseDeletedWebGpuPipelineContexts", () => {
     expect(live.size).toBe(1);
   });
 
+  it("releases the leftover uniform buffer of an Effect built outside the compiled-effect cache", () => {
+    const { engine, live } = webGpuEngine();
+    releaseDeletedWebGpuPipelineContexts(engine);
+    const { effect, leftOver } = compiledEffectWithLeftOverUniform(engine, "");
+    // An EffectWrapper without the shader store constructs its Effect directly.
+    delete (engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects[""];
+
+    engine._releaseEffect(effect as never);
+
+    expect(engine._uniformBuffers).not.toContain(leftOver);
+    expect(live.size).toBe(0);
+  });
+
   it("releases each context once when Babylon deletes it again", () => {
     const { engine, live } = webGpuEngine();
     releaseDeletedWebGpuPipelineContexts(engine);

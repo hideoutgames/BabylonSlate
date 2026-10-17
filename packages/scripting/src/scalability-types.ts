@@ -34,7 +34,7 @@ export const SCALABILITY_STRUCTS: EngineStruct[] = [
   define("GeometryQuality", [bool("autoLod", true), number("lodDistanceScale", 1)]),
   // Defaults equal the Medium tier; normalization rounds integer fields and snaps FFT Size.
   define("WaterQuality", [choice("shadingDetail", "WaterShadingDetail", "medium"), number("meshDensity", 0.75),
-    number("contactResolution", 512), bool("refraction", true), number("refractionScale", 0.5),
+    number("contactResolution", 256), bool("refraction", true), number("refractionScale", 0.5),
     choice("reflections", "WaterReflectionMode", "sky"), number("reflectionSteps", 8), number("planarScale", 0.5),
     bool("fft", false), number("fftSize", 64), number("fftCascades", 1)]),
   define("PostProcessingQuality", [number("resolutionScale", 0.75)]),

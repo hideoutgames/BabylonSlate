@@ -1107,15 +1107,21 @@ function initializeEngine(
       // resizes its visible canvas. A pending graph must retain that bitmap.
       const css = cssCanvasPixelSize(canvas);
       const scale = engine.getHardwareScalingLevel();
-      const size = scaledLockedViewSize() ?? {
+      const locked = scaledLockedViewSize();
+      const size = locked ?? {
         width: Math.max(1, Math.floor(css.width / scale)),
         height: Math.max(1, Math.floor(css.height / scale)),
       };
-      if (engine.getRenderWidth(true) !== size.width || engine.getRenderHeight(true) !== size.height)
+      // A canvas with no layout box (a hidden dock tab) has nothing to present, yet the scheduler only learns
+      // that from an IntersectionObserver callback a frame or more later. Until then, `css` floors to 1×1:
+      // neither resize the shared Engine to that for it nor draw it, since a 1×1 frame re-plans the graph
+      // (the water scene copy is off at that size) and compiles the variants it then draws.
+      const noLayout = !locked && (canvas.clientWidth <= 0 || canvas.clientHeight <= 0);
+      if (!noLayout && (engine.getRenderWidth(true) !== size.width || engine.getRenderHeight(true) !== size.height))
         engine.setSize(size.width, size.height);
       admittedSnapshot = prepareSnapshot();
       snapshotAdmitted = true;
-      const admitted = shouldRenderFrame(performance.now());
+      const admitted = !noLayout && shouldRenderFrame(performance.now());
       if (performanceFeed.active) admissionPreparationMs = performance.now() - preparationStart;
       return admitted;
     }, {
@@ -4132,6 +4138,9 @@ function initializeEngine(
       // that keeps finishing uploads stays in budget; a hung upload fails.
       let lastProgress = Date.now();
       let previous: string | null = null;
+      // The RGBD decode behind the environment BRDF texture waits for its post-process effect, which can sit
+      // behind long driver compiles; like the other loading budgets, renew while the driver is compiling.
+      const compiles = new DriverCompileWatch(engine);
       for (;;) {
         const pending = pendingSceneTextureWork(scope.target);
         if (pending.length === 0) break;
@@ -4141,9 +4150,12 @@ function initializeEngine(
         if (key !== previous) {
           lastProgress = now;
         } else if (now - lastProgress >= SCENE_SHADER_WARM_TIMEOUT_MS) {
-          throw new Error(
-            `Material textures did not become ready before the loading deadline. Still waiting for ${pending.length}: ${pending.slice(0, 8).join(", ")}${pending.length > 8 ? ", …" : ""}.`,
-          );
+          if (!compiles.renew()) {
+            throw new Error(
+              `Material textures did not become ready before the loading deadline. Still waiting for ${pending.length}: ${pending.slice(0, 8).join(", ")}${pending.length > 8 ? ", …" : ""}.`,
+            );
+          }
+          lastProgress = now;
         }
         previous = key;
         await new Promise((resolve) => setTimeout(resolve, 16));

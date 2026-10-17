@@ -204,7 +204,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     textures: { lodBias: 0, anisotropy: 4, byteBudget: 512 * MIB },
     geometry: { autoLod: true, lodDistanceScale: 1 },
     water: {
-      shadingDetail: "medium", meshDensity: 0.75, contactResolution: 512,
+      shadingDetail: "medium", meshDensity: 0.75, contactResolution: 256,
       refraction: true, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
       planarScale: 0.5, fft: false, fftSize: 64, fftCascades: 1,
     },
