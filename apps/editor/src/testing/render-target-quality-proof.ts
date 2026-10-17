@@ -92,11 +92,18 @@ async function lakeHost(backend: Backend, size: number, boxes = 0) {
     }
   };
   const dispose = async () => {
-    captures.clear();
-    view.dispose();
-    await Promise.all([view.whenReleased(), captures.whenReleased()]);
-    const retainedBytes = managedRenderReservations(engine).reservedBytes;
     captures.dispose();
+    view.dispose();
+    // WebGPU frees leases after its end-of-frame destruction drain: keep frames coming.
+    let settled = false;
+    const released = Promise.all([view.whenReleased(), captures.whenReleased()]).finally(() => { settled = true; });
+    while (!settled) {
+      engine.beginFrame();
+      engine.endFrame();
+      await new Promise<void>((resolve) => setTimeout(resolve, 16));
+    }
+    await released;
+    const retainedBytes = managedRenderReservations(engine).reservedBytes;
     scene.dispose();
     engine.dispose();
     canvas.remove();
@@ -108,10 +115,14 @@ async function lakeHost(backend: Backend, size: number, boxes = 0) {
 async function readView(engine: AbstractEngine, backend: Backend, size: number): Promise<number[]> {
   const pixels = await engine.readPixels(0, 0, size, size);
   const values = Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
-  // Babylon returns the canvas attachment's native channel order on WebGPU.
-  if (backend === "webgpu" && (engine.getCreationOptions() as { swapChainFormat?: string }).swapChainFormat === "bgra8unorm")
+  if (backend === "webgl2") return values;
+  // Babylon returns the canvas attachment's native channel order on WebGPU,
+  // top row first; render-target readback is bottom row first on both backends.
+  if ((engine.getCreationOptions() as { swapChainFormat?: string }).swapChainFormat === "bgra8unorm")
     for (let index = 0; index < values.length; index += 4) [values[index], values[index + 2]] = [values[index + 2]!, values[index]!];
-  return values;
+  const rows: number[] = [];
+  for (let row = size - 1; row >= 0; row--) rows.push(...values.slice(row * size * 4, (row + 1) * size * 4));
+  return rows;
 }
 
 async function readCapture(texture: BaseTexture, size: number): Promise<number[]> {
