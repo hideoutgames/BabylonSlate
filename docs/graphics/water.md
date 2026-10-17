@@ -61,11 +61,12 @@ Rendering cost follows the **Water** group in **Project Settings > Rendering > S
 | --- | --- | --- | --- | --- |
 | **Water Shading Detail** | Low | Medium | High | Ultra |
 | **Water Mesh Density** | 0.5 | 0.75 | 1 | 1.5 |
-| **Contact Resolution** | 256 | 512 | 1024 | 1024 |
+| **Contact Resolution** | 256 | 256 | 1024 | 1024 |
 | **Water Refraction** | Off | On | On | On |
 | **Water Reflections** | Sky Only | Sky Only | Screen Space | Planar |
 | **FFT Ocean Detail** | Off | Off | On | On |
 
+- **Contact Resolution** sets the detail of the foam and rings where objects meet the water. The work of keeping them current is capped per frame and goes to the water nearest the camera first, so around many moving objects foam can trail them by a fraction of a second. Higher values cost more per update and trail longer.
 - **Refraction Resolution** sets the scene copy's scale, shared with Screen Space reflections.
 - **Water Reflections**: **Sky Only** reflects the environment, **Screen Space** also reflects visible objects, and **Planar** mirrors flat water and uses Screen Space elsewhere. **Reflection Steps** and **Planar Resolution** tune them.
 - **FFT Size** and **FFT Cascades** add fine wave detail when **FFT Ocean Detail** is on.
