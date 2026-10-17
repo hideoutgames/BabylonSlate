@@ -39,6 +39,7 @@ import {
   type ManagedRenderCategory, type ManagedRenderLease,
 } from "./managed-render-resources";
 import { managedRenderTextureResource, renderTargetAllocationBytes } from "./render-target-resource-cost";
+import { drawSceneAuxiliaryViews } from "./scene-auxiliary-views";
 import {
   ManagedShadowObjectRendererTask,
   ManagedShadowsTask,
@@ -896,6 +897,10 @@ export class ForwardSceneFrameGraph {
           task.targetTexture = target;
           return { task, outputTexture: task.outputTexture };
         };
+        // An auxiliary view without a chain still draws offscreen: only the
+        // final copy writes its output, which a material in view may sample.
+        if (this.auxiliary && !this.postProcessGraph && !effectsPlan)
+          this.ownScene = this.declareOwnSceneTargets(this.graph, renderSize.width, renderSize.height);
         if (effectsPlan) {
           this.effectsGraph = new SceneEffectsGraph({
             frameGraph: this.graph,
@@ -910,12 +915,8 @@ export class ForwardSceneFrameGraph {
             beforeAntialiasing: this.preparedOutlineView ? composeOutline : undefined,
           });
         } else if (this.preparedOutlineView) {
-          composeOutline(this.postProcessGraph?.outputTexture ?? color);
+          composeOutline(this.postProcessGraph?.outputTexture ?? this.ownScene?.color ?? color);
         }
-        // An auxiliary view without a chain still draws offscreen: only the
-        // final copy writes its output, which a material in view may sample.
-        if (this.auxiliary && !this.postProcessGraph && !this.effectsGraph)
-          this.ownScene = this.declareOwnSceneTargets(this.graph, renderSize.width, renderSize.height);
         this.clear = new FrameGraphClearTextureTask(
           "Forward clear",
           this.graph,
@@ -982,6 +983,10 @@ export class ForwardSceneFrameGraph {
           scene,
           this.objects,
         );
+        // The scene view draws its auxiliary views here: after Babylon's
+        // evaluation and its own shadow maps, before the cluster mask that each
+        // view redraws for its camera.
+        if (!this.auxiliary) this.clustered.onBeforeTaskExecute.add(() => drawSceneAuxiliaryViews(scene));
         this.graph.addTask(this.shadows);
         this.graph.addTask(this.clustered);
         if (this.water?.splitsClear) {
@@ -1010,7 +1015,7 @@ export class ForwardSceneFrameGraph {
         const chainOutput =
           this.effectsGraph?.outputTexture ??
           (this.postProcessGraph ? this.outlineTask?.outputTexture ?? this.postProcessGraph.outputTexture : undefined) ??
-          this.ownScene?.color;
+          (this.ownScene ? this.outlineTask?.outputTexture ?? this.ownScene.color : undefined);
         if (chainOutput) {
           if (output.color) {
             const copy = new FrameGraphCopyToTextureTask(this.ownScene ? "Capture output" : "Scene post-process output", this.graph);

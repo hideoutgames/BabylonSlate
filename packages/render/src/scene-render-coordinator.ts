@@ -17,6 +17,8 @@ class PreparationChanged extends Error {}
 const PREPARATION_TIMEOUT_MS = 10_000;
 /** Bound on one owner's preparation across every invalidation restart. */
 const PREPARATION_TOTAL_TIMEOUT_MS = 60_000;
+/** An auxiliary view's wait before retrying a failed preparation. */
+const AUXILIARY_RETRY_MS = 1_000;
 
 function outputSnapshot(scene: Scene, camera: Camera) {
   const target = camera.outputRenderTarget;
@@ -53,6 +55,8 @@ export class SceneRenderCoordinator {
   /** Views may draw planar water reflections; previews and thumbnails never retain one. */
   private readonly releaseWaterPlanarReflections: () => void;
   private readonly auxiliaryCamera: Camera | undefined;
+  private failedAt = 0;
+  private warnedFailure: string | undefined;
 
   constructor(scene: Scene, options: SceneRenderCoordinatorOptions = {}) {
     this.scene = scene;
@@ -316,9 +320,24 @@ export class SceneRenderCoordinator {
 
   private requestPreparation(): void {
     if (this.pending?.generation === this.generation) return;
+    // An auxiliary view retries a failed preparation (a refused budget, an
+    // unsupported scene) at most once per AUXILIARY_RETRY_MS instead of every
+    // frame, warning once per distinct failure. Its owner keeps the last image.
+    if (this.auxiliaryCamera && this.failure !== undefined) {
+      if (performance.now() - this.failedAt < AUXILIARY_RETRY_MS) return;
+      this.failure = undefined;
+      this.graph.clearFailure();
+    }
     const generation = this.generation;
     void this.prepare().catch((error: unknown) => {
-      if (!this.disposed && generation === this.generation) this.failure = error;
+      if (this.disposed || generation !== this.generation) return;
+      this.failure = error;
+      this.failedAt = performance.now();
+      const message = String(error);
+      if (this.auxiliaryCamera && message !== this.warnedFailure) {
+        this.warnedFailure = message;
+        console.warn(`[render] Full Quality capture is not drawn while its preparation fails: ${message}`);
+      }
     });
   }
 

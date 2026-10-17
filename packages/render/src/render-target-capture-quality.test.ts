@@ -1,14 +1,16 @@
 import {
-  Constants, DirectionalLight, FreeCamera, Mesh, MeshBuilder, NullEngine, NullEngineOptions, Scene, SpotLight,
+  Constants, DirectionalLight, FreeCamera, Mesh, MeshBuilder, NullEngine, NullEngineOptions, ParticleSystem, Scene, SpotLight,
   StandardMaterial, UniversalCamera, Vector3,
 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   createDefaultRenderTargetCaptureProperties, createDefaultWaterDefinition, normalizeShadowSettings, normalizeWaterBody,
-  type RenderTargetCaptureQuality,
+  outlineBindings, type RenderTargetCaptureQuality,
 } from "@babylonslate/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
+import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
+import { SceneOutlineHost } from "./scene-outline-host";
 import { managedRenderReservations } from "./managed-render-resources";
 import { RenderTargetCaptures } from "./render-target-capture";
 import { updateSceneRenderingSettings } from "./render-settings";
@@ -145,6 +147,76 @@ it("renders Full Quality through the forward pipeline with its own scene copy, w
   expect(captures.diagnostics()[0]).toMatchObject({ published: true, strictReadinessChecks: captureChecks });
   view.dispose();
 });
+
+it("draws a Full Quality capture after the frame's evaluation, so it shows this frame's particle step", async () => {
+  const { scene, view, captures } = host("fullQuality");
+  const emitter = new Mesh("particleEmitter:test", scene);
+  emitter.alwaysSelectAsActiveMesh = true;
+  const system = new ParticleSystem("sparks", 8, scene);
+  system.emitter = emitter;
+  system.start();
+  vi.spyOn(system, "isReady").mockReturnValue(true);
+  const events: string[] = [];
+  const animate = system.animate.bind(system);
+  vi.spyOn(system, "animate").mockImplementation((preWarm) => { events.push("step"); animate(preWarm); });
+  vi.spyOn(system, "render").mockImplementation(() => {
+    events.push(scene.activeCamera?.name === "renderTargetCapture:capture" ? "capture" : "view");
+    return 0;
+  });
+  await untilPublished(scene, view, captures);
+  events.length = 0;
+  expect(view.render()).toMatchObject({ rendered: true });
+  // The emitter mesh has no geometry, as the particle service builds them.
+  expect(events).toEqual(["step", "capture", "view"]);
+  view.dispose();
+});
+
+it("draws gameplay outlines in a Full Quality capture but never the editor selection", async () => {
+  const { scene, pier, view, captures } = host("fullQuality");
+  const outlines = new SceneOutlineHost(scene, view, () => {});
+  captures.setOutlines((renderer) => outlines.attachCaptureView(renderer));
+  outlines.replaceActors([{ id: "pier", meshes: [pier], bindings: [] }]);
+  outlines.setSelection(["pier"]);
+  await untilPublished(scene, view, captures);
+  expect(view.taskNames()).toContain("Shared outlines");
+  expect(captures.diagnostics()[0]!.taskNames).not.toContain("Shared outlines");
+  // An Outline component is a game visual: the capture draws it as the view does.
+  const ink = outlineBindings("pier", [{ id: "ink", classId: "OutlineComponent", properties: { color: [1, 0, 0], width: 2 } }]);
+  outlines.replaceActors([{ id: "pier", meshes: [pier], bindings: ink }]);
+  await vi.waitFor(() => {
+    view.render();
+    expect(captures.diagnostics()[0]!.taskNames).toContain("Shared outlines");
+  }, { timeout: 5000 });
+  outlines.dispose();
+  view.dispose();
+});
+
+it("retries a failed Full Quality preparation at most once a second and warns once", async () => {
+  const { scene, view, captures } = host("fullQuality");
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  // A refused budget for the capture's own scene targets (only auxiliary views declare them).
+  const refuse = vi.spyOn(ForwardSceneFrameGraph.prototype as unknown as { declareOwnSceneTargets: () => never }, "declareOwnSceneTargets")
+    .mockImplementation(() => { throw new Error("Capture scene targets exceed the shared rendering budget."); });
+  const frames = async (count: number) => {
+    for (let frame = 0; frame < count; frame++) {
+      view.render();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  };
+  await vi.waitFor(() => { view.render(); expect(refuse).toHaveBeenCalled(); }, { timeout: 5000 });
+  await frames(15);
+  expect(refuse).toHaveBeenCalledTimes(1);
+  await new Promise((resolve) => setTimeout(resolve, 1_050));
+  await frames(3);
+  expect(refuse).toHaveBeenCalledTimes(2);
+  expect(warn.mock.calls.filter(([message]) => String(message).includes("Full Quality capture"))).toHaveLength(1);
+  expect(captures.diagnostics()[0]!.published).toBe(false);
+  // Once the budget admits it, the next retry draws the capture.
+  refuse.mockRestore();
+  await new Promise((resolve) => setTimeout(resolve, 1_050));
+  await untilPublished(scene, view, captures);
+  view.dispose();
+}, 15_000);
 
 it("keeps the scene view's shadow maps cached in a static scene while a Full Quality capture draws", async () => {
   const options = new NullEngineOptions();

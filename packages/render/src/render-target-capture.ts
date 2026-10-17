@@ -26,6 +26,7 @@ import { acquireAuthoredMaterialVariant, type AuthoredMaterialVariant } from "./
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import type { AttachedPostProcessStack } from "./post-process-material";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { registerSceneAuxiliaryViews } from "./scene-auxiliary-views";
 
 export { isRenderTargetCaptureCandidate } from "./render-target-capture-state";
 
@@ -34,6 +35,11 @@ export { isRenderTargetCaptureCandidate } from "./render-target-capture-state";
  * view, or null when the scene's own view runs none.
  */
 export type RenderTargetCapturePostProcess = (renderer: SceneRenderCoordinator, camera: Camera) => AttachedPostProcessStack | null;
+/**
+ * Attaches the scene's gameplay outlines (Outline components and CEL outlines,
+ * never the editor selection) to a Full Quality capture's view; returns its detach.
+ */
+export type RenderTargetCaptureOutlines = (renderer: SceneRenderCoordinator) => () => void;
 
 /** One capture output's rendering state, for proofs and performance checks. */
 export type RenderTargetCaptureDiagnostics = {
@@ -114,6 +120,9 @@ type FullQualityView = {
   postProcess: AttachedPostProcessStack | null;
   /** The controller's post-process source revision this view attached; -1 before the first. */
   postProcessRevision: number;
+  detachOutlines: (() => void) | null;
+  /** The controller's outline source revision this view attached; -1 before the first. */
+  outlineRevision: number;
 };
 type Target = CaptureBuffer & {
   key: string;
@@ -157,10 +166,17 @@ export class RenderTargetCaptures {
   private fallbackLease: ManagedRenderLease | undefined;
   private postProcess: RenderTargetCapturePostProcess | null = null;
   private postProcessRevision = 0;
+  private outlines: RenderTargetCaptureOutlines | null = null;
+  private outlineRevision = 0;
+  /** Emitter meshes of the particle systems the capture being collected draws. */
+  private readonly emitters = new Set<AbstractMesh>();
+  /** This frame's Full Quality captures, queued in `render()`. */
+  private readonly pendingFullQuality: { actorId: string; guid: string; capture: Capture; target: Target }[] = [];
   /** Full Quality views awaiting confirmed native release before their output and lease go. */
   private readonly releases = new Set<Promise<void>>();
   private releaseFailure: unknown;
   private readonly beforeRender: Observer<Scene>;
+  private readonly releaseAuxiliaryViews: () => void;
   private disposed = false;
   private readonly position = new Vector3();
   private readonly rotation = new Quaternion();
@@ -170,6 +186,7 @@ export class RenderTargetCaptures {
   constructor(scene: Scene) {
     this.scene = scene;
     this.beforeRender = scene.onBeforeRenderObservable.add(() => this.render())!;
+    this.releaseAuxiliaryViews = registerSceneAuxiliaryViews(scene, this.drawPendingFullQuality);
     this.addedMesh = scene.onNewMeshAddedObservable.add(() => { this.rootsDirty = true; })!;
     this.removedMesh = scene.onMeshRemovedObservable.add(() => { this.rootsDirty = true; })!;
     scene.onDisposeObservable.addOnce(() => this.dispose());
@@ -193,6 +210,11 @@ export class RenderTargetCaptures {
   setPostProcess(source: RenderTargetCapturePostProcess | null): void {
     this.postProcess = source;
     this.postProcessRevision += 1;
+  }
+  /** The scene's gameplay outlines for Full Quality captures; each live view re-attaches on its next capture. */
+  setOutlines(source: RenderTargetCaptureOutlines | null): void {
+    this.outlines = source;
+    this.outlineRevision += 1;
   }
   /** Runtime parameter writes reach every Full Quality view's live stack, as they reach the scene view's. */
   setPostProcessParameter(...args: Parameters<AttachedPostProcessStack["setParameter"]>): void {
@@ -262,7 +284,13 @@ export class RenderTargetCaptures {
     // changes; material disposal must never dispose a capture's GPU output.
     return { resource: texture, key: `renderTargetTexture:${guid}`, release() {} };
   }
+  /**
+   * Runs from the scene view's `onBeforeRender`: draws Fast captures now and
+   * queues this frame's Full Quality captures, which the view's graph draws
+   * after Babylon's evaluation (`drawSceneAuxiliaryViews`).
+   */
   render(): void {
+    this.pendingFullQuality.length = 0;
     if (this.disposed || drawing.has(this.scene) || isSceneGameTimePaused(this.scene)) return;
     this.frameOwners.clear();
     for (const [actorId, capture] of this.captures) {
@@ -286,29 +314,11 @@ export class RenderTargetCaptures {
       const quality = normalizeRenderTargetPayload(definition).mode === "SceneColor" ? settings.quality : "fast";
       const target = this.ensureTarget(guid, definition, actorId, capture.camera, quality);
       if (!target) continue;
-      const meshes = this.renderList(capture, target);
-      // Even with renderParticles=false Babylon probes particleSystemList
-      // during readiness. Keep non-color passes independent of particles.
-      let particleCount = 0;
-      if (!target.depth && !target.normals) {
-        for (const system of admittedSceneParticles(this.scene) ?? this.scene.particleSystems) {
-          if (capture.settings.captureOnlyActors) {
-            const emitter = system.emitter;
-            if (!emitter || !("parent" in emitter) || !capture.includeIds.has(this.ownerOf(emitter as Node) ?? "")) continue;
-          }
-          target.particles[particleCount++] = system;
-        }
-      }
-      target.particles.length = particleCount;
-      const view = target.fullQuality;
-      if (view) {
-        // Culling reads bounds: refresh this frame's transforms (cached, so the
-        // scene view's own evaluation reuses them).
-        for (const mesh of meshes) mesh.computeWorldMatrix();
-        if (!this.stageDraw(target, guid, actorId, () => this.drawFullQuality(view))) continue;
-        this.published(capture, target);
+      if (target.fullQuality) {
+        this.pendingFullQuality.push({ actorId, guid, capture, target });
         continue;
       }
+      const meshes = this.collectCandidates(capture, target);
       if (!target.depth && !target.normals && !target.spare && this.samplesAttachment(target, target.texture)) {
         target.spare = this.createBuffer(`${guid}:history`, definition, capture.camera);
         // Keep the previous image and pending manual request if admission fails.
@@ -371,6 +381,49 @@ export class RenderTargetCaptures {
     return frameCapture.stage(this.scene, { name: `Render Target Capture: ${guid}`, kind: "auxiliary",
       actorGuid: actorId, detail: `${width} × ${height}; ${target.fullQuality ? "Full Quality; " : ""}output asset ${guid}` }, draw);
   }
+  /**
+   * The queued Full Quality captures, drawn inside the scene view's graph after
+   * Babylon's evaluation: skinning, LOD, particles and the view's shadow maps
+   * are this frame's, and the view's own materials sample this frame's image.
+   */
+  private readonly drawPendingFullQuality = (): void => {
+    if (this.disposed || drawing.has(this.scene)) return;
+    for (const { actorId, guid, capture, target } of this.pendingFullQuality) {
+      const view = target.fullQuality;
+      // A command between the queue and the draw may have retired the target.
+      if (!view || this.targets.get(guid) !== target || this.captures.get(actorId) !== capture) continue;
+      this.collectCandidates(capture, target);
+      if (this.stageDraw(target, guid, actorId, () => this.drawFullQuality(view))) this.published(capture, target);
+    }
+    this.pendingFullQuality.length = 0;
+  };
+  /** The capture's eligible meshes and (for color passes) particle systems, into the target's reused lists. */
+  private collectCandidates(capture: Capture, target: Target): AbstractMesh[] {
+    if (capture.settings.captureOnlyActors && this.rootsDirty) {
+      this.rootOwners.clear();
+      for (const [id, resolve] of this.actorRoots) {
+        const root = resolve();
+        if (root) this.rootOwners.set(root, id);
+      }
+      this.rootsDirty = false;
+    }
+    // Even with renderParticles=false Babylon probes particleSystemList
+    // during readiness. Keep non-color passes independent of particles.
+    let particleCount = 0;
+    this.emitters.clear();
+    if (!target.depth && !target.normals) {
+      for (const system of admittedSceneParticles(this.scene) ?? this.scene.particleSystems) {
+        const emitter = system.emitter;
+        if (capture.settings.captureOnlyActors) {
+          if (!emitter || !("parent" in emitter) || !capture.includeIds.has(this.ownerOf(emitter as Node) ?? "")) continue;
+        }
+        target.particles[particleCount++] = system;
+        if (emitter && "position" in emitter) this.emitters.add(emitter);
+      }
+    }
+    target.particles.length = particleCount;
+    return this.renderList(capture, target);
+  }
   /** A drawn frame consumes the manual request and publishes the front buffer. */
   private published(capture: Capture, target: Target): void {
     capture.requested = false;
@@ -378,13 +431,19 @@ export class RenderTargetCaptures {
     target.published = true;
     if (!wasPublished || target.spare) this.publishTextures(wasPublished);
   }
-  /** Re-attach the scene's authored stack when it changed, then draw the view if it is ready. */
+  /** Re-attach the scene's authored stack and outlines when they changed, then draw the view if it is ready. */
   private drawFullQuality(view: FullQualityView): boolean {
     if (view.postProcessRevision !== this.postProcessRevision) {
       view.postProcess?.dispose();
       view.postProcess = null;
       view.postProcessRevision = this.postProcessRevision;
       view.postProcess = this.postProcess?.(view.renderer, view.camera) ?? null;
+    }
+    if (view.outlineRevision !== this.outlineRevision) {
+      view.detachOutlines?.();
+      view.detachOutlines = null;
+      view.outlineRevision = this.outlineRevision;
+      view.detachOutlines = this.outlines?.(view.renderer) ?? null;
     }
     // Shader and graph preparation run asynchronously; until the view is ready
     // the target keeps its last image (or the transparent fallback).
@@ -466,7 +525,7 @@ export class RenderTargetCaptures {
       renderer = new SceneRenderCoordinator(this.scene, { waterPlanarReflections: false, auxiliary: { camera, objects } });
       const target: Target = {
         key, definition, quality: "fullQuality", texture, lease, owner,
-        fullQuality: { renderer, camera, postProcess: null, postProcessRevision: -1 },
+        fullQuality: { renderer, camera, postProcess: null, postProcessRevision: -1, detachOutlines: null, outlineRevision: -1 },
         normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(), materialRetirement: Promise.resolve(),
         overrides: new Set(), pendingOverrides: new Set(), meshes, particles, published: false,
       };
@@ -536,14 +595,6 @@ export class RenderTargetCaptures {
     } finally { checked.clear(); }
   }
   private renderList(capture: Capture, target: Target): AbstractMesh[] {
-    if (capture.settings.captureOnlyActors && this.rootsDirty) {
-      this.rootOwners.clear();
-      for (const [id, resolve] of this.actorRoots) {
-        const root = resolve();
-        if (root) this.rootOwners.set(root, id);
-      }
-      this.rootsDirty = false;
-    }
     const meshes = admittedSceneMeshes(this.scene) ?? this.scene.meshes;
     let count = 0;
     for (const mesh of meshes) {
@@ -553,7 +604,11 @@ export class RenderTargetCaptures {
     return target.meshes;
   }
   private isEligible(capture: Capture, target: Target, mesh: AbstractMesh): boolean {
-    if (mesh.isDisposed() || !mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.getTotalVertices() === 0 || !(mesh.layerMask & capture.camera.layerMask)) return false;
+    if (mesh.isDisposed() || !mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || !(mesh.layerMask & capture.camera.layerMask)) return false;
+    // Geometry-less meshes draw nothing, except that Babylon draws a particle
+    // system only while its emitter mesh (geometry-less from the particle
+    // service) is in the pass's list.
+    if (mesh.getTotalVertices() === 0 && !this.emitters.has(mesh)) return false;
     if (!isRenderTargetCaptureCandidate(mesh)) return false;
     if (capture.settings.captureOnlyActors) {
       const actorId = this.ownerOf(mesh);
@@ -791,6 +846,7 @@ export class RenderTargetCaptures {
     let released: Promise<void>;
     try {
       view.postProcess?.dispose();
+      view.detachOutlines?.();
       view.renderer.dispose();
       released = view.renderer.whenReleased().then(() => {
         // Scene disposal already released every texture it owns.
@@ -819,6 +875,8 @@ export class RenderTargetCaptures {
     if (this.disposed) return;
     this.disposed = true;
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);
+    this.releaseAuxiliaryViews();
+    this.pendingFullQuality.length = 0;
     this.scene.onNewMeshAddedObservable.remove(this.addedMesh);
     this.scene.onMeshRemovedObservable.remove(this.removedMesh);
     this.clear();

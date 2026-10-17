@@ -1230,6 +1230,8 @@ function initializeEngine(
   binding.renderTargetTextures = options.renderTargetTextures;
   const renderTargetCaptures = sceneRenderTargetCaptures(scene);
   renderTargetCaptures.setAssets(binding.renderTargets, binding.renderTargetTextures);
+  // Full Quality captures draw the scene's gameplay outlines, never the editor selection.
+  renderTargetCaptures.setOutlines((renderer) => outlineHost.attachCaptureView(renderer));
   const captureActorSlots = new Map<number, string>();
   const runtimeActorIdentities = new Map<number, import("@babylonslate/bridge").RuntimeObjectIdentity>();
   const runtimeComponentTokens = new Map<number, Map<string, number>>();
