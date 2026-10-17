@@ -6,9 +6,11 @@ import {
   identitySerializedTransform,
   type SerializedScene,
 } from "../packages/core/src/index";
-import { openMainScene, openTestProject } from "./open-test-project";
+import { openMainScene, openTestProject, waitForSceneViewportReady } from "./open-test-project";
+import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 type Presentation = { direct?: boolean; held: number; drawn: number };
+type Baseline = { backend?: string; render?: { presentation?: Presentation } };
 type Sample = { source: "engine" | "view"; minAlpha: number; spread: number; width: number };
 
 declare global {
@@ -31,12 +33,14 @@ function boxScene(): SerializedScene {
   };
 }
 
-async function presentation(page: Page): Promise<Presentation | undefined> {
+async function baseline(page: Page): Promise<Baseline | null> {
   return page.evaluate(() => (
-    globalThis as unknown as {
-      __babylonslateViewportTest: { renderingBaseline: () => { render?: { presentation?: Presentation } } | null };
-    }
-  ).__babylonslateViewportTest.renderingBaseline()?.render?.presentation);
+    globalThis as unknown as { __babylonslateViewportTest: { renderingBaseline: () => Baseline | null } }
+  ).__babylonslateViewportTest.renderingBaseline());
+}
+
+async function presentation(page: Page): Promise<Presentation | undefined> {
+  return (await baseline(page))?.render?.presentation;
 }
 
 /**
@@ -85,10 +89,21 @@ async function startProbe(page: Page) {
   });
 }
 
-test("a directly presented viewport stays non-blank across held frames and a resize", async ({ page }) => {
-  test.setTimeout(120_000);
+async function useWebGpu(page: Page) {
+  await page.getByTestId("settings-menu").click();
+  await page.getByTestId("project-settings").click();
+  await page.getByTestId("settings-modal-category-rendering").click();
+  await page.getByTestId("project-gpu-backend").click();
+  await page.getByRole("option", { name: "WebGPU", exact: true }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(async () => (await baseline(page))?.backend, { timeout: 30_000 }).toBe("webgpu");
+  await waitForSceneViewportReady(page);
+}
+
+async function staysNonBlank(page: Page, backend: "webgl2" | "webgpu") {
   await openTestProject(page);
   await openMainScene(page);
+  if (backend === "webgpu") await useWebGpu(page);
   await page.evaluate(
     (scene) =>
       (
@@ -129,4 +144,17 @@ test("a directly presented viewport stays non-blank across held frames and a res
   expect(new Set(samples.map((sample) => sample.width)).size, "the probe saw the resize").toBeGreaterThan(1);
   const blank = samples.filter((sample) => sample.minAlpha < 250 || sample.spread < 8);
   expect(blank, JSON.stringify(samples.slice(0, 40))).toEqual([]);
+}
+
+test("a directly presented viewport stays non-blank across held frames and a resize", async ({ page }) => {
+  test.setTimeout(120_000);
+  await staysNonBlank(page, "webgl2");
+});
+
+test.describe("WebGPU", () => {
+  test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+  test("a directly presented WebGPU viewport stays non-blank across held frames and a resize", async ({ page }) => {
+    test.setTimeout(180_000);
+    await staysNonBlank(page, "webgpu");
+  });
 });
