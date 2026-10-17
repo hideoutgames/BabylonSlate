@@ -12,6 +12,8 @@ import {
   configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
 } from "./ktx2-transcoder";
+import { pruneReleasedWebGpuCacheEntries } from "./webgpu-cache-pruning";
+import { releaseDeletedWebGpuPipelineContexts } from "./webgpu-resource-release";
 
 /** A fully initialized project Engine, with the same offline assets as WebGL2. */
 export async function createAppWebGpuEngine(
@@ -64,6 +66,8 @@ export async function createAppWebGpuEngine(
       renderer: engine.getInfo().renderer,
     });
     reportWebGpuDeviceProblems(engine);
+    releaseDeletedWebGpuPipelineContexts(engine);
+    pruneReleasedWebGpuCacheEntries(engine);
     return engine;
   } catch (error) {
     const failures: unknown[] = [error];
