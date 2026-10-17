@@ -1,7 +1,7 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Effect, type Mesh } from "@babylonjs/core";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import {
@@ -1034,6 +1034,36 @@ describe("Play createEngine view", () => {
     engine.activeView = null;
   });
 
+  it("neither resizes the shared Engine nor draws for a view whose canvas lost its layout", async () => {
+    const engine = sharedEngine();
+    const { handle, canvas } = editorHandle(engine);
+    await handle.prewarmSceneMaterials();
+    const setSize = vi.spyOn(engine, "setSize");
+    let frames = 0;
+    handle.scene.onAfterRenderObservable.add(() => { frames += 1; });
+    const frame = () => {
+      handle.scheduler.invalidate("manual");
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+    };
+    Object.assign(canvas, { clientWidth: 300, clientHeight: 180 });
+    frame();
+    const shown = frames;
+    expect(shown).toBeGreaterThan(0);
+    expect(setSize).toHaveBeenLastCalledWith(300, 180);
+    // A hidden dock tab: no layout box, while the scheduler still believes the view is on screen.
+    setSize.mockClear();
+    Object.assign(canvas, { clientWidth: 0, clientHeight: 0 });
+    frame();
+    expect(setSize).not.toHaveBeenCalled();
+    expect(frames).toBe(shown);
+    Object.assign(canvas, { clientWidth: 320, clientHeight: 200 });
+    frame();
+    expect(setSize).toHaveBeenLastCalledWith(320, 200);
+    expect(frames).toBeGreaterThan(shown);
+  });
+
   // Software GL can take longer than the shader stall budget to produce a heavy scene's first valid frame.
   it.each(["validates", "never validates"] as const)("gives a first frame that %s the first-frame budget", async (outcome) => {
     const engine = sharedEngine();
@@ -1225,6 +1255,61 @@ describe("Play createEngine view", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("a stalled texture while the driver compiles", () => {
+    /** One scene texture that never loads, and one driver compile (the decode's post-process effect) still pending. */
+    function stalledWithCompile() {
+      const engine = sharedEngine();
+      engine.getCaps().parallelShaderCompile = { COMPLETION_STATUS_KHR: 0x91b1 };
+      const compile = { ready: false };
+      (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects["postprocess+rgbdDecode"] =
+        { isReady: () => compile.ready, getCompilationError: () => "" } as unknown as Effect;
+      const { handle } = playHandle(engine);
+      const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, handle.scene, false);
+      texture.name = "data:EnvironmentBRDFTexture2";
+      texture.getInternalTexture()!.isReady = false;
+      let outcome: "ready" | Error | null = null;
+      const settled = handle.whenMaterialTexturesReady().then(() => { outcome = "ready"; }, (error: Error) => { outcome = error; });
+      return { compile, texture, settled, outcome: () => outcome };
+    }
+
+    it("keeps waiting across stall budgets and finishes when the compile and the texture do", async () => {
+      vi.useFakeTimers();
+      // DriverCompileWatch reads performance.now; follow the faked clock whether or not it is faked itself.
+      const clock = vi.spyOn(performance, "now").mockImplementation(() => Date.now());
+      try {
+        const { compile, texture, settled, outcome } = stalledWithCompile();
+        await vi.advanceTimersByTimeAsync(SCENE_SHADER_WARM_TIMEOUT_MS * 3);
+        expect(outcome()).toBeNull();
+        compile.ready = true;
+        texture.getInternalTexture()!.isReady = true;
+        await vi.advanceTimersByTimeAsync(100);
+        await settled;
+        expect(outcome()).toBe("ready");
+      } finally {
+        clock.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+
+    it("fails once the same compile has stayed pending for the driver bound", async () => {
+      vi.useFakeTimers();
+      const clock = vi.spyOn(performance, "now").mockImplementation(() => Date.now());
+      try {
+        const { settled, outcome } = stalledWithCompile();
+        await vi.advanceTimersByTimeAsync(SCENE_DRIVER_COMPILE_TIMEOUT_MS - 5_000);
+        expect(outcome()).toBeNull();
+        await vi.advanceTimersByTimeAsync(5_000 + SCENE_SHADER_WARM_TIMEOUT_MS + 1_000);
+        await settled;
+        expect((outcome() as Error).message).toBe(
+          'Material textures did not become ready before the loading deadline. Still waiting for 1: texture "data:EnvironmentBRDFTexture2".',
+        );
+      } finally {
+        clock.mockRestore();
+        vi.useRealTimers();
+      }
+    });
   });
 
   it("does not evict shared GPU textures on restore or retain disposed handle callbacks", () => {

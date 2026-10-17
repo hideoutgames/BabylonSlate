@@ -128,6 +128,13 @@ export interface WaterFieldSurface {
   contactRange: number;
   /** Most contact-texture cells per side (project Contact Resolution); beyond it cells grow. Defaults to 1024. */
   contactCells?: number;
+  /**
+   * Whether this body draws the surface at a world X/Z. Blending bodies discard the water a neighbour owns, so contacts
+   * there are never seen and the contact field leaves them unbuilt until `drawStamp` changes. Absent: drawn everywhere.
+   */
+  draws?: (x: number, z: number) => boolean;
+  /** Changes whenever `draws` may answer differently. */
+  drawStamp?: number;
 }
 
 type Rect = { minX: number; minZ: number; maxX: number; maxZ: number };

@@ -1652,6 +1652,14 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
       get amplitude() { return waterWaveEnvelope(water, body.waveScale) + 0.05; },
       // Contact Resolution caps the contact texture's cells per side; a change rebuilds it.
       get contactCells() { return sceneWaterQualityDeviceClamp(scene).quality.contactResolution; },
+      // A blending surface discards the water a neighbour owns (the share margin is negative there), and what lies
+      // beyond the blended shoreline: contacts in either are never seen. A point the blend cannot place counts as drawn.
+      get drawStamp() { return sceneBlends.get(scene)?.index.revision ?? 0; },
+      draws: (x, z) => {
+        const state = surface.blend ? sceneBlends.get(scene) : undefined;
+        if (!state || !surface.blend) return true;
+        return !evaluateWaterBlend(state.index, surface.blend.self, x, surface.world.m[13]!, z, fieldSample) || (fieldSample.margin >= 0 && fieldSample.union >= 0);
+      },
       surfaceY: (x, z) => waterSurfaceY(surface, x, z),
       get restVaries() { return restVaries(surface); },
       restY: (x, z) => waterSurfaceY(surface, x, z, true)!,
