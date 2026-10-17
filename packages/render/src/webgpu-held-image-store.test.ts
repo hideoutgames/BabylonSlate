@@ -159,10 +159,14 @@ describe("WebGPU direct presentation store", () => {
     expect(store.restore({} as EngineView, 64, 48, true)).toBe(false);
   });
 
-  it("adds copy-destination use to Babylon's canvas configuration and keeps the rest", () => {
+  it("leaves the Engine alone until a step presents directly, then adds copy-destination use to Babylon's canvas configuration", () => {
     const fake = fakeEngine();
-    createWebGpuHeldImageStore(fake.engine);
-    expect(fake.configurations.at(-1)).toEqual({ device: "device", format: "bgra8unorm", usage: 0x13, alphaMode: "premultiplied" });
+    const { _startMainRenderPass: start } = fake.native;
+    const store = createWebGpuHeldImageStore(fake.engine)!;
+    expect([fake.configurations.length, fake.native._startMainRenderPass]).toEqual([0, start]);
+    store.engage!();
+    expect(fake.configurations).toEqual([{ device: "device", format: "bgra8unorm", usage: 0x13, alphaMode: "premultiplied" }]);
+    expect(fake.native.flushFramebuffer).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the copy path when the Engine's internals differ", () => {

@@ -151,9 +151,19 @@ export function createWebGpuHeldImageStore(engine: AbstractEngine): HeldImageSto
     }
     shown = { width: canvas.width, height: canvas.height, configuration };
   };
-  const endFrame = engine.onEndFrameObservable.add(() => {
-    for (const texture of retired.splice(0)) texture.destroy();
-  });
+  let endFrame: ReturnType<typeof engine.onEndFrameObservable.add> = null;
+  /** Installed at the first direct step, so an Engine that never presents directly is never touched. */
+  const install = () => {
+    if (endFrame) return;
+    endFrame = engine.onEndFrameObservable.add(() => {
+      for (const texture of retired.splice(0)) texture.destroy();
+    });
+    // Reconfiguring replaces the canvas texture; submit anything that still uses it first.
+    engine.flushFramebuffer();
+    native._startMainRenderPass = directStart;
+    native._configureContext = copyContext;
+    native._configureContext();
+  };
   const drop = (destroy: boolean) => {
     for (let index = 0; index < targets.length; index++) {
       const target = targets[index];
@@ -162,12 +172,10 @@ export function createWebGpuHeldImageStore(engine: AbstractEngine): HeldImageSto
     }
     if (!destroy) retired.length = 0;
   };
-  native._startMainRenderPass = directStart;
-  native._configureContext = copyContext;
-  native._configureContext();
   return {
     engage() {
       if (!usable) return;
+      install();
       engaged = true;
       drew = false;
     },
@@ -212,6 +220,7 @@ export function createWebGpuHeldImageStore(engine: AbstractEngine): HeldImageSto
       drop(true);
       for (const texture of retired.splice(0)) texture.destroy();
       engine.onEndFrameObservable.remove(endFrame);
+      endFrame = null;
       if (native._startMainRenderPass === directStart) {
         if (ownStart) Object.defineProperty(native, "_startMainRenderPass", ownStart);
         else Reflect.deleteProperty(native, "_startMainRenderPass");
