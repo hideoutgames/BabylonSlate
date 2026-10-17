@@ -3,13 +3,19 @@ import type { AbstractEngine } from "@babylonjs/core";
 import type { GpuBackend } from "@babylonslate/core";
 import { createAppEngine, type CreateEngineOptions } from "./create-engine";
 import { releaseResourceCacheForEngine } from "./resource-cache";
-import { createAppWebGpuEngine } from "./webgpu-engine";
+import { createAppWebGpuEngine, whenWebGpuDeviceLost, type WebGpuDeviceLoss } from "./webgpu-engine";
 
 export interface BackendEngineSession {
   engine: AbstractEngine;
   requestedBackend: GpuBackend;
   effectiveBackend: "webgl2" | "webgpu";
   fallbackReason?: string;
+  /**
+   * WebGPU only: settles when the device is lost while the session is in use.
+   * The Engine cannot recover in place; dispose the session and create another.
+   * WebGL2 restores a lost context in place, so it is absent there.
+   */
+  deviceLost?: Promise<WebGpuDeviceLoss>;
   dispose(): void;
 }
 
@@ -48,12 +54,14 @@ export async function createBackendEngineSession(
       }
       const ownedEngine = engine;
       setEngineBackendStatus(ownedEngine, { requestedBackend, effectiveBackend: backend, fallbackReason });
+      const deviceLost = backend === "webgpu" ? whenWebGpuDeviceLost(ownedEngine) : null;
       let disposed = false;
       return {
         engine: ownedEngine,
         requestedBackend,
         effectiveBackend: backend,
         ...(fallbackReason ? { fallbackReason } : {}),
+        ...(deviceLost ? { deviceLost } : {}),
         dispose() {
           if (disposed) return;
           disposed = true;
