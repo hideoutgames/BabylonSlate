@@ -27,8 +27,8 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { prewarmSceneMaterials } from "./scene-perf";
 import { configureEditorRenderingGroups } from "./sorting";
 import type { WaterMaterialPlugin } from "./water-material";
-import { createWaterMesh } from "./water-mesh";
-import { isMainWaterPass, waterMeshDrawsInSceneCopyPass, waterSceneCopyForPass } from "./water-scene-copy";
+import { createWaterMesh, isBuiltInWaterMesh } from "./water-mesh";
+import { isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
 
 const DEFAULT_TASKS = [
   "Forward admitted shadows",
@@ -479,7 +479,7 @@ it("compiles the water variants the view draws before its first frame, and none 
   const drawn = new Set<string>();
   water.onAfterRenderObservable.add(() => drawn.add(waterVariant(water.subMeshes[0]!.effect?.defines ?? "")));
   // The load's order: the shader warm-up first, then the view's graph is prepared.
-  await prewarmSceneMaterials(scene, undefined, (mesh) => waterMeshDrawsInSceneCopyPass(scene, scene.activeCamera, mesh));
+  await prewarmSceneMaterials(scene, undefined, isBuiltInWaterMesh);
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   // Water the view draws through its scene copy: the drawn colour variant and its depth pre-pass, nothing else.
@@ -505,21 +505,51 @@ it("compiles the water variants the view draws before its first frame, and none 
   graph.dispose();
 });
 
-it("warms the water variant of a view without a scene copy, which is the one it draws", async () => {
+it("leaves a view without a scene copy's water to the graph's probe, which compiles the variant it draws", async () => {
   const { engine, scene, camera } = host();
   updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "low" } }) });
   const water = lake(scene, { ...createDefaultWaterDefinition(), refraction: 0.35 });
   const drawn = new Set<string>();
   water.onAfterRenderObservable.add(() => drawn.add(waterVariant(water.subMeshes[0]!.effect?.defines ?? "")));
-  await prewarmSceneMaterials(scene, undefined, (mesh) => waterMeshDrawsInSceneCopyPass(scene, scene.activeCamera, mesh));
-  expect(compiledWaterVariants(engine)).toEqual(["colour without copy"]);
+  await prewarmSceneMaterials(scene, undefined, isBuiltInWaterMesh);
   const graph = new ForwardSceneFrameGraph(scene);
+  expect(graph.sceneStrictlyReady(camera)).toBe(true);
+  expect(compiledWaterVariants(engine)).toEqual([]);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(compiledWaterVariants(engine)).toEqual(["colour without copy", "depth"]);
   await settle(graph, camera);
   expect([...drawn].sort()).toEqual(["colour without copy", "depth"]);
   expect(compiledWaterVariants(engine)).toEqual(["colour without copy", "depth"]);
   graph.dispose();
+});
+
+it("compiles no pass-less water variant when the view's scene copy cannot be planned during the warm-up", async () => {
+  const { engine, scene, camera } = host();
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "ultra" } }) });
+  const water = lake(scene, { ...createDefaultWaterDefinition(), refraction: 0.35 });
+  const drawn = new Set<string>();
+  water.onAfterRenderObservable.add(() => drawn.add(waterVariant(water.subMeshes[0]!.effect?.defines ?? "")));
+  // With no camera the plan has no demand yet; the load's camera arrives before the graph prepares.
+  scene.activeCamera = null;
+  await prewarmSceneMaterials(scene, undefined, isBuiltInWaterMesh);
+  scene.activeCamera = camera;
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(graph.sceneStrictlyReady(camera)).toBe(true);
+  expect(compiledWaterVariants(engine)).toEqual([]);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(compiledWaterVariants(engine)).toEqual(["colour with copy", "depth"]);
+  await settle(graph, camera);
+  expect([...drawn].sort()).toEqual(["colour with copy", "depth"]);
+  expect(compiledWaterVariants(engine)).toEqual(["colour with copy", "depth"]);
+  graph.dispose();
+});
+
+it("names only water with the built-in material as built-in, so a Custom Material water mesh is still warmed", () => {
+  const { scene } = host();
+  const custom = createWaterMesh(scene, "custom", normalizeWaterBody({ width: 4, length: 4, resolution: 8 }), createDefaultWaterDefinition(), new StandardMaterial("custom", scene));
+  expect(isBuiltInWaterMesh(lake(scene))).toBe(true);
+  expect(isBuiltInWaterMesh(custom)).toBe(false);
+  expect(isBuiltInWaterMesh(box(scene, "crate"))).toBe(false);
 });
 
 it("keeps frozen Play water's colour draw on its full variant when a tilt re-prepares it without a readiness probe", async () => {
