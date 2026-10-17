@@ -18,7 +18,7 @@ import type { AudioPlaybackBackend, AudioPose } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
-import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled, VIEW_CANVAS_2D_ATTRIBUTES } from "./registered-view-admission";
+import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled, VIEW_CANVAS_2D_ATTRIBUTES, viewPresentedDirectly } from "./registered-view-admission";
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
@@ -2447,7 +2447,7 @@ function initializeEngine(
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
-    ))(), presentation: { ...presentationStats }, rendererWork: worldRenderer.diagnostics(),
+    ))(), presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
         registeredViewEnabled: registeredView?.enabled ?? null,
