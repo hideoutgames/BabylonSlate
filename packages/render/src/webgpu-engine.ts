@@ -34,7 +34,7 @@ export async function createAppWebGpuEngine(
     dracoBasePath: options.dracoBasePath,
     meshoptBasePath: options.meshoptBasePath,
   });
-  const engine = new WebGPUEngine(canvas, {
+  const engine: WebGPUEngine = new WebGPUEngine(canvas, {
     antialias: false,
     stencil: true,
     adaptToDeviceRatio: false,
@@ -52,7 +52,7 @@ export async function createAppWebGpuEngine(
       ],
       // Babylon 9.29 reads this after storing the adapter's limits and
       // before requesting the device.
-      get requiredLimits() {
+      get requiredLimits(): Record<string, number> {
         return adapterRequiredLimits(engine.supportedLimits);
       },
     },
