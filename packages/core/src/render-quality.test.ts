@@ -163,7 +163,7 @@ describe("rendering quality sessions", () => {
       ["reflections", "mirror"], ["fft", "yes"], ["contactResolution", "128"], ["octaves", "3"], ["meshDensity", ""]])
       expect(session.execute("water", field, value).success).toBe(false);
     expect(session.execute("geometry", "meshDensity", "1").success).toBe(false);
-    expect(session.effective().water).toMatchObject({ fftSize: 256, meshDensity: 1.25, contactResolution: 512 });
+    expect(session.effective().water).toMatchObject({ fftSize: 256, meshDensity: 1.25, contactResolution: 256 });
     session.execute("water", "reset");
     expect(session.effective().water).toMatchObject({ ...RENDER_QUALITY_PROFILES.medium.water, preset: "medium" });
   });

@@ -15,6 +15,7 @@ import {
   type Scene,
   type ThinEngine,
 } from "@babylonjs/core";
+import { viewOfBox, type BoxView } from "./active-view";
 import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { RENDERING_GROUP } from "./sorting";
@@ -43,18 +44,40 @@ const MOVE_MS = 33;
 const SURFACE_MOVE_MS = 150;
 const SURFACE_SAME = 0, SURFACE_MOVED = 1, SURFACE_CHANGED = 2;
 /**
- * Milliseconds of contact rebuilds all of a scene's surfaces start in one frame. Full rebuilds (a new surface, a
- * reshaped body, a forced update) never wait but count; one moving-object rebuild always runs. Once it is spent, further surfaces wait for a later frame unless they are overdue (`MOVE_WAIT_MS`, or
- * two frames when frames are slower than half of it) or were the longest waiter the previous frame skipped, so the
- * surfaces visited first never starve the later ones.
+ * The contact cost cap: milliseconds of window rebuilds (`WaterContactField.fillWindow`) a scene's surfaces start in
+ * one frame. A moving object only queues the window around it (`WaterContactField.enqueue`); each frame the scene's
+ * queue serves its most important windows first (`WaterContactField.next`) until this is spent, and always one, so a
+ * frame costs at most this plus the window that crosses it (at most `MAX_WINDOW` cells a side). Full rebuilds (a new
+ * surface, a reshaped body, a resolution change or a forced update) and re-slicing moved objects run at once but are
+ * counted, so queued windows wait that frame. Windows still wait only while the cap is spent, so every one is built.
  */
 export const WATER_CONTACT_FRAME_BUDGET_MS = 2;
-const MOVE_WAIT_MS = 100;
+/** At least this much per window counts against the cap, so a clock that does not advance within a frame still spreads them. */
+const MIN_WINDOW_MS = 0.1;
+/** A window waiting this long (seen by a camera) goes before every other, oldest first, so none starves behind nearer ones. */
+const OVERDUE_MS = 250;
+/** A window no camera sees waits this long before it runs, and this long before it goes ahead of the seen windows. */
+const OFFSCREEN_MS = 400, OFFSCREEN_OVERDUE_MS = 1500;
 /**
- * Per scene and frame: rebuild time spent, moving rebuilds run, and the last build time of the longest-waiting surface
- * skipped (this frame's, and the previous frame's, which has priority now).
+ * A seen window waits before it runs by a delay that grows from nothing at `FAR_START` metres from the nearest camera to
+ * `FAR_MAX_MS` at `FAR_END` (below `OVERDUE_MS`, so waiting never makes a window overdue before it may run): far foam is
+ * a few pixels, and several moves of it become one rebuild.
  */
-const rebuildBudgets = new WeakMap<Scene, { frame: number; spent: number; moving: number; oldest: number; priority: number }>();
+const FAR_START = 100, FAR_END = 400, FAR_MAX_MS = 200;
+/** The most cells per side one rebuilt window covers: larger regions are cut into blocks of about this size. */
+const MAX_WINDOW = 64;
+/** Per scene and frame: the frame this counts, the milliseconds of window rebuilds started, and how many (or full rebuilds) ran. */
+const frameBudgets = new WeakMap<Scene, { frame: number; spent: number; ran: number }>();
+/** The contact fields of each scene, whose queued windows share the frame's budget. */
+const sceneFields = new WeakMap<Scene, Set<WaterContactField>>();
+
+function frameBudget(scene: Scene): { frame: number; spent: number; ran: number } {
+  let budget = frameBudgets.get(scene);
+  if (!budget) { budget = { frame: NaN, spent: 0, ran: 0 }; frameBudgets.set(scene, budget); }
+  const frame = scene.getFrameId();
+  if (budget.frame !== frame) { budget.frame = frame; budget.spent = 0; budget.ran = 0; }
+  return budget;
+}
 /** Surfaces above or below a layer count a little more than horizontal ones, so nearness is not contact. */
 const VERTICAL_WEIGHT = 1.5;
 /** Most rest-height samples per side over an object on a sloped body (rivers, tilted volumes), bilinearly interpolated. */
@@ -78,6 +101,14 @@ export function isWaterContactMesh(mesh: AbstractMesh): boolean {
 type Rect = { minX: number; minZ: number; maxX: number; maxZ: number };
 /** Inclusive-exclusive cell window. */
 type Window = { x0: number; z0: number; x1: number; z1: number };
+/**
+ * A window waiting for the frame budget. `since` is when it was first queued (a window that grows or merges while it
+ * waits keeps its age); `hidden` is whether no body draws this surface anywhere in it, as of `stamp`.
+ */
+type Queued = Window & { since: number; stamp: number; hidden: boolean };
+/** `WaterContactField.next`'s answer, reused: the queue index of the window to build next and its sort key (lowest first). */
+const pick = { index: -1, key: Infinity };
+const boxView: BoxView = { visible: true, distance: 0 };
 
 /** One rigid placement of a mesh's geometry: a mesh, an instance, or one thin instance. */
 type Piece = {
@@ -192,7 +223,10 @@ const union = (a: Rect | null, b: Rect | null): Rect | null => !a ? b : !b ? a
  * its own waterline. Surfaces just above or below a layer add a weighted vertical distance, so
  * shallow hulls, rafts and deck undersides between layers still meet the rising and falling water.
  * Rebuilt only when objects move, deform, appear or disappear, or the surface or wave envelope
- * changes; waves never rebake it.
+ * changes; waves never rebake it. Only the cells an object's movement can change are rebuilt, as queued windows that
+ * share the scene's per-frame cost cap (`WATER_CONTACT_FRAME_BUDGET_MS`): the most important (seen, near, longest
+ * waiting) first, and none that no body draws. Until its window is built a cell keeps its last result, so contacts follow a
+ * moving object a few frames late, never wrongly.
  */
 export class WaterContactField {
   texture: RawTexture | null = null;
@@ -215,6 +249,10 @@ export class WaterContactField {
   /** Bumped when the surface changes, which invalidates every cached thin-instance placement. */
   private surfaceEpoch = 0;
   private dirty: Rect[] = [];
+  /** Windows of `data` that changed and wait for the frame budget; none overlap. */
+  private readonly queue: Queued[] = [];
+  /** Windows were built since `update` last reported. */
+  private touched = false;
   private lastScan = -Infinity;
   /** Milliseconds this surface's periodic scans run ahead of the others' (`SCAN_PHASES`). */
   private readonly scanPhase = (scanPhases++ % SCAN_PHASES) * SCAN_MS / SCAN_PHASES;
@@ -232,20 +270,28 @@ export class WaterContactField {
   constructor(scene: Scene, surface: WaterFieldSurface) {
     this.scene = scene;
     this.surface = surface;
+    let fields = sceneFields.get(scene);
+    if (!fields) { fields = new Set(); sceneFields.set(scene, fields); }
+    fields.add(this);
   }
 
+  /** Windows still waiting for the frame budget (some may wait on another body drawing the surface instead). */
+  get queued(): number { return this.queue.length; }
+
   /**
-   * Track objects and rebuild what changed. Returns true when the texture changed. A changed wave envelope, contact
-   * range or cell cap cuts every object again at once; so does a moved surface, but while it keeps moving (a dragged,
-   * animated or tide-driven body) at most every `SURFACE_MOVE_MS`: its contacts lag its pose by that much at most, and
+   * Track objects and queue what changed, then build the scene's queued windows within the frame's budget. Returns true
+   * when the texture changed. A changed wave envelope, contact range or cell cap cuts every object again and rebuilds
+   * every cell at once; so does a moved surface, but while it keeps moving (a dragged, animated or tide-driven body) at
+   * most every `SURFACE_MOVE_MS` and as one queued window: its contacts lag its pose by that much plus the queue, and
    * its last pose always lands. A released texture (`releaseTexture`) waits for `restore`.
    */
   update(now: number, force = false): boolean {
     const surface = this.syncSurface();
     if (surface === SURFACE_MOVED) this.surfaceMoved = true;
     if (this.released && !force) return false;
-    const full = force || surface === SURFACE_CHANGED
-      || (this.surfaceMoved && (this.lastBuild === -Infinity || now - this.lastBuild >= SURFACE_MOVE_MS));
+    const rebuildAll = force || surface === SURFACE_CHANGED;
+    const recut = !rebuildAll && this.surfaceMoved && (this.lastBuild === -Infinity || now - this.lastBuild >= SURFACE_MOVE_MS);
+    const full = rebuildAll || recut;
     if (full) this.surfaceMoved = false;
     if (full) { this.surfaceEpoch++; for (const piece of this.pieces.values()) piece.stale = true; }
     if (full || now - this.lastScan >= SCAN_MS) {
@@ -256,26 +302,135 @@ export class WaterContactField {
     else this.track();
     let stale = full || this.dirty.length > 0;
     for (const piece of this.pieces.values()) stale ||= piece.stale;
-    if (!stale || (!full && now - this.lastBuild < MOVE_MS)) return false;
-    // Many surfaces with moving objects share a per-frame budget (`WATER_CONTACT_FRAME_BUDGET_MS`).
-    let budget = rebuildBudgets.get(this.scene);
-    if (!budget) { budget = { frame: NaN, spent: 0, moving: 0, oldest: Infinity, priority: -Infinity }; rebuildBudgets.set(this.scene, budget); }
-    const frame = this.scene.getFrameId();
-    if (budget.frame !== frame) {
-      budget.frame = frame; budget.spent = 0; budget.moving = 0;
-      budget.priority = budget.oldest === Infinity ? -Infinity : budget.oldest; budget.oldest = Infinity;
+    let changed = false;
+    if (stale && (full || now - this.lastBuild >= MOVE_MS)) {
+      this.lastBuild = now;
+      const budget = frameBudget(this.scene), start = performance.now();
+      changed = this.rebuild(rebuildAll, recut, now);
+      // Re-slicing and full rebuilds are not queued but count against the frame; a full one is the frame's progress too.
+      budget.spent += Math.max(performance.now() - start, MIN_WINDOW_MS);
+      if (rebuildAll) budget.ran++;
     }
-    if (!full && budget.moving > 0 && budget.spent >= WATER_CONTACT_FRAME_BUDGET_MS
-      && now - this.lastBuild < Math.max(MOVE_WAIT_MS, 2 * this.scene.getEngine().getDeltaTime()) && this.lastBuild > budget.priority) {
-      budget.oldest = Math.min(budget.oldest, this.lastBuild);
+    WaterContactField.drain(this.scene, now);
+    changed ||= this.touched; this.touched = false;
+    return changed;
+  }
+
+  /**
+   * Builds the scene's queued windows, across all its surfaces, most important first, until the frame's budget is spent
+   * (the first window of a frame always runs). A window larger than `MAX_WINDOW` is only cut into blocks, which costs
+   * nothing, and its blocks queue again.
+   */
+  private static drain(scene: Scene, now: number): void {
+    const fields = sceneFields.get(scene);
+    if (!fields) return;
+    const budget = frameBudget(scene);
+    for (;;) {
+      if (budget.ran > 0 && budget.spent >= WATER_CONTACT_FRAME_BUDGET_MS) return;
+      let best: WaterContactField | null = null, index = -1, key = Infinity;
+      for (const field of fields) {
+        if (field.queue.length === 0 || field.released || !field.data) continue;
+        field.next(now);
+        if (pick.index >= 0 && pick.key < key) { best = field; index = pick.index; key = pick.key; }
+      }
+      if (!best) return;
+      const start = performance.now();
+      if (!best.build(index)) continue;
+      budget.spent += Math.max(performance.now() - start, MIN_WINDOW_MS);
+      budget.ran++;
+    }
+  }
+
+  /**
+   * Sets `pick` to this surface's most important queued window that may run now: windows no body draws wait for that to
+   * change; seen windows go before unseen ones, nearer before farther, and a window that waited long enough (`OVERDUE_MS`)
+   * goes before every other, oldest first. Unseen and far windows also wait a little before they run at all, so a
+   * cluster of moves becomes one rebuild.
+   */
+  private next(now: number): void {
+    pick.index = -1; pick.key = Infinity;
+    const r = this.rect!, cell = this.cell, box = this.surface.mesh.getBoundingInfo().boundingBox;
+    const low = box.minimumWorld.y - this.amplitude, high = box.maximumWorld.y + this.amplitude;
+    const stamp = this.surface.drawStamp ?? 0;
+    for (let i = 0; i < this.queue.length; i++) {
+      const window = this.queue[i]!;
+      if (window.stamp !== stamp) { window.hidden = this.undrawn(window); window.stamp = stamp; }
+      if (window.hidden) continue;
+      const { visible, distance } = viewOfBox(this.scene, r.minX + window.x0 * cell, low, r.minZ + window.z0 * cell, r.minX + window.x1 * cell, high, r.minZ + window.z1 * cell, boxView);
+      const age = now - window.since;
+      if (age < (visible ? FAR_MAX_MS * Math.min(1, Math.max(0, (distance - FAR_START) / (FAR_END - FAR_START))) : OFFSCREEN_MS)) continue;
+      const key = age >= (visible ? OVERDUE_MS : OFFSCREEN_OVERDUE_MS) ? -1e9 - age : (visible ? 0 : 1e6) + distance - age * 1e-3;
+      if (key < pick.key) { pick.key = key; pick.index = i; }
+    }
+  }
+
+  /**
+   * Whether no body draws this surface anywhere in the window (`WaterFieldSurface.draws`, sampled at its centre and
+   * corners): contacts there are never seen, so the window waits until that changes.
+   */
+  private undrawn(window: Window): boolean {
+    const draws = this.surface.draws;
+    if (!draws) return false;
+    const r = this.rect!, cell = this.cell;
+    const x0 = r.minX + window.x0 * cell, x1 = r.minX + window.x1 * cell, z0 = r.minZ + window.z0 * cell, z1 = r.minZ + window.z1 * cell;
+    return !(draws((x0 + x1) / 2, (z0 + z1) / 2) || draws(x0, z0) || draws(x1, z0) || draws(x0, z1) || draws(x1, z1));
+  }
+
+  /** Builds queued window `index`, or cuts it into blocks of at most `MAX_WINDOW` cells a side and queues those (false). */
+  private build(index: number): boolean {
+    const window = this.queue[index]!;
+    this.queue.splice(index, 1);
+    const width = window.x1 - window.x0, height = window.z1 - window.z0;
+    const nx = Math.ceil(width / MAX_WINDOW), nz = Math.ceil(height / MAX_WINDOW);
+    if (nx * nz > 1) {
+      for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+        this.queue.push({
+          x0: window.x0 + Math.floor(width * i / nx), x1: window.x0 + Math.floor(width * (i + 1) / nx),
+          z0: window.z0 + Math.floor(height * j / nz), z1: window.z0 + Math.floor(height * (j + 1) / nz),
+          since: window.since, stamp: NaN, hidden: false,
+        });
+      }
       return false;
     }
-    if (!full) budget.moving++;
-    this.lastBuild = now;
-    const start = performance.now(), changed = this.rebuild(full);
-    // At least a hair per rebuild, so a clock that does not advance within a frame still spreads them.
-    budget.spent += Math.max(performance.now() - start, 0.25);
-    return changed;
+    // The blur and minimum filters read a few cells past the window: those are computed too, so no seam shows between
+    // a rebuilt window and its stale neighbour.
+    const margin = this.smoothRadius() * 2 + 1;
+    this.fill({
+      x0: Math.max(0, window.x0 - margin), z0: Math.max(0, window.z0 - margin),
+      x1: Math.min(this.width, window.x1 + margin), z1: Math.min(this.height, window.z1 + margin),
+    }, window);
+    this.upload([window], false);
+    this.touched = true;
+    return true;
+  }
+
+  /**
+   * Queues a window of changed cells. Windows that overlap it merge into one, which keeps the oldest age, so nothing is
+   * built twice and a window that keeps changing while it waits still goes by when it first changed.
+   */
+  private enqueue(next: Window, now: number): void {
+    if (next.x0 >= next.x1 || next.z0 >= next.z1) return;
+    let merged: Queued = { ...next, since: now, stamp: NaN, hidden: false };
+    for (let again = true; again;) {
+      again = false;
+      for (let i = 0; i < this.queue.length; i++) {
+        const w = this.queue[i]!;
+        if (w.x0 >= merged.x1 || merged.x0 >= w.x1 || w.z0 >= merged.z1 || merged.z0 >= w.z1) continue;
+        this.queue.splice(i, 1);
+        merged = {
+          x0: Math.min(w.x0, merged.x0), z0: Math.min(w.z0, merged.z0), x1: Math.max(w.x1, merged.x1), z1: Math.max(w.z1, merged.z1),
+          since: Math.min(w.since, merged.since), stamp: NaN, hidden: false,
+        };
+        again = true;
+        break;
+      }
+    }
+    this.queue.push(merged);
+  }
+
+  /** Radius (cells) of the box blurs and minimum filter that round the distances (`smoothContacts`, `minimumFilter`). */
+  private smoothRadius(): number {
+    return Math.max(1, Math.round(this.range / CONTACT_SMOOTH / this.cell));
   }
 
   /**
@@ -312,6 +467,7 @@ export class WaterContactField {
 
   dispose(): void {
     this.release();
+    sceneFields.get(this.scene)?.delete(this);
     for (const piece of this.pieces.values()) if (piece.geometry) unwatchGeometry(piece.geometry);
     for (const placements of this.thin.values()) unwatchGeometry(placements.geometry);
     this.pieces.clear(); this.thin.clear();
@@ -331,7 +487,7 @@ export class WaterContactField {
   }
 
   private release(): void {
-    this.texture?.dispose(); this.texture = null; this.data = null; this.rect = null;
+    this.texture?.dispose(); this.texture = null; this.data = null; this.rect = null; this.queue.length = 0;
   }
 
   /** Candidate placements of every mesh that reaches the wave envelope near this surface. */
@@ -568,7 +724,12 @@ export class WaterContactField {
     };
   }
 
-  private rebuild(full: boolean): boolean {
+  /**
+   * Re-slices stale placements and works out which cells that changes. `rebuildAll` (and any change of allocation)
+   * rebuilds every cell at once; otherwise the changed windows are queued (all of the cells for `recut`, a surface that
+   * moved) and the texture is unchanged until the frame budget builds them. Returns whether the texture changed.
+   */
+  private rebuild(rebuildAll: boolean, recut: boolean, now: number): boolean {
     for (const piece of this.pieces.values()) {
       if (!piece.stale) continue;
       const before = piece.bounds;
@@ -595,20 +756,37 @@ export class WaterContactField {
       && current.minX <= needed.minX && current.minZ <= needed.minZ && current.maxX >= needed.maxX && current.maxZ >= needed.maxZ
       // Release most of an oversized field once objects leave.
       && (current.maxX - current.minX) * (current.maxZ - current.minZ) <= 4 * (needed.maxX - needed.minX + 16 * cell) * (needed.maxZ - needed.minZ + 16 * cell);
-    if (!fits) { this.allocate(needed, cell); full = true; }
-    const windows: Window[] = [];
-    if (full) windows.push({ x0: 0, z0: 0, x1: this.width, z1: this.height });
-    else {
-      const grow = this.range + this.cell;
-      for (const rect of this.dirty) this.addWindow(windows, this.toWindow(rect, grow));
-    }
+    // A moved object that outgrows the allocation carries the cells it keeps over to the new one, so only what its
+    // movement changed rebuilds (a first allocation, or another cell size, rebuilds everything).
+    const grown = !fits;
+    if (grown && !this.allocate(needed, cell)) rebuildAll = true;
+    const everything: Window = { x0: 0, z0: 0, x1: this.width, z1: this.height };
+    const dirty = this.dirty;
     this.dirty = [];
-    for (const window of windows) this.fill(window);
-    this.upload(windows, full);
-    return true;
+    if (rebuildAll) {
+      this.queue.length = 0;
+      this.fill(everything, everything);
+      this.upload([everything], true);
+      return true;
+    }
+    if (grown) this.upload([everything], true);
+    if (recut) {
+      // The whole surface moved: every cell is stale, but they come in as windows within the budget, newest pose.
+      this.queue.length = 0;
+      this.enqueue(everything, now);
+      return grown;
+    }
+    const grow = this.range + this.cell;
+    for (const rect of dirty) this.enqueue(this.toWindow(rect, grow), now);
+    return grown;
   }
 
-  private allocate(needed: Rect, cell: number): void {
+  /**
+   * Allocates cells for `needed`. Returns whether the previous cells it shares with the new allocation were carried
+   * over (same cell size: every allocation snaps to the same lattice) with the queued windows moved to match, so only
+   * what changed needs rebuilding; otherwise everything does.
+   */
+  private allocate(needed: Rect, cell: number): boolean {
     // Snap to 16-cell blocks so small moves stay inside the allocation.
     const block = cell * 16;
     const rect = {
@@ -617,10 +795,25 @@ export class WaterContactField {
     };
     const width = Math.max(2, Math.round((rect.maxX - rect.minX) / cell)), height = Math.max(2, Math.round((rect.maxZ - rect.minZ) / cell));
     if (this.texture && (width !== this.width || height !== this.height)) { this.texture.dispose(); this.texture = null; }
+    const previous = this.data, before = this.rect, oldWidth = this.width, oldHeight = this.height;
+    const carry = previous !== null && before !== null && this.cell === cell;
     this.rect = rect; this.cell = cell; this.width = width; this.height = height;
     this.data = new Uint8Array(width * height * 4).fill(255);
     this.bounds[0] = rect.minX; this.bounds[1] = rect.minZ;
     this.bounds[2] = 1 / (width * cell); this.bounds[3] = 1 / (height * cell);
+    if (!carry) { this.queue.length = 0; return false; }
+    // The old cell (0, 0) lies at (dx, dz) in the new allocation.
+    const dx = Math.round((before.minX - rect.minX) / cell), dz = Math.round((before.minZ - rect.minZ) / cell);
+    const x0 = Math.max(0, dx), x1 = Math.min(width, dx + oldWidth), z0 = Math.max(0, dz), z1 = Math.min(height, dz + oldHeight);
+    for (let z = z0; z < z1; z++) {
+      this.data.set(previous.subarray(((z - dz) * oldWidth + x0 - dx) * 4, ((z - dz) * oldWidth + x1 - dx) * 4), (z * width + x0) * 4);
+    }
+    for (let i = this.queue.length - 1; i >= 0; i--) {
+      const w = this.queue[i]!;
+      w.x0 = Math.max(0, w.x0 + dx); w.x1 = Math.min(width, w.x1 + dx); w.z0 = Math.max(0, w.z0 + dz); w.z1 = Math.min(height, w.z1 + dz);
+      if (w.x0 >= w.x1 || w.z0 >= w.z1) this.queue.splice(i, 1);
+    }
+    return true;
   }
 
   private toWindow(rect: Rect, grow: number): Window {
@@ -631,32 +824,27 @@ export class WaterContactField {
     };
   }
 
-  /** Overlapping windows merge, so a cell is never computed twice in one rebuild. */
-  private addWindow(windows: Window[], next: Window): void {
-    if (next.x0 >= next.x1 || next.z0 >= next.z1) return;
-    for (let i = 0; i < windows.length; i++) {
-      const w = windows[i]!;
-      if (w.x0 <= next.x1 && next.x0 <= w.x1 && w.z0 <= next.z1 && next.z0 <= w.z1) {
-        windows.splice(i, 1);
-        this.addWindow(windows, { x0: Math.min(w.x0, next.x0), z0: Math.min(w.z0, next.z0), x1: Math.max(w.x1, next.x1), z1: Math.max(w.z1, next.z1) });
-        return;
-      }
-    }
-    windows.push(next);
-  }
-
-  /** Recompute every layer inside `target`, seeding from all objects within range of it. */
-  private fill(target: Window): void {
+  /**
+   * Recomputes every layer of the cells in `write`, seeding from all objects within range of them. `target` (`write` or
+   * a window around it) is the region computed: the rounding filters read neighbours, so the cells of `write` come out
+   * exact only when `target` reaches `smoothRadius() * 2` cells past them (or the edge of the texture).
+   */
+  private fill(target: Window, write: Window): void {
     const r = this.rect!, cell = this.cell, data = this.data!;
     const reachCells = Math.ceil(this.range / cell) + 2;
     const w: Window = { x0: Math.max(0, target.x0 - reachCells), z0: Math.max(0, target.z0 - reachCells), x1: Math.min(this.width, target.x1 + reachCells), z1: Math.min(this.height, target.z1 + reachCells) };
     const cw = w.x1 - w.x0, ch = w.z1 - w.z0;
+    const reach = { minX: r.minX + w.x0 * cell - this.range, minZ: r.minZ + w.z0 * cell - this.range, maxX: r.minX + w.x1 * cell + this.range, maxZ: r.minZ + w.z1 * cell + this.range };
+    const pieces = Array.from(this.pieces.values()).filter(({ bounds: b }) => b && b.maxX >= reach.minX && b.minX <= reach.maxX && b.maxZ >= reach.minZ && b.minZ <= reach.maxZ);
+    if (pieces.length === 0) {
+      // No object within range: every layer reads the far end (255), exactly what the filters would arrive at, without them.
+      for (let z = write.z0; z < write.z1; z++) data.fill(255, (z * this.width + write.x0) * 4, (z * this.width + write.x1) * 4);
+      return;
+    }
     // Shared scratch, grown on demand: moving objects rebuild windows many times a second.
     if (scratchSeed.length < cw * ch) { scratchSeed = new Float32Array(cw * ch); scratchInside = new Uint8Array(cw * ch); }
     while (scratchRows.length < ch) scratchRows.push([]);
     const seed = scratchSeed.subarray(0, cw * ch), inside = scratchInside.subarray(0, cw * ch), rows = scratchRows;
-    const reach = { minX: r.minX + w.x0 * cell - this.range, minZ: r.minZ + w.z0 * cell - this.range, maxX: r.minX + w.x1 * cell + this.range, maxZ: r.minZ + w.z1 * cell + this.range };
-    const pieces = Array.from(this.pieces.values()).filter(({ bounds: b }) => b && b.maxX >= reach.minX && b.minX <= reach.maxX && b.maxZ >= reach.minZ && b.minZ <= reach.maxZ);
     // Cell-centre coordinates: cell (i, j) of the window has its centre at u = i, v = j.
     const u = (x: number) => (x - r.minX) / cell - 0.5 - w.x0, v = (z: number) => (z - r.minZ) / cell - 0.5 - w.z0;
     const rangeCells = this.range / cell, spacing = this.amplitude * 2 / (LAYERS - 1);
@@ -686,7 +874,7 @@ export class WaterContactField {
         const distance = Math.min(rangeCells, Math.sqrt(seed[i]!)) / rangeCells;
         signed[z * tw + x] = inside[i] ? -distance : distance;
       }
-      const exact = contactExact(tw * th), floor = contactFloor(tw * th), radius = Math.max(1, Math.round(this.range / CONTACT_SMOOTH / cell));
+      const exact = contactExact(tw * th), floor = contactFloor(tw * th), radius = this.smoothRadius();
       exact.set(signed); floor.set(signed);
       smoothContacts(signed, tw, th, radius);
       // The smallest exact distance under each cell's blur kernel: where any part of an object is that near (a hull, or
@@ -694,7 +882,7 @@ export class WaterContactField {
       // takes over where everything under the kernel is three radii away or more, where creases between objects form.
       minimumFilter(floor, tw, th, radius * 2);
       const near = radius * 3 / rangeCells, far = near * 2;
-      for (let z = 0; z < th; z++) for (let x = 0; x < tw; x++) {
+      for (let z = write.z0 - target.z0; z < write.z1 - target.z0; z++) for (let x = write.x0 - target.x0; x < write.x1 - target.x0; x++) {
         const i = z * tw + x, e = exact[i]!, t = Math.max(0, Math.min(1, (floor[i]! - near) / (far - near)));
         const value = e + (signed[i]! - e) * t * t * (3 - 2 * t);
         data[((z + target.z0) * this.width + x + target.x0) * 4 + k] = Math.round(Math.max(0, Math.min(1, 0.5 + value * 0.5)) * 255);
