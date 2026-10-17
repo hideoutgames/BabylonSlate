@@ -300,7 +300,7 @@ describe("material node contracts", () => {
     scene.render();
     scene.render();
   });
-  it("compiles VertexNormalWS in vertex displacement and fragment color", async () => {
+  it("compiles Vertex Normal (World Space) in vertex displacement and fragment color", async () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "normal", "input.vertexNormalWS");
     wire(doc, "normal", "normal", "output", "worldPositionOffset");
