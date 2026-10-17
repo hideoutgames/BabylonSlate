@@ -16,6 +16,8 @@ type Presentation = {
   begin: () => void;
   canCopy: () => boolean;
   copied: (milliseconds: number) => void;
+  /** Whether this step drew into the Engine's default framebuffer at all (absent: assume it did). */
+  dirty?: () => boolean;
 };
 const presenters = new WeakMap<AbstractEngine, {
   views: Map<EngineView, Presentation>;
@@ -47,13 +49,23 @@ function createDirectPresenter(engine: AbstractEngine, storeFactory: (engine: Ab
   const source = engine.getRenderingCanvas();
   const store = source ? storeFactory(engine) : null;
   if (!source || !store) return null;
-  return { store, placement: createEngineCanvasPlacement(source), active: false, inStep: false };
+  return { store, placement: createEngineCanvasPlacement(source, () => engine.isDisposed), active: false, inStep: false };
 }
 
-function soleEnabledView(engine: AbstractEngine): boolean {
-  let enabled = 0;
-  for (const view of engine.views ?? []) if (registeredViewIsEnabled(view) && ++enabled > 1) return false;
-  return enabled === 1;
+/**
+ * The only enabled view whose canvas has a layout box, or null. Admission
+ * keeps a hidden dock tab's view enabled (held, not drawn) every frame; it
+ * must not push the view on screen back to copying.
+ */
+function soleShownView(engine: AbstractEngine): EngineView | null {
+  let sole: EngineView | null = null;
+  for (const view of engine.views ?? []) {
+    const target = view.target;
+    if (!registeredViewIsEnabled(view) || !target.isConnected || !target.clientWidth || !target.clientHeight) continue;
+    if (sole) return null;
+    sole = view;
+  }
+  return sole;
 }
 
 /** Store factory override for tests (node has no WebGL). */
@@ -95,8 +107,11 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
     const stopCovering = (current: EngineView, keepImage: boolean) => {
       if (!direct || direct.placement.view !== current) return;
       if (keepImage) freeze(current);
-      trackDirectViewTarget(current.target, null);
       direct.placement.vacate();
+    };
+    /** Cover the view; a canvas that cannot be covered gets its held image instead. */
+    const show = (current: EngineView) => {
+      if (direct && !direct.placement.show(current, () => freeze(current))) freeze(current);
     };
     const leaveDirect = () => {
       if (!direct?.active) return;
@@ -114,7 +129,9 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       const context = canvas.getContext("2d", VIEW_CANVAS_2D_ATTRIBUTES);
       const source = this.getRenderingCanvas();
       if (!context || !source) return true;
-      const presentDirectly = direct !== null && directViewPresentationEnabled() && soleEnabledView(this);
+      // A popout window's view copies: the Engine canvas cannot leave its document.
+      const presentDirectly = direct !== null && directViewPresentationEnabled() && soleShownView(this) === current &&
+        direct.placement.canCover(current);
       if (!presentDirectly) leaveDirect();
       else {
         // The previous sole view keeps its last frame in its own canvas.
@@ -129,6 +146,7 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       const previousCameras = scene?.activeCameras;
       const previousView = this.activeView;
       if (direct) direct.inStep = true;
+      const startSize = { width: source.width, height: source.height };
       try {
         if (scene && camera) {
           if (Array.isArray(camera)) scene.activeCameras = camera;
@@ -146,17 +164,22 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
         this._renderFrame();
         if (presentDirectly) {
           direct.active = true;
+          // A resize reallocates (clears) the default framebuffer even when nothing draws.
+          const wrote = source.width !== startSize.width || source.height !== startSize.height || host.dirty?.() !== false;
           if (host.canCopy()) {
             const started = performance.now();
             direct.store.snapshot(current, source.width, source.height);
             // The view canvas keeps the presented image's dimensions; it is drawn into only when it stops being covered.
             if (canvas.width !== source.width) canvas.width = source.width;
             if (canvas.height !== source.height) canvas.height = source.height;
-            if (direct.placement.show(current)) trackDirectViewTarget(canvas, () => freeze(current));
+            show(current);
             host.copied(performance.now() - started);
+          } else if (!wrote && direct.placement.view === current) {
+            // An idle step (render on demand): the shown image is still the held one.
+            direct.placement.follow();
           } else if (direct.store.restore(current, source.width, source.height)) {
             // An incoherent frame: put the last coherent image back before the browser presents.
-            if (direct.placement.show(current)) trackDirectViewTarget(canvas, () => freeze(current));
+            show(current);
           } else {
             // Nothing coherent yet: let the view canvas show through.
             stopCovering(current, false);
@@ -196,8 +219,6 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
     };
     if (direct) engine.setSize = resizeWhileCovering;
     const lost = direct ? engine.onContextLostObservable.add(() => {
-      const covered = direct.placement.view;
-      if (covered) trackDirectViewTarget(covered.target, null);
       direct.placement.vacate();
       direct.store.clear(true);
       direct.active = false;
@@ -218,10 +239,9 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       else Reflect.deleteProperty(engine, "_renderViewStep");
     }, releaseView: (released: EngineView) => {
       if (!direct) return;
-      if (direct.placement.view === released) {
-        trackDirectViewTarget(released.target, null);
-        direct.placement.park();
-      }
+      // Untrack even an uncovered view: a stale entry would keep this Engine alive.
+      trackDirectViewTarget(released.target, null);
+      if (direct.placement.view === released) direct.placement.park();
       direct.store.release(released);
     } };
     presenters.set(engine, owner);

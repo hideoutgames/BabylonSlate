@@ -1050,6 +1050,8 @@ function initializeEngine(
     preparationMs: 0, copyMs: 0,
     contextLosses: 0, contextRestorations: 0,
   };
+  /** `presentationStats.attempted` when the current view step began. */
+  let attemptedAtStep = 0;
   /** Rendered-loop passes of preparation timing left; each `renderDiagnostics()` read renews it so a closed HUD stops the timing. */
   let framePhaseLeaseFrames = 0;
   const performanceFeed = new RenderPerformanceFeed();
@@ -1119,8 +1121,10 @@ function initializeEngine(
       if (performanceFeed.active) admissionPreparationMs = performance.now() - preparationStart;
       return admitted;
     }, {
-      begin: () => { frameCopyReady = false; },
+      begin: () => { frameCopyReady = false; attemptedAtStep = presentationStats.attempted; },
       canCopy: () => frameCopyReady && !disposed && !contextLost,
+      // renderLoop counts an attempt once it passes shouldRenderFrame, before it touches the framebuffer.
+      dirty: () => presentationStats.attempted !== attemptedAtStep,
       copied: (milliseconds) => {
         presentationStats.copyMs = milliseconds;
         acknowledgeFrameCopy(undefined, pendingPerformanceReceipt, milliseconds);

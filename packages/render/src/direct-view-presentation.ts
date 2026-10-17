@@ -1,18 +1,19 @@
 import type { AbstractEngine, EngineView } from "@babylonjs/core";
 
 /**
- * Direct view presentation. While exactly one registered view is enabled, the
- * project Engine's own canvas is placed over that view's canvas and shown,
- * instead of copying the Engine canvas into the view's 2D canvas every frame
- * (a CPU blit plus a CPU/GPU sync on WebKit, a GPU copy on Chromium).
+ * Direct view presentation. While exactly one enabled registered view is laid
+ * out (has a box), the project Engine's own canvas is placed over that view's
+ * canvas and shown, instead of copying the Engine canvas into the view's 2D
+ * canvas every frame (a CPU blit plus a CPU/GPU sync on WebKit, a GPU copy on
+ * Chromium).
  *
  * The visible image still changes only after a coherent frame: every coherent
  * frame copies the default framebuffer into the view's held image on the GPU,
  * and a frame that drew something incoherent copies the held image back before
- * the browser presents. Resizes outside a view step restore the held image into
- * the new buffer. When presentation moves to another view, or back to copying,
- * the departing view's 2D canvas receives its held image once, so it keeps its
- * last frame like a copied view.
+ * the browser presents. A step that drew nothing copies nothing. Resizes
+ * restore the held image into the new buffer. When presentation moves to
+ * another view, or back to copying, the departing view's 2D canvas receives
+ * its held image once, so it keeps its last frame like a copied view.
  */
 
 /** GPU copies of each view's last coherent frame. */
@@ -111,13 +112,19 @@ export function createWebGl2HeldImageStore(engine: AbstractEngine): HeldImageSto
 export interface EngineCanvasPlacement {
   /** The view the canvas covers, or null when it covers none. */
   readonly view: EngineView | null;
-  /** Cover `view`'s canvas and show it. False when that canvas is not in a document. */
-  show(view: EngineView): boolean;
+  /** Whether `view`'s canvas can be covered: it is in this canvas's document (not a popout window). */
+  canCover(view: EngineView): boolean;
+  /**
+   * Cover `view`'s canvas and show it; while it does, `sync` writes the shown
+   * image into the view canvas on a read (see `syncDirectViewCanvas`). False
+   * when that canvas cannot be covered.
+   */
+  show(view: EngineView, sync: () => void): boolean;
   /** Re-measure the covered view's box (resize, dock moves). */
   follow(): void;
   /** Stop covering any view, invisibly, without moving the canvas yet. */
   vacate(): void;
-  /** Return the canvas to where and how it was before the first `show`. */
+  /** Return the canvas to where and how it was before the first `show`; a disposed Engine's canvas is only removed. */
   park(): void;
 }
 
@@ -127,9 +134,9 @@ const PLACED_STYLE: Record<string, string> = {
   display: "block", pointerEvents: "none", transform: "none", visibility: "hidden",
 };
 
-export function createEngineCanvasPlacement(canvas: HTMLCanvasElement): EngineCanvasPlacement {
+export function createEngineCanvasPlacement(canvas: HTMLCanvasElement, isDisposed: () => boolean = () => false): EngineCanvasPlacement {
   let view: EngineView | null = null;
-  let original: { parent: ParentNode | null; next: Node | null; cssText: string } | null = null;
+  let original: { parent: ParentNode | null; next: Node | null; cssText: string; ariaHidden: string | null } | null = null;
   let offset = { x: 0, y: 0 };
   let box = { width: -1, height: -1 };
   let observer: ResizeObserver | null = null;
@@ -138,9 +145,13 @@ export function createEngineCanvasPlacement(canvas: HTMLCanvasElement): EngineCa
     if (!view) return;
     const target = view.target.getBoundingClientRect();
     const own = canvas.getBoundingClientRect();
-    const x = offset.x + (target.left - own.left);
-    const y = offset.y + (target.top - own.top);
-    if (Math.abs(x - offset.x) > 0.01 || Math.abs(y - offset.y) > 0.01) {
+    // Device-pixel offsets: a sub-pixel layout difference neither misaligns
+    // the image nor rewrites the style (and re-runs layout) every frame.
+    const ratio = canvas.ownerDocument?.defaultView?.devicePixelRatio || 1;
+    const snap = (value: number) => Math.round(value * ratio) / ratio;
+    const x = snap(offset.x + (target.left - own.left));
+    const y = snap(offset.y + (target.top - own.top));
+    if (x !== offset.x || y !== offset.y) {
       offset = { x, y };
       style.left = `${x}px`;
       style.top = `${y}px`;
@@ -153,18 +164,29 @@ export function createEngineCanvasPlacement(canvas: HTMLCanvasElement): EngineCa
   };
   const vacate = () => {
     observer?.disconnect();
+    if (view) trackDirectViewTarget(view.target, null);
     view = null;
     style.visibility = "hidden";
   };
+  const canCover = (next: EngineView) => {
+    const target = next.target;
+    return target.isConnected && target.parentNode !== null && target.ownerDocument === canvas.ownerDocument;
+  };
   return {
     get view() { return view; },
-    show(next) {
+    canCover,
+    show(next, sync) {
       const target = next.target;
       const parent = target.parentNode;
-      if (!target.isConnected || !parent) { vacate(); return false; }
-      original ??= { parent: canvas.parentNode, next: canvas.nextSibling, cssText: canvas.style.cssText };
+      if (!canCover(next) || !parent) { vacate(); return false; }
+      if (!original) {
+        original = { parent: canvas.parentNode, next: canvas.nextSibling, cssText: canvas.style.cssText, ariaHidden: canvas.getAttribute("aria-hidden") };
+        // The view canvas carries the viewport's semantics; the image over it is decoration.
+        canvas.setAttribute("aria-hidden", "true");
+      }
       if (canvas.parentNode !== parent || canvas.previousSibling !== target) parent.insertBefore(canvas, target.nextSibling);
       if (view !== next) {
+        if (view) trackDirectViewTarget(view.target, null);
         observer?.disconnect();
         Object.assign(style, PLACED_STYLE);
         offset = { x: 0, y: 0 };
@@ -175,6 +197,7 @@ export function createEngineCanvasPlacement(canvas: HTMLCanvasElement): EngineCa
           observer.observe(target);
         }
       }
+      trackDirectViewTarget(target, sync);
       measure();
       style.visibility = "visible";
       return true;
@@ -184,10 +207,13 @@ export function createEngineCanvasPlacement(canvas: HTMLCanvasElement): EngineCa
     park() {
       vacate();
       if (!original) return;
-      const { parent, next, cssText } = original;
+      const { parent, next, cssText, ariaHidden } = original;
       original = null;
       canvas.style.cssText = cssText;
-      if (parent && (parent as Node).isConnected !== false) parent.insertBefore(canvas, next && next.parentNode === parent ? next : null);
+      if (ariaHidden === null) canvas.removeAttribute("aria-hidden");
+      else canvas.setAttribute("aria-hidden", ariaHidden);
+      // A disposed Engine's owner may already have removed its canvas; never put it back.
+      if (!isDisposed() && parent && (parent as Node).isConnected !== false) parent.insertBefore(canvas, next && next.parentNode === parent ? next : null);
       else canvas.parentNode?.removeChild(canvas);
     },
   };
@@ -204,8 +230,12 @@ export function directViewPresentationEnabled(): boolean {
   return directEnabled;
 }
 
-/** View canvases presented directly right now, with the step that writes their held image into them. */
-const directTargets = new Map<HTMLCanvasElement, () => void>();
+/**
+ * View canvases presented directly right now, with the step that writes their
+ * held image into them. Entries go when a view stops being covered or is
+ * released; weak keys keep a dropped canvas from holding its Engine regardless.
+ */
+const directTargets = new WeakMap<HTMLCanvasElement, () => void>();
 
 export function trackDirectViewTarget(target: HTMLCanvasElement, sync: (() => void) | null): void {
   if (sync) directTargets.set(target, sync);
