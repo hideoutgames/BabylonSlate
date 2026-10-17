@@ -22,6 +22,7 @@ import {
   createMeshComponent,
   DEFAULT_RENDER_EFFECTS,
   normalizeRenderProjectSettings,
+  normalizeWaterBody,
   engineCommandBus,
   requestEditorDrop,
   parseCableProperties,
@@ -52,6 +53,7 @@ import * as presentation from "./presented-frame";
 import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
+import { createWaterMesh } from "./water-mesh";
 
 const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
 
@@ -526,6 +528,23 @@ describe("Play createEngine view", () => {
     const cancelled = expect(handle.captureFrame()).rejects.toThrow("disposed");
     handle.dispose();
     await cancelled;
+  });
+
+  it("compiles blending water bodies' variants once, with Blend, before the first frame's update", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    createWaterMesh(handle.scene, "west", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }));
+    // Within the blend distance of the first body: both blend once the water update has seen them.
+    createWaterMesh(handle.scene, "east", normalizeWaterBody({ width: 24, length: 24, resolution: 24 })).position.set(16, 0.5, 0);
+    const compiled = () => Object.values((engine as unknown as { _compiledEffects: Record<string, { defines?: string }> })._compiledEffects)
+      .map((effect) => effect.defines ?? "").filter((defines) => /^#define SLATE_WATER$/m.test(defines));
+    await handle.prewarmSceneMaterials();
+    const afterLoad = compiled();
+    expect(afterLoad.length).toBeGreaterThan(0);
+    for (const defines of afterLoad) expect(defines).toMatch(/^#define SLATE_WATER_BLEND$/m);
+    // The first frame's update finds nothing left to change, so no pass compiles a second variant.
+    for (let index = 0; index < 2; index++) { engine.beginFrame(); renderViews(engine); engine.endFrame(); }
+    expect(compiled()).toEqual(afterLoad);
   });
 
   function renderViews(engine: NullEngine) {
