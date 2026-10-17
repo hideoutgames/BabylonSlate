@@ -705,6 +705,8 @@ function placeRenderTargets(ctx: FeatureTestContext, refs: RenderingRefs): void 
           fieldOfView: 50,
           nearClip: 0.5,
           farClip: mode === "DepthPass" ? 20 : 30,
+          // The Fast side of the Quality comparison; FT_World's lake capture is Full Quality.
+          quality: "fast",
         }),
       ], { classId: "RenderTargetCapture" }));
     } else {
@@ -717,7 +719,8 @@ function placeRenderTargets(ctx: FeatureTestContext, refs: RenderingRefs): void 
     add(primitive(monitor, `${label} Monitor`, "plane", zone.at(x, 3, 7), {
       materialGuid: refs.targets[mode].monitorMaterial, scale: [3, 3, 1], castShadows: false,
     }));
-    add(text3d(`${monitor}-caption`, `${label} Caption`, zone.at(x, 0.3, 6.2), everyFrame ? label : `${label} (Manual)`, {
+    const caption = !everyFrame ? `${label} (Manual)` : mode === "SceneColor" ? `${label} (Fast)` : label;
+    add(text3d(`${monitor}-caption`, `${label} Caption`, zone.at(x, 0.3, 6.2), caption, {
       size: 0.4, color: [0.9, 0.9, 0.9], fontAssetGuid: null,
     }));
   }

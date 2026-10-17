@@ -75,13 +75,14 @@ export const FEATURE_TEST_WORLD_WATER = {
 type WaterKey = keyof typeof FEATURE_TEST_WORLD_WATER;
 
 /**
- * Two every-frame Scene Color captures of the Lake from the same south-shore
- * lens, one per capture Quality, on monitors facing the world camera: only
- * Full Quality refracts the lake bed through its own scene copy. Perf knob.
+ * An every-frame Full Quality Scene Color capture of the Lake from the south
+ * shore, on a monitor facing the world camera: it refracts the lake bed through
+ * its own scene copy, as the world camera does. The Fast comparison is the main
+ * scene's Render Targets zone (`rendering.ts`). World is the heaviest scene:
+ * keep this one capture at 256². Perf knob.
  */
 const LAKE_CAPTURES: ReadonlyArray<{ quality: RenderTargetCaptureQuality; slug: string; asset: string; x: number }> = [
-  { quality: "fast", slug: "fast", asset: "Fast", x: 8 },
-  { quality: "fullQuality", slug: "full-quality", asset: "FullQuality", x: 17 },
+  { quality: "fullQuality", slug: "full-quality", asset: "FullQuality", x: 12 },
 ];
 const LAKE_CAPTURE_SIZE = 256;
 /** Landscape-local z of the monitors, on the south shore in front of the world camera. */

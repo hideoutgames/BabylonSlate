@@ -642,7 +642,7 @@ export function componentPropertyRows(
           kind: "enum", id: rowId(actorId, component.id, "quality"), label: "Quality", value: capture.quality,
           defaultValue: "fast",
           options: RENDER_TARGET_CAPTURE_QUALITIES.map((value) => ({ value, label: RENDER_TARGET_CAPTURE_QUALITY_LABELS[value] })),
-          description: "Full Quality renders like the scene camera, with water refraction, post-processing and its own shadows, at about the cost of a second camera. Scene Color targets only.",
+          description: "Full Quality renders like a camera here, with water refraction, post-processing and outlines. It differs only in planar water mirrors, in which lights shine when more ask than the device allows, and in sun shadows, which follow the main camera's view. It costs about a second camera: keep its Render Target at 512 × 512 or smaller, and turn off Capture Every Frame for images that rarely change. Scene Color targets only.",
           onChange: (value) => update("quality", value),
         },
         ...(["enabled", "captureEveryFrame", "captureOnlyActors"] as const).map((key): PropertyRow => ({

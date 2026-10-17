@@ -48,20 +48,21 @@ Captures never include editor helpers.
 
 | Quality | What it draws | Cost |
 | --- | --- | --- |
-| **Fast** | The lit scene with fog and particles. Water is see-through, without refraction or screen-space reflections. No post-processing or screen effects such as bloom, anti-aliasing or ambient occlusion. Sun shadows follow the main camera's view, so places it does not see can lack them. | The captured meshes drawn once more each captured frame. |
-| **Full Quality** | What a camera at the capture shows: water refraction and screen-space reflections, the scene's post-processing and screen effects, sun shadows fitted to the capture, and the same sorting of see-through and cut-out surfaces. | About a second camera each captured frame: its draws, sun shadows, water and screen effects, plus GPU memory for its own images. |
+| **Fast** | The lit scene with fog and particles. Water is see-through, without refraction or screen-space reflections. No post-processing, screen effects such as bloom, anti-aliasing or ambient occlusion, or outlines. Animated characters and particles show the previous frame. | The captured meshes drawn once more each captured frame. |
+| **Full Quality** | What a camera at the capture shows this frame: water refraction and screen-space reflections, the scene's post-processing and screen effects, Outline components and CEL outlines, and the same sorting of see-through and cut-out surfaces. | About a second camera each captured frame: its draws, water and screen effects, plus GPU memory for its own images. |
 
 A Full Quality capture still differs from the main camera in a few ways:
 
 - Water shows its screen-space or sky reflection instead of a planar mirror.
-- Outline components and CEL outlines are not drawn.
 - When more lights want to shine than the device allows, the main camera decides which ones light the scene.
+- Shadows come from the main camera's shadow maps. Sun shadows are fitted to the main camera's view, so they are exact where the capture sees what the main camera sees, and can be missing or blockier elsewhere. Fast captures share the same limit.
 
-A new capture is Fast. Choose Full Quality for a few small monitors that must look exactly like the game, such as a security camera over water, and keep their Render Targets small. After switching, a Full Quality capture prepares its shaders first, so its target keeps the previous image for a moment.
+A new capture is Fast. Choose Full Quality for a few small monitors that must look exactly like the game, such as a security camera over water. After switching, a Full Quality capture prepares its shaders first, so its target keeps the previous image for a moment.
 
-## Capture on demand
+## Keep captures cheap
 
-Capturing every frame costs a second scene render each frame, and Full Quality costs about as much as a second camera. For a picture that rarely changes, turn off **Capture Every Frame** and call [Capture Render Target](../scripting/class/capture-render-target.md) when you need a new image. Until the first capture, the target is transparent.
+- Capturing every frame costs a second scene render each frame, and Full Quality costs about as much as a second camera. For a picture that rarely changes, turn off **Capture Every Frame** and call [Capture Render Target](../scripting/class/capture-render-target.md) when you need a new image: the capture draws nothing in between. Until the first capture, the target is transparent.
+- Keep Full Quality Render Targets at 512 × 512 or smaller, and use only a few Full Quality captures at once.
 
 In the editor viewport, a capture with Capture Every Frame off stays transparent: on-demand captures run only in Play and exported games.
 

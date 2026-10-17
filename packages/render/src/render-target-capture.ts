@@ -57,6 +57,8 @@ export type RenderTargetCaptureDiagnostics = {
 };
 
 const controllers = new WeakMap<Scene, RenderTargetCaptures>();
+/** Above 512 × 512 a Full Quality capture warns once: it costs about a second camera at its size. */
+const FULL_QUALITY_GUIDANCE_PIXELS = 512 * 512;
 const drawing = renderTargetCaptureDrawing;
 
 class CaptureTexture extends Texture {
@@ -168,6 +170,8 @@ export class RenderTargetCaptures {
   private postProcessRevision = 0;
   private outlines: RenderTargetCaptureOutlines | null = null;
   private outlineRevision = 0;
+  /** Render Targets already warned about as too large for Full Quality. */
+  private readonly warnedLargeTargets = new Set<string>();
   /** Emitter meshes of the particle systems the capture being collected draws. */
   private readonly emitters = new Set<AbstractMesh>();
   /** This frame's Full Quality captures, queued in `render()`. */
@@ -501,6 +505,10 @@ export class RenderTargetCaptures {
     const engine = this.scene.getEngine();
     const caps = engine.getCaps();
     if (width > caps.maxTextureSize || height > caps.maxTextureSize || !caps.depthTextureExtension) return undefined;
+    if (width * height > FULL_QUALITY_GUIDANCE_PIXELS && !this.warnedLargeTargets.has(guid)) {
+      this.warnedLargeTargets.add(guid);
+      console.warn(`[render] Full Quality capture into a ${width} × ${height} Render Target costs about a second camera at that size; keep it at 512 × 512 or smaller, or turn off Capture Every Frame.`);
+    }
     const lease = beginManagedRenderAllocation(engine,
       renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_RGBA, type: Constants.TEXTURETYPE_UNSIGNED_BYTE }) +
       renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_DEPTH24 }));
