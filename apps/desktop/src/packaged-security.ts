@@ -45,6 +45,29 @@ export function isPreviewFrameUrl(rawUrl: string): boolean {
   return url !== null && ["/player/", "/player/index.html"].includes(url.pathname);
 }
 
+/** RevenueCat Web Billing checkout and its Stripe payment frames. */
+const BILLING_FRAME_HOSTS = [/(^|\.)stripe\.com$/, /(^|\.)stripe\.network$/, /(^|\.)revenuecat\.com$/, /^pay\.rev\.cat$/];
+
+/** A subframe may host Web Billing checkout over HTTPS. */
+export function isBillingFrameUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    return url.protocol === "https:" && BILLING_FRAME_HOSTS.some((host) => host.test(url.hostname));
+  } catch {
+    return false;
+  }
+}
+
+/** Links the editor hands to the system browser or mail client: HTTPS and mailto only. */
+export function externalOpenUrl(rawUrl: string): string | null {
+  try {
+    const url = new URL(rawUrl);
+    return url.protocol === "https:" || url.protocol === "mailto:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The editor frame may write the clipboard; every other permission is denied. */
 export function allowsEditorPermission(permission: string, requestingUrl: string, mainFrame: boolean): boolean {
   return permission === "clipboard-sanitized-write" && isEditorSender(requestingUrl, mainFrame);

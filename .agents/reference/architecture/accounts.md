@@ -19,9 +19,10 @@ Launcher routing, optional and required sign-in, the temporary demo account, and
 
 ## Billing
 
-- Web and desktop use Clerk Billing: `useSubscription` and `usePlans` from `@clerk/react/experimental` give the current plan, `CheckoutButton` subscribes to the plan whose slug is `VITE_CLERK_PRO_PLAN_SLUG` (default `pro`), and `SubscriptionDetailsButton` manages billing. Enable Billing in the Clerk dashboard and create that plan.
-- iOS and Android use RevenueCat through `@revenuecat/purchases-capacitor`, behind the `StorePurchasesPort` in `@babylonslate/vfs` (`createStorePurchases`). [`store-billing.ts`](../../../apps/editor/src/services/store-billing.ts) configures it with `VITE_REVENUECAT_IOS_API_KEY` or `VITE_REVENUECAT_ANDROID_API_KEY`, identifies purchases with the Clerk user id so one subscription covers every device, buys the current offering's first package, checks the `VITE_REVENUECAT_PRO_ENTITLEMENT` entitlement (default `pro`), restores purchases and opens the store's management URL.
-- Without keys, purchase and management actions stay disabled and the Subscription page says billing is not connected for the build.
+- RevenueCat runs every subscription so entitlements stay unified: Web Billing (`@revenuecat/purchases-js`, loaded only when configured) on web and Electron, and `@revenuecat/purchases-capacitor` for the App Store and Google Play. Both sit behind the `PurchasesPort` in `@babylonslate/vfs` (`createPurchases`). Clerk handles sign-in only.
+- [`subscription-billing.ts`](../../../apps/editor/src/services/subscription-billing.ts) picks `VITE_REVENUECAT_WEB_API_KEY`, `VITE_REVENUECAT_IOS_API_KEY` or `VITE_REVENUECAT_ANDROID_API_KEY` for the host and uses the Clerk user id as the RevenueCat app user id, so one Haptic Pro subscription covers every device. Signing in is required to subscribe. It buys the current offering's first package, checks the `VITE_REVENUECAT_PRO_ENTITLEMENT` entitlement (default `pro`), opens the customer's management URL for Manage Billing, and offers Restore Purchases in the mobile apps.
+- Electron hands HTTPS and mailto links to the system browser or mail client (`externalOpenUrl`) and lets subframes load only the bundled Preview player or Web Billing checkout from RevenueCat and Stripe over HTTPS (`isBillingFrameUrl` in `apps/desktop/src/packaged-security.ts`). Desktop checkout and RevenueCat API access from the `app://` origin still need validation with real keys.
+- Without keys, purchase and management actions stay disabled and the Subscription page says subscriptions are not set up for the build.
 
 ## Clerk configuration
 

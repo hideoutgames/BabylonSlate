@@ -16,12 +16,10 @@ export interface AccountDetails {
 export type HapticPlanId = "free" | "pro" | "enterprise";
 
 /**
- * Billing for the signed-in account. Clerk Billing serves web and desktop;
- * RevenueCat serves the iOS and Android stores. Without keys, purchases stay
- * unavailable and `unavailableReason` says why.
+ * Billing for the signed-in account, through RevenueCat on every host. Without
+ * keys, purchases stay unavailable and `unavailableReason` says why.
  */
 export interface BillingController {
-  provider: "clerk" | "revenuecat";
   unavailableReason: string | null;
   currentPlan: HapticPlanId;
   /** Provider status for the current paid plan, such as "Active" or "Past Due". */
@@ -35,16 +33,10 @@ export interface BillingController {
   onRestore?: () => void;
 }
 
-/** Billing before any provider keys are configured for this build. */
-export function unconfiguredBilling(
-  provider: BillingController["provider"],
-): BillingController {
+/** Billing before RevenueCat keys are configured for this build. */
+export function unconfiguredBilling(): BillingController {
   return {
-    provider,
     currentPlan: "free",
-    unavailableReason:
-      provider === "revenuecat"
-        ? "In-app purchases are not set up for this build yet."
-        : "Billing is not connected for this build yet.",
+    unavailableReason: "Subscriptions are not set up for this build yet.",
   };
 }

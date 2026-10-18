@@ -7,9 +7,9 @@ import {
   type ReactElement,
 } from "react";
 import {
-  createStorePurchases,
+  createPurchases,
   getHostPlatform,
-  type StoreEntitlementStatus,
+  type EntitlementStatus,
 } from "@babylonslate/vfs";
 import {
   unconfiguredBilling,
@@ -20,14 +20,15 @@ import {
 const PRO_ENTITLEMENT =
   import.meta.env.VITE_REVENUECAT_PRO_ENTITLEMENT?.trim() || "pro";
 
-function storeApiKey(): string | undefined {
+/** The RevenueCat public key for this host's store. */
+function revenueCatApiKey(): string | undefined {
   const host = getHostPlatform();
   const key =
     host === "ios"
       ? import.meta.env.VITE_REVENUECAT_IOS_API_KEY
       : host === "android"
         ? import.meta.env.VITE_REVENUECAT_ANDROID_API_KEY
-        : undefined;
+        : import.meta.env.VITE_REVENUECAT_WEB_API_KEY;
   return key?.trim() || undefined;
 }
 
@@ -43,44 +44,51 @@ function withClick(
 }
 
 /**
- * App Store and Google Play billing for the iOS and Android apps, through
- * RevenueCat. Purchases are tied to the signed-in account so one Haptic Pro
- * subscription covers every device.
+ * Haptic Pro billing on every host through RevenueCat: the App Store and
+ * Google Play in the mobile apps, Web Billing on web and desktop. Purchases
+ * belong to the signed-in account, so one subscription covers every device.
  */
-export function useStoreBilling(appUserId: string | undefined): BillingController {
-  const apiKey = storeApiKey();
-  const [entitlement, setEntitlement] = useState<StoreEntitlementStatus | null>(null);
+export function useSubscriptionBilling(
+  appUserId: string | undefined,
+  email?: string,
+): BillingController {
+  const apiKey = revenueCatApiKey();
+  const [entitlement, setEntitlement] = useState<EntitlementStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!apiKey) return;
-    const store = createStorePurchases();
-    await store.configure({ apiKey, appUserId });
-    setEntitlement(await store.status(PRO_ENTITLEMENT));
+    if (!apiKey || !appUserId) {
+      setEntitlement(null);
+      return;
+    }
+    const purchases = createPurchases();
+    await purchases.configure({ apiKey, appUserId });
+    setEntitlement(await purchases.status(PRO_ENTITLEMENT));
   }, [apiKey, appUserId]);
 
   useEffect(() => {
+    setError(null);
     refresh().catch((cause: unknown) =>
-      setError(cause instanceof Error ? cause.message : "Purchases could not be loaded."),
+      setError(cause instanceof Error ? cause.message : "Billing could not be loaded."),
     );
   }, [refresh]);
 
-  if (!apiKey) return unconfiguredBilling("revenuecat");
+  if (!apiKey) return unconfiguredBilling();
 
+  const purchases = createPurchases();
   const run = (action: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
     void action()
       .then(refresh)
       .catch((cause: unknown) =>
-        setError(cause instanceof Error ? cause.message : "The store request failed."),
+        setError(cause instanceof Error ? cause.message : "The purchase did not go through."),
       )
       .finally(() => setBusy(false));
   };
-  const store = createStorePurchases();
+  const restore = purchases.restore?.bind(purchases);
   return {
-    provider: "revenuecat",
     unavailableReason: error,
     currentPlan: entitlement?.active ? "pro" : "free",
     status: entitlement?.active
@@ -90,7 +98,7 @@ export function useStoreBilling(appUserId: string | undefined): BillingControlle
       : undefined,
     renewsAt: entitlement?.expiresAt ? new Date(entitlement.expiresAt) : undefined,
     renderSubscribe: (button) =>
-      withClick(button, () => run(() => store.purchase(PRO_ENTITLEMENT)), busy),
+      withClick(button, () => run(() => purchases.purchase(PRO_ENTITLEMENT, { email })), busy),
     renderManage: (button) =>
       withClick(
         button,
@@ -99,6 +107,6 @@ export function useStoreBilling(appUserId: string | undefined): BillingControlle
         },
         busy || !entitlement?.managementUrl,
       ),
-    onRestore: () => run(() => store.restore(PRO_ENTITLEMENT)),
+    onRestore: restore ? () => run(() => restore(PRO_ENTITLEMENT)) : undefined,
   };
 }

@@ -17,19 +17,12 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@babylonslate/ui/components/dropdown-menu";
-import { getHostPlatform } from "@babylonslate/vfs";
 import { HomepageAccountCenter } from "./homepage-account-center";
 import {
   unconfiguredBilling,
   type AccountDetails,
   type BillingController,
 } from "./homepage-account-types";
-
-/** Store builds bill through RevenueCat; web and desktop through Clerk. */
-function defaultBilling(): BillingController {
-  const host = getHostPlatform();
-  return unconfiguredBilling(host === "ios" || host === "android" ? "revenuecat" : "clerk");
-}
 
 function ProfileAvatar({
   imageUrl,
@@ -206,7 +199,7 @@ export function HomepageProfileMenu({
         open={accountOpen}
         onOpenChange={setAccountOpen}
         account={{ name, status, email, imageUrl, ...details }}
-        billing={billing ?? defaultBilling()}
+        billing={billing ?? unconfiguredBilling()}
         busy={busy}
         onSignIn={onSignIn}
         onSignUp={onSignUp}

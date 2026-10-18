@@ -1,8 +1,7 @@
 interface ImportMetaEnv {
   readonly VITE_CLERK_PUBLISHABLE_KEY?: string;
-  /** Clerk Billing plan slug for Haptic Pro; defaults to "pro". */
-  readonly VITE_CLERK_PRO_PLAN_SLUG?: string;
-  /** RevenueCat public SDK keys for the App Store and Google Play builds. */
+  /** RevenueCat public keys: Web Billing (web and desktop), App Store, Google Play. */
+  readonly VITE_REVENUECAT_WEB_API_KEY?: string;
   readonly VITE_REVENUECAT_IOS_API_KEY?: string;
   readonly VITE_REVENUECAT_ANDROID_API_KEY?: string;
   /** RevenueCat entitlement that unlocks Haptic Pro; defaults to "pro". */

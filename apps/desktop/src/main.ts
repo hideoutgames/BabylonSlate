@@ -11,6 +11,7 @@ import {
   protocol,
   safeStorage,
   session,
+  shell,
   type IpcMainInvokeEvent,
 } from "electron";
 import { NodeStorageAdapter } from "@babylonslate/vfs/node";
@@ -22,6 +23,8 @@ import { DesktopAccountSecretStore } from "./desktop-account-secrets";
 import { fetchDesktopHttp, type DesktopHttpRequest } from "./desktop-http";
 import {
   allowsEditorPermission,
+  externalOpenUrl,
+  isBillingFrameUrl,
   isEditorSender,
   isPreviewFrameUrl,
   knownProjectFolder,
@@ -114,12 +117,18 @@ async function createWindow(): Promise<void> {
   // Windows can terminate an installer during shutdown/logoff. Keep it cached
   // for a subsequent normal exit instead.
   window.on("session-end", () => updates?.setEnabled(false));
-  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  // Pricing, billing management and mail links open outside the app.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    const external = externalOpenUrl(url);
+    if (external) void shell.openExternal(external);
+    return { action: "deny" };
+  });
   window.webContents.on("will-navigate", (event, url) => {
     if (!isEditorSender(url, true)) event.preventDefault();
   });
   window.webContents.on("will-frame-navigate", event => {
-    if (!event.isMainFrame && !isPreviewFrameUrl(event.url)) event.preventDefault();
+    if (!event.isMainFrame && !isPreviewFrameUrl(event.url) && !isBillingFrameUrl(event.url))
+      event.preventDefault();
   });
   window.webContents.on("will-attach-webview", event => event.preventDefault());
   await window.loadURL("app://babylonslate/index.html");

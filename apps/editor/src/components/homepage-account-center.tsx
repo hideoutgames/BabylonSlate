@@ -216,7 +216,7 @@ function SubscriptionSection({
                 variant="outline"
                 size="sm"
                 nativeButton={false}
-                render={<a href={`mailto:${HAPTIC_SALES_EMAIL}`} />}
+                render={<a href={`mailto:${HAPTIC_SALES_EMAIL}`} target="_blank" rel="noreferrer" />}
               >
                 <MailIcon data-icon="inline-start" />
                 Contact Sales

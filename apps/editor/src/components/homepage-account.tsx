@@ -23,7 +23,7 @@ import {
 } from "./homepage-account-context";
 import type { NativeClerkSession } from "../services/native-clerk";
 import { useMobileDemoSession } from "../context/mobile-demo-context";
-import { useStoreBilling } from "../services/store-billing";
+import { useSubscriptionBilling } from "../services/subscription-billing";
 
 const ClerkAccount = lazy(() => import("./homepage-account-clerk"));
 const DesktopAccount = lazy(() => import("./homepage-account-desktop"));
@@ -127,8 +127,7 @@ export function HomepageAccount({
     onOpenChange?.(menuOpen || clerkOverlayOpen || authOpen);
   }, [menuOpen, clerkOverlayOpen, authOpen, onOpenChange]);
   const account = nativeAccount ?? desktopAccount;
-  const storeBilling = useStoreBilling(account?.session.userId);
-  const storeHost = host === "ios" || host === "android";
+  const billing = useSubscriptionBilling(account?.session.userId, account?.session.email);
   const fallback = (
     <HomepageProfileMenu
       disabled={disabled}
@@ -140,7 +139,7 @@ export function HomepageAccount({
       description={demoActive ? "Local Testing Only · Not Signed In" : undefined}
       email={account?.session.email}
       imageUrl={account?.session.imageUrl}
-      billing={storeHost ? storeBilling : undefined}
+      billing={billing}
       onSignOut={demoActive ? async () => demo.end() : account?.signOut}
       signOutLabel={demoActive ? "End Demo" : undefined}
       onSignIn={
