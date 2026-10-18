@@ -33,7 +33,7 @@ export async function publishRelease({ identity, platformFiles, appleState }, ap
   if (identity.channel === "release" && selected.includes("ipados") && !["available", "awaiting-beta-review"].includes(appleState)) {
     throw new Error("Apple has not reached a state permitting a normal release; preserve the platform artifacts and retry finalization/publication");
   }
-  if (identity.channel === "release") validatePatchNotes(identity.patchNotes, identity.applicationVersion);
+  validatePatchNotes(identity.patchNotes, identity.applicationVersion);
 
   const assets = new Map();
   const toolchains = {};
@@ -74,7 +74,8 @@ export async function publishRelease({ identity, platformFiles, appleState }, ap
   const tagSha = await resolveTag(api, identity.tag);
   let release = await api(`/releases/tags/${encodeURIComponent(identity.tag)}`, { optional: true });
   releaseDisposition(identity, tagSha, release);
-  const notes = identity.patchNotes ? `${patchNotesMarkdown(identity.patchNotes)}\n\n` : "";
+  // The marked notes block leads every body; the app reads release notes from it.
+  const notes = `${patchNotesMarkdown(identity.patchNotes)}\n\n`;
   const descriptions = {
     windows: "Unsigned x64 NSIS installer; Windows may warn about an unrecognized publisher",
     macos: `arm64 and x64 DMG/ZIP; ${macosSigned === true ? "signed and notarized" : "unsigned: open via Privacy & Security → Open Anyway; automatic updates are disabled for unsigned macOS packages"}`,

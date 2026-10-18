@@ -24,6 +24,7 @@ test("inspected tool versions survive the public build manifest allowlist", () =
   const toolchains = inspectAppleToolchain({ platform: "darwin", env, run: runner() });
   const manifest = buildManifest({ version: "0.0.1", appleSequenceOffset: 0 }, {
     channel: "test", platforms: "ipados", platform: "ipados", sourceSha: "a".repeat(40), runNumber: 417, runAttempt: 1, toolchains,
+    patchNotes: { version: "0.0.1", title: "Updates", changes: ["New editor features."] },
   });
   assert.deepEqual(manifest.toolchains, {
     xcode: "26.6", iosSdk: "26.5", ruby: "3.3.12", bundler: "2.5.22", fastlane: "2.239.0", cocoapods: "1.16.2",

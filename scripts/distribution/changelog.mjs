@@ -1,7 +1,8 @@
 const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 export function validatePatchNotes(notes, version) {
-  const text = value => typeof value === "string" && value.trim().length > 0;
+  // One line each, and no comment markers that would end the release-body block early.
+  const text = value => typeof value === "string" && value.trim().length > 0 && !/[\r\n]|<!--|-->/.test(value);
   if (!notes || !versionPattern.test(notes.version) || notes.version !== version ||
       !text(notes.title) || !Array.isArray(notes.changes) ||
       notes.changes.length === 0 || !notes.changes.every(text)) {
@@ -22,7 +23,14 @@ export function validateChangelog(value, version) {
   return releases.filter(notes => compare(notes.version, version) <= 0).sort((a, b) => compare(b.version, a.version));
 }
 
+/** The marked block every GitHub Release body leads with; the app's release notes parser reads exactly this. */
 export function patchNotesMarkdown(notes) {
-  const validated = validatePatchNotes(notes, notes?.version);
-  return `## ${validated.title}\n\n${validated.changes.map(change => `- ${change}`).join("\n")}`;
+  const { version, title, changes } = validatePatchNotes(notes, notes?.version);
+  return [
+    `<!-- haptic-release-notes version="${version}" -->`,
+    `## ${title}`,
+    "",
+    ...changes.map(change => `- ${change}`),
+    "<!-- /haptic-release-notes -->",
+  ].join("\n");
 }
