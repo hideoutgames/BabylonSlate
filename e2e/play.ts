@@ -45,20 +45,31 @@ export async function clickPlayAndWaitForOverlay(page: Page): Promise<void> {
 
 /**
  * Preview Build packs on the main thread (software GL may transcode PNG).
- * Wait for the overlay, then for the iframe player to tick — not for both
- * inside one 30s `data-booted` assertion from the Preview click.
+ * Wait for the overlay, then for the iframe player to be booted with its Scene
+ * loaded — not for both inside one 30s `data-booted` assertion from the Preview
+ * click.
+ *
+ * The player reports `data-booted` from its first tick, while its Scene is still
+ * loading, and software GL links the Scene's effects on the page's only thread
+ * for many seconds. An assertion made in that window cannot be answered within
+ * the 5 s default, so settle the load first. A failed load stops the player,
+ * which resets `data-booted`, so the combined selector never matches then.
  */
 export async function waitForPreviewBuildBoot(page: Page) {
   await expect(page.getByTestId("preview-build-overlay")).toBeVisible({
     timeout: PREVIEW_BUILD_TIMEOUT_MS,
   });
   await expect(page.getByTestId("preview-build-error")).toHaveCount(0);
-  const root = page
-    .frameLocator('[data-testid="preview-build-iframe"]')
-    .getByTestId("player-root");
-  await expect(root).toHaveAttribute("data-booted", "true", {
+  const player = page.frameLocator('[data-testid="preview-build-iframe"]');
+  await expect(
+    player.locator(
+      '[data-testid="player-root"][data-booted="true"][data-scene-loading="false"]',
+    ),
+    "Preview Build player boots and finishes loading its Scene",
+  ).toHaveCount(1, { timeout: PREVIEW_BUILD_TIMEOUT_MS });
+  const root = player.getByTestId("player-root");
+  await expect(root).not.toHaveAttribute("data-error", /.+/, {
     timeout: PREVIEW_BUILD_TIMEOUT_MS,
   });
-  await expect(root).not.toHaveAttribute("data-error", /.+/);
   return root;
 }

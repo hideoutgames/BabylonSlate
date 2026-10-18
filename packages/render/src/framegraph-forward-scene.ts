@@ -32,6 +32,7 @@ import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admi
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
 import { DriverCompileWatch } from "./driver-compile";
+import { heldThreadMs } from "./stall-deadline";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
 import { isManagedClusteredLight } from "./clustered-light-policy";
 import { whenPresentationFenceClear } from "./presented-frame";
@@ -993,7 +994,12 @@ export class ForwardSceneFrameGraph {
         // Readiness probes finalise effects; a synchronous GL query waits behind
         // an outstanding presentation fence's driver compile, so defer them.
         deadline += await whenPresentationFenceClear(scene.getEngine(), assertCurrent);
-        if (this.disposed || this.isReady()) break;
+        const probeStart = performance.now();
+        const ready = this.disposed || this.isReady();
+        // Without parallel shader compile the probe links every effect before it
+        // returns: a probe that held the thread was compiling, not waiting.
+        deadline += heldThreadMs(performance.now() - probeStart);
+        if (ready) break;
         assertCurrent();
         // A failed shader never becomes ready; report it instead of timing out.
         const compileFailure = this.effectsGraph?.spatial?.compileFailure.message ?? this.outlineTask?.compileFailure.message;
