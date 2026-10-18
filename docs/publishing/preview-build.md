@@ -5,10 +5,10 @@ Preview Build packages your game the way Export Game does and runs it inside the
 ## Turn it on
 
 1. Open the **Debug** menu next to **Play**.
-2. Under **Session**, check **Preview Build**. You cannot change it while a game is running or preparing.
+2. Under **Play Mode**, choose **Preview Build**. You cannot change it while a game is running or preparing.
 3. The **Play** button now reads **Preview** (**Build** on phones). Tap it to start.
 
-Uncheck **Preview Build** to return to normal Play.
+Choose **Play** under **Play Mode** to return to normal Play.
 
 ## What happens when you start
 
@@ -18,11 +18,11 @@ Uncheck **Preview Build** to return to normal Play.
 
 If packaging fails, **Preview Build Failed** names the step and the reason, with **Retry** and **Close**. Warnings, such as a high file count, go to the **Output Log**.
 
-The game starts from the open scene while **Play from Scene** is on, and from the **Startup Scene** otherwise. Without a usable scene, Haptic asks you to set a Startup Scene.
+The game starts from the open scene while **Start In Open Scene** is on, and from the **Startup Scene** otherwise. Without a usable scene, Haptic asks you to set a Startup Scene.
 
 ## While it runs
 
-The toolbar over the game shows the controls you enabled under **Debug > Play Overlay**:
+The toolbar over the game shows the controls you enabled under **Debug > Overlays**. Hover or long-press a button to see its name.
 
 | Control | Use |
 | --- | --- |

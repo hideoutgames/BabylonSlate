@@ -1,7 +1,9 @@
 import { NullEngine, Scene, MeshBuilder, StandardMaterial, RawTexture } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { normalizeWaterBody } from "@babylonslate/core";
 import { prepareSceneStream } from "./scene-stream-preparation";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
+import { createWaterMesh } from "./water-mesh";
 
 function deferred() {
   let resolve!: () => void;
@@ -51,6 +53,24 @@ describe("streamed render resource preparation", () => {
     expect(ready).toBe(true);
     expect(f.compile).toHaveBeenCalledWith(f.root);
     expect(siblingCompile).not.toHaveBeenCalled();
+  });
+
+  it("warms Custom Material water but leaves built-in water to the graph's probe under its real pass", async () => {
+    const f = fixture();
+    const body = normalizeWaterBody({ width: 8, length: 8, resolution: 8 });
+    const builtIn = createWaterMesh(f.scene, "built-in water", body);
+    const custom = createWaterMesh(f.scene, "custom water", body, undefined, new StandardMaterial("custom water", f.scene));
+    for (const [slot, mesh] of [[2, builtIn], [3, custom]] as const) {
+      f.binding.meshes.set(slot, mesh);
+      f.binding.meshSorting.set(slot, { actorGuid: mesh.name });
+    }
+    const builtInCompile = vi.spyOn(builtIn.material!, "forceCompilationAsync").mockResolvedValue();
+    const customCompile = vi.spyOn(custom.material!, "forceCompilationAsync").mockResolvedValue();
+    await prepareSceneStream(f.scene, f.binding, [1, 2, 3], f.options);
+    // The pass-less warm-up would compile a variant nothing draws (its refraction and depth pre-pass forms differ).
+    expect(builtInCompile).not.toHaveBeenCalled();
+    expect(customCompile).toHaveBeenCalledWith(custom);
+    expect(f.compile).toHaveBeenCalledWith(f.root);
   });
 
   it("settles cancellation without waiting for a hanging model and never warms its late result", async () => {

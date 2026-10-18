@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import {
   ActivityIcon,
   CameraIcon,
@@ -7,11 +7,12 @@ import {
   PauseIcon,
   PlayIcon,
   SkipForwardIcon,
+  SquareIcon,
   TerminalIcon,
-  XIcon,
 } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
-import { Toggle } from "@babylonslate/ui/components/toggle";
+import { Separator } from "@babylonslate/ui/components/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@babylonslate/ui/components/tooltip";
 import { useDiagnosticResultsStore } from "../context/diagnostic-results-context";
 
 export type PlayOverlayChromeProps = {
@@ -42,7 +43,7 @@ export function PlayOverlayChrome({
   showStats = true,
   showConsole = true,
   showInspector = true,
-  showProfiler = true,
+  showProfiler = false,
   onPauseToggle,
   pausePending = false,
   simulation,
@@ -64,101 +65,92 @@ export function PlayOverlayChrome({
         {extras}
       </div>
       <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-2">
-        {!simulation && showProfiler && diagnostics ? <>
-          <Button size="touch" variant="secondary" data-testid="play-profiler-open" onClick={() => diagnostics.open("summary")}>
-            <GaugeIcon data-icon="inline-start" />
-            Profiler
-          </Button>
-          <Button size="touch" variant="secondary" data-testid="play-capture-frame" onClick={() => void diagnostics.captureFrame()}>
-            <CameraIcon data-icon="inline-start" />
-            Capture Frame
-          </Button>
-        </> : null}
-        {simulation ? <>
-          <span className="text-xs font-medium">Simulation · {simulation.keepChanges ? "Keep Changes On Stop" : "Discard On Stop"}</span>
-          <Button size="touch" variant="secondary" disabled={simulation.inputPending}
-            data-testid="simulation-input-mode"
-            onClick={() => simulation.onInputModeChange(simulation.inputMode === "game" ? "edit" : "game")}>
-            {simulation.inputMode === "game" ? "Game Input · Edit" : "Edit · Return To Game"}
-          </Button>
-        </> : null}
-        <Button
-          size="touch"
-          variant="secondary"
-          data-testid="play-overlay-pause"
-          aria-label={paused ? "Resume" : "Pause"}
-          aria-pressed={paused}
-          disabled={pausePending}
-          onClick={onPauseToggle}
-        >
-          {paused ? (
-            <PlayIcon data-icon="inline-start" fill="currentColor" />
-          ) : (
-            <PauseIcon data-icon="inline-start" />
-          )}
-          {paused ? "Resume" : "Pause"}
-        </Button>
-        {paused && onStep ? (
-          <Button
-            size="touch"
-            variant="secondary"
-            data-testid="play-overlay-step"
-            aria-label="Step"
-            onClick={() => onStep?.()}
-          >
-            <SkipForwardIcon data-icon="inline-start" />
-            Step
-          </Button>
+        {simulation ? (
+          <div className="toolbar-island toolbar-island-touch">
+            <span className="px-1.5 text-xs font-medium text-muted-foreground">
+              Simulation · {simulation.keepChanges ? "Keep Changes On Stop" : "Discard On Stop"}
+            </span>
+            <Button size="sm" variant="outline" disabled={simulation.inputPending}
+              data-testid="simulation-input-mode"
+              onClick={() => simulation.onInputModeChange(simulation.inputMode === "game" ? "edit" : "game")}>
+              {simulation.inputMode === "game" ? "Game Input · Edit" : "Edit · Return To Game"}
+            </Button>
+          </div>
         ) : null}
-        {showStats ? (
-          <Toggle
-            size="touch"
-            variant="secondary"
-            pressed={statsOpen}
-            data-testid="play-stats-toggle"
-            aria-label="Stats"
-            onPressedChange={() => onStatsToggle()}
+        <div className="toolbar-island toolbar-island-touch" role="toolbar" aria-label="Play Controls">
+          <PlayChromeTool
+            label={paused ? "Resume" : "Pause"}
+            data-testid="play-overlay-pause"
+            pressed={paused}
+            disabled={pausePending}
+            onClick={onPauseToggle}
           >
-            <ActivityIcon data-icon="inline-start" />
-            Stats
-          </Toggle>
-        ) : null}
-        {showConsole ? (
-          <Button
-            size="touch"
-            variant="secondary"
-            data-testid="play-console-open"
-            aria-label="Console"
-            onClick={onConsoleOpen}
-          >
-            <TerminalIcon data-icon="inline-start" />
-            Console
-          </Button>
-        ) : null}
-        {showInspector ? (
-          <Toggle
-            size="touch"
-            variant="secondary"
-            pressed={inspectorOpen}
-            data-testid="play-inspector-toggle"
-            aria-label="Inspector"
-            onPressedChange={() => onInspectorToggle?.()}
-          >
-            <ListTreeIcon data-icon="inline-start" />
-            Inspector
-          </Toggle>
-        ) : null}
-        <Button
-          size="touch"
-          variant="secondary"
-          data-testid="play-overlay-close"
-          aria-label="Stop"
-          onClick={onClose}
-        >
-          <XIcon data-icon="inline-start" />
-          Stop
-        </Button>
+            {paused ? <PlayIcon fill="currentColor" /> : <PauseIcon />}
+          </PlayChromeTool>
+          {paused && onStep ? (
+            <PlayChromeTool label="Step" data-testid="play-overlay-step" onClick={() => onStep?.()}>
+              <SkipForwardIcon />
+            </PlayChromeTool>
+          ) : null}
+          {showStats || showConsole || showInspector ? <Separator orientation="vertical" /> : null}
+          {showStats ? (
+            <PlayChromeTool label="Stats" data-testid="play-stats-toggle" pressed={statsOpen} onClick={onStatsToggle}>
+              <ActivityIcon />
+            </PlayChromeTool>
+          ) : null}
+          {showConsole ? (
+            <PlayChromeTool label="Console" data-testid="play-console-open" onClick={onConsoleOpen}>
+              <TerminalIcon />
+            </PlayChromeTool>
+          ) : null}
+          {showInspector ? (
+            <PlayChromeTool label="Inspector" data-testid="play-inspector-toggle" pressed={inspectorOpen} onClick={() => onInspectorToggle?.()}>
+              <ListTreeIcon />
+            </PlayChromeTool>
+          ) : null}
+          {!simulation && showProfiler && diagnostics ? <>
+            <Separator orientation="vertical" />
+            <PlayChromeTool label="Profiler" data-testid="play-profiler-open" onClick={() => diagnostics.open("summary")}>
+              <GaugeIcon />
+            </PlayChromeTool>
+            <PlayChromeTool label="Capture Frame" data-testid="play-capture-frame" onClick={() => void diagnostics.captureFrame()}>
+              <CameraIcon />
+            </PlayChromeTool>
+          </> : null}
+          <Separator orientation="vertical" />
+          <PlayChromeTool label="Stop" data-testid="play-overlay-close" className="play-stop" onClick={onClose}>
+            <SquareIcon fill="currentColor" />
+          </PlayChromeTool>
+        </div>
       </div>
     </div>
+  );
+}
+
+/** An icon tool in the Play and Preview Build islands; its label is the accessible name and tooltip. */
+export function PlayChromeTool({
+  label,
+  pressed,
+  children,
+  ...props
+}: Omit<ComponentProps<typeof Button>, "aria-label" | "aria-pressed"> & { label: string; pressed?: boolean }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label={label}
+            aria-pressed={pressed}
+            {...props}
+          />
+        }
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   );
 }

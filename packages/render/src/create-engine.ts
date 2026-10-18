@@ -26,7 +26,7 @@ import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
-import { isBuiltInWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
+import { isBuiltInWaterMesh, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
@@ -2715,6 +2715,9 @@ function initializeEngine(
     }) : null;
     admissionPreparationMs = 0;
     let coherentFrame = true;
+    // Water created or enabled since the last update (an editor edit or drop, a Play spawn) settles before the world's
+    // strict probes below request its variants.
+    settleSceneWater(scene);
     beginEngineDrawCallFrame(engine);
     if (rttPresent) rttPresent.bind();
     if (!options.playMode) {
@@ -4168,9 +4171,10 @@ function initializeEngine(
     prewarmSceneMaterials: async (owner) => {
       const scope = loadingScope(owner);
       applyRenderingQuality();
-      // Water's blend, placement (flat) and copy intent are otherwise first settled by the first frame's update, after
-      // the shader warm-up and the graph's probes compiled every variant without them: each then compiles twice.
-      updateSceneWater(scope.target);
+      // Water's blend and placement (flat) are otherwise first settled by the first frame's update, after the shader
+      // warm-up and the graph's probes compiled every variant without them: each then compiles twice. Copy intent is
+      // counted at creation and changes later only for water disabled through an ancestor or `setEnabled`.
+      settleSceneWater(scope.target, true);
       // Built-in water compiles the variant its pass draws when the graph below prepares: which one that is depends on
       // the view's plan, so a warm-up here would compile one nothing draws, and wait for its link.
       await warmSceneMaterials(scope.target, scope.assert, isBuiltInWaterMesh);
@@ -4275,6 +4279,9 @@ function initializeEngine(
       assertCurrent(generation);
       if (streamAdmission?.publish(slotIds, owner) === false)
         throw new Error("Scene streaming publication was superseded.");
+      // Published roots are enabled now (the water update skips water held disabled until here): settle it before the
+      // fog preparation below probes its variants.
+      settleSceneWater(scene);
       if (slotIds.some((slot) => {
         const fog = binding.fogVolumes.get(slot);
         return fog && hasFogVolumes(scene, fog.actorId);

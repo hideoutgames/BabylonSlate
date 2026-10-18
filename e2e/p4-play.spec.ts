@@ -28,10 +28,11 @@ test.describe("P4 Play overlay and session report", () => {
     await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-canvas")).toBeVisible();
     await expect(page.getByTestId("play-frame-cap")).toHaveCount(0);
-    await expect(page.getByTestId("play-overlay-pause")).toContainText("Pause");
-    await expect(page.getByTestId("play-overlay-close")).toContainText("Stop");
+    // Play tools are icon buttons named by their aria-label.
+    await expect(page.getByTestId("play-overlay-pause")).toHaveAttribute("aria-label", "Pause");
+    await expect(page.getByTestId("play-overlay-close")).toHaveAttribute("aria-label", "Stop");
     // Debug-menu defaults show only Stats beside Pause and Stop.
-    await expect(page.getByTestId("play-stats-toggle")).toContainText("Stats");
+    await expect(page.getByTestId("play-stats-toggle")).toHaveAttribute("aria-label", "Stats");
     await expect(page.getByTestId("play-console-open")).toHaveCount(0);
     await expect(page.getByTestId("play-inspector-toggle")).toHaveCount(0);
     await expect(page.getByTestId("play-profiler-open")).toHaveCount(0);

@@ -329,3 +329,141 @@
     min-height: 44px;
   }
 }
+
+/* Floating toolbar islands over viewports, graphs and previews. One frosted
+ * surface; controls inside are borderless so the island reads as one object,
+ * and pressed tools are the only filled controls. */
+.toolbar-island {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--popover) 88%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(12px) saturate(140%);
+  box-shadow:
+    0 1px 0 0 color-mix(in oklch, var(--foreground) 6%, transparent) inset,
+    0 6px 20px -6px rgb(0 0 0 / 45%);
+}
+
+.toolbar-island-vertical {
+  flex-direction: column;
+}
+
+.toolbar-island button {
+  border-color: transparent;
+  background: transparent;
+  color: color-mix(in oklch, var(--foreground) 78%, transparent);
+  border-radius: 7px;
+  box-shadow: none;
+}
+
+.toolbar-island button:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.toolbar-island button[aria-pressed="true"],
+.toolbar-island button[aria-pressed="true"]:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--selection) 18%, transparent);
+  color: var(--selection);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--selection) 45%, transparent);
+}
+
+/* Menu triggers stay neutral while open; the open menu is the feedback. */
+.toolbar-island button[aria-expanded="true"],
+.toolbar-island button[aria-expanded="true"]:hover {
+  background: color-mix(in oklch, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+}
+
+/* A compact caret after a trigger's icon or value marks it as a menu. */
+.toolbar-island .toolbar-island-caret {
+  width: 10px;
+  height: 10px;
+  margin-inline-start: -2px;
+  opacity: 0.6;
+}
+
+.toolbar-island [data-slot="toggle-group"] {
+  gap: 2px;
+  border: 0;
+  box-shadow: none;
+}
+
+.toolbar-island [data-slot="separator"][data-orientation="vertical"] {
+  height: 16px;
+  margin-inline: 3px;
+  align-self: center;
+  background: color-mix(in oklch, var(--foreground) 16%, transparent);
+}
+
+.toolbar-island [data-slot="separator"][data-orientation="horizontal"] {
+  width: 16px;
+  margin-block: 3px;
+  align-self: center;
+}
+
+/* A two- or three-way mode switch inside an island: a flat track with a
+ * neutral fill on the active option; orange stays for selected tools. */
+.toolbar-island .toolbar-island-segmented {
+  gap: 1px;
+  padding: 2px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+
+.toolbar-island .toolbar-island-segmented > button {
+  height: 24px;
+  min-width: 30px;
+  padding-inline: 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.toolbar-island .toolbar-island-segmented > button[aria-pressed="true"],
+.toolbar-island .toolbar-island-segmented > button[aria-pressed="true"]:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--foreground) 14%, transparent);
+  color: var(--foreground);
+  box-shadow: none;
+}
+
+/* Coarse pointers get full touch targets in islands that live over a running
+ * game (Play, Preview Build), unlike the dense editor viewport islands. */
+@media (pointer: coarse) {
+  .toolbar-island-touch button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+
+/* In-game developer readouts (stats, light and audio debug, log tail): one
+ * dark frosted panel style in compact monospace. */
+.play-debug-readout {
+  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: color-mix(in oklch, var(--background) 72%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: var(--foreground);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* Print / Print String lines: shadowed text over the game, no box. */
+.play-print-line {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
+}
+
+.toolbar-island button.play-stop {
+  color: color-mix(in oklch, var(--destructive) 85%, var(--foreground));
+}

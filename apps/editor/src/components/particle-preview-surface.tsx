@@ -150,7 +150,7 @@ export function ParticlePreviewSurface({
       {state.status === "ready" ? (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
-            className="pointer-events-auto flex items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-md"
+            className="pointer-events-auto toolbar-island"
             data-testid="particle-preview-controls"
           >
             <IconActionButton
