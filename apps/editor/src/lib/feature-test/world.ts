@@ -437,8 +437,8 @@ function worldAssetGuid(ctx: FeatureTestContext, type: CreatableAssetType, name:
 }
 
 /**
- * The Lake captures (same south-shore lens, Fast and Full Quality) and their
- * monitors on the south shore, each facing the world camera under its caption.
+ * The Lake's Full Quality capture from the south shore and its monitor, facing
+ * the world camera under its caption.
  */
 function lakeCaptures(
   ctx: FeatureTestContext,
