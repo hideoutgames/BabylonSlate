@@ -1,0 +1,47 @@
+{
+  "id": "duplicate-event",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "tick-a",
+      "typeId": "flow.event.tick",
+      "position": {
+        "x": 8000,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "tick-b",
+      "typeId": "flow.event.tick",
+      "position": {
+        "x": 8000,
+        "y": 200
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": []
+}

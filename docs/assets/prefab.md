@@ -4,7 +4,7 @@ A reusable set of components without logic. Lighter than an Actor [Class](class.
 
 ## Create
 
-In the **Content Browser**, choose **New Asset > World > Prefab**. A new Prefab holds one Box mesh.
+In the **Content Browser**, choose **New Asset > World > Prefab**. A new Prefab holds one Box mesh, or nothing if the open Scene is 2D.
 
 ## Editor
 

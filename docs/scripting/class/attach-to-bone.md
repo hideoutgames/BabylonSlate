@@ -23,6 +23,6 @@ Attaches an actor to a named bone of another actor's model so it follows that bo
 
 ## Notes
 
-- **Bone Name** must match the bone exactly, including capitalisation. Nothing happens if the name is empty or either actor is invalid.
+- **Bone Name** must match the bone exactly, including capitalisation. Nothing happens if the name is empty or either actor is invalid, including an **Actor** wired to a reference that is empty (only an unconnected **Actor** means the actor running the graph).
 - The actor snaps to the bone's origin and keeps its scale. Use [**Set Actor Transform**](set-actor-transform.md) afterwards to add an offset from the bone.
 - [**Detach Actor**](detach-actor.md) releases the attachment.

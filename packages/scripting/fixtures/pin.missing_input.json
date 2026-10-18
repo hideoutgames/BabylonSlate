@@ -23,8 +23,8 @@
       "properties": {}
     },
     {
-      "id": "log",
-      "typeId": "debug.log",
+      "id": "attach",
+      "typeId": "actor.attach",
       "position": {
         "x": 7000,
         "y": 0
@@ -49,12 +49,13 @@
           }
         },
         {
-          "id": "message",
-          "name": "message",
+          "id": "parent",
+          "name": "Parent",
           "kind": "data",
           "direction": "in",
           "type": {
-            "kind": "string"
+            "kind": "actorRef",
+            "classId": "Actor"
           }
         }
       ],
@@ -63,10 +64,10 @@
   ],
   "edges": [
     {
-      "id": "entry.execOut->log.execIn",
+      "id": "entry.execOut->attach.execIn",
       "sourceNodeId": "entry",
       "sourcePinId": "execOut",
-      "targetNodeId": "log",
+      "targetNodeId": "attach",
       "targetPinId": "execIn"
     }
   ]

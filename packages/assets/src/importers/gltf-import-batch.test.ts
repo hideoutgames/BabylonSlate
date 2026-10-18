@@ -77,7 +77,7 @@ describe("embedGltfImportBatch missing BIN", () => {
   it("keeps the original .gltf when the matching .bin is missing so siblings still import", () => {
     const gltf = sidecarGltf("Hero.gltf", "Hero.bin");
     const png = { name: "notes.png", bytes: ONE_BY_ONE_PNG };
-    const out = embedGltfImportBatch([gltf, png]);
+    const { files: out } = embedGltfImportBatch([gltf, png]);
     expect(out.map((file) => file.name)).toEqual(["Hero.gltf", "notes.png"]);
     expect(out[0]).toBe(gltf);
   });
@@ -92,21 +92,21 @@ describe("embedGltfImportBatch missing BIN", () => {
       })),
     };
     const albedo = { name: "Hero_albedo.png", bytes: ONE_BY_ONE_PNG };
-    const out = embedGltfImportBatch([gltf, albedo]);
+    const { files: out } = embedGltfImportBatch([gltf, albedo]);
     expect(out).toEqual([gltf, albedo]);
   });
 
   it("does not consume an unrelated picker .bin when the glTF BIN is still missing", () => {
     const gltf = sidecarGltf("Hero.gltf", "Hero.bin");
     const other = { name: "other.bin", bytes: new Uint8Array([1, 2, 3, 4]) };
-    const out = embedGltfImportBatch([gltf, other]);
+    const { files: out } = embedGltfImportBatch([gltf, other]);
     expect(out.map((file) => file.name)).toEqual(["Hero.gltf", "other.bin"]);
   });
 
   it("embeds when the picker .bin matches the buffer URI basename (FAB folder prefix)", () => {
     const gltf = sidecarGltf("Hero.gltf", "buffers/Hero.bin");
     const bin = { name: "Hero.bin", bytes: new Uint8Array([1, 2, 3, 4]) };
-    const out = embedGltfImportBatch([gltf, bin]);
+    const { files: out } = embedGltfImportBatch([gltf, bin]);
     expect(out).toHaveLength(1);
     expect(out[0]!.name).toBe("Hero.glb");
   });
@@ -114,7 +114,7 @@ describe("embedGltfImportBatch missing BIN", () => {
 
 describe("embedGltfImportBatch", () => {
   it("embeds the shared atlas into each GLB and does not re-import the PNG", () => {
-    const prepared = embedGltfImportBatch([
+    const { files: prepared, warnings } = embedGltfImportBatch([
       kenneyStyleSidecarGlb("tree.glb"),
       kenneyStyleSidecarGlb("house.glb"),
       { name: "colormap.png", bytes: ONE_BY_ONE_PNG },
@@ -127,5 +127,40 @@ describe("embedGltfImportBatch", () => {
     ]);
     const tree = prepared.find((file) => file.name === "tree.glb")!;
     expect(tree.bytes).not.toEqual(kenneyStyleSidecarGlb("tree.glb").bytes);
+    expect(warnings).toEqual([]);
+  });
+
+  it("warns for each model whose texture files were not picked with it", () => {
+    const { files, warnings } = embedGltfImportBatch([
+      kenneyStyleSidecarGlb("tree.glb"),
+      kenneyStyleSidecarGlb("house.glb"),
+    ]);
+    expect(files.map((file) => file.name)).toEqual(["tree.glb", "house.glb"]);
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toMatch(/^tree\.glb: .*Textures\/colormap\.png/);
+    expect(warnings[1]).toMatch(/^house\.glb: .*Textures\/colormap\.png/);
+  });
+
+  it("warns only about the texture files that are missing", () => {
+    const model = {
+      name: "tree.gltf",
+      bytes: new TextEncoder().encode(JSON.stringify({
+        asset: { version: "2.0" },
+        images: [{ uri: "Textures/albedo.png" }, { uri: "Textures/normal.png" }],
+      })),
+    };
+    const { files, warnings } = embedGltfImportBatch([
+      model,
+      { name: "albedo.png", bytes: ONE_BY_ONE_PNG },
+    ]);
+    expect(files.map((file) => file.name)).toEqual(["tree.glb"]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("Textures/normal.png");
+    expect(warnings[0]).not.toContain("albedo");
+  });
+
+  it("does not warn when a model's BIN is missing, because the model itself fails to import", () => {
+    const { warnings } = embedGltfImportBatch([sidecarGltf("Hero.gltf", "Hero.bin")]);
+    expect(warnings).toEqual([]);
   });
 });

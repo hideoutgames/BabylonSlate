@@ -15,7 +15,7 @@ A 2D world simulates on the X/Y plane. Bodies in a Scene Layer never collide wit
 
 ## Make an actor simulate
 
-An actor needs a **Rigid Body** and at least one **Collider** on the same actor.
+An actor needs a **Rigid Body** and at least one **Collider** on the same actor. A Collider on an actor with no Rigid Body (and none of the [sources below](#collision-without-a-rigid-body)) is not simulated: it blocks nothing, raises no events and is not found by traces. For a trigger volume or a fixed collider, add a Rigid Body and set its **Motion Type** to **Static**.
 
 1. Select the actor and choose **Add Component > Physics > Rigid Body**.
 2. Choose **Add Component > Physics > Collider**. A new Collider is sized to fit the actor's primitive Mesh.
@@ -40,13 +40,21 @@ These sources create a static body on their own, so they need no Rigid Body:
 - A **Blocking Volume** from **Place Actors > Physics > Blocking Volume**: an invisible box the size of the actor's scale.
 - A Tilemap with collision layers, enabled Landscape collisions and a Dynamic Runtime Mesh with **Enable Collision**.
 
+A Collider on the same actor adds its shape to that static body, so it can be a trigger volume without a Rigid Body. A **Mesh** set to **No Collision** supplies no body, so its Collider still needs a Rigid Body.
+
+A Mesh set to **Use Simple Collision** builds a body only when its Model has simple collision shapes. A Model imported with a skeleton starts with none: add shapes in the Model's **Colliders**, or use **Use Complex Collision**. Mesh collision is 3D only.
+
 ::: tip
 A Ground shape placed from **Place Actors** does not stop anything until you give it collision. Set its Mesh **Collision** to **Use Simple Collision**.
 :::
 
 ## Check your setup
 
-- **Compiler Results** warns when a Collider has no Rigid Body or a Rigid Body has no Collider.
+- **Compiler Results** warns when:
+  - a Collider has no Rigid Body, Mesh collision or other source of a body, so it is not simulated;
+  - a Rigid Body has no shape to collide with: no Collider and no Mesh collision;
+  - a Mesh is set to **Use Simple Collision** but its Model has no simple collision shapes, so it produces no collision;
+  - a Mesh in a 2D scene has collision on, which only 3D physics supports. A Class does not know its scene, so only Scenes get this check.
 - The editor always draws Collider outlines. Turn on **Show Collisions** in **Viewport Settings** (<kbd>Alt</kbd>+<kbd>C</kbd>) to also see Mesh collision.
 - Turn on a Collider's **Render In Game** to draw its outline during Play, or type `showcollision` in the [console](../debugging/console.md).
 

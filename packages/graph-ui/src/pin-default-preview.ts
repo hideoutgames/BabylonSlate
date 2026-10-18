@@ -199,10 +199,11 @@ export function pinDefaultPreview(
       return { kind: "classRef", text: pinDefaultAsString(selectedClass) };
     }
   }
-  // Only the node's own Target pin; a member argument named "target" is `target__arg`.
+  // The node's own Target pin (a member argument named "target" is `target__arg`),
+  // or a pin the catalog says reads Self while unwired.
   if (
-    pin.id === "target" &&
-    properties.implicitSelf === true &&
+    ((pin.id === "target" && properties.implicitSelf === true) ||
+      pin.selfWhenUnwired === true) &&
     (pin.type.kind === "objectRef" || pin.type.kind === "actorRef")
   ) {
     return { kind: pin.type.kind, text: "Self" };

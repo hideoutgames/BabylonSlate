@@ -20,6 +20,35 @@ export const SCENE_DRIVER_COMPILE_TIMEOUT_MS = 60_000;
  */
 export const SCENE_FIRST_FRAME_TIMEOUT_MS = 20_000;
 
+/**
+ * A gap of at least this long between two checkpoints of a polling loading step
+ * is time the step could neither spend nor observe. The loops step every 16 ms
+ * and a probe on a healthy host takes milliseconds, so a longer gap means a
+ * synchronous call held the thread, or the host did not run the step (garbage
+ * collection, a decode, or a hidden page, whose timers browsers align to a
+ * second or more). Without KHR_parallel_shader_compile (SwiftShader, WebKit
+ * WebGL2) a readiness probe links every effect before it returns, and a cold
+ * two-core runner held the thread for 13 to 15 s.
+ */
+export const SCENE_THREAD_HELD_MS = 1_000;
+
+/**
+ * The most one loading step (a `SceneRenderCoordinator.prepare` call, a forward
+ * graph readiness loop) credits back for held time. Beyond it the wall-clock
+ * bounds run as usual, so a scene that never becomes ready still fails; it
+ * matches the bound on a pending parallel compile.
+ */
+export const SCENE_THREAD_HELD_BUDGET_MS = 60_000;
+
+/**
+ * The part of a gap between two checkpoints that a wall-clock loading bound
+ * must not charge: all of a gap that reaches `SCENE_THREAD_HELD_MS`, none of a
+ * shorter one. The caller spends it from `SCENE_THREAD_HELD_BUDGET_MS`.
+ */
+export function heldThreadMs(elapsed: number): number {
+  return elapsed >= SCENE_THREAD_HELD_MS ? elapsed : 0;
+}
+
 export interface StallDeadline {
   /** Restart the deadline after one unit of progress; `unit` names the next one. */
   advance(unit: string): void;

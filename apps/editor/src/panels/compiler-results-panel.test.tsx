@@ -25,6 +25,13 @@ const pairingWarning: Diagnostic = {
 const diagnostics = vi.hoisted(() => ({
   current: [] as Diagnostic[],
 }));
+const scene = vi.hoisted(() => ({ physicsWorld: "3d" as "2d" | "3d" }));
+// A Model with no simple collision shapes, and one with a shape.
+const registry = vi.hoisted(() => ({
+  getByGuid: (guid: string) => guid === "hollow" || guid === "solid"
+    ? { path: `assets/${guid}.model.babasset`, header: { type: "Model", payload: { simpleColliders: guid === "solid" ? [{ id: "box" }] : [] } } }
+    : undefined,
+}));
 diagnostics.current = [pairingWarning];
 
 vi.mock("../context/document-workspace-context", () => ({
@@ -47,11 +54,18 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
       },
       content: {
         name: "Main",
+        settings: {
+          get physicsWorld() {
+            return scene.physicsWorld;
+          },
+        },
         actors: [
           {
             id: "hero",
             components: [{ id: "rb", classId: "RigidBodyComponent" }],
           },
+          { id: "statue", components: [{ id: "mesh", classId: "MeshComponent", properties: { collisionMode: "simple", assetGuid: "hollow" } }] },
+          { id: "crate", components: [{ id: "mesh", classId: "MeshComponent", properties: { collisionMode: "simple", assetGuid: "solid" } }] },
           // Nonuniform parent scale: a quarter-turned child stays shear-free,
           // a 45 degree child is sheared.
           { id: "arm", parentId: null, components: [], transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [2, 1, 1] } },
@@ -67,6 +81,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     },
   ],
   setActiveDocument,
+  assetRegistry: registry,
   activeDocumentId: "scene:assets/Main.scene.babasset",
 })));
 
@@ -117,6 +132,7 @@ afterEach(() => {
   setActiveDocument.mockClear();
   clearFocusedNode.mockClear();
   diagnostics.current = [pairingWarning];
+  scene.physicsWorld = "3d";
 });
 
 describe("CompilerResultsPanel", () => {
@@ -142,7 +158,18 @@ describe("CompilerResultsPanel", () => {
     const published = setDiagnostics.mock.lastCall![0] as Diagnostic[];
     expect(published.map(({ code, actorId, severity }) => ({ code, actorId, severity }))).toEqual([
       { code: "physics.body_without_collider", actorId: "hero", severity: "warning" },
+      { code: "physics.mesh_collision_empty", actorId: "statue", severity: "warning" },
       { code: "scene.sheared_actor_transform", actorId: "hand", severity: "warning" },
+    ]);
+  });
+
+  it("reports Mesh collision a 2D scene ignores instead of the Model's missing shapes", () => {
+    scene.physicsWorld = "2d";
+    render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
+    const published = setDiagnostics.mock.lastCall![0] as Diagnostic[];
+    expect(published.filter((entry) => entry.code.startsWith("physics.mesh_")).map(({ code, actorId }) => ({ code, actorId }))).toEqual([
+      { code: "physics.mesh_collision_2d", actorId: "statue" },
+      { code: "physics.mesh_collision_2d", actorId: "crate" },
     ]);
   });
 

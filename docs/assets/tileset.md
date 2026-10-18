@@ -16,6 +16,8 @@ Double-tap a Tileset to open it.
 
 Tiles are numbered from 1, starting at the top-left of the image.
 
+A Tileset with no Texture still paints and plays: each tile draws as a flat coloured square, the same colour in the Paint panel, the editor viewport and Play.
+
 ## Settings
 
 **Atlas** and **Grid**

@@ -1,6 +1,7 @@
 import {
   applyPrintHudCommand,
   nextPrintHudTimeoutMs,
+  printHudRowText,
   visiblePrintHudEntries,
   type PrintHudColor,
   type PrintHudEntry,
@@ -54,7 +55,7 @@ export function mountPlayerPrintOverlay(parent: HTMLElement): {
         row.style.cssText =
           "border-radius:6px;background:rgba(0,0,0,0.6);padding:4px 12px;font:14px/1.4 ui-sans-serif,system-ui,sans-serif;";
         row.style.color = entry.color;
-        row.textContent = entry.message;
+        row.textContent = printHudRowText(entry.message);
         host.appendChild(row);
       }
       host.hidden = visible.length === 0;

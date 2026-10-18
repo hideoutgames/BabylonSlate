@@ -3,10 +3,12 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssetRegistry, projectContentRoot } from "@babylonslate/assets";
+import type { Diagnostic } from "@babylonslate/scripting";
 import {
   CONTENT_BROWSER_ID,
   CONTENT_BROWSER_REF,
@@ -26,6 +28,8 @@ const state = vi.hoisted(() => ({
   activeId: "first",
   canPlay: false,
   sceneViewportLoading: false,
+  compileDiagnostics: [] as Diagnostic[],
+  setDiagnostics: vi.fn(),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -36,12 +40,14 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   projectDirty: false,
   assetRegistry: state.registry,
   registryEpoch: state.registry?.generation ?? 0,
+  graphsNeedCompile: true,
+  collectPlayPreviewScripts: async () => ({ bundles: [], diagnostics: state.compileDiagnostics }),
 })));
 vi.mock("../context/play-context", () => ({
   usePlay: () => ({ playing: false, preparing: false, canPlay: state.canPlay, sceneViewportLoading: state.sceneViewportLoading }),
 }));
 vi.mock("../context/validation-context", () => ({
-  useValidation: () => ({ errorCount: state.errorCount }),
+  useValidation: () => ({ errorCount: state.errorCount, setDiagnostics: state.setDiagnostics }),
 }));
 vi.mock("../shell/use-platform-layout", () => ({
   usePhoneLayout: () => state.phone,
@@ -95,6 +101,8 @@ afterEach(() => {
   state.activeId = "first";
   state.canPlay = false;
   state.sceneViewportLoading = false;
+  state.compileDiagnostics = [];
+  state.setDiagnostics.mockClear();
 });
 
 describe("chrome Play", () => {
@@ -108,6 +116,52 @@ describe("chrome Play", () => {
     state.sceneViewportLoading = false;
     rerender(<Chrome />);
     expect(screen.getByTestId("play-preview").hasAttribute("disabled")).toBe(false);
+  });
+});
+
+describe("chrome Compile", () => {
+  const issue = (assetGuid: string, message: string): Diagnostic => ({
+    severity: "error",
+    code: "pin.missing_input",
+    message,
+    assetGuid,
+    graphId: assetGuid,
+    nodeId: "n1",
+  });
+
+  it("shows the focused class's diagnostics only, not other classes' errors", async () => {
+    state.activeId = "hero";
+    state.documents = [
+      openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF),
+      openDocument("hero", createDocumentRef("graph", "assets/Hero.class.babasset")),
+      openDocument("villain", createDocumentRef("graph", "assets/Villain.class.babasset")),
+    ];
+    // Compile covers the project, so it returns every class's validation.
+    state.compileDiagnostics = [
+      issue("assets/Villain.class.babasset", "villain problem"),
+      issue("assets/Hero.class.babasset", "hero problem"),
+    ];
+    render(<Chrome />);
+
+    fireEvent.click(screen.getByTestId("compile-graph"));
+
+    await waitFor(() => expect(state.setDiagnostics).toHaveBeenCalledOnce());
+    expect(state.setDiagnostics.mock.calls[0]![0]).toEqual([issue("assets/Hero.class.babasset", "hero problem")]);
+  });
+
+  it("reports no errors for a clean focused class while another class has some", async () => {
+    state.activeId = "hero";
+    state.documents = [
+      openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF),
+      openDocument("hero", createDocumentRef("graph", "assets/Hero.class.babasset")),
+    ];
+    state.compileDiagnostics = [issue("assets/Villain.class.babasset", "villain problem")];
+    render(<Chrome />);
+
+    fireEvent.click(screen.getByTestId("compile-graph"));
+
+    await waitFor(() => expect(state.setDiagnostics).toHaveBeenCalledOnce());
+    expect(state.setDiagnostics).toHaveBeenCalledWith([]);
   });
 });
 

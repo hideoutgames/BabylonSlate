@@ -14,6 +14,8 @@ export type GraphPin = {
   defaultValue?: unknown;
   /** Required storage input, or a variable output that can supply that storage. */
   reference?: "required" | "writable";
+  /** An unwired Actor input reads the actor running the graph (the node compiles it to `ctx.self`). */
+  selfWhenUnwired?: boolean;
 };
 
 export type GraphNode = {

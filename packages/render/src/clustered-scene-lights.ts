@@ -18,8 +18,10 @@ import { LightConstants } from "@babylonjs/core/Lights/lightConstants";
 import { clusteredLightCapabilities } from "./clustered-light-capabilities";
 import { registerClusteredLightPolicy } from "./clustered-light-policy";
 import {
+  compareLightCreation,
   isGlobalLight,
   isIlluminatingLight,
+  lightsInCreationOrder,
   setClusteredLightMember,
   sortLightsByAdmission,
 } from "./light-policy";
@@ -113,7 +115,8 @@ export class ClusteredSceneLights {
     this.scene = scene;
     this.registry = this.validateRegistry(lights);
     this.registryMembership = new Set(this.registry);
-    this.authoredOrder = [...scene.lights];
+    // Creation order: Forward slot exchanges reorder scene.lights.
+    this.authoredOrder = lightsInCreationOrder(scene.lights);
     this.updateAuthoredOrder();
     this.unregister = registerClusteredLightPolicy(scene, this);
     const materialsChanged = () => {
@@ -617,27 +620,29 @@ export class ClusteredSceneLights {
       this.authoredOrder.forEach((light, index) =>
         this.authoredIndices.set(light, index),
       );
-    // Runs every sync; allocate only when a light is new.
+    // Runs every sync; allocate only when a light is new. New lights follow
+    // the known ones in creation order.
     let added: Light[] | undefined;
     for (const light of this.scene.lights)
-      if (this.indexAuthored(light)) (added ??= []).push(light);
+      if (this.isUnindexed(light, added)) (added ??= []).push(light);
     for (const light of this.registry)
-      if (this.indexAuthored(light)) (added ??= []).push(light);
+      if (this.isUnindexed(light, added)) (added ??= []).push(light);
     if (added) {
+      added.sort(compareLightCreation);
+      for (const light of added)
+        this.authoredIndices.set(light, this.authoredIndices.size);
       this.authoredOrder = [...this.authoredOrder, ...added];
       this.orderDirty = true;
     }
   }
 
-  private indexAuthored(light: Light): boolean {
-    if (
-      light.isDisposed() ||
-      light === this.container ||
-      this.authoredIndices.has(light)
-    )
-      return false;
-    this.authoredIndices.set(light, this.authoredIndices.size);
-    return true;
+  private isUnindexed(light: Light, added: readonly Light[] | undefined): boolean {
+    return (
+      !light.isDisposed() &&
+      light !== this.container &&
+      !this.authoredIndices.has(light) &&
+      !added?.includes(light)
+    );
   }
 
   /** Resolve only on authored topology/style/quality changes, never camera/map admission. */
