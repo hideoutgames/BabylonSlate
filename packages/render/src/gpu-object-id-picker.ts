@@ -204,12 +204,16 @@ class PickPass {
     return graph.textureManager.getTextureFromHandle(geometry.geometryObjectIdTexture);
   }
 
-  /** Drop the object list and the id numbering so an idle pass keeps no mesh alive. */
+  /**
+   * Drop the object list, the id numbering and the meshes probed ahead (a tap that gave up never let the pass report
+   * ready, which would forget them) so an idle pass keeps no mesh alive.
+   */
   clearObjects(): void {
     this.ids = new Map();
     if (!this.geometry) return;
     this.geometry.objectList = { meshes: [], particleSystems: [] };
     this.geometry.objectRenderer.renderList = [];
+    this.geometry.forgetCompilesAhead();
   }
 
   dispose(): void {

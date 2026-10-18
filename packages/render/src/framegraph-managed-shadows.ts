@@ -13,7 +13,7 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import type { FrameGraphShadowGeneratorTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/shadowGeneratorTask";
 import { findSceneShadowController } from "./shadow-controller";
-import { requestCompilesAhead } from "./driver-compile";
+import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { configureCutoutSorting } from "./sorting";
@@ -98,6 +98,11 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   /** Meshes this pass probed ahead of its readiness scan since it was last ready (`requestCompilesAhead`). */
   private readonly requestedAhead = new Set<AbstractMesh>();
 
+  /** Forget the meshes probed ahead, so the next scan probes them ahead again: after a readiness invalidation. */
+  forgetCompilesAhead(): void {
+    this.requestedAhead.clear();
+  }
+
   override isReady(): boolean {
     const previous = this._renderer.customIsReadyFunction;
     const engine = this._frameGraph.engine;
@@ -119,7 +124,7 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
         if (colour && depthReady(mesh)) return true;
         // The scan stops here. A parallel-compile driver links this mesh's depth pre-pass, which an unready colour
         // variant holds back, and the next meshes' variants meanwhile.
-        requestCompilesAhead(engine, this._renderer.renderList ?? [], mesh, this.requestedAhead,
+        requestCompilesAhead(engine, readinessScanMeshes(this._renderer, this._frameGraph.scene), mesh, this.requestedAhead,
           (other) => probeAhead(other, rate, preWarm), colour ? undefined : depthReady);
         return false;
       };
