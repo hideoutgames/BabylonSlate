@@ -28,6 +28,7 @@ import {
   NavMeshDebugOverlay,
   navDebugBlockersFromActors,
   selectionGizmoRoots,
+  setDirectViewPresentationEnabled,
   syncEditorPlayState,
   engineAdapterInfo,
   type EngineHandle,
@@ -1203,6 +1204,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         environmentTextureSamples: () => Promise<Record<string, unknown> | null>;
         environmentLightingProof: () => Promise<Record<string, unknown>>;
         measureRenderingBaseline: (durationMs: number) => Promise<Record<string, unknown>>;
+        /** Direct presentation of a sole view (default on); off copies into the view canvas, for A/B runs. */
+        setDirectViewPresentation: (enabled: boolean) => void;
         webgpuPreviewsProof: (
           options?: import("../testing/webgpu-previews-proof").ViewportProofOptions,
         ) => Promise<
@@ -1384,6 +1387,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         return (await import("../testing/mannequin-shadow-proof")).mannequinShadowVisibility(handle.scene, points);
       },
       setRenderSettings: (settings) => engineRef.current?.setRenderSettings(settings),
+      setDirectViewPresentation: (enabled) => setDirectViewPresentationEnabled(enabled),
       setShadowCaptureView: (position, target, fov) => {
         const handle = engineRef.current;
         const camera = handle?.editor?.camera.camera;

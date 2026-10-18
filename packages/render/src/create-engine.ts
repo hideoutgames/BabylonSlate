@@ -19,13 +19,14 @@ import type { AudioPlaybackBackend, AudioPose } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
-import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled, VIEW_CANVAS_2D_ATTRIBUTES } from "./registered-view-admission";
+import { directViewPresentationAllowed } from "./direct-view-presentation";
+import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled, VIEW_CANVAS_2D_ATTRIBUTES, viewCanvasHasLayoutBox, viewPresentedDirectly } from "./registered-view-admission";
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
-import { setSceneWaterTime } from "./water-mesh";
+import { isBuiltInWaterMesh, setSceneWaterTime } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
@@ -110,7 +111,6 @@ import {
 } from "./viewport-shading-mode";
 import { createGizmoHost, type GizmoHost } from "./gizmo-host";
 import { createWaterHandles } from "./water-handles";
-import { waterMeshDrawsInSceneCopyPass } from "./water-scene-copy";
 import { createSplineHandles } from "./spline-handles";
 import { selectedShapeComponent } from "./shape-edit-target";
 import type { ComponentShapeEdit } from "./shape-handles";
@@ -1051,6 +1051,8 @@ function initializeEngine(
     preparationMs: 0, copyMs: 0,
     contextLosses: 0, contextRestorations: 0,
   };
+  /** `presentationStats.attempted` when the current view step began. */
+  let attemptedAtStep = 0;
   /** Rendered-loop passes of preparation timing left; each `renderDiagnostics()` read renews it so a closed HUD stops the timing. */
   let framePhaseLeaseFrames = 0;
   const performanceFeed = new RenderPerformanceFeed();
@@ -1116,8 +1118,9 @@ function initializeEngine(
       // A canvas with no layout box (a hidden dock tab) has nothing to present, yet the scheduler only learns
       // that from an IntersectionObserver callback a frame or more later. Until then, `css` floors to 1×1:
       // neither resize the shared Engine to that for it nor draw it, since a 1×1 frame re-plans the graph
-      // (the water scene copy is off at that size) and compiles the variants it then draws.
-      const noLayout = !locked && (canvas.clientWidth <= 0 || canvas.clientHeight <= 0);
+      // (the water scene copy is off at that size) and compiles the variants it then draws. Direct
+      // presentation does not count such a view either.
+      const noLayout = !locked && !viewCanvasHasLayoutBox(canvas);
       if (!noLayout && (engine.getRenderWidth(true) !== size.width || engine.getRenderHeight(true) !== size.height))
         engine.setSize(size.width, size.height);
       admittedSnapshot = prepareSnapshot();
@@ -1126,8 +1129,13 @@ function initializeEngine(
       if (performanceFeed.active) admissionPreparationMs = performance.now() - preparationStart;
       return admitted;
     }, {
-      begin: () => { frameCopyReady = false; },
+      begin: () => { frameCopyReady = false; attemptedAtStep = presentationStats.attempted; },
       canCopy: () => frameCopyReady && !disposed && !contextLost,
+      // renderLoop counts an attempt once it passes shouldRenderFrame, before it touches the framebuffer.
+      dirty: () => presentationStats.attempted !== attemptedAtStep,
+      // Only the editor's project Engine presents directly. The exported player and Preview Build run their own
+      // Engine session, whose view canvas keeps receiving copies: the player and its checks read those pixels.
+      allowDirect: () => directViewPresentationAllowed(engine),
       copied: (milliseconds) => {
         presentationStats.copyMs = milliseconds;
         acknowledgeFrameCopy(undefined, pendingPerformanceReceipt, milliseconds);
@@ -2454,7 +2462,7 @@ function initializeEngine(
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
-    ))(), presentation: { ...presentationStats }, rendererWork: worldRenderer.diagnostics(),
+    ))(), presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
         registeredViewEnabled: registeredView?.enabled ?? null,
@@ -4127,9 +4135,9 @@ function initializeEngine(
     prewarmSceneMaterials: async (owner) => {
       const scope = loadingScope(owner);
       applyRenderingQuality();
-      // Water the view draws through a scene copy compiles its drawn variant when the graph below prepares.
-      const target = scope.target;
-      await warmSceneMaterials(target, scope.assert, (mesh) => waterMeshDrawsInSceneCopyPass(target, target.activeCamera, mesh));
+      // Built-in water compiles the variant its pass draws when the graph below prepares: which one that is depends on
+      // the view's plan, so a warm-up here would compile one nothing draws, and wait for its link.
+      await warmSceneMaterials(scope.target, scope.assert, isBuiltInWaterMesh);
       scope.assert();
       freezeLibraryMaterials();
       outlineHost.refreshSettings();
