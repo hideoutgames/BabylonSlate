@@ -97,12 +97,8 @@
 }
 
 .chrome-play-button {
-  position: relative;
-  z-index: 1;
   background: var(--play);
   color: var(--play-foreground);
-  font-weight: 600;
-  box-shadow: var(--brand-fringe);
 }
 
 .chrome-play-button:hover:not(:disabled) {

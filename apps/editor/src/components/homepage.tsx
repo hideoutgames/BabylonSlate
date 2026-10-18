@@ -16,10 +16,8 @@ import {
   LayoutTemplateIcon,
   ListIcon,
   LoaderCircleIcon,
-  MoonIcon,
   PlusIcon,
   Settings2Icon,
-  SunIcon,
   XIcon,
 } from "lucide-react";
 import {
@@ -83,7 +81,6 @@ import {
 } from "../lib/create-project";
 import { brandWordmarkSrc } from "../lib/branding";
 import { getBuildLabel } from "../lib/build-identity";
-import { IconActionButton } from "./icon-action-button";
 import { HomepageAccount } from "./homepage-account";
 import { ReleaseNews } from "./release-news";
 import { HomepageApplicationSettings } from "./homepage-application-settings";
@@ -166,7 +163,7 @@ export function Homepage({
   onDismissRecovery,
   onSettingsChanged,
 }: HomepageProps) {
-  const [scheme, setScheme] = useHomepageScheme();
+  const [scheme] = useHomepageScheme();
   const transition = useLauncherTransition();
   const [artReady, setArtReady] = useState(false);
   const markArtReady = useCallback(() => setArtReady(true), []);
@@ -445,19 +442,6 @@ export function Homepage({
           )}
         </div>
         <div className="homepage-toolbar-end">
-          <IconActionButton
-            label={scheme === "dark" ? "Light Mode" : "Dark Mode"}
-            variant="ghost"
-            disabled={busy}
-            onClick={() =>
-              void run(
-                () => setScheme(scheme === "dark" ? "light" : "dark"),
-                "Updating Theme",
-              )
-            }
-          >
-            {scheme === "dark" ? <SunIcon /> : <MoonIcon />}
-          </IconActionButton>
           <Button
             variant="outline"
             size="sm"
