@@ -9,6 +9,10 @@ export type ProjectEngineState = {
   session: ProjectEngineSession | null;
   error?: unknown;
   retryable?: boolean;
+  /** Failed because the ready session's WebGPU device was lost; only Retry replaces it. */
+  deviceLost?: boolean;
+  /** Ready on WebGL2 because WebGPU failed to initialize (not a material compatibility switch). */
+  webGpuFallbackReason?: string;
 };
 export type ProjectEngineRequest = {
   projectGuid: string;
@@ -118,12 +122,15 @@ export function createProjectEngineController(): ProjectEngineController {
             drop();
             return;
           }
-          publish({ phase: "ready", session });
+          const webGpuFallbackReason = request.backend === "webgpu" && !reason && session.effectiveBackend === "webgl2"
+            ? session.fallbackReason ?? "WebGPU is unavailable. Using WebGL2."
+            : undefined;
+          publish({ phase: "ready", session, ...(webGpuFallbackReason ? { webGpuFallbackReason } : {}) });
           // A lost WebGPU device cannot recover in place: detach every client
           // and offer Retry, which replaces the Engine.
           void session.deviceLost?.then(() => {
             if (owned !== session || state.session !== session) return;
-            publish({ phase: "failed", session: null, retryable: true, error: new Error(DEVICE_LOST_MESSAGE) });
+            publish({ phase: "failed", session: null, retryable: true, deviceLost: true, error: new Error(DEVICE_LOST_MESSAGE) });
           });
         } catch (error) {
           if (error instanceof AggregateError) quarantine(error);

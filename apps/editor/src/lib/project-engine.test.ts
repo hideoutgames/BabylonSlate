@@ -140,6 +140,26 @@ describe("project Engine transitions", () => {
     await host.sync(null);
   });
 
+  it("reports a WebGPU initialization fallback, but not a material compatibility switch", async () => {
+    const host = createProjectEngineController();
+    const factory = createSession.getMockImplementation()!;
+    // What createBackendEngineSession returns when WebGPU fails to initialize.
+    createSession.mockImplementation(async (options: BackendEngineSessionOptions) =>
+      Object.assign(await factory(options), options.requestedBackend === "webgpu" ? {
+        effectiveBackend: "webgl2",
+        fallbackReason: options.webGpuCompatibilityReason ?? "WebGPU initialization failed: No adapter. Using WebGL2.",
+      } : {}));
+    await host.sync(request("webgpu"));
+    expect(host.getSnapshot()).toMatchObject({ phase: "ready", webGpuFallbackReason: "WebGPU initialization failed: No adapter. Using WebGL2." });
+
+    await host.sync({ ...request("webgpu"), prepare: async () => "Material uses Custom GLSL." }, true);
+    expect(host.getSnapshot().phase).toBe("ready");
+    expect(host.getSnapshot().webGpuFallbackReason).toBeUndefined();
+    await host.sync(request("webgl2"));
+    expect(host.getSnapshot().webGpuFallbackReason).toBeUndefined();
+    await host.sync(null);
+  });
+
   it("ignores the loss of a device it already replaced", async () => {
     const host = createProjectEngineController();
     const lost = deferred<{ reason: string; message: string }>();

@@ -139,8 +139,10 @@ import {
   nextSharedEngineGeneration,
 } from "../lib/shared-engine-generation";
 import { createProjectEngineController } from "../lib/project-engine";
+import { RenderingRetryError, retryProjectRendering, stopGameOnDeviceLoss } from "../lib/project-rendering-recovery";
 import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
 import { ProjectRenderingDialog } from "../components/project-rendering-dialog";
+import { RenderingFallbackNotice } from "../components/rendering-fallback-notice";
 
 type PlayOptions = {
   /** Internal until the Simulation Inspector and authoring gates are qualified. */
@@ -310,6 +312,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [projectEngine] = useState(createProjectEngineController);
   const projectEngineState = useSyncExternalStore(projectEngine.subscribe, projectEngine.getSnapshot);
   const [renderingFailureDismissed, setRenderingFailureDismissed] = useState(false);
+  const [renderingRetrying, setRenderingRetrying] = useState(false);
+  const [renderingRetryFailure, setRenderingRetryFailure] = useState<{ error: unknown; retryable: boolean } | null>(null);
   const schedulerRegistryRef = useRef(new EditorSchedulerRegistry());
   const preparingRef = useRef(false);
   const pendingPlayOptionsRef = useRef<PlayOptions | undefined>(undefined);
@@ -898,16 +902,25 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     void projectEngine.sync(renderingRequest);
   }, [projectEngine, renderingRequest, sessionOwner, sessionState]);
 
+  // A lost device stops the game at once; Retry then only replaces the Engine.
+  useEffect(() => stopGameOnDeviceLoss(projectEngine, sessionOwner), [projectEngine, sessionOwner]);
+
+  // A retry failure belongs to the controller state it was shown over.
+  useEffect(() => { setRenderingRetryFailure(null); }, [projectEngineState]);
+
   const retryRendering = useCallback(async () => {
-    // Retry replaces the Engine. A game still on the old one (for example
-    // after its device was lost) stops first and must release it.
-    if (!sessionOwner.canStart()) {
-      const stopped = await sessionOwner.stop();
-      if (stopped) await stopped.released.catch(() => undefined);
-      if (!sessionOwner.canStart()) return;
+    setRenderingFailureDismissed(false);
+    setRenderingRetryFailure(null);
+    setRenderingRetrying(true);
+    try {
+      await retryProjectRendering({ projectEngine, sessionOwner, request: renderingRequest });
+    } catch (error) {
+      appendLog(`Rendering could not restart: ${error instanceof Error ? error.message : String(error)}`);
+      setRenderingRetryFailure({ error, retryable: !(error instanceof RenderingRetryError) || error.retryable });
+    } finally {
+      setRenderingRetrying(false);
     }
-    await projectEngine.sync(renderingRequest, true);
-  }, [projectEngine, renderingRequest, sessionOwner]);
+  }, [appendLog, projectEngine, renderingRequest, sessionOwner]);
 
   useEffect(() => {
     const engine = projectEngineState.session?.engine ?? null;
@@ -1835,11 +1848,16 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             onStop={() => { void sessionOwner.stop(); }} />
         ) : null}
         {projectOpen && (projectEngineState.phase === "preparing" || projectEngineState.phase === "initializing" ||
-          (projectEngineState.phase === "failed" && !renderingFailureDismissed)) ? (
-          <ProjectRenderingDialog state={projectEngineState}
-            onRetry={() => { setRenderingFailureDismissed(false); void retryRendering(); }}
+          ((projectEngineState.phase === "failed" || renderingRetryFailure) && !renderingFailureDismissed)) ? (
+          <ProjectRenderingDialog
+            state={renderingRetryFailure
+              ? { ...projectEngineState, phase: "failed", error: renderingRetryFailure.error, retryable: renderingRetryFailure.retryable }
+              : projectEngineState}
+            retrying={renderingRetrying}
+            onRetry={() => { void retryRendering(); }}
             onDismiss={() => setRenderingFailureDismissed(true)} />
         ) : null}
+        {projectOpen ? <RenderingFallbackNotice state={projectEngineState} /> : null}
         {previewPhase || previewPreparationError ? (
           <PreparingPreviewDialog
             open
