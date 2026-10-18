@@ -210,6 +210,12 @@ export function defaultPropertiesFor(
   siblings: readonly SerializedComponent[] = [],
 ): Record<string, unknown> {
   const defaults = defaultComponentAuthoringProperties(classId, physicsWorld, viewportMode);
+  if (classId === "DeformerComponent") {
+    // Target the first sibling Mesh and apply at once, so the viewport cage edits and previews it.
+    // Zero offsets leave the mesh unchanged until a control moves.
+    const mesh = siblings.find((component) => component.classId === "MeshComponent");
+    return mesh ? { ...defaults, targetMeshComponentId: mesh.id, enabled: true } : defaults;
+  }
   if (classId !== "ColliderComponent") return defaults;
   const shape = defaults.shape as { kind: Parameters<typeof fittedColliderShape>[0] };
   return { ...defaults, shape: fittedColliderShape(shape.kind, siblings) ?? defaults.shape };

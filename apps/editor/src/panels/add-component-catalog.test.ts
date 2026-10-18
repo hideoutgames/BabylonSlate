@@ -82,6 +82,16 @@ describe("Add Component catalog", () => {
     });
   });
 
+  it("targets and enables a new Deformer on the first sibling Mesh", () => {
+    const siblings = [
+      { id: "light", classId: "LightComponent", properties: {} },
+      { id: "body", classId: "MeshComponent", properties: {} },
+      { id: "head", classId: "MeshComponent", properties: {} },
+    ];
+    expect(defaultPropertiesFor("DeformerComponent", "3d", "3d", siblings)).toMatchObject({ targetMeshComponentId: "body", enabled: true });
+    expect(defaultPropertiesFor("DeformerComponent")).toMatchObject({ targetMeshComponentId: "", enabled: false });
+  });
+
   it("seeds Sprite and Tilemap asset-guid defaults", () => {
     expect(defaultPropertiesFor("DynamicRuntimeMeshComponent").enableCollision).toBe(false);
     expect(defaultPropertiesFor("AnimationGraphComponent")).toEqual({
