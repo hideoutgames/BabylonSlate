@@ -12,6 +12,7 @@ import {
   LauncherTransitionProvider,
   EditorRouteReady,
 } from "./components/launcher-transition";
+import { RouteErrorBoundary } from "./components/route-error-boundary";
 
 const HomeRoute = lazy(() => import("./routes/home-route"));
 const EditorRoute = lazy(() => import("./routes/editor-route"));
@@ -26,22 +27,24 @@ export function AppRoutes() {
   usePreventDocumentOverscroll();
   useOrientationScrollReset();
   return (
-    <LauncherTransitionProvider route={gallery ? "editor" : route}>
-      <Suspense fallback={null}>
-        {gallery ? (
-          <>
-            <EditorRoute gallery />
-            <EditorRouteReady />
-          </>
-        ) : route === "home" ? (
-          <HomeRoute />
-        ) : (
-          <>
-            <EditorRoute />
-            <EditorRouteReady />
-          </>
-        )}
-      </Suspense>
-    </LauncherTransitionProvider>
+    <RouteErrorBoundary>
+      <LauncherTransitionProvider route={gallery ? "editor" : route}>
+        <Suspense fallback={null}>
+          {gallery ? (
+            <>
+              <EditorRoute gallery />
+              <EditorRouteReady />
+            </>
+          ) : route === "home" ? (
+            <HomeRoute />
+          ) : (
+            <>
+              <EditorRoute />
+              <EditorRouteReady />
+            </>
+          )}
+        </Suspense>
+      </LauncherTransitionProvider>
+    </RouteErrorBoundary>
   );
 }

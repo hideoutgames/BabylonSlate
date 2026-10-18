@@ -21,6 +21,8 @@ function originBase(): string {
 /**
  * A listed player file is a relative path inside the player root. Its name
  * becomes an exported archive entry, so nothing may climb out of that root.
+ * Dot-named parts (`ktx2/.keep`, `..`) are deployment markers or traversal,
+ * never player files.
  */
 function isPlayerFileName(name: string): boolean {
   return (
@@ -28,7 +30,7 @@ function isPlayerFileName(name: string): boolean {
     !name.startsWith("/") &&
     !name.includes("\\") &&
     !/^[a-z][a-z\d+.-]*:/i.test(name) &&
-    name.split("/").every((part) => part !== "" && part !== "." && part !== "..")
+    name.split("/").every((part) => part !== "" && !part.startsWith("."))
   );
 }
 

@@ -9,9 +9,11 @@ import {
 } from "@babylonslate/vfs";
 import { installDirectViewReadSync } from "@babylonslate/render";
 import App from "./App";
+import { installPreloadErrorReload } from "./lib/preload-error-reload";
 
 initializeCapacitorLifecycle();
 initializeCapacitorAudioLifecycle();
+installPreloadErrorReload();
 
 if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("latticeDeformerCost")) {
   void import("./testing/lattice-deformer-cost").then(({ runLatticeDeformerCost }) => Object.assign(window, { __latticeDeformerCost: runLatticeDeformerCost }));

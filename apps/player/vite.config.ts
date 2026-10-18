@@ -35,10 +35,12 @@ function copyRuntimePublic(): Plugin {
   };
 }
 
+/** Files the editor fetches for the player. Dot-named markers (`ktx2/.keep`) are never player files. */
 function listRelativeFiles(dir: string, prefix = ""): string[] {
   if (!existsSync(dir)) return [];
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith(".")) continue;
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       out.push(...listRelativeFiles(path.join(dir, entry.name), rel));
