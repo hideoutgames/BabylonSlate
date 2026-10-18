@@ -20,7 +20,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { sceneShadowController } from "./shadow-controller";
-import { syncForwardLightPolicy } from "./light-policy";
+import { FORWARD_LIGHT_DWELL_MS, syncForwardLightPolicy } from "./light-policy";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import {
   sceneRenderingSettings,
@@ -845,6 +845,15 @@ describe("shared shadow lifecycle", () => {
     expect(generator.getDarkness()).toBe(0);
     expect(allocate).not.toHaveBeenCalled();
     expect(dispose).not.toHaveBeenCalled();
+    // A withdrawn shadow request frees the standby map although the light stays disabled.
+    syncForwardLightPolicy(scene, 1, undefined, performance.now() + 2 * FORWARD_LIGHT_DWELL_MS);
+    controller.sync();
+    expect(controller.generator(shadowed)).toBeNull();
+    expect(shadowed.getShadowGenerator()).toBe(generator);
+    controller.register(shadowed, false);
+    controller.sync();
+    expect(shadowed.getShadowGenerator()).toBeNull();
+    expect(dispose).toHaveBeenCalledOnce();
   });
 
   it("frees standby maps before reducing an admitted map after an allocation failure", () => {

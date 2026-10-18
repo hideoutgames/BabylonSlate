@@ -876,9 +876,13 @@ export class SceneShadowController {
       // The Forward light budget dropped this light for camera distance: it is
       // camera-rejected like a budget-limited one. Releasing its map would
       // dispose the generator, and readmission would rebuild every caster's
-      // depth effect.
+      // depth effect. Its "disabled" status hides a withdrawn request, so
+      // check what the candidate filter would have said.
       const forwardLimited =
-        entry.status === "disabled" && isForwardLightExcluded(entry.light);
+        entry.status === "disabled" &&
+        entry.requested &&
+        settings.enabled &&
+        isForwardLightExcluded(entry.light);
       if (
         clustered ||
         (entry.status !== "outside-relevant-area" &&
