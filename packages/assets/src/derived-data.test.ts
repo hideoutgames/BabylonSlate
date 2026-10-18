@@ -3,9 +3,13 @@ import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import {
   appendJournalLine,
   appendJournalLines,
+  discardSealedJournal,
   hasJournal,
   readJournalLines,
+  readSealedJournalLines,
+  sealJournalForRecovery,
   truncateJournal,
+  unsealJournal,
 } from "./derived-data";
 
 /** A ~1 KiB journal record, numbered so order is checkable. */
@@ -123,5 +127,61 @@ describe("derived-data journal", () => {
 
     await truncateJournal(storage, "proj-1");
     expect(await readJournalLines(storage, "proj-1")).toEqual([]);
+  });
+
+  describe("records sealed for recovery", () => {
+    async function sealedSession() {
+      const storage = new MemoryStorageAdapter("documents");
+      await storage.openDocumentsProject("derived-root");
+      // Enough records to span several segments, so the seal ends mid-journal.
+      const earlier = Array.from({ length: 200 }, (_, index) => record(index));
+      await appendJournalLines(storage, "proj-1", earlier);
+      await sealJournalForRecovery(storage, "proj-1");
+      return { storage, earlier };
+    }
+
+    it("survive truncation while later edits are journaled after them and truncated by their own save", async () => {
+      const { storage, earlier } = await sealedSession();
+      await appendJournalLine(storage, "proj-1", "after reopen");
+      expect(await readSealedJournalLines(storage, "proj-1")).toEqual(earlier);
+
+      expect(await truncateJournal(storage, "proj-1")).toBe(true);
+      expect(await readJournalLines(storage, "proj-1")).toEqual(earlier);
+
+      await appendJournalLine(storage, "proj-1", "second edit");
+      expect(await readSealedJournalLines(storage, "proj-1")).toEqual(earlier);
+      expect(await readJournalLines(storage, "proj-1")).toEqual([...earlier, "second edit"]);
+    });
+
+    it("are discarded without touching later edits", async () => {
+      const { storage } = await sealedSession();
+      await appendJournalLine(storage, "proj-1", "after reopen");
+      await discardSealedJournal(storage, "proj-1");
+      expect(await readSealedJournalLines(storage, "proj-1")).toEqual([]);
+      expect(await readJournalLines(storage, "proj-1")).toEqual(["after reopen"]);
+      await truncateJournal(storage, "proj-1");
+      expect(await hasJournal(storage, "proj-1")).toBe(false);
+    });
+
+    it("rejoin the live journal when unsealed, so the next truncation clears them", async () => {
+      const { storage, earlier } = await sealedSession();
+      await appendJournalLine(storage, "proj-1", "after reopen");
+      await unsealJournal(storage, "proj-1");
+      expect(await readSealedJournalLines(storage, "proj-1")).toEqual([]);
+      expect(await readJournalLines(storage, "proj-1")).toEqual([...earlier, "after reopen"]);
+      await truncateJournal(storage, "proj-1");
+      expect(await readJournalLines(storage, "proj-1")).toEqual([]);
+    });
+
+    it("include edits from an earlier session when sealed again", async () => {
+      const { storage, earlier } = await sealedSession();
+      await appendJournalLine(storage, "proj-1", "unsaved before the crash");
+      await sealJournalForRecovery(storage, "proj-1");
+      await truncateJournal(storage, "proj-1");
+      expect(await readSealedJournalLines(storage, "proj-1")).toEqual([
+        ...earlier,
+        "unsaved before the crash",
+      ]);
+    });
   });
 });
