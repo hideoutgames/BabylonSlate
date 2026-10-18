@@ -104,8 +104,8 @@ type BasicSlot = SlotBase & {
   prewarmPending: boolean;
   lifetime: number;
   drainedTime: number;
-  lastRenderId: number;
-  lastCameraId: number;
+  /** Scene frame of the last counted step; -1 before the first. */
+  lastFrame: number;
 };
 /** A Particle Graph slot: always a CPU `ParticleSystem` built from Node Particle blocks. */
 type GraphSlot = SlotBase & {
@@ -589,11 +589,11 @@ export class ParticleService {
           if (!this.current(entry, generation)) return;
           // Babylon draws only after its prewarm, so bursts queued from now on are rendered.
           basic.prewarmPending = false;
-          const renderId = host.getRenderId();
-          const cameraId = host.activeCamera?.uniqueId ?? -1;
-          // MULTIPLYADD draws twice, but Babylon updates once per camera/render ID.
-          if (basic.lastRenderId === renderId && basic.lastCameraId === cameraId) return;
-          basic.lastRenderId = renderId; basic.lastCameraId = cameraId;
+          // The system steps once per scene frame, on its first draw (MULTIPLYADD
+          // draws twice, and Render Target Captures draw in the same frame).
+          const frame = host.getFrameId();
+          if (basic.lastFrame === frame) return;
+          basic.lastFrame = frame;
           if (basic.stopped) basic.drainedTime += particleSimulationDelta(system);
         });
         record.cancel.push(() => system.onBeforeDrawParticlesObservable.remove(draw));
@@ -622,7 +622,7 @@ export class ParticleService {
       return { record: { kind: "basic", index: slot.index, emitterGuid: slot.guid, system, lease, gpu, backend: context.backend,
         payload, driver: createBasicEmissionDriver(system, plan.schedule), prewarmPending: gpu && plan.preWarmCycles > 0,
         pending: 0, updateSpeed: plan.updateSpeed, started: false, stopped: false,
-        lifetime: plan.lifetimeBound, drainedTime: 0, lastRenderId: -1, lastCameraId: -1, cancel: [] } };
+        lifetime: plan.lifetimeBound, drainedTime: 0, lastFrame: -1, cancel: [] } };
     } catch (error) {
       system.dispose();
       throw error;

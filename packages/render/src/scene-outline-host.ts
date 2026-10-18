@@ -45,6 +45,9 @@ export interface SceneOutlineSelection {
 
 /** One view's authored gameplay contributions and optional editor selection.
  * Actor keys group model parts and keep shared assets independently styled. */
+/** One Full Quality capture's outline view: its graph detach and the meshes it may outline. */
+type CaptureView = { detach: () => void; includes: (mesh: AbstractMesh) => boolean };
+
 export class SceneOutlineHost {
   readonly view: SharedOutlineView;
   readonly selection: SceneOutlineSelection;
@@ -57,6 +60,11 @@ export class SceneOutlineHost {
   private readonly detach: () => void;
   private readonly scene: Scene;
   private readonly invalidate: () => void;
+  /** Full Quality capture views: the gameplay contributions, never the selection. */
+  private readonly captureViews = new Map<SharedOutlineView, CaptureView>();
+  private captureViewCount = 0;
+  private gameplay: ReadonlyMap<string, SharedOutlineContribution> = new Map();
+  private occluders: AbstractMesh[] = [];
 
   constructor(scene: Scene, renderer: SceneRenderCoordinator, invalidate: () => void) {
     this.scene = scene; this.invalidate = invalidate;
@@ -144,14 +152,65 @@ export class SceneOutlineHost {
       color: [SELECTION_COLOR.r, SELECTION_COLOR.g, SELECTION_COLOR.b], width: 1, throughMeshes: true });
     // Publish a complete validated snapshot before committing host state. A
     // rejected registration/capacity request preserves all previous consumers.
-    this.view.replaceContributions(contributions, targets.flatMap((target) => target.meshes));
+    const occluders = targets.flatMap((target) => target.meshes);
+    this.view.replaceContributions(contributions, occluders);
     this.actors = actors; this.selectedActors = selectedActors;
+    contributions.delete("selection");
+    this.gameplay = contributions;
+    this.occluders = occluders;
+    for (const [view, capture] of this.captureViews) this.publishCaptureView(view, capture);
     if (revision !== this.view.revision) this.invalidate();
+  }
+
+  /**
+   * A Full Quality capture's view of the scene's gameplay outlines (Outline
+   * components and CEL outlines); the editor selection never reaches it. Only
+   * meshes `includes` accepts are outlined or occlude outlines: a capture of
+   * chosen actors draws no other. `refresh` republishes after `includes`
+   * changes; `detach` also disposes the view.
+   */
+  attachCaptureView(renderer: SceneRenderCoordinator, includes: (mesh: AbstractMesh) => boolean = () => true):
+    { refresh(): void; detach(): void } {
+    if (this.disposed) return { refresh() {}, detach() {} };
+    const view = SharedOutlineOwner.forScene(this.scene).createView(`capture:${++this.captureViewCount}`);
+    let detach: () => void;
+    try {
+      detach = renderer.attachSharedOutline(view);
+    } catch (error) {
+      view.dispose();
+      throw error;
+    }
+    const capture: CaptureView = { detach, includes };
+    this.captureViews.set(view, capture);
+    this.publishCaptureView(view, capture);
+    return {
+      refresh: () => { if (this.captureViews.get(view) === capture) this.publishCaptureView(view, capture); },
+      detach: () => {
+        if (!this.captureViews.delete(view)) return;
+        detach();
+        view.dispose();
+      },
+    };
+  }
+
+  /** A capture view that cannot take the snapshot keeps its previous outlines; the scene view is unaffected. */
+  private publishCaptureView(view: SharedOutlineView, capture: CaptureView): void {
+    const contributions = new Map<string, SharedOutlineContribution>();
+    for (const [key, contribution] of this.gameplay) {
+      const targets = contribution.targets
+        .map((target) => ({ key: target.key, meshes: target.meshes.filter(capture.includes) }))
+        .filter((target) => target.meshes.length > 0);
+      if (targets.length) contributions.set(key, { ...contribution, targets });
+    }
+    try { view.replaceContributions(contributions, this.occluders.filter(capture.includes)); }
+    catch (error) { console.warn(`[render] Capture outlines kept their previous state: ${String(error)}`); }
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    for (const [view, { detach }] of this.captureViews) { detach(); view.dispose(); }
+    this.captureViews.clear();
     this.detach(); this.view.dispose(); this.actors.clear();
   }
   whenReleased(): Promise<void> { return this.view.owner.whenReleased(); }

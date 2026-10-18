@@ -20,6 +20,19 @@ export type RenderTargetPayload = {
 /** A material sampler asset referencing the live output of a Render Target. */
 export type RenderTargetTexturePayload = { renderTargetGuid: string | null };
 
+/**
+ * How a capture renders a Scene Color target: `fast` is the lightweight capture
+ * pass; `fullQuality` renders like the scene's own camera (water refraction and
+ * screen-space reflections, post-processing, camera-fitted shadows). Depth Pass
+ * and World Normal targets always record data with the fast pass.
+ */
+export const RENDER_TARGET_CAPTURE_QUALITIES = ["fast", "fullQuality"] as const;
+export type RenderTargetCaptureQuality = (typeof RENDER_TARGET_CAPTURE_QUALITIES)[number];
+export const RENDER_TARGET_CAPTURE_QUALITY_LABELS: Record<RenderTargetCaptureQuality, string> = {
+  fast: "Fast",
+  fullQuality: "Full Quality",
+};
+
 export type RenderTargetCaptureProperties = {
   renderTargetGuid: string | null;
   enabled: boolean;
@@ -30,6 +43,8 @@ export type RenderTargetCaptureProperties = {
   fieldOfView: number;
   nearClip: number;
   farClip: number;
+  /** Optional in saved data; absent or unknown values load as `fast`. */
+  quality: RenderTargetCaptureQuality;
 };
 export type RenderTargetCaptureProperty = keyof RenderTargetCaptureProperties;
 
@@ -73,7 +88,12 @@ export function createDefaultRenderTargetCaptureProperties(): RenderTargetCaptur
     fieldOfView: 60,
     nearClip: 0.1,
     farClip: 1000,
+    quality: "fast",
   };
+}
+export function normalizeRenderTargetCaptureQuality(value: unknown): RenderTargetCaptureQuality {
+  return (RENDER_TARGET_CAPTURE_QUALITIES as readonly unknown[]).includes(value)
+    ? value as RenderTargetCaptureQuality : "fast";
 }
 export function normalizeRenderTargetCaptureProperties(value: unknown): RenderTargetCaptureProperties {
   const source = record(value);
@@ -88,6 +108,7 @@ export function normalizeRenderTargetCaptureProperties(value: unknown): RenderTa
     fieldOfView: finite(source.fieldOfView, 60, 1, 179),
     nearClip,
     farClip: Math.max(nearClip + 0.001, finite(source.farClip, 1000, 0.002, 1000000)),
+    quality: normalizeRenderTargetCaptureQuality(source.quality),
   };
 }
 

@@ -38,8 +38,7 @@ import {
   beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease, type ManagedRenderResource,
 } from "./managed-render-resources";
 import { sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
-import { isRenderTargetCaptureCandidate } from "./render-target-capture";
-import { renderTargetCaptureDrawing } from "./render-target-capture-state";
+import { isRenderTargetCaptureCandidate, renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { managedRenderTargetResources, renderTargetAllocationBytes } from "./render-target-resource-cost";
 import { admittedSceneMeshes } from "./scene-stream-admission";
 import type { WaterMaterialPlugin } from "./water-material";
