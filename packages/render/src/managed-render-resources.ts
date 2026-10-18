@@ -2,8 +2,12 @@ import type { AbstractEngine } from "@babylonjs/core";
 
 /** Conservative managed rendering ceiling, not measured/free GPU memory. */
 export const MANAGED_RENDER_BYTE_LIMIT = 512 * 1024 ** 2;
+/**
+ * `shadow` holds per-view shadow maps (a Full Quality capture's own sun maps);
+ * a scene view's maps reserve through reserveManagedShadowBytes instead.
+ */
 export type ManagedRenderCategory =
-  "cluster" | "sceneColor" | "geometry" | "depth" | "postprocess" | "areaLight" | "water";
+  "cluster" | "sceneColor" | "geometry" | "depth" | "postprocess" | "areaLight" | "water" | "shadow";
 export type ManagedRenderResource = {
   handle: object;
   bytes: number;
@@ -17,6 +21,7 @@ const categories: readonly ManagedRenderCategory[] = [
   "postprocess",
   "areaLight",
   "water",
+  "shadow",
 ];
 type ResourceEntry = {
   bytes: number;
@@ -74,6 +79,7 @@ export function managedRenderReservations(engine: AbstractEngine) {
     postprocess: 0,
     areaLight: 0,
     water: 0,
+    shadow: 0,
   };
   let sharedBytes = 0;
   for (const resource of value.resources.values()) {

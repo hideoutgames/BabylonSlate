@@ -1,6 +1,6 @@
 import {
-  Constants, DirectionalLight, FreeCamera, Mesh, MeshBuilder, NullEngine, NullEngineOptions, ParticleSystem, Scene, SpotLight,
-  StandardMaterial, UniversalCamera, Vector3,
+  CascadedShadowGenerator, Constants, DirectionalLight, FreeCamera, Mesh, MeshBuilder, NullEngine, NullEngineOptions, ParticleSystem,
+  Scene, SpotLight, StandardMaterial, UniversalCamera, Vector3, type Camera, type ShadowGenerator,
 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
 import {
@@ -134,6 +134,8 @@ it("renders Full Quality through the forward pipeline with its own scene copy, w
   expect(scene.activeCamera).toBe(camera);
   const captureCamera = scene.cameras.find((entry) => entry.name === "renderTargetCapture:capture")!;
   expect(output.getInternalTexture()).toBe(captureCamera.outputRenderTarget!.getInternalTexture());
+  // The view draws into its own scene targets: the output holds colour only.
+  expect(captureCamera.outputRenderTarget!.depthStencilTexture).toBeNull();
   // Editor helpers stay out of the capture, and the capture compiles nothing for them; world geometry draws in both views.
   expect(pierCameras).toEqual(new Set(["Main Camera", "renderTargetCapture:capture"]));
   expect(helperCameras).toEqual(new Set(["Main Camera"]));
@@ -191,6 +193,50 @@ it("draws gameplay outlines in a Full Quality capture but never the editor selec
   view.dispose();
 });
 
+it("draws only the captured actors' outlines in a Capture Only Actors capture", async () => {
+  const { scene, pier, view, captures, root, settings } = host("fullQuality");
+  const post = MeshBuilder.CreateBox("post", {}, scene);
+  post.position.x = 2;
+  captures.registerActor("pier", () => pier);
+  captures.registerActor("post", () => post);
+  const outlines = new SceneOutlineHost(scene, view, () => {});
+  captures.setOutlines((renderer, includes) => outlines.attachCaptureView(renderer, includes));
+  const ink = outlineBindings("pier", [{ id: "ink", classId: "OutlineComponent", properties: { color: [1, 0, 0], width: 2 } }]);
+  outlines.replaceActors([{ id: "pier", meshes: [pier], bindings: ink }, { id: "post", meshes: [post], bindings: [] }]);
+  captures.configure("capture", { ...settings, captureOnlyActors: true, actorIds: ["post"] }, () => root);
+  await untilPublished(scene, view, captures);
+  for (let frame = 0; frame < 3; frame++) view.render();
+  // The scene view outlines the pier; the capture, which leaves the pier out, does not.
+  expect(view.taskNames()).toContain("Shared outlines");
+  expect(captures.diagnostics()[0]!.taskNames).not.toContain("Shared outlines");
+  // Capturing the pier as well brings its outline into the capture.
+  captures.configure("capture", { ...settings, captureOnlyActors: true, actorIds: ["post", "pier"] }, () => root);
+  await vi.waitFor(() => {
+    view.render();
+    expect(captures.diagnostics()[0]!.taskNames).toContain("Shared outlines");
+  }, { timeout: 5000 });
+  outlines.dispose();
+  view.dispose();
+});
+
+it("keeps the scene view's frame and the capture's last image when a Full Quality capture fails to draw", async () => {
+  const { scene, view, captures, output } = host("fullQuality");
+  await untilPublished(scene, view, captures);
+  const image = output.getInternalTexture();
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const render = ForwardSceneFrameGraph.prototype.render;
+  vi.spyOn(ForwardSceneFrameGraph.prototype, "render").mockImplementation(
+    function (this: ForwardSceneFrameGraph, camera: Camera, updateCameras?: boolean, reuseAdmission?: boolean) {
+      if (camera.name.startsWith("renderTargetCapture:")) throw new Error("capture draw failed");
+      return render.call(this, camera, updateCameras, reuseAdmission);
+    });
+  for (let frame = 0; frame < 3; frame++) expect(view.render()).toMatchObject({ rendered: true });
+  expect(captures.diagnostics()[0]).toMatchObject({ published: true });
+  expect(output.getInternalTexture()).toBe(image);
+  expect(warn.mock.calls.filter(([message]) => String(message).includes("capture draw failed"))).toHaveLength(1);
+  view.dispose();
+});
+
 it("retries a failed Full Quality preparation at most once a second and warns once", async () => {
   const { scene, view, captures } = host("fullQuality");
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -218,7 +264,12 @@ it("retries a failed Full Quality preparation at most once a second and warns on
   view.dispose();
 }, 15_000);
 
-it("keeps the scene view's shadow maps cached in a static scene while a Full Quality capture draws", async () => {
+/**
+ * A scene view over a box on a floor under a cascaded, shadowed sun and an
+ * unranged shadowed spot, with one Full Quality capture far from the scene
+ * camera, with a different lens and clip range.
+ */
+function shadowedHost() {
   const options = new NullEngineOptions();
   options.renderWidth = 96;
   options.renderHeight = 64;
@@ -254,41 +305,104 @@ it("keeps the scene view's shadow maps cached in a static scene while a Full Qua
   controller.register(sun, true);
   controller.register(spot, true);
   controller.sync();
-  const maps = [sun, spot].map((light) => controller.generator(light)!.getShadowMap()!);
-  let draws = 0;
-  const bind = engine.bindFramebuffer.bind(engine);
-  vi.spyOn(engine, "bindFramebuffer").mockImplementation((target, ...args) => {
-    if (maps.some((map) => map.renderTarget === target)) draws++;
-    bind(target, ...args);
-  });
   const view = new SceneRenderCoordinator(scene);
   const captures = new RenderTargetCaptures(scene);
   captures.setAssets(new Map([["target", { mode: "SceneColor", width: 32, height: 16 }]]),
     new Map([["texture", { renderTargetGuid: "target" }]]));
   const lens = new Mesh("Lens", scene);
-  lens.position.set(6, 4, -6);
-  lens.lookAt(Vector3.Zero());
+  lens.position.set(30, 4, 30);
+  lens.lookAt(new Vector3(30, 0, 40));
   // A visible geometry-less caster would keep the maps redrawing by itself.
   lens.isVisible = false;
-  // A different lens and clip range from the scene camera's.
-  captures.configure("capture", { ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: "target",
-    quality: "fullQuality", fieldOfView: 40, nearClip: 0.5, farClip: 60 }, () => lens);
+  const settings = { ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: "target",
+    quality: "fullQuality" as const, fieldOfView: 40, nearClip: 0.5, farClip: 60 };
+  captures.configure("capture", settings, () => lens);
   captures.acquireTexture("texture");
+  const captureCamera = () => scene.cameras.find((entry) => entry.name === "renderTargetCapture:capture");
+  return { engine, scene, camera, sun, spot, controller, view, captures, lens, settings, captureCamera };
+}
+
+/** Actual passes (one per face or cascade) of a map; readiness probes do not clear. */
+function passes(generator: ShadowGenerator): () => number {
+  let count = 0;
+  generator.getShadowMap()!.onClearObservable.add(() => { count++; });
+  return () => count;
+}
+
+it("draws a Full Quality capture's own sun maps, fitted to its camera, and leaves the scene view's maps as they were", async () => {
+  const { scene, camera, sun, spot, controller, view, captures, captureCamera } = shadowedHost();
+  const main = controller.generator(sun) as CascadedShadowGenerator;
+  const local = controller.generator(spot)!;
+  const mainPasses = passes(main), localPasses = passes(local);
   // Each frame executes the scene view's graph and, inside its frame, the capture's.
   // (A render hook on a caster would make the maps redraw every frame by themselves.)
   const executes = vi.spyOn(FrameGraph.prototype, "execute");
   await untilPublished(scene, view, captures);
+  const capture = captureCamera()!;
+  // The capture's sun map is the controller's, keyed to the capture camera, with the scene map's allocation.
+  const own = sun.getShadowGenerator(capture) as CascadedShadowGenerator;
+  expect(own).toBeInstanceOf(CascadedShadowGenerator);
+  expect(own).toBe(controller.viewBoundGenerator(sun, capture));
+  expect(own.camera).toBe(capture);
+  expect(own.numCascades).toBe(main.numCascades);
+  expect(own.getShadowMap()!.getSize()).toEqual(main.getShadowMap()!.getSize());
+  // The scene view keeps binding its own map; the spot map is shared.
+  expect(sun.getShadowGenerator()).toBe(main);
+  expect(spot.getShadowGenerators()?.size).toBe(1);
   // Settle: a map's first draws feed its next snapshot once.
   for (let frame = 0; frame < 5; frame++) view.render();
-  const before = { draws, executes: executes.mock.calls.length };
+  const mainFit = Array.from({ length: main.numCascades }, (_, layer) => [...main.getCascadeTransformMatrix(layer)!.m]);
+  const ownPasses = passes(own);
+  const before = { main: mainPasses(), local: localPasses(), executes: executes.mock.calls.length };
   for (let frame = 0; frame < 4; frame++) expect(view.render()).toMatchObject({ rendered: true });
   expect(executes.mock.calls.length - before.executes).toBe(8);
-  expect(draws - before.draws).toBe(0);
+  // The scene view's maps stay cached and keep their cascade fit; the capture redraws its own each captured frame.
+  expect(mainPasses() - before.main).toBe(0);
+  expect(localPasses() - before.local).toBe(0);
+  expect(ownPasses()).toBe(4 * own.numCascades);
+  expect(Array.from({ length: main.numCascades }, (_, layer) => [...main.getCascadeTransformMatrix(layer)!.m])).toEqual(mainFit);
+  expect(sun.getShadowGenerator()).toBe(main);
+  // The capture's cascades follow its own camera, far from the scene camera's.
+  expect([...own.getCascadeTransformMatrix(0)!.m]).not.toEqual(mainFit[0]);
   // The capture's receivers bind the depth range its borrowed spot map was drawn with.
-  const captureCamera = scene.cameras.find((entry) => entry.name === "renderTargetCapture:capture")!;
-  expect([spot.getDepthMinZ(captureCamera), spot.getDepthMaxZ(captureCamera)])
+  expect([spot.getDepthMinZ(capture), spot.getDepthMaxZ(capture)])
     .toEqual([spot.getDepthMinZ(camera), spot.getDepthMaxZ(camera)]);
   view.dispose();
+});
+
+it("releases a Full Quality capture's own sun maps and their ledger charge on quality change, removal and scene change", async () => {
+  const { engine, scene, sun, view, captures, lens, settings, captureCamera } = shadowedHost();
+  const viewShadowBytes = () => managedRenderReservations(engine).categoryBytes.shadow;
+  await untilPublished(scene, view, captures);
+  let own = sun.getShadowGenerator(captureCamera()!)!;
+  expect(own.getShadowMap()).not.toBeNull();
+  expect(viewShadowBytes()).toBeGreaterThan(0);
+  const released = async () => {
+    await captures.whenReleased();
+    expect(own.getShadowMap()).toBeNull();
+    expect(sun.getShadowGenerator(captureCamera()!)).toBeNull();
+    expect(viewShadowBytes()).toBe(0);
+  };
+  captures.configure("capture", { ...settings, quality: "fast" }, () => lens);
+  await released();
+
+  captures.configure("capture", settings, () => lens);
+  await untilPublished(scene, view, captures);
+  own = sun.getShadowGenerator(captureCamera()!)!;
+  captures.removeActor("capture");
+  await captures.whenReleased();
+  expect(own.getShadowMap()).toBeNull();
+  expect(viewShadowBytes()).toBe(0);
+
+  captures.configure("capture", settings, () => lens);
+  await untilPublished(scene, view, captures);
+  own = sun.getShadowGenerator(captureCamera()!)!;
+  view.dispose();
+  await view.whenReleased();
+  scene.dispose();
+  await captures.whenReleased();
+  expect(own.getShadowMap()).toBeNull();
+  expect(managedRenderReservations(engine)).toMatchObject({ shadowBytes: 0, resourceBytes: 0, pendingBytes: 0 });
 });
 
 it("releases a Full Quality view's graph, output and ledger charge on disable, removal and scene close", async () => {

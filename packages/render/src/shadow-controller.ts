@@ -49,7 +49,12 @@ import {
   resolveDirectionalShadowBias,
   type DirectionalShadowBiasInput,
 } from "./shadow-bias";
-import { configureDirectionalShadowProjection } from "./directional-shadow-projection";
+import { configureDirectionalShadowProjection, trackDirectionalShadowFit } from "./directional-shadow-projection";
+import {
+  beginManagedRenderAllocation,
+  releaseManagedRenderLeaseAfterDisposal,
+  type ManagedRenderLease,
+} from "./managed-render-resources";
 import { readEngineDrawCalls } from "./draw-calls";
 import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
 import { beginEngineAllocationCheckpoint } from "./allocation-checkpoint";
@@ -102,6 +107,28 @@ type Entry = {
   admittedAt: number;
   distanceSquared: number;
   effectiveBias: EffectiveShadowBias[];
+};
+/**
+ * A view's own sun map (a Full Quality Render Target Capture's): the scene
+ * map's kind, size, cascades and settings, keyed to the view's camera and
+ * fitted to it as a scene view there would fit it. `mirrors` is the scene map
+ * it was built from; a replaced scene map replaces it.
+ */
+type ViewMap = { generator: ShadowGenerator; mirrors: ShadowGenerator; lease: ManagedRenderLease };
+type View = {
+  camera: Camera;
+  /** Live claims; the maps go with the last. */
+  claims: number;
+  maps: Map<Light, ViewMap>;
+  /** Scene maps whose mirror the ledger refused at every size; retried when the scene map changes. */
+  refused: Map<Light, ShadowGenerator>;
+  /** Ledger releases of disposed maps, pending the WebGPU end-of-frame drain. */
+  pending: Set<Promise<void>>;
+};
+/** A view's claim on its own sun maps. */
+export type ViewShadows = {
+  /** Disposes the view's maps; settles once their ledger charge is released. Idempotent. */
+  release(): Promise<void>;
 };
 // Minimum residency bounds camera-driven map churn; priority/camera switches
 // and loss of eligibility still take effect immediately.
@@ -275,7 +302,11 @@ export class SceneShadowController {
   private readonly spatial = new ShadowSpatialIndex();
   private selectionCamera: Camera | null = null;
   /** Per-map closures read their current owner; a local map can move between lights. */
-  private readonly slots = new WeakMap<ShadowGenerator, { entry: Entry; guard: boolean }>();
+  private readonly slots = new WeakMap<ShadowGenerator, { entry: Entry; guard: boolean; view: boolean }>();
+  /** Views with their own sun maps, by camera. */
+  private readonly views = new Map<Camera, View>();
+  /** Effective settings of the last sync, which views mirror. */
+  private viewSettings: ShadowSettings | null = null;
   private readonly refresh = new ShadowMapRefresh((mesh) =>
     this.spatial.invalidate(mesh),
   );
@@ -328,8 +359,7 @@ export class SceneShadowController {
       // Only casters own a spatial leaf or generator render-list membership.
       if (!this.meshes.delete(mesh)) return;
       this.spatial.remove(mesh);
-      for (const entry of this.entries.values())
-        entry.generator?.removeShadowCaster(mesh, false);
+      this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
     });
     scene.onBeforeRenderObservable.add(() => {
       this.drawCalls = 0;
@@ -354,6 +384,8 @@ export class SceneShadowController {
     });
     scene.onDisposeObservable.addOnce(() => {
       engine.onContextRestoredObservable.remove(restored);
+      // Their owners still await the ledger releases through their own claims.
+      for (const view of [...this.views.values()]) void this.releaseView(view).catch(() => {});
       for (const entry of this.entries.values()) entry.generator?.dispose();
       this.entries.clear();
       this.meshes.clear();
@@ -395,6 +427,10 @@ export class SceneShadowController {
       light.onDisposeObservable.addOnce(() => {
         this.entries.get(light)?.generator?.dispose();
         this.entries.delete(light);
+        for (const view of this.views.values()) {
+          this.dropViewMap(view, light);
+          view.refused.delete(light);
+        }
         markSceneReadinessDirty(this.scene);
       });
     }
@@ -428,6 +464,39 @@ export class SceneShadowController {
   boundGenerator(light: Light): ShadowGenerator | null {
     return this.entries.get(light)?.generator ?? null;
   }
+  /**
+   * Gives `camera` (a Full Quality capture's) its own sun maps: each admitted
+   * sun map is mirrored with the same kind, size, cascades and settings, keyed
+   * to the camera, so materials drawn for it bind a map fitted to it as a scene
+   * view there would fit one. Point and spot maps do not depend on the view and
+   * stay shared. The maps follow every sync until the claim is released; each
+   * reserves in the shared rendering ledger and redraws in every pass the view draws.
+   */
+  attachView(camera: Camera): ViewShadows {
+    if (this.scene.isDisposed) return { release: () => Promise.resolve() };
+    let view = this.views.get(camera);
+    if (view) view.claims++;
+    else {
+      view = { camera, claims: 1, maps: new Map(), refused: new Map(), pending: new Set() };
+      this.views.set(camera, view);
+      this.syncView(view, () => this.spatial.bounds());
+    }
+    const claimed = view;
+    let released: Promise<void> | undefined;
+    return {
+      release: () => (released ??= --claimed.claims > 0
+        ? Promise.resolve()
+        : this.releaseView(claimed)),
+    };
+  }
+  /**
+   * The map a pass drawn for `camera` binds for `light`: the view's own sun
+   * map (null when it has none), or the shared point or spot map.
+   */
+  viewBoundGenerator(light: Light, camera: Camera): ShadowGenerator | null {
+    if (light instanceof DirectionalLight) return this.views.get(camera)?.maps.get(light)?.generator ?? null;
+    return this.boundGenerator(light);
+  }
   /** Last completed map pass, bounded to the admitted faces/cascades. */
   effectiveBias(light: Light): readonly EffectiveShadowBias[] {
     return this.entries.get(light)?.effectiveBias ?? [];
@@ -455,6 +524,14 @@ export class SceneShadowController {
         fitLocalShadowDepth(entry.generator.getLight(), this.scene.activeCamera);
         this.refresh.apply(entry.generator);
       }
+    // A view's maps draw later in this frame, from its own pass; they redraw every time.
+    for (const view of this.views.values())
+      for (const { generator } of view.maps.values())
+        if (generator instanceof CascadedShadowGenerator) {
+          casterBounds ??= this.spatial.bounds();
+          if (casterBounds)
+            generator.shadowCastersBoundingInfo.reConstruct(casterBounds.min, casterBounds.max);
+        }
   }
   status(light: Light): ShadowLightStatus | undefined {
     return this.entries.get(light)?.status;
@@ -530,8 +607,7 @@ export class SceneShadowController {
       if (mesh.isBlocked) {
         if (this.meshes.delete(mesh)) {
           this.spatial.remove(mesh);
-          for (const entry of this.entries.values())
-            entry.generator?.removeShadowCaster(mesh, false);
+          this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
         }
         continue;
       }
@@ -539,8 +615,7 @@ export class SceneShadowController {
         mesh.receiveShadows = false;
         if (this.meshes.delete(mesh)) {
           this.spatial.remove(mesh);
-          for (const entry of this.entries.values())
-            entry.generator?.removeShadowCaster(mesh, false);
+          this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
         }
         continue;
       }
@@ -549,16 +624,14 @@ export class SceneShadowController {
       if (participation.castShadows === false || neverCastsShadows(mesh)) {
         if (this.meshes.delete(mesh)) {
           this.spatial.remove(mesh);
-          for (const entry of this.entries.values())
-            entry.generator?.removeShadowCaster(mesh, false);
+          this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
         }
         continue;
       }
       this.meshes.add(mesh);
       this.spatial.add(mesh);
       partitionShadowGeometry(mesh);
-      for (const entry of this.entries.values())
-        entry.generator?.addShadowCaster(mesh, false);
+      this.forEachGenerator((generator) => generator.addShadowCaster(mesh, false));
     }
     this.pending.clear();
     // Caster participation and receiveShadows changed material defines or map
@@ -953,198 +1026,7 @@ export class SceneShadowController {
       while (mapSize >= 256) {
         const cleanup = shadowAllocationCheckpoint(scene);
         try {
-          const validateAllocation = beginShadowAllocationValidation(
-            scene.getEngine(),
-          );
-          const generator =
-            directionalLight && settings.cascades > 1
-              ? new CascadedShadowGenerator(
-                  mapSize,
-                  entry.light as DirectionalLight,
-                )
-              : directionalLight
-                ? new ShadowGenerator(mapSize, entry.light)
-                : new ReusableShadowGenerator(mapSize, entry.light as LocalShadowLight);
-          const slot = { entry, guard: false };
-          this.slots.set(generator, slot);
-          if (generator instanceof CascadedShadowGenerator) {
-            generator.numCascades = settings.cascades;
-            generator.stabilizeCascades = true;
-            generator.lambda = 0.7;
-            generator.shadowMaxZ = settings.distance;
-            generator.cascadeBlendPercentage = 0.05;
-            generator.autoCalcDepthBounds = false;
-            generator.depthClamp = true;
-            generator.freezeShadowCastersBoundingInfo = true;
-            if (casterBounds)
-              generator.shadowCastersBoundingInfo.reConstruct(
-                casterBounds.min,
-                casterBounds.max,
-              );
-          } else if (entry.light instanceof DirectionalLight) {
-            configureDirectionalShadowProjection(
-              entry.light,
-              scene,
-              settings.distance,
-              mapSize,
-              this.spatial,
-            );
-          }
-          this.applySettings(generator, settings);
-          const prepare = generator.prepareDefines.bind(generator);
-          generator.prepareDefines = (defines, lightIndex) => {
-            prepare(defines, lightIndex);
-            defines[`SLATE_SHADOW_AUTO${lightIndex}`] =
-              directionalLight && slot.entry.settings!.autoBias && generator.usePercentageCloserFiltering;
-            if (generator instanceof CascadedShadowGenerator)
-              defines[`SLATE_SHADOW_FADE${lightIndex}`] = slot.entry.settings!.fadeFraction;
-            defines.rebuild();
-          };
-          validateAllocation(generator);
-          const map = generator.getShadowMap();
-          // The new map's list is empty and the casters are unique, so skip
-          // addShadowCaster's per-mesh indexOf scan. The constructor has already
-          // light-dirtied every mesh that can bind this light's shadow defines.
-          if (map) map.renderList = Array.from(this.meshes);
-          let drawsBefore = 0;
-          let indicesBefore = 0;
-          map?.onBeforeBindObservable.add(() => {
-            drawsBefore = readEngineDrawCalls(scene.getEngine());
-            indicesBefore = scene.getActiveIndices();
-          });
-          map?.onAfterUnbindObservable.add(() => {
-            this.drawCalls += Math.max(
-              0,
-              readEngineDrawCalls(scene.getEngine()) - drawsBefore,
-            );
-            this.triangles +=
-              Math.max(0, scene.getActiveIndices() - indicesBefore) / 3;
-          });
-          if (generator instanceof CascadedShadowGenerator)
-            map?.onBeforeBindObservable.add(
-              () => generator.splitFrustum(),
-              -1,
-              true,
-            );
-          // Registered after Babylon 9.29's native observer: single-map view /
-          // projection and the CSM layer are current, caster uniforms are not
-          // bound yet. Never derive from the previous frame in applySettings.
-          let preparedBias: EffectiveShadowBias | null = null;
-          let clearedForDraw = false;
-          // The resolver reads its input synchronously; each map reuses one.
-          const biasInput: DirectionalShadowBiasInput = {
-            width: 0, height: 0, depth: 0, mapWidth: 0, mapHeight: 0, filter: "none", filterQuality: "low",
-            poissonRadiusTexels: 0, depthClamp: false, authoredDepthBias: 0, authoredNormalBias: 0,
-          };
-          map?.onBeforeRenderObservable.add((layer) => {
-            clearedForDraw = false;
-            const settings = slot.entry.settings!;
-            const automatic = settings.autoBias && directionalLight;
-            const projection = generator instanceof CascadedShadowGenerator
-              ? generator.getCascadeProjectionMatrix(layer)
-              : generator.projectionMatrix;
-            const size = map.getSize();
-            const matrix = projection?.m;
-            biasInput.width = automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[0]) : 0;
-            biasInput.height = automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[5]) : 0;
-            biasInput.depth = matrix ? Math.abs((scene.getEngine().isNDCHalfZRange ? 1 : 2) / matrix[10]) : 0;
-            biasInput.mapWidth = size.width;
-            biasInput.mapHeight = size.height;
-            biasInput.filter = generator.usePercentageCloserFiltering ? "pcf"
-              : generator.useContactHardeningShadow ? "pcss"
-                : generator.usePoissonSampling ? "poisson" : "none";
-            biasInput.filterQuality = generator.filteringQuality === ShadowGenerator.QUALITY_HIGH ? "high"
-              : generator.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? "medium" : "low";
-            biasInput.poissonRadiusTexels = generator.blurScale;
-            biasInput.depthClamp = generator instanceof CascadedShadowGenerator && generator.depthClamp;
-            biasInput.authoredDepthBias = settings.depthBias;
-            biasInput.authoredNormalBias = settings.normalBias;
-            const effective = resolveDirectionalShadowBias(biasInput);
-            generator.bias = effective.bias;
-            generator.normalBias = effective.normalBias;
-            const record = preparedBias ??= {
-              layer, cameraId: null, renderId: -1, depthBias: 0, normalBias: 0, worldTexelSize: 0, depthScale: 0,
-              mode: "manual",
-            };
-            record.layer = layer;
-            record.depthBias = effective.bias;
-            record.cameraId = (generator.camera ?? scene.activeCamera)?.id ?? null;
-            record.renderId = scene.getRenderId();
-            record.normalBias = effective.normalBias;
-            record.worldTexelSize = effective.worldTexelSize;
-            record.depthScale = effective.depthScale;
-            record.mode = !settings.autoBias ? "manual" : automatic ? "directional-auto" : "local-authored";
-          });
-          // Native readiness probes emit before/after-render without drawing.
-          // Only actual RTT passes (including empty maps and snapshot rendering)
-          // emit clear before their successful after-render notification. Keep
-          // prepared values private until that pass has finished, so evidence
-          // cannot relabel a cached map after another camera's readiness probe.
-          map?.onClearObservable.add(() => { clearedForDraw = true; });
-          map?.onAfterRenderObservable.add((face) => {
-            if (!clearedForDraw) return;
-            clearedForDraw = false;
-            // A moved or resumed map samples neutrally until its last face is redrawn.
-            if (slot.guard && face === (map.isCube ? 5 : 0)) {
-              slot.guard = false;
-              if (!slot.entry.standby) generator.setDarkness(0);
-            }
-            if (!preparedBias) return;
-            const record = slot.entry.effectiveBias[preparedBias.layer] ??= { ...preparedBias };
-            Object.assign(record, preparedBias);
-            record.depthBias = generator.bias;
-            record.normalBias = generator.normalBias;
-          });
-          let activePlanes: Plane[] | null = null;
-          // Babylon consumes each custom list synchronously, so every map reuses
-          // its planes and caster list; upstream views the same side/far planes.
-          const planes = Array.from({ length: 6 }, () => new Plane(0, 0, 0, 0));
-          const upstream = planes.slice(1);
-          const casters: AbstractMesh[] = [];
-          if (map)
-            map.getCustomRenderList = (layer) => {
-              const transform =
-                generator instanceof CascadedShadowGenerator
-                  ? generator.getCascadeTransformMatrix(layer)
-                  : generator.getTransformMatrix();
-              if (!transform) return null;
-              Frustum.GetPlanesToRef(transform, planes);
-              activePlanes =
-                directionalLight && slot.entry.settings!.filter === "pcf"
-                  ? upstream
-                  : planes;
-              this.spatial.queryPlanes(activePlanes, casters);
-              // The index never plane-culls deforming casters. A local map ends
-              // at its light's range, so anything that cannot reach it draws nothing.
-              const light = generator.getLight();
-              if (!directionalLight && "range" in light && Number.isFinite(light.range)) {
-                const position = (light as LocalShadowLight).getAbsolutePosition();
-                let kept = 0;
-                for (const mesh of casters)
-                  if (casterWithinShadowRange(mesh, position, light.range)) casters[kept++] = mesh;
-                casters.length = kept;
-              }
-              return casters;
-            };
-          generator.customAllowRendering = (part) => {
-            if (hasDeformingShadowBounds(part.getMesh())) return true;
-            if (!activePlanes || part.getMesh().subMeshes.length < 2)
-              return true;
-            const box = part.getBoundingInfo()?.boundingBox;
-            if (!box) return true;
-            for (const plane of activePlanes) {
-              const n = plane.normal;
-              if (
-                n.x * (n.x >= 0 ? box.maximumWorld.x : box.minimumWorld.x) +
-                  n.y * (n.y >= 0 ? box.maximumWorld.y : box.minimumWorld.y) +
-                  n.z * (n.z >= 0 ? box.maximumWorld.z : box.minimumWorld.z) +
-                  plane.d <
-                0
-              )
-                return false;
-            }
-            return true;
-          };
+          const generator = this.createGenerator(entry, mapSize, settings, null, casterBounds);
           entry.generator = generator;
           markSceneReadinessDirty(scene);
           invalidateShadowReceiverHandoffs(scene);
@@ -1218,6 +1100,340 @@ export class SceneShadowController {
         // Without a walk this sync, apply() would compare stale caster state.
         if (castersCurrent) this.refresh.apply(entry.generator);
       }
+    // Views mirror the maps admitted above, after their releases and replacements.
+    this.viewSettings = settings;
+    if (this.views.size) {
+      const bounds = () => {
+        currentCasters();
+        return casterBounds;
+      };
+      for (const view of this.views.values()) this.syncView(view, bounds);
+    }
+  }
+  /**
+   * Constructs one admitted map with every hook the controller relies on:
+   * receiver defines, automatic bias, culled caster lists and draw counters.
+   * `view` keys a sun map to a view's camera (attachView); null is the scene
+   * view's map, which receivers of every other camera bind.
+   */
+  private createGenerator(
+    entry: Entry,
+    mapSize: number,
+    settings: ShadowSettings,
+    view: Camera | null,
+    casterBounds: ReturnType<ShadowSpatialIndex["bounds"]> | undefined,
+  ): ShadowGenerator {
+    const scene = this.scene;
+    const directionalLight = entry.light instanceof DirectionalLight;
+    const validateAllocation = beginShadowAllocationValidation(
+      scene.getEngine(),
+    );
+    // A view's map is keyed to its camera; the scene view's to the null camera.
+    const camera = view ?? undefined;
+    const generator =
+      directionalLight && settings.cascades > 1
+        ? new CascadedShadowGenerator(
+            mapSize,
+            entry.light as DirectionalLight,
+            undefined,
+            camera,
+          )
+        : directionalLight
+          ? new ShadowGenerator(mapSize, entry.light, undefined, camera)
+          : new ReusableShadowGenerator(mapSize, entry.light as LocalShadowLight);
+    const slot = { entry, guard: false, view: view !== null };
+    this.slots.set(generator, slot);
+    if (generator instanceof CascadedShadowGenerator) {
+      generator.numCascades = settings.cascades;
+      generator.stabilizeCascades = true;
+      generator.lambda = 0.7;
+      generator.shadowMaxZ = settings.distance;
+      generator.cascadeBlendPercentage = 0.05;
+      generator.autoCalcDepthBounds = false;
+      generator.depthClamp = true;
+      generator.freezeShadowCastersBoundingInfo = true;
+      if (casterBounds)
+        generator.shadowCastersBoundingInfo.reConstruct(
+          casterBounds.min,
+          casterBounds.max,
+        );
+    } else if (entry.light instanceof DirectionalLight) {
+      // The light's one builder fits each of its generators to its own camera.
+      if (!view)
+        configureDirectionalShadowProjection(
+          entry.light,
+          scene,
+          settings.distance,
+          mapSize,
+          this.spatial,
+        );
+      trackDirectionalShadowFit(generator);
+    }
+    this.applySettings(generator, settings);
+    const prepare = generator.prepareDefines.bind(generator);
+    generator.prepareDefines = (defines, lightIndex) => {
+      prepare(defines, lightIndex);
+      defines[`SLATE_SHADOW_AUTO${lightIndex}`] =
+        directionalLight && slot.entry.settings!.autoBias && generator.usePercentageCloserFiltering;
+      if (generator instanceof CascadedShadowGenerator)
+        defines[`SLATE_SHADOW_FADE${lightIndex}`] = slot.entry.settings!.fadeFraction;
+      defines.rebuild();
+    };
+    validateAllocation(generator);
+    const map = generator.getShadowMap();
+    // The new map's list is empty and the casters are unique, so skip
+    // addShadowCaster's per-mesh indexOf scan. The constructor has already
+    // light-dirtied every mesh that can bind this light's shadow defines.
+    if (map) map.renderList = Array.from(this.meshes);
+    let drawsBefore = 0;
+    let indicesBefore = 0;
+    map?.onBeforeBindObservable.add(() => {
+      drawsBefore = readEngineDrawCalls(scene.getEngine());
+      indicesBefore = scene.getActiveIndices();
+    });
+    map?.onAfterUnbindObservable.add(() => {
+      this.drawCalls += Math.max(
+        0,
+        readEngineDrawCalls(scene.getEngine()) - drawsBefore,
+      );
+      this.triangles +=
+        Math.max(0, scene.getActiveIndices() - indicesBefore) / 3;
+    });
+    if (generator instanceof CascadedShadowGenerator)
+      map?.onBeforeBindObservable.add(
+        () => generator.splitFrustum(),
+        -1,
+        true,
+      );
+    // Registered after Babylon 9.29's native observer: single-map view /
+    // projection and the CSM layer are current, caster uniforms are not
+    // bound yet. Never derive from the previous frame in applySettings.
+    let preparedBias: EffectiveShadowBias | null = null;
+    let clearedForDraw = false;
+    // The resolver reads its input synchronously; each map reuses one.
+    const biasInput: DirectionalShadowBiasInput = {
+      width: 0, height: 0, depth: 0, mapWidth: 0, mapHeight: 0, filter: "none", filterQuality: "low",
+      poissonRadiusTexels: 0, depthClamp: false, authoredDepthBias: 0, authoredNormalBias: 0,
+    };
+    map?.onBeforeRenderObservable.add((layer) => {
+      clearedForDraw = false;
+      const settings = slot.entry.settings!;
+      const automatic = settings.autoBias && directionalLight;
+      const projection = generator instanceof CascadedShadowGenerator
+        ? generator.getCascadeProjectionMatrix(layer)
+        : generator.projectionMatrix;
+      const size = map.getSize();
+      const matrix = projection?.m;
+      biasInput.width = automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[0]) : 0;
+      biasInput.height = automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[5]) : 0;
+      biasInput.depth = matrix ? Math.abs((scene.getEngine().isNDCHalfZRange ? 1 : 2) / matrix[10]) : 0;
+      biasInput.mapWidth = size.width;
+      biasInput.mapHeight = size.height;
+      biasInput.filter = generator.usePercentageCloserFiltering ? "pcf"
+        : generator.useContactHardeningShadow ? "pcss"
+          : generator.usePoissonSampling ? "poisson" : "none";
+      biasInput.filterQuality = generator.filteringQuality === ShadowGenerator.QUALITY_HIGH ? "high"
+        : generator.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? "medium" : "low";
+      biasInput.poissonRadiusTexels = generator.blurScale;
+      biasInput.depthClamp = generator instanceof CascadedShadowGenerator && generator.depthClamp;
+      biasInput.authoredDepthBias = settings.depthBias;
+      biasInput.authoredNormalBias = settings.normalBias;
+      const effective = resolveDirectionalShadowBias(biasInput);
+      generator.bias = effective.bias;
+      generator.normalBias = effective.normalBias;
+      const record = preparedBias ??= {
+        layer, cameraId: null, renderId: -1, depthBias: 0, normalBias: 0, worldTexelSize: 0, depthScale: 0,
+        mode: "manual",
+      };
+      record.layer = layer;
+      record.depthBias = effective.bias;
+      record.cameraId = (generator.camera ?? scene.activeCamera)?.id ?? null;
+      record.renderId = scene.getRenderId();
+      record.normalBias = effective.normalBias;
+      record.worldTexelSize = effective.worldTexelSize;
+      record.depthScale = effective.depthScale;
+      record.mode = !settings.autoBias ? "manual" : automatic ? "directional-auto" : "local-authored";
+    });
+    // Native readiness probes emit before/after-render without drawing.
+    // Only actual RTT passes (including empty maps and snapshot rendering)
+    // emit clear before their successful after-render notification. Keep
+    // prepared values private until that pass has finished, so evidence
+    // cannot relabel a cached map after another camera's readiness probe.
+    map?.onClearObservable.add(() => { clearedForDraw = true; });
+    map?.onAfterRenderObservable.add((face) => {
+      if (!clearedForDraw) return;
+      clearedForDraw = false;
+      // A moved or resumed map samples neutrally until its last face is redrawn.
+      if (slot.guard && face === (map.isCube ? 5 : 0)) {
+        slot.guard = false;
+        if (!slot.entry.standby) generator.setDarkness(0);
+      }
+      // Effective bias reports the scene view's maps.
+      if (!preparedBias || slot.view) return;
+      const record = slot.entry.effectiveBias[preparedBias.layer] ??= { ...preparedBias };
+      Object.assign(record, preparedBias);
+      record.depthBias = generator.bias;
+      record.normalBias = generator.normalBias;
+    });
+    let activePlanes: Plane[] | null = null;
+    // Babylon consumes each custom list synchronously, so every map reuses
+    // its planes and caster list; upstream views the same side/far planes.
+    const planes = Array.from({ length: 6 }, () => new Plane(0, 0, 0, 0));
+    const upstream = planes.slice(1);
+    const casters: AbstractMesh[] = [];
+    if (map)
+      map.getCustomRenderList = (layer) => {
+        const transform =
+          generator instanceof CascadedShadowGenerator
+            ? generator.getCascadeTransformMatrix(layer)
+            : generator.getTransformMatrix();
+        if (!transform) return null;
+        Frustum.GetPlanesToRef(transform, planes);
+        activePlanes =
+          directionalLight && slot.entry.settings!.filter === "pcf"
+            ? upstream
+            : planes;
+        this.spatial.queryPlanes(activePlanes, casters);
+        // The index never plane-culls deforming casters. A local map ends
+        // at its light's range, so anything that cannot reach it draws nothing.
+        const light = generator.getLight();
+        if (!directionalLight && "range" in light && Number.isFinite(light.range)) {
+          const position = (light as LocalShadowLight).getAbsolutePosition();
+          let kept = 0;
+          for (const mesh of casters)
+            if (casterWithinShadowRange(mesh, position, light.range)) casters[kept++] = mesh;
+          casters.length = kept;
+        }
+        return casters;
+      };
+    generator.customAllowRendering = (part) => {
+      if (hasDeformingShadowBounds(part.getMesh())) return true;
+      if (!activePlanes || part.getMesh().subMeshes.length < 2)
+        return true;
+      const box = part.getBoundingInfo()?.boundingBox;
+      if (!box) return true;
+      for (const plane of activePlanes) {
+        const n = plane.normal;
+        if (
+          n.x * (n.x >= 0 ? box.maximumWorld.x : box.minimumWorld.x) +
+            n.y * (n.y >= 0 ? box.maximumWorld.y : box.minimumWorld.y) +
+            n.z * (n.z >= 0 ? box.maximumWorld.z : box.minimumWorld.z) +
+            plane.d <
+          0
+        )
+          return false;
+      }
+      return true;
+    };
+    return generator;
+  }
+  /** Every allocated map: the scene view's (admitted or standby) and every view's own. */
+  private forEachGenerator(action: (generator: ShadowGenerator) => void): void {
+    for (const entry of this.entries.values()) if (entry.generator) action(entry.generator);
+    for (const view of this.views.values()) for (const map of view.maps.values()) action(map.generator);
+  }
+  /**
+   * Mirrors every admitted sun map for `view` and drops mirrors of replaced or
+   * released maps. Settings that keep the allocation apply in place, as they do
+   * to the scene map. Point and spot maps stay shared.
+   */
+  private syncView(
+    view: View,
+    casterBounds: () => ReturnType<ShadowSpatialIndex["bounds"]> | undefined,
+  ): void {
+    const settings = this.viewSettings;
+    for (const [light, map] of view.maps) {
+      const entry = this.entries.get(light);
+      if (!settings || entry?.status !== "active" || entry.standby || entry.generator !== map.mirrors)
+        this.dropViewMap(view, light);
+    }
+    for (const [light, refused] of view.refused)
+      if (this.entries.get(light)?.generator !== refused) view.refused.delete(light);
+    if (!settings) return;
+    for (const entry of this.entries.values()) {
+      const source = entry.generator;
+      if (!(entry.light instanceof DirectionalLight) || entry.status !== "active" || !source || entry.standby)
+        continue;
+      const existing = view.maps.get(entry.light);
+      if (existing) {
+        this.applySettings(existing.generator, settings);
+        // Babylon checks the distance against the view's own clip range, as a camera there would.
+        if (existing.generator instanceof CascadedShadowGenerator) existing.generator.shadowMaxZ = settings.distance;
+        continue;
+      }
+      if (view.refused.get(entry.light) !== source) this.createViewMap(view, entry, source, settings, casterBounds());
+    }
+  }
+  /**
+   * The scene map's allocation for the view's camera, reserved in the shared
+   * rendering ledger first. A refused reservation halves the map like admission
+   * does; refused at every size, the view draws its sun unshadowed and retries
+   * once the scene map changes.
+   */
+  private createViewMap(
+    view: View,
+    entry: Entry,
+    source: ShadowGenerator,
+    settings: ShadowSettings,
+    casterBounds: ReturnType<ShadowSpatialIndex["bounds"]> | undefined,
+  ): void {
+    const scene = this.scene;
+    const engine = scene.getEngine();
+    const cascaded = source instanceof CascadedShadowGenerator;
+    // Mirror the scene map's kind even if the settings moved on since it was built.
+    if (cascaded !== settings.cascades > 1) return;
+    const layers = cascaded ? source.numCascades : 1;
+    const bytesPerTexel = shadowBytesPerTexel(engine);
+    for (let mapSize = entry.mapSize; mapSize >= 256; mapSize /= 2) {
+      // CSM constructs four layers before applying the authored count.
+      const lease = beginManagedRenderAllocation(engine, (cascaded ? 4 : layers) * mapSize ** 2 * bytesPerTexel);
+      if (!lease) continue;
+      const cleanup = shadowAllocationCheckpoint(scene);
+      try {
+        const generator = this.createGenerator(entry, mapSize, settings, view.camera, casterBounds);
+        lease.commit([{ handle: generator.getShadowMap()!, bytes: layers * mapSize ** 2 * bytesPerTexel, category: "shadow" }]);
+        view.maps.set(entry.light, { generator, mirrors: source, lease });
+        return;
+      } catch (error) {
+        const failures: unknown[] = [error];
+        try {
+          cleanup(entry.light.getShadowGenerator(view.camera));
+        } catch (cleanupError) {
+          failures.push(cleanupError);
+        }
+        // Uncertain cleanup keeps the reservation.
+        if (failures.length > 1)
+          throw new AggregateError(failures, "View shadow allocation and resource cleanup failed", { cause: error });
+        this.trackViewRelease(view, releaseManagedRenderLeaseAfterDisposal(engine, lease));
+      }
+    }
+    view.refused.set(entry.light, source);
+    console.warn(`[render] A Full Quality capture draws "${entry.light.name}" without shadows: its own shadow map does not fit the shared rendering budget.`);
+  }
+  /** Disposes a view's map; its ledger charge goes after the WebGPU destruction drain. */
+  private dropViewMap(view: View, light: Light): void {
+    const map = view.maps.get(light);
+    if (!map) return;
+    view.maps.delete(light);
+    try {
+      map.generator.dispose();
+    } catch (error) {
+      // Uncertain cleanup keeps the reservation.
+      this.trackViewRelease(view, Promise.reject(error instanceof Error ? error : new Error(String(error))));
+      return;
+    }
+    this.trackViewRelease(view, releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), map.lease));
+  }
+  private trackViewRelease(view: View, release: Promise<void>): void {
+    view.pending.add(release);
+    // A failed release stays pending, so the claim's release reports it.
+    void release.then(() => view.pending.delete(release), () => {});
+  }
+  private releaseView(view: View): Promise<void> {
+    if (this.views.get(view.camera) === view) this.views.delete(view.camera);
+    for (const light of [...view.maps.keys()]) this.dropViewMap(view, light);
+    view.refused.clear();
+    return Promise.all([...view.pending]).then(() => {});
   }
   /** Caster state only drives allocated maps (admitted or standby) and their spatial queries. */
   private holdsGenerator(): boolean {

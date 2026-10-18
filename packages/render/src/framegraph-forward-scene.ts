@@ -54,10 +54,11 @@ export type ForwardSceneFrameGraphOptions = {
    * An auxiliary view (a Full Quality Render Target Capture) drawn inside the
    * scene's own view frame. It executes its graph without Scene.render, so no
    * animation, particle step or render observer runs twice; it never admits
-   * lights or shadows (the scene's view does, for its camera); it draws only
-   * `objects`, the owner's candidate list; and it draws the scene into its own
-   * targets, writing the camera's output only in a final copy, so a material
-   * in view may sample that output without a feedback loop.
+   * lights or shadows (the scene's view does, for its camera), but draws its
+   * own sun maps fitted to its camera (SceneShadowController.attachView); it
+   * draws only `objects`, the owner's candidate list; and it draws the scene
+   * into its own targets, writing the camera's output (colour only) in a final
+   * copy, so a material in view may sample that output without a feedback loop.
    */
   auxiliary?: { objects: FrameGraphObjectList };
 };
@@ -677,10 +678,6 @@ export class ForwardSceneFrameGraph {
         const execute = () => graph.execute();
         if (capture) capture.frameGraph(this.scene, graph, this.work.graphBuilds, execute);
         else execute();
-        // WebGPU writes texture uploads on the queue ahead of the frame's
-        // commands. The cluster light data is sorted per camera: submit this
-        // view's draws before the scene view uploads its own.
-        if (engine.isWebGPU && this.clustered?.drawsMask) engine.flushFramebuffer();
       } else {
         this.scene.frameGraph = graph;
         this.scene.activeCamera = camera;
@@ -772,12 +769,14 @@ export class ForwardSceneFrameGraph {
     if (scene.getEngine()._currentRenderTarget)
       return "A caller-bound render target is not supported.";
     const target = camera.outputRenderTarget;
+    // An auxiliary view draws into its own scene targets and copies colour
+    // only, so its output needs no depth attachment.
     if (
       target &&
       (target.isCube ||
         target.is2DArray ||
         target.samples !== 1 ||
-        !target.depthStencilTexture)
+        (!target.depthStencilTexture && !this.auxiliary))
     )
       return "FrameGraph output requires a single-sample 2D color/depth texture.";
     // Post-processing runs as graph tasks attached through attachPostProcess.
@@ -929,6 +928,9 @@ export class ForwardSceneFrameGraph {
           color;
         this.clear.depthTexture = this.postProcessGraph?.depthTexture ?? this.effectsGraph?.depthTexture ??
           this.ownScene?.depth ?? depth;
+        // Every auxiliary path (own targets, an authored or a settings chain) has its own depth.
+        if (this.auxiliary && this.clear.depthTexture === depth)
+          throw new Error("An auxiliary view requires its own scene depth.");
         // The authored clear color is display-space; a Scene Linear scene
         // color holds linear HDR that the Display Color stage encodes once.
         this.clear.convertColorToLinearSpace = effectsPlan?.sceneLinear === true;
@@ -977,7 +979,7 @@ export class ForwardSceneFrameGraph {
         const jitter = this.effectsGraph?.spatial?.jitter;
         jitter?.jitterRenderer(this.objects.objectRenderer);
         if (this.water) jitter?.jitterRenderer(this.water.transparent.objectRenderer);
-        this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects, { borrowOnly: this.auxiliary !== undefined });
+        this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects, { view: this.auxiliary ? camera : undefined });
         for (const receiver of this.water?.shadowReceivers ?? []) this.shadows.addReceiver(receiver);
         this.clustered = new FrameGraphClusteredLightsTask(
           this.graph,

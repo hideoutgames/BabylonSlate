@@ -38,11 +38,6 @@ export class FrameGraphClusteredLightsTask extends FrameGraphTask {
     this.objects = objects;
   }
 
-  /** The recorded graph draws a cluster mask (clustered lighting is active for its camera). */
-  get drawsMask(): boolean {
-    return this.target !== undefined;
-  }
-
   needsPreparation(camera: Camera): boolean {
     const target = clusteredLightTarget(this.scene, camera);
     return (

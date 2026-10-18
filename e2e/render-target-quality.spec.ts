@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
-import type { runRenderTargetQualityCost, runRenderTargetQualityProof } from "../apps/editor/src/testing/render-target-quality-proof";
+import type {
+  runRenderTargetQualityCost, runRenderTargetQualityProof, runRenderTargetShadowProof,
+} from "../apps/editor/src/testing/render-target-quality-proof";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
@@ -8,6 +10,7 @@ if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
 type ProofWindow = {
   __renderTargetQualityProof: typeof runRenderTargetQualityProof;
   __renderTargetQualityCost: typeof runRenderTargetQualityCost;
+  __renderTargetShadowProof: typeof runRenderTargetShadowProof;
 };
 
 for (const backend of ["webgl2", "webgpu"] as const) {
@@ -33,6 +36,32 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(result.fullQuality, label).toBeLessThan(1.5);
       // Fast draws blended water without refraction: visibly different.
       expect(result.fast, label).toBeGreaterThan(Math.max(4, result.fullQuality * 4));
+    }
+  });
+}
+
+for (const backend of ["webgl2", "webgpu"] as const) {
+  test(`a Full Quality capture far from the scene camera shows the sun shadows a camera there sees on ${backend}`, async ({ page }, testInfo) => {
+    test.setTimeout(300_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error" || (message.type() === "warning" &&
+        /shader|GPUValidation|validation error|INVALID_|feedback loop|conflicting usages/i.test(message.text()))) errors.push(message.text());
+    });
+    await page.goto("/?test=1&renderTargetQualityProof=1");
+    await page.waitForFunction(() => "__renderTargetShadowProof" in window);
+    const report = await page.evaluate((backend) => (window as unknown as ProofWindow).__renderTargetShadowProof(backend), backend);
+    await testInfo.attach("render-target-shadows", { body: JSON.stringify(report), contentType: "application/json" });
+    expect(errors).toEqual([]);
+    expect(report.effectiveBackend).toBe(backend);
+    expect(report.mainCameraPreserved).toBe(true);
+    expect(report.retainedBytes).toBe(0);
+    for (const [label, result] of Object.entries(report.cases)) {
+      // Sun shadows are a visible part of the reference image, beyond the scene camera's maps.
+      expect.soft(result.shadowContrast, label).toBeGreaterThan(6);
+      // The capture draws them as a camera at its pose does.
+      expect.soft(result.fullQuality, label).toBeLessThan(1.5);
     }
   });
 }

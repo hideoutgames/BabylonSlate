@@ -1,13 +1,14 @@
 import {
-  Color3, Color4, Engine, FreeCamera, HemisphericLight, Mesh, MeshBuilder, Quaternion, StandardMaterial, Scene, Vector3,
-  type AbstractEngine, type BaseTexture,
+  Color3, Color4, DirectionalLight, Engine, FreeCamera, HemisphericLight, Mesh, MeshBuilder, Quaternion, StandardMaterial, Scene,
+  Vector3, type AbstractEngine, type BaseTexture,
 } from "@babylonjs/core";
 import {
   createDefaultRenderTargetCaptureProperties, createDefaultWaterDefinition, DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality,
-  normalizeWaterBody, type RenderTargetCaptureQuality,
+  normalizeShadowSettings, normalizeWaterBody, type RenderTargetCaptureQuality,
 } from "@babylonslate/core";
 import {
-  configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, RenderTargetCaptures, setSceneWaterTime,
+  applyAuthoredLightProperties, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, RenderTargetCaptures,
+  setSceneWaterTime,
 } from "@babylonslate/render";
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
 import { updateSceneRenderingSettings } from "@babylonslate/render/render-settings";
@@ -168,6 +169,149 @@ export async function runRenderTargetQualityProof(backend: Backend) {
       effectiveBackend: host.engine.isWebGPU ? "webgpu" : "webgl2",
       cases,
       mainCameraPreserved: host.scene.activeCamera?.name === "Main Camera",
+      retainedBytes: await host.dispose(),
+    };
+  } catch (error) {
+    await host.dispose().catch(() => {});
+    throw error;
+  }
+}
+
+/** The capture's pose: over a pillar yard, far from where the scene camera starts. */
+const SHADOW_LENS = { position: new Vector3(0, 7, -14), rotation: Quaternion.FromEulerAngles(0.45, 0.1, 0) };
+/**
+ * Where the scene camera starts: the same heading 200 m south of the lens, so
+ * neither its cascades nor its single sun map (Low: 80 m around the camera)
+ * reach the yard.
+ */
+const SHADOW_FAR_VIEW = new Vector3(0, 7, -214);
+
+/**
+ * A pillar yard on a pale ground under a shadowed sun, rendered by the
+ * production scene view, with one Full Quality capture over the yard.
+ * Numeric primitives only.
+ */
+async function shadowHost(backend: Backend, size: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  document.getElementById("root")!.append(canvas);
+  const engine = backend === "webgpu"
+    ? await createAppWebGpuEngine(canvas)
+    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  engine.setSize(size, size);
+  const scene = new Scene(engine);
+  scene.clearColor = new Color4(0.55, 0.7, 0.9, 1);
+  configureEditorRenderingGroups(scene);
+  const camera = new FreeCamera("Main Camera", SHADOW_FAR_VIEW.clone(), scene);
+  camera.rotationQuaternion = SHADOW_LENS.rotation.clone();
+  camera.fov = 50 * Math.PI / 180;
+  camera.minZ = 0.1;
+  camera.maxZ = 100;
+  scene.activeCamera = camera;
+  new HemisphericLight("Sky", new Vector3(0, 1, 0), scene).intensity = 0.35;
+  // Low and behind the yard, so long shadows fall toward the lens.
+  const sun = new DirectionalLight("Sun", new Vector3(0.35, -0.75, -0.8), scene);
+  applyAuthoredLightProperties(sun, { intensity: 1.4, color: [1, 1, 1], castShadows: true });
+  const ground = MeshBuilder.CreateGround("Ground", { width: 600, height: 600 }, scene);
+  const pale = new StandardMaterial("Pale Ground", scene);
+  pale.diffuseColor = new Color3(0.85, 0.85, 0.8);
+  pale.specularColor = Color3.Black();
+  ground.material = pale;
+  const grey = new StandardMaterial("Grey Pillar", scene);
+  grey.diffuseColor = new Color3(0.6, 0.6, 0.65);
+  grey.specularColor = Color3.Black();
+  for (const [x, z, height] of [[-5, 4, 5], [-2, 7, 6], [1, 3, 4], [4, 6, 6], [7, 2, 5], [-7, 9, 6], [2, 10, 7]] as const) {
+    const pillar = MeshBuilder.CreateBox(`Pillar ${x} ${z}`, { width: 1.2, height, depth: 1.2 }, scene);
+    pillar.material = grey;
+    pillar.position.set(x, height / 2, z);
+  }
+  const view = new SceneRenderCoordinator(scene);
+  const captures = new RenderTargetCaptures(scene);
+  captures.setAssets(new Map([["yard", { mode: "SceneColor", width: size, height: size }]]),
+    new Map([["yardTexture", { renderTargetGuid: "yard" }]]));
+  const lens = new Mesh("Lens", scene);
+  lens.position.copyFrom(SHADOW_LENS.position);
+  lens.rotationQuaternion = SHADOW_LENS.rotation.clone();
+  const configure = (enabled: boolean) => captures.configure("yard", {
+    ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: "yard", quality: "fullQuality", enabled,
+    fieldOfView: 50, nearClip: 0.1, farClip: 100,
+  }, () => lens);
+  const output = captures.acquireTexture("yardTexture")!.resource;
+  const frame = () => {
+    engine.beginFrame();
+    try { return view.render(); } finally { engine.endFrame(); }
+  };
+  const settle = async (ready: () => boolean, label: string) => {
+    const deadline = performance.now() + 60_000;
+    for (;;) {
+      const result = frame();
+      if (result.rendered && result.readyForPresentation && ready()) return;
+      if (performance.now() > deadline) throw new Error(`${label} did not settle: ${JSON.stringify(captures.diagnostics())}`);
+      await new Promise<void>((resolve) => setTimeout(resolve, 16));
+    }
+  };
+  const dispose = async () => {
+    captures.dispose();
+    view.dispose();
+    let settled = false;
+    const released = Promise.all([view.whenReleased(), captures.whenReleased()]).finally(() => { settled = true; });
+    while (!settled) {
+      engine.beginFrame();
+      engine.endFrame();
+      await new Promise<void>((resolve) => setTimeout(resolve, 16));
+    }
+    await released;
+    // The scene view's own shadow maps are charged until the scene goes.
+    scene.dispose();
+    const retainedBytes = managedRenderReservations(engine).reservedBytes;
+    engine.dispose();
+    canvas.remove();
+    return retainedBytes;
+  };
+  return { engine, scene, camera, sun, view, captures, output, configure, frame, settle, dispose };
+}
+
+/**
+ * A Full Quality capture over a pillar yard far from the scene camera, against
+ * the scene view's own image after its camera moves to the capture's pose and
+ * lens: the sun shadows in view must be the ones that view draws. Cascaded and
+ * single-map (Low) sun shadows. `shadowContrast` is how much the reference
+ * changes without sun shadows, so a match cannot come from shadows missing in both.
+ */
+export async function runRenderTargetShadowProof(backend: Backend) {
+  const size = 96;
+  const host = await shadowHost(backend, size);
+  try {
+    const cases: Record<string, { fullQuality: number; shadowContrast: number }> = {};
+    const shadowSettings = [
+      ["cascaded", normalizeShadowSettings({ cascades: 2, distance: 50, mapSize: 1024 })],
+      ["low", normalizeShadowSettings({ profile: "low" })],
+    ] as const;
+    for (const [label, shadows] of shadowSettings) {
+      updateSceneRenderingSettings(host.scene, { shadows });
+      host.camera.position.copyFrom(SHADOW_FAR_VIEW);
+      // A fresh capture, so it publishes only images drawn with this case's settings.
+      host.configure(false);
+      host.configure(true);
+      await host.settle(() => host.captures.diagnostics().every((entry) => entry.published), `${label} capture`);
+      host.frame(); host.frame();
+      const capture = await readCapture(host.output, size);
+      host.configure(false);
+      host.camera.position.copyFrom(SHADOW_LENS.position);
+      await host.settle(() => true, `${label} view at the capture pose`);
+      host.frame(); host.frame();
+      const reference = await readView(host.engine, backend, size);
+      applyAuthoredLightProperties(host.sun, { intensity: 1.4, color: [1, 1, 1], castShadows: false });
+      await host.settle(() => true, `${label} view without sun shadows`);
+      host.frame(); host.frame();
+      const unshadowed = await readView(host.engine, backend, size);
+      applyAuthoredLightProperties(host.sun, { intensity: 1.4, color: [1, 1, 1], castShadows: true });
+      cases[label] = { fullQuality: meanError(reference, capture), shadowContrast: meanError(reference, unshadowed) };
+    }
+    return {
+      effectiveBackend: host.engine.isWebGPU ? "webgpu" : "webgl2",
+      cases,
+      mainCameraPreserved: host.scene.activeCamera === host.camera,
       retainedBytes: await host.dispose(),
     };
   } catch (error) {
