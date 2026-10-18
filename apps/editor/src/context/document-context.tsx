@@ -701,11 +701,12 @@ export type ActiveDocumentState = Pick<
   | "canRedoActiveDocument"
 >;
 /**
- * `useSaveState()`: unsaved work and Auto-Save. `dirtyDocuments` keeps its
- * identity while the same documents (with the same labels) are dirty, so
- * further edits of an already dirty document do not change it.
+ * `useSaveState()`: unsaved work, edits still waiting for Recover or Discard,
+ * and Auto-Save. `dirtyDocuments` keeps its identity while the same documents
+ * (with the same labels) are dirty, so further edits of an already dirty
+ * document do not change it.
  */
-export type SaveState = Pick<DocumentContextValue, "dirtyDocuments" | "projectDirty" | "autoSaveStatus">;
+export type SaveState = Pick<DocumentContextValue, "dirtyDocuments" | "projectDirty" | "autoSaveStatus" | "recoveryAvailable">;
 /** `useCompileState()`: compile staleness and the Play preview bundles. */
 export type CompileState = Pick<
   DocumentContextValue,
@@ -4116,8 +4117,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
   const projectDirty = projectSaveState.current.isDirty(projectDocument);
   const saveState = useMemo<SaveState>(
-    () => ({ dirtyDocuments: stableDirtyDocuments, projectDirty, autoSaveStatus }),
-    [stableDirtyDocuments, projectDirty, autoSaveStatus],
+    () => ({ dirtyDocuments: stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable }),
+    [stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable],
   );
   const compileState = useMemo<CompileState>(
     () => ({

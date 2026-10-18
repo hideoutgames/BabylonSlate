@@ -8,21 +8,23 @@ import { useValidation } from "../context/validation-context";
 import { getBuildLabel } from "../lib/build-identity";
 import { usePhoneLayout } from "../shell/use-platform-layout";
 
-function saveStateLabel(unsaved: number, projectDirty: boolean): string {
+function saveStateLabel(unsaved: number, projectDirty: boolean, unrecovered: boolean): string {
   if (unsaved > 0)
     return `${unsaved} Unsaved ${unsaved === 1 ? "Document" : "Documents"}`;
-  return projectDirty ? "Unsaved Project Changes" : "All Changes Saved";
+  if (projectDirty) return "Unsaved Project Changes";
+  return unrecovered ? "Unrecovered Edits" : "All Changes Saved";
 }
 
 export function EditorStatusBar() {
   const activeDocumentId = useActiveDocumentId();
   // The label only: tab-level changes, not each content edit.
   const active = useOpenDocumentTabs().find((doc) => doc.id === activeDocumentId);
-  const { dirtyDocuments, projectDirty, autoSaveStatus } = useSaveState();
+  const { dirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable } = useSaveState();
   const { errorCount } = useValidation();
   const phone = usePhoneLayout();
   if (phone) return null;
-  const dirty = dirtyDocuments.length > 0 || projectDirty;
+  // Edits waiting for Recover or Discard are not saved either.
+  const dirty = dirtyDocuments.length > 0 || projectDirty || recoveryAvailable;
   return (
     <footer className="editor-statusbar" data-testid="editor-status-bar">
       <p className="editor-status-summary">
@@ -38,7 +40,7 @@ export function EditorStatusBar() {
               ? "Auto-Save Failed — Use Save All"
               : autoSaveStatus?.state === "saved" && !dirty
                 ? "All Changes Auto-Saved"
-                : saveStateLabel(dirtyDocuments.length, projectDirty)}
+                : saveStateLabel(dirtyDocuments.length, projectDirty, recoveryAvailable)}
         </span>
         {errorCount > 0 ? (
           <span className="editor-status-errors">
