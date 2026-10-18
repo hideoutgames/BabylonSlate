@@ -65,7 +65,7 @@ interface EditCommand<TDoc = unknown> {
   - Recover replays the sealed records, then `unsealJournal` returns them to the live journal (they stay crash-protected until a save writes the replayed edits), or `discardSealedJournal` drops them when the replay ends at the saved content with nothing skipped. Discard calls `discardSealedJournal`.
   - Both run in the tick that applies the replay, so no save sits between. The replayed edits are written by `updateScene` / `updateGraph` / `updateAssetDocument`, not through `EditSession`, so they have no Undo history.
 - `truncateJournal` removes only the live segments (those after the sealed ones). Successful Save All (and so autosave and Save & Play) truncates them for revisions the save wrote; clean and forced Close Project truncate them too. Sealed records survive all of these and a document close (`document.discard` is a live record and does not reach sealed ones); only Recover or Discard ends them. Project Settings are not journaled. `v` exists for future journal migration.
-- The status bar shows `Unrecovered Edits` and the dirty dot while the banner shows; Save All behaviour does not change.
+- The status bar shows `Unrecovered Edits` while the banner shows; Save All behaviour does not change.
 
 ## Document revisions and subscriptions
 
