@@ -1,5 +1,5 @@
 import { checkStorageRevision, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange } from "./storage-range";
-import { isStorageNotFound, SourceRevisionChangedError, StorageNotFoundError } from "@babylonslate/core";
+import { isStorageNotFound, ProjectOpenElsewhereError, SourceRevisionChangedError, StorageNotFoundError } from "@babylonslate/core";
 import type {
   DirEntry,
   FileStat,
@@ -49,6 +49,37 @@ function withProjectLifecycle<T>(id: string, work: () => Promise<T>): Promise<T>
   return next;
 }
 
+/** A tab's claim on a project it has bound; the browser frees it when the tab goes away. */
+interface ProjectSession {
+  readonly id: string;
+  /** Settles once the browser has released the lock, so the project can be claimed again at once. */
+  release(): Promise<void>;
+}
+
+/**
+ * Hold the project's session lock until the session is released. It is a
+ * different lock from the lifecycle one, which only covers a bind or a delete.
+ * Locks die with their document, so a reload or a crash frees the project.
+ * Resolves to null when another tab holds it; without Web Locks nothing can be
+ * told, so the claim always succeeds.
+ */
+function claimSession(id: string): Promise<ProjectSession | null> {
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+  if (!locks) return Promise.resolve({ id, release: async () => {} });
+  return new Promise((resolve, reject) => {
+    const done = locks.request(`babylonslate:opfs-session:${id}`, { ifAvailable: true }, (lock) => {
+      if (!lock) {
+        resolve(null);
+        return undefined;
+      }
+      return new Promise<void>((end) => {
+        resolve({ id, release: () => { end(); return done.then(() => undefined, () => undefined); } });
+      });
+    });
+    done.catch(reject);
+  });
+}
+
 interface OpfsMeta {
   currentId: string | null;
   projects: Array<{ id: string; name: string }>;
@@ -96,6 +127,8 @@ export class OpfsStorageAdapter implements ProjectStorage {
   private folder: ProjectFolderHandle | null = null;
   private root: FileSystemDirectoryHandle | null = null;
   private readonly library: boolean;
+  /** Held while a project is bound; libraries are shared app data and take none. */
+  private session: ProjectSession | null = null;
 
   constructor(options: OpfsStorageOptions = {}) {
     this.library = options.library === true;
@@ -126,9 +159,24 @@ export class OpfsStorageAdapter implements ProjectStorage {
     const handle: ProjectFolderHandle = { id: `opfs:${name}`, name, tier: "opfs" };
     return withProjectLifecycle(handle.id, async () => {
       const opfs = await this.getOpfsRoot();
-      await opfs.getDirectoryHandle(await directoryName(handle.id), { create: true });
-      if (!this.library) return this.remember(handle);
-      this.folder = handle;
+      if (this.library) {
+        await opfs.getDirectoryHandle(await directoryName(handle.id), { create: true });
+        this.folder = handle;
+        return handle;
+      }
+      // A refused bind changes nothing: the previous project stays bound.
+      const previous = this.session;
+      const session = previous?.id === handle.id ? previous : await claimSession(handle.id);
+      if (!session) throw new ProjectOpenElsewhereError();
+      try {
+        await opfs.getDirectoryHandle(await directoryName(handle.id), { create: true });
+        await this.remember(handle);
+      } catch (error) {
+        if (session !== previous) await session.release();
+        throw error;
+      }
+      this.session = session;
+      if (previous && previous !== session) await previous.release();
       return handle;
     });
   }
@@ -183,6 +231,9 @@ export class OpfsStorageAdapter implements ProjectStorage {
   async releaseFolder(): Promise<void> {
     const folder = this.getCurrentFolder();
     this.folder = null;
+    const session = this.session;
+    this.session = null;
+    await session?.release();
     if (this.library) return;
     await updateMeta((meta) => {
       if (meta.currentId === folder?.id) meta.currentId = null;
@@ -198,21 +249,35 @@ export class OpfsStorageAdapter implements ProjectStorage {
       throw new Error(`OPFS adapter cannot delete tier ${handle.tier}`);
     }
     if (!loadMeta().projects.some((project) => project.id === handle.id)) return;
-    for (const cached of [...this.rangeHandles.keys()]) {
-      if (cached.startsWith(`${handle.id}/`)) this.rangeHandles.delete(cached);
-    }
-    const opfs = await this.getOpfsRoot();
-    try { await opfs.removeEntry(await directoryName(handle.id), { recursive: true }); }
-    catch (error) {
-      if (!(error instanceof DOMException && error.name === "NotFoundError")) throw error;
-    }
-    // Another adapter may have registered or selected a project during disk I/O.
-    await updateMeta((latest) => {
-      latest.projects = latest.projects.filter((project) => project.id !== handle.id);
-      if (latest.currentId === handle.id) latest.currentId = null;
-    });
-    if (this.folder?.id === handle.id) {
-      this.folder = null;
+    // Deleting needs the session as much as opening does: another tab's project must stay.
+    const owned = this.session?.id === handle.id;
+    const session = owned ? this.session : await claimSession(handle.id);
+    if (!session) throw new ProjectOpenElsewhereError();
+    let spent = !owned;
+    try {
+      for (const cached of [...this.rangeHandles.keys()]) {
+        if (cached.startsWith(`${handle.id}/`)) this.rangeHandles.delete(cached);
+      }
+      const opfs = await this.getOpfsRoot();
+      try { await opfs.removeEntry(await directoryName(handle.id), { recursive: true }); }
+      catch (error) {
+        if (!(error instanceof DOMException && error.name === "NotFoundError")) throw error;
+      }
+      // Another adapter may have registered or selected a project during disk I/O.
+      await updateMeta((latest) => {
+        latest.projects = latest.projects.filter((project) => project.id !== handle.id);
+        if (latest.currentId === handle.id) latest.currentId = null;
+      });
+      if (this.folder?.id === handle.id) {
+        this.folder = null;
+      }
+      if (owned) {
+        this.session = null;
+        spent = true;
+      }
+    } finally {
+      // A failed deletion leaves this adapter's own project bound, and so locked.
+      if (spent) await session.release();
     }
   }
 
