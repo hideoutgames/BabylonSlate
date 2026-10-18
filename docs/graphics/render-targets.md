@@ -56,7 +56,7 @@ A Full Quality capture still differs from the main camera in a few ways:
 - Water shows its screen-space or sky reflection instead of a planar mirror.
 - When more lights want to shine than the device allows, the main camera decides which ones light the scene.
 - Point and spot light shadows come from the main camera's shadow maps. The main camera also decides which point and spot lights get shadows, and their shadows use its **Near Clip**. Otherwise they don't depend on where a camera looks.
-- When the device's rendering memory can't fit a capture's own sun shadow maps, the capture uses the main camera's until memory frees up. Those can be missing or wrong where the capture looks elsewhere.
+- When the device's rendering memory is short, a capture's own sun shadow maps can be smaller (blurrier) than the main camera's. When even the smallest doesn't fit, the capture uses the main camera's until memory frees up; those can be missing or wrong where the capture looks elsewhere.
 
 A new capture is Fast. Choose Full Quality for a few small monitors that must look exactly like the game, such as a security camera over water. After switching, a Full Quality capture prepares its shaders first, so its target keeps the previous image for a moment.
 

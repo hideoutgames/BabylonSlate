@@ -66,8 +66,10 @@ import {
   ENGINE_SHADOW_BUDGET,
   otherShadowReservations,
   availableSceneShadowBytes,
+  pendingViewShadowDrains,
   reserveSceneShadows,
   shadowBytesPerTexel,
+  trackViewShadowDrain,
   type ShadowCost,
 } from "./shadow-admission";
 
@@ -133,7 +135,7 @@ type View = {
   maps: Map<Light, ViewMap>;
   /**
    * Scene maps whose mirror the ledger refused at every size (warned once per
-   * scene map). Retried after `retryAt`, once the controller's drains settle,
+   * scene map). Retried after `retryAt`, once the Engine's view drains settle,
    * after view maps yield, and whenever the scene map changes.
    */
   refused: Map<Light, { mirrors: ShadowGenerator; retryAt: number }>;
@@ -326,12 +328,6 @@ export class SceneShadowController {
   private readonly views = new Map<Camera, View>();
   /** Effective settings of the last sync, which views mirror. */
   private viewSettings: ShadowSettings | null = null;
-  /**
-   * View map releases still waiting for WebGPU's end-of-frame destruction
-   * drain, across every view (a re-created view's predecessor included): their
-   * textures still hold the memory, so no view allocates until they settle.
-   */
-  private draining = 0;
   private readonly refresh = new ShadowMapRefresh((mesh) =>
     this.spatial.invalidate(mesh),
   );
@@ -993,8 +989,12 @@ export class SceneShadowController {
       if (entry.status === "active" && !(entry.light instanceof DirectionalLight)) pooled++;
     const standby: ShadowCost = { bytes: 0, passes: 0, samplers: 0 };
     // Standby maps are optional reuse: they keep only room the views' own maps
-    // do not hold, so retaining one never makes a capture's sun maps yield.
-    const standbyBudget = Math.min(byteBudget, availableSceneShadowBytes(scene));
+    // do not hold, so retaining one never makes a capture's sun maps yield,
+    // and none the views' missing mirrors will ask for once they may allocate.
+    const standbyBudget = Math.max(
+      0,
+      Math.min(byteBudget, availableSceneShadowBytes(scene)) - this.missingViewMirrorBytes(settings),
+    );
     for (const entry of donors.reverse()) {
       const generator = entry.generator!;
       const bytes = generatorPasses(generator) * entry.mapSize ** 2 * bytesPerTexel;
@@ -1434,10 +1434,12 @@ export class SceneShadowController {
    * rendering ledger first. A refused reservation halves the map like admission
    * does; refused at every size, the view's receivers sample the scene view's
    * map instead, and the view asks again later (VIEW_REFUSAL_RETRY_MS, or once
-   * drains settle or view maps yield). A failed construction retries at half
-   * size on a later sync, after its release has drained. Nothing is allocated
-   * while a view map's release is still draining: its texture still holds the
-   * memory, and a view allocated beside it would settle smaller for good.
+   * drains settle or view maps yield). A mirror that fit only at a smaller
+   * size keeps it until the scene map changes or the view is re-created. A
+   * failed construction retries at half size on a later sync, after its
+   * release has drained. Nothing is allocated while any view map's release on
+   * this Engine is still draining: its texture still holds the memory, and a
+   * view allocated beside it would settle smaller for good.
    */
   private createViewMap(
     view: View,
@@ -1446,11 +1448,11 @@ export class SceneShadowController {
     settings: ShadowSettings,
     casterBounds: ReturnType<ShadowSpatialIndex["bounds"]> | undefined,
   ): void {
-    // Released maps still hold their memory until WebGPU's end-of-frame drain:
-    // allocate once they have gone, on a later sync.
-    if (this.draining) return;
     const scene = this.scene;
     const engine = scene.getEngine();
+    // Released view maps (any Scene's on this Engine) still hold their memory
+    // until WebGPU's end-of-frame drain: allocate once they have gone, on a later sync.
+    if (pendingViewShadowDrains(engine)) return;
     const cascaded = source instanceof CascadedShadowGenerator;
     // Mirror the scene map's kind even if the settings moved on since it was built.
     if (cascaded !== settings.cascades > 1) return;
@@ -1551,12 +1553,42 @@ export class SceneShadowController {
   }
   private trackViewRelease(view: View, release: Promise<void>, deferred: boolean): void {
     view.pending.add(release);
-    if (deferred) this.draining++;
-    // A failed release stays pending, so the claim's release reports it; the
-    // drain count settles either way (a lost device or disposed Engine settles it too).
-    void release.then(() => view.pending.delete(release), () => {}).finally(() => {
-      if (deferred && --this.draining === 0) this.retryRefusedViewMaps();
-    });
+    // A failed release stays pending, so the claim's release reports it.
+    void release.then(() => view.pending.delete(release), () => {});
+    // The Engine's drain count settles either way (a lost device or disposed Engine settles it too).
+    const engine = this.scene.getEngine();
+    if (deferred)
+      void trackViewShadowDrain(engine, release).then(() => {
+        if (!pendingViewShadowDrains(engine)) this.retryRefusedViewMaps();
+      });
+  }
+  /**
+   * Ledger room the views' missing sun mirrors will ask for once they may
+   * allocate (a view that yielded or was re-created, waiting for a drain; a new
+   * capture), at the size each would ask for first (cascaded: the four-layer
+   * peak). Optional standby maps leave it free. A refused mirror waiting to ask
+   * again does not count.
+   */
+  private missingViewMirrorBytes(settings: ShadowSettings): number {
+    if (!this.views.size) return 0;
+    const bytesPerTexel = shadowBytesPerTexel(this.scene.getEngine());
+    const layers = settings.cascades > 1 ? 4 : 1;
+    const now = performance.now();
+    let bytes = 0;
+    for (const entry of this.entries.values()) {
+      if (!(entry.light instanceof DirectionalLight) || entry.status !== "active") continue;
+      for (const view of this.views.values()) {
+        if (view.maps.has(entry.light)) continue;
+        const refused = view.refused.get(entry.light);
+        if (refused && refused.mirrors === entry.generator && now < refused.retryAt) continue;
+        const recovery = view.recovery.get(entry.light);
+        const mapSize = recovery && recovery.mirrors === entry.generator
+          ? Math.min(entry.mapSize, recovery.mapSize)
+          : entry.mapSize;
+        bytes += layers * mapSize ** 2 * bytesPerTexel;
+      }
+    }
+    return bytes;
   }
   /** Lets every refused mirror ask the ledger again on the next sync. */
   private retryRefusedViewMaps(): void {
