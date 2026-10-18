@@ -20,7 +20,9 @@ import {
   bindVolumetricLights,
   selectVolumetricLights,
   volumetricLayoutKey,
+  volumetricLightsLayoutKey,
   volumeShadowLayout,
+  type VolumeShadow,
 } from "./volumetric-lights";
 import {
   volumetricShader,
@@ -101,6 +103,11 @@ export interface SpatialStage {
    * function, which the graph evaluates once per frame.
    */
   idle?: () => boolean;
+  /**
+   * The volumetric march's light layout (`volumetricLightsLayoutKey`): the lights its slots bind and the shadow
+   * samplers it was compiled for. The view rebuilds once the march would run for another layout.
+   */
+  lightLayout?: string;
   bind(effect: Effect): void;
 }
 
@@ -156,6 +163,11 @@ export function reserveSpatialEffects(
   return beginManagedRenderAllocation(scene.getEngine(), bytes);
 }
 
+/**
+ * The settings, camera and size baked into a prepared graph's effect tasks. The volumetric march's light layout is
+ * left out: the lights nearest the camera fill its slots, but a march that idles binds none, so the view compares
+ * that layout only while the march runs (`volumetricLayoutCurrent`).
+ */
 export function liveSceneEffectsKey(
   scene: Scene,
   camera = scene.activeCamera,
@@ -165,11 +177,31 @@ export function liveSceneEffectsKey(
   if (!camera || !hasSpatialEffects(plan)) return state.effectsKey;
   const size = camera.outputRenderTarget?.getSize();
   const engine = scene.getEngine();
-  return `${state.effectsKey}:${camera.uniqueId}:${camera.mode}:${size?.width ?? engine.getRenderWidth(true)}x${size?.height ?? engine.getRenderHeight(true)}:${resolveSceneRenderingQuality(scene).postprocessing.resolutionScale}:${
-    plan.volumetricLighting
-      ? volumetricLayoutKey(scene, camera, plan.volumetricLighting)
-      : ""
-  }`;
+  return `${state.effectsKey}:${camera.uniqueId}:${camera.mode}:${size?.width ?? engine.getRenderWidth(true)}x${size?.height ?? engine.getRenderHeight(true)}:${resolveSceneRenderingQuality(scene).postprocessing.resolutionScale}`;
+}
+
+type VolumetricPlan = NonNullable<SceneEffectsPlan["volumetricLighting"]>;
+
+/**
+ * Without scene density the volumetric march only fogs authored Fog Volumes: none in front of this camera leaves
+ * every pixel unfogged, whatever the lights.
+ */
+export function volumetricMarchIdle(
+  scene: Scene,
+  camera: Camera,
+  volume: VolumetricPlan,
+  localVolumes = hasFogVolumes(scene),
+): boolean {
+  return volume.density <= 0 && (!localVolumes || selectFogVolumes(scene, camera, volume.maxDistance).length === 0);
+}
+
+/**
+ * Whether a march built for the light layout `built` may draw this camera's frame: it runs with this camera's
+ * nearest lights, or idles and binds none.
+ */
+export function volumetricLayoutCurrent(scene: Scene, camera: Camera, built: string): boolean {
+  const volume = sceneRenderingSettings(scene).effectsPlan?.volumetricLighting;
+  return !volume || volumetricMarchIdle(scene, camera, volume) || volumetricLayoutKey(scene, camera, volume) === built;
 }
 
 function customWrapper(
@@ -365,6 +397,7 @@ export function createSpatialStages(
       const localVolumes = hasFogVolumes(scene);
       const lights = selectVolumetricLights(scene, camera, volume);
       const shadows = lights.map((light) => volumeShadowLayout(scene, light));
+      const lightLayout = volumetricLightsLayoutKey(scene, lights);
       const uniforms = [
         "inverseProjection",
         "inverseView",
@@ -407,15 +440,28 @@ export function createSpatialStages(
       const inverseProjection = Matrix.Identity(),
         inverseView = Matrix.Identity();
       const mainInput = stages.length;
-      // Without scene density the march only fogs authored Fog Volumes: none in
-      // front of this camera leaves every pixel unfogged, whatever the lights.
-      const idle = () =>
-        volume.density <= 0 && (!localVolumes || selectFogVolumes(scene, camera, volume.maxDistance).length === 0);
+      // The view checks the light layout before each frame, but the frame then
+      // moves the camera (inputs, animation) and shadow admission can release
+      // or stand by a map: a march that wakes after a check that found it idle,
+      // or runs on after a map changed, can hold lights whose shadow maps no
+      // longer match its samplers. Skip that frame rather than bind them; the
+      // view rebuilds on the next. Only the built lights' maps are compared: a
+      // frame whose nearest lights changed still binds the built set validly.
+      const current: VolumeShadow = { kind: "none", cascades: 0, packed: false };
+      const shadowsChanged = () => {
+        for (let i = 0; i < lights.length; i++) {
+          const built = shadows[i]!, now = volumeShadowLayout(scene, lights[i]!, current);
+          if (now.kind !== built.kind || now.cascades !== built.cascades || now.packed !== built.packed) return true;
+        }
+        return false;
+      };
+      const idle = () => volumetricMarchIdle(scene, camera, volume, localVolumes) || shadowsChanged();
       stages.push({
         wrapper: march,
         scale: Math.max(0.25, volume.resolutionScale * quality),
         geometry: true,
         idle,
+        lightLayout,
         bind: (effect) => {
           camera.getProjectionMatrix().invertToRef(inverseProjection);
           camera.getViewMatrix().invertToRef(inverseView);

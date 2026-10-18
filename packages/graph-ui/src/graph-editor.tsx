@@ -124,9 +124,11 @@ import {
   type GraphViewport,
 } from "./graph-viewport";
 import { formatGraphNodes } from "./graph-format";
+import { freeNodePosition } from "./graph-placement";
 import { findProximityConnections, type ProximityPin } from "./graph-proximity";
 import {
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
+  estimateGraphNodeSize,
   graphNodesBounds,
   selectVisibleGraphElements,
 } from "./graph-virtualize";
@@ -276,12 +278,11 @@ function uniqueNodeId(base: string, taken: ReadonlySet<string>): string {
 
 /**
  * Nudge a placement by `PASTE_OFFSET` steps until none of `positions` lands
- * on an existing node, so repeated inserts and pastes cascade.
+ * on an existing node, so repeated pastes cascade.
  */
 function nonOverlappingOffset(
   positions: ReadonlyArray<{ x: number; y: number }>,
   existing: ReadonlyArray<{ position: { x: number; y: number } }>,
-  firstStep: number,
 ): number {
   const overlaps = (offset: number) =>
     positions.some((position) =>
@@ -291,7 +292,7 @@ function nonOverlappingOffset(
           Math.abs(node.position.y - (position.y + offset)) < PASTE_OFFSET,
       ),
     );
-  let offset = firstStep * PASTE_OFFSET;
+  let offset = PASTE_OFFSET;
   while (overlaps(offset)) offset += PASTE_OFFSET;
   return offset;
 }
@@ -1744,18 +1745,20 @@ function GraphEditorCanvas({
 
   const handleAddPaletteNode = useCallback(
     (paletteNode: PaletteNode) => {
-      let position = pendingConnect?.position ??
-        screenToFlowPosition({
-          x: window.innerWidth / 2,
-          y: window.innerHeight / 2,
+      // Toolbar additions have no chosen point: centre them on the canvas and
+      // step by node footprint to a free slot.
+      let position = pendingConnect?.position;
+      if (!position) {
+        const bounds = wrapperRef.current?.getBoundingClientRect();
+        const center = screenToFlowPosition({
+          x: (bounds?.left ?? 0) + (bounds?.width ?? 0) / 2,
+          y: (bounds?.top ?? 0) + (bounds?.height ?? 0) / 2,
         });
-      if (!pendingConnect) {
-        const offset = nonOverlappingOffset(
-          [position],
+        position = freeNodePosition(
+          center,
+          estimateGraphNodeSize(paletteNode.pins),
           graphStateRef.current.nodes,
-          0,
         );
-        position = { x: position.x + offset, y: position.y + offset };
       }
       const id = uniqueNodeId(
         `${paletteNode.id}-${Date.now()}`,
@@ -1915,7 +1918,6 @@ function GraphEditorCanvas({
     const offset = nonOverlappingOffset(
       pasteable.map((node) => node.position),
       current,
-      1,
     );
     const taken = new Set(current.map((node) => node.id));
     const idMap = new Map<string, string>();

@@ -20,6 +20,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { sceneShadowController } from "./shadow-controller";
+import { isForwardLightExcluded, syncForwardLightPolicy } from "./light-policy";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import {
   sceneRenderingSettings,
@@ -807,6 +808,102 @@ describe("shared shadow lifecycle", () => {
     expect(first.getShadowGenerator()).toBeNull();
     expect(allocate).not.toHaveBeenCalled();
     expect(dispose).not.toHaveBeenCalled();
+  });
+
+  /** A shadowed point light the one-slot Forward budget has dropped for a nearer unshadowed one. */
+  function forwardDroppedStandby() {
+    const { scene, controller } = fixture();
+    scene.activeCamera!.position.set(0, 0, 0);
+    const receiver = MeshBuilder.CreateBox("receiver", {}, scene);
+    receiver.material = new StandardMaterial("receiver", scene);
+    controller.setParticipation(receiver, { castShadows: true, receiveShadows: true });
+    const shadowed = new PointLight("shadowed", new Vector3(5, 0, 0), scene);
+    const nearer = new PointLight("nearer", new Vector3(1, 0, 0), scene);
+    controller.register(shadowed, true);
+    syncForwardLightPolicy(scene, 2);
+    controller.sync();
+    const generator = controller.generator(shadowed)!;
+    const dispose = vi.spyOn(generator, "dispose");
+    syncForwardLightPolicy(scene, 1);
+    controller.sync();
+    expect(shadowed.isEnabled()).toBe(false);
+    expect(nearer.isEnabled()).toBe(true);
+    return { scene, controller, shadowed, nearer, generator, dispose };
+  }
+
+  it("keeps the map of a light the Forward budget dropped on standby until the light returns", () => {
+    const { scene, controller, shadowed, generator, dispose } = forwardDroppedStandby();
+    const allocate = vi.spyOn(scene.getEngine(), "createRenderTargetCubeTexture");
+    expect(controller.generator(shadowed)).toBeNull();
+    expect(shadowed.getShadowGenerator()).toBe(generator);
+    expect(generator.getDarkness()).toBe(1);
+    expect(controller.metrics().passes).toBe(0);
+    expect(controller.metrics().bytes).toBeGreaterThan(0);
+    expect(dispose).not.toHaveBeenCalled();
+    // Capacity returns: the same map is admitted again, neutral until redrawn.
+    syncForwardLightPolicy(scene, 2);
+    controller.sync();
+    expect(controller.generator(shadowed)).toBe(generator);
+    expect(controller.status(shadowed)).toBe("active");
+    expect(generator.getDarkness()).toBe(1);
+    prepareShadowLayers(generator);
+    expect(generator.getDarkness()).toBe(0);
+    expect(allocate).not.toHaveBeenCalled();
+    expect(dispose).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a withdrawn shadow request", ({ controller, shadowed }: ReturnType<typeof forwardDroppedStandby>) =>
+      controller.register(shadowed, false)],
+    ["shadows turned off", ({ scene }: ReturnType<typeof forwardDroppedStandby>) =>
+      updateSceneRenderingSettings(scene, {
+        shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1, enabled: false }),
+      })],
+  ])("releases the standby map of a Forward-dropped light on %s", (_name, change) => {
+    const context = forwardDroppedStandby();
+    const { controller, shadowed, dispose } = context;
+    // The light stays disabled, which hides the change from its status.
+    expect(shadowed.getShadowGenerator()).not.toBeNull();
+    change(context);
+    controller.sync();
+    expect(controller.generator(shadowed)).toBeNull();
+    expect(shadowed.getShadowGenerator()).toBeNull();
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(controller.metrics()).toEqual({ passes: 0, bytes: 0 });
+  });
+
+  it("ranks a standby map handed to a new winner by its light's current distance, not the distance it had when dropped", () => {
+    const { scene, controller } = fixture();
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 2 }),
+    });
+    const camera = scene.activeCamera!;
+    camera.position.set(0, 0, 0);
+    const near = new PointLight("near", new Vector3(1, 0, 0), scene);
+    const dropped = new PointLight("dropped", new Vector3(6, 0, 0), scene);
+    const rejected = new PointLight("rejected", new Vector3(5, 0, 0), scene);
+    for (const light of [dropped, rejected]) {
+      light.range = 10;
+      controller.register(light, true);
+    }
+    controller.sync();
+    const droppedMap = controller.generator(dropped)!;
+    const rejectedMap = controller.generator(rejected)!;
+    // The camera leaves: only `dropped` loses its Forward slot, and `rejected`
+    // leaves the relevant area. Both keep their maps, but `dropped` is now the
+    // farther one, though it was the nearest light with a stale measurement.
+    camera.position.set(-1000, 0, 0);
+    const winner = new PointLight("winner", new Vector3(-1001, 0, 0), scene);
+    winner.range = 10;
+    controller.register(winner, true);
+    syncForwardLightPolicy(scene, 3);
+    controller.sync();
+    expect(isForwardLightExcluded(dropped)).toBe(true);
+    expect(controller.status(rejected)).toBe("outside-relevant-area");
+    expect(near.isEnabled()).toBe(true);
+    // The new winner takes the farthest retained map and the nearer one waits.
+    expect(controller.generator(winner)).toBe(droppedMap);
+    expect(rejected.getShadowGenerator()).toBe(rejectedMap);
   });
 
   it("frees standby maps before reducing an admitted map after an allocation failure", () => {
