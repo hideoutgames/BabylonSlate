@@ -203,6 +203,7 @@ export function HomepageTemplateBrowser({
             icon={choice.icon}
             imageUrl={choice.imageUrl}
             selected={choice.id === selected}
+            actionLabel={composing ? undefined : "New Project"}
             disabled={disabled}
             testId={
               composing

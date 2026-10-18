@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import {
+  ArrowRightIcon,
   ArrowUpDownIcon,
   ChevronDownIcon,
   FolderOpenIcon,
@@ -52,8 +53,6 @@ import {
 } from "@babylonslate/ui/components/dropdown-menu";
 import {
   Empty,
-  EmptyContent,
-  EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
@@ -626,59 +625,59 @@ export function Homepage({
                     ),
                   }))}
                   empty={
-                    <Empty
-                      className="homepage-empty"
-                      data-testid="homepage-projects-empty"
-                      data-search={search ? "true" : "false"}
-                    >
-                      <EmptyHeader>
-                        <EmptyTitle>
-                          {search ? "No Results" : "Start Your First Project"}
-                        </EmptyTitle>
-                        {!search && (
-                          <EmptyDescription>
-                            Pick a starter, browse every template, or open an
-                            existing project folder.
-                          </EmptyDescription>
-                        )}
-                      </EmptyHeader>
-                      {!search && (
-                        <>
-                          <div className="homepage-empty-starters">
-                            {starterTemplates.map((starter) => (
-                              <TemplatePickCard
-                                key={starter.id}
-                                title={starter.name}
-                                description={starter.description}
-                                icon={starter.icon}
-                                disabled={busy}
-                                testId={`homepage-empty-start-${starter.id}`}
-                                onSelect={() => create(starter.id, false)}
-                              />
-                            ))}
+                    search ? (
+                      <Empty
+                        className="homepage-empty"
+                        data-testid="homepage-projects-empty"
+                        data-search="true"
+                      >
+                        <EmptyHeader>
+                          <EmptyTitle>No Results</EmptyTitle>
+                        </EmptyHeader>
+                      </Empty>
+                    ) : (
+                      <section
+                        className="homepage-welcome"
+                        data-testid="homepage-projects-empty"
+                        aria-labelledby="homepage-welcome-title"
+                      >
+                        <header className="homepage-welcome-header">
+                          <div>
+                            <h3 id="homepage-welcome-title">
+                              Start Your First Project
+                            </h3>
+                            <p>
+                              Pick a template to begin. Everything can be
+                              changed later.
+                            </p>
                           </div>
-                          <EmptyContent className="homepage-empty-actions">
-                            <Button
-                              size="sm"
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy}
+                            onClick={() => changeView("templates")}
+                          >
+                            All Templates
+                            <ArrowRightIcon data-icon="inline-end" />
+                          </Button>
+                        </header>
+                        <div className="homepage-welcome-grid">
+                          {starterTemplates.map((starter) => (
+                            <TemplatePickCard
+                              key={starter.id}
+                              title={starter.name}
+                              description={starter.description}
+                              icon={starter.icon}
+                              imageUrl={starter.imageUrl}
+                              actionLabel="New Project"
                               disabled={busy}
-                              onClick={() => create()}
-                            >
-                              <PlusIcon data-icon="inline-start" />
-                              New Project
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => changeView("templates")}
-                            >
-                              <LayoutTemplateIcon data-icon="inline-start" />
-                              Browse Templates
-                            </Button>
-                          </EmptyContent>
-                        </>
-                      )}
-                    </Empty>
+                              testId={`homepage-empty-start-${starter.id}`}
+                              onSelect={() => create(starter.id, false)}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    )
                   }
                 />
               </div>

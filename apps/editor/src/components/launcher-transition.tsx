@@ -23,6 +23,8 @@ type Transition = {
   readyAt: number | null;
   settled: boolean;
   leaving: boolean;
+  /** The first transition continues the boot splash from index.html. */
+  boot: boolean;
 };
 const TransitionContext = createContext<{
   begin: (label: string) => void;
@@ -70,6 +72,7 @@ export function LauncherTransitionProvider({
     readyAt: null,
     settled: true,
     leaving: false,
+    boot: true,
   }));
   const begin = useCallback(
     (label: string) =>
@@ -82,6 +85,7 @@ export function LauncherTransitionProvider({
         readyAt: null,
         settled: false,
         leaving: false,
+        boot: false,
       }),
     [],
   );
@@ -192,6 +196,7 @@ export function LauncherTransitionProvider({
             <div
               className="slate-loading"
               data-leaving={transition.leaving}
+              data-boot={transition.boot}
               onTransitionEnd={(event) => {
                 if (
                   event.target !== event.currentTarget ||
@@ -210,12 +215,16 @@ export function LauncherTransitionProvider({
                   : `Opening ${transition.label}`
               }
             >
+              <div className="slate-splash-glow" aria-hidden="true" />
+              <div className="slate-splash-grain" aria-hidden="true" />
               <section className="slate-splash">
                 <img
                   className="slate-splash-wordmark"
                   src={brandWordmarkSrc("dark")}
                   alt=""
                 />
+              </section>
+              <div className="slate-splash-progress">
                 <div className="slate-splash-text">
                   {transition.target !== "home" && (
                     <span className="slate-loading-label">
@@ -233,7 +242,7 @@ export function LauncherTransitionProvider({
                 >
                   <span />
                 </span>
-              </section>
+              </div>
               <span className="slate-splash-version">{version}</span>
             </div>
           </>,
