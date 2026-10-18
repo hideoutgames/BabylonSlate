@@ -833,6 +833,22 @@ describe("TilemapPaint", () => {
       );
     });
   });
+
+  it("zooms from the wheel, including on a canvas shown after the first Tileset is added", async () => {
+    const { rerender } = render(
+      <TilemapPaint payload={createDefaultTilemapPayload() as unknown as Record<string, unknown>} onChange={() => {}} />,
+    );
+    expect(screen.queryByTestId("tilemap-paint-canvas")).toBeNull();
+    rerender(<TilemapPaint payload={mapWithGround() as unknown as Record<string, unknown>} onChange={() => {}} />);
+    const canvas = await waitFor(() => screen.getByTestId("tilemap-paint-canvas"));
+    canvas.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, right: 256, bottom: 256, width: 256, height: 256, toJSON: () => {} }) as DOMRect;
+    const before = Number(canvas.getAttribute("data-cell-size"));
+
+    // React's wheel listener is passive and cannot cancel the page scroll; fireEvent
+    // returns false only when a listener cancelled the event.
+    expect(fireEvent.wheel(canvas, { deltaY: -120, clientX: 100, clientY: 100 })).toBe(false);
+    await waitFor(() => expect(Number(canvas.getAttribute("data-cell-size"))).toBeGreaterThan(before));
+  });
 });
 
 describe("Tilemap Tileset loading", () => {

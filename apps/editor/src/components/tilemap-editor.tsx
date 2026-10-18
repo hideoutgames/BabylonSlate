@@ -765,6 +765,34 @@ export function TilemapPaint({
     );
   }, [atlases, cellSize, cssSize, pan, payloads, shown, sortingLayers]);
 
+  // React attaches wheel listeners as passive, which ignore preventDefault, so
+  // the canvas keeps a native non-passive listener that runs the latest handler.
+  const wheelRef = useRef<(event: WheelEvent) => void>(() => {});
+  wheelRef.current = (event) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    event.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const view = applyWheelZoom({
+      panX: viewRef.current.pan.x,
+      panY: viewRef.current.pan.y,
+      cellSize: viewRef.current.cellSize,
+      originX: event.clientX - rect.left,
+      originY: event.clientY - rect.top,
+      canvasHeight: rect.height || cssSize.height,
+      deltaY: event.deltaY,
+    });
+    viewRef.current = { pan: { x: view.panX, y: view.panY }, cellSize: view.cellSize };
+    flushView();
+  };
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (event: WheelEvent) => wheelRef.current(event);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, [tilemap.tilesets.length]);
+
   const cellAt = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
@@ -1020,21 +1048,6 @@ export function TilemapPaint({
           data-pan-x={String(pan.x)}
           data-pan-y={String(pan.y)}
           data-paint-source={atlases.size > 0 ? "atlas" : "hsl"}
-          onWheel={(event) => {
-            event.preventDefault();
-            const rect = event.currentTarget.getBoundingClientRect();
-            const view = applyWheelZoom({
-              panX: viewRef.current.pan.x,
-              panY: viewRef.current.pan.y,
-              cellSize: viewRef.current.cellSize,
-              originX: event.clientX - rect.left,
-              originY: event.clientY - rect.top,
-              canvasHeight: rect.height || cssSize.height,
-              deltaY: event.deltaY,
-            });
-            viewRef.current = { pan: { x: view.panX, y: view.panY }, cellSize: view.cellSize };
-            flushView();
-          }}
           onPointerDown={(event) => {
             event.preventDefault();
             const pointerId = pointerIdOf(event);

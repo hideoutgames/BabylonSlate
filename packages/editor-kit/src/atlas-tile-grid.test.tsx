@@ -369,8 +369,23 @@ describe("AtlasTileGrid", () => {
       />,
     );
     const surface = screen.getByTestId("atlas-surface");
-    fireEvent.wheel(surface, { deltaY: -120, clientX: 10, clientY: 10 });
+    // React's wheel listener is passive and cannot cancel the page scroll;
+    // fireEvent returns false only when a listener cancelled the event.
+    expect(fireEvent.wheel(surface, { deltaY: -120, clientX: 10, clientY: 10 })).toBe(false);
     expect(Number(surface.getAttribute("data-zoom") ?? "1")).toBeGreaterThan(1);
+  });
+
+  it("leaves the wheel to the page when the atlas does not pan and zoom", () => {
+    render(
+      <AtlasTileGrid
+        tileset={twoTileSet()}
+        imageUrl="blob:atlas"
+        selectedId={1}
+        onSelect={() => {}}
+        data-testid="atlas"
+      />,
+    );
+    expect(fireEvent.wheel(screen.getByTestId("atlas-surface"), { deltaY: -120 })).toBe(true);
   });
 
   it("refits on resize until the user zooms, then keeps their view", () => {
