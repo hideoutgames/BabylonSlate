@@ -42,7 +42,7 @@ export function PlayOverlayChrome({
   showStats = true,
   showConsole = true,
   showInspector = true,
-  showProfiler = true,
+  showProfiler = false,
   onPauseToggle,
   pausePending = false,
   simulation,

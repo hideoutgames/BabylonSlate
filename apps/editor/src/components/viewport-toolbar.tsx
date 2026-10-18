@@ -517,6 +517,7 @@ export function ViewportToolbar({
                     if (next) setMode(next);
                   }}
                   aria-label="Viewport Dimension"
+                  className="toolbar-island-segmented"
                   aria-keyshortcuts={modeChord ? ariaKeyShortcuts(modeChord) : undefined}
                   data-testid={`${testIdPrefix}viewport-mode-toggle`}
                 />

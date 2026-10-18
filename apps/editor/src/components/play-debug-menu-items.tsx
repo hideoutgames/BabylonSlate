@@ -6,6 +6,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@babylonslate/ui/components/dropdown-menu";
+import { ClipboardCheckIcon, MonitorPlayIcon } from "lucide-react";
 
 export type PlayDebugMenuItemsProps = {
   overlayStats: boolean;
@@ -23,6 +24,12 @@ export type PlayDebugMenuItemsProps = {
   onPauseOnPlayChange: (checked: boolean) => void;
   onPreviewBuildChange: (checked: boolean) => void;
   onPlayFromSceneChange: (checked: boolean) => void;
+  keepSimulationChanges: boolean;
+  onKeepSimulationChangesChange: (checked: boolean) => void;
+  /** Starts a Simulation session in the editor viewport. */
+  onSimulate: () => void;
+  /** Why Simulate cannot start now, or null when it can. */
+  simulateUnavailableReason: string | null;
   /** Shown for Feature Test projects only. */
   onRunFeatureTestCheck?: () => void;
 };
@@ -44,13 +51,70 @@ export function PlayDebugMenuItems({
   onPauseOnPlayChange,
   onPreviewBuildChange,
   onPlayFromSceneChange,
+  keepSimulationChanges,
+  onKeepSimulationChangesChange,
+  onSimulate,
+  simulateUnavailableReason,
   onRunFeatureTestCheck,
 }: PlayDebugMenuItemsProps) {
   return (
-    <DropdownMenuContent align="center" className="w-max min-w-56 whitespace-nowrap">
+    <DropdownMenuContent align="center" className="w-max min-w-60 whitespace-nowrap">
       <DropdownMenuGroup>
-        <DropdownMenuLabel>Play Overlay</DropdownMenuLabel>
-        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Play</DropdownMenuLabel>
+        <DropdownMenuCheckboxItem
+          data-testid="play-from-scene-toggle"
+          checked={playFromScene}
+          disabled={sessionLocked}
+          onCheckedChange={(checked) =>
+            onPlayFromSceneChange(checked === true)
+          }
+        >
+          Play From Current Scene
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          data-testid="preview-build-toggle"
+          checked={previewBuild}
+          disabled={sessionLocked}
+          onCheckedChange={(checked) =>
+            onPreviewBuildChange(checked === true)
+          }
+        >
+          Play As Preview Build
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          data-testid="pause-on-play-toggle"
+          checked={pauseOnPlay}
+          onCheckedChange={(checked) => onPauseOnPlayChange(checked === true)}
+        >
+          Start Paused
+        </DropdownMenuCheckboxItem>
+      </DropdownMenuGroup>
+      <DropdownMenuSeparator />
+      <DropdownMenuGroup>
+        <DropdownMenuLabel>Simulation</DropdownMenuLabel>
+        <DropdownMenuItem
+          data-testid="simulate-start"
+          disabled={sessionLocked || simulateUnavailableReason !== null}
+          title={simulateUnavailableReason ?? undefined}
+          onClick={onSimulate}
+        >
+          <MonitorPlayIcon />
+          Simulate In Viewport
+        </DropdownMenuItem>
+        <DropdownMenuCheckboxItem
+          data-testid="keep-simulation-changes-toggle"
+          checked={keepSimulationChanges}
+          disabled={sessionLocked}
+          onCheckedChange={(checked) =>
+            onKeepSimulationChangesChange(checked === true)
+          }
+        >
+          Keep Changes On Stop
+        </DropdownMenuCheckboxItem>
+      </DropdownMenuGroup>
+      <DropdownMenuSeparator />
+      <DropdownMenuGroup>
+        <DropdownMenuLabel>Overlay</DropdownMenuLabel>
         <DropdownMenuCheckboxItem
           data-testid="overlay-stats-toggle"
           checked={overlayStats}
@@ -86,49 +150,20 @@ export function PlayDebugMenuItems({
           Profiler
         </DropdownMenuCheckboxItem>
       </DropdownMenuGroup>
-      <DropdownMenuGroup>
-        <DropdownMenuLabel>Session</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuCheckboxItem
-          data-testid="pause-on-play-toggle"
-          checked={pauseOnPlay}
-          onCheckedChange={(checked) => onPauseOnPlayChange(checked === true)}
-        >
-          Pause On Play
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuCheckboxItem
-          data-testid="preview-build-toggle"
-          checked={previewBuild}
-          disabled={sessionLocked}
-          onCheckedChange={(checked) =>
-            onPreviewBuildChange(checked === true)
-          }
-        >
-          Preview Build
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuCheckboxItem
-          data-testid="play-from-scene-toggle"
-          checked={playFromScene}
-          disabled={sessionLocked}
-          onCheckedChange={(checked) =>
-            onPlayFromSceneChange(checked === true)
-          }
-        >
-          Play from Scene
-        </DropdownMenuCheckboxItem>
-      </DropdownMenuGroup>
       {onRunFeatureTestCheck ? (
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Feature Test</DropdownMenuLabel>
+        <>
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            data-testid="feature-test-check-open"
-            disabled={sessionLocked}
-            onClick={onRunFeatureTestCheck}
-          >
-            Run Feature Test Check…
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              data-testid="feature-test-check-open"
+              disabled={sessionLocked}
+              onClick={onRunFeatureTestCheck}
+            >
+              <ClipboardCheckIcon />
+              Run Feature Test Check…
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </>
       ) : null}
     </DropdownMenuContent>
   );

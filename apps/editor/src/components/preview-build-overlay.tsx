@@ -68,7 +68,7 @@ export function PreviewBuildOverlay({
   error = null,
   showStats = true,
   showConsole = true,
-  showProfiler = true,
+  showProfiler = false,
 }: PreviewBuildOverlayProps) {
   const onDetachedRef = useRef(onDetached);
   onDetachedRef.current = onDetached;
