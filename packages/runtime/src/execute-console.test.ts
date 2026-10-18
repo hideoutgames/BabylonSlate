@@ -315,6 +315,21 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.stop();
   });
 
+  it("tells the host when quit stops the session, and refuses every later command", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.start();
+    expect(commands.some((command) => command.type === "sessionEnded")).toBe(false);
+    expect(runtime.executeConsoleCommand("quit")).toEqual({ success: true, output: "quit" });
+    expect(commands.filter((command) => command.type === "sessionEnded")).toEqual([{ type: "sessionEnded" }]);
+    expect(runtime.executeConsoleCommand("help")).toEqual({ success: false, output: "The runtime session has ended" });
+  });
+
   it("advances one tick from step while staying paused", () => {
     const runtime = createInProcessRuntime({
       seed: 1,

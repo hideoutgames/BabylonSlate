@@ -269,6 +269,8 @@ export function PreviewBuildOverlay({
           command.message,
         );
       }
+      // The player ran `quit`; end Preview Build as its Stop button does.
+      if (command?.type === "sessionEnded") void finishRef.current();
       if (command?.type === "setBehaviourTreeDebug") {
         setTreeOpen(command.enabled === true);
         if (command.enabled) setConsoleOpen(false);

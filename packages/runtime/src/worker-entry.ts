@@ -126,6 +126,16 @@ function onCommand(command: CommandMessage): void {
     return;
   }
   if (sceneSnapshots.receive(command)) return;
+  if (command.type === "sessionEnded") {
+    // `quit` already ran End Play and On Game End. The host ends the session, and in the
+    // player terminates this worker, only once their save writes are answered.
+    const rt = runtime;
+    const generation = bootGeneration;
+    void saveStorage.whenIdle().then(() => {
+      if (runtime === rt && generation === bootGeneration) queueCommand(command);
+    });
+    return;
+  }
   const geometryTransfers = dynamicMeshTransferables(command);
   if (geometryTransfers) {
     post({ channel: "command", payload: command }, geometryTransfers);

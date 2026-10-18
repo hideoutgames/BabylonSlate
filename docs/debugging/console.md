@@ -38,7 +38,7 @@ The game keeps running while the console is open. As you type, a list suggests c
 | `renderpath` | `auto`, `forward`, `clusteredForward` or `reset` | Requests a render path for the session. No argument prints the requested and actual path and the GPU backend. |  |
 | `framecap` | fps | Limits the frame rate. 0 or less uses 60. |  |
 | `volume` | 0 to 1 | Sets the master volume, like [Set Global Volume](../scripting/class/set-global-volume.md). |  |
-| `quit` |  | Stops the session. |  |
+| `quit` |  | Stops the session. Play and Preview Build close and return to the editor; an exported game stops running. |  |
 | `help` | command name | Lists every command, or shows one command's arguments. |  |
 | `pause` |  | Pauses the game. | Yes |
 | `resume` |  | Resumes the game. | Yes |

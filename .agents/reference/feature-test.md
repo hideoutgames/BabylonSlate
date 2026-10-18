@@ -185,6 +185,7 @@ A switched backend is saved before the first scene opens; scene edits a flight l
 
 A feature that cannot be showcased is recorded here with its reason; never skip it silently or weaken the gate.
 
+- Console `quit`: it ends the Play session, so the starter's console workload never runs it.
 - Skinned Skeletons and retargeted Animations: the repository has no skinned model (the Mannequin is a hierarchy rig, the door a node animation).
 - MSDF font atlases: none exists; text uses the facetype and Onest source Fonts.
 - Sprites cut from atlas sub-rects: the Sprite editor preview reads V top-down and the runtime bottom-up, so `FT_2D` Sprites use whole-frame Textures and crates stay Tilemap tiles.

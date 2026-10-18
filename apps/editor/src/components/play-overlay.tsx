@@ -834,6 +834,7 @@ function PlayOverlayView({
             if (current) syncFramebuffer(current.handle);
           },
           onFatalDiagnostic: () => finishSessionRef.current(),
+          onSessionEnded: () => finishSessionRef.current(),
         });
       } catch (error) {
         // Closed here: a later Stop must not stop or close this session again.

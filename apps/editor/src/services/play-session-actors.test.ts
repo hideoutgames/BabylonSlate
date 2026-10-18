@@ -62,6 +62,7 @@ describe.each(["worker", "in-process"] as const)(
         gameInstanceClass?: string;
         presentFirstFrame?: () => Promise<void>;
         onFatalDiagnostic?: () => void;
+        onSessionEnded?: () => void;
         scenes?: Parameters<typeof startPlaySession>[0]["scenes"];
         prepareSceneStream?: () => Promise<void>;
         applyCommand?: (command: CommandMessage) => void;
@@ -214,6 +215,7 @@ describe.each(["worker", "in-process"] as const)(
         scripts: [mainScript, ...(options.scripts ?? [])],
         gameInstanceClass: options.gameInstanceClass,
         onFatalDiagnostic: options.onFatalDiagnostic,
+        onSessionEnded: options.onSessionEnded,
         acquireAssetSources: options.acquireAssetSources,
         acquireSceneSources: options.sceneSources,
         audioReverbByScene: options.audioReverbByScene,
@@ -492,6 +494,17 @@ describe.each(["worker", "in-process"] as const)(
         code: "scene.loading.failed", assetGuid: "scene", severity: "error",
         message: "Scene loading failed: First frame shader pipeline unavailable", stack: failure.stack,
       })]);
+    });
+
+    it("hands a runtime quit to the host once, so the host can stop the session as its Stop control does", async () => {
+      const onSessionEnded = vi.fn(() => {
+        session!.stop();
+        session = undefined;
+      });
+      const runtime = await play({ onSessionEnded });
+      expect(runtime.executeConsoleCommand("quit")).toEqual({ success: true, output: "quit" });
+      expect(onSessionEnded).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(onSessionEnded).toHaveBeenCalledOnce());
     });
 
     it("keeps a placed main actor at its authored position and runs Begin Play", async () => {

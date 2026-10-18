@@ -650,6 +650,8 @@ export function startPlaySession(options: {
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   /** Called when a session-fatal diagnostic (infinite loop) arrives. */
   onFatalDiagnostic?: () => void;
+  /** Called when the runtime ended its own session (console `quit`); the host stops as for its Stop control. */
+  onSessionEnded?: () => void;
   /** When true, pause after Play boot so `boot.play`'s resume cannot undo it. */
   pauseOnPlay?: boolean;
   onSceneLoading?: (state: SceneLoadProgress | null) => void;
@@ -1381,6 +1383,10 @@ export function startPlaySession(options: {
       else if (command.type === "runtimeStopped") finishWorkerStop?.();
       else if (command.type === "log") options.onLog?.(command.message, command.severity ?? "log");
       else if (command.type === "diagnostic") options.onLog?.(command.message, command.severity ?? "error");
+      return;
+    }
+    if (command.type === "sessionEnded") {
+      queueMicrotask(() => options.onSessionEnded?.());
       return;
     }
     if (command.type === "simulationRetentionUnavailable") {

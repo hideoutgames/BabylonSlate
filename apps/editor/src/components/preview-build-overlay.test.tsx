@@ -171,6 +171,15 @@ describe("PreviewBuildOverlay", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
+  it("leaves Preview Build when the player reports that a quit command ended its session", async () => {
+    const iframeRef = createRef<HTMLIFrameElement>();
+    const onClose = vi.fn();
+    render(<PreviewBuildOverlay src="/player/index.html?preview=1" iframeRef={iframeRef} onClose={onClose} />);
+    act(() => window.dispatchEvent(new MessageEvent("message", { source: iframeRef.current!.contentWindow!,
+      origin: window.location.origin, data: { type: "babylonslate-preview-console-event", command: { type: "sessionEnded" } } })));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
   it("drains through the shared owner's stop boundary once before detaching", async () => {
     const iframeRef = createRef<HTMLIFrameElement>();
     const onTrace = vi.fn();
