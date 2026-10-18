@@ -365,11 +365,26 @@
   color: var(--foreground);
 }
 
-.toolbar-island button:is([aria-pressed="true"], [data-pressed]),
-.toolbar-island button:is([aria-pressed="true"], [data-pressed]):hover:not(:disabled) {
-  background: var(--accent);
+.toolbar-island button[aria-pressed="true"],
+.toolbar-island button[aria-pressed="true"]:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--selection) 18%, transparent);
+  color: var(--selection);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--selection) 45%, transparent);
+}
+
+/* Menu triggers stay neutral while open; the open menu is the feedback. */
+.toolbar-island button[aria-expanded="true"],
+.toolbar-island button[aria-expanded="true"]:hover {
+  background: color-mix(in oklch, var(--foreground) 10%, transparent);
   color: var(--foreground);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 55%, transparent);
+}
+
+/* A compact caret after a trigger's icon or value marks it as a menu. */
+.toolbar-island .toolbar-island-caret {
+  width: 10px;
+  height: 10px;
+  margin-inline-start: -2px;
+  opacity: 0.6;
 }
 
 .toolbar-island [data-slot="toggle-group"] {

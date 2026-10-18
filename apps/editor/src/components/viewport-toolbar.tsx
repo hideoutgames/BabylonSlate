@@ -6,7 +6,6 @@ import {
   type NestedMenuItem,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
-import { Badge } from "@babylonslate/ui/components/badge";
 import { Separator } from "@babylonslate/ui/components/separator";
 import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
@@ -24,6 +23,8 @@ import type { GizmoTool, ViewportShadingMode } from "@babylonslate/render";
 import {
   ArrowDownToLineIcon,
   BoxIcon,
+  ChevronDownIcon,
+  EyeIcon,
   GlobeIcon,
   MagnetIcon,
   MoveIcon,
@@ -31,6 +32,7 @@ import {
   ScalingIcon,
   Settings2Icon,
   SquareDashedMousePointerIcon,
+  VideoIcon,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import {
@@ -130,6 +132,7 @@ export function ViewportToolbar({
   const snapChord = bindings.get("viewport.toggleSnap")?.[0];
   const dragSelectChord = bindings.get("viewport.toggleDragSelect")?.[0];
   const modeChord = bindings.get("viewport.toggleMode")?.[0];
+  const gameCameraChord = bindings.get("viewport.toggleGameCamera")?.[0];
   const gizmoKeys = { enabled: showGizmoTools, scopeRef: toolbarRef };
   useKeybindCommand("viewport.translate", () => setGizmoTool("translate"), gizmoKeys);
   useKeybindCommand("viewport.rotate", () => setGizmoTool("rotate"), gizmoKeys);
@@ -214,46 +217,35 @@ export function ViewportToolbar({
     ...viewportKeys, enabled: Boolean(onDrop) && !dropDisabled,
   });
 
-  const shadingMenu: NestedMenuItem = {
-    type: "submenu",
-    id: "viewport-mode",
-    label: "Viewport Mode",
-    testId: `${testIdPrefix}viewport-shading-mode`,
-    items: [
-      {
-        type: "radio-group",
-        id: "viewport-shading",
-        value: viewportShadingMode,
-        closeOnClick: false,
-        onValueChange: (value) =>
-          setViewportShadingMode(value as ViewportShadingMode),
-        items: [
+  const litLabel = projectDocument?.settings.render.mode === "cel" ? "CEL" : "PBR";
+  const shadingLabel =
+    viewportShadingMode === "wireframe"
+      ? "Wireframe"
+      : viewportShadingMode === "unlit"
+        ? "Unlit"
+        : litLabel;
+  // One View menu: how the scene draws, then which editor overlays draw on it.
+  // SceneLayer and overlay-prefab viewports (no 3D / 2D toggle) are HUD
+  // overlays that always draw Unlit, so they offer no shading choice.
+  const viewItems: NestedMenuItem[] = [
+    ...(showViewportModeToggle
+      ? ([
           {
-            id: "pbr",
-            label: projectDocument?.settings.render.mode === "cel" ? "CEL" : "PBR",
-            value: "pbr",
-            testId: `${testIdPrefix}viewport-shading-pbr`,
+            type: "radio-group",
+            id: "viewport-shading",
+            value: viewportShadingMode,
+            closeOnClick: false,
+            onValueChange: (value: string) =>
+              setViewportShadingMode(value as ViewportShadingMode),
+            items: [
+              { id: "pbr", label: litLabel, value: "pbr", testId: `${testIdPrefix}viewport-shading-pbr` },
+              { id: "unlit", label: "Unlit", value: "unlit", testId: `${testIdPrefix}viewport-shading-unlit` },
+              { id: "wireframe", label: "Wireframe", value: "wireframe", testId: `${testIdPrefix}viewport-shading-wireframe` },
+            ],
           },
-          {
-            id: "unlit",
-            label: "Unlit",
-            value: "unlit",
-            testId: `${testIdPrefix}viewport-shading-unlit`,
-          },
-          {
-            id: "wireframe",
-            label: "Wireframe",
-            value: "wireframe",
-            testId: `${testIdPrefix}viewport-shading-wireframe`,
-          },
-        ],
-      },
-    ],
-  };
-  const settingsItems: NestedMenuItem[] = [
-    // SceneLayer and overlay-prefab viewports (no 3D / 2D toggle) are HUD
-    // overlays that always draw Unlit, so they offer no Viewport Mode choice.
-    ...(showViewportModeToggle ? [shadingMenu] : []),
+          { type: "separator", id: "shading-separator" },
+        ] satisfies NestedMenuItem[])
+      : []),
     {
       type: "checkbox",
       id: "show-grid",
@@ -284,6 +276,8 @@ export function ViewportToolbar({
       testId: `${testIdPrefix}viewport-show-collisions-toggle`,
       onCheckedChange: setCollisionsVisible,
     },
+  ];
+  const settingsItems: NestedMenuItem[] = [
     {
       type: "checkbox",
       id: "joystick",
@@ -302,35 +296,18 @@ export function ViewportToolbar({
       testId: `${testIdPrefix}viewport-pivot-around-center-toggle`,
       onCheckedChange: setPivotAroundCenter,
     },
+    { type: "separator", id: "settings-separator" },
     {
-      type: "checkbox",
-      id: "game-camera",
-      label: "Game Camera",
-      shortcut: bindings.get("viewport.toggleGameCamera")?.[0],
-      checked: previewGameCamera,
-      closeOnClick: false,
-      testId: `${testIdPrefix}viewport-game-camera-toggle`,
-      onCheckedChange: setPreviewGameCamera,
+      id: "grid-size",
+      label: "Grid Settings",
+      testId: `${testIdPrefix}viewport-grid-size`,
+      onSelect: () => setNumberPrompt("grid"),
     },
     {
-      type: "submenu",
-      id: "settings",
-      label: "Settings",
-      testId: `${testIdPrefix}viewport-settings-submenu`,
-      items: [
-        {
-          id: "grid-size",
-          label: "Grid Settings",
-          testId: `${testIdPrefix}viewport-grid-size`,
-          onSelect: () => setNumberPrompt("grid"),
-        },
-        {
-          id: "camera-speed",
-          label: "Camera Speed",
-          testId: `${testIdPrefix}viewport-camera-speed`,
-          onSelect: () => setNumberPrompt("camera"),
-        },
-      ],
+      id: "camera-speed",
+      label: "Camera Speed",
+      testId: `${testIdPrefix}viewport-camera-speed`,
+      onSelect: () => setNumberPrompt("camera"),
     },
   ];
 
@@ -467,6 +444,46 @@ export function ViewportToolbar({
       ) : null}
       <ToolbarSeparator />
       <NestedMenu
+        items={viewItems}
+        size="chrome"
+        align="end"
+        contentTestId={`${testIdPrefix}viewport-view-menu`}
+        contentClassName="w-max min-w-56 whitespace-nowrap"
+        trigger={
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-label={showViewportModeToggle ? `View: ${shadingLabel}` : "View"}
+            data-testid={`${testIdPrefix}viewport-view`}
+          />
+        }
+      >
+        <EyeIcon />
+        {showViewportModeToggle ? <span>{shadingLabel}</span> : null}
+        <ChevronDownIcon className="toolbar-island-caret" />
+      </NestedMenu>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Toggle
+              variant="outline"
+              size="sm"
+              aria-label="Game Camera"
+              aria-keyshortcuts={gameCameraChord ? ariaKeyShortcuts(gameCameraChord) : undefined}
+              pressed={previewGameCamera}
+              onPressedChange={setPreviewGameCamera}
+              data-testid={`${testIdPrefix}viewport-game-camera-toggle`}
+            >
+              <VideoIcon />
+            </Toggle>
+          }
+        />
+        <TooltipContent>
+          Look Through The Game Camera <ShortcutKeys chord={gameCameraChord} decorative />
+        </TooltipContent>
+      </Tooltip>
+      <NestedMenu
         items={settingsItems}
         size="chrome"
         align="end"
@@ -485,35 +502,38 @@ export function ViewportToolbar({
         <Settings2Icon />
       </NestedMenu>
       {showViewportModeToggle ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setMode(viewportMode === "3d" ? "2d" : "3d")}
-                aria-label={`${viewportMode.toUpperCase()} Viewport; Switch To ${viewportMode === "3d" ? "2D" : "3D"}`}
-                aria-keyshortcuts={modeChord ? ariaKeyShortcuts(modeChord) : undefined}
-                data-testid={`${testIdPrefix}viewport-mode-toggle`}
-              >
-                {viewportMode.toUpperCase()}
-              </Button>
-            }
-          />
-          <TooltipContent>
-            Switch 2D / 3D <ShortcutKeys chord={modeChord} decorative />
-          </TooltipContent>
-        </Tooltip>
-      ) : null}
-      {viewportShadingMode === "wireframe" ||
-      (viewportShadingMode === "unlit" && showViewportModeToggle) ? (
-        <Badge variant="secondary">
-          {viewportShadingMode === "wireframe" ? "Wireframe" : "Unlit"}
-        </Badge>
-      ) : null}
-      {previewGameCamera ? (
-        <Badge variant="secondary">Game Camera</Badge>
+        <>
+          <ToolbarSeparator />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <ToggleGroup
+                  variant="outline"
+                  size="sm"
+                  spacing={0}
+                  value={[viewportMode]}
+                  onValueChange={(value) => {
+                    const next = value[0] as "2d" | "3d" | undefined;
+                    if (next) setMode(next);
+                  }}
+                  aria-label="Viewport Dimension"
+                  aria-keyshortcuts={modeChord ? ariaKeyShortcuts(modeChord) : undefined}
+                  data-testid={`${testIdPrefix}viewport-mode-toggle`}
+                />
+              }
+            >
+              <ToggleGroupItem value="2d" aria-label="2D Viewport" data-testid={`${testIdPrefix}viewport-mode-2d`}>
+                2D
+              </ToggleGroupItem>
+              <ToggleGroupItem value="3d" aria-label="3D Viewport" data-testid={`${testIdPrefix}viewport-mode-3d`}>
+                3D
+              </ToggleGroupItem>
+            </TooltipTrigger>
+            <TooltipContent>
+              Switch 2D / 3D <ShortcutKeys chord={modeChord} decorative />
+            </TooltipContent>
+          </Tooltip>
+        </>
       ) : null}
       <GridSizeDialog
         open={numberPrompt === "grid"}
