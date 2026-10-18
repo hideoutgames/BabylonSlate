@@ -11,7 +11,6 @@ import { engineDefaultSkyboxVitePlugin } from "./vite-engine-skybox.ts";
 import { engineBillboardsVitePlugin } from "./vite-engine-billboards.ts";
 import { featureTestEngineContentVitePlugin } from "./vite-engine-content.ts";
 import { playerHostVitePlugin } from "./vite-player-host.ts";
-import { validateChangelog } from "../../scripts/distribution/changelog.mjs";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(rootDir, "../..");
@@ -49,20 +48,12 @@ const channelLabel =
       ? "Test (Indev)"
       : "Development build";
 const buildLabel = `${declaredVersion} ${channelLabel}`;
-const changelog = validateChangelog(
-  JSON.parse(readFileSync(path.join(repoRoot, "release/changelog.json"), "utf8")),
-  declaredVersion,
-);
-if (buildIdentity?.channel === "release" && JSON.stringify(buildIdentity.patchNotes) !== JSON.stringify(changelog.find(notes => notes.version === declaredVersion))) {
-  throw new Error("Release manifest patch notes differ from the source changelog");
-}
 
 export default defineConfig({
   define: {
     __BABYLONSLATE_BUILD__: JSON.stringify(buildIdentity),
     __BABYLONSLATE_BUILD_LABEL__: JSON.stringify(buildLabel),
     __BABYLONSLATE_VERSION__: JSON.stringify(declaredVersion),
-    __BABYLONSLATE_CHANGELOG__: JSON.stringify(changelog),
   },
   base: process.env.VITE_BASE_PATH ?? "/",
   plugins: [

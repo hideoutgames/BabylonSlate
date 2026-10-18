@@ -9,6 +9,7 @@ import {
 } from "@babylonslate/vfs";
 import { installDirectViewReadSync } from "@babylonslate/render";
 import App from "./App";
+import { loadReleaseNotes } from "./services/release-notes";
 
 initializeCapacitorLifecycle();
 initializeCapacitorAudioLifecycle();
@@ -68,6 +69,9 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
 } else {
   // Pixel probes read view canvases; a directly presented view writes its image into its canvas first.
   if (isTestModeEnabled()) installDirectViewReadSync();
+  // Release notes load from GitHub once per launch. QA `?test` sessions skip
+  // this request and load them when the Changelog first opens.
+  if (!(isTestModeEnabled() && new URLSearchParams(location.search).has("test"))) void loadReleaseNotes();
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <App />

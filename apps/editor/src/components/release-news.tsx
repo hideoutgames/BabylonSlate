@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { LoaderCircleIcon } from "lucide-react";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { SelectableText } from "@babylonslate/editor-kit";
 import { Badge } from "@babylonslate/ui/components/badge";
@@ -6,10 +7,11 @@ import { Button } from "@babylonslate/ui/components/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@babylonslate/ui/components/dialog";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { useAppSettings } from "../context/app-settings-context";
 import { brandWordmarkSrc } from "../lib/branding";
-import { getApplicationVersion, getChangelog, type ReleaseNotes } from "../lib/changelog";
+import { getApplicationVersion, type ReleaseNotes } from "../lib/changelog";
+import { loadReleaseNotes, useReleaseNotes, type ReleaseNotesState } from "../services/release-notes";
 
 /** One release: its version beside the title and changes. */
 function ReleaseEntry({ release, current }: { release: ReleaseNotes; current: boolean }) {
@@ -29,23 +31,59 @@ function ReleaseEntry({ release, current }: { release: ReleaseNotes; current: bo
   );
 }
 
-/** One dialog for first-launch news and the account menu's offline history. */
+/** What the Changelog shows while notes load, after a failed load, or when none are published. */
+function ReleaseNotesStatus({ status }: { status: ReleaseNotesState["status"] }) {
+  if (status === "failed") {
+    return (
+      <Empty data-testid="release-news-failed">
+        <EmptyHeader>
+          <EmptyTitle>Failed To Load Patch Notes</EmptyTitle>
+          <EmptyDescription>Check your connection and reopen Haptic to try again.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
+  if (status === "loaded") {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>No Patch Notes Yet</EmptyTitle>
+          <EmptyDescription>Release notes appear here once a version is published.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
+  return (
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia><LoaderCircleIcon className="animate-spin" aria-hidden="true" /></EmptyMedia>
+        <EmptyTitle>Loading Patch Notes</EmptyTitle>
+      </EmptyHeader>
+    </Empty>
+  );
+}
+
+/** One dialog for first-launch news and the account menu's release history from GitHub Releases. */
 export function ReleaseNews({
   open,
   onOpenChange,
   ready = true,
   announce = !import.meta.env.DEV && !(isTestModeEnabled() && new URLSearchParams(window.location.search).has("test")),
   version = getApplicationVersion(),
-  releases = getChangelog(),
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   ready?: boolean;
   announce?: boolean;
   version?: string;
-  releases?: ReleaseNotes[];
 }) {
   const { settings, hydrated, updateSettings } = useAppSettings();
+  const notes = useReleaseNotes();
+  const releases = notes.releases;
+  // QA sessions skip the launch request; this reuses it everywhere else.
+  useEffect(() => {
+    if (open) void loadReleaseNotes();
+  }, [open]);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const current = releases.find(release => release.version === version);
   const showNews = Boolean(ready && announce && hydrated && current && dismissed !== version && !settings.seenReleaseVersions.includes(version));
@@ -90,7 +128,7 @@ export function ReleaseNews({
           {visibleReleases.length ? visibleReleases.map(release => (
             <ReleaseEntry key={release.version} release={release} current={release.version === version} />
           )) : (
-            <Empty><EmptyHeader><EmptyTitle>No Release Notes</EmptyTitle><EmptyDescription>This build has no bundled release notes.</EmptyDescription></EmptyHeader></Empty>
+            <ReleaseNotesStatus status={notes.status} />
           )}
         </div>
         <DialogFooter>
