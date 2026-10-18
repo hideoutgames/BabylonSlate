@@ -10,7 +10,7 @@ The console runs commands that change quality, control time, show debug views an
 
 Exported games have no console window. They still run commands from **Execute Console Command**.
 
-The game keeps running while the console is open, and pressing the game does not close it: use <kbd>Esc</kbd> or **Close**. The command field is ready to type in when the console opens, except on touch devices, where the console output is selected so the on-screen keyboard stays hidden until you tap the field. As you type, a list suggests commands, arguments and values: use the arrow keys to choose, <kbd>Tab</kbd> or a tap to complete, and <kbd>Enter</kbd> to run. With no suggestions showing, the arrow keys step through earlier commands. **Clear** empties the transcript and **Copy Transcript** copies it.
+The game keeps running while the console is open, and pressing the game does not close it: use <kbd>Esc</kbd> or **Close**. The command field is ready to type in when the console opens. On touch devices it opens without the on-screen keyboard; tap the field to type. As you type, a list suggests commands, arguments and values: use the arrow keys to choose, <kbd>Tab</kbd> or a tap to complete, and <kbd>Enter</kbd> to run. With no suggestions showing, the arrow keys step through earlier commands. **Clear** empties the transcript and **Copy Transcript** copies it.
 
 ## Command syntax
 
