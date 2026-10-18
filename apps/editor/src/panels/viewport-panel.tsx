@@ -1230,6 +1230,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         engineSceneDiagnostics: () => Promise<
           import("../testing/webgpu-previews-proof").EngineSceneDiagnostics | null
         >;
+        /** Fly the editor camera along a path and record per-frame render events (perf routes only). */
+        flyThrough: (
+          options: import("../testing/flythrough-probe").FlyThroughOptions,
+        ) => Promise<import("../testing/flythrough-probe").FlyThroughResult>;
       };
     };
     const host = globalThis as ViewportTestHost;
@@ -1261,6 +1265,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         const engine = ensureSharedEngine();
         if (!engine) return null;
         return (await import("../testing/webgpu-previews-proof")).collectEngineSceneDiagnostics(engine, engineRef.current?.scene ?? null);
+      },
+      flyThrough: async (options) => {
+        if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Fly-through requires a test build.");
+        const handle = engineRef.current;
+        if (!handle) throw new Error("No active viewport for the fly-through");
+        return (await import("../testing/flythrough-probe")).runFlyThrough(handle, options);
       },
       environmentTextureSamples: async () => {
         const handle = engineRef.current;
