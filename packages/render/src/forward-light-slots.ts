@@ -1,5 +1,10 @@
-import { InstancedMesh, type Light, type Scene } from "@babylonjs/core";
-import { hasPinnedLightBlock, receiverSignature } from "./shadow-receiver-handoff";
+import {
+  InstancedMesh,
+  type AbstractMesh,
+  type Light,
+  type Scene,
+} from "@babylonjs/core";
+import { pinnedLights, receiverSignature } from "./shadow-receiver-handoff";
 
 /** One Forward admission change: `to` took `from`'s shader light index on every receiver. */
 export type ForwardLightSlotExchange = {
@@ -28,14 +33,17 @@ function slotSignature(scene: Scene, light: Light): string | null {
  * Babylon disables a light by splicing it out of each `mesh.lightSources` and
  * enables one by appending it, so one Forward swap would move every later
  * light down a shader index and give each lit material new defines. Call this
- * before the toggles: each entering light takes the index of a leaving one
- * (same slot signature first) in `scene.lights` and in every receiver that
- * both can light, so Babylon's own resyncs find nothing to change and later
- * `lightSources` rebuilds reproduce the order. Receivers are dirtied only
- * where the slot's defines change. Entering lights without a partner move to
- * the end of `scene.lights`, matching where Babylon appends them. The caller
- * keeps directional lights out of both lists (sun ownership follows scene
- * order) and skips Clustered Forward, which orders lights itself.
+ * before the toggles with the lights the budget drops and admits: each
+ * admitted light takes the index of a dropped one (same slot signature first)
+ * in `scene.lights` and in every receiver that both can light, so Babylon's
+ * own resyncs find nothing to change there and later `lightSources` rebuilds
+ * reproduce the order. An exchange is preserved, dirtying nothing, only when
+ * both lights have the same slot signature and every mesh holds both or
+ * neither; otherwise the exchanged receivers are dirtied (Babylon dirties the
+ * meshes that hold only one). Admitted lights without a partner move to the
+ * end of `scene.lights`, matching where Babylon appends them. The caller keeps
+ * sun and fill lights out (sun ownership follows scene order) and skips
+ * Clustered Forward, which orders lights itself.
  */
 export function exchangeForwardLightSlots(
   scene: Scene,
@@ -64,28 +72,40 @@ export function exchangeForwardLightSlots(
   }
   const lights = scene.lights;
   const exchanges: ForwardLightSlotExchange[] = [];
+  const pinned = pairs.length ? pinnedLights(scene) : undefined;
+  const receivers: AbstractMesh[] = [];
   for (const [from, to] of pairs) {
     const a = lights.indexOf(from);
     const b = lights.indexOf(to);
     if (a < 0 || b < 0) continue;
     lights[a] = to;
     lights[b] = from;
-    const preserved =
+    let preserved =
       signature(from) !== null &&
       signature(from) === signature(to) &&
-      !hasPinnedLightBlock(scene, [from, to]);
+      !pinned!.has(from) &&
+      !pinned!.has(to);
+    receivers.length = 0;
     for (const mesh of scene.meshes) {
       // An instance shares its source's array, which the source updates.
       if (mesh instanceof InstancedMesh) continue;
       const sources = mesh.lightSources;
-      const index = sources.indexOf(from);
-      if (index < 0 || sources.includes(to) || !to.canAffectMesh(mesh)) continue;
-      sources[index] = to;
+      const lit = sources.includes(from);
+      const reaches = !sources.includes(to) && to.canAffectMesh(mesh);
+      if (lit && reaches) receivers.push(mesh);
+      // Babylon splices `from` out of, or appends `to` to, this mesh's
+      // lights, so its later slots change: refresh every receiver's shader.
+      else if (lit || reaches) preserved = false;
+    }
+    for (const mesh of receivers) {
+      const sources = mesh.lightSources;
+      sources[sources.indexOf(from)] = to;
       // As Babylon's removal does: never draw the old effect with the new light.
       if (!preserved) mesh._markSubMeshesAsLightDirty(true);
     }
     exchanges.push({ from, to, preserved });
   }
+  receivers.length = 0;
   if (appended.length) {
     // After every light that is lit once the toggles land.
     const incoming = new Set(exchanges.map(({ to }) => to));
@@ -105,19 +125,28 @@ export function exchangeForwardLightSlots(
 
 /**
  * After the toggles: an exchange whose lights did not reach the predicted
- * state (a parent changed in the same pass) is handed back to Babylon's
- * resync, which repairs membership and dirties the receivers.
+ * state (a parent changed in the same pass) is undone in `scene.lights` and
+ * handed back to Babylon's resync, which repairs membership and dirties the
+ * receivers.
  */
 export function settleForwardLightSlots(
   scene: Scene,
   exchanges: readonly ForwardLightSlotExchange[],
 ): void {
   for (const exchange of exchanges) {
-    if (!exchange.from.isEnabled() && exchange.to.isEnabled()) continue;
+    const { from, to } = exchange;
+    if (!from.isEnabled() && to.isEnabled()) continue;
     exchange.preserved = false;
+    const lights = scene.lights;
+    const a = lights.indexOf(to);
+    const b = lights.indexOf(from);
+    if (a >= 0 && b >= 0) {
+      lights[a] = from;
+      lights[b] = to;
+    }
     for (const mesh of scene.meshes) {
-      mesh._resyncLightSource(exchange.from);
-      mesh._resyncLightSource(exchange.to);
+      mesh._resyncLightSource(from);
+      mesh._resyncLightSource(to);
     }
   }
 }

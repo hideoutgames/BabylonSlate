@@ -35,16 +35,17 @@ export function receiverSignature(light: Light): string {
   ]);
 }
 
-/** Node blocks bound to one light prepare its defines outside lightSources order. */
-export function hasPinnedLightBlock(scene: Scene, lights: readonly Light[]): boolean {
+/** Lights a node block is bound to; it prepares their defines outside lightSources order. */
+export function pinnedLights(scene: Scene): Set<Light> {
+  const pinned = new Set<Light>();
   for (const material of scene.materials) {
     if (!(material instanceof NodeMaterial)) continue;
     for (const block of material.attachedBlocks) {
       const light = (block as { light?: unknown }).light;
-      if (light && lights.includes(light as Light)) return true;
+      if (light) pinned.add(light as Light);
     }
   }
-  return false;
+  return pinned;
 }
 
 function journal(scene: Scene): Journal {
@@ -81,13 +82,15 @@ export function exchangeShadowReceivers(
   const a = lights.indexOf(from);
   const b = lights.indexOf(to);
   const exchange = new Set<Light[]>();
+  const pinned = pinnedLights(scene);
   const valid =
     a >= 0 &&
     b >= 0 &&
     // Clustered Forward re-sorts lightSources and moves lights into the cluster.
     !hasClusteredLightPolicy(scene) &&
     receiverSignature(from) === receiverSignature(to) &&
-    !hasPinnedLightBlock(scene, [from, to]) &&
+    !pinned.has(from) &&
+    !pinned.has(to) &&
     scene.meshes.every((mesh) => {
       // InstancedMesh shares its source's array; exchange each array once.
       const sources = mesh.lightSources;

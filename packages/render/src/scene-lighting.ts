@@ -1,6 +1,6 @@
 import { syncSceneRenderPath, publishSceneRenderPath } from "./scene-render-path";
 import "./texture-quality";
-import { syncForwardLightPolicy } from "./light-policy";
+import { lightsInCreationOrder, syncForwardLightPolicy } from "./light-policy";
 import { forwardLightBudget } from "./forward-light-budget";
 import { lightingSamplerCapacity } from "./light-sampler-budget";
 import {
@@ -326,7 +326,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
     limits: () =>
       admission.limited.length
         ? [
-            `Conventional lighting: ${admission.admitted}/${admission.requested} requested lights admitted; ${sceneRenderingSettings(scene).localLightBudget} scalability local lights; ${budget.slots} shader slots (${budget.source}, ${budget.reservedBlocks} non-light blocks reserved); ${admission.samplers}/${lightingSamplerCapacity(scene)} lighting samplers, ${admission.samplerLimited.length} limited by sampler headroom. Limited: ${admission.limited
+            `Conventional lighting: ${admission.admitted}/${admission.requested} requested lights admitted; ${sceneRenderingSettings(scene).localLightBudget} scalability local lights; ${budget.slots} shader slots (${budget.source}, ${budget.reservedBlocks} non-light blocks reserved); ${admission.samplers}/${lightingSamplerCapacity(scene)} lighting samplers, ${admission.samplerLimited.length} limited by sampler headroom. Limited: ${lightsInCreationOrder(admission.limited)
               .slice(0, 16)
               .map((light) => light.name)
               .join(", ")}${admission.limited.length > 16 ? ", …" : ""}`,

@@ -36,8 +36,26 @@ const scratchCandidateSet = new Set<Light>();
 const scratchDistances = new Map<Light, number>();
 const scratchLights: Light[] = [];
 const scratchAuthored: boolean[] = [];
+const scratchBudget: BudgetChange[] = [];
 const scratchLeaving: Light[] = [];
 const scratchEntering: Light[] = [];
+
+/** How this sync's budget selection changed a light's Forward limit. */
+const BudgetChange = { None: 0, Dropped: 1, Admitted: 2 } as const;
+type BudgetChange = (typeof BudgetChange)[keyof typeof BudgetChange];
+
+/**
+ * Creation order: the stable "authored" order of a Scene's lights. The Forward
+ * policy reorders `scene.lights` to keep shader slots, so order-sensitive
+ * readers (clustered authored order, diagnostics) sort by this instead.
+ */
+export function compareLightCreation(a: Light, b: Light): number {
+  return a.uniqueId - b.uniqueId;
+}
+
+export function lightsInCreationOrder(lights: readonly Light[]): Light[] {
+  return lights.slice().sort(compareLightCreation);
+}
 
 export function isAuthoredLightEnabled(light: Light): boolean {
   const current = light.isEnabled(false);
@@ -189,24 +207,35 @@ export function syncForwardLightPolicy(
   candidateSet.clear();
   const lights = scratchLights;
   const authored = scratchAuthored;
+  const budget = scratchBudget;
   let exchanges: readonly ForwardLightSlotExchange[];
   try {
     for (const light of scene.lights) {
-      if (isForwardEligible(light) && !selected.has(light)) {
+      const wasLimited = forwardExcluded.has(light);
+      const isLimited = isForwardEligible(light) && !selected.has(light);
+      if (isLimited) {
         forwardExcluded.add(light);
         if (!candidateSet.size) for (const candidate of candidates) candidateSet.add(candidate);
         if (!candidateSet.has(light)) limited.push(light);
       } else forwardExcluded.delete(light);
       lights.push(light);
       authored.push(isAuthoredLightEnabled(light));
+      budget.push(
+        isLimited === wasLimited
+          ? BudgetChange.None
+          : isLimited
+            ? BudgetChange.Dropped
+            : BudgetChange.Admitted,
+      );
     }
-    exchanges = exchangeSlots(scene, lights, authored);
+    exchanges = exchangeSlots(scene, lights, authored, budget);
     for (let index = 0; index < lights.length; index++)
       applyEnabled(lights[index]!, authored[index]!);
     settleForwardLightSlots(scene, exchanges);
   } finally {
     lights.length = 0;
     authored.length = 0;
+    budget.length = 0;
     candidates.length = 0;
     candidateSet.clear();
   }
@@ -221,11 +250,15 @@ export function syncForwardLightPolicy(
   };
 }
 
-/** Lights this sync will enable take the shader indices of those it disables. */
+/**
+ * Lights the budget admits this sync take the shader indices of those it
+ * drops. Authored Enabled, intensity and parent changes keep Babylon's order.
+ */
 function exchangeSlots(
   scene: Scene,
   lights: readonly Light[],
   authored: readonly boolean[],
+  budget: readonly BudgetChange[],
 ): readonly ForwardLightSlotExchange[] {
   // Clustered Forward orders lightSources itself; Babylon re-sorts a scene
   // that requires light sorting whenever a light is added or removed.
@@ -236,14 +269,15 @@ function exchangeSlots(
   try {
     for (let index = 0; index < lights.length; index++) {
       const light = lights[index]!;
-      // The first enabled sun in scene order illuminates; never move one.
-      if (light instanceof DirectionalLight) continue;
+      // The first enabled sun in scene order illuminates; never move a sun
+      // or fill (the budget keeps both ahead of every local light anyway).
+      if (budget[index] === BudgetChange.None || isGlobalLight(light)) continue;
       const lit = light.isEnabled();
       const next =
         effectiveEnabled(light, authored[index]!) &&
         (!light.parent || light.parent.isEnabled());
-      if (lit && !next) leaving.push(light);
-      else if (!lit && next) entering.push(light);
+      if (budget[index] === BudgetChange.Dropped && lit && !next) leaving.push(light);
+      else if (budget[index] === BudgetChange.Admitted && !lit && next) entering.push(light);
     }
     // Removal alone keeps every remaining light's relative order.
     return entering.length
