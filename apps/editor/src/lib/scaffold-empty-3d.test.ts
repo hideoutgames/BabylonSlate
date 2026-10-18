@@ -1,11 +1,14 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultScene, quatRotateVector, type SerializedGraph } from "@babylonslate/core";
-import { AssetRegistry, collectAssetDependencyMetadata, createRegistryAssetLoadingService, encodeBabasset, type ImportResult, type IndexedAsset, type RegistryLoadedAsset } from "@babylonslate/assets";
+import { AssetRegistry, collectAssetDependencyMetadata, createRegistryAssetLoadingService, encodeBabasset, extractGltfPositions, type ImportResult, type IndexedAsset, type RegistryLoadedAsset } from "@babylonslate/assets";
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import {
   applyKenneyMannequinEmptyScaffold,
   MANNEQUIN_ACTOR_ID,
+  MANNEQUIN_CAPSULE_HALF_HEIGHT,
+  MANNEQUIN_CAPSULE_RADIUS,
   MANNEQUIN_CLASS_ID,
 } from "./scaffold-empty-3d";
 import { syncSceneActorsFromPrefabs } from "./prefab-instance-sync";
@@ -106,10 +109,11 @@ describe("applyKenneyMannequinEmptyScaffold", () => {
     );
     expect(actorBody?.properties.motionType).toBe("kinematic");
     expect(actorCollider?.properties.shape).toEqual(
-      expect.objectContaining({ kind: "capsule", radius: 0.5, halfHeight: 1 }),
+      expect.objectContaining({ kind: "capsule", radius: MANNEQUIN_CAPSULE_RADIUS, halfHeight: MANNEQUIN_CAPSULE_HALF_HEIGHT }),
     );
     const actorY = actorCollider?.transform?.position[1];
-    expect(actorY).toBe(1.5);
+    // The capsule stands on the feet (origin) instead of floating or sinking.
+    expect(actorY).toBeCloseTo(MANNEQUIN_CAPSULE_RADIUS + MANNEQUIN_CAPSULE_HALF_HEIGHT, 6);
 
     const classCall = createAsset.mock.calls.find(([, path]) =>
       String(path).includes("Mannequin.class"),
@@ -148,5 +152,19 @@ describe("applyKenneyMannequinEmptyScaffold", () => {
       scope.dispose();
       loading.dispose();
     }
+  });
+});
+
+describe("Mannequin capsule", () => {
+  it("fits the shipped Kenney Mannequin: feet on the origin, head at the capsule top, body inside the radius", () => {
+    const glb = readFileSync(new URL("../../../../engine-content/kenney-assets/Mannequin/mannequin.glb", import.meta.url));
+    const rest = extractGltfPositions(new Uint8Array(glb));
+    const heights = rest.map((point) => point.y);
+    const capsuleTop = 2 * (MANNEQUIN_CAPSULE_RADIUS + MANNEQUIN_CAPSULE_HALF_HEIGHT);
+    expect(Math.min(...heights)).toBeCloseTo(0, 3);
+    expect(capsuleTop).toBeCloseTo(Math.max(...heights), 3);
+    // Torso, head and legs (everything inside the shoulders) are narrower than the capsule's diameter.
+    const trunk = rest.filter((point) => Math.abs(point.x) <= 0.4 + 1e-3);
+    expect(Math.max(...trunk.map((point) => Math.max(Math.abs(point.x), Math.abs(point.z))))).toBeLessThanOrEqual(MANNEQUIN_CAPSULE_RADIUS);
   });
 });
