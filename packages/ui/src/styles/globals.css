@@ -101,8 +101,8 @@
   --dialog-edge: clamp(0.5rem, 1vw, 1rem);
   --dialog-max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge));
   --dialog-max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 2 * var(--dialog-edge));
-  width: min(var(--dialog-max-width), max(56rem, 82vw));
-  height: min(var(--dialog-max-height), max(36rem, 84dvh));
+  width: min(var(--dialog-max-width), max(60rem, 92vw));
+  height: min(var(--dialog-max-height), max(38rem, 90dvh));
   max-width: var(--dialog-max-width);
   max-height: var(--dialog-max-height);
 }

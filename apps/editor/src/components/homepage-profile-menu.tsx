@@ -17,7 +17,19 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@babylonslate/ui/components/dropdown-menu";
+import { getHostPlatform } from "@babylonslate/vfs";
 import { HomepageAccountCenter } from "./homepage-account-center";
+import {
+  unconfiguredBilling,
+  type AccountDetails,
+  type BillingController,
+} from "./homepage-account-types";
+
+/** Store builds bill through RevenueCat; web and desktop through Clerk. */
+function defaultBilling(): BillingController {
+  const host = getHostPlatform();
+  return unconfiguredBilling(host === "ios" || host === "android" ? "revenuecat" : "clerk");
+}
 
 function ProfileAvatar({
   imageUrl,
@@ -45,7 +57,10 @@ export function HomepageProfileMenu({
   email,
   description,
   imageUrl,
+  details,
+  billing,
   onSignIn,
+  onSignUp,
   onSignOut,
   signOutLabel = "Sign Out",
   onManageAccount,
@@ -58,7 +73,11 @@ export function HomepageProfileMenu({
   email?: string;
   description?: string;
   imageUrl?: string;
+  /** Extra account facts for the Account dialog. */
+  details?: Pick<AccountDetails, "memberSince" | "lastSignInAt" | "signInMethods">;
+  billing?: BillingController;
   onSignIn?: () => void;
+  onSignUp?: () => void;
   onSignOut?: () => Promise<void>;
   signOutLabel?: string;
   onManageAccount?: () => void;
@@ -186,11 +205,11 @@ export function HomepageProfileMenu({
       <HomepageAccountCenter
         open={accountOpen}
         onOpenChange={setAccountOpen}
-        name={name}
-        status={status}
-        imageUrl={imageUrl}
+        account={{ name, status, email, imageUrl, ...details }}
+        billing={billing ?? defaultBilling()}
         busy={busy}
         onSignIn={onSignIn}
+        onSignUp={onSignUp}
         onSignOut={signOut}
         signOutLabel={signOutLabel}
         onManageAccount={onManageAccount}

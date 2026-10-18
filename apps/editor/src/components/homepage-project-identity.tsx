@@ -16,7 +16,9 @@ function useProjectThumbnail(appearance?: ProjectAppearance) {
     normalizeProjectAppearance(appearance) ?? DEFAULT_PROJECT_APPEARANCE;
   const [failedImage, setFailedImage] = useState<string | undefined>();
   const image =
-    identity.image && identity.image !== failedImage
+    identity.image &&
+    identity.cover !== "icon" &&
+    identity.image !== failedImage
       ? identity.image
       : undefined;
   const Icon = projectIconPreset(identity.icon).icon;

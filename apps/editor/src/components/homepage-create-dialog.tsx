@@ -179,6 +179,7 @@ export function HomepageCreateDialog({
   const appearanceRef = useRef(appearance);
   appearanceRef.current = appearance;
 
+  const showsPicture = Boolean(appearance.image) && appearance.cover !== "icon";
   const removePicture = () => {
     importRequest.current?.abort();
     importRequest.current = null;
@@ -195,7 +196,7 @@ export function HomepageCreateDialog({
     try {
       const image = await prepareProjectPicture(file, request.signal);
       if (!request.signal.aborted)
-        onAppearanceChange({ ...appearanceRef.current, image });
+        onAppearanceChange({ ...appearanceRef.current, image, cover: "image" });
     } catch (cause) {
       if (!request.signal.aborted)
         setImageIssue(
@@ -401,9 +402,13 @@ export function HomepageCreateDialog({
                             className="homepage-icon-choice"
                             data-color={appearance.color}
                             aria-label={label}
-                            aria-pressed={appearance.icon === id}
+                            aria-pressed={appearance.icon === id && !showsPicture}
                             onClick={() =>
-                              onAppearanceChange({ ...appearance, icon: id })
+                              onAppearanceChange({
+                                ...appearance,
+                                icon: id,
+                                ...(appearance.image ? { cover: "icon" } : {}),
+                              })
                             }
                           >
                             <Icon />
@@ -411,6 +416,22 @@ export function HomepageCreateDialog({
                         ))}
                       </div>
                       <div className="homepage-composer-upload">
+                        {appearance.image && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="homepage-icon-choice homepage-picture-choice"
+                            aria-label="Use Picture"
+                            aria-pressed={showsPicture}
+                            disabled={busy || imageBusy}
+                            onClick={() =>
+                              onAppearanceChange({ ...appearance, cover: "image" })
+                            }
+                          >
+                            <img src={appearance.image} alt="" />
+                          </Button>
+                        )}
                         <input
                           ref={fileInput}
                           type="file"
@@ -458,9 +479,6 @@ export function HomepageCreateDialog({
                         )}
                       </div>
                     </div>
-                    <FieldDescription>
-                      A picture replaces the icon on the project card.
-                    </FieldDescription>
                     {imageIssue && <FieldError>{imageIssue}</FieldError>}
                   </FieldSet>
                   {!editing && (

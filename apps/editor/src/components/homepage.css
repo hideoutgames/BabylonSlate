@@ -811,10 +811,10 @@
       2
   );
   /* Scales with the screen like the other large dialogs. */
-  width: min(calc(100vw - 32px), max(56rem, 82vw));
+  width: min(calc(100vw - 32px), max(60rem, 92vw));
   height: min(
     calc(var(--homepage-visible-height, 100dvh) - 32px),
-    max(36rem, calc(var(--homepage-visible-height, 100dvh) * 0.84))
+    max(38rem, calc(var(--homepage-visible-height, 100dvh) * 0.9))
   );
   max-width: none;
   max-height: calc(var(--homepage-visible-height, 100dvh) - 32px);
@@ -1065,6 +1065,16 @@
   outline: 2px solid var(--foreground);
   outline-offset: -2px;
 }
+.homepage-picture-choice {
+  overflow: hidden;
+  padding: 3px;
+}
+.homepage-picture-choice img {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+}
 .homepage-composer-upload {
   display: flex;
   gap: 4px;
@@ -1163,23 +1173,146 @@ svg.homepage-account-center-avatar {
   flex-wrap: wrap;
   gap: 6px;
 }
-.homepage-account-center-section {
+.homepage-account-center-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 64rem;
+}
+.homepage-account-center-note {
+  max-width: 44rem;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.homepage-account-center-note a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.homepage-account-center-note a svg {
+  width: 11px;
+  height: 11px;
+}
+.homepage-account-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--border);
+}
+.homepage-account-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--card);
+}
+.homepage-account-detail dt {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.homepage-account-detail dd {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+/* Subscription: current plan, then the plans from haptic.no/pricing. */
+.homepage-billing-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+.homepage-billing-label {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.homepage-billing-summary h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.homepage-billing-summary p {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.homepage-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.homepage-plan {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
 }
-.homepage-account-center-section > header {
+.homepage-plan[data-current="true"] {
+  border-color: var(--foreground);
+}
+.homepage-plan > header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 11px;
 }
-.homepage-account-center-section h3 {
+.homepage-plan > header svg {
+  width: 14px;
+  height: 14px;
+}
+.homepage-plan h4 {
   font-size: 15px;
   font-weight: 600;
 }
-.homepage-account-center-section > p {
+.homepage-plan-price {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.homepage-plan-summary {
   color: var(--muted-foreground);
   font-size: 12px;
+}
+.homepage-plan ul {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+  font-size: 12px;
+}
+.homepage-plan li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.homepage-plan li svg {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  color: var(--success);
+}
+.homepage-plan > footer {
+  display: flex;
+  min-height: var(--chrome-row, 28px);
+  align-items: center;
+  padding-top: 8px;
 }
 /* The frame sizes the dialog; its default 16px body padding and gap scroll. */
 .homepage-profile {
@@ -1215,45 +1348,6 @@ svg.homepage-account-center-avatar {
   color: var(--muted-foreground);
   font-size: 12px;
   margin-top: 2px;
-}
-.homepage-subscription {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.homepage-subscription > button {
-  align-self: flex-start;
-}
-.homepage-subscription-plans {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-.homepage-subscription-plan {
-  background: var(--card);
-  border-radius: var(--radius-lg);
-}
-.homepage-subscription-plan [data-slot="card-title"] {
-  font-size: 18px;
-  font-weight: 600;
-}
-.homepage-subscription-plan [data-slot="card-content"] {
-  flex: 1;
-}
-.homepage-subscription-plan li {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  font-size: 12px;
-  margin-bottom: 6px;
-}
-.homepage-subscription-plan li svg {
-  width: 13px;
-  height: 13px;
-}
-.homepage-subscription-note {
-  font-size: 11px;
-  color: var(--muted-foreground);
 }
 .homepage-profile-avatar {
   flex-shrink: 0;
