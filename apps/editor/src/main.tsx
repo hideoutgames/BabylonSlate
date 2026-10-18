@@ -9,9 +9,11 @@ import {
 } from "@babylonslate/vfs";
 import { installDirectViewReadSync } from "@babylonslate/render";
 import App from "./App";
+import { installPreloadErrorReload } from "./lib/preload-error-reload";
 
 initializeCapacitorLifecycle();
 initializeCapacitorAudioLifecycle();
+installPreloadErrorReload();
 
 if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("latticeDeformerCost")) {
   void import("./testing/lattice-deformer-cost").then(({ runLatticeDeformerCost }) => Object.assign(window, { __latticeDeformerCost: runLatticeDeformerCost }));
@@ -23,6 +25,12 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/fsr-upscaling-proof").then(({ runFsrUpscalingProof }) => Object.assign(window, { __fsrUpscalingProof: runFsrUpscalingProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("renderTargetProof")) {
   void import("./testing/render-target-proof").then(({ runRenderTargetProof }) => Object.assign(window, { __renderTargetProof: runRenderTargetProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("renderTargetQualityProof")) {
+  void import("./testing/render-target-quality-proof").then(({ runRenderTargetQualityProof, runRenderTargetQualityCost, runRenderTargetShadowProof }) =>
+    Object.assign(window, {
+      __renderTargetQualityProof: runRenderTargetQualityProof, __renderTargetQualityCost: runRenderTargetQualityCost,
+      __renderTargetShadowProof: runRenderTargetShadowProof,
+    }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("spatialEffectsProof")) {
   void import("./testing/spatial-effects-proof").then(({ runSpatialEffectsProof }) => Object.assign(window, { __spatialEffectsProof: runSpatialEffectsProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("colorGradingProof")) {

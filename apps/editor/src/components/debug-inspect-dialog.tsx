@@ -186,11 +186,15 @@ export function DebugInspectDialog({
   }, [effectiveId, onSelectedIdChange]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    // Like the console, the inspector leaves the game running and the Play toolbar (Stop,
+    // Pause) reachable: no backdrop, no focus trap, and only Escape or Close dismisses it.
+    // Its height keeps clear of the toolbar row above it.
+    <Dialog open={open} onOpenChange={onOpenChange} modal={false} disablePointerDismissal>
       <DialogContent
         data-testid="debug-inspect"
         initialFocus={bodyRef}
-        className="h-[min(90vh,52rem)] w-[min(96vw,64rem)] max-w-none sm:max-w-none"
+        showOverlay={false}
+        className="h-[min(calc(100dvh-var(--safe-top)-var(--safe-bottom)-9rem),52rem)] w-[min(96vw,64rem)] max-w-none sm:max-w-none"
         bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
         <DialogHeader className="shrink-0 flex-row items-center justify-between gap-2 border-b px-3 py-3 pr-14">

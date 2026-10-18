@@ -471,10 +471,30 @@ export function BlueprintNodeShell({
   );
 }
 
+/**
+ * Right-click and long-press menu of a script-style node. The items are built
+ * when the menu opens, after the selection rule has run for this node.
+ */
+function useNodeMenu(nodeId: string) {
+  const { nodeMenu } = useGraphEditorContext();
+  const enabled = nodeMenu?.enabled === true;
+  const menu = useContextMenu({
+    items: () => nodeMenu?.resolve(nodeId) ?? [],
+    enabled,
+  });
+  const bind = {
+    ...menu.bind,
+    onContextMenu: (event: MouseEvent) => {
+      if (enabled) event.stopPropagation();
+      menu.bind.onContextMenu(event);
+    },
+  };
+  return { bind, overlay: <ContextMenuOverlay menu={menu.menu} onClose={menu.closeMenu} /> };
+}
+
 export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
-  const { contextMenuItemsForNode, renderNodeBody } = useGraphEditorContext();
-  const items = contextMenuItemsForNode?.(id) ?? [];
-  const menu = useContextMenu({ items, enabled: items.length > 0 });
+  const { renderNodeBody } = useGraphEditorContext();
+  const nodeMenu = useNodeMenu(id);
   const pins = hasSerializedPins(data) ? data.__pins : [];
   const { title, role } = visualFromData(data, type);
   const rows = zipPinRows(pins, {
@@ -493,13 +513,7 @@ export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
   }, [handleOrder, id, updateNodeInternals]);
 
   return (
-    <div
-      {...menu.bind}
-      onContextMenu={(event) => {
-        if (items.length > 0) event.stopPropagation();
-        menu.bind.onContextMenu(event);
-      }}
-    >
+    <div {...nodeMenu.bind}>
       <BlueprintNodeShell
         nodeId={id}
         title={title}
@@ -522,7 +536,7 @@ export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
         </div>
         {renderNodeBody?.(id, data)}
       </BlueprintNodeShell>
-      <ContextMenuOverlay menu={menu.menu} onClose={menu.closeMenu} />
+      {nodeMenu.overlay}
     </div>
   );
 }
@@ -543,12 +557,13 @@ export function VariableGetNode({
     ? (pinDisplayType(id, outgoing.id) ?? outgoing.type)
     : { kind: "wildcard" };
   const disabled = data.__disabled === true;
+  const nodeMenu = useNodeMenu(id);
 
   const isPending = (pin: SerializedPin) =>
     Boolean(pendingPin?.nodeId === id && pendingPin.pinId === pin.id);
 
   return (
-    <div className="relative">
+    <div className="relative" {...nodeMenu.bind}>
       <NodeErrorBadge nodeId={id} count={nodeErrorCount(id)} />
       <div
         data-node-role="variable"
@@ -591,6 +606,7 @@ export function VariableGetNode({
           </>
         ) : null}
       </div>
+      {nodeMenu.overlay}
     </div>
   );
 }

@@ -80,7 +80,7 @@ import {
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
 import type { OpenDocument } from "../services/document-service";
-import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
+import { modelSimpleColliderCounter, physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
@@ -754,6 +754,11 @@ export function EditorChromeBar({
                     (doc) => doc.id === activeDocumentId && doc.ref.kind === "graph",
                   );
                   const result = await collectPlayPreviewScripts();
+                  const openDocuments = getOpenDocuments();
+                  const modelSimpleColliderCount = modelSimpleColliderCounter(
+                    assetRegistry,
+                    openDocuments.filter((doc) => doc.ref.kind === "model"),
+                  );
                   const diagnostics = [
                     ...result.diagnostics.filter(
                       (entry) => entry.assetGuid === focused?.ref.path,
@@ -767,7 +772,7 @@ export function EditorChromeBar({
                                 (focused.content as SerializedGraph).components ?? [],
                             },
                           ],
-                          { assetGuid: focused.ref.path, graphId: focused.id },
+                          { assetGuid: focused.ref.path, graphId: focused.id, modelSimpleColliderCount },
                         )
                       : []),
                   ];

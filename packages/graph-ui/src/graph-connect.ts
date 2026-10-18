@@ -8,6 +8,7 @@ import {
   type PaletteNode,
   type SerializedPin,
 } from "./graph-types";
+import type { PinTypeNames } from "./pin-default-preview";
 
 /** Drop closer than this (screen px) to a safe pin cancels Add Node. */
 export const CONNECT_END_CANCEL_PX = 96;
@@ -318,6 +319,112 @@ export function pinsAreCompatible(
   return (
     outgoing.type.kind.toLowerCase().includes("wildcard") ||
     incoming.type.kind.toLowerCase().includes("wildcard")
+  );
+}
+
+const PIN_TYPE_LABEL: Record<string, string> = {
+  exec: "Exec",
+  bool: "Bool",
+  int: "Int",
+  float: "Float",
+  string: "String",
+  tag: "Tag",
+  vec2: "Vector 2",
+  vec3: "Vector 3",
+  vec4: "Vector 4",
+  rotator: "Rotator",
+  quat: "Quaternion",
+  color: "Color",
+  transform: "Transform",
+  objectRef: "Object",
+  actorRef: "Actor",
+  classRef: "Class",
+  assetRef: "Asset",
+  structRef: "Structure",
+  enumRef: "Enum",
+  delegate: "Delegate",
+  boxedWildcard: "Wildcard",
+  resolvingWildcard: "Wildcard",
+  wildcard: "Wildcard",
+};
+
+type PinTypeLike = { kind: string; [key: string]: unknown };
+
+function pinTypeText(value: unknown): string {
+  return typeof value === "string" ? value.trim().replace(/^engine:/, "") : "";
+}
+
+/** The type as a player of the editor reads it: `Float`, `Vector 3`, `Actor (Door)`. */
+export function pinTypeDisplayName(
+  type: PinTypeLike,
+  names?: PinTypeNames,
+): string {
+  switch (type.kind) {
+    case "array":
+      return `${pinTypeDisplayName(type.element as PinTypeLike, names)} Array`;
+    case "map":
+      return `${pinTypeDisplayName(type.key as PinTypeLike, names)} to ${pinTypeDisplayName(type.value as PinTypeLike, names)} Map`;
+    case "objectRef":
+    case "actorRef":
+    case "classRef": {
+      const classId = pinTypeText(type.classId);
+      return classId ? `${PIN_TYPE_LABEL[type.kind]} (${classId})` : PIN_TYPE_LABEL[type.kind]!;
+    }
+    case "assetRef":
+      return pinTypeText(type.assetType) || PIN_TYPE_LABEL.assetRef!;
+    case "structRef":
+    case "enumRef": {
+      const guid = typeof type.guid === "string" ? type.guid.trim() : "";
+      return names?.[guid] ?? (pinTypeText(guid) || PIN_TYPE_LABEL[type.kind]!);
+    }
+    default:
+      return PIN_TYPE_LABEL[type.kind] ?? humanizePropertyLabel(type.kind);
+  }
+}
+
+/**
+ * Why `pinsAreCompatible` refuses two pins, worded for the person dragging the
+ * wire; null when it accepts them. The output is named first whichever pin
+ * the drag started from.
+ */
+export function pinRefusalReason(
+  source: SerializedPin,
+  target: SerializedPin,
+  rule?: PinCompatibilityRule,
+  names?: PinTypeNames,
+): string | null {
+  if (pinsAreCompatible(source, target, rule)) return null;
+  if (source.direction === target.direction) {
+    return "Connect an output to an input";
+  }
+  const outgoing = source.direction === "out" ? source : target;
+  const incoming = source.direction === "in" ? source : target;
+  const from = pinTypeDisplayName(outgoing.type, names);
+  const to = pinTypeDisplayName(incoming.type, names);
+  return from === to
+    ? "These pins can't connect"
+    : `${from} does not connect to ${to}`;
+}
+
+/**
+ * Whether wiring `next` drops another wire from the same exec output.
+ * Scripting graphs drive one wire per exec output (`singleExecOutput`), so the
+ * old one goes quietly unless the person is told.
+ */
+export function replacesExecOutputWire(
+  edges: readonly PinEdgeRef[],
+  next: OrientedConnection,
+  pinFor: ConnectPinLookup,
+): boolean {
+  if (pinFor(next.source, next.sourceHandle)?.kind !== "exec") return false;
+  return edges.some(
+    (edge) =>
+      edge.source === next.source &&
+      (edge.sourceHandle ?? "") === next.sourceHandle &&
+      !(
+        edge.target === next.target &&
+        (edge.targetHandle ?? "") === next.targetHandle
+      ),
   );
 }
 

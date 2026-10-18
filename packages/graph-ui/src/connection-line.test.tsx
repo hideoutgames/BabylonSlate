@@ -1,7 +1,8 @@
 import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
-import { Position } from "@xyflow/react";
-import { GraphConnectionLineView } from "./connection-line";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Position, ReactFlowProvider, type ConnectionLineComponentProps } from "@xyflow/react";
+import { GraphConnectionLine, GraphConnectionLineView } from "./connection-line";
+import { GraphEditorProvider, type GraphEditorContextValue } from "./graph-editor-context";
 import type { SerializedPin } from "./graph-types";
 
 afterEach(() => {
@@ -199,5 +200,92 @@ describe("GraphConnectionLineView", () => {
       toHandle: { id: "execIn" },
     });
     expect(queryByTestId("add-node-hint")).toBeNull();
+  });
+});
+
+describe("GraphConnectionLineView refusal", () => {
+  it("shows why the hovered pin refuses the wire", () => {
+    const { getByTestId } = renderLine({
+      toHandle: { id: "message" },
+      refusal: "Float does not connect to Vector 3",
+    });
+    expect(getByTestId("connection-refusal").textContent).toBe(
+      "Float does not connect to Vector 3",
+    );
+  });
+
+  it("shows nothing without a refusal", () => {
+    const { queryByTestId } = renderLine({ toHandle: { id: "execIn" } });
+    expect(queryByTestId("connection-refusal")).toBeNull();
+  });
+});
+
+describe("GraphConnectionLine refusal lookup", () => {
+  const baseContext: GraphEditorContextValue = {
+    pendingPin: null,
+    onPinTap: () => {},
+    nodeErrorCount: () => 0,
+    pinHasError: () => false,
+    pinDisplayType: () => undefined,
+    connectEndMode: "default",
+  };
+
+  function renderContainer(
+    connectionRefusal: GraphEditorContextValue["connectionRefusal"],
+    overrides: Partial<ConnectionLineComponentProps> = {},
+  ) {
+    const props = {
+      connectionLineStyle: {},
+      connectionLineType: "default",
+      fromNode: { id: "source", data: { __pins: [execOut, stringOut] } },
+      fromHandle: { id: "execOut" },
+      fromX: 0,
+      fromY: 0,
+      toX: 200,
+      toY: 0,
+      fromPosition: Position.Right,
+      toPosition: Position.Left,
+      connectionStatus: "invalid",
+      toNode: { id: "log", data: { __pins: [execIn] } },
+      toHandle: { id: "message" },
+      pointer: { x: 200, y: 0 },
+      ...overrides,
+    } as unknown as ConnectionLineComponentProps;
+    const tree = (next: ConnectionLineComponentProps) => (
+      <ReactFlowProvider>
+        <GraphEditorProvider value={{ ...baseContext, connectionRefusal }}>
+          <svg>
+            <GraphConnectionLine {...next} />
+          </svg>
+        </GraphEditorProvider>
+      </ReactFlowProvider>
+    );
+    const view = render(tree(props));
+    return { ...view, props, move: () => view.rerender(tree({ ...props, toX: 215, pointer: { x: 215, y: 0 } })) };
+  }
+
+  it("asks the editor only while the wire hovers a rejected pin, once per pin", () => {
+    const connectionRefusal = vi.fn(() => "Exec does not connect to String");
+    const { getByTestId, move } = renderContainer(connectionRefusal);
+    expect(getByTestId("connection-refusal").textContent).toBe("Exec does not connect to String");
+    expect(connectionRefusal).toHaveBeenCalledWith(
+      { nodeId: "source", pinId: "execOut" },
+      { nodeId: "log", pinId: "message" },
+    );
+    move();
+    move();
+    expect(connectionRefusal).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays silent for an accepted or undecided wire", () => {
+    const connectionRefusal = vi.fn(() => "never shown");
+    for (const connectionStatus of ["valid", null] as const) {
+      const { queryByTestId, unmount } = renderContainer(connectionRefusal, { connectionStatus });
+      expect(queryByTestId("connection-refusal")).toBeNull();
+      unmount();
+    }
+    const open = renderContainer(connectionRefusal, { toHandle: null, toNode: null });
+    expect(open.queryByTestId("connection-refusal")).toBeNull();
+    expect(connectionRefusal).not.toHaveBeenCalled();
   });
 });

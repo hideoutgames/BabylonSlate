@@ -54,12 +54,12 @@ async function journalCommands(page: Page) {
     for await (const directory of (derived as Listable).values()) {
       if (directory.kind !== "directory") continue;
       const project = directory as FileSystemDirectoryHandle;
-      // The journal is a folder of ordered segments.
+      // The journal is a folder of ordered segments beside a `sealed.json` marker.
       try {
         const segments = await project.getDirectoryHandle("journal");
         const files: FileSystemFileHandle[] = [];
         for await (const entry of (segments as Listable).values()) {
-          if (entry.kind === "file") files.push(entry as FileSystemFileHandle);
+          if (entry.kind === "file" && entry.name.endsWith(".jsonl")) files.push(entry as FileSystemFileHandle);
         }
         files.sort((a, b) => a.name.localeCompare(b.name));
         for (const file of files) await readLines(file);

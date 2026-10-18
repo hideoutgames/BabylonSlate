@@ -105,6 +105,30 @@ describe("DebugInspectDialog", () => {
     cleanup();
   });
 
+  it("keeps the game and the Play toolbar reachable: no backdrop, no outside dismissal, Escape and Close still close", () => {
+    const onOpenChange = vi.fn();
+    render(
+      <>
+        <button type="button" data-testid="stop">Stop</button>
+        <DebugInspectDialog open onOpenChange={onOpenChange} snapshot={snapshot} />
+      </>,
+    );
+    expect(document.querySelector('[data-slot="dialog-overlay"]')).toBeNull();
+    const stop = screen.getByTestId("stop");
+    fireEvent.pointerDown(stop);
+    fireEvent.mouseDown(stop);
+    fireEvent.pointerUp(stop);
+    fireEvent.mouseUp(stop);
+    fireEvent.click(stop);
+    act(() => stop.focus());
+    expect(onOpenChange).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByTestId("debug-inspect"), { key: "Escape" });
+    expect(onOpenChange).toHaveBeenCalledWith(false, expect.anything());
+    onOpenChange.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false, expect.anything());
+  });
+
   it("filters the tree by name, class, or guid and keeps ancestors", () => {
     render(
       <DebugInspectDialog open onOpenChange={() => {}} snapshot={snapshot} />,

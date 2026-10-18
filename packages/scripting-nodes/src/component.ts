@@ -9,6 +9,7 @@ import {
   BOOL,
   TRANSFORM,
 } from "@babylonslate/scripting";
+import { actorOrSelf, selfActorPin } from "./self-pin";
 
 export const componentNodes: NodeDefinition[] = [
   {
@@ -43,12 +44,12 @@ export const componentNodes: NodeDefinition[] = [
     category: "component",
     pure: true,
     pins: () => [
-      pin("actor", "actor", "in", actorRef("Actor")),
+      selfActorPin("actor"),
       pin("classId", "classId", "in", classRef("ActorComponent")),
       pin("out", "out", "out", objectRef("ActorComponent")),
     ],
     codegen: (ctx) => ({
-      out: `ctx.getComponent(${ctx.input("actor")}, ${ctx.input("classId")})`,
+      out: `ctx.getComponent(${actorOrSelf(ctx, "actor")}, ${ctx.input("classId")})`,
     }),
   },
   {
@@ -97,12 +98,12 @@ export const componentNodes: NodeDefinition[] = [
     category: "component",
     pure: true,
     pins: () => [
-      pin("actor", "actor", "in", actorRef("Actor")),
+      selfActorPin("actor"),
       pin("classId", "classId", "in", classRef("ActorComponent")),
       pin("out", "out", "out", BOOL),
     ],
     codegen: (ctx) => ({
-      out: `(ctx.getComponent(${ctx.input("actor")}, ${ctx.input("classId")}) != null)`,
+      out: `(ctx.getComponent(${actorOrSelf(ctx, "actor")}, ${ctx.input("classId")}) != null)`,
     }),
   },
   {
@@ -112,7 +113,7 @@ export const componentNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("actor", "actor", "in", actorRef("Actor")),
+      selfActorPin("actor"),
       pin("classId", "classId", "in", classRef("ActorComponent")),
       pin("transform", "Transform", "in", TRANSFORM, "data", true),
       pin("out", "out", "out", objectRef("ActorComponent")),
@@ -120,7 +121,7 @@ export const componentNodes: NodeDefinition[] = [
     codegen: (ctx) => {
       const out = ctx.output("out");
       ctx.emit(
-        `${out} = ctx.addComponent(${ctx.input("actor")}, ${ctx.input("classId")}, ${ctx.input("transform")});`,
+        `${out} = ctx.addComponent(${actorOrSelf(ctx, "actor")}, ${ctx.input("classId")}, ${ctx.input("transform")});`,
       );
     },
   },

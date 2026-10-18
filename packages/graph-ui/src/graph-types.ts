@@ -16,6 +16,8 @@ export type SerializedPin = {
   min?: number;
   max?: number;
   reference?: "required" | "writable";
+  /** An unwired reference input reads the actor running the graph and shows Self. */
+  selfWhenUnwired?: boolean;
   colorHint?: boolean;
   /**
    * The pin keeps one link: a new connection replaces its old one instead of

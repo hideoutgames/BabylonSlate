@@ -32,6 +32,63 @@ describe("ScriptHost BObject receivers", () => {
     expect(ctx.getComponent(actor, "MeshComponent")).toBeNull();
   });
 
+  it("does nothing for an empty actor reference instead of acting on the running actor", () => {
+    const self = new Actor({ classId: "Hero" });
+    const mesh = new ActorComponent({ classId: "MeshComponent" });
+    self.attachComponent(mesh);
+    const effects: string[] = [];
+    const record = (name: string) => () => {
+      effects.push(name);
+    };
+    const ctx = new ScriptHost(stubServices({
+      destroyActor: record("destroyActor"),
+      teleportActor: record("teleportActor"),
+      attachToBone: () => {
+        effects.push("attachToBone");
+        return true;
+      },
+      addComponent: () => {
+        effects.push("addComponent");
+        return null;
+      },
+      addImpulse: record("addImpulse"),
+      moveCharacter: record("moveCharacter"),
+      setParticlePlaying: record("setParticlePlaying"),
+      moveTo: record("moveTo"),
+      stopMovement: record("stopMovement"),
+    })).createContext(self, 0, 0);
+    const vec = { x: 9, y: 9, z: 9 };
+
+    for (const empty of [null, undefined]) {
+      ctx.destroyActor(empty);
+      ctx.setActorLocation(empty, vec);
+      ctx.addActorWorldOffset(empty, vec);
+      ctx.setActorRotation(empty, { pitch: 0, yaw: 90, roll: 0 });
+      ctx.setActorScale(empty, vec);
+      ctx.setActorTransform(empty, { position: vec });
+      ctx.attachToBone(empty, new Actor({ classId: "Rig" }), "hand");
+      ctx.addComponent(empty, "MeshComponent");
+      ctx.addImpulse(empty, vec, 1);
+      ctx.moveCharacter(empty, vec, 0);
+      ctx.playParticles(empty);
+      ctx.stopParticles(empty);
+      ctx.moveTo(empty, vec);
+      ctx.stopMovement(empty);
+      expect(ctx.getComponent(empty, "MeshComponent")).toBeNull();
+    }
+
+    expect(effects).toEqual([]);
+    expect(self.transform.position).toEqual({ x: 0, y: 0, z: 0 });
+    expect(self.transform.scale).toEqual({ x: 1, y: 1, z: 1 });
+
+    // The same calls with the actor itself still act.
+    expect(ctx.getComponent(self, "MeshComponent")).toBe(mesh);
+    ctx.destroyActor(self);
+    ctx.setActorLocation(self, vec);
+    expect(effects).toEqual(["destroyActor", "teleportActor"]);
+    expect(self.transform.position).toEqual(vec);
+  });
+
   it("sets Anim Graph variables only on the wired AnimationGraphComponent", () => {
     const actor = new Actor({ classId: "Hero" });
     const first = new ActorComponent({ classId: "AnimationGraphComponent" });

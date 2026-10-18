@@ -7,7 +7,7 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { readJournalLines, truncateJournal } from "@babylonslate/assets";
+import { discardSealedJournal, readSealedJournalLines, unsealJournal } from "@babylonslate/assets";
 import {
   commandToJournalPayload,
   diffGraphCommands,
@@ -361,9 +361,10 @@ export class DocumentEditingService {
   }
 
   /**
-   * Replay the crash-recovery journal onto its documents, opening cold ones
-   * first. Stops without resolving recovery when an authoring lock or another
-   * project takes over during its reads, so the banner stays for a retry.
+   * Replay the records sealed at open onto their documents, opening cold ones
+   * first. Edits made since then are not replayed again. Stops without
+   * resolving recovery when an authoring lock or another project takes over
+   * during its reads, so the banner stays for a retry.
    */
   async replayRecoveryJournal(): Promise<void> {
     const authoring = this.documents.getAuthoringLock();
@@ -372,11 +373,13 @@ export class DocumentEditingService {
     if (!guid) return;
     const current = () => this.documents.getAuthoringLock() === authoring && this.project.guid === guid;
     const derived = await this.options.derivedStorage();
-    const lines = resolveClassRenameRecovery(await this.journal.afterFlush(guid, () =>
-      readJournalLines(derived, guid),
-    ), this.project.registry);
+    const lines = resolveClassRenameRecovery(
+      await readSealedJournalLines(derived, guid),
+      this.project.registry,
+    );
     if (!current()) return;
     if (lines.length === 0) {
+      await discardSealedJournal(derived, guid);
       this.options.onRecoveryResolved();
       return;
     }
@@ -427,15 +430,15 @@ export class DocumentEditingService {
       }
     }
     // Undo can leave the journal at the saved content. There is nothing to
-    // save in that case, so retire the replayed journal without a no-op edit.
-    // Retain skipped or unreadable records and any edits made while the clear is queued.
-    if (skipped.length === 0 && malformed.length === 0) {
-      await this.journal.clearAfterFlush(guid, () => truncateJournal(derived, guid, () =>
-        this.project.guid === guid &&
-        this.documents.getDirtyDocuments().length === 0 &&
-        !this.options.isProjectDirty(),
-      ));
-    }
+    // save in that case, so retire the replayed records without a no-op edit.
+    // Otherwise they rejoin the live journal, so a crash before the next save
+    // still recovers them; skipped or unreadable ones stay until that save too.
+    // Decided in the tick that applied the replay, so no save sits between.
+    const settled = skipped.length === 0 &&
+      malformed.length === 0 &&
+      this.documents.getDirtyDocuments().length === 0 &&
+      !this.options.isProjectDirty();
+    await (settled ? discardSealedJournal(derived, guid) : unsealJournal(derived, guid));
     this.options.onRecoveryResolved();
     this.options.bump();
   }

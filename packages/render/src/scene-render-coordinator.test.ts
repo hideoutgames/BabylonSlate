@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTextureManager } from "@babylonjs/core/FrameGraph/frameGraphTextureManager";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
-import { SCENE_DRIVER_COMPILE_TIMEOUT_MS } from "./stall-deadline";
+import { SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS, SCENE_THREAD_HELD_MS } from "./stall-deadline";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { SharedOutlineOwner } from "./shared-outline";
 import { createGizmoHost } from "./gizmo-host";
@@ -432,23 +432,24 @@ it("rejects a changed output the graph cannot draw without drawing a frame", asy
 });
 
 /**
- * `performance.now()` plus a skew the test advances from inside a readiness
- * probe. A probe that advances by half a second models one poll of the
- * preparation loop; one that advances by seconds models a synchronous call that
- * held the thread.
+ * A virtual `performance.now()` that moves only when a test advances it from
+ * inside a readiness probe, so the real speed of the runner never changes what a
+ * gap between checkpoints looks like. A probe that advances by `POLL_MS` models
+ * one poll of the preparation loop; one that advances by seconds models a
+ * synchronous call that held the thread.
  */
-function skewedClock() {
-  const real = performance.now.bind(performance);
-  let skew = 0;
-  vi.spyOn(performance, "now").mockImplementation(() => real() + skew);
-  return { advance: (ms: number) => { skew += ms; } };
+function virtualClock() {
+  const start = performance.now();
+  let now = start;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  return { advance: (ms: number) => { now += ms; }, elapsed: () => now - start };
 }
-/** Less than the stretch that counts as a held thread, so a poll never looks like one. */
-const POLL_MS = 800;
+/** The longest gap that still counts as polling. */
+const POLL_MS = SCENE_THREAD_HELD_MS - 100;
 
 it("rejects the loading owner at the preparation deadline instead of accepting a timeout as readiness", async () => {
   const { scene, renderer } = host();
-  const clock = skewedClock();
+  const clock = virtualClock();
   scene.addIsReadyCheck({ isReady: () => { clock.advance(POLL_MS); return false; } });
   await expect(renderer.prepare()).rejects.toThrow("timed out");
   expect(scene.objectRenderers).toHaveLength(0);
@@ -460,7 +461,7 @@ it("rejects the loading owner at the preparation deadline instead of accepting a
 describe("preparation while a synchronous probe holds the thread", () => {
   it("finishes when one probe outlasts the preparation deadline and the next finds the scene ready", async () => {
     const { scene, renderer } = host();
-    const clock = skewedClock();
+    const clock = virtualClock();
     let probes = 0;
     scene.addIsReadyCheck({ isReady: () => { probes += 1; if (probes === 1) clock.advance(15_000); return probes > 1; } });
     await expect(renderer.prepare()).resolves.toEqual({ path: "frameGraph" });
@@ -469,7 +470,7 @@ describe("preparation while a synchronous probe holds the thread", () => {
 
   it("finishes when the probe that held the thread is the one that finds the scene ready", async () => {
     const { scene, renderer } = host();
-    const clock = skewedClock();
+    const clock = virtualClock();
     scene.addIsReadyCheck({ isReady: () => { clock.advance(15_000); return true; } });
     await expect(renderer.prepare()).resolves.toEqual({ path: "frameGraph" });
     renderer.dispose();
@@ -477,12 +478,39 @@ describe("preparation while a synchronous probe holds the thread", () => {
 
   it("still rejects a scene that never becomes ready after the thread was held", async () => {
     const { scene, renderer } = host();
-    const clock = skewedClock();
+    const clock = virtualClock();
     let probes = 0;
     scene.addIsReadyCheck({ isReady: () => { probes += 1; clock.advance(probes === 1 ? 15_000 : POLL_MS); return false; } });
     await expect(renderer.prepare()).rejects.toThrow("timed out");
     renderer.dispose();
   });
+
+  // Nothing above the coordinator bounds a preparation, so a credit without a ceiling could hold a scene that
+  // never becomes ready (a texture that never arrives, on a host where every probe is slow) forever.
+  it("rejects a scene that stays unready while every probe holds the thread, once the credit budget is spent", async () => {
+    const { scene, renderer } = host();
+    const clock = virtualClock();
+    scene.addIsReadyCheck({ isReady: () => { clock.advance(SCENE_THREAD_HELD_MS * 1.5); return false; } });
+    await expect(renderer.prepare()).rejects.toThrow("timed out");
+    // The 60 s total bound, extended by at most the credit budget (plus the probe that crossed it).
+    expect(clock.elapsed()).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS);
+    expect(clock.elapsed()).toBeLessThanOrEqual(2 * SCENE_THREAD_HELD_BUDGET_MS + 2 * SCENE_THREAD_HELD_MS);
+    renderer.dispose();
+  });
+
+  // Every probe finds the scene ready, so the graph's own readiness loop exits at once and only the coordinator
+  // still bounds the preparation: each probe also invalidates the graph, the way an asset arriving mid-load does,
+  // and the coordinator starts over.
+  it("bounds a preparation that every probe invalidates while holding the thread, once the coordinator's credit budget is spent", async () => {
+    const { scene, renderer } = host();
+    const clock = virtualClock();
+    const held = 5_000;
+    scene.addIsReadyCheck({ isReady: () => { clock.advance(held); renderer.invalidate(); return true; } });
+    await expect(renderer.prepare()).rejects.toThrow("timed out");
+    expect(clock.elapsed()).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS);
+    expect(clock.elapsed()).toBeLessThanOrEqual(2 * SCENE_THREAD_HELD_BUDGET_MS + 2 * held);
+    renderer.dispose();
+  }, 20_000);
 });
 
 describe("preparation while the driver compiles", () => {
@@ -494,7 +522,7 @@ describe("preparation while the driver compiles", () => {
     (made.engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects["water"] =
       { isReady: () => compiled, getCompilationError: () => "" };
     // Each poll of the readiness loop is one probe, and the clock follows the polls.
-    const clock = skewedClock();
+    const clock = virtualClock();
     let polls = 0;
     made.scene.addIsReadyCheck({ isReady: () => { polls += 1; clock.advance(POLL_MS); return compiled; } });
     const settled: { value: unknown } = { value: undefined };

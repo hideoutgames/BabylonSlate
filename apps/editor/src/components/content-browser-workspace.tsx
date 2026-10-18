@@ -1696,8 +1696,10 @@ function ContentBrowserWorkspaceBody({
               engine: play?.ensureSharedEngine() ?? undefined,
             });
             errors.push(...stl.errors);
+            const embedded = embedGltfImportBatch(stl.files);
+            errors.push(...embedded.warnings);
             const prepared = groupMsdfImportBatch(
-              embedGltfImportBatch(stl.files).filter((file) => !fbx.consumedSidecars.includes(file.name)),
+              embedded.files.filter((file) => !fbx.consumedSidecars.includes(file.name)),
             );
             if (prepared.length === 0) return;
             setImportProgress({

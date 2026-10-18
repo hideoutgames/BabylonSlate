@@ -171,6 +171,7 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     removeListedProject: resolved,
     reconnectProject: resolved,
     saveProject: async () => true,
+    setAutoSavePaused: noop,
     saveAll: async () => true,
     approveMigrationsAndSave: async () => true,
     closeProject: async () => ({ outcome: "closed" }),

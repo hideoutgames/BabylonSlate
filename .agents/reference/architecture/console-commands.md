@@ -33,7 +33,7 @@ Built-in Play/export console command catalog, its principles, host wiring and us
 | `renderpath [auto\|forward\|clusteredForward\|reset]` | Session-only render path request, never persisted |
 | `framecap [fps]` | Render cap only; fixed simulation step and input polling unchanged. Initial value from project `playFrameCap` |
 | `volume [0..1]` | `setGlobalVolume` (same as the graph node) |
-| `quit` | `runtime.stop()` |
+| `quit` | `runtime.stop()`, then a `sessionEnded` command: editor Play ends its session through the Stop path, Preview Build closes, a standalone player stops itself. Also runs from `ExecuteConsoleCommand` |
 | `help [name]` | Lists registered commands, user commands included |
 
 ## Debug tier

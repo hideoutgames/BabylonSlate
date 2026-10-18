@@ -6,9 +6,9 @@ import { PlayOverlay } from "./play-overlay";
 
 vi.mock("../services/play-session", () => ({ startPlaySession: vi.fn() }));
 vi.mock("../context/play-context", () => ({
-  usePlay: () => ({ reportBtState: reportBtState }),
+  usePlay: () => ({ reportBtState: reportBtState, appendLog: appendLog }),
 }));
-const { reportBtState } = vi.hoisted(() => ({ reportBtState: () => {} }));
+const { reportBtState, appendLog } = vi.hoisted(() => ({ reportBtState: () => {}, appendLog: vi.fn() }));
 vi.mock("../context/app-settings-context", () => ({
   useAppSettings: () => ({ settings: {} }),
 }));
@@ -66,4 +66,11 @@ it("shows a one-frame print on screen as soon as it arrives", async () => {
   const callbacks = await openPlay();
   act(() => callbacks.onPrint?.({ message: "flash", key: "", duration: 0, color: "#ffffff" }));
   expect(screen.getByTestId("print-overlay").textContent).toContain("flash");
+});
+
+it("sends runtime logs to the Output Log with their category and severity", async () => {
+  const callbacks = await openPlay();
+  appendLog.mockClear();
+  act(() => callbacks.onRuntimeLog?.({ category: "Fuel", severity: "warning", message: "Low" }));
+  expect(appendLog).toHaveBeenCalledExactlyOnceWith("[Fuel] Warning: Low");
 });

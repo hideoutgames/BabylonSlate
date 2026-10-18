@@ -62,7 +62,7 @@ The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play.
 | Meshes And Materials (-32, 0) | `materials.ts` | Every primitive kind; `FT_MatSurface` (colormap, Material Function tint, pulse), `FT_MatSurfaceInstance` and a chained metal instance, scene-owned instance overrides, `FT_MatEmissive` (scrolling bands), `FT_MatGlass` (translucent, WPO ripple, Fresnel rim glow), `FT_MatNoiseMasked` (alpha clip). Holiday models keep their slot Materials; one uses a `materialGuid` override. |
 | Lights And Shadows (32, 0) | `rendering.ts` | Shadowed spot, shadowed point (cube shadows from a pillar ring), three unshadowed color point lights, unshadowed spot, Area Rect Light, Hemispheric Fill Light. |
 | Effects (-64, 0) | `rendering.ts` | Fog Volume around a glowing sphere; x-ray Outline through an occluder wall; lattice Deformer; 3D Text with the facetype Font and the bundled face; Dynamic Runtime Mesh pyramid (`FT_RenderDynamicMesh`, Play only); Spring Arm rig with lag (`FT_RenderSpringArmRig`); orthographic `Effects Ortho Camera`. |
-| Render Targets (64, 0) | `rendering.ts` | Scene Color (512, every frame), Depth Pass (256, every frame) and World Normal (256, one manual capture by `FT_RenderCaptureManual`) captures of a four-actor subject group (Capture Only Actors), each on a monitor Material sampling its Render Target Texture. |
+| Render Targets (64, 0) | `rendering.ts` | Scene Color (512, every frame, Quality Fast: the Fast side of the comparison with `FT_World`'s Full Quality lake capture), Depth Pass (256, every frame) and World Normal (256, one manual capture by `FT_RenderCaptureManual`) captures of a four-actor subject group (Capture Only Actors), each on a monitor Material sampling its Render Target Texture. |
 | Audio (-64, 32) | `audio.ts` | Spatial loop, one-shot cue and looping cue emitters, a muffle wall and a reverb back wall. Channels `FT_AudioMaster` → `FT_AudioWorld` → `FT_AudioCues`; attenuations `FT_AudioNear`, `FT_AudioWide`; `FT_AudioMixer` is the project mixer. `possess "Audio Listener Camera"` to hear them. |
 | Physics (-32, 32) | `physics.ts` | Box, capsule, convex, cylinder and bouncy sphere bodies; friction ramp; triangle-mesh trough; 15-box stack; rising balloon and damped sphere; `Ghost` collision layer wall; trigger launch pad (`FT_PhysLaunchPad`); kinematic sweeper (`FT_PhysSweeper`). |
 | Constraints And Movement (0, 32) | `physics.ts` | Ball-socket pendulum, distance rod, limited hinge, 8-link chain, fixed weld, Mannequin ragdoll, Blocking Volume shelf, two Movement walkers (`FT_PhysWalker`, one hopping). |
@@ -78,7 +78,7 @@ The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play.
 | Document | Contents |
 | --- | --- |
 | `FT_Stress` | 320 dynamic bodies over a scaled sweeper, 6 ragdolls, a 32-link chain; 4 stress particle actors (about 16 000 GPU particles); an 8x8 animated Mannequin crowd; a 5184-instance foliage carpet. |
-| `FT_World` (`world.ts`) | 80 m island Landscape (grass, snow, sand, rock layers, collision), 226 foliage instances, Global Sea at -6 m (object reflections off), Ocean (Ocean Spectrum waves, object reflections), Lake, River and Puddle bodies, Dry Dock removal volume, buoyant presents, seven Cables, two editor Splines; shadowed sun and light fog. Separate from the main scene because an Ocean over every main-scene zone made the main scene miss its loading deadline on software GL. |
+| `FT_World` (`world.ts`) | 80 m island Landscape (grass, snow, sand, rock layers, collision), 226 foliage instances, Global Sea at -6 m (object reflections off), Ocean (Ocean Spectrum waves, object reflections), Lake, River and Puddle bodies, Dry Dock removal volume, buoyant presents, seven Cables, two editor Splines; shadowed sun and light fog. A Full Quality Render Target Capture of the Lake from the south shore (256², every frame) on a captioned monitor facing the world camera, refracting the lake bed and drawing its own sun shadow cascades as the world camera does. Separate from the main scene because an Ocean over every main-scene zone made the main scene miss its loading deadline on software GL. |
 | `FT_Clustered` | 48 unshadowed point lights over a plain floor with the engine default sky, so Auto can select Clustered Forward. |
 | `FT_2D` | Orthographic camera over a 16x9 Tilemap of 128 px Kenney platformer tiles: parallax backdrop, collision ground (grass on dirt, crates, chain ramp, top-edge ledges, animated switch blocks), decor layer from a second Tileset (animated water and torches, signs, plants). `FT_2DRobotGraph` cycles robot Idle, Walk, Jump, Fall Sprite Animations on a mascot and a dynamic walking robot; 32 falling robot bodies use every 2D collider shape; chain funnel; hinge pendulum; custom `Characters` sorting layer. |
 | `FT_StreamedRoom` | Platform, pillars, sign and a streamed spinner; no camera or lights. |
@@ -116,6 +116,7 @@ Counts are constants in the area modules; changing one changes performance basel
 | `STRESS_GRID`, `STRESS_CAPACITY`, `STRESS_RATE` | 4 actors x 4096, 2000/s | `particles.ts` |
 | `FEATURE_TEST_ANIMATION_STRESS` | 8x8 crowd | `animation.ts` |
 | `STRESS_FOLIAGE_GRID` | 72x72 | `world.ts` |
+| `LAKE_CAPTURES` | 1 Full Quality capture, 256², every frame (plus its own sun shadow maps each frame) | `world.ts` |
 | `GUARD_COUNT` | 4 (crowd cap 32) | `ai.ts` |
 | `FEATURE_TEST_SCENE_LAYER_KNOBS` | list 10 000, grid 400 | `scene-layers.ts` |
 | `CLUSTER_*`, `CAPTURES`, `LOD_DISTANCES` | 48 lights, 3 captures, 5 menorahs | `rendering.ts` |
@@ -185,6 +186,7 @@ A switched backend is saved before the first scene opens; scene edits a flight l
 
 A feature that cannot be showcased is recorded here with its reason; never skip it silently or weaken the gate.
 
+- Console `quit`: it ends the Play session, so the starter's console workload never runs it.
 - Skinned Skeletons and retargeted Animations: the repository has no skinned model (the Mannequin is a hierarchy rig, the door a node animation).
 - MSDF font atlases: none exists; text uses the facetype and Onest source Fonts.
 - Sprites cut from atlas sub-rects: the Sprite editor preview reads V top-down and the runtime bottom-up, so `FT_2D` Sprites use whole-frame Textures and crates stay Tilemap tiles.

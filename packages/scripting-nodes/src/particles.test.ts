@@ -40,7 +40,7 @@ describe("particle nodes", () => {
     expect(actorPin?.type).toEqual({ kind: "actorRef", classId: "Actor" });
   });
 
-  it("compiled Play/Stop Particles call ctx with the actor pin or null", () => {
+  it("compiled Play/Stop Particles act on Self when the actor pin is unwired", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -79,7 +79,9 @@ describe("particle nodes", () => {
     };
     const plays: unknown[] = [];
     const stops: unknown[] = [];
+    const self = { guid: "self" };
     mod.onBeginPlay({
+      self,
       playParticles: (actor: unknown) => {
         plays.push(actor);
       },
@@ -87,7 +89,7 @@ describe("particle nodes", () => {
         stops.push(actor);
       },
     });
-    expect(plays).toEqual([null]);
-    expect(stops).toEqual([null]);
+    expect(plays).toEqual([self]);
+    expect(stops).toEqual([self]);
   });
 });

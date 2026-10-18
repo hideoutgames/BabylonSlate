@@ -90,6 +90,40 @@ describe("render target graph runtime", () => {
     } finally { runtime.stop(); }
   });
 
+  it("sends each capture's authored quality, Fast when saved without one, and accepts only known qualities", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: { ...createDefaultScene(), actors: [
+        createActor("full", "Full", { classId: "Monitor", components: [
+          { id: "lens", classId: "RenderTargetCaptureComponent", properties: { quality: "fullQuality" } },
+        ] }),
+        createActor("legacy", "Legacy", { classId: "RenderTargetCapture", components: [
+          { id: "legacy-lens", classId: "RenderTargetCaptureComponent", properties: { renderTargetGuid: null } },
+        ] }),
+      ] }, onCommand: (command) => commands.push(command),
+    });
+    const sent = (actorGuid: string) => commands.filter((command) =>
+      command.type === "configureRenderTargetCapture" && command.actorGuid === actorGuid).at(-1);
+    try {
+      await runtime.loadScripts([{
+        assetGuid: "monitor", classId: "Monitor", parentClassId: "RenderTargetCapture",
+        anchors: [], entryPoints: [{ name: "Update", event: "Update", isAsync: false }],
+        source: `export function Update(ctx) {
+          ctx.setRenderTargetCaptureProperty(ctx.self, "quality", "Full Quality");
+          ctx.setVariable("kept", ctx.getRenderTargetCaptureProperty(ctx.self, "quality"));
+          ctx.setRenderTargetCaptureProperty(ctx.self, "quality", "fast");
+        }`,
+      }]);
+      runtime.realizePlayWorld();
+      expect(sent("full")).toMatchObject({ settings: { quality: "fullQuality" } });
+      expect(sent("legacy")).toMatchObject({ settings: { quality: "fast" } });
+      const actor = runtime.getWorld().findActor("full")!;
+      runtime.invokeScriptEvent("Monitor", "Update", actor);
+      expect(actor.getVariable("kept")).toBe("fullQuality");
+      expect(sent("full")).toMatchObject({ settings: { quality: "fast" } });
+    } finally { runtime.stop(); }
+  });
+
   it("rejects non-actor filter values, returns detached lists, and preserves empty enabled filters", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,

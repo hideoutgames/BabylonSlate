@@ -38,10 +38,13 @@ import type {
 import { ASSET_DOCUMENT_KINDS, documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, remapAlwaysPackageFolders, removeAlwaysPackageFolders, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
 import {
   appendJournalLines,
+  discardSealedJournal,
   getTile,
   normalizeTilemapPayload,
   readJournalLines,
+  readSealedJournalLines,
   readThumbnail,
+  sealJournalForRecovery,
   writeThumbnail,
   ThumbnailDecodeLru,
   truncateJournal,
@@ -395,6 +398,12 @@ interface DocumentContextValue {
   removeListedProject: (handle: ProjectFolderHandle) => Promise<void>;
   reconnectProject: () => Promise<void>;
   saveProject: () => Promise<boolean>;
+  /**
+   * Hold the auto-save timer while a prompt lists unsaved work, so the choice
+   * it asks for applies to that work. Resuming starts a new interval when
+   * something is still unsaved.
+   */
+  setAutoSavePaused: (paused: boolean) => void;
   saveAll: () => Promise<boolean>;
   /** Approve pending schema migrations and run the complete Save All; false when it did not save. */
   approveMigrationsAndSave: () => Promise<boolean>;
@@ -698,11 +707,12 @@ export type ActiveDocumentState = Pick<
   | "canRedoActiveDocument"
 >;
 /**
- * `useSaveState()`: unsaved work and Auto-Save. `dirtyDocuments` keeps its
- * identity while the same documents (with the same labels) are dirty, so
- * further edits of an already dirty document do not change it.
+ * `useSaveState()`: unsaved work, edits still waiting for Recover or Discard,
+ * and Auto-Save. `dirtyDocuments` keeps its identity while the same documents
+ * (with the same labels) are dirty, so further edits of an already dirty
+ * document do not change it.
  */
-export type SaveState = Pick<DocumentContextValue, "dirtyDocuments" | "projectDirty" | "autoSaveStatus">;
+export type SaveState = Pick<DocumentContextValue, "dirtyDocuments" | "projectDirty" | "autoSaveStatus" | "recoveryAvailable">;
 /** `useCompileState()`: compile staleness and the Play preview bundles. */
 export type CompileState = Pick<
   DocumentContextValue,
@@ -883,6 +893,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     () => new Set(),
   );
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSavePausedRef = useRef(false);
   const projectWriteQueue = useRef<Promise<void>>(Promise.resolve());
   const enqueueProjectWrite = useCallback(<T,>(operation: () => Promise<T>): Promise<T> => {
     const pending = projectWriteQueue.current.then(operation);
@@ -1672,6 +1683,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         document.metadata,
         document.settings.sourceControl?.enabled === true,
       );
+      // Records from a session that never saved them wait for Recover or
+      // Discard; this session's saves and closes only truncate what it writes.
+      // Sealed before the editor shows, so its first edits are never offered.
+      const derived = await ensureDerived();
+      const guid = projectService.guid;
+      if (guid) {
+        await sealJournalForRecovery(derived, guid);
+        const unreplayed = resolveJournalLines(await readSealedJournalLines(derived, guid));
+        if (unreplayed.length === 0) await discardSealedJournal(derived, guid);
+        setRecoveryAvailable(unreplayed.length > 0);
+      }
       setRoute("editor");
       setAnimEditorModes({});
       const { probeKtx2TranscoderAvailable } = await import(
@@ -1681,12 +1703,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         editorKtx2PublicBase(),
       );
       await projectService.setTranscoderAvailable(transcoderOk);
-      const derived = await ensureDerived();
       projectService.setDerivedStorage(derived);
-      const guid = projectService.guid;
-      if (guid) {
-        setRecoveryAvailable(resolveJournalLines(await readJournalLines(derived, guid)).length > 0);
-      }
       await refreshProjectList();
       await captureMtimeSnapshot();
       bump();
@@ -1935,12 +1952,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           const derived = await ensureDerived();
           // The journal holds document edits only; Project Settings changed
           // during the save are not in it and must not keep saved edits there.
-          const cleared = await journalBuffer.clearAfterFlush(guid, () =>
+          // Records sealed for a pending recovery stay.
+          await journalBuffer.clearAfterFlush(guid, () =>
             truncateJournal(derived, guid, () =>
               projectService.guid === guid && documentService.getDirtyDocuments().length === 0,
             ),
           );
-          if (cleared) setRecoveryAvailable(false);
         }
         progress.phase("callbacks");
         if (savedScene) {
@@ -2005,7 +2022,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const approveMigrationsAndSave = useCallback(() => runSaveAll({ approveMigrations: true }), [runSaveAll]);
 
   const scheduleDebouncedSave = useCallback(() => {
-    if (saveDebounceRef.current) return;
+    if (saveDebounceRef.current || autoSavePausedRef.current) return;
     const interval =
       projectDocumentRef.current?.settings.autoSaveIntervalMs ?? 120_000;
     saveDebounceRef.current = setTimeout(() => {
@@ -2029,6 +2046,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       );
     }, interval);
   }, [projectService, saveProject]);
+
+  const setAutoSavePaused = useCallback((paused: boolean) => {
+    if (autoSavePausedRef.current === paused) return;
+    autoSavePausedRef.current = paused;
+    if (paused) {
+      if (saveDebounceRef.current) {
+        clearTimeout(saveDebounceRef.current);
+        saveDebounceRef.current = null;
+      }
+    } else if (
+      projectService.guid &&
+      (documentService.getDirtyDocuments().length > 0 || projectSaveState.current.isDirty(projectDocumentRef.current))
+    ) {
+      scheduleDebouncedSave();
+    }
+  }, [documentService, projectService, scheduleDebouncedSave]);
 
   // The edit pipeline (apply*, Undo / Redo, Simulation apply, journal append
   // and recovery replay, prefab sync). Every input is stable, so it is built
@@ -2313,12 +2346,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const dismissRecovery = useCallback(async () => {
     const guid = projectService.guid;
     if (guid) {
-      const derived = await ensureDerived();
-      await journalBuffer.clearAfterFlush(guid, () => truncateJournal(derived, guid));
+      // Edits made since the project opened are not part of the offer and stay.
+      await discardSealedJournal(await ensureDerived(), guid);
     }
     // The banner belongs to the project open now; another may have opened meanwhile.
     if (projectService.guid === guid) setRecoveryAvailable(false);
-  }, [ensureDerived, journalBuffer, projectService]);
+  }, [ensureDerived, projectService]);
 
   const keepRecovery = useCallback(() => {
     setRecoveryRequested(true);
@@ -3802,6 +3835,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       removeListedProject,
       reconnectProject,
       saveProject,
+      setAutoSavePaused,
       saveAll,
       approveMigrationsAndSave,
       closeProject,
@@ -3913,6 +3947,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       removeListedProject,
       reconnectProject,
       saveProject,
+      setAutoSavePaused,
       saveAll,
       approveMigrationsAndSave,
       closeProject,
@@ -4108,8 +4143,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
   const projectDirty = projectSaveState.current.isDirty(projectDocument);
   const saveState = useMemo<SaveState>(
-    () => ({ dirtyDocuments: stableDirtyDocuments, projectDirty, autoSaveStatus }),
-    [stableDirtyDocuments, projectDirty, autoSaveStatus],
+    () => ({ dirtyDocuments: stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable }),
+    [stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable],
   );
   const compileState = useMemo<CompileState>(
     () => ({
