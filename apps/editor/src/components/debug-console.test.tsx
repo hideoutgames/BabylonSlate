@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   createCommandRegistry,
   createUserCommand,
@@ -25,6 +25,80 @@ describe("DebugConsole", () => {
       key: "Escape",
     });
     expect(onOpenChange).toHaveBeenCalledWith(false, expect.anything());
+  });
+
+  it.each([
+    ["a mouse or keyboard environment", false, "debug-console-input"],
+    ["a touch environment", true, "debug-console-transcript"],
+  ] as const)("starts focused for %s so typing is not lost and the on-screen keyboard stays down", async (_label, coarse, focused) => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: coarse && query === "(pointer: coarse)", media: query,
+      addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
+    try {
+      render(
+        <DebugConsole
+          open
+          onOpenChange={() => {}}
+          commands={createCommandRegistry().list()}
+          onExecute={() => ({ success: true, output: "" })}
+        />,
+      );
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId(focused)));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("stays open while the game is pressed, and still closes from Escape and the close button", () => {
+    const onOpenChange = vi.fn();
+    render(
+      <>
+        <canvas data-testid="game" tabIndex={0} />
+        <DebugConsole
+          open
+          onOpenChange={onOpenChange}
+          commands={createCommandRegistry().list()}
+          onExecute={() => ({ success: true, output: "" })}
+        />
+      </>,
+    );
+    const game = screen.getByTestId("game");
+    fireEvent.pointerDown(game);
+    fireEvent.mouseDown(game);
+    fireEvent.pointerUp(game);
+    fireEvent.mouseUp(game);
+    fireEvent.click(game);
+    act(() => game.focus());
+    expect(onOpenChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false, expect.anything());
+  });
+
+  it("says why Enter does nothing while a command is still running, and keeps the typed line", async () => {
+    let finish!: (result: { success: boolean; output: string }) => void;
+    const onExecute = vi.fn(() => new Promise<{ success: boolean; output: string }>((resolve) => { finish = resolve; }));
+    render(
+      <DebugConsole
+        open
+        onOpenChange={() => {}}
+        commands={createCommandRegistry().list()}
+        onExecute={onExecute}
+      />,
+    );
+    const input = screen.getByTestId("debug-console-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "changescene slow" } });
+    fireEvent.click(screen.getByTestId("debug-console-submit"));
+    expect(screen.getByTestId("debug-console-submit").textContent).toBe("Running");
+    fireEvent.change(input, { target: { value: "help" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getAllByTestId("debug-console-busy")).toHaveLength(1);
+    expect(screen.getByTestId("debug-console-busy").textContent).toContain("still running");
+    expect(input.value).toBe("help");
+    expect(onExecute).toHaveBeenCalledTimes(1);
+    await act(async () => { finish({ success: true, output: "done" }); });
+    expect(screen.getByTestId("debug-console-submit").textContent).toBe("Run");
+    fireEvent.click(screen.getByTestId("debug-console-submit"));
+    expect(onExecute).toHaveBeenLastCalledWith("help");
   });
 
   it("draws a block caret that follows the typed text instead of key hints", () => {

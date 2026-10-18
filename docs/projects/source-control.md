@@ -12,7 +12,7 @@ Haptic handles locks only. Clone, commit, pull and push with your Git app, such 
 
 ## Turn it on
 
-1. Open **Project Settings > Source Control** and turn on **Enable**. Haptic fills in the repository and branch from the folder's Git settings when it can read them.
+1. Open **Project Settings > Source Control** and turn on **Enable**. If **Repository URL** is empty, Haptic fills in the repository and branch from the folder's Git settings when it can read them. When it cannot, **Enable** stays off until you enter a Repository URL.
 2. Check the settings below.
 3. Paste your token into **Token** and choose **Save Token**.
 

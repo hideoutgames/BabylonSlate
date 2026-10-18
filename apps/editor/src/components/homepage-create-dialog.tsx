@@ -7,10 +7,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { type ProjectAppearance } from "@babylonslate/core";
-import {
-  isCoarsePointerEnvironment,
-  NumberField,
-} from "@babylonslate/editor-kit";
+import { NumberField } from "@babylonslate/editor-kit";
 import type { HostPlatform } from "@babylonslate/vfs";
 import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
 import { Button } from "@babylonslate/ui/components/button";
@@ -47,13 +44,7 @@ import {
   PROJECT_ICON_PRESETS,
   prepareProjectPicture,
 } from "./homepage-project-appearance";
-
-function hasTouchInput() {
-  return (
-    isCoarsePointerEnvironment() ||
-    Boolean(window.matchMedia?.("(any-pointer: coarse)").matches)
-  );
-}
+import { hasTouchInput } from "../lib/touch-input";
 
 function nativeLocationStatus(
   hostPlatform: HostPlatform,

@@ -36,6 +36,8 @@ Stats shows **fps**, the frame time, and the **script** and **physics** time of 
 
 The Play **Inspector** lists the Game Instance, subsystems, actors and their components. Select one to see its **Identity**, **Transform** and **Variables**. Values are read-only.
 
+The Inspector floats over the game without dimming it, so the Play toolbar, including **Stop**, stays usable. Close it with <kbd>Esc</kbd>, **Close** or the **Inspector** button.
+
 For a selected actor you can also:
 
 - **Use Camera**: view the game through the actor's camera, when it has a Camera component.

@@ -57,8 +57,8 @@ References to moved and renamed assets stay connected. You cannot move assets be
 
 Deleting asks for confirmation and cannot be undone.
 
-- If other assets or settings use what you are deleting, the dialog lists them under **Referenced By**. Confirm with **Delete And Update References** to clear those references.
-- When you delete a Class that is used elsewhere, choose a replacement under **Replace Class**, or leave **None**.
+- If other assets or settings use what you are deleting, the dialog lists them under **Referenced By**. **Delete** clears those references.
+- When you delete a Class that is used elsewhere, choose a replacement under **Replace Class**, or leave **None**. **Delete** then asks once more: review the replacements and confirm with **Delete And Update References**.
 
 ## Show References
 

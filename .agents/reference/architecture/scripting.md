@@ -80,7 +80,7 @@ Contributor reference for Haptic's visual scripting: Class graph IR, pin types, 
 
 ## Editor surfaces
 
-- Wiring rules: exec inputs fan in; each exec output drives one wire in the Class graph (`singleExecOutputOnConnect`); a new data wire replaces the old one; wires persist output→input.
+- Wiring rules: exec inputs fan in; each exec output drives one wire in the Class graph (`singleExecOutputOnConnect`; replacing one shows a notice pointing to Sequence); a new data wire replaces the old one; wires persist output→input.
 - Generic catalog ids for Get/Set/Validated Get, Call Function, Call Custom Event, Cast, Make/Break, enum rows and Get `<Subsystem>` are hidden; the palette injects one row per member/class/type. Heavy injectors run only when Add Node opens and memoize on class-set identity.
 - Hydrate regenerates member, struct, enum and interface pins from live schemas, keeps wires whose pin ids still match, and prunes the rest. Seeding of native events and Call Parent wiring runs on create, never on hydrate.
 - Undo goes through `@babylonslate/edit` commands (`graph.setFunctionGraphs`, members, components); position drags commit once per gesture.

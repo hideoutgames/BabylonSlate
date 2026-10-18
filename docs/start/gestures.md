@@ -27,7 +27,7 @@ Text fields keep the system's own selection, copy and paste menus.
 - Hold Ctrl, Command or Shift while tapping to add to the selection.
 - **Drag Select** in the viewport toolbar turns the next one-finger drag into a selection rectangle, in 2D and 3D.
 - Turn on **Joystick** in the viewport's settings menu for an on-screen stick that moves the camera.
-- Double-tap an actor in the **Outliner** to frame it in the viewport.
+- Double-tap an actor's icon, or the blank space beside its name, in the **Outliner** to frame it in the viewport. Double-tap the name to rename it.
 
 ## Graphs
 
@@ -42,6 +42,7 @@ Class, Material, Animation Graph, Behaviour Tree and Particle Graph editors shar
 | Tap an output pin, then an input pin | Connect them. |
 | Drag from a pin | Draw a wire. Release over empty space to open Add Node and connect the new node. |
 | Tap empty space | Clear the selection. |
+| Hold a node, or right-click it | Open the node menu. Nodes in Class, Material and Particle graphs list **Copy**, **Paste**, **Duplicate**, **Delete** and **Break Links**; holding an unselected node selects only that node. |
 
 Double-tapping does not zoom. Shaking a node back and forth while dragging breaks its links; turn this off with **Shake Nodes To Disconnect** in **Engine Settings > Graph**.
 

@@ -39,6 +39,8 @@ export type GraphConnectionLineViewProps = {
   connectEndMode?: ConnectEndMode;
   pinCompatibility?: PinCompatibilityRule;
   connectionLineKind?: "default" | "animTransition";
+  /** Why the pin under the wire refuses it; shown next to the pointer. */
+  refusal?: string | null;
 };
 
 function pinOnDraggedNode(
@@ -84,6 +86,7 @@ export function GraphConnectionLineView({
   connectEndMode = "default",
   pinCompatibility,
   connectionLineKind = "default",
+  refusal = null,
 }: GraphConnectionLineViewProps) {
   const declaredPin = pinOnDraggedNode(fromNode, fromHandle.id);
   const pinStyle = edgeStyleForPin(
@@ -140,6 +143,25 @@ export function GraphConnectionLineView({
         className="react-flow__connection-path"
         style={{ ...connectionLineStyle, ...pinStyle }}
       />
+      {refusal ? (
+        <foreignObject
+          x={badge.x}
+          y={badge.y - 10}
+          width={260}
+          height={24}
+          overflow="visible"
+          className="pointer-events-none"
+        >
+          <Badge
+            variant="destructive"
+            role="status"
+            data-testid="connection-refusal"
+            className="pointer-events-none whitespace-nowrap bg-popover shadow-md"
+          >
+            {refusal}
+          </Badge>
+        </foreignObject>
+      ) : null}
       {showHint ? (
         <foreignObject
           x={badge.x}
@@ -166,7 +188,23 @@ export function GraphConnectionLineView({
 export function GraphConnectionLine(props: ConnectionLineComponentProps) {
   const nodes = useStore((state) => state.nodes);
   const flow = useStore((state) => state.domNode);
-  const { connectEndMode, connectionLineKind, pinCompatibility, pinDisplayType } = useGraphEditorContext();
+  const { connectEndMode, connectionLineKind, connectionRefusal, pinCompatibility, pinDisplayType } = useGraphEditorContext();
+  const fromNodeId = props.fromNode.id;
+  const fromPinId = props.fromHandle.id;
+  const toNodeId = props.toNode?.id;
+  const toPinId = props.toHandle?.id;
+  // The wire hovers a pin XYFlow rejects. The reason depends only on the two
+  // pins, so a moving pointer on the same pin does not look it up again.
+  const refusal = useMemo(
+    () =>
+      props.connectionStatus === "invalid" && fromPinId && toNodeId && toPinId
+        ? (connectionRefusal?.(
+            { nodeId: fromNodeId, pinId: fromPinId },
+            { nodeId: toNodeId, pinId: toPinId },
+          ) ?? null)
+        : null,
+    [connectionRefusal, fromNodeId, fromPinId, props.connectionStatus, toNodeId, toPinId],
+  );
   const pointer = flow
     ? containerPointerToClient(props.pointer, flow)
     : props.pointer;
@@ -189,6 +227,7 @@ export function GraphConnectionLine(props: ConnectionLineComponentProps) {
       connectEndMode={connectEndMode}
       pinCompatibility={pinCompatibility}
       connectionLineKind={connectionLineKind}
+      refusal={refusal}
     />
   );
 }

@@ -34,10 +34,10 @@ describe("texturesRetainedAfterPlay", () => {
     const before = new Set([kept, released]);
     // Same size as before: one texture released, one session texture retained.
     const engine = { getLoadedTexturesCache: () => [kept, leaked], _emptyTexture3D: placeholder };
-    expect(texturesRetainedAfterPlay(engine as never, before)).toBe(1);
+    expect(texturesRetainedAfterPlay(engine as never, before)).toEqual([leaked]);
     // Babylon's lazily created placeholder grows the cache without a leak.
     engine.getLoadedTexturesCache = () => [kept, released, placeholder];
-    expect(texturesRetainedAfterPlay(engine as never, before)).toBe(0);
+    expect(texturesRetainedAfterPlay(engine as never, before)).toEqual([]);
   });
 });
 

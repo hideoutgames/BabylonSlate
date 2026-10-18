@@ -435,6 +435,32 @@ describe("useContextMenu", () => {
     ).toBeNull();
   });
 
+  it("builds items given as a function each time the menu opens", async () => {
+    vi.useFakeTimers();
+    let opened = 0;
+    function LazyHost() {
+      const { menu, closeMenu, bind } = useContextMenu({
+        items: () => [
+          { id: `open-${++opened}`, label: "Action", onSelect: vi.fn() },
+        ],
+      });
+      return (
+        <div data-testid="target" {...bind}>
+          <ContextMenuOverlay menu={menu} onClose={closeMenu} />
+        </div>
+      );
+    }
+    const { getByTestId, queryByTestId } = render(<LazyHost />);
+    expect(opened).toBe(0);
+    fireEvent.contextMenu(getByTestId("target"));
+    expect(getByTestId("context-menu-item-open-1")).toBeTruthy();
+    fireEvent.click(getByTestId("context-menu-backdrop"));
+    dispatchPointerEvent(getByTestId("target"), "pointerdown", ORIGIN);
+    await advancePastLongPress();
+    expect(queryByTestId("context-menu-item-open-1")).toBeNull();
+    expect(getByTestId("context-menu-item-open-2")).toBeTruthy();
+  });
+
   it("forwards a custom overlay content test id", () => {
     function CustomHost() {
       const { menu, closeMenu, bind } = useContextMenu({

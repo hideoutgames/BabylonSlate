@@ -16,7 +16,7 @@ import {
   type ConsoleCompletionContext,
   type RegisteredCommand,
 } from "@babylonslate/debugger";
-import { SelectableText } from "@babylonslate/editor-kit";
+import { SelectableText, isCoarsePointerEnvironment } from "@babylonslate/editor-kit";
 import { Button, buttonVariants } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
@@ -123,6 +123,7 @@ export function DebugConsole({
   const followOutputRef = useRef(true);
   const commandIdRef = useRef(0);
   const executingRef = useRef(false);
+  const busyNoticeRef = useRef(false);
   const draftBeforeHistoryRef = useRef("");
   const listId = useId();
   const [draft, setDraft] = useState("");
@@ -192,6 +193,7 @@ export function DebugConsole({
     const trimmed = line.trim();
     if (!trimmed || executingRef.current) return;
     executingRef.current = true;
+    busyNoticeRef.current = false;
     setExecuting(true);
     const id = commandIdRef.current++;
     followOutputRef.current = true;
@@ -245,6 +247,25 @@ export function DebugConsole({
     inputRef.current?.focus();
   };
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter" && executingRef.current && !event.nativeEvent.isComposing) {
+      // The Run button is disabled meanwhile, so the browser submits nothing; say why the line stays.
+      event.preventDefault();
+      if (busyNoticeRef.current) return;
+      busyNoticeRef.current = true;
+      setEntries((previous) =>
+        [
+          ...previous,
+          {
+            id: `busy-${commandIdRef.current}`,
+            timestamp: Date.now(),
+            text: "A command is still running. Run this one when it finishes.",
+            severity: "info",
+            testId: "debug-console-busy",
+          },
+        ].slice(-TRANSCRIPT_LIMIT),
+      );
+      return;
+    }
     if (event.key === "Tab" && suggestions[selectedIndex]) {
       event.preventDefault();
       applySuggestion(suggestions[selectedIndex]!);
@@ -310,7 +331,9 @@ export function DebugConsole({
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
+    // The game keeps running and taking input while the console is open, so only
+    // Escape and the close button dismiss it, never a press or focus move outside.
+    <Sheet open={open} onOpenChange={onOpenChange} modal={false} disablePointerDismissal>
       <SheetContent
         side="bottom"
         showCloseButton={false}
@@ -318,8 +341,10 @@ export function DebugConsole({
         className="w-full rounded-none border-t-border bg-background/92 font-mono text-xs shadow-none backdrop-blur-sm data-[side=bottom]:h-[min(40dvh,22rem)] pointer-coarse:data-[side=bottom]:h-[min(50dvh,26rem)]"
         bodyClassName="gap-0 overflow-hidden"
         data-testid="debug-console"
+        // Opened from a toolbar button, so Base UI reports no interaction type. Touch and pen
+        // environments keep the transcript focused so the on-screen keyboard stays down.
         initialFocus={(interaction) =>
-          interaction === "keyboard" ? inputRef.current : bodyRef.current
+          isCoarsePointerEnvironment() && interaction !== "keyboard" ? bodyRef.current : inputRef.current
         }
         onKeyDown={(event) => event.stopPropagation()}
         onKeyUp={(event) => event.stopPropagation()}
@@ -504,7 +529,7 @@ export function DebugConsole({
             disabled={executing || !draft.trim()}
             data-testid="debug-console-submit"
           >
-            Run
+            {executing ? "Running" : "Run"}
           </Button>
         </form>
         <div

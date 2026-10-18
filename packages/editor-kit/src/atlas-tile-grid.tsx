@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -418,7 +419,7 @@ export function AtlasTileGrid({
     }
   };
 
-  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+  const onWheel = (event: WheelEvent) => {
     if (!panZoom) return;
     event.preventDefault();
     const surface = surfaceRef.current;
@@ -438,6 +439,17 @@ export function AtlasTileGrid({
       y: originY - (originY - pan.y) * scale,
     });
   };
+  // React attaches wheel listeners as passive, which ignore preventDefault, so
+  // the surface keeps a native non-passive listener that runs the latest handler.
+  const wheelRef = useRef(onWheel);
+  wheelRef.current = onWheel;
+  useEffect(() => {
+    const surface = surfaceRef.current;
+    if (!surface) return;
+    const listener = (event: WheelEvent) => wheelRef.current(event);
+    surface.addEventListener("wheel", listener, { passive: false });
+    return () => surface.removeEventListener("wheel", listener);
+  }, []);
 
   const tileButtons = useMemo(
     () =>
@@ -528,7 +540,6 @@ export function AtlasTileGrid({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onWheel={onWheel}
       >
         {!imageUrl ? (
           <Empty
