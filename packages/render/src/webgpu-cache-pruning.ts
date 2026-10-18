@@ -11,10 +11,13 @@ import { WebGPUCacheRenderPipelineTree } from "@babylonjs/core/Engines/WebGPU/we
  * render pipelines behind. WebKit backs each bind group with Metal argument
  * buffers, so an editor session grows GPU memory until allocation fails.
  *
- * Buffer, texture and Effect ids are never reused, so an entry keyed by a
- * released one can never be looked up again. Pruning only removes cache
- * entries: a later miss rebuilds the bind group or pipeline, so it can never
- * break a draw.
+ * Babylon hands out buffer, texture and Effect ids from counters, so an entry
+ * keyed by a released one is never looked up again. Pruning only removes cache
+ * entries: a later miss rebuilds the bind group or pipeline, so a wrong prune
+ * can never break a draw. Two cases prune an entry that is still wanted, and
+ * both only cost a miss: `Texture.Parse` restoring a serialized texture id, and
+ * an unbound slot, which keys as id 0 (so releasing buffer or texture 0 prunes
+ * every unbound-slot entry). render.md lists both.
  */
 
 /** `webgpuCacheBindGroups.js` key ranges: sampler hash < 2^20 <= buffer id + 2^20 < 2^35 <= texture id + 2^35. */
