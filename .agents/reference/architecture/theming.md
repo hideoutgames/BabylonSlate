@@ -24,7 +24,7 @@ Editor and launcher theme tokens, semantic color families, density, canvas and o
 - Preserve compact desktop density: `--chrome-row` 28px rows, small Primary buttons, 26px Dockview tab strips, 28px global bars. Imported design guidance must not enlarge these.
 - Coarse pointers get 44px targets via `--touch-target` and the `Button` / `Toggle` `touch` / `touch-icon` sizes; prefer those over call-site `min-h-11`. Graph pin rows stay 44px everywhere.
 - Phone layout: below 768px wide, or ≤ 500px tall with a coarse pointer ([`use-platform-layout.ts`](../../../apps/editor/src/shell/use-platform-layout.ts)). One Dockview window with a bottom Window picker; 44px bars and rows.
-- Safe areas come from `--safe-top/right/bottom/left` in `globals.css`. Surfaces consume the tokens; canvases and the Preview iframe stay edge-to-edge.
+- Safe areas come from `--safe-top/right/bottom/left` in `globals.css`. Surfaces consume the tokens; canvases and the Preview iframe stay edge-to-edge. The launcher also reaches the bottom edge: only its sidebar account row, gallery end and build label pad by `--safe-bottom`.
 
 ## Canvas and overlay rules
 

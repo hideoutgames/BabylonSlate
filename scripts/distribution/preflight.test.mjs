@@ -47,18 +47,21 @@ test("release channel never substitutes an ancestor's successful checks", async 
   await assert.rejects(preflight({ ...request, channel: "release" }, wrong.dependencies), /Verify/);
 });
 
-test("release preflight requires patch notes from the exact selected source", async () => {
-  const original = fixture();
-  const reads = [];
-  const dependencies = { ...original.dependencies, git: async args => {
-    reads.push(args);
-    return original.dependencies.git(args);
-  } };
-  const result = await preflight({ ...request, channel: "release" }, dependencies);
-  assert.deepEqual(result.identity.patchNotes.changes, ["New editor features."]);
-  assert.ok(reads.some(args => args[1] === `${sha}:release/changelog.json`));
-  dependencies.git = async args => args[1]?.endsWith("changelog.json") ? JSON.stringify({ schemaVersion: 1, releases: [] }) : original.dependencies.git(args);
-  await assert.rejects(preflight({ ...request, channel: "release" }, dependencies), /Patch notes/);
+test("test and release preflight require the declared version's patch notes from the exact selected source", async () => {
+  for (const channel of ["test", "release"]) {
+    const original = fixture();
+    const reads = [];
+    const dependencies = { ...original.dependencies, git: async args => {
+      reads.push(args);
+      return original.dependencies.git(args);
+    } };
+    const result = await preflight({ ...request, channel }, dependencies);
+    assert.deepEqual(result.identity.patchNotes, { version: "1.0.0", title: "Updates", changes: ["New editor features."] });
+    assert.ok(reads.some(args => args[1] === `${sha}:release/changelog.json`));
+    const olderOnly = { schemaVersion: 1, releases: [{ version: "0.9.0", title: "Earlier Updates", changes: ["Older notes."] }] };
+    dependencies.git = async args => args[1]?.endsWith("changelog.json") ? JSON.stringify(olderOnly) : original.dependencies.git(args);
+    await assert.rejects(preflight({ ...request, channel }, dependencies), /Patch notes/);
+  }
 });
 
 test("required checks read every check-run page before accepting a commit status", async () => {
