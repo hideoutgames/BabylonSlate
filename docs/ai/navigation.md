@@ -6,7 +6,7 @@ A navigation mesh (NavMesh) marks where AI characters can walk, so they can find
 
 1. Choose **Place Actors > Navigation > NavMesh** to add a NavMesh actor to the scene.
 2. Select it and tap **Bake NavMesh** in the **Inspector**. A dialog shows progress; you can cancel while it generates.
-3. Turn on **Show Navmesh** in **Viewport Settings** (<kbd>Shift</kbd>+<kbd>N</kbd>) to see the walkable area in green.
+3. Turn on **Show Navmesh** in **Viewport Settings** (<kbd>Shift</kbd>+<kbd>N</kbd>) to see the walkable area in green. If it cannot be drawn, the **Output Log** says why.
 4. Save the scene. The NavMesh is stored with it.
 
 Bake again after you change level geometry. Turn on **Auto Bake On Save** to rebake every time you save the scene. Play and Export Game never bake: they use the NavMesh saved with the scene.
@@ -72,7 +72,7 @@ Type these in the Play [console](../debugging/console.md):
 
 ## Gotchas
 
-- Without a baked NavMesh, or without a Nav Agent, move nodes do nothing and the Move To task fails.
+- Without a baked NavMesh, or without a Nav Agent, move nodes do nothing and the Move To task fails. The **Output Log** warns once for each actor and reason during a Play session.
 - Points more than 4 units from the NavMesh count as unreachable.
 - On a dynamic Rigid Body in 3D, the Nav Agent steers horizontally and physics keeps gravity, so a falling agent still falls.
 - Do not combine a Nav Agent with a Movement component on the same actor.

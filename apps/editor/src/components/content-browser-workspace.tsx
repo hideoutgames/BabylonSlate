@@ -206,6 +206,7 @@ import {
   runWithContentBrowserImportBusy,
   buildMaterialInstanceAssetResult,
   materialInstanceNameFor,
+  openSceneViewportMode,
   type ContentBrowserDropMove,
   type ContentBrowserSortMode,
   type CreatableAssetType,
@@ -2426,6 +2427,7 @@ function ContentBrowserWorkspaceBody({
                 classIdForPath: classIdForGraphPath,
               })
             : undefined,
+        viewportMode: type === "Prefab" ? openSceneViewportMode(getOpenDocuments(), activeDocumentId) : undefined,
       });
       setNewAssetOpen(false);
       // The mounted registry indexed the asset on write; a remount would
@@ -2440,6 +2442,7 @@ function ContentBrowserWorkspaceBody({
       setBusy(false);
     }
   }, [
+    activeDocumentId,
     allAssets,
     assetRegistry,
     classParentOf,

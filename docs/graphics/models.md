@@ -26,7 +26,7 @@ A Model has one material slot per material in the file.
 
 - In the Model's editor, each slot shows its Material. **Default** keeps the material from the file.
 - On a Mesh component, **Material** replaces every slot for that one actor. Choose **Model Materials** to go back to the Model's slots, or **None** for the engine's grey checker.
-- Meshes with no Material draw a grey checker, so missing materials are easy to spot.
+- Meshes with no Material draw a grey checker, so missing materials are easy to spot. The checker is lit like any other surface, so a 3D scene needs a [light](lighting.md) for it to show. A **Blank** project's scene has none: add a light, or the meshes draw black.
 
 When the file uses material features a Haptic Material cannot represent, the Model keeps the original material, and the imported Material asset says so.
 

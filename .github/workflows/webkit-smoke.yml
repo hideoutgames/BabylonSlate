@@ -19,7 +19,10 @@ env:
 
 jobs:
   webkit:
-    runs-on: ubuntu-latest
+    # macOS, not Linux: Playwright's Linux WebKit has no origin-private file
+    # system (navigator.storage is undefined), so the editor cannot create a
+    # project there. The macOS build is the engine Safari and iPadOS ship.
+    runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -31,11 +34,10 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install
-      # One job, so WebKit's system packages (including Mesa for software
-      # WebGL) are installed here; Chromium is not downloaded.
+      # One job, so only WebKit is downloaded; Chromium is not.
       - name: Install Playwright WebKit
         timeout-minutes: 10
-        run: pnpm exec playwright install --with-deps webkit
+        run: pnpm exec playwright install webkit
       - run: pnpm test:e2e:webkit
         env:
           BL_TEST_BUILD_MODE: ci-bundle

@@ -105,7 +105,7 @@ import {
   classIdFromClassAsset,
   classParentLookup,
 } from "../lib/content-browser-helpers";
-import { prefabComponentsFromGraph } from "../lib/prefab-preview";
+import { authoredPrefabComponents } from "../lib/prefab-preview";
 import { sceneActorDisplayNames } from "../lib/scene-actor-names";
 import {
   actorRowId,
@@ -797,7 +797,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
                       return diskGraphs.get(path);
                     },
                   }) ??
-                  (graph ? prefabComponentsFromGraph(graph) : kind.components),
+                  (graph ? authoredPrefabComponents(graph) : kind.components),
               },
             });
           });

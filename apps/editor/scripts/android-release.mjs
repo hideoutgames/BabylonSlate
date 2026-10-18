@@ -15,7 +15,7 @@ const manifest = JSON.parse(await readFile(join(androidDir, "app/src/main/assets
 if (!["test", "release"].includes(manifest.channel) || !manifest.packageVersion || manifest.platform !== "android" || !Number.isSafeInteger(manifest.androidVersionCode) || manifest.androidVersionCode < 1) {
   throw new Error("Android distribution manifest required");
 }
-if (manifest.channel === "release") validatePatchNotes(manifest.patchNotes, manifest.applicationVersion);
+validatePatchNotes(manifest.patchNotes, manifest.applicationVersion);
 const required = ["ANDROID_KEYSTORE_BASE64", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD"];
 for (const name of required) if (!process.env[name]) throw new Error(`Android release signing is not provisioned: ${name}`);
 

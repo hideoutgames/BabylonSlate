@@ -69,6 +69,7 @@ export {
   physicsActorDiagnostics,
   physicsActorsDiagnostics,
   type PhysicsActorLike,
+  type PhysicsDiagnosticsContext,
   type PhysicsPairingWarning,
 } from "./pairing";
 

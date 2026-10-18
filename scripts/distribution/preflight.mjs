@@ -33,7 +33,8 @@ export async function preflight(request, { api, git }) {
   validateSource({ ...request, protectedMain: main.protected, reachable: true });
   const declared = JSON.parse(await git(["show", `${request.sourceSha}:release/version.json`]));
   const identity = operation === "finalize-testflight" ? existingAppleIdentity(declared, request) : createIdentity({ ...request, declaredVersion: declared.version, appleSequenceOffset: declared.appleSequenceOffset });
-  if (identity.channel === "release" && operation === "distribute") {
+  // Test and release builds both carry the declared version's notes into their manifests and GitHub Release bodies.
+  if (operation === "distribute") {
     const changelog = JSON.parse(await git(["show", `${request.sourceSha}:release/changelog.json`]));
     identity.patchNotes = validateChangelog(changelog, identity.applicationVersion).find(notes => notes.version === identity.applicationVersion);
   }

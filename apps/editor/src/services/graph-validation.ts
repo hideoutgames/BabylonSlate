@@ -1197,6 +1197,7 @@ function callCustomEventPaletteNodes(
 type FunctionRow = {
   name: string;
   description?: string;
+  searchAliases?: readonly string[];
   pins: GraphClassMemberPin[];
   runtime?: string;
   /** Stored literal defaults by input pin name for a newly placed node. */
@@ -1328,6 +1329,7 @@ function callFunctionPaletteNodes(
         {
           name: fn.name,
           description: fn.description,
+          searchAliases: fn.searchAliases,
           pins: fn.pins.map((pin) => ({
             ...(pin.container ? { container: pin.container } : {}),
             name: pin.name,
@@ -1380,6 +1382,7 @@ function callFunctionPaletteNodes(
       nodeType: "functions.call",
       title: `Call ${fn.name}`,
       description: fn.description,
+      searchAliases: fn.searchAliases,
       category: def.category,
       pins: def.pins(defaultData),
       pure: def.pure,

@@ -26,10 +26,10 @@ The pages in this section cover Class graphs.
 Open **Add Node** in any of these ways:
 
 - Double-tap or right-click (long-press on touch) empty canvas.
-- Tap **Add Node** (**+**) in the graph toolbar.
+- Tap **Add Node** (**+**) in the graph toolbar. The node appears in the middle of the canvas, or in the nearest free spot when something is already there.
 - Drag a wire from a pin and release it on empty canvas. The new node connects to that pin.
 
-Type in **Search Nodes** or browse the categories. **Context Sensitive** is on by default: it hides nodes that need a target object from another class, and when you drag from a pin it shows only compatible nodes. Turn it off to see every node the graph allows.
+Type in **Search Nodes** or browse the categories. Search words can be in any order and spaces are optional, so **Int to String** finds **To String (Int)** and **BeginPlay** finds **Event Begin Play**. The best match comes first: node names before aliases (such as **label** for **Set Text**), and those before descriptions. Categories are listed by their best match, and the highlighted first row is the one **Enter** adds. **Context Sensitive** is on by default: it hides nodes that need a target object from another class, and when you drag from a pin it shows only compatible nodes. Turn it off to see every node the graph allows.
 
 ## Connect pins
 
@@ -47,9 +47,9 @@ The graph toolbar also has **Copy**, **Paste**, **Delete**, **Break Links** (rem
 
 Graphs are checked as you edit. Problems appear in **Compiler Results** and as red badges on nodes; tap a result to jump to the node.
 
-1. Tap **Compile** in the toolbar, or press <kbd>F7</kbd>. **Compilation Error** appears next to it while a graph has errors.
-2. Press Play. Play compiles every graph in the project first.
-3. If any graph has errors, the **Compile errors** dialog lists them. Tap a row to go to the node, or choose **Play Anyway**.
+1. Tap **Compile** in the toolbar, or press <kbd>F7</kbd>. **Compiler Results** lists the errors and warnings of the class you have open, and **Compilation Error** appears next to the button while it has errors.
+2. Press Play. Play compiles the graphs the game uses: the scene it starts in, the Game Instance, the Game and Scene Subsystems, and every class they use. Other classes are not checked.
+3. If any of those graphs has errors, the **Compile errors** dialog lists them. Tap a row to go to the node, or choose **Play Anyway**.
 
 Warnings never block Play. A loop that never ends stops Play and reports **Infinite loop detected**.
 

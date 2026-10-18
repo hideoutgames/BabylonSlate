@@ -466,6 +466,35 @@ describe("spawnPlacedActor", () => {
     ]);
   });
 
+  it.each([
+    { host: "3D scene", scene: createDefaultScene("3d"), overlay: false, meshKinds: ["box"] },
+    { host: "2D scene", scene: createDefaultScene("2d"), overlay: false, meshKinds: [] },
+    { host: "Scene Layer", scene: createDefaultScene("3d"), overlay: true, meshKinds: [] },
+  ])("gives a Class with no authored components the starter box only in a $host", ({ scene: target, overlay, meshKinds }) => {
+    const assets = [{
+      path: "assets/Empty.class.babasset",
+      header: { guid: "empty-guid", name: "Empty", type: "Class", parentClass: overlay ? "SceneLayerActor" : "Actor" },
+    }];
+    const [item] = projectPlaceActors(
+      assets,
+      (guid) => prefabComponentsForGuid(guid, { assets, graphForPath: () => ({}) }),
+      { overlay },
+    );
+    expect(item?.kind).toMatchObject({ type: "asset", classId: "Empty" });
+    const actor = spawnPlacedActor(target, item!, "actor-empty", ORIGIN, { overlay });
+    expect(actor.classId).toBe("Empty");
+    expect(actor.components.map((component) => component.properties.meshKind)).toEqual(meshKinds);
+  });
+
+  it("keeps an authored empty component list empty in a 3D scene", () => {
+    const assets = [{ path: "assets/Marker.class.babasset", header: { guid: "marker-guid", name: "Marker", type: "Class" } }];
+    const [item] = projectPlaceActors(
+      assets,
+      (guid) => prefabComponentsForGuid(guid, { assets, graphForPath: () => ({ components: [] }) }),
+    );
+    expect(spawnPlacedActor(createDefaultScene("3d"), item!, "actor-marker", ORIGIN).components).toEqual([]);
+  });
+
   it("allocates the next unused actor-N id", () => {
     const empty = { ...scene, actors: [] };
     expect(nextActorId(empty)).toBe("actor-1");

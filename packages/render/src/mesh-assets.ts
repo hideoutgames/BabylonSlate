@@ -478,6 +478,22 @@ class AtlasImageProcessing extends ImageProcessingConfiguration {
 }
 const atlasImageProcessing = new WeakMap<Scene, AtlasImageProcessing>();
 
+const tilemapPlaceholderMaterials = new WeakMap<Scene, StandardMaterial>();
+
+/** One unlit, double-sided, fog-free material per Scene for every chunk of an atlas without an image. */
+function tilemapPlaceholderMaterial(scene: Scene, imageProcessing: ImageProcessingConfiguration): StandardMaterial {
+  const existing = tilemapPlaceholderMaterials.get(scene);
+  if (existing && scene.materials.includes(existing)) return existing;
+  const material = new StandardMaterial("tilemapPlaceholder", scene);
+  material.disableLighting = true;
+  material.emissiveColor = Color3.White();
+  material.backFaceCulling = false;
+  material.fogEnabled = false;
+  material.imageProcessingConfiguration = imageProcessing;
+  tilemapPlaceholderMaterials.set(scene, material);
+  return material;
+}
+
 /** Bind each tilemap chunk child to the atlas stored on `metadata.tilemapTextureGuid`. */
 export function applyTilemapAlbedoTextures(
   mesh: Mesh,
@@ -491,6 +507,13 @@ export function applyTilemapAlbedoTextures(
   }
   for (const child of mesh.getChildMeshes()) {
     const guid = child.metadata?.tilemapTextureGuid as string | null | undefined;
+    if (!guid) {
+      // Without an atlas image Babylon's lit default material would draw the
+      // chunk black or grey; its vertex colours carry each tile's placeholder.
+      child.material = tilemapPlaceholderMaterial(scene, imageProcessing);
+      enableOverlayVisualMaterial(child);
+      continue;
+    }
     const before = child.material;
     applyAlbedoTexture(child, scene, guid, assets);
     const material = child.material;

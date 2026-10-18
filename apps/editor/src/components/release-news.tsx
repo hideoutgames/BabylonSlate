@@ -7,30 +7,53 @@ import {
 } from "@babylonslate/ui/components/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { useAppSettings } from "../context/app-settings-context";
-import { getApplicationVersion, getChangelog, type ReleaseNotes } from "../lib/changelog";
+import { brandWordmarkSrc } from "../lib/branding";
+import { getApplicationVersion, getReleaseNotes, type ReleaseNotes } from "../lib/changelog";
 
-/** One dialog for first-launch news and the account menu's offline history. */
+/** The current version's notes: its title and changes. */
+function ReleaseEntry({ release }: { release: ReleaseNotes }) {
+  return (
+    <article className="release-news-entry">
+      <h3><SelectableText>{release.title}</SelectableText></h3>
+      <ul>
+        {release.changes.map((change, index) => <li key={index}><SelectableText>{change}</SelectableText></li>)}
+      </ul>
+    </article>
+  );
+}
+
+/** Shown when the build carries no notes for its version. */
+function NoReleaseNotes({ version }: { version: string }) {
+  return (
+    <Empty>
+      <EmptyHeader>
+        <EmptyTitle>No Patch Notes</EmptyTitle>
+        <EmptyDescription>Haptic {version} has no patch notes.</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
+}
+
+/** The current version's notes, embedded at build time: first-launch news, and the account menu's Changelog. */
 export function ReleaseNews({
   open,
   onOpenChange,
   ready = true,
   announce = !import.meta.env.DEV && !(isTestModeEnabled() && new URLSearchParams(window.location.search).has("test")),
   version = getApplicationVersion(),
-  releases = getChangelog(),
+  current = getReleaseNotes(),
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   ready?: boolean;
   announce?: boolean;
   version?: string;
-  releases?: ReleaseNotes[];
+  current?: ReleaseNotes | null;
 }) {
   const { settings, hydrated, updateSettings } = useAppSettings();
   const [dismissed, setDismissed] = useState<string | null>(null);
-  const current = releases.find(release => release.version === version);
   const showNews = Boolean(ready && announce && hydrated && current && dismissed !== version && !settings.seenReleaseVersions.includes(version));
   const news = showNews && !open;
-  const visibleReleases = news && current ? [current] : releases;
 
   function close() {
     onOpenChange(false);
@@ -44,27 +67,25 @@ export function ReleaseNews({
 
   return (
     <Dialog open={open || showNews} onOpenChange={value => { if (!value) close(); }}>
-      <DialogContent className="sm:max-w-2xl" data-testid="release-news">
-        <DialogHeader>
-          <DialogTitle>{news ? "What's New" : "Changelog"}</DialogTitle>
-          <DialogDescription>
-            {news ? `Welcome To Haptic ${version}` : "Haptic Release History"}
-          </DialogDescription>
+      <DialogContent
+        className="homepage-theme release-news"
+        data-testid="release-news"
+        data-mode={news ? "news" : "history"}
+      >
+        <DialogHeader className="release-news-header">
+          <div className="release-news-brand">
+            <img className="release-news-wordmark" src={brandWordmarkSrc()} alt="" />
+            <span className="release-news-divider" aria-hidden="true" />
+            <DialogTitle>{news ? "What's New" : "Changelog"}</DialogTitle>
+            <DialogDescription className="release-news-version">
+              <span className="sr-only">Haptic </span>{version}
+            </DialogDescription>
+          </div>
         </DialogHeader>
-        <div className="flex max-h-[60dvh] min-h-0 flex-col gap-5 overflow-y-auto overscroll-contain">
-          {visibleReleases.length ? visibleReleases.map(release => (
-            <section key={release.version} className="flex flex-col gap-2">
-              <h3 className="text-sm font-medium"><SelectableText>{release.version} — {release.title}</SelectableText></h3>
-              <ul className="flex list-disc flex-col gap-2 pl-5 text-sm">
-                {release.changes.map((change, index) => <li key={index}><SelectableText>{change}</SelectableText></li>)}
-              </ul>
-            </section>
-          )) : (
-            <Empty><EmptyHeader><EmptyTitle>No Release Notes</EmptyTitle><EmptyDescription>This build has no bundled release notes.</EmptyDescription></EmptyHeader></Empty>
-          )}
+        <div className="release-news-body">
+          {current ? <ReleaseEntry release={current} /> : <NoReleaseNotes version={version} />}
         </div>
         <DialogFooter>
-          {news && <Button size="sm" variant="outline" onClick={() => onOpenChange(true)}>View Changelog</Button>}
           <Button size="sm" onClick={close}>Done</Button>
         </DialogFooter>
       </DialogContent>

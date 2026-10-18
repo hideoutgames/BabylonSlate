@@ -2,6 +2,7 @@ import {
   syncDirectionalLightPolicy,
   isDirectionalLightExcluded,
   isForwardLightExcluded,
+  lightsInCreationOrder,
 } from "./light-policy";
 import {
   CascadedShadowGenerator,
@@ -498,7 +499,7 @@ export class SceneShadowController {
     this.knownMeshCount = this.scene.meshes.length;
     this.removedSinceScan = 0;
   }
-  diagnostics(lights: readonly Light[] = this.scene.lights) {
+  diagnostics(lights: readonly Light[] = lightsInCreationOrder(this.scene.lights)) {
     return lights.map((light) => shadowLightRow(light, this.entries.get(light)));
   }
   /**
@@ -605,6 +606,19 @@ export class SceneShadowController {
         entry.light instanceof DirectionalLight ? settings.cascades : 1,
         settings.profile,
       ]);
+    const measureDistance = (entry: Entry) => {
+      entry.distanceSquared = 0;
+      if (camera && !(entry.light instanceof DirectionalLight)) {
+        // Shadow-limited lights may never bind a material. Refresh their
+        // parents explicitly rather than ranking a stale transformedPosition.
+        entry.light.parent?.computeWorldMatrix(true);
+        entry.light.computeTransformedInformation();
+        entry.distanceSquared = Vector3.DistanceSquared(
+          entry.light.parent ? entry.light.getAbsolutePosition() : entry.light.position,
+          camera.globalPosition,
+        );
+      }
+    };
     const candidates = [...this.entries.values()].filter((entry) => {
       entry.status = "disabled";
       entry.reason = null;
@@ -615,7 +629,11 @@ export class SceneShadowController {
         entry.status = "non-illuminating";
         return false;
       }
-      if (!entry.light.isEnabled() || entry.light.intensity <= 0) return false;
+      if (!entry.light.isEnabled() || entry.light.intensity <= 0) {
+        // A Forward-dropped light keeps its map on standby, which ranks by distance.
+        if (entry.generator) measureDistance(entry);
+        return false;
+      }
       if (!entry.requested) {
         entry.status = "not-requested";
         return false;
@@ -630,17 +648,7 @@ export class SceneShadowController {
           "shadow allocation failed at minimum size; awaiting settings change or context recovery";
         return false;
       }
-      entry.distanceSquared = 0;
-      if (camera && !(entry.light instanceof DirectionalLight)) {
-        // Shadow-limited lights may never bind a material. Refresh their
-        // parents explicitly rather than ranking a stale transformedPosition.
-        entry.light.parent?.computeWorldMatrix(true);
-        entry.light.computeTransformedInformation();
-        entry.distanceSquared = Vector3.DistanceSquared(
-          entry.light.parent ? entry.light.getAbsolutePosition() : entry.light.position,
-          camera.globalPosition,
-        );
-      }
+      measureDistance(entry);
       if (camera && !(entry.light instanceof DirectionalLight) &&
         entry.distanceSquared > (settings.distance + entry.light.range) ** 2) {
         entry.status = "outside-relevant-area";
@@ -873,9 +881,21 @@ export class SceneShadowController {
       const generator = entry.generator!;
       const bytes = generatorPasses(generator) * entry.mapSize ** 2 * bytesPerTexel;
       const samplers = admissionSamplers(entry.light, settings);
+      // The Forward light budget dropped this light for camera distance: it is
+      // camera-rejected like a budget-limited one. Releasing its map would
+      // dispose the generator, and readmission would rebuild every caster's
+      // depth effect. Its "disabled" status hides a withdrawn request, so
+      // check what the candidate filter would have said.
+      const forwardLimited =
+        entry.status === "disabled" &&
+        entry.requested &&
+        settings.enabled &&
+        isForwardLightExcluded(entry.light);
       if (
         clustered ||
-        (entry.status !== "outside-relevant-area" && entry.status !== "budget-limited") ||
+        (entry.status !== "outside-relevant-area" &&
+          entry.status !== "budget-limited" &&
+          !forwardLimited) ||
         JSON.stringify(entry.settings) !== settingsKey() ||
         pooled >= settings.maxLocalLights ||
         admitted.bytes + standby.bytes + bytes > byteBudget ||
@@ -1255,7 +1275,10 @@ export function shadowLightDiagnostics(
   scene: Scene,
   controller?: SceneShadowController,
 ) {
-  return controller?.diagnostics() ?? scene.lights.map((light) => shadowLightRow(light));
+  return (
+    controller?.diagnostics() ??
+    lightsInCreationOrder(scene.lights).map((light) => shadowLightRow(light))
+  );
 }
 
 export function sceneShadowController(scene: Scene): SceneShadowController {
