@@ -1,9 +1,9 @@
 import {
   NodeMaterial,
+  ShadowLight,
   type Light,
   type MaterialDefines,
   type Scene,
-  type ShadowLight,
 } from "@babylonjs/core";
 import { hasClusteredLightPolicy } from "./clustered-light-policy";
 
@@ -19,8 +19,10 @@ const MAX_PENDING_HANDOFFS = 64;
 const journals = new WeakMap<Scene, Journal>();
 
 /** Every per-light input of Babylon 9.29 PrepareDefinesForLight except the generator. */
-function receiverSignature(light: ShadowLight): string {
+export function receiverSignature(light: Light): string {
   const defines: Record<string, unknown> = {};
+  // Light subclasses that add a define key rebuild the define set (area-rect-light).
+  Object.defineProperty(defines, "rebuild", { value: () => {} });
   light.prepareLightSpecificDefines(defines as unknown as MaterialDefines, 0);
   return JSON.stringify([
     light.getClassName(),
@@ -29,20 +31,21 @@ function receiverSignature(light: ShadowLight): string {
     light.specular.equalsFloats(0, 0, 0),
     light.lightmapMode,
     light.shadowEnabled,
-    light.needCube(),
+    light instanceof ShadowLight && light.needCube(),
   ]);
 }
 
-/** Node blocks bound to one light prepare its defines outside lightSources order. */
-function hasPinnedLightBlock(scene: Scene, lights: readonly Light[]): boolean {
+/** Lights a node block is bound to; it prepares their defines outside lightSources order. */
+export function pinnedLights(scene: Scene): Set<Light> {
+  const pinned = new Set<Light>();
   for (const material of scene.materials) {
     if (!(material instanceof NodeMaterial)) continue;
     for (const block of material.attachedBlocks) {
       const light = (block as { light?: unknown }).light;
-      if (light && lights.includes(light as Light)) return true;
+      if (light) pinned.add(light as Light);
     }
   }
-  return false;
+  return pinned;
 }
 
 function journal(scene: Scene): Journal {
@@ -79,13 +82,15 @@ export function exchangeShadowReceivers(
   const a = lights.indexOf(from);
   const b = lights.indexOf(to);
   const exchange = new Set<Light[]>();
+  const pinned = pinnedLights(scene);
   const valid =
     a >= 0 &&
     b >= 0 &&
     // Clustered Forward re-sorts lightSources and moves lights into the cluster.
     !hasClusteredLightPolicy(scene) &&
     receiverSignature(from) === receiverSignature(to) &&
-    !hasPinnedLightBlock(scene, [from, to]) &&
+    !pinned.has(from) &&
+    !pinned.has(to) &&
     scene.meshes.every((mesh) => {
       // InstancedMesh shares its source's array; exchange each array once.
       const sources = mesh.lightSources;

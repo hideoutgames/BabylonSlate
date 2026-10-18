@@ -19,6 +19,12 @@ Projects in default storage reopen from the Homepage without asking for a folder
 On Android and the web, nothing else holds a copy of your project. Use **Project Settings > Export > Export Project** regularly to keep a backup. See [Projects](index.md).
 :::
 
+## One tab per project
+
+On the web, a project can be open in only one browser tab at a time. If you open it from the Homepage in a second tab, Haptic stays on the Homepage and shows **This project is open in another tab. Close it there and try again.** Editing or deleting the project from another tab is refused the same way.
+
+To open the project in the new tab, choose **Settings > Project Settings > Close Project** in the first tab, or close that tab. Reloading or closing a tab also frees its project, even after a crash. Different projects can be open in different tabs.
+
 ## Choose your own folder
 
 In the iPad, iPhone, Android and desktop apps you can keep a project anywhere you can pick a folder, such as iCloud Drive, a Git working copy (for example in Working Copy on iPad) or a folder on your computer.

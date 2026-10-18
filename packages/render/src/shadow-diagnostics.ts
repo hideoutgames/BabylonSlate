@@ -14,6 +14,7 @@ import type { GpuBackend } from "@babylonslate/core";
 import { engineAdapterInfo } from "./render-diagnostics";
 import { sceneRenderingSettings } from "./render-settings";
 import { sceneRenderPathStatus } from "./scene-render-path";
+import { lightsInCreationOrder } from "./light-policy";
 import { findSceneShadowController } from "./shadow-controller";
 
 /** Caller-supplied provenance is deliberately not inferred from an adapter name. */
@@ -96,7 +97,7 @@ export function captureShadowDiagnostics(
   const camera = scene.activeCamera;
   const canvas = engine.getRenderingCanvas();
   const renderSize = camera?.outputRenderTarget?.getSize();
-  const lights = scene.lights.slice(0, limit(options.maxLights, 32));
+  const lights = lightsInCreationOrder(scene.lights).slice(0, limit(options.maxLights, 32));
   const statuses = controller?.diagnostics(lights) ?? [];
   // Automatic LOD levels draw in place of their master and share its state.
   const selectedMeshes = (options.meshes ?? []).filter((mesh) => !mesh.isBlocked);

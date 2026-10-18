@@ -328,7 +328,7 @@ test("Simulation redraws initialized GPU particles without advancing their visib
       const index = (y * 256 + x) * 4;
       const r = rgba[index]!; const g = rgba[index + 1]!; const b = rgba[index + 2]!;
       // Center strip contains the emitter, never the selected cube's gizmo; the
-      // ratio excludes the orange selection outline (#ff4400) from the red particles.
+      // ratio excludes the orange selection outline (#ff8000) from the red particles.
       const isRed = y > 50 && y < 94 && r > 40 && r > g * 6 && r > b * 6;
       const isBlue = b > 40 && b > g * 2 && b > r * 2;
       red += Number(isRed); blue += Number(isBlue);

@@ -448,6 +448,25 @@ export function applyPlaySnapshotTick(
   return snapshotTickIndex(buffer) ?? previous;
 }
 
+/** One Print node message as the HUD and console show it. */
+export interface PlayPrintEntry {
+  message: string;
+  key: string;
+  duration: number;
+  color: string;
+}
+
+/** A worker `print` command as a HUD entry. An empty message is a valid empty line; a non-string is not. */
+export function printEntryFromCommand(command: CommandMessage): PlayPrintEntry | null {
+  if (command.type !== "print" || typeof command.message !== "string") return null;
+  return {
+    message: command.message,
+    key: command.key ?? "",
+    duration: command.duration ?? 2,
+    color: printHudCssColor(command.color),
+  };
+}
+
 export interface PlayHudStats {
   fps: number;
   scriptMs: number;
@@ -565,12 +584,7 @@ export function startPlaySession(options: {
     frameId: number;
   }) => void;
   onLog?: (message: string, severity: string) => void;
-  onPrint?: (entry: {
-    message: string;
-    key: string;
-    duration: number;
-    color: string;
-  }) => void;
+  onPrint?: (entry: PlayPrintEntry) => void;
   /** Project `playFrameCap`; omitted or invalid → 60. */
   frameCap?: number;
   /** Engine Settings trace retention budget, captured when Play starts. */
@@ -1435,14 +1449,8 @@ export function startPlaySession(options: {
     if (command.type === "log") {
       options.onLog?.(command.message, command.severity ?? "log");
     }
-    if (command.type === "print" && command.message) {
-      options.onPrint?.({
-        message: command.message,
-        key: command.key ?? "",
-        duration: command.duration ?? 2,
-        color: printHudCssColor(command.color),
-      });
-    }
+    const printEntry = printEntryFromCommand(command);
+    if (printEntry) options.onPrint?.(printEntry);
     if (command.type === "stats") {
       emitHudStats(
         applyWorkerPlayStats(hudStats, {
