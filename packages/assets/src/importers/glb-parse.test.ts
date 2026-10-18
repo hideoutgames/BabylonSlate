@@ -2,6 +2,7 @@ import { crc32, inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import {
   buildMinimalGlbFixture,
+  dropSourcelessGltfTextures,
   embedGlbExternalImages,
   encodeGlbJsonBin,
   gltfAnimationClips,
@@ -56,6 +57,34 @@ function kenneyStyleSidecarGlb(uri = "Textures/colormap.png"): Uint8Array {
     },
     new Uint8Array(0),
   );
+}
+
+/** A pack GLB: images 0 and 2 are embedded, image 1 is an external file that was not supplied. */
+function packWithMissingImage(json: Record<string, unknown>): Uint8Array {
+  const length = ONE_BY_ONE_PNG.byteLength;
+  return encodeGlbJsonBin(
+    {
+      asset: { version: "2.0" },
+      buffers: [{ byteLength: length }],
+      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: length }],
+      images: [
+        { name: "albedo", mimeType: "image/png", bufferView: 0 },
+        { name: "missing", uri: "Textures/missing.png" },
+        { name: "emissive", mimeType: "image/png", bufferView: 0 },
+      ],
+      ...json,
+    },
+    ONE_BY_ONE_PNG,
+  );
+}
+
+/** The glTF loader throws `/textures/N/source: Failed to find index` unless every texture has an image. */
+function expectEveryTextureBacked(json: Record<string, unknown>): void {
+  const images = (json.images as unknown[] | undefined) ?? [];
+  for (const texture of (json.textures as Array<{ source?: number }> | undefined) ?? []) {
+    expect(Number.isInteger(texture.source)).toBe(true);
+    expect(images[texture.source!]).toBeDefined();
+  }
 }
 
 describe("parseGlbForBrowse", () => {
@@ -599,6 +628,119 @@ describe("embedGlbExternalImages", () => {
       false,
     );
   });
+
+  it("drops the textures of an unsupplied image and every material reference to them", () => {
+    const glb = packWithMissingImage({
+      textures: [{ source: 0 }, { source: 1 }, { source: 2 }],
+      materials: [
+        {
+          name: "kept",
+          pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+          emissiveTexture: { index: 2 },
+        },
+        {
+          name: "lost",
+          pbrMetallicRoughness: { baseColorFactor: [1, 0, 0, 1], baseColorTexture: { index: 1 } },
+          normalTexture: { index: 1, scale: 2 },
+          extensions: { KHR_materials_clearcoat: { clearcoatFactor: 1, clearcoatTexture: { index: 1 } } },
+        },
+      ],
+    });
+    const split = splitGlbJsonBin(stripUnmatchedGltfImageUris(glb))!;
+    expect((split.json.images as Array<{ name: string }>).map((image) => image.name)).toEqual([
+      "albedo",
+      "emissive",
+    ]);
+    expect(split.json.textures).toEqual([{ source: 0 }, { source: 1 }]);
+    expectEveryTextureBacked(split.json);
+    expect(split.json.materials).toEqual([
+      {
+        name: "kept",
+        pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+        emissiveTexture: { index: 1 },
+      },
+      {
+        name: "lost",
+        pbrMetallicRoughness: { baseColorFactor: [1, 0, 0, 1] },
+        extensions: { KHR_materials_clearcoat: { clearcoatFactor: 1 } },
+      },
+    ]);
+  });
+
+  it("moves extension-sourced textures to the kept images and drops those whose image is gone", () => {
+    const glb = packWithMissingImage({
+      textures: [
+        { source: 1 },
+        { source: 0 },
+        { extensions: { EXT_texture_webp: { source: 2 } } },
+        { extensions: { EXT_texture_webp: { source: 1 } } },
+      ],
+      materials: [
+        {
+          pbrMetallicRoughness: { baseColorTexture: { index: 1 }, metallicRoughnessTexture: { index: 0 } },
+          emissiveTexture: { index: 2 },
+          occlusionTexture: { index: 3 },
+        },
+      ],
+    });
+    const split = splitGlbJsonBin(stripUnmatchedGltfImageUris(glb))!;
+    expect(split.json.textures).toEqual([
+      { source: 0 },
+      { extensions: { EXT_texture_webp: { source: 1 } } },
+    ]);
+    expect(split.json.materials).toEqual([
+      { pbrMetallicRoughness: { baseColorTexture: { index: 0 } }, emissiveTexture: { index: 1 } },
+    ]);
+  });
+
+  it("leaves a GLB without images or textures when its only image is missing", () => {
+    const split = splitGlbJsonBin(stripUnmatchedGltfImageUris(kenneyStyleSidecarGlb()))!;
+    expect(split.json.images).toBeUndefined();
+    expect(split.json.textures).toBeUndefined();
+    expect(split.json.materials).toEqual([{ name: "colormap", pbrMetallicRoughness: {} }]);
+  });
+});
+
+describe("dropSourcelessGltfTextures", () => {
+  it("repairs a model stored with textures that have no image", () => {
+    const json: Record<string, unknown> = {
+      asset: { version: "2.0" },
+      images: [{ bufferView: 0, mimeType: "image/png" }],
+      textures: [{}, { source: 0 }, { source: 5 }],
+      materials: [
+        {
+          pbrMetallicRoughness: { baseColorTexture: { index: 0 }, metallicRoughnessTexture: { index: 1 } },
+          normalTexture: { index: 2 },
+        },
+      ],
+    };
+    expect(dropSourcelessGltfTextures(json)).toBe(true);
+    expect(json.textures).toEqual([{ source: 0 }]);
+    expectEveryTextureBacked(json);
+    expect(json.materials).toEqual([{ pbrMetallicRoughness: { metallicRoughnessTexture: { index: 0 } } }]);
+  });
+
+  it("does not touch a GLB whose textures all have images", () => {
+    const json: Record<string, unknown> = {
+      asset: { version: "2.0" },
+      images: [{ bufferView: 0, mimeType: "image/png" }],
+      textures: [{ source: 0 }],
+      materials: [{ pbrMetallicRoughness: { baseColorTexture: { index: 0 } } }],
+    };
+    const before = JSON.stringify(json);
+    expect(dropSourcelessGltfTextures(json)).toBe(false);
+    expect(JSON.stringify(json)).toBe(before);
+  });
+
+  it("ignores texture-like keys under extras", () => {
+    const json: Record<string, unknown> = {
+      asset: { version: "2.0" },
+      textures: [{}],
+      materials: [{ extras: { paintTexture: { index: 0 } } }],
+    };
+    expect(dropSourcelessGltfTextures(json)).toBe(true);
+    expect(json.materials).toEqual([{ extras: { paintTexture: { index: 0 } } }]);
+  });
 });
 
 describe("ingestGltfForImport missing BIN", () => {
@@ -651,6 +793,16 @@ describe("ingestGltfForImport missing BIN", () => {
   });
 });
 
+describe("ingestGltfForImport missing images", () => {
+  it("names the image files no sidecar supplied", () => {
+    const glb = packWithMissingImage({});
+    expect(ingestGltfForImport("pack.glb", glb).missingImageUris).toEqual(["Textures/missing.png"]);
+    expect(
+      ingestGltfForImport("pack.glb", glb, { "missing.png": ONE_BY_ONE_PNG }).missingImageUris,
+    ).toEqual([]);
+  });
+});
+
 describe("importModel sidecar GLB", () => {
   it("embeds ImportOptions.sidecars before browse so the Texture has pixels and pending encode", async () => {
     const glb = kenneyStyleSidecarGlb();
@@ -691,6 +843,22 @@ describe("importModel sidecar GLB", () => {
         expect(texture.payload.compressionState).not.toBe("pending");
       }
     }
+  });
+
+  it("keeps a loadable Model and an editable Material when the texture files were not supplied", async () => {
+    const results = await importModel(kenneyStyleSidecarGlb(), {
+      fileName: "tree.glb",
+      existingGuids: new Set(),
+    });
+    const model = results.find((result) => result.type === "Model")!;
+    const split = splitGlbJsonBin(model.chunks.find((chunk) => chunk.id === "source")!.data)!;
+    expectEveryTextureBacked(split.json);
+    const material = results.find((result) => result.type === "Material")!;
+    expect(material.dependencies).toEqual([]);
+    expect(material.payload.importNotice).toBeUndefined();
+    expect(model.payload.materialSlots).toEqual([
+      expect.objectContaining({ index: 0, name: "colormap", materialGuid: material.guid }),
+    ]);
   });
 });
 

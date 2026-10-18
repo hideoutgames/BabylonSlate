@@ -6,6 +6,7 @@ import type { Node } from "@babylonjs/core/node";
 import type { Scene } from "@babylonjs/core/scene";
 import { GLTFLoaderAnimationStartMode } from "@babylonjs/loaders/glTF/glTFFileLoader";
 import {
+  dropSourcelessGltfTextures,
   gltfAnimationClips,
   type GlbBrowseAnimation,
 } from "@babylonslate/assets";
@@ -30,6 +31,9 @@ export async function loadModelContainer(
           animationStartMode: GLTFLoaderAnimationStartMode.NONE,
           targetFps,
           onParsed: (data) => {
+            // Models imported without their texture files were stored with
+            // textures that have no image; the loader would fail the whole model.
+            dropSourcelessGltfTextures(data.json as Record<string, unknown>);
             clips = gltfAnimationClips(data.json as Record<string, unknown>);
             const animations =
               (data.json as { animations?: { name?: string }[] }).animations ??

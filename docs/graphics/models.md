@@ -6,6 +6,8 @@ Models are imported 3D meshes. Importing one can also create its Materials, Text
 
 Import `.glb` or `.gltf` files, or `.fbx`, `.obj` and `.stl` files, which are converted on import. See [Importing](../editor/importing.md) for import settings.
 
+When a file refers to texture files outside it, pick them together with the model. Textures you leave out are skipped and the model imports without them.
+
 | Created asset | When |
 | --- | --- |
 | [Model](../assets/model.md) | Always. |
