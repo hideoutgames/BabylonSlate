@@ -25,7 +25,7 @@ Double-tap the asset to open it. The window has **Preview**, **Colliders** and a
 
 ## Use it
 
-Drag a Model from **Place Actors > Models**, or set **Asset** on a [Mesh](../components/mesh.md) component. A Mesh set to **Use Simple Collision** uses the Model's colliders.
+Drag a Model from **Place Actors > Models**, or set **Asset** on a [Mesh](../components/mesh.md) component. A Mesh set to **Use Simple Collision** uses the Model's colliders. A Model imported with a skeleton starts with none (other Models start with one **Generated Collision** shape), so add a shape under **Colliders** or set the Mesh to **Use Complex Collision**.
 
 ## Related
 
