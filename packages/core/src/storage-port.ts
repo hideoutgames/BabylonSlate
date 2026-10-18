@@ -60,6 +60,26 @@ export function isStorageNotFound(error: unknown): error is StorageNotFoundError
     candidate.name === "StorageNotFoundError" && candidate.code === "not-found";
 }
 
+/**
+ * A browser project is bound by one tab at a time. Raised when another tab
+ * already has the project open; its message is shown to the user as is.
+ */
+export class ProjectOpenElsewhereError extends Error {
+  readonly code = "project-open-elsewhere";
+  constructor() {
+    super("This project is open in another tab. Close it there and try again.");
+    this.name = "ProjectOpenElsewhereError";
+  }
+}
+
+/** True for a project another tab holds open; read the type, never the message. */
+export function isProjectOpenElsewhere(error: unknown): error is ProjectOpenElsewhereError {
+  if (error instanceof ProjectOpenElsewhereError) return true;
+  const candidate = error as { name?: unknown; code?: unknown } | null;
+  return typeof candidate === "object" && candidate !== null &&
+    candidate.name === "ProjectOpenElsewhereError" && candidate.code === "project-open-elsewhere";
+}
+
 export interface StorageReadMetrics {
   operations: number;
   fullReads: number;
