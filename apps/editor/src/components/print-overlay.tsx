@@ -35,19 +35,15 @@ export function PrintOverlay({ entries }: PrintOverlayProps) {
     [entries, clock],
   );
   if (visible.length === 0) return null;
-  // Newest first and clipped to the overlay, so a burst of prints drops the
-  // oldest lines off the bottom instead of running off-screen.
+  // Newest first, left-aligned under the Play chrome like an engine's on-screen
+  // debug log; lines carry their own shadow so no box hides the game.
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 top-12 bottom-12 z-40 flex flex-col items-center gap-1 overflow-hidden px-4"
+      className="play-print-log pointer-events-none flex max-h-[50dvh] min-w-0 flex-col items-start gap-0.5 overflow-hidden"
       data-testid="print-overlay"
     >
       {[...visible].reverse().map((e) => (
-        <div
-          key={e.key}
-          className="max-w-full shrink-0 break-words rounded-md bg-black/60 px-3 py-1 text-sm"
-          style={{ color: e.color }}
-        >
+        <div key={e.key} className="play-print-line max-w-full shrink-0 break-words" style={{ color: e.color }}>
           {printHudRowText(e.message)}
         </div>
       ))}

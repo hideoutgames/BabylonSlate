@@ -86,6 +86,7 @@ describe("Playwright iPad project filter", () => {
     for (const file of [
       "editor-edit-profile.spec.ts",
       "feature-test-flythrough-route.spec.ts",
+      "feature-test-load-route.spec.ts",
       "feature-test-perf-route.spec.ts",
       "play-performance-route.spec.ts",
       "play-sustained-route.spec.ts",

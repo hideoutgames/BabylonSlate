@@ -30,6 +30,9 @@ const state = vi.hoisted(() => ({
   sceneViewportLoading: false,
   compileDiagnostics: [] as Diagnostic[],
   setDiagnostics: vi.fn(),
+  requestPlay: vi.fn(),
+  requestSimulate: vi.fn(),
+  simulationUnavailableReason: null as string | null,
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -44,7 +47,12 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   collectPlayPreviewScripts: async () => ({ bundles: [], diagnostics: state.compileDiagnostics }),
 })));
 vi.mock("../context/play-context", () => ({
-  usePlay: () => ({ playing: false, preparing: false, canPlay: state.canPlay, sceneViewportLoading: state.sceneViewportLoading }),
+  usePlay: () => ({
+    playing: false, preparing: false, canPlay: state.canPlay, sceneViewportLoading: state.sceneViewportLoading,
+    requestPlay: state.requestPlay, requestSimulate: state.requestSimulate,
+    simulationUnavailableReason: state.simulationUnavailableReason,
+    previewBuild: false, setPreviewBuild: vi.fn(), playFromScene: true,
+  }),
 }));
 vi.mock("../context/validation-context", () => ({
   useValidation: () => ({ errorCount: state.errorCount, setDiagnostics: state.setDiagnostics }),
@@ -103,6 +111,9 @@ afterEach(() => {
   state.sceneViewportLoading = false;
   state.compileDiagnostics = [];
   state.setDiagnostics.mockClear();
+  state.requestPlay.mockClear();
+  state.requestSimulate.mockClear();
+  state.simulationUnavailableReason = null;
 });
 
 describe("chrome Play", () => {
@@ -116,6 +127,24 @@ describe("chrome Play", () => {
     state.sceneViewportLoading = false;
     rerender(<Chrome />);
     expect(screen.getByTestId("play-preview").hasAttribute("disabled")).toBe(false);
+  });
+});
+
+describe("chrome Play Mode", () => {
+  it("turns Play into a remembered Simulate when Simulate is chosen", async () => {
+    state.canPlay = true;
+    const { getAppSettingsSnapshot } = await import("../context/app-settings-context");
+    render(<Chrome />);
+    fireEvent.click(screen.getByTestId("debug-menu"));
+    fireEvent.click(await screen.findByTestId("play-mode-simulate"));
+    await waitFor(() => expect(screen.getByTestId("play-preview").textContent).toContain("Simulate"));
+    expect(getAppSettingsSnapshot().settings.debuggerDefaults.simulate).toBe(true);
+    fireEvent.click(screen.getByTestId("play-preview"));
+    expect(state.requestSimulate).toHaveBeenCalledTimes(1);
+    expect(state.requestPlay).not.toHaveBeenCalled();
+    // Choosing a mode keeps the Debug menu open.
+    fireEvent.click(screen.getByTestId("play-mode-play"));
+    await waitFor(() => expect(screen.getByTestId("play-preview").textContent).toContain("Play"));
   });
 });
 

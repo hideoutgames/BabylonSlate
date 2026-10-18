@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useId,
   useLayoutEffect,
   useMemo,
@@ -20,6 +21,7 @@ import { cn } from "@babylonslate/ui/lib/utils";
 import { popupMenuFrame } from "./catalog-menu";
 import { SearchInput } from "./search-input";
 import { PickerIdentity } from "./picker-identity";
+import { usePopupOutsideDismiss } from "./use-popup-outside-dismiss";
 import {
   WindowedList,
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
@@ -261,6 +263,18 @@ export function SearchDialog({
     return { left, top, width, maxHeight: height };
   }, [items.length, open, openAnchor]);
   const lastPinnedIndex = filtered.filter((item) => item.pinned).length - 1;
+  const onOpenChangeRef = useRef(onOpenChange);
+  const openRef = useRef(open);
+  useLayoutEffect(() => {
+    onOpenChangeRef.current = onOpenChange;
+    openRef.current = open;
+  });
+  usePopupOutsideDismiss(open, () => onOpenChange(false));
+  // A host that hides the picker (a switched tab or type) unmounts it while
+  // open; report the close so it cannot reappear later at a stale position.
+  useEffect(() => () => {
+    if (openRef.current) onOpenChangeRef.current(false);
+  }, []);
   // An external close clears the query while rendering; the list unmounts with it.
   const [wasOpen, setWasOpen] = useState(open);
   if (wasOpen !== open) {
@@ -304,6 +318,7 @@ export function SearchDialog({
         className="catalog-menu-popup max-w-none translate-x-0 translate-y-0 rounded-lg sm:max-w-none"
         bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
         style={frame ?? undefined}
+        data-popup-picker=""
         data-testid={testId}
       >
         <DialogHeader className="shrink-0 gap-0.5 px-2 pt-2 pb-1.5">
