@@ -457,7 +457,9 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
     const { frames, summary, result } = await flyScene(page, cdp, scene, "editor");
     scenes[scene] = { sceneReadyMs: readyMs, loadRetries, ...summary };
     raw[scene] = { frames, log: result.log, longTasks: result.longTasks, totals: result.totals };
-    await page.getByTestId("viewport-canvas").screenshot({ path: testInfo.outputPath(`${scene}-flythrough-end.png`) });
+    // Best effort: a screenshot of a directly presented WebGPU view can stall on a software adapter.
+    await page.getByTestId("viewport-canvas").screenshot({ path: testInfo.outputPath(`${scene}-flythrough-end.png`), timeout: 30_000 })
+      .catch(() => undefined);
     if (PLAY_SCENES.includes(scene)) {
       const play = await flyPlay(page, cdp, scene);
       scenes[`${scene}:play`] = { playBootMs: play.playBootMs, ...play.summary };
