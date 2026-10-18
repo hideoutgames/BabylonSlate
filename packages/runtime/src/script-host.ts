@@ -462,6 +462,8 @@ export interface ScriptContext {
     boneName: string,
   ): void;
   getParent(actor: BObject | null | undefined): Actor | null;
+  /** The actor's `name` variable (an Actor has no `name` property); "" for a missing or non-actor target. */
+  getActorName(actor: BObject | null | undefined): string;
   setOwner(
     actor: BObject | null | undefined,
     owner: BObject | null | undefined,
@@ -771,7 +773,7 @@ export type HostContextKey =
   | "combineRotators" | "inverseRotator" | "deltaRotator" | "lerpRotator" | "rotatorForward" | "rotatorRight"
   | "rotatorUp" | "lookAtRotator" | "multiplyQuats" | "inverseQuat" | "slerpQuats" | "quatRotateVector"
   | "normalizeQuat" | "randomFloat" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
-  | "detachActor" | "getParent" | "setOwner" | "getOwner" | "executeConsoleCommand" | "getFirstComponentOfType"
+  | "detachActor" | "getParent" | "getActorName" | "setOwner" | "getOwner" | "executeConsoleCommand" | "getFirstComponentOfType"
   | "getAllComponentsOfType" | "getSceneLoadingProgress" | "getTargetSceneName" | "releaseAssetLoad"
   | "getAssetLoadHandleState" | "getAssetLoadHandleProgress" | "getAssetLoadState" | "loadSceneAsync"
   | "unloadSceneAsync" | "isSceneLoaded" | "getSceneLoadProgress" | "getSceneState" | "getProjectName"
@@ -1576,6 +1578,10 @@ export class ScriptHost {
         setActorLink(child, "parentId", null);
       },
       getParent: (actor) => readActorLink(services, actor, "parentId"),
+      getActorName: (actor) => {
+        const name = asActor(actor)?.getVariable("name");
+        return typeof name === "string" ? name : "";
+      },
       setOwner: (actor, owner) => {
         setActorLink(actor, "ownerId", owner);
       },

@@ -38,6 +38,8 @@ interface RuntimeNavigationHost {
   isStreamActor(actor: Actor): boolean;
   actorName(actor: Actor): string;
   emit(command: CommandMessage): void;
+  /** A Navigation warning for the session log. */
+  warn(message: string): void;
 }
 
 export function navPointFromUnknown(value: unknown): NavPoint | null {
@@ -70,6 +72,8 @@ export class RuntimeNavigation implements RuntimeSubsystem {
   /** NavMeshBlocker settings, re-parsed only when one of the component's variables is written. */
   private readonly blockerSettings = new ParsedComponentProperties(parseNavMeshBlockerProperties);
   private readonly navTargetByActor = new Map<string, NavPoint>();
+  /** `actorGuid:reason` of each blocked Move To already reported this session. */
+  private readonly warnedMoveBlocks = new Set<string>();
   private readonly navSteeredActors = new Set<string>();
   private readonly navPhysicalAgents = new Set<string>();
   private readonly navAgentActors: Actor[] = [];
@@ -160,17 +164,19 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     this.nav?.dispose();
     this.nav = null;
     this.sceneNavmeshBytes.clear();
+    this.warnedMoveBlocks.clear();
     if (this.showPathfinding || this.showNavAgent) {
       this.host.emit({ type: "debugNavigation", agents: [], world: this.host.worldKind() });
     }
   }
 
   setAgentTarget(actorGuid: string, target: NavPoint): boolean {
-    if (!this.nav) return false;
     const actor = this.host.world().findActor(actorGuid);
-    if (!actor || actor.destroyed || !actor.components.some(
-      (component) => component.classId === "NavAgentComponent" && !component.destroyed,
-    )) return false;
+    if (!actor || actor.destroyed) return false;
+    if (!this.nav || !this.hasNavAgent(actor)) {
+      this.warnMoveBlocked(actor);
+      return false;
+    }
     const destination = this.nav.closestPoint(this.toNav(target));
     if (!destination) return false;
     if (!this.navAgentByActor.has(actorGuid)) {
@@ -184,6 +190,33 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     this.navTargetByActor.set(actorGuid, { ...destination });
     this.emitDebug(true);
     return true;
+  }
+
+  private hasNavAgent(actor: Actor): boolean {
+    return actor.components.some(
+      (component) => component.classId === "NavAgentComponent" && !component.destroyed,
+    );
+  }
+
+  /**
+   * Move To without a Nav Agent or a loaded NavMesh is a no-op by design; this says so once per
+   * actor and reason per session, so a Move To in a loop does not flood the log.
+   */
+  private warnMoveBlocked(actor: Actor): void {
+    const name = this.host.actorName(actor);
+    const reasons: Array<[string, string]> = [];
+    if (!this.hasNavAgent(actor)) {
+      reasons.push(["agent", `Move To: ${name} has no Nav Agent component, so it does not move.`]);
+    }
+    if (!this.nav) {
+      reasons.push(["navmesh", `Move To: ${name} does not move because the scene has no baked NavMesh.`]);
+    }
+    for (const [reason, message] of reasons) {
+      const key = `${actor.guid}:${reason}`;
+      if (this.warnedMoveBlocks.has(key)) continue;
+      this.warnedMoveBlocks.add(key);
+      this.host.warn(message);
+    }
   }
 
   findPath(from: NavPoint, to: NavPoint): NavPoint[] {
@@ -699,6 +732,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     }
     const target = this.nav?.closestPoint(this.toNav(dest));
     if (!target) {
+      this.warnMoveBlocked(actor);
       this.stopAgent(actor.guid);
       return "failure";
     }

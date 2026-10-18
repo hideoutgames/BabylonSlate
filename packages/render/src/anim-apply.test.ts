@@ -4,6 +4,7 @@ import {
   applyAnimStateToScene,
   applySpriteAnimFrame,
   applySpriteAnimationAssetFrame,
+  onceMissingClip,
   resolvePlaySpriteSlot,
   sceneAnimHostFromBinding,
   seekGameplayAnimation,
@@ -539,6 +540,66 @@ describe("seekGameplayAnimation", () => {
         clipAssetGuid: "hero-model",
       },
     ]);
+  });
+
+  it("treats a state with no clip as playing nothing, not as a missing clip, and rests the slot's groups", () => {
+    const missing: string[] = [];
+    const events: string[] = [];
+    const walk = {
+      name: "Walk",
+      from: 0,
+      to: 10,
+      pause() {},
+      goToFrame() {
+        events.push("seek");
+      },
+      reset() {
+        events.push("reset");
+      },
+    };
+    const host = {
+      getAnimationGroups: () => [walk],
+      onMissingClip: (info: { clipName: string }) => {
+        missing.push(info.clipName);
+      },
+    };
+    const play = (clipName: string, clipAssetGuid: string) =>
+      applyAnimStateToScene(host, {
+        type: "animState",
+        slotId: 1,
+        stateId: "s",
+        normalisedTime: 0.5,
+        blendWeights: { s: 1 },
+        clipName,
+        clipKind: "animation",
+        layers: [{ stateId: "s", clipName, clipAssetGuid, clipKind: "animation", normalisedTime: 0.5, weight: 1 }],
+      });
+
+    play("", "");
+    expect(missing).toEqual([]);
+    expect(events).toEqual(["reset"]);
+
+    // A clip that is named but absent is still reported, with or without its asset.
+    play("Run", "");
+    play("", "hero-model");
+    expect(missing).toEqual(["Run", ""]);
+  });
+
+  it("passes each missing clip on once per slot and clip", () => {
+    const reported: string[] = [];
+    const once = onceMissingClip((info) => {
+      reported.push(`${info.slotId}/${info.clipKind}/${info.clipAssetGuid ?? ""}/${info.clipName}`);
+    });
+    const miss = (slotId: number, clipName: string, clipAssetGuid?: string) =>
+      once({ slotId, clipName, clipAssetGuid, clipKind: "animation" });
+
+    for (let frame = 0; frame < 3; frame += 1) miss(1, "Run");
+    miss(1, "Run", "hero-model");
+    miss(2, "Run");
+    miss(1, "Jump");
+    miss(1, "Run");
+
+    expect(reported).toEqual(["1/animation//Run", "1/animation/hero-model/Run", "2/animation//Run", "1/animation//Jump"]);
   });
 
   it("crossfades two sprite layers onto the base mesh and overlay", () => {
