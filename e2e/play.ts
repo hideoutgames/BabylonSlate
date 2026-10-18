@@ -25,15 +25,20 @@ export async function showOverlayButtons(
   buttons: readonly ("console" | "inspector" | "profiler")[],
 ): Promise<void> {
   const trigger = page.getByTestId("debug-menu");
+  const submenu = page.getByTestId("play-overlays-submenu");
   for (const button of buttons) {
     const item = page.getByTestId(`overlay-${button}-toggle`);
-    if (!(await item.isVisible())) await trigger.click();
+    // Overlays live in the Debug menu's Overlays submenu.
+    if (!(await item.isVisible())) {
+      if (!(await submenu.isVisible())) await trigger.click();
+      await submenu.click();
+    }
     if ((await item.getAttribute("aria-checked")) !== "true") await item.click();
-    if (!(await item.isVisible())) await trigger.click();
     await expect(item).toHaveAttribute("aria-checked", "true");
   }
-  if (await page.getByTestId(`overlay-${buttons[0]}-toggle`).isVisible())
-    await page.keyboard.press("Escape");
+  // Escape closes the submenu, then the Debug menu.
+  for (let step = 0; step < 3 && (await submenu.isVisible()); step += 1) await page.keyboard.press("Escape");
+  await expect(submenu).toBeHidden();
 }
 
 /** Click Play and wait until the overlay is up, including a prepare dialog. */

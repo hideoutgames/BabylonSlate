@@ -725,6 +725,14 @@ export function TreeView({
         setScrollTop(event.currentTarget.scrollTop);
         if (dragRef.current) clearDrag();
       }}
+      // Touch leaves a sticky :hover on the last row it touched; rows show
+      // hover only while a mouse or pen is the pointer in use.
+      onPointerOverCapture={(event) => {
+        event.currentTarget.dataset.pointer = event.pointerType;
+      }}
+      onPointerDownCapture={(event) => {
+        event.currentTarget.dataset.pointer = event.pointerType;
+      }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={clearDrag}
@@ -770,7 +778,7 @@ export function TreeView({
                   "group/tree-row absolute right-1 left-1 flex items-center gap-1 rounded-sm pr-1 text-[13px] transition-colors motion-reduce:transition-none",
                   selected
                     ? "bg-accent text-accent-foreground"
-                    : "hover:bg-accent/50",
+                    : "group-data-[pointer=mouse]/tree:hover:bg-accent/50 group-data-[pointer=pen]/tree:hover:bg-accent/50",
                   dropInto
                     ? "bg-accent/50 outline outline-1 -outline-offset-1 outline-ring"
                     : "",

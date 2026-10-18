@@ -12,13 +12,16 @@ import { defineConfig, devices } from "@playwright/test";
  * The FeatureTest fly-through route counts camera-motion events per frame:
  *   BL_PERF_FLYTHROUGH=1 pnpm run test:e2e e2e/feature-test-flythrough-route.spec.ts \
  *     --config playwright.perf.config.ts --project perf-software
+ * The FeatureTest cold-load route counts shader programs, modules and pipelines per scene load:
+ *   BL_PERF_LOAD=1 pnpm run test:e2e e2e/feature-test-load-route.spec.ts \
+ *     --config playwright.perf.config.ts --project perf-gpu
  * The editor-edit profiling route also needs a React profiling build:
  *   VITE_REACT_PROFILING=true pnpm run test:e2e e2e/editor-edit-profile.spec.ts \
  *     --config playwright.perf.config.ts --project perf-software
  */
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: /(?:play-(performance|sustained)-route|feature-test-(?:perf|flythrough)-route|editor-edit-profile|rendering-baseline|shared-outline|scalability-play|lattice-deformer)\.spec\.ts$/,
+  testMatch: /(?:play-(performance|sustained)-route|feature-test-(?:perf|flythrough|load)-route|editor-edit-profile|rendering-baseline|shared-outline|scalability-play|lattice-deformer)\.spec\.ts$/,
   timeout: 600_000,
   fullyParallel: false,
   retries: 0,

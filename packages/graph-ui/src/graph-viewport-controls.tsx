@@ -1,22 +1,14 @@
 import { useReactFlow, useStore } from "@xyflow/react";
 import { MaximizeIcon, MinusIcon, PlusIcon } from "lucide-react";
-import { Button } from "@babylonslate/ui/components/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@babylonslate/ui/components/tooltip";
+import { Separator } from "@babylonslate/ui/components/separator";
+import { IslandIconButton } from "./island-icon-button";
 
 /** Canvas sibling so transformed or elevated nodes cannot cover navigation. */
 export function GraphViewportControls({ onFitGraph }: { onFitGraph: () => void }) {
-  const { zoomIn, zoomOut } = useReactFlow();
+  const { zoomIn, zoomOut, zoomTo } = useReactFlow();
+  const zoom = useStore((state) => state.transform[2]);
   const atMinZoom = useStore((state) => state.transform[2] <= state.minZoom);
   const atMaxZoom = useStore((state) => state.transform[2] >= state.maxZoom);
-  const actions = [
-    { label: "Zoom In", Icon: PlusIcon, disabled: atMaxZoom, run: () => zoomIn() },
-    { label: "Zoom Out", Icon: MinusIcon, disabled: atMinZoom, run: () => zoomOut() },
-    { label: "Size Graph To Fit", Icon: MaximizeIcon, disabled: false, run: onFitGraph },
-  ];
 
   return (
     <div
@@ -24,27 +16,28 @@ export function GraphViewportControls({ onFitGraph }: { onFitGraph: () => void }
       aria-label="Graph Navigation"
       data-testid="graph-viewport-controls"
       data-graph-overlay=""
-      className="absolute bottom-2 left-2 z-10 flex flex-col gap-1 rounded-lg border border-border bg-popover p-1 shadow-sm"
+      className="toolbar-island toolbar-island-vertical absolute bottom-2 left-2 z-10"
     >
-      {actions.map(({ label, Icon, disabled, run }) => (
-        <Tooltip key={label}>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-sm"
-                aria-label={label}
-                disabled={disabled}
-                onClick={() => { void run(); }}
-              />
-            }
-          >
-            <Icon />
-          </TooltipTrigger>
-          <TooltipContent side="right">{label}</TooltipContent>
-        </Tooltip>
-      ))}
+      <IslandIconButton label="Zoom In" side="right" disabled={atMaxZoom} onClick={() => { void zoomIn(); }}>
+        <PlusIcon />
+      </IslandIconButton>
+      <IslandIconButton
+        label="Reset Zoom"
+        hint="Reset Zoom To 100%"
+        side="right"
+        className="h-5 w-7 text-[10px] tabular-nums"
+        onClick={() => { void zoomTo(1); }}
+        data-testid="graph-zoom-level"
+      >
+        {Math.round(zoom * 100)}%
+      </IslandIconButton>
+      <IslandIconButton label="Zoom Out" side="right" disabled={atMinZoom} onClick={() => { void zoomOut(); }}>
+        <MinusIcon />
+      </IslandIconButton>
+      <Separator orientation="horizontal" />
+      <IslandIconButton label="Size Graph To Fit" side="right" onClick={() => { void onFitGraph(); }}>
+        <MaximizeIcon />
+      </IslandIconButton>
     </div>
   );
 }

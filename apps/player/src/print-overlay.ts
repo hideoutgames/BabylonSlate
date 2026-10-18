@@ -36,7 +36,7 @@ export function mountPlayerPrintOverlay(parent: HTMLElement): {
   const host = document.createElement("div");
   host.dataset.testid = "print-overlay";
   host.style.cssText =
-    "position:fixed;inset:3rem 0 auto 0;z-index:40;display:flex;flex-direction:column;align-items:center;gap:4px;padding:0 1rem;pointer-events:none;";
+    "position:fixed;top:3.5rem;left:12px;max-width:min(60%,40rem);z-index:40;display:flex;flex-direction:column;align-items:flex-start;gap:2px;pointer-events:none;";
   parent.appendChild(host);
 
   let entries: PrintHudEntry[] = [];
@@ -52,8 +52,9 @@ export function mountPlayerPrintOverlay(parent: HTMLElement): {
       host.replaceChildren();
       for (const entry of visible) {
         const row = document.createElement("div");
+        // Matches the editor's Play print log: shadowed lines, no box over the game.
         row.style.cssText =
-          "border-radius:6px;background:rgba(0,0,0,0.6);padding:4px 12px;font:14px/1.4 ui-sans-serif,system-ui,sans-serif;";
+          "max-width:100%;overflow-wrap:anywhere;font:500 13px/18px ui-sans-serif,system-ui,sans-serif;text-shadow:0 1px 2px rgba(0,0,0,0.8);";
         row.style.color = entry.color;
         row.textContent = printHudRowText(entry.message);
         host.appendChild(row);
