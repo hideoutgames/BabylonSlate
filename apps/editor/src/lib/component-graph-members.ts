@@ -1,4 +1,8 @@
-import type { GraphClassMember, SerializedGraph } from "@babylonslate/core";
+import {
+  normalizeClassMemberCategory,
+  type GraphClassMember,
+  type SerializedGraph,
+} from "@babylonslate/core";
 import { prefabComponentLabel } from "../panels/add-component-catalog";
 import {
   mergePrefabComponents,
@@ -7,6 +11,15 @@ import {
 
 /** Class tree category for the automatic component object-ref variables. */
 export const COMPONENT_GRAPH_MEMBER_CATEGORY = "Components";
+
+/** The component's object-ref category: Components unless authored; empty is uncategorized. */
+export function componentGraphMemberCategory(
+  component: { category?: string },
+): string | undefined {
+  return component.category === undefined
+    ? COMPONENT_GRAPH_MEMBER_CATEGORY
+    : normalizeClassMemberCategory(component.category);
+}
 
 export type ComponentGraphMember = GraphClassMember & {
   componentId: string;
@@ -52,8 +65,9 @@ export function componentGraphMembers(options: {
       typeId: "object",
       typeClassId: component.classId,
       componentId: component.id,
-      category: COMPONENT_GRAPH_MEMBER_CATEGORY,
     };
+    const category = componentGraphMemberCategory(component);
+    if (category) member.category = category;
     if (component.inheritedFrom) member.inheritedFrom = component.inheritedFrom;
     return member;
   });

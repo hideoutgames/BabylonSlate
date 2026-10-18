@@ -348,6 +348,18 @@ describe("Inspector class member details", () => {
     ).toMatchObject({ category: "Stats" });
   });
 
+  it("re-categorises a component object-ref variable", () => {
+    renderMemberInspector("component:prefab-mesh");
+    expect(screen.getByTestId("inspector-member-component")).toBeTruthy();
+    const category = screen.getByTestId("property-category") as HTMLInputElement;
+    expect(category.value).toBe("Components");
+    fireEvent.change(category, { target: { value: " Visuals | Meshes " } });
+    fireEvent.blur(category);
+    expect(
+      applyGraphChange.mock.calls.at(-1)![1].components?.find((entry) => entry.id === "prefab-mesh"),
+    ).toMatchObject({ category: "Visuals|Meshes" });
+  });
+
   it("locks Inputs and Outputs for an interface implementation", () => {
     renderMemberInspector("fn-impl");
     expect(screen.getByTestId("inspector-member-interface-impl")).toBeTruthy();
