@@ -8,10 +8,10 @@ Returns true when an actor has a component of a given type.
 
 ## Inputs
 
-| Pin | Type |
-| --- | --- |
-| Actor | Actor Reference |
-| Class ID | ActorComponent Class |
+| Pin | Type | Description |
+| --- | --- | --- |
+| Actor | Actor Reference | The actor to check. Left unconnected, it checks the actor running the graph. |
+| Class ID | ActorComponent Class |  |
 
 ## Outputs
 

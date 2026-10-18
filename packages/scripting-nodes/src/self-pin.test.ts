@@ -37,6 +37,8 @@ const CASES = [
   { typeId: "particles.stop", pin: "actor", method: "stopParticles", pure: false },
   { typeId: "actor.attachToBone", pin: "actor", method: "attachToBone", pure: false },
   { typeId: "component.get", pin: "actor", method: "getComponent", pure: true },
+  { typeId: "component.has", pin: "actor", method: "getComponent", pure: true },
+  { typeId: "component.add", pin: "actor", method: "addComponent", pure: false },
 ] as const;
 
 /** Begin Play into the node, or into Print when the node is a pure value. */
@@ -86,6 +88,11 @@ describe("optional Actor pins that read Self", () => {
   const registry = createDefaultNodeRegistry();
 
   it.each(CASES)("$typeId passes Self when its Actor pin is unwired and reports nothing missing", (testCase) => {
+    // The graph shows Self on the pin only when the catalog pin says it reads Self.
+    expect(registry.get(testCase.typeId)?.pins({}).find((entry) => entry.id === testCase.pin)).toMatchObject({
+      optional: true,
+      selfWhenUnwired: true,
+    });
     expect(firstArgumentOf(registry, testCase, false)).toBe("self");
     const missing = validateGraphs([graphFor(registry, testCase, false)], { assetGuid: "a" }, { registry })
       .filter((d) => d.code === "pin.missing_input" && d.nodeId === "subject" && d.pinId === testCase.pin);

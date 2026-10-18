@@ -1,4 +1,12 @@
-import type { CodegenContext } from "@babylonslate/scripting";
+import { actorRef, pin, type CodegenContext, type GraphPin } from "@babylonslate/scripting";
+
+/**
+ * An optional Actor input that reads the actor running the graph while it is
+ * unwired; the node pairs it with `actorOrSelf`. The graph shows it as Self.
+ */
+export function selfActorPin(id: string, name: string = id): GraphPin {
+  return { ...pin(id, name, "in", actorRef("Actor"), "data", true), selfWhenUnwired: true };
+}
 
 /**
  * An optional Actor pin left unwired reads the actor running the graph. A wired

@@ -1564,7 +1564,6 @@ describe("script host runs compiled graphs", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "self", "actor.getSelf"),
         node(registry, "has", "component.has", {
           "default:classId": "MeshComponent",
         }),
@@ -1576,7 +1575,6 @@ describe("script host runs compiled graphs", () => {
       ],
       edges: [
         edge("begin-saw", "begin", "execOut", "saw", "execIn"),
-        edge("self-has", "self", "out", "has", "actor"),
         edge("has-saw", "has", "out", "saw", "value"),
       ],
     };

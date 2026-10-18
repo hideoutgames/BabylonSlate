@@ -2,9 +2,8 @@ import {
   pin,
   type NodeDefinition,
   EXEC,
-  actorRef,
 } from "@babylonslate/scripting";
-import { actorOrSelf } from "./self-pin";
+import { actorOrSelf, selfActorPin } from "./self-pin";
 
 export const particleNodes: NodeDefinition[] = [
   {
@@ -14,7 +13,7 @@ export const particleNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("actor", "actor", "in", actorRef("Actor"), "data", true),
+      selfActorPin("actor"),
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.playParticles(${actorOrSelf(ctx, "actor")});`);
@@ -27,7 +26,7 @@ export const particleNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("actor", "actor", "in", actorRef("Actor"), "data", true),
+      selfActorPin("actor"),
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.stopParticles(${actorOrSelf(ctx, "actor")});`);
