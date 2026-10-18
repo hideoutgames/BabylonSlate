@@ -1120,6 +1120,37 @@ describe("AssetRegistry", () => {
     expect(renamedDoc.payload.name).toBe("Arena");
   });
 
+  it.each([
+    ["Material", ".material.babasset"],
+    ["Tileset", ".tileset.babasset"],
+  ])("rewrites the payload name when renaming and duplicating a %s", async (type, suffix) => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    await storage.writeBinary(
+      `assets/Old${suffix}`,
+      await encodeAssetDocument({ type, name: "Old", guid: "doc-1", version: 1, payload: { name: "Old", nodes: [] } }),
+    );
+    await storage.writeBinary(
+      `assets/Plain${suffix}`,
+      await encodeAssetDocument({ type, name: "Plain", guid: "doc-2", version: 1, payload: { nodes: [] } }),
+    );
+
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const renamed = await registry.renameAsset("doc-1", "Fresh");
+    const renamedDoc = await decodeAssetDocument(await storage.readBinary(renamed.path));
+    expect(renamedDoc.payload).toEqual({ name: "Fresh", nodes: [] });
+    const copy = await registry.duplicateAsset("doc-1", "project", "");
+    const copyDoc = await decodeAssetDocument(await storage.readBinary(copy.path));
+    expect(copyDoc.payload).toEqual({ name: copy.header.name, nodes: [] });
+    expect(copy.header.name).not.toBe("Fresh");
+
+    // A payload without a name keeps none: the header holds the asset's name.
+    const plain = await registry.renameAsset("doc-2", "Smooth");
+    const plainDoc = await decodeAssetDocument(await storage.readBinary(plain.path));
+    expect(plainDoc.payload).toEqual({ nodes: [] });
+  });
+
   it("refuses to overwrite an existing asset path", async () => {
     const storage = await createStorage();
     await writeAsset(storage, "assets/tex.babasset", {

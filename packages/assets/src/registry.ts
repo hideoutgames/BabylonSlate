@@ -901,9 +901,7 @@ export class AssetRegistry {
     }
     const { chunks, ...headerRest } = decoded.header;
     void chunks;
-    if (decoded.header.type === "Scene") {
-      stampDocumentChunkName(chunksById, safe);
-    }
+    stampDocumentChunkName(chunksById, safe);
     const encoded = await encodeBabasset({
       header: { ...headerRest, name: safe },
       chunks: [...chunksById.values()],
@@ -1003,9 +1001,7 @@ export class AssetRegistry {
     try {
       const { chunks, ...headerRest } = decoded.header;
       void chunks;
-      if (decoded.header.type === "Scene") {
-        stampDocumentChunkName(chunksById, uniqueName);
-      }
+      stampDocumentChunkName(chunksById, uniqueName);
       const encoded = await encodeBabasset({
         header: { ...headerRest, guid: newGuid, name: uniqueName },
         chunks: [...chunksById.values()],
