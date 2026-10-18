@@ -35,6 +35,11 @@ export interface HeldImageStore {
    * False when the view has no held image.
    */
   restore(view: EngineView, width: number, height: number, forRead?: boolean): boolean;
+  /**
+   * `restore` copies the held image unscaled into the canvas's top-left corner
+   * (WebGPU), so after a resize only the overlapping region holds it.
+   */
+  readonly restoresUnscaled?: boolean;
   size(view: EngineView): { width: number; height: number } | null;
   release(view: EngineView): void;
   /** Forget every held image and stop drawing for direct presentation; `lost` skips GPU deletes after a context loss. */

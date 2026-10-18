@@ -28,13 +28,14 @@ class FakeTexture {
  * they do: the main pass binds whatever `this._context.getCurrentTexture()`
  * returns, and `_configureContext` configures the canvas.
  */
-function fakeEngine(options: { antialias?: boolean } = {}) {
+function fakeEngine(options: { antialias?: boolean; validation?: (scope: number) => Promise<{ message: string } | null> } = {}) {
   const canvas = new FakeCanvas();
   const created: FakeTexture[] = [];
   const configurations: Array<Record<string, unknown>> = [];
   const copies: Array<{ from: FakeTexture; to: FakeTexture; size: number[] }> = [];
   let canvasTexture: FakeTexture | null = null;
   let acquisitions = 0;
+  let scopes = 0;
   const context = {
     getCurrentTexture() {
       if (!canvasTexture) { canvasTexture = new FakeTexture("canvas", canvas.width, canvas.height); acquisitions++; }
@@ -63,6 +64,10 @@ function fakeEngine(options: { antialias?: boolean } = {}) {
         finish: () => ({}),
       }),
       queue: { submit: vi.fn() },
+      ...(options.validation ? {
+        pushErrorScope: () => { scopes++; },
+        popErrorScope: () => options.validation!(scopes),
+      } : {}),
     },
     _context: context,
     _mainRenderPassWrapper: { colorAttachmentGPUTextures: [hardware] },
@@ -86,7 +91,7 @@ function fakeEngine(options: { antialias?: boolean } = {}) {
   };
   return {
     engine: engine as unknown as AbstractEngine, native: engine, canvas, hardware, created, configurations, copies,
-    acquisitions: () => acquisitions, frame,
+    acquisitions: () => acquisitions, scopes: () => scopes, frame,
   };
 }
 
@@ -189,6 +194,65 @@ describe("WebGPU direct presentation store", () => {
     expect(store.restore(view, 64, 48)).toBe(false);
   });
 
+  it("renders into the canvas when the main pass needs more of the canvas context than the target stands in for", () => {
+    const fake = fakeEngine();
+    const start = fake.native._startMainRenderPass;
+    fake.native._startMainRenderPass = function (this: typeof fake.native) {
+      (this._context as unknown as { canvas: FakeCanvas }).canvas.width.toFixed();
+      start.call(this);
+    };
+    (fake.native._context as unknown as { canvas: FakeCanvas }).canvas = fake.canvas;
+    const own = fake.native._startMainRenderPass;
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const store = createWebGpuHeldImageStore(fake.engine)!;
+    store.engage!();
+    fake.frame(0xff8040, () => expect(store.snapshot(view, 64, 48)).toBe(false));
+    // The frame still reached the screen, and Babylon's member is its own again.
+    expect([fake.canvas.displayed, store.usable!(), fake.native._startMainRenderPass]).toEqual([0xff8040, false, own]);
+  });
+
+  it("never redirects the main pass once the canvas configuration turns out to differ", () => {
+    const fake = fakeEngine();
+    fake.native._configureContext = function (this: { _context: { configure(configuration: object): void; canvas?: unknown } }) {
+      this._context.configure({ device: "device", format: "bgra8unorm", usage: 0x11, canvas: this._context.canvas!.toString() });
+    };
+    (fake.native._context as unknown as { canvas: FakeCanvas }).canvas = fake.canvas;
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const store = createWebGpuHeldImageStore(fake.engine)!;
+    store.engage!();
+    fake.frame(0xff8040, () => expect(store.snapshot(view, 64, 48)).toBe(false));
+    expect([fake.canvas.displayed, store.usable!(), fake.configurations.at(-1)?.usage]).toEqual([0xff8040, false, 0x11]);
+  });
+
+  it("turns off and puts Babylon's canvas configuration back when the device rejects the configuration or the first copy", async () => {
+    for (const rejected of [1, 2]) {
+      // Scope 1 wraps the configuration with copy-destination use, scope 2 the first copy.
+      const fake = fakeEngine({ validation: async (scope) => (scope === rejected ? { message: "usage not supported" } : null) });
+      const { _startMainRenderPass: start, _configureContext: configure } = fake.native;
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const store = createWebGpuHeldImageStore(fake.engine)!;
+      store.engage!();
+      fake.frame(0xff8040, () => store.snapshot(view, 64, 48));
+      await vi.waitFor(() => expect(store.usable!()).toBe(false));
+      expect(fake.configurations.map((configuration) => configuration.usage)).toEqual([0x13, 0x11]);
+      expect([fake.native._startMainRenderPass, fake.native._configureContext, warn.mock.calls.length]).toEqual([start, configure, 1]);
+      warn.mockRestore();
+    }
+  });
+
+  it("keeps presenting through a lost device and checks the restored device's first copy again", async () => {
+    const fake = fakeEngine({ validation: () => Promise.reject(new Error("device lost")) });
+    const store = createWebGpuHeldImageStore(fake.engine)!;
+    store.engage!();
+    fake.frame(0xff8040, () => store.snapshot(view, 64, 48));
+    expect(fake.scopes()).toBe(2);
+    store.clear(true);
+    await Promise.resolve();
+    store.engage!();
+    fake.frame(0x40a0ff, () => expect(store.snapshot(view, 64, 48)).toBe(true));
+    expect([store.usable!(), fake.canvas.displayed, fake.scopes()]).toEqual([true, 0x40a0ff, 3]);
+  });
+
   it("destroys its textures on clear and dispose, keeps them on a lost device, and restores Babylon's members", () => {
     const fake = fakeEngine();
     const { _startMainRenderPass: start, _configureContext: configure } = fake.native;
@@ -212,8 +276,11 @@ describe("WebGPU direct presentation store", () => {
     expect(fake.hardware.underlyingResource?.label).toBe("canvas");
 
     store.engage!();
-    fake.frame(0x00ff00);
-    store.dispose!();
+    fake.frame(0x00ff00, () => {
+      // Released mid-frame: the frame's passes still use the target until it ends.
+      store.dispose!();
+      expect(fake.created.at(-1)!.destroyed).toBe(false);
+    });
     expect(fake.created.at(-1)!.destroyed).toBe(true);
     expect([fake.native._startMainRenderPass, fake.native._configureContext]).toEqual([start, configure]);
     expect(fake.native.onEndFrameObservable.hasObservers()).toBe(false);
@@ -254,6 +321,18 @@ describe("Babylon WebGPUEngine internals for direct presentation", () => {
   it("resizes through _initializeMainAttachments and submits on flushFramebuffer", () => {
     expect(method(engineSource, "setSize(width, height, forceSetSize = false)")).toContain("this._initializeMainAttachments();");
     expect(method(engineSource, "flushFramebuffer(_fromEndFrame = false)")).toContain("this._device.queue.submit(");
+  });
+
+  it("submits a frame's passes before its end-frame observers run, including the main pass a resize starts", () => {
+    // Replaced targets are destroyed by an end-frame observer: every pass that used them must be submitted by then.
+    const inOrder = (body: string, lines: string[]) => {
+      const at = lines.map((line) => body.indexOf(line));
+      return at.every((index, position) => index > -1 && (position === 0 || index > at[position - 1]!));
+    };
+    expect(inOrder(method(engineSource, "endFrame()"), ["this.flushFramebuffer(true);", "super.endFrame();"])).toBe(true);
+    expect(inOrder(method(engineSource, "_initializeMainAttachments()"), [
+      "this.flushFramebuffer();", "this.beginFrame();", "this._startMainRenderPass(true, null, true, false);", "this.endFrame();",
+    ])).toBe(true);
   });
 
   it("exposes the bound texture as underlyingResource", () => {

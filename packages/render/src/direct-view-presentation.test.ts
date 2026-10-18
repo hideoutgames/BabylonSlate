@@ -332,17 +332,19 @@ describe("direct view presentation", () => {
   });
 
   it("keeps copying a view whose presentation disallows direct presentation", () => {
-    useFakeHeldImages();
+    let engaged = 0;
+    // On WebGPU, engaging the store redirects Babylon's main pass; a copying Engine must never be touched.
+    useFakeHeldImages({ engage: () => { engaged++; } });
     let allowed = false;
     const { engine, body, source, draw, view } = host();
     const a = view(undefined, { allowDirect: () => allowed });
     try {
       // An Engine not declared for direct presentation (the exported player's): the Engine canvas stays parked and the view canvas gets the pixels.
       draw(0xff8040);
-      expect([source.parentNode, a.target.pixel]).toEqual([body, 0xff8040]);
+      expect([source.parentNode, a.target.pixel, engaged]).toEqual([body, 0xff8040, 0]);
       allowed = true;
       draw(0x40a0ff);
-      expect(source.parentNode).toBe(a.panel);
+      expect([source.parentNode, engaged]).toEqual([a.panel, 1]);
     } finally { a.release(); engine.dispose(); }
   });
 

@@ -13,8 +13,10 @@ import type { HeldImageStore } from "./direct-view-presentation";
  * canvas) and for handing that frame to the view canvas.
  *
  * `webgpu-held-image-store.test.ts` pins the Babylon source shapes this relies
- * on; a runtime check falls back to copying if the main pass ever binds
- * anything but the owned texture.
+ * on. At runtime the store turns itself off, restores Babylon's members and
+ * leaves presentation to the copy path when those internals are missing, when
+ * the main pass throws or binds anything but the owned texture, or when the
+ * device rejects the canvas configuration or the first copy.
  */
 
 const COPY_SRC = 0x01;
@@ -81,6 +83,8 @@ export function createWebGpuHeldImageStore(engine: AbstractEngine): HeldImageSto
   let engaged = false;
   let drew = false;
   let usable = true;
+  let disposed = false;
+  /** The first copy on this device has been submitted under a validation check. */
   let copyChecked = false;
   let configuration = 0;
   /** What the canvas shows: a copy made at this canvas size and context configuration. */
@@ -88,11 +92,46 @@ export function createWebGpuHeldImageStore(engine: AbstractEngine): HeldImageSto
   /** Replaced targets; passes of the current frame may still use them until it is submitted. */
   const retired: GpuTexture[] = [];
   const drawIndex = () => (held === 0 ? 1 : 0);
-  const fail = (reason: string) => {
+  /** Put Babylon's own members back (the store is going away or cannot work). */
+  const uninstall = () => {
+    if (native._startMainRenderPass === directStart) {
+      if (ownStart) Object.defineProperty(native, "_startMainRenderPass", ownStart);
+      else Reflect.deleteProperty(native, "_startMainRenderPass");
+    }
+    if (native._configureContext === copyContext) {
+      if (ownConfigure) Object.defineProperty(native, "_configureContext", ownConfigure);
+      else Reflect.deleteProperty(native, "_configureContext");
+    }
+  };
+  /**
+   * Turn direct presentation off for this Engine: Babylon renders into the
+   * canvas again and views copy. `reconfigure` (only between frames: it
+   * replaces the canvas texture) also drops the copy-destination use the
+   * device rejected.
+   */
+  const fail = (reason: string, reconfigure = false) => {
     if (!usable) return;
     usable = false;
     engaged = false;
+    uninstall();
     console.warn(`[render] WebGPU direct view presentation is off: ${reason}`);
+    if (!reconfigure || engine.isDisposed) return;
+    engine.flushFramebuffer();
+    native._configureContext();
+    configuration += 1;
+  };
+  /** Run `work` under a validation error scope; an error turns the store off and restores Babylon's canvas configuration. */
+  const validated = (what: string, work: () => void) => {
+    const device = native._device;
+    const scoped = typeof device.pushErrorScope === "function" && typeof device.popErrorScope === "function";
+    if (scoped) device.pushErrorScope!("validation");
+    try { work(); }
+    finally {
+      // A lost device resolves with null (or rejects); neither turns the store off, nor does a late answer after dispose.
+      if (scoped) void device.popErrorScope!().then((error) => {
+        if (error && !disposed && device === native._device) fail(`${what} failed: ${error.message}`, true);
+      }, () => {});
+    }
   };
   const drawTarget = (): GpuTexture => {
     const index = drawIndex();
@@ -113,10 +152,18 @@ export function createWebGpuHeldImageStore(engine: AbstractEngine): HeldImageSto
     if (!engaged) return startMainRenderPass.apply(this, args);
     const context = this._context;
     this._context = drawContext;
+    let threw = false;
     try { startMainRenderPass.apply(this, args); }
+    catch { threw = true; }
     finally { this._context = context; }
+    if (threw) {
+      // The pass needs more of the canvas context than the target stands in for: render it into the canvas.
+      fail("the main pass failed with the presentation target.");
+      startMainRenderPass.apply(this, args);
+      return;
+    }
     // Babylon binds the texture it acquired; anything else means its internals moved.
-    if (this._mainRenderPassWrapper.colorAttachmentGPUTextures[0]?.underlyingResource !== targets[drawIndex()])
+    if (this._mainRenderPassWrapper?.colorAttachmentGPUTextures?.[0]?.underlyingResource !== targets[drawIndex()])
       fail("the main pass did not render into the presentation target.");
     else drew = true;
   };
@@ -129,40 +176,41 @@ export function createWebGpuHeldImageStore(engine: AbstractEngine): HeldImageSto
     try { configureContext.call(this); configured = true; }
     catch { /* handled below */ }
     finally { this._context = context; }
-    if (!configured) {
-      fail("the canvas configuration changed shape.");
-      configureContext.call(this);
-    }
     configuration += 1;
+    if (configured) return;
+    fail("the canvas configuration changed shape.");
+    configureContext.call(this);
   };
   const present = (source: GpuTexture) => {
-    const destination = native._context.getCurrentTexture();
-    const check = !copyChecked && typeof native._device.pushErrorScope === "function" && typeof native._device.popErrorScope === "function";
-    if (check) native._device.pushErrorScope!("validation");
-    const encoder = native._device.createCommandEncoder({ label: "DirectViewPresent" });
-    encoder.copyTextureToTexture({ texture: source }, { texture: destination },
-      [Math.min(source.width, destination.width), Math.min(source.height, destination.height), 1]);
-    native._device.queue.submit([encoder.finish()]);
-    if (check) {
+    const copy = () => {
+      const destination = native._context.getCurrentTexture();
+      const encoder = native._device.createCommandEncoder({ label: "DirectViewPresent" });
+      encoder.copyTextureToTexture({ texture: source }, { texture: destination },
+        [Math.min(source.width, destination.width), Math.min(source.height, destination.height), 1]);
+      native._device.queue.submit([encoder.finish()]);
+    };
+    if (copyChecked) copy();
+    else {
       copyChecked = true;
-      void native._device.popErrorScope!().then((error) => {
-        if (error) fail(`the first copy to the canvas failed: ${error.message}`);
-      }, () => {});
+      validated("the first copy to the canvas", copy);
     }
     shown = { width: canvas.width, height: canvas.height, configuration };
   };
+  const destroyRetired = () => {
+    for (const texture of retired.splice(0)) texture.destroy();
+  };
   let endFrame: ReturnType<typeof engine.onEndFrameObservable.add> = null;
+  let installed = false;
   /** Installed at the first direct step, so an Engine that never presents directly is never touched. */
   const install = () => {
-    if (endFrame) return;
-    endFrame = engine.onEndFrameObservable.add(() => {
-      for (const texture of retired.splice(0)) texture.destroy();
-    });
+    if (installed) return;
+    installed = true;
+    endFrame = engine.onEndFrameObservable.add(destroyRetired);
     // Reconfiguring replaces the canvas texture; submit anything that still uses it first.
     engine.flushFramebuffer();
     native._startMainRenderPass = directStart;
     native._configureContext = copyContext;
-    native._configureContext();
+    validated("configuring the canvas for copies", () => native._configureContext());
   };
   const drop = (destroy: boolean) => {
     for (let index = 0; index < targets.length; index++) {
@@ -173,9 +221,12 @@ export function createWebGpuHeldImageStore(engine: AbstractEngine): HeldImageSto
     if (!destroy) retired.length = 0;
   };
   return {
+    restoresUnscaled: true,
     engage() {
       if (!usable) return;
       install();
+      // Installing can find the canvas configuration unusable.
+      if (!usable) return;
       engaged = true;
       drew = false;
     },
@@ -192,7 +243,7 @@ export function createWebGpuHeldImageStore(engine: AbstractEngine): HeldImageSto
     },
     restore(view, _width, _height, forRead = false) {
       const target = held >= 0 ? targets[held] : null;
-      if (view !== owner || !target || !usable) return false;
+      if (view !== owner || !target || !usable || canvas.width < 1 || canvas.height < 1) return false;
       // Frames that did not acquire the canvas left it showing the held frame; a resize or a reconfiguration cleared it.
       const current = shown?.width === canvas.width && shown.height === canvas.height && shown.configuration === configuration;
       if (!current || forRead) present(target);
@@ -213,22 +264,20 @@ export function createWebGpuHeldImageStore(engine: AbstractEngine): HeldImageSto
       held = -1;
       shown = null;
       drop(!lost);
+      // A restored device gets its own first-copy check.
+      if (lost) copyChecked = false;
     },
     usable: () => usable,
     dispose() {
+      disposed = true;
       engaged = false;
       drop(true);
-      for (const texture of retired.splice(0)) texture.destroy();
+      uninstall();
       engine.onEndFrameObservable.remove(endFrame);
       endFrame = null;
-      if (native._startMainRenderPass === directStart) {
-        if (ownStart) Object.defineProperty(native, "_startMainRenderPass", ownStart);
-        else Reflect.deleteProperty(native, "_startMainRenderPass");
-      }
-      if (native._configureContext === copyContext) {
-        if (ownConfigure) Object.defineProperty(native, "_configureContext", ownConfigure);
-        else Reflect.deleteProperty(native, "_configureContext");
-      }
+      // A view released mid-frame leaves the frame's unsubmitted passes using the targets: destroy them after it.
+      const pending = retired.splice(0);
+      if (pending.length) engine.onEndFrameObservable.addOnce(() => { for (const texture of pending) texture.destroy(); });
     },
   };
 }
