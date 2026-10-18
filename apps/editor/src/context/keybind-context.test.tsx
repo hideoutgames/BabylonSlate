@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useRef } from "react";
+import { AlertDialog, AlertDialogContent, AlertDialogTitle } from "@babylonslate/ui/components/alert-dialog";
+import { Dialog, DialogContent, DialogTitle } from "@babylonslate/ui/components/dialog";
+import { Sheet, SheetContent, SheetTitle } from "@babylonslate/ui/components/sheet";
 import { KeybindProvider, useKeybindCommand } from "./keybind-context";
 import type { EditorCommandId } from "../lib/editor-keybinds";
 
@@ -13,13 +16,25 @@ function Command({
   id,
   run,
   enabled,
+  allowInModal,
 }: {
   id: EditorCommandId;
   run: () => void;
   enabled?: boolean;
+  allowInModal?: boolean;
 }) {
-  useKeybindCommand(id, run, { enabled });
+  useKeybindCommand(id, run, { enabled, allowInModal });
   return null;
+}
+
+function ModalDialog({ open = true, modal }: { open?: boolean; modal?: boolean }) {
+  return (
+    <Dialog open={open} modal={modal}>
+      <DialogContent>
+        <DialogTitle>Settings</DialogTitle>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function FocusScoped({ run }: { run: () => void }) {
@@ -69,16 +84,9 @@ describe("KeybindProvider", () => {
     expect(save).toHaveBeenCalledTimes(1);
   });
 
-  it("ignores commands while a modal dialog is open or play is running", () => {
+  it("ignores commands while play is running", () => {
     const save = vi.fn();
-    const { rerender } = render(
-      <KeybindProvider>
-        <Command id="editor.saveAll" run={save} />
-        <div role="dialog" aria-modal="true" />
-      </KeybindProvider>,
-    );
-    fireEvent.keyDown(document.body, ctrl("S"));
-    rerender(
+    render(
       <KeybindProvider suspended>
         <Command id="editor.saveAll" run={save} />
       </KeybindProvider>,
@@ -87,7 +95,122 @@ describe("KeybindProvider", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
-  it("keeps the browser's Save Page action off Save All's chord when nothing saves", () => {
+  it.each([
+    ["Dialog", <ModalDialog key="dialog" />],
+    [
+      "AlertDialog",
+      <AlertDialog key="alert" open>
+        <AlertDialogContent>
+          <AlertDialogTitle>Delete Actors?</AlertDialogTitle>
+        </AlertDialogContent>
+      </AlertDialog>,
+    ],
+    [
+      "modal Sheet",
+      <Sheet key="sheet" open>
+        <SheetContent>
+          <SheetTitle>Folders</SheetTitle>
+        </SheetContent>
+      </Sheet>,
+    ],
+  ])("suspends every command behind an open %s", async (_name, modal) => {
+    const undo = vi.fn();
+    const focus = vi.fn();
+    const search = vi.fn();
+    render(
+      <KeybindProvider>
+        <Command id="editor.undo" run={undo} />
+        <Command id="editor.focusLayout" run={focus} />
+        <Command id="editor.search" run={search} />
+        {modal}
+      </KeybindProvider>,
+    );
+    await screen.findByText(/Settings|Delete Actors\?|Folders/);
+    fireEvent.keyDown(document.body, ctrl("Z"));
+    fireEvent.keyDown(document.body, { ...ctrl("F"), shiftKey: true });
+    fireEvent.keyDown(document.body, ctrl("K"));
+    expect(undo).not.toHaveBeenCalled();
+    expect(focus).not.toHaveBeenCalled();
+    expect(search).not.toHaveBeenCalled();
+  });
+
+  it("resumes commands once the dialog has closed", async () => {
+    const undo = vi.fn();
+    const tree = (open: boolean) => (
+      <KeybindProvider>
+        <Command id="editor.undo" run={undo} />
+        <ModalDialog open={open} />
+      </KeybindProvider>
+    );
+    const { rerender } = render(tree(true));
+    await screen.findByRole("dialog");
+    fireEvent.keyDown(document.body, ctrl("Z"));
+    expect(undo).not.toHaveBeenCalled();
+    rerender(tree(false));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.keyDown(document.body, ctrl("Z"));
+    expect(undo).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not hold commands back for a dialog that is still animating closed", async () => {
+    const undo = vi.fn();
+    // A pending animation keeps the closing popup mounted, as the real exit does.
+    const getAnimations = vi.fn(() => [{ finished: new Promise(() => undefined) }]);
+    Object.defineProperty(Element.prototype, "getAnimations", { configurable: true, value: getAnimations });
+    try {
+      const tree = (open: boolean) => (
+        <KeybindProvider>
+          <Command id="editor.undo" run={undo} />
+          <ModalDialog open={open} />
+        </KeybindProvider>
+      );
+      const { rerender } = render(tree(true));
+      await screen.findByRole("dialog");
+      rerender(tree(false));
+      await waitFor(() => expect(document.querySelector('[role="dialog"][data-closed]')).not.toBeNull());
+      fireEvent.keyDown(document.body, ctrl("Z"));
+      expect(undo).toHaveBeenCalledTimes(1);
+    } finally {
+      Reflect.deleteProperty(Element.prototype, "getAnimations");
+    }
+  });
+
+  it("leaves commands alone behind nonmodal popups", async () => {
+    const undo = vi.fn();
+    render(
+      <KeybindProvider>
+        <Command id="editor.undo" run={undo} />
+        <ModalDialog modal={false} />
+        <Sheet open modal={false}>
+          <SheetContent showOverlay={false}>
+            <SheetTitle>Console</SheetTitle>
+          </SheetContent>
+        </Sheet>
+      </KeybindProvider>,
+    );
+    await screen.findByText("Console");
+    fireEvent.keyDown(document.body, ctrl("Z"));
+    expect(undo).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a command that closes its own modal run while that modal is open", async () => {
+    const search = vi.fn();
+    const undo = vi.fn();
+    render(
+      <KeybindProvider>
+        <Command id="editor.search" run={search} allowInModal />
+        <Command id="editor.undo" run={undo} />
+        <ModalDialog />
+      </KeybindProvider>,
+    );
+    await screen.findByRole("dialog");
+    fireEvent.keyDown(document.body, ctrl("K"));
+    fireEvent.keyDown(document.body, ctrl("Z"));
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(undo).not.toHaveBeenCalled();
+  });
+
+  it("keeps the browser's Save Page action off Save All's chord when nothing saves", async () => {
     const save = vi.fn();
     const { rerender } = render(
       <KeybindProvider>
@@ -98,9 +221,10 @@ describe("KeybindProvider", () => {
     rerender(
       <KeybindProvider>
         <Command id="editor.saveAll" run={save} />
-        <div role="dialog" aria-modal="true" />
+        <ModalDialog />
       </KeybindProvider>,
     );
+    await screen.findByRole("dialog");
     expect(fireEvent.keyDown(document.body, ctrl("S"))).toBe(false);
     rerender(
       <KeybindProvider suspended>

@@ -35,7 +35,7 @@ The default chord table is the catalog itself; read `EDITOR_COMMANDS` rather tha
 ## Dispatch rules
 
 - One window `keydown` listener; the newest enabled registration for the matched command runs and the event is `preventDefault`ed.
-- Skipped while Play runs, during IME composition, with three or more pointers down, and while a modal dialog or alert dialog is open. Save All's chord still suppresses the browser Save Page.
+- Skipped while Play runs, during IME composition, with three or more pointers down, and while a modal popup is open: `DialogContent` and modal `SheetContent` set `aria-modal` (Base UI does not), alert dialogs carry `role="alertdialog"`, and a popup in its exit animation (`data-closed`) no longer counts. A registration with `allowInModal` still runs (Search Project closes its own dialog); nonmodal popups (the Play console) never block. Save All's chord still suppresses the browser Save Page.
 - Text fields and `SelectableText` keep native editing. Menus, listboxes, comboboxes and selects keep their own key navigation.
 - `scopeRef` limits a handler to a visible surface (the active viewport). `focusWithinRef` also requires focus inside it; Outliner and Content Browser use it so Delete, Duplicate and Rename act on the focused panel.
 - Viewport fly keys ignore presses with Command, Control or Option so `Mod+S` never starts flying.

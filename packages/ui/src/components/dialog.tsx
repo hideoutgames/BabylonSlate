@@ -7,8 +7,17 @@ import { cn } from "#lib/utils"
 import { Button } from "#components/button"
 import { XIcon } from "lucide-react"
 
-function Dialog({ ...props }: DialogPrimitive.Root.Props) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+// Local change: Base UI never sets aria-modal on a Dialog popup, so the editor
+// keybind dispatcher cannot tell a modal dialog from the page. The root passes
+// its `modal` prop down and DialogContent marks modal popups.
+const DialogModalContext = React.createContext(true)
+
+function Dialog({ modal = true, ...props }: DialogPrimitive.Root.Props) {
+  return (
+    <DialogModalContext.Provider value={modal === true}>
+      <DialogPrimitive.Root data-slot="dialog" modal={modal} {...props} />
+    </DialogModalContext.Provider>
+  )
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
@@ -57,11 +66,13 @@ function DialogContent({
   /** Layout classes for the scrolling body that receives `children`. */
   bodyClassName?: string
 }) {
+  const modal = React.useContext(DialogModalContext)
   return (
     <DialogPortal>
       <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
+        aria-modal={modal ? true : undefined}
         className={cn(
           "editor-dialog fixed top-1/2 left-1/2 z-50 flex w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-popover shadow-xl text-sm text-popover-foreground ring-1 ring-border duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 motion-reduce:animate-none",
           showCloseButton && "[--dialog-close-inset:--spacing(12)]",
