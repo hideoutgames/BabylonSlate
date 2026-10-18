@@ -346,13 +346,11 @@ describe("explicit clustered light ownership", () => {
     const { scene, mesh, lights } = fixture();
     for (const light of lights.slice(3)) light.dispose();
     const authored = lights.slice(0, 3);
-    // A Forward slot exchange reorders scene.lights and receivers; the
-    // authored order stays the lights' creation order.
-    for (const order of [scene.lights, mesh.lightSources]) {
-      const first = order.indexOf(authored[0]!);
-      const last = order.indexOf(authored[2]!);
-      [order[first], order[last]] = [order[last]!, order[first]!];
-    }
+    // Forward slot exchanges reorder scene.lights; authored order stays the
+    // lights' creation order, so the unsupported light still interleaves.
+    const first = scene.lights.indexOf(authored[0]!);
+    const middle = scene.lights.indexOf(authored[1]!);
+    [scene.lights[first], scene.lights[middle]] = [authored[1]!, authored[0]!];
     updateSceneRenderingSettings(scene, { mode: "cel" });
     authored[1]!.falloffType = PointLight.FALLOFF_GLTF;
     const owner = new ClusteredSceneLights(scene, authored);
