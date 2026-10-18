@@ -22,6 +22,7 @@ import {
   playInputStampTick,
   playSessionBootControls,
   previewFixtureThrowHint,
+  printEntryFromCommand,
   resolvePlayFrameCap,
   applyPlayActiveScene,
   texturesRetainedAfterPlay,
@@ -37,6 +38,30 @@ describe("texturesRetainedAfterPlay", () => {
     // Babylon's lazily created placeholder grows the cache without a leak.
     engine.getLoadedTexturesCache = () => [kept, released, placeholder];
     expect(texturesRetainedAfterPlay(engine as never, before)).toEqual([]);
+  });
+});
+
+describe("printEntryFromCommand", () => {
+  const print = { type: "print", key: "", duration: 2, color: { x: 1, y: 0, z: 0, w: 1 }, frameId: 1 } as const;
+
+  it("turns a worker print into a HUD entry, keeping an empty message as an empty line", () => {
+    expect(printEntryFromCommand({ ...print, message: "" })).toEqual({
+      message: "",
+      key: "",
+      duration: 2,
+      color: "rgba(255, 0, 0, 1)",
+    });
+    expect(printEntryFromCommand({ ...print, message: "hp", key: "status", duration: 0 })).toMatchObject({
+      message: "hp",
+      key: "status",
+      duration: 0,
+    });
+  });
+
+  it("ignores other commands and non-string messages", () => {
+    expect(printEntryFromCommand({ type: "log", severity: "log", category: "Script", message: "hi", frameId: 1 })).toBeNull();
+    expect(printEntryFromCommand({ ...print, message: undefined as never })).toBeNull();
+    expect(printEntryFromCommand({ ...print, message: 3 as never })).toBeNull();
   });
 });
 

@@ -43,7 +43,7 @@ export const actorNodes: NodeDefinition[] = [
       pin("out", "out", "out", STRING),
     ],
     codegen: (ctx) => ({
-      out: `(${ctx.input("target")}?.name ?? "")`,
+      out: `ctx.getActorName(${ctx.input("target")})`,
     }),
   },
   {
