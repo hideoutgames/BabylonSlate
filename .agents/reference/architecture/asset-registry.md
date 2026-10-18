@@ -91,4 +91,4 @@ Header-indexed asset catalog across content roots: file operations, dependency m
 
 ## Area emission
 
-Rectangular area lights reference a Texture; explicit **Prepare Emission** writes a versioned `area-emission` chunk keyed by the source sha256 and processor version beside the untouched `pixels`. Gameplay never preprocesses; export ships it as an `AreaEmission` sidecar.
+Rectangular area lights reference a Texture; **Prepare Emission** (explicit, or started by a scene or prefab viewport for a referenced unprepared Texture, once per source sha256, in `apps/editor/src/lib/area-emission-preparation.ts`) writes a versioned `area-emission` chunk keyed by the source sha256 and processor version beside the untouched `pixels`. Gameplay never preprocesses; export ships it as an `AreaEmission` sidecar.

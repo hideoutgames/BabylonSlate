@@ -1,4 +1,5 @@
 import { SimulationInspector } from "./simulation-inspector";
+import { useAreaEmissionStatus } from "../lib/use-area-emission-status";
 import { ActorDefaultsGrid } from "./actor-defaults-grid";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { GraphDataLiteralDefaults } from "../components/graph-data-literal-editor";
@@ -976,6 +977,7 @@ function PrefabComponentDetails({
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
   const { assetRegistry, registryEpoch } = useRegistryState();
+  const areaEmissionStatus = useAreaEmissionStatus();
   // Open Class and Model tabs override saved content in these rows.
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const modelDocuments = useOpenDocumentsOfKinds(MODEL_KINDS);
@@ -1041,6 +1043,7 @@ function PrefabComponentDetails({
             fontHasMsdfPng,
             physicsWorld,
             onPickAsset: setAssetPick,
+            areaEmissionStatus,
             actorComponents: (targetId) => targetId === PREFAB_ROOT_ID ? components : [],
             actorVariableNames: () => saveGameVariableNames(actorClassId, classGraphs, parentOf),
             componentVariableNames: (classId) => saveGameVariableNames(classId, classGraphs, parentOf),
