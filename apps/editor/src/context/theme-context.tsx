@@ -1,21 +1,16 @@
-import { createContext, useContext, useEffect, type ReactNode } from "react";
-import { applyDocumentTheme, type ResolvedTheme } from "../lib/resolved-theme";
+import { useEffect, type ReactNode } from "react";
+import { createStatusBarStyle } from "@babylonslate/vfs";
 
-/** Haptic is dark only. */
-const EDITOR_THEME: ResolvedTheme = "dark";
-
-const ThemeContext = createContext<ResolvedTheme | null>(null);
-
+/**
+ * Haptic is dark only. The boot script in index.html sets `html.dark` before
+ * load; this keeps it set and gives the native status bar light glyphs.
+ */
 export function EditorThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
-    applyDocumentTheme(EDITOR_THEME);
+    document.documentElement.classList.add("dark");
+    void createStatusBarStyle()
+      .setStyle("light")
+      .catch(() => undefined);
   }, []);
-
-  return (
-    <ThemeContext.Provider value={EDITOR_THEME}>{children}</ThemeContext.Provider>
-  );
-}
-
-export function useResolvedTheme(): ResolvedTheme {
-  return useContext(ThemeContext) ?? EDITOR_THEME;
+  return children;
 }

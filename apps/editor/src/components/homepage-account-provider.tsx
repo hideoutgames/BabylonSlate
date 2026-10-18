@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { ClerkProvider } from "@clerk/react";
-import { useHomepageScheme } from "./homepage-scheme";
 
 /** Owned by the project browser; never mounted inside the editor route. */
 export function HomepageClerkProvider({
@@ -10,8 +9,6 @@ export function HomepageClerkProvider({
   publishableKey: string;
   children: ReactNode;
 }) {
-  const [scheme] = useHomepageScheme();
-  const dark = scheme === "dark";
   return (
     <ClerkProvider
       publishableKey={publishableKey}
@@ -23,16 +20,18 @@ export function HomepageClerkProvider({
       afterSignOutUrl={import.meta.env.BASE_URL}
       appearance={{
         variables: {
-          colorBackground: dark ? "#1b1d24" : "#fbfbfd",
-          colorForeground: dark ? "#ededf2" : "#1b1d23",
-          colorPrimary: dark ? "#b7c2f0" : "#495b9b",
-          colorMutedForeground: dark ? "#90939f" : "#737782",
+          // The dark editor tokens (popover, foreground, primary, muted).
+          colorBackground: "#1d1b19",
+          colorForeground: "#f6f5f4",
+          colorPrimary: "#f6f5f4",
+          colorPrimaryForeground: "#0c0b09",
+          colorMutedForeground: "#a3a19d",
           borderRadius: "12px",
         },
         elements: {
           formFieldInput: {
-            backgroundColor: dark ? "#242730" : "#eeeff2",
-            color: dark ? "#ededf2" : "#1b1d23",
+            backgroundColor: "#0a0907",
+            color: "#f6f5f4",
           },
           modalContent: "slate-clerk-overlay",
           rootBox: "homepage-theme homepage-clerk",

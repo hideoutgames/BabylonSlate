@@ -84,7 +84,6 @@ import { HomepageGallery } from "./homepage-gallery";
 import { HomepageProjectCard } from "./homepage-project-card";
 import { HomepageWelcome } from "./homepage-welcome";
 import { DEFAULT_PROJECT_APPEARANCE } from "./homepage-project-appearance";
-import { useHomepageScheme } from "./homepage-scheme";
 import {
   HomepageTemplateBrowser,
   homepageTemplates,
@@ -158,7 +157,6 @@ export function Homepage({
   onDismissRecovery,
   onSettingsChanged,
 }: HomepageProps) {
-  const [scheme] = useHomepageScheme();
   const transition = useLauncherTransition();
   useEffect(() => {
     transition.reportHomeLoading(
@@ -331,12 +329,11 @@ export function Homepage({
     <div
       className="homepage homepage-theme safe-frame safe-frame-top"
       data-testid="homepage"
-      data-slate-theme={scheme}
     >
       <style data-slate-home-styles>{homepageStyles}</style>
       <aside className="homepage-sidebar">
         <div className="homepage-brand">
-          <img src={brandWordmarkSrc(scheme)} alt="" />
+          <img src={brandWordmarkSrc()} alt="" />
           <h1 className="sr-only">Haptic</h1>
         </div>
         <ToggleGroup

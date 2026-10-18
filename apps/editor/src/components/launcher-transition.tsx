@@ -218,7 +218,7 @@ export function LauncherTransitionProvider({
               <section className="slate-splash">
                 <img
                   className="slate-splash-wordmark"
-                  src={brandWordmarkSrc("dark")}
+                  src={brandWordmarkSrc()}
                   alt=""
                 />
                 <div className="slate-splash-bottom">

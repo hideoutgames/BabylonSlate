@@ -1,6 +1,6 @@
 /*
  * Launcher-only layout and motion. This stylesheet mounts and unmounts with
- * Home, so nothing here reaches the editor. Surfaces use the shared Graphite
+ * Home, so nothing here reaches the editor. Surfaces use the shared editor
  * tokens from globals.css; only project badge colors are launcher-owned.
  */
 .homepage-theme,
@@ -16,8 +16,6 @@
   --homepage-badge-stone: var(--project-stone);
   --launcher-shadow: color-mix(in oklch, var(--shadow-color, #000) 22%, transparent);
   --launcher-ease: cubic-bezier(0.2, 0.75, 0.2, 1);
-  /* Decorative viewports stay dark in both themes, like editor canvases. */
-  --launcher-viewport: oklch(0.145 0.004 75);
   color: var(--foreground);
 }
 
@@ -112,16 +110,6 @@
   margin-top: auto;
   padding-top: 8px;
   border-top: 1px solid var(--border);
-}
-.homepage-sidebar-action {
-  justify-content: flex-start;
-  width: 100%;
-  padding-inline: 8px;
-  color: var(--muted-foreground);
-  font-weight: 500;
-}
-.homepage-sidebar-action:hover {
-  color: var(--foreground);
 }
 .homepage-sidebar-account {
   display: flex;
@@ -1619,10 +1607,6 @@ body:has(.homepage-theme) [data-slot="dialog-overlay"],
 body:has(.homepage-theme) [data-slot="alert-dialog-overlay"] {
   background: oklch(0 0 0 / 55%);
   backdrop-filter: blur(6px);
-}
-body:has([data-slate-theme="light"]) [data-slot="dialog-overlay"],
-body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
-  background: oklch(0.3 0.006 70 / 30%);
 }
 
 .homepage-optional-label {
