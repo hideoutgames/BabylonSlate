@@ -1,5 +1,5 @@
 import type { KeyboardEvent, ReactNode } from "react";
-import { PlusIcon, type LucideIcon } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   Card,
   CardDescription,
@@ -44,7 +44,6 @@ export function TemplatePickCard({
   testId,
   imageUrl,
   icon: Icon,
-  actionLabel,
   className,
   onSelect,
 }: {
@@ -55,8 +54,6 @@ export function TemplatePickCard({
   testId: string;
   imageUrl?: string;
   icon: LucideIcon;
-  /** Shown on the cover on hover, such as "New Project". */
-  actionLabel?: string;
   className?: string;
   onSelect: () => void;
 }) {
@@ -81,7 +78,8 @@ export function TemplatePickCard({
       data-testid={testId}
       data-selected={selected ? "true" : "false"}
       className={cn(
-        "homepage-template-card shrink-0 cursor-pointer gap-0 py-0",
+        "homepage-template-card w-52 shrink-0 cursor-pointer gap-0 py-0",
+        selected ? "ring-2 ring-primary" : "",
         disabled && "cursor-default opacity-50",
         className,
       )}
@@ -92,18 +90,10 @@ export function TemplatePickCard({
       }}
       onKeyDown={onKeyDown}
     >
-      <div className="homepage-template-cover">
-        <TemplateCardWell imageUrl={imageUrl}>
-          <Icon />
-        </TemplateCardWell>
-        {actionLabel && (
-          <span className="homepage-template-action" aria-hidden="true">
-            <PlusIcon />
-            {actionLabel}
-          </span>
-        )}
-      </div>
-      <CardHeader>
+      <TemplateCardWell imageUrl={imageUrl}>
+        <Icon />
+      </TemplateCardWell>
+      <CardHeader className="gap-1 px-3 py-3">
         <CardTitle>{title}</CardTitle>
         {description ? <CardDescription>{description}</CardDescription> : null}
       </CardHeader>

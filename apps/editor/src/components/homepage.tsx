@@ -7,7 +7,6 @@ import {
   useState,
 } from "react";
 import {
-  ArrowRightIcon,
   ArrowUpDownIcon,
   ChevronDownIcon,
   FolderOpenIcon,
@@ -83,7 +82,7 @@ import { ReleaseNews } from "./release-news";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
 import { HomepageGallery } from "./homepage-gallery";
 import { HomepageProjectCard } from "./homepage-project-card";
-import { TemplatePickCard } from "./homepage-template-card";
+import { HomepageWelcome } from "./homepage-welcome";
 import { DEFAULT_PROJECT_APPEARANCE } from "./homepage-project-appearance";
 import { useHomepageScheme } from "./homepage-scheme";
 import {
@@ -636,47 +635,12 @@ export function Homepage({
                         </EmptyHeader>
                       </Empty>
                     ) : (
-                      <section
-                        className="homepage-welcome"
-                        data-testid="homepage-projects-empty"
-                        aria-labelledby="homepage-welcome-title"
-                      >
-                        <header className="homepage-welcome-header">
-                          <div>
-                            <h3 id="homepage-welcome-title">
-                              Start Your First Project
-                            </h3>
-                            <p>
-                              Pick a template to begin. Everything can be
-                              changed later.
-                            </p>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={busy}
-                            onClick={() => changeView("templates")}
-                          >
-                            All Templates
-                            <ArrowRightIcon data-icon="inline-end" />
-                          </Button>
-                        </header>
-                        <div className="homepage-welcome-grid">
-                          {starterTemplates.map((starter) => (
-                            <TemplatePickCard
-                              key={starter.id}
-                              title={starter.name}
-                              description={starter.description}
-                              icon={starter.icon}
-                              imageUrl={starter.imageUrl}
-                              actionLabel="New Project"
-                              disabled={busy}
-                              testId={`homepage-empty-start-${starter.id}`}
-                              onSelect={() => create(starter.id, false)}
-                            />
-                          ))}
-                        </div>
-                      </section>
+                      <HomepageWelcome
+                        starters={starterTemplates}
+                        disabled={busy}
+                        onStart={(id) => create(id, false)}
+                        onBrowse={() => changeView("templates")}
+                      />
                     )
                   }
                 />

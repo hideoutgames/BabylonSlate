@@ -215,35 +215,35 @@ export function LauncherTransitionProvider({
                   : `Opening ${transition.label}`
               }
             >
-              <div className="slate-splash-glow" aria-hidden="true" />
-              <div className="slate-splash-grain" aria-hidden="true" />
               <section className="slate-splash">
                 <img
                   className="slate-splash-wordmark"
                   src={brandWordmarkSrc("dark")}
                   alt=""
                 />
-              </section>
-              <div className="slate-splash-progress">
-                <div className="slate-splash-text">
-                  {transition.target !== "home" && (
-                    <span className="slate-loading-label">
-                      {transition.label}
-                    </span>
-                  )}
-                  <span className="slate-splash-status">
-                    {transition.status}
+                <div className="slate-splash-bottom">
+                  <span
+                    className="slate-loading-track"
+                    aria-hidden="true"
+                    data-ready={transition.mounted && transition.settled}
+                  >
+                    <span />
                   </span>
+                  <div className="slate-splash-footer">
+                    <div className="slate-splash-text">
+                      {transition.target !== "home" && (
+                        <span className="slate-loading-label">
+                          {transition.label}
+                        </span>
+                      )}
+                      <span className="slate-splash-status">
+                        {transition.status}
+                      </span>
+                    </div>
+                    <span className="slate-splash-version">{version}</span>
+                  </div>
                 </div>
-                <span
-                  className="slate-loading-track"
-                  aria-hidden="true"
-                  data-ready={transition.mounted && transition.settled}
-                >
-                  <span />
-                </span>
-              </div>
-              <span className="slate-splash-version">{version}</span>
+              </section>
             </div>
           </>,
           document.body,
