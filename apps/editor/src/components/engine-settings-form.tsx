@@ -29,13 +29,6 @@ import {
   FieldSet,
 } from "@babylonslate/ui/components/field";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@babylonslate/ui/components/select";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,

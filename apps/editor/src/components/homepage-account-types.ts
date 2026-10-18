@@ -1,4 +1,10 @@
-import type { ReactElement } from "react";
+import type { MouseEvent, ReactElement } from "react";
+
+/** A plan action button that billing wraps with its own click handler. */
+export type BillingButton = ReactElement<{
+  onClick?: (event: MouseEvent) => void;
+  disabled?: boolean;
+}>;
 
 /** What the Account dialog shows about the signed-in person. */
 export interface AccountDetails {
@@ -26,9 +32,9 @@ export interface BillingController {
   status?: string;
   renewsAt?: Date;
   /** Wraps the Haptic Pro button so it opens the provider's checkout. */
-  renderSubscribe?: (button: ReactElement) => ReactElement;
+  renderSubscribe?: (button: BillingButton) => ReactElement;
   /** Wraps the Manage Billing button so it opens the provider's billing page. */
-  renderManage?: (button: ReactElement) => ReactElement;
+  renderManage?: (button: BillingButton) => ReactElement;
   /** Store builds must offer restoring purchases made on another install. */
   onRestore?: () => void;
 }

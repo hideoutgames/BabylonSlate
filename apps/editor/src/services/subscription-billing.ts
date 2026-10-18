@@ -3,8 +3,6 @@ import {
   useCallback,
   useEffect,
   useState,
-  type MouseEvent,
-  type ReactElement,
 } from "react";
 import {
   createPurchases,
@@ -13,6 +11,7 @@ import {
 } from "@babylonslate/vfs";
 import {
   unconfiguredBilling,
+  type BillingButton,
   type BillingController,
 } from "../components/homepage-account-types";
 
@@ -33,7 +32,7 @@ function revenueCatApiKey(): string | undefined {
 }
 
 function withClick(
-  button: ReactElement<{ onClick?: (event: MouseEvent) => void; disabled?: boolean }>,
+  button: BillingButton,
   onClick: () => void,
   disabled = false,
 ) {

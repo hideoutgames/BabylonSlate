@@ -24,7 +24,11 @@ export class CapacitorPurchases implements PurchasesPort {
   private configured: Promise<void> | null = null;
   private userId: string | undefined;
 
-  constructor(readonly store: PurchasesStore) {}
+  readonly store: PurchasesStore;
+
+  constructor(store: PurchasesStore) {
+    this.store = store;
+  }
 
   async configure({ apiKey, appUserId }: { apiKey: string; appUserId: string }): Promise<void> {
     if (!this.configured) {
