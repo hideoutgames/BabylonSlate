@@ -57,15 +57,30 @@ class FakeCanvas {
   }
 }
 
-/** Held images are the Engine canvas pixel at snapshot time, per view. */
-function useFakeHeldImages() {
+/**
+ * Held images are the Engine canvas pixel at snapshot time, per view. While
+ * `off()` the store can neither hold nor restore (it turned itself off).
+ */
+function useFakeHeldImages({ off, ...extra }: Pick<HeldImageStore, "engage" | "usable"> & { off?: () => boolean } = {}) {
   const blits = { count: 0 };
   setHeldImageStoreFactoryForTests((engine) => {
     const source = engine.getRenderingCanvas() as unknown as FakeCanvas;
     const held = new Map<EngineView, { pixel: number; width: number; height: number }>();
     const store: HeldImageStore = {
-      snapshot: (view, width, height) => { blits.count++; held.set(view, { pixel: source.pixel, width, height }); },
-      restore: (view) => { const entry = held.get(view); if (!entry) return false; blits.count++; source.pixel = entry.pixel; return true; },
+      ...extra,
+      snapshot: (view, width, height) => {
+        if (off?.()) return false;
+        blits.count++;
+        held.set(view, { pixel: source.pixel, width, height });
+        return true;
+      },
+      restore: (view) => {
+        const entry = held.get(view);
+        if (!entry || off?.()) return false;
+        blits.count++;
+        source.pixel = entry.pixel;
+        return true;
+      },
       size: (view) => { const entry = held.get(view); return entry ? { width: entry.width, height: entry.height } : null; },
       release: (view) => { held.delete(view); },
       clear: () => { held.clear(); },
@@ -315,18 +330,49 @@ describe("direct view presentation", () => {
     } finally { b.release(); off.engine.dispose(); }
   });
 
+  it("engages the store before a direct step draws, and copies once the store reports it cannot work", () => {
+    let usable = true;
+    const order: string[] = [];
+    useFakeHeldImages({ engage: () => { order.push("engage"); }, usable: () => usable });
+    const { engine, body, source, draw, view } = host();
+    const a = view();
+    try {
+      draw(0xff8040, true, () => order.push("draw"));
+      expect([order, source.parentNode]).toEqual([["engage", "draw"], a.panel]);
+      usable = false; // e.g. the WebGPU main pass stopped rendering into the store's target
+      draw(0x40a0ff);
+      expect([source.parentNode, a.target.pixel, order.length]).toEqual([body, 0x40a0ff, 2]);
+    } finally { a.release(); engine.dispose(); }
+  });
+
+  it("copies a coherent frame the store could not present instead of showing its held image again", () => {
+    let off = false;
+    useFakeHeldImages({ usable: () => !off, off: () => off });
+    const { engine, body, source, draw, view } = host();
+    const a = view();
+    try {
+      draw(0xff8040);
+      expect([source.parentNode, a.copies()]).toEqual([a.panel, 1]);
+      // The store turns itself off while this frame draws (WebGPU then renders the frame into the canvas).
+      draw(0x40a0ff, true, () => { off = true; });
+      expect([source.parentNode, a.target.pixel, a.copies()]).toEqual([body, 0x40a0ff, 2]);
+    } finally { a.release(); engine.dispose(); }
+  });
+
   it("keeps copying a view whose presentation disallows direct presentation", () => {
-    useFakeHeldImages();
+    let engaged = 0;
+    // On WebGPU, engaging the store redirects Babylon's main pass; a copying Engine must never be touched.
+    useFakeHeldImages({ engage: () => { engaged++; } });
     let allowed = false;
     const { engine, body, source, draw, view } = host();
     const a = view(undefined, { allowDirect: () => allowed });
     try {
       // An Engine not declared for direct presentation (the exported player's): the Engine canvas stays parked and the view canvas gets the pixels.
       draw(0xff8040);
-      expect([source.parentNode, a.target.pixel]).toEqual([body, 0xff8040]);
+      expect([source.parentNode, a.target.pixel, engaged]).toEqual([body, 0xff8040, 0]);
       allowed = true;
       draw(0x40a0ff);
-      expect(source.parentNode).toBe(a.panel);
+      expect([source.parentNode, engaged]).toEqual([a.panel, 1]);
     } finally { a.release(); engine.dispose(); }
   });
 

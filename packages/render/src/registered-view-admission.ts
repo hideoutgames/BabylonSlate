@@ -7,6 +7,7 @@ import {
   type EngineCanvasPlacement,
   type HeldImageStore,
 } from "./direct-view-presentation";
+import { createWebGpuHeldImageStore } from "./webgpu-held-image-store";
 
 type Admission = { requestedEnabled: boolean; held: boolean };
 const admissions = new WeakMap<EngineView, Admission>();
@@ -77,10 +78,13 @@ function soleShownView(engine: AbstractEngine): EngineView | null {
   return sole;
 }
 
-/** Store factory override for tests (node has no WebGL). */
-let heldImageStoreFactory: (engine: AbstractEngine) => HeldImageStore | null = createWebGl2HeldImageStore;
+const createHeldImageStore = (engine: AbstractEngine) =>
+  engine.isWebGPU ? createWebGpuHeldImageStore(engine) : createWebGl2HeldImageStore(engine);
+
+/** Store factory override for tests (node has no GPU). */
+let heldImageStoreFactory: (engine: AbstractEngine) => HeldImageStore | null = createHeldImageStore;
 export function setHeldImageStoreFactoryForTests(factory: ((engine: AbstractEngine) => HeldImageStore | null) | null): void {
-  heldImageStoreFactory = factory ?? createWebGl2HeldImageStore;
+  heldImageStoreFactory = factory ?? createHeldImageStore;
 }
 
 /** Whether `view` is presented by showing the Engine canvas itself (diagnostics and tests). */
@@ -106,12 +110,19 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       const target = current.target;
       const context = target.getContext("2d", VIEW_CANVAS_2D_ATTRIBUTES);
       if (!direct || !size || !source?.width || !source.height || !context) return;
-      direct.store.restore(current, source.width, source.height);
+      // A store that turned itself off has nothing to hand over; the view canvas keeps what it had.
+      if (!direct.store.restore(current, source.width, source.height, true)) return;
       engine.flushFramebuffer();
-      if (target.width !== size.width) target.width = size.width;
-      if (target.height !== size.height) target.height = size.height;
-      if (current.clearBeforeCopy) context.clearRect(0, 0, size.width, size.height);
-      context.drawImage(source, 0, 0, source.width, source.height, 0, 0, size.width, size.height);
+      // A scaled restore fills the canvas with the held image; an unscaled one holds it 1:1 in the top-left
+      // corner, cropped by a smaller canvas, and the view canvas takes just that region (as the screen shows it).
+      const from = direct.store.restoresUnscaled
+        ? { width: Math.min(size.width, source.width), height: Math.min(size.height, source.height) }
+        : { width: source.width, height: source.height };
+      const to = direct.store.restoresUnscaled ? from : size;
+      if (target.width !== to.width) target.width = to.width;
+      if (target.height !== to.height) target.height = to.height;
+      if (current.clearBeforeCopy) context.clearRect(0, 0, to.width, to.height);
+      context.drawImage(source, 0, 0, from.width, from.height, 0, 0, to.width, to.height);
     };
     const stopCovering = (current: EngineView, keepImage: boolean) => {
       if (!direct || direct.placement.view !== current) return;
@@ -140,12 +151,15 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       if (!context || !source) return true;
       // A popout window's view copies: the Engine canvas cannot leave its document.
       const presentDirectly = direct !== null && directViewPresentationEnabled() && host.allowDirect?.() !== false &&
+        direct.store.usable?.() !== false &&
         soleShownView(this) === current && direct.placement.canCover(current);
       if (!presentDirectly) leaveDirect();
       else {
         // The previous sole view keeps its last frame in its own canvas.
         const covered = direct.placement.view;
         if (covered && covered !== current) stopCovering(covered, true);
+        direct.active = true;
+        direct.store.engage?.();
       }
       host.begin();
       this.onBeforeViewRenderObservable.notifyObservers(current);
@@ -172,28 +186,34 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
         if (!source.width || !source.height) return true;
         this._renderFrame();
         if (presentDirectly) {
-          direct.active = true;
           // A resize reallocates (clears) the default framebuffer even when nothing draws.
           const wrote = source.width !== startSize.width || source.height !== startSize.height || host.dirty?.() !== false;
-          if (host.canCopy()) {
-            const started = performance.now();
-            direct.store.snapshot(current, source.width, source.height);
+          const coherent = host.canCopy();
+          const started = performance.now();
+          if (coherent && direct.store.snapshot(current, source.width, source.height)) {
             // The view canvas keeps the presented image's dimensions; it is drawn into only when it stops being covered.
             if (canvas.width !== source.width) canvas.width = source.width;
             if (canvas.height !== source.height) canvas.height = source.height;
             show(current);
             host.copied(performance.now() - started);
-          } else if (!wrote && direct.placement.view === current) {
-            // An idle step (render on demand): the shown image is still the held one.
-            direct.placement.follow();
-          } else if (direct.store.restore(current, source.width, source.height)) {
-            // An incoherent frame: put the last coherent image back before the browser presents.
-            show(current);
-          } else {
-            // Nothing coherent yet: let the view canvas show through.
-            stopCovering(current, false);
+            return true;
           }
-          return true;
+          if (!coherent) {
+            if (!wrote && direct.placement.view === current) {
+              // An idle step (render on demand): the shown image is still the held one.
+              direct.placement.follow();
+            } else if (direct.store.restore(current, source.width, source.height)) {
+              // An incoherent frame: put the last coherent image back before the browser presents.
+              show(current);
+            } else {
+              // Nothing coherent yet: let the view canvas show through.
+              stopCovering(current, false);
+            }
+            return true;
+          }
+          // A coherent frame the store could not present (WebGPU turned it off while the frame drew, so the
+          // frame is in the canvas): copy it into the view canvas rather than showing the stale held image.
+          leaveDirect();
         }
         if (!host.canCopy()) return true;
         const started = performance.now();
@@ -237,6 +257,7 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
         leaveDirect();
         direct.placement.park();
         direct.store.clear();
+        direct.store.dispose?.();
         engine.onContextLostObservable.remove(lost);
         if (engine.setSize === resizeWhileCovering) {
           if (sizeDescriptor) Object.defineProperty(engine, "setSize", sizeDescriptor);
