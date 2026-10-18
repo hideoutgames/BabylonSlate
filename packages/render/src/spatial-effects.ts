@@ -18,11 +18,12 @@ import {
 } from "./render-settings";
 import {
   bindVolumetricLights,
-  selectVolumetricLights,
-  volumetricLayoutKey,
-  volumetricLightsLayoutKey,
-  volumeShadowLayout,
-  type VolumeShadow,
+  createVolumetricSlots,
+  fillVolumetricSlots,
+  volumetricLayoutMatches,
+  volumetricLayoutOf,
+  volumetricSlotsMatch,
+  type VolumetricLayout,
 } from "./volumetric-lights";
 import {
   volumetricShader,
@@ -104,10 +105,11 @@ export interface SpatialStage {
    */
   idle?: () => boolean;
   /**
-   * The volumetric march's light layout (`volumetricLightsLayoutKey`): the lights its slots bind and the shadow
-   * samplers it was compiled for. The view rebuilds once the march would run for another layout.
+   * The volumetric march's slot layout: the shadow sampler shape of each slot it was compiled for, in canonical order.
+   * Each frame binds the lights then nearest the camera by shape, so the view rebuilds only once the march would run
+   * for another layout.
    */
-  lightLayout?: string;
+  lightLayout?: VolumetricLayout;
   bind(effect: Effect): void;
 }
 
@@ -164,9 +166,9 @@ export function reserveSpatialEffects(
 }
 
 /**
- * The settings, camera and size baked into a prepared graph's effect tasks. The volumetric march's light layout is
- * left out: the lights nearest the camera fill its slots, but a march that idles binds none, so the view compares
- * that layout only while the march runs (`volumetricLayoutCurrent`).
+ * The settings, camera and size baked into a prepared graph's effect tasks. The volumetric march's slot layout is left
+ * out: the shadow shapes of the lights nearest the camera, which a march that idles does not bind, so the view
+ * compares that layout only while the march runs (`volumetricLayoutCurrent`).
  */
 export function liveSceneEffectsKey(
   scene: Scene,
@@ -196,12 +198,12 @@ export function volumetricMarchIdle(
 }
 
 /**
- * Whether a march built for the light layout `built` may draw this camera's frame: it runs with this camera's
- * nearest lights, or idles and binds none.
+ * Whether a march built for the slot layout `built` may draw this camera's frame: the shadow shapes of this camera's
+ * nearest lights fill exactly its slots, or it idles and binds none.
  */
-export function volumetricLayoutCurrent(scene: Scene, camera: Camera, built: string): boolean {
+export function volumetricLayoutCurrent(scene: Scene, camera: Camera, built: VolumetricLayout): boolean {
   const volume = sceneRenderingSettings(scene).effectsPlan?.volumetricLighting;
-  return !volume || volumetricMarchIdle(scene, camera, volume) || volumetricLayoutKey(scene, camera, volume) === built;
+  return !volume || volumetricMarchIdle(scene, camera, volume) || volumetricLayoutMatches(scene, camera, volume, built);
 }
 
 function customWrapper(
@@ -395,9 +397,10 @@ export function createSpatialStages(
     const volume = plan.volumetricLighting;
     if (volume) {
       const localVolumes = hasFogVolumes(scene);
-      const lights = selectVolumetricLights(scene, camera, volume);
-      const shadows = lights.map((light) => volumeShadowLayout(scene, light));
-      const lightLayout = volumetricLightsLayoutKey(scene, lights);
+      // The slots take the lights nearest the camera by shadow shape; the shader is compiled for those shapes only.
+      const slots = createVolumetricSlots();
+      fillVolumetricSlots(slots, scene, camera, volume);
+      const lightLayout = volumetricLayoutOf(slots);
       const uniforms = [
         "inverseProjection",
         "inverseView",
@@ -408,7 +411,7 @@ export function createSpatialStages(
         ...(localVolumes ? ["fogVolumeCount", "fogVolumeInverse", "fogVolumeParameters"] : []),
       ];
       const samplers = ["depthSampler"];
-      shadows.forEach((shadow, i) => {
+      lightLayout.forEach((shadow, i) => {
         uniforms.push(
           `volumePosition${i}`,
           `volumeDirection${i}`,
@@ -426,7 +429,7 @@ export function createSpatialStages(
           "Scene Volumetric Lighting",
           volumetricShader(
             engine.isWebGPU,
-            shadows,
+            lightLayout,
             volume.steps,
             engine.isNDCHalfZRange,
             engine.useReverseDepthBuffer,
@@ -440,22 +443,20 @@ export function createSpatialStages(
       const inverseProjection = Matrix.Identity(),
         inverseView = Matrix.Identity();
       const mainInput = stages.length;
-      // The view checks the light layout before each frame, but the frame then
+      // The view checks the slot layout before each frame, but the frame then
       // moves the camera (inputs, animation) and shadow admission can release
       // or stand by a map: a march that wakes after a check that found it idle,
-      // or runs on after a map changed, can hold lights whose shadow maps no
-      // longer match its samplers. Skip that frame rather than bind them; the
-      // view rebuilds on the next. Only the built lights' maps are compared: a
-      // frame whose nearest lights changed still binds the built set validly.
-      const current: VolumeShadow = { kind: "none", cascades: 0, packed: false };
-      const shadowsChanged = () => {
-        for (let i = 0; i < lights.length; i++) {
-          const built = shadows[i]!, now = volumeShadowLayout(scene, lights[i]!, current);
-          if (now.kind !== built.kind || now.cascades !== built.cascades || now.packed !== built.packed) return true;
-        }
-        return false;
+      // or runs on after the nearest lights or a map changed, can hold lights
+      // whose shadow shapes no longer fill its slots. Take the frame's nearest
+      // lights into the slots and skip it when their shapes differ from the
+      // compiled ones rather than bind a sampler a slot was not compiled for;
+      // the view rebuilds on the next. Evaluated once per frame, before the
+      // march binds the slots.
+      const slotsCurrent = () => {
+        fillVolumetricSlots(slots, scene, camera, volume);
+        return volumetricSlotsMatch(slots, lightLayout);
       };
-      const idle = () => volumetricMarchIdle(scene, camera, volume, localVolumes) || shadowsChanged();
+      const idle = () => volumetricMarchIdle(scene, camera, volume, localVolumes) || !slotsCurrent();
       stages.push({
         wrapper: march,
         scale: Math.max(0.25, volume.resolutionScale * quality),
@@ -491,7 +492,7 @@ export function createSpatialStages(
             scene.useRightHandedSystem ? -1 : 1,
             camera.mode === Camera.ORTHOGRAPHIC_CAMERA ? 1 : 0,
           );
-          bindVolumetricLights(effect, scene, camera, lights);
+          bindVolumetricLights(effect, scene, camera, slots.lights, slots.count);
           if (localVolumes) bindFogVolumes(effect, scene, camera, volume.maxDistance);
         },
       });

@@ -1179,8 +1179,8 @@ export class ForwardSceneFrameGraph {
       this.preparedWaterDemand === waterSceneCopyDemand(this.scene, camera);
   }
 
-  /** The volumetric march bakes the lights nearest the camera, with their shadow samplers, into its slots. Only a
-   * march that runs re-plans for other lights: an idle one binds none, so passing lights never rebuild it. */
+  /** The volumetric march bakes the shadow sampler shapes of the lights nearest the camera into its slots, and binds
+   * whichever lights are nearest by shape. Only a march that runs re-plans for other shapes: an idle one binds none. */
   private volumetricMatches(camera: Camera): boolean {
     const built = this.effectsGraph?.spatial?.volumetricLayout;
     return built === undefined || volumetricLayoutCurrent(this.scene, camera, built);
