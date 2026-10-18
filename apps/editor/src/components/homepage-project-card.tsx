@@ -122,13 +122,15 @@ export function HomepageProjectCard({
         ) : (
           <ProjectCover appearance={project.appearance} />
         )}
-        {layout !== "list" && <ProjectBadges project={project} />}
       </CardContent>
       <CardHeader className="homepage-project-caption">
         <CardTitle>
           <span>{name}</span>
         </CardTitle>
-        {activity && <CardDescription>{activity}</CardDescription>}
+        <div className="homepage-project-meta">
+          {activity && <CardDescription>{activity}</CardDescription>}
+          {layout !== "list" && <ProjectBadges project={project} />}
+        </div>
       </CardHeader>
       {layout === "list" && <ProjectBadges project={project} />}
       <Button

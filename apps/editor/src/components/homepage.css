@@ -563,11 +563,60 @@
   gap: 4px;
   pointer-events: none;
 }
+/* Cards: status sits in the caption's meta line, after the activity. */
+.homepage-project-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.homepage-project-meta [data-slot="card-description"] {
+  min-width: 0;
+}
+.homepage-project-card:not([data-layout="list"]) .homepage-project-badges {
+  position: static;
+  flex: none;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+}
+.homepage-project-card:not([data-layout="list"]) .homepage-project-meta > [data-slot="card-description"] + .homepage-project-badges::before {
+  content: "·";
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
 .homepage-project-card:not([data-layout="list"]) .homepage-project-badges [data-slot="badge"] {
-  border: 1px solid oklch(1 0 0 / 10%);
-  background: oklch(0 0 0 / 45%);
-  color: oklch(0.92 0.003 85);
-  backdrop-filter: blur(6px);
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.3;
+  overflow: visible;
+  box-shadow: none;
+}
+.homepage-project-card:not([data-layout="list"]) .homepage-project-badges [data-slot="badge"] svg {
+  width: 11px;
+  height: 11px;
+}
+/* The actions button sits at the caption's right edge. */
+.homepage-project-card:not([data-layout="list"]) .homepage-project-caption {
+  padding-right: 40px;
+}
+.homepage-project-card:not([data-layout="list"]) .homepage-project-actions {
+  top: auto;
+  bottom: 9px;
+  right: 6px;
+  background: transparent;
+  backdrop-filter: none;
+  color: var(--muted-foreground);
+}
+.homepage-project-card:not([data-layout="list"]) .homepage-project-actions:hover,
+.homepage-project-card:not([data-layout="list"]) .homepage-project-actions[aria-expanded="true"] {
+  background: var(--accent);
+  color: var(--foreground);
 }
 .homepage-project-badges [data-slot="badge"] {
   height: 18px;
