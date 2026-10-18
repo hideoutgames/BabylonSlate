@@ -113,14 +113,15 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       // A store that turned itself off has nothing to hand over; the view canvas keeps what it had.
       if (!direct.store.restore(current, source.width, source.height, true)) return;
       engine.flushFramebuffer();
-      if (target.width !== size.width) target.width = size.width;
-      if (target.height !== size.height) target.height = size.height;
-      if (current.clearBeforeCopy) context.clearRect(0, 0, size.width, size.height);
-      // A scaled restore fills the canvas; an unscaled one holds the image 1:1 in its top-left corner.
+      // A scaled restore fills the canvas with the held image; an unscaled one holds it 1:1 in the top-left
+      // corner, cropped by a smaller canvas, and the view canvas takes just that region (as the screen shows it).
       const from = direct.store.restoresUnscaled
         ? { width: Math.min(size.width, source.width), height: Math.min(size.height, source.height) }
         : { width: source.width, height: source.height };
       const to = direct.store.restoresUnscaled ? from : size;
+      if (target.width !== to.width) target.width = to.width;
+      if (target.height !== to.height) target.height = to.height;
+      if (current.clearBeforeCopy) context.clearRect(0, 0, to.width, to.height);
       context.drawImage(source, 0, 0, from.width, from.height, 0, 0, to.width, to.height);
     };
     const stopCovering = (current: EngineView, keepImage: boolean) => {
