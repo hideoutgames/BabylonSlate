@@ -13,9 +13,11 @@ import type { ShadowSpatialIndex } from "./shadow-spatial-index";
 
 /**
  * One single-map sun generator's light-space box: [minX, maxX, minY, maxY,
- * near, far]. `drawing` holds while its map renders.
+ * near, far]. `drawing` is the render id its map was bound at for a pass, -1
+ * after the pass; the fit refits only within that render id, so a draw that
+ * threw before unbinding cannot leave later bindings refitting.
  */
-type DirectionalFit = { generator: ShadowGenerator; drawing: boolean; box: number[] | null };
+type DirectionalFit = { generator: ShadowGenerator; drawing: number; box: number[] | null };
 
 /**
  * Fits by generator, keyed by the projection matrix Babylon hands the light's
@@ -35,12 +37,13 @@ const fits = new WeakMap<Matrix, DirectionalFit>();
  * to the active camera it draws for.
  */
 export function trackDirectionalShadowFit(generator: ShadowGenerator): void {
-  const fit: DirectionalFit = { generator, drawing: false, box: null };
+  const fit: DirectionalFit = { generator, drawing: -1, box: null };
   fits.set(generator.projectionMatrix, fit);
+  const scene = generator.getLight().getScene();
   const map = generator.getShadowMap();
   // Before Babylon's own before-bind work, so the draw's first projection fits.
-  map?.onBeforeBindObservable.add(() => { fit.drawing = true; }, undefined, true);
-  map?.onAfterUnbindObservable.add(() => { fit.drawing = false; });
+  map?.onBeforeBindObservable.add(() => { fit.drawing = scene.getRenderId(); }, undefined, true);
+  map?.onAfterUnbindObservable.add(() => { fit.drawing = -1; });
 }
 
 /** Stable single-map fallback. The scene's aggregate XY bounds never size it. */
@@ -67,7 +70,7 @@ export function configureDirectionalShadowProjection(
   light.customProjectionMatrixBuilder = (view, _renderList, result) => {
     const fit = fits.get(result);
     // A binding outside the map's own pass samples the image it holds.
-    if (fit?.box && !fit.drawing) {
+    if (fit?.box && fit.drawing !== scene.getRenderId()) {
       ortho(fit.box, result);
       return;
     }

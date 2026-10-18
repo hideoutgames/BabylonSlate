@@ -428,7 +428,11 @@ export class RenderTargetCaptures {
       // other captures go on, and it tries again next frame.
       try {
         this.collectCandidates(capture, target);
-        if (this.stageDraw(target, guid, actorId, () => this.drawFullQuality(view, actorId))) this.published(capture, target);
+        if (this.stageDraw(target, guid, actorId, () => this.drawFullQuality(view, actorId))) {
+          this.published(capture, target);
+          // A capture that recovers warns again if it fails later.
+          this.failedDraws.delete(guid);
+        }
       } catch (error) {
         if (this.failedDraws.has(guid)) continue;
         this.failedDraws.add(guid);

@@ -11,7 +11,7 @@ import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { SceneOutlineHost } from "./scene-outline-host";
-import { managedRenderReservations } from "./managed-render-resources";
+import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { RenderTargetCaptures } from "./render-target-capture";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
@@ -367,6 +367,23 @@ it("draws a Full Quality capture's own sun maps, fitted to its camera, and leave
   // The capture's receivers bind the depth range its borrowed spot map was drawn with.
   expect([spot.getDepthMinZ(capture), spot.getDepthMaxZ(capture)])
     .toEqual([spot.getDepthMinZ(camera), spot.getDepthMaxZ(camera)]);
+  view.dispose();
+});
+
+it("lets a Full Quality capture whose own sun map does not fit sample the scene view's, without rebuilding materials each frame", async () => {
+  const { engine, scene, sun, controller, view, captures, captureCamera } = shadowedHost();
+  // Room for the capture's own targets, not for a copy of the sun map (256² × 4 layers × 12 bytes while it builds).
+  limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 2 * 1024 ** 2);
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  await untilPublished(scene, view, captures);
+  const capture = captureCamera()!;
+  expect(sun.getShadowGenerator(capture)).toBeNull();
+  expect(controller.viewBoundGenerator(sun, capture)).toBe(controller.generator(sun));
+  for (let frame = 0; frame < 3; frame++) view.render();
+  const dirty = vi.spyOn(sun, "_markMeshesAsLightDirty");
+  for (let frame = 0; frame < 4; frame++) expect(view.render()).toMatchObject({ rendered: true });
+  expect(dirty).not.toHaveBeenCalled();
+  expect(warn.mock.calls.filter(([message]) => String(message).includes("main camera's map"))).toHaveLength(1);
   view.dispose();
 });
 
