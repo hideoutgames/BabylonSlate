@@ -791,8 +791,10 @@ export function compileMaterialPlan(
             }
             // Blocking textures defer effect creation. The compile budget starts
             // with the effect; a separate, longer bound covers the dependency wait.
+            // It is checked at every poll, so a long compile never reads as one held gap.
+            const dependenciesExpired = dependencyBound.expired();
             if (shaderProbe && !subMesh?.effect) {
-              if (dependencyBound.expired()) {
+              if (dependenciesExpired) {
                 finishShaderCheck();
                 buildState = "failed";
                 settleBuild([{ code: "material.missingTexture", message: "Material textures did not become ready", severity: "error" }]);
