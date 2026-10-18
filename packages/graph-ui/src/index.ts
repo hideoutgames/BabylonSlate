@@ -36,6 +36,13 @@ export {
 } from "./graph-editor-context";
 
 export { GraphInteractionSettingsContext } from "./graph-interaction-settings";
+export {
+  DEFAULT_GRAPH_KEYBINDS,
+  GraphKeybindsContext,
+  graphCommandForEvent,
+  type GraphCommand,
+  type GraphKeybinds,
+} from "./graph-keybinds";
 
 export { PinDefaultEditorContext, type PinDefaultEditorRequest, type PinDefaultEditorRenderer } from "./pin-default-editor-context";
 export type { PinDefaultPreview } from "./pin-default-preview";

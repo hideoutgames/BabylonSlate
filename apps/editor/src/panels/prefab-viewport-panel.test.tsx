@@ -11,6 +11,7 @@ import {
 import type { IDockviewPanelProps } from "dockview-react";
 import { createMeshComponent, engineCommandBus } from "@babylonslate/core";
 import {
+  AssetLoadError,
   encodeAssetDocument,
   readAssetDocumentHeader,
 } from "@babylonslate/assets";
@@ -641,6 +642,29 @@ describe("PrefabViewportPanel engine", () => {
       expect(handle.loadScene).toHaveBeenCalled();
       expect(collectPlayMaterialLibrary).toHaveBeenCalled();
     });
+  });
+
+  it("does not log a cancelled asset load as a failure but still reports real ones", async () => {
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      collectPlayMaterialLibrary.mockRejectedValueOnce(
+        new AssetLoadError("cancelled", "surface", "prefab", "scope is disposed"),
+      );
+      const { unmount } = render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+      await waitFor(() => expect(collectPlayMaterialLibrary).toHaveBeenCalledTimes(1));
+      await act(async () => {});
+      expect(errorLog).not.toHaveBeenCalledWith("[prefab] failed to load mesh assets", expect.anything());
+      unmount();
+
+      const failure = new Error("Disk unavailable");
+      collectPlayMaterialLibrary.mockRejectedValueOnce(failure);
+      render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+      await waitFor(() =>
+        expect(errorLog).toHaveBeenCalledWith("[prefab] failed to load mesh assets", failure),
+      );
+    } finally {
+      errorLog.mockRestore();
+    }
   });
 
   it("does not restart material collection when components is a new array of the same payload", async () => {

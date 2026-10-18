@@ -2545,6 +2545,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         // must not reintroduce the Class id that no longer exists.
         editSessionRef.current.dropDocument(doc.id);
       }
+      // The registry stamped the file's payload name; an open tab follows it.
+      for (const doc of documentService.getOpenDocumentsOrdered()) {
+        if (doc.ref.path === before.path) documentService.applyAssetRename(doc.id, renamed.header.name);
+      }
       const current = projectDocumentRef.current;
       if (current && replacements.length) {
         const settings = replaceClassAssetReferences(current.settings, replacements);

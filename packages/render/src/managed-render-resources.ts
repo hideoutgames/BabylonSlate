@@ -2,8 +2,12 @@ import type { AbstractEngine } from "@babylonjs/core";
 
 /** Conservative managed rendering ceiling, not measured/free GPU memory. */
 export const MANAGED_RENDER_BYTE_LIMIT = 512 * 1024 ** 2;
+/**
+ * `shadow` holds per-view shadow maps (a Full Quality capture's own sun maps);
+ * a scene view's maps reserve through reserveManagedShadowBytes instead.
+ */
 export type ManagedRenderCategory =
-  "cluster" | "sceneColor" | "geometry" | "depth" | "postprocess" | "areaLight" | "water";
+  "cluster" | "sceneColor" | "geometry" | "depth" | "postprocess" | "areaLight" | "water" | "shadow";
 export type ManagedRenderResource = {
   handle: object;
   bytes: number;
@@ -17,6 +21,7 @@ const categories: readonly ManagedRenderCategory[] = [
   "postprocess",
   "areaLight",
   "water",
+  "shadow",
 ];
 type ResourceEntry = {
   bytes: number;
@@ -74,6 +79,7 @@ export function managedRenderReservations(engine: AbstractEngine) {
     postprocess: 0,
     areaLight: 0,
     water: 0,
+    shadow: 0,
   };
   let sharedBytes = 0;
   for (const resource of value.resources.values()) {
@@ -246,6 +252,12 @@ function contextLost(engine: AbstractEngine): boolean {
   return (engine as unknown as { _contextWasLost?: boolean })._contextWasLost === true;
 }
 
+/** Whether releaseManagedRenderLeaseAfterDisposal holds a lease until a later
+ * end frame (a live WebGPU Engine's destruction drain) rather than releasing it at once. */
+export function managedRenderReleaseIsDeferred(engine: AbstractEngine): boolean {
+  return engine.isWebGPU && !disposedEngines.has(engine) && !contextLost(engine);
+}
+
 /** Call only after disposing all owned resources. Native WebGPU queues physical
  * texture/buffer destruction until endFrame; hold the lease through that drain.
  * A lost device frees everything at once, so loss also settles it.
@@ -259,7 +271,7 @@ export function releaseManagedRenderLeaseAfterDisposal(
     throw new Error("Managed render lease belongs to another Engine.");
   const pending = deferredReleases.get(lease);
   if (pending) return pending;
-  if (!engine.isWebGPU || disposedEngines.has(engine) || contextLost(engine)) {
+  if (!managedRenderReleaseIsDeferred(engine)) {
     lease.release();
     return Promise.resolve();
   }

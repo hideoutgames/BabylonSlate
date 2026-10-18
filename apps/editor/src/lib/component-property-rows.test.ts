@@ -97,6 +97,12 @@ it("edits capture settings through typed controls and keeps actor filtering opt-
   expect(filter.value).toBe(false);
   filter.onChange(true);
   expect(update).toHaveBeenCalledWith("captureOnlyActors", true);
+  const quality = rows.find((row) => row.label === "Quality");
+  if (quality?.kind !== "enum") throw new Error("Missing capture quality");
+  expect(quality.value).toBe("fast");
+  expect(quality.options.map((option) => option.label)).toEqual(["Fast", "Full Quality"]);
+  quality.onChange("fullQuality");
+  expect(update).toHaveBeenCalledWith("quality", "fullQuality");
 });
 
 it("edits Global Water Volume settings without exposing finite bounds", () => {

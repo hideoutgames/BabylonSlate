@@ -35,11 +35,11 @@ The default chord table is the catalog itself; read `EDITOR_COMMANDS` rather tha
 ## Dispatch rules
 
 - One window `keydown` listener; the newest enabled registration for the matched command runs and the event is `preventDefault`ed.
-- Skipped while Play runs, during IME composition, with three or more pointers down, and while a modal dialog or alert dialog is open. Save All's chord still suppresses the browser Save Page.
+- Skipped while Play runs, during IME composition, with three or more pointers down, and while a modal popup is open: `DialogContent` and modal `SheetContent` set `aria-modal` (Base UI does not), alert dialogs carry `role="alertdialog"`, and a popup in its exit animation (`data-closed`) no longer counts. A registration with `allowInModal` still runs (Search Project closes its own dialog); nonmodal popups (the Play console) never block. Save All's chord still suppresses the browser Save Page.
 - Text fields and `SelectableText` keep native editing. Menus, listboxes, comboboxes and selects keep their own key navigation.
 - `scopeRef` limits a handler to a visible surface (the active viewport). `focusWithinRef` also requires focus inside it; Outliner and Content Browser use it so Delete, Duplicate and Rename act on the focused panel.
 - Viewport fly keys ignore presses with Command, Control or Option so `Mod+S` never starts flying.
-- Graph canvases (`GraphEditor`) own their delete key: only the graph last pressed or focused deletes, never a hidden tab, and protected nodes stay.
+- Graph canvases (`GraphEditor`) own their Copy, Paste, Duplicate and Delete keys instead of registering with the dispatcher, because `graph-ui` cannot import the app. `KeybindProvider` supplies `edit.copy`, `edit.paste`, `edit.duplicate` and `edit.delete` through `GraphKeybindsContext`, so Keybinds settings rebind graph keys and the node menu shows them; a graph outside the editor uses the defaults. A graph reacts only after its last pointer press or focus landed inside it (the arming survives host re-renders), never when hidden, read-only or targeted at a text field, menu, listbox or foreign dialog. Protected nodes stay; a host that hides the toolbar's Copy and Paste has no keys for them, and `deleteKeyCode={null}` turns key deletion off. Each key calls `preventDefault` only when the graph handled it; Duplicate always claims its chord while engaged so the browser's bookmark shortcut never opens.
 - Document navigation wraps through open documents including the pinned Content Browser, which cannot be closed. Close commands use the normal unsaved-change prompts.
 
 ## Display

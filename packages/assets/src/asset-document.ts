@@ -173,7 +173,10 @@ function assetDocumentFrom(
   };
 }
 
-/** Rewrite payload `name` in the document JSON chunk (Scene rename/duplicate). */
+/**
+ * Rewrite payload `name` in the document JSON chunk on rename/duplicate, for
+ * every type whose payload carries one: editor tabs title a document by it.
+ */
 export function stampDocumentChunkName(
   chunks: Map<string, ChunkInput>,
   name: string,
@@ -189,6 +192,7 @@ export function stampDocumentChunkName(
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return;
   }
+  if (typeof (payload as Record<string, unknown>).name !== "string") return;
   (payload as Record<string, unknown>).name = name;
   chunks.set(DOCUMENT_CHUNK_ID, {
     ...chunk,

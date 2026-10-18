@@ -27,7 +27,11 @@ export interface ContextMenuState {
 }
 
 export interface UseContextMenuOptions {
-  items: ContextMenuItem[];
+  /**
+   * The menu items, or a function evaluated each time the menu opens, for
+   * items that depend on state the gesture itself changes (a selection).
+   */
+  items: ContextMenuItem[] | (() => ContextMenuItem[]);
   enabled?: boolean;
   longPressMs?: number;
 }
@@ -121,7 +125,8 @@ export function useContextMenu(
   const openAt = useCallback(
     (clientX: number, clientY: number, itemsOverride?: ContextMenuItem[]) => {
       if (!enabled) return;
-      const nextItems = itemsOverride ?? itemsRef.current;
+      const source = itemsOverride ?? itemsRef.current;
+      const nextItems = typeof source === "function" ? source() : source;
       if (nextItems.length === 0) return;
       setMenu({ open: true, x: clientX, y: clientY, items: nextItems });
     },

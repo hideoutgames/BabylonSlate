@@ -30,6 +30,24 @@ export type GraphEditorContextValue = {
   ) => NestedMenuItem[];
   onEdgeDoubleClick?: (edgeId: string) => void;
   connectionLineKind?: "default" | "animTransition";
+  /**
+   * Context menu of script-style nodes: Copy, Paste, Duplicate, Delete and
+   * Break Links plus the host's items. `resolve` first applies the selection
+   * rule (a menu on an unselected node replaces the selection) and returns the
+   * items for the resulting selection.
+   */
+  nodeMenu?: {
+    enabled: boolean;
+    resolve: (nodeId: string) => NestedMenuItem[];
+  };
+  /**
+   * Why a wire dragged from one pin cannot land on another, or null when it
+   * can (or the reason is unknown). Read only while the wire hovers a pin.
+   */
+  connectionRefusal?: (
+    from: { nodeId: string; pinId: string },
+    to: { nodeId: string; pinId: string },
+  ) => string | null;
 };
 
 const GraphEditorContext = createContext<GraphEditorContextValue | null>(null);

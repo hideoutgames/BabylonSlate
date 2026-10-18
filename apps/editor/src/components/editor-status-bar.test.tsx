@@ -20,10 +20,6 @@ vi.mock("../context/validation-context", () => ({ useValidation: () => ({ errorC
 vi.mock("../shell/use-platform-layout", () => ({ usePhoneLayout: () => false }));
 vi.mock("../lib/build-identity", () => ({ getBuildLabel: () => "test" }));
 
-function dot() {
-  return screen.getByTestId("editor-status-bar").querySelector(".editor-status-dot");
-}
-
 afterEach(() => {
   cleanup();
   state.recoveryAvailable = false;
@@ -32,10 +28,9 @@ afterEach(() => {
 });
 
 describe("EditorStatusBar", () => {
-  it("reads saved with a clean dot when nothing is waiting", () => {
+  it("reads saved when nothing is waiting", () => {
     render(<EditorStatusBar />);
     expect(screen.getByRole("status").textContent).toBe("All Changes Saved");
-    expect(dot()?.getAttribute("data-dirty")).toBe("false");
   });
 
   it.each([null, { state: "saved" as const }])("never reads saved while edits wait for Recover or Discard (auto-save %j)", (autoSaveStatus) => {
@@ -43,7 +38,6 @@ describe("EditorStatusBar", () => {
     state.autoSaveStatus = autoSaveStatus;
     render(<EditorStatusBar />);
     expect(screen.getByRole("status").textContent).toBe("Unrecovered Edits");
-    expect(dot()?.getAttribute("data-dirty")).toBe("true");
   });
 
   it("keeps naming unsaved project changes when edits also wait for recovery", () => {

@@ -1606,14 +1606,14 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       }
       publishPlaySessionClosed(result);
       appendLog(`Play ended (${result.runtimeMode})`);
-      void result.released.then(({ textureCountAfter, textureLeak, quarantined }) => {
+      void result.released.then(({ textureCountAfter, textureLeak, quarantined, textureLeakDetail }) => {
         if (quarantined) appendLog("Game resources did not confirm release. Reload the editor before starting another session.");
         appendLog(
           `Play textures ${result.textureCountBefore}→${textureCountAfter}`,
         );
         if (textureLeak && !quarantined) {
           appendLog(
-            `Texture leak detected: ${result.textureCountBefore} → ${textureCountAfter}`,
+            `Texture leak detected: ${result.textureCountBefore} → ${textureCountAfter}${textureLeakDetail ? `: ${textureLeakDetail}` : ""}`,
           );
         }
       });
@@ -1981,6 +1981,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             onClose={closePreview}
             registerBeforeStop={registerPreviewBeforeStop}
             onTrace={(trace) => void openRecordedTrace(trace)}
+            onOutputLog={appendLog}
             showStats={overlayStats}
             showConsole={overlayConsole}
             showProfiler={overlayProfiler}
