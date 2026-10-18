@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createFakeWebLocks } from "../../../../packages/vfs/src/test-support/fake-web-locks";
 import { createMemoryOpfsRoot, opfsProjectFolder } from "../../../../packages/vfs/src/test-support/memory-opfs";
-import { createEmptyProject, MAIN_SCENE_FILE, PROJECT_FILE, SourceRevisionChangedError, type SerializedScene, type ProjectStorage } from "@babylonslate/core";
-import { MemoryStorageAdapter, OpfsStorageAdapter } from "@babylonslate/vfs";
+import { createEmptyProject, isProjectOpenElsewhere, MAIN_SCENE_FILE, PROJECT_FILE, SourceRevisionChangedError, type SerializedScene, type ProjectStorage } from "@babylonslate/core";
+import { MemoryStorageAdapter, OpfsStorageAdapter, pickImportFiles } from "@babylonslate/vfs";
 import { encodeAssetDocument, encodeBabasset, decodeBabasset } from "@babylonslate/assets";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { ProjectService } from "./project-service";
@@ -13,6 +14,11 @@ beforeEach(() => {
   vi.stubGlobal("navigator", { storage: { getDirectory: async () => root } });
 });
 afterEach(() => vi.unstubAllGlobals());
+
+vi.mock("@babylonslate/vfs", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@babylonslate/vfs")>();
+  return { ...mod, pickImportFiles: vi.fn(mod.pickImportFiles) };
+});
 
 vi.mock("../lib/kenney-mannequin", async (importOriginal) => {
   const mod =
@@ -815,6 +821,47 @@ describe("project round-trip", () => {
     expect(await storage.listProjects()).toEqual([]);
     await storage.openKnownFolder(handle);
     expect(await storage.exists("project.json")).toBe(false);
+  });
+});
+
+/** Each ProjectService over its own OpfsStorageAdapter stands for a browser tab. */
+describe("project open in another tab", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.stubGlobal("navigator", { storage: navigator.storage, locks: createFakeWebLocks() });
+  });
+
+  it("refuses to open or delete a project another tab has open, and opens it once that tab closes it", async () => {
+    const first = new ProjectService(new OpfsStorageAdapter());
+    await first.createEmptyProject("Shared");
+    const handle = (await first.listProjects())[0]!;
+
+    const second = new ProjectService(new OpfsStorageAdapter());
+    await expect(second.openListedProject(handle)).rejects.toSatisfy(isProjectOpenElsewhere);
+    await expect(second.deleteListedProject(handle)).rejects.toSatisfy(isProjectOpenElsewhere);
+    expect(second.guid).toBeNull();
+    expect(first.guid).not.toBeNull();
+
+    await first.closeProject();
+    expect((await second.openListedProject(handle)).document.metadata.name).toBe("Shared");
+    await second.closeProject();
+    expect((await first.openListedProject(handle)).document.metadata.name).toBe("Shared");
+  });
+
+  it("imports under the next free name when another tab has the project of that name open", async () => {
+    const source = new ProjectService(new MemoryStorageAdapter("documents"));
+    await source.createEmptyProject("Imported", { kind: "2d" });
+    const files = (await source.readTree()).map((file) => ({ name: file.path, bytes: file.data }));
+    vi.mocked(pickImportFiles).mockResolvedValueOnce(files);
+
+    const first = new ProjectService(new OpfsStorageAdapter());
+    await first.createEmptyProject("Imported", { kind: "2d" });
+
+    const storage = new OpfsStorageAdapter();
+    const imported = await new ProjectService(storage).openProject("folder");
+    expect(storage.getCurrentFolder()?.name).toBe("Imported 2");
+    expect(imported?.document.metadata.name).toBe("Imported 2");
+    expect((await storage.listProjects()).map((project) => project.name).sort()).toEqual(["Imported", "Imported 2"]);
   });
 });
 

@@ -282,6 +282,38 @@ describe("ScriptHost utility bindings", () => {
     expect(empty.getAllComponentsOfType("ActorComponent")).toEqual([]);
   });
 
+  it("compiled Get Actor Name reads the actor's name variable and returns an empty string for an empty reference", async () => {
+    const registry = createDefaultNodeRegistry();
+    const shown: string[] = [];
+    const host = new ScriptHost(stubServices({ print: (message) => { shown.push(message); } }));
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "self", "actor.getSelf"),
+        node(registry, "selfName", "actor.getName"),
+        node(registry, "missing", "actor.getOfClass", { "default:classId": "Nobody" }),
+        node(registry, "missingName", "actor.getName"),
+        node(registry, "printSelf", "debug.printString"),
+        node(registry, "printMissing", "debug.printString"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "printSelf", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "printSelf", sourcePinId: "execOut", targetNodeId: "printMissing", targetPinId: "execIn" },
+        { id: "e3", sourceNodeId: "self", sourcePinId: "out", targetNodeId: "selfName", targetPinId: "target" },
+        { id: "e4", sourceNodeId: "selfName", sourcePinId: "out", targetNodeId: "printSelf", targetPinId: "inString" },
+        { id: "e5", sourceNodeId: "missing", sourcePinId: "out", targetNodeId: "missingName", targetPinId: "target" },
+        { id: "e6", sourceNodeId: "missingName", sourcePinId: "out", targetNodeId: "printMissing", targetPinId: "inString" },
+      ],
+    };
+
+    await host.load(toScript(graph, registry, "Runner"));
+    host.invokeEvent("Runner", "onBeginPlay", new Actor({ classId: "Runner", variables: { name: "Door Guard" } }));
+
+    expect(shown).toEqual(["Door Guard", ""]);
+  });
+
   it("Add World Offset mutates actor location in place", () => {
     const actor = new Actor({ classId: "Actor" });
     actor.transform.position.x = 1;

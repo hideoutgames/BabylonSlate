@@ -1888,6 +1888,8 @@ describe("scriptPaletteNodes", () => {
       (node) => node.id === "functions.call:Text3DComponent:Set Text",
     );
     expect(callSetText?.title).toBe("Call Set Text");
+    expect(callSetText?.description?.trim()).toBeTruthy();
+    expect(callSetText?.searchAliases).toEqual(expect.arrayContaining(["label", "caption"]));
     expect(callSetText?.defaultData).toMatchObject({
       functionName: "Set Text",
       runtime: "setText",

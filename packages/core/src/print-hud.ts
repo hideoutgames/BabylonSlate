@@ -34,6 +34,11 @@ function channelByte(value: number): number {
   return Math.max(0, Math.min(255, Math.round((Number(value) || 0) * 255)));
 }
 
+/** An empty message is an empty line: it keeps the row's line height instead of collapsing to its padding. */
+export function printHudRowText(message: string): string {
+  return message === "" ? " " : message;
+}
+
 /** Missing or type-default transparent black becomes opaque white. */
 export function printHudCssColor(color?: PrintHudColor): string {
   if (!color) return "rgba(255, 255, 255, 1)";
