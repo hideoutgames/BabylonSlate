@@ -49,17 +49,20 @@ function DialogContent({
   bodyClassName,
   children,
   showCloseButton = true,
+  showOverlay = true,
   overlayClassName,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
+  /** Disable the backdrop for nonmodal tools over an interactive view. */
+  showOverlay?: boolean
   overlayClassName?: string
   /** Layout classes for the scrolling body that receives `children`. */
   bodyClassName?: string
 }) {
   return (
     <DialogPortal>
-      <DialogOverlay className={overlayClassName} />
+      {showOverlay && <DialogOverlay className={overlayClassName} />}
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(

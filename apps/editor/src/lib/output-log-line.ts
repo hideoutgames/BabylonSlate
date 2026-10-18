@@ -26,3 +26,19 @@ export function parseOutputLogLine(line: string): OutputLogEntry {
       : "info";
   return { severity, source, message };
 }
+
+const SEVERITY_PREFIX: Readonly<Record<string, string>> = {
+  verbose: "Verbose: ",
+  warning: "Warning: ",
+  error: "Error: ",
+};
+
+/**
+ * A runtime log command (a Log node, or a log the runtime itself raises) as an
+ * Output Log line: its category as the source tag, and the severity named in the
+ * message unless it is the default Log, so the panel's wording inference marks it.
+ */
+export function formatRuntimeLogLine(entry: { category: string; severity: string; message: string }): string {
+  const tag = entry.category ? `[${entry.category}] ` : "";
+  return `${tag}${SEVERITY_PREFIX[entry.severity] ?? ""}${entry.message}`;
+}

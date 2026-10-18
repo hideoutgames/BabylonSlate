@@ -36,7 +36,7 @@ const previewMode = new URLSearchParams(window.location.search).get("preview") =
 const previewHosted = previewMode && window.parent !== window;
 /** Runtime console events mirrored into the Preview host's console. */
 const PREVIEW_CONSOLE_EVENTS: ReadonlySet<string> = new Set([
-  "log", "print", "diagnostic", "setBehaviourTreeDebug", "behaviourTreeSnapshot", "trace", "setShowFps", "setStat",
+  "log", "print", "diagnostic", "setBehaviourTreeDebug", "behaviourTreeSnapshot", "trace", "setShowFps", "setStat", "sessionEnded",
 ]);
 const startupAbort = new AbortController();
 let stopCurrentPlayer: (() => void) | undefined;
@@ -177,6 +177,8 @@ async function launchLoaded(
     onStopped: cleanupPage,
     onConsoleEvent: (command) => {
       hud.applyCommand(command);
+      // `quit` stops a standalone game here; a Preview host stops its player itself.
+      if (command.type === "sessionEnded" && !previewHosted) queueMicrotask(() => stopCurrentPlayer?.());
       if (!previewHosted || !PREVIEW_CONSOLE_EVENTS.has(command.type)) return;
       window.parent.postMessage(
         { type: PREVIEW_CONSOLE_EVENT_MESSAGE, command },
