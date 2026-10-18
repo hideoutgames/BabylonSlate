@@ -855,14 +855,16 @@
     var(--homepage-visible-top, 0px) + var(--homepage-visible-height, 100dvh) /
       2
   );
-  /* Practically full screen, like the other large dialogs. */
-  --dialog-edge: clamp(0.5rem, 1.25vw, 1.25rem);
-  width: calc(100vw - 2 * var(--dialog-edge));
-  height: calc(var(--homepage-visible-height, 100dvh) - 2 * var(--dialog-edge));
+  /* Full screen, like the other large dialogs. */
+  width: 100vw;
+  height: var(--homepage-visible-height, 100dvh);
   max-width: none;
-  max-height: calc(var(--homepage-visible-height, 100dvh) - 2 * var(--dialog-edge));
+  max-height: var(--homepage-visible-height, 100dvh);
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  border-radius: 0;
+  box-shadow: none;
+  --tw-ring-shadow: 0 0 #0000;
   background: var(--popover);
-  border-radius: var(--radius-xl);
 }
 .homepage-composer-header {
   position: relative;
