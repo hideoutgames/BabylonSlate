@@ -44,6 +44,7 @@ import {
 } from "./homepage-project-identity";
 import {
   PROJECT_COLOR_PRESETS,
+  PROJECT_ICON_PRESETS,
   prepareProjectPicture,
 } from "./homepage-project-appearance";
 
@@ -296,10 +297,7 @@ export function HomepageCreateDialog({
               data-color={appearance.color}
             >
               <div className="homepage-composer-preview-card">
-                <ProjectCover
-                  appearance={appearance}
-                  name={name.trim() || placeholderName}
-                />
+                <ProjectCover appearance={appearance} />
                 <span className="homepage-composer-preview-name">
                   <span>{name.trim() || placeholderName}</span>
                 </span>
@@ -350,7 +348,6 @@ export function HomepageCreateDialog({
                       <span>Color</span>
                       <ProjectIdentityBadge
                         appearance={appearance}
-                        name={name.trim() || placeholderName}
                         className="homepage-composer-inline-preview"
                       />
                     </FieldLegend>
@@ -379,6 +376,37 @@ export function HomepageCreateDialog({
                             >
                               {appearance.color === id && <CheckIcon />}
                             </span>
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  </FieldSet>
+                  <FieldSet
+                    disabled={busy}
+                    className="homepage-composer-identity"
+                  >
+                    <FieldLegend variant="label">Icon</FieldLegend>
+                    <div className="homepage-composer-color-row">
+                      <div
+                        className="homepage-composer-icon-grid"
+                        role="group"
+                        aria-label="Project Icon"
+                      >
+                        {PROJECT_ICON_PRESETS.map(({ id, label, icon: Icon }) => (
+                          <Button
+                            key={id}
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="homepage-icon-choice"
+                            data-color={appearance.color}
+                            aria-label={label}
+                            aria-pressed={appearance.icon === id}
+                            onClick={() =>
+                              onAppearanceChange({ ...appearance, icon: id })
+                            }
+                          >
+                            <Icon />
                           </Button>
                         ))}
                       </div>
@@ -430,6 +458,9 @@ export function HomepageCreateDialog({
                         )}
                       </div>
                     </div>
+                    <FieldDescription>
+                      A picture replaces the icon on the project card.
+                    </FieldDescription>
                     {imageIssue && <FieldError>{imageIssue}</FieldError>}
                   </FieldSet>
                   {!editing && (

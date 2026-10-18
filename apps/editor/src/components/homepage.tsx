@@ -17,7 +17,6 @@ import {
   ListIcon,
   LoaderCircleIcon,
   PlusIcon,
-  Settings2Icon,
   XIcon,
 } from "lucide-react";
 import {
@@ -83,7 +82,6 @@ import { brandWordmarkSrc } from "../lib/branding";
 import { getBuildLabel } from "../lib/build-identity";
 import { HomepageAccount } from "./homepage-account";
 import { ReleaseNews } from "./release-news";
-import { HomepageApplicationSettings } from "./homepage-application-settings";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
 import { HomepageEmptyArt } from "./homepage-empty-art";
 import { HomepageGallery } from "./homepage-gallery";
@@ -234,8 +232,6 @@ export function Homepage({
   const [accountOpen, setAccountOpen] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [applicationSettingsOpen, setApplicationSettingsOpen] =
-    useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [chooseTemplate, setChooseTemplate] = useState(true);
   const [editTarget, setEditTarget] = useState<ListedProject | null>(null);
@@ -368,23 +364,10 @@ export function Homepage({
           </ToggleGroupItem>
         </ToggleGroup>
         <div className="homepage-sidebar-end">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="homepage-sidebar-action"
-            aria-label="Engine Settings"
-            data-testid="engine-settings"
-            disabled={busy}
-            onClick={() => setSettingsOpen(true)}
-          >
-            <Settings2Icon data-icon="inline-start" />
-            <span className="homepage-optional-label">Engine Settings</span>
-          </Button>
           <div className="homepage-sidebar-account">
             <HomepageAccount
               disabled={busy}
               onOpenChange={setAccountOpen}
-              onApplicationSettings={() => setApplicationSettingsOpen(true)}
               onEngineSettings={() => setSettingsOpen(true)}
               onChangelog={() => setChangelogOpen(true)}
             />
@@ -656,8 +639,7 @@ export function Homepage({
                             transition.active ||
                             createOpen ||
                             settingsOpen ||
-                            applicationSettingsOpen ||
-                            accountOpen ||
+                              accountOpen ||
                             changelogOpen ||
                             view !== "projects"
                           }
@@ -821,11 +803,7 @@ export function Homepage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <HomepageApplicationSettings
-        open={applicationSettingsOpen}
-        onOpenChange={setApplicationSettingsOpen}
-      />
-      <ReleaseNews open={changelogOpen} onOpenChange={setChangelogOpen} ready={dataReady && !accountOpen && !settingsOpen && !applicationSettingsOpen && !createOpen && !busy} />
+      <ReleaseNews open={changelogOpen} onOpenChange={setChangelogOpen} ready={dataReady && !accountOpen && !settingsOpen && !createOpen && !busy} />
       {settingsOpen && (
         <Suspense fallback={null}>
           <SettingsModal

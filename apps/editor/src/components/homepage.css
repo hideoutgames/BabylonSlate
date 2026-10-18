@@ -475,7 +475,12 @@
   padding-block: 5px;
 }
 
-/* The thumbnail: the user's picture, or the project colour with its initials. */
+.homepage-project-caption {
+  border-top: 0;
+}
+
+/* The thumbnail: the user's picture, or the project icon, framed in the
+ * project colour like Content Browser asset tiles. */
 .homepage-project-cover {
   position: relative;
   display: flex;
@@ -484,27 +489,20 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  color: var(--homepage-badge-ink);
-  background: color-mix(in oklch, var(--project-badge-color) 88%, #000);
-}
-.homepage-project-initials {
-  position: relative;
-  font-size: 44px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.03em;
-  opacity: 0.88;
-  transition: transform 260ms var(--launcher-ease);
-}
-.homepage-gallery[data-layout="small"] .homepage-project-initials {
-  font-size: 32px;
+  border: 2px solid var(--project-badge-color);
+  border-radius: calc(var(--radius-lg) + 1px) calc(var(--radius-lg) + 1px) 0 0;
+  color: var(--project-badge-color);
+  background: oklch(0.17 0.004 75);
 }
 .homepage-project-cover > svg {
   position: relative;
+  width: 40px;
+  height: 40px;
+  transition: transform 260ms var(--launcher-ease);
+}
+.homepage-gallery[data-layout="small"] .homepage-project-cover > svg {
   width: 32px;
   height: 32px;
-  stroke-width: 1.4;
-  transition: transform 260ms var(--launcher-ease), color 160ms ease;
 }
 .homepage-project-cover > img {
   position: absolute;
@@ -632,13 +630,10 @@
   width: 28px;
   height: 28px;
   overflow: hidden;
+  border: 2px solid var(--project-badge-color);
   border-radius: var(--radius-md);
-  color: var(--homepage-badge-ink);
-  background: color-mix(in oklch, var(--project-badge-color) 88%, #000);
-}
-.homepage-project-badge .homepage-project-initials {
-  font-size: 11px;
-  letter-spacing: 0;
+  color: var(--project-badge-color);
+  background: oklch(0.17 0.004 75);
 }
 .homepage-project-badge svg {
   width: 15px;
@@ -685,8 +680,8 @@
   }
   .homepage-project-card:not([data-touch-input="true"]):hover
     .homepage-project-cover
-    > :is(svg, .homepage-project-initials) {
-    transform: scale(1.06);
+    > svg {
+    transform: scale(1.08);
   }
   .homepage-project-card:not([data-touch-input="true"]):hover
     .homepage-project-cover
@@ -815,8 +810,12 @@
     var(--homepage-visible-top, 0px) + var(--homepage-visible-height, 100dvh) /
       2
   );
-  width: min(920px, calc(100vw - 32px));
-  height: min(600px, calc(var(--homepage-visible-height, 100dvh) * 0.88));
+  /* Scales with the screen like the other large dialogs. */
+  width: min(calc(100vw - 32px), max(56rem, 82vw));
+  height: min(
+    calc(var(--homepage-visible-height, 100dvh) - 32px),
+    max(36rem, calc(var(--homepage-visible-height, 100dvh) * 0.84))
+  );
   max-width: none;
   max-height: calc(var(--homepage-visible-height, 100dvh) - 32px);
   background: var(--popover);
@@ -930,9 +929,7 @@
   gap: 12px;
   padding: 4px 14px 14px;
 }
-.homepage-composer[data-step="details"] {
-  height: min(460px, calc(var(--homepage-visible-height, 100dvh) * 0.88));
-}
+
 .homepage-composer-layout {
   display: flex;
   flex: 1;
@@ -961,7 +958,7 @@
   transition: background 200ms ease;
 }
 .homepage-composer-preview-card {
-  width: min(100%, 280px);
+  width: min(100%, 360px);
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1050,6 +1047,24 @@
   width: 11px;
   height: 11px;
 }
+.homepage-composer-icon-grid {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.homepage-icon-choice {
+  color: var(--project-badge-color);
+}
+.homepage-icon-choice:hover {
+  background: var(--accent);
+  color: var(--project-badge-color);
+}
+.homepage-icon-choice[aria-pressed="true"] {
+  background: var(--accent);
+  outline: 2px solid var(--foreground);
+  outline-offset: -2px;
+}
 .homepage-composer-upload {
   display: flex;
   gap: 4px;
@@ -1110,9 +1125,61 @@
 }
 
 /* ------------------------------------------------- Profile and account */
-.catalog-dialog.homepage-application-settings {
-  width: min(720px, calc(100vw - 32px));
-  height: min(460px, calc(100dvh - 32px));
+/* Account dialog: identity with sign-in actions, plans and app preferences. */
+.homepage-account-center-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+.homepage-account-center-avatar {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+svg.homepage-account-center-avatar {
+  padding: 9px;
+  background: var(--accent);
+  color: var(--muted-foreground);
+  stroke-width: 1.5;
+}
+.homepage-account-center-text {
+  flex: 1;
+  min-width: 0;
+}
+.homepage-account-center-text h3 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.homepage-account-center-text p {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.homepage-account-center-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.homepage-account-center-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.homepage-account-center-section > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.homepage-account-center-section h3 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.homepage-account-center-section > p {
+  color: var(--muted-foreground);
+  font-size: 12px;
 }
 /* The frame sizes the dialog; its default 16px body padding and gap scroll. */
 .homepage-profile {
@@ -1213,6 +1280,12 @@
   align-items: center;
   gap: 10px;
   padding: 6px;
+}
+.homepage-profile-menu [role="menuitem"].homepage-profile-menu-identity {
+  min-height: 44px;
+}
+.homepage-profile-menu .homepage-profile-menu-identity svg.homepage-profile-menu-chevron {
+  margin-left: auto;
 }
 .homepage-profile-menu-avatar {
   flex-shrink: 0;
@@ -1527,8 +1600,13 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
     flex-shrink: 0;
     padding: 0;
   }
-  .homepage-sidebar-action {
-    width: auto;
+  .homepage-sidebar-account .homepage-account {
+    height: 32px;
+    padding: 0 3px;
+  }
+  .homepage-account-text,
+  .homepage-account .homepage-account-chevron {
+    display: none;
   }
   .homepage-navigation [data-slot="toggle-group-item"] {
     flex: 1;
@@ -1695,7 +1773,7 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   min-height: var(--chrome-row, 28px);
   font-size: 12px;
 }
-.homepage-profile-menu [role="menuitem"] svg {
+.homepage-profile-menu [role="menuitem"] svg:not(.homepage-profile-menu-avatar) {
   width: 14px;
   height: 14px;
   color: var(--muted-foreground);

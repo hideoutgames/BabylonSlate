@@ -11,8 +11,6 @@ import { HomepageProfileMenu } from "./homepage-profile-menu";
 
 type Props = {
   disabled?: boolean;
-  onSubscription: () => void;
-  onApplicationSettings?: () => void;
   onEngineSettings?: () => void;
   onChangelog?: () => void;
   onOpenChange: (open: boolean) => void;

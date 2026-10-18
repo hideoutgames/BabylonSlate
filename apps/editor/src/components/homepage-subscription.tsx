@@ -1,11 +1,9 @@
 import {
-  ArrowLeftIcon,
   CheckIcon,
   MonitorIcon,
   SmartphoneIcon,
 } from "lucide-react";
 import { Badge } from "@babylonslate/ui/components/badge";
-import { Button } from "@babylonslate/ui/components/button";
 import {
   Card,
   CardContent,
@@ -13,11 +11,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@babylonslate/ui/components/card";
-import {
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@babylonslate/ui/components/dialog";
 
 const PLANS = [
   {
@@ -36,18 +29,10 @@ const PLANS = [
   },
 ] as const;
 
-export function HomepageSubscription({ onBack }: { onBack: () => void }) {
+/** Plan cards for the Account dialog's Subscription section. */
+export function SubscriptionPlans() {
   return (
     <div className="homepage-subscription" data-testid="homepage-subscription">
-      <Button variant="ghost" onClick={onBack}>
-        <ArrowLeftIcon data-icon="inline-start" />
-        Profile
-      </Button>
-      <DialogHeader>
-        <Badge variant="outline">Preview</Badge>
-        <DialogTitle>Plans</DialogTitle>
-        <DialogDescription>Full editor access on both plans.</DialogDescription>
-      </DialogHeader>
       <div className="homepage-subscription-plans">
         {PLANS.map((plan) => (
           <Card

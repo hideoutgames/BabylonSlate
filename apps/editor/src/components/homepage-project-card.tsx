@@ -118,9 +118,9 @@ export function HomepageProjectCard({
     >
       <CardContent className="homepage-project-well">
         {layout === "list" ? (
-          <ProjectIdentityBadge appearance={project.appearance} name={name} />
+          <ProjectIdentityBadge appearance={project.appearance} />
         ) : (
-          <ProjectCover appearance={project.appearance} name={name} />
+          <ProjectCover appearance={project.appearance} />
         )}
         {layout !== "list" && <ProjectBadges project={project} />}
       </CardContent>
