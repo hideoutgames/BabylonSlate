@@ -183,7 +183,7 @@ test.describe("Editor density and IA", () => {
     await page.getByRole("button", { name: "Violet", exact: true }).click();
     await page.getByTestId("homepage-rename-confirm").click();
     await expect(listed).toContainText("Renamed Game");
-    await expect(listed.locator(".homepage-project-color")).toHaveAttribute(
+    await expect(listed.locator(".homepage-project-cover")).toHaveAttribute(
       "data-color",
       "violet",
     );
@@ -202,7 +202,7 @@ test.describe("Editor density and IA", () => {
     await expect(page.locator("[data-slate-home-styles]")).toHaveCount(0);
     await closeProjectViaSettings(page);
     await expect(listed).toContainText("Renamed Game");
-    await expect(listed.locator(".homepage-project-color")).toHaveAttribute(
+    await expect(listed.locator(".homepage-project-cover")).toHaveAttribute(
       "data-color",
       "violet",
     );

@@ -281,7 +281,7 @@ test.describe("P9 content systems", () => {
         mimeType: "font/woff2",
         buffer: await readFile(path.join(
           process.cwd(),
-          "packages/ui/node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2",
+          "engine-content/fonts/Onest/Onest-Latin-Variable.woff2",
         )),
       });
     await expect(
