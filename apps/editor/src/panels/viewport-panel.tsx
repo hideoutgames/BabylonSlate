@@ -94,6 +94,7 @@ import {
   viewportPayloadRevisions,
 } from "../lib/scene-viewport-assets";
 import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
+import { prepareReferencedAreaEmissions } from "../lib/area-emission-preparation";
 import { sceneStreamingEditorScene } from "../lib/scene-streaming-editor-labels";
 import {
   MATERIAL_DOCUMENT_KINDS,
@@ -146,6 +147,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
     collectPlayAreaEmissions,
+    prepareAreaEmission,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
     collectPlayFontCssStacks,
@@ -778,6 +780,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   ]);
   const areaTextureGuids = useMemo(() => areaEmissionTextureGuids(scene), [scene]);
   const areaEmissionKey = savedAreaEmissionKey(areaTextureGuids, (guid) => assetRegistry?.getByGuid(guid));
+  // An assigned emission Texture without prepared data would leave its light off.
+  useEffect(() => {
+    if (assetRegistry) prepareReferencedAreaEmissions(areaTextureGuids, (guid) => assetRegistry.getByGuid(guid), (guid) => prepareAreaEmission(guid));
+  }, [areaTextureGuids, areaEmissionKey, assetRegistry, prepareAreaEmission]);
   // How each Texture is stored. An encode commit changes this and not `viewportAssetsKey`.
   const textureEncodings = useMemo(() => {
     void registryEpoch;

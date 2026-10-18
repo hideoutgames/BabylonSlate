@@ -118,6 +118,8 @@ export type ComponentPropertyContext = {
   onPickActor?: (componentId: string) => void;
   sceneLayerClasses?: readonly ClassPickerEntry[];
   focusTargets?: readonly { value: string; label: string }[];
+  /** Why an assigned emission Texture cannot light its emitter yet. */
+  areaEmissionStatus?: (guid: string) => string | undefined;
 };
 
 function rowId(actorId: string, componentId: string, key: string): string {
@@ -1672,7 +1674,8 @@ export function componentPropertyRows(
         ...(["width", "height"] as const).map((key): PropertyRow => ({ kind: "number", id: rowId(actorId, component.id, key), label: key === "width" ? "Width" : "Height", value: properties[key], min: 0.0001, description: "Local units. Actor and parent scale apply once. Sheared transforms are unsupported.", onChange: (next) => update(key, next) })),
         { kind: "color", id: rowId(actorId, component.id, "color"), label: "Color", value: properties.color, onChange: (next) => update("color", next) },
         { kind: "number", id: rowId(actorId, component.id, "intensity"), label: "Intensity", value: properties.intensity, min: 0, onChange: (next) => update("intensity", next) },
-        assetRow(actorId, component, "textureGuid", "Emission Texture", ["Texture"], update, context, "Choose Emission Texture", "Uniform Emission"),
+        { ...assetRow(actorId, component, "textureGuid", "Emission Texture", ["Texture"], update, context, "Choose Emission Texture", "Uniform Emission"),
+          description: properties.textureGuid ? context.areaEmissionStatus?.(properties.textureGuid) : undefined },
       ];
     }
     case "CameraComponent": {

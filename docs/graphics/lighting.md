@@ -37,7 +37,7 @@ Only one directional light lights a scene at a time: the first enabled one in th
 | **Range** | Point and spot only. Default 10. |
 | **Inner Angle**, **Outer Angle** | Spot only, in degrees. Defaults 30 and 45. |
 
-For a textured **Rectangular Area Light**, open a Texture asset, choose **Prepare Emission**, then pick it in **Emission Texture**.
+For a textured **Rectangular Area Light**, pick a Texture in **Emission Texture**. The editor prepares its emission data automatically; the light stays off until it is ready.
 
 ## Light icons
 

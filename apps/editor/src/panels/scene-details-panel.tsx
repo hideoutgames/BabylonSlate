@@ -14,6 +14,7 @@ import { RenderTargetCaptureActorsField } from "../components/render-target-capt
 import { RichTextAppearModesField } from "../components/rich-text-appear-modes-field";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
+import { useAreaEmissionStatus } from "../lib/use-area-emission-status";
 import { CelShadingFields } from "../components/cel-shading-fields";
 
 import {
@@ -226,6 +227,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   const { applySceneChange } = useDocumentActions();
   const { projectDocument } = useProjectState();
   const { assetRegistry, registryEpoch } = useRegistryState();
+  const areaEmissionStatus = useAreaEmissionStatus();
   // Open Model tabs' unsaved material slots win over saved headers.
   const modelDocuments = useOpenDocumentsOfKinds(MODEL_KINDS);
   const { selectedActorIds, setSelectedActorIds, shapeEditTarget, setShapeEditTarget } = useSceneEditing();
@@ -1312,6 +1314,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
             fontHasMsdfPng,
             physicsWorld: scene.settings.physicsWorld,
             onPickAsset: setAssetPick,
+            areaEmissionStatus,
             actorLabel: (targetId) => actorDisplayNames.get(targetId),
             actorComponents: (targetId) => scene.actors.find((candidate) => candidate.id === targetId)?.components ?? [],
             actorVariableNames: () => saveGameVariableNames(actor.classId, classSaveGraphs, parentOf),

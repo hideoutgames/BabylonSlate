@@ -24,7 +24,7 @@ Double-tap the asset to open it. The window has **Preview** and an **Inspector**
 
 **Compression** shows a state: **Not Compressed**, **Queued**, **Encoding**, **Compressed** or **Failed**. Albedo, Normal and Particle Textures are compressed in the background. The other usages stay uncompressed so their pixels are exact. If encoding fails, the Inspector shows the error and **Retry Encoding**.
 
-**Area Light Emission** prepares the Texture for a textured [Rectangular Area Light](../components/area-rect-light.md). Choose **Prepare Emission**; **Cancel** stops it. Prepared data is saved with the asset and included in game exports.
+**Area Light Emission** prepares the Texture for a textured [Rectangular Area Light](../components/area-rect-light.md). Picking the Texture as a light's **Emission Texture** prepares it automatically (the state shows **Preparing**), or choose **Prepare Emission**; **Cancel** stops a preparation you started here. Prepared data is saved with the asset and included in game exports.
 
 A cube Texture has no editable settings. Its Inspector shows the cube's container, encoding, face size and roughness mip levels. Pick it in **Environment Texture** under **Environment Lighting** in the scene's settings.
 
