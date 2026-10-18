@@ -17,7 +17,11 @@ export interface ComponentShapeEdit {
   componentId: string;
   properties: Record<string, unknown>;
 }
-export interface ShapeHandleTarget extends ComponentShapeEdit { meshName: string }
+export interface ShapeHandleTarget extends ComponentShapeEdit {
+  meshName: string;
+  /** Resolves the component-space mesh when its name is not unique in the Scene. */
+  resolveMesh?: () => Mesh | null;
+}
 export interface ShapeHandlesOptions {
   scheduler?: Pick<RenderScheduler, "invalidate" | "acquireContinuous">;
   handleScale?: number;
@@ -42,7 +46,8 @@ export interface ShapeHandlesHost<Target extends ShapeHandleTarget> {
 export interface ShapeHandlesAdapter<Body extends object, Handle extends ShapeHandle, Target extends ShapeHandleTarget> {
   name: string;
   parse: (properties: unknown, target: Target) => Body;
-  read: (mesh: Mesh) => Body | null;
+  /** The mesh's current body, or null to keep `current`. */
+  read: (mesh: Mesh, current: Body) => Body | null;
   update: (mesh: Mesh, body: Body) => void;
   handles: (body: Body) => Handle[];
   outline: (body: Body) => ShapePoint[][];
@@ -57,7 +62,7 @@ export interface ShapeHandlesAdapter<Body extends object, Handle extends ShapeHa
 
 const OUTLINE_COLOR = new Color3(0.42, 0.78, 1);
 
-/** Shared water/spline handle lifecycle. Preview edits stay local until one release commit. */
+/** Shared water/spline/deformer handle lifecycle. Preview edits stay local until one release commit. */
 export function createShapeHandles<Body extends object, Handle extends ShapeHandle, Target extends ShapeHandleTarget>(
   layer: UtilityLayerRenderer, scene: Scene,
   adapter: ShapeHandlesAdapter<Body, Handle, Target>, options: ShapeHandlesOptions = {},
@@ -83,7 +88,7 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
   let release: (() => void) | null = null;
   const lastTap = { id: "", time: -Infinity };
   const sourceMesh = (): Mesh | null => {
-    const mesh = target ? scene.getMeshByName(target.meshName) : null;
+    const mesh = !target ? null : target.resolveMesh ? target.resolveMesh() : scene.getMeshByName(target.meshName);
     return mesh instanceof Mesh && !mesh.isDisposed() ? mesh : null;
   };
   const clear = () => {
@@ -216,7 +221,7 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
       for (const mesh of meshes.values()) mesh.setEnabled(false);
       outline?.setEnabled(false); return;
     }
-    if (!drag) body = adapter.read(source) ?? body;
+    if (!drag && body) body = adapter.read(source, body) ?? body;
     if (!body) return;
     if (body !== handlesBody) {
       handles = adapter.handles(body);

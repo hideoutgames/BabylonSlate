@@ -536,7 +536,8 @@ export function previewSceneFor(
           components: component.classId === "DeformerComponent" ? [] : [previewVisualComponent(components, component),
             ...(deformersByTarget.has(component.id) ? [{
               id: deformersByTarget.get(component.id)!.id, classId: "DeformerComponent",
-              properties: { ...deformersByTarget.get(component.id)! },
+              // The binding's own id is not a property; shape edits commit these back to the component.
+              properties: Object.fromEntries(Object.entries(deformersByTarget.get(component.id)!).filter(([key]) => key !== "id")),
             }] : []),
           ],
         }),
