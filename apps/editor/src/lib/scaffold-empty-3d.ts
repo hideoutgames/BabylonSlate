@@ -38,9 +38,12 @@ export const MANNEQUIN_ACTOR_ID = "actor-1";
 /** The model faces +Z; turn it toward the default Camera on the -Z side. */
 export const MANNEQUIN_ROTATION: QuaternionTuple = [0, 1, 0, 0];
 
-/** Kenney Mannequin is about 1.6m tall; origin is at the feet. */
+/**
+ * Kenney Mannequin is 2.7 units tall at Import Scale 1 (rest pose, origin at the feet), and its
+ * torso and head are 0.8 wide. The capsule spans exactly its height: 2 * (radius + halfHeight).
+ */
 export const MANNEQUIN_CAPSULE_RADIUS = 0.5;
-export const MANNEQUIN_CAPSULE_HALF_HEIGHT = 1;
+export const MANNEQUIN_CAPSULE_HALF_HEIGHT = 0.85;
 
 /** Mannequin Class prefab row ids; `actor-1`'s rows link to them by `sourceId`. */
 const PREFAB_ID_PREFIX = "prefab-";

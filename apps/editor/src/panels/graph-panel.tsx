@@ -45,7 +45,12 @@ import {
 import { classIdForGraphPath } from "../services/script-compiler";
 import { sceneAssetClassId } from "@babylonslate/object-model";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
-import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
+import {
+  MODEL_DOCUMENT_KINDS,
+  modelSimpleColliderCounter,
+  physicsPairingDiagnostics,
+} from "../lib/physics-pairing-diagnostics";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import {
   commitLogicGraph,
@@ -99,6 +104,7 @@ export function GraphPanel(
   );
 
   const doc = useOpenDocument(documentId);
+  const modelDocuments = useOpenDocumentsOfKinds(MODEL_DOCUMENT_KINDS);
   const indexed = useMemo(() => {
     void registryEpoch;
     return (assetRegistry?.list() ?? []).find(
@@ -305,7 +311,11 @@ export function GraphPanel(
               components: graphContent?.components ?? [],
             },
           ],
-          { assetGuid, graphId: documentId },
+          {
+            assetGuid,
+            graphId: documentId,
+            modelSimpleColliderCount: modelSimpleColliderCounter(assetRegistry, modelDocuments),
+          },
         ),
       ]);
     }, VALIDATION_DEBOUNCE_MS);
@@ -314,6 +324,9 @@ export function GraphPanel(
     activeDocumentId,
     activeFunctionId,
     assetGuid,
+    assetRegistry,
+    registryEpoch,
+    modelDocuments,
     classId,
     doc?.ref.kind,
     documentId,
