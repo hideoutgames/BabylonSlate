@@ -802,6 +802,7 @@ describe("SettingsModal project authoring", () => {
 
   it("turns Source Control on at once when a Repository URL is already set", () => {
     projectSourceControl.current = { repositoryUrl: "https://example.com/team.git" };
+    sourceControl.readGitPrefill.mockClear();
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
     fireEvent.click(screen.getByTestId("settings-source-control-enabled"));
