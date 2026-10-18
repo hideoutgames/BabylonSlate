@@ -8,12 +8,12 @@ Haptic has two kinds of settings: **Engine Settings** belong to the app on this 
 | --- | --- | --- |
 | Applies to | Every project on this device | This project only, on every device |
 | Saved | Immediately | With the project, when you choose **Save All** or auto-save runs |
-| Examples | Theme, shortcuts, Undo limits, viewport camera speed | Startup scene, rendering, collision layers, export options |
+| Examples | Shortcuts, Undo limits, viewport camera speed | Startup scene, rendering, collision layers, export options |
 
 ## Open settings
 
 - In the editor, choose **Settings > Project Settings** (<kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>,</kbd>) or **Settings > Engine Settings** (<kbd>Mod</kbd>+<kbd>,</kbd>).
-- On the Homepage, choose **Engine Settings**.
+- On the Homepage, open the account menu at the bottom of the sidebar and choose **Engine Settings**.
 
 Use **Search settings** in either window to find a setting by name. Choosing a result opens its page at that setting.
 

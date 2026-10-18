@@ -4,9 +4,11 @@ Launcher routing, optional and required sign-in, the temporary demo account, and
 
 ## Launcher
 
-- `App` retains settings, theme, and the project/document owner. `AppRoutes` loads mutually exclusive Home and Editor route modules. Play, validation, search, utility execution, and renderer hosts mount only with the Editor route.
+- `App` retains settings and the project/document owner. `AppRoutes` loads mutually exclusive Home and Editor route modules. Play, validation, search, utility execution, and renderer hosts mount only with the Editor route.
 - Haptic is dark only; there is no theme setting or toggle.
 - The launcher is a sidebar (wordmark, Projects and Templates, account row) beside the library. Project cards show the chosen icon framed in the project colour, or the uploaded picture when `appearance.cover` is not `icon`; the caption shows a compact age (`31m ago`) and the Local and Source Control status.
+- An empty library shows **Start Your First Project** with flat Basic 3D, Basic 2D and Blank tiles (`homepage-welcome.tsx`). Those tiles and the Templates cards open New Project at the naming step with that template chosen. The editor's first chrome tab shows the open project's icon or picture in its colour (`ProjectIdentityMark`).
+- Loading is one flat splash card (wordmark, amber-to-red progress line, status and build label). The boot copy in `apps/editor/index.html` and `LauncherTransitionProvider` (`launcher-transition.css`) must stay identical; the boot page has no CSS reset, so the card sets `box-sizing` itself.
 - The project browser owns its dialogs, account UI, styles, and animation lifecycle. Opening a project unmounts that entire surface, including its inline stylesheet. Returning to the browser creates fresh menu state; project state stays with `DocumentProvider`. JavaScript modules may remain in the browser's import cache.
 - Opening, reconnecting, recovery, updates, and removal show operation status and keep launcher actions disabled until the operation settles. Web project options explain browser-local storage and Export Project backups.
 
@@ -21,7 +23,7 @@ Launcher routing, optional and required sign-in, the temporary demo account, and
 
 - RevenueCat runs every subscription so entitlements stay unified: Web Billing (`@revenuecat/purchases-js`, loaded only when configured) on web and Electron, and `@revenuecat/purchases-capacitor` for the App Store and Google Play. Both sit behind the `PurchasesPort` in `@babylonslate/vfs` (`createPurchases`). Clerk handles sign-in only.
 - [`subscription-billing.ts`](../../../apps/editor/src/services/subscription-billing.ts) picks `VITE_REVENUECAT_WEB_API_KEY`, `VITE_REVENUECAT_IOS_API_KEY` or `VITE_REVENUECAT_ANDROID_API_KEY` for the host and uses the Clerk user id as the RevenueCat app user id, so one Haptic Pro subscription covers every device. Signing in is required to subscribe. It buys the current offering's first package, checks the `VITE_REVENUECAT_PRO_ENTITLEMENT` entitlement (default `pro`), opens the customer's management URL for Manage Billing, and offers Restore Purchases in the mobile apps.
-- Electron hands HTTPS and mailto links to the system browser or mail client (`externalOpenUrl`) and lets subframes load only the bundled Preview player or Web Billing checkout from RevenueCat and Stripe over HTTPS (`isBillingFrameUrl` in `apps/desktop/src/packaged-security.ts`). Desktop checkout and RevenueCat API access from the `app://` origin still need validation with real keys.
+- Electron hands only haptic.no, Web Billing (RevenueCat and Stripe) HTTPS links and mailto to the system browser or mail client (`externalOpenUrl`), so Preview scripts cannot open arbitrary sites, and lets subframes load only the bundled Preview player or Web Billing checkout from RevenueCat and Stripe over HTTPS (`isBillingFrameUrl` in `apps/desktop/src/packaged-security.ts`). Desktop checkout and RevenueCat API access from the `app://` origin still need validation with real keys.
 - Without keys, purchase and management actions stay disabled and the Subscription page says subscriptions are not set up for the build.
 
 ## Clerk configuration

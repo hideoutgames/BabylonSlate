@@ -58,11 +58,20 @@ export function isBillingFrameUrl(rawUrl: string): boolean {
   }
 }
 
-/** Links the editor hands to the system browser or mail client: HTTPS and mailto only. */
+/** Haptic's site, for pricing and plan details. */
+const HAPTIC_SITE_HOST = /(^|\.)haptic\.no$/;
+
+/**
+ * Links the editor hands to the system browser or mail client: Haptic's site
+ * and Web Billing pages over HTTPS, and mailto. Anything else stays denied, so
+ * project scripts in the Preview frame cannot open arbitrary sites.
+ */
 export function externalOpenUrl(rawUrl: string): string | null {
   try {
     const url = new URL(rawUrl);
-    return url.protocol === "https:" || url.protocol === "mailto:" ? url.href : null;
+    if (url.protocol === "mailto:") return url.href;
+    if (url.protocol !== "https:" || url.username || url.password) return null;
+    return HAPTIC_SITE_HOST.test(url.hostname) || isBillingFrameUrl(url.href) ? url.href : null;
   } catch {
     return null;
   }
