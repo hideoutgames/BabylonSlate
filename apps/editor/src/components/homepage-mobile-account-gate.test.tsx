@@ -75,7 +75,10 @@ function mobileHome(gateKey = 0) {
 // A Base UI menu trigger mounted outside act ignores clicks until React's passive
 // effects hand it the menu's open handler; it reports aria-expanded from then on.
 function findProfileTrigger() {
-  return screen.findByRole("button", { name: "Profile", expanded: false });
+  return screen.findByRole("button", {
+    name: `${session.name}, ${session.email}`,
+    expanded: false,
+  });
 }
 
 function renderMobile(host = "ios", publishableKey = "pk_test_example") {
@@ -92,7 +95,11 @@ describe("native mobile account requirement", () => {
       expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
       fireEvent.click(screen.getByRole("button", { name: "Use Temporary Demo Account" }));
       expect(screen.getByRole("button", { name: "Create Project" })).toBeTruthy();
-      fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "Temporary Demo, Local Testing Only · Not Signed In",
+        }),
+      );
       expect(within(await screen.findByRole("menu")).getByText("Temporary Demo")).toBeTruthy();
       expect(screen.getByText("Local Testing Only · Not Signed In")).toBeTruthy();
       fireEvent.click(screen.getByRole("menuitem", { name: "End Demo" }));
@@ -124,7 +131,7 @@ describe("native mobile account requirement", () => {
     await waitFor(() => expect(auth.restoreSession).toHaveBeenCalledOnce());
     fireEvent.click(screen.getByRole("button", { name: "Use Temporary Demo Account" }));
     await act(async () => finishRestore(session));
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(screen.getByTestId("homepage-account"));
     expect(within(await screen.findByRole("menu")).getByText("Temporary Demo")).toBeTruthy();
     expect(screen.queryByText("Ada Lovelace")).toBeNull();
     fireEvent.click(screen.getByRole("menuitem", { name: "End Demo" }));
