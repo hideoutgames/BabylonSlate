@@ -45,6 +45,12 @@ export interface CatalogMenuProps<T extends CatalogMenuItem> {
   presentation?: "popup" | "modal";
   /** Defaults to a title / category / description substring match. */
   filterItems?: (items: readonly T[], query: string) => T[];
+  /**
+   * Treat the order `filterItems` returns as relevance while a query is typed:
+   * categories list in the order of their best match (not A–Z) and the row
+   * Enter adds is highlighted. Without a query the A–Z tree is unchanged.
+   */
+  rankedSearch?: boolean;
   /** Keep the given order as one flat list instead of a category tree. */
   flat?: boolean;
   /** Visible category label; defaults to `humanizePropertyLabel` for camelCase ids. */
@@ -133,6 +139,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
   anchor,
   presentation = "popup",
   filterItems,
+  rankedSearch = false,
   flat = false,
   formatCategory = humanizePropertyLabel,
   trailingCategories,
@@ -194,6 +201,8 @@ export function CatalogMenu<T extends CatalogMenuItem>({
       .sort((a, b) => compareCategories(a.category, b.category));
   }, [compareCategories, filtered, items, sidebar]);
 
+  const ranked = rankedSearch && search.trim() !== "";
+
   const rows = useMemo((): MenuRow<T>[] => {
     if (flat) {
       return filtered.map((item) => ({ kind: "item", key: item.id, item, nested: false }));
@@ -209,7 +218,10 @@ export function CatalogMenu<T extends CatalogMenuItem>({
       list.push(item);
       groups.set(item.category, list);
     }
-    const sorted = [...groups.entries()].sort(([a], [b]) => compareCategories(a, b));
+    // Groups are created in the order their best match appears in `filtered`.
+    const sorted = ranked
+      ? [...groups.entries()]
+      : [...groups.entries()].sort(([a], [b]) => compareCategories(a, b));
     const result: MenuRow<T>[] = [];
     for (const [category, grouped] of sorted) {
       const expanded = !collapsed.has(category);
@@ -226,7 +238,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
       }
     }
     return result;
-  }, [collapsed, compareCategories, filtered, flat, sidebar, sidebarCategory]);
+  }, [collapsed, compareCategories, filtered, flat, ranked, sidebar, sidebarCategory]);
 
   const stripedRows = useMemo(() => {
     const striped = new Set<number>();
@@ -244,6 +256,9 @@ export function CatalogMenu<T extends CatalogMenuItem>({
 
   const activeIndex = rows.findIndex((row) => row.key === activeKey);
   const firstItemIndex = rows.findIndex((row) => row.kind === "item");
+  // Enter adds the first item row; a ranked search highlights it up front.
+  const enterIndex = ranked ? firstItemIndex : -1;
+  const highlightIndex = activeIndex >= 0 ? activeIndex : enterIndex;
 
   const close = () => onOpenChange(false);
   const commit = (item: T) => {
@@ -266,13 +281,14 @@ export function CatalogMenu<T extends CatalogMenuItem>({
   const onSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.nativeEvent.isComposing || rows.length === 0) return;
     const active = activeIndex >= 0 ? rows[activeIndex]! : null;
+    const from = highlightIndex;
     let next: number;
     switch (event.key) {
       case "ArrowDown":
-        next = Math.min(rows.length - 1, activeIndex + 1);
+        next = Math.min(rows.length - 1, from + 1);
         break;
       case "ArrowUp":
-        next = activeIndex < 0 ? rows.length - 1 : Math.max(0, activeIndex - 1);
+        next = from < 0 ? rows.length - 1 : Math.max(0, from - 1);
         break;
       case "Home":
         if (activeIndex < 0) return;
@@ -312,7 +328,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
   };
 
   const frame = modal ? null : popupMenuFrame(anchor);
-  const activeDescendant = activeIndex >= 0 ? rowId(listId, rows[activeIndex]!.key) : undefined;
+  const activeDescendant = highlightIndex >= 0 ? rowId(listId, rows[highlightIndex]!.key) : undefined;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -419,11 +435,11 @@ export function CatalogMenu<T extends CatalogMenuItem>({
                 key={`${search}:${listKey}:${sidebarCategory ?? ""}`}
                 itemCount={rows.length}
                 rowHeight={rowHeight}
-                activeIndex={activeIndex}
+                activeIndex={highlightIndex}
               >
                 {(index) => {
                   const row = rows[index]!;
-                  const active = row.key === activeKey;
+                  const active = index === highlightIndex;
                   const stripe = modal && stripedRows.has(index) ? "true" : undefined;
                   if (row.kind === "category") {
                     return (

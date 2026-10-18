@@ -337,6 +337,12 @@
   border-color: var(--foreground);
 }
 
+/* Inline pin-colored strokes beat XYFlow's .selected rule, so a selected wire needs its own. */
+.graph-editor-canvas .react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--graph-state-selected) !important;
+  stroke-width: calc(var(--graph-edge-exec) + 1px) !important;
+}
+
 /* GraphEditor paints exec-width inline strokes; tree and state wires stay thin and neutral. */
 :is(.bt-graph-canvas, .anim-graph-canvas) {
   --graph-link: color-mix(in oklch, var(--muted-foreground) 70%, var(--graph-canvas));
