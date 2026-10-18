@@ -1,9 +1,9 @@
-import { expect, test } from "@playwright/test";
 import { WEBKIT_SMOKE_TAG } from "./ipad-tag";
 import { createContentBrowserAsset, openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay, waitForPlayOverlay } from "./play";
 import { previewPhysicsScene } from "./preview-scene-fixture";
 import { expectSpheresRollDownhill, setPreviewScene } from "./preview-parity";
+import { expect, test } from "./profile-context";
 import { unsavedPlayDialog } from "./unsaved-play";
 
 test.describe("P4 Play overlay and session report", () => {
