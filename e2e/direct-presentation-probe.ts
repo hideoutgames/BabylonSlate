@@ -166,13 +166,15 @@ export async function directViewportStaysNonBlank(page: Page, backend: Backend) 
   const probe = await startFrameProbe(page, backend);
 
   // A render mode change rebuilds the FrameGraph asynchronously; its frames are held.
+  // A software adapter on a loaded host can take seconds per frame.
+  const frames = { timeout: 30_000 };
   const before = (await presentation(page))!;
   await page.evaluate(() => (
     globalThis as unknown as { __babylonslateViewportTest: { setRenderSettings: (settings: { mode: "cel" }) => void } }
   ).__babylonslateViewportTest.setRenderSettings({ mode: "cel" }));
-  await expect.poll(async () => (await presentation(page))!.held).toBeGreaterThan(before.held);
+  await expect.poll(async () => (await presentation(page))!.held, frames).toBeGreaterThan(before.held);
   const afterHeld = (await presentation(page))!;
-  await expect.poll(async () => (await presentation(page))!.drawn).toBeGreaterThan(afterHeld.drawn);
+  await expect.poll(async () => (await presentation(page))!.drawn, frames).toBeGreaterThan(afterHeld.drawn);
 
   const viewport = page.viewportSize()!;
   const canvas = page.getByTestId("viewport-canvas");
@@ -180,7 +182,7 @@ export async function directViewportStaysNonBlank(page: Page, backend: Backend) 
   await page.setViewportSize({ width: viewport.width - 240, height: viewport.height - 120 });
   await expect.poll(async () => (await canvas.boundingBox())!.width).toBeLessThan(width - 100);
   const afterResize = (await presentation(page))!;
-  await expect.poll(async () => (await presentation(page))!.drawn).toBeGreaterThan(afterResize.drawn + 5);
+  await expect.poll(async () => (await presentation(page))!.drawn, frames).toBeGreaterThan(afterResize.drawn + 5);
   expect((await presentation(page))!.direct).toBe(true);
 
   const samples = await probe.stop();
