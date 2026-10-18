@@ -1,13 +1,12 @@
-﻿import { useState } from "react";
+﻿import { useEffect, useState } from "react";
 import {
-  AppWindowIcon,
   NewspaperIcon,
+  ChevronRightIcon,
+  ChevronsUpDownIcon,
   CircleUserRoundIcon,
-  CreditCardIcon,
   LogInIcon,
   LogOutIcon,
   Settings2Icon,
-  UserRoundCogIcon,
 } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -15,10 +14,15 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuGroup,
-  DropdownMenuLabel,
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@babylonslate/ui/components/dropdown-menu";
+import { HomepageAccountCenter } from "./homepage-account-center";
+import {
+  unconfiguredBilling,
+  type AccountDetails,
+  type BillingController,
+} from "./homepage-account-types";
 
 function ProfileAvatar({
   imageUrl,
@@ -46,12 +50,13 @@ export function HomepageProfileMenu({
   email,
   description,
   imageUrl,
+  details,
+  billing,
   onSignIn,
+  onSignUp,
   onSignOut,
   signOutLabel = "Sign Out",
   onManageAccount,
-  onSubscription,
-  onApplicationSettings,
   onEngineSettings,
   onChangelog,
   onOpenChange,
@@ -61,141 +66,150 @@ export function HomepageProfileMenu({
   email?: string;
   description?: string;
   imageUrl?: string;
+  /** Extra account facts for the Account dialog. */
+  details?: Pick<AccountDetails, "memberSince" | "lastSignInAt" | "signInMethods">;
+  billing?: BillingController;
   onSignIn?: () => void;
+  onSignUp?: () => void;
   onSignOut?: () => Promise<void>;
   signOutLabel?: string;
   onManageAccount?: () => void;
-  onSubscription: () => void;
-  onApplicationSettings?: () => void;
   onEngineSettings?: () => void;
   onChangelog?: () => void;
   onOpenChange?: (open: boolean) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const signedIn = Boolean(onSignOut);
+  const status =
+    description ?? email ?? (signedIn ? "Signed In" : "Not Signed In");
+  useEffect(() => {
+    onOpenChange?.(menuOpen || accountOpen);
+  }, [menuOpen, accountOpen, onOpenChange]);
+  const signOut = onSignOut
+    ? () => {
+        setBusy(true);
+        setError(null);
+        void onSignOut()
+          .catch((cause: unknown) =>
+            setError(
+              cause instanceof Error ? cause.message : "Could not sign out.",
+            ),
+          )
+          .finally(() => setBusy(false));
+      }
+    : undefined;
   return (
-    <DropdownMenu onOpenChange={onOpenChange}>
-      <DropdownMenuTrigger
-        disabled={disabled || busy}
-        render={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="homepage-account"
-            aria-label="Profile"
-            data-testid="homepage-account"
-          />
-        }
-      >
-        <ProfileAvatar
-          imageUrl={imageUrl}
-          className="homepage-profile-avatar"
-        />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        sideOffset={6}
-        className="homepage-theme homepage-profile-menu"
-        data-testid="homepage-profile-menu"
-      >
-        <DropdownMenuGroup>
-          <DropdownMenuLabel className="homepage-profile-menu-identity">
-            <ProfileAvatar
-              imageUrl={imageUrl}
-              className="homepage-profile-menu-avatar"
+    <>
+      <DropdownMenu onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger
+          disabled={disabled || busy}
+          render={
+            <Button
+              variant="ghost"
+              size="sm"
+              className="homepage-account"
+              aria-label="Profile"
+              data-testid="homepage-account"
             />
-            <span className="homepage-profile-menu-text">
-              <span className="homepage-profile-menu-name">{name}</span>
-              <span className="homepage-profile-menu-email">
-                {description ?? email ?? (signedIn ? "Signed In" : "Not Signed In")}
+          }
+        >
+          <ProfileAvatar
+            imageUrl={imageUrl}
+            className="homepage-profile-avatar"
+          />
+          <span className="homepage-account-text">
+            <span className="homepage-account-name">{name}</span>
+            <span className="homepage-account-status">{status}</span>
+          </span>
+          <ChevronsUpDownIcon className="homepage-account-chevron" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          side="top"
+          sideOffset={6}
+          className="homepage-theme homepage-profile-menu"
+          data-testid="homepage-profile-menu"
+        >
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              className="homepage-profile-menu-identity"
+              data-testid="homepage-account-open"
+              onClick={() => setAccountOpen(true)}
+            >
+              <ProfileAvatar
+                imageUrl={imageUrl}
+                className="homepage-profile-menu-avatar"
+              />
+              <span className="homepage-profile-menu-text">
+                <span className="homepage-profile-menu-name">{name}</span>
+                <span className="homepage-profile-menu-email">Manage Account</span>
               </span>
-            </span>
-          </DropdownMenuLabel>
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          {onManageAccount && (
-            <DropdownMenuItem onClick={onManageAccount}>
-              <UserRoundCogIcon />
-              Account Settings
+              <ChevronRightIcon className="homepage-profile-menu-chevron" />
             </DropdownMenuItem>
+          </DropdownMenuGroup>
+          {(onEngineSettings || onChangelog) && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                {onEngineSettings && (
+                  <DropdownMenuItem
+                    data-testid="engine-settings"
+                    onClick={onEngineSettings}
+                  >
+                    <Settings2Icon />
+                    Engine Settings
+                  </DropdownMenuItem>
+                )}
+                {onChangelog && (
+                  <DropdownMenuItem onClick={onChangelog}>
+                    <NewspaperIcon />
+                    Changelog
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuGroup>
+            </>
           )}
-          <DropdownMenuItem onClick={onSubscription}>
-            <CreditCardIcon />
-            Manage Subscription
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
-        {(onApplicationSettings || onEngineSettings) && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              {onApplicationSettings && (
-                <DropdownMenuItem onClick={onApplicationSettings}>
-                  <AppWindowIcon />
-                  Application Settings
-                </DropdownMenuItem>
-              )}
-              {onEngineSettings && (
-                <DropdownMenuItem onClick={onEngineSettings}>
-                  <Settings2Icon />
-                  Engine Settings
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuGroup>
-          </>
-        )}
-        {onChangelog && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem onClick={onChangelog}>
-                <NewspaperIcon />
-                Changelog
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </>
-        )}
-        {(onSignIn || onSignOut) && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              {onSignIn && (
-                <DropdownMenuItem onClick={onSignIn}>
-                  <LogInIcon />
-                  Sign In
-                </DropdownMenuItem>
-              )}
-              {onSignOut && (
-                <DropdownMenuItem
-                  disabled={busy}
-                  onClick={() => {
-                    setBusy(true);
-                    setError(null);
-                    void onSignOut()
-                      .catch((cause: unknown) =>
-                        setError(
-                          cause instanceof Error
-                            ? cause.message
-                            : "Could not sign out.",
-                        ),
-                      )
-                      .finally(() => setBusy(false));
-                  }}
-                >
-                  <LogOutIcon />
-                  {signOutLabel}
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuGroup>
-          </>
-        )}
-        {error && (
-          <p role="alert" className="p-2 text-xs text-destructive">
-            {error}
-          </p>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+          {(onSignIn || onSignOut) && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                {onSignIn && (
+                  <DropdownMenuItem onClick={onSignIn}>
+                    <LogInIcon />
+                    Sign In
+                  </DropdownMenuItem>
+                )}
+                {signOut && (
+                  <DropdownMenuItem disabled={busy} onClick={signOut}>
+                    <LogOutIcon />
+                    {signOutLabel}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuGroup>
+            </>
+          )}
+          {error && (
+            <p role="alert" className="p-2 text-xs text-destructive">
+              {error}
+            </p>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <HomepageAccountCenter
+        open={accountOpen}
+        onOpenChange={setAccountOpen}
+        account={{ name, status, email, imageUrl, ...details }}
+        billing={billing ?? unconfiguredBilling()}
+        busy={busy}
+        onSignIn={onSignIn}
+        onSignUp={onSignUp}
+        onSignOut={signOut}
+        signOutLabel={signOutLabel}
+        onManageAccount={onManageAccount}
+      />
+    </>
   );
 }

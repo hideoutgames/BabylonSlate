@@ -11,7 +11,9 @@
     --color-trace-script: var(--trace-script);
     --color-trace-physics: var(--trace-physics);
     --font-heading: var(--font-sans);
-    --font-sans: 'Geist Variable', sans-serif;
+    --font-sans: 'Onest Variable', ui-sans-serif, system-ui, sans-serif;
+    --color-brand-red: var(--brand-red);
+    --color-brand-amber: var(--brand-amber);
     --color-sidebar: var(--sidebar);
     --color-ring: var(--ring);
     --color-input: var(--input);
@@ -74,33 +76,44 @@
 }
 
 /*
- * Soft graphite chrome with a restrained cool tint and ink --primary.
+ * Haptic warm-black chrome (haptic.no) with white or black ink --primary and
+ * red/amber chromatic-fringe brand accents.
  * Pin/node/success/axis tokens stay
  * chromatic so graph and gizmo meaning is independent of chrome.
  */
 :root {
-    --background: oklch(0.905 0.006 85);
-    --foreground: oklch(0.30 0.006 70);
-    --card: oklch(0.988 0.002 85);
+    /* Project identity colours (project cards, editor project tab). */
+    --project-ink: #17191e;
+    --project-coral: #ff4569;
+    --project-amber: #ffc239;
+    --project-lime: #b3f52f;
+    --project-mint: #28dfdb;
+    --project-sky: #5085ff;
+    --project-violet: #9c63ff;
+    --project-rose: #f252df;
+    --project-stone: #b1b7c4;
+    --background: oklch(0.948 0.004 80);
+    --foreground: oklch(0.18 0.005 75);
+    --card: oklch(0.995 0.001 85);
     --card-foreground: var(--foreground);
-    --popover: oklch(0.99 0.002 85);
+    --popover: oklch(0.998 0.001 85);
     --popover-foreground: var(--foreground);
-    --primary: oklch(0.30 0.006 70);
-    --primary-foreground: oklch(0.972 0.003 85);
-    --secondary: oklch(0.927 0.005 85);
+    --primary: oklch(0.16 0.004 75);
+    --primary-foreground: oklch(0.985 0.002 85);
+    --secondary: oklch(0.925 0.004 80);
     --secondary-foreground: var(--foreground);
-    --muted: oklch(0.945 0.004 85);
-    --muted-foreground: oklch(0.465 0.008 70);
-    --accent: oklch(0.898 0.006 85);
+    --muted: oklch(0.958 0.003 80);
+    --muted-foreground: oklch(0.48 0.008 70);
+    --accent: oklch(0.915 0.006 75);
     --accent-foreground: var(--foreground);
     --destructive: oklch(0.577 0.245 27.325);
     --destructive-foreground: oklch(1 0 0);
-    --border: oklch(0.855 0.006 85);
-    --input: oklch(0.835 0.006 85);
-    --ring: oklch(0.51 0.012 70);
-    --control: oklch(0.99 0.002 85);
-    --panel-header: oklch(0.952 0.004 85);
-    --graph-canvas: oklch(0.935 0.005 85);
+    --border: oklch(0.885 0.005 80);
+    --input: oklch(0.855 0.005 80);
+    --ring: oklch(0.62 0.2 38);
+    --control: oklch(0.995 0.001 85);
+    --panel-header: oklch(0.962 0.003 80);
+    --graph-canvas: oklch(0.16 0.004 75);
     --graph-node: oklch(0.972 0.003 85);
     --graph-state-selected: oklch(0.64 0.14 80);
     --graph-state-entry: oklch(0.45 0.12 155);
@@ -110,7 +123,7 @@
     --trace-script: oklch(0.49 0.17 260);
     --trace-physics: oklch(0.48 0.10 185);
     --radius: 0.5rem;
-    --sidebar: oklch(0.975 0.003 85);
+    --sidebar: oklch(0.978 0.002 85);
     --sidebar-border: var(--border);
     --shadow-color: oklch(0 0 0);
     --success: oklch(0.45 0.12 155);
@@ -120,7 +133,7 @@
     --axis-y: var(--success);
     --axis-z: oklch(0.50 0.14 250);
     --chrome-tab-active: var(--card);
-    --chrome-tab-accent: var(--foreground);
+    --chrome-tab-accent: var(--brand-red);
     --chrome-row: 28px;
     --touch-target: 44px;
     --safe-top: env(safe-area-inset-top, 0px);
@@ -183,32 +196,35 @@
     --asset-folder: oklch(0.62 0.16 70);
     --play: oklch(0.49 0.11 155);
     --play-foreground: oklch(0.972 0.003 85);
+    --brand-red: oklch(0.655 0.233 36);
+    --brand-amber: oklch(0.81 0.17 76);
+    --brand-fringe: -1.5px 0 1px -0.5px var(--brand-amber), 1.5px 0 1px -0.5px var(--brand-amber), -3px 0 1.5px -1px var(--brand-red), 3px 0 1.5px -1px var(--brand-red);
 }
 
 .dark {
-    --background: oklch(0.23 0.003 75);
-    --foreground: oklch(0.92 0.003 85);
-    --card: oklch(0.30 0.003 75);
+    --background: oklch(0.155 0.004 75);
+    --foreground: oklch(0.97 0.002 85);
+    --card: oklch(0.215 0.004 75);
     --card-foreground: var(--foreground);
-    --popover: oklch(0.315 0.003 75);
+    --popover: oklch(0.225 0.005 75);
     --popover-foreground: var(--foreground);
-    --primary: oklch(0.92 0.003 85);
-    --primary-foreground: oklch(0.23 0.003 75);
-    --secondary: oklch(0.42 0.004 75);
+    --primary: oklch(0.97 0.002 85);
+    --primary-foreground: oklch(0.15 0.004 75);
+    --secondary: oklch(0.30 0.005 75);
     --secondary-foreground: var(--foreground);
-    --muted: oklch(0.29 0.003 75);
-    --muted-foreground: oklch(0.745 0.005 85);
-    --accent: oklch(0.35 0.004 75);
+    --muted: oklch(0.205 0.004 75);
+    --muted-foreground: oklch(0.71 0.006 80);
+    --accent: oklch(0.275 0.006 70);
     --accent-foreground: var(--foreground);
     --destructive: oklch(0.704 0.191 22.216);
     --destructive-foreground: oklch(0.215 0.006 260);
-    --border: oklch(0.43 0 0);
-    --input: oklch(0.50 0 0);
-    --ring: oklch(0.70 0.006 85);
-    --control: oklch(0.252 0.003 75);
-    --panel-header: oklch(0.264 0.003 75);
-    --graph-canvas: oklch(0.215 0.003 75);
-    --graph-node: oklch(0.30 0.003 75);
+    --border: oklch(0.285 0.004 75);
+    --input: oklch(0.35 0.004 75);
+    --ring: oklch(0.81 0.17 76);
+    --control: oklch(0.14 0.004 75);
+    --panel-header: oklch(0.175 0.004 75);
+    --graph-canvas: oklch(0.145 0.004 75);
+    --graph-node: oklch(0.22 0.004 75);
     --graph-state-selected: oklch(0.83 0.14 80);
     --graph-state-entry: oklch(0.74 0.12 155);
     --surface-shadow: 0 2px 6px rgb(0 0 0 / 18%);
@@ -216,7 +232,7 @@
     --trace-selected: oklch(0.76 0.18 55);
     --trace-script: oklch(0.70 0.14 260);
     --trace-physics: oklch(0.72 0.12 185);
-    --sidebar: oklch(0.275 0.003 75);
+    --sidebar: oklch(0.185 0.004 75);
     --sidebar-border: var(--border);
     --shadow-color: oklch(0 0 0);
     --success: oklch(0.62 0.14 155);
@@ -226,7 +242,7 @@
     --axis-y: var(--success);
     --axis-z: oklch(0.62 0.14 250);
     --chrome-tab-active: var(--card);
-    --chrome-tab-accent: var(--foreground);
+    --chrome-tab-accent: var(--brand-red);
     --chrome-row: 28px;
     --touch-target: 44px;
     --safe-top: env(safe-area-inset-top, 0px);
@@ -289,4 +305,7 @@
     --asset-folder: oklch(0.74 0.16 70);
     --play: oklch(0.49 0.11 155);
     --play-foreground: oklch(0.99 0.002 85);
+    --brand-red: oklch(0.655 0.233 36);
+    --brand-amber: oklch(0.81 0.17 76);
+    --brand-fringe: -1.5px 0 1px -0.5px var(--brand-amber), 1.5px 0 1px -0.5px var(--brand-amber), -3px 0 1.5px -1px var(--brand-red), 3px 0 1.5px -1px var(--brand-red);
 }

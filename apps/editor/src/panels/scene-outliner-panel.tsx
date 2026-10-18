@@ -231,7 +231,8 @@ const ActorRowActions = memo(function ActorRowActions({
         onClick={() => actions.toggleFlag(actorId, "visible")}
         data-testid={`outliner-visibility-${actorId}`}
         aria-pressed={!muted}
-        className={muted ? undefined : QUIET_ROW_ACTION}
+        className="outliner-flag"
+        data-active={muted}
       >
         {muted ? <EyeOffIcon /> : <EyeIcon />}
       </IconActionButton>
@@ -239,11 +240,11 @@ const ActorRowActions = memo(function ActorRowActions({
         aria-label={`${locked ? "Unlock" : "Lock"} ${label}`}
         title={`${locked ? "Unlock" : "Lock"} ${label}`}
         size={phone ? "touch" : "sm"}
-        variant={locked ? "outline" : "default"}
         onPressedChange={() => actions.toggleFlag(actorId, "locked")}
         data-testid={`outliner-lock-${actorId}`}
         pressed={locked}
-        className="px-0"
+        className="outliner-flag px-0"
+        data-active={locked}
       >
         {locked ? <LockIcon /> : <UnlockIcon />}
       </Toggle>

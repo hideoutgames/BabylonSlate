@@ -131,6 +131,7 @@ try {
   await news.getByRole("button", { name: "Done", exact: true }).click();
   assert.equal(page.url(), "app://babylonslate/index.html");
   assert.equal(await page.evaluate(() => typeof window.require), "undefined");
+  await page.getByTestId("homepage-account").click();
   await page.getByTestId("engine-settings").click();
   await page.getByTestId("engine-settings-modal-category-about").click();
   await expect(page.getByTestId("build-identity")).toContainText(manifest.applicationVersion);

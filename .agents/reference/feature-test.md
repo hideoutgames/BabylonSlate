@@ -22,7 +22,7 @@ Only existing repository files and runtime primitives are used (no generated art
 | Kenney platformer art | `engine-content/kenney-assets/Platformer` (CC0, Platformer Pack Redux tilesheet and toon robot frames; `License.txt`, `Source.txt`) | `FT_2D` Tilesets, robot Sprites and Sprite Animations |
 | Skybox faces and net | `engine-content/skybox` | Skybox Texture faces, Skybox Creator source |
 | Billboards | `engine-content/billboards` | UI Textures |
-| Geist | `engine-content/fonts/Geist` (SIL OFL 1.1, `OFL.txt` + `Source.txt` alongside; keep `OFL.txt` with any export that ships the font) | Source Font for overlay text |
+| Onest | `engine-content/fonts/Onest` (SIL OFL 1.1, `OFL.txt` + `Source.txt` alongside; keep `OFL.txt` with any export that ships the font) | Source Font for overlay text |
 | Bundled ASCII glyphs | `@babylonslate/render/default-typeface` | Facetype Font for 3D Text |
 
 A new third-party pack must be human-made and CC0 (fonts: OFL), ship its `License.txt` (or `OFL.txt`) and `Source.txt` beside it, and be listed in this table.
@@ -91,7 +91,7 @@ The scene spawns the `FT_HUD` and `FT_OverlayPhysics` Scene Layers in Play.
 - **Editor**: `FT_EditorProbe` (EditorUtilityObject, registered) logs editor events; `FT_EditorMath` (EditorFunctionLibrary) is authored only.
 - **Types and data**: `FT_ScriptSpeedMode` (Enum), `FT_ScriptSpinConfig` (Structure), `FT_ScriptDescribable` (ScriptInterface), `FT_DataItemStats` / `FT_DataItems` (Data Definition and Data Tree), `FT_DataProgress` (SaveGame, `wipeOnPlay` on).
 - **Input**: Basic 3D actions plus `FT_ScriptPulse` (P or pad button 3; every press also rumbles pad 0 through Set Gamepad Rumble) and `FT_ScriptNudge` (arrow keys); the HUD joystick adds touch bindings to Move.
-- **Project settings**: Feature Test tags, collision layers Default, Dynamic, Trigger, Water, Ghost; PBR with Scene Linear and ACES, bloom, vignette, white balance, FXAA, FSR at render scale 0.8, ambient occlusion, reflections and volumetrics at 0.5 scale (at the default Medium quality only ambient occlusion runs; reflections and scene-wide volumetric fog need High or Ultra; the Effects zone's Fog Volume renders on every tier); shadows on; render path Auto; WebGL2; dynamic resolution off; Geist as the default font.
+- **Project settings**: Feature Test tags, collision layers Default, Dynamic, Trigger, Water, Ghost; PBR with Scene Linear and ACES, bloom, vignette, white balance, FXAA, FSR at render scale 0.8, ambient occlusion, reflections and volumetrics at 0.5 scale (at the default Medium quality only ambient occlusion runs; reflections and scene-wide volumetric fog need High or Ultra; the Effects zone's Fog Volume renders on every tier); shadows on; render path Auto; WebGL2; dynamic resolution off; Onest as the default font.
 
 ### Console commands
 
@@ -186,7 +186,7 @@ A switched backend is saved before the first scene opens; scene edits a flight l
 A feature that cannot be showcased is recorded here with its reason; never skip it silently or weaken the gate.
 
 - Skinned Skeletons and retargeted Animations: the repository has no skinned model (the Mannequin is a hierarchy rig, the door a node animation).
-- MSDF font atlases: none exists; text uses the facetype and Geist source Fonts.
+- MSDF font atlases: none exists; text uses the facetype and Onest source Fonts.
 - Sprites cut from atlas sub-rects: the Sprite editor preview reads V top-down and the runtime bottom-up, so `FT_2D` Sprites use whole-frame Textures and crates stay Tilemap tiles.
 - Color grading waits for a human-supplied CC0 LUT in its slot (Kenney publishes no LUTs).
 - Project plugins (PluginSettings): the scaffold host has no plugin API, so no project plugin is authored.

@@ -31,13 +31,21 @@ Every platform opens the same project format, so you can move a project between 
 
 The demo account is for local testing. It has no cloud access and ends when the app restarts; your projects stay on the device.
 
-Open the account menu from your profile picture at the top right of the Homepage. Depending on the platform and whether you are signed in, it offers **Account Settings**, **Manage Subscription**, **Application Settings**, **Engine Settings**, **Changelog**, and **Sign In** or **Sign Out** (**End Demo** for the demo account).
+Open the account menu from your name at the bottom of the Homepage sidebar. It offers **Manage Account**, **Engine Settings**, **Changelog**, and **Sign In** or **Sign Out** (**End Demo** for the demo account).
+
+**Manage Account** opens the **Account** window:
+
+| Section | What it holds |
+| --- | --- |
+| Account | Your name, email and sign-in methods, and **Sign Out**. On the web, **Profile and Security** changes your details. Guests can sign in or create an account here. |
+| Subscription | Your current plan, the Haptic plans, and **Manage Billing**. Store builds also offer **Restore Purchases**. |
+| Application | **Automatic Updates** for the desktop app. |
 
 Signing in does not sync projects. Projects stay where you saved them.
 
 ## Updates
 
-The desktop app can download new releases and install them when you quit. Turn this on or off with **Automatic Updates** in **Engine Settings > About** or in **Application Settings** on the Homepage. It is on by default.
+The desktop app can download new releases and install them when you quit. Turn this on or off with **Automatic Updates** in **Engine Settings > About** or in **Manage Account > Application** on the Homepage. It is on by default.
 
 To see what changed in each version, choose **Changelog** in the account menu.
 

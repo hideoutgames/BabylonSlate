@@ -13,6 +13,7 @@ import { HomepageAccount } from "./homepage-account";
 const clerk = vi.hoisted(() => ({
   provider: vi.fn(),
   openSignIn: vi.fn(),
+  openSignUp: vi.fn(),
   openUserProfile: vi.fn(),
   signOut: vi.fn(() => Promise.resolve()),
   signedIn: false,
@@ -34,19 +35,38 @@ vi.mock("@clerk/react", () => ({
     isSignedIn: clerk.signedIn,
     user: clerk.signedIn
       ? {
+          id: "user_ada",
           fullName: "Ada Lovelace",
           primaryEmailAddress: { emailAddress: "ada@example.test" },
           hasImage: true,
           imageUrl: "https://img.example.test/ada.png",
+          passwordEnabled: false,
+          externalAccounts: [{ provider: "google" }],
+          createdAt: new Date("2025-03-01T12:00:00Z"),
+          lastSignInAt: new Date("2026-10-01T12:00:00Z"),
         }
       : null,
   }),
   useClerk: () => ({
     openSignIn: clerk.openSignIn,
+    openSignUp: clerk.openSignUp,
     openUserProfile: clerk.openUserProfile,
     signOut: clerk.signOut,
   }),
 }));
+
+const purchases = vi.hoisted(() => ({ create: vi.fn() }));
+
+vi.mock("@babylonslate/vfs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@babylonslate/vfs")>();
+  return {
+    ...actual,
+    createPurchases: () => {
+      purchases.create();
+      return actual.createPurchases();
+    },
+  };
+});
 
 // The Clerk account UI is lazy-loaded. Transform it once up front so a cold
 // module graph cannot outlast the default findBy timeout under worker load.
@@ -58,48 +78,70 @@ afterEach(() => {
   cleanup();
   clerk.provider.mockClear();
   clerk.openSignIn.mockClear();
+  clerk.openSignUp.mockClear();
   clerk.openUserProfile.mockClear();
   clerk.signOut.mockClear();
   clerk.signedIn = false;
   clerk.failed = false;
+  purchases.create.mockClear();
   vi.unstubAllEnvs();
 });
 
+/** Profile → Manage Account opens the Account dialog on one of its sections. */
+async function openAccountSection(section: "Account" | "Subscription") {
+  fireEvent.click(await screen.findByRole("button", { name: "Profile" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: /Manage Account/ }));
+  const dialog = await screen.findByRole("dialog", { name: "Account" });
+  fireEvent.click(
+    within(within(dialog).getByRole("navigation", { name: "Categories" })).getByRole(
+      "button",
+      { name: section },
+    ),
+  );
+  return dialog;
+}
+
 describe("Homepage account", () => {
-  it("keeps the subscription preview available when configured authentication fails", async () => {
+  it("keeps the plans available when configured authentication fails", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
     clerk.failed = true;
     render(<HomepageAccount />);
     await screen.findByTestId("clerk-failed");
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
-    fireEvent.click(
-      await screen.findByRole("menuitem", { name: "Manage Subscription" }),
-    );
-    expect(await screen.findByRole("dialog", { name: "Plans" })).toBeTruthy();
+    const dialog = await openAccountSection("Subscription");
+    expect(within(dialog).getByRole("heading", { name: "Haptic Pro", level: 4 })).toBeTruthy();
   });
 
-  it("opens a guest menu and previews both plans without purchase actions", async () => {
+  it("shows a guest the plans without purchases while billing is not configured", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
     render(<HomepageAccount />);
     fireEvent.click(screen.getByRole("button", { name: "Profile" }));
     expect(await screen.findByRole("menu")).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(clerk.provider).not.toHaveBeenCalled();
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: "Manage Subscription" }),
-    );
-    const preview = await screen.findByRole("dialog", { name: "Plans" });
-    expect(within(preview).getByRole("heading", { name: "Free" })).toBeTruthy();
-    expect(within(preview).getByRole("heading", { name: "Pro" })).toBeTruthy();
-    expect(within(preview).getAllByText("Full Editor Access")).toHaveLength(2);
-    expect(within(preview).getByText("Mobile App Access")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    const dialog = await openAccountSection("Subscription");
+    for (const plan of ["Haptic", "Haptic Pro", "Enterprise"]) {
+      expect(within(dialog).getByRole("heading", { name: plan, level: 4 })).toBeTruthy();
+    }
     expect(
-      within(preview).queryByRole("button", {
-        name: /buy|purchase|subscribe|upgrade/i,
-      }),
-    ).toBeNull();
-    fireEvent.click(within(preview).getByRole("button", { name: "Profile" }));
+      within(dialog).getByRole("button", { name: "Subscribe" }),
+    ).toHaveProperty("disabled", true);
+    expect(within(dialog).getByRole("alert").textContent).toMatch(/not set up/i);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("asks guests to sign in before subscribing when billing is configured", async () => {
+    vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
+    vi.stubEnv("VITE_REVENUECAT_WEB_API_KEY", "rcb_test_example");
+    render(<HomepageAccount />);
+    const dialog = await openAccountSection("Subscription");
+    expect(within(dialog).getByRole("alert").textContent).toBe("Sign in to subscribe.");
+    expect(
+      within(dialog).getByRole("button", { name: "Subscribe" }),
+    ).toHaveProperty("disabled", true);
+    expect(within(dialog).queryByRole("button", { name: "Restore Purchases" })).toBeNull();
+    expect(purchases.create).not.toHaveBeenCalled();
   });
 
   it("restores configured Clerk on mount and opens its sign-in flow from the menu", async () => {
@@ -121,39 +163,28 @@ describe("Homepage account", () => {
   it("drives signed-in Clerk accounts from the launcher profile menu", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
     clerk.signedIn = true;
-    const onApplicationSettings = vi.fn();
     const onEngineSettings = vi.fn();
     const onChangelog = vi.fn();
     const { unmount } = render(
       <HomepageAccount
-        onApplicationSettings={onApplicationSettings}
         onEngineSettings={onEngineSettings}
         onChangelog={onChangelog}
       />,
     );
     const trigger = await screen.findByRole("button", { name: "Profile" });
-    expect(trigger.querySelector("img")?.getAttribute("src")).toBe(
-      "https://img.example.test/ada.png",
+    await waitFor(() =>
+      expect(trigger.querySelector("img")?.getAttribute("src")).toBe(
+        "https://img.example.test/ada.png",
+      ),
     );
+    expect(trigger.textContent).toContain("ada@example.test");
     const open = async () => {
       fireEvent.click(trigger);
       return screen.findByRole("menu");
     };
     let menu = await open();
     expect(within(menu).getByText("Ada Lovelace")).toBeTruthy();
-    expect(within(menu).getByText("ada@example.test")).toBeTruthy();
     expect(within(menu).queryByRole("menuitem", { name: "Sign In" })).toBeNull();
-    fireEvent.click(
-      within(menu).getByRole("menuitem", { name: "Account Settings" }),
-    );
-    expect(clerk.openUserProfile).toHaveBeenCalledOnce();
-
-    menu = await open();
-    fireEvent.click(
-      within(menu).getByRole("menuitem", { name: "Application Settings" }),
-    );
-    expect(onApplicationSettings).toHaveBeenCalledOnce();
-    menu = await open();
     fireEvent.click(
       within(menu).getByRole("menuitem", { name: "Engine Settings" }),
     );
@@ -163,15 +194,15 @@ describe("Homepage account", () => {
     fireEvent.click(within(menu).getByRole("menuitem", { name: "Changelog" }));
     expect(onChangelog).toHaveBeenCalledOnce();
 
-    menu = await open();
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Sign Out" }));
-    await waitFor(() => expect(clerk.signOut).toHaveBeenCalledOnce());
-
-    menu = await open();
+    const dialog = await openAccountSection("Account");
+    expect(within(dialog).getByText("ada@example.test", { selector: "dd" })).toBeTruthy();
+    expect(within(dialog).getByText("Email, Google")).toBeTruthy();
     fireEvent.click(
-      within(menu).getByRole("menuitem", { name: "Manage Subscription" }),
+      within(dialog).getByRole("button", { name: "Profile and Security" }),
     );
-    expect(await screen.findByRole("dialog", { name: "Plans" })).toBeTruthy();
+    expect(clerk.openUserProfile).toHaveBeenCalledOnce();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign Out" }));
+    await waitFor(() => expect(clerk.signOut).toHaveBeenCalledOnce());
     unmount();
     expect(screen.queryByRole("dialog")).toBeNull();
   });

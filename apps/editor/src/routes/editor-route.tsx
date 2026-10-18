@@ -11,11 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-} from "@babylonslate/ui/components/alert";
+import { HistoryIcon } from "lucide-react";
 import { ComponentGallery } from "../components/component-gallery";
 import { EditorChromeBar } from "../components/editor-chrome-bar";
 import { EditorStatusBar } from "../components/editor-status-bar";
@@ -183,38 +179,58 @@ function CloseProjectErrorDialog({
 const SESSION_KEPT_PROJECT_OPEN =
   "The running Play or Simulate session did not stop, so the project stays open.";
 
+/**
+ * A floating notice over the workspace, so the layout does not shift when the
+ * journal is found or resolved.
+ */
 function RecoveryBanner() {
   const { keepRecovery, dismissRecovery } = useDocumentActions();
   const { recoveryAvailable } = useEditorShellState();
+  const [discarding, setDiscarding] = useState(false);
   if (!recoveryAvailable) return null;
   return (
-    <Alert
-      className="rounded-none border-x-0 border-t-0"
+    <div
+      className="recovery-notice"
+      role="alert"
+      aria-labelledby="recovery-notice-title"
+      aria-describedby="recovery-notice-description"
       data-testid="recovery-prompt"
     >
-      <AlertTitle>Recovery journal found</AlertTitle>
-      <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-        <span>Replay unsaved document edits, or discard the journal.</span>
-        <div className="flex gap-2">
-          <Button
-            data-testid="recover-journal"
-            onClick={() => void keepRecovery()}
-          >
-            Recover edits
-          </Button>
-          <Button
-            variant="outline"
-            data-testid="dismiss-journal"
-            onClick={() => {
-              // A failed clear keeps the journal, so the banner stays for a retry.
-              dismissRecovery().catch((error: unknown) => console.error("[editor] could not discard the recovery journal", error));
-            }}
-          >
-            Discard journal
-          </Button>
-        </div>
-      </AlertDescription>
-    </Alert>
+      <span className="recovery-notice-icon" aria-hidden="true">
+        <HistoryIcon />
+      </span>
+      <div className="recovery-notice-text">
+        <p id="recovery-notice-title">Recover Unsaved Edits?</p>
+        <p id="recovery-notice-description">
+          The last session closed before these edits were saved.
+        </p>
+      </div>
+      <div className="recovery-notice-actions">
+        <Button
+          variant="ghost"
+          size="sm"
+          data-testid="dismiss-journal"
+          disabled={discarding}
+          onClick={() => {
+            setDiscarding(true);
+            // A failed clear keeps the journal, so the notice stays for a retry.
+            dismissRecovery()
+              .catch((error: unknown) => console.error("[editor] could not discard the recovery journal", error))
+              .finally(() => setDiscarding(false));
+          }}
+        >
+          Discard
+        </Button>
+        <Button
+          size="sm"
+          data-testid="recover-journal"
+          disabled={discarding}
+          onClick={() => void keepRecovery()}
+        >
+          Recover Edits
+        </Button>
+      </div>
+    </div>
   );
 }
 

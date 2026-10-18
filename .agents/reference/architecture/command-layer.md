@@ -9,7 +9,7 @@ Undo/redo, dirty state, autosave and the crash-recovery journal for authored doc
 | In-document mutations (graph, scene, asset payloads) | [`packages/edit/src/`](../../../packages/edit/src/) commands through `EditSession` |
 | Asset file create / delete / move / folder ops | Asset registry ([asset-registry](asset-registry.md)), **outside** undo |
 | Edit pipeline, Undo/Redo, journal append/replay, prefab sync | `DocumentEditingService` ([`apps/editor/src/services/document-editing-service.ts`](../../../apps/editor/src/services/document-editing-service.ts)) |
-| `EditSession` lifecycle, gesture boundaries, recovery banner, rename | `DocumentProvider` ([`apps/editor/src/context/document-context.tsx`](../../../apps/editor/src/context/document-context.tsx)) |
+| `EditSession` lifecycle, gesture boundaries, recovery notice, rename | `DocumentProvider` ([`apps/editor/src/context/document-context.tsx`](../../../apps/editor/src/context/document-context.tsx)) |
 | Open documents, revisions, dirty baselines | `DocumentService` ([`apps/editor/src/services/document-service.ts`](../../../apps/editor/src/services/document-service.ts)) |
 | Play/export content collection and compile cache | `createPlayContentService` ([`play-content-service.ts`](../../../apps/editor/src/services/play-content-service.ts)) |
 | Journal batching | `JournalBuffer` ([`apps/editor/src/lib/journal-buffer.ts`](../../../apps/editor/src/lib/journal-buffer.ts)); segments via `appendJournalLines` ([`packages/assets/src/derived-data.ts`](../../../packages/assets/src/derived-data.ts)) |
