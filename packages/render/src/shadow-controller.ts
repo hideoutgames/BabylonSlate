@@ -993,7 +993,7 @@ export class SceneShadowController {
     // and none the views' missing mirrors will ask for once they may allocate.
     const standbyBudget = Math.max(
       0,
-      Math.min(byteBudget, availableSceneShadowBytes(scene)) - this.missingViewMirrorBytes(settings),
+      Math.min(byteBudget, availableSceneShadowBytes(scene)) - this.missingViewMirrorBytes(settings, admitted.bytes),
     );
     for (const entry of donors.reverse()) {
       const generator = entry.generator!;
@@ -1566,13 +1566,17 @@ export class SceneShadowController {
    * Ledger room the views' missing sun mirrors will ask for once they may
    * allocate (a view that yielded or was re-created, waiting for a drain; a new
    * capture), at the size each would ask for first (cascaded: the four-layer
-   * peak). Optional standby maps leave it free. A refused mirror waiting to ask
-   * again does not count.
+   * peak). Optional standby maps leave it free. A refused mirror counts only
+   * when it is about to ask again, at the smallest size (it was refused at
+   * every larger one), and only if that fits beside `admittedBytes`: otherwise
+   * releasing standby maps for it would be futile, and repeat every retry.
    */
-  private missingViewMirrorBytes(settings: ShadowSettings): number {
+  private missingViewMirrorBytes(settings: ShadowSettings, admittedBytes: number): number {
     if (!this.views.size) return 0;
     const bytesPerTexel = shadowBytesPerTexel(this.scene.getEngine());
     const layers = settings.cascades > 1 ? 4 : 1;
+    const smallest = layers * 256 ** 2 * bytesPerTexel;
+    const room = availableSceneShadowBytes(this.scene) - admittedBytes;
     const now = performance.now();
     let bytes = 0;
     for (const entry of this.entries.values()) {
@@ -1580,7 +1584,10 @@ export class SceneShadowController {
       for (const view of this.views.values()) {
         if (view.maps.has(entry.light)) continue;
         const refused = view.refused.get(entry.light);
-        if (refused && refused.mirrors === entry.generator && now < refused.retryAt) continue;
+        if (refused && refused.mirrors === entry.generator) {
+          if (now >= refused.retryAt && smallest <= room) bytes += smallest;
+          continue;
+        }
         const recovery = view.recovery.get(entry.light);
         const mapSize = recovery && recovery.mirrors === entry.generator
           ? Math.min(entry.mapSize, recovery.mapSize)

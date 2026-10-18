@@ -1741,6 +1741,55 @@ describe("view sun shadow maps", () => {
     }
   });
 
+  it("releases standby maps for a refused mirror's retry only when its smallest size would then fit", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    enableHeadlessCascades(engine);
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ cascades: 2, distance: 40, mapSize: 512, maxLocalLights: 2, localMapSize: 256 }),
+    });
+    const camera = scene.activeCamera!;
+    camera.position.set(0, 0, 0);
+    const sun = new DirectionalLight("sun", new Vector3(0.4, -1, 0.6), scene);
+    const spot = new SpotLight("spot", new Vector3(5, 3, 0), Vector3.Down(), Math.PI / 2, 1, scene);
+    spot.range = 10;
+    controller.register(sun, true);
+    controller.register(spot, true);
+    controller.sync();
+    // A quarter MiB free; another owner holds 2.5 MiB more. The smallest cascaded mirror needs 3 MiB (four 256² layers).
+    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 2.75 * 1024 ** 2);
+    const other = beginManagedRenderAllocation(engine, 2.5 * 1024 ** 2)!;
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
+      controller.attachView(capture);
+      expect(sun.getShadowGenerator(capture)).toBeNull();
+      // The camera leaves the spot light: its map (0.75 MiB) stands by.
+      camera.position.x = 1000;
+      controller.sync();
+      const standby = spot.getShadowGenerator()!;
+      expect(standby).not.toBeNull();
+      // Releasing it would still leave too little for the smallest mirror: each retry keeps it.
+      for (const now of [1_500, 3_000, 4_500]) {
+        clock.mockReturnValue(now);
+        controller.sync();
+        expect(spot.getShadowGenerator()).toBe(standby);
+        expect(sun.getShadowGenerator(capture)).toBeNull();
+      }
+      // With the other owner's room back, the standby map is what stands between the retry and its smallest size.
+      other.release();
+      clock.mockReturnValue(6_000);
+      controller.sync();
+      expect(spot.getShadowGenerator()).toBeNull();
+      expect(mapWidth(sun.getShadowGenerator(capture))).toBe(256);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+      clock.mockRestore();
+    }
+  });
+
   it("lets a view whose own sun map does not fit bind the scene view's map, warning once", () => {
     const { scene, controller } = fixture();
     const engine = scene.getEngine();
