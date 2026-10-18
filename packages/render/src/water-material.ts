@@ -4920,6 +4920,46 @@ function setDefine(defines: MaterialDefines, name: string, value: boolean | numb
   return true;
 }
 
+/** A water variant a render pass asked Babylon to compile: what the compile log (`recordWaterVariant`) holds. */
+export interface WaterVariantRequest {
+  at: number;
+  mesh: string;
+  /** `engine.currentRenderPassId` when the variant was requested, and whether that is a scene-copy (main water) pass. */
+  pass: number;
+  mainPass: boolean;
+  look: "realistic" | "painted" | "toon";
+  refraction: boolean;
+  ssr: boolean;
+  planar: boolean;
+  fft: boolean;
+  blend: boolean;
+  /** The shadow defines in the variant, as the pass's shadow toggles left them. */
+  shadows: string[];
+  depthPrePass: boolean;
+  prePass: boolean;
+  /** The calling frames, innermost first. */
+  caller: string;
+}
+
+/** Harnesses and tests opt in with `globalThis.__slateWaterCompileLog = []`; without it nothing is recorded. */
+const WATER_COMPILE_LOG = "__slateWaterCompileLog";
+
+/** Appends one request to the compile log when one is installed. Called when a pass's defines change, i.e. per variant. */
+function recordWaterVariant(defines: MaterialDefines, water: WaterDefinition, mesh: AbstractMesh | null, scene: Scene): void {
+  const log = (globalThis as unknown as Record<string, WaterVariantRequest[] | undefined>)[WATER_COMPILE_LOG];
+  if (!log) return;
+  const pass = scene.getEngine().currentRenderPassId;
+  const on = (name: string) => Boolean(defines[name]);
+  log.push({
+    at: performance.now(), mesh: mesh?.name ?? "", pass, mainPass: isMainWaterPass(scene, pass),
+    look: water.style !== "stylized" ? "realistic" : toonLook(water) ? "toon" : "painted",
+    refraction: on(REFRACTION), ssr: on(SSR), planar: on(PLANAR), fft: on(FFT), blend: on(WATER_BLEND_DEFINE),
+    shadows: Object.keys(defines).filter((name) => name.startsWith("SHADOW") && defines[name]),
+    depthPrePass: on("DEPTHPREPASS"), prePass: on("PREPASS"),
+    caller: String(new Error().stack ?? "").split("\n").slice(2, 12).map((frame) => frame.trim().replace(/^at /, "")).join(" < "),
+  });
+}
+
 type VertexPoint = "CUSTOM_VERTEX_DEFINITIONS" | "CUSTOM_VERTEX_UPDATE_WORLDPOS" | "CUSTOM_VERTEX_MAIN_END";
 const FRAGMENT_POINTS = [
   "CUSTOM_FRAGMENT_DEFINITIONS", "CUSTOM_FRAGMENT_UPDATE_ALPHA", "CUSTOM_FRAGMENT_BEFORE_LIGHTS", "CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS",
@@ -5319,7 +5359,10 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     changed = setDefine(defines, FFT, this.fftCascades) || changed;
     changed = setDefine(defines, FFT_VERTEX, this.fftVertex) || changed;
     changed = setDefine(defines, WATER_BLEND_DEFINE, this._blend) || changed;
-    if (changed) defines.markAsUnprocessed();
+    if (changed) {
+      defines.markAsUnprocessed();
+      recordWaterVariant(defines, w, this.mesh, scene);
+    }
   }
   /**
    * True when the vertex shader evaluates the swell (`SLATE_WATER_GPU_WAVES`) and the mesh keeps a static rest grid.
