@@ -15,7 +15,10 @@ import {
   isNearSourcePin,
   nodePinLists,
   pinAllowsMultipleIncoming,
+  pinRefusalReason,
+  pinTypeDisplayName,
   pinsAreCompatible,
+  replacesExecOutputWire,
   screenCentersForSafePins,
   connectEndAction,
   nearestSnapConnectPin,
@@ -158,6 +161,85 @@ describe("pinsAreCompatible", () => {
           outgoing.type.classId === incoming.type.classId
         );
       }),
+    ).toBe(false);
+  });
+});
+
+describe("pinRefusalReason", () => {
+  const vec3In: SerializedPin = { ...floatIn, id: "v", type: { kind: "vec3" } };
+  const floatOut: SerializedPin = { ...stringOut, id: "f", type: { kind: "float" } };
+
+  it("names both types, output first, when data types differ", () => {
+    expect(pinRefusalReason(floatOut, vec3In)).toBe("Float does not connect to Vector 3");
+    // Dragging from the input names the output first as well.
+    expect(pinRefusalReason(vec3In, floatOut)).toBe("Float does not connect to Vector 3");
+  });
+
+  it("explains exec against data and output against output", () => {
+    expect(pinRefusalReason(execOut, stringIn)).toBe("Exec does not connect to String");
+    expect(pinRefusalReason(stringOut, stringOut)).toBe("Connect an output to an input");
+  });
+
+  it("is silent for a connection the rule accepts", () => {
+    expect(pinRefusalReason(execOut, execIn)).toBeNull();
+    expect(pinRefusalReason(floatOut, vec3In, () => true)).toBeNull();
+  });
+
+  it("names the classes a host rule keeps apart and the Structures it knows", () => {
+    const heroOut: SerializedPin = { ...stringOut, type: { kind: "objectRef", classId: "Hero" } };
+    const pawnIn: SerializedPin = { ...stringIn, type: { kind: "objectRef", classId: "Pawn" } };
+    expect(pinRefusalReason(heroOut, pawnIn, () => false)).toBe(
+      "Object (Hero) does not connect to Object (Pawn)",
+    );
+    const pointOut: SerializedPin = { ...stringOut, type: { kind: "structRef", guid: "g-1" } };
+    expect(pinRefusalReason(pointOut, stringIn, undefined, { "g-1": "Hit Result" })).toBe(
+      "Hit Result does not connect to String",
+    );
+  });
+
+  it("does not repeat one type name when only a host rule refuses", () => {
+    expect(pinRefusalReason(stringOut, stringIn, () => false)).toBe("These pins can't connect");
+  });
+});
+
+describe("pinTypeDisplayName", () => {
+  it("reads like the pin type picker and describes containers", () => {
+    expect(pinTypeDisplayName({ kind: "quat" })).toBe("Quaternion");
+    expect(pinTypeDisplayName({ kind: "array", element: { kind: "vec2" } })).toBe("Vector 2 Array");
+    expect(
+      pinTypeDisplayName({ kind: "map", key: { kind: "string" }, value: { kind: "float" } }),
+    ).toBe("String to Float Map");
+    expect(pinTypeDisplayName({ kind: "actorRef", classId: "" })).toBe("Actor");
+    expect(pinTypeDisplayName({ kind: "assetRef", assetType: "Texture" })).toBe("Texture");
+    expect(pinTypeDisplayName({ kind: "structRef", guid: "engine:TagContainer" })).toBe("TagContainer");
+    expect(pinTypeDisplayName({ kind: "boxedWildcard" })).toBe("Wildcard");
+  });
+});
+
+describe("replacesExecOutputWire", () => {
+  const lookup = (nodeId: string, pinId: string) =>
+    nodeId === "a" && pinId === "execOut" ? execOut : nodeId === "a" ? stringOut : undefined;
+  const existing = [
+    { id: "e1", source: "a", sourceHandle: "execOut", target: "b", targetHandle: "execIn" },
+  ];
+
+  it("flags a second wire from an exec output to a different input", () => {
+    expect(
+      replacesExecOutputWire(existing, { source: "a", sourceHandle: "execOut", target: "c", targetHandle: "execIn" }, lookup),
+    ).toBe(true);
+  });
+
+  it("ignores the same wire, a free exec output and data outputs", () => {
+    expect(
+      replacesExecOutputWire(existing, { source: "a", sourceHandle: "execOut", target: "b", targetHandle: "execIn" }, lookup),
+    ).toBe(false);
+    expect(replacesExecOutputWire([], { source: "a", sourceHandle: "execOut", target: "c", targetHandle: "execIn" }, lookup)).toBe(false);
+    expect(
+      replacesExecOutputWire(
+        [{ id: "d", source: "a", sourceHandle: "value", target: "b", targetHandle: "message" }],
+        { source: "a", sourceHandle: "value", target: "c", targetHandle: "message" },
+        lookup,
+      ),
     ).toBe(false);
   });
 });

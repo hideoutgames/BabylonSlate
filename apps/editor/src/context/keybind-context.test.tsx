@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
-import { useRef } from "react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useContext, useRef } from "react";
+import { GraphKeybindsContext } from "@babylonslate/graph-ui";
+import { MemoryAppSettingsStore, defaultEngineSettings } from "@babylonslate/vfs";
+import { AppSettingsProvider } from "./app-settings-context";
 import { KeybindProvider, useKeybindCommand } from "./keybind-context";
 import type { EditorCommandId } from "../lib/editor-keybinds";
 
@@ -138,5 +141,29 @@ describe("KeybindProvider", () => {
     row.focus();
     fireEvent.keyDown(row, { key: "Delete", code: "Delete" });
     expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands graph canvases the Copy, Paste, Duplicate and Delete chords, customized or not", async () => {
+    function Chords() {
+      return <span data-testid="chords">{JSON.stringify(useContext(GraphKeybindsContext))}</span>;
+    }
+    const defaults = render(<KeybindProvider><Chords /></KeybindProvider>);
+    expect(JSON.parse(defaults.getByTestId("chords").textContent!)).toEqual({
+      copy: ["Mod+C"],
+      paste: ["Mod+V"],
+      duplicate: ["Mod+D"],
+      delete: ["Delete", "Backspace"],
+    });
+    defaults.unmount();
+
+    const store = new MemoryAppSettingsStore();
+    await store.save({ ...defaultEngineSettings(), keybinds: { "edit.duplicate": ["Alt+Shift+D"], "edit.copy": [] } });
+    render(<AppSettingsProvider store={store}><KeybindProvider><Chords /></KeybindProvider></AppSettingsProvider>);
+    expect(JSON.parse((await screen.findByText(/Alt\+Shift\+D/)).textContent!)).toEqual({
+      copy: [],
+      paste: ["Mod+V"],
+      duplicate: ["Alt+Shift+D"],
+      delete: ["Delete", "Backspace"],
+    });
   });
 });
