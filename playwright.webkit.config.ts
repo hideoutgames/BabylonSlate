@@ -13,7 +13,7 @@ import { WEBKIT_SMOKE_GREP } from "./e2e/ipad-tag";
  */
 export default defineConfig<{ profileContext: boolean }>({
   ...base,
-  // Software WebGL in headless WebKit is slower than Chromium's SwiftShader.
+  // WebKit on a shared CI virtual machine gets twice the Chromium timeout.
   timeout: 120_000,
   outputDir: "test-results/webkit",
   use: { ...base.use, trace: "retain-on-failure" },
