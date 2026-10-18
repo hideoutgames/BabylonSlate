@@ -395,6 +395,8 @@ export function EditorChromeBar({
   };
   useKeybindCommand("editor.search", () => setSearchOpen((current) => !current), {
     enabled: Boolean(projectName),
+    // The open Search Project dialog is the modal this chord toggles shut.
+    allowInModal: searchOpen,
   });
   useKeybindCommand("editor.focusLayout", () => toggleLayoutFocus(), {
     enabled: Boolean(projectName) && canFocus && !phone,

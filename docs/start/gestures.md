@@ -27,7 +27,7 @@ Text fields keep the system's own selection, copy and paste menus.
 - Hold Ctrl, Command or Shift while tapping to add to the selection.
 - **Drag Select** in the viewport toolbar turns the next one-finger drag into a selection rectangle, in 2D and 3D.
 - Turn on **Joystick** in the viewport's settings menu for an on-screen stick that moves the camera.
-- Double-tap an actor in the **Outliner** to frame it in the viewport.
+- Double-tap an actor's icon, or the blank space beside its name, in the **Outliner** to frame it in the viewport. Double-tap the name to rename it.
 
 ## Graphs
 

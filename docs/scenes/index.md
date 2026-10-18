@@ -16,7 +16,7 @@ A new Scene starts in 3D with an empty actor, a skybox, a directional light and 
 - **3D**: drag with one finger or the mouse to look around, pinch or scroll to zoom, and use three fingers or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to fly. Turn on **Pivot Around Center** to orbit instead of looking.
 - **2D**: drag to pan, pinch or scroll to zoom. Hold, then drag, to box-select actors.
 - The on-screen **Joystick** moves the editor camera too.
-- Press <kbd>F</kbd> to frame the selection, or double-tap an actor in the **Outliner**.
+- Press <kbd>F</kbd> to frame the selection, or double-tap an actor's icon or the blank space beside its name in the **Outliner**. Double-tapping the name renames it.
 
 See [Touch Gestures](../start/gestures.md) for the full list.
 

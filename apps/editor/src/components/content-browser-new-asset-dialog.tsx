@@ -47,6 +47,7 @@ import {
   newAssetFileName,
   type CreatableAssetType,
 } from "../lib/content-browser-helpers";
+import { hasTouchInput } from "../lib/touch-input";
 import { usePhoneLayout } from "../shell/use-platform-layout";
 
 export type NewAssetClassAssetRef = {
@@ -166,6 +167,7 @@ export function ContentBrowserNewAssetDialog({
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
   const bodyRef = useRef<HTMLDivElement>(null);
   const detailsRef = useRef<HTMLElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const selectedVisual = resolveTypeVisual({ assetType: type });
   const isData = type === "DataTree";
   // The same rule as Rename, so a created name can always be renamed back.
@@ -218,7 +220,9 @@ export function ContentBrowserNewAssetDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-testid="content-browser-new-asset-dialog"
-        initialFocus={bodyRef}
+        // Desktop starts in Name; touch skips the text field so the keyboard
+        // does not cover the dialog.
+        initialFocus={() => (phone || hasTouchInput() ? bodyRef.current : nameRef.current)}
         className="editor-dialog-large max-w-none sm:max-w-none"
         bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
@@ -341,6 +345,7 @@ export function ContentBrowserNewAssetDialog({
                   <Field data-invalid={nameInvalid || undefined}>
                     <FieldLabel htmlFor="new-asset-name">Name</FieldLabel>
                     <Input
+                      ref={nameRef}
                       id="new-asset-name"
                       data-testid="new-asset-name"
                       className="min-h-[var(--chrome-row,28px)]"

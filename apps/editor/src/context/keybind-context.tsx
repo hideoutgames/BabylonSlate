@@ -27,6 +27,8 @@ import { useAppSettings } from "./app-settings-context";
 interface Registration {
   run: () => void;
   enabled?: () => boolean;
+  /** Runs while a modal is open (the modal is this command's own surface). */
+  allowInModal?: boolean;
 }
 
 interface KeybindContextValue {
@@ -38,7 +40,13 @@ const EMPTY_BINDINGS = resolveKeybinds();
 
 const KeybindContext = createContext<KeybindContextValue | null>(null);
 
-const MODAL_SELECTOR = '[role="dialog"][aria-modal="true"], [role="alertdialog"]';
+/**
+ * Open modal popups: DialogContent and modal SheetContent set `aria-modal`
+ * (Base UI does not), alert dialogs carry their own role. A popup in its exit
+ * animation is `data-closed` and no longer swallows commands.
+ */
+const MODAL_SELECTOR =
+  '[role="dialog"][aria-modal="true"]:not([data-closed]), [role="alertdialog"]:not([data-closed])';
 
 /** Menus, pickers, and selects keep their own arrow/letter navigation. */
 function blockedTarget(target: EventTarget | null): boolean {
@@ -96,10 +104,11 @@ export function KeybindProvider({
         } else if (blockedTarget(event.target)) {
           continue;
         }
-        if (modalOpen()) continue;
+        const modal = modalOpen();
         const handlers = registry.current.get(commandId) ?? [];
         for (let index = handlers.length - 1; index >= 0; index -= 1) {
           const registration = handlers[index]!.current;
+          if (modal && !registration.allowInModal) continue;
           if (registration.enabled && !registration.enabled()) continue;
           event.preventDefault();
           registration.run();
@@ -178,6 +187,8 @@ function visible(element: Element | null | undefined): boolean {
  * registration wins; `scopeRef` limits a handler to a visible surface so
  * hidden documents do not react, and `focusWithinRef` additionally requires
  * keyboard focus inside that surface (used by selection-destructive edits).
+ * An open modal suspends every command unless its registration sets
+ * `allowInModal` (a toggle that closes its own modal).
  */
 export function useKeybindCommand(
   commandId: EditorCommandId | undefined,
@@ -186,13 +197,15 @@ export function useKeybindCommand(
     enabled?: boolean | (() => boolean);
     scopeRef?: RefObject<Element | null>;
     focusWithinRef?: RefObject<Element | null>;
+    allowInModal?: boolean;
   } = {},
 ): void {
   const context = useContext(KeybindContext);
-  const { enabled = true, scopeRef, focusWithinRef } = options;
+  const { enabled = true, scopeRef, focusWithinRef, allowInModal } = options;
   const registration = useRef<Registration>({ run });
   registration.current = {
     run,
+    allowInModal,
     enabled: () =>
       (typeof enabled === "function" ? enabled() : enabled) &&
       (!scopeRef || visible(scopeRef.current)) &&

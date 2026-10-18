@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ContentBrowserNewAssetDialog } from "./content-browser-new-asset-dialog";
 import type { CreatableAssetType } from "../lib/content-browser-helpers";
 
@@ -168,6 +168,21 @@ describe("ContentBrowserNewAssetDialog", () => {
     const { onCreate } = renderDialog(props);
     fireEvent.keyDown(screen.getByTestId("new-asset-name"), { key: "Enter" });
     expect(onCreate).toHaveBeenCalledTimes(calls);
+  });
+
+  it("starts in the Name field on desktop but skips the text field on touch", async () => {
+    renderDialog();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("new-asset-name")));
+    cleanup();
+
+    const matchMedia = vi.fn((query: string) => ({ matches: query.includes("coarse") }) as MediaQueryList);
+    vi.stubGlobal("matchMedia", matchMedia);
+    try {
+      renderDialog();
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("new-asset-type")));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("navigates type choices with arrow keys", () => {

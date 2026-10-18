@@ -5,13 +5,17 @@ function trimFixed(fixed: string): string {
   return formatted === "-0" ? "0" : formatted;
 }
 
+/** Below this magnitude a value is arithmetic noise (`sin(pi)` is 1.2e-16), not a small setting. */
+const FLOAT_NOISE = 1e-9;
+
 /**
  * Idle Details numerics: round to the requested precision and strip trailing
  * zeros. A nonzero value that would round to 0 keeps that many significant
- * digits instead (`0.001`, not `0`), so the field never hides a small value.
+ * digits instead (`0.001`, not `0`), so the field never hides a small value;
+ * float noise below `FLOAT_NOISE` shows as `0`.
  */
 export function formatNumericDisplay(value: number, precision = 2): string {
-  if (!Number.isFinite(value)) return "0";
+  if (!Number.isFinite(value) || Math.abs(value) < FLOAT_NOISE) return "0";
   const digits = Math.max(0, Math.min(20, precision));
   const rounded = trimFixed(value.toFixed(digits));
   if (rounded !== "0" || value === 0) return rounded;

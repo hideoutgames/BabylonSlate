@@ -887,6 +887,22 @@ export class DocumentService {
     this.advanceKinds([doc.ref.kind]);
   }
 
+  /**
+   * Follow a registry rename. A payload that carries a `name` titles its tab
+   * and is written back on save, so it takes the asset's new name now; the
+   * registry has already stamped the file. Scenes keep their path-derived title.
+   */
+  applyAssetRename(id: string, name: string): void {
+    const doc = this.state.openDocuments.get(id);
+    if (!doc || doc.ref.kind === "content-browser" || isSceneWorkspaceKind(doc.ref.kind)) return;
+    const content = doc.content;
+    if (!content || typeof (content as { name?: unknown }).name !== "string") return;
+    const renamed = { ...content, name } as DocumentContent;
+    doc.ref = { ...doc.ref, label: `${name} ${documentKindLabel(doc.ref.kind)}` };
+    if (doc.dirty) this.patchLoadedContent(id, renamed);
+    else this.replaceLoadedContent(id, renamed);
+  }
+
   buildLayouts(): ProjectLayouts {
     const documents: Record<string, Record<string, unknown>> = {};
     for (const [id, doc] of this.state.openDocuments) {
