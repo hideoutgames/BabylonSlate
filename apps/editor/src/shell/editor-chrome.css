@@ -35,7 +35,7 @@
   border-right: 1px solid var(--border);
   padding-inline: 8px 12px;
   font-size: 0.75rem;
-  font-weight: var(--ui-weight-strong);
+  font-weight: 600;
   letter-spacing: 0.01em;
   white-space: nowrap;
 }
@@ -231,7 +231,7 @@
 }
 
 .chrome-tab-active .chrome-tab-label {
-  font-weight: var(--ui-weight-medium);
+  font-weight: 500;
 }
 
 .chrome-tab-dragging {
