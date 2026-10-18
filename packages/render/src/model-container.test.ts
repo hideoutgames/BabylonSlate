@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InstancedMesh, Mesh, PBRMaterial, VertexBuffer } from "@babylonjs/core";
+import { InstancedMesh, Mesh, VertexBuffer } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
 import { loadModelContainer } from "./model-container";
@@ -183,46 +183,6 @@ describe("model pose and clip ranges", () => {
       host.scene.render();
     } finally {
       host.dispose();
-      handle.engine.dispose();
-    }
-  });
-});
-
-describe("models stored with textures that have no image", () => {
-  it("loads the mesh and drops the texture instead of failing the whole model", async () => {
-    // Shape of a Model imported before the importer kept textures backed by images.
-    const handle = createTestEngine();
-    try {
-      const split = splitGlbJsonBin(encodeTriangleGlb())!;
-      const json = split.json as {
-        meshes: { primitives: Record<string, unknown>[] }[];
-      } & Record<string, unknown>;
-      json.meshes[0]!.primitives[0]!.material = 0;
-      json.materials = [
-        {
-          name: "Painted",
-          pbrMetallicRoughness: {
-            baseColorFactor: [0, 1, 0, 1],
-            baseColorTexture: { index: 0 },
-          },
-        },
-      ];
-      json.textures = [{}];
-      const container = await loadModelContainer(
-        handle.scene,
-        encodeGlbJsonBin(split.json, split.bin),
-        "stored.glb",
-      );
-      try {
-        expect(container.meshes.some((mesh) => mesh.getTotalVertices() === 3)).toBe(true);
-        const material = container.materials[0] as PBRMaterial;
-        expect(material.name).toBe("Painted");
-        expect(material.albedoTexture).toBeNull();
-      } finally {
-        container.dispose();
-      }
-    } finally {
-      handle.scene.dispose();
       handle.engine.dispose();
     }
   });

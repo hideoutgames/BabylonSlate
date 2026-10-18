@@ -306,7 +306,7 @@ function remapMaterialTextureRefs(
  * The materials fall back to their factors. Edits `json` in place and returns
  * whether anything changed.
  */
-export function dropSourcelessGltfTextures(
+function dropSourcelessGltfTextures(
   json: Record<string, unknown>,
 ): boolean {
   if (!Array.isArray(json.textures)) return false;

@@ -2,7 +2,6 @@ import { crc32, inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import {
   buildMinimalGlbFixture,
-  dropSourcelessGltfTextures,
   embedGlbExternalImages,
   encodeGlbJsonBin,
   gltfAnimationClips,
@@ -701,10 +700,20 @@ describe("embedGlbExternalImages", () => {
   });
 });
 
-describe("dropSourcelessGltfTextures", () => {
-  it("repairs a model stored with textures that have no image", () => {
-    const json: Record<string, unknown> = {
-      asset: { version: "2.0" },
+describe("stripUnmatchedGltfImageUris textures without an image", () => {
+  const withEmbeddedImage = (json: Record<string, unknown>) =>
+    encodeGlbJsonBin(
+      {
+        asset: { version: "2.0" },
+        buffers: [{ byteLength: ONE_BY_ONE_PNG.byteLength }],
+        bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: ONE_BY_ONE_PNG.byteLength }],
+        ...json,
+      },
+      ONE_BY_ONE_PNG,
+    );
+
+  it("drops textures a file ships with no image, or an image index it lacks", () => {
+    const glb = withEmbeddedImage({
       images: [{ bufferView: 0, mimeType: "image/png" }],
       textures: [{}, { source: 0 }, { source: 5 }],
       materials: [
@@ -713,33 +722,30 @@ describe("dropSourcelessGltfTextures", () => {
           normalTexture: { index: 2 },
         },
       ],
-    };
-    expect(dropSourcelessGltfTextures(json)).toBe(true);
-    expect(json.textures).toEqual([{ source: 0 }]);
-    expectEveryTextureBacked(json);
-    expect(json.materials).toEqual([{ pbrMetallicRoughness: { metallicRoughnessTexture: { index: 0 } } }]);
+    });
+    const split = splitGlbJsonBin(stripUnmatchedGltfImageUris(glb))!;
+    expect(split.json.textures).toEqual([{ source: 0 }]);
+    expectEveryTextureBacked(split.json);
+    expect(split.json.materials).toEqual([{ pbrMetallicRoughness: { metallicRoughnessTexture: { index: 0 } } }]);
   });
 
-  it("does not touch a GLB whose textures all have images", () => {
-    const json: Record<string, unknown> = {
-      asset: { version: "2.0" },
+  it("returns a GLB whose textures all have images untouched", () => {
+    const glb = withEmbeddedImage({
       images: [{ bufferView: 0, mimeType: "image/png" }],
       textures: [{ source: 0 }],
       materials: [{ pbrMetallicRoughness: { baseColorTexture: { index: 0 } } }],
-    };
-    const before = JSON.stringify(json);
-    expect(dropSourcelessGltfTextures(json)).toBe(false);
-    expect(JSON.stringify(json)).toBe(before);
+    });
+    expect(stripUnmatchedGltfImageUris(glb)).toBe(glb);
   });
 
   it("ignores texture-like keys under extras", () => {
-    const json: Record<string, unknown> = {
-      asset: { version: "2.0" },
+    const glb = withEmbeddedImage({
       textures: [{}],
       materials: [{ extras: { paintTexture: { index: 0 } } }],
-    };
-    expect(dropSourcelessGltfTextures(json)).toBe(true);
-    expect(json.materials).toEqual([{ extras: { paintTexture: { index: 0 } } }]);
+    });
+    const split = splitGlbJsonBin(stripUnmatchedGltfImageUris(glb))!;
+    expect(split.json.textures).toBeUndefined();
+    expect(split.json.materials).toEqual([{ extras: { paintTexture: { index: 0 } } }]);
   });
 });
 
