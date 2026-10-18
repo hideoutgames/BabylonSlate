@@ -572,6 +572,18 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
       variables: { name: "Cube" },
     });
     runtime.getWorld().spawnActorNow(actor);
+    // Physics and transform math leave float noise that must not reach the console.
+    const drifted = runtime.getWorld().createActor({
+      guid: "drifted",
+      classId: "Actor",
+      variables: { name: "Drifted" },
+      transform: {
+        position: { x: 6.988249910934554e-16, y: -1e-9, z: 12.345678901 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    });
+    runtime.getWorld().spawnActorNow(drifted);
     expect(runtime.executeConsoleCommand("showfps")).toEqual({
       success: true,
       output: "showfps on",
@@ -630,6 +642,12 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     );
     expect(runtime.executeConsoleCommand("inspect Cube").output).toContain(
       "Cube Actor cube",
+    );
+    expect(runtime.executeConsoleCommand("dumpactors").output).toContain(
+      "Drifted Actor drifted 0,0,12.3457",
+    );
+    expect(runtime.executeConsoleCommand("inspect Drifted").output).toContain(
+      "  position 0, 0, 12.3457",
     );
     expect(runtime.executeConsoleCommand("inspect").output).toBe(
       "inspect <name|guid>",

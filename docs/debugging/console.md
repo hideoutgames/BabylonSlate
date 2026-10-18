@@ -64,8 +64,8 @@ The game keeps running while the console is open. As you type, a list suggests c
 | `shownavagent` | `on`/`off` | Shows agent bounds, paths, names and movement state. | Yes |
 | `behaviourtreedebug` | `on`/`off` | Opens the Behaviour Tree Debugger with live node states and Blackboards. | Yes |
 | `showaudiodebug` | `on`/`off` | Lists the sounds playing, with their volume, pitch and distance. | Yes |
-| `dumpactors` |  | Prints every actor with its name, class, GUID and position. | Yes |
-| `inspect` | actor name or GUID | Prints an actor's variables. With no argument it uses the actor selected in the Play Inspector. | Yes |
+| `dumpactors` |  | Prints every actor with its name, class, GUID and position, rounded to four decimals. | Yes |
+| `inspect` | actor name or GUID | Prints an actor's position and variables. With no argument it uses the actor selected in the Play Inspector. | Yes |
 | `destroyactor` | actor name or GUID | Destroys an actor for this session. | Yes |
 | `dumplog` |  | Prints the session log. | Yes |
 | `snapshot start` |  | Starts a trace recording. See [Profiler](profiler.md#trace-recording). | Yes |
