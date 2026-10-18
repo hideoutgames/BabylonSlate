@@ -86,12 +86,12 @@ import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { FeatureTestCheckDialog } from "./feature-test-check-dialog";
 import { useIsFeatureTestProject } from "../lib/use-is-feature-test-project";
-import { useAppSettings, useDebugMode } from "../context/app-settings-context";
+import { useDebugMode } from "../context/app-settings-context";
 import { IconActionButton } from "./icon-action-button";
 import { ActionFeedbackButton } from "./action-feedback-button";
 import { CompilationErrorIndicator } from "./compilation-error-indicator";
 import { WindowsMenu } from "./windows-menu";
-import { PlayDebugMenuItems } from "./play-debug-menu-items";
+import { PlayDebugMenuItems, type PlayLaunchMode } from "./play-debug-menu-items";
 import { useMaterialRenderControl } from "../context/material-render-control-context";
 import {
   playChromeLaunchAriaLabel,
@@ -306,7 +306,6 @@ export function EditorChromeBar({
     requestSimulate,
     simulationUnavailableReason,
   } = usePlay();
-  const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
   const { errorCount, setDiagnostics } = useValidation();
   const [settingsScope, setSettingsScope] = useState<
     "project" | "engine" | null
@@ -374,8 +373,17 @@ export function EditorChromeBar({
   const playChord = useKeybindChord("play.start");
   const projectSettingsChord = useKeybindChord("editor.projectSettings");
   const engineSettingsChord = useKeybindChord("editor.engineSettings");
-  const playEnabled = Boolean(projectName) && !playing && !preparing && canPlay && !sceneViewportLoading;
+  // Simulate is chosen per editor session; Preview Build is a saved preference.
+  const [simulateSelected, setSimulateSelected] = useState(false);
+  const launchMode: PlayLaunchMode = simulateSelected ? "simulate" : previewBuild ? "preview" : "play";
+  const simulating = launchMode === "simulate";
+  const playEnabled = Boolean(projectName) && !playing && !preparing && !sceneViewportLoading &&
+    (simulating ? simulationUnavailableReason === null : canPlay);
   const launchPlay = () => {
+    if (simulating) {
+      void requestSimulate();
+      return;
+    }
     const inject =
       typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("previewThrow") === "1";
@@ -422,12 +430,17 @@ export function EditorChromeBar({
         <ChevronDownIcon data-icon="inline-end" />
       </DropdownMenuTrigger>
       <PlayDebugMenuItems
+        mode={launchMode}
+        onModeChange={(next) => {
+          setSimulateSelected(next === "simulate");
+          if (next !== "simulate") setPreviewBuild(next === "preview");
+        }}
+        simulateUnavailableReason={simulationUnavailableReason}
         overlayStats={overlayStats}
         overlayConsole={overlayConsole}
         overlayInspector={overlayInspector}
         overlayProfiler={overlayProfiler}
         pauseOnPlay={pauseOnPlay}
-        previewBuild={previewBuild}
         playFromScene={playFromScene}
         sessionLocked={playing || preparing}
         onOverlayStatsChange={setOverlayStats}
@@ -435,17 +448,7 @@ export function EditorChromeBar({
         onOverlayInspectorChange={setOverlayInspector}
         onOverlayProfilerChange={setOverlayProfiler}
         onPauseOnPlayChange={setPauseOnPlay}
-        onPreviewBuildChange={setPreviewBuild}
         onPlayFromSceneChange={setPlayFromScene}
-        keepSimulationChanges={appSettings.debuggerDefaults.keepSimulationChanges}
-        onKeepSimulationChangesChange={(keep) => {
-          void updateDebuggerDefaults({ keepSimulationChanges: keep });
-        }}
-        onSimulate={() => {
-          setToolsOpen(false);
-          void requestSimulate();
-        }}
-        simulateUnavailableReason={simulationUnavailableReason}
         onRunFeatureTestCheck={featureTestCheck ? () => {
           setToolsOpen(false);
           setFeatureTestCheckOpen(true);
@@ -814,11 +817,13 @@ export function EditorChromeBar({
                     variant="ghost"
                     data-testid="play-preview"
                     className="chrome-action-button chrome-play-button relative"
-                    aria-label={playChromeLaunchAriaLabel(previewBuild, canPlay, {
-                      playFromScene,
-                    })}
+                    aria-label={simulating
+                      ? simulationUnavailableReason ? `Simulate (${simulationUnavailableReason})` : "Simulate"
+                      : playChromeLaunchAriaLabel(previewBuild, canPlay, { playFromScene })}
                     title={
-                      !canPlay
+                      simulating
+                        ? simulationUnavailableReason ?? undefined
+                        : !canPlay
                         ? playFromScene && !previewBuild
                           ? "Open a scene to play"
                           : "Set Startup Scene in Project Settings."
@@ -833,9 +838,11 @@ export function EditorChromeBar({
                 }
               >
                 <PlayIcon data-icon="inline-start" fill="currentColor" />
-                {phone && previewBuild
-                  ? "Build"
-                  : playChromeLaunchLabel(previewBuild)}
+                {simulating
+                  ? "Simulate"
+                  : phone && previewBuild
+                    ? "Build"
+                    : playChromeLaunchLabel(previewBuild)}
                 {errorCount > 0 ? (
                   <span
                     className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-md bg-destructive text-[10px] text-white"
@@ -845,9 +852,9 @@ export function EditorChromeBar({
                   </span>
                 ) : null}
               </TooltipTrigger>
-              {canPlay && !sceneViewportLoading ? (
+              {(simulating ? simulationUnavailableReason === null : canPlay) && !sceneViewportLoading ? (
                 <TooltipContent>
-                  {phone && previewBuild ? "Build" : playChromeLaunchLabel(previewBuild)}
+                  {simulating ? "Simulate" : phone && previewBuild ? "Build" : playChromeLaunchLabel(previewBuild)}
                   <ShortcutKeys chord={playChord} decorative />
                 </TooltipContent>
               ) : null}

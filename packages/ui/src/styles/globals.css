@@ -406,14 +406,13 @@
   align-self: center;
 }
 
-/* A two- or three-way mode switch inside an island: a recessed track with a
- * raised thumb on the active option. */
+/* A two- or three-way mode switch inside an island: a flat track, the active
+ * option filled like any pressed island tool. */
 .toolbar-island .toolbar-island-segmented {
-  gap: 0;
+  gap: 1px;
   padding: 2px;
   border-radius: 8px;
-  background: color-mix(in oklch, var(--foreground) 7%, transparent);
-  box-shadow: inset 0 1px 2px rgb(0 0 0 / 35%);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
 }
 
 .toolbar-island .toolbar-island-segmented > button {
@@ -423,16 +422,48 @@
   border-radius: 6px;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.02em;
   color: var(--muted-foreground);
-  transition: background-color 120ms, color 120ms, box-shadow 120ms;
 }
 
 .toolbar-island .toolbar-island-segmented > button[aria-pressed="true"],
 .toolbar-island .toolbar-island-segmented > button[aria-pressed="true"]:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--popover), var(--foreground) 16%);
+  background: color-mix(in oklch, var(--selection) 18%, transparent);
   color: var(--selection);
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 45%),
-    inset 0 1px 0 color-mix(in oklch, var(--foreground) 10%, transparent);
+  box-shadow: none;
+}
+
+/* Coarse pointers get full touch targets in islands that live over a running
+ * game (Play, Preview Build), unlike the dense editor viewport islands. */
+@media (pointer: coarse) {
+  .toolbar-island-touch button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+
+/* In-game developer readouts (stats, light and audio debug, log tail): one
+ * dark frosted panel style in compact monospace. */
+.play-debug-readout {
+  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: color-mix(in oklch, var(--background) 72%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: var(--foreground);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* Print / Print String lines: shadowed text over the game, no box. */
+.play-print-line {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
+}
+
+.toolbar-island button.play-stop {
+  color: color-mix(in oklch, var(--destructive) 85%, var(--foreground));
 }

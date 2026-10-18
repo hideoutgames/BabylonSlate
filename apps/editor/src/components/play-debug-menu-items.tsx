@@ -4,17 +4,34 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
-import { ClipboardCheckIcon, MonitorPlayIcon } from "lucide-react";
+import {
+  ClipboardCheckIcon,
+  LayersIcon,
+  MonitorPlayIcon,
+  PackageIcon,
+  PlayIcon,
+} from "lucide-react";
+
+/** What the Play button starts. */
+export type PlayLaunchMode = "play" | "preview" | "simulate";
 
 export type PlayDebugMenuItemsProps = {
+  mode: PlayLaunchMode;
+  onModeChange: (mode: PlayLaunchMode) => void;
+  /** Why Simulate cannot start now, or null when it can. */
+  simulateUnavailableReason: string | null;
   overlayStats: boolean;
   overlayConsole: boolean;
   overlayInspector: boolean;
   overlayProfiler: boolean;
   pauseOnPlay: boolean;
-  previewBuild: boolean;
   playFromScene: boolean;
   sessionLocked: boolean;
   onOverlayStatsChange: (checked: boolean) => void;
@@ -22,26 +39,21 @@ export type PlayDebugMenuItemsProps = {
   onOverlayInspectorChange: (checked: boolean) => void;
   onOverlayProfilerChange: (checked: boolean) => void;
   onPauseOnPlayChange: (checked: boolean) => void;
-  onPreviewBuildChange: (checked: boolean) => void;
   onPlayFromSceneChange: (checked: boolean) => void;
-  keepSimulationChanges: boolean;
-  onKeepSimulationChangesChange: (checked: boolean) => void;
-  /** Starts a Simulation session in the editor viewport. */
-  onSimulate: () => void;
-  /** Why Simulate cannot start now, or null when it can. */
-  simulateUnavailableReason: string | null;
   /** Shown for Feature Test projects only. */
   onRunFeatureTestCheck?: () => void;
 };
 
-/** Debug-menu overlay chrome and session checkboxes next to Play. */
+/** The Debug menu next to Play: what Play starts, how it starts, and the in-game overlays. */
 export function PlayDebugMenuItems({
+  mode,
+  onModeChange,
+  simulateUnavailableReason,
   overlayStats,
   overlayConsole,
   overlayInspector,
   overlayProfiler,
   pauseOnPlay,
-  previewBuild,
   playFromScene,
   sessionLocked,
   onOverlayStatsChange,
@@ -49,37 +61,45 @@ export function PlayDebugMenuItems({
   onOverlayInspectorChange,
   onOverlayProfilerChange,
   onPauseOnPlayChange,
-  onPreviewBuildChange,
   onPlayFromSceneChange,
-  keepSimulationChanges,
-  onKeepSimulationChangesChange,
-  onSimulate,
-  simulateUnavailableReason,
   onRunFeatureTestCheck,
 }: PlayDebugMenuItemsProps) {
   return (
-    <DropdownMenuContent align="center" className="w-max min-w-60 whitespace-nowrap">
+    <DropdownMenuContent align="center" className="w-max min-w-52 whitespace-nowrap">
       <DropdownMenuGroup>
-        <DropdownMenuLabel>Play</DropdownMenuLabel>
+        <DropdownMenuLabel>Play Mode</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={mode}
+          onValueChange={(value) => onModeChange(value as PlayLaunchMode)}
+        >
+          <DropdownMenuRadioItem value="play" disabled={sessionLocked} data-testid="play-mode-play">
+            <PlayIcon />
+            Play
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="preview" disabled={sessionLocked} data-testid="preview-build-toggle">
+            <PackageIcon />
+            Preview Build
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem
+            value="simulate"
+            disabled={sessionLocked || (simulateUnavailableReason !== null && mode !== "simulate")}
+            title={simulateUnavailableReason ?? undefined}
+            data-testid="play-mode-simulate"
+          >
+            <MonitorPlayIcon />
+            Simulate
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuGroup>
+      <DropdownMenuSeparator />
+      <DropdownMenuGroup>
         <DropdownMenuCheckboxItem
           data-testid="play-from-scene-toggle"
           checked={playFromScene}
-          disabled={sessionLocked}
-          onCheckedChange={(checked) =>
-            onPlayFromSceneChange(checked === true)
-          }
+          disabled={sessionLocked || mode !== "play"}
+          onCheckedChange={(checked) => onPlayFromSceneChange(checked === true)}
         >
-          Play From Current Scene
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuCheckboxItem
-          data-testid="preview-build-toggle"
-          checked={previewBuild}
-          disabled={sessionLocked}
-          onCheckedChange={(checked) =>
-            onPreviewBuildChange(checked === true)
-          }
-        >
-          Play As Preview Build
+          Start In Open Scene
         </DropdownMenuCheckboxItem>
         <DropdownMenuCheckboxItem
           data-testid="pause-on-play-toggle"
@@ -90,80 +110,51 @@ export function PlayDebugMenuItems({
         </DropdownMenuCheckboxItem>
       </DropdownMenuGroup>
       <DropdownMenuSeparator />
-      <DropdownMenuGroup>
-        <DropdownMenuLabel>Simulation</DropdownMenuLabel>
-        <DropdownMenuItem
-          data-testid="simulate-start"
-          disabled={sessionLocked || simulateUnavailableReason !== null}
-          title={simulateUnavailableReason ?? undefined}
-          onClick={onSimulate}
-        >
-          <MonitorPlayIcon />
-          Simulate In Viewport
-        </DropdownMenuItem>
-        <DropdownMenuCheckboxItem
-          data-testid="keep-simulation-changes-toggle"
-          checked={keepSimulationChanges}
-          disabled={sessionLocked}
-          onCheckedChange={(checked) =>
-            onKeepSimulationChangesChange(checked === true)
-          }
-        >
-          Keep Changes On Stop
-        </DropdownMenuCheckboxItem>
-      </DropdownMenuGroup>
-      <DropdownMenuSeparator />
-      <DropdownMenuGroup>
-        <DropdownMenuLabel>Overlay</DropdownMenuLabel>
-        <DropdownMenuCheckboxItem
-          data-testid="overlay-stats-toggle"
-          checked={overlayStats}
-          onCheckedChange={(checked) => onOverlayStatsChange(checked === true)}
-        >
-          Stats
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuCheckboxItem
-          data-testid="overlay-console-toggle"
-          checked={overlayConsole}
-          onCheckedChange={(checked) =>
-            onOverlayConsoleChange(checked === true)
-          }
-        >
-          Console
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuCheckboxItem
-          data-testid="overlay-inspector-toggle"
-          checked={overlayInspector}
-          onCheckedChange={(checked) =>
-            onOverlayInspectorChange(checked === true)
-          }
-        >
-          Inspector
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuCheckboxItem
-          data-testid="overlay-profiler-toggle"
-          checked={overlayProfiler}
-          onCheckedChange={(checked) =>
-            onOverlayProfilerChange(checked === true)
-          }
-        >
-          Profiler
-        </DropdownMenuCheckboxItem>
-      </DropdownMenuGroup>
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger data-testid="play-overlays-submenu">
+          <LayersIcon />
+          Overlays
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className="w-max min-w-40 whitespace-nowrap">
+          <DropdownMenuCheckboxItem
+            data-testid="overlay-stats-toggle"
+            checked={overlayStats}
+            onCheckedChange={(checked) => onOverlayStatsChange(checked === true)}
+          >
+            Stats
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            data-testid="overlay-console-toggle"
+            checked={overlayConsole}
+            onCheckedChange={(checked) => onOverlayConsoleChange(checked === true)}
+          >
+            Console
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            data-testid="overlay-inspector-toggle"
+            checked={overlayInspector}
+            onCheckedChange={(checked) => onOverlayInspectorChange(checked === true)}
+          >
+            Inspector
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            data-testid="overlay-profiler-toggle"
+            checked={overlayProfiler}
+            onCheckedChange={(checked) => onOverlayProfilerChange(checked === true)}
+          >
+            Profiler
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
       {onRunFeatureTestCheck ? (
-        <>
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            <DropdownMenuItem
-              data-testid="feature-test-check-open"
-              disabled={sessionLocked}
-              onClick={onRunFeatureTestCheck}
-            >
-              <ClipboardCheckIcon />
-              Run Feature Test Check…
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        </>
+        <DropdownMenuItem
+          data-testid="feature-test-check-open"
+          disabled={sessionLocked}
+          onClick={onRunFeatureTestCheck}
+        >
+          <ClipboardCheckIcon />
+          Run Feature Test Check…
+        </DropdownMenuItem>
       ) : null}
     </DropdownMenuContent>
   );

@@ -1185,6 +1185,7 @@ function PlayOverlayView({
         }
         extras={
           <>
+            <PrintHud printRef={printRef} />
             {simulationSession ? <SimulationRetentionHint session={simulationSession} /> : null}
             {controlError ? <p role="alert" className="pointer-events-auto text-xs text-destructive">{controlError}</p> : null}
             {simulating && inputMode === "edit" ? <>
@@ -1235,15 +1236,14 @@ function PlayOverlayView({
           sessionRef.current?.handle.steerPlayFreeCam(forward, right)
         }
       />
-      <PrintHud printRef={printRef} />
       {lightsDebug && rendering && lightsDebugText(rendering) ? (
-        <pre className="pointer-events-none absolute top-12 right-3 m-0 max-h-64 max-w-xl overflow-hidden whitespace-pre-wrap rounded-md bg-background/80 p-2 font-mono text-xs text-foreground" data-testid="lights-debug-overlay">
+        <pre className="play-debug-readout pointer-events-none absolute top-14 right-3 m-0 max-h-64 max-w-xl overflow-hidden whitespace-pre-wrap" data-testid="lights-debug-overlay">
           <SelectableText>{lightsDebugText(rendering)}</SelectableText>
         </pre>
       ) : null}
       {audioDebugText !== null ? (
         <pre
-          className="pointer-events-none absolute bottom-3 right-3 z-20 m-0 max-h-48 max-w-md overflow-hidden whitespace-pre rounded-md bg-background/80 p-2 font-mono text-xs text-foreground"
+          className="play-debug-readout pointer-events-none absolute bottom-3 right-3 z-20 m-0 max-h-48 max-w-md overflow-hidden whitespace-pre"
           data-testid="audio-debug-overlay"
         >
           <SelectableText>{audioDebugText}</SelectableText>
@@ -1251,7 +1251,7 @@ function PlayOverlayView({
       ) : null}
       {logs.length > 0 ? (
         <div
-          className="pointer-events-none absolute bottom-3 left-3 max-h-32 max-w-md overflow-hidden rounded-md bg-background/80 p-2 text-xs"
+          className="play-debug-readout pointer-events-none absolute bottom-3 left-3 max-h-32 max-w-md overflow-hidden"
           data-testid="play-log-tail"
         >
           {logs.slice(-5).map((line) => (
