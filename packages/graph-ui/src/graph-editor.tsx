@@ -258,6 +258,10 @@ export interface GraphEditorProps {
   deleteKeyCode?: string | string[] | null;
   /** Forwarded to React Flow. Default true; BT passes false to avoid focus traps. */
   nodesFocusable?: boolean;
+  /**
+   * Host actions for a node's menu (Rename Event). Script-style nodes list them
+   * above the graph's own Copy, Paste, Duplicate, Delete and Break Links.
+   */
   contextMenuItemsForNode?: (nodeId: string) => NestedMenuItem[];
   contextMenuItemsForAttachment?: (
     nodeId: string,
@@ -276,6 +280,8 @@ const DOUBLE_TAP_MS = 350;
 const PASTE_OFFSET = 40;
 /** Long enough to read; the hint never blocks editing meanwhile. */
 const WIRE_NOTICE_MS = 4000;
+/** A stable default, so the menu and key handlers do not rebuild every render. */
+const NO_HIDDEN_TOOLBAR_ACTIONS: NonNullable<GraphEditorProps["hiddenToolbarActions"]> = [];
 const REPLACED_WIRE_NOTICE = "Replaced the existing wire. Use a Sequence to run several.";
 /** Keys typed into these keep their meaning (text editing, menu navigation). */
 const KEY_EXEMPT_TARGETS =
@@ -679,7 +685,7 @@ function GraphEditorCanvas({
   toolbarExtra,
   selectedAttachmentId = null,
   onAttachmentSelect,
-  hiddenToolbarActions = [],
+  hiddenToolbarActions = NO_HIDDEN_TOOLBAR_ACTIONS,
   lockNodeDragAxis: lockDragAxis,
   nodeDragHandle,
   connectEndMode = "default",
