@@ -400,6 +400,17 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
     return effect;
   })) instrumented.push("engine.createEffect");
 
+  // Released Effects leave the cache: the next request for the same shader and defines compiles again.
+  if (wrapMethod(engine, "_releaseEffect", restores, (original) => function (this: unknown, ...args: unknown[]) {
+    const effect = args[0] as { name?: unknown; _key?: string } | undefined;
+    if (effect?._key && (internals._compiledEffects as Record<string, unknown> | undefined)?.[effect._key] === effect) {
+      const base = effectBaseName(effect.name);
+      bump("effect.release");
+      record("effect.release", base, true, base.replace(/\d+/g, "#"));
+    }
+    return original.apply(this, args);
+  })) instrumented.push("engine._releaseEffect");
+
   // Backend object creation and uploads.
   const gl = internals._gl as Record<string, unknown> | undefined;
   if (gl && !engine.isWebGPU) {

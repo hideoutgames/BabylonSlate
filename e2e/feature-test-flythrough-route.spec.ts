@@ -162,7 +162,7 @@ const EVENT_KEYS = [
   "gl.texUpload", "gpu.buffer", "gl.createBuffer", "mat.dirty.light", "mat.dirty.texture", "mat.dirty.attributes", "mat.dirty.misc",
   "mat.markDirty", "defines.processed", "defines.light", "ready.false", "graph.strictChecks", "graph.builds", "view.held",
   "shadow.init", "shadow.dispose", "shadow.moved", "shadow.attached", "shadow.detached", "lights.changed", "heap.drop",
-  "nodeMaterial.build", "defines.lightDisposed", "frameGraph.dispose", "frameGraph.buildAsync", "size.changed",
+  "nodeMaterial.build", "defines.lightDisposed", "frameGraph.dispose", "frameGraph.buildAsync", "size.changed", "effect.release",
 ];
 
 function summarizePhase(frames: AnnotatedFrame[]) {
@@ -232,7 +232,7 @@ function correlate(frames: AnnotatedFrame[]) {
 
 /** Effects and pipelines group by shader family (digits folded: node materials name effects by build id). */
 function logGroupKey(entry: FlyThroughResult["log"][number]): string {
-  if (entry.kind === "effect" || entry.kind === "pipeline" || entry.kind === "nodeMaterial.build")
+  if (entry.kind === "effect" || entry.kind === "pipeline" || entry.kind === "nodeMaterial.build" || entry.kind === "effect.release")
     return entry.detail.split(" @ ")[0]!.split(" #")[0]!.replace(/\d+/g, "#");
   // Light-define marks group by caller, which identifies what moved the light set.
   if (entry.kind === "defines.light") return `${entry.detail} ${(entry.stack ?? "").split(" | ").slice(0, 8).join(" | ")}`;
