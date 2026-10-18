@@ -10,9 +10,11 @@ const RETRY_RELEASE_WAIT_MS = 15_000;
 
 /** Why Retry could not replace the Engine; `retryable` is false when only a reload helps. */
 export class RenderingRetryError extends Error {
-  constructor(message: string, readonly retryable: boolean) {
+  readonly retryable: boolean;
+  constructor(message: string, retryable: boolean) {
     super(message);
     this.name = "RenderingRetryError";
+    this.retryable = retryable;
   }
 }
 
