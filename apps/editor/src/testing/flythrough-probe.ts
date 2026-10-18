@@ -54,7 +54,7 @@ export interface FlyThroughOptions {
   stackLimit?: number;
 }
 
-export type FlyPhase = "warmup" | "reset" | `pass${number}`;
+export type FlyPhase = "warmup" | "reset" | "end" | `pass${number}`;
 
 export interface FlyFrame {
   /** Rendered-frame index within the run. */
@@ -253,12 +253,11 @@ function createPath(points: FlyVec3[]) {
   return { length, at, end: vectors[vectors.length - 1]!, beforeEnd: vectors[vectors.length - 2]! };
 }
 
-/** The frame graph's main object renderer culls; the Scene's own list stays empty under a frame graph. */
-function activeMeshIds(scene: Scene, into: Set<number>): number {
+type ActiveMeshSource = { objectRenderer?: { getActiveMeshes(): ReturnType<Scene["getActiveMeshes"]> } };
+
+/** The forward graph's object renderer culls; the Scene's own list stays empty under a frame graph. */
+function activeMeshIds(scene: Scene, task: ActiveMeshSource | null, into: Set<number>): number {
   into.clear();
-  const task = scene.frameGraph?.getTaskByName("Forward objects") as
-    | { objectRenderer?: { getActiveMeshes(): ReturnType<Scene["getActiveMeshes"]> } }
-    | undefined;
   const active = task?.objectRenderer?.getActiveMeshes() ?? scene.getActiveMeshes();
   for (let index = 0; index < active.length; index += 1) {
     const mesh = active.data[index] as AbstractMesh | undefined;
@@ -480,6 +479,12 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
       }
       return original.apply(this, args);
     })) instrumented.push(`MaterialDefines.${method}`);
+  // The view's forward graph is owned outside the Scene (scene.frameGraph stays unset); find it as it executes.
+  let forwardObjects: ActiveMeshSource | null = null;
+  if (wrapMethod(FrameGraph.prototype, "execute", restores, (original) => function (this: FrameGraph, ...args: unknown[]) {
+    if (this.scene === scene) forwardObjects = (this.getTaskByName("Forward objects") as ActiveMeshSource | undefined) ?? forwardObjects;
+    return original.apply(this, args);
+  })) instrumented.push("FrameGraph.execute");
   // Frame graph re-plans: who released the prepared graph, and each rebuild.
   for (const method of ["dispose", "buildAsync"] as const)
     if (wrapMethod(FrameGraph.prototype, method, restores, (original) => function (this: FrameGraph, ...args: unknown[]) {
@@ -600,7 +605,7 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
   for (const light of scene.lights) for (const generator of lightGenerators(light)) generatorLights.set(generator, light.name);
   let previousActive = new Set<number>();
   let currentActive = new Set<number>();
-  activeMeshIds(scene, previousActive);
+  activeMeshIds(scene, null, previousActive);
   const heap = () => {
     const memory = (performance as Performance & { memory?: { usedJSHeapSize?: number } }).memory;
     return typeof memory?.usedJSHeapSize === "number" ? round2(memory.usedJSHeapSize / 1048576) : null;
@@ -671,7 +676,7 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
         record("shadow.detached", owner);
         generatorLights.delete(generator);
       }
-    const activeCount = activeMeshIds(scene, currentActive);
+    const activeCount = activeMeshIds(scene, forwardObjects, currentActive);
     let added = 0;
     let removed = 0;
     for (const id of currentActive) if (!previousActive.has(id)) added += 1;
@@ -755,7 +760,7 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
           setPose(distance);
           if (now - passStarted >= passMs) {
             if (pass >= passes) {
-              startPhase("reset", now);
+              startPhase("end", now);
               resolve();
               return;
             }

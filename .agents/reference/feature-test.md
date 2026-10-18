@@ -171,10 +171,11 @@ Rules: compare runs on the same machine, browser project and build only; never a
 | `BL_FLY_SPEED` / `BL_FLY_PASSES` / `BL_FLY_WARMUP_MS` | 8 m/s / 2 / 5000 | Fly speed, flights of the path, static hold before the first |
 | `BL_FLY_PATH` | per scene | JSON array of `[x, y, z]` eye waypoints |
 | `BL_FLY_PROFILE` | off | `1` records a CPU profile of the flights |
+| `BL_FLY_PLAY` | none | Selected scenes to fly again in overlay Play with the free camera (`freecam`) |
 | `BL_PERF_SCALING` / `BL_PERF_VIEWPORT_CAP` | Engine Settings | Hardware scaling level and viewport frame cap |
 | `BL_PERF_SETTLE_MS`, `BL_PERF_LABEL`, `BL_PERF_OUT` | 5000, none, none | Settle after opening, label, extra report path |
 
-On a GPU host (`perf-gpu`), set `BL_RENDER_NATIVE_GPU=1` so the project's launch arguments are kept.
+A switched backend is saved before the first scene opens; scene edits a flight leaves behind are discarded when the next scene opens. On a GPU host (`perf-gpu`), set `BL_RENDER_NATIVE_GPU=1` so the project's launch arguments are kept. Main-scene Play (`BL_FLY_PLAY=main`) only loads on a real GPU.
 
 ## Verification
 

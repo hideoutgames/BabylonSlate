@@ -416,7 +416,16 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
   const cdp = await page.context().newCDPSession(page);
   const createToInteractiveMs = await createFeatureTestProject(page);
   await waitForTextureEncodes(page);
-  if (BACKEND) await selectBackend(page, BACKEND);
+  if (BACKEND) {
+    await selectBackend(page, BACKEND);
+    // The backend is a project setting: save it now, before any scene changes.
+    await saveAllIfEnabled(page, 300_000);
+  }
+  // A flight can leave the scene dirty (Save All would then bake audio reverb on software GL for minutes);
+  // opening the next scene discards it instead.
+  await page.addLocatorHandler(page.getByRole("alertdialog", { name: "Unsaved Documents" }), async (dialog) => {
+    await dialog.getByRole("button", { name: "Discard", exact: true }).click();
+  });
 
   const scenes: Record<string, unknown> = {};
   const raw: Record<string, unknown> = {};
@@ -442,8 +451,6 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
     }
   };
   for (const scene of SCENES) {
-    // The backend is a project setting: unsaved documents would block opening the next scene.
-    await saveAllIfEnabled(page, 120_000);
     const { readyMs, loadRetries } = await openFeatureTestScene(page, scene);
     if (BACKEND) await expect.poll(() => viewportBackend(page), { timeout: 120_000 }).toBe(BACKEND);
     await page.waitForTimeout(SETTLE_MS);
