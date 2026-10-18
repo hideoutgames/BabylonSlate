@@ -19,7 +19,7 @@
 
 .catalog-menu-modal .catalog-menu-category {
   background: color-mix(in oklch, var(--popover-foreground) 8%, var(--popover));
-  font-weight: 600;
+  font-weight: var(--ui-weight-strong);
 }
 
 .catalog-menu-row:hover,
@@ -29,7 +29,7 @@
 }
 
 .catalog-menu-category {
-  font-weight: 500;
+  font-weight: var(--ui-weight-medium);
 }
 
 .catalog-menu-item[data-nested="true"] {

@@ -104,7 +104,7 @@
   max-width: 100%;
   overflow: hidden;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: var(--ui-weight-strong);
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;

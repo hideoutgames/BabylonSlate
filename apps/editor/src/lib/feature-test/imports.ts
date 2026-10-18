@@ -10,7 +10,7 @@ import type { FeatureTestContext } from "./context";
 import {
   FEATURE_TEST_HOLIDAY_MODELS,
   FEATURE_TEST_OPTIONAL_SLOTS,
-  GEIST_FONT_PATH,
+  ONEST_FONT_PATH,
   HOLIDAY_COLORMAP_PATH,
   PLATFORMER_TILESHEET_PATH,
   ROBOT_FRAMES,
@@ -32,7 +32,7 @@ const UI_ICON_STEMS = ["camera", "audio", "particles", "point_light", "spot_ligh
  * pixel art, Kenney platformer tiles and robot frames, UI, skybox faces,
  * Skybox Creator net, optional LUT), Holiday Pack
  * Models (the door brings rigid node Animations), and Fonts
- * (bundled ASCII facetype + Geist). Also records the Basic 3D Mannequin.
+ * (bundled ASCII facetype + Onest). Also records the Basic 3D Mannequin.
  */
 export async function importFeatureTestContent(ctx: FeatureTestContext): Promise<void> {
   const { host, assets } = ctx;
@@ -110,8 +110,8 @@ export async function importFeatureTestContent(ctx: FeatureTestContext): Promise
     new TextEncoder().encode(JSON.stringify(bundledAsciiTypeFace)),
   );
   assets.fonts.facetype = single(facetype, "Font").header.guid;
-  assets.fonts.geist = single(
-    await ctx.importFile(FONTS, "FT_Geist.woff2", await host.loadBytes(GEIST_FONT_PATH)),
+  assets.fonts.onest = single(
+    await ctx.importFile(FONTS, "FT_Onest.woff2", await host.loadBytes(ONEST_FONT_PATH)),
     "Font",
   ).header.guid;
 }

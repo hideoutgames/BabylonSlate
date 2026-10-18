@@ -11,6 +11,9 @@
     --color-trace-script: var(--trace-script);
     --color-trace-physics: var(--trace-physics);
     --font-heading: var(--font-sans);
+    --font-weight-normal: var(--ui-weight-regular);
+    --font-weight-medium: var(--ui-weight-medium);
+    --font-weight-semibold: var(--ui-weight-strong);
     --font-sans: 'Onest Variable', ui-sans-serif, system-ui, sans-serif;
     --color-brand-red: var(--brand-red);
     --color-brand-amber: var(--brand-amber);
@@ -82,6 +85,10 @@
  * chromatic so graph and gizmo meaning is independent of chrome.
  */
 :root {
+    /* Onest weights, matching haptic.no's Medium body text. */
+    --ui-weight-regular: 500;
+    --ui-weight-medium: 600;
+    --ui-weight-strong: 650;
     --background: oklch(0.948 0.004 80);
     --foreground: oklch(0.18 0.005 75);
     --card: oklch(0.995 0.001 85);

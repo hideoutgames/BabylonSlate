@@ -53,6 +53,7 @@
     }
   html {
     @apply font-sans;
+    font-weight: var(--ui-weight-regular);
     height: 100%;
     overflow: hidden;
     overscroll-behavior: none;

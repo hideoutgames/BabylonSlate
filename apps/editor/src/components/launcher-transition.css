@@ -44,7 +44,7 @@
   border-bottom: 1px solid oklch(0.285 0.004 75);
   background: oklch(0.175 0.004 75);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: var(--ui-weight-strong);
 }
 .slate-splash-titlebar img {
   width: 12px;
@@ -62,7 +62,7 @@
   margin-left: auto;
   color: oklch(0.745 0.005 85);
   font-size: 11px;
-  font-weight: 400;
+  font-weight: var(--ui-weight-regular);
   white-space: nowrap;
 }
 /* Decorative viewports stay dark in both themes, like editor canvases. */
@@ -163,7 +163,7 @@
 .slate-loading-label {
   display: block;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: var(--ui-weight-strong);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
