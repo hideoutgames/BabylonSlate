@@ -96,7 +96,7 @@ export function PlayDebugMenuItems({
         <DropdownMenuCheckboxItem
           data-testid="play-from-scene-toggle"
           checked={playFromScene}
-          disabled={sessionLocked || mode !== "play"}
+          disabled={sessionLocked || mode === "simulate"}
           onCheckedChange={(checked) => onPlayFromSceneChange(checked === true)}
         >
           Start In Open Scene

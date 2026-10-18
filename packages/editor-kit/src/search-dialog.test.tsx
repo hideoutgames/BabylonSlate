@@ -293,6 +293,29 @@ describe("SearchDialog", () => {
     expect(screen.getByText("No matches")).toBeTruthy();
   });
 
+  it("closes on a press outside the popup, even inside another dialog's content", () => {
+    const onOpenChange = vi.fn();
+    render(
+      <div>
+        <button type="button" data-testid="host-field">Host Field</button>
+        <SearchDialog open onOpenChange={onOpenChange} title="Choose Asset" items={items} onSelect={() => {}} data-testid="picker" />
+      </div>,
+    );
+    fireEvent.pointerDown(screen.getByTestId("picker-query"));
+    expect(onOpenChange).not.toHaveBeenCalled();
+    fireEvent.pointerDown(screen.getByTestId("host-field"));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("reports a close when its host unmounts it while open", () => {
+    const onOpenChange = vi.fn();
+    const view = render(
+      <SearchDialog open onOpenChange={onOpenChange} title="Choose Asset" items={items} onSelect={() => {}} data-testid="picker" />,
+    );
+    view.unmount();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it("grows the popup for items that arrive after it opens", () => {
     const props = {
       open: true,

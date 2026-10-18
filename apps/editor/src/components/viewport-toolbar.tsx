@@ -472,7 +472,7 @@ export function ViewportToolbar({
               aria-label="Game Camera"
               aria-keyshortcuts={gameCameraChord ? ariaKeyShortcuts(gameCameraChord) : undefined}
               pressed={previewGameCamera}
-              onPressedChange={setPreviewGameCamera}
+              onPressedChange={(pressed) => setPreviewGameCamera(pressed)}
               data-testid={`${testIdPrefix}viewport-game-camera-toggle`}
             >
               <VideoIcon />
