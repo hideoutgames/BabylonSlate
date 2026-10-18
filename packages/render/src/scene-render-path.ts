@@ -14,7 +14,7 @@ import { clusteredLightCapabilities } from "./clustered-light-capabilities";
 import { isManagedClusteredLight } from "./clustered-light-policy";
 import { clusteredSceneMaterialReason } from "./clustered-material-policy";
 import { forwardLightBudget } from "./forward-light-budget";
-import { isGlobalLight } from "./light-policy";
+import { compareLightCreation, isGlobalLight } from "./light-policy";
 import { renderPathSession } from "./render-path-session";
 import { sceneRenderingSettings } from "./render-settings";
 import { findSceneShadowController } from "./shadow-controller";
@@ -143,16 +143,19 @@ class SceneRenderPath {
           (live.has(light) || this.cluster?.borrowsLight(light)),
       );
       const known = new Set(registry);
+      let added: Light[] | undefined;
       for (const light of scene.lights) {
         if (
           !light.isDisposed() &&
           !known.has(light) &&
           !isManagedClusteredLight(scene, light)
         ) {
-          registry.push(light);
+          (added ??= []).push(light);
           known.add(light);
         }
       }
+      // Creation order: Forward slot exchanges reorder scene.lights.
+      if (added) registry.push(...added.sort(compareLightCreation));
       const changed =
         registry.length !== this.registry.length ||
         registry.some((light, index) => light !== this.registry[index]);

@@ -9,9 +9,16 @@ import {
 } from "@babylonjs/core";
 
 import {
+  hasClusteredLightPolicy,
   isClusteredLocalAllowed,
   isManagedClusteredLight,
 } from "./clustered-light-policy";
+import {
+  exchangeForwardLightSlots,
+  NO_FORWARD_LIGHT_SLOT_EXCHANGES,
+  settleForwardLightSlots,
+  type ForwardLightSlotExchange,
+} from "./forward-light-slots";
 import { lightingSamplerCapacity, lightSamplerCost, lightSamplerCount } from "./light-sampler-budget";
 
 const authoredEnabled = new WeakMap<
@@ -27,6 +34,28 @@ const scratchLightPosition = new Vector3();
 const scratchCandidates: Light[] = [];
 const scratchCandidateSet = new Set<Light>();
 const scratchDistances = new Map<Light, number>();
+const scratchLights: Light[] = [];
+const scratchAuthored: boolean[] = [];
+const scratchBudget: BudgetChange[] = [];
+const scratchLeaving: Light[] = [];
+const scratchEntering: Light[] = [];
+
+/** How this sync's budget selection changed a light's Forward limit. */
+const BudgetChange = { None: 0, Dropped: 1, Admitted: 2 } as const;
+type BudgetChange = (typeof BudgetChange)[keyof typeof BudgetChange];
+
+/**
+ * Creation order: the stable "authored" order of a Scene's lights. The Forward
+ * policy reorders `scene.lights` to keep shader slots, so order-sensitive
+ * readers (clustered authored order, diagnostics) sort by this instead.
+ */
+export function compareLightCreation(a: Light, b: Light): number {
+  return a.uniqueId - b.uniqueId;
+}
+
+export function lightsInCreationOrder(lights: readonly Light[]): Light[] {
+  return lights.slice().sort(compareLightCreation);
+}
 
 export function isAuthoredLightEnabled(light: Light): boolean {
   const current = light.isEnabled(false);
@@ -45,12 +74,17 @@ export function isIlluminatingLight(light: Light): boolean {
   );
 }
 
-function applyEnabled(light: Light, enabled: boolean): void {
-  const effective =
+function effectiveEnabled(light: Light, enabled: boolean): boolean {
+  return (
     enabled &&
     light.intensity > 0 &&
     !excluded.has(light) &&
-    (!forwardExcluded.has(light) || clusteredMembers.has(light));
+    (!forwardExcluded.has(light) || clusteredMembers.has(light))
+  );
+}
+
+function applyEnabled(light: Light, enabled: boolean): void {
+  const effective = effectiveEnabled(light, enabled);
   const previous = authoredEnabled.get(light);
   if (previous) {
     previous.enabled = enabled;
@@ -119,6 +153,8 @@ export function syncForwardLightPolicy(
   limited: Light[];
   samplerLimited: Light[];
   samplers: number;
+  /** Lights that took a dropped light's shader index during this sync. */
+  exchanges: readonly ForwardLightSlotExchange[];
 } {
   syncDirectionalLightPolicy(scene);
   const previous = forwardSelections.get(scene) ?? new Set<Light>();
@@ -164,22 +200,45 @@ export function syncForwardLightPolicy(
       if (authoredLocal) selectedLocals++;
     }
   }
-  // Test membership in the candidates snapshot rather than re-deriving it:
-  // applyEnabled can change a descendant light's eligibility mid-loop. Fill
-  // the set once, and only when an eligible light went unselected.
+  // Decide every light before toggling any, so receivers can be prepared for
+  // the whole change. An eligible light the clustered policy kept out of the
+  // candidates is limited too; fill that set once, and only when needed.
   const candidateSet = scratchCandidateSet;
   candidateSet.clear();
-  for (const light of scene.lights) {
-    const enabled = isAuthoredLightEnabled(light);
-    if (isForwardEligible(light) && !selected.has(light)) {
-      forwardExcluded.add(light);
-      if (!candidateSet.size) for (const candidate of candidates) candidateSet.add(candidate);
-      if (!candidateSet.has(light)) limited.push(light);
-    } else forwardExcluded.delete(light);
-    applyEnabled(light, enabled);
+  const lights = scratchLights;
+  const authored = scratchAuthored;
+  const budget = scratchBudget;
+  let exchanges: readonly ForwardLightSlotExchange[];
+  try {
+    for (const light of scene.lights) {
+      const wasLimited = forwardExcluded.has(light);
+      const isLimited = isForwardEligible(light) && !selected.has(light);
+      if (isLimited) {
+        forwardExcluded.add(light);
+        if (!candidateSet.size) for (const candidate of candidates) candidateSet.add(candidate);
+        if (!candidateSet.has(light)) limited.push(light);
+      } else forwardExcluded.delete(light);
+      lights.push(light);
+      authored.push(isAuthoredLightEnabled(light));
+      budget.push(
+        isLimited === wasLimited
+          ? BudgetChange.None
+          : isLimited
+            ? BudgetChange.Dropped
+            : BudgetChange.Admitted,
+      );
+    }
+    exchanges = exchangeSlots(scene, lights, authored, budget);
+    for (let index = 0; index < lights.length; index++)
+      applyEnabled(lights[index]!, authored[index]!);
+    settleForwardLightSlots(scene, exchanges);
+  } finally {
+    lights.length = 0;
+    authored.length = 0;
+    budget.length = 0;
+    candidates.length = 0;
+    candidateSet.clear();
   }
-  candidates.length = 0;
-  candidateSet.clear();
   forwardSelections.set(scene, selected);
   return {
     requested: selected.size + limited.length,
@@ -187,7 +246,47 @@ export function syncForwardLightPolicy(
     limited,
     samplerLimited,
     samplers,
+    exchanges,
   };
+}
+
+/**
+ * Lights the budget admits this sync take the shader indices of those it
+ * drops. Authored Enabled, intensity and parent changes keep Babylon's order.
+ */
+function exchangeSlots(
+  scene: Scene,
+  lights: readonly Light[],
+  authored: readonly boolean[],
+  budget: readonly BudgetChange[],
+): readonly ForwardLightSlotExchange[] {
+  // Clustered Forward orders lightSources itself; Babylon re-sorts a scene
+  // that requires light sorting whenever a light is added or removed.
+  if (hasClusteredLightPolicy(scene) || scene.requireLightSorting)
+    return NO_FORWARD_LIGHT_SLOT_EXCHANGES;
+  const leaving = scratchLeaving;
+  const entering = scratchEntering;
+  try {
+    for (let index = 0; index < lights.length; index++) {
+      const light = lights[index]!;
+      // The first enabled sun in scene order illuminates; never move a sun
+      // or fill (the budget keeps both ahead of every local light anyway).
+      if (budget[index] === BudgetChange.None || isGlobalLight(light)) continue;
+      const lit = light.isEnabled();
+      const next =
+        effectiveEnabled(light, authored[index]!) &&
+        (!light.parent || light.parent.isEnabled());
+      if (budget[index] === BudgetChange.Dropped && lit && !next) leaving.push(light);
+      else if (budget[index] === BudgetChange.Admitted && !lit && next) entering.push(light);
+    }
+    // Removal alone keeps every remaining light's relative order.
+    return entering.length
+      ? exchangeForwardLightSlots(scene, leaving, entering)
+      : NO_FORWARD_LIGHT_SLOT_EXCHANGES;
+  } finally {
+    leaving.length = 0;
+    entering.length = 0;
+  }
 }
 
 function isForwardEligible(light: Light): boolean {
