@@ -16,15 +16,15 @@ const DRAIN_DEADLINE_MS = 5_000;
  * buffer and texture destruction, deferred Effect disposal and frame-gated
  * managed-lease releases. With no other client rendering, a closed Scene would
  * otherwise stay allocated until the next client's first frame, so switching
- * scenes would peak at the old and the new one together. The frames draw
- * nothing: no views or Scenes are rendered by this loop.
+ * scenes would peak at the old and the new one together. The loop's own
+ * function draws nothing, and it is the only loop this removes: a client that
+ * starts mid-drain keeps its loop, and its frames count toward the end.
  */
 export function drainEngineAfterRelease(engine: AbstractEngine, released: Promise<unknown>): void {
   if (engine.isDisposed) return;
   const frame = () => {};
   let settledFrames = -1;
   let stopped = false;
-  let deadline: ReturnType<typeof setTimeout> | undefined;
   const stop = () => {
     if (stopped) return;
     stopped = true;
@@ -38,7 +38,7 @@ export function drainEngineAfterRelease(engine: AbstractEngine, released: Promis
     if (settledFrames >= 0 && ++settledFrames >= SETTLE_FRAMES) stop();
   });
   const disposed = engine.onDisposeObservable.addOnce(stop);
-  deadline = setTimeout(stop, DRAIN_DEADLINE_MS);
+  const deadline = setTimeout(stop, DRAIN_DEADLINE_MS);
   void released.then(() => {
     if (!stopped) settledFrames = 0;
   }, stop);

@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core";
+import type { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
+import { WebGPUCacheBindGroups } from "@babylonjs/core/Engines/WebGPU/webgpuCacheBindGroups";
 import { drainEngineAfterRelease } from "./idle-engine-drain";
+import { pruneReleasedWebGpuCacheEntries, webGpuCacheCounts } from "./webgpu-cache-pruning";
 
 const engines: NullEngine[] = [];
+beforeEach(() => WebGPUCacheBindGroups.ResetCache());
 afterEach(() => {
   vi.useRealTimers();
   for (const engine of engines.splice(0)) engine.dispose();
@@ -31,6 +35,36 @@ function deferred() {
   return { promise, resolve };
 }
 
+/**
+ * An idle Engine that records its releases the way a WebGPU Engine does, so
+ * the drain's cache prune shows on Babylon's real global bind-group cache.
+ */
+function releasingEngine() {
+  const idle = idleEngine();
+  Object.assign(idle.engine, { _releaseBuffer: () => true, _releaseTexture: () => {}, _releaseEffect: () => {} });
+  const webGpu = idle.engine as unknown as WebGPUEngine;
+  pruneReleasedWebGpuCacheEntries(webGpu);
+  return { ...idle, webGpu };
+}
+
+/** Cache one bind group keyed by `buffer`, through Babylon's own lookup. */
+function cacheBindGroupFor(buffer: { uniqueId: number }) {
+  const pipelineContext = {
+    shaderProcessingContext: {
+      bufferNames: ["Scene"], samplerNames: [], textureNames: [],
+      bindGroupLayoutEntries: [[{ binding: 0, buffer: {} }]],
+      bindGroupEntries: [[{ binding: 0, resource: {} }]],
+      bindGroupLayoutEntryInfo: [{ 0: { name: "Scene" } }],
+    },
+    bindGroupLayouts: { 0: [{}] },
+  };
+  const drawContext = { buffers: { Scene: buffer }, isDirty: () => true, resetIsDirty() {}, bindGroups: undefined };
+  const materialContext = { textures: {}, samplers: {}, updateId: 0, isDirty: true, forceBindGroupCreation: false, textureState: 0 };
+  const device = { createBindGroup: () => ({}) };
+  new WebGPUCacheBindGroups(device as never, {} as never, {} as never)
+    .getBindGroups(pipelineContext as never, drawContext as never, materialContext as never);
+}
+
 describe("drainEngineAfterRelease", () => {
   it("keeps end frames coming until the release settles and its deferred end-frame work has run", async () => {
     const { engine, frame } = idleEngine();
@@ -50,6 +84,42 @@ describe("drainEngineAfterRelease", () => {
 
     expect(deferredWork).toHaveBeenCalledOnce();
     expect(engine.activeRenderLoops).toHaveLength(0);
+  });
+
+  it("prunes the cache entries of what the Engine released once the drain ends", async () => {
+    const { engine, webGpu, frame } = releasingEngine();
+    const closed = { uniqueId: 5 };
+    const live = { uniqueId: 6 };
+    cacheBindGroupFor(closed);
+    cacheBindGroupFor(live);
+    const release = deferred();
+    drainEngineAfterRelease(engine, release.promise);
+    // The Scene's disposal releases its buffer; below the frame-end threshold nothing else prunes it.
+    webGpu._releaseBuffer(closed as never);
+    expect(webGpuCacheCounts().bindGroups).toBe(2);
+
+    release.resolve();
+    await release.promise;
+    for (let i = 0; i < 3; i++) frame();
+
+    expect(webGpuCacheCounts().bindGroups).toBe(1);
+  });
+
+  it("removes only its own loop, so a client that starts mid-drain keeps rendering", async () => {
+    const { engine, frame } = idleEngine();
+    const release = deferred();
+    drainEngineAfterRelease(engine, release.promise);
+    const client = vi.fn();
+    engine.runRenderLoop(client);
+    frame();
+
+    release.resolve();
+    await release.promise;
+    for (let i = 0; i < 3; i++) frame();
+
+    expect(engine.activeRenderLoops).toHaveLength(1);
+    expect(engine.activeRenderLoops).toContain(client);
+    expect(client).toHaveBeenCalledTimes(4);
   });
 
   it("stops at its deadline when the release never settles", () => {
