@@ -93,6 +93,8 @@ type Surface = {
   fftDisplaced: boolean; boundsDirty: boolean;
   /** Counted in `copyIntents`: a built-in surface that is enabled, itself and through its ancestors. */
   copyCounted: boolean;
+  /** Whether the mesh was enabled (with its ancestors) when the water update last saw it; null before the first update. */
+  seenEnabled: boolean | null;
   /** Process-unique id: blending orders and identifies surfaces by it. */
   uid: number;
   /** When the water update first found the surface disabled (performance.now), or -1 while it is enabled. */
@@ -286,11 +288,12 @@ function sceneWaterTime(scene: Scene): number {
  * Called once per scene render; runtime water advances only with the worker clock. Every enabled surface advances its
  * shader clock and keeps its grid and bounds current. Surfaces neither drawn last frame nor inside an active camera's
  * frustum skip their CPU vertex work (Custom Material water), their terrain and contact refreshes and their FFT detail
- * request until they are; the FFT simulations then update once for the whole scene.
+ * request until they are; the FFT simulations then update once for the whole scene. An editor-time clock advances by
+ * the last frame's time (at most 0.1 s) unless `advanceClock` is false.
  */
-export function updateSceneWater(scene: Scene): void {
+export function updateSceneWater(scene: Scene, advanceClock = true): void {
   const clock = sceneClock(scene);
-  if (!clock.runtime && !isSceneGameTimePaused(scene)) clock.time += Math.min(0.1, scene.getEngine().getDeltaTime() / 1000 || 0);
+  if (advanceClock && !clock.runtime && !isSceneGameTimePaused(scene)) clock.time += Math.min(0.1, scene.getEngine().getDeltaTime() / 1000 || 0);
   const time = sceneWaterTime(scene);
   reflections.get(scene)?.sync();
   const entries = surfaces.get(scene);
@@ -301,8 +304,10 @@ export function updateSceneWater(scene: Scene): void {
   if (blendState) blendState.spent = 0;
   let restored = 0;
   for (const surface of entries) {
+    const enabled = surface.mesh.isEnabled();
+    surface.seenEnabled = enabled;
     syncCopyIntent(scene, surface);
-    if (!surface.mesh.isEnabled()) {
+    if (!enabled) {
       // Water disabled for a while gives back its terrain and contact textures (their CPU data stays); enabling it
       // uploads them again, rebuilding only what changed meanwhile.
       if (surface.disabledSince < 0) surface.disabledSince = now;
@@ -332,6 +337,25 @@ export function updateSceneWater(scene: Scene): void {
     if (surface.plugin) requestWaterFft(scene, surface.mesh, surface.water, surface.mesh.isVisible && surface.mesh.visibility > 0);
   }
   updateSceneWaterFft(scene, time);
+}
+
+/** Whether a surface was created, or enabled or disabled (itself or through an ancestor), since the water update last ran. */
+function waterUnsettled(scene: Scene): boolean {
+  const entries = surfaces.get(scene);
+  if (entries) for (const surface of entries) if (surface.seenEnabled !== surface.mesh.isEnabled()) return true;
+  return false;
+}
+
+/**
+ * Runs the water update ahead of the frame's strict readiness probes, without advancing the clock, so a surface's blend,
+ * placement (`flat`), enablement and the sky reflection view are final when its variants are first requested. The
+ * before-render update runs after those probes, and every define it then changes compiles another variant. Copy intent
+ * is counted when the surface is created and re-synced only when its enablement changes. Idempotent with the
+ * before-render update. Without `force` it does nothing unless a surface was created or its enablement changed since the
+ * last update (an editor edit or drop, a Play spawn, a published scene stream); a load forces it.
+ */
+export function settleSceneWater(scene: Scene, force = false): void {
+  if (force || waterUnsettled(scene)) updateSceneWater(scene, false);
 }
 
 const blendPosition = new Vector3(), blendScaling = new Vector3(), blendRotation = new Quaternion();
@@ -1630,7 +1654,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     qualityRevision: NaN, density: 1, drawn: true,
     base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty,
     offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null, fftDisplaced: false, boundsDirty: false,
-    copyCounted: false, uid: ++surfaceIds, blend: null, blendData: empty, blendRest: empty, blendRevision: 0,
+    copyCounted: false, seenEnabled: null, uid: ++surfaceIds, blend: null, blendData: empty, blendRest: empty, blendRevision: 0,
     blendMatrix: new Float64Array(16).fill(NaN), blendEnabled: false, blendStamp: 0, blendRows: Int32Array.of(1, 0), stage: null, layoutColumns: 0, disabledSince: -1, released: false,
   };
   let entries = surfaces.get(scene);
