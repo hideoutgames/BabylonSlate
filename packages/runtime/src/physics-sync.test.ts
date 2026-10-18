@@ -1034,6 +1034,49 @@ describe("PhysicsWorldSync MeshComponent collision", () => {
   });
 });
 
+describe("PhysicsWorldSync Collider without its own Rigid Body", () => {
+  /** An actor with `sources` plus a Collider box whose centre is 3 units along +X. */
+  function sync(sources: Array<[string, Record<string, unknown>]>, colliderVariables: Record<string, unknown> = {}) {
+    const world = createWorld();
+    const actor = world.createActor({ classId: "Actor", guid: "sensor", transform: identityTransform() });
+    sources.forEach(([classId, variables], index) =>
+      actor.attachComponent(world.createComponent({ classId, guid: `source-${index}`, variables })));
+    actor.attachComponent(world.createComponent({
+      classId: "ColliderComponent",
+      guid: "col",
+      variables: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } }, ...colliderVariables },
+      transform: { position: { x: 3, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } },
+    }));
+    world.spawnActorNow(actor);
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const physics = new PhysicsWorldSync(backend);
+    physics.syncFromWorld(world);
+    return { backend, physics, owners: (x: number) => backend.sphereOverlap({ x, y: 0, z: 0 }, 0.2).actorIds };
+  }
+
+  it("does not simulate a Collider on an actor with no body source", () => {
+    const { owners, physics } = sync([]);
+    expect(owners(3)).toEqual([]);
+    physics.dispose();
+    const none = sync([["MeshComponent", { meshKind: "box", collisionMode: "none" }]]);
+    expect(none.owners(3)).toEqual([]);
+    none.physics.dispose();
+  });
+
+  it.each([
+    ["Mesh with Use Simple Collision", "MeshComponent", { meshKind: "box", collisionMode: "simple" }],
+    ["Blocking Volume", "BlockingVolumeComponent", {}],
+  ])("attaches the Collider's shape, trigger or solid, to the implicit body of a %s", (_name, classId, variables) => {
+    for (const isTrigger of [false, true]) {
+      const { owners, physics } = sync([[classId, variables]], { isTrigger });
+      expect(owners(3), `isTrigger ${isTrigger}`).toContain("sensor");
+      // The implicit shape stays beside it.
+      expect(owners(0), `isTrigger ${isTrigger}`).toContain("sensor");
+      physics.dispose();
+    }
+  });
+});
+
 describe("PhysicsWorldSync actor candidates", () => {
   it("considers only actors that own a physics component class and creates bodies in world order as the world changes", () => {
     const world = createWorld();
