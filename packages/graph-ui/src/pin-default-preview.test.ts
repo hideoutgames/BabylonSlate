@@ -456,6 +456,14 @@ describe("pinDefaultPreview", () => {
     expect(pinDefaultPreview(argument, { implicitSelf: true }, false)).toEqual({ kind: "actorRef", text: "", placeholder: true });
   });
 
+  it("previews Self on an unwired pin the catalog marks selfWhenUnwired, and nothing once it is wired", () => {
+    const actor: SerializedPin = { id: "actor", name: "actor", kind: "data", direction: "in", optional: true, selfWhenUnwired: true, type: { kind: "actorRef", classId: "Actor" } };
+    const water: SerializedPin = { id: "waterActor", name: "Water Actor", kind: "data", direction: "in", optional: true, type: { kind: "actorRef", classId: "Actor" } };
+    expect(pinDefaultPreview(actor, {}, false)).toEqual({ kind: "actorRef", text: "Self" });
+    expect(pinDefaultPreview(actor, {}, true)).toBeNull();
+    expect(pinDefaultPreview(water, {}, false)).toEqual({ kind: "actorRef", text: "Actor", placeholder: true });
+  });
+
   it("returns null for texture pins", () => {
     const texture = pin({
       id: "texture",

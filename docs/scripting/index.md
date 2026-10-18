@@ -36,7 +36,7 @@ Type in **Search Nodes** or browse the categories. Search words can be in any or
 - Drag from one pin to another, or tap a pin and then tap the pin to connect.
 - A data input takes one wire. Connecting a new wire replaces the old one.
 - An execution output drives one wire; an execution input accepts several.
-- Most unconnected data inputs show an inline value you can edit on the node or in the **Inspector**. Object and actor inputs must be wired.
+- Most unconnected data inputs show an inline value you can edit on the node or in the **Inspector**. Object and actor inputs must be wired, unless the node's page says an unconnected one uses the actor running the graph.
 - Shake a node while dragging it to disconnect all its wires.
 
 The graph toolbar also has **Copy**, **Paste**, **Delete**, **Break Links** (removes the wires of the selected nodes) and **Format** (tidies the selected chains). Gestures are listed in [Touch gestures](../start/gestures.md).
@@ -52,6 +52,14 @@ Graphs are checked as you edit. Problems appear in **Compiler Results** and as r
 3. If any of those graphs has errors, the **Compile errors** dialog lists them. Tap a row to go to the node, or choose **Play Anyway**.
 
 Warnings never block Play. A loop that never ends stops Play and reports **Infinite loop detected**.
+
+Results you may meet while wiring:
+
+| Result | Meaning |
+| --- | --- |
+| **Required input "…" is not connected** | An object or actor input has no wire (error), or a class or asset input has nothing selected (warning). Inputs with an inline value never raise it. |
+| **Event … appears more than once in this graph** | Error. An event can be on the graph once, so it would run twice. Keep one and use a [Sequence](class/sequence.md) to run several things. |
+| **Input "…" reads from …, which never runs** | Warning. A node with execution pins only runs when an execution wire reaches it, so the value you read from it is always empty. Wire the node into the chain before the node that reads it. |
 
 ::: tip
 [Print](class/print.md), [Print String](class/print-string.md) and the Draw Debug nodes are **Development Only** by default: they run in the editor but are left out of an exported game unless **Project Settings > Export > Bundle Debugger** is on. You can set **Development Only** on any node in the **Inspector**.

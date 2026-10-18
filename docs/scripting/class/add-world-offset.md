@@ -24,3 +24,4 @@ Moves an actor by adding an offset to its current location.
 
 - The offset is in world units and is added on each axis. For an attached actor, it is added to the location relative to the parent.
 - A value that is not a finite number changes nothing.
+- If **Target** is connected to a reference that is empty when the node runs, nothing happens.

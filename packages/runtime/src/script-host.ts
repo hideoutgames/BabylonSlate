@@ -1938,18 +1938,18 @@ export class ScriptHost {
         }
       };
       context.destroyActor = (actor) => {
-        const target = asActor(actor ?? self);
+        const target = asActor(actor);
         if (target) services.destroyActor(target);
       };
       context.setActorLocation = (actor, location) => {
-        const target = transformTarget(actor ?? self);
+        const target = transformTarget(actor);
         const position = finiteVector(location, 0);
         if (!target || !position) return;
         Object.assign(target.transform.position, position);
         services.teleportActor?.(target);
       };
       context.addActorWorldOffset = (actor, offset) => {
-        const target = transformTarget(actor ?? self);
+        const target = transformTarget(actor);
         const delta = finiteVector(offset, 0);
         if (!target || !delta) return;
         const position = finiteVector({
@@ -1962,21 +1962,21 @@ export class ScriptHost {
         services.teleportActor?.(target);
       };
       context.setActorRotation = (actor, rotation) => {
-        const target = transformTarget(actor ?? self);
+        const target = transformTarget(actor);
         const rotator = finiteRotator(rotation);
         if (!target || !rotator) return;
         Object.assign(target.transform.rotation, rotatorToQuat(rotator));
         services.teleportActor?.(target);
       };
       context.setActorScale = (actor, scale) => {
-        const target = transformTarget(actor ?? self);
+        const target = transformTarget(actor);
         const next = finiteVector(scale, 1);
         if (!target || !next) return;
         Object.assign(target.transform.scale, next);
         services.teleportActor?.(target);
       };
       context.setActorTransform = (actor, transform, options) => {
-        const target = transformTarget(actor ?? self);
+        const target = transformTarget(actor);
         if (!target || !transform) return;
         // Every supplied part is checked first, so a non-finite part changes nothing.
         const position = transform.position ? finiteVector(transform.position, 0) : undefined;
@@ -1989,7 +1989,7 @@ export class ScriptHost {
         services.teleportActor?.(target, options);
       };
       context.attachToBone = (actor, target, boneName) => {
-        const child = asActor(actor ?? self);
+        const child = asActor(actor);
         const parent = asActor(target);
         if (!child || child.destroyed || !parent || parent.destroyed ||
           typeof boneName !== "string" || !boneName.trim()) return;
@@ -2024,7 +2024,7 @@ export class ScriptHost {
         }
       };
       context.getComponent = (actor, classId) =>
-        asActor(actor ?? self)?.components.find((c) => c.classId === classId && !c.destroyed) ??
+        asActor(actor)?.components.find((c) => c.classId === classId && !c.destroyed) ??
         null;
       context.getComponentById = (actor, componentId) => {
         const target = actor ?? self;
@@ -2042,7 +2042,7 @@ export class ScriptHost {
       context.callComponentFunction = (target, name, args) =>
         this.callNativeComponentFunction(target ?? self, String(name ?? ""), args ?? {});
       context.addComponent = (actor, classId, transform) => {
-        const target = asActor(actor ?? self);
+        const target = asActor(actor);
         if (!target) return null;
         return services.addComponent?.(target, classId, transform) ?? null;
       };
@@ -2311,12 +2311,12 @@ export class ScriptHost {
         };
       };
       context.addImpulse = (actor, impulse, strength) => {
-        const target = asActor(actor ?? self);
+        const target = asActor(actor);
         if (!target) return;
         services.addImpulse?.(target, impulse, strength);
       };
       context.moveCharacter = (actor, translation, offset) => {
-        const target = asActor(actor ?? self);
+        const target = asActor(actor);
         if (!target) return;
         services.moveCharacter?.(
           target,
@@ -2331,12 +2331,12 @@ export class ScriptHost {
         });
       };
       context.playParticles = (actor) => {
-        const target = asActor(actor ?? self);
+        const target = asActor(actor);
         if (!target) return;
         services.setParticlePlaying?.(target.guid, true);
       };
       context.stopParticles = (actor) => {
-        const target = asActor(actor ?? self);
+        const target = asActor(actor);
         if (!target) return;
         services.setParticlePlaying?.(target.guid, false);
       };
@@ -2347,12 +2347,12 @@ export class ScriptHost {
         return layer;
       };
       context.moveTo = (actor, destination) => {
-        const target = asActor(actor ?? self);
+        const target = asActor(actor);
         if (!target) return;
         services.moveTo?.(target, destination);
       };
       context.stopMovement = (actor) => {
-        const target = asActor(actor ?? self);
+        const target = asActor(actor);
         if (!target) return;
         services.stopMovement?.(target);
       };

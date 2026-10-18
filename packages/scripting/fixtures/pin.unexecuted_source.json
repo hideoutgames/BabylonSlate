@@ -1,0 +1,118 @@
+{
+  "id": "unexecuted-source",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "begin",
+      "typeId": "flow.event.beginPlay",
+      "position": {
+        "x": 9000,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "log",
+      "typeId": "debug.log",
+      "position": {
+        "x": 9200,
+        "y": 0
+      },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "message",
+          "name": "message",
+          "kind": "data",
+          "direction": "in",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "trace",
+      "typeId": "trace.line",
+      "position": {
+        "x": 9000,
+        "y": 200
+      },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": {
+            "kind": "exec"
+          }
+        },
+        {
+          "id": "hit",
+          "name": "hit",
+          "kind": "data",
+          "direction": "out",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "begin.execOut->log.execIn",
+      "sourceNodeId": "begin",
+      "sourcePinId": "execOut",
+      "targetNodeId": "log",
+      "targetPinId": "execIn"
+    },
+    {
+      "id": "trace.hit->log.message",
+      "sourceNodeId": "trace",
+      "sourcePinId": "hit",
+      "targetNodeId": "log",
+      "targetPinId": "message"
+    }
+  ]
+}

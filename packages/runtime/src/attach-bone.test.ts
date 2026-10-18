@@ -66,7 +66,7 @@ describe("Attach to Bone scripting", () => {
     } finally { runtime.stop(); }
   });
 
-  it("rejects missing, destroyed, and cyclic targets and clears attachments on ordinary reparent or detach", async () => {
+  it("rejects an empty actor and missing, destroyed, and cyclic targets, and clears attachments on ordinary reparent or detach", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (c) => commands.push(c) });
     try {
@@ -77,14 +77,15 @@ describe("Attach to Bone scripting", () => {
           const parent = ctx.getActorOfClass("Character");
           const dead = ctx.spawnActor("Dead");
           dead.destroyed = true;
-          ctx.attachToBone(null, null, "Hand");
-          ctx.attachToBone(null, dead, "Hand");
-          ctx.attachToBone(null, ctx.self, "Hand");
-          ctx.attachToBone(null, parent, "");
+          ctx.attachToBone(ctx.self, null, "Hand");
+          ctx.attachToBone(ctx.self, dead, "Hand");
+          ctx.attachToBone(ctx.self, ctx.self, "Hand");
+          ctx.attachToBone(ctx.self, parent, "");
           ctx.attachToBone(null, parent, "Hand");
+          ctx.attachToBone(ctx.self, parent, "Hand");
           ctx.attachToBone(parent, ctx.self, "Hand");
           ctx.detachActor(ctx.self);
-          ctx.attachToBone(null, parent, "Hand");
+          ctx.attachToBone(ctx.self, parent, "Hand");
           ctx.attachActor(ctx.self, parent);
         }`,
       }]);
@@ -98,7 +99,7 @@ describe("Attach to Bone scripting", () => {
       ]);
       expect(child?.transform).toEqual({ position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 2, y: 3, z: 4 } });
       expect(commands.filter((c) => c.type === "diagnostic")).toEqual([]);
-      // Only self-attachment and the cycle warn; missing, destroyed, and unnamed targets stay silent.
+      // Only self-attachment and the cycle warn; an empty actor and missing, destroyed, and unnamed targets stay silent.
       const refused = warnings(commands);
       expect(refused).toHaveLength(2);
       expect(refused[0]).toContain(child!.guid);
