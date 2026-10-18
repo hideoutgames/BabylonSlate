@@ -9,6 +9,7 @@ vi.mock("./create-engine", () => ({ createAppEngine: createGl }));
 vi.mock("./webgpu-engine", () => ({ createAppWebGpuEngine: createGpu }));
 vi.mock("./resource-cache", () => ({ releaseResourceCacheForEngine: releaseCache }));
 import { createBackendEngineSession } from "./backend-engine-session";
+import { directViewPresentationAllowed } from "./direct-view-presentation";
 
 describe("backend Engine session", () => {
   beforeEach(() => vi.resetAllMocks());
@@ -55,6 +56,14 @@ describe("backend Engine session", () => {
     expect(h.released).toEqual(h.canvases);
     expect(releaseCache).toHaveBeenCalledWith(h.engine);
     expect(h.engine.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets views present directly only on a session that asks for it, so the player's views keep receiving copies", async () => {
+    const player = host();
+    const copying = await createBackendEngineSession(player.options);
+    const project = host();
+    const presenting = await createBackendEngineSession({ ...project.options, presentViewsDirectly: true });
+    expect([directViewPresentationAllowed(copying.engine), directViewPresentationAllowed(presenting.engine)]).toEqual([false, true]);
   });
 
   it("disposes a superseded completion and never starts fallback after cancellation", async () => {

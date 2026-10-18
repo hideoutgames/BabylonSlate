@@ -25,6 +25,8 @@ export type RenderDiagnostics = {
     attempted: number; drawn: number; copied: number; held: number;
     preparationMs: number; copyMs: number;
     contextLosses: number; contextRestorations: number;
+    /** The view shows the Engine canvas itself (sole enabled view) instead of a copy. */
+    direct?: boolean;
   };
   rendererWork?: {
     graphBuilds: number; shadowAdmissions: number; shadowAdmissionMs: number; strictReadinessChecks: number;

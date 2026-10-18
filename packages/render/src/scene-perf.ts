@@ -74,8 +74,8 @@ function describeShaderStall(stalled: string | null, completed: number): string 
 }
 
 /**
- * `skipMesh` names meshes whose drawn variant a later readiness probe compiles under the pass that draws them (water
- * the view samples a scene copy for), so warming the pass-less variant here would compile one nothing draws.
+ * `skipMesh` names meshes whose drawn variant a later readiness probe compiles under the pass that draws them (built-in
+ * water, whose variant depends on the pass), so warming the pass-less variant here could compile one nothing draws.
  */
 export async function prewarmSceneMaterials(
   scene: Scene,

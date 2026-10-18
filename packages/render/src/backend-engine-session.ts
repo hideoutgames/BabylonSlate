@@ -2,6 +2,7 @@ import { setEngineBackendStatus } from "./backend-status";
 import type { AbstractEngine } from "@babylonjs/core";
 import type { GpuBackend } from "@babylonslate/core";
 import { createAppEngine, type CreateEngineOptions } from "./create-engine";
+import { allowDirectViewPresentation } from "./direct-view-presentation";
 import { releaseResourceCacheForEngine } from "./resource-cache";
 import { createAppWebGpuEngine } from "./webgpu-engine";
 
@@ -21,6 +22,8 @@ export interface BackendEngineSessionOptions {
   decoders?: Pick<CreateEngineOptions, "ktx2BasePath" | "dracoBasePath" | "meshoptBasePath">;
   /** An actionable incompatibility discovered from the project's material inputs. */
   webGpuCompatibilityReason?: string;
+  /** Views of this Engine may show its canvas directly while one is on screen (the editor's project Engine); absent: they copy. */
+  presentViewsDirectly?: boolean;
   signal?: AbortSignal;
 }
 
@@ -48,6 +51,7 @@ export async function createBackendEngineSession(
       }
       const ownedEngine = engine;
       setEngineBackendStatus(ownedEngine, { requestedBackend, effectiveBackend: backend, fallbackReason });
+      if (options.presentViewsDirectly) allowDirectViewPresentation(ownedEngine);
       let disposed = false;
       return {
         engine: ownedEngine,

@@ -5,7 +5,9 @@ import "@babylonslate/editor-kit/styles/context-menu.css";
 import {
   initializeCapacitorAudioLifecycle,
   initializeCapacitorLifecycle,
+  isTestModeEnabled,
 } from "@babylonslate/vfs";
+import { installDirectViewReadSync } from "@babylonslate/render";
 import App from "./App";
 
 initializeCapacitorLifecycle();
@@ -67,6 +69,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
     Object.assign(window, { __babylonslateWebGpuProof: runWebGpuProof });
   });
 } else {
+  // Pixel probes read view canvases; a directly presented view writes its image into its canvas first.
+  if (isTestModeEnabled()) installDirectViewReadSync();
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <App />
