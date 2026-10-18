@@ -16,6 +16,7 @@ type Backend = "webgl2" | "webgpu";
 type ViewportHooks = {
   __babylonslateViewportTest: {
     renderingBaseline: () => Baseline | null;
+    sceneVisuals: () => Array<{ actorId: string }>;
     setRenderSettings: (settings: { mode: "cel" }) => void;
     holdViewportFrames: (hold: boolean) => Promise<void>;
   };
@@ -126,9 +127,11 @@ async function screen(page: Page, label: string): Promise<Screen> {
     context.fillRect(0, 0, view.width, view.height);
   }, VIEW_FILL);
   const started = Date.now();
-  const png = (await page.getByTestId("viewport-canvas").screenshot({ timeout: 60_000 })).toString("base64");
+  const shot = await page.getByTestId("viewport-canvas").screenshot({ timeout: 60_000 });
   const milliseconds = Date.now() - started;
+  const png = shot.toString("base64");
   test.info().annotations.push({ type: "direct-presentation-screenshot", description: `${label}: ${milliseconds} ms` });
+  await test.info().attach(`direct presentation ${label}`, { body: shot, contentType: "image/png" });
   const reduced = await page.evaluate(async ({ data, fill }) => {
     const bytes = Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
     const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
@@ -258,6 +261,11 @@ export async function directViewportStaysNonBlank(page: Page, backend: Backend) 
   await expect.poll(async () => (await presentation(page))?.direct).toBe(true);
   // A software adapter on a loaded host can take seconds per frame.
   const frames = { timeout: 30_000 };
+  // The box scene is drawn: frames that realize it are held, and the screen keeps the previous scene meanwhile.
+  await expect.poll(() => page.evaluate(() => (globalThis as unknown as ViewportHooks).__babylonslateViewportTest
+    .sceneVisuals().map((visual) => visual.actorId)), frames).toContain("probe-box");
+  const realized = (await presentation(page))!;
+  await expect.poll(async () => (await presentation(page))!.drawn, frames).toBeGreaterThan(realized.drawn + 2);
   if (backend === "webgpu") await heldFramesStayOnScreen(page, frames);
   const probe = await startFrameProbe(page, backend);
 
@@ -276,7 +284,7 @@ export async function directViewportStaysNonBlank(page: Page, backend: Backend) 
   await page.setViewportSize({ width: viewport.width - 240, height: viewport.height - 120 });
   await expect.poll(async () => (await canvas.boundingBox())!.width).toBeLessThan(width - 100);
   const afterResize = (await presentation(page))!;
-  await expect.poll(async () => (await presentation(page))!.drawn, frames).toBeGreaterThan(afterResize.drawn + 5);
+  await expect.poll(async () => (await presentation(page))!.drawn, frames).toBeGreaterThan(afterResize.drawn + 25);
   expect((await presentation(page))!.direct).toBe(true);
 
   const samples = await probe.stop();
