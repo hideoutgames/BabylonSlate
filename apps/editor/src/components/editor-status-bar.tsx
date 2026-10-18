@@ -26,11 +26,6 @@ export function EditorStatusBar() {
   return (
     <footer className="editor-statusbar" data-testid="editor-status-bar">
       <p className="editor-status-summary">
-        <span
-          className="editor-status-dot"
-          data-dirty={dirty ? "true" : "false"}
-          aria-hidden="true"
-        />
         <span role="status" title={autoSaveStatus?.message}>
           {autoSaveStatus?.state === "saving"
             ? "Auto-Saving…"
