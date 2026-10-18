@@ -62,17 +62,22 @@ export function updateDeformerProperties(properties: unknown, key: string, value
   return next;
 }
 
+/** Same-owner Mesh reference: an exact ID wins over an inherited source ID. */
+export function deformerTargetMesh(components: readonly SerializedComponent[], targetMeshComponentId: string): SerializedComponent | undefined {
+  const meshes = components.filter((component) => component.classId === "MeshComponent");
+  return meshes.find((mesh) => mesh.id === targetMeshComponentId)
+    ?? meshes.find((mesh) => mesh.sourceId === targetMeshComponentId);
+}
+
 /** Same-owner references only. Exact IDs win over inherited source IDs. One enabled cage per mesh. */
 export function deformerBindings(_actorId: string, components: readonly SerializedComponent[]): DeformerBinding[] {
-  const meshes = components.filter((component) => component.classId === "MeshComponent");
   const claimed = new Set<string>();
   const bindings: DeformerBinding[] = [];
   for (const component of components) {
     if (component.classId !== DEFORMER_COMPONENT_CLASS_ID) continue;
     const properties = parseDeformerProperties(component.properties);
     if (!properties.enabled) continue;
-    const target = meshes.find((mesh) => mesh.id === properties.targetMeshComponentId)
-      ?? meshes.find((mesh) => mesh.sourceId === properties.targetMeshComponentId);
+    const target = deformerTargetMesh(components, properties.targetMeshComponentId);
     if (!target || claimed.has(target.id)) continue;
     claimed.add(target.id);
     bindings.push({ id: component.id, ...properties, targetMeshComponentId: target.id });
