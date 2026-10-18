@@ -903,10 +903,17 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   }, [projectEngine, renderingRequest, sessionOwner, sessionState]);
 
   // A lost device stops the game at once; Retry then only replaces the Engine.
-  useEffect(() => stopGameOnDeviceLoss(projectEngine, sessionOwner), [projectEngine, sessionOwner]);
+  useEffect(() => stopGameOnDeviceLoss(projectEngine, sessionOwner, {
+    simulation: () => simulationRef.current,
+    log: appendLog,
+  }), [appendLog, projectEngine, sessionOwner]);
 
-  // A retry failure belongs to the controller state it was shown over.
+  // A retry failure belongs to the controller state it was shown over, and
+  // ends once the game it waited for has released.
   useEffect(() => { setRenderingRetryFailure(null); }, [projectEngineState]);
+  useEffect(() => {
+    if (sessionOwner.canStart()) setRenderingRetryFailure(null);
+  }, [sessionOwner, sessionState]);
 
   const retryRendering = useCallback(async () => {
     setRenderingFailureDismissed(false);

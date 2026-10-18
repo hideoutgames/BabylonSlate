@@ -6,15 +6,28 @@ import type { ProjectEngineSession, ProjectEngineState } from "../lib/project-en
 /** Long enough to read; the notice never blocks editing meanwhile. */
 const NOTICE_DURATION_MS = 12_000;
 
+/** A number per Engine session, so a dismissal does not retain a disposed session. */
+const sessionNumbers = new WeakMap<ProjectEngineSession, number>();
+let lastSessionNumber = 0;
+function sessionNumber(session: ProjectEngineSession | null): number | null {
+  if (!session) return null;
+  let number = sessionNumbers.get(session);
+  if (number === undefined) {
+    number = ++lastSessionNumber;
+    sessionNumbers.set(session, number);
+  }
+  return number;
+}
+
 /**
  * Floating, non-blocking notice that the project asked for WebGPU but its
  * renderer started on WebGL2 because WebGPU failed to initialize. Shown once
  * per Engine; the GPU Backend setting is unchanged.
  */
 export function RenderingFallbackNotice({ state }: { state: ProjectEngineState }) {
-  const session = state.phase === "ready" ? state.session : null;
-  const reason = session ? state.webGpuFallbackReason : undefined;
-  const [dismissed, setDismissed] = useState<ProjectEngineSession | null>(null);
+  const session = sessionNumber(state.phase === "ready" ? state.session : null);
+  const reason = session !== null ? state.webGpuFallbackReason : undefined;
+  const [dismissed, setDismissed] = useState<number | null>(null);
   const visible = Boolean(reason) && dismissed !== session;
   const dismiss = useCallback(() => setDismissed(session), [session]);
   useEffect(() => {

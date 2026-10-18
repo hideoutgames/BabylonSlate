@@ -13,15 +13,18 @@ describe("shared engine generation", () => {
     expect(nextSharedEngineGeneration(0, second, first)).toBe(1);
   });
 
-  it("treats a disposed engine or one with a lost context as unusable", () => {
+  it("treats a disposed engine or a lost WebGPU device as unusable", () => {
     expect(isUsableEngine({ isDisposed: true })).toBe(false);
     expect(isUsableEngine({ isDisposed: false })).toBe(true);
     expect(isUsableEngine(null)).toBe(false);
     // Babylon's own lost-context flag: a lost WebGPU device never recovers in place.
-    const lost = { isDisposed: false, _contextWasLost: true };
-    const restored = { isDisposed: false, _contextWasLost: false };
-    expect(isUsableEngine(lost)).toBe(false);
-    expect(isUsableEngine(restored)).toBe(true);
+    const lostWebGpu = { isDisposed: false, isWebGPU: true, _contextWasLost: true };
+    const liveWebGpu = { isDisposed: false, isWebGPU: true, _contextWasLost: false };
+    expect(isUsableEngine(lostWebGpu)).toBe(false);
+    expect(isUsableEngine(liveWebGpu)).toBe(true);
+    // Babylon restores a lost WebGL2 context on the same Engine, so its clients keep it.
+    const lostWebGl = { isDisposed: false, isWebGPU: false, _contextWasLost: true };
+    expect(isUsableEngine(lostWebGl)).toBe(true);
   });
 });
 

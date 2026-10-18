@@ -523,7 +523,14 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !sharedEngine || simulationDetachedRef.current) return;
+    if (!sharedEngine) {
+      // The Engine is gone (a lost device, a backend change, a closed project):
+      // a failed load has nothing left to retry; the next Engine loads anew.
+      setSceneReady(false);
+      setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene" });
+      return;
+    }
+    if (!canvas || simulationDetachedRef.current) return;
     engineGenerationRef.current += 1;
     setSceneReady(false);
     setDropReady(null);
@@ -1206,6 +1213,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         measureRenderingBaseline: (durationMs: number) => Promise<Record<string, unknown>>;
         /** Direct presentation of a sole view (default on); off copies into the view canvas, for A/B runs. */
         setDirectViewPresentation: (enabled: boolean) => void;
+        /** Destroys the project Engine's WebGPU device, as a real loss would; false on WebGL2 or without a view. */
+        destroyGraphicsDevice: () => boolean;
         webgpuPreviewsProof: (
           options?: import("../testing/webgpu-previews-proof").ViewportProofOptions,
         ) => Promise<
@@ -1388,6 +1397,14 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       },
       setRenderSettings: (settings) => engineRef.current?.setRenderSettings(settings),
       setDirectViewPresentation: (enabled) => setDirectViewPresentationEnabled(enabled),
+      destroyGraphicsDevice: () => {
+        const engine = engineRef.current?.engine;
+        // Pinned Babylon 9.29 owning-device boundary.
+        const device = engine?.isWebGPU ? (engine as unknown as { _device?: { destroy(): void } })._device : undefined;
+        if (!device) return false;
+        device.destroy();
+        return true;
+      },
       setShadowCaptureView: (position, target, fov) => {
         const handle = engineRef.current;
         const camera = handle?.editor?.camera.camera;

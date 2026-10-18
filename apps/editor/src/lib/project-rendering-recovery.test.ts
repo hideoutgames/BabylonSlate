@@ -65,6 +65,43 @@ describe("project rendering recovery", () => {
     },
   );
 
+  it("discards Simulate's kept changes before stopping it, since their capture needs the lost Engine", async () => {
+    const engine = createProjectEngineController();
+    const owner = new GameSessionOwner<GameSessionStopResult>();
+    // Keep Changes gates Stop on a final capture until the changes are discarded.
+    const simulation = { keepChanges: true, discarded: null as string | null, discardChanges(reason?: string | null) { this.discarded = reason ?? ""; } };
+    const log = vi.fn();
+    const unsubscribe = stopGameOnDeviceLoss(engine, owner, { simulation: () => simulation, log });
+    await engine.sync(request);
+    const ticket = owner.begin("simulate")!;
+    const stop = vi.fn(() => ({ released: Promise.resolve({ quarantined: false }) }));
+    owner.attach(ticket, stop);
+    owner.setBeforeStop(ticket, async () => simulation.discarded !== null);
+
+    lose({ reason: "unknown", message: "Out of memory" });
+    await vi.waitFor(() => expect(owner.getSnapshot().lifecycle).toBe("idle"));
+    expect(stop).toHaveBeenCalledOnce();
+    expect(simulation.discarded).toMatch(/graphics device was lost/);
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/Simulation changes were discarded/));
+    unsubscribe();
+  });
+
+  it("asks the user to stop a running Preview Build before Retry instead of stopping it", async () => {
+    const engine = createProjectEngineController();
+    const owner = new GameSessionOwner<GameSessionStopResult>();
+    await engine.sync(request);
+    const stop = running(owner, "preview", Promise.resolve({ quarantined: false }));
+    lose({ reason: "unknown", message: "Out of memory" });
+    await vi.waitFor(() => expect(engine.getSnapshot().phase).toBe("failed"));
+
+    const failure = await retryProjectRendering({ projectEngine: engine, sessionOwner: owner, request })
+      .then(() => null, (error: unknown) => error);
+    expect(failure).toMatchObject({ retryable: true, message: expect.stringMatching(/Stop Preview Build, then choose Retry/) });
+    expect(stop).not.toHaveBeenCalled();
+    expect(owner.getSnapshot().lifecycle).toBe("running");
+    expect(createSession).toHaveBeenCalledTimes(1);
+  });
+
   it("does not stop a game when the Engine is replaced for another reason", async () => {
     const engine = createProjectEngineController();
     const owner = new GameSessionOwner<GameSessionStopResult>();
