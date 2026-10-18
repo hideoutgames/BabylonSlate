@@ -23,7 +23,7 @@ export function validateChangelog(value, version) {
   return releases.filter(notes => compare(notes.version, version) <= 0).sort((a, b) => compare(b.version, a.version));
 }
 
-/** The marked block every GitHub Release body leads with; the app's release notes parser reads exactly this. */
+/** The marked block every GitHub Release body leads with, for the release page; the app embeds its notes at build time. */
 export function patchNotesMarkdown(notes) {
   const { version, title, changes } = validatePatchNotes(notes, notes?.version);
   return [

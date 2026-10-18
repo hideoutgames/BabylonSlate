@@ -8,7 +8,6 @@ import { fileURLToPath } from "node:url";
 import { extractAll, listPackage } from "@electron/asar";
 import { _electron, expect as baseExpect } from "@playwright/test";
 import { stageRenderer } from "./layout.mjs";
-import { patchNotesMarkdown } from "../../../scripts/distribution/changelog.mjs";
 
 // Cold installed-app launches on hosted runners exceed Playwright's 5 s assertion default.
 const expect = baseExpect.configure({ timeout: 60000 });
@@ -119,22 +118,13 @@ try {
     launched.on("window", watch);
     return launched;
   };
-  // Release notes come from GitHub Releases, and this build's release is published only after the
-  // smoke passes; serve its notes as the release body would carry them.
-  const releaseNotes = [{ draft: false, prerelease: manifest.channel === "test", published_at: new Date().toISOString(), body: patchNotesMarkdown(manifest.patchNotes) }];
-  const launch = async () => {
-    const launched = await _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs], env: cleanEnv, timeout: 60000 });
-    await launched.context().route("https://api.github.com/repos/hideoutgames/BabylonSlate/releases*", route => route.fulfill({ json: releaseNotes }));
-    return observe(launched);
-  };
+  const launch = async () => observe(await _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs], env: cleanEnv, timeout: 60000 }));
   app = await launch();
   // macOS reports the /private/var target of the /var temporary directory symlink.
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath("userData"))), await realpath(userData));
   assert.equal(await app.evaluate(({ app }) => app.getVersion()), manifest.packageVersion);
   let page = await app.firstWindow();
   page.setDefaultTimeout(60000);
-  // The launch request can start before the route exists; reloading makes this launch's one request use it.
-  await page.reload();
   await expect(page.getByTestId("homepage")).toBeVisible();
   const news = page.getByRole("dialog", { name: "What's New" });
   await expect(news).toContainText(manifest.applicationVersion);

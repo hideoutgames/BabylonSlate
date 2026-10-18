@@ -11,6 +11,7 @@ import { engineDefaultSkyboxVitePlugin } from "./vite-engine-skybox.ts";
 import { engineBillboardsVitePlugin } from "./vite-engine-billboards.ts";
 import { featureTestEngineContentVitePlugin } from "./vite-engine-content.ts";
 import { playerHostVitePlugin } from "./vite-player-host.ts";
+import { validateChangelog, validatePatchNotes } from "../../scripts/distribution/changelog.mjs";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(rootDir, "../..");
@@ -48,12 +49,21 @@ const channelLabel =
       ? "Test (Indev)"
       : "Development build";
 const buildLabel = `${declaredVersion} ${channelLabel}`;
+// The app shows the running version's notes. Distribution builds embed the copy
+// preflight read from the exact source commit; other builds read the working tree.
+const releaseNotes = buildIdentity
+  ? validatePatchNotes(buildIdentity.patchNotes, declaredVersion)
+  : (validateChangelog(
+      JSON.parse(readFileSync(path.join(repoRoot, "release/changelog.json"), "utf8")),
+      declaredVersion,
+    ).find(notes => notes.version === declaredVersion) ?? null);
 
 export default defineConfig({
   define: {
     __BABYLONSLATE_BUILD__: JSON.stringify(buildIdentity),
     __BABYLONSLATE_BUILD_LABEL__: JSON.stringify(buildLabel),
     __BABYLONSLATE_VERSION__: JSON.stringify(declaredVersion),
+    __BABYLONSLATE_RELEASE_NOTES__: JSON.stringify(releaseNotes),
   },
   base: process.env.VITE_BASE_PATH ?? "/",
   plugins: [

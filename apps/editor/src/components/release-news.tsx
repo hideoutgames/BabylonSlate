@@ -1,16 +1,14 @@
-import { useEffect, useState } from "react";
-import { LoaderCircleIcon } from "lucide-react";
+import { useState } from "react";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { SelectableText } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@babylonslate/ui/components/dialog";
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@babylonslate/ui/components/empty";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { useAppSettings } from "../context/app-settings-context";
 import { brandWordmarkSrc } from "../lib/branding";
-import { getApplicationVersion, type ReleaseNotes } from "../lib/changelog";
-import { loadReleaseNotes, useReleaseNotes, type ReleaseNotesState } from "../services/release-notes";
+import { getApplicationVersion, getReleaseNotes, type ReleaseNotes } from "../lib/changelog";
 
 /** The current version's notes: its title and changes. */
 function ReleaseEntry({ release }: { release: ReleaseNotes }) {
@@ -24,61 +22,36 @@ function ReleaseEntry({ release }: { release: ReleaseNotes }) {
   );
 }
 
-/** What the Changelog shows while notes load, after a failed load, or when none are published. */
-function ReleaseNotesStatus({ status, version }: { status: ReleaseNotesState["status"]; version: string }) {
-  if (status === "failed") {
-    return (
-      <Empty data-testid="release-news-failed">
-        <EmptyHeader>
-          <EmptyTitle>Failed To Load Patch Notes</EmptyTitle>
-          <EmptyDescription>Check your connection and reopen Haptic to try again.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
-  if (status === "loaded") {
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyTitle>No Patch Notes Yet</EmptyTitle>
-          <EmptyDescription>Notes for Haptic {version} appear here once it is published.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
+/** Shown when the build carries no notes for its version. */
+function NoReleaseNotes({ version }: { version: string }) {
   return (
     <Empty>
       <EmptyHeader>
-        <EmptyMedia><LoaderCircleIcon className="animate-spin" aria-hidden="true" /></EmptyMedia>
-        <EmptyTitle>Loading Patch Notes</EmptyTitle>
+        <EmptyTitle>No Patch Notes</EmptyTitle>
+        <EmptyDescription>Haptic {version} has no patch notes.</EmptyDescription>
       </EmptyHeader>
     </Empty>
   );
 }
 
-/** The current version's notes from GitHub Releases: first-launch news, and the account menu's Changelog. */
+/** The current version's notes, embedded at build time: first-launch news, and the account menu's Changelog. */
 export function ReleaseNews({
   open,
   onOpenChange,
   ready = true,
   announce = !import.meta.env.DEV && !(isTestModeEnabled() && new URLSearchParams(window.location.search).has("test")),
   version = getApplicationVersion(),
+  current = getReleaseNotes(),
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   ready?: boolean;
   announce?: boolean;
   version?: string;
+  current?: ReleaseNotes | null;
 }) {
   const { settings, hydrated, updateSettings } = useAppSettings();
-  const notes = useReleaseNotes();
-  const releases = notes.releases;
-  // QA sessions skip the launch request; this reuses it everywhere else.
-  useEffect(() => {
-    if (open) void loadReleaseNotes();
-  }, [open]);
   const [dismissed, setDismissed] = useState<string | null>(null);
-  const current = releases.find(release => release.version === version);
   const showNews = Boolean(ready && announce && hydrated && current && dismissed !== version && !settings.seenReleaseVersions.includes(version));
   const news = showNews && !open;
 
@@ -110,7 +83,7 @@ export function ReleaseNews({
           </div>
         </DialogHeader>
         <div className="release-news-body">
-          {current ? <ReleaseEntry release={current} /> : <ReleaseNotesStatus status={notes.status} version={version} />}
+          {current ? <ReleaseEntry release={current} /> : <NoReleaseNotes version={version} />}
         </div>
         <DialogFooter>
           <Button size="sm" onClick={close}>Done</Button>
