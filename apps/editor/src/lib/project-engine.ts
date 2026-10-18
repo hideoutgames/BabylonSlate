@@ -34,6 +34,8 @@ export async function createProjectEngineSession(
     requestedBackend: backend,
     signal,
     webGpuCompatibilityReason,
+    // The editor's viewport, Play and other project views show this Engine's canvas itself while one is on screen.
+    presentViewsDirectly: true,
     decoders: {
       ktx2BasePath: editorKtx2PublicBase(),
       dracoBasePath: editorDracoPublicBase(),

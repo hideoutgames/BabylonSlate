@@ -71,6 +71,12 @@ function mobileHome(gateKey = 0) {
   );
 }
 
+// A Base UI menu trigger mounted outside act ignores clicks until React's passive
+// effects hand it the menu's open handler; it reports aria-expanded from then on.
+function findProfileTrigger() {
+  return screen.findByRole("button", { name: "Profile", expanded: false });
+}
+
 function renderMobile(host = "ios", publishableKey = "pk_test_example") {
   auth.host = host;
   vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", publishableKey);
@@ -228,9 +234,7 @@ describe("native mobile account requirement", () => {
       await screen.findByRole("button", { name: "Create Project" }),
     ).toBeTruthy();
     expect(auth.verifyCode).toHaveBeenCalledWith(challenge, "123456");
-    // The Sign In dialog closes after verification; Profile opens only once it is gone.
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Sign In" })).toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(await findProfileTrigger());
     expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
     expect(screen.getByText("ada@example.test")).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: "Sign Out" }));
@@ -391,7 +395,7 @@ describe("native mobile account requirement", () => {
       }),
     );
     renderMobile();
-    fireEvent.click(await screen.findByRole("button", { name: "Profile" }));
+    fireEvent.click(await findProfileTrigger());
     fireEvent.click(await screen.findByRole("menuitem", { name: "Sign Out" }));
     expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
