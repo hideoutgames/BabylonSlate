@@ -23,10 +23,7 @@
     <div id="root">
       <style>
         body:has(#slate-boot) {
-          background: oklch(0.155 0.004 75);
-        }
-        body:has(#slate-boot[data-scheme="light"]) {
-          background: oklch(0.938 0.005 85);
+          background: oklch(0.145 0.004 75);
         }
         #slate-boot {
           position: fixed;
@@ -36,7 +33,7 @@
           place-items: center;
           padding: 24px;
           background: oklch(0.145 0.004 75);
-          color: oklch(0.92 0.003 85);
+          color: oklch(0.97 0.002 85);
           will-change: opacity;
           opacity: 1;
           transition: opacity 650ms cubic-bezier(0.22, 0.61, 0.36, 1);
@@ -45,206 +42,71 @@
             system-ui,
             sans-serif;
         }
-        #slate-boot[data-scheme="light"] {
-          background: oklch(0.885 0.005 85);
-          color: oklch(0.3 0.006 70);
-        }
         #slate-boot[data-leaving="true"] {
           opacity: 0;
           pointer-events: none;
         }
-        .slate-splash-card {
-          width: min(560px, 100%);
-          overflow: hidden;
-          border-radius: 11px;
-          border: 1px solid oklch(0.285 0.004 75);
-          background: oklch(0.215 0.004 75);
-          box-shadow:
-            0 30px 80px oklch(0 0 0 / 45%),
-            0 6px 18px oklch(0 0 0 / 30%);
-        }
-        .slate-splash-titlebar {
+        .slate-splash {
           display: flex;
+          flex-direction: column;
           align-items: center;
-          gap: 6px;
-          height: 28px;
-          padding: 0 10px;
-          border-bottom: 1px solid oklch(0.285 0.004 75);
-          background: oklch(0.175 0.004 75);
-          font-size: 12px;
-          font-weight: 600;
+          gap: 18px;
+          width: min(320px, 100%);
+          animation: slate-splash-in 500ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
         }
-        .slate-splash-titlebar img {
-          width: 12px;
-          height: 16px;
+        .slate-splash-wordmark {
+          width: auto;
+          height: 44px;
           object-fit: contain;
         }
-        .slate-splash-titlebar img[data-scheme="light"],
-        #slate-boot[data-scheme="light"] .slate-splash-titlebar img[data-scheme="dark"] {
-          display: none;
-        }
-        #slate-boot[data-scheme="light"] .slate-splash-titlebar img[data-scheme="light"] {
-          display: block;
-        }
-        .slate-splash-version {
-          margin-left: auto;
-          color: oklch(0.745 0.005 85);
-          font-size: 11px;
-          font-weight: 400;
-          white-space: nowrap;
-        }
-        /* Decorative viewports stay dark in both themes, like editor canvases. */
-        .slate-splash-art {
-          height: 210px;
-          position: relative;
-          overflow: hidden;
-          background:
-            radial-gradient(ellipse 55% 75% at 72% 40%, oklch(0.34 0.004 75), transparent 70%),
-            oklch(0.2 0.003 75);
-        }
-        .slate-splash-floor {
-          position: absolute;
-          left: -50%;
-          right: -50%;
-          bottom: -2%;
-          height: 60%;
-          transform-origin: 50% 100%;
-          transform: perspective(240px) rotateX(60deg);
-          background-image:
-            linear-gradient(oklch(0.42 0.004 75) 1px, transparent 1px),
-            linear-gradient(90deg, oklch(0.42 0.004 75) 1px, transparent 1px);
-          background-size: 30px 30px;
-          mask-image: linear-gradient(to top, #000, transparent 90%);
-          opacity: 0.45;
-          animation: slate-splash-floor 6s linear infinite;
-        }
-        .slate-splash-caption {
-          position: absolute;
-          bottom: 14px;
-          left: 16px;
-          padding: 2px 6px;
-          border: 1px solid oklch(1 0 0 / 10%);
-          border-radius: 5px;
-          background: oklch(0 0 0 / 35%);
-          color: oklch(0.85 0.004 85);
-          font-size: 11px;
-        }
-        .slate-splash-planes {
-          position: absolute;
-          width: 250px;
-          height: 280px;
-          right: 40px;
-          top: -30px;
-          transform: rotate(-25deg);
-        }
-        .slate-splash-planes i {
-          position: absolute;
-          width: 150px;
-          height: 200px;
-          top: 40px;
-          left: 20px;
-          border-radius: 26px;
-          border: 1px solid oklch(0.82 0.004 85 / 35%);
-          background: linear-gradient(
-            130deg,
-            oklch(0.62 0.004 80 / 35%),
-            oklch(0.32 0.003 75) 40%,
-            oklch(0.22 0.003 75) 85%
-          );
-          box-shadow:
-            12px 18px 30px oklch(0 0 0 / 40%),
-            inset 0 1px 0 oklch(0.95 0.003 85 / 45%);
-          will-change: transform;
-          animation: slate-splash-drift 5s ease-in-out infinite alternate;
-        }
-        .slate-splash-planes i:nth-child(2) {
-          left: 58px;
-          top: 64px;
-          opacity: 0.85;
-          animation-delay: -1.6s;
-        }
-        .slate-splash-planes i:nth-child(3) {
-          left: 96px;
-          top: 88px;
-          background: linear-gradient(
-            125deg,
-            oklch(0.88 0.004 85),
-            oklch(0.64 0.004 80) 37%,
-            oklch(0.42 0.003 75) 72%,
-            oklch(0.28 0.003 75)
-          );
-          animation-delay: -3.2s;
-        }
-        .slate-splash-planes i::after {
-          content: "";
-          position: absolute;
-          inset: 20px;
-          border: 1px solid oklch(0.95 0.003 85 / 16%);
-          border-radius: 14px;
-        }
-        .slate-splash-info {
-          padding: 14px 16px 16px;
-        }
-        .slate-splash-heading {
-          margin-bottom: 4px;
+        .slate-splash-text {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          min-height: 34px;
+          max-width: 100%;
+          text-align: center;
         }
         .slate-loading-label {
-          display: block;
+          max-width: 100%;
+          overflow: hidden;
           font-size: 14px;
           font-weight: 600;
-          overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
         .slate-splash-status {
-          color: oklch(0.745 0.005 85);
+          color: oklch(0.71 0.006 80);
           font-size: 12px;
-          margin-bottom: 12px;
         }
         .slate-loading-track {
           display: block;
+          width: 160px;
           height: 2px;
-          width: 100%;
           overflow: hidden;
-          background: oklch(0.43 0 0 / 60%);
           border-radius: 2px;
+          background: oklch(1 0 0 / 10%);
         }
         .slate-loading-track > span {
           display: block;
           width: 40%;
           height: 100%;
-          background: linear-gradient(90deg, transparent, oklch(0.92 0.003 85), transparent);
+          background: linear-gradient(90deg, transparent, oklch(0.97 0.002 85), transparent);
           will-change: transform;
-          animation: slate-load-travel 1.8s ease-in-out infinite;
+          animation: slate-load-travel 1.6s ease-in-out infinite;
         }
         .slate-loading-track[data-ready="true"] > span {
           width: 100%;
-          background: oklch(0.92 0.003 85);
+          background: oklch(0.97 0.002 85);
           animation: none;
         }
-        #slate-boot[data-scheme="light"] .slate-splash-card {
-          border-color: oklch(0.878 0.005 85);
-          background: oklch(0.972 0.003 85);
-          box-shadow:
-            0 30px 70px oklch(0.3 0.006 70 / 22%),
-            0 6px 18px oklch(0.3 0.006 70 / 12%);
-        }
-        #slate-boot[data-scheme="light"] .slate-splash-titlebar {
-          border-color: oklch(0.878 0.005 85);
-          background: oklch(0.953 0.005 85);
-        }
-        #slate-boot[data-scheme="light"] .slate-splash-version,
-        #slate-boot[data-scheme="light"] .slate-splash-status {
-          color: oklch(0.465 0.008 70);
-        }
-        #slate-boot[data-scheme="light"] .slate-loading-track {
-          background: oklch(0.878 0.005 85);
-        }
-        #slate-boot[data-scheme="light"] .slate-loading-track > span {
-          background: linear-gradient(90deg, transparent, oklch(0.3 0.006 70), transparent);
-        }
-        #slate-boot[data-scheme="light"] .slate-loading-track[data-ready="true"] > span {
-          background: oklch(0.3 0.006 70);
+        .slate-splash-version {
+          position: absolute;
+          right: 12px;
+          bottom: 8px;
+          color: oklch(0.71 0.006 80);
+          font-size: 11px;
         }
         @keyframes slate-load-travel {
           from {
@@ -254,37 +116,10 @@
             transform: translateX(350%);
           }
         }
-        @keyframes slate-splash-drift {
-          to {
-            transform: translate3d(0, -10px, 0);
-          }
-        }
-        @keyframes slate-splash-floor {
-          to {
-            background-position: 0 30px;
-          }
-        }
-        @media (max-width: 520px) {
-          #slate-boot {
-            padding: 16px;
-          }
-          .slate-splash-art {
-            height: 180px;
-          }
-          .slate-splash-planes {
-            right: -80px;
-            opacity: 0.7;
-          }
-        }
-        @media (max-height: 520px) {
-          .slate-splash-art {
-            height: 120px;
-          }
-          .slate-splash-caption {
-            display: none;
-          }
-          .slate-splash-info {
-            padding: 10px 16px 12px;
+        @keyframes slate-splash-in {
+          from {
+            opacity: 0;
+            transform: translateY(6px);
           }
         }
         @media (prefers-reduced-motion: reduce) {
@@ -294,39 +129,18 @@
             transition: none;
           }
         }
+
       </style>
       <div id="slate-boot" role="status" aria-label="Loading Haptic">
-        <section class="slate-splash-card">
-          <div class="slate-splash-titlebar">
-            <img data-scheme="dark" src="/branding/HapticMark-DarkMode.png" alt="" /><img
-              data-scheme="light"
-              src="/branding/HapticMark-LightMode.png"
-              alt=""
-            /><span>Haptic</span
-            ><span class="slate-splash-version">__SLATE_BUILD_LABEL__</span>
+        <section class="slate-splash">
+          <img class="slate-splash-wordmark" src="/branding/HapticWordmark-DarkMode.png" alt="" />
+          <div class="slate-splash-text">
+            <span class="slate-splash-status">Loading application</span>
           </div>
-          <div class="slate-splash-art" aria-hidden="true">
-            <div class="slate-splash-floor"></div>
-            <div class="slate-splash-planes"><i></i><i></i><i></i></div>
-            <span class="slate-splash-caption"
-              >A blank slate to create with.</span
-            >
-          </div>
-          <div class="slate-splash-info">
-            <div class="slate-splash-heading">
-              <span class="slate-loading-label">Haptic</span>
-            </div>
-            <div class="slate-splash-status">Loading application</div>
-            <span class="slate-loading-track" aria-hidden="true"
-              ><span></span
-            ></span>
-          </div>
+          <span class="slate-loading-track" aria-hidden="true"><span></span></span>
         </section>
+        <span class="slate-splash-version">__SLATE_BUILD_LABEL__</span>
       </div>
-      <script>
-        document.getElementById("slate-boot").dataset.scheme =
-          document.documentElement.classList.contains("dark") ? "dark" : "light";
-      </script>
     </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

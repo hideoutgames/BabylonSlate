@@ -66,7 +66,7 @@ import {
 } from "@babylonslate/ui/components/sheet";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { usePhoneLayout } from "../shell/use-platform-layout";
-import { BrandIcon } from "./brand-icon";
+import { ProjectIdentityMark } from "./project-identity-mark";
 import { DocumentSwitcher } from "./document-switcher";
 import {
   useActiveDocumentState,
@@ -271,7 +271,7 @@ export function EditorChromeBar({
   // Tabs re-render for opens, closes, moves, labels and dirty flags, not for
   // each content edit.
   const openDocuments = useOpenDocumentTabs();
-  const { projectName } = useProjectState();
+  const { projectName, projectDocument } = useProjectState();
   const {
     activeDocumentId,
     canUndoActiveDocument,
@@ -556,7 +556,10 @@ export function EditorChromeBar({
             data-testid="project-name"
             title={projectName || undefined}
           >
-            <BrandIcon className="editor-chrome-brand" />
+            <ProjectIdentityMark
+              appearance={projectDocument?.metadata.appearance}
+              className="editor-chrome-brand"
+            />
             <span className="editor-chrome-project">
               {projectName ?? ""}
             </span>

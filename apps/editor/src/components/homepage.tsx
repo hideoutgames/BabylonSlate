@@ -1,7 +1,6 @@
 import {
   lazy,
   Suspense,
-  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -83,9 +82,9 @@ import { getBuildLabel } from "../lib/build-identity";
 import { HomepageAccount } from "./homepage-account";
 import { ReleaseNews } from "./release-news";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
-import { HomepageEmptyArt } from "./homepage-empty-art";
 import { HomepageGallery } from "./homepage-gallery";
 import { HomepageProjectCard } from "./homepage-project-card";
+import { TemplatePickCard } from "./homepage-template-card";
 import { DEFAULT_PROJECT_APPEARANCE } from "./homepage-project-appearance";
 import { useHomepageScheme } from "./homepage-scheme";
 import {
@@ -163,19 +162,15 @@ export function Homepage({
 }: HomepageProps) {
   const [scheme] = useHomepageScheme();
   const transition = useLauncherTransition();
-  const [artReady, setArtReady] = useState(false);
-  const markArtReady = useCallback(() => setArtReady(true), []);
   useEffect(() => {
     transition.reportHomeLoading(
       !dataReady
         ? "Loading project library"
-        : projects.length === 0 && !artReady
-          ? "Loading 3D models"
-          : "Preparing interface",
+        : "Preparing interface",
     );
-  }, [dataReady, projects.length, artReady, transition.reportHomeLoading]);
+  }, [dataReady, transition.reportHomeLoading]);
   useEffect(() => {
-    if (!dataReady || (projects.length === 0 && !artReady)) return;
+    if (!dataReady) return;
     let cancelled = false;
     const images = Array.from(
       document.querySelectorAll<HTMLImageElement>(
@@ -191,7 +186,7 @@ export function Homepage({
     return () => {
       cancelled = true;
     };
-  }, [dataReady, projects.length, artReady, transition.ready]);
+  }, [dataReady, projects.length, transition.ready]);
   const launch = async (action: () => Promise<void>, label = "Haptic") => {
     transition.begin(label);
     await new Promise<void>((resolve) =>
@@ -268,7 +263,12 @@ export function Homepage({
       ),
     [projects, search, sort],
   );
-  const templateCount = homepageTemplates(templates, { debugMode }).length;
+  const allTemplates = homepageTemplates(templates, { debugMode });
+  const templateCount = allTemplates.length;
+  /** The empty library offers the built-in starters directly. */
+  const starterTemplates = ["empty", "2d", "blank"].flatMap((id) =>
+    allTemplates.filter((template) => template.id === id),
+  );
   const LayoutIcon =
     PROJECT_LAYOUT_OPTIONS.find((option) => option.value === layout)?.icon ??
     Grid2x2Icon;
@@ -631,51 +631,52 @@ export function Homepage({
                       data-testid="homepage-projects-empty"
                       data-search={search ? "true" : "false"}
                     >
-                      {!search && (
-                        <HomepageEmptyArt
-                          onReady={markArtReady}
-                          paused={
-                            busy ||
-                            transition.active ||
-                            createOpen ||
-                            settingsOpen ||
-                              accountOpen ||
-                            changelogOpen ||
-                            view !== "projects"
-                          }
-                        />
-                      )}
                       <EmptyHeader>
                         <EmptyTitle>
-                          {search ? "No Results" : "No Projects Yet"}
+                          {search ? "No Results" : "Start Your First Project"}
                         </EmptyTitle>
                         {!search && (
                           <EmptyDescription>
-                            Start from a template or open an existing project
-                            folder.
+                            Pick a starter, browse every template, or open an
+                            existing project folder.
                           </EmptyDescription>
                         )}
                       </EmptyHeader>
                       {!search && (
-                        <EmptyContent className="homepage-empty-actions">
-                          <Button
-                            size="sm"
-                            disabled={busy}
-                            onClick={() => create()}
-                          >
-                            <PlusIcon data-icon="inline-start" />
-                            New Project
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={busy}
-                            onClick={() => changeView("templates")}
-                          >
-                            <LayoutTemplateIcon data-icon="inline-start" />
-                            Browse Templates
-                          </Button>
-                        </EmptyContent>
+                        <>
+                          <div className="homepage-empty-starters">
+                            {starterTemplates.map((starter) => (
+                              <TemplatePickCard
+                                key={starter.id}
+                                title={starter.name}
+                                description={starter.description}
+                                icon={starter.icon}
+                                disabled={busy}
+                                testId={`homepage-empty-start-${starter.id}`}
+                                onSelect={() => create(starter.id, false)}
+                              />
+                            ))}
+                          </div>
+                          <EmptyContent className="homepage-empty-actions">
+                            <Button
+                              size="sm"
+                              disabled={busy}
+                              onClick={() => create()}
+                            >
+                              <PlusIcon data-icon="inline-start" />
+                              New Project
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={busy}
+                              onClick={() => changeView("templates")}
+                            >
+                              <LayoutTemplateIcon data-icon="inline-start" />
+                              Browse Templates
+                            </Button>
+                          </EmptyContent>
+                        </>
                       )}
                     </Empty>
                   }

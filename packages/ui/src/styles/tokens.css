@@ -82,6 +82,16 @@
  * chromatic so graph and gizmo meaning is independent of chrome.
  */
 :root {
+    /* Project identity colours (project cards, editor project tab). */
+    --project-ink: #17191e;
+    --project-coral: #ff4569;
+    --project-amber: #ffc239;
+    --project-lime: #b3f52f;
+    --project-mint: #28dfdb;
+    --project-sky: #5085ff;
+    --project-violet: #9c63ff;
+    --project-rose: #f252df;
+    --project-stone: #b1b7c4;
     --background: oklch(0.948 0.004 80);
     --foreground: oklch(0.18 0.005 75);
     --card: oklch(0.995 0.001 85);

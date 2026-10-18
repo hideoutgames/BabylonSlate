@@ -41,8 +41,31 @@
 }
 
 .editor-chrome-brand {
-  height: 17px;
   flex-shrink: 0;
+}
+
+/* The open project's icon in its colour (or its picture), as on its card. */
+.project-identity-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  overflow: hidden;
+  border: 1.5px solid var(--project-color);
+  border-radius: 5px;
+  color: var(--project-color);
+  background: oklch(0.17 0.004 75);
+}
+
+.project-identity-mark svg {
+  width: 11px;
+  height: 11px;
+}
+
+.project-identity-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .editor-chrome-project {
@@ -470,4 +493,28 @@
 
 .ui-dock-surface-inactive * {
   pointer-events: none !important;
+}
+
+/*
+ * Outliner visibility and lock flags stay on every row. The default state
+ * (visible, unlocked) is a faint outline icon; hidden and locked actors show
+ * the icon at full ink on an accent chip so they stand out in long lists.
+ */
+.outliner-flag[data-active="false"] {
+  color: color-mix(in oklch, var(--muted-foreground) 55%, transparent);
+}
+
+[role="treeitem"]:hover .outliner-flag[data-active="false"],
+.outliner-flag[data-active="false"]:focus-visible {
+  color: var(--muted-foreground);
+}
+
+.outliner-flag[data-active="true"] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.outliner-flag[data-active="true"]:hover {
+  background: color-mix(in oklch, var(--accent) 80%, var(--foreground));
 }

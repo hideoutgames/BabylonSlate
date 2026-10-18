@@ -85,6 +85,32 @@
   }
 }
 
+/* A project's chosen colour, for its icon and frame. */
+[data-project-color="coral"] {
+  --project-color: var(--project-coral);
+}
+[data-project-color="amber"] {
+  --project-color: var(--project-amber);
+}
+[data-project-color="lime"] {
+  --project-color: var(--project-lime);
+}
+[data-project-color="mint"] {
+  --project-color: var(--project-mint);
+}
+[data-project-color="sky"] {
+  --project-color: var(--project-sky);
+}
+[data-project-color="violet"] {
+  --project-color: var(--project-violet);
+}
+[data-project-color="rose"] {
+  --project-color: var(--project-rose);
+}
+[data-project-color="stone"] {
+  --project-color: var(--project-stone);
+}
+
 /* Overlay bounds apply after caller sizing utilities so wide editors and short
  * phone windows remain inside the safe viewport. Compact control defaults stay
  * unchanged; touch menus get their own non-overlapping row layout below. */
@@ -181,6 +207,22 @@
     calc(100vw - var(--safe-left) - var(--safe-right) - 1rem)
   );
   overscroll-behavior: contain;
+}
+
+/* Mouse and trackpad menus match the 12px chrome: compact type, 28px rows.
+ * Touch keeps its own larger rows. */
+@media (pointer: fine) {
+  .editor-menu
+    :is(
+      [data-slot="dropdown-menu-item"],
+      [data-slot="dropdown-menu-sub-trigger"],
+      [data-slot="dropdown-menu-checkbox-item"],
+      [data-slot="dropdown-menu-radio-item"],
+      [data-slot="select-item"]
+    ) {
+    min-height: var(--chrome-row, 28px);
+    font-size: 12px;
+  }
 }
 
 .catalog-category-picker {

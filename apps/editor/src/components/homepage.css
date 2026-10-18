@@ -5,15 +5,15 @@
  */
 .homepage-theme,
 [data-testid="homepage-project-menu"] {
-  --homepage-badge-ink: #17191e;
-  --homepage-badge-coral: #ff4569;
-  --homepage-badge-amber: #ffc239;
-  --homepage-badge-lime: #b3f52f;
-  --homepage-badge-mint: #28dfdb;
-  --homepage-badge-sky: #5085ff;
-  --homepage-badge-violet: #9c63ff;
-  --homepage-badge-rose: #f252df;
-  --homepage-badge-stone: #b1b7c4;
+  --homepage-badge-ink: var(--project-ink);
+  --homepage-badge-coral: var(--project-coral);
+  --homepage-badge-amber: var(--project-amber);
+  --homepage-badge-lime: var(--project-lime);
+  --homepage-badge-mint: var(--project-mint);
+  --homepage-badge-sky: var(--project-sky);
+  --homepage-badge-violet: var(--project-violet);
+  --homepage-badge-rose: var(--project-rose);
+  --homepage-badge-stone: var(--project-stone);
   --launcher-shadow: color-mix(in oklch, var(--shadow-color, #000) 22%, transparent);
   --launcher-ease: cubic-bezier(0.2, 0.75, 0.2, 1);
   /* Decorative viewports stay dark in both themes, like editor canvases. */
@@ -781,60 +781,19 @@
   font-weight: 400;
   color: var(--muted-foreground);
 }
+.homepage-empty-starters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 180px));
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+}
 .homepage-empty-actions {
   flex-direction: row;
   justify-content: center;
   flex-wrap: wrap;
   gap: 6px;
 }
-.homepage-empty-art {
-  position: relative;
-  width: min(560px, 100%);
-  height: min(320px, 38vh);
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background:
-    radial-gradient(
-      ellipse 60% 70% at 50% 42%,
-      oklch(0.26 0.006 60),
-      transparent 72%
-    ),
-    var(--launcher-viewport);
-  box-shadow: 0 24px 48px -30px var(--launcher-shadow);
-  animation: launcher-arrive 520ms var(--launcher-ease) both;
-}
-.homepage-viewport-chips {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  display: flex;
-  gap: 4px;
-  pointer-events: none;
-}
-.homepage-viewport-chips span {
-  padding: 2px 6px;
-  border: 1px solid oklch(1 0 0 / 10%);
-  border-radius: var(--radius-sm);
-  background: oklch(0 0 0 / 35%);
-  color: oklch(0.85 0.004 85);
-  font-size: 10px;
-  line-height: 14px;
-}
-.homepage-sculpture {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  transition: opacity 600ms;
-}
-.homepage-sculpture[data-ready="true"] {
-  opacity: 1;
-}
-.homepage-sculpture canvas {
-  width: 100%;
-  height: 100%;
-}
-
 /* ------------------------------------------------------ Template browser */
 .homepage-template-browser {
   flex: 1;
@@ -1847,9 +1806,6 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   .homepage-composer-footer > button:last-child {
     flex: 1;
   }
-  .homepage-empty-art {
-    height: 220px;
-  }
 }
 
 /* -------------------------------------------------------- Short screens */
@@ -1871,9 +1827,6 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   .homepage-empty {
     padding-block: 8px;
     gap: 10px;
-  }
-  .homepage-empty-art {
-    height: 150px;
   }
 }
 /* ---------------------------------------------------------------- Motion */
@@ -1907,11 +1860,6 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   }
 }
 
-/* The profile menu matches the launcher's compact type. */
-.homepage-profile-menu [role="menuitem"] {
-  min-height: var(--chrome-row, 28px);
-  font-size: 12px;
-}
 .homepage-profile-menu [role="menuitem"] svg:not(.homepage-profile-menu-avatar) {
   width: 14px;
   height: 14px;
