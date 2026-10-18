@@ -1,262 +1,143 @@
 /* Keep in sync with the boot splash in apps/editor/index.html. Literal values
- * mirror the Graphite tokens because the boot copy renders before globals.css. */
+ * mirror the editor tokens because the boot copy renders before globals.css. */
 .slate-loading {
   position: fixed;
   inset: 0;
   z-index: 1000;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
-  padding: 24px;
-  background: oklch(0.19 0.003 75);
-  color: oklch(0.92 0.003 85);
+  padding: 16px;
+  background: oklch(0.125 0.004 75);
+  color: oklch(0.97 0.002 85);
   will-change: opacity;
   opacity: 1;
-  transition: opacity 650ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition: opacity 500ms cubic-bezier(0.22, 0.61, 0.36, 1);
   font:
-    400 12px "Geist Variable",
+    400 12px "Onest Variable",
     system-ui,
     sans-serif;
-}
-.slate-loading[data-scheme="light"] {
-  background: oklch(0.885 0.005 85);
-  color: oklch(0.3 0.006 70);
 }
 .slate-loading[data-leaving="true"] {
   opacity: 0;
   pointer-events: none;
 }
-.slate-splash-card {
-  width: min(560px, 100%);
-  overflow: hidden;
-  border-radius: 11px;
-  border: 1px solid oklch(0.43 0 0 / 80%);
-  background: oklch(0.3 0.003 75);
-  box-shadow:
-    0 30px 80px oklch(0 0 0 / 45%),
-    0 6px 18px oklch(0 0 0 / 30%);
-}
-.slate-splash-titlebar {
+/* A flat splash card: the wordmark on top, then the progress line with the
+ * status and build under it. */
+.slate-splash {
+  box-sizing: border-box;
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border-bottom: 1px solid oklch(0.43 0 0 / 80%);
-  background: oklch(0.264 0.003 75);
-  font-size: 12px;
-  font-weight: 600;
+  flex-direction: column;
+  justify-content: space-between;
+  width: min(460px, 100%);
+  aspect-ratio: 2 / 1;
+  padding: 28px 28px 26px;
+  overflow: hidden;
+  border: 1px solid oklch(1 0 0 / 8%);
+  border-radius: 16px;
+  background: oklch(0.175 0.004 75);
+  transition: transform 500ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  animation: slate-splash-in 500ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
-.slate-splash-titlebar img {
-  width: 12px;
-  height: 16px;
+.slate-loading[data-leaving="true"] .slate-splash {
+  transform: scale(0.98);
+}
+.slate-splash-wordmark {
+  align-self: flex-start;
+  width: auto;
+  height: 34px;
+  aspect-ratio: 1119 / 257;
   object-fit: contain;
 }
-.slate-splash-titlebar img[data-scheme="light"],
-.slate-loading[data-scheme="light"] .slate-splash-titlebar img[data-scheme="dark"] {
-  display: none;
+.slate-splash-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
 }
-.slate-loading[data-scheme="light"] .slate-splash-titlebar img[data-scheme="light"] {
-  display: block;
+.slate-splash-footer {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
 }
-.slate-splash-version {
-  margin-left: auto;
-  color: oklch(0.745 0.005 85);
-  font-size: 11px;
-  font-weight: 400;
-  white-space: nowrap;
-}
-/* Decorative viewports stay dark in both themes, like editor canvases. */
-.slate-splash-art {
-  height: 210px;
-  position: relative;
-  overflow: hidden;
-  background:
-    radial-gradient(ellipse 55% 75% at 72% 40%, oklch(0.34 0.004 75), transparent 70%),
-    oklch(0.2 0.003 75);
-}
-.slate-splash-floor {
-  position: absolute;
-  left: -50%;
-  right: -50%;
-  bottom: -2%;
-  height: 60%;
-  transform-origin: 50% 100%;
-  transform: perspective(240px) rotateX(60deg);
-  background-image:
-    linear-gradient(oklch(0.42 0.004 75) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.42 0.004 75) 1px, transparent 1px);
-  background-size: 30px 30px;
-  mask-image: linear-gradient(to top, #000, transparent 90%);
-  opacity: 0.45;
-  animation: slate-splash-floor 6s linear infinite;
-}
-.slate-splash-caption {
-  position: absolute;
-  bottom: 14px;
-  left: 16px;
-  padding: 2px 6px;
-  border: 1px solid oklch(1 0 0 / 10%);
-  border-radius: 5px;
-  background: oklch(0 0 0 / 35%);
-  color: oklch(0.85 0.004 85);
-  font-size: 11px;
-}
-.slate-splash-planes {
-  position: absolute;
-  width: 250px;
-  height: 280px;
-  right: 40px;
-  top: -30px;
-  transform: rotate(-25deg);
-}
-.slate-splash-planes i {
-  position: absolute;
-  width: 150px;
-  height: 200px;
-  top: 40px;
-  left: 20px;
-  border-radius: 26px;
-  border: 1px solid oklch(0.82 0.004 85 / 35%);
-  background: linear-gradient(
-    130deg,
-    oklch(0.62 0.004 80 / 35%),
-    oklch(0.32 0.003 75) 40%,
-    oklch(0.22 0.003 75) 85%
-  );
-  box-shadow:
-    12px 18px 30px oklch(0 0 0 / 40%),
-    inset 0 1px 0 oklch(0.95 0.003 85 / 45%);
-  will-change: transform;
-  animation: slate-splash-drift 5s ease-in-out infinite alternate;
-}
-.slate-splash-planes i:nth-child(2) {
-  left: 58px;
-  top: 64px;
-  opacity: 0.85;
-  animation-delay: -1.6s;
-}
-.slate-splash-planes i:nth-child(3) {
-  left: 96px;
-  top: 88px;
-  background: linear-gradient(
-    125deg,
-    oklch(0.88 0.004 85),
-    oklch(0.64 0.004 80) 37%,
-    oklch(0.42 0.003 75) 72%,
-    oklch(0.28 0.003 75)
-  );
-  animation-delay: -3.2s;
-}
-.slate-splash-planes i::after {
-  content: "";
-  position: absolute;
-  inset: 20px;
-  border: 1px solid oklch(0.95 0.003 85 / 16%);
-  border-radius: 14px;
-}
-.slate-splash-info {
-  padding: 14px 16px 16px;
-}
-.slate-splash-heading {
-  margin-bottom: 4px;
+.slate-splash-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 .slate-loading-label {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
+  min-width: 0;
   overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .slate-splash-status {
-  color: oklch(0.745 0.005 85);
+  color: oklch(0.97 0.002 85 / 60%);
   font-size: 12px;
-  margin-bottom: 12px;
+}
+.slate-splash-version {
+  flex-shrink: 0;
+  color: oklch(0.97 0.002 85 / 40%);
+  font-size: 11px;
 }
 .slate-loading-track {
+  position: relative;
   display: block;
   height: 2px;
-  width: 100%;
   overflow: hidden;
-  background: oklch(0.43 0 0 / 60%);
   border-radius: 2px;
+  background: oklch(1 0 0 / 10%);
 }
 .slate-loading-track > span {
-  display: block;
-  width: 40%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, oklch(0.92 0.003 85), transparent);
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(0.83 0.16 75) 35%,
+    oklch(0.66 0.21 32) 70%,
+    transparent
+  );
   will-change: transform;
-  animation: slate-load-travel 1.8s ease-in-out infinite;
+  animation: slate-load-travel 1.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 .slate-loading-track[data-ready="true"] > span {
   width: 100%;
-  background: oklch(0.92 0.003 85);
+  background: oklch(0.97 0.002 85);
+  animation: slate-load-fill 400ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+/* The React copy replaces the boot copy; skip the entrance. */
+.slate-loading[data-boot="true"] .slate-splash {
   animation: none;
 }
-.slate-loading[data-scheme="light"] .slate-splash-card {
-  border-color: oklch(0.855 0.006 85);
-  background: oklch(0.988 0.002 85);
-  box-shadow:
-    0 30px 70px oklch(0.3 0.006 70 / 22%),
-    0 6px 18px oklch(0.3 0.006 70 / 12%);
-}
-.slate-loading[data-scheme="light"] .slate-splash-titlebar {
-  border-color: oklch(0.855 0.006 85);
-  background: oklch(0.952 0.004 85);
-}
-.slate-loading[data-scheme="light"] .slate-splash-version,
-.slate-loading[data-scheme="light"] .slate-splash-status {
-  color: oklch(0.465 0.008 70);
-}
-.slate-loading[data-scheme="light"] .slate-loading-track {
-  background: oklch(0.855 0.006 85);
-}
-.slate-loading[data-scheme="light"] .slate-loading-track > span {
-  background: linear-gradient(90deg, transparent, oklch(0.3 0.006 70), transparent);
-}
-.slate-loading[data-scheme="light"] .slate-loading-track[data-ready="true"] > span {
-  background: oklch(0.3 0.006 70);
+@keyframes slate-splash-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
 }
 @keyframes slate-load-travel {
   from {
-    transform: translateX(-110%);
+    transform: translateX(-100%);
   }
   to {
-    transform: translateX(350%);
+    transform: translateX(290%);
   }
 }
-@keyframes slate-splash-drift {
+@keyframes slate-load-fill {
+  from {
+    transform: scaleX(0);
+    transform-origin: left;
+  }
   to {
-    transform: translate3d(0, -10px, 0);
-  }
-}
-@keyframes slate-splash-floor {
-  to {
-    background-position: 0 30px;
-  }
-}
-@media (max-width: 520px) {
-  .slate-loading {
-    padding: 16px;
-  }
-  .slate-splash-art {
-    height: 180px;
-  }
-  .slate-splash-planes {
-    right: -80px;
-    opacity: 0.7;
-  }
-}
-@media (max-height: 520px) {
-  .slate-splash-art {
-    height: 120px;
-  }
-  .slate-splash-caption {
-    display: none;
-  }
-  .slate-splash-info {
-    padding: 10px 16px 12px;
+    transform-origin: left;
   }
 }
 @media (prefers-reduced-motion: reduce) {

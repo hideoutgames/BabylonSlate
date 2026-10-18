@@ -63,6 +63,7 @@ import {
   normalizeScenePostProcessStack,
   newGuid,
   waterKindForClass,
+  DEFORMER_COMPONENT_CLASS_ID,
 } from "@babylonslate/core";
 import {
   ChevronDownIcon,
@@ -1197,7 +1198,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   const multiSelection = selectedActors.length > 1;
   const spatialActors = selectedActors.filter((entry) => !isSceneLayerAnchorActor(entry));
   const shapeComponents = actor.components.filter((component) =>
-    component.classId === "SplineComponent" || waterKindForClass(component.classId) !== null,
+    component.classId === "SplineComponent" || component.classId === DEFORMER_COMPONENT_CLASS_ID || waterKindForClass(component.classId) !== null,
   );
   const activeShapeComponent = !multiSelection && !actor.locked
     ? shapeComponents.find((component) => shapeEditTarget?.actorId === actor.id && shapeEditTarget.componentId === component.id) ?? shapeComponents[0]

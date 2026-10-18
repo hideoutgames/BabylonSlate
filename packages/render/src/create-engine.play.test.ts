@@ -22,6 +22,7 @@ import {
   createMeshComponent,
   DEFAULT_RENDER_EFFECTS,
   normalizeRenderProjectSettings,
+  normalizeWaterBody,
   engineCommandBus,
   requestEditorDrop,
   parseCableProperties,
@@ -52,6 +53,7 @@ import * as presentation from "./presented-frame";
 import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
+import { createWaterMesh } from "./water-mesh";
 
 const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
 
@@ -526,6 +528,23 @@ describe("Play createEngine view", () => {
     const cancelled = expect(handle.captureFrame()).rejects.toThrow("disposed");
     handle.dispose();
     await cancelled;
+  });
+
+  it("compiles blending water bodies' variants once, with Blend, before the first frame's update", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    createWaterMesh(handle.scene, "west", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }));
+    // Within the blend distance of the first body: both blend once the water update has seen them.
+    createWaterMesh(handle.scene, "east", normalizeWaterBody({ width: 24, length: 24, resolution: 24 })).position.set(16, 0.5, 0);
+    const compiled = () => Object.values((engine as unknown as { _compiledEffects: Record<string, { defines?: string }> })._compiledEffects)
+      .map((effect) => effect.defines ?? "").filter((defines) => /^#define SLATE_WATER$/m.test(defines));
+    await handle.prewarmSceneMaterials();
+    const afterLoad = compiled();
+    expect(afterLoad.length).toBeGreaterThan(0);
+    for (const defines of afterLoad) expect(defines).toMatch(/^#define SLATE_WATER_BLEND$/m);
+    // The first frame's update finds nothing left to change, so no pass compiles a second variant.
+    for (let index = 0; index < 2; index++) { engine.beginFrame(); renderViews(engine); engine.endFrame(); }
+    expect(compiled()).toEqual(afterLoad);
   });
 
   function renderViews(engine: NullEngine) {
@@ -2495,6 +2514,25 @@ describe("Play createEngine view", () => {
     await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
     expect(retireTextures).toHaveBeenCalledOnce();
     expect(engine.isDisposed).toBe(false);
+  });
+
+  it("confirms an outlined Play view's release without another frame once its WebGPU device is lost", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    handle.applyCommand({ type: "setActorOutlines", slotId: 4, actorId: "hero",
+      outlines: outlineBindings("hero", [{ id: "ink", classId: "OutlineComponent", properties: { color: [1, 0, 0], width: 3 } }]) });
+    handle.applyCommand({ type: "assignMesh", slotId: 4, actorGuid: "hero", meshAssetGuid: null, meshKind: "box" });
+    await handle.prewarmSceneMaterials();
+    // Leases taken by the prepared graph now wait for a WebGPU end frame.
+    Object.defineProperty(engine, "isWebGPU", { get: () => true });
+    const frames = vi.spyOn(engine, "endFrame");
+    // What `watchWebGpuDevice` does on a lost device; the Engine never draws again.
+    (engine as unknown as { _contextWasLost: boolean })._contextWasLost = true;
+    engine.onContextLostObservable.notifyObservers(engine);
+    handle.dispose();
+    await handle.whenReleased();
+    await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
+    expect(frames).not.toHaveBeenCalled();
   });
 
   it("keeps shared Scene and MaterialLibrary owners until a held native release confirms", async () => {

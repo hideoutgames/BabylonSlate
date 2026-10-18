@@ -62,6 +62,27 @@ describe("managed render disposal completion", () => {
     expect(engine.onEndFrameObservable.observers.length).toBe(0);
     await releaseManagedRenderLeaseAfterDisposal(engine, lease);
   });
+  it("settles without a frame when the Engine's context was already lost", async () => {
+    const { engine, lease } = fixture();
+    // A lost WebGPU Engine never draws another frame or restores its device.
+    (engine as unknown as { _contextWasLost: boolean })._contextWasLost = true;
+    await releaseManagedRenderLeaseAfterDisposal(engine, lease);
+    expect(managedRenderReservations(engine).reservedBytes).toBe(0);
+  });
+  it("settles a pending release when the Engine's context is lost and removes its frame observer", async () => {
+    const { engine, lease } = fixture();
+    const framesBefore = engine.onEndFrameObservable.observers.length;
+    const completion = releaseManagedRenderLeaseAfterDisposal(engine, lease);
+    await Promise.resolve();
+    expect(managedRenderReservations(engine).reservedBytes).toBe(32);
+    (engine as unknown as { _contextWasLost: boolean })._contextWasLost = true;
+    engine.onContextLostObservable.notifyObservers(engine);
+    await completion;
+    expect(managedRenderReservations(engine).reservedBytes).toBe(0);
+    // Babylon's Observable.remove unregisters on the next macrotask.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(engine.onEndFrameObservable.observers.length).toBe(framesBefore);
+  });
   it("releases synchronously on WebGL and rejects another Engine's lease", async () => {
     const first = fixture(false);
     const second = fixture();

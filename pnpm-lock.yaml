@@ -299,6 +299,9 @@ importers:
       '@lezer/highlight':
         specifier: ^1.2.3
         version: 1.2.3
+      '@revenuecat/purchases-capacitor':
+        specifier: 13.7.0
+        version: 13.7.0(@capacitor/core@8.5.2)
       dockview-react:
         specifier: ^8.5.1
         version: 8.5.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -826,9 +829,9 @@ importers:
       '@base-ui/react':
         specifier: ^1.7.0
         version: 1.7.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@fontsource-variable/geist':
-        specifier: ^5.3.0
-        version: 5.3.0
+      '@fontsource-variable/onest':
+        specifier: ^5.3.1
+        version: 5.3.1
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -881,6 +884,12 @@ importers:
       '@capacitor/status-bar':
         specifier: ^8.0.3
         version: 8.0.3(@capacitor/core@8.5.2)
+      '@revenuecat/purchases-capacitor':
+        specifier: 13.7.0
+        version: 13.7.0(@capacitor/core@8.5.2)
+      '@revenuecat/purchases-js':
+        specifier: 1.67.1
+        version: 1.67.1
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1726,9 +1735,6 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
-  '@fontsource-variable/geist@5.3.0':
-    resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
-
   '@fontsource-variable/onest@5.3.1':
     resolution: {integrity: sha512-xaaw6G4HDB2/RczsWLD/2bnib4ykmQlTlBUN3GOEOiyErilZukQWVJG95h9zwAy0i8KY+QzDa+COPfqhI72Acw==}
 
@@ -1916,6 +1922,17 @@ packages:
 
   '@recast-navigation/wasm@0.43.1':
     resolution: {integrity: sha512-XFL6PhO8JodwXUHBSAkfaLUdUEweIkJsdP3HTmtJvMs5fkqEWxWJmBskZlACHJepv55NAriqWxOtuLlG3t7+Hg==}
+
+  '@revenuecat/purchases-capacitor@13.7.0':
+    resolution: {integrity: sha512-GFBgeHuieJUBUgaoQaFKR9Rx1iF86WxLxiKSn0ybl11lDgIjZNcsGYJ2F+56cn9XRLw+TDh6+0PX3DSa8Aaikw==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
+
+  '@revenuecat/purchases-js@1.67.1':
+    resolution: {integrity: sha512-PPr9VcVVqN2KVNGuA0X4xq4e60GtY8xBEUtQVKOGpKAjrPGRPv9JasuSj1pd0UG+dEQyBBAyNCgi7HizKhTswQ==}
+
+  '@revenuecat/purchases-typescript-internal-esm@19.5.0':
+    resolution: {integrity: sha512-25QmDlnwmOBHNFP3VgGLkuUA9CpMwHVfGv74CUj7TeeSbzARaGzwoqMET8MYC3YgixuutvPneUj2VN5GBHenIg==}
 
   '@rolldown/binding-android-arm-eabi@1.2.12':
     resolution: {integrity: sha512-dB/a1214qKfHMXCpgqR4OZT+jS4kTyEXbQGJPqzobt5EwH5rX080pxE37alt3RzvR1bf1Yz/yGqRfrYAxuPw0A==}
@@ -6527,8 +6544,6 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@fontsource-variable/geist@5.3.0': {}
-
   '@fontsource-variable/onest@5.3.1': {}
 
   '@hono/node-server@2.1.0(hono@4.13.7)':
@@ -6774,6 +6789,15 @@ snapshots:
       '@recast-navigation/wasm': 0.43.1
 
   '@recast-navigation/wasm@0.43.1': {}
+
+  '@revenuecat/purchases-capacitor@13.7.0(@capacitor/core@8.5.2)':
+    dependencies:
+      '@capacitor/core': 8.5.2
+      '@revenuecat/purchases-typescript-internal-esm': 19.5.0
+
+  '@revenuecat/purchases-js@1.67.1': {}
+
+  '@revenuecat/purchases-typescript-internal-esm@19.5.0': {}
 
   '@rolldown/binding-android-arm-eabi@1.2.12':
     optional: true

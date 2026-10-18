@@ -10,8 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { getBuildLabel } from "../lib/build-identity";
-import { brandIconSrc } from "../lib/branding";
-import { useHomepageScheme } from "./homepage-scheme";
+import { brandWordmarkSrc } from "../lib/branding";
 import loadingStyles from "./launcher-transition.css?inline";
 
 type Target = "home" | "editor";
@@ -24,6 +23,8 @@ type Transition = {
   readyAt: number | null;
   settled: boolean;
   leaving: boolean;
+  /** The first transition continues the boot splash from index.html. */
+  boot: boolean;
 };
 const TransitionContext = createContext<{
   begin: (label: string) => void;
@@ -57,7 +58,6 @@ export function LauncherTransitionProvider({
   route: string;
   children: ReactNode;
 }) {
-  const [scheme] = useHomepageScheme();
   const reducedMotion = useSyncExternalStore(
     subscribeReducedMotion,
     prefersReducedMotion,
@@ -72,6 +72,7 @@ export function LauncherTransitionProvider({
     readyAt: null,
     settled: true,
     leaving: false,
+    boot: true,
   }));
   const begin = useCallback(
     (label: string) =>
@@ -84,6 +85,7 @@ export function LauncherTransitionProvider({
         readyAt: null,
         settled: false,
         leaving: false,
+        boot: false,
       }),
     [],
   );
@@ -193,8 +195,8 @@ export function LauncherTransitionProvider({
             <style>{loadingStyles}</style>
             <div
               className="slate-loading"
-              data-scheme={scheme}
               data-leaving={transition.leaving}
+              data-boot={transition.boot}
               onTransitionEnd={(event) => {
                 if (
                   event.target !== event.currentTarget ||
@@ -213,34 +215,13 @@ export function LauncherTransitionProvider({
                   : `Opening ${transition.label}`
               }
             >
-              <section className="slate-splash-card">
-                <div className="slate-splash-titlebar">
-                  <img src={brandIconSrc(scheme)} alt="" />
-                  <span>Haptic</span>
-                  <span className="slate-splash-version">{version}</span>
-                </div>
-                <div className="slate-splash-art" aria-hidden="true">
-                  <div className="slate-splash-floor" />
-                  <div className="slate-splash-planes">
-                    <i />
-                    <i />
-                    <i />
-                  </div>
-                  <span className="slate-splash-caption">
-                    {transition.target === "home"
-                      ? "A blank slate to create with."
-                      : "Preparing slate project..."}
-                  </span>
-                </div>
-                <div className="slate-splash-info">
-                  <div className="slate-splash-heading">
-                    <span className="slate-loading-label">
-                      {transition.label}
-                    </span>
-                  </div>
-                  <div className="slate-splash-status">
-                    <span>{transition.status}</span>
-                  </div>
+              <section className="slate-splash">
+                <img
+                  className="slate-splash-wordmark"
+                  src={brandWordmarkSrc()}
+                  alt=""
+                />
+                <div className="slate-splash-bottom">
                   <span
                     className="slate-loading-track"
                     aria-hidden="true"
@@ -248,6 +229,19 @@ export function LauncherTransitionProvider({
                   >
                     <span />
                   </span>
+                  <div className="slate-splash-footer">
+                    <div className="slate-splash-text">
+                      {transition.target !== "home" && (
+                        <span className="slate-loading-label">
+                          {transition.label}
+                        </span>
+                      )}
+                      <span className="slate-splash-status">
+                        {transition.status}
+                      </span>
+                    </div>
+                    <span className="slate-splash-version">{version}</span>
+                  </div>
                 </div>
               </section>
             </div>

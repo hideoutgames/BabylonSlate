@@ -1,4 +1,5 @@
 import { applyGamepadRumble } from "./gamepad-rumble";
+import { drainEngineAfterRelease } from "./idle-engine-drain";
 import { acquireEngineGpuTiming, observeEngineGpuTiming, type EngineGpuTimingLease, type EngineGpuTimingObservation, type EngineGpuTimingSample } from "./engine-gpu-timing";
 import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest, type RuntimeMaterialCommitCommand } from "./runtime-material-edit";
 import { drainFinalAuthoringResources } from "./final-authoring-drain";
@@ -25,7 +26,7 @@ import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
-import { isBuiltInWaterMesh, setSceneWaterTime } from "./water-mesh";
+import { isBuiltInWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
@@ -111,8 +112,9 @@ import {
 import { createGizmoHost, type GizmoHost } from "./gizmo-host";
 import { createWaterHandles } from "./water-handles";
 import { createSplineHandles } from "./spline-handles";
+import { createDeformerHandles } from "./deformer-handles";
 import { selectedShapeComponent } from "./shape-edit-target";
-import type { ComponentShapeEdit } from "./shape-handles";
+import type { ComponentShapeEdit, ShapeHandlesHost } from "./shape-handles";
 import {
   applyGizmoMultiSelectDrag,
   beginGizmoMultiSelectDrag,
@@ -143,7 +145,7 @@ import {
   unfreezeActorWorldMatrix,
   freezeStaticActorWorldMatrix,
 } from "./scene-loader";
-import { waterKindForClass } from "@babylonslate/core";
+import { waterKindForClass, DEFORMER_COMPONENT_CLASS_ID, deformerTargetMesh, parseDeformerProperties } from "@babylonslate/core";
 import {
   accountedGeometryBytesForScene,
   isEditorModelPlaceholder,
@@ -2002,7 +2004,7 @@ function initializeEngine(
     const selection = outlineHost.selection;
     onRollback(() => selection.dispose());
     let multiSelectDrag: GizmoMultiSelectDrag | null = null;
-    let splinePointDrag = false;
+    let pointDrag: ShapeHandlesHost<never> | null = null;
     const parentIdOf = (id: string): string | null =>
       editorSync.serializedScene()?.actors.find((actor) => actor.id === id)
         ?.parentId ?? null;
@@ -2050,8 +2052,8 @@ function initializeEngine(
       canvasCssHeight: () => pointerCanvas().height,
       onDragStart: () => {
         const attached = gizmosRef.host?.attachedMesh() ?? null;
-        splinePointDrag = attached !== null && attached === splineHandles.selectedNode() && splineHandles.beginSelectionDrag();
-        if (splinePointDrag) return;
+        pointDrag = (attached && pointHandles().find((handles) => attached === handles.selectedNode() && handles.beginSelectionDrag())) || null;
+        if (pointDrag) return;
         const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
         const followers = roots
           .map((id) => editorSync.meshForActor(id))
@@ -2068,7 +2070,7 @@ function initializeEngine(
         options.onGizmoDragStart?.();
       },
       onDrag: () => {
-        if (splinePointDrag) { splineHandles.dragSelection(); return; }
+        if (pointDrag) { pointDrag.dragSelection(); return; }
         const attached = gizmosRef.host?.attachedMesh() ?? null;
         if (multiSelectDrag && attached) {
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
@@ -2083,7 +2085,7 @@ function initializeEngine(
         debugOverlayInstance.followLivePose();
       },
       onDragEnd: () => {
-        if (splinePointDrag) { splinePointDrag = false; splineHandles.endSelectionDrag(); return; }
+        if (pointDrag) { pointDrag.endSelectionDrag(); pointDrag = null; return; }
         const attached = gizmosRef.host?.attachedMesh() ?? null;
         if (multiSelectDrag && attached) {
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
@@ -2110,10 +2112,17 @@ function initializeEngine(
       onCommit: (edit) => options.onComponentShapeEdit?.(edit),
       onSelectionChange: () => attachSelectionGizmo(),
     });
-    // A selected spline point takes the translate gizmo until a viewport tap
-    // outside the handles or a new selection returns it to the actor.
+    const deformerHandles = createDeformerHandles(gizmos.layer, scene, {
+      scheduler,
+      onCommit: (edit) => options.onComponentShapeEdit?.(edit),
+      onSelectionChange: () => attachSelectionGizmo(),
+    });
+    onRollback(() => deformerHandles.dispose());
+    const pointHandles = (): ShapeHandlesHost<never>[] => [splineHandles, deformerHandles];
+    // A selected spline or deformer point takes the translate gizmo until a viewport
+    // tap outside the handles or a new selection returns it to the actor.
     const attachSelectionGizmo = () => {
-      const point = splineHandles.selectedNode();
+      const point = splineHandles.selectedNode() ?? deformerHandles.selectedNode();
       if (point) {
         gizmos.attachTo(point, [], { tool: "translate" });
         return;
@@ -2149,6 +2158,14 @@ function initializeEngine(
         actorId: actor.id, componentId: component.id,
         meshName: editorComponentMeshName(actor.id, component.id), properties: component.properties,
       } : null);
+      const deformerTarget = actor && component?.classId === DEFORMER_COMPONENT_CLASS_ID
+        ? deformerTargetMesh(actor.components, parseDeformerProperties(component.properties).targetMeshComponentId) : undefined;
+      deformerHandles.attach(actor && component && deformerTarget ? {
+        actorId: actor.id, componentId: component.id,
+        meshName: editorComponentMeshName(actor.id, deformerTarget.id), properties: component.properties,
+        resolveMesh: () => editorSync.meshForComponent(actor.id, deformerTarget.id),
+        preview: deformerBindings(actor.id, actor.components).some((binding) => binding.id === component.id),
+      } : null);
     };
 
     let tapPickSequence = 0;
@@ -2156,7 +2173,7 @@ function initializeEngine(
       scheduler,
       editorCameraActive: () => !previewGameCamera,
       blockLook: (x, y) =>
-        gizmos.isDragging() || waterHandles.isDragging() || splineHandles.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
+        gizmos.isDragging() || waterHandles.isDragging() || splineHandles.isDragging() || deformerHandles.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
       dragSelectActive: () => options.dragSelectActive?.() === true,
       onPointer:
         options.sharedEngine || presentRtt
@@ -2169,6 +2186,7 @@ function initializeEngine(
           : undefined,
       onTap: (x, y, tap) => {
         splineHandles.clearSelection();
+        deformerHandles.clearSelection();
         const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
         const sequence = ++tapPickSequence;
         void pickActorMeshName(scene, mapped.x, mapped.y).then((meshName) => {
@@ -3261,7 +3279,11 @@ function initializeEngine(
         // resources. Stop the view immediately, but release these owners only
         // after actual release confirms; a rejected release quarantines them.
         void retired.catch(reportRetirementFailure);
-        void released.then(releaseSceneResources).catch(reportReleaseFailure);
+        const sceneReleased = released.then(releaseSceneResources);
+        void sceneReleased.catch(reportReleaseFailure);
+        // Frame-gated releases and the Scene's deferred GPU destruction need end
+        // frames even when this was the shared Engine's last rendering client.
+        drainEngineAfterRelease(engine, sceneReleased);
       } else {
         void retired.catch(reportRetirementFailure);
         void released.catch(reportReleaseFailure);
@@ -4142,6 +4164,9 @@ function initializeEngine(
     prewarmSceneMaterials: async (owner) => {
       const scope = loadingScope(owner);
       applyRenderingQuality();
+      // Water's blend, placement (flat) and copy intent are otherwise first settled by the first frame's update, after
+      // the shader warm-up and the graph's probes compiled every variant without them: each then compiles twice.
+      updateSceneWater(scope.target);
       // Built-in water compiles the variant its pass draws when the graph below prepares: which one that is depends on
       // the view's plan, so a warm-up here would compile one nothing draws, and wait for its link.
       await warmSceneMaterials(scope.target, scope.assert, isBuiltInWaterMesh);

@@ -1,13 +1,64 @@
 import {
+  BoxIcon,
+  CarIcon,
+  CastleIcon,
+  CrownIcon,
+  FlagIcon,
+  Gamepad2Icon,
+  GhostIcon,
+  HeartIcon,
+  MountainSnowIcon,
+  OrbitIcon,
+  PuzzleIcon,
+  RocketIcon,
+  ShapesIcon,
+  SparklesIcon,
+  SwordsIcon,
+  TreePineIcon,
+  type LucideIcon,
+} from "lucide-react";
+import {
   MAX_PROJECT_IMAGE_DATA_URL_LENGTH,
   type ProjectAppearance,
 } from "@babylonslate/core";
 
-/** The launcher does not display `icon`; the stored format still requires it. */
+/** New projects start grey with the generic shapes icon. */
 export const DEFAULT_PROJECT_APPEARANCE: ProjectAppearance = {
-  icon: "box",
-  color: "sky",
+  icon: "shapes",
+  color: "stone",
 };
+
+/** Project card icons; a picture, when set, replaces the icon. */
+export const PROJECT_ICON_PRESETS: ReadonlyArray<{
+  id: string;
+  label: string;
+  icon: LucideIcon;
+}> = [
+  { id: "shapes", label: "Shapes", icon: ShapesIcon },
+  { id: "box", label: "Box", icon: BoxIcon },
+  { id: "gamepad", label: "Gamepad", icon: Gamepad2Icon },
+  { id: "rocket", label: "Rocket", icon: RocketIcon },
+  { id: "swords", label: "Swords", icon: SwordsIcon },
+  { id: "castle", label: "Castle", icon: CastleIcon },
+  { id: "car", label: "Car", icon: CarIcon },
+  { id: "ghost", label: "Ghost", icon: GhostIcon },
+  { id: "tree", label: "Tree", icon: TreePineIcon },
+  { id: "mountain", label: "Mountain", icon: MountainSnowIcon },
+  { id: "planet", label: "Planet", icon: OrbitIcon },
+  { id: "puzzle", label: "Puzzle", icon: PuzzleIcon },
+  { id: "crown", label: "Crown", icon: CrownIcon },
+  { id: "heart", label: "Heart", icon: HeartIcon },
+  { id: "flag", label: "Flag", icon: FlagIcon },
+  { id: "sparkles", label: "Sparkles", icon: SparklesIcon },
+];
+
+/** Unknown or older icon ids fall back to the default shapes icon. */
+export function projectIconPreset(id: string | undefined) {
+  return (
+    PROJECT_ICON_PRESETS.find((preset) => preset.id === id) ??
+    PROJECT_ICON_PRESETS[0]!
+  );
+}
 
 export const PROJECT_COLOR_PRESETS = [
   { id: "coral", label: "Crimson" },

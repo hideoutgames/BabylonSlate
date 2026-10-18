@@ -4,6 +4,7 @@ import { isColliderVisualTree } from "./collider-visual";
 import { isSkyboxMesh } from "./skybox";
 import { isViewportShadingTarget } from "./viewport-shading-mode";
 import { sceneRenderingSettings } from "./render-settings";
+import { SELECTION_COLOR } from "./selection-style";
 import { SharedOutlineOwner, type SharedOutlineContribution, type SharedOutlineTarget, type SharedOutlineView } from "./shared-outline";
 import type { SceneRenderCoordinator } from "./scene-render-coordinator";
 
@@ -148,7 +149,7 @@ export class SceneOutlineHost {
     const selectedKeys = new Set(selectedActors);
     const selected = targets.filter((target) => selectedKeys.has(target.key));
     if (selected.length) contributions.set("selection", { kind: "selection", targets: selected,
-      color: [0.42, 0.78, 1], width: 1, throughMeshes: true });
+      color: [SELECTION_COLOR.r, SELECTION_COLOR.g, SELECTION_COLOR.b], width: 1, throughMeshes: true });
     // Publish a complete validated snapshot before committing host state. A
     // rejected registration/capacity request preserves all previous consumers.
     const occluders = targets.flatMap((target) => target.meshes);

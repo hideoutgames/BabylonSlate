@@ -15,11 +15,11 @@ test("release news survives reload and the account menu reopens it offline", asy
 
   await page.reload();
   await expect(page.getByTestId("homepage")).toBeVisible();
-  // The homepage mounts before its 3D artwork and loading transition finish.
+  // The homepage mounts before its loading transition finishes.
   await expect(page.locator(".slate-loading")).toHaveCount(0, { timeout: 30_000 });
   await expect(news).toHaveCount(0);
   await page.context().setOffline(true);
-  await page.getByRole("button", { name: "Profile", exact: true }).click();
+  await page.getByTestId("homepage-account").click();
   await page.getByRole("menuitem", { name: "Changelog" }).click();
   const history = page.getByRole("dialog", { name: "Changelog" });
   await expect(history).toContainText(notes.changes[0]);

@@ -23,7 +23,7 @@ Storage port, platform adapters, app-owned libraries, Engine Settings storage, s
 
 | Adapter | Host | Notes |
 | --- | --- | --- |
-| OPFS | Web | Projects in `project-v2-<SHA-256 hex of JSON id>`; binding/deletion serialize with Web Locks; writes never recreate a deleted project folder; `readdir` skips `*.crswap`; required for browser writes (no temporary in-memory saves). Libraries/derived data bind with `{ library: true }`. |
+| OPFS | Web | Projects in `project-v2-<SHA-256 hex of JSON id>`; binding/deletion serialize with Web Locks, and a bound project holds a per-project session lock (one tab per project, below); writes never recreate a deleted project folder; `readdir` skips `*.crswap`; required for browser writes (no temporary in-memory saves). Libraries/derived data bind with `{ library: true }`. |
 | Documents | iPad / Android default | `Directory.Documents` (iOS) or app-private `Directory.Data` (Android) under `BabylonSlate/projects/`; no picker. Android projects excluded from cloud backup. |
 | Scoped / external | iPad / Android opt-in | Security-scoped bookmarks (`NSFileCoordinator`) / SAF tree URIs; root-confined paths; revoked access → **Reconnect Project Folder**. SAF overwrites stage a sibling then rename. |
 | Node | Electron main, tools | Root-confined through real paths; writes stage `.babylonslate-<uuid>.tmp`, flush and rename (no truncated files). |
@@ -31,6 +31,7 @@ Storage port, platform adapters, app-owned libraries, Engine Settings storage, s
 | HTTP catalog | Bundled engine plugins | `HttpCatalogStorageAdapter` over content-addressed immutable parts; never downloads archives; works without HTTP Range. |
 | Read-only wrapper / Memory | Engine plugins / tests | Writes throw / in-memory tree. |
 
+- **OPFS session lock:** a project (non-library) bind holds the Web Lock `babylonslate:opfs-session:<project id>` until `releaseFolder`, a bind of another project, or deleting that project. It is separate from the `babylonslate:opfs:<id>` lifecycle lock, which only covers a bind or delete. A project is therefore open in one tab; the journal and saves have a single writer. Refusal is taken with `ifAvailable` and throws `ProjectOpenElsewhereError` (`isProjectOpenElsewhere`) before any folder, meta or bound-project change, so the previous project stays bound. `deleteProject` needs the lock too (its own session counts); it borrows it for the deletion otherwise. Libraries take none. Locks die with their document, so reload and crash free the project, and the lock is released (and awaited) before the folder is reported released so a same-tab reopen is never refused. A host without `navigator.locks` cannot tell, so it does not refuse. Other adapters are single-window and unaffected.
 - `withReadScope` gives a scan a bounded native directory-lookup cache (Android): ≤ 8,192 listing entries per scope, ≤ 8 scopes per plugin, cleared around every mutation. Not a snapshot.
 - Mobile startup restores external folder ids without contacting the provider; recents reopen by stable id and never recreate missing folders.
 
@@ -54,7 +55,7 @@ The Documents tier crosses the Capacitor bridge once per asset write with base64
 - Global settings live outside any project; schema and defaults in [`app-settings.ts`](../../../packages/vfs/src/app-settings.ts). Backends: Capacitor Preferences (iOS/Android), `globalThis.babylonslate.userData` (Electron, `engine-settings.json` replaced atomically), localStorage (web).
 - `AppSettingsStore.update` is a queued read-mutate-validate-write transaction across store instances; emit change events only after persistence.
 - A refused save keeps settings in memory for the session; an unreadable file keeps `automaticUpdatesEnabled` off (it may hold an opt-out). A failed native Preferences read never overwrites stored settings.
-- `appearance.coarsePointerTargetScale` stays in the schema for stored files, but nothing reads it and Engine Settings does not show it.
+- `appearance.theme` and `appearance.coarsePointerTargetScale` stay in the schema for stored files, but nothing reads them and Engine Settings does not show them (the editor is dark only).
 - Number settings clamp on load (for example `undoHistoryLength` 1–1000, `traceByteBudget` 1–256 MiB, default 128 MiB).
 
 ## Secrets and native HTTP

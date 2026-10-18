@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { HomepageAccount } from "./homepage-account";
 
@@ -82,7 +83,7 @@ describe("optional desktop account", () => {
       </>,
     );
     await waitFor(() => expect(auth.restoreSession).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(screen.getByTestId("homepage-account"));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Sign In" }));
     const email = await screen.findByLabelText("Email Address");
     expect(auth.browserProvider).not.toHaveBeenCalled();
@@ -95,14 +96,16 @@ describe("optional desktop account", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Verify & Continue" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
-    expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ada Lovelace, ada@example.test" }),
+    );
+    expect(within(await screen.findByRole("menu")).getByText("Ada Lovelace")).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: "Sign Out" }));
     await waitFor(() => expect(auth.signOut).toHaveBeenCalledWith(session));
     expect(screen.getByRole("button", { name: "Create Project" })).toBeTruthy();
   });
 
-  it("keeps guests and subscription preview available when restoration fails", async () => {
+  it("keeps guests and the plans available when restoration fails", async () => {
     auth.restoreSession.mockRejectedValue(
       new Error("Secure account storage is unavailable."),
     );
@@ -113,12 +116,17 @@ describe("optional desktop account", () => {
       </>,
     );
     await waitFor(() => expect(auth.restoreSession).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(screen.getByTestId("homepage-account"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Manage Account/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Account" });
     fireEvent.click(
-      await screen.findByRole("menuitem", { name: "Manage Subscription" }),
+      within(within(dialog).getByRole("navigation", { name: "Categories" })).getByRole(
+        "button",
+        { name: "Subscription" },
+      ),
     );
-    expect(await screen.findByRole("dialog", { name: "Plans" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(within(dialog).getByRole("heading", { name: "Haptic Pro", level: 4 })).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
     expect(
       await screen.findByRole("button", { name: "Create Project" }),
     ).toBeTruthy();

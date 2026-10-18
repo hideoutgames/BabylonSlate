@@ -246,8 +246,15 @@ export function beginManagedRenderAllocation(
   return lease;
 }
 
+/** Pinned Babylon 9.29: set while a context is lost. A lost WebGPU Engine
+ * (`doNotHandleContextLost`) draws no further frame and is never restored. */
+function contextLost(engine: AbstractEngine): boolean {
+  return (engine as unknown as { _contextWasLost?: boolean })._contextWasLost === true;
+}
+
 /** Call only after disposing all owned resources. Native WebGPU queues physical
  * texture/buffer destruction until endFrame; hold the lease through that drain.
+ * A lost device frees everything at once, so loss also settles it.
  * A failed/uncertain disposal must keep its lease instead of calling this helper.
  * Never forces a shared Engine frame. Repeated calls share one completion. */
 export function releaseManagedRenderLeaseAfterDisposal(
@@ -258,7 +265,7 @@ export function releaseManagedRenderLeaseAfterDisposal(
     throw new Error("Managed render lease belongs to another Engine.");
   const pending = deferredReleases.get(lease);
   if (pending) return pending;
-  if (!engine.isWebGPU || disposedEngines.has(engine)) {
+  if (!engine.isWebGPU || disposedEngines.has(engine) || contextLost(engine)) {
     lease.release();
     return Promise.resolve();
   }
@@ -270,6 +277,7 @@ export function releaseManagedRenderLeaseAfterDisposal(
       finished = true;
       removeFrame?.();
       engine.onDisposeObservable.remove(disposeObserver);
+      engine.onContextLostObservable.remove(lostObserver);
       try {
         lease.release();
         resolve();
@@ -278,12 +286,13 @@ export function releaseManagedRenderLeaseAfterDisposal(
       }
     };
     const disposeObserver = engine.onDisposeObservable.addOnce(finish);
+    const lostObserver = engine.onContextLostObservable.addOnce(finish);
     // Babylon 9.29 drains deferred resources BEFORE notifying end-frame. A
     // disposal requested inside that notification must await the NEXT drain;
     // registering synchronously could run our observer in the current iteration.
     queueMicrotask(() => {
       if (finished) return;
-      if (disposedEngines.has(engine)) {
+      if (disposedEngines.has(engine) || contextLost(engine)) {
         finish();
         return;
       }

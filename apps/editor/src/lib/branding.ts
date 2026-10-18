@@ -2,10 +2,10 @@
 
 export const BRAND_NAME = "Haptic";
 
-/** Light-mode mark (dark ink) — use on light chrome. */
-export const BRAND_ICON_ON_LIGHT = "branding/HapticMark-LightMode.png";
-/** Dark-mode mark (light ink) — use on dark chrome. */
-export const BRAND_ICON_ON_DARK = "branding/HapticMark-DarkMode.png";
+/** Haptic is dark only, so the light-ink dark-mode marks are the only ones served. */
+export const BRAND_ICON = "branding/HapticMark-DarkMode.png";
+/** The wordmark with the chromatic fringes of haptic.no's title. */
+export const BRAND_WORDMARK = "branding/HapticWordmark-DarkMode.png";
 
 export function publicAssetUrl(pathFromPublic: string): string {
   const base = import.meta.env.BASE_URL ?? "/";
@@ -13,8 +13,10 @@ export function publicAssetUrl(pathFromPublic: string): string {
   return `${prefix}${pathFromPublic.replace(/^\//, "")}`;
 }
 
-export function brandIconSrc(theme: "light" | "dark"): string {
-  return publicAssetUrl(
-    theme === "dark" ? BRAND_ICON_ON_DARK : BRAND_ICON_ON_LIGHT,
-  );
+export function brandIconSrc(): string {
+  return publicAssetUrl(BRAND_ICON);
+}
+
+export function brandWordmarkSrc(): string {
+  return publicAssetUrl(BRAND_WORDMARK);
 }

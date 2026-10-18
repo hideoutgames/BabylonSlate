@@ -43,9 +43,9 @@ Cables also simulate gently in the editor, without collision. A stretched cable 
 
 A Deformer bends one Mesh component on the same actor with a lattice cage, after animation and material vertex offsets.
 
-1. Add a **Deformer** and pick the mesh in **Target Mesh**. Deformers start disabled.
+1. Add a **Deformer**. It targets the actor's first Mesh and starts enabled; pick another in **Target Mesh** if needed.
 2. Set **Resolution**: 2 to 4 control points per axis. Changing it resets the offsets.
-3. Turn on **Enabled**, then move the **Control** offsets. **Strength** blends the effect from 0 to 1.
+3. Select the actor and drag the cage's control points in the viewport, or type the **Control** offsets. The mesh deforms as you edit. **Strength** blends the effect from 0 to 1.
 
 **Fit To Mesh** fits the cage to the mesh. Turn it off to set **Bounds Min** and **Bounds Max** yourself. Deforming is visual only: collision and picking keep the original shape. Scripts can change the cage with the component's **Set Control Point Offset** and **Reset Control Points** functions.
 

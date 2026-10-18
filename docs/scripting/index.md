@@ -26,10 +26,10 @@ The pages in this section cover Class graphs.
 Open **Add Node** in any of these ways:
 
 - Double-tap or right-click (long-press on touch) empty canvas.
-- Tap **Add Node** (**+**) in the graph toolbar.
+- Tap **Add Node** (**+**) in the graph toolbar. The node appears in the middle of the canvas, or in the nearest free spot when something is already there.
 - Drag a wire from a pin and release it on empty canvas. The new node connects to that pin.
 
-Type in **Search Nodes** or browse the categories. **Context Sensitive** is on by default: it hides nodes that need a target object from another class, and when you drag from a pin it shows only compatible nodes. Turn it off to see every node the graph allows.
+Type in **Search Nodes** or browse the categories. Search words can be in any order and spaces are optional, so **Int to String** finds **To String (Int)** and **BeginPlay** finds **Event Begin Play**. The best match comes first: node names before aliases (such as **label** for **Set Text**), and those before descriptions. Categories are listed by their best match, and the highlighted first row is the one **Enter** adds. **Context Sensitive** is on by default: it hides nodes that need a target object from another class, and when you drag from a pin it shows only compatible nodes. Turn it off to see every node the graph allows.
 
 ## Connect pins
 

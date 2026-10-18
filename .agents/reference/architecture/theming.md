@@ -13,8 +13,9 @@ Editor and launcher theme tokens, semantic color families, density, canvas and o
 
 ## Appearance
 
-- Engine Settings Appearance → Theme `system | light | dark` (default `system`) is shared by launcher and editor. `EditorThemeProvider` toggles `html.dark`; a boot script in [`apps/editor/index.html`](../../../apps/editor/index.html) applies the stored choice before load.
-- Soft Graphite chrome: `--primary` is near-neutral ink in both schemes; buttons and focus rings follow it. Pin, node, asset, axis, status and Play tokens stay chromatic so meaning is independent of chrome.
+- Dark only: `EditorThemeProvider` always applies `html.dark`, and a boot script in [`apps/editor/index.html`](../../../apps/editor/index.html) sets it before load. There is no theme setting.
+- Haptic warm-black chrome (haptic.no): `--primary` is white ink; buttons follow it and focus rings are amber. `--brand-red` / `--brand-amber` and `--brand-fringe` carry the chromatic-fringe accent, used only under the active document tab. Pin, node, asset, axis, status and Play tokens stay chromatic so meaning is independent of chrome.
+- Type: Onest (`packages/ui/src/styles/onest.css`), with vertical metric overrides that centre capitals in compact rows.
 - Surface ladder: `--background` (app frame) → `--sidebar` (PanelFrame) → `--card` → `--panel-header` → `--popover` (menus, dialogs, floating tools); `--control` for inputs, `--accent` for hover/selection. `--radius` is 8px.
 - No automated contrast test exists; validate with screenshots and interaction review.
 

@@ -1,10 +1,11 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { createFakeWebLocks } from "./test-support/fake-web-locks";
 import { createMemoryOpfsRoot, opfsProjectFolder } from "./test-support/memory-opfs";
 import { webcrypto } from "node:crypto";
 import { createStorage } from "./create-storage";
 import { TEST_PROJECT_NAME } from "./test-mode";
 import { OpfsStorageAdapter } from "./web-adapter";
-import { isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
+import { isProjectOpenElsewhere, isStorageNotFound, SourceRevisionChangedError } from "@babylonslate/core";
 import { createMountedProjectStorage } from "./mounted-storage";
 
 vi.mock("./test-mode", async (importOriginal) => {
@@ -505,5 +506,102 @@ describe("OPFS / web storage adapter", () => {
     const reopened = new OpfsStorageAdapter();
     expect(await reopened.listProjects()).toHaveLength(1);
     expect(await reopened.readText("project.json")).toBe("original");
+  });
+});
+
+/** Each adapter stands for a tab: they share the origin's OPFS, localStorage and Web Locks. */
+describe("OPFS project session lock", () => {
+  let root: FileSystemDirectoryHandle;
+  beforeEach(() => {
+    vi.stubGlobal("crypto", webcrypto);
+    root = createMemoryOpfsRoot();
+    vi.stubGlobal("navigator", { storage: { getDirectory: async () => root }, locks: createFakeWebLocks() });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it("opens a project in one tab at a time and frees it when that tab closes it", async () => {
+    const first = new OpfsStorageAdapter();
+    const handle = await first.openDocumentsProject("Shared");
+    await first.writeText("project.json", "first tab");
+
+    const second = new OpfsStorageAdapter();
+    const refused = await second.openKnownFolder(handle).catch((error: unknown) => error);
+    expect(isProjectOpenElsewhere(refused)).toBe(true);
+    expect((refused as Error).message).toBe("This project is open in another tab. Close it there and try again.");
+    await second.openDocumentsProject("Other");
+
+    await first.releaseFolder();
+    await second.openKnownFolder(handle);
+    expect(await second.readText("project.json")).toBe("first tab");
+    expect(isProjectOpenElsewhere(await first.openKnownFolder(handle).catch((error: unknown) => error))).toBe(true);
+    await second.releaseFolder();
+    await first.openKnownFolder(handle);
+  });
+
+  it("keeps the bound project locked and usable when another bind is refused", async () => {
+    const other = new OpfsStorageAdapter();
+    const taken = await other.openDocumentsProject("Taken");
+    const storage = new OpfsStorageAdapter();
+    const own = await storage.openDocumentsProject("Own");
+    await expect(storage.openKnownFolder(taken)).rejects.toSatisfy(isProjectOpenElsewhere);
+    expect(storage.getCurrentFolder()).toEqual(own);
+    await storage.writeText("project.json", "still mine");
+    await expect(new OpfsStorageAdapter().openKnownFolder(own)).rejects.toSatisfy(isProjectOpenElsewhere);
+  });
+
+  it("releases the previous project when the adapter binds another, and rebinds its own", async () => {
+    const storage = new OpfsStorageAdapter();
+    const first = await storage.openDocumentsProject("First");
+    await storage.openDocumentsProject("First");
+    await storage.openDocumentsProject("Second");
+    await new OpfsStorageAdapter().openKnownFolder(first);
+  });
+
+  it("releases the project when binding fails", async () => {
+    vi.spyOn(root, "getDirectoryHandle").mockRejectedValueOnce(new DOMException("Denied", "NotAllowedError"));
+    const storage = new OpfsStorageAdapter();
+    await expect(storage.openDocumentsProject("Flaky")).rejects.toThrow("Denied");
+    await new OpfsStorageAdapter().openDocumentsProject("Flaky");
+  });
+
+  it("leaves app libraries shared between tabs", async () => {
+    const first = new OpfsStorageAdapter({ library: true });
+    await first.openDocumentsProject("__babylonslate_derived__");
+    const second = new OpfsStorageAdapter({ library: true });
+    await second.openDocumentsProject("__babylonslate_derived__");
+    await second.writeText("cache.json", "{}");
+    expect(await first.readText("cache.json")).toBe("{}");
+  });
+
+  it("deletes only projects this tab owns or that no tab has open", async () => {
+    const other = new OpfsStorageAdapter();
+    const open = await other.openDocumentsProject("OpenElsewhere");
+    await other.writeText("project.json", "keep");
+    const idle = await other.openDocumentsProject("Idle");
+    await other.releaseFolder();
+
+    const storage = new OpfsStorageAdapter();
+    await other.openKnownFolder(open);
+    await expect(storage.deleteProject(open)).rejects.toSatisfy(isProjectOpenElsewhere);
+    expect(await other.readText("project.json")).toBe("keep");
+
+    await storage.deleteProject(idle);
+    expect((await storage.listProjects()).map((project) => project.id)).toEqual([open.id]);
+    await storage.openDocumentsProject("Idle");
+
+    await other.deleteProject(open);
+    await storage.openKnownFolder(open);
+    expect(await storage.exists("project.json")).toBe(false);
+  });
+
+  it("keeps its own project locked when its deletion fails", async () => {
+    const storage = new OpfsStorageAdapter();
+    const handle = await storage.openDocumentsProject("Stubborn");
+    vi.spyOn(root, "removeEntry").mockRejectedValueOnce(new DOMException("Deletion denied", "NotAllowedError"));
+    await expect(storage.deleteProject(handle)).rejects.toThrow("Deletion denied");
+    await expect(new OpfsStorageAdapter().openKnownFolder(handle)).rejects.toSatisfy(isProjectOpenElsewhere);
   });
 });

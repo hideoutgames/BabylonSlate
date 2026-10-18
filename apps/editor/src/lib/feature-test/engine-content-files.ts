@@ -20,9 +20,9 @@ export type FeatureTestHolidayModel = (typeof FEATURE_TEST_HOLIDAY_MODELS)[numbe
 
 export const HOLIDAY_PACK_DIR = "engine-content/kenney-assets/Holiday Pack";
 export const HOLIDAY_COLORMAP_PATH = `${HOLIDAY_PACK_DIR}/Textures/colormap.png`;
-/** Geist (SIL OFL 1.1); `OFL.txt` ships beside it. */
-export const GEIST_FONT_PATH = "engine-content/fonts/Geist/Geist-Latin-Variable.woff2";
-export const GEIST_LICENSE_PATH = "engine-content/fonts/Geist/OFL.txt";
+/** Onest (SIL OFL 1.1); `OFL.txt` ships beside it. */
+export const ONEST_FONT_PATH = "engine-content/fonts/Onest/Onest-Latin-Variable.woff2";
+export const ONEST_LICENSE_PATH = "engine-content/fonts/Onest/OFL.txt";
 export const SKYBOX_NET_PATH = "engine-content/skybox/cubemap_layout.png";
 
 /** Kenney Platformer Pack Redux tilesheet: 13 × 12 tiles of 128 px (CC0). */
@@ -60,8 +60,8 @@ export const FEATURE_TEST_ENGINE_CONTENT: readonly string[] = [
   HOLIDAY_COLORMAP_PATH,
   PLATFORMER_TILESHEET_PATH,
   ...ROBOT_FRAMES.map(robotFramePath),
-  GEIST_FONT_PATH,
-  GEIST_LICENSE_PATH,
+  ONEST_FONT_PATH,
+  ONEST_LICENSE_PATH,
   SKYBOX_NET_PATH,
 ];
 

@@ -39,12 +39,12 @@ import {
 } from "@babylonslate/ui/components/toggle-group";
 import { HomepageTemplateBrowser, homepageTemplates } from "./homepage-template-browser";
 import {
-  ProjectColorDot,
   ProjectCover,
   ProjectIdentityBadge,
 } from "./homepage-project-identity";
 import {
   PROJECT_COLOR_PRESETS,
+  PROJECT_ICON_PRESETS,
   prepareProjectPicture,
 } from "./homepage-project-appearance";
 
@@ -179,6 +179,7 @@ export function HomepageCreateDialog({
   const appearanceRef = useRef(appearance);
   appearanceRef.current = appearance;
 
+  const showsPicture = Boolean(appearance.image) && appearance.cover !== "icon";
   const removePicture = () => {
     importRequest.current?.abort();
     importRequest.current = null;
@@ -195,7 +196,7 @@ export function HomepageCreateDialog({
     try {
       const image = await prepareProjectPicture(file, request.signal);
       if (!request.signal.aborted)
-        onAppearanceChange({ ...appearanceRef.current, image });
+        onAppearanceChange({ ...appearanceRef.current, image, cover: "image" });
     } catch (cause) {
       if (!request.signal.aborted)
         setImageIssue(
@@ -257,7 +258,7 @@ export function HomepageCreateDialog({
             {editing
               ? "Edit Project"
               : step === "templates"
-                ? "Start With"
+                ? "New Project"
                 : `New ${homepageTemplates(templates, { debugMode: true }).find((template) => template.id === templateId)?.name ?? "Project"}`}
           </DialogTitle>
           <DialogDescription className="sr-only">
@@ -294,11 +295,11 @@ export function HomepageCreateDialog({
             <aside
               className="homepage-composer-preview"
               data-testid="project-identity-preview"
+              data-color={appearance.color}
             >
               <div className="homepage-composer-preview-card">
                 <ProjectCover appearance={appearance} />
                 <span className="homepage-composer-preview-name">
-                  <ProjectColorDot appearance={appearance} />
                   <span>{name.trim() || placeholderName}</span>
                 </span>
               </div>
@@ -379,7 +380,58 @@ export function HomepageCreateDialog({
                           </Button>
                         ))}
                       </div>
+                    </div>
+                  </FieldSet>
+                  <FieldSet
+                    disabled={busy}
+                    className="homepage-composer-identity"
+                  >
+                    <FieldLegend variant="label">Icon</FieldLegend>
+                    <div className="homepage-composer-color-row">
+                      <div
+                        className="homepage-composer-icon-grid"
+                        role="group"
+                        aria-label="Project Icon"
+                      >
+                        {PROJECT_ICON_PRESETS.map(({ id, label, icon: Icon }) => (
+                          <Button
+                            key={id}
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="homepage-icon-choice"
+                            data-color={appearance.color}
+                            aria-label={label}
+                            aria-pressed={appearance.icon === id && !showsPicture}
+                            onClick={() =>
+                              onAppearanceChange({
+                                ...appearance,
+                                icon: id,
+                                ...(appearance.image ? { cover: "icon" } : {}),
+                              })
+                            }
+                          >
+                            <Icon />
+                          </Button>
+                        ))}
+                      </div>
                       <div className="homepage-composer-upload">
+                        {appearance.image && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="homepage-icon-choice homepage-picture-choice"
+                            aria-label="Use Picture"
+                            aria-pressed={showsPicture}
+                            disabled={busy || imageBusy}
+                            onClick={() =>
+                              onAppearanceChange({ ...appearance, cover: "image" })
+                            }
+                          >
+                            <img src={appearance.image} alt="" />
+                          </Button>
+                        )}
                         <input
                           ref={fileInput}
                           type="file"

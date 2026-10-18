@@ -2,31 +2,38 @@ const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-const RELATIVE_UNITS: ReadonlyArray<[Intl.RelativeTimeFormatUnit, number]> = [
-  ["year", 365 * DAY],
-  ["month", 30 * DAY],
-  ["week", 7 * DAY],
-  ["day", DAY],
-  ["hour", HOUR],
-  ["minute", MINUTE],
+const COMPACT_UNITS: ReadonlyArray<[string, number]> = [
+  ["y", 365 * DAY],
+  ["mo", 30 * DAY],
+  ["w", 7 * DAY],
+  ["d", DAY],
+  ["h", HOUR],
+  ["m", MINUTE],
 ];
 
-const relativeTime = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+const fullDate = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
-/** Launcher card caption: the most recent open, falling back to creation. */
+/**
+ * Launcher card caption: how long ago the project was last opened (or
+ * created), compact like "31m ago" or "2d ago", with the full date for a tooltip.
+ */
 export function describeProjectActivity(
   project: { lastOpenedAt?: string; createdAt?: string },
   now = Date.now(),
-): string | null {
+): { label: string; title: string } | null {
   const [verb, iso] = project.lastOpenedAt
     ? ["Opened", project.lastOpenedAt]
     : ["Created", project.createdAt];
   const time = iso ? Date.parse(iso) : Number.NaN;
   if (Number.isNaN(time)) return null;
-  const elapsed = time - now;
-  for (const [unit, size] of RELATIVE_UNITS) {
-    if (Math.abs(elapsed) >= size)
-      return `${verb} ${relativeTime.format(Math.round(elapsed / size), unit)}`;
+  const title = `${verb} ${fullDate.format(time)}`;
+  const elapsed = Math.max(0, now - time);
+  for (const [unit, size] of COMPACT_UNITS) {
+    if (elapsed >= size)
+      return { label: `${Math.floor(elapsed / size)}${unit} ago`, title };
   }
-  return `${verb} just now`;
+  return { label: "Just now", title };
 }

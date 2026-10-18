@@ -89,6 +89,47 @@ test("project backend changes rebuild one Engine while preserving scene edits an
   expect(externalShaderRequests).toEqual([]);
 });
 
+test("a lost WebGPU device stops Play and Retry restores the viewport on a new Engine", async ({ page }) => {
+  test.setTimeout(180_000);
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await openMinimalTestProject(page);
+  await openMainScene(page);
+  const baseline = () => page.evaluate(() => (window as unknown as {
+    __babylonslateViewportTest: { renderingBaseline(): { backend: string; engineCount: number; frameCount: number } | null };
+  }).__babylonslateViewportTest.renderingBaseline());
+  await page.getByTestId("settings-menu").click();
+  await page.getByTestId("project-settings").click();
+  await page.getByTestId("settings-modal-category-rendering").click();
+  await page.getByTestId("project-gpu-backend").click();
+  await page.getByRole("option", { name: "WebGPU", exact: true }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(async () => (await baseline())?.backend, { timeout: 30_000 }).toBe("webgpu");
+  await waitForSceneViewportReady(page);
+
+  await clickPlayAndWaitForOverlay(page);
+  const ticks = () => page.evaluate(() => (window as unknown as {
+    __babylonslatePlayTest?: { tickIndex(): number };
+  }).__babylonslatePlayTest?.tickIndex() ?? 0);
+  await expect.poll(ticks, { timeout: 30_000 }).toBeGreaterThan(3);
+  // Software WebGPU resolves `device.lost` for a destroyed device the Engine did not dispose.
+  expect(await page.evaluate(() => (window as unknown as {
+    __babylonslateViewportTest: { destroyGraphicsDevice(): boolean };
+  }).__babylonslateViewportTest.destroyGraphicsDevice())).toBe(true);
+
+  await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 30_000 });
+  const dialog = page.getByTestId("project-rendering-dialog");
+  await expect(dialog).toContainText("Rendering Update Failed");
+  await expect(dialog).toContainText("graphics device was lost");
+  await dialog.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(dialog).toHaveCount(0, { timeout: 60_000 });
+  // The lost Engine released its view; a new one draws the scene again.
+  await expect.poll(async () => (await baseline())?.frameCount ?? 0, { timeout: 60_000 }).toBeGreaterThan(0);
+  await waitForSceneViewportReady(page);
+  expect(await baseline()).toMatchObject({ backend: "webgpu", engineCount: 1 });
+  expect(pageErrors).toEqual([]);
+});
+
 test("WebGPU renders native and graph PBR and CEL using native shaders", async ({
   page,
 }, testInfo) => {

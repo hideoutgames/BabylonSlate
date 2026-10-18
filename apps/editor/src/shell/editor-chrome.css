@@ -41,8 +41,31 @@
 }
 
 .editor-chrome-brand {
-  height: 17px;
   flex-shrink: 0;
+}
+
+/* The open project's icon in its colour (or its picture), as on its card. */
+.project-identity-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  overflow: hidden;
+  border: 1.5px solid var(--project-color);
+  border-radius: 5px;
+  color: var(--project-color);
+  background: oklch(0.17 0.004 75);
+}
+
+.project-identity-mark svg {
+  width: 11px;
+  height: 11px;
+}
+
+.project-identity-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .editor-chrome-project {
@@ -213,8 +236,21 @@
 }
 
 .chrome-tab-active {
+  position: relative;
   background: var(--chrome-tab-active, var(--background));
   color: var(--foreground);
+}
+
+/* The active document carries the haptic.no title's chromatic fringe. */
+.chrome-tab-active::after {
+  content: "";
+  position: absolute;
+  inset: auto 10px 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--foreground);
+  box-shadow: var(--brand-fringe);
+  pointer-events: none;
 }
 
 .chrome-tab-active .chrome-tab-label {
@@ -379,7 +415,7 @@
 }
 
 .content-browser-panes > [data-panel] > .content-browser-pane {
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-md);
   background: var(--sidebar);
 }
@@ -457,4 +493,113 @@
 
 .ui-dock-surface-inactive * {
   pointer-events: none !important;
+}
+
+/*
+ * Outliner visibility and lock flags stay on every row. The default state
+ * (visible, unlocked) is a faint outline icon; hidden and locked actors show
+ * the icon at full ink on an accent chip so they stand out in long lists.
+ */
+.outliner-flag[data-active="false"] {
+  color: color-mix(in oklch, var(--muted-foreground) 55%, transparent);
+}
+
+[role="treeitem"]:hover .outliner-flag[data-active="false"],
+.outliner-flag[data-active="false"]:focus-visible {
+  color: var(--muted-foreground);
+}
+
+.outliner-flag[data-active="true"] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.outliner-flag[data-active="true"]:hover {
+  background: color-mix(in oklch, var(--accent) 80%, var(--foreground));
+}
+
+/* Recovery journal notice: floats above the status bar, centred on the
+ * workspace, so finding or resolving the journal never shifts the layout. */
+.recovery-notice {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-bottom, 0px) + 40px);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 10px 10px 10px 12px;
+  border: 1px solid color-mix(in oklch, var(--foreground) 12%, transparent);
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--popover) 94%, transparent);
+  color: var(--popover-foreground);
+  box-shadow:
+    0 1px 0 color-mix(in oklch, var(--foreground) 6%, transparent) inset,
+    0 24px 48px -16px oklch(0 0 0 / 70%);
+  backdrop-filter: blur(12px);
+  translate: -50% 0;
+  animation: recovery-notice-in 360ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.recovery-notice-icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--brand-amber) 16%, transparent);
+  color: var(--brand-amber);
+}
+.recovery-notice-icon > svg {
+  width: 16px;
+  height: 16px;
+}
+.recovery-notice-text {
+  min-width: 0;
+  margin-right: 12px;
+}
+.recovery-notice-text p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.recovery-notice-text p:first-child {
+  font-size: 13px;
+  font-weight: 500;
+}
+.recovery-notice-text p + p {
+  color: var(--muted-foreground);
+}
+.recovery-notice-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+@media (max-width: 560px) {
+  .recovery-notice {
+    flex-wrap: wrap;
+    width: calc(100vw - 32px);
+  }
+  .recovery-notice-text {
+    flex: 1;
+    margin-right: 0;
+  }
+  .recovery-notice-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+@keyframes recovery-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .recovery-notice {
+    animation: none;
+  }
 }

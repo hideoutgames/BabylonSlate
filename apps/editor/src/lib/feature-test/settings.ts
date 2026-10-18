@@ -30,7 +30,7 @@ export function applyFeatureTestProjectSettings(
     ...base,
     tags,
     alwaysPackageFolders: [...new Set([...(base.alwaysPackageFolders ?? []), `assets/${FEATURE_TEST_ROOT}`])],
-    fonts: { ...base.fonts, defaultFontGuid: ctx.assets.fonts.geist || null },
+    fonts: { ...base.fonts, defaultFontGuid: ctx.assets.fonts.onest || null },
     render: {
       ...base.render,
       quality: { ...quality, resolution: { ...quality.resolution, dynamic: false } },
