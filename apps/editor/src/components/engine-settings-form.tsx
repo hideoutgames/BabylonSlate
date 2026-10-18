@@ -29,13 +29,6 @@ import {
   FieldSet,
 } from "@babylonslate/ui/components/field";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@babylonslate/ui/components/select";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -48,12 +41,6 @@ import {
   type FocusDocumentKind,
 } from "../shell/layout-ops";
 import type { DockWindowOptions } from "../shell/window-catalog";
-
-const THEME_LABELS: Record<EngineSettings["appearance"]["theme"], string> = {
-  system: "System",
-  light: "Light",
-  dark: "Dark",
-};
 
 type FocusKeepSettingKey = keyof EngineSettings["focusKeepPanels"];
 
@@ -169,7 +156,6 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
 
 export type EngineSettingsCategoryId =
   | "about"
-  | "appearance"
   | "undo"
   | "debugger"
   | "viewport"
@@ -236,44 +222,6 @@ export function EngineSettingsForm({
               <Switch id="setting-automatic-updates" checked={settings.automaticUpdatesEnabled} onCheckedChange={automaticUpdatesEnabled => void onChange({ automaticUpdatesEnabled })} />
             </Field>
           )}
-        </FieldSet>
-      ) : null}
-      {categoryId === "appearance" ? (
-        <FieldSet>
-          <FieldLegend>Appearance</FieldLegend>
-          <Field className="settings-field">
-            <FieldLabel htmlFor="setting-theme">Theme</FieldLabel>
-            <Select
-              value={settings.appearance.theme}
-              onValueChange={(value) =>
-                void onChange({
-                  appearance: {
-                    ...settings.appearance,
-                    theme: value as EngineSettings["appearance"]["theme"],
-                  },
-                })
-              }
-            >
-              <SelectTrigger
-                id="setting-theme"
-                className="min-h-[var(--chrome-row,28px)] w-full"
-                data-testid="setting-theme"
-              >
-                <SelectValue>{THEME_LABELS[settings.appearance.theme]}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="system" data-testid="setting-theme-system">
-                  System
-                </SelectItem>
-                <SelectItem value="light" data-testid="setting-theme-light">
-                  Light
-                </SelectItem>
-                <SelectItem value="dark" data-testid="setting-theme-dark">
-                  Dark
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
         </FieldSet>
       ) : null}
 

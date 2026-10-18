@@ -9,7 +9,6 @@ import {
 import { getHostPlatform, isTestModeEnabled } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import { brandIconSrc } from "../lib/branding";
-import { useHomepageScheme } from "./homepage-scheme";
 import { useLauncherTransition } from "./launcher-transition";
 import { useMobileDemoSession } from "../context/mobile-demo-context";
 import homepageStyles from "./homepage.css?inline";
@@ -34,7 +33,6 @@ export function HomepageMobileAccountFrame({
 }: {
   children: ReactNode;
 }) {
-  const [scheme] = useHomepageScheme();
   const demo = useMobileDemoSession();
   const host = getHostPlatform();
   const { ready } = useLauncherTransition();
@@ -45,11 +43,10 @@ export function HomepageMobileAccountFrame({
     <main
       className="homepage-theme homepage-mobile-auth safe-frame safe-frame-top"
       data-testid="homepage-mobile-auth"
-      data-slate-theme={scheme}
     >
       <style data-slate-home-styles>{homepageStyles}</style>
       <div className="homepage-mobile-auth-brand">
-        <img src={brandIconSrc(scheme)} alt="" />
+        <img src={brandIconSrc()} alt="" />
         <span>Haptic</span>
       </div>
       <section className="homepage-mobile-auth-content">

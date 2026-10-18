@@ -213,11 +213,6 @@ const ENGINE_CATEGORIES: Array<
     keywords: "version channel build commit source release test automatic updates GitHub",
   },
   {
-    id: "appearance",
-    label: "Appearance",
-    keywords: "theme coarse pointer target scale",
-  },
-  {
     id: "undo",
     label: "Undo",
     keywords: "undo history length stack memory limit budget",
@@ -292,7 +287,6 @@ const ENGINE_GROUPS: CatalogCategoryGroup[] = [
   {
     label: "Editor",
     ids: [
-      "appearance",
       "undo",
       "debugger",
       "viewport",
@@ -417,7 +411,7 @@ export function SettingsModal({
     useState(false);
   const [utilityPick, setUtilityPick] = useState<"new" | number | null>(null);
   const [activeCategoryId, setActiveCategoryId] = useState(
-    scope === "engine" ? "appearance" : "general",
+    scope === "engine" ? "undo" : "general",
   );
   const store = useMemo(() => createAppSettingsStore(), []);
   const [engineSettings, setEngineSettings] = useState<EngineSettings>(
@@ -428,7 +422,7 @@ export function SettingsModal({
     setPendingFocus(null);
     if (!open) return;
     setSearch("");
-    setActiveCategoryId(scope === "engine" ? "appearance" : "general");
+    setActiveCategoryId(scope === "engine" ? "undo" : "general");
     if (scope === "engine") {
       void store.load().then(setEngineSettings);
     }

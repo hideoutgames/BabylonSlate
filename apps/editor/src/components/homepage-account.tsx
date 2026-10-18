@@ -16,7 +16,6 @@ import {
   DialogDescription,
 } from "@babylonslate/ui/components/dialog";
 import { getHostPlatform } from "@babylonslate/vfs";
-import { HomepageSubscription } from "./homepage-subscription";
 import { HomepageProfileMenu } from "./homepage-profile-menu";
 import {
   useNativeHomepageAccount,
@@ -24,6 +23,7 @@ import {
 } from "./homepage-account-context";
 import type { NativeClerkSession } from "../services/native-clerk";
 import { useMobileDemoSession } from "../context/mobile-demo-context";
+import { useSubscriptionBilling } from "../services/subscription-billing";
 
 const ClerkAccount = lazy(() => import("./homepage-account-clerk"));
 const DesktopAccount = lazy(() => import("./homepage-account-desktop"));
@@ -43,13 +43,11 @@ class AccountErrorBoundary extends Component<
 export function HomepageAccount({
   disabled = false,
   onOpenChange,
-  onApplicationSettings,
   onEngineSettings,
   onChangelog,
 }: {
   disabled?: boolean;
   onOpenChange?: (open: boolean) => void;
-  onApplicationSettings?: () => void;
   onEngineSettings?: () => void;
   onChangelog?: () => void;
 }) {
@@ -59,7 +57,6 @@ export function HomepageAccount({
     useState<NativeHomepageAccount | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [clerkOverlayOpen, setClerkOverlayOpen] = useState(false);
-  const [subscriptionOpen, setSubscriptionOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const host = getHostPlatform();
   const demoActive = demo?.active && (host === "ios" || host === "android");
@@ -127,10 +124,10 @@ export function HomepageAccount({
     };
   }, [desktopClient, acceptDesktopSession]);
   useEffect(() => {
-    onOpenChange?.(menuOpen || clerkOverlayOpen || subscriptionOpen || authOpen);
-  }, [menuOpen, clerkOverlayOpen, subscriptionOpen, authOpen, onOpenChange]);
+    onOpenChange?.(menuOpen || clerkOverlayOpen || authOpen);
+  }, [menuOpen, clerkOverlayOpen, authOpen, onOpenChange]);
   const account = nativeAccount ?? desktopAccount;
-  const openSubscription = () => setSubscriptionOpen(true);
+  const billing = useSubscriptionBilling(account?.session.userId, account?.session.email);
   const fallback = (
     <HomepageProfileMenu
       disabled={disabled}
@@ -142,6 +139,7 @@ export function HomepageAccount({
       description={demoActive ? "Local Testing Only · Not Signed In" : undefined}
       email={account?.session.email}
       imageUrl={account?.session.imageUrl}
+      billing={billing}
       onSignOut={demoActive ? async () => demo.end() : account?.signOut}
       signOutLabel={demoActive ? "End Demo" : undefined}
       onSignIn={
@@ -149,8 +147,6 @@ export function HomepageAccount({
           ? () => setAuthOpen(true)
           : undefined
       }
-      onSubscription={openSubscription}
-      onApplicationSettings={onApplicationSettings}
       onEngineSettings={onEngineSettings}
       onChangelog={onChangelog}
       onOpenChange={setMenuOpen}
@@ -164,8 +160,6 @@ export function HomepageAccount({
             <ClerkAccount
               publishableKey={publishableKey}
               disabled={disabled}
-              onSubscription={openSubscription}
-              onApplicationSettings={onApplicationSettings}
               onEngineSettings={onEngineSettings}
               onChangelog={onChangelog}
               onOpenChange={setMenuOpen}
@@ -177,14 +171,6 @@ export function HomepageAccount({
       ) : (
         fallback
       )}
-      <Dialog open={subscriptionOpen} onOpenChange={setSubscriptionOpen}>
-        <DialogContent
-          className="homepage-theme homepage-profile"
-          data-subscription-open="true"
-        >
-          <HomepageSubscription onBack={() => setSubscriptionOpen(false)} />
-        </DialogContent>
-      </Dialog>
       <Dialog open={authOpen} onOpenChange={setAuthOpen}>
         <DialogContent
           className="homepage-theme homepage-profile"

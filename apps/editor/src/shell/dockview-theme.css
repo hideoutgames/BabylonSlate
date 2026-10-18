@@ -30,7 +30,7 @@
  * hit; the strip keeps compact heights.
  */
 .dockview-theme-babylonslate .dv-tabs-and-actions-container {
-  box-shadow: inset 0 -1px 0 var(--border);
+  box-shadow: none;
 }
 
 .dockview-theme-babylonslate .dv-tabs-container {
@@ -311,7 +311,8 @@
   border-radius: var(--radius-md);
 }
 
-/* Docked groups read as separate panels over the app frame. */
+/* Docked groups read as separate panels over the app frame: surface contrast
+ * and the gutter separate them, without outlines. */
 .dockview-frame {
   padding: 4px;
   background: var(--background);
@@ -323,7 +324,7 @@
 
 .dockview-frame .dockview-theme-babylonslate .dv-groupview {
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-md);
   background: var(--sidebar);
 }
@@ -349,3 +350,4 @@
     animation: none;
   }
 }
+

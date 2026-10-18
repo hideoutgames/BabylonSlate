@@ -1,23 +1,21 @@
 /*
  * Launcher-only layout and motion. This stylesheet mounts and unmounts with
- * Home, so nothing here reaches the editor. Surfaces use the shared Graphite
+ * Home, so nothing here reaches the editor. Surfaces use the shared editor
  * tokens from globals.css; only project badge colors are launcher-owned.
  */
 .homepage-theme,
 [data-testid="homepage-project-menu"] {
-  --homepage-badge-ink: #17191e;
-  --homepage-badge-coral: #ff4569;
-  --homepage-badge-amber: #ffc239;
-  --homepage-badge-lime: #b3f52f;
-  --homepage-badge-mint: #28dfdb;
-  --homepage-badge-sky: #5085ff;
-  --homepage-badge-violet: #9c63ff;
-  --homepage-badge-rose: #f252df;
-  --homepage-badge-stone: #b1b7c4;
+  --homepage-badge-ink: var(--project-ink);
+  --homepage-badge-coral: var(--project-coral);
+  --homepage-badge-amber: var(--project-amber);
+  --homepage-badge-lime: var(--project-lime);
+  --homepage-badge-mint: var(--project-mint);
+  --homepage-badge-sky: var(--project-sky);
+  --homepage-badge-violet: var(--project-violet);
+  --homepage-badge-rose: var(--project-rose);
+  --homepage-badge-stone: var(--project-stone);
   --launcher-shadow: color-mix(in oklch, var(--shadow-color, #000) 22%, transparent);
   --launcher-ease: cubic-bezier(0.2, 0.75, 0.2, 1);
-  /* Decorative viewports stay dark in both themes, like editor canvases. */
-  --launcher-viewport: oklch(0.2 0.003 75);
   color: var(--foreground);
 }
 
@@ -26,7 +24,6 @@
   height: 100%;
   min-height: 0;
   display: flex;
-  flex-direction: column;
   position: relative;
   overflow: hidden;
   background: var(--background);
@@ -34,52 +31,48 @@
   font-size: 12px;
 }
 
-.homepage-titlebar {
+/* Sidebar: brand, library navigation, then settings and account. */
+.homepage-sidebar {
   display: flex;
-  align-items: stretch;
-  height: var(--chrome-row, 28px);
-  min-height: var(--chrome-row, 28px);
+  flex-direction: column;
+  gap: 8px;
+  width: 200px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--background);
+  padding: 12px 8px 8px;
+  border-right: 1px solid var(--border);
+  background: var(--sidebar);
 }
 .homepage-brand {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  padding-inline: 8px 12px;
-  border-right: 1px solid var(--border);
+  height: 28px;
+  padding-inline: 8px;
+  margin-bottom: 8px;
 }
 .homepage-brand img {
-  width: 13px;
-  height: 17px;
+  width: auto;
+  height: 15px;
   object-fit: contain;
 }
-.homepage-brand h1 {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
 .homepage-navigation {
-  align-self: stretch;
+  flex-direction: column;
   align-items: stretch;
-  gap: 0;
+  gap: 2px;
+  width: 100%;
   border-radius: 0;
 }
 .homepage-navigation [data-slot="toggle-group-item"] {
-  position: relative;
-  height: auto;
-  min-height: var(--chrome-row, 28px);
-  gap: 6px;
-  padding: 0 12px;
+  justify-content: flex-start;
+  width: 100%;
+  height: var(--chrome-row, 28px);
+  gap: 8px;
+  padding: 0 8px;
   border: 0;
-  border-right: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--muted-foreground);
   font-size: 12px;
-  font-weight: 400;
+  font-weight: 500;
   transition:
     background-color 120ms ease,
     color 120ms ease;
@@ -93,52 +86,138 @@
   color: var(--foreground);
 }
 .homepage-navigation [data-slot="toggle-group-item"][aria-pressed="true"] {
-  background: var(--chrome-tab-active, var(--card));
+  background: var(--accent);
   color: var(--foreground);
-  font-weight: 500;
-}
-.homepage-navigation [data-slot="toggle-group-item"]::after {
-  content: "";
-  position: absolute;
-  inset: auto 10px 0;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--foreground);
-  transform: scaleX(0);
-  transition: transform 220ms var(--launcher-ease);
-}
-.homepage-navigation [data-slot="toggle-group-item"][aria-pressed="true"]::after {
-  transform: scaleX(1);
 }
 .homepage-navigation [data-slot="toggle-group-item"]:focus-visible {
   outline: 2px solid var(--ring);
-  outline-offset: -3px;
+  outline-offset: -2px;
 }
-.homepage-titlebar-end {
+.homepage-navigation-label {
+  flex: 1;
+  text-align: left;
+}
+.homepage-navigation-count {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.homepage-sidebar-end {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 2px;
-  margin-left: auto;
-  padding-inline: 4px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.homepage-sidebar-account {
+  display: flex;
+  min-width: 0;
+}
+/* Account row: avatar, name and status, opening the profile menu upwards. */
+.homepage-sidebar-account .homepage-account {
+  flex: 1;
+  justify-content: flex-start;
+  min-width: 0;
+  height: 40px;
+  gap: 8px;
+  padding: 0 6px;
+  text-align: left;
+}
+.homepage-account-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.homepage-account-name {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+.homepage-account-status {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+.homepage-account .homepage-account-chevron {
+  width: 14px;
+  height: 14px;
+  color: var(--muted-foreground);
+}
+/* The build label floats over the library's bottom-right corner. */
+.homepage-status-version {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  z-index: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--background) 80%, transparent);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
-.homepage-toolbar {
+/* Content: page heading with the primary actions, then the library. */
+.homepage-content {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.homepage-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
-  min-height: var(--chrome-row, 28px);
+  gap: 12px;
   flex-shrink: 0;
-  padding: 2px 6px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel-header);
+  padding: 16px 20px 12px;
 }
-.homepage-toolbar-start,
-.homepage-toolbar-end {
+.homepage-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.homepage-heading h2 {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+  letter-spacing: -0.01em;
+}
+.homepage-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.homepage-status-summary,
+.homepage-status-operation {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.homepage-status-operation {
+  color: var(--foreground);
+}
+.homepage-status-operation svg {
+  width: 12px;
+  height: 12px;
 }
 
 .homepage-main {
@@ -184,80 +263,31 @@
   display: flex;
   flex-direction: column;
   isolation: isolate;
+  background: var(--background);
 }
-/* A faint graph-canvas dot field with a soft top light. */
-.homepage-panel::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(
-      ellipse 70% 55% at 50% 0%,
-      color-mix(in oklch, var(--foreground) 5%, transparent),
-      transparent 70%
-    ),
-    radial-gradient(
-        circle,
-        color-mix(in oklch, var(--foreground) 9%, transparent) 0.7px,
-        transparent 1px
-      )
-      0 0 / 16px 16px;
-  mask-image: linear-gradient(to bottom, #000, transparent 85%);
-}
+
 .homepage-panel-toolbar,
 .homepage-template-toolbar {
   display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-  min-height: calc(var(--chrome-row, 28px) + 8px);
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--border);
-  background: var(--background);
+  min-height: var(--chrome-row, 28px);
+  padding: 0 20px 8px;
+}
+.homepage-panel-toolbar > .editor-search-input,
+.homepage-template-toolbar > .editor-search-input {
+  flex: 0 1 320px;
+  margin-right: auto;
 }
 .homepage-panel-toolbar [data-slot="input"],
 .homepage-template-toolbar [data-slot="input"] {
   height: var(--chrome-row, 28px);
   font-size: 12px;
 }
-
-.homepage-statusbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  height: 22px;
-  flex-shrink: 0;
-  /* The status bar itself provides clearance at the bottom of the frame. */
-  margin-bottom: calc(-1 * var(--safe-bottom));
-  padding-inline: 8px;
-  border-top: 1px solid var(--border);
-  background: var(--panel-header);
-  color: var(--muted-foreground);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.homepage-status-summary,
-.homepage-status-operation {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.homepage-status-operation {
-  color: var(--foreground);
-}
-.homepage-status-operation svg {
-  width: 12px;
-  height: 12px;
-}
-.homepage-status-version {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.homepage-error,
+.homepage-notice {
+  margin: 0 20px 12px;
 }
 
 /* -------------------------------------------------------------- Gallery */
@@ -285,12 +315,12 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--gallery-min), 1fr));
   align-content: start;
-  gap: 12px;
-  padding: 12px;
+  gap: 16px;
+  padding: 4px 20px 32px;
 }
 .homepage-gallery[data-layout="small"] .homepage-gallery-grid {
-  --gallery-min: 168px;
-  gap: 10px;
+  --gallery-min: 176px;
+  gap: 12px;
 }
 .homepage-gallery[data-layout="list"] .homepage-gallery-grid {
   grid-template-columns: minmax(0, 1fr);
@@ -298,8 +328,11 @@
 }
 .homepage-gallery-item {
   min-width: 0;
-  /* Off-screen cards skip rendering in long libraries. */
+  /* Off-screen cards skip rendering in long libraries. That also clips
+   * paint to the item, so it keeps room for the 2px hover lift. */
   content-visibility: auto;
+  margin-top: -2px;
+  padding-top: 2px;
   contain-intrinsic-size: auto 240px;
   animation: launcher-card-in 420ms var(--launcher-ease) both;
   animation-delay: calc(var(--item-index, 0) * 35ms);
@@ -322,9 +355,9 @@
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: calc(var(--radius-lg) + 2px);
   background: var(--card);
-  box-shadow: none;
+  box-shadow: 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent) inset;
   transition:
     transform 220ms var(--launcher-ease),
     border-color 160ms ease,
@@ -342,10 +375,10 @@
 }
 .homepage-card-well {
   place-items: center;
-  background: linear-gradient(
-    160deg,
-    color-mix(in oklch, var(--foreground) 5%, var(--card)),
-    color-mix(in oklch, var(--foreground) 2%, var(--card))
+  background: radial-gradient(
+    120% 90% at 50% 0%,
+    oklch(0.255 0.005 75),
+    oklch(0.17 0.004 75) 75%
   );
 }
 .homepage-card-well img {
@@ -354,8 +387,8 @@
   object-fit: cover;
 }
 .homepage-card-well > svg {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   stroke-width: 1.2;
   color: var(--muted-foreground);
   transition: transform 260ms var(--launcher-ease), color 160ms ease;
@@ -368,15 +401,15 @@
   align-items: stretch;
   gap: 2px;
   flex-shrink: 0;
-  min-height: 44px;
-  padding: 7px 10px;
+  min-height: 48px;
+  padding: 8px 12px;
   border-top: 1px solid var(--border);
   border-radius: 0;
   background: var(--card);
 }
 .homepage-project-caption [data-slot="card-title"],
 .homepage-template-card [data-slot="card-title"] {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.3;
   white-space: nowrap;
@@ -423,7 +456,7 @@
   cursor: pointer;
 }
 .homepage-template-card[data-selected="true"] {
-  border-color: var(--ring);
+  border-color: var(--foreground);
 }
 .homepage-project-card[data-touch-pressed="true"],
 .homepage-template-card[data-touch-pressed="true"] {
@@ -437,7 +470,12 @@
   padding-block: 5px;
 }
 
-/* A neutral thumbnail: the user's picture, or a placeholder glyph. */
+.homepage-project-caption {
+  border-top: 0;
+}
+
+/* The thumbnail: the user's picture, or the project icon, framed in the
+ * project colour like Content Browser asset tiles. */
 .homepage-project-cover {
   position: relative;
   display: flex;
@@ -446,36 +484,20 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  color: var(--muted-foreground);
-  background: linear-gradient(
-    160deg,
-    color-mix(in oklch, var(--foreground) 5%, var(--card)),
-    color-mix(in oklch, var(--foreground) 2%, var(--card))
-  );
-}
-.homepage-project-cover::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(
-      circle,
-      color-mix(in oklch, var(--foreground) 7%, transparent) 0.7px,
-      transparent 1px
-    )
-    center / 12px 12px;
-  mask-image: radial-gradient(
-    ellipse 75% 85% at center,
-    #000,
-    transparent 80%
-  );
+  border: 2px solid var(--project-badge-color);
+  border-radius: calc(var(--radius-lg) + 1px) calc(var(--radius-lg) + 1px) 0 0;
+  color: var(--project-badge-color);
+  background: oklch(0.17 0.004 75);
 }
 .homepage-project-cover > svg {
   position: relative;
+  width: 40px;
+  height: 40px;
+  transition: transform 260ms var(--launcher-ease);
+}
+.homepage-gallery[data-layout="small"] .homepage-project-cover > svg {
   width: 32px;
   height: 32px;
-  stroke-width: 1.2;
-  transition: transform 260ms var(--launcher-ease), color 160ms ease;
 }
 .homepage-project-cover > img {
   position: absolute;
@@ -484,15 +506,6 @@
   height: 100%;
   object-fit: cover;
   transition: transform 420ms var(--launcher-ease);
-}
-.homepage-project-color {
-  --project-badge-color: var(--homepage-badge-stone);
-  flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--project-badge-color);
-  box-shadow: 0 0 0 1px color-mix(in oklch, #000 18%, transparent);
 }
 .homepage-project-caption [data-slot="card-title"],
 .homepage-composer-preview-name {
@@ -545,16 +558,67 @@
   gap: 4px;
   pointer-events: none;
 }
+/* Cards: status sits in the caption's meta line, after the activity. */
+.homepage-project-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.homepage-project-meta [data-slot="card-description"] {
+  min-width: 0;
+}
+.homepage-project-card:not([data-layout="list"]) .homepage-project-badges {
+  position: static;
+  flex: none;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+}
+.homepage-project-card:not([data-layout="list"]) .homepage-project-meta > [data-slot="card-description"] + .homepage-project-badges::before {
+  content: "·";
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.homepage-project-card .homepage-project-badges [data-slot="badge"] {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.3;
+  overflow: visible;
+  box-shadow: none;
+}
+.homepage-project-card .homepage-project-badges [data-slot="badge"] svg {
+  width: 11px;
+  height: 11px;
+}
+/* The actions button sits at the caption's right edge. */
+.homepage-project-card:not([data-layout="list"]) .homepage-project-caption {
+  padding-right: 40px;
+}
+.homepage-project-card:not([data-layout="list"]) .homepage-project-actions {
+  top: auto;
+  bottom: 9px;
+  right: 6px;
+  background: transparent;
+  backdrop-filter: none;
+  color: var(--muted-foreground);
+}
+.homepage-project-card:not([data-layout="list"]) .homepage-project-actions:hover,
+.homepage-project-card:not([data-layout="list"]) .homepage-project-actions[aria-expanded="true"] {
+  background: var(--accent);
+  color: var(--foreground);
+}
 .homepage-project-badges [data-slot="badge"] {
   height: 18px;
   gap: 3px;
   padding-inline: 6px;
   font-size: 10px;
   box-shadow: 0 1px 2px color-mix(in oklch, #000 20%, transparent);
-}
-.homepage-project-badges .homepage-project-badge-secondary {
-  border-color: var(--border);
-  background: color-mix(in oklch, var(--foreground) 10%, var(--card));
 }
 /* Small cards and phone rows have room for one labelled badge; the secondary one keeps only its icon. */
 .homepage-project-card[data-layout="small"] .homepage-project-badges {
@@ -590,9 +654,9 @@
 .homepage-project-card[data-layout="list"] .homepage-project-badges {
   position: static;
   flex: none;
-  flex-direction: row-reverse;
   flex-wrap: nowrap;
-  margin-right: 40px;
+  gap: 10px;
+  margin-right: 44px;
 }
 .homepage-project-card[data-layout="list"] .homepage-project-badges [data-slot="badge"] {
   box-shadow: none;
@@ -606,10 +670,10 @@
   width: 28px;
   height: 28px;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 2px solid var(--project-badge-color);
   border-radius: var(--radius-md);
-  color: var(--muted-foreground);
-  background: color-mix(in oklch, var(--foreground) 5%, var(--card));
+  color: var(--project-badge-color);
+  background: oklch(0.17 0.004 75);
 }
 .homepage-project-badge svg {
   width: 15px;
@@ -651,14 +715,13 @@
   .homepage-project-card:not([data-touch-input="true"]):hover,
   .homepage-template-card:not([data-touch-input="true"]):hover {
     transform: translateY(-2px);
-    border-color: color-mix(in oklch, var(--ring) 70%, var(--border));
-    box-shadow: 0 12px 24px -16px var(--launcher-shadow);
+    border-color: color-mix(in oklch, var(--foreground) 30%, var(--border));
+    box-shadow: 0 18px 36px -20px oklch(0 0 0 / 70%);
   }
   .homepage-project-card:not([data-touch-input="true"]):hover
     .homepage-project-cover
     > svg {
-    transform: translateY(-3px) scale(1.06);
-    color: var(--foreground);
+    transform: scale(1.08);
   }
   .homepage-project-card:not([data-touch-input="true"]):hover
     .homepage-project-cover
@@ -713,60 +776,114 @@
   font-weight: 400;
   color: var(--muted-foreground);
 }
-.homepage-empty-actions {
-  flex-direction: row;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.homepage-empty-art {
-  position: relative;
-  width: min(560px, 100%);
-  height: min(320px, 38vh);
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background:
-    radial-gradient(
-      ellipse 60% 70% at 50% 42%,
-      oklch(0.32 0.004 75),
-      transparent 72%
-    ),
-    var(--launcher-viewport);
-  box-shadow: 0 24px 48px -30px var(--launcher-shadow);
-  animation: launcher-arrive 520ms var(--launcher-ease) both;
-}
-.homepage-viewport-chips {
-  position: absolute;
-  top: 8px;
-  left: 8px;
+/* The first-run welcome: a heading and one flat tile per starter. */
+.homepage-welcome {
   display: flex;
-  gap: 4px;
-  pointer-events: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  width: min(100%, 720px);
+  margin: auto;
+  padding: 24px 20px 64px;
+  animation: launcher-arrive 420ms var(--launcher-ease) both;
 }
-.homepage-viewport-chips span {
-  padding: 2px 6px;
-  border: 1px solid oklch(1 0 0 / 10%);
-  border-radius: var(--radius-sm);
-  background: oklch(0 0 0 / 35%);
-  color: oklch(0.85 0.004 85);
-  font-size: 10px;
-  line-height: 14px;
+.homepage-welcome h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
 }
-.homepage-sculpture {
+.homepage-welcome-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+.homepage-welcome-tile {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  aspect-ratio: 5 / 4;
+  min-width: 0;
+  height: auto;
+  padding: 16px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 14px;
+  background: oklch(0.195 0.004 75);
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+.homepage-welcome-tile > svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 1.5;
+  color: var(--muted-foreground);
+  transition: color 140ms ease;
+}
+.homepage-welcome-tile > span {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A picture fills the tile; the name stays readable on a bottom scrim. */
+.homepage-welcome-tile > img {
   position: absolute;
   inset: 0;
-  opacity: 0;
-  transition: opacity 600ms;
-}
-.homepage-sculpture[data-ready="true"] {
-  opacity: 1;
-}
-.homepage-sculpture canvas {
+  z-index: -1;
   width: 100%;
   height: 100%;
+  object-fit: cover;
 }
-
+.homepage-welcome-tile[data-picture="true"] {
+  justify-content: flex-end;
+}
+.homepage-welcome-tile[data-picture="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(transparent 55%, oklch(0 0 0 / 60%));
+}
+.homepage-welcome-tile:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.homepage-welcome-tile:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.homepage-welcome-tile[data-touch-pressed="true"] {
+  background: var(--accent);
+  transition-duration: 0ms;
+}
+.homepage-welcome-browse {
+  color: var(--muted-foreground);
+}
+.homepage-welcome-browse:hover {
+  color: var(--foreground);
+}
+@media (hover: hover) and (pointer: fine) {
+  .homepage-welcome-tile:not(:disabled, [data-picture="true"]):hover {
+    background: oklch(0.225 0.004 75);
+  }
+  .homepage-welcome-tile:not(:disabled):hover > svg {
+    color: var(--foreground);
+  }
+}
 /* ------------------------------------------------------ Template browser */
 .homepage-template-browser {
   flex: 1;
@@ -787,12 +904,16 @@
     var(--homepage-visible-top, 0px) + var(--homepage-visible-height, 100dvh) /
       2
   );
-  width: min(920px, calc(100vw - 32px));
-  height: min(600px, calc(var(--homepage-visible-height, 100dvh) * 0.88));
+  /* Full screen, like the other large dialogs. */
+  width: 100vw;
+  height: var(--homepage-visible-height, 100dvh);
   max-width: none;
-  max-height: calc(var(--homepage-visible-height, 100dvh) - 32px);
+  max-height: var(--homepage-visible-height, 100dvh);
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  border-radius: 0;
+  box-shadow: none;
+  --tw-ring-shadow: 0 0 #0000;
   background: var(--popover);
-  border-radius: var(--radius-xl);
 }
 .homepage-composer-header {
   position: relative;
@@ -898,8 +1019,11 @@
   margin-left: auto;
 }
 .homepage-template-results .homepage-gallery-grid {
-  padding-top: 2px;
+  --gallery-min: 190px;
+  gap: 12px;
+  padding: 4px 14px 14px;
 }
+
 .homepage-composer-layout {
   display: flex;
   flex: 1;
@@ -920,27 +1044,15 @@
   border-right: 1px solid var(--border);
   background:
     radial-gradient(
-      ellipse at 50% 46%,
-      color-mix(in oklch, var(--foreground) 7%, transparent),
-      transparent 68%
+      ellipse 70% 55% at 50% 50%,
+      color-mix(in oklch, var(--project-badge-color, var(--foreground)) 22%, transparent),
+      transparent 72%
     ),
     var(--background);
-}
-.homepage-composer-preview::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: radial-gradient(
-      circle,
-      color-mix(in oklch, var(--foreground) 10%, transparent) 0.7px,
-      transparent 1px
-    )
-    0 0 / 14px 14px;
-  mask-image: radial-gradient(ellipse at center, #000 20%, transparent 75%);
+  transition: background 200ms ease;
 }
 .homepage-composer-preview-card {
-  width: min(100%, 260px);
+  width: min(100%, 360px);
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -953,7 +1065,7 @@
   height: auto;
 }
 .homepage-composer-preview-name {
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-top: 1px solid var(--border);
   overflow: hidden;
   white-space: nowrap;
@@ -1002,7 +1114,7 @@
   flex: 1;
   display: flex;
   flex-wrap: wrap;
-  gap: 2px;
+  gap: 6px;
 }
 .homepage-color-choice {
   padding: 0;
@@ -1011,8 +1123,8 @@
 .homepage-color-blob {
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--project-badge-color);
   color: var(--homepage-badge-ink);
@@ -1022,12 +1134,40 @@
   transform: scale(1.12);
 }
 .homepage-color-choice[aria-pressed="true"] {
-  outline: 1px solid var(--ring);
-  outline-offset: -2px;
+  outline: 2px solid var(--foreground);
+  outline-offset: -1px;
 }
 .homepage-color-blob svg {
   width: 11px;
   height: 11px;
+}
+.homepage-composer-icon-grid {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.homepage-icon-choice {
+  color: var(--project-badge-color);
+}
+.homepage-icon-choice:hover {
+  background: var(--accent);
+  color: var(--project-badge-color);
+}
+.homepage-icon-choice[aria-pressed="true"] {
+  background: var(--accent);
+  outline: 2px solid var(--foreground);
+  outline-offset: -2px;
+}
+.homepage-picture-choice {
+  overflow: hidden;
+  padding: 3px;
+}
+.homepage-picture-choice img {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
 }
 .homepage-composer-upload {
   display: flex;
@@ -1089,9 +1229,184 @@
 }
 
 /* ------------------------------------------------- Profile and account */
-.catalog-dialog.homepage-application-settings {
-  width: min(720px, calc(100vw - 32px));
-  height: min(460px, calc(100dvh - 32px));
+/* Account dialog: identity with sign-in actions, plans and app preferences. */
+.homepage-account-center-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+.homepage-account-center-avatar {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+svg.homepage-account-center-avatar {
+  padding: 9px;
+  background: var(--accent);
+  color: var(--muted-foreground);
+  stroke-width: 1.5;
+}
+.homepage-account-center-text {
+  flex: 1;
+  min-width: 0;
+}
+.homepage-account-center-text h3 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.homepage-account-center-text p {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.homepage-account-center-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.homepage-account-center-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 64rem;
+}
+.homepage-account-center-note {
+  max-width: 44rem;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.homepage-account-center-note a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.homepage-account-center-note a svg {
+  width: 11px;
+  height: 11px;
+}
+.homepage-account-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--border);
+}
+.homepage-account-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--card);
+}
+.homepage-account-detail dt {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.homepage-account-detail dd {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+/* Subscription: current plan, then the plans from haptic.no/pricing. */
+.homepage-billing-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+.homepage-billing-label {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.homepage-billing-summary h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.homepage-billing-summary p {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.homepage-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.homepage-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+.homepage-plan[data-current="true"] {
+  border-color: var(--foreground);
+}
+.homepage-plan > header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.homepage-plan > header svg {
+  width: 14px;
+  height: 14px;
+}
+.homepage-plan h4 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.homepage-plan-price {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.homepage-plan-summary {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.homepage-plan ul {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+  font-size: 12px;
+}
+.homepage-plan li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.homepage-plan li svg {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  color: var(--success);
+}
+.homepage-plan > footer {
+  display: flex;
+  min-height: var(--chrome-row, 28px);
+  align-items: center;
+  padding-top: 8px;
 }
 /* The frame sizes the dialog; its default 16px body padding and gap scroll. */
 .homepage-profile {
@@ -1128,58 +1443,24 @@
   font-size: 12px;
   margin-top: 2px;
 }
-.homepage-subscription {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.homepage-subscription > button {
-  align-self: flex-start;
-}
-.homepage-subscription-plans {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-.homepage-subscription-plan {
-  background: var(--card);
-  border-radius: var(--radius-lg);
-}
-.homepage-subscription-plan [data-slot="card-title"] {
-  font-size: 18px;
-  font-weight: 600;
-}
-.homepage-subscription-plan [data-slot="card-content"] {
-  flex: 1;
-}
-.homepage-subscription-plan li {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  font-size: 12px;
-  margin-bottom: 6px;
-}
-.homepage-subscription-plan li svg {
-  width: 13px;
-  height: 13px;
-}
-.homepage-subscription-note {
-  font-size: 11px;
-  color: var(--muted-foreground);
-}
 .homepage-profile-avatar {
-  width: 20px;
-  height: 20px;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   object-fit: cover;
 }
 .homepage-account svg.homepage-profile-avatar {
-  width: 18px;
-  height: 18px;
+  width: 26px;
+  height: 26px;
+  padding: 4px;
+  border-radius: 50%;
+  background: var(--accent);
   color: var(--muted-foreground);
+  stroke-width: 1.75;
 }
 .homepage-profile-menu {
-  width: 248px;
+  width: max(var(--anchor-width), 220px);
   max-width: calc(100vw - 24px);
 }
 .homepage-profile-menu-identity {
@@ -1187,6 +1468,12 @@
   align-items: center;
   gap: 10px;
   padding: 6px;
+}
+.homepage-profile-menu [role="menuitem"].homepage-profile-menu-identity {
+  min-height: 44px;
+}
+.homepage-profile-menu .homepage-profile-menu-identity svg.homepage-profile-menu-chevron {
+  margin-left: auto;
 }
 .homepage-profile-menu-avatar {
   flex-shrink: 0;
@@ -1311,10 +1598,6 @@ body:has(.homepage-theme) [data-slot="alert-dialog-overlay"] {
   background: oklch(0 0 0 / 55%);
   backdrop-filter: blur(6px);
 }
-body:has([data-slate-theme="light"]) [data-slot="dialog-overlay"],
-body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
-  background: oklch(0.3 0.006 70 / 30%);
-}
 
 .homepage-optional-label {
   display: inline;
@@ -1383,8 +1666,7 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
     height: max(100%, var(--touch-target, 44px));
     transform: translate(-50%, -50%);
   }
-  .homepage-toolbar-start,
-  .homepage-toolbar-end,
+  .homepage-header-actions,
   .homepage-panel-toolbar,
   .homepage-template-toolbar,
   .homepage-composer-upload {
@@ -1408,20 +1690,8 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   .homepage-theme [role^="menuitem"] {
     min-height: var(--touch-target, 44px);
   }
-  .homepage-titlebar {
-    height: auto;
-    min-height: var(--touch-target, 44px);
-  }
   .homepage-navigation [data-slot="toggle-group-item"] {
-    padding: 0 16px;
-  }
-  .homepage-titlebar-end {
-    padding-inline: 8px;
-  }
-  .homepage-toolbar,
-  .homepage-panel-toolbar,
-  .homepage-template-toolbar {
-    padding-block: 6px;
+    height: var(--touch-target, 44px);
   }
   .homepage-panel-toolbar [data-slot="input"],
   .homepage-template-toolbar [data-slot="input"],
@@ -1435,9 +1705,6 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   }
   .homepage-project-card[data-layout="list"] .homepage-project-badges {
     margin-right: 48px;
-  }
-  .homepage-statusbar {
-    height: 26px;
   }
   .homepage-composer-header {
     min-height: var(--touch-target, 44px);
@@ -1473,32 +1740,85 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
 /* ---------------------------------------------------------------- Phone */
 @media (max-width: 700px) {
   /* Labels collapse to 32px icons here; 12px gaps keep 44px hit areas apart. */
-  .homepage-toolbar-start,
-  .homepage-toolbar-end,
+  .homepage-header-actions,
   .homepage-panel-toolbar,
   .homepage-template-toolbar,
   .homepage-template-sidebar {
     gap: 12px;
   }
-  .homepage-brand h1,
   .homepage-optional-label,
-  .homepage-statusbar {
+  .homepage-navigation-count,
+  .homepage-status-version {
     display: none;
   }
+  /* The sidebar folds into a top bar: brand, navigation, then settings. */
+  .homepage {
+    flex-direction: column;
+  }
+  .homepage-sidebar {
+    flex-direction: row;
+    align-items: center;
+    width: auto;
+    gap: 12px;
+    padding: 4px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
   .homepage-brand {
-    padding-inline: 12px;
+    margin: 0;
+    padding: 0;
   }
   .homepage-navigation {
     flex: 1;
+    flex-direction: row;
+    width: auto;
+    min-width: 0;
+  }
+  .homepage-navigation [data-slot="toggle-group-item"] svg {
+    display: none;
+  }
+  .homepage-navigation [data-slot="toggle-group-item"] {
+    min-width: 0;
+  }
+  .homepage-sidebar-account {
+    flex-shrink: 0;
+    padding: 0;
+  }
+  .homepage-sidebar-account .homepage-account {
+    height: 32px;
+    padding: 0 3px;
+  }
+  .homepage-account-text,
+  .homepage-account .homepage-account-chevron {
+    display: none;
   }
   .homepage-navigation [data-slot="toggle-group-item"] {
     flex: 1;
     justify-content: center;
   }
+  .homepage-navigation-label {
+    flex: none;
+  }
+  .homepage-sidebar-end {
+    flex-direction: row;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .homepage-header {
+    padding: 12px;
+  }
+  .homepage-panel-toolbar,
+  .homepage-template-toolbar {
+    padding: 0 12px 10px;
+  }
   .homepage-gallery-grid {
     --gallery-min: 200px;
     gap: 10px;
-    padding: 10px;
+    padding: 0 12px 12px;
   }
   .homepage-gallery[data-layout="small"] .homepage-gallery-grid {
     --gallery-min: 140px;
@@ -1572,18 +1892,15 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   .homepage-composer-footer > button:last-child {
     flex: 1;
   }
-  .homepage-empty-art {
-    height: 220px;
-  }
 }
 
 /* -------------------------------------------------------- Short screens */
 @media (max-height: 520px) {
-  .homepage-statusbar {
-    display: none;
+  .homepage-header {
+    padding-block: 8px;
   }
   .homepage-gallery-grid {
-    padding-block: 8px;
+    padding-bottom: 8px;
   }
   .homepage-project-caption,
   .homepage-template-card [data-slot="card-header"] {
@@ -1596,9 +1913,6 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
   .homepage-empty {
     padding-block: 8px;
     gap: 10px;
-  }
-  .homepage-empty-art {
-    height: 150px;
   }
 }
 /* ---------------------------------------------------------------- Motion */
@@ -1630,4 +1944,10 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
     transition: none !important;
     scroll-behavior: auto !important;
   }
+}
+
+.homepage-profile-menu [role="menuitem"] svg:not(.homepage-profile-menu-avatar) {
+  width: 14px;
+  height: 14px;
+  color: var(--muted-foreground);
 }

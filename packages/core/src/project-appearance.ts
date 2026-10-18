@@ -6,6 +6,8 @@ export interface ProjectAppearance {
   color: string;
   /** Optional small PNG, JPEG, or WebP data URL supplied by the user. */
   image?: string;
+  /** Which thumbnail the card shows when both exist; the picture by default. */
+  cover?: "icon" | "image";
 }
 
 /** Bounds each cached badge so twenty recents fit within app-settings storage. */
@@ -17,7 +19,7 @@ export function normalizeProjectAppearance(
 ): ProjectAppearance | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value))
     return undefined;
-  const { icon, color, image } = value as Record<string, unknown>;
+  const { icon, color, image, cover } = value as Record<string, unknown>;
   if (typeof icon !== "string" || typeof color !== "string") return undefined;
   const normalizedIcon = icon.trim();
   const normalizedColor = color.trim();
@@ -43,5 +45,6 @@ export function normalizeProjectAppearance(
   ) {
     appearance.image = image;
   }
+  if (cover === "icon" || cover === "image") appearance.cover = cover;
   return appearance;
 }
