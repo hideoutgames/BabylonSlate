@@ -80,7 +80,7 @@ import {
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
 import type { OpenDocument } from "../services/document-service";
-import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
+import { modelSimpleColliderCounter, physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
@@ -730,9 +730,14 @@ export function EditorChromeBar({
                 onAction={async () => {
                   activateDockPanel("compiler-results");
                   const result = await collectPlayPreviewScripts();
+                  const openDocuments = getOpenDocuments();
+                  const modelSimpleColliderCount = modelSimpleColliderCounter(
+                    assetRegistry,
+                    openDocuments.filter((doc) => doc.ref.kind === "model"),
+                  );
                   const diagnostics = [
                     ...result.diagnostics,
-                    ...getOpenDocuments()
+                    ...openDocuments
                       .filter((doc) => doc.ref.kind === "graph" && doc.content)
                       .flatMap((doc) =>
                         physicsPairingDiagnostics(
@@ -744,7 +749,7 @@ export function EditorChromeBar({
                                 [],
                             },
                           ],
-                          { assetGuid: doc.ref.path, graphId: doc.id },
+                          { assetGuid: doc.ref.path, graphId: doc.id, modelSimpleColliderCount },
                         ),
                       ),
                   ];
