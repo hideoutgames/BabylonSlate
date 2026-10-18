@@ -1,6 +1,11 @@
 export type PhysicsPairingWarning = {
   severity: "warning";
-  code: "physics.collider_without_body" | "physics.body_without_collider" | "physics.movement_conflict";
+  code:
+    | "physics.collider_without_body"
+    | "physics.body_without_collider"
+    | "physics.movement_conflict"
+    | "physics.mesh_collision_empty"
+    | "physics.mesh_collision_2d";
   message: string;
   actorId: string;
   componentId: string;
@@ -15,8 +20,28 @@ export type PhysicsActorLike = {
   }[];
 };
 
-const COLLIDER_WITHOUT_BODY = "Collider needs a Rigid Body on the same actor.";
-const BODY_WITHOUT_COLLIDER = "Rigid Body needs a Collider on the same actor.";
+/** What the caller knows beyond the actor's own components. Every field is optional; an unknown never warns. */
+export type PhysicsDiagnosticsContext = {
+  /**
+   * The physics world the actors simulate in. Omit it for actors that can be placed in either
+   * (a Class prefab): Mesh collision is then assumed to apply and the 2D check is skipped.
+   */
+  physicsWorld?: "2d" | "3d";
+  /** Simple collision shapes of the Model `assetGuid`, or undefined when the Model is not known. */
+  modelSimpleColliderCount?: (assetGuid: string) => number | undefined;
+};
+
+const FIX_FOR_BODY_3D =
+  "Add a Rigid Body (Motion Type Static for a trigger volume or a fixed collider), or set a Mesh's Collision to Use Simple Collision or Use Complex Collision for solid geometry.";
+const FIX_FOR_BODY_2D =
+  "Add a Rigid Body (Motion Type Static for a trigger volume or a fixed collider).";
+const FIX_FOR_COLLIDER_3D =
+  "Add a Collider, or set a Mesh's Collision to Use Simple Collision or Use Complex Collision.";
+const FIX_FOR_COLLIDER_2D = "Add a Collider.";
+const MESH_COLLISION_EMPTY =
+  "Use Simple Collision produces no collision because this Model has no simple collision shapes. Set Collision to Use Complex Collision, or add shapes to the Model's Colliders.";
+const MESH_COLLISION_2D =
+  "Mesh Collision works only in a 3D physics world, so this Mesh does not collide. Set Physics World to 3D (Havok), or give the actor a Rigid Body and a 2D Collider.";
 
 const MOVEMENT_CONFLICTS = new Map([
   ["RigidBodyComponent", "Rigid Body"],
@@ -25,17 +50,35 @@ const MOVEMENT_CONFLICTS = new Map([
   ["WaterBuoyancyComponent", "Water Buoyancy"],
 ]);
 
-function meshComponentHasCollision(component: {
-  classId: string;
-  properties?: Record<string, unknown>;
-}): boolean {
-  if (component.classId !== "MeshComponent") return false;
-  return component.properties?.collisionMode !== "none";
+type Component = PhysicsActorLike["components"][number];
+
+/** A missing mode reads as Use Simple Collision, as `parseMeshCollisionMode` does. */
+function meshCollisionMode(component: Component): "simple" | "complex" | "none" {
+  const mode = component.properties?.collisionMode;
+  return mode === "complex" || mode === "none" ? mode : "simple";
 }
 
-/** Diagnose incompatible Movement owners before checking ordinary body/collider pairs. */
+function modelGuid(component: Component): string {
+  const guid = component.properties?.assetGuid;
+  return typeof guid === "string" ? guid.trim() : "";
+}
+
+/** Use Simple Collision on a Model known to have no simple shapes: the runtime builds no body. */
+function hasNoSimpleShapes(component: Component, context: PhysicsDiagnosticsContext): boolean {
+  const guid = modelGuid(component);
+  return meshCollisionMode(component) === "simple" && guid !== "" &&
+    context.modelSimpleColliderCount?.(guid) === 0;
+}
+
+/**
+ * Diagnose incompatible Movement owners, then body and shape pairs, as `PhysicsWorldSync` builds them:
+ * a Rigid Body (or Water Buoyancy in 3D) or an implicit static body is a body; every Collider on the
+ * actor attaches to whichever body it has, and Mesh collision, Blocking Volume, Tilemap, enabled
+ * Landscape and enabled Dynamic Runtime Mesh supply both a static body and their own shapes.
+ */
 export function physicsActorDiagnostics(
   actor: PhysicsActorLike,
+  context: PhysicsDiagnosticsContext = {},
 ): PhysicsPairingWarning[] {
   const live = actor.components.filter((component) => component.classId);
   const movements = live.filter((component) => component.classId === "MovementComponent");
@@ -57,55 +100,48 @@ export function physicsActorDiagnostics(
         componentId: component.id,
       }));
     }
+    // Movement owns the actor's capsule body.
+    return [];
   }
-  const hasImplicitBody = live.some(
+  const is3d = context.physicsWorld !== "2d";
+  const warnings: PhysicsPairingWarning[] = [];
+  const warn = (
+    component: Component,
+    code: PhysicsPairingWarning["code"],
+    message: string,
+  ) => warnings.push({ severity: "warning", code, message, actorId: actor.id, componentId: component.id });
+
+  let meshShapes = false;
+  for (const mesh of live) {
+    if (mesh.classId !== "MeshComponent" || meshCollisionMode(mesh) === "none") continue;
+    if (!is3d) warn(mesh, "physics.mesh_collision_2d", MESH_COLLISION_2D);
+    else if (hasNoSimpleShapes(mesh, context)) warn(mesh, "physics.mesh_collision_empty", MESH_COLLISION_EMPTY);
+    else meshShapes = true;
+  }
+
+  const ownShapes = meshShapes || live.some(
     (component) =>
       component.classId === "TilemapComponent" ||
       component.classId === "BlockingVolumeComponent" ||
-      component.classId === "MovementComponent" ||
-      (component.classId === "LandscapeComponent" && component.properties?.collisionsEnabled === true) ||
-      (component.classId === "DynamicRuntimeMeshComponent" && component.properties?.enableCollision === true) ||
-      meshComponentHasCollision(component),
+      (is3d && component.classId === "LandscapeComponent" && component.properties?.collisionsEnabled === true) ||
+      (is3d && component.classId === "DynamicRuntimeMeshComponent" && component.properties?.enableCollision === true),
   );
-  if (hasImplicitBody) return [];
-  const hasBody = live.some(
-    (component) => component.classId === "RigidBodyComponent",
-  );
-  const colliders = live.filter(
-    (component) => component.classId === "ColliderComponent",
-  );
-  const warnings: PhysicsPairingWarning[] = [];
-  if (!hasBody) {
-    for (const collider of colliders) {
-      warnings.push({
-        severity: "warning",
-        code: "physics.collider_without_body",
-        message: COLLIDER_WITHOUT_BODY,
-        actorId: actor.id,
-        componentId: collider.id,
-      });
-    }
-    return warnings;
+  const buoyancy = is3d && live.some((component) => component.classId === "WaterBuoyancyComponent");
+  const rigidBody = live.find((component) => component.classId === "RigidBodyComponent");
+  const colliders = live.filter((component) => component.classId === "ColliderComponent");
+
+  if (!rigidBody && !buoyancy && !ownShapes) {
+    for (const collider of colliders)
+      warn(collider, "physics.collider_without_body", `Collider is not simulated without a Rigid Body on the same actor. ${is3d ? FIX_FOR_BODY_3D : FIX_FOR_BODY_2D}`);
   }
-  if (colliders.length === 0) {
-    const body = live.find(
-      (component) => component.classId === "RigidBodyComponent",
-    );
-    if (body) {
-      warnings.push({
-        severity: "warning",
-        code: "physics.body_without_collider",
-        message: BODY_WITHOUT_COLLIDER,
-        actorId: actor.id,
-        componentId: body.id,
-      });
-    }
-  }
+  if (rigidBody && colliders.length === 0 && !ownShapes && !buoyancy)
+    warn(rigidBody, "physics.body_without_collider", `Rigid Body has no shape to collide with. ${is3d ? FIX_FOR_COLLIDER_3D : FIX_FOR_COLLIDER_2D}`);
   return warnings;
 }
 
 export function physicsActorsDiagnostics(
   actors: readonly PhysicsActorLike[],
+  context: PhysicsDiagnosticsContext = {},
 ): PhysicsPairingWarning[] {
-  return actors.flatMap((actor) => physicsActorDiagnostics(actor));
+  return actors.flatMap((actor) => physicsActorDiagnostics(actor, context));
 }
