@@ -25,6 +25,7 @@ const state = vi.hoisted(() => ({
   releaseSessionsForProjectClose: vi.fn(async () => true),
   forceCloseProject: vi.fn(async () => true),
   saveAll: vi.fn(async () => true),
+  setAutoSavePaused: vi.fn(),
   approveMigrationsAndSave: vi.fn(async () => true),
   migrationPromptRequest: 0,
   play: {} as Record<string, unknown>,
@@ -46,6 +47,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   externalChangePrompt: null,
   cancelExclusiveSceneOpen: vi.fn(),
   saveAll: state.saveAll,
+  setAutoSavePaused: state.setAutoSavePaused,
   approveMigrationsAndSave: state.approveMigrationsAndSave,
   closeDocument: state.closeDocument,
 })));
@@ -163,6 +165,7 @@ beforeEach(() => {
   state.migrationPromptRequest = 0;
   state.play = {};
   state.closeDocument.mockClear();
+  state.setAutoSavePaused.mockClear();
 });
 afterEach(cleanup);
 
@@ -316,6 +319,35 @@ describe("document tab close requests", () => {
     expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual(["Hero Class"]);
   });
 
+  it.each(["dirty-cancel", "dirty-discard"])("holds auto-save while the tab prompt is open and resumes it after %s", (button) => {
+    render(<EditorRoute />);
+    expect(state.setAutoSavePaused).not.toHaveBeenCalledWith(true);
+    requestBulkClose();
+    expect(state.setAutoSavePaused).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByTestId(button));
+    expect(state.setAutoSavePaused).toHaveBeenLastCalledWith(false);
+  });
+
+  it("lists only what is still unsaved when a save lands under the prompt", () => {
+    const { rerender } = render(<EditorRoute />);
+    requestBulkClose();
+    state.documents.find((doc) => doc.id === "graph")!.dirty = false;
+    rerender(<EditorRoute />);
+    expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual(["Main Scene"]);
+    fireEvent.click(screen.getByTestId("dirty-discard"));
+    expect(state.documents.map((doc) => doc.id)).toEqual([CONTENT_BROWSER_ID]);
+  });
+
+  it("closes the tabs without a prompt when everything listed was saved meanwhile", async () => {
+    const { rerender } = render(<EditorRoute />);
+    requestBulkClose();
+    state.documents.forEach((doc) => { doc.dirty = false; });
+    rerender(<EditorRoute />);
+    await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
+    expect(state.documents.map((doc) => doc.id)).toEqual([CONTENT_BROWSER_ID]);
+    expect(state.setAutoSavePaused).toHaveBeenLastCalledWith(false);
+  });
+
   it("still closes only the active tab for the individual close action", () => {
     render(<EditorRoute />);
     fireEvent.click(screen.getByRole("button", { name: "Open Documents" }));
@@ -348,6 +380,35 @@ describe("project close requests", () => {
     await waitFor(() => expect(state.closeProject).toHaveBeenCalledTimes(2));
     expect(state.releaseSessionsForProjectClose.mock.invocationCallOrder[0])
       .toBeLessThan(state.saveAll.mock.invocationCallOrder[0]!);
+  });
+
+  it.each(["dirty-cancel", "dirty-discard"])("holds auto-save while the project prompt is open and resumes it after %s", async (button) => {
+    state.projectDirty = true;
+    render(<EditorRoute />);
+    fireEvent.click(screen.getByRole("button", { name: "Close Project" }));
+    await screen.findByTestId("dirty-close-dialog");
+    expect(state.setAutoSavePaused).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByTestId(button));
+    expect(state.setAutoSavePaused).toHaveBeenLastCalledWith(false);
+  });
+
+  it("lists the unsaved work live and closes without the prompt once it was saved meanwhile", async () => {
+    state.documents.find((doc) => doc.id === "scene")!.dirty = true;
+    state.projectDirty = true;
+    const { rerender } = render(<EditorRoute />);
+    fireEvent.click(screen.getByRole("button", { name: "Close Project" }));
+    await screen.findByTestId("dirty-close-dialog");
+    expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual(["Main Scene", "Project Settings"]);
+
+    state.projectDirty = false;
+    rerender(<EditorRoute />);
+    expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual(["Main Scene"]);
+
+    state.documents.find((doc) => doc.id === "scene")!.dirty = false;
+    rerender(<EditorRoute />);
+    await waitFor(() => expect(state.closeProject).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
+    expect(state.forceCloseProject).not.toHaveBeenCalled();
   });
 
   it("reports a session that refuses to stop instead of listing unsaved work", async () => {

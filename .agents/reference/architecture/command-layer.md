@@ -48,18 +48,24 @@ interface EditCommand<TDoc = unknown> {
 
 - Forward edits mark dirty without hashing. Undo, Redo and journal replay compare against the last saved/loaded baseline (Scenes structurally, others by content identity), so undoing to saved content is clean.
 - Autosave runs `ProjectSettings.autoSaveIntervalMs` (default 120000) after the first edit; later edits do not reset the timer. Failures keep documents dirty. `compileOnSave` defaults true. Play is an explicit save + compile trigger.
+- `setAutoSavePaused(true)` holds the timer while an Unsaved Documents close prompt is open (tab close, Close Project, exclusive Scene open), so Discard drops what the prompt lists; resuming starts a new interval when anything is unsaved. The prompt lists live dirty state and closes without asking when everything listed was saved by a save already in flight.
 - Only dirty documents write. Queued writes resolve the asset's current path from its guid, so a queued save cannot resurrect a moved or deleted path.
 - `lockAuthoringWrites(reason)` closes project-write admission (Save All, autosave, registry, blob, extension writes) and its lease's `ready` resolves after admitted operations drain. Simulation preparation takes its baseline behind it.
 
 ## Journal format
 
 - Path: `derived/{projectGuid}/journal/00000000.jsonl`, `00000001.jsonl`, … in app-private derived storage. Segments roll at `JOURNAL_SEGMENT_MAX_CHARS` = 64 KiB (append rewrites only the tail segment).
+- `journal/sealed.json` (`{"through": N}`) marks segments `0..N` as sealed: records of an earlier session awaiting the recovery decision. Append never rewrites a sealed segment; it starts the next one.
 - Line: `{"v":1,"docId":"…","at":"ISO-8601","command":{"type":"…",…}}`. Multi-command actions are one `edit.batch` record; an unsupported child skips the whole batch.
 - Markers: `document.repath` (`docId` = new id, `from` = old id; `resolveJournalLines` follows chains), `document.discard` (close drops earlier edits), `document.checkpoint` (Class rename snapshot of open referrers).
 - `JournalBuffer` writes at most `JOURNAL_FLUSH_DELAY_MS` = 150 ms after the first record, and flushes on Save, close, `pagehide` and backgrounding. Edits inside that window can be lost on a crash.
 - `coalesceJournalLines` folds one gesture (first `from`, last `to`) only for commands whose replay writes just `to`. `byteSize` never enters journal payloads.
 - Replay: `replayJournalLines` → `reviveCommand` → `apply`. Malformed lines return in `malformed`, throwing records in `skipped`; neither is dropped until Save or clean close.
-- Successful Save and clean Close Project truncate the journal (only revisions the save wrote). Project Settings are not journaled. `v` exists for future journal migration.
+- Recovery lifecycle: opening a project calls `sealJournalForRecovery`, which seals every segment written so far; the banner shows while the sealed records resolve to any edit (none: the sealed segments are discarded). Records from a session that never reached Recover or Discard (a crash in between) are sealed again with the rest. Replay reads only the sealed segments, so edits made after the reopen are never replayed.
+  - Recover replays the sealed records, then `unsealJournal` returns them to the live journal (they stay crash-protected until a save writes the replayed edits), or `discardSealedJournal` drops them when the replay ends at the saved content with nothing skipped. Discard calls `discardSealedJournal`.
+  - Both run in the tick that applies the replay, so no save sits between. The replayed edits are written by `updateScene` / `updateGraph` / `updateAssetDocument`, not through `EditSession`, so they have no Undo history.
+- `truncateJournal` removes only the live segments (those after the sealed ones). Successful Save All (and so autosave and Save & Play) truncates them for revisions the save wrote; clean and forced Close Project truncate them too. Sealed records survive all of these and a document close (`document.discard` is a live record and does not reach sealed ones); only Recover or Discard ends them. Project Settings are not journaled. `v` exists for future journal migration.
+- The status bar shows `Unrecovered Edits` and the dirty dot while the banner shows; Save All behaviour does not change.
 
 ## Document revisions and subscriptions
 

@@ -41,7 +41,7 @@ export function PlayUnsavedDialog({
           <AlertDialogDescription>
             {previewBuild
               ? "Preview Build uses the saved project. Save your changes before building?"
-              : "Save your changes before playing? Play Without Saving runs your current edits and leaves the files on disk unchanged."}
+              : "Save your changes before playing? Play Without Saving runs your current edits without saving them first."}
           </AlertDialogDescription>
           {names ? (
             <p className="truncate text-xs text-muted-foreground" title={names} data-testid="play-unsaved-names">
