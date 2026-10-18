@@ -18,6 +18,7 @@ import {
 } from "@babylonslate/core";
 import {
   PREFAB_ROOT_ID,
+  authoredPrefabComponents,
   defaultPrefabComponents,
   instantiatePrefabComponents,
   mergePrefabComponents,
@@ -43,6 +44,17 @@ describe("prefabComponentsFromGraph", () => {
   it("falls back to the default mesh when the class has no prefab field", () => {
     expect(prefabComponentsFromGraph({})).toEqual(defaultPrefabComponents());
     expect(prefabComponentsFromGraph(null)).toEqual(defaultPrefabComponents());
+  });
+
+  it("starts with the box in 3D and with nothing in a 2D scene or Scene Layer", () => {
+    expect(defaultPrefabComponents("3d").map((component) => component.properties.meshKind)).toEqual(["box"]);
+    expect(defaultPrefabComponents("2d")).toEqual([]);
+  });
+
+  it("reports whether a graph authored components at all", () => {
+    expect(authoredPrefabComponents({})).toBeUndefined();
+    expect(authoredPrefabComponents(null)).toBeUndefined();
+    expect(authoredPrefabComponents({ components: [] })).toEqual([]);
   });
 
   it("merges parent components under local overrides without removing inherited", () => {

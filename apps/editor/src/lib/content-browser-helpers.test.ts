@@ -17,6 +17,7 @@ import {
   filterCreatableAssetTypes,
   isContentBrowserEmptyGridDoubleClickTarget,
   buildNewAssetResult,
+  openSceneViewportMode,
   classDocumentShowsPrefab,
   collectFolderGuids,
   contentBrowserMoveFromDrop,
@@ -1195,6 +1196,30 @@ describe("content-browser-helpers", () => {
       ).toThrow(`"${name}" is an engine class name`);
     },
   );
+
+  it.each([
+    { mode: undefined, meshKinds: ["box"] },
+    { mode: "3d" as const, meshKinds: ["box"] },
+    { mode: "2d" as const, meshKinds: [] },
+  ])("starts a new Prefab with $meshKinds mesh kinds for viewport mode $mode", ({ mode, meshKinds }) => {
+    const prefab = buildNewAssetResult({ type: "Prefab", name: "Crate", guid: "crate", parentClass: null, viewportMode: mode });
+    const components = prefab.payload.components as Array<{ properties: { meshKind?: string } }>;
+    expect(components.map((component) => component.properties.meshKind)).toEqual(meshKinds);
+  });
+
+  it("takes the new-content viewport mode from the active Scene or Scene Layer tab", () => {
+    const tab = (id: string, kind: string, viewportMode?: string) => ({ id, ref: { kind }, content: viewportMode ? { viewportMode } : null });
+    const scene2d = tab("scene-2d", "scene", "2d");
+    const scene3d = tab("scene-3d", "scene", "3d");
+    const layer = tab("hud", "scene-layer", "2d");
+    const graph = tab("class", "graph");
+    expect(openSceneViewportMode([scene3d, scene2d], "scene-2d")).toBe("2d");
+    expect(openSceneViewportMode([scene2d, scene3d], "scene-3d")).toBe("3d");
+    expect(openSceneViewportMode([scene3d, layer], "hud")).toBe("2d");
+    // A Class tab is not a Scene: the first open Scene decides.
+    expect(openSceneViewportMode([graph, scene2d, scene3d], "class")).toBe("2d");
+    expect(openSceneViewportMode([graph], "class")).toBe("3d");
+  });
 
   it("creates a GameSubsystem child whose name only contains an engine id", () => {
     const klass = buildNewAssetResult({

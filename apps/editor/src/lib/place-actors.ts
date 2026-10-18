@@ -25,9 +25,9 @@ import {
 } from "@babylonslate/editor-kit";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
 import {
+  authoredPrefabComponents,
   defaultPrefabComponents,
   instantiatePrefabComponents,
-  prefabComponentsFromGraph,
 } from "./prefab-preview";
 import { classIdFromClassAsset, classParentLookup } from "./content-browser-helpers";
 import { mergedPrefabComponentsForClass } from "./prefab-instance-sync";
@@ -348,7 +348,9 @@ export function prefabComponentsResolver(
     if (merged) return merged;
     const graph = options.graphForPath(asset.path);
     if (!graph) return undefined;
-    return prefabComponentsFromGraph(graph);
+    // A Class that never authored components stays undefined: the placement
+    // mode, not the Class, decides whether it gets the starter box.
+    return authoredPrefabComponents(graph);
   };
 }
 
@@ -700,7 +702,9 @@ export function spawnPlacedActor(
         classId: kind.classId ?? kind.name,
         transform,
         components: instantiatePrefabComponents(
-          kind.components ?? defaultPrefabComponents(),
+          kind.components ?? defaultPrefabComponents(
+            options?.overlay === true || scene.viewportMode === "2d" ? "2d" : "3d",
+          ),
           id,
         ),
       }));

@@ -4,7 +4,7 @@ import {
   type AssetRegistry,
   type IndexedAsset,
 } from "@babylonslate/assets";
-import type { DataDefinitionAsset, DataTreeAsset, SerializedGraph, WaterStyle, WaterStylizedLook } from "@babylonslate/core";
+import type { DataDefinitionAsset, DataTreeAsset, SerializedGraph, ViewportMode, WaterStyle, WaterStylizedLook } from "@babylonslate/core";
 import { validateDataDefinition, validateDataTree, type TypeSchemas } from "@babylonslate/scripting";
 import { engineParentOf, walkAncestry } from "@babylonslate/editor-kit";
 import {
@@ -49,6 +49,8 @@ export async function createProjectAsset(options: {
   dataTree?: DataTreeAsset;
   classParentOf?: (id: string) => string | null | undefined;
   parentGraphs?: Record<string, SerializedGraph>;
+  /** The mode of the open Scene; a new Prefab starts empty in 2D. */
+  viewportMode?: ViewportMode;
 }): Promise<IndexedAsset> {
   const { type, name } = options;
   const defaultDefinitionGuid = options.dataTree ? options.dataTree.defaultDefinitionGuid : options.defaultDefinitionGuid ?? null;
@@ -93,6 +95,7 @@ export async function createProjectAsset(options: {
     defaultDefinitionGuid,
     dataDefinition,
     dataTree: options.dataTree,
+    viewportMode: options.viewportMode,
   });
   if (type === "DataDefinition" || type === "DataTree") {
     Object.assign(result, assetHeaderDependencyMetadata(type, result.payload, options.registry.list?.() ?? [], result.parentClass));
