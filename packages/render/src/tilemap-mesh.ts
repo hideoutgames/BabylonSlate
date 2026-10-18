@@ -94,6 +94,7 @@ export function createTilemapMeshes(
             kind: "static",
             resolveGid,
             atlasGuid: guid,
+            placeholderColors: !tileset.textureGuid,
           }),
           layer.parallax,
           sorting,
@@ -113,6 +114,7 @@ export function createTilemapMeshes(
             kind: "animated",
             resolveGid,
             atlasGuid: guid,
+            placeholderColors: !tileset.textureGuid,
           }),
           layer.parallax,
           sorting,
@@ -234,6 +236,8 @@ function appendChunkMesh(
   const normals: number[] = [];
   VertexData.ComputeNormals(data.positions, data.indices, normals);
   vertexData.normals = normals;
+  // Atlases without an image draw per-tile placeholder colours.
+  if (data.colors) vertexData.colors = data.colors;
   vertexData.applyToMesh(mesh, true);
   if (data.animatedTiles.length > 0) {
     let chunks = animatedChunks.get(scene);

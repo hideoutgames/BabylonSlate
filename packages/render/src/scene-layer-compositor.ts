@@ -1,6 +1,7 @@
 import { activeRenderFrameCapture } from "./render-frame-report";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { overlayClipAllowsPoint } from "./overlay-layout-render";
+import { pickBufferSize } from "./pick-coords";
 import type { AttachedPostProcessStack } from "./post-process-material";
 import {
   Camera,
@@ -370,8 +371,6 @@ export class SceneLayerCompositor {
   ): OverlayPointerHit[] {
     const hits: OverlayPointerHit[] = [];
     const seen = new Set<string>();
-    const renderWidth = Math.max(1, this.engine.getRenderWidth());
-    const renderHeight = Math.max(1, this.engine.getRenderHeight());
 
     const pushHit = (
       layerId: string,
@@ -401,7 +400,9 @@ export class SceneLayerCompositor {
       const layer = ordered[index]!;
       if (!this.isLayerReady(layer.layerId)) continue;
       this.bindHudCamera(layer);
-      const pickWorld = overlayCanvasToWorld(canvasX, canvasY, renderWidth, renderHeight, layer.layerBounds.width / 2, layer.layerBounds.height / 2);
+      // The pointer is in pick space (render size x hardware scaling level), as `scene.pick` expects.
+      const pickSize = pickBufferSize(layer.scene);
+      const pickWorld = overlayCanvasToWorld(canvasX, canvasY, pickSize.width, pickSize.height, layer.layerBounds.width / 2, layer.layerBounds.height / 2);
       const minWorld = overlayMinTargetWorldSize(
         options?.minTargetPx ?? 0,
         options?.canvasCssHeight ?? 0,

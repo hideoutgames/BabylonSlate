@@ -514,6 +514,26 @@ describe("SceneLayerCompositor", () => {
     expect(compositor.pickHits(missX, 128, floor)).toEqual([]);
   });
 
+  it("maps the pointer through pick space when dynamic resolution raises the hardware scaling level", () => {
+    const { engine, compositor } = world();
+    // A 128 px drawing buffer at level 2 is picked like a 256 px canvas.
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(128);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(128);
+    vi.spyOn(engine, "getHardwareScalingLevel").mockReturnValue(2);
+    const layer = compositor.create({
+      type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0,
+      ownerSceneGuid: null, postProcessStack: [], layerBounds: { width: 9, height: 9 },
+    });
+    const button = MeshBuilder.CreatePlane("actor-1", { width: 0.32, height: 0.32 }, layer.scene);
+    button.metadata = { overlayActorGuid: "btn", overlayHitTest: "block", overlayHasButton: true };
+    button.computeWorldMatrix(true);
+    const floor = { minTargetPx: 44, canvasCssHeight: 256 };
+    // 20 pick px right of the centre is 0.70 units: past the quad, inside the 44 px floor (0.77 units each side).
+    expect(compositor.pickHits(148, 128, floor).map((hit) => hit.actorGuid)).toEqual(["btn"]);
+    // 64 pick px is 2.25 units left of the centre; render size alone would read it as the centre.
+    expect(compositor.pickHits(64, 128, floor)).toEqual([]);
+  });
+
   describe("touch-target floor over a busy layer", () => {
     const floor = { minTargetPx: 44, canvasCssHeight: 256 };
     function busyLayer() {

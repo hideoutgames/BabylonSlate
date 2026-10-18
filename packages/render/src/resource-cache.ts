@@ -1,6 +1,6 @@
 import { installedAssetHeader, installedEnvironmentInfo, copyTextureBytesForUpload, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
 import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
-import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import { CubeTexture, type ICubeTextureCreationOptions } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { assetByteFingerprint as contentKey } from "./asset-byte-fingerprint";
@@ -57,9 +57,59 @@ export function createEngineCubeTextureFromImages(
   engine: AbstractEngine,
   files: string[],
   noMipmap = false,
-  completion?: { onLoad: () => void; onError: (message?: string) => void },
+  completion?: CubeCompletion,
 ): CubeTexture {
-  return new CubeTexture(files.join(""), engine, { files, noMipmap, ...completion });
+  return trackedCubeTexture(files.join(""), engine, { files, noMipmap }, completion);
+}
+
+type CubeCompletion = { onLoad: () => void; onError: (message?: string) => void };
+
+/** A cube's native upload: settled once it finished or failed; `waiting` runs on settling, true when it finished. */
+const cubeUploads = new WeakMap<CubeTexture, { settled: boolean; waiting: Array<(loaded: boolean) => void> }>();
+
+function trackedCubeTexture(
+  url: string,
+  engine: AbstractEngine,
+  options: ICubeTextureCreationOptions,
+  completion?: CubeCompletion,
+): CubeTexture {
+  const upload = { settled: false, waiting: [] as Array<(loaded: boolean) => void> };
+  const settle = (loaded: boolean) => {
+    upload.settled = true;
+    for (const release of upload.waiting.splice(0)) release(loaded);
+  };
+  const texture = new CubeTexture(url, engine, {
+    ...options,
+    onLoad: () => { settle(true); completion?.onLoad(); },
+    onError: (message?: string) => { settle(false); completion?.onError(message); },
+  });
+  cubeUploads.set(texture, upload);
+  return texture;
+}
+
+/**
+ * Babylon uploads a cube when its last face decodes and never checks that the texture was disposed meanwhile:
+ * texImage2D, generateMipmap and texParameter then hit an unbound target ("no texture bound"), and the next
+ * presentation reads GL error 1282. A cube disposed mid-load drops its wrapper at once but keeps its native
+ * texture until the upload settles, bounded by the preparation deadline.
+ */
+function disposeTexture(texture: BaseTexture): void {
+  const upload = texture instanceof CubeTexture ? cubeUploads.get(texture) : undefined;
+  const native = texture.getInternalTexture();
+  if (upload && !upload.settled && native && !native.isReady) {
+    native.incrementReferences();
+    let held = true;
+    // A failed load needs no release: Babylon disposes the native texture before it reports the error.
+    const release = (dispose: boolean) => {
+      if (!held) return;
+      held = false;
+      clearTimeout(deadline);
+      if (dispose && !native.getEngine().isDisposed) native.dispose();
+    };
+    const deadline = setTimeout(() => release(true), TEXTURE_PREPARATION_TIMEOUT_MS);
+    upload.waiting.push(release);
+  }
+  texture.dispose();
 }
 
 /** Engine-static PNG (editor billboards). Not a project asset guid. */
@@ -189,7 +239,7 @@ function disposeEntryTextures(entry: CacheEntry): void {
   for (const cancel of entry.samplingDisposers?.values() ?? []) cancel();
   entry.samplingDisposers?.clear();
   for (const texture of entry.textures.values()) {
-    texture.dispose();
+    disposeTexture(texture);
   }
   entry.textures.clear();
   entry.textureUploads?.clear();
@@ -500,14 +550,13 @@ export class ResourceCache {
     let texture: Texture | CubeTexture;
     try {
     texture = options.isCube
-      ? new CubeTexture(blobUrl, engine, {
+      ? trackedCubeTexture(blobUrl, engine, {
           noMipmap: options.noMipmap ?? false,
           useSRGBBuffer: false,
           forcedExtension: environment ? `.${environment}` : undefined,
           prefiltered: !!environment,
           createPolynomials: !!environment,
-          onLoad: preparation.onLoad, onError: preparation.onError,
-        })
+        }, preparation)
       : new Texture(blobUrl, engine, {
           noMipmap: options.noMipmap ?? false,
           invertY: options.invertY !== false && !flipV,
@@ -559,12 +608,12 @@ export class ResourceCache {
     this.textureKeys.set(texture, variantKey);
     try {
       const measured = this.trackTextureBytes(entry, key, texture, bytes, options.noMipmap !== true, uploadKey);
-      preparation.validate(() => admit(true), () => texture.dispose(), measured);
+      preparation.validate(() => admit(true), () => disposeTexture(texture), measured);
       admit(false);
       preparation.observe(texture);
     } catch (error) {
       preparation.onError();
-      texture.dispose();
+      disposeTexture(texture);
       this.release(entry.key);
       if (this.isUnreferenced(entry)) this.evictEntry(entry.key, "admission");
       throw error;
@@ -619,13 +668,13 @@ export class ResourceCache {
       this.textureKeys.set(texture, variantKey);
       entry.textures.set(key, texture);
       const measured = this.trackTextureBytes(entry, key, texture, undefined, !noMipmap);
-      preparation.validate(() => this.assertAdmitted(), () => texture?.dispose(), measured);
+      preparation.validate(() => this.assertAdmitted(), () => texture && disposeTexture(texture), measured);
       this.assertAdmitted();
       preparation.observe(texture);
       return texture;
     } catch (error) {
       preparation.onError();
-      texture?.dispose();
+      if (texture) disposeTexture(texture);
       this.release(entry.key);
       if (this.isUnreferenced(entry)) this.evictEntry(entry.key, "failed");
       throw error;

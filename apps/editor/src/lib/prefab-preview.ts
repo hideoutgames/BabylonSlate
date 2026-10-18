@@ -12,13 +12,15 @@ import {
   type SerializedComponent,
   type SerializedScene,
   type SerializedTransform,
+  type ViewportMode,
 } from "@babylonslate/core";
 import type { TreeDropPlacement } from "@babylonslate/editor-kit";
 
 export const PREFAB_ROOT_ID = "prefab-root";
 
-export function defaultPrefabComponents(): SerializedComponent[] {
-  return [createMeshComponent("prefab-mesh", "box")];
+/** The starter box of a 3D prefab or Class; 2D scenes and Scene Layers start with no components. */
+export function defaultPrefabComponents(viewportMode: ViewportMode = "3d"): SerializedComponent[] {
+  return viewportMode === "2d" ? [] : [createMeshComponent("prefab-mesh", "box")];
 }
 
 export function nextPrefabComponentId(
@@ -33,12 +35,18 @@ export function nextPrefabComponentId(
   return `prefab-component-${index}`;
 }
 
+/** The authored list, including an empty one; undefined when the graph never authored components. */
+export function authoredPrefabComponents(
+  graph: { components?: SerializedComponent[] } | null | undefined,
+): SerializedComponent[] | undefined {
+  return graph && Array.isArray(graph.components) ? graph.components : undefined;
+}
+
 /** Authored list when present (including empty); otherwise the default mesh. */
 export function prefabComponentsFromGraph(
   graph: { components?: SerializedComponent[] } | null | undefined,
 ): SerializedComponent[] {
-  if (graph && Array.isArray(graph.components)) return graph.components;
-  return defaultPrefabComponents();
+  return authoredPrefabComponents(graph) ?? defaultPrefabComponents();
 }
 
 export type PrefabComponentView = SerializedComponent & {

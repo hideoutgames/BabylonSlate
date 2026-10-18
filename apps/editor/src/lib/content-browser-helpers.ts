@@ -44,6 +44,9 @@ import {
   isInputAssetType,
   createDefaultSceneLayer,
   isMaterialTextureAssetType,
+  isSceneWorkspaceKind,
+  type SerializedScene,
+  type ViewportMode,
 } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import {
@@ -1534,6 +1537,19 @@ export function visualForIndexedAsset(
   return resolveTypeVisual({ assetType: asset.header.type });
 }
 
+/**
+ * The mode new authored content starts in: the active Scene or Scene Layer
+ * tab's, else the first open one's; 3D when none is open.
+ */
+export function openSceneViewportMode(
+  documents: ReadonlyArray<{ id: string; ref: { kind: string }; content: unknown }>,
+  activeDocumentId: string | null,
+): ViewportMode {
+  const scenes = documents.filter((doc) => isSceneWorkspaceKind(doc.ref.kind));
+  const scene = scenes.find((doc) => doc.id === activeDocumentId) ?? scenes[0];
+  return (scene?.content as SerializedScene | null | undefined)?.viewportMode === "2d" ? "2d" : "3d";
+}
+
 export function defaultParentClassForType(
   type: CreatableAssetType,
 ): string | null {
@@ -1555,6 +1571,8 @@ export function buildNewAssetResult(options: {
   defaultDefinitionGuid?: string | null;
   dataDefinition?: DataDefinitionAsset;
   dataTree?: DataTreeAsset;
+  /** A new Prefab starts empty in a 2D scene, with the starter box in 3D. */
+  viewportMode?: ViewportMode;
 }): ImportResult {
   const { type, name, guid, parentClass } = options;
   if (type === "DataDefinition" || type === "DataTree") {
@@ -1569,7 +1587,7 @@ export function buildNewAssetResult(options: {
   if (type === "RenderTargetTexture") return documentAsset(type, name, guid, { ...createDefaultRenderTargetTexturePayload() });
   if (type === "Water") return documentAsset(type, name, guid, createDefaultWaterDefinition(options.waterStyle, options.waterStylizedLook) as unknown as Record<string, unknown>);
   if (type === "Prefab") {
-    const result = documentAsset(type, name, guid, { components: defaultPrefabComponents() });
+    const result = documentAsset(type, name, guid, { components: defaultPrefabComponents(options.viewportMode) });
     result.dependencies = assetHeaderDependencies(type, result.payload);
     return result;
   }

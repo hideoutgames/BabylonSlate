@@ -19,7 +19,7 @@ Select an actor, then choose **Add Component > Rendering > Tilemap**. You can al
 - Works in world scenes and in Scene Layers.
 - The Sorting Layer and Order In Layer apply to the whole tilemap. Inside it, the asset's own layers keep their order.
 - Sorting Layers are listed back to front in **Project Settings > Game > Sorting Layers**. Layers further down the list draw in front.
-- Layers that have collision turned on in the Tilemap asset make the tilemap solid in Play. It becomes a static body, so it needs no Rigid Body.
+- In Play the tilemap becomes a static body, so it needs no Rigid Body. Only tiles whose **Tile Collision** is **Full** or **Chain** in the [Tileset](../assets/tileset.md), on layers that have **Collision** turned on in the Tilemap asset, collide. Tiles left on **None** stay passable.
 - Paint tiles by opening the Tilemap asset.
 
 ## Related
