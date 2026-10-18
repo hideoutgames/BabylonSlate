@@ -2,6 +2,7 @@ export { authoredActorWorldTransform } from "./authored-transform-matrices";
 export * from "./editor-clear-color";
 export * from "./create-engine";
 export { installDirectViewReadSync, setDirectViewPresentationEnabled, syncDirectViewCanvas } from "./direct-view-presentation";
+export { whenSubmittedWorkDone } from "./presented-frame";
 export { sceneRenderTargetCaptures, RenderTargetCaptures } from "./render-target-capture";
 export { setSceneRenderSettings } from "./scene-render-mode";
 export type { RenderShadingSettings } from "./render-settings";
@@ -112,7 +113,7 @@ export { createSceneStreamingReadiness, type SceneStreamIdentity } from "./scene
 export type { SceneSourceAssets } from "./scene-source-assets";
 export { NativePreparationScheduler, nativePreparationForEngine } from "./native-preparation";
 export type { NativePreparationLimits, NativePreparationPriority, NativePreparationRequest } from "./native-preparation";
-export { createAppWebGpuEngine } from "./webgpu-engine";
+export { createAppWebGpuEngine, type WebGpuDeviceLoss } from "./webgpu-engine";
 export { createBackendEngineSession, type BackendEngineSession, type BackendEngineSessionOptions } from "./backend-engine-session";
 export { webGpuMaterialCompatibilityReason } from "./material-backend-compatibility";
 

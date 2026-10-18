@@ -197,6 +197,28 @@ describe("packed player backend lifetime", () => {
     expect(owner.dispose).toHaveBeenCalledOnce();
   });
 
+  it("reports a graphics device lost while the game runs, but not after Stop", async () => {
+    const loaded = await game();
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    let lose!: (loss: { reason: string; message: string }) => void;
+    owner.deviceLost = new Promise((resolve) => { lose = resolve; });
+    const onDiagnostic = vi.fn();
+    await startPlayerWithBackend({ game: loaded, canvas, onDiagnostic });
+    lose({ reason: "unknown", message: "Out of memory" });
+    await vi.waitFor(() => expect(onDiagnostic).toHaveBeenCalledWith([expect.objectContaining({
+      code: "render.device.lost", severity: "error", message: expect.stringContaining("Out of memory"),
+    })]));
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining("graphics device was lost"));
+
+    const stopped = vi.fn();
+    owner.deviceLost = new Promise((resolve) => { lose = resolve; });
+    const handle = await startPlayerWithBackend({ game: loaded, canvas, onDiagnostic: stopped });
+    handle.stop();
+    lose({ reason: "destroyed", message: "" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(stopped).not.toHaveBeenCalled();
+  });
+
   it("reports a failed deferred Engine disposal without disposing the uncertain backend again", async () => {
     const loaded = await game();
     vi.spyOn(console, "error").mockImplementation(() => {});

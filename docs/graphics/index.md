@@ -22,6 +22,12 @@ When **Render Mode** is **CEL**, a **CEL Shading** section appears in Project Se
 
 Clustered Forward requires WebGL2. On WebGPU, or when a scene cannot use it, Haptic falls back to Forward.
 
+If WebGPU cannot start on your device, Haptic renders with WebGL2 and shows **WebGPU Unavailable** with the reason. **GPU Backend** keeps its WebGPU setting, so the next start tries WebGPU again.
+
+On WebGPU, rendering stops if the graphics device stops working, for example when the device runs out of graphics memory. A running Play or Simulate session stops, and **Rendering Update Failed** appears; choose **Retry** to restart rendering. Open documents and unsaved edits are kept. If rendering still cannot restart, the dialog says why; when it asks you to, save your work and reload the editor. If **Keep Simulation Changes** is on, the Simulate changes are discarded, because the final scene can no longer be captured.
+
+Preview Build and exported games have no Retry. If their graphics device stops working on WebGPU, the game stops drawing; Preview Build lists the error in the **Preview Session Report** when you stop it. Reload an exported game to restart it.
+
 ## Scalability
 
 **Scalability** sets quality per group: **Shadows**, **Resolution**, **Textures**, **Geometry**, **Water**, **Post Processing** and **Lighting**. Pick a level for all groups with **Overall Quality**, or set groups individually. When groups differ, Overall Quality shows **Custom**. New projects use Medium.

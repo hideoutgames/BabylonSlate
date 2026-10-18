@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { EngineStore } from "@babylonjs/core";
-import { createAppWebGpuEngine } from "./webgpu-engine";
+import { EngineStore, Observable } from "@babylonjs/core";
+import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
+import { createAppWebGpuEngine, watchWebGpuDevice, whenWebGpuDeviceLost } from "./webgpu-engine";
 
 /** Native constructor listener surface; the GPU adapter/device is the I/O seam. */
 class CanvasSurface {
@@ -121,5 +122,52 @@ describe("WebGPU project Engine initialization", () => {
     ).rejects.toBe(reason);
     expect(requestAdapter).not.toHaveBeenCalled();
     expect(EngineStore.Instances).toEqual(before);
+  });
+});
+
+describe("WebGPU device loss", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  /** Prototype-level WebGPUEngine around a device whose loss the test controls. */
+  function engineWithDevice() {
+    let lose!: (info: { reason: string; message: string }) => void;
+    const lost = new Promise<{ reason: string; message: string }>((resolve) => { lose = resolve; });
+    const engine = Object.assign(Object.create(WebGPUEngine.prototype), {
+      _isDisposed: false,
+      _contextWasLost: false,
+      onContextLostObservable: new Observable(),
+      _device: { lost, addEventListener() {} },
+    }) as WebGPUEngine;
+    watchWebGpuDevice(engine);
+    return { engine, lose };
+  }
+
+  it("marks the Engine lost, notifies its context-lost observers and reports the loss", async () => {
+    const { engine, lose } = engineWithDevice();
+    const observer = vi.fn();
+    engine.onContextLostObservable.add(observer);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    lose({ reason: "unknown", message: "Out of memory" });
+
+    await expect(whenWebGpuDeviceLost(engine)).resolves.toEqual({ reason: "unknown", message: "Out of memory" });
+    expect(observer).toHaveBeenCalledOnce();
+    // Babylon's render loop skips frames while this is set.
+    expect((engine as unknown as { _contextWasLost: boolean })._contextWasLost).toBe(true);
+  });
+
+  it("does not treat the device destroyed by disposal as a loss", async () => {
+    const { engine, lose } = engineWithDevice();
+    const observer = vi.fn();
+    engine.onContextLostObservable.add(observer);
+    const reported = vi.fn();
+    void whenWebGpuDeviceLost(engine)!.then(reported);
+
+    (engine as unknown as { _isDisposed: boolean })._isDisposed = true;
+    lose({ reason: "destroyed", message: "" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(observer).not.toHaveBeenCalled();
+    expect(reported).not.toHaveBeenCalled();
   });
 });

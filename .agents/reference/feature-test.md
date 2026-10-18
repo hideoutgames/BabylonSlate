@@ -160,6 +160,23 @@ It creates FeatureTest through the real Create dialog, waits for background text
 
 Rules: compare runs on the same machine, browser project and build only; never assert frame rates. Dynamic resolution is off in FeatureTest projects so the workload stays fixed. Quick smoke: `BL_PERF_SAMPLES=1 BL_PERF_SAMPLE_MS=2000 BL_PERF_WARMUP_MS=2000`. Agents wrap long runs in `pnpm --silent agent:wait local --script test:e2e -- <same arguments>`.
 
+### Fly-through route
+
+`e2e/feature-test-flythrough-route.spec.ts` (opt-in `BL_PERF_FLYTHROUGH=1`, same config) looks for camera-motion stutter. It creates FeatureTest, optionally switches the project backend in Project Settings, then per scene drives the editor camera along a fixed eye path at fly speed the way the joystick and WASD do (a pose change and camera invalidation per animation frame under a continuous render lease): a static warm-up, then the same path `BL_FLY_PASSES` times. The test-build hook `__babylonslateViewportTest.flyThrough` ([`flythrough-probe.ts`](../../apps/editor/src/testing/flythrough-probe.ts)) instruments the Engine for the run only and records every rendered frame: main-thread frame time, eye position, and counters for new Effects, WebGL links and compiles or WebGPU pipelines, shader modules, bind groups, buffers, textures and uploads, material and define invalidations by flag, failed readiness checks, strict readiness probes, graph builds, held frames, shadow generator construction, disposal and moves, enabled-light changes and visible-set churn, plus long tasks and JS heap. The spec ranks spike frames, correlates event kinds with frame cost, groups the event log (with stacks) and, with `BL_FLY_PROFILE=1`, adds the hottest functions of each spike frame from a CDP CPU profile. Counts are hardware-independent; compare counts across backends and builds, and times only on one machine.
+
+| Env | Default | Effect |
+| --- | --- | --- |
+| `BL_PERF_SCENES` | `main,world` | Scenes with a built-in path: `main`, `world`, `clustered`; others need `BL_FLY_PATH` |
+| `BL_PERF_BACKEND` | project (WebGL2) | `webgl2` or `webgpu`; WebGPU uses the software adapter unless `BL_RENDER_NATIVE_GPU=1` |
+| `BL_FLY_SPEED` / `BL_FLY_PASSES` / `BL_FLY_WARMUP_MS` | 8 m/s / 2 / 5000 | Fly speed, flights of the path, static hold before the first |
+| `BL_FLY_PATH` | per scene | JSON array of `[x, y, z]` eye waypoints |
+| `BL_FLY_PROFILE` | off | `1` records a CPU profile of the flights |
+| `BL_FLY_PLAY` | none | Selected scenes to fly again in overlay Play with the free camera (`freecam`) |
+| `BL_PERF_SCALING` / `BL_PERF_VIEWPORT_CAP` | Engine Settings | Hardware scaling level and viewport frame cap |
+| `BL_PERF_SETTLE_MS`, `BL_PERF_LABEL`, `BL_PERF_OUT` | 5000, none, none | Settle after opening, label, extra report path |
+
+A switched backend is saved before the first scene opens; scene edits a flight leaves behind are discarded when the next scene opens. On a GPU host (`perf-gpu`), set `BL_RENDER_NATIVE_GPU=1` so the project's launch arguments are kept. Main-scene Play (`BL_FLY_PLAY=main`) only loads on a real GPU.
+
 ## Verification
 
 [`apps/editor/src/services/project-service.feature-test.test.ts`](../../apps/editor/src/services/project-service.feature-test.test.ts) (node) creates the project in memory and reopens it. It requires every `ENGINE_COMPONENT_CLASS_IDS` entry (`packages/core/src/engine-components.ts`), every creatable (`CREATABLE_ASSET_TYPES`) and imported asset type, and every `ENGINE_BASE_CLASSES` entry to be present; every dependency to resolve; every document to decode; Play validation to report no errors; every compiled script to load the way Play loads it; every Material and Material Instance to compile; every Particle and Animation Graph to validate; and physics pairing to be clean. Its browser route is perf-only.

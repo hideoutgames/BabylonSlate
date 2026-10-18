@@ -54,6 +54,9 @@ for (const scenario of scenarios) {
     expect((await baseline(page))?.backend).toBe("webgl2");
 
     await selectBackend(page, "WebGPU");
+    // The editor tells the user why it renders with WebGL2. The notice closes
+    // itself after a while, so check it before waiting for the slow scene.
+    await expect(page.getByTestId("rendering-fallback-notice")).toContainText(scenario.reason, { timeout: 60_000 });
     // The transition must settle on WebGL2 with the project request unchanged.
     await expect.poll(async () => (await baseline(page))?.backend, { timeout: 60_000 }).toBe("webgl2");
     await waitForSceneViewportReady(page);

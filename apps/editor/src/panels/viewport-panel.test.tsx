@@ -522,6 +522,35 @@ describe("ViewportPanel engine", () => {
     }
   });
 
+  it("closes a failed load when the project Engine goes away, leaving no Retry for the old Engine", async () => {
+    documents.openDocuments = [{
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: createDefaultScene(),
+    }];
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    handle.loadSceneAsync.mockRejectedValueOnce(new Error("Rendering context was lost during scene loading."));
+    const liveEngine = play.ensureSharedEngine();
+    try {
+      const view = renderViewport();
+      await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("Scene Loading Failed"));
+      // A lost WebGPU device: the project Engine controller detaches every client.
+      play.ensureSharedEngine.mockReturnValue(null as unknown as typeof liveEngine);
+      play.sharedEngineGeneration = 2;
+      view.rerender(
+        <DocumentWorkspaceProvider documentId="scene:S">
+          <ViewportPanel {...({} as IDockviewPanelProps)} />
+        </DocumentWorkspaceProvider>,
+      );
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(screen.queryByTestId("viewport-load-failed")).toBeNull();
+      expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("false");
+    } finally {
+      play.ensureSharedEngine.mockReturnValue(liveEngine);
+      play.sharedEngineGeneration = 1;
+      errorLog.mockRestore();
+    }
+  });
+
   it("applies compatible settings behind blocking progress without replacing the scene or camera", async () => {
     const scene = createDefaultScene();
     const document = {
