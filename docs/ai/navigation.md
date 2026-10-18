@@ -72,7 +72,7 @@ Type these in the Play [console](../debugging/console.md):
 
 ## Gotchas
 
-- Without a baked NavMesh, or without a Nav Agent, move nodes do nothing and the Move To task fails.
+- Without a baked NavMesh, or without a Nav Agent, move nodes do nothing and the Move To task fails. The **Output Log** warns once for each actor and reason during a Play session.
 - Points more than 4 units from the NavMesh count as unreachable.
 - On a dynamic Rigid Body in 3D, the Nav Agent steers horizontally and physics keeps gravity, so a falling agent still falls.
 - Do not combine a Nav Agent with a Movement component on the same actor.
