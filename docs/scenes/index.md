@@ -29,8 +29,10 @@ See [Touch Gestures](../start/gestures.md) for the full list.
 | **Snap Grid** | Snaps gizmo moves to the increment shown on the button (<kbd>G</kbd>). Hold or right-click it for **Grid Settings**. |
 | **Drag Select** | The next drag draws a selection box (<kbd>Q</kbd>). |
 | **Drop** | Drops the selected actors straight down onto the nearest collision surface (<kbd>End</kbd>). |
-| **Viewport Settings** | **Viewport Mode** (PBR or CEL, Unlit, Wireframe), **Show Grid**, **Show Navmesh**, **Show Collisions**, **Joystick**, **Pivot Around Center**, **Game Camera** (look through the scene's Default Camera), and **Settings > Grid Settings** or **Camera Speed**. |
-| **3D** / **2D** | Switches the scene between 3D and 2D (<kbd>Alt</kbd>+<kbd>V</kbd>). |
+| **View** | Shows how the viewport draws the scene (**PBR** or **CEL**, **Unlit**, **Wireframe**) and holds **Show Grid**, **Show Navmesh** and **Show Collisions**. |
+| **Game Camera** | Looks through the scene's Default Camera (<kbd>Shift</kbd>+<kbd>C</kbd>). |
+| **Viewport Settings** | **Joystick**, **Pivot Around Center**, **Grid Settings** and **Camera Speed**. |
+| **2D** / **3D** | Switches the scene between 2D and 3D (<kbd>Alt</kbd>+<kbd>V</kbd>). The active one is highlighted. |
 
 **Grid Settings** holds **Grid Size** (visible cell spacing), **Grid Snap** (move increment), **Rotation Snap (Degrees)** and **Scale Snap**. New scenes use 1, 1, 15 and 0.25. **Camera Speed** (default 8 units per second) and **Drop Distance** (default 10,000 units) are in **Engine Settings > Viewport**.
 
@@ -42,7 +44,7 @@ Tap empty space in the viewport, or clear the selection, to show **Scene Setting
 | --- | --- |
 | Name | The scene's display name. |
 | Game Instance | Read-only. Set it in **Project Settings > Game**. |
-| Viewport | 3D or 2D. The same as the 3D / 2D toolbar button. |
+| Viewport | 3D or 2D. The same as the 2D / 3D switch in the viewport toolbar. |
 | Physics World | **3D (Havok)** or **2D (Rapier)**. A scene uses one or the other. |
 | Environment | Background colour. |
 | Fog | Distance fog, with **Fog Mode**, **Fog Color** and its distance or density settings. See [Sky and Fog](../graphics/sky-and-fog.md). |
@@ -64,7 +66,7 @@ The **Scene Mode** picker in the toolbar switches the open scene between **Desig
 
 ## Play a scene
 
-When **Debug > Play from Scene** is on (the default), Play and Preview Build start from the open scene. Otherwise they start from the **Startup Scene** in **Project Settings > Game**, which is also where exported games start. To move to another scene during the game, use [Change Scene](../scripting/class/change-scene.md).
+When **Debug > Start In Open Scene** is on (the default), Play and Preview Build start from the open scene. Otherwise they start from the **Startup Scene** in **Project Settings > Game**, which is also where exported games start. To move to another scene during the game, use [Change Scene](../scripting/class/change-scene.md).
 
 ## In this section
 

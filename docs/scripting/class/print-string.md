@@ -4,7 +4,7 @@ node: debug.printString
 
 # Print String
 
-Shows a string as on-screen text while the game runs.
+Shows a string as on-screen text while the game runs. Lines appear at the top left of the game view, under Stats, newest first.
 
 ## Inputs
 

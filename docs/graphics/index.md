@@ -60,7 +60,7 @@ The editor viewport has its own **Viewport Frame Cap (FPS)** in **Engine Setting
 
 ## Viewport Mode
 
-The viewport's **Viewport Settings** menu has **Viewport Mode**: **PBR** (or **CEL**), **Unlit** and **Wireframe**. This only changes how the editor draws the scene. Play and exported games always use the project's Render Mode.
+The viewport's **View** menu chooses how the editor draws the scene: **PBR** (or **CEL**), **Unlit** or **Wireframe**. The **View** button shows the current choice. This only changes how the editor draws the scene. Play and exported games always use the project's Render Mode.
 
 ## Change quality from scripts
 
