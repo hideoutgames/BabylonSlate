@@ -43,7 +43,7 @@ Contributor reference for Haptic's visual scripting: Class graph IR, pin types, 
 - Pure `(graphs, TypeContext, rules) → Diagnostic[]`; packages add rules with `registerValidationRule`. Diagnostics anchor to `assetGuid`, `graphId`, `nodeId`, `pinId` (plus `bodyLine` for ExecuteJavaScript). Behaviour Trees use `validateBehaviourTree`.
 - Validator and compiler share the TypeContext builder: a graph that validates compiles.
 - Node-scoped diagnostics run only on nodes the compiler would emit (`compiledNodeIds`); isolated nodes and exec islands without a trigger never block Play.
-- Runs on edit (250 ms debounce, open graph), save (document + dependents), pre-Play (whole project closure), export (adds export-only rules) and CI golden fixtures (`packages/scripting/fixtures/`, one broken graph per code).
+- Runs on edit (250 ms debounce, open graph), save (document + dependents), editor Compile (compiles every project graph; Compiler Results keeps only the focused class's diagnostics, like edit-time validation), pre-Play (dependency closure of the played scene, Game Instance and subsystems), export (adds export-only rules) and CI golden fixtures (`packages/scripting/fixtures/`, one broken graph per code).
 - Warnings never block. Errors block Play through a dialog with **Play Anyway** per run; there is no persistent bypass. Demote noisy rules rather than hardening the dialog.
 - Parent cycles are refused at write time (Attach Actor, Attach To Bone, `parentId` sets) with a warning; loaded data breaks cycles at load.
 

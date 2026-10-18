@@ -136,6 +136,17 @@ export interface MissingAnimClip {
   clipKind: "animation" | "sprite";
 }
 
+/** Passes each missing clip on once per slot and clip, so a state that replays every frame reports it once. */
+export function onceMissingClip(report: (info: MissingAnimClip) => void): (info: MissingAnimClip) => void {
+  const reported = new Set<string>();
+  return (info) => {
+    const key = `${info.slotId}\0${info.clipKind}\0${info.clipAssetGuid ?? ""}\0${info.clipName}`;
+    if (reported.has(key)) return;
+    reported.add(key);
+    report(info);
+  };
+}
+
 export interface SceneAnimHost {
   isPhysicsDriven?(slotId: number): boolean;
   /** The slot's own groups; clips resolve only from these, never another actor's. */
@@ -342,6 +353,8 @@ export function applyAnimStateToScene(
         else spriteSecondary ??= layer;
         continue;
       }
+      // A state with no clip names none: it plays nothing, so its slot's groups rest and nothing is missing.
+      if (!layer.clipName && !layer.clipAssetGuid) continue;
       resolvedLayers[resolvedCount] = layer;
       // A slot without its own clip (still loading, or not on its Model) must
       // not seek another actor's group of the same name.
