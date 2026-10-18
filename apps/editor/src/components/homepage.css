@@ -125,24 +125,61 @@
 }
 .homepage-sidebar-account {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
   min-width: 0;
-  padding-left: 2px;
 }
-.homepage-status-version {
+/* Account row: avatar, name and status, opening the profile menu upwards. */
+.homepage-sidebar-account .homepage-account {
+  flex: 1;
+  justify-content: flex-start;
   min-width: 0;
-  padding-right: 6px;
+  height: 40px;
+  gap: 8px;
+  padding: 0 6px;
+  text-align: left;
+}
+.homepage-account-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.homepage-account-name {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+.homepage-account-status {
   overflow: hidden;
   color: var(--muted-foreground);
   font-size: 11px;
+  font-weight: 400;
   text-overflow: ellipsis;
+}
+.homepage-account .homepage-account-chevron {
+  width: 14px;
+  height: 14px;
+  color: var(--muted-foreground);
+}
+/* The build label floats over the library's bottom-right corner. */
+.homepage-status-version {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  z-index: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--background) 80%, transparent);
+  color: var(--muted-foreground);
+  font-size: 11px;
   white-space: nowrap;
+  pointer-events: none;
 }
 
 /* Content: page heading with the primary actions, then the library. */
 .homepage-content {
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -248,7 +285,7 @@
   gap: 4px;
   flex-shrink: 0;
   min-height: var(--chrome-row, 28px);
-  padding: 0 20px 12px;
+  padding: 0 20px 8px;
 }
 .homepage-panel-toolbar > .editor-search-input,
 .homepage-template-toolbar > .editor-search-input {
@@ -291,7 +328,7 @@
   grid-template-columns: repeat(auto-fill, minmax(var(--gallery-min), 1fr));
   align-content: start;
   gap: 16px;
-  padding: 0 20px 20px;
+  padding: 4px 20px 32px;
 }
 .homepage-gallery[data-layout="small"] .homepage-gallery-grid {
   --gallery-min: 176px;
@@ -347,11 +384,7 @@
 }
 .homepage-card-well {
   place-items: center;
-  background: linear-gradient(
-    160deg,
-    color-mix(in oklch, var(--foreground) 5%, var(--card)),
-    color-mix(in oklch, var(--foreground) 2%, var(--card))
-  );
+  background: oklch(0.17 0.004 75);
 }
 .homepage-card-well img {
   width: 100%;
@@ -359,8 +392,8 @@
   object-fit: cover;
 }
 .homepage-card-well > svg {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   stroke-width: 1.2;
   color: var(--muted-foreground);
   transition: transform 260ms var(--launcher-ease), color 160ms ease;
@@ -442,7 +475,7 @@
   padding-block: 5px;
 }
 
-/* A neutral thumbnail: the user's picture, or a placeholder glyph. */
+/* The thumbnail: the user's picture, or the project colour with its initials. */
 .homepage-project-cover {
   position: relative;
   display: flex;
@@ -451,37 +484,26 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  color: color-mix(in oklch, var(--project-badge-color, var(--muted-foreground)) 80%, var(--foreground));
-  background:
-    radial-gradient(
-      ellipse 90% 80% at 50% 100%,
-      color-mix(in oklch, var(--project-badge-color, var(--foreground)) 20%, transparent),
-      transparent 70%
-    ),
-    color-mix(in oklch, var(--project-badge-color, var(--foreground)) 5%, oklch(0.17 0.004 75));
+  color: var(--homepage-badge-ink);
+  background: color-mix(in oklch, var(--project-badge-color) 88%, #000);
 }
-.homepage-project-cover::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(
-      circle,
-      color-mix(in oklch, var(--foreground) 7%, transparent) 0.7px,
-      transparent 1px
-    )
-    center / 12px 12px;
-  mask-image: radial-gradient(
-    ellipse 75% 85% at center,
-    #000,
-    transparent 80%
-  );
+.homepage-project-initials {
+  position: relative;
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  opacity: 0.88;
+  transition: transform 260ms var(--launcher-ease);
+}
+.homepage-gallery[data-layout="small"] .homepage-project-initials {
+  font-size: 32px;
 }
 .homepage-project-cover > svg {
   position: relative;
   width: 32px;
   height: 32px;
-  stroke-width: 1.2;
+  stroke-width: 1.4;
   transition: transform 260ms var(--launcher-ease), color 160ms ease;
 }
 .homepage-project-cover > img {
@@ -491,15 +513,6 @@
   height: 100%;
   object-fit: cover;
   transition: transform 420ms var(--launcher-ease);
-}
-.homepage-project-color {
-  --project-badge-color: var(--homepage-badge-stone);
-  flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--project-badge-color);
-  box-shadow: 0 0 0 1px color-mix(in oklch, #000 18%, transparent);
 }
 .homepage-project-caption [data-slot="card-title"],
 .homepage-composer-preview-name {
@@ -619,10 +632,13 @@
   width: 28px;
   height: 28px;
   overflow: hidden;
-  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  color: var(--muted-foreground);
-  background: color-mix(in oklch, var(--foreground) 5%, var(--card));
+  color: var(--homepage-badge-ink);
+  background: color-mix(in oklch, var(--project-badge-color) 88%, #000);
+}
+.homepage-project-badge .homepage-project-initials {
+  font-size: 11px;
+  letter-spacing: 0;
 }
 .homepage-project-badge svg {
   width: 15px;
@@ -669,9 +685,8 @@
   }
   .homepage-project-card:not([data-touch-input="true"]):hover
     .homepage-project-cover
-    > svg {
-    transform: translateY(-3px) scale(1.06);
-    color: var(--foreground);
+    > :is(svg, .homepage-project-initials) {
+    transform: scale(1.06);
   }
   .homepage-project-card:not([data-touch-input="true"]):hover
     .homepage-project-cover
@@ -911,7 +926,12 @@
   margin-left: auto;
 }
 .homepage-template-results .homepage-gallery-grid {
-  padding-top: 2px;
+  --gallery-min: 190px;
+  gap: 12px;
+  padding: 4px 14px 14px;
+}
+.homepage-composer[data-step="details"] {
+  height: min(460px, calc(var(--homepage-visible-height, 100dvh) * 0.88));
 }
 .homepage-composer-layout {
   display: flex;
@@ -933,27 +953,15 @@
   border-right: 1px solid var(--border);
   background:
     radial-gradient(
-      ellipse at 50% 46%,
-      color-mix(in oklch, var(--foreground) 7%, transparent),
-      transparent 68%
+      ellipse 70% 55% at 50% 50%,
+      color-mix(in oklch, var(--project-badge-color, var(--foreground)) 22%, transparent),
+      transparent 72%
     ),
     var(--background);
-}
-.homepage-composer-preview::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: radial-gradient(
-      circle,
-      color-mix(in oklch, var(--foreground) 10%, transparent) 0.7px,
-      transparent 1px
-    )
-    0 0 / 14px 14px;
-  mask-image: radial-gradient(ellipse at center, #000 20%, transparent 75%);
+  transition: background 200ms ease;
 }
 .homepage-composer-preview-card {
-  width: min(100%, 260px);
+  width: min(100%, 280px);
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -966,7 +974,7 @@
   height: auto;
 }
 .homepage-composer-preview-name {
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-top: 1px solid var(--border);
   overflow: hidden;
   white-space: nowrap;
@@ -1015,7 +1023,7 @@
   flex: 1;
   display: flex;
   flex-wrap: wrap;
-  gap: 2px;
+  gap: 6px;
 }
 .homepage-color-choice {
   padding: 0;
@@ -1024,8 +1032,8 @@
 .homepage-color-blob {
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--project-badge-color);
   color: var(--homepage-badge-ink);
@@ -1035,8 +1043,8 @@
   transform: scale(1.12);
 }
 .homepage-color-choice[aria-pressed="true"] {
-  outline: 1px solid var(--ring);
-  outline-offset: -2px;
+  outline: 2px solid var(--foreground);
+  outline-offset: -1px;
 }
 .homepage-color-blob svg {
   width: 11px;
@@ -1181,18 +1189,23 @@
   color: var(--muted-foreground);
 }
 .homepage-profile-avatar {
-  width: 20px;
-  height: 20px;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   object-fit: cover;
 }
 .homepage-account svg.homepage-profile-avatar {
-  width: 18px;
-  height: 18px;
+  width: 26px;
+  height: 26px;
+  padding: 4px;
+  border-radius: 50%;
+  background: var(--accent);
   color: var(--muted-foreground);
+  stroke-width: 1.75;
 }
 .homepage-profile-menu {
-  width: 248px;
+  width: max(var(--anchor-width), 220px);
   max-width: calc(100vw - 24px);
 }
 .homepage-profile-menu-identity {
@@ -1675,4 +1688,15 @@ body:has([data-slate-theme="light"]) [data-slot="alert-dialog-overlay"] {
     transition: none !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* The profile menu matches the launcher's compact type. */
+.homepage-profile-menu [role="menuitem"] {
+  min-height: var(--chrome-row, 28px);
+  font-size: 12px;
+}
+.homepage-profile-menu [role="menuitem"] svg {
+  width: 14px;
+  height: 14px;
+  color: var(--muted-foreground);
 }

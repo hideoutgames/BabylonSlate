@@ -39,7 +39,6 @@ import {
 } from "@babylonslate/ui/components/toggle-group";
 import { HomepageTemplateBrowser, homepageTemplates } from "./homepage-template-browser";
 import {
-  ProjectColorDot,
   ProjectCover,
   ProjectIdentityBadge,
 } from "./homepage-project-identity";
@@ -257,7 +256,7 @@ export function HomepageCreateDialog({
             {editing
               ? "Edit Project"
               : step === "templates"
-                ? "Start With"
+                ? "New Project"
                 : `New ${homepageTemplates(templates, { debugMode: true }).find((template) => template.id === templateId)?.name ?? "Project"}`}
           </DialogTitle>
           <DialogDescription className="sr-only">
@@ -294,11 +293,14 @@ export function HomepageCreateDialog({
             <aside
               className="homepage-composer-preview"
               data-testid="project-identity-preview"
+              data-color={appearance.color}
             >
               <div className="homepage-composer-preview-card">
-                <ProjectCover appearance={appearance} />
+                <ProjectCover
+                  appearance={appearance}
+                  name={name.trim() || placeholderName}
+                />
                 <span className="homepage-composer-preview-name">
-                  <ProjectColorDot appearance={appearance} />
                   <span>{name.trim() || placeholderName}</span>
                 </span>
               </div>
@@ -348,6 +350,7 @@ export function HomepageCreateDialog({
                       <span>Color</span>
                       <ProjectIdentityBadge
                         appearance={appearance}
+                        name={name.trim() || placeholderName}
                         className="homepage-composer-inline-preview"
                       />
                     </FieldLegend>

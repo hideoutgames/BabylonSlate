@@ -2,6 +2,7 @@
 import {
   AppWindowIcon,
   NewspaperIcon,
+  ChevronsUpDownIcon,
   CircleUserRoundIcon,
   CreditCardIcon,
   LogInIcon,
@@ -81,7 +82,7 @@ export function HomepageProfileMenu({
         render={
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="sm"
             className="homepage-account"
             aria-label="Profile"
             data-testid="homepage-account"
@@ -92,9 +93,17 @@ export function HomepageProfileMenu({
           imageUrl={imageUrl}
           className="homepage-profile-avatar"
         />
+        <span className="homepage-account-text">
+          <span className="homepage-account-name">{name}</span>
+          <span className="homepage-account-status">
+            {description ?? email ?? (signedIn ? "Signed In" : "Not Signed In")}
+          </span>
+        </span>
+        <ChevronsUpDownIcon className="homepage-account-chevron" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        align="end"
+        align="start"
+        side="top"
         sideOffset={6}
         className="homepage-theme homepage-profile-menu"
         data-testid="homepage-profile-menu"

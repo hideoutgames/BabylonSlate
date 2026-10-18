@@ -5,7 +5,7 @@ Create, open, save and close projects from the Homepage, the screen Haptic shows
 ## Create a project
 
 1. On the Homepage, choose **New Project**.
-2. In **Start With**, pick a starter or an installed template.
+2. In the **New Project** dialog, pick a starter or an installed template.
 3. Enter a **Name**. If you leave it empty, Haptic uses the suggested name shown in the field.
 4. Optionally pick a **Color** or choose **Upload Picture** (PNG, JPEG or WebP) for the project card.
 5. Optionally open **Options** to change where the project is stored and its resolution.

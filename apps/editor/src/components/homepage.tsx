@@ -388,7 +388,6 @@ export function Homepage({
               onEngineSettings={() => setSettingsOpen(true)}
               onChangelog={() => setChangelogOpen(true)}
             />
-            <span className="homepage-status-version">{getBuildLabel()}</span>
           </div>
         </div>
       </aside>
@@ -713,6 +712,7 @@ export function Homepage({
             </div>
           </div>
         </main>
+        <span className="homepage-status-version">{getBuildLabel()}</span>
       </div>
       <HomepageCreateDialog
         open={createOpen}
