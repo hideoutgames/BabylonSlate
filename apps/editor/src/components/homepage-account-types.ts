@@ -31,6 +31,8 @@ export interface BillingController {
   renderSubscribe?: (button: ReactElement) => ReactElement;
   /** Wraps the Manage Billing button so it opens the provider's billing page. */
   renderManage?: (button: ReactElement) => ReactElement;
+  /** Store builds must offer restoring purchases made on another install. */
+  onRestore?: () => void;
 }
 
 /** Billing before any provider keys are configured for this build. */

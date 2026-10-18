@@ -106,6 +106,8 @@ jobs:
       VITE_BASE_PATH: /
       # Public repository variable. Unset builds have no Clerk sign-in; mobile then offers only the demo account.
       VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+      # Public repository variable; defaults to the Clerk Billing plan slug "pro".
+      VITE_CLERK_PRO_PLAN_SLUG: ${{ vars.VITE_CLERK_PRO_PLAN_SLUG }}
       # Git Bash must not rewrite the URL base to its Windows installation path.
       MSYS2_ENV_CONV_EXCL: VITE_BASE_PATH
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -154,6 +156,8 @@ jobs:
       VITE_TEST_MODE: 'false'
       VITE_BASE_PATH: /
       VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+      # Public repository variable; defaults to the Clerk Billing plan slug "pro".
+      VITE_CLERK_PRO_PLAN_SLUG: ${{ vars.VITE_CLERK_PRO_PLAN_SLUG }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -204,6 +208,8 @@ jobs:
       VITE_TEST_MODE: 'false'
       VITE_BASE_PATH: /
       VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+      # Public repository variable; defaults to the Clerk Billing plan slug "pro".
+      VITE_CLERK_PRO_PLAN_SLUG: ${{ vars.VITE_CLERK_PRO_PLAN_SLUG }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -246,6 +252,11 @@ jobs:
       VITE_TEST_MODE: 'false'
       VITE_BASE_PATH: /
       VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+      # Public repository variable; defaults to the Clerk Billing plan slug "pro".
+      VITE_CLERK_PRO_PLAN_SLUG: ${{ vars.VITE_CLERK_PRO_PLAN_SLUG }}
+      # Public RevenueCat SDK key. Unset builds show in-app purchases as not set up.
+      VITE_REVENUECAT_ANDROID_API_KEY: ${{ vars.VITE_REVENUECAT_ANDROID_API_KEY }}
+      VITE_REVENUECAT_PRO_ENTITLEMENT: ${{ vars.VITE_REVENUECAT_PRO_ENTITLEMENT }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -302,6 +313,11 @@ jobs:
       VITE_TEST_MODE: 'false'
       VITE_BASE_PATH: /
       VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+      # Public repository variable; defaults to the Clerk Billing plan slug "pro".
+      VITE_CLERK_PRO_PLAN_SLUG: ${{ vars.VITE_CLERK_PRO_PLAN_SLUG }}
+      # Public RevenueCat SDK key. Unset builds show in-app purchases as not set up.
+      VITE_REVENUECAT_IOS_API_KEY: ${{ vars.VITE_REVENUECAT_IOS_API_KEY }}
+      VITE_REVENUECAT_PRO_ENTITLEMENT: ${{ vars.VITE_REVENUECAT_PRO_ENTITLEMENT }}
       FASTLANE_SKIP_UPDATE_CHECK: 'true'
       FASTLANE_OPT_OUT_USAGE: 'true'
     steps:

@@ -95,16 +95,14 @@
   overscroll-behavior: contain;
 }
 
-/* Shared working size: scales with the screen and leaves the surrounding
- * editor visible; small screens use all of the safe viewport. */
+/* Shared working size: practically full screen, with a slim margin that
+ * keeps the dialog edge visible. */
 .editor-dialog-large {
-  --dialog-edge: clamp(0.5rem, 1vw, 1rem);
-  --dialog-max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge));
-  --dialog-max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 2 * var(--dialog-edge));
-  width: min(var(--dialog-max-width), max(60rem, 92vw));
-  height: min(var(--dialog-max-height), max(38rem, 90dvh));
-  max-width: var(--dialog-max-width);
-  max-height: var(--dialog-max-height);
+  --dialog-edge: clamp(0.5rem, 1.25vw, 1.25rem);
+  width: calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge));
+  height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 2 * var(--dialog-edge));
+  max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge));
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 2 * var(--dialog-edge));
 }
 
 /* Pick lists keep the editor in view; phones fall back to the large size. */

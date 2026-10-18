@@ -128,7 +128,9 @@ export function HomepageProjectCard({
           <span>{name}</span>
         </CardTitle>
         <div className="homepage-project-meta">
-          {activity && <CardDescription>{activity}</CardDescription>}
+          {activity && (
+            <CardDescription title={activity.title}>{activity.label}</CardDescription>
+          )}
           {layout !== "list" && <ProjectBadges project={project} />}
         </div>
       </CardHeader>

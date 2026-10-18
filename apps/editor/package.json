@@ -61,6 +61,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@lezer/highlight": "^1.2.3",
+    "@revenuecat/purchases-capacitor": "13.7.0",
     "dockview-react": "^8.5.1",
     "lucide-react": "^0.552.0",
     "react": "^19.2.8",

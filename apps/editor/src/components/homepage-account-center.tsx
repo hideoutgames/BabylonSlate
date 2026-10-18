@@ -7,6 +7,7 @@ import {
   LogInIcon,
   LogOutIcon,
   MailIcon,
+  RotateCcwIcon,
   UserPlusIcon,
   UserRoundCogIcon,
 } from "lucide-react";
@@ -176,7 +177,20 @@ function SubscriptionSection({
                   .join(" · ")}
           </p>
         </div>
-        {billing.renderManage && !blocked ? billing.renderManage(manageButton) : manageButton}
+        <div className="homepage-account-center-actions">
+          {billing.onRestore && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={Boolean(billing.unavailableReason)}
+              onClick={billing.onRestore}
+            >
+              <RotateCcwIcon data-icon="inline-start" />
+              Restore Purchases
+            </Button>
+          )}
+          {billing.renderManage && !blocked ? billing.renderManage(manageButton) : manageButton}
+        </div>
       </section>
       {blocked && (
         <Alert>

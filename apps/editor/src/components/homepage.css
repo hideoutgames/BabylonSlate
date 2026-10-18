@@ -585,7 +585,7 @@
   color: var(--muted-foreground);
   font-size: 11px;
 }
-.homepage-project-card:not([data-layout="list"]) .homepage-project-badges [data-slot="badge"] {
+.homepage-project-card .homepage-project-badges [data-slot="badge"] {
   height: auto;
   padding: 0;
   border: 0;
@@ -597,7 +597,7 @@
   overflow: visible;
   box-shadow: none;
 }
-.homepage-project-card:not([data-layout="list"]) .homepage-project-badges [data-slot="badge"] svg {
+.homepage-project-card .homepage-project-badges [data-slot="badge"] svg {
   width: 11px;
   height: 11px;
 }
@@ -624,10 +624,6 @@
   padding-inline: 6px;
   font-size: 10px;
   box-shadow: 0 1px 2px color-mix(in oklch, #000 20%, transparent);
-}
-.homepage-project-badges .homepage-project-badge-secondary {
-  border-color: var(--border);
-  background: color-mix(in oklch, var(--foreground) 10%, var(--card));
 }
 /* Small cards and phone rows have room for one labelled badge; the secondary one keeps only its icon. */
 .homepage-project-card[data-layout="small"] .homepage-project-badges {
@@ -663,9 +659,9 @@
 .homepage-project-card[data-layout="list"] .homepage-project-badges {
   position: static;
   flex: none;
-  flex-direction: row-reverse;
   flex-wrap: nowrap;
-  margin-right: 40px;
+  gap: 10px;
+  margin-right: 44px;
 }
 .homepage-project-card[data-layout="list"] .homepage-project-badges [data-slot="badge"] {
   box-shadow: none;
@@ -859,14 +855,12 @@
     var(--homepage-visible-top, 0px) + var(--homepage-visible-height, 100dvh) /
       2
   );
-  /* Scales with the screen like the other large dialogs. */
-  width: min(calc(100vw - 32px), max(60rem, 92vw));
-  height: min(
-    calc(var(--homepage-visible-height, 100dvh) - 32px),
-    max(38rem, calc(var(--homepage-visible-height, 100dvh) * 0.9))
-  );
+  /* Practically full screen, like the other large dialogs. */
+  --dialog-edge: clamp(0.5rem, 1.25vw, 1.25rem);
+  width: calc(100vw - 2 * var(--dialog-edge));
+  height: calc(var(--homepage-visible-height, 100dvh) - 2 * var(--dialog-edge));
   max-width: none;
-  max-height: calc(var(--homepage-visible-height, 100dvh) - 32px);
+  max-height: calc(var(--homepage-visible-height, 100dvh) - 2 * var(--dialog-edge));
   background: var(--popover);
   border-radius: var(--radius-xl);
 }
