@@ -41,14 +41,12 @@ import { upsertFogVolumes } from "./fog-volumes";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { ParticleService } from "./particle-service";
 import {
-  sceneRenderingSettings,
   setSceneEffectsEnabled,
   updateSceneRenderingSettings,
 } from "./render-settings";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneShadowController } from "./shadow-controller";
 import { configureCutoutSorting } from "./sorting";
-import { volumetricLayoutKey } from "./volumetric-lights";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -888,9 +886,9 @@ async function fogHost(
   const graph = new ForwardSceneFrameGraph(scene);
   await graph.prepare(camera);
   /** Names of the graph tasks that ran their disabled passes in one frame. */
-  const skipped = () => {
+  const skipped = (result: object = { path: "frameGraph" }) => {
     const frame = captureRenderFrame(engine, () => graph.render(camera));
-    expect(frame.value).toEqual({ path: "frameGraph" });
+    expect(frame.value).toEqual(result);
     return frame.report.stages.filter((stage) => stage.kind === "task" && stage.fallbackPasses).map((stage) => stage.name);
   };
   return { scene, camera, graph, skipped, far };
@@ -948,26 +946,35 @@ it.each([
   graph.dispose();
 });
 
-it("skips a fog march that wakes inside a frame while its lights' shadow maps differ from the ones it was built for", async () => {
+/** A Fog Volume host whose volumetric march samples a shadowed sun's map. */
+async function shadowedFogHost() {
   let sun: DirectionalLight | undefined;
-  const { scene, camera, graph, skipped } = await fogHost({}, undefined, (scene) => {
+  const host = await fogHost({}, undefined, (scene) => {
     // WebGL2 and WebGPU compare shadow maps in the sampler; NullEngine reports WebGL1's Poisson fallback.
     Object.assign(scene.getEngine()._features, { supportShadowSamplers: true });
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, mapSize: 256 }) });
     sun = new DirectionalLight("sun", new Vector3(0, -1, 0.2), scene);
+    // Without uniform buffers (NullEngine) the sun's shadow uniforms go through the last lit draw's Effect.
+    const receiver = MeshBuilder.CreatePlane("receiver", { size: 2 }, scene);
+    receiver.position.z = 1;
+    receiver.material = new StandardMaterial("receiver", scene);
     const controller = sceneShadowController(scene);
     controller.register(sun, true);
     controller.sync();
   });
-  const volume = sceneRenderingSettings(scene).effectsPlan!.volumetricLighting!;
-  const built = volumetricLayoutKey(scene, camera, volume);
+  const controller = sceneShadowController(host.scene);
+  expect(controller.generator(sun!)?.usePercentageCloserFiltering).toBe(true);
+  return { ...host, sun: sun!, controller };
+}
+
+it("skips a fog march that wakes inside a frame while its lights' shadow maps differ from the ones it was built for", async () => {
+  const { scene, camera, graph, skipped, sun, controller } = await shadowedFogHost();
   const builds = graph.diagnostics().graphBuilds;
   camera.rotation.y = Math.PI;
   expect(skipped().sort()).toEqual(FOG_ONLY_TASKS);
-  const controller = sceneShadowController(scene);
-  controller.register(sun!, false);
+  controller.register(sun, false);
   controller.sync();
-  expect(volumetricLayoutKey(scene, camera, volume)).not.toBe(built);
+  expect(controller.generator(sun)).toBeNull();
   // The dropped map re-prepares the lighting; the idle march keeps its graph.
   await graph.prepare(camera);
   expect(graph.diagnostics().graphBuilds).toBe(builds);
@@ -975,6 +982,22 @@ it("skips a fog march that wakes inside a frame while its lights' shadow maps di
   // The view checks its graph before the frame moves the camera (inputs, animation): the march wakes after that check.
   scene.onBeforeRenderObservable.addOnce(() => { camera.rotation.y = 0; });
   expect(skipped().sort()).toEqual(FOG_ONLY_TASKS);
+  expect(graph.readiness(camera)).toMatchObject({ preparationRequired: true });
+  await graph.prepare(camera);
+  expect(skipped()).toEqual([]);
+  graph.dispose();
+});
+
+it("skips a running fog march for the frame in which shadow admission drops one of its lights' maps", async () => {
+  const { scene, camera, graph, skipped, sun, controller } = await shadowedFogHost();
+  expect(skipped()).toEqual([]);
+  // Shadow admission also runs inside the frame, after the view's check; the released map marks the frame stale.
+  scene.onBeforeRenderObservable.addOnce(() => {
+    controller.register(sun, false);
+    controller.sync();
+  });
+  expect(skipped({ path: "frameGraph", rendered: false }).sort()).toEqual(FOG_ONLY_TASKS);
+  expect(controller.generator(sun)).toBeNull();
   expect(graph.readiness(camera)).toMatchObject({ preparationRequired: true });
   await graph.prepare(camera);
   expect(skipped()).toEqual([]);

@@ -22,6 +22,7 @@ import {
   volumetricLayoutKey,
   volumetricLightsLayoutKey,
   volumeShadowLayout,
+  type VolumeShadow,
 } from "./volumetric-lights";
 import {
   volumetricShader,
@@ -440,12 +441,21 @@ export function createSpatialStages(
         inverseView = Matrix.Identity();
       const mainInput = stages.length;
       // The view checks the light layout before each frame, but the frame then
-      // moves the camera (inputs, animation): a march that wakes after a check
-      // that found it idle can hold lights whose shadow maps changed shape since
-      // it was built. Skip that frame rather than bind them; the view rebuilds
-      // on the next.
-      const idle = () =>
-        volumetricMarchIdle(scene, camera, volume, localVolumes) || volumetricLightsLayoutKey(scene, lights) !== lightLayout;
+      // moves the camera (inputs, animation) and shadow admission can release
+      // or stand by a map: a march that wakes after a check that found it idle,
+      // or runs on after a map changed, can hold lights whose shadow maps no
+      // longer match its samplers. Skip that frame rather than bind them; the
+      // view rebuilds on the next. Only the built lights' maps are compared: a
+      // frame whose nearest lights changed still binds the built set validly.
+      const current: VolumeShadow = { kind: "none", cascades: 0, packed: false };
+      const shadowsChanged = () => {
+        for (let i = 0; i < lights.length; i++) {
+          const built = shadows[i]!, now = volumeShadowLayout(scene, lights[i]!, current);
+          if (now.kind !== built.kind || now.cascades !== built.cascades || now.packed !== built.packed) return true;
+        }
+        return false;
+      };
+      const idle = () => volumetricMarchIdle(scene, camera, volume, localVolumes) || shadowsChanged();
       stages.push({
         wrapper: march,
         scale: Math.max(0.25, volume.resolutionScale * quality),
