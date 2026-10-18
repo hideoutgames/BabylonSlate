@@ -1,6 +1,7 @@
 import type { AbstractEngine } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { AssetLoadError } from "@babylonslate/assets";
 import { areaEmissionTextureGuids, requestEditorDrop } from "@babylonslate/core";
 import {
   createEngine,
@@ -438,6 +439,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         if (cancelled || engineRef.current !== handle) return;
         setDropReady({ handle, loadKey: dropLoadKey });
       } catch (error) {
+        // A superseded effect or a disposed load scope cancels its own requests.
+        if (cancelled || engineRef.current !== handle) return;
+        if (error instanceof AssetLoadError && error.code === "cancelled") return;
         console.error("[prefab] failed to load mesh assets", error);
       }
     })();

@@ -76,6 +76,44 @@ describe("DocumentService", () => {
     expect(service.getDocument(id)?.dirty).toBe(true);
   });
 
+  it("retitles a renamed asset's tab from its payload name and keeps unsaved edits unsaved", async () => {
+    const service = new DocumentService();
+    const saved = { name: "Shiny", roughness: 0.5 };
+    const project = createMockProjectService({ loadDocument: vi.fn(async () => structuredClone(saved)) });
+    const path = "assets/Shiny.material.babasset";
+    const id = await service.openDocument(project, { kind: "material", path, label: "Shiny Material" });
+
+    service.applyAssetRename(id, "Glossy");
+    expect(service.getDocument(id)).toMatchObject({ dirty: false, content: { name: "Glossy", roughness: 0.5 }, ref: { label: "Glossy Material" } });
+    // A later edit writes the new name back, so the tab never reverts.
+    const content = service.getDocument(id)!.content as Record<string, unknown>;
+    service.updateAssetDocument(id, { ...content, roughness: 0.9 });
+    expect(service.getDocument(id)).toMatchObject({ dirty: true, ref: { label: "Glossy Material" } });
+
+    service.applyAssetRename(id, "Matte");
+    expect(service.getDocument(id)).toMatchObject({ dirty: true, content: { name: "Matte", roughness: 0.9 }, ref: { label: "Matte Material" } });
+    const moved = service.repathDocument("material", path, "assets/Matte.material.babasset")!;
+    expect(service.getDocument(moved.newId)?.ref.label).toBe("Matte Material");
+  });
+
+  it("leaves scenes and payloads without a name alone when an asset is renamed", async () => {
+    const service = new DocumentService();
+    const project = createMockProjectService({
+      loadDocument: vi.fn(async (kind: string) => (kind === "scene" ? createDefaultScene() : { nodes: [] })),
+    });
+    const sceneId = await service.openDocument(project, { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" });
+    const treeId = await service.openDocument(project, { kind: "data-tree", path: "assets/Loot.datatree.babasset", label: "Loot" });
+    const scene = service.getDocument(sceneId)!;
+    const tree = service.getDocument(treeId)!;
+
+    service.applyAssetRename(sceneId, "Arena");
+    service.applyAssetRename(treeId, "Treasure");
+
+    expect(service.getDocument(sceneId)).toBe(scene);
+    expect(service.getDocument(treeId)).toBe(tree);
+    expect(tree.content).toEqual({ nodes: [] });
+  });
+
   it("protects document content and revisions while independent authoring owners hold leases", async () => {
     const service = new DocumentService();
     const project = createMockProjectService();

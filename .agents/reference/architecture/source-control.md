@@ -48,7 +48,7 @@ Linux without a keyring stores new values with an explicit plaintext tag (accept
 
 ## Settings
 
-`sourceControl: { enabled (false), repositoryUrl (""), branch ("main"), autoLockOnEdit (true), pollIntervalMs (60000, minimum 1000) }`. Missing settings normalize to disabled; a stray `token` field is dropped. Changing repository, branch or poll interval drops the old provider's locks and every read-only state.
+`sourceControl: { enabled (false), repositoryUrl (""), branch ("main"), autoLockOnEdit (true), pollIntervalMs (60000, minimum 1000) }`. Missing settings normalize to disabled; a stray `token` field is dropped. Changing repository, branch or poll interval drops the old provider's locks and every read-only state. The Settings **Enable** toggle never turns on an empty `repositoryUrl`: it reads the `.git/config` prefill first and otherwise shows a field error beside Repository URL.
 
 ## Editor behaviour
 

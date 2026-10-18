@@ -23,6 +23,14 @@ describe("formatNumericDisplay", () => {
     expect(formatNumericDisplay(1e-7)).toBe("0.0000001");
     expect(formatNumericDisplay(0.00123, 6)).toBe("0.00123");
   });
+
+  it("shows float noise as 0 but keeps the smallest genuine values", () => {
+    expect(formatNumericDisplay(1.7e-16)).toBe("0");
+    expect(formatNumericDisplay(-Math.sin(Math.PI))).toBe("0");
+    expect(formatNumericDisplay(-4e-12, 6)).toBe("0");
+    expect(formatNumericDisplay(1e-8)).toBe("0.00000001");
+    expect(formatNumericDisplay(-2.5e-8)).toBe("-0.000000025");
+  });
 });
 
 describe("evaluateNumericExpression", () => {

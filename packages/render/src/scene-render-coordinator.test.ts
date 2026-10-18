@@ -497,6 +497,20 @@ describe("preparation while a synchronous probe holds the thread", () => {
     expect(clock.elapsed()).toBeLessThanOrEqual(2 * SCENE_THREAD_HELD_BUDGET_MS + 2 * SCENE_THREAD_HELD_MS);
     renderer.dispose();
   });
+
+  // Every probe finds the scene ready, so the graph's own readiness loop exits at once and only the coordinator
+  // still bounds the preparation: each probe also invalidates the graph, the way an asset arriving mid-load does,
+  // and the coordinator starts over.
+  it("bounds a preparation that every probe invalidates while holding the thread, once the coordinator's credit budget is spent", async () => {
+    const { scene, renderer } = host();
+    const clock = virtualClock();
+    const held = 5_000;
+    scene.addIsReadyCheck({ isReady: () => { clock.advance(held); renderer.invalidate(); return true; } });
+    await expect(renderer.prepare()).rejects.toThrow("timed out");
+    expect(clock.elapsed()).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS);
+    expect(clock.elapsed()).toBeLessThanOrEqual(2 * SCENE_THREAD_HELD_BUDGET_MS + 2 * held);
+    renderer.dispose();
+  }, 20_000);
 });
 
 describe("preparation while the driver compiles", () => {

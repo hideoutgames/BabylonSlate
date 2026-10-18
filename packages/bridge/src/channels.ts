@@ -757,6 +757,8 @@ export type CommandMessage =
     }
   /** The worker finished its `stop` phase (End Play, On Game End and their save writes). */
   | { type: "runtimeStopped" }
+  /** The runtime stopped itself (console `quit`); the host ends the session as its Stop control does. */
+  | { type: "sessionEnded" }
   /** Rumble a pad by its Gamepad API index: intensity 0..1; zero intensity or duration stops it. */
   | {
       type: "setGamepadRumble";

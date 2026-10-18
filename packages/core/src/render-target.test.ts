@@ -30,6 +30,14 @@ describe("render target asset contracts", () => {
     });
   });
 
+  it("loads captures saved without a quality as Fast and keeps an authored Full Quality", () => {
+    // Projects saved before the setting existed carry no quality field.
+    expect(normalizeRenderTargetCaptureProperties({ renderTargetGuid: "target" }).quality).toBe("fast");
+    expect(normalizeRenderTargetCaptureProperties({ quality: "fullQuality" }).quality).toBe("fullQuality");
+    expect(normalizeRenderTargetCaptureProperties({ quality: "Full Quality" }).quality).toBe("fast");
+    expect(normalizeRenderTargetCaptureProperties({ quality: 1 }).quality).toBe("fast");
+  });
+
   it("keeps assets referenced by graph nodes and typed containers reachable without collecting text", () => {
     const node = (type: string, data: Record<string, unknown>): SerializedGraph["nodes"][number] => ({
       id: type, type, position: { x: 0, y: 0 }, data,

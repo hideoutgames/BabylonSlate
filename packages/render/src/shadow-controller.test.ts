@@ -18,6 +18,7 @@ import {
   UniversalCamera,
   TransformNode,
   Vector3,
+  type AbstractEngine,
 } from "@babylonjs/core";
 import { sceneShadowController } from "./shadow-controller";
 import { isForwardLightExcluded, syncForwardLightPolicy } from "./light-policy";
@@ -28,6 +29,8 @@ import {
 } from "./render-settings";
 import { normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch } from "@babylonslate/core";
 import { otherShadowReservations } from "./shadow-admission";
+import { beginManagedRenderAllocation, limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
+import { unsupportedManagedShadows } from "./framegraph-managed-shadows";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { createColliderVisualMesh } from "./collider-visual";
 import { createWaterMesh } from "./water-mesh";
@@ -1313,6 +1316,539 @@ describe("shared shadow lifecycle", () => {
       expect(controller.status(light)).toBe("allocation-failed");
     } finally {
       restoreFailedDispose?.();
+    }
+  });
+});
+
+/** Every cascade's light transform as plain numbers (the generator reuses its matrices). */
+function cascadeFit(generator: CascadedShadowGenerator): number[][] {
+  return Array.from({ length: generator.numCascades }, (_, layer) => [...generator.getCascadeTransformMatrix(layer)!.m]);
+}
+
+describe("view sun shadow maps", () => {
+  it("binds a single sun map with the box it was drawn with, whichever camera binds it", () => {
+    const { scene, controller } = fixture();
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ cascades: 1, distance: 10, mapSize: 512 }),
+    });
+    const light = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(light, true);
+    controller.sync();
+    const generator = controller.generator(light)!;
+    prepareShadowLayers(generator);
+    const drawn = [...generator.getTransformMatrix().m];
+    // A later pass for a camera far away (a Render Target Capture) binds the
+    // map: it samples the image drawn around the scene camera.
+    const sceneCamera = scene.activeCamera!;
+    scene.activeCamera = new UniversalCamera("far", new Vector3(200, 2, 300), scene);
+    scene.incrementRenderId();
+    expect([...generator.getTransformMatrix().m]).toEqual(drawn);
+    // A draw that throws after binding its map, before fitting it, leaves later bindings on that box too.
+    const observers = generator.getShadowMap()!.onBeforeRenderObservable;
+    const failure = observers.add(() => { throw new Error("draw failed"); }, undefined, true);
+    expect(() => prepareShadowLayers(generator)).toThrow("draw failed");
+    observers.remove(failure);
+    scene.incrementRenderId();
+    expect([...generator.getTransformMatrix().m]).toEqual(drawn);
+    // Its next draw fits the camera it is drawn for.
+    prepareShadowLayers(generator);
+    expect([...generator.getTransformMatrix().m]).not.toEqual(drawn);
+    scene.activeCamera = sceneCamera;
+  });
+
+  it("mirrors each admitted sun map for an attached view, fitted to that view's camera, and shares local maps", async () => {
+    const { scene, controller } = fixture();
+    enableHeadlessCascades(scene.getEngine());
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ cascades: 2, distance: 40, mapSize: 512, localMapSize: 256, maxLocalLights: 1 }),
+    });
+    const caster = MeshBuilder.CreateBox("caster", { size: 2 }, scene);
+    const sun = new DirectionalLight("sun", new Vector3(0.4, -1, 0.6), scene);
+    const spot = new SpotLight("spot", new Vector3(0, 4, -4), new Vector3(0, -1, 0.5), 1, 1, scene);
+    controller.register(sun, true);
+    controller.register(spot, true);
+    controller.sync();
+    const main = controller.generator(sun) as CascadedShadowGenerator;
+    const local = controller.generator(spot)!;
+    const capture = new UniversalCamera("capture", new Vector3(120, 6, 90), scene);
+    capture.setTarget(new Vector3(120, 0, 100));
+    const before = managedRenderReservations(scene.getEngine()).reservedBytes;
+    const metrics = controller.metrics();
+    const view = controller.attachView(capture);
+    const own = controller.viewBoundGenerator(sun, capture) as CascadedShadowGenerator;
+    // Stats count the view's two cascades of 512² (half-float colour plus depth: 12 bytes a texel).
+    expect(controller.metrics()).toEqual({ passes: metrics.passes + 2, bytes: metrics.bytes + 2 * 512 ** 2 * 12 });
+    // The ledger holds the four layers CSM constructs first (WebGPU frees that texture at the frame's end).
+    expect(managedRenderReservations(scene.getEngine()).categoryBytes.shadow).toBe(4 * 512 ** 2 * 12);
+    // A map of the scene map's kind, size and cascades, keyed to the capture camera.
+    expect(own).toBeInstanceOf(CascadedShadowGenerator);
+    expect(own).not.toBe(main);
+    expect(own.camera).toBe(capture);
+    expect(own.numCascades).toBe(2);
+    expect(own.getShadowMap()!.getSize().width).toBe(main.getShadowMap()!.getSize().width);
+    expect(own.getShadowMap()!.renderList).toContain(caster);
+    expect(sun.getShadowGenerator(capture)).toBe(own);
+    expect(sun.getShadowGenerator()).toBe(main);
+    // Point and spot maps do not depend on the view: it shares the scene's.
+    expect(controller.viewBoundGenerator(spot, capture)).toBe(local);
+    expect(unsupportedManagedShadows(scene)).toBeUndefined();
+    expect(managedRenderReservations(scene.getEngine()).reservedBytes).toBeGreaterThan(before);
+    // Each map fits its own camera; drawing one leaves the other's fit alone.
+    prepareShadowLayers(main);
+    const mainFit = cascadeFit(main);
+    prepareShadowLayers(own);
+    expect(cascadeFit(own)).not.toEqual(mainFit);
+    expect(cascadeFit(main)).toEqual(mainFit);
+    const ownFit = cascadeFit(own);
+    prepareShadowLayers(main);
+    expect(cascadeFit(own)).toEqual(ownFit);
+    await view.release();
+    expect(sun.getShadowGenerator(capture)).toBeNull();
+    expect(own.getShadowMap()).toBeNull();
+    expect(managedRenderReservations(scene.getEngine()).reservedBytes).toBe(before);
+    // A camera-keyed map the controller does not own is still rejected.
+    new ShadowGenerator(256, sun, undefined, capture);
+    expect(unsupportedManagedShadows(scene)).toBe("Unmanaged shadow allocations are not supported.");
+  });
+
+  it("fits a view's single sun map to its camera and keeps the scene map's box", () => {
+    const { scene, controller } = fixture();
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings(qualityPresetPatch("low").shadows),
+    });
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    controller.sync();
+    const main = controller.generator(sun)!;
+    const capture = new UniversalCamera("capture", new Vector3(300, 2, 300), scene);
+    controller.attachView(capture);
+    const own = controller.viewBoundGenerator(sun, capture)!;
+    expect(own).not.toBe(main);
+    expect(own).not.toBeInstanceOf(CascadedShadowGenerator);
+    prepareShadowLayers(main);
+    const mainBox = [...main.getTransformMatrix().m];
+    // The capture's map draws in the capture's pass, with the capture camera active.
+    const sceneCamera = scene.activeCamera!;
+    scene.activeCamera = capture;
+    prepareShadowLayers(own);
+    const ownBox = [...own.getTransformMatrix().m];
+    expect(ownBox).not.toEqual(mainBox);
+    // The scene view binds its map after the capture's draw, and the capture binds its own.
+    scene.activeCamera = sceneCamera;
+    scene.incrementRenderId();
+    expect([...main.getTransformMatrix().m]).toEqual(mainBox);
+    expect([...own.getTransformMatrix().m]).toEqual(ownBox);
+    // The view's map is fitted to the capture camera even when drawn under another.
+    prepareShadowLayers(own);
+    expect([...own.getTransformMatrix().m]).toEqual(ownBox);
+  });
+
+  it("replaces a view's map with the scene map's allocation and releases it, and its ledger charge, with the view", async () => {
+    const { scene, controller } = fixture();
+    enableHeadlessCascades(scene.getEngine());
+    const engine = scene.getEngine();
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ cascades: 2, distance: 40, mapSize: 512 }),
+    });
+    const sun = new DirectionalLight("sun", new Vector3(0.4, -1, 0.6), scene);
+    controller.register(sun, true);
+    controller.sync();
+    const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
+    const view = controller.attachView(capture);
+    const first = controller.viewBoundGenerator(sun, capture)!;
+    // A shadow settings change replaces the scene map, and the view's follows it.
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 256 }),
+    });
+    controller.sync();
+    const second = controller.viewBoundGenerator(sun, capture)!;
+    expect(second).not.toBe(first);
+    expect(first.getShadowMap()).toBeNull();
+    expect(second).not.toBeInstanceOf(CascadedShadowGenerator);
+    expect(second.getShadowMap()!.getSize().width).toBe(controller.generator(sun)!.getShadowMap()!.getSize().width);
+    // Turning the sun's shadows off removes the view's map too.
+    controller.register(sun, false);
+    controller.sync();
+    expect(controller.viewBoundGenerator(sun, capture)).toBeNull();
+    expect(second.getShadowMap()).toBeNull();
+    expect(sun.getShadowGenerator(capture)).toBeNull();
+    controller.register(sun, true);
+    controller.sync();
+    const third = controller.viewBoundGenerator(sun, capture)!;
+    expect(third.getShadowMap()).not.toBeNull();
+    // A spot map admitted while the view is attached stays shared, never mirrored.
+    const spot = new SpotLight("spot", new Vector3(0, 4, -4), new Vector3(0, -1, 0.5), 1, 1, scene);
+    controller.register(spot, true);
+    controller.sync();
+    expect(controller.generator(spot)).not.toBeNull();
+    expect(controller.viewBoundGenerator(spot, capture)).toBe(controller.generator(spot));
+    expect(spot.getShadowGenerators()?.size).toBe(1);
+    await view.release();
+    expect(third.getShadowMap()).toBeNull();
+    expect(sun.getShadowGenerator(capture)).toBeNull();
+    // Only the scene view's own map remains charged.
+    expect(managedRenderReservations(engine)).toMatchObject({ resourceBytes: 0, pendingBytes: 0 });
+    // A released view gets no new maps.
+    controller.sync();
+    expect(sun.getShadowGenerator(capture)).toBeNull();
+  });
+
+  it("never shrinks the scene view's sun map for the ledger room views hold", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512 }) });
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    controller.sync();
+    const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
+    controller.attachView(capture);
+    expect(controller.viewBoundGenerator(sun, capture)!.getShadowMap()!.getSize().width).toBe(512);
+    // 3 MiB each now (512² × 12 bytes). A 1024 scene map (12 MiB) fits only in the view's room.
+    const limit = managedRenderReservations(engine).reservedBytes + 8 * 1024 ** 2;
+    limitManagedRenderBytes(engine, limit);
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 1024 }) });
+    controller.sync();
+    const main = controller.generator(sun)!;
+    expect(main.getShadowMap()!.getSize().width).toBe(1024);
+    // The view mirrors the new map with what is left.
+    const own = controller.viewBoundGenerator(sun, capture)!;
+    expect(own).not.toBe(main);
+    expect(own.getShadowMap()!.getSize().width).toBe(256);
+    expect(managedRenderReservations(engine).reservedBytes).toBeLessThanOrEqual(limit);
+  });
+
+  /** Disposed textures stay allocated until the frame's end, as on WebGPU (the ledger's deferred releases). */
+  function deferReleasesLikeWebGpu(engine: AbstractEngine) {
+    Object.defineProperty(engine, "isWebGPU", { value: true, configurable: true });
+    return async () => {
+      // Releases register for the next end frame from a microtask.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      engine.endFrame();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+  }
+  const mapWidth = (generator: { getShadowMap(): RenderTargetTexture | null } | null | undefined) =>
+    generator?.getShadowMap()?.getSize().width;
+
+  it("waits for a released view's WebGPU drain before mirroring for its replacement, at full size", async () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512 }) });
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    controller.sync();
+    const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
+    const first = controller.attachView(capture);
+    expect(mapWidth(sun.getShadowGenerator(capture))).toBe(512);
+    // 1 MiB to spare: a second 512² view map (3 MiB) fits only once the first has gone.
+    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 1024 ** 2);
+    const endFrame = deferReleasesLikeWebGpu(engine);
+    // Switching the capture's quality, re-enabling it or changing its target retires its view and makes a new one.
+    const released = first.release();
+    controller.attachView(capture);
+    controller.sync();
+    // Until the old map's texture is destroyed the capture binds the scene view's map, rather than settle smaller.
+    expect(sun.getShadowGenerator(capture)).toBeNull();
+    expect(controller.viewBoundGenerator(sun, capture)).toBe(controller.generator(sun));
+    await endFrame();
+    await released;
+    controller.sync();
+    expect(mapWidth(sun.getShadowGenerator(capture))).toBe(512);
+  });
+
+  it("re-mirrors a view map that yielded to the scene view's maps only after its WebGPU drain", async () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512 }) });
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    controller.sync();
+    const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
+    controller.attachView(capture);
+    const own = sun.getShadowGenerator(capture)!;
+    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 8 * 1024 ** 2);
+    const endFrame = deferReleasesLikeWebGpu(engine);
+    // The scene map grows into the view's room: the view's map yields at once, but its texture lives to the frame's end.
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 1024 }) });
+    controller.sync();
+    expect(mapWidth(controller.generator(sun))).toBe(1024);
+    expect(own.getShadowMap()).toBeNull();
+    expect(sun.getShadowGenerator(capture)).toBeNull();
+    await endFrame();
+    controller.sync();
+    expect(mapWidth(sun.getShadowGenerator(capture))).toBe(256);
+  });
+
+  it("yields only as many view maps as the scene view's maps need, largest first", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512, maxLocalLights: 1, localMapSize: 256 }),
+    });
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    controller.sync();
+    const large = new UniversalCamera("large", new Vector3(20, 6, 20), scene);
+    controller.attachView(large);
+    const largeMap = sun.getShadowGenerator(large)!;
+    // 1 MiB left: the second view's mirror fits only at 256² (0.75 MiB).
+    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 1024 ** 2);
+    const small = new UniversalCamera("small", new Vector3(-20, 6, -20), scene);
+    controller.attachView(small);
+    const smallMap = sun.getShadowGenerator(small)!;
+    expect([mapWidth(largeMap), mapWidth(smallMap)]).toEqual([512, 256]);
+    // A spot map (0.75 MiB) needs half a MiB more than is free. The smaller view map would cover it, but the
+    // larger one yields first, and that is enough: the smaller one stays.
+    const spot = new SpotLight("spot", new Vector3(0, 4, -4), new Vector3(0, -1, 0.5), 1, 1, scene);
+    controller.register(spot, true);
+    controller.sync();
+    expect(mapWidth(controller.generator(spot))).toBe(256);
+    expect(largeMap.getShadowMap()).toBeNull();
+    expect(sun.getShadowGenerator(small)).toBe(smallMap);
+    expect(mapWidth(smallMap)).toBe(256);
+    // The yielded view mirrors again from what is left.
+    expect(mapWidth(sun.getShadowGenerator(large))).toBe(256);
+  });
+
+  it("releases a standby local map rather than make a view's sun map yield the room it holds", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512, maxLocalLights: 2, localMapSize: 256 }),
+    });
+    scene.activeCamera!.position.set(0, 0, 0);
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    const point = new PointLight("point", new Vector3(5, 0, 0), scene);
+    point.range = 10;
+    controller.register(sun, true);
+    controller.register(point, true);
+    controller.sync();
+    expect(point.getShadowGenerator()).not.toBeNull();
+    const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
+    controller.attachView(capture);
+    const own = sun.getShadowGenerator(capture)!;
+    expect(mapWidth(own)).toBe(512);
+    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 512 * 1024);
+    // The camera leaves the point light (its cube map, 4.5 MiB, could stand by) for a spot light that needs a map:
+    // keeping both fits only in the room the capture's sun map holds.
+    scene.activeCamera!.position.x = 1000;
+    const spot = new SpotLight("spot", new Vector3(1005, 3, 0), Vector3.Down(), Math.PI / 2, 1, scene);
+    spot.range = 10;
+    controller.register(spot, true);
+    controller.sync();
+    expect(controller.generator(spot)).not.toBeNull();
+    expect(point.getShadowGenerator()).toBeNull();
+    expect(sun.getShadowGenerator(capture)).toBe(own);
+    expect(mapWidth(own)).toBe(512);
+  });
+
+  it("keeps the room a yielded view map will mirror into free of standby local maps while its WebGPU drain is pending", async () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512, maxLocalLights: 2, localMapSize: 256 }),
+    });
+    scene.activeCamera!.position.set(0, 0, 0);
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    controller.sync();
+    const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
+    controller.attachView(capture);
+    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 3 * 1024 ** 2);
+    const endFrame = deferReleasesLikeWebGpu(engine);
+    // A point light's cube map (4.5 MiB) takes room the capture's sun map (3 MiB) holds: it yields, and mirrors
+    // again only once its texture is destroyed at the frame's end.
+    const point = new PointLight("point", new Vector3(5, 0, 0), scene);
+    point.range = 10;
+    controller.register(point, true);
+    controller.sync();
+    expect(point.getShadowGenerator()).not.toBeNull();
+    expect(sun.getShadowGenerator(capture)).toBeNull();
+    // Before that, the camera leaves the point light for a spot light. The point's map could stand by in the
+    // room the capture is about to mirror into; it is released instead.
+    scene.activeCamera!.position.x = 1000;
+    const spot = new SpotLight("spot", new Vector3(1005, 3, 0), Vector3.Down(), Math.PI / 2, 1, scene);
+    spot.range = 10;
+    controller.register(spot, true);
+    controller.sync();
+    expect(controller.generator(spot)).not.toBeNull();
+    expect(point.getShadowGenerator()).toBeNull();
+    await endFrame();
+    controller.sync();
+    expect(mapWidth(sun.getShadowGenerator(capture))).toBe(512);
+  });
+
+  it("waits for another Scene's pending view map drain on the same Engine before mirroring", async () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    const shadows = normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512 });
+    updateSceneRenderingSettings(scene, { shadows });
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    controller.sync();
+    controller.attachView(new UniversalCamera("capture", new Vector3(20, 6, 20), scene));
+    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 1024 ** 2);
+    const endFrame = deferReleasesLikeWebGpu(engine);
+    // Opening another scene closes this one: its capture's sun map lives until the frame's end.
+    scene.dispose();
+    const next = new Scene(engine);
+    next.activeCamera = new UniversalCamera("camera", new Vector3(0, 2, -10), next);
+    updateSceneRenderingSettings(next, { shadows });
+    const nextController = sceneShadowController(next);
+    const nextSun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), next);
+    nextController.register(nextSun, true);
+    nextController.sync();
+    const nextCapture = new UniversalCamera("capture", new Vector3(20, 6, 20), next);
+    nextController.attachView(nextCapture);
+    nextController.sync();
+    // The new capture binds its scene's map until the old texture has gone, rather than settle smaller.
+    expect(nextSun.getShadowGenerator(nextCapture)).toBeNull();
+    expect(nextController.viewBoundGenerator(nextSun, nextCapture)).toBe(nextController.generator(nextSun));
+    await endFrame();
+    nextController.sync();
+    expect(mapWidth(nextSun.getShadowGenerator(nextCapture))).toBe(512);
+  });
+
+  it("lets a refused mirror ask again as soon as pending view map drains settle", async () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512 }) });
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    controller.sync();
+    const first = controller.attachView(new UniversalCamera("first", new Vector3(20, 6, 20), scene));
+    // Less than the smallest mirror is left for a second capture.
+    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 512 * 1024);
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const second = new UniversalCamera("second", new Vector3(-20, 6, -20), scene);
+      controller.attachView(second);
+      expect(sun.getShadowGenerator(second)).toBeNull();
+      const endFrame = deferReleasesLikeWebGpu(engine);
+      // The first capture goes; once its texture is destroyed the second asks again, without waiting its second out.
+      const released = first.release();
+      controller.sync();
+      expect(sun.getShadowGenerator(second)).toBeNull();
+      await endFrame();
+      await released;
+      controller.sync();
+      expect(mapWidth(sun.getShadowGenerator(second))).toBe(512);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+      clock.mockRestore();
+    }
+  });
+
+  it("releases standby maps for a refused mirror's retry only when its smallest size would then fit", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    enableHeadlessCascades(engine);
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ cascades: 2, distance: 40, mapSize: 512, maxLocalLights: 2, localMapSize: 256 }),
+    });
+    const camera = scene.activeCamera!;
+    camera.position.set(0, 0, 0);
+    const sun = new DirectionalLight("sun", new Vector3(0.4, -1, 0.6), scene);
+    const spot = new SpotLight("spot", new Vector3(5, 3, 0), Vector3.Down(), Math.PI / 2, 1, scene);
+    spot.range = 10;
+    controller.register(sun, true);
+    controller.register(spot, true);
+    controller.sync();
+    // A quarter MiB free; another owner holds 2.5 MiB more. The smallest cascaded mirror needs 3 MiB (four 256² layers).
+    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 2.75 * 1024 ** 2);
+    const other = beginManagedRenderAllocation(engine, 2.5 * 1024 ** 2)!;
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
+      controller.attachView(capture);
+      expect(sun.getShadowGenerator(capture)).toBeNull();
+      // The camera leaves the spot light: its map (0.75 MiB) stands by.
+      camera.position.x = 1000;
+      controller.sync();
+      const standby = spot.getShadowGenerator()!;
+      expect(standby).not.toBeNull();
+      // Releasing it would still leave too little for the smallest mirror: each retry keeps it.
+      for (const now of [1_500, 3_000, 4_500]) {
+        clock.mockReturnValue(now);
+        controller.sync();
+        expect(spot.getShadowGenerator()).toBe(standby);
+        expect(sun.getShadowGenerator(capture)).toBeNull();
+      }
+      // With the other owner's room back, the standby map is what stands between the retry and its smallest size.
+      other.release();
+      clock.mockReturnValue(6_000);
+      controller.sync();
+      expect(spot.getShadowGenerator()).toBeNull();
+      expect(mapWidth(sun.getShadowGenerator(capture))).toBe(256);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+      clock.mockRestore();
+    }
+  });
+
+  it("lets a view whose own sun map does not fit bind the scene view's map, warning once", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    controller.sync();
+    limitManagedRenderBytes(engine, managedRenderReservations(engine).reservedBytes + 64 * 1024 ** 2);
+    // Another owner's targets leave less than the smallest view map (256² × 12 bytes).
+    const other = beginManagedRenderAllocation(engine, 64 * 1024 ** 2 - 512 * 1024)!;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    try {
+      const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
+      controller.attachView(capture);
+      controller.sync();
+      controller.sync();
+      expect(sun.getShadowGenerator(capture)).toBeNull();
+      expect(controller.viewBoundGenerator(sun, capture)).toBe(controller.generator(sun));
+      expect(warn).toHaveBeenCalledTimes(1);
+      // That owner releases its targets: a later sync asks again.
+      other.release();
+      controller.sync();
+      expect(sun.getShadowGenerator(capture)).toBeNull();
+      clock.mockReturnValue(1_500);
+      controller.sync();
+      expect(sun.getShadowGenerator(capture)!.getShadowMap()!.getSize().width)
+        .toBe(controller.generator(sun)!.getShadowMap()!.getSize().width);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      clock.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it("retries a view map whose construction failed at half size on a later sync", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, distance: 40, mapSize: 512 }) });
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    controller.sync();
+    const allocate = engine.createRenderTargetTexture.bind(engine);
+    const failure = vi.spyOn(engine, "createRenderTargetTexture").mockImplementationOnce(() => {
+      throw new Error("driver allocation failed");
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const capture = new UniversalCamera("capture", new Vector3(20, 6, 20), scene);
+      controller.attachView(capture);
+      // Its reservation drains first (on WebGPU, at the frame's end): no smaller map in the same sync.
+      expect(failure).toHaveBeenCalledTimes(1);
+      expect(sun.getShadowGenerator(capture)).toBeNull();
+      failure.mockImplementation(allocate);
+      controller.sync();
+      expect(sun.getShadowGenerator(capture)!.getShadowMap()!.getSize().width).toBe(256);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      failure.mockRestore();
+      warn.mockRestore();
     }
   });
 });

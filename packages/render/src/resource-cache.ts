@@ -3,6 +3,7 @@ import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture, type ICubeTextureCreationOptions } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Constants } from "@babylonjs/core/Engines/constants";
+import { InternalTextureSource, type InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { assetByteFingerprint as contentKey } from "./asset-byte-fingerprint";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import {
@@ -280,6 +281,30 @@ export function releaseResourceCacheForEngine(engine: AbstractEngine): void {
   cache.dispose();
 }
 
+/** A native texture as a leak report names it. */
+export interface EngineTextureDescription {
+  /** Its upload URL (a ResourceCache blob URL for assets), else the kind of source that created it. */
+  name: string;
+  size: string;
+  cube: boolean;
+  /** Wrappers still sharing the native texture. */
+  references: number;
+  /** The Engine's ResourceCache entry whose wrapper uploads this texture, if any. */
+  resourceCache: { assetGuid: string; leases: number } | null;
+}
+
+/** Names a native texture the Engine still caches, and says whether the Engine's ResourceCache owns it. */
+export function describeEngineTexture(engine: AbstractEngine, texture: InternalTexture): EngineTextureDescription {
+  const cache = caches.get(engine);
+  return {
+    name: texture.url || InternalTextureSource[texture._source] || "unnamed",
+    size: `${texture.baseWidth}×${texture.baseHeight}`,
+    cube: texture.isCube,
+    references: texture._references,
+    resourceCache: cache ? ResourceCache.entryHolding(cache, texture) : null,
+  };
+}
+
 /**
  * LRU resource cache with byte ceiling and stable blob URLs per asset guid.
  * Texture construction must go through this cache (lint-enforced).
@@ -350,6 +375,14 @@ export class ResourceCache {
     this.evictToCeiling();
     const ceiling = this.effectiveCeiling();
     if (ceiling !== null && this.totalBytes > ceiling) throw new Error("Texture replacement exceeds the live texture byte budget");
+  }
+
+  /** The entry of `cache` whose wrapper uploads this native texture; static to keep the per-handle owner surface unchanged. */
+  static entryHolding(cache: ResourceCache, texture: InternalTexture): { assetGuid: string; leases: number } | null {
+    for (const entry of cache.entries.values())
+      for (const wrapper of entry.textures.values())
+        if (wrapper.getInternalTexture() === texture) return { assetGuid: entry.assetGuid, leases: entry.refCount };
+    return null;
   }
 
   resourceStats() {

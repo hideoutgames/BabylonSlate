@@ -195,15 +195,17 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
     // Babylon 9.29 reads only these three members in _setLightsForShadow. Its
     // official shadow task cannot adopt a generator and owns disposal. Supplying
     // this narrow read contract avoids invoking any allocating task setters.
-    // All controller generators (including CSM) currently use the null camera
-    // key. The ordinary task class name preserves that key without adding a
-    // second camera entry to the light's generator map.
+    // Babylon re-registers each map under a camera key: the cascaded task's
+    // camera, otherwise the null key. The scene view's maps keep the null key
+    // through the ordinary task name; a view's own map (keyed to its camera)
+    // reports the cascaded name and its camera, or it would replace the scene
+    // view's null-key map and every other pass would bind the view's.
     this.shadowGenerators = generators.map(
       (shadowGenerator) =>
         ({
           shadowGenerator,
-          camera,
-          getClassName: () => "FrameGraphShadowGeneratorTask",
+          camera: shadowGenerator.camera ?? camera,
+          getClassName: () => shadowGenerator.camera ? "FrameGraphCascadedShadowGeneratorTask" : "FrameGraphShadowGeneratorTask",
         }) satisfies Pick<
           FrameGraphShadowGeneratorTask,
           "shadowGenerator" | "camera" | "getClassName"
@@ -213,15 +215,19 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   }
 }
 
-/** The prototype supports only allocations owned by this scene's controller. */
+/**
+ * The prototype supports only allocations owned by this scene's controller:
+ * the scene view's maps (null camera key) and the views' own sun maps (keyed
+ * to their camera, SceneShadowController.attachView).
+ */
 export function unsupportedManagedShadows(scene: Scene): string | undefined {
   const controller = findSceneShadowController(scene);
   for (const light of scene.lights) {
     for (const [camera, generator] of light.getShadowGenerators() ?? []) {
-      const owned = controller?.boundGenerator(light);
+      const owned = camera === null ? controller?.boundGenerator(light) : controller?.viewBoundGenerator(light, camera);
       if (!owned || owned !== generator)
         return "Unmanaged shadow allocations are not supported.";
-      if (camera !== null || owned.camera !== null)
+      if (owned.camera !== camera)
         return "Camera-specific shadow allocations are not supported.";
       if (!generator.getShadowMap()?.getInternalTexture())
         return "The admitted shadow allocation is not ready for FrameGraph import.";
@@ -246,15 +252,25 @@ export class ManagedShadowsTask extends FrameGraphTask {
   private readonly objects: ManagedShadowObjectRendererTask;
   /** Further main-view passes (a split object pass) that receive the same maps. */
   private readonly receivers: ManagedShadowObjectRendererTask[] = [];
+  /**
+   * An auxiliary view's camera (a Full Quality capture's). The view draws its
+   * own sun maps, fitted to this camera (SceneShadowController.attachView),
+   * and receives the scene view's point and spot maps as that view drew them:
+   * it never walks casters, refits or refreshes them, so their render-once
+   * caching and depth ranges stay the scene view's.
+   */
+  private readonly view: Camera | undefined;
 
   constructor(
     graph: FrameGraph,
     scene: Scene,
     objects: ManagedShadowObjectRendererTask,
+    options: { view?: Camera } = {},
   ) {
     super("Forward admitted shadows", graph);
     this.scene = scene;
     this.objects = objects;
+    this.view = options.view;
   }
 
   /** Bind another main-view pass to the admitted maps, before the graph builds. */
@@ -294,12 +310,17 @@ export class ManagedShadowsTask extends FrameGraphTask {
     let count = 0;
     // Standby maps stay bound: receivers keep sampling them at neutral darkness.
     for (const light of this.scene.lights) {
-      const generator = controller?.boundGenerator(light);
+      const generator = this.boundGenerator(controller, light);
       if (generator) generators[count++] = generator;
     }
     // Truncate after overwriting; clearing first would drop the backing store.
     generators.length = count;
     return generators;
+  }
+
+  /** The map this view's receivers bind for `light`. */
+  private boundGenerator(controller: ReturnType<typeof findSceneShadowController>, light: Light): ShadowGenerator | null {
+    return (this.view ? controller?.viewBoundGenerator(light, this.view) : controller?.boundGenerator(light)) ?? null;
   }
 
   private bind(): void {
@@ -334,7 +355,8 @@ export class ManagedShadowsTask extends FrameGraphTask {
       // Babylon's graph scene path updates world matrices after the ordinary
       // target observable, so the controller skips its walk there (a graph
       // scene) and this is the frame's only one, before consuming the RTT gate.
-      findSceneShadowController(this.scene)?.refreshShadowMaps();
+      // A view draws inside the scene view's frame, after that walk.
+      if (!this.view) findSceneShadowController(this.scene)?.refreshShadowMaps();
       // onBeforeRender can change admission after render's preflight. External
       // RTTs do not alias graph allocations: bind the live maps now, then warm
       // the changed receiver layout before the following presented frame.
@@ -342,6 +364,8 @@ export class ManagedShadowsTask extends FrameGraphTask {
       if (!this.scene.shadowsEnabled || !this.scene.renderTargetsEnabled)
         return;
       for (const entry of this.borrowed) {
+        // A view draws only its own maps; the scene view drew the shared ones.
+        if (this.view && entry.generator.camera !== this.view) continue;
         // A preceding caster draw can revoke a later light synchronously. Check
         // controller ownership before touching that later borrowed resource.
         if (!this.isCurrent(entry)) {
@@ -360,8 +384,9 @@ export class ManagedShadowsTask extends FrameGraphTask {
             withSceneReadinessState(this.scene, () => {
               const output = this.objects.camera.outputRenderTarget?.renderTarget;
               if (output) {
-                // CSM's before-bind hook reads the camera's cached projection.
-                // Match Scene.render's output binding before computing cascades.
+                // CSM's before-bind hook reads the camera's cached projection,
+                // whose aspect follows the bound target. Match Scene.render's
+                // output binding before computing cascades.
                 this.scene.getEngine().bindFramebuffer(output);
                 this.scene.updateTransformMatrix(true);
               }
@@ -387,7 +412,7 @@ export class ManagedShadowsTask extends FrameGraphTask {
   private isCurrent(entry: BorrowedMap): boolean {
     const light = entry.generator.getLight();
     return (
-      findSceneShadowController(this.scene)?.boundGenerator(light) ===
+      this.boundGenerator(findSceneShadowController(this.scene), light) ===
         entry.generator &&
       entry.generator.getShadowMap() === entry.map &&
       entry.map.getInternalTexture() === entry.texture
@@ -403,10 +428,14 @@ export class ManagedShadowsTask extends FrameGraphTask {
     // never turn a render-once map into an uninitialized cached allocation.
     for (const generator of this.generators()) {
       const map = generator.getShadowMap();
-      if (
-        !map ||
-        !withSceneReadinessState(this.scene, () => map.isReadyForRendering())
-      )
+      if (!map) return false;
+      // A probe binds the map, which refits the scene view's cascades to the
+      // probing camera: a view probes only its own maps.
+      if (this.view && generator.camera !== this.view) {
+        if (!map.getInternalTexture()) return false;
+        continue;
+      }
+      if (!withSceneReadinessState(this.scene, () => map.isReadyForRendering()))
         return false;
     }
     this.changedDuringFrame = false;

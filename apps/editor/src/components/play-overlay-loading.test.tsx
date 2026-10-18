@@ -64,10 +64,11 @@ it("blocks from mount through the initial worker handshake and presentation", as
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
 
-it.each(["Stop", "failure"] as const)("closes pending startup on %s before the worker sends a scene token", async (action) => {
+it.each(["Stop", "failure", "quit"] as const)("closes pending startup on %s before the worker sends a scene token", async (action) => {
   const { callbacks, stop, result, onClose } = await openPendingPlay();
   const dialog = screen.getByRole("dialog");
   if (action === "Stop") fireEvent.click(within(dialog).getByRole("button", { name: "Stop" }));
+  else if (action === "quit") act(() => callbacks.onSessionEnded?.());
   else act(() => callbacks.onFatalDiagnostic?.());
   await waitFor(() => expect(screen.queryByTestId("play-overlay")).toBeNull());
   expect(screen.queryByRole("dialog")).toBeNull();

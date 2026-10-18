@@ -48,8 +48,11 @@ export function classifyMaterialCost(
   if (policy.domain === "postProcess") return "expensive";
   const samples = policy.observedCompileMs ?? [];
   if (samples.length >= 2) {
-    const worst = Math.max(...samples);
-    return worst > policy.frameBudgetMs * AUTO_COMPILE_FRAME_ALLOWANCE
+    // The lower median, so one cold compile (driver warm-up, a cold shader
+    // cache) never makes a simple material manual for the whole session.
+    const sorted = [...samples].sort((a, b) => a - b);
+    const typical = sorted[Math.floor((sorted.length - 1) / 2)]!;
+    return typical > policy.frameBudgetMs * AUTO_COMPILE_FRAME_ALLOWANCE
       ? "expensive"
       : "cheap";
   }
