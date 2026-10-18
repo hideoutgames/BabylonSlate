@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type ConsoleMessage, type Page } from "@playwright/test";
 import { acceptUnsavedPlayPrompts } from "./unsaved-play";
 
 /**
@@ -95,6 +95,13 @@ export async function waitForPreviewBuildBoot(page: Page) {
     timeout: PREVIEW_BUILD_TIMEOUT_MS,
   });
   const seen: { state: PreviewPlayerState | null } = { state: null };
+  // The player logs why a Scene load failed before it stops.
+  const playerErrors: string[] = [];
+  const collect = (message: ConsoleMessage) => {
+    const text = message.text();
+    if (message.type() === "error" && text.startsWith("[player]")) playerErrors.push(text.split("\n")[0]!);
+  };
+  page.on("console", collect);
   try {
     await expect
       .poll(
@@ -113,9 +120,11 @@ export async function waitForPreviewBuildBoot(page: Page) {
       .toBe(true);
   } catch (error) {
     throw new Error(
-      `Preview Build player did not boot and finish loading its Scene: ${error instanceof Error ? error.message : String(error)}; last state ${JSON.stringify(seen.state)}`,
+      `Preview Build player did not boot and finish loading its Scene: ${error instanceof Error ? error.message : String(error)}; last state ${JSON.stringify(seen.state)}; player errors ${JSON.stringify(playerErrors)}`,
       { cause: error },
     );
+  } finally {
+    page.off("console", collect);
   }
   return previewPlayerRoot(page);
 }
