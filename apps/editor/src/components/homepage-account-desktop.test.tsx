@@ -83,7 +83,7 @@ describe("optional desktop account", () => {
       </>,
     );
     await waitFor(() => expect(auth.restoreSession).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(screen.getByTestId("homepage-account"));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Sign In" }));
     const email = await screen.findByLabelText("Email Address");
     expect(auth.browserProvider).not.toHaveBeenCalled();
@@ -96,7 +96,9 @@ describe("optional desktop account", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Verify & Continue" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ada Lovelace, ada@example.test" }),
+    );
     expect(within(await screen.findByRole("menu")).getByText("Ada Lovelace")).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: "Sign Out" }));
     await waitFor(() => expect(auth.signOut).toHaveBeenCalledWith(session));
@@ -114,7 +116,7 @@ describe("optional desktop account", () => {
       </>,
     );
     await waitFor(() => expect(auth.restoreSession).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(screen.getByTestId("homepage-account"));
     fireEvent.click(await screen.findByRole("menuitem", { name: /Manage Account/ }));
     const dialog = await screen.findByRole("dialog", { name: "Account" });
     fireEvent.click(

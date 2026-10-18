@@ -89,7 +89,7 @@ afterEach(() => {
 
 /** Profile → Manage Account opens the Account dialog on one of its sections. */
 async function openAccountSection(section: "Account" | "Subscription") {
-  fireEvent.click(await screen.findByRole("button", { name: "Profile" }));
+  fireEvent.click(await screen.findByTestId("homepage-account"));
   fireEvent.click(await screen.findByRole("menuitem", { name: /Manage Account/ }));
   const dialog = await screen.findByRole("dialog", { name: "Account" });
   fireEvent.click(
@@ -114,11 +114,11 @@ describe("Homepage account", () => {
   it("shows a guest the plans without purchases while billing is not configured", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
     render(<HomepageAccount />);
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(screen.getByRole("button", { name: "Guest, Not Signed In" }));
     expect(await screen.findByRole("menu")).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(clerk.provider).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(screen.getByTestId("homepage-account"));
     const dialog = await openAccountSection("Subscription");
     for (const plan of ["Haptic", "Haptic Pro", "Enterprise"]) {
       expect(within(dialog).getByRole("heading", { name: plan, level: 4 })).toBeTruthy();
@@ -148,7 +148,7 @@ describe("Homepage account", () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
     render(<HomepageAccount />);
     await waitFor(() => expect(clerk.provider).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(screen.getByTestId("homepage-account"));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Sign In" }));
     expect(clerk.openSignIn).toHaveBeenCalledOnce();
     expect(clerk.provider).toHaveBeenCalledWith(
@@ -171,7 +171,9 @@ describe("Homepage account", () => {
         onChangelog={onChangelog}
       />,
     );
-    const trigger = await screen.findByRole("button", { name: "Profile" });
+    const trigger = await screen.findByRole("button", {
+      name: "Ada Lovelace, ada@example.test",
+    });
     await waitFor(() =>
       expect(trigger.querySelector("img")?.getAttribute("src")).toBe(
         "https://img.example.test/ada.png",

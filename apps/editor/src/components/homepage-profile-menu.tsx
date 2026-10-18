@@ -111,7 +111,8 @@ export function HomepageProfileMenu({
               variant="ghost"
               size="sm"
               className="homepage-account"
-              aria-label="Profile"
+              // Phones hide the name and status text, so the label carries them.
+              aria-label={`${name}, ${status}`}
               data-testid="homepage-account"
             />
           }

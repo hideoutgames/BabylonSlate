@@ -117,7 +117,7 @@ describe("application route lifetime", () => {
       () => expect(document.querySelector(".slate-loading")).toBeNull(),
       { timeout: 5000 },
     );
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(screen.getByTestId("homepage-account"));
     expect(await screen.findByRole("menu")).toBeTruthy();
     documentState.route = "editor";
     view.rerender(ui());

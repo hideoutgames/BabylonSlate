@@ -97,7 +97,7 @@ function listedProject(
 
 /** Profile → Manage Account → the Account dialog's Application section. */
 async function openApplicationSettings() {
-  fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+  fireEvent.click(screen.getByTestId("homepage-account"));
   fireEvent.click(await screen.findByRole("menuitem", { name: /Manage Account/ }));
   const dialog = await screen.findByRole("dialog", { name: "Account" });
   fireEvent.click(
@@ -171,7 +171,7 @@ describe("Slate project browser", () => {
       "disabled",
       true,
     );
-    expect(screen.getByRole("button", { name: "Profile" })).toHaveProperty(
+    expect(screen.getByTestId("homepage-account")).toHaveProperty(
       "disabled",
       true,
     );
