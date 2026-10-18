@@ -392,8 +392,8 @@
 }
 
 .content-browser-panes > [data-panel] > .content-browser-pane {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--panel-line);
+  border-radius: var(--radius-lg);
   background: var(--sidebar);
 }
 

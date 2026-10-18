@@ -1,17 +1,17 @@
 .dockview-theme-babylonslate {
   --dv-tabs-and-actions-container-height: 26px;
   --dv-group-view-background-color: var(--background);
-  --dv-tabs-and-actions-container-background-color: var(--panel-header);
+  --dv-tabs-and-actions-container-background-color: var(--sidebar);
   --dv-tabs-and-actions-container-font-size: 11px;
-  --dv-activegroup-visiblepanel-tab-background-color: var(--card);
+  --dv-activegroup-visiblepanel-tab-background-color: transparent;
   --dv-activegroup-hiddenpanel-tab-background-color: transparent;
-  --dv-inactivegroup-visiblepanel-tab-background-color: var(--card);
+  --dv-inactivegroup-visiblepanel-tab-background-color: transparent;
   --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
   --dv-activegroup-visiblepanel-tab-color: var(--foreground);
   --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
   --dv-inactivegroup-visiblepanel-tab-color: var(--foreground);
   --dv-inactivegroup-hiddenpanel-tab-color: var(--muted-foreground);
-  --dv-tab-margin: 0 2px;
+  --dv-tab-margin: 0;
   --dv-tab-divider-color: var(--border);
   --dv-separator-border: 1px solid var(--border);
   --dv-paneview-header-border-color: var(--border);
@@ -25,33 +25,29 @@
 }
 
 /*
- * Tabs are segments inside the strip: the visible tab is a raised card and
- * hidden tabs stay flat until hovered. Wide minimums keep short titles easy to
- * hit; the strip keeps compact heights.
+ * Tabs are flat labels on the panel's own surface. The visible tab carries an
+ * underline: muted in other panels, full ink in the focused one. Wide minimums
+ * keep short titles easy to hit; the strip keeps compact heights.
  */
 .dockview-theme-babylonslate .dv-tabs-and-actions-container {
-  box-shadow: inset 0 -1px 0 var(--border);
+  box-shadow: inset 0 -1px 0 var(--panel-line);
 }
 
 .dockview-theme-babylonslate .dv-tabs-container {
-  align-items: center;
+  align-items: stretch;
   padding-inline: 2px;
 }
 
 .dockview-theme-babylonslate .dv-tab {
+  position: relative;
   display: flex;
   align-items: center;
-  height: 20px;
-  min-width: 96px;
+  min-width: 80px;
   max-width: 200px;
   padding-inline: 8px 4px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border: 0;
   color: var(--muted-foreground);
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
+  transition: color 120ms ease;
 }
 
 .dockview-theme-babylonslate .dv-tab .dv-default-tab {
@@ -83,6 +79,10 @@
   transition: opacity 120ms ease;
 }
 
+.dockview-theme-babylonslate .dv-tab .dv-default-tab-action:hover {
+  background-color: color-mix(in oklch, var(--foreground) 10%, transparent);
+}
+
 .dockview-theme-babylonslate .dv-tab .dv-default-tab-action .dv-svg {
   width: 8px;
   height: 8px;
@@ -93,17 +93,29 @@
 }
 
 .dockview-theme-babylonslate .dv-tab.dv-inactive-tab:hover {
-  --dv-activegroup-hiddenpanel-tab-background-color: var(--muted);
-  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--muted);
   --dv-activegroup-hiddenpanel-tab-color: var(--foreground);
   --dv-inactivegroup-hiddenpanel-tab-color: var(--foreground);
 }
 
 .dockview-theme-babylonslate .dv-active-tab {
-  border-color: var(--border);
   color: var(--foreground);
   font-weight: 500;
-  box-shadow: 0 1px 1px color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+.dockview-theme-babylonslate .dv-active-tab::after {
+  content: "";
+  position: absolute;
+  inset: auto 6px 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--muted-foreground);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.dockview-theme-babylonslate .dv-groupview.dv-active-group .dv-active-tab::after {
+  background: var(--foreground);
+  opacity: 1;
 }
 
 .dockview-theme-babylonslate .dv-tab:focus-visible {
@@ -256,7 +268,6 @@
   }
 
   .dockview-theme-babylonslate .dv-tab {
-    height: 26px;
     min-width: 128px;
     padding-inline: 10px 4px;
   }
@@ -323,8 +334,8 @@
 
 .dockview-frame .dockview-theme-babylonslate .dv-groupview {
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--panel-line);
+  border-radius: var(--radius-lg);
   background: var(--sidebar);
 }
 

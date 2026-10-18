@@ -114,6 +114,7 @@
     --trace-physics: oklch(0.48 0.10 185);
     --radius: 0.5rem;
     --sidebar: oklch(0.978 0.002 85);
+    --panel-line: oklch(0 0 0 / 8%);
     --sidebar-border: var(--border);
     --shadow-color: oklch(0 0 0);
     --success: oklch(0.45 0.12 155);
@@ -223,6 +224,7 @@
     --trace-script: oklch(0.70 0.14 260);
     --trace-physics: oklch(0.72 0.12 185);
     --sidebar: oklch(0.185 0.004 75);
+    --panel-line: oklch(1 0 0 / 7%);
     --sidebar-border: var(--border);
     --shadow-color: oklch(0 0 0);
     --success: oklch(0.62 0.14 155);
