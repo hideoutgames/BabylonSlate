@@ -27,8 +27,8 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [UV](uv.md) | Returns the texture coordinates of the surface, particle quad or text glyph being drawn. |
 | [Vertex Color](vertex-color.md) | Returns the vertex colour painted on the mesh, including alpha. |
 | [Vertex Normal (Local)](vertex-normal-local.md) | Returns the vertex normal in the mesh's local space, including morph target changes. |
+| [Vertex Normal (World Space)](vertex-normal-world-space.md) | Returns the vertex normal in world space, scaled to a length of 1. |
 | [Vertex Position (Local)](vertex-position-local.md) | Returns the vertex position in the mesh's local space, including morph target changes. |
-| [VertexNormalWS](vertexnormalws.md) | Returns the vertex normal in world space, scaled to a length of 1. |
 | [View Direction](view-direction.md) | Returns the direction from the surface point toward the camera, scaled to a length of 1. |
 | [Water Surface](water-surface.md) | Returns water data for the current point: wave height, bank distance, depth, time and flow. |
 | [Water Waves](water-waves.md) | Calculates animated wave displacement on the GPU, returning offset, height, normal and time for a water surface. |
