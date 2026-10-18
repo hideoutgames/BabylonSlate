@@ -75,9 +75,15 @@ export async function serveExportFiles(
         url: `http://127.0.0.1:${port}/`,
         requests,
         close: () =>
-          new Promise((done, fail) =>
-            server.close((error) => (error ? fail(error) : done())),
-          ),
+          new Promise((done, fail) => {
+            server.close((error) => (error ? fail(error) : done()));
+            // close() waits for every connection. Chromium opens spare sockets
+            // for a burst of parallel requests and leaves them unused; Node
+            // counts a socket that never sent a request as active, so neither
+            // close() nor its idle sweep ends it and teardown would hang until
+            // the test timeout. The test is over: drop whatever the page holds.
+            server.closeAllConnections();
+          }),
       });
     });
     server.on("error", reject);
