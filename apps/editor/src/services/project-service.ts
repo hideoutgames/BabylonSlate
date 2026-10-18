@@ -1,4 +1,4 @@
-import { createDefaultInputAssets, SourceRevisionChangedError } from "@babylonslate/core";
+import { createDefaultInputAssets, isProjectOpenElsewhere, SourceRevisionChangedError } from "@babylonslate/core";
 import { isLockedEngineClassId } from "@babylonslate/object-model";
 import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@babylonslate/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
@@ -1220,14 +1220,20 @@ export class ProjectService {
                 .replace(/\.zip$/i, ""),
         ) || "Imported Project";
       let name = base;
-      let suffix = 2;
+      let owned: OwnedFolder | null = null;
       // Existing browser projects remain untouched, even when display names
       // match. The probe that creates the folder owns it, so a failed import
       // removes that folder instead of leaving it listed and its name taken.
-      let owned = await this.openOwnedDocumentsProject(name);
-      while (!(await this.projectFolderIsEmpty())) {
-        name = `${base} ${suffix++}`;
-        owned = await this.openOwnedDocumentsProject(name);
+      for (let attempt = 1; !owned; attempt++) {
+        name = attempt === 1 ? base : `${base} ${attempt}`;
+        try {
+          owned = await this.openOwnedDocumentsProject(name);
+        } catch (error) {
+          // A project another tab has open takes its name as well.
+          if (isProjectOpenElsewhere(error)) continue;
+          throw error;
+        }
+        if (!(await this.projectFolderIsEmpty())) owned = null;
       }
       return this.scaffoldFromTemplate(owned, name, { templateFiles: files });
     }
