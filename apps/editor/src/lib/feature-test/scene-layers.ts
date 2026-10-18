@@ -102,7 +102,7 @@ const layerGuidsByContext = new WeakMap<FeatureTestContext, { hud: string; overl
  * and routes focus activation to the Confirm action.
  */
 export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Promise<void> {
-  const font = requireRef(ctx.assets.fonts.geist, "the Geist Font");
+  const font = requireRef(ctx.assets.fonts.onest, "the Onest Font");
   const overlayMaterial = requireRef(ctx.assets.materials.overlayUnlit, "the overlay unlit Material");
   const icon = (stem: keyof LayerRefs["icons"]) => requireRef(ctx.assets.textures.ui[stem], `the ui_${stem} Texture`);
   const base = {

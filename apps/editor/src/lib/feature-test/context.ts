@@ -131,8 +131,8 @@ export interface FeatureTestAssets {
   fonts: {
     /** Facetype Font built from the engine's bundled ASCII glyph outlines. */
     facetype: string;
-    /** Geist source Font (OFL). */
-    geist: string;
+    /** Onest source Font (OFL). */
+    onest: string;
   };
   /** User-supplied CC0 Audio assets (null when the slot is empty). Filled by the audio area. */
   audio: {
@@ -320,7 +320,7 @@ function emptyAssets(): FeatureTestAssets {
       classPath: "",
       actorId: "",
     },
-    fonts: { facetype: "", geist: "" },
+    fonts: { facetype: "", onest: "" },
     audio: { loop: null, oneShot: null, mixer: null, channel: null, attenuation: null },
     materials: {},
     classes: {},

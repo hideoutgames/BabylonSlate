@@ -1035,6 +1035,10 @@ function PlayOverlayView({
         shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
         setRenderSettings: PlaySession["handle"]["setRenderSettings"];
         materialDefines: () => ReturnType<PlaySession["handle"]["playMeshMaterialDefines"]>;
+        /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
+        flyThrough: (
+          options: import("../testing/flythrough-probe").FlyThroughOptions,
+        ) => Promise<import("../testing/flythrough-probe").FlyThroughResult>;
       };
     };
     host.__babylonslatePlayTest = {
@@ -1056,6 +1060,12 @@ function PlayOverlayView({
       tickIndex: () => sessionRef.current?.lastTickIndex() ?? 0,
       inspectWorld: () => sessionRef.current?.inspectWorld() ?? Promise.resolve({ tickIndex: 0, nodes: [] }),
       runtimeMode: () => sessionRef.current?.runtimeMode ?? null,
+      flyThrough: async (options) => {
+        if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Fly-through requires a test build.");
+        const handle = sessionRef.current?.handle;
+        if (!handle) throw new Error("No Play session for the fly-through");
+        return (await import("../testing/flythrough-probe")).runFlyThrough(handle, options);
+      },
     };
     return () => {
       delete host.__babylonslatePlayTest;

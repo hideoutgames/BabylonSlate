@@ -57,7 +57,7 @@ Closing a tab, closing the project or opening another scene while something is u
 Haptic records your edits as you work. If the app closes before you save, you can get them back:
 
 - On the Homepage, **Recover Previous Session?** offers **Recover** and **Dismiss**.
-- In the editor, **Recovery journal found** offers **Recover edits** and **Discard journal**.
+- In the editor, the **Recover Unsaved Edits?** notice above the status bar offers **Recover Edits** and **Discard**.
 
 Recovered edits are unsaved until you choose **Save All**.
 

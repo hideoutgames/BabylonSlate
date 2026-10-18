@@ -12,6 +12,12 @@ PODS:
   - CapacitorStatusBar (8.0.3):
     - Capacitor
   - IONFilesystemLib (1.1.4)
+  - PurchasesHybridCommon (19.5.0):
+    - RevenueCat (= 5.92.0)
+  - RevenueCat (5.92.0)
+  - RevenuecatPurchasesCapacitor (13.7.0):
+    - Capacitor
+    - PurchasesHybridCommon (= 19.5.0)
 
 DEPENDENCIES:
   - "Capacitor (from `../../../../node_modules/.pnpm/@capacitor+ios@8.5.2_@capacitor+core@8.5.2/node_modules/@capacitor/ios`)"
@@ -20,10 +26,13 @@ DEPENDENCIES:
   - "CapacitorFilesystem (from `../../../../node_modules/.pnpm/@capacitor+filesystem@8.1.2_@capacitor+core@8.5.2/node_modules/@capacitor/filesystem`)"
   - "CapacitorPreferences (from `../../../../node_modules/.pnpm/@capacitor+preferences@8.0.1_@capacitor+core@8.5.2/node_modules/@capacitor/preferences`)"
   - "CapacitorStatusBar (from `../../../../node_modules/.pnpm/@capacitor+status-bar@8.0.3_@capacitor+core@8.5.2/node_modules/@capacitor/status-bar`)"
+  - "RevenuecatPurchasesCapacitor (from `../../../../node_modules/.pnpm/@revenuecat+purchases-capacitor@13.7.0_@capacitor+core@8.5.2/node_modules/@revenuecat/purchases-capacitor`)"
 
 SPEC REPOS:
   trunk:
     - IONFilesystemLib
+    - PurchasesHybridCommon
+    - RevenueCat
 
 EXTERNAL SOURCES:
   Capacitor:
@@ -38,6 +47,8 @@ EXTERNAL SOURCES:
     :path: "../../../../node_modules/.pnpm/@capacitor+preferences@8.0.1_@capacitor+core@8.5.2/node_modules/@capacitor/preferences"
   CapacitorStatusBar:
     :path: "../../../../node_modules/.pnpm/@capacitor+status-bar@8.0.3_@capacitor+core@8.5.2/node_modules/@capacitor/status-bar"
+  RevenuecatPurchasesCapacitor:
+    :path: "../../../../node_modules/.pnpm/@revenuecat+purchases-capacitor@13.7.0_@capacitor+core@8.5.2/node_modules/@revenuecat/purchases-capacitor"
 
 SPEC CHECKSUMS:
   Capacitor: 89067779e14fb7ea56af07b4817f45d1f0c2a269
@@ -47,7 +58,10 @@ SPEC CHECKSUMS:
   CapacitorPreferences: cca2021f386efb75947c850334447d9ff22b14f1
   CapacitorStatusBar: eca7bc2b58d9f886f1ef9edb66e57a9b29c121af
   IONFilesystemLib: e6610c2b260d15e4b9cb9d5e37a87095479b669e
+  PurchasesHybridCommon: da80a28f43fdfbf96dcb04c3aa2c6122b0e315d2
+  RevenueCat: 39657b04641af73c29788b4bf2cf1acff52fd0dc
+  RevenuecatPurchasesCapacitor: 75ae3e1077bc9db9081b1e7d324097361ce857c7
 
-PODFILE CHECKSUM: 0730079f3517f04693506fe3ef0d54e2d67b32e5
+PODFILE CHECKSUM: 3a98cc98fd67e1f7b84ba015f0b8679c2d84c82c
 
 COCOAPODS: 1.16.2

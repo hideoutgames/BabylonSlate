@@ -2516,6 +2516,25 @@ describe("Play createEngine view", () => {
     expect(engine.isDisposed).toBe(false);
   });
 
+  it("confirms an outlined Play view's release without another frame once its WebGPU device is lost", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    handle.applyCommand({ type: "setActorOutlines", slotId: 4, actorId: "hero",
+      outlines: outlineBindings("hero", [{ id: "ink", classId: "OutlineComponent", properties: { color: [1, 0, 0], width: 3 } }]) });
+    handle.applyCommand({ type: "assignMesh", slotId: 4, actorGuid: "hero", meshAssetGuid: null, meshKind: "box" });
+    await handle.prewarmSceneMaterials();
+    // Leases taken by the prepared graph now wait for a WebGPU end frame.
+    Object.defineProperty(engine, "isWebGPU", { get: () => true });
+    const frames = vi.spyOn(engine, "endFrame");
+    // What `watchWebGpuDevice` does on a lost device; the Engine never draws again.
+    (engine as unknown as { _contextWasLost: boolean })._contextWasLost = true;
+    engine.onContextLostObservable.notifyObservers(engine);
+    handle.dispose();
+    await handle.whenReleased();
+    await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
+    expect(frames).not.toHaveBeenCalled();
+  });
+
   it("keeps shared Scene and MaterialLibrary owners until a held native release confirms", async () => {
     const engine = sharedEngine();
     const document = createDefaultMaterialDocument("Blur", "postProcess");

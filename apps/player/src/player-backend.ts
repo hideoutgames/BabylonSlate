@@ -96,6 +96,13 @@ export async function startPlayerWithBackend(
     options.signal?.throwIfAborted();
     owner.engine.inputElement = options.canvas;
     player = startPlayer({ ...options, content, sharedEngine: owner.engine, onStopped: releaseOwner });
+    // A lost WebGPU device is never restored in place: the game stops drawing.
+    void owner.deviceLost?.then((loss) => {
+      if (released) return;
+      const message = `Rendering stopped because the graphics device was lost (${loss.reason}): ${loss.message}. Reload to restart the game.`;
+      console.error(`[player] ${message}`);
+      options.onDiagnostic?.([{ severity: "error", code: "render.device.lost", message }]);
+    }).catch((error: unknown) => { console.error("[player] The lost graphics device could not be reported.", error); });
   } catch (error) {
     const failures: unknown[] = [error];
     try { releaseOwner(); }

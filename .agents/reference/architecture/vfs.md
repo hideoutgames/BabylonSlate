@@ -54,7 +54,7 @@ The Documents tier crosses the Capacitor bridge once per asset write with base64
 - Global settings live outside any project; schema and defaults in [`app-settings.ts`](../../../packages/vfs/src/app-settings.ts). Backends: Capacitor Preferences (iOS/Android), `globalThis.babylonslate.userData` (Electron, `engine-settings.json` replaced atomically), localStorage (web).
 - `AppSettingsStore.update` is a queued read-mutate-validate-write transaction across store instances; emit change events only after persistence.
 - A refused save keeps settings in memory for the session; an unreadable file keeps `automaticUpdatesEnabled` off (it may hold an opt-out). A failed native Preferences read never overwrites stored settings.
-- `appearance.coarsePointerTargetScale` stays in the schema for stored files, but nothing reads it and Engine Settings does not show it.
+- `appearance.theme` and `appearance.coarsePointerTargetScale` stay in the schema for stored files, but nothing reads them and Engine Settings does not show them (the editor is dark only).
 - Number settings clamp on load (for example `undoHistoryLength` 1–1000, `traceByteBudget` 1–256 MiB, default 128 MiB).
 
 ## Secrets and native HTTP

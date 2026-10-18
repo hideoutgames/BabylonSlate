@@ -5,13 +5,13 @@ Create, open, save and close projects from the Homepage, the screen Haptic shows
 ## Create a project
 
 1. On the Homepage, choose **New Project**.
-2. In **Start With**, pick a starter or an installed template.
+2. In the **New Project** dialog, pick a starter or an installed template.
 3. Enter a **Name**. If you leave it empty, Haptic uses the suggested name shown in the field.
-4. Optionally pick a **Color** or choose **Upload Picture** (PNG, JPEG or WebP) for the project card.
+4. Optionally pick a **Color** and an **Icon** for the project card, or choose **Upload Picture** (PNG, JPEG or WebP). After uploading, switch between the picture and an icon at any time without uploading again.
 5. Optionally open **Options** to change where the project is stored and its resolution.
 6. Choose **Create**. The editor opens with the **Content Browser**.
 
-You can also browse templates first: switch the Homepage to **Templates** and choose one to go straight to step 3.
+You can also start from a template directly: choose one under **Templates** in the Homepage sidebar to go straight to step 3. When you have no projects yet, the Homepage shows **Start Your First Project** with **Basic 3D**, **Basic 2D** and **Blank**, which do the same.
 
 ## Starters
 
