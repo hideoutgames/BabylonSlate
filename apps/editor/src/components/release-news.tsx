@@ -70,11 +70,21 @@ export function ReleaseNews({
         data-mode={news ? "news" : "history"}
       >
         <DialogHeader className="release-news-header">
-          {news && <img className="release-news-wordmark" src={brandWordmarkSrc()} alt="" />}
-          <DialogTitle>{news ? "What's New" : "Changelog"}</DialogTitle>
-          <DialogDescription>
-            {news ? `Haptic ${version}` : "Every Haptic release, newest first."}
-          </DialogDescription>
+          {news ? (
+            <div className="release-news-brand">
+              <img className="release-news-wordmark" src={brandWordmarkSrc()} alt="" />
+              <span className="release-news-divider" aria-hidden="true" />
+              <DialogTitle>What's New</DialogTitle>
+              <DialogDescription className="release-news-version">
+                <span className="sr-only">Haptic </span>{version}
+              </DialogDescription>
+            </div>
+          ) : (
+            <>
+              <DialogTitle>Changelog</DialogTitle>
+              <DialogDescription>Every Haptic release, newest first.</DialogDescription>
+            </>
+          )}
         </DialogHeader>
         <div className="release-news-body">
           {visibleReleases.length ? visibleReleases.map(release => (
