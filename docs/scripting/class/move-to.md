@@ -24,3 +24,4 @@ Sends an actor toward a destination along the navigation mesh.
 
 - The actor needs a Nav Agent component, and the scene needs a baked navigation mesh; otherwise nothing happens.
 - The node continues at once while the actor walks over the following frames. The destination snaps to the nearest point on the mesh.
+- If **Target** is connected to a reference that is empty when the node runs, nothing happens.

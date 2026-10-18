@@ -47,7 +47,9 @@ Haptic has two kinds of wildcard pin:
 An unconnected input can hold a value, edited on the node or under **Defaults** in the **Inspector**.
 
 - Bool, Int, Float, String, vectors, Rotator, Quaternion, Color, Tag, TagContainer, Enum, Class and Asset inputs have inline editors. Color opens a colour picker; confirm it with **Done**.
-- Object and Actor inputs must be wired. The exception is a **Target** pin that shows **Self** when unconnected: it uses the object running the graph.
+- An input with an inline editor always has a value: the one you set, else the pin's own default, else zero, false or empty. **Compiler Results** never reports it as not connected. The exceptions are Class and Asset inputs, which warn while nothing is selected, and the outputs of an [Interface Implementation](interfaces.md), which need a wire or a value.
+- Object and Actor inputs must be wired; **Compiler Results** reports them as errors until they are. The exceptions are a **Target** pin that shows **Self** when unconnected, which uses the object running the graph, and the Actor inputs that say so on their node page, such as [Destroy Actor](class/destroy-actor.md) and [Get Component](class/get-component.md).
+- An Actor input that is wired to a reference that is empty when the node runs never falls back to the running actor: the node does nothing, or returns an empty value.
 - Build arrays with [Make Array](class/make-array.md), maps with [Make Map](class/make-map.md), structures with [Make Structure](class/make-structure.md) and transforms with [Make Transform](class/make-transform.md).
 
 Text values are saved when you press <kbd>Enter</kbd> or leave the field; <kbd>Esc</kbd> cancels. To stop accidental edits on touch screens, turn on **Engine Settings > Graph > Read-Only Pin Defaults**. The **Inspector** stays editable.

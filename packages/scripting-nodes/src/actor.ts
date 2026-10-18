@@ -10,6 +10,7 @@ import {
   arrayOf,
   TRANSFORM,
 } from "@babylonslate/scripting";
+import { actorOrSelf } from "./self-pin";
 
 export const actorNodes: NodeDefinition[] = [
   {
@@ -27,10 +28,10 @@ export const actorNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "target", "in", actorRef("Actor")),
+      pin("target", "target", "in", actorRef("Actor"), "data", true),
     ],
     codegen: (ctx) => {
-      ctx.emit(`ctx.destroyActor(${ctx.input("target")});`);
+      ctx.emit(`ctx.destroyActor(${actorOrSelf(ctx, "target")});`);
     },
   },
   {
@@ -130,7 +131,7 @@ export const actorNodes: NodeDefinition[] = [
       pin("boneName", "Bone Name", "in", STRING),
     ],
     codegen: (ctx) => {
-      ctx.emit(`ctx.attachToBone(${ctx.input("actor")}, ${ctx.input("target")}, ${ctx.input("boneName")});`);
+      ctx.emit(`ctx.attachToBone(${actorOrSelf(ctx, "actor")}, ${ctx.input("target")}, ${ctx.input("boneName")});`);
     },
   },
   {

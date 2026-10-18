@@ -381,7 +381,7 @@ Deliberate product decisions that can look like bugs. Do not "fix" them without 
 - Print is HUD output; the console and log history are a separate sink. Development Only nodes run in editor Play and Preview Build and are stripped from release export.
 - The Play Inspector is a read-only snapshot (plus Use Camera and Destroy Actor); runtime changes never write back to authored content.
 - Play and Preview launch the open Scene tab (Play from Scene) or the startup scene, not the active asset tab.
-- Spawning every Tick is allowed: there is no actor cap, throttle or kill-Z. An empty class reference spawns nothing (safe null); Destroy Actor on null no-ops.
+- Spawning every Tick is allowed: there is no actor cap, throttle or kill-Z. An empty class reference spawns nothing (safe null); Destroy Actor on null no-ops. An Actor pin left unwired means Self only where the node says so (Destroy Actor, Get Component, Play/Stop Particles, Attach To Bone); a wired reference that is null never falls back to Self.
 - Class references and actor references are distinct pin kinds; a wrong-type wire is rejected.
 - Map and Array nodes are immutable values: Set/Append return new containers and need a write-back to the variable; value-type keys compare by value. Unwired impure nodes do not execute.
 - Releasing a dragged pin in the empty-canvas safe zone breaks its wires; a data input takes one wire (a new wire replaces it).

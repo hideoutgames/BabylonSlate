@@ -25,3 +25,4 @@ Adds a new component of a chosen type to an actor and returns it.
 ## Notes
 
 - Returns an empty reference when nothing is added, for example when **Class ID** is empty or the component type does not suit the actor.
+- If **Actor** is connected to a reference that is empty when the node runs, nothing is added and the result is empty.

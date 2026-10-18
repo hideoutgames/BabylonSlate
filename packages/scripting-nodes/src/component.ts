@@ -9,6 +9,7 @@ import {
   BOOL,
   TRANSFORM,
 } from "@babylonslate/scripting";
+import { actorOrSelf } from "./self-pin";
 
 export const componentNodes: NodeDefinition[] = [
   {
@@ -43,12 +44,12 @@ export const componentNodes: NodeDefinition[] = [
     category: "component",
     pure: true,
     pins: () => [
-      pin("actor", "actor", "in", actorRef("Actor")),
+      pin("actor", "actor", "in", actorRef("Actor"), "data", true),
       pin("classId", "classId", "in", classRef("ActorComponent")),
       pin("out", "out", "out", objectRef("ActorComponent")),
     ],
     codegen: (ctx) => ({
-      out: `ctx.getComponent(${ctx.input("actor")}, ${ctx.input("classId")})`,
+      out: `ctx.getComponent(${actorOrSelf(ctx, "actor")}, ${ctx.input("classId")})`,
     }),
   },
   {

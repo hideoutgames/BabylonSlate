@@ -11,7 +11,7 @@ In the **Class** window, tap **+** next to **Events**. The **Add Event** menu li
 - Events of the class's components, such as **Event On Click (2D Button)** or **Event On Hit (Collider)**. Each component gets its own event.
 - Custom events inherited from the parent class.
 
-Each event can be on the graph only once. The **Events** section lists the events on the graph; tap one to jump to it.
+Each event can be on the graph only once. The **Events** section lists the events on the graph; tap one to jump to it. A second copy, such as two **Event Tick** nodes or two custom events with the same name, is a compile error. Keep one and use a [Sequence](class/sequence.md) to run several chains. Component events count per component, and input events per Input Action or Input Axis.
 
 ## Lifecycle events
 

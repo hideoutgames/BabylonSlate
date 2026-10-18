@@ -22,3 +22,4 @@ Returns true when an actor has a component of a given type.
 ## Notes
 
 - Only components of exactly that type count; components of a derived type do not.
+- Returns false when **Actor** is connected to a reference that is empty.
