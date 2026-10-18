@@ -27,6 +27,21 @@ describe("loadPlayerDistFiles", () => {
     expect(requested.slice(1)).toEqual([`${root}index.html`, `${root}player.js`]);
   });
 
+  it("does not fetch dot-named marker files a stale list still names", async () => {
+    const requested: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      requested.push(url);
+      if (url.endsWith("player-files.json")) {
+        return new Response(JSON.stringify(["index.html", "ktx2/.keep", ".nojekyll", "ktx2/uastc_astc.wasm", ".hidden/player.js"]));
+      }
+      return new Response("bytes");
+    };
+    const files = await loadPlayerDistFiles("/player/", fetchImpl);
+    expect([...files.keys()].sort()).toEqual(["index.html", "ktx2/uastc_astc.wasm"]);
+    expect(requested.some((url) => url.includes(".keep") || url.includes(".nojekyll") || url.includes(".hidden"))).toBe(false);
+  });
+
   it("fetches UASTC and Zstd wasm when player-files.json is missing", async () => {
     const requested: string[] = [];
     const fetchImpl: typeof fetch = async (input) => {

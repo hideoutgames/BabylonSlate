@@ -54,6 +54,7 @@ The **Compression** section shows the current state. If compression fails, the I
 ## Models
 
 - **Engine Settings > Assets > Model Import Default Scale** sets the scale given to newly imported models. It does not change models you already imported.
+- Pick a glTF's texture files in the same import as the model. A texture file you leave out is skipped: the model still imports, its materials use their plain colours, and **Import Partially Completed** lists the missing files.
 - Open the Model to check its preview and colliders. See [Model](../assets/model.md) and [Models](../graphics/models.md).
 
 ## Sounds and fonts

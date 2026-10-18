@@ -262,20 +262,94 @@ export function collectGltfExternalUris(
   return [];
 }
 
+/** The objects that can name a texture's image: the texture itself and its extensions (`EXT_texture_webp`, `KHR_texture_basisu`). */
+function textureSourceHolders(texture: unknown): Array<Record<string, unknown>> {
+  if (!texture || typeof texture !== "object") return [];
+  const holders = [texture as Record<string, unknown>];
+  const extensions = holders[0]!.extensions;
+  if (extensions && typeof extensions === "object") {
+    for (const extension of Object.values(extensions)) {
+      if (extension && typeof extension === "object") {
+        holders.push(extension as Record<string, unknown>);
+      }
+    }
+  }
+  return holders;
+}
+
+/** Repoint material texture references through `indexMap`; a reference to a texture it lacks is removed. */
+function remapMaterialTextureRefs(
+  node: unknown,
+  indexMap: ReadonlyMap<number, number>,
+): void {
+  if (!node || typeof node !== "object") return;
+  const record = node as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (key === "extras") continue;
+    const value = record[key];
+    if (!value || typeof value !== "object") continue;
+    // glTF names every texture reference `*Texture` (`baseColorTexture`, `clearcoatTexture`, ...).
+    const index = (value as { index?: unknown }).index;
+    if (key.endsWith("Texture") && typeof index === "number") {
+      const next = indexMap.get(index);
+      if (next === undefined) delete record[key];
+      else (value as { index: number }).index = next;
+    } else {
+      remapMaterialTextureRefs(value, indexMap);
+    }
+  }
+}
+
 /**
- * Drop relative image URIs that were not embedded so Play/preview never fetch
- * pack-relative paths like `Textures/colormap.png`.
+ * Remove glTF textures that no image backs, and every material reference to
+ * them, so the loader never throws `/textures/N/source: Failed to find index`.
+ * The materials fall back to their factors. Edits `json` in place and returns
+ * whether anything changed.
  */
-export function stripUnmatchedGltfImageUris(bytes: Uint8Array): Uint8Array {
+function dropSourcelessGltfTextures(
+  json: Record<string, unknown>,
+): boolean {
+  if (!Array.isArray(json.textures)) return false;
+  const textures = json.textures as unknown[];
+  const imageCount = Array.isArray(json.images) ? json.images.length : 0;
+  const kept: unknown[] = [];
+  const indexMap = new Map<number, number>();
+  for (const [index, texture] of textures.entries()) {
+    const backed = textureSourceHolders(texture).some(
+      ({ source }) =>
+        typeof source === "number" &&
+        Number.isInteger(source) &&
+        source >= 0 &&
+        source < imageCount,
+    );
+    if (!backed) continue;
+    indexMap.set(index, kept.length);
+    kept.push(texture);
+  }
+  if (kept.length === textures.length) return false;
+  if (kept.length > 0) json.textures = kept;
+  else delete json.textures;
+  if (Array.isArray(json.materials)) {
+    for (const material of json.materials) {
+      remapMaterialTextureRefs(material, indexMap);
+    }
+  }
+  return true;
+}
+
+function stripUnmatchedImages(bytes: Uint8Array): {
+  bytes: Uint8Array;
+  missingUris: string[];
+} {
   const split = splitGlbJsonBin(bytes);
-  if (!split) return bytes;
+  if (!split) return { bytes, missingUris: [] };
   const images = Array.isArray(split.json.images)
     ? [...(split.json.images as Record<string, unknown>[])]
     : [];
-  if (images.length === 0) return bytes;
 
   const kept: Record<string, unknown>[] = [];
   const indexMap = new Map<number, number>();
+  const missingUris = new Set<string>();
   let changed = false;
   for (let i = 0; i < images.length; i++) {
     const image = { ...images[i] };
@@ -288,30 +362,45 @@ export function stripUnmatchedGltfImageUris(bytes: Uint8Array): Uint8Array {
     const remainingUri = typeof image.uri === "string" ? image.uri : "";
     const hasData = remainingUri.startsWith("data:");
     if (!hasView && !hasData) {
+      if (uri) missingUris.add(uri);
       changed = true;
       continue;
     }
     indexMap.set(i, kept.length);
     kept.push(image);
   }
-  if (!changed) return bytes;
-
-  split.json.images = kept;
-  if (Array.isArray(split.json.textures)) {
-    split.json.textures = (split.json.textures as Record<string, unknown>[]).map(
-      (texture) => {
-        if (typeof texture.source !== "number") return texture;
-        const next = indexMap.get(texture.source);
-        if (next === undefined) {
-          const rest = { ...texture };
-          delete rest.source;
-          return rest;
+  if (changed) {
+    if (kept.length > 0) split.json.images = kept;
+    else delete split.json.images;
+    // Textures follow their images to the new indices; one whose image was
+    // dropped loses its source and is removed below.
+    if (Array.isArray(split.json.textures)) {
+      for (const texture of split.json.textures) {
+        for (const holder of textureSourceHolders(texture)) {
+          if (typeof holder.source !== "number") continue;
+          const next = indexMap.get(holder.source);
+          if (next === undefined) delete holder.source;
+          else holder.source = next;
         }
-        return { ...texture, source: next };
-      },
-    );
+      }
+    }
   }
-  return encodeGlbJsonBin(split.json, split.bin);
+  const repaired = dropSourcelessGltfTextures(split.json);
+  if (!changed && !repaired) return { bytes, missingUris: [] };
+  return {
+    bytes: encodeGlbJsonBin(split.json, split.bin),
+    missingUris: [...missingUris],
+  };
+}
+
+/**
+ * Drop relative image URIs that were not embedded so Play/preview never fetch
+ * pack-relative paths like `Textures/colormap.png`. The textures and material
+ * references that used those images go with them, so every texture that stays
+ * has a valid image and the Material renders from its factors.
+ */
+export function stripUnmatchedGltfImageUris(bytes: Uint8Array): Uint8Array {
+  return stripUnmatchedImages(bytes).bytes;
 }
 
 /**
@@ -448,29 +537,34 @@ function gltfJsonToGlb(
 
 /**
  * Embed sidecars and strip leftover relative image URIs. `.gltf` becomes a GLB
- * when a BIN sidecar or external image URIs are present.
+ * when a BIN sidecar or external image URIs are present. `missingImageUris`
+ * names the image files no sidecar supplied; the stored GLB goes without them.
  */
 export function ingestGltfForImport(
   fileName: string,
   bytes: Uint8Array,
   sidecars: ReadonlyMap<string, Uint8Array> | Record<string, Uint8Array> = {},
-): { bytes: Uint8Array; mime: string } {
+): { bytes: Uint8Array; mime: string; missingImageUris: string[] } {
   const map = toSidecarMap(sidecars);
   const lower = fileName.toLowerCase();
   if (lower.endsWith(".gltf")) {
     const glb = gltfJsonToGlb(new TextDecoder().decode(bytes), map);
     if (!glb) {
-      return { bytes, mime: "model/gltf+json" };
+      return { bytes, mime: "model/gltf+json", missingImageUris: [] };
     }
-    const embedded = stripUnmatchedGltfImageUris(
-      embedGlbExternalImages(glb, map),
-    );
-    return { bytes: embedded, mime: "model/gltf-binary" };
+    const stripped = stripUnmatchedImages(embedGlbExternalImages(glb, map));
+    return {
+      bytes: stripped.bytes,
+      mime: "model/gltf-binary",
+      missingImageUris: stripped.missingUris,
+    };
   }
-  const embedded = stripUnmatchedGltfImageUris(
-    embedGlbExternalImages(bytes, map),
-  );
-  return { bytes: embedded, mime: "model/gltf-binary" };
+  const stripped = stripUnmatchedImages(embedGlbExternalImages(bytes, map));
+  return {
+    bytes: stripped.bytes,
+    mime: "model/gltf-binary",
+    missingImageUris: stripped.missingUris,
+  };
 }
 
 /** Parse a `.glb` container into browse metadata + embedded image bytes. */
