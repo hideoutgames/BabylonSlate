@@ -234,10 +234,24 @@ describe("WebGPU direct presentation store", () => {
       store.engage!();
       fake.frame(0xff8040, () => store.snapshot(view, 64, 48));
       await vi.waitFor(() => expect(store.usable!()).toBe(false));
-      expect(fake.configurations.map((configuration) => configuration.usage)).toEqual([0x13, 0x11]);
       expect([fake.native._startMainRenderPass, fake.native._configureContext, warn.mock.calls.length]).toEqual([start, configure, 1]);
+      // Reconfiguring clears the canvas, which may still cover the view: it waits until the presenter vacates.
+      expect(fake.configurations.map((configuration) => configuration.usage)).toEqual([0x13]);
+      store.clear();
+      expect(fake.configurations.map((configuration) => configuration.usage)).toEqual([0x13, 0x11]);
       warn.mockRestore();
     }
+  });
+
+  it("puts Babylon's canvas configuration back at once when the rejection arrives after presentation stopped", async () => {
+    const fake = fakeEngine({ validation: async (scope) => (scope === 2 ? { message: "copy failed" } : null) });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const store = createWebGpuHeldImageStore(fake.engine)!;
+    store.engage!();
+    fake.frame(0xff8040, () => store.snapshot(view, 64, 48));
+    store.clear(); // e.g. a second view appeared: views copy, the Engine canvas is parked
+    await vi.waitFor(() => expect(store.usable!()).toBe(false));
+    expect(fake.configurations.map((configuration) => configuration.usage)).toEqual([0x13, 0x11]);
   });
 
   it("keeps presenting through a lost device and checks the restored device's first copy again", async () => {
@@ -277,11 +291,16 @@ describe("WebGPU direct presentation store", () => {
 
     store.engage!();
     fake.frame(0x00ff00, () => {
-      // Released mid-frame: the frame's passes still use the target until it ends.
+      // Released mid-frame, perhaps the last frame there will be: the frame's passes are submitted before the
+      // targets they use are destroyed.
+      const order: string[] = [];
+      fake.native.flushFramebuffer.mockImplementation(() => { order.push("submit"); });
+      const target = fake.created.at(-1)!;
+      const destroy = target.destroy.bind(target);
+      target.destroy = () => { order.push("destroy"); destroy(); };
       store.dispose!();
-      expect(fake.created.at(-1)!.destroyed).toBe(false);
+      expect(order).toEqual(["submit", "destroy"]);
     });
-    expect(fake.created.at(-1)!.destroyed).toBe(true);
     expect([fake.native._startMainRenderPass, fake.native._configureContext]).toEqual([start, configure]);
     expect(fake.native.onEndFrameObservable.hasObservers()).toBe(false);
   });

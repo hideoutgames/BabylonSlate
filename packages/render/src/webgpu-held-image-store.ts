@@ -103,22 +103,32 @@ export function createWebGpuHeldImageStore(engine: AbstractEngine): HeldImageSto
       else Reflect.deleteProperty(native, "_configureContext");
     }
   };
+  /** The device rejected the copy-destination configuration; Babylon's own goes back once the canvas covers nothing. */
+  let reconfigurePending = false;
+  const restoreConfiguration = () => {
+    reconfigurePending = false;
+    if (engine.isDisposed) return;
+    // Reconfiguring replaces the canvas texture; submit anything that still uses it first.
+    engine.flushFramebuffer();
+    native._configureContext();
+    configuration += 1;
+  };
   /**
    * Turn direct presentation off for this Engine: Babylon renders into the
-   * canvas again and views copy. `reconfigure` (only between frames: it
-   * replaces the canvas texture) also drops the copy-destination use the
-   * device rejected.
+   * canvas again and views copy. `reconfigure` also drops the copy-destination
+   * use the device rejected. Reconfiguring clears the canvas, so while a view
+   * may still be covered it waits for `clear` (the presenter has vacated by then).
    */
   const fail = (reason: string, reconfigure = false) => {
     if (!usable) return;
+    const presenting = engaged;
     usable = false;
     engaged = false;
     uninstall();
     console.warn(`[render] WebGPU direct view presentation is off: ${reason}`);
-    if (!reconfigure || engine.isDisposed) return;
-    engine.flushFramebuffer();
-    native._configureContext();
-    configuration += 1;
+    if (!reconfigure) return;
+    if (presenting) reconfigurePending = true;
+    else restoreConfiguration();
   };
   /** Run `work` under a validation error scope; an error turns the store off and restores Babylon's canvas configuration. */
   const validated = (what: string, work: () => void) => {
@@ -264,8 +274,11 @@ export function createWebGpuHeldImageStore(engine: AbstractEngine): HeldImageSto
       held = -1;
       shown = null;
       drop(!lost);
-      // A restored device gets its own first-copy check.
-      if (lost) copyChecked = false;
+      // A restored device gets its own first-copy check, and Babylon configures it its own way.
+      if (lost) {
+        copyChecked = false;
+        reconfigurePending = false;
+      } else if (reconfigurePending) restoreConfiguration();
     },
     usable: () => usable,
     dispose() {
@@ -275,9 +288,12 @@ export function createWebGpuHeldImageStore(engine: AbstractEngine): HeldImageSto
       uninstall();
       engine.onEndFrameObservable.remove(endFrame);
       endFrame = null;
-      // A view released mid-frame leaves the frame's unsubmitted passes using the targets: destroy them after it.
       const pending = retired.splice(0);
-      if (pending.length) engine.onEndFrameObservable.addOnce(() => { for (const texture of pending) texture.destroy(); });
+      if (!pending.length) return;
+      // WebGPU destroys a texture once submitted work that uses it completes; a view released mid-frame leaves
+      // passes that use the targets unsubmitted, so submit them first. No later frame may come to do it.
+      if (!engine.isDisposed) engine.flushFramebuffer();
+      for (const texture of pending) texture.destroy();
     },
   };
 }

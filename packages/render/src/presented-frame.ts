@@ -44,6 +44,17 @@ export async function whenPresentationFenceClear(engine: AbstractEngine, tick: (
   return performance.now() - start;
 }
 
+/**
+ * Resolves once the GPU has finished the work submitted so far (WebGPU); other
+ * Engines only submit pending work. Test hooks settle the GPU with it before a
+ * screenshot.
+ */
+export async function whenSubmittedWorkDone(engine: AbstractEngine): Promise<void> {
+  engine.flushFramebuffer();
+  const device = (engine as AbstractEngine & { _device?: Partial<SubmissionDevice> })._device;
+  if (engine.isWebGPU && device?.queue?.onSubmittedWorkDone) await device.queue.onSubmittedWorkDone();
+}
+
 export type PresentedFrame = {
   completed: Promise<void>;
   cancel: () => void;

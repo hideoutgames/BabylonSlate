@@ -188,24 +188,32 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
         if (presentDirectly) {
           // A resize reallocates (clears) the default framebuffer even when nothing draws.
           const wrote = source.width !== startSize.width || source.height !== startSize.height || host.dirty?.() !== false;
+          const coherent = host.canCopy();
           const started = performance.now();
-          if (host.canCopy() && direct.store.snapshot(current, source.width, source.height)) {
+          if (coherent && direct.store.snapshot(current, source.width, source.height)) {
             // The view canvas keeps the presented image's dimensions; it is drawn into only when it stops being covered.
             if (canvas.width !== source.width) canvas.width = source.width;
             if (canvas.height !== source.height) canvas.height = source.height;
             show(current);
             host.copied(performance.now() - started);
-          } else if (!wrote && direct.placement.view === current) {
-            // An idle step (render on demand): the shown image is still the held one.
-            direct.placement.follow();
-          } else if (direct.store.restore(current, source.width, source.height)) {
-            // An incoherent frame: put the last coherent image back before the browser presents.
-            show(current);
-          } else {
-            // Nothing coherent yet: let the view canvas show through.
-            stopCovering(current, false);
+            return true;
           }
-          return true;
+          if (!coherent) {
+            if (!wrote && direct.placement.view === current) {
+              // An idle step (render on demand): the shown image is still the held one.
+              direct.placement.follow();
+            } else if (direct.store.restore(current, source.width, source.height)) {
+              // An incoherent frame: put the last coherent image back before the browser presents.
+              show(current);
+            } else {
+              // Nothing coherent yet: let the view canvas show through.
+              stopCovering(current, false);
+            }
+            return true;
+          }
+          // A coherent frame the store could not present (WebGPU turned it off while the frame drew, so the
+          // frame is in the canvas): copy it into the view canvas rather than showing the stale held image.
+          leaveDirect();
         }
         if (!host.canCopy()) return true;
         const started = performance.now();
