@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { NullEngine, Scene } from "@babylonjs/core";
+import { MeshBuilder, NullEngine, Scene, ShadowGenerator, SpotLight, Vector3, type AbstractMesh, type Effect } from "@babylonjs/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
 import { acquireAuthoredMaterialVariant, acquireAuthoredOutlineVariant, compileMaterialPlan, ensureAuthoredShadowDepthWrapper } from "./material-compiler";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
@@ -66,6 +66,43 @@ it("retains an independent shadow variant through source disposal while a pass s
   expect(acquireAuthoredMaterialVariant(source.material, "shadowDepth")).toBeUndefined();
   await retained.release();
   expect(isDisposedNodeMaterial(retained.compiled.material, scene)).toBe(true);
+});
+
+it("gives every caster of one authored shadow graph the same depth Effect until its last caster leaves", async () => {
+  const engine = new NullEngine(); engines.push(engine);
+  const scene = new Scene(engine);
+  const document = createDefaultMaterialDocument();
+  document.nodes.find((node) => node.type === "output.surface")!.properties["default:worldPositionOffset"] = [0, 1, 0];
+  const lowered = lowerMaterialDocument(document);
+  if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+  // A Material and a component's private instance compile the same graph under one name.
+  const material = compileMaterialPlan(lowered.plan, { scene, name: "material:wpo" });
+  const instance = compileMaterialPlan(lowered.plan, { scene, name: "material:wpo" });
+  if (!material.ok || !instance.ok) throw new Error("WPO material did not compile");
+  expect(await material.ready).toEqual([]);
+  expect(await instance.ready).toEqual([]);
+  const generator = new ShadowGenerator(256, new SpotLight("spot", new Vector3(0, 6, 0), Vector3.Down(), 1, 1, scene));
+  const casters = [material, material, instance].map((compiled, index) => {
+    const mesh = MeshBuilder.CreateBox(`caster-${index}`, {}, scene);
+    mesh.material = compiled.material;
+    generator.addShadowCaster(mesh);
+    return mesh;
+  });
+  await generator.forceCompilationAsync();
+  const depthEffect = (mesh: AbstractMesh): Effect | null | undefined =>
+    mesh.material!.shadowDepthWrapper!.getEffect(mesh.subMeshes[0]!, generator, engine.currentRenderPassId)?.effect;
+  const shared = depthEffect(casters[0]!)!;
+  expect(shared).toBeTruthy();
+  expect(depthEffect(casters[1]!)).toBe(shared);
+  expect(depthEffect(casters[2]!)).toBe(shared);
+  casters[0]!.dispose();
+  casters[1]!.dispose();
+  await material.whenReleased();
+  expect(shared.isDisposed).toBe(false);
+  expect(depthEffect(casters[2]!)).toBe(shared);
+  casters[2]!.dispose();
+  await instance.whenReleased();
+  expect(shared.isDisposed).toBe(true);
 });
 
 it.each([false, true])("releases only cage-owned authored shadows after the last cage detaches (WPO=%s)", async (wpo) => {
