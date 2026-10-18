@@ -605,6 +605,19 @@ export class SceneShadowController {
         entry.light instanceof DirectionalLight ? settings.cascades : 1,
         settings.profile,
       ]);
+    const measureDistance = (entry: Entry) => {
+      entry.distanceSquared = 0;
+      if (camera && !(entry.light instanceof DirectionalLight)) {
+        // Shadow-limited lights may never bind a material. Refresh their
+        // parents explicitly rather than ranking a stale transformedPosition.
+        entry.light.parent?.computeWorldMatrix(true);
+        entry.light.computeTransformedInformation();
+        entry.distanceSquared = Vector3.DistanceSquared(
+          entry.light.parent ? entry.light.getAbsolutePosition() : entry.light.position,
+          camera.globalPosition,
+        );
+      }
+    };
     const candidates = [...this.entries.values()].filter((entry) => {
       entry.status = "disabled";
       entry.reason = null;
@@ -615,7 +628,11 @@ export class SceneShadowController {
         entry.status = "non-illuminating";
         return false;
       }
-      if (!entry.light.isEnabled() || entry.light.intensity <= 0) return false;
+      if (!entry.light.isEnabled() || entry.light.intensity <= 0) {
+        // A Forward-dropped light keeps its map on standby, which ranks by distance.
+        if (entry.generator) measureDistance(entry);
+        return false;
+      }
       if (!entry.requested) {
         entry.status = "not-requested";
         return false;
@@ -630,17 +647,7 @@ export class SceneShadowController {
           "shadow allocation failed at minimum size; awaiting settings change or context recovery";
         return false;
       }
-      entry.distanceSquared = 0;
-      if (camera && !(entry.light instanceof DirectionalLight)) {
-        // Shadow-limited lights may never bind a material. Refresh their
-        // parents explicitly rather than ranking a stale transformedPosition.
-        entry.light.parent?.computeWorldMatrix(true);
-        entry.light.computeTransformedInformation();
-        entry.distanceSquared = Vector3.DistanceSquared(
-          entry.light.parent ? entry.light.getAbsolutePosition() : entry.light.position,
-          camera.globalPosition,
-        );
-      }
+      measureDistance(entry);
       if (camera && !(entry.light instanceof DirectionalLight) &&
         entry.distanceSquared > (settings.distance + entry.light.range) ** 2) {
         entry.status = "outside-relevant-area";

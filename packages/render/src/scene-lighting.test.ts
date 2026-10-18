@@ -1,6 +1,5 @@
 import { installAssetBytes } from "@babylonslate/assets";
 import {
-  FORWARD_LIGHT_DWELL_MS,
   isForwardLightExcluded,
   setAuthoredLightEnabled,
   syncDirectionalLightPolicy,
@@ -260,23 +259,22 @@ describe("scene material lighting", () => {
       moving.parent = parent;
       const fixed = new PointLight("fixed", new Vector3(60, 0, 0), scene);
 
-      // Each step lands after the previous swap's dwell, which is tested apart.
       // Before any render, moving is 100 units away despite its local x of 50.
-      syncForwardLightPolicy(scene, 1, undefined, 0);
+      syncForwardLightPolicy(scene, 1);
       expect(fixed.isEnabled()).toBe(true);
       expect(isForwardLightExcluded(moving)).toBe(true);
 
       // The excluded light must be reconsidered using its ancestor's new pose,
       // without relying on a render or an enabled light's uniform transfer.
       ancestor.position.x = -69;
-      syncForwardLightPolicy(scene, 1, undefined, FORWARD_LIGHT_DWELL_MS);
+      syncForwardLightPolicy(scene, 1);
       expect(moving.isEnabled()).toBe(true);
       expect(isForwardLightExcluded(fixed)).toBe(true);
 
       // Detachment must also stop using the former parent's cached world pose.
       moving.parent = null;
       fixed.position.x = 10;
-      syncForwardLightPolicy(scene, 1, undefined, 2 * FORWARD_LIGHT_DWELL_MS);
+      syncForwardLightPolicy(scene, 1);
       expect(fixed.isEnabled()).toBe(true);
       expect(isForwardLightExcluded(moving)).toBe(true);
     },
@@ -302,59 +300,6 @@ describe("scene material lighting", () => {
     syncForwardLightPolicy(scene, 2);
     expect(left.isEnabled()).toBe(true);
     expect(right.isEnabled()).toBe(true);
-  });
-
-  describe("dwell of a changed local selection", () => {
-    function boundary() {
-      const scene = host(false);
-      const camera = new UniversalCamera("camera", new Vector3(-9, 0, 0), scene);
-      scene.activeCamera = camera;
-      const left = new PointLight("left", new Vector3(-10, 0, 0), scene);
-      const right = new PointLight("right", new Vector3(10, 0, 0), scene);
-      const sync = (now: number) => syncForwardLightPolicy(scene, 1, undefined, now);
-      // The first sighting is undwelled, so the nearest light is admitted at once.
-      sync(0);
-      expect(left.isEnabled()).toBe(true);
-      camera.position.x = 9;
-      sync(100);
-      expect(right.isEnabled()).toBe(true);
-      expect(isForwardLightExcluded(left)).toBe(true);
-      return { scene, camera, left, right, sync, swappedAt: 100 };
-    }
-
-    it("keeps a swap from reversing inside the dwell, then lets the camera ranking decide", () => {
-      const { camera, left, right, sync, swappedAt } = boundary();
-      camera.position.x = -9;
-      sync(swappedAt + FORWARD_LIGHT_DWELL_MS - 1);
-      expect(right.isEnabled()).toBe(true);
-      expect(isForwardLightExcluded(left)).toBe(true);
-      sync(swappedAt + FORWARD_LIGHT_DWELL_MS);
-      expect(left.isEnabled()).toBe(true);
-      expect(isForwardLightExcluded(right)).toBe(true);
-    });
-
-    it("lets priority, capacity and a new camera override the dwell", () => {
-      const { scene, camera, left, right, sync, swappedAt } = boundary();
-      camera.position.x = -9;
-      left.renderPriority = 1;
-      sync(swappedAt + 1);
-      expect(left.isEnabled()).toBe(true);
-      expect(isForwardLightExcluded(right)).toBe(true);
-      // Capacity has no dwell: an empty budget drops the light that just won.
-      syncForwardLightPolicy(scene, 0, undefined, swappedAt + 2);
-      expect(left.isEnabled()).toBe(false);
-      left.renderPriority = 0;
-      sync(swappedAt + 3);
-      const cut = new UniversalCamera("cut", new Vector3(9, 0, 0), scene);
-      scene.activeCamera = cut;
-      sync(swappedAt + 4);
-      expect(right.isEnabled()).toBe(true);
-      expect(isForwardLightExcluded(left)).toBe(true);
-      scene.activeCamera = camera;
-      sync(swappedAt + 5);
-      expect(left.isEnabled()).toBe(true);
-      expect(isForwardLightExcluded(right)).toBe(true);
-    });
   });
 
   it("does not spend shader slots on zero-intensity lights and restores their requested state", () => {
