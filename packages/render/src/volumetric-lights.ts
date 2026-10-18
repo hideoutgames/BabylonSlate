@@ -90,34 +90,34 @@ export function volumeShadowGenerator(
     : null;
 }
 
+/** The light's current shadow sampler layout, written into `out` (a per-frame caller passes scratch storage). */
 export function volumeShadowLayout(
   scene: Scene,
   light: VolumeLight,
+  out: VolumeShadow = { kind: "none", cascades: 0, packed: false },
 ): VolumeShadow {
   const generator = volumeShadowGenerator(scene, light);
   const map = generator?.getShadowMap();
-  if (map?.isCube)
-    return {
-      kind: "cube",
-      cascades: 1,
-      packed: map.textureType === Constants.TEXTURETYPE_UNSIGNED_BYTE,
-    };
-  if (
+  if (map?.isCube) {
+    out.kind = "cube";
+    out.cascades = 1;
+    out.packed = map.textureType === Constants.TEXTURETYPE_UNSIGNED_BYTE;
+  } else if (
     generator &&
     map &&
     (generator.usePercentageCloserFiltering ||
       generator.useContactHardeningShadow)
-  )
-    return {
-      kind:
-        generator instanceof CascadedShadowGenerator ? "cascades" : "compare",
-      cascades:
-        generator instanceof CascadedShadowGenerator
-          ? generator.numCascades
-          : 1,
-      packed: false,
-    };
-  return { kind: "none", cascades: 0, packed: false };
+  ) {
+    const cascaded = generator instanceof CascadedShadowGenerator;
+    out.kind = cascaded ? "cascades" : "compare";
+    out.cascades = cascaded ? generator.numCascades : 1;
+    out.packed = false;
+  } else {
+    out.kind = "none";
+    out.cascades = 0;
+    out.packed = false;
+  }
+  return out;
 }
 
 /** Sampler topology changes reprepare shaders; motion/color never recompile. */
@@ -126,7 +126,15 @@ export function volumetricLayoutKey(
   camera: Camera,
   settings: VolumetricLightingSettings,
 ): string {
-  return selectVolumetricLights(scene, camera, settings)
+  return volumetricLightsLayoutKey(scene, selectVolumetricLights(scene, camera, settings));
+}
+
+/** The layout key of these lights in these slots, with their current shadow maps. */
+export function volumetricLightsLayoutKey(
+  scene: Scene,
+  lights: readonly VolumeLight[],
+): string {
+  return lights
     .map((light) => {
       const layout = volumeShadowLayout(scene, light);
       return `${light.uniqueId}:${layout.kind}:${layout.cascades}:${Number(layout.packed)}`;
