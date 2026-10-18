@@ -124,6 +124,76 @@ export function exchangeForwardLightSlots(
 }
 
 /**
+ * A light's place in the canonical order: whether it binds a shadow map, then
+ * the defines it gives its slot on every receiver.
+ */
+function slotClass(scene: Scene, light: Light): string {
+  const shadowed = !!(light.getShadowGenerator(scene.activeCamera) ?? light.getShadowGenerator());
+  return `${shadowed ? 1 : 0}${receiverSignature(light)}`;
+}
+
+/**
+ * After the toggles of a budget transition whose receivers refresh anyway (an
+ * exchange that is not preserved, an admission without a partner, a drop
+ * without an admission): put the `movable` lights in a canonical order, the
+ * enabled ones first by slot class and then creation, the others after them in
+ * their current order, within the `scene.lights` positions movable lights
+ * already hold. Every receiver whose lights are out of that order is re-sorted
+ * and dirtied, so its light defines depend only on which lights reach it: a
+ * light set the budget returns to rebuilds the shaders it compiled before, where
+ * a chain of exchanges would otherwise leave it in another slot arrangement.
+ * Same-class lights stay interchangeable, so a preserved exchange (same slot
+ * signature, no shadow map) keeps a canonical arrangement's defines. Returns
+ * whether any light moved.
+ */
+export function canonicalizeForwardLightSlots(
+  scene: Scene,
+  movable: (light: Light) => boolean,
+): boolean {
+  const lights = scene.lights;
+  const positions: number[] = [];
+  const enabled: Light[] = [];
+  const disabled: Light[] = [];
+  for (let index = 0; index < lights.length; index++) {
+    const light = lights[index]!;
+    if (!movable(light)) continue;
+    positions.push(index);
+    (light.isEnabled() ? enabled : disabled).push(light);
+  }
+  const classes = new Map<Light, string>();
+  for (const light of enabled) classes.set(light, slotClass(scene, light));
+  enabled.sort((a, b) => {
+    const left = classes.get(a)!;
+    const right = classes.get(b)!;
+    return left < right ? -1 : left > right ? 1 : a.uniqueId - b.uniqueId;
+  });
+  const ordered = enabled.concat(disabled);
+  let moved = false;
+  for (let index = 0; index < positions.length; index++) {
+    if (lights[positions[index]!] === ordered[index]) continue;
+    lights[positions[index]!] = ordered[index]!;
+    moved = true;
+  }
+  if (!moved) return false;
+  const rank = new Map<Light, number>();
+  for (let index = 0; index < lights.length; index++) rank.set(lights[index]!, index);
+  const place = (light: Light) => rank.get(light) ?? Number.MAX_SAFE_INTEGER;
+  for (const mesh of scene.meshes) {
+    // An instance shares its source's array, which the source re-sorts.
+    if (mesh instanceof InstancedMesh) continue;
+    const sources = mesh.lightSources;
+    let sorted = true;
+    for (let index = 1; sorted && index < sources.length; index++)
+      sorted = place(sources[index - 1]!) <= place(sources[index]!);
+    if (sorted) continue;
+    sources.sort((a, b) => place(a) - place(b));
+    // As Babylon's removal does: never draw the old effect with lights in new slots.
+    mesh._markSubMeshesAsLightDirty(true);
+  }
+  return true;
+}
+
+/**
  * After the toggles: an exchange whose lights did not reach the predicted
  * state (a parent changed in the same pass) is undone in `scene.lights` and
  * handed back to Babylon's resync, which repairs membership and dirties the

@@ -571,8 +571,9 @@ describe("scene material lighting", () => {
   });
 
   describe("Forward budget swaps", () => {
-    // Nine shader slots; ten lamps 10 m apart. With the camera at x = 90 the
-    // budget drops lamp 0 and admits lamp 9.
+    // Nine shader slots; ten lamps 10 m apart. The first sync drops lamp 9 and
+    // orders the admitted lamps points first, then spots, each in creation
+    // order. With the camera at x = 90 the budget drops lamp 0 and admits lamp 9.
     function swapFixture(spots: readonly number[] = []) {
       const scene = host(false);
       const camera = new UniversalCamera("camera", Vector3.Zero(), scene);
@@ -609,6 +610,7 @@ describe("scene material lighting", () => {
             ? "point"
             : "none",
       );
+    const points = (count: number) => Array.from({ length: count }, () => "point");
 
     it("puts the admitted light in the dropped light's slot without dirtying or recompiling receivers when the slot defines match", async () => {
       const { scene, camera, lamps, material, receiver, part } = swapFixture([4]);
@@ -620,9 +622,8 @@ describe("scene material lighting", () => {
       camera.position.x = 90;
       beginFrame(scene);
       expect(isForwardLightExcluded(lamps[0]!)).toBe(true);
-      // Later lights keep their indices, so the spot stays in slot 4.
-      expect(receiver.lightSources[0]).toBe(lamps[9]);
-      expect(receiver.lightSources).toEqual([lamps[9], ...lamps.slice(1, 9)]);
+      // Every other light keeps its index, so the spot stays in the last slot.
+      expect(receiver.lightSources).toEqual([9, 1, 2, 3, 5, 6, 7, 8, 4].map((index) => lamps[index]));
       expect(part.materialDefines!.isDirty).toBe(false);
       expect(invalidate).not.toHaveBeenCalled();
       expect(material.isFrozen).toBe(true);
@@ -643,18 +644,51 @@ describe("scene material lighting", () => {
       );
     });
 
-    it("changes only the exchanged slot and refreshes frozen receivers when the slot defines differ", async () => {
+    it("re-sorts the admitted lights by slot kind and refreshes frozen receivers when the slot defines differ", async () => {
       const { scene, camera, lamps, material, receiver, part } = swapFixture([0, 4]);
       material.freeze();
       await ready(receiver, material);
-      const before = slotKinds(part.materialDefines!.toString());
-      expect(before.slice(0, 5)).toEqual(["spot", "point", "point", "point", "spot"]);
+      expect(slotKinds(part.materialDefines!.toString())).toEqual([...points(7), "spot", "spot"]);
       camera.position.x = 90;
       beginFrame(scene);
-      expect(receiver.lightSources[0]).toBe(lamps[9]);
+      // The admitted point joins the points; the remaining spot moves to the end.
+      expect(receiver.lightSources).toEqual([1, 2, 3, 5, 6, 7, 8, 9, 4].map((index) => lamps[index]));
       material.isReadyForSubMesh(receiver, part);
-      expect(slotKinds(part.materialDefines!.toString())).toEqual(["point", ...before.slice(1)]);
+      expect(slotKinds(part.materialDefines!.toString())).toEqual([...points(8), "spot"]);
       expect(material.isFrozen).toBe(true);
+    });
+
+    it("rebuilds the shader a revisited light set compiled before, after a chain of different-kind swaps", () => {
+      const scene = host(false);
+      const camera = new UniversalCamera("camera", Vector3.Zero(), scene);
+      scene.activeCamera = camera;
+      // Two spot and two point corner lamps; six points near the centre stay
+      // admitted. With the camera opposite a corner, that corner is farthest
+      // and the nine-slot budget drops it.
+      const corners = [new Vector3(40, 3, 40), new Vector3(-40, 3, 40), new Vector3(-40, 3, -40), new Vector3(40, 3, -40)];
+      const lamps = corners.map((position, index) =>
+        index < 2
+          ? new SpotLight(`corner-${index}`, position, Vector3.Down(), 1, 1, scene)
+          : new PointLight(`corner-${index}`, position, scene));
+      for (let index = 0; index < 6; index++) new PointLight(`centre-${index}`, new Vector3(index - 2.5, 3, 0), scene);
+      const material = new StandardMaterial("receiver", scene);
+      const receiver = MeshBuilder.CreateBox("receiver", {}, scene);
+      receiver.material = material;
+      const part = receiver.subMeshes[0]!;
+      syncSceneLighting(scene);
+      const exclude = (corner: number) => {
+        camera.position.copyFrom(corners[corner]!).scaleInPlace(-1);
+        beginFrame(scene);
+        expect(isForwardLightExcluded(lamps[corner]!)).toBe(true);
+        material.isReadyForSubMesh(receiver, part);
+        return { defines: part.materialDefines!.toString(), effect: part.effect };
+      };
+      const first = exclude(0);
+      exclude(1); // spot for spot
+      exclude(2); // spot for point
+      const revisit = exclude(0); // point for spot: the first light set again
+      expect(revisit.defines).toBe(first.defines);
+      expect(revisit.effect).toBe(first.effect);
     });
 
     it("refreshes a frozen receiver the admitted light excludes, which only loses the dropped light", async () => {
@@ -667,13 +701,11 @@ describe("scene material lighting", () => {
       await ready(excluded, material);
       camera.position.x = 90;
       beginFrame(scene);
-      expect(receiver.lightSources[0]).toBe(lamps[9]);
-      expect(excluded.lightSources).toEqual(lamps.slice(1, 9));
+      expect(receiver.lightSources).toEqual([1, 2, 3, 5, 6, 7, 8, 9, 4].map((index) => lamps[index]));
+      expect(excluded.lightSources).toEqual([1, 2, 3, 5, 6, 7, 8, 4].map((index) => lamps[index]));
       material.isReadyForSubMesh(excluded, excluded.subMeshes[0]!);
       // Its later lights moved down one slot, so its shader must follow.
-      expect(slotKinds(excluded.subMeshes[0]!.materialDefines!.toString())).toEqual(
-        ["point", "point", "point", "spot", "point", "point", "point", "point", "none"],
-      );
+      expect(slotKinds(excluded.subMeshes[0]!.materialDefines!.toString())).toEqual([...points(7), "spot", "none"]);
       expect(material.isFrozen).toBe(true);
     });
 
@@ -685,16 +717,17 @@ describe("scene material lighting", () => {
       beginFrame(scene);
       material.freeze();
       await ready(receiver, material);
-      expect(part.materialDefines!.toString()).toContain("#define SHADOW0\n");
+      // The spot follows the eight points.
+      expect(part.materialDefines!.toString()).toContain("#define SHADOW8\n");
       camera.position.x = 90;
       beginFrame(scene);
       // A standby map stays attached to the dropped light; the admitted spot has none.
       expect(lamps[0]!.getShadowGenerator()).toBe(generator);
-      expect(receiver.lightSources[0]).toBe(lamps[9]);
+      expect(receiver.lightSources[8]).toBe(lamps[9]);
       material.isReadyForSubMesh(receiver, part);
       const defines = part.materialDefines!.toString();
-      expect(defines).toContain("#define SPOTLIGHT0\n");
-      expect(defines).not.toContain("#define SHADOW0\n");
+      expect(defines).toContain("#define SPOTLIGHT8\n");
+      expect(defines).not.toContain("#define SHADOW8\n");
     });
 
     it("hands an exchange back to Babylon when the admitted light's parent is the dropped light", async () => {
@@ -714,14 +747,14 @@ describe("scene material lighting", () => {
       expect(isForwardLightExcluded(child)).toBe(true);
       material.freeze();
       await ready(receiver, material);
-      const order = scene.lights.slice();
       camera.position.x = 95;
       beginFrame(scene);
       // Dropping lamp 0 also disables its child, so neither lights the receiver.
       expect(isForwardLightExcluded(lamps[0]!)).toBe(true);
       expect(child.isEnabled()).toBe(false);
       expect(receiver.lightSources).toEqual(lamps.slice(1));
-      expect(scene.lights).toEqual(order);
+      // The undone exchange leaves the lit lamps first, then the two unlit ones.
+      expect(scene.lights).toEqual([...lamps.slice(1), lamps[0], child]);
       material.isReadyForSubMesh(receiver, receiver.subMeshes[0]!);
       expect(slotKinds(receiver.subMeshes[0]!.materialDefines!.toString())).toEqual(
         [...Array.from({ length: 8 }, () => "point"), "none"],
