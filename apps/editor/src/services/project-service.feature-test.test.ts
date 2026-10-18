@@ -33,6 +33,7 @@ import {
 } from "../lib/content-browser-helpers";
 import { loadOptionalEngineContent } from "../lib/engine-content";
 import { FEATURE_TEST_OPTIONAL_SLOTS } from "../lib/feature-test/engine-content-files";
+import { modelSimpleColliderCounter } from "../lib/physics-pairing-diagnostics";
 import { DocumentService } from "./document-service";
 import { createPlayContentService } from "./play-content-service";
 import { ProjectService } from "./project-service";
@@ -197,8 +198,17 @@ describe("FeatureTest starter", () => {
   });
 
   it("authors physics without pairing problems", async () => {
+    const modelSimpleColliderCount = modelSimpleColliderCounter(reopened.registry);
     for (const scene of await sceneDocuments()) {
-      expect(physicsActorsDiagnostics(scene.actors), scene.name).toEqual([]);
+      // A SceneLayer simulates in its own 2D world.
+      const physicsWorld = "viewportMode" in scene ? scene.settings.physicsWorld : "2d";
+      expect(physicsActorsDiagnostics(scene.actors, { physicsWorld, modelSimpleColliderCount }), scene.name).toEqual([]);
+    }
+    for (const asset of reopened.registry!.list()) {
+      if (asset.header.type !== "Class") continue;
+      const graph = (await reopened.loadDocument("graph", asset.path)) as SerializedGraph;
+      const actors = [{ id: asset.header.name, components: graph.components ?? [] }];
+      expect(physicsActorsDiagnostics(actors, { modelSimpleColliderCount }), asset.path).toEqual([]);
     }
   });
 });

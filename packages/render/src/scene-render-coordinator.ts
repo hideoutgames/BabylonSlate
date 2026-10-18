@@ -10,7 +10,7 @@ import { whenPresentationFenceClear } from "./presented-frame";
 import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
-import { heldThreadMs } from "./stall-deadline";
+import { heldThreadMs, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 
 class PreparationChanged extends Error {}
 
@@ -150,13 +150,19 @@ export class SceneRenderCoordinator {
     let deadline = 0;
     let finalDeadline = Infinity;
     let checkpoint = 0;
+    let creditLeft = 0;
     const restartDeadline = () => { deadline = Math.min(performance.now() + PREPARATION_TIMEOUT_MS, finalDeadline); };
-    /** A stretch in which one synchronous call held the thread is work, not time without readiness: it extends both bounds. */
+    /**
+     * A long gap between checkpoints is a synchronous call that held the thread,
+     * or a host that did not run this loop: time the preparation could neither
+     * spend nor observe. It extends both bounds, up to a budget per preparation,
+     * so a scene that never becomes ready still fails.
+     */
     const creditHeldThread = () => {
       const now = performance.now();
-      const held = heldThreadMs(now - checkpoint);
+      const grant = Math.min(heldThreadMs(now - checkpoint), creditLeft);
       checkpoint = now;
-      if (held > 0) { deadline += held; finalDeadline += held; }
+      if (grant > 0) { creditLeft -= grant; deadline += grant; finalDeadline += grant; }
     };
     const compiles = new DriverCompileWatch(this.scene.getEngine());
     /** A driver still compiling reports completion only, so it renews both bounds. */
@@ -167,11 +173,13 @@ export class SceneRenderCoordinator {
       restartDeadline();
       return false;
     };
-    const check = () => {
+    /** `credit: false` for a wait whose whole duration the caller already credits. */
+    const check = (credit = true) => {
       assertCurrent();
       if (this.disposed || this.scene.isDisposed)
         throw new PreparationChanged("Scene rendering preparation was superseded or disposed.");
-      creditHeldThread();
+      if (credit) creditHeldThread();
+      else checkpoint = performance.now();
       if (this.generation !== pending.generation) {
         pending.generation = this.generation;
         restartDeadline();
@@ -184,6 +192,7 @@ export class SceneRenderCoordinator {
         catch { /* previous owner's outcome */ }
       }
       checkpoint = performance.now();
+      creditLeft = SCENE_THREAD_HELD_BUDGET_MS;
       finalDeadline = checkpoint + PREPARATION_TOTAL_TIMEOUT_MS;
       restartDeadline();
       check();
@@ -192,7 +201,7 @@ export class SceneRenderCoordinator {
         // Preparing creates and finalises effects, and each synchronous GL query
         // waits behind the presented draw's driver compile. The wait is not
         // preparation time, so it extends both bounds.
-        const waited = await whenPresentationFenceClear(this.scene.getEngine(), check);
+        const waited = await whenPresentationFenceClear(this.scene.getEngine(), () => check(false));
         if (waited > 0) { finalDeadline += waited; restartDeadline(); }
         flushSceneLatticeDeformers(this.scene);
         if (expired())

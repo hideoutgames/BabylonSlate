@@ -27,7 +27,7 @@ To handle these events, add **Event On Hit**, **Event On Begin Overlap** or **Ev
 Each Actor class has **Generate Hit Events** and **Generate Overlap Events** under **Actor Defaults**, shown when you select the Prefab Root in the Class editor. Both are on by default. Turn one off when the actor never needs that event.
 
 ::: tip
-Use a trigger for pickups, checkpoints and damage zones. Pair the trigger Collider with a Rigid Body set to Static so it stays in place.
+Use a trigger for pickups, checkpoints and damage zones. Pair the trigger Collider with a Rigid Body set to Static so it stays in place. A Collider with no Rigid Body is not simulated, so it never raises an overlap. A Collider beside a collidable Mesh or a Blocking Volume does not need one.
 :::
 
 An overlap that already exists when Play starts also runs **Event On Begin Overlap**.

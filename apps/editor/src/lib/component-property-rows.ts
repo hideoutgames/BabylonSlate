@@ -367,12 +367,20 @@ function colliderShapeRows(
         }),
     });
   } else if (shape.kind === "box2d") {
+    // Play sizes a Box 2D from the actor's first Sprite collision box whenever that Sprite has an asset.
+    const spriteSizesBox = guidValue(
+      siblings.find((sibling) => sibling.classId === "SpriteComponent")?.properties.assetGuid,
+    ) !== null;
     rows.push({
       kind: "vector3",
       id: rowId(actorId, component.id, "shape-half-extents"),
       label: "Half Extents",
       value: [shape.halfExtents.x, shape.halfExtents.y, 0],
       axes: ["X", "Y"],
+      disabled: spriteSizesBox,
+      description: spriteSizesBox
+        ? "No effect while the actor's Sprite has an asset: the Sprite's Collision box sets the size."
+        : undefined,
       onChange: (value) =>
         update("shape", {
           kind: "box2d",
