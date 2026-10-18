@@ -579,6 +579,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState("");
   const [placeOpen, setPlaceOpen] = useState(false);
+  const outlinerRef = useRef<HTMLDivElement>(null);
   const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
   const [renamingRowId, setRenamingRowId] = useState<string | null>(null);
   const [deleteFolderId, setDeleteFolderId] = useState<string | null>(null);
@@ -767,6 +768,9 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         });
         selectActor(id);
         setPlaceOpen(false);
+        // The dialog keeps focus until its exit animation ends, outside the
+        // outliner's focus gate, so an immediate Delete would be ignored.
+        outlinerRef.current?.querySelector<HTMLElement>('[role="tree"]')?.focus({ preventScroll: true });
       };
       if (
         item.kind.type === "asset" &&
@@ -1155,7 +1159,6 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     [keybinds],
   );
 
-  const outlinerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const outlinerKeys = { enabled: Boolean(scene), focusWithinRef: outlinerRef };
   useKeybindCommand("edit.find", () => {

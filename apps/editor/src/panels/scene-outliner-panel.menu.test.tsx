@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedScene } from "@babylonslate/core";
@@ -249,6 +249,30 @@ describe("SceneOutlinerPanel menus", () => {
     fireEvent.click(screen.getByTestId("place-actors-catalog-category-Project"));
     expect(screen.getByTestId("place-actors-item-asset-hero-sprite")).toBeTruthy();
     expect(screen.getByTestId("place-actors-item-asset-villain-sprite")).toBeTruthy();
+  });
+  it("moves focus into the outliner while the Place Actors dialog is still closing", async () => {
+    const scene = createDefaultScene();
+    scene.actors = [createActor("actor-1", "Cube")];
+    harness.scene = scene;
+    // A pending animation keeps the closing dialog mounted, as its real exit does.
+    Object.defineProperty(Element.prototype, "getAnimations", {
+      configurable: true,
+      value: () => [{ finished: new Promise(() => undefined) }],
+    });
+    onTestFinished(() => {
+      Reflect.deleteProperty(Element.prototype, "getAnimations");
+    });
+    render(
+      <SceneEditingProvider>
+        <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
+      </SceneEditingProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId("outliner-add-actor"));
+    fireEvent.click(await screen.findByTestId("place-actors-item-shape-box"));
+
+    await waitFor(() => expect(document.querySelector('[data-slot="dialog-content"][data-closed]')).not.toBeNull());
+    expect(document.activeElement).toBe(screen.getByRole("tree"));
   });
   it("toggles an actor from the menu without replacing other selected actors", async () => {
     const scene = createDefaultScene();
