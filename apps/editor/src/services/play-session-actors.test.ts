@@ -63,6 +63,7 @@ describe.each(["worker", "in-process"] as const)(
         presentFirstFrame?: () => Promise<void>;
         onFatalDiagnostic?: () => void;
         onSessionEnded?: () => void;
+        onRuntimeLog?: (entry: { category: string; severity: string; message: string }) => void;
         scenes?: Parameters<typeof startPlaySession>[0]["scenes"];
         prepareSceneStream?: () => Promise<void>;
         applyCommand?: (command: CommandMessage) => void;
@@ -216,6 +217,7 @@ describe.each(["worker", "in-process"] as const)(
         gameInstanceClass: options.gameInstanceClass,
         onFatalDiagnostic: options.onFatalDiagnostic,
         onSessionEnded: options.onSessionEnded,
+        onRuntimeLog: options.onRuntimeLog,
         acquireAssetSources: options.acquireAssetSources,
         acquireSceneSources: options.sceneSources,
         audioReverbByScene: options.audioReverbByScene,
@@ -505,6 +507,28 @@ describe.each(["worker", "in-process"] as const)(
       expect(runtime.executeConsoleCommand("quit")).toEqual({ success: true, output: "quit" });
       expect(onSessionEnded).not.toHaveBeenCalled();
       await vi.waitFor(() => expect(onSessionEnded).toHaveBeenCalledOnce());
+    });
+
+    it("feeds each Log node message to the host's Output Log once, with its category and severity", async () => {
+      const onRuntimeLog = vi.fn();
+      const logger: ScriptBundleEntry = {
+        assetGuid: "logger-class", classId: "logger", parentClassId: "Actor",
+        source: [
+          "export function onBeginPlay(ctx) {",
+          "  ctx.log('warning', 'Fuel', 'Low');",
+          "  ctx.log('error', 'Fuel', 'Empty');",
+          "}",
+        ].join("\n"),
+        anchors: [],
+        entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }],
+      };
+      await play({ actors: [createActor("pump", "Pump", { classId: "logger" })], scripts: [logger], onRuntimeLog });
+      await vi.waitFor(() => expect(onRuntimeLog).toHaveBeenCalledTimes(2));
+      // An error log also raises a runtime diagnostic; that one stays out of the Output Log feed.
+      expect(onRuntimeLog.mock.calls.map(([entry]) => entry)).toEqual([
+        { category: "Fuel", severity: "warning", message: "Low" },
+        { category: "Fuel", severity: "error", message: "Empty" },
+      ]);
     });
 
     it("keeps a placed main actor at its authored position and runs Begin Play", async () => {

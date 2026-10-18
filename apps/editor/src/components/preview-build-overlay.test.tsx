@@ -171,6 +171,20 @@ describe("PreviewBuildOverlay", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
+  it("sends the player's logs, but not its diagnostics or prints, to the Output Log", async () => {
+    const iframeRef = createRef<HTMLIFrameElement>();
+    const onOutputLog = vi.fn();
+    render(<PreviewBuildOverlay src="/player/index.html?preview=1" iframeRef={iframeRef} onClose={() => undefined} onOutputLog={onOutputLog} />);
+    const receive = (command: Record<string, unknown>) => act(() => window.dispatchEvent(new MessageEvent("message", {
+      source: iframeRef.current!.contentWindow!, origin: window.location.origin,
+      data: { type: "babylonslate-preview-console-event", command } })));
+    receive({ type: "log", severity: "error", category: "Fuel", message: "Empty" });
+    receive({ type: "diagnostic", severity: "error", message: "Empty" });
+    receive({ type: "print", message: "Hello" });
+    receive({ type: "log", severity: "warning", message: "Audio could not start" });
+    expect(onOutputLog.mock.calls).toEqual([["[Fuel] Error: Empty"], ["Warning: Audio could not start"]]);
+  });
+
   it("leaves Preview Build when the player reports that a quit command ended its session", async () => {
     const iframeRef = createRef<HTMLIFrameElement>();
     const onClose = vi.fn();

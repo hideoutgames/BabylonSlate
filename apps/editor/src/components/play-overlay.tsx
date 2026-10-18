@@ -10,6 +10,7 @@ import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render"
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
 import { clipText } from "../lib/diagnostic-info";
+import { formatRuntimeLogLine } from "../lib/output-log-line";
 import { formatSceneLoadReport } from "../lib/scene-load-report";
 import { nextStatGroups, type StatGroup } from "@babylonslate/debugger";
 import type { SceneLoadProgress } from "@babylonslate/render";
@@ -307,7 +308,7 @@ function PlayOverlayView({
   pauseOnPlay = false,
   onClose,
 }: PlayOverlayProps) {
-  const { reportBtState, overlayStats, overlayConsole, overlayInspector, overlayProfiler } =
+  const { appendLog, reportBtState, overlayStats, overlayConsole, overlayInspector, overlayProfiler } =
     usePlay();
   const simulating = sessionTicket?.mode === "simulate";
   const inspectionStore = useSimulationInspectionStore();
@@ -809,6 +810,7 @@ function PlayOverlayView({
             if (testMode) setMoveX(sessionRef.current?.lastMoveX() ?? null);
           },
           onLog: (message, severity) => pushLog(severity, message),
+          onRuntimeLog: (entry) => appendLog(formatRuntimeLogLine(entry)),
           onPrint: (entry) => {
             printRef.current?.(entry);
             pushLog("print", entry.message);
@@ -1011,7 +1013,7 @@ function PlayOverlayView({
       };
     });
     return () => { cancelled = true; disposePresentation?.(); };
-  }, [sharedEngine, injectFixtureThrow, reportBtState, btStateObservers, pushLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, simulationSession, diagnosticStore, testMode]);
+  }, [sharedEngine, injectFixtureThrow, reportBtState, btStateObservers, pushLog, appendLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, simulationSession, diagnosticStore, testMode]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;

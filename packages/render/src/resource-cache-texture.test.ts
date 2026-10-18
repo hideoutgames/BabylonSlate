@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine, PBRMaterial, Texture } from "@babylonjs/core";
+import { Constants, NullEngine, PBRMaterial, Texture } from "@babylonjs/core";
 import {
   bindResourceCacheToHandle,
+  describeEngineTexture,
   acquireMaterialTexture,
   acquireTextureVariant,
   PIXEL_ART_TEXTURE_SAMPLING,
@@ -793,5 +794,23 @@ describe("KTX2 orientation", () => {
       expect(lowerAndUpper.map((v) => sampledImageRow(texture, v, 2, "block-compressed"))).toEqual([1, 0]);
     cache.dispose();
     engine.dispose();
+  });
+});
+
+describe("describeEngineTexture", () => {
+  it("names a native texture and says which ResourceCache entry uploads it, even once the entry is unreferenced", async () => {
+    const engine = textureEngine();
+    const cache = resourceCacheForEngine(engine);
+    const lease = cache.acquireTexture("asset-a", engine, new Uint8Array([1, 2, 3]));
+    await lease.ready;
+    const owned = lease.resource.getInternalTexture()!;
+    const stray = engine.createRawTexture(new Uint8Array(4), 1, 1, Constants.TEXTUREFORMAT_RGBA, false, false, Texture.NEAREST_SAMPLINGMODE);
+    try {
+      expect(describeEngineTexture(engine, owned)).toMatchObject({ name: owned.url, references: owned._references, resourceCache: { assetGuid: "asset-a", leases: 1 } });
+      expect(describeEngineTexture(engine, stray)).toMatchObject({ references: 1, resourceCache: null });
+      lease.release();
+      // Released but not evicted: the entry still holds the native texture.
+      expect(describeEngineTexture(engine, owned).resourceCache).toEqual({ assetGuid: "asset-a", leases: 0 });
+    } finally { releaseResourceCacheForEngine(engine); engine.dispose(); }
   });
 });

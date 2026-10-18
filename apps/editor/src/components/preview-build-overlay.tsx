@@ -34,6 +34,7 @@ import {
 import { SelectableText } from "@babylonslate/editor-kit";
 import { useDiagnosticResultsStore } from "../context/diagnostic-results-context";
 import { createPreviewDiagnostics } from "../services/preview-diagnostics";
+import { formatRuntimeLogLine } from "../lib/output-log-line";
 
 function sameNames(next: readonly string[] | undefined, previous: readonly string[] | undefined): boolean {
   if (next === previous) return true;
@@ -48,6 +49,8 @@ export type PreviewBuildOverlayProps = {
   /** Called after this iframe presentation has unmounted. */
   onDetached?: () => void;
   onTrace?: (trace: TracePayload) => void;
+  /** Receives each runtime log (Log nodes included) as an Output Log line. */
+  onOutputLog?: (line: string) => void;
   /** The shared session owner invokes this before closing or replacing Preview. */
   registerBeforeStop?: (finalize: () => Promise<void>) => () => void;
   /** Boot failure reported by the player, so the black canvas is explained. */
@@ -64,6 +67,7 @@ export function PreviewBuildOverlay({
   onClose,
   onDetached,
   onTrace,
+  onOutputLog,
   registerBeforeStop,
   error = null,
   showStats = true,
@@ -73,6 +77,8 @@ export function PreviewBuildOverlay({
   const onDetachedRef = useRef(onDetached);
   onDetachedRef.current = onDetached;
   useEffect(() => () => { onDetachedRef.current?.(); }, []);
+  const onOutputLogRef = useRef(onOutputLog);
+  onOutputLogRef.current = onOutputLog;
   const [consoleOpen, setConsoleOpen] = useState(false);
   // The player starts with Stats hidden; console commands report changes back.
   const [statsOpen, setStatsOpen] = useState(false);
@@ -268,6 +274,13 @@ export function PreviewBuildOverlay({
           command.type === "print" ? "print" : (command.severity ?? "log"),
           command.message,
         );
+      }
+      if (command?.type === "log" && typeof command.message === "string") {
+        onOutputLogRef.current?.(formatRuntimeLogLine({
+          category: typeof command.category === "string" ? command.category : "",
+          severity: command.severity ?? "log",
+          message: command.message,
+        }));
       }
       // The player ran `quit`; end Preview Build as its Stop button does.
       if (command?.type === "sessionEnded") void finishRef.current();
