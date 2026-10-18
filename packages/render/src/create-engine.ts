@@ -112,8 +112,9 @@ import {
 import { createGizmoHost, type GizmoHost } from "./gizmo-host";
 import { createWaterHandles } from "./water-handles";
 import { createSplineHandles } from "./spline-handles";
+import { createDeformerHandles } from "./deformer-handles";
 import { selectedShapeComponent } from "./shape-edit-target";
-import type { ComponentShapeEdit } from "./shape-handles";
+import type { ComponentShapeEdit, ShapeHandlesHost } from "./shape-handles";
 import {
   applyGizmoMultiSelectDrag,
   beginGizmoMultiSelectDrag,
@@ -144,7 +145,7 @@ import {
   unfreezeActorWorldMatrix,
   freezeStaticActorWorldMatrix,
 } from "./scene-loader";
-import { waterKindForClass } from "@babylonslate/core";
+import { waterKindForClass, DEFORMER_COMPONENT_CLASS_ID, deformerTargetMesh, parseDeformerProperties } from "@babylonslate/core";
 import {
   accountedGeometryBytesForScene,
   isEditorModelPlaceholder,
@@ -1995,7 +1996,7 @@ function initializeEngine(
     const selection = outlineHost.selection;
     onRollback(() => selection.dispose());
     let multiSelectDrag: GizmoMultiSelectDrag | null = null;
-    let splinePointDrag = false;
+    let pointDrag: ShapeHandlesHost<never> | null = null;
     const parentIdOf = (id: string): string | null =>
       editorSync.serializedScene()?.actors.find((actor) => actor.id === id)
         ?.parentId ?? null;
@@ -2043,8 +2044,8 @@ function initializeEngine(
       canvasCssHeight: () => pointerCanvas().height,
       onDragStart: () => {
         const attached = gizmosRef.host?.attachedMesh() ?? null;
-        splinePointDrag = attached !== null && attached === splineHandles.selectedNode() && splineHandles.beginSelectionDrag();
-        if (splinePointDrag) return;
+        pointDrag = (attached && pointHandles().find((handles) => attached === handles.selectedNode() && handles.beginSelectionDrag())) || null;
+        if (pointDrag) return;
         const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
         const followers = roots
           .map((id) => editorSync.meshForActor(id))
@@ -2061,7 +2062,7 @@ function initializeEngine(
         options.onGizmoDragStart?.();
       },
       onDrag: () => {
-        if (splinePointDrag) { splineHandles.dragSelection(); return; }
+        if (pointDrag) { pointDrag.dragSelection(); return; }
         const attached = gizmosRef.host?.attachedMesh() ?? null;
         if (multiSelectDrag && attached) {
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
@@ -2076,7 +2077,7 @@ function initializeEngine(
         debugOverlayInstance.followLivePose();
       },
       onDragEnd: () => {
-        if (splinePointDrag) { splinePointDrag = false; splineHandles.endSelectionDrag(); return; }
+        if (pointDrag) { pointDrag.endSelectionDrag(); pointDrag = null; return; }
         const attached = gizmosRef.host?.attachedMesh() ?? null;
         if (multiSelectDrag && attached) {
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
@@ -2103,10 +2104,17 @@ function initializeEngine(
       onCommit: (edit) => options.onComponentShapeEdit?.(edit),
       onSelectionChange: () => attachSelectionGizmo(),
     });
-    // A selected spline point takes the translate gizmo until a viewport tap
-    // outside the handles or a new selection returns it to the actor.
+    const deformerHandles = createDeformerHandles(gizmos.layer, scene, {
+      scheduler,
+      onCommit: (edit) => options.onComponentShapeEdit?.(edit),
+      onSelectionChange: () => attachSelectionGizmo(),
+    });
+    onRollback(() => deformerHandles.dispose());
+    const pointHandles = (): ShapeHandlesHost<never>[] => [splineHandles, deformerHandles];
+    // A selected spline or deformer point takes the translate gizmo until a viewport
+    // tap outside the handles or a new selection returns it to the actor.
     const attachSelectionGizmo = () => {
-      const point = splineHandles.selectedNode();
+      const point = splineHandles.selectedNode() ?? deformerHandles.selectedNode();
       if (point) {
         gizmos.attachTo(point, [], { tool: "translate" });
         return;
@@ -2142,6 +2150,14 @@ function initializeEngine(
         actorId: actor.id, componentId: component.id,
         meshName: editorComponentMeshName(actor.id, component.id), properties: component.properties,
       } : null);
+      const deformerTarget = actor && component?.classId === DEFORMER_COMPONENT_CLASS_ID
+        ? deformerTargetMesh(actor.components, parseDeformerProperties(component.properties).targetMeshComponentId) : undefined;
+      deformerHandles.attach(actor && component && deformerTarget ? {
+        actorId: actor.id, componentId: component.id,
+        meshName: editorComponentMeshName(actor.id, deformerTarget.id), properties: component.properties,
+        resolveMesh: () => editorSync.meshForComponent(actor.id, deformerTarget.id),
+        preview: deformerBindings(actor.id, actor.components).some((binding) => binding.id === component.id),
+      } : null);
     };
 
     let tapPickSequence = 0;
@@ -2149,7 +2165,7 @@ function initializeEngine(
       scheduler,
       editorCameraActive: () => !previewGameCamera,
       blockLook: (x, y) =>
-        gizmos.isDragging() || waterHandles.isDragging() || splineHandles.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
+        gizmos.isDragging() || waterHandles.isDragging() || splineHandles.isDragging() || deformerHandles.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
       dragSelectActive: () => options.dragSelectActive?.() === true,
       onPointer:
         options.sharedEngine || presentRtt
@@ -2162,6 +2178,7 @@ function initializeEngine(
           : undefined,
       onTap: (x, y, tap) => {
         splineHandles.clearSelection();
+        deformerHandles.clearSelection();
         const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
         const sequence = ++tapPickSequence;
         void pickActorMeshName(scene, mapped.x, mapped.y).then((meshName) => {

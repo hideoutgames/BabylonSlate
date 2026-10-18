@@ -51,14 +51,22 @@ describe("conventional forward shader admission", () => {
     expect(getParameter).toHaveBeenCalledTimes(8);
   });
 
-  it("matches Babylon's WebGPU light clamp to the per-stage uniform buffer limit", () => {
-    const engine = {
-      supportsUniformBuffers: true,
-      onContextRestoredObservable: new Observable<AbstractEngine>(),
-      getCaps: () => ({ maxUniformBuffersPerShaderStage: 12 }),
-    } as unknown as AbstractEngine;
-    expect(forwardLightBudget(engine)).toMatchObject({ slots: 8, source: "webgpu", reservedBlocks: 4 });
-  });
+  it.each([
+    [12, 8],
+    [16, 12],
+    [20, 16],
+    [4, 1],
+  ])(
+    "matches Babylon's WebGPU light clamp to a per-stage uniform buffer limit of %i",
+    (limit, slots) => {
+      const engine = {
+        supportsUniformBuffers: true,
+        onContextRestoredObservable: new Observable<AbstractEngine>(),
+        getCaps: () => ({ maxUniformBuffersPerShaderStage: limit }),
+      } as unknown as AbstractEngine;
+      expect(forwardLightBudget(engine)).toMatchObject({ slots, source: "webgpu", reservedBlocks: 4 });
+    },
+  );
 
   it("uses conservative WebGL2 minima when queries fail", () => {
     const { engine, getParameter } = device([]);

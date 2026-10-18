@@ -1,4 +1,4 @@
-import { waterKindForClass, type SerializedScene } from "@babylonslate/core";
+import { DEFORMER_COMPONENT_CLASS_ID, waterKindForClass, type SerializedScene } from "@babylonslate/core";
 
 /** Explicit component selection wins over the actor's first editable shape. */
 export function selectedShapeComponent(scene: SerializedScene | null, actorIds: readonly string[], componentIds: readonly string[]) {
@@ -7,7 +7,7 @@ export function selectedShapeComponent(scene: SerializedScene | null, actorIds: 
   if (!actor || actor.locked) return null;
   const component = actor.components.find((entry) =>
     (componentIds.length === 0 || componentIds.includes(entry.id)) &&
-    (entry.classId === "SplineComponent" || waterKindForClass(entry.classId) !== null),
+    (entry.classId === "SplineComponent" || entry.classId === DEFORMER_COMPONENT_CLASS_ID || waterKindForClass(entry.classId) !== null),
   );
   return component ? { actor, component } : null;
 }

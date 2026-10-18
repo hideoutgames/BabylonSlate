@@ -58,6 +58,47 @@ export function disposeMeshLatticeDeformer(root: AbstractMesh): void {
   owners.delete(root); setLatticeBinding(root); owner.dispose();
 }
 
+/** Meshes a cage on `root` deforms: its subtree and detached LODs, stopping at other component roots. */
+export function latticePartMeshes(root: AbstractMesh): AbstractMesh[] {
+  const found: AbstractMesh[] = [];
+  const visit = (node: Node) => {
+    if (node !== root && isLatticeComponentRoot(node)) return;
+    if (node instanceof AbstractMesh && !isEditorHelperMesh(node) && node.getTotalVertices() > 0) found.push(node);
+    for (const child of node.getChildren(undefined, true)) visit(child);
+    if (node instanceof Mesh) for (const level of node.getLODLevels()) if (level.mesh && level.mesh.parent !== node) visit(level.mesh);
+  };
+  visit(root);
+  return found;
+}
+
+const FIT_POINT = Vector3.Zero();
+const FIT_INVERSE = Matrix.Identity();
+const FIT_RELATIVE = Matrix.Identity();
+function fitPartBounds(root: AbstractMesh, parts: Iterable<[AbstractMesh, { minimum: Vector3; maximum: Vector3 }]>): { min: Vector3; max: Vector3 } {
+  const min = new Vector3(Infinity, Infinity, Infinity), max = new Vector3(-Infinity, -Infinity, -Infinity);
+  root.computeWorldMatrix(true).invertToRef(FIT_INVERSE);
+  for (const [mesh, part] of parts) {
+    mesh.computeWorldMatrix(true);
+    // Parentless LODs borrow their master's rendered transform and bounds.
+    // computeWorldMatrix returns the LOD's own transform; getWorldMatrix
+    // resolves Babylon's master override used by the actual draw.
+    mesh.getWorldMatrix().multiplyToRef(FIT_INVERSE, FIT_RELATIVE);
+    for (let i = 0; i < 8; i++) {
+      FIT_POINT.set(i & 1 ? part.maximum.x : part.minimum.x, i & 2 ? part.maximum.y : part.minimum.y, i & 4 ? part.maximum.z : part.minimum.z);
+      Vector3.TransformCoordinatesToRef(FIT_POINT, FIT_RELATIVE, FIT_POINT);
+      min.minimizeInPlace(FIT_POINT); max.maximizeInPlace(FIT_POINT);
+    }
+  }
+  return { min, max };
+}
+
+/** Fit To Mesh cage bounds in `root`'s local space, from undeformed geometry; null without geometry. */
+export function latticeFitBounds(root: AbstractMesh): { min: Vector3; max: Vector3 } | null {
+  const parts = latticePartMeshes(root);
+  if (!parts.length) return null;
+  return fitPartBounds(root, parts.map((mesh) => [mesh, materialBaseBounds(mesh._masterMesh ?? mesh)]));
+}
+
 type Part = {
   minimum: Vector3; maximum: Vector3; matrixFlag: number; bounds: BoundingInfo;
   material: Material | null; slots: readonly (Material | null)[];
@@ -176,25 +217,18 @@ class LatticeOwner {
     const config = this.config;
     if (!config) return;
     if (geometryChanged) this.fit = undefined;
-    const found = new Set<AbstractMesh>();
-    const visit = (node: Node) => {
-      if (node !== this.root && isLatticeComponentRoot(node)) return;
-      if (node instanceof AbstractMesh && !isEditorHelperMesh(node) && node.getTotalVertices() > 0) {
-        found.add(node);
-        if (!this.parts.has(node)) {
-          const box = materialBaseBounds(node._masterMesh ?? node);
-          this.parts.set(node, { minimum: box.minimum.clone(), maximum: box.maximum.clone(), matrixFlag: -1, bounds: new BoundingInfo(box.minimum, box.maximum), material: node.material, slots: [], materialObserver: node.onMaterialChangedObservable.add(() => { this.materialsDirty = true; }) });
-          this.fit = undefined;
-          this.materialsDirty = true;
-        } else if (geometryChanged) {
-          const base = materialBaseBounds(node._masterMesh ?? node), part = this.parts.get(node)!;
-          part.minimum.copyFrom(base.minimum); part.maximum.copyFrom(base.maximum); part.matrixFlag = -1;
-        }
+    const found = new Set(latticePartMeshes(this.root));
+    for (const node of found) {
+      if (!this.parts.has(node)) {
+        const box = materialBaseBounds(node._masterMesh ?? node);
+        this.parts.set(node, { minimum: box.minimum.clone(), maximum: box.maximum.clone(), matrixFlag: -1, bounds: new BoundingInfo(box.minimum, box.maximum), material: node.material, slots: [], materialObserver: node.onMaterialChangedObservable.add(() => { this.materialsDirty = true; }) });
+        this.fit = undefined;
+        this.materialsDirty = true;
+      } else if (geometryChanged) {
+        const base = materialBaseBounds(node._masterMesh ?? node), part = this.parts.get(node)!;
+        part.minimum.copyFrom(base.minimum); part.maximum.copyFrom(base.maximum); part.matrixFlag = -1;
       }
-      for (const child of node.getChildren(undefined, true)) visit(child);
-      if (node instanceof Mesh) for (const level of node.getLODLevels()) if (level.mesh && level.mesh.parent !== node) visit(level.mesh);
-    };
-    visit(this.root);
+    }
     for (const [mesh, part] of this.parts) if (!found.has(mesh)) { mesh.onMaterialChangedObservable.remove(part.materialObserver); setMaterialBoundsExpansion(mesh, null); this.parts.delete(mesh); this.fit = undefined; }
     this.instanceSources.clear();
     for (const mesh of this.parts.keys()) {
@@ -322,20 +356,7 @@ class LatticeOwner {
     }
   }
   private fitBounds(): { min: Vector3; max: Vector3 } {
-    const min = new Vector3(Infinity, Infinity, Infinity), max = new Vector3(-Infinity, -Infinity, -Infinity);
-    this.root.computeWorldMatrix(true).invertToRef(this.inverse);
-    for (const [mesh, part] of this.parts) {
-      mesh.computeWorldMatrix(true);
-      // Parentless LODs borrow their master's rendered transform and bounds.
-      // computeWorldMatrix returns the LOD's own transform; getWorldMatrix
-      // resolves Babylon's master override used by the actual draw.
-      mesh.getWorldMatrix().multiplyToRef(this.inverse, this.relative);
-      this.corners(part.minimum, part.maximum, (point) => { Vector3.TransformCoordinatesToRef(point, this.relative, point); min.minimizeInPlace(point); max.maximizeInPlace(point); });
-    }
-    return { min, max };
-  }
-  private corners(min: Vector3, max: Vector3, visit: (point: Vector3) => void): void {
-    for (let i = 0; i < 8; i++) { this.point.set(i & 1 ? max.x : min.x, i & 2 ? max.y : min.y, i & 4 ? max.z : min.z); visit(this.point); }
+    return fitPartBounds(this.root, this.parts);
   }
   private updateBounds(force: boolean): void {
     const lattice = this.resource?.lattice;
