@@ -36,6 +36,7 @@ export * from "./easing";
 export * from "./tween";
 export * from "./cursor-ray";
 export * from "./format-value";
+export * from "./humanize-property-label";
 export * from "./print-hud";
 export * from "./trace";
 export * from "./map-default";

@@ -231,16 +231,28 @@ describe("validateGraphs", () => {
     expect(diags.some((d) => d.code === "pin.missing_input")).toBe(false);
   });
 
-  it("warns pin.missing_input for an unconnected required pin without a default", () => {
+  it("warns pin.missing_input, by display label, only for an unconnected reference pin", () => {
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
       nodes: [
         flowEntry(),
         {
+          id: "spawn",
+          typeId: "actor.spawn",
+          position: { x: 200, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("classId", "classId", "in", classRef("Actor")),
+            pin("out", "out", "out", actorRef("Actor")),
+          ],
+          properties: {},
+        },
+        {
           id: "log",
           typeId: "debug.log",
-          position: { x: 200, y: 0 },
+          position: { x: 400, y: 0 },
           pins: [
             pin("execIn", "exec", "in", EXEC),
             pin("execOut", "then", "out", EXEC),
@@ -261,7 +273,8 @@ describe("validateGraphs", () => {
         },
       ],
       edges: [
-        execThen("entry", "log"),
+        execThen("entry", "spawn"),
+        execThen("spawn", "log"),
         {
           id: "data",
           sourceNodeId: "add",
@@ -271,11 +284,49 @@ describe("validateGraphs", () => {
         },
       ],
     };
-    const diags = validateGraphs([graph], { assetGuid: "a" });
-    expect(diags.filter((d) => d.code === "pin.missing_input")).toHaveLength(2);
-    expect(diags.filter((d) => d.code === "pin.missing_input")[0]?.severity).toBe(
-      "warning",
+    const missing = validateGraphs([graph], { assetGuid: "a" }).filter(
+      (d) => d.code === "pin.missing_input",
     );
+    expect(missing).toEqual([
+      expect.objectContaining({
+        severity: "warning",
+        nodeId: "spawn",
+        pinId: "classId",
+        message: 'Required input "Class ID" is not connected',
+      }),
+    ]);
+  });
+
+  it.each([
+    ["a stored default", { pin: pin("classId", "classId", "in", classRef("Actor")), properties: { "default:classId": "Pawn" }, catalog: undefined }],
+    ["a default on the saved pin", { pin: pin("classId", "classId", "in", classRef("Actor"), "data", false, "Pawn"), properties: {}, catalog: undefined }],
+    ["a default only on the catalog pin", { pin: pin("classId", "classId", "in", classRef("Actor")), properties: {}, catalog: pin("classId", "classId", "in", classRef("Actor"), "data", false, "Pawn") }],
+  ])("counts %s as authored for an unconnected reference pin", (_name, { pin: spawnPin, properties, catalog }) => {
+    const registry = new NodeRegistry();
+    registry.register({
+      id: "actor.spawn",
+      title: "Spawn Actor",
+      category: "test",
+      pins: () => [catalog ?? spawnPin],
+      codegen: () => {},
+    });
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        flowEntry(),
+        {
+          id: "spawn",
+          typeId: "actor.spawn",
+          position: { x: 200, y: 0 },
+          pins: [pin("execIn", "exec", "in", EXEC), spawnPin],
+          properties,
+        },
+      ],
+      edges: [execThen("entry", "spawn")],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" }, { registry });
+    expect(diags.some((d) => d.code === "pin.missing_input")).toBe(false);
   });
 
   it("errors pin.missing_input for an unconnected required object reference", () => {
@@ -1102,6 +1153,112 @@ describe("validateGraphs", () => {
     expect(collisions).toEqual([expect.objectContaining({ severity: "error", nodeId: "b" })]);
   });
 
+  describe("event.duplicate", () => {
+    const entryEvent = (
+      id: string,
+      typeId: string,
+      properties: Record<string, unknown> = {},
+    ): GraphNode => ({
+      id,
+      typeId,
+      position: { x: 0, y: 0 },
+      pins: [pin("execOut", "then", "out", EXEC)],
+      properties,
+    });
+    const inputEvent = (id: string, asset?: string): GraphNode => ({
+      id,
+      typeId: "input.actionEvent",
+      position: { x: 0, y: 0 },
+      pins: [
+        pin("started", "Started", "out", EXEC),
+        pin("binding", "Input Binding", "in", structRef("engine:InputBinding")),
+      ],
+      properties: asset ? { "default:binding": { Input: { Name: asset, Asset: asset } } } : {},
+    });
+    const duplicates = (nodes: GraphNode[], edges: GraphEdge[] = []) =>
+      validateGraphs([{ ...createEmptyLogicGraph("g"), nodes, edges }], { assetGuid: "a" }).filter(
+        (d) => d.code === "event.duplicate",
+      );
+
+    it("errors on the second entry of a lifecycle event, in display-name form", () => {
+      expect(
+        duplicates([entryEvent("a", "flow.event.tick"), entryEvent("b", "flow.event.tick"), entryEvent("c", "flow.event.beginPlay")]),
+      ).toEqual([
+        expect.objectContaining({
+          severity: "error",
+          nodeId: "b",
+          relatedNodeId: "a",
+          message: "Event Tick appears more than once in this graph. Keep one; use a Sequence to run several things.",
+        }),
+      ]);
+    });
+
+    it("tells component events apart by component, and flags the same one twice", () => {
+      expect(
+        duplicates([
+          entryEvent("a", "flow.event.hit", { componentId: "col-1" }),
+          entryEvent("b", "flow.event.hit", { componentId: "col-2" }),
+          entryEvent("c", "flow.event.hit", { componentId: "col-1", title: "Event On Hit (Collider)" }),
+        ]),
+      ).toEqual([
+        expect.objectContaining({ nodeId: "c", relatedNodeId: "a", message: expect.stringMatching(/^Event On Hit \(Collider\) appears/) }),
+      ]);
+    });
+
+    it("tells input events apart by binding, never by the shared tick handler", () => {
+      expect(
+        duplicates([
+          inputEvent("jump", "input-jump"),
+          inputEvent("fire", "input-fire"),
+          inputEvent("jump-again", "input-jump"),
+          entryEvent("tick", "flow.event.tick"),
+          inputEvent("unbound-1"),
+          inputEvent("unbound-2"),
+        ]).map((d) => d.nodeId),
+      ).toEqual(["jump-again"]);
+    });
+
+    it("skips an input event whose binding is wired, since the binding is unknown", () => {
+      const source: GraphNode = {
+        id: "binding",
+        typeId: "input.getBinding",
+        position: { x: 0, y: 0 },
+        pins: [pin("out", "Binding", "out", structRef("engine:InputBinding"))],
+        properties: {},
+      };
+      const wire = (id: string, target: string): GraphEdge => ({
+        id, sourceNodeId: "binding", sourcePinId: "out", targetNodeId: target, targetPinId: "binding",
+      });
+      expect(
+        duplicates(
+          [source, inputEvent("a", "input-jump"), inputEvent("b", "input-jump")],
+          [wire("w1", "a"), wire("w2", "b")],
+        ),
+      ).toEqual([]);
+    });
+
+    it("reports two custom events with the same name, and leaves differently spelled ones to event.name_collision", () => {
+      const custom = (id: string, name: string) => entryEvent(id, "flow.event.custom", { name });
+      const graph = { ...createEmptyLogicGraph("g"), nodes: [custom("a", "Open Door"), custom("b", "Open Door"), custom("c", "Open/Door")] };
+      const diags = validateGraphs([graph], { assetGuid: "a" });
+      expect(diags.filter((d) => d.code === "event.duplicate")).toEqual([
+        expect.objectContaining({ nodeId: "b", relatedNodeId: "a", message: expect.stringMatching(/^Event Open Door appears/) }),
+      ]);
+      expect(diags.filter((d) => d.code === "event.name_collision").map((d) => d.nodeId)).toEqual(["c"]);
+    });
+
+    it("ignores nodes with an exec input, which run where wired instead of starting a chain", () => {
+      const call = (id: string): GraphNode => ({
+        id,
+        typeId: "flow.event.call",
+        position: { x: 0, y: 0 },
+        pins: [pin("execIn", "exec", "in", EXEC), pin("execOut", "then", "out", EXEC)],
+        properties: { name: "Ping" },
+      });
+      expect(duplicates([call("a"), call("b")])).toEqual([]);
+    });
+  });
+
   it("errors when an interface implementation pin is a Map where the method takes an Array", () => {
     const signature = (container: "array" | "map") => [
       { name: "targets", typeId: "actorRef", direction: "in" as const, container },
@@ -1673,7 +1830,7 @@ describe("validateGraphs", () => {
             pin("hit", "hit", "out", STRING),
             pin("target", "target", "in", objectRef("Actor")),
           ],
-          properties: {},
+          properties: { title: "Line Trace" },
         },
       ],
       edges: [
@@ -1692,6 +1849,62 @@ describe("validateGraphs", () => {
       diags.some((d) => d.code === "pin.missing_input" && d.nodeId === "log"),
     ).toBe(false);
     expect(diags.some((d) => d.nodeId === "trace")).toBe(false);
+    // The data is intentionally empty (an unwired impure node does not run),
+    // but the consumer is told why.
+    expect(diags.filter((d) => d.code === "pin.unexecuted_source")).toEqual([
+      expect.objectContaining({
+        severity: "warning",
+        nodeId: "log",
+        pinId: "message",
+        relatedNodeId: "trace",
+        message:
+          'Input "Message" reads from Line Trace, which never runs because no event reaches it. Connect it into the execution chain before this node.',
+      }),
+    ]);
+
+    // Once the impure node sits on an executed path, nothing is reported.
+    graph.edges.splice(0, 1, execThen("begin", "trace"), execThen("trace", "log"));
+    expect(
+      validateGraphs([graph], { assetGuid: "a" }).some((d) => d.code === "pin.unexecuted_source"),
+    ).toBe(false);
+  });
+
+  it("does not report pin.unexecuted_source for a pure source or a consumer that never runs", () => {
+    const impure = (id: string): GraphNode => ({
+      id,
+      typeId: "debug.log",
+      position: { x: 0, y: 0 },
+      pins: [
+        pin("execIn", "exec", "in", EXEC),
+        pin("execOut", "then", "out", EXEC),
+        pin("message", "message", "in", STRING),
+        pin("text", "text", "out", STRING),
+      ],
+      properties: { "default:message": "x" },
+    });
+    const pure: GraphNode = {
+      id: "pure",
+      typeId: "string.make",
+      position: { x: 0, y: 0 },
+      pins: [pin("out", "out", "out", STRING)],
+      properties: {},
+    };
+    const wire = (id: string, source: string, sourcePin: string, target: string): GraphEdge => ({
+      id, sourceNodeId: source, sourcePinId: sourcePin, targetNodeId: target, targetPinId: "message",
+    });
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [flowEntry(), impure("run"), pure, impure("island-source"), impure("island-consumer")],
+      edges: [
+        execThen("entry", "run"),
+        wire("a", "pure", "out", "run"),
+        wire("b", "island-source", "text", "island-consumer"),
+      ],
+    };
+    expect(
+      validateGraphs([graph], { assetGuid: "a" }).some((d) => d.code === "pin.unexecuted_source"),
+    ).toBe(false);
   });
 
   it("still reports a direction error when a leftover node wires into a compiled pin", () => {
