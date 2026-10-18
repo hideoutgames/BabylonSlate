@@ -24,7 +24,7 @@ export function GraphViewportControls({ onFitGraph }: { onFitGraph: () => void }
       aria-label="Graph Navigation"
       data-testid="graph-viewport-controls"
       data-graph-overlay=""
-      className="absolute bottom-2 left-2 z-10 flex flex-col gap-1 rounded-lg border border-border bg-popover p-1 shadow-sm"
+      className="toolbar-island toolbar-island-vertical absolute bottom-2 left-2 z-10"
     >
       {actions.map(({ label, Icon, disabled, run }) => (
         <Tooltip key={label}>

@@ -337,7 +337,7 @@ export function ViewportToolbar({
   return (
     <div
       ref={toolbarRef}
-      className="flex flex-wrap items-center gap-1"
+      className="flex flex-wrap items-center gap-0.5"
       data-testid={`${testIdPrefix}viewport-toolbar`}
     >
       {showGizmoTools ? (

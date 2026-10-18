@@ -329,3 +329,64 @@
     min-height: 44px;
   }
 }
+
+/* Floating toolbar islands over viewports, graphs and previews. One frosted
+ * surface; controls inside are borderless so the island reads as one object,
+ * and pressed tools are the only filled controls. */
+.toolbar-island {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--popover) 88%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(12px) saturate(140%);
+  box-shadow:
+    0 1px 0 0 color-mix(in oklch, var(--foreground) 6%, transparent) inset,
+    0 6px 20px -6px rgb(0 0 0 / 45%);
+}
+
+.toolbar-island-vertical {
+  flex-direction: column;
+}
+
+.toolbar-island button {
+  border-color: transparent;
+  background: transparent;
+  color: color-mix(in oklch, var(--foreground) 78%, transparent);
+  border-radius: 7px;
+  box-shadow: none;
+}
+
+.toolbar-island button:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.toolbar-island button:is([aria-pressed="true"], [data-pressed]),
+.toolbar-island button:is([aria-pressed="true"], [data-pressed]):hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 55%, transparent);
+}
+
+.toolbar-island [data-slot="toggle-group"] {
+  gap: 2px;
+  border: 0;
+  box-shadow: none;
+}
+
+.toolbar-island [data-slot="separator"][data-orientation="vertical"] {
+  height: 16px;
+  margin-inline: 3px;
+  align-self: center;
+  background: color-mix(in oklch, var(--foreground) 16%, transparent);
+}
+
+.toolbar-island [data-slot="separator"][data-orientation="horizontal"] {
+  width: 16px;
+  margin-block: 3px;
+  align-self: center;
+}
