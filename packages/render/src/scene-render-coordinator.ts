@@ -10,6 +10,7 @@ import { whenPresentationFenceClear } from "./presented-frame";
 import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
+import { heldThreadMs } from "./stall-deadline";
 
 class PreparationChanged extends Error {}
 
@@ -148,7 +149,15 @@ export class SceneRenderCoordinator {
     const pending = { generation: this.generation, promise: undefined as unknown as Promise<ForwardSceneGraphResult> };
     let deadline = 0;
     let finalDeadline = Infinity;
+    let checkpoint = 0;
     const restartDeadline = () => { deadline = Math.min(performance.now() + PREPARATION_TIMEOUT_MS, finalDeadline); };
+    /** A stretch in which one synchronous call held the thread is work, not time without readiness: it extends both bounds. */
+    const creditHeldThread = () => {
+      const now = performance.now();
+      const held = heldThreadMs(now - checkpoint);
+      checkpoint = now;
+      if (held > 0) { deadline += held; finalDeadline += held; }
+    };
     const compiles = new DriverCompileWatch(this.scene.getEngine());
     /** A driver still compiling reports completion only, so it renews both bounds. */
     const expired = () => {
@@ -162,6 +171,7 @@ export class SceneRenderCoordinator {
       assertCurrent();
       if (this.disposed || this.scene.isDisposed)
         throw new PreparationChanged("Scene rendering preparation was superseded or disposed.");
+      creditHeldThread();
       if (this.generation !== pending.generation) {
         pending.generation = this.generation;
         restartDeadline();
@@ -173,7 +183,8 @@ export class SceneRenderCoordinator {
         try { await previous.promise; }
         catch { /* previous owner's outcome */ }
       }
-      finalDeadline = performance.now() + PREPARATION_TOTAL_TIMEOUT_MS;
+      checkpoint = performance.now();
+      finalDeadline = checkpoint + PREPARATION_TOTAL_TIMEOUT_MS;
       restartDeadline();
       check();
       for (;;) {

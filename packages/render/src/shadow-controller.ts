@@ -2,6 +2,7 @@ import {
   syncDirectionalLightPolicy,
   isDirectionalLightExcluded,
   isForwardLightExcluded,
+  lightsInCreationOrder,
 } from "./light-policy";
 import {
   CascadedShadowGenerator,
@@ -616,7 +617,7 @@ export class SceneShadowController {
     this.knownMeshCount = this.scene.meshes.length;
     this.removedSinceScan = 0;
   }
-  diagnostics(lights: readonly Light[] = this.scene.lights) {
+  diagnostics(lights: readonly Light[] = lightsInCreationOrder(this.scene.lights)) {
     return lights.map((light) => shadowLightRow(light, this.entries.get(light)));
   }
   /**
@@ -1610,7 +1611,10 @@ export function shadowLightDiagnostics(
   scene: Scene,
   controller?: SceneShadowController,
 ) {
-  return controller?.diagnostics() ?? scene.lights.map((light) => shadowLightRow(light));
+  return (
+    controller?.diagnostics() ??
+    lightsInCreationOrder(scene.lights).map((light) => shadowLightRow(light))
+  );
 }
 
 export function sceneShadowController(scene: Scene): SceneShadowController {

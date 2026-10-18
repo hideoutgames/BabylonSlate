@@ -10,9 +10,7 @@ if (!["windows", "macos", "linux"].includes(platform) || !["test", "release"].in
 const declared = JSON.parse(await readFile("release/version.json", "utf8"));
 const root = JSON.parse(await readFile("package.json", "utf8"));
 const desktop = JSON.parse(await readFile("apps/desktop/package.json", "utf8"));
-const patchNotes = channel === "release"
-  ? validateChangelog(JSON.parse(await readFile("release/changelog.json", "utf8")), declared.version).find(item => item.version === declared.version)
-  : undefined;
+const patchNotes = validateChangelog(JSON.parse(await readFile("release/changelog.json", "utf8")), declared.version).find(item => item.version === declared.version);
 const manifest = buildManifest(declared, {
   channel,
   platforms: "all",
@@ -21,7 +19,7 @@ const manifest = buildManifest(declared, {
   runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT ?? 1),
   platform,
   ...(platform === "macos" ? { macosSigned: false } : {}),
-  ...(patchNotes ? { patchNotes } : {}),
+  patchNotes,
   toolchains: { node: process.versions.node, pnpm: root.packageManager.split("@")[1], electron: desktop.devDependencies.electron },
 });
 const contents = JSON.stringify(manifest, null, 2) + "\n";

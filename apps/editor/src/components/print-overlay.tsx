@@ -9,6 +9,7 @@ import {
 import {
   applyPrintHudCommand,
   nextPrintHudTimeoutMs,
+  printHudRowText,
   visiblePrintHudEntries,
   type PrintHudColor,
   type PrintHudEntry,
@@ -47,7 +48,7 @@ export function PrintOverlay({ entries }: PrintOverlayProps) {
           className="max-w-full shrink-0 break-words rounded-md bg-black/60 px-3 py-1 text-sm"
           style={{ color: e.color }}
         >
-          {e.message}
+          {printHudRowText(e.message)}
         </div>
       ))}
     </div>

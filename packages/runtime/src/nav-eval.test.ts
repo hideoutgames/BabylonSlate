@@ -711,6 +711,92 @@ describe("runtime navmesh import and crowd", () => {
     runtime.stop();
   });
 
+  describe("Move To without a Nav Agent or a NavMesh", () => {
+    const hero = (id: string, withAgent: boolean) => createActor(id, id, {
+      classId: "Hero",
+      components: withAgent
+        ? [{ id: `${id}-nav`, classId: "NavAgentComponent", properties: { radius: 0.5, height: 2, maxSpeed: 3.5 } }]
+        : [],
+    });
+    const moveEveryTick = {
+      assetGuid: "hero-script",
+      classId: "Hero",
+      parentClassId: "Actor",
+      source: "export function onTick(ctx) { ctx.moveTo(ctx.self, { x: 4, y: 0, z: 4 }); }",
+      anchors: [],
+      entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }],
+    };
+    const navigationWarnings = (commands: readonly CommandMessage[]) => commands.flatMap((command) =>
+      command.type === "log" && command.category === "Navigation" ? [`${command.severity}: ${command.message}`] : []);
+
+    async function play(actors: SerializedScene["actors"], navmesh: Uint8Array | null, ticks = 5) {
+      const commands: CommandMessage[] = [];
+      const runtime = createInProcessRuntime({
+        seed: 1, seedDemoActors: false, onCommand: (command) => commands.push(command),
+        playScene: { name: "Nav", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors },
+      });
+      await runtime.loadScripts([moveEveryTick]);
+      if (navmesh) await runtime.loadNavMesh(navmesh);
+      runtime.start();
+      runtime.realizePlayWorld();
+      for (let i = 0; i < ticks; i += 1) runtime.tick();
+      runtime.stop();
+      return commands;
+    }
+
+    it("warns once per actor that has no Nav Agent, and stays quiet for one that walks", async () => {
+      const commands = await play([hero("Walker", true), hero("Statue", false), hero("Pillar", false)], bytes);
+
+      expect(navigationWarnings(commands).sort()).toEqual([
+        "warning: Move To: Pillar has no Nav Agent component, so it does not move.",
+        "warning: Move To: Statue has no Nav Agent component, so it does not move.",
+      ]);
+    });
+
+    it("warns once per actor when the scene has no baked NavMesh, and again for a missing Nav Agent", async () => {
+      const commands = await play([hero("Walker", true), hero("Statue", false)], null);
+
+      expect(navigationWarnings(commands).sort()).toEqual([
+        "warning: Move To: Statue does not move because the scene has no baked NavMesh.",
+        "warning: Move To: Statue has no Nav Agent component, so it does not move.",
+        "warning: Move To: Walker does not move because the scene has no baked NavMesh.",
+      ]);
+    });
+
+    it.each([
+      ["a Nav Agent but the scene has no baked NavMesh", true, false, "Move To: Guard does not move because the scene has no baked NavMesh."],
+      ["no Nav Agent", false, true, "Move To: Guard has no Nav Agent component, so it does not move."],
+    ] as const)("warns once when a Behaviour Tree Move To task fails for %s", async (_label, withAgent, withNavmesh, message) => {
+      const commands: CommandMessage[] = [];
+      const runtime = createInProcessRuntime({
+        seed: 1, seedDemoActors: false, onCommand: (command) => commands.push(command),
+        behaviourTrees: { "tree-1": {
+          name: "Patrol", rootId: "move", blackboardGuid: null,
+          nodes: [{
+            id: "move", kind: "task" as const, classId: "BTTask_MoveTo", children: [], decorators: [], services: [],
+            properties: { destination: { x: 4, y: 0, z: 4 }, acceptRadius: 1.5 },
+          }],
+        } },
+        playScene: {
+          name: "Nav", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [],
+          actors: [createActor("guard", "Guard", {
+            components: [
+              ...(withAgent ? [{ id: "nav", classId: "NavAgentComponent", properties: { radius: 0.5, height: 2, maxSpeed: 3.5 } }] : []),
+              { id: "bt", classId: "BehaviourTreeComponent", properties: { treeGuid: "tree-1" } },
+            ],
+          })],
+        },
+      });
+      if (withNavmesh) await runtime.loadNavMesh(bytes);
+      runtime.start();
+      runtime.realizePlayWorld();
+      for (let i = 0; i < 8; i += 1) runtime.tick();
+      runtime.stop();
+
+      expect(navigationWarnings(commands)).toEqual([`warning: ${message}`]);
+    });
+  });
+
   it("registers dynamic blockers onto a tile-cache mesh", async () => {
     const tileBytes = await generateNavMesh({
       ...groundPrism(),

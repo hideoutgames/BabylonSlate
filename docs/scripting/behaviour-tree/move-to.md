@@ -16,5 +16,5 @@ Moves the actor to a world position along the navigation mesh.
 ## Notes
 
 - The task stays running until the actor is within **Accept Radius** of the destination, then succeeds.
-- It needs a baked NavMesh in the scene and a **Nav Agent** component on the actor, otherwise it fails.
+- It needs a baked NavMesh in the scene and a **Nav Agent** component on the actor, otherwise it fails. The **Output Log** warns once for each actor and reason during a Play session.
 - If the tree aborts the task, the actor stops.

@@ -221,7 +221,7 @@ import {
 } from "./snapshot-apply";
 import { applyAlbedoTexture, installModelSources, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
 import { FontRegistry, type FontAssetEntry } from "./font-registry";
-import { applyAnimStateToScene, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
+import { applyAnimStateToScene, onceMissingClip, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
 import { pickActorMeshName, pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
@@ -1389,10 +1389,14 @@ function initializeEngine(
     onMissingClip,
   });
   const animHost = sceneAnimHostFromBinding(binding, animHostOptions());
+  // Once per slot and clip for this Play session. A model whose clips are still loading is not
+  // reported, so it does not use up the warning.
+  const warnMissingClip = onceMissingClip((info) =>
+    console.warn(`[render] missing ${info.clipKind} clip "${info.clipName}" on slot ${info.slotId}`));
   const animHostReportingMissing = sceneAnimHostFromBinding(binding, animHostOptions((info) => {
     const groups = binding.slotAnimationGroups?.get(info.slotId);
     if (info.clipKind === "animation" && (!groups || groups.length === 0)) return;
-    console.warn(`[render] missing ${info.clipKind} clip "${info.clipName}" on slot ${info.slotId}`);
+    warnMissingClip(info);
   }));
   binding.slotVisualReady = (slotId, successor) => {
     // Move emitter nodes before recursive retirement of the old visual root.
