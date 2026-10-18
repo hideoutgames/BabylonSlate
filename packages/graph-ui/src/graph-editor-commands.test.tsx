@@ -1,7 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { dispatchPointerEvent } from "../../editor-kit/src/test-support/pointer-events";
 import { GraphEditor } from "./graph-editor";
 import { useGraphEditorContext, type GraphEditorContextValue } from "./graph-editor-context";
 import { DEFAULT_GRAPH_KEYBINDS, GraphKeybindsContext } from "./graph-keybinds";
@@ -11,6 +10,18 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
 });
+
+/**
+ * jsdom has no PointerEvent: a MouseEvent with the pointer fields defined, as
+ * the editor-kit test helper builds it (this package's rootDir cannot import it).
+ */
+function dispatchTouchDown(target: Element, clientX: number, clientY: number): void {
+  const event = new MouseEvent("pointerdown", { bubbles: true, cancelable: true, clientX, clientY });
+  Object.defineProperty(event, "pointerId", { value: 1 });
+  Object.defineProperty(event, "pointerType", { value: "touch" });
+  Object.defineProperty(event, "isPrimary", { value: true });
+  target.dispatchEvent(event);
+}
 
 const execIn: SerializedPin = { id: "execIn", name: "exec", kind: "exec", direction: "in", type: { kind: "exec" } };
 const execOut: SerializedPin = { id: "execOut", name: "then", kind: "exec", direction: "out", type: { kind: "exec" } };
@@ -305,7 +316,7 @@ describe("node context menu", () => {
     vi.useFakeTimers();
     const { container } = render(<GraphEditor initialGraph={wiredGraph()} />);
     fireEvent.click(nodeEl(container, "log-a"));
-    dispatchPointerEvent(nodeBody(container, "log-d"), "pointerdown", { clientX: 5, clientY: 5 });
+    dispatchTouchDown(nodeBody(container, "log-d"), 5, 5);
     act(() => {
       vi.advanceTimersByTime(499);
     });
