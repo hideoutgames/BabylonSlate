@@ -86,7 +86,7 @@ import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { FeatureTestCheckDialog } from "./feature-test-check-dialog";
 import { useIsFeatureTestProject } from "../lib/use-is-feature-test-project";
-import { useDebugMode } from "../context/app-settings-context";
+import { useAppSettings, useDebugMode } from "../context/app-settings-context";
 import { IconActionButton } from "./icon-action-button";
 import { ActionFeedbackButton } from "./action-feedback-button";
 import { CompilationErrorIndicator } from "./compilation-error-indicator";
@@ -373,8 +373,12 @@ export function EditorChromeBar({
   const playChord = useKeybindChord("play.start");
   const projectSettingsChord = useKeybindChord("editor.projectSettings");
   const engineSettingsChord = useKeybindChord("editor.engineSettings");
-  // Simulate is chosen per editor session; Preview Build is a saved preference.
-  const [simulateSelected, setSimulateSelected] = useState(false);
+  // The Play Mode is a saved preference: Simulate wins over Preview Build.
+  const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
+  const simulateSelected = appSettings.debuggerDefaults.simulate;
+  const setSimulateSelected = (simulate: boolean) => {
+    if (simulate !== simulateSelected) void updateDebuggerDefaults({ simulate });
+  };
   const launchMode: PlayLaunchMode = simulateSelected ? "simulate" : previewBuild ? "preview" : "play";
   const simulating = launchMode === "simulate";
   const playEnabled = Boolean(projectName) && !playing && !preparing && !sceneViewportLoading &&

@@ -406,8 +406,8 @@
   align-self: center;
 }
 
-/* A two- or three-way mode switch inside an island: a flat track, the active
- * option filled like any pressed island tool. */
+/* A two- or three-way mode switch inside an island: a flat track with a
+ * neutral fill on the active option; orange stays for selected tools. */
 .toolbar-island .toolbar-island-segmented {
   gap: 1px;
   padding: 2px;
@@ -427,8 +427,8 @@
 
 .toolbar-island .toolbar-island-segmented > button[aria-pressed="true"],
 .toolbar-island .toolbar-island-segmented > button[aria-pressed="true"]:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--selection) 18%, transparent);
-  color: var(--selection);
+  background: color-mix(in oklch, var(--foreground) 14%, transparent);
+  color: var(--foreground);
   box-shadow: none;
 }
 

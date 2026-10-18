@@ -511,7 +511,8 @@ export function resolveActorTypeVisual(actor: {
 }
 
 export const TYPE_VISUAL_ICON_CHROME_SIZE = 16;
-export const TYPE_VISUAL_ICON_TILE_SIZE = 40;
+/** A multiple of Lucide's 24-unit grid, so whole and half units land on whole pixels. */
+export const TYPE_VISUAL_ICON_TILE_SIZE = 48;
 /** Lucide design stroke in CSS px when `absoluteStrokeWidth` is set on tiles. */
 export const TYPE_VISUAL_ICON_TILE_STROKE_WIDTH = 2;
 
@@ -528,7 +529,7 @@ export function TypeVisualIcon({
 }) {
   const Icon = visual.icon;
   const isTile = size >= TYPE_VISUAL_ICON_TILE_SIZE;
-  const sizeClass = isTile ? "size-10" : "size-4";
+  const sizeClass = isTile ? "size-12" : "size-4";
   return (
     <Icon
       size={size}

@@ -42,7 +42,7 @@ import {
 import { pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { PinDefaultEditorContext, type PinDefaultEditorRenderer } from "./pin-default-editor-context";
 import { inlinePinDefaultStorageValue } from "./pin-default-value";
-import { ClipboardPasteIcon, CopyIcon, PlusIcon, Trash2Icon, Unlink2Icon, WandSparklesIcon } from "lucide-react";
+import { ClipboardPasteIcon, CopyIcon, PlusIcon, ScissorsIcon, Trash2Icon, WorkflowIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Separator } from "@babylonslate/ui/components/separator";
 import { IslandIconButton } from "./island-icon-button";
@@ -2642,7 +2642,7 @@ function GraphEditorCanvas({
               onClick={breakSelectionLinks}
               data-testid="graph-break-links"
             >
-              <Unlink2Icon />
+              <ScissorsIcon />
             </IslandIconButton>
             )}
             {hiddenToolbar.has("format") ? null : (
@@ -2655,7 +2655,7 @@ function GraphEditorCanvas({
               onClick={formatSelection}
               data-testid="graph-format"
             >
-              <WandSparklesIcon />
+              <WorkflowIcon />
             </IslandIconButton>
             </>
             )}
