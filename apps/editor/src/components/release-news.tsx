@@ -75,6 +75,7 @@ export function ReleaseNews({
     <Dialog open={open || showNews} onOpenChange={value => { if (!value) close(); }}>
       <DialogContent
         className="homepage-theme release-news"
+        bodyClassName="release-news-frame"
         data-testid="release-news"
         data-mode={news ? "news" : "history"}
       >
