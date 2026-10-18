@@ -72,6 +72,8 @@ interface PrefabEditingContextValue {
   ) => void;
   /** Sets the display name; undefined restores the class label. */
   renameComponent: (componentId: string, name: string | undefined) => void;
+  /** Sets the object-ref variable's class tree category; undefined restores Components. */
+  setComponentCategory: (componentId: string, category: string | undefined) => void;
   updateComponentTransform: (
     componentId: string,
     transform: SerializedTransform,
@@ -108,6 +110,7 @@ function stripInheritance(
       id: rest.id,
       classId: rest.classId,
       ...(rest.name ? { name: rest.name } : {}),
+      ...(rest.category !== undefined ? { category: rest.category } : {}),
       properties: { ...rest.properties },
       parentId: rest.parentId ?? null,
       ...(rest.transform ? { transform: rest.transform } : {}),
@@ -449,6 +452,21 @@ export function PrefabEditingProvider({
     [components, upsertLocalFromViews],
   );
 
+  const setComponentCategory = useCallback(
+    (componentId: string, category: string | undefined) => {
+      const target = components.find((component) => component.id === componentId);
+      if (!target || target.category === category) return;
+      upsertLocalFromViews(components.map((component) => {
+        if (component.id !== componentId) return component;
+        const next = { ...component };
+        if (category === undefined) delete next.category;
+        else next.category = category;
+        return next;
+      }));
+    },
+    [components, upsertLocalFromViews],
+  );
+
   const updateComponentTransform = useCallback(
     (componentId: string, transform: SerializedTransform) => {
       upsertLocalFromViews(
@@ -548,6 +566,7 @@ export function PrefabEditingProvider({
       reparentComponent,
       updateComponent,
       renameComponent,
+      setComponentCategory,
       updateComponentTransform,
       commitComponentProperties,
       commitComponentGizmo,
@@ -565,6 +584,7 @@ export function PrefabEditingProvider({
       setSelectedId,
       updateComponent,
       renameComponent,
+      setComponentCategory,
       updateComponentTransform,
       commitComponentProperties,
       commitComponentGizmo,

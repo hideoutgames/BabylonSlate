@@ -1,4 +1,4 @@
-import { ActivityIcon, CameraIcon, GaugeIcon, TerminalIcon, XIcon } from "lucide-react";
+import { ActivityIcon, CameraIcon, GaugeIcon, SquareIcon, TerminalIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   DebugBehaviourTree,
@@ -24,8 +24,8 @@ import {
 import { DebugConsole } from "./debug-console";
 import { useDebugConsoleLogs } from "../lib/use-debug-console-logs";
 import { DebugBehaviourTreeDialog } from "./debug-behaviour-tree-dialog";
-import { Button } from "@babylonslate/ui/components/button";
-import { Toggle } from "@babylonslate/ui/components/toggle";
+import { Separator } from "@babylonslate/ui/components/separator";
+import { PlayChromeTool } from "./play-overlay-chrome";
 import {
   Alert,
   AlertDescription,
@@ -72,7 +72,7 @@ export function PreviewBuildOverlay({
   error = null,
   showStats = true,
   showConsole = true,
-  showProfiler = true,
+  showProfiler = false,
 }: PreviewBuildOverlayProps) {
   const onDetachedRef = useRef(onDetached);
   onDetachedRef.current = onDetached;
@@ -341,74 +341,41 @@ export function PreviewBuildOverlay({
         </div>
       ) : null}
       <div className="safe-overlay-chrome pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-start justify-end gap-2">
-        {showProfiler && diagnosticResults ? <>
-          <Button
-            size="touch"
-            variant="secondary"
-            className="pointer-events-auto"
-            data-testid="preview-build-profiler-open"
-            disabled={stopping || !!error}
-            onClick={() => diagnosticResults.open("summary")}
-          >
-            <GaugeIcon data-icon="inline-start" />
-            Profiler
-          </Button>
-          <Button
-            size="touch"
-            variant="secondary"
-            className="pointer-events-auto"
-            data-testid="preview-build-capture-frame"
-            disabled={stopping || !!error}
-            onClick={() => void diagnosticResults.captureFrame()}
-          >
-            <CameraIcon data-icon="inline-start" />
-            Capture Frame
-          </Button>
-        </> : null}
-        {showStats ? (
-          <Toggle
-            size="touch"
-            variant="secondary"
-            className="pointer-events-auto"
-            pressed={statsOpen}
-            data-testid="preview-build-stats-toggle"
-            aria-label="Stats"
-            disabled={stopping || !!error}
-            onPressedChange={(pressed) => {
-              setStatsOpen(pressed);
-              void execute(`showfps ${pressed ? "on" : "off"}`);
-            }}
-          >
-            <ActivityIcon data-icon="inline-start" />
-            Stats
-          </Toggle>
-        ) : null}
-        {showConsole ? (
-          <Button
-            size="touch"
-            variant="secondary"
-            className="pointer-events-auto"
-            aria-label="Console"
-            data-testid="preview-build-console-open"
-            disabled={stopping}
-            onClick={() => setConsoleOpen(true)}
-          >
-            <TerminalIcon data-icon="inline-start" />
-            Console
-          </Button>
-        ) : null}
-        <Button
-          size="touch"
-          variant="secondary"
-          className="pointer-events-auto"
-          aria-label="Stop"
-          data-testid="preview-build-close"
-          disabled={stopping}
-          onClick={finish}
-        >
-          <XIcon data-icon="inline-start" />
-          Stop
-        </Button>
+        <div className="toolbar-island toolbar-island-touch pointer-events-auto" role="toolbar" aria-label="Preview Build Controls">
+          {showStats ? (
+            <PlayChromeTool
+              label="Stats"
+              pressed={statsOpen}
+              data-testid="preview-build-stats-toggle"
+              disabled={stopping || !!error}
+              onClick={() => {
+                const next = !statsOpen;
+                setStatsOpen(next);
+                void execute(`showfps ${next ? "on" : "off"}`);
+              }}
+            >
+              <ActivityIcon />
+            </PlayChromeTool>
+          ) : null}
+          {showConsole ? (
+            <PlayChromeTool label="Console" data-testid="preview-build-console-open" disabled={stopping} onClick={() => setConsoleOpen(true)}>
+              <TerminalIcon />
+            </PlayChromeTool>
+          ) : null}
+          {showProfiler && diagnosticResults ? <>
+            {showStats || showConsole ? <Separator orientation="vertical" /> : null}
+            <PlayChromeTool label="Profiler" data-testid="preview-build-profiler-open" disabled={stopping || !!error} onClick={() => diagnosticResults.open("summary")}>
+              <GaugeIcon />
+            </PlayChromeTool>
+            <PlayChromeTool label="Capture Frame" data-testid="preview-build-capture-frame" disabled={stopping || !!error} onClick={() => void diagnosticResults.captureFrame()}>
+              <CameraIcon />
+            </PlayChromeTool>
+          </> : null}
+          {showStats || showConsole || (showProfiler && diagnosticResults) ? <Separator orientation="vertical" /> : null}
+          <PlayChromeTool label="Stop" data-testid="preview-build-close" className="play-stop" disabled={stopping} onClick={finish}>
+            <SquareIcon fill="currentColor" />
+          </PlayChromeTool>
+        </div>
       </div>
       <DebugConsole
         open={consoleOpen}

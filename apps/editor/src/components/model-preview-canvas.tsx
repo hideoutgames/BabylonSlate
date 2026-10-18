@@ -475,7 +475,7 @@ export function ModelPreviewCanvas({
   return (
     <div className="relative h-full min-h-0">
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
-        <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-md">
+        <div className="pointer-events-auto toolbar-island flex-wrap">
           <Toggle
             size="sm"
             variant="outline"

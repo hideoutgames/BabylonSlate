@@ -13,6 +13,7 @@
     --font-heading: var(--font-sans);
     --font-sans: 'Onest Variable', ui-sans-serif, system-ui, sans-serif;
     --color-brand-red: var(--brand-red);
+    --color-selection: var(--selection);
     --color-brand-amber: var(--brand-amber);
     --color-sidebar: var(--sidebar);
     --color-ring: var(--ring);
@@ -198,6 +199,8 @@
     --play-foreground: oklch(0.972 0.003 85);
     --brand-red: oklch(0.655 0.233 36);
     --brand-amber: oklch(0.81 0.17 76);
+    /* Editor selection orange (#ff8000), shared with the viewport selection outline. */
+    --selection: #ff8000;
     --brand-fringe: -1.5px 0 1px -0.5px var(--brand-amber), 1.5px 0 1px -0.5px var(--brand-amber), -3px 0 1.5px -1px var(--brand-red), 3px 0 1.5px -1px var(--brand-red);
 }
 
@@ -307,5 +310,7 @@
     --play-foreground: oklch(0.99 0.002 85);
     --brand-red: oklch(0.655 0.233 36);
     --brand-amber: oklch(0.81 0.17 76);
+    /* Editor selection orange (#ff8000), shared with the viewport selection outline. */
+    --selection: #ff8000;
     --brand-fringe: -1.5px 0 1px -0.5px var(--brand-amber), 1.5px 0 1px -0.5px var(--brand-amber), -3px 0 1.5px -1px var(--brand-red), 3px 0 1.5px -1px var(--brand-red);
 }

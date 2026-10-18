@@ -39,12 +39,10 @@ async function greenPixels(canvas: Locator): Promise<number> {
 }
 
 async function setShading(page: Page, mode: "pbr" | "unlit", prefix = "") {
-  await page.getByTestId(`${prefix}viewport-settings`).click();
-  await page.getByTestId(`${prefix}viewport-shading-mode`).click();
+  await page.getByTestId(`${prefix}viewport-view`).click();
   await page.getByTestId(`${prefix}viewport-shading-${mode}`).click();
   await page.keyboard.press("Escape");
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId(`${prefix}viewport-settings-menu`)).toHaveCount(
+  await expect(page.getByTestId(`${prefix}viewport-view-menu`)).toHaveCount(
     0,
   );
 }

@@ -9,7 +9,7 @@ The top bar shows the project name and the document tabs. The toolbar sits below
 | Area | Controls |
 | --- | --- |
 | Left | **Save All** (a dot means something is unsaved), **Undo** and **Redo**. A Class adds **Compile**; a Material adds **Render**; a scene adds the scene mode picker (**Design**, **Landscape**, **Foliage**). |
-| Centre | **Play** (or **Preview** when Preview Build is on) and the **Debug** menu with Play options. |
+| Centre | **Play** (it reads **Preview** or **Simulate** for those Play Modes) and the **Debug** menu with Play options. |
 | Right | **Windows**, **Focus**, **Search Project** and **Settings** (**Project Settings** and **Engine Settings**). |
 
 ## Document tabs

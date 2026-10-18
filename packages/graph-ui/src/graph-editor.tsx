@@ -42,9 +42,11 @@ import {
 import { pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { PinDefaultEditorContext, type PinDefaultEditorRenderer } from "./pin-default-editor-context";
 import { inlinePinDefaultStorageValue } from "./pin-default-value";
-import { PlusIcon } from "lucide-react";
+import { ClipboardPasteIcon, CopyIcon, PlusIcon, Trash2Icon, UnlinkIcon, WaypointsIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
 import { Button } from "@babylonslate/ui/components/button";
+import { Separator } from "@babylonslate/ui/components/separator";
+import { IslandIconButton } from "./island-icon-button";
 import {
   AssetOpenProvider,
   ContextMenuOverlay,
@@ -2849,7 +2851,7 @@ function GraphEditorCanvas({
         {readOnly ? null : (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
-            className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-sm"
+            className="pointer-events-auto toolbar-island flex-wrap"
             data-graph-overlay=""
             data-testid="graph-toolbar"
           >
@@ -2857,9 +2859,7 @@ function GraphEditorCanvas({
             <Button
               type="button"
               variant="outline"
-              size="icon-sm"
-              aria-label="Add Node"
-              title="Add Node"
+              size="sm"
               onClick={() => {
                 setPendingConnect(null);
                 setPaletteAnchor(null);
@@ -2868,70 +2868,66 @@ function GraphEditorCanvas({
               }}
               data-testid="graph-add-node"
             >
-              <PlusIcon />
+              <PlusIcon data-icon="inline-start" />
+              Add Node
             </Button>
             ) : null}
+            {hiddenToolbar.has("copy") && hiddenToolbar.has("paste") ? null : <Separator orientation="vertical" />}
             {hiddenToolbar.has("copy") ? null : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
+            <IslandIconButton
+              label="Copy"
               disabled={selectedNodes.length === 0 || selectionIsOnlyProtected}
               onClick={copySelection}
               data-testid="graph-copy"
             >
-              Copy
-            </Button>
+              <CopyIcon />
+            </IslandIconButton>
             )}
             {hiddenToolbar.has("paste") ? null : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
+            <IslandIconButton
+              label="Paste"
               disabled={!hasClipboard}
               onClick={pasteClipboard}
               data-testid="graph-paste"
             >
-              Paste
-            </Button>
+              <ClipboardPasteIcon />
+            </IslandIconButton>
             )}
+            {hiddenToolbar.has("delete") && hiddenToolbar.has("breakLinks") ? null : <Separator orientation="vertical" />}
             {hiddenToolbar.has("delete") ? null : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
+            <IslandIconButton
+              label="Delete"
               disabled={selectedNodes.length === 0 || selectionIsOnlyProtected}
               onClick={deleteSelection}
               data-testid="graph-delete"
             >
-              Delete
-            </Button>
+              <Trash2Icon />
+            </IslandIconButton>
             )}
             {hiddenToolbar.has("breakLinks") ? null : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
+            <IslandIconButton
+              label="Break Links"
+              hint="Break Links On The Selected Nodes Or Blend Rule"
               disabled={!hasBreakableLinks}
               onClick={breakSelectionLinks}
-              title="Break links on the selected nodes or the selected blend rule"
               data-testid="graph-break-links"
             >
-              Break Links
-            </Button>
+              <UnlinkIcon />
+            </IslandIconButton>
             )}
             {hiddenToolbar.has("format") ? null : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
+            <>
+            <Separator orientation="vertical" />
+            <IslandIconButton
+              label="Format"
+              hint="Format Selection: Exec Runs Left To Right, Data Hangs Below"
               disabled={selectedNodes.length === 0}
               onClick={formatSelection}
-              title="Format selected chain roots independently: exec stays a horizontal highway, data trees hang below-left"
               data-testid="graph-format"
             >
-              Format
-            </Button>
+              <WaypointsIcon />
+            </IslandIconButton>
+            </>
             )}
             {toolbarExtra}
           </div>

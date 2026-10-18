@@ -109,7 +109,7 @@ export function StatsHud({
 
   return (
     <div
-      className="pointer-events-none inline-flex max-w-full flex-col gap-0.5 rounded-sm bg-background/75 px-2 py-1 font-mono text-[11px] leading-4 text-foreground backdrop-blur-sm"
+      className="play-debug-readout pointer-events-none inline-flex max-w-full flex-col gap-0.5"
       data-testid="stats-hud"
       data-groups={groups.join(" ")}
     >

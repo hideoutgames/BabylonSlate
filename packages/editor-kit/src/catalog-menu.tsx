@@ -9,6 +9,7 @@ import {
 import { Kbd } from "@babylonslate/ui/components/kbd";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { clampOverlayMenuPosition } from "./clamp-overlay-menu";
+import { usePopupOutsideDismiss } from "./use-popup-outside-dismiss";
 import { humanizePropertyLabel } from "./humanize-property-label";
 import { isCoarsePointerEnvironment } from "./prevent-document-overscroll";
 import { SearchInput } from "./search-input";
@@ -328,6 +329,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
   };
 
   const frame = modal ? null : popupMenuFrame(anchor);
+  usePopupOutsideDismiss(open && !modal, () => onOpenChange(false));
   const activeDescendant = highlightIndex >= 0 ? rowId(listId, rows[highlightIndex]!.key) : undefined;
 
   return (
@@ -335,6 +337,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
       <DialogContent
         data-testid={testId}
         data-presentation={presentation}
+        data-popup-picker=""
         showCloseButton={modal}
         overlayClassName={cn("catalog-menu-overlay", !modal && "bg-transparent")}
         initialFocus={(interaction) =>
