@@ -14,6 +14,7 @@ import {
   takeShadowReceiverHandoffs,
   type ShadowReceiverHandoff,
 } from "./shadow-receiver-handoff";
+import type { ForwardLightSlotExchange } from "./forward-light-slots";
 import {
   LightBlock,
   Material,
@@ -57,12 +58,15 @@ type SceneLighting = { sync: () => void; invalidate: () => void; limits: () => s
 const LAYOUT_STRIDE = 4;
 
 /**
- * Whether same-kind shadow map moves, which exchanged the lights' shader
- * indices without changing any receiver define, explain every difference
- * between the previous and next snapshots.
+ * Whether index-preserving light changes that left every receiver define
+ * unchanged explain every difference between the previous and next
+ * snapshots: same-kind shadow map moves since the last sync, which exchanged
+ * the lights' shader indices, then this sync's Forward slot exchanges, which
+ * put an identical light in a dropped light's index.
  */
-function explainedByShadowHandoffs(
+function explainedBySlotChanges(
   handoffs: readonly ShadowReceiverHandoff[],
+  exchanges: readonly ForwardLightSlotExchange[],
   lights: readonly Light[],
   layout: readonly unknown[],
   nextLights: readonly Light[],
@@ -90,6 +94,12 @@ function explainedByShadowHandoffs(
     // The map keeps its shader index; only its light changed places.
     expected[a * LAYOUT_STRIDE + 1] = generator;
     expected[b * LAYOUT_STRIDE + 1] = null;
+  }
+  for (const { from, to, preserved } of exchanges) {
+    const index = expectedLights.indexOf(from);
+    if (!preserved || index < 0) return false;
+    // Same slot defines and no shadow map, so the layout tokens stay too.
+    expectedLights[index] = to;
   }
   return (
     expectedLights.length === nextLights.length &&
@@ -139,12 +149,32 @@ function installSceneLighting(scene: Scene): SceneLighting {
   let nextEnabled: Light[] = [];
   let shadowLayout: unknown[] = [];
   let nextShadowLayout: unknown[] = [];
-  let admission = { requested: 0, admitted: 0, limited: [] as Light[], samplerLimited: [] as Light[], samplers: 0 };
+  let admission: ReturnType<typeof syncForwardLightPolicy> = {
+    requested: 0,
+    admitted: 0,
+    limited: [],
+    samplerLimited: [],
+    samplers: 0,
+    exchanges: [],
+  };
   let budget = forwardLightBudget(scene.getEngine());
   const watchedLights = new Map<Light, Observer<boolean>>();
   const invalidate = () => {
     dirty = true;
   };
+  // Enabled changes the Forward policy makes are judged after it returns: a
+  // preserved slot exchange already left every receiver's shader valid.
+  let policyToggles: Set<Light> | undefined;
+  const toggled = new Set<Light>();
+  const watchLight = (light: Light) => () => {
+    if (policyToggles) policyToggles.add(light);
+    else dirty = true;
+  };
+  const isPreservedExchange = (light: Light) =>
+    admission.exchanges.some(
+      (exchange) =>
+        exchange.preserved && (exchange.from === light || exchange.to === light),
+    );
 
   const sync = (): void => {
     if (scene.isDisposed) return;
@@ -154,15 +184,28 @@ function installSceneLighting(scene: Scene): SceneLighting {
     budget = forwardLightBudget(scene.getEngine());
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.
-    admission = syncForwardLightPolicy(
-      scene,
-      budget.slots,
-      Math.max(
-        0,
-        sceneRenderingSettings(scene).localLightBudget -
-          clusteredLocalContributionCount(scene),
-      ),
-    );
+    policyToggles = toggled;
+    try {
+      admission = syncForwardLightPolicy(
+        scene,
+        budget.slots,
+        Math.max(
+          0,
+          sceneRenderingSettings(scene).localLightBudget -
+            clusteredLocalContributionCount(scene),
+        ),
+      );
+    } finally {
+      policyToggles = undefined;
+    }
+    if (toggled.size) {
+      for (const light of toggled)
+        if (!isPreservedExchange(light)) {
+          dirty = true;
+          break;
+        }
+      toggled.clear();
+    }
     nextEnabled.length = 0;
     nextShadowLayout.length = 0;
     for (const light of scene.lights) {
@@ -194,9 +237,10 @@ function installSceneLighting(scene: Scene): SceneLighting {
         (sceneLightsEnabled === scene.lightsEnabled &&
           sceneShadowsEnabled === scene.shadowsEnabled &&
           !handoffs?.invalid &&
-          !!handoffs?.handoffs.length &&
-          explainedByShadowHandoffs(
-            handoffs.handoffs,
+          (!!handoffs?.handoffs.length || admission.exchanges.length > 0) &&
+          explainedBySlotChanges(
+            handoffs?.handoffs ?? [],
+            admission.exchanges,
             enabledLights,
             shadowLayout,
             nextEnabled,
@@ -227,7 +271,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
       if (watchedLights.has(light)) continue;
       watchedLights.set(
         light,
-        light.onEffectiveEnabledStateChangedObservable.add(invalidate),
+        light.onEffectiveEnabledStateChangedObservable.add(watchLight(light)),
       );
     }
     const previousEnabled = enabledLights;

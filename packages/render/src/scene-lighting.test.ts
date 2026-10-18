@@ -15,6 +15,7 @@ import {
   MaterialDefines,
   MaterialHelper,
   MeshBuilder,
+  type Mesh,
   NullEngine,
   NullEngineOptions,
   PBRMaterial,
@@ -218,12 +219,10 @@ describe("scene material lighting", () => {
     syncSceneLighting(scene);
     material.freeze();
     expect(isForwardLightExcluded(lamps[9]!)).toBe(true);
-    const refresh = vi.spyOn(material, "markDirty");
     camera.position.x = 90;
     beginFrame(scene);
     expect(isForwardLightExcluded(lamps[0]!)).toBe(true);
     expect(lamps[9]!.isEnabled()).toBe(true);
-    expect(refresh).toHaveBeenCalled();
     expect(material.isFrozen).toBe(true);
     lamps[0]!.renderPriority = 10;
     beginFrame(scene);
@@ -568,6 +567,85 @@ describe("scene material lighting", () => {
     expect(pbr.maxSimultaneousLights).toBe(4);
     expect(material.disableLighting).toBe(true);
     expect(pbr.unlit).toBe(true);
+  });
+
+  describe("Forward budget swaps", () => {
+    // Nine shader slots; ten lamps 10 m apart. With the camera at x = 90 the
+    // budget drops lamp 0 and admits lamp 9.
+    function swapFixture(spots: readonly number[] = []) {
+      const scene = host(false);
+      const camera = new UniversalCamera("camera", Vector3.Zero(), scene);
+      scene.activeCamera = camera;
+      const lamps = Array.from({ length: 10 }, (_, index) => {
+        const position = new Vector3(index * 10, 3, 0);
+        return spots.includes(index)
+          ? new SpotLight(`lamp-${index}`, position, Vector3.Down(), 1, 1, scene)
+          : new PointLight(`lamp-${index}`, position, scene);
+      });
+      const material = new StandardMaterial("receiver", scene);
+      const receiver = MeshBuilder.CreateBox("receiver", {}, scene);
+      receiver.material = material;
+      syncSceneLighting(scene);
+      const part = receiver.subMeshes[0]!;
+      material.isReadyForSubMesh(receiver, part);
+      expect(part.materialDefines!.isDirty).toBe(false);
+      return { scene, camera, lamps, material, receiver, part };
+    }
+    // Re-prepare from the current light order to see which defines it yields.
+    const prepared = (mesh: Mesh, material: Material) => {
+      mesh._markSubMeshesAsLightDirty();
+      material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!);
+      return mesh.subMeshes[0]!.materialDefines!.toString();
+    };
+    const slotKinds = (defines: string) =>
+      Array.from({ length: 9 }, (_, index) =>
+        defines.includes(`#define SPOTLIGHT${index}\n`)
+          ? "spot"
+          : defines.includes(`#define POINTLIGHT${index}\n`)
+            ? "point"
+            : "none",
+      );
+
+    it("puts the admitted light in the dropped light's slot without dirtying receivers when the slot defines match", () => {
+      const { scene, camera, lamps, material, receiver, part } = swapFixture([4]);
+      const defines = part.materialDefines!.toString();
+      const invalidate = vi.spyOn(material, "markAsDirty");
+      camera.position.x = 90;
+      beginFrame(scene);
+      expect(isForwardLightExcluded(lamps[0]!)).toBe(true);
+      // Later lights keep their indices, so the spot stays in slot 4.
+      expect(receiver.lightSources).toEqual([lamps[9], ...lamps.slice(1, 9)]);
+      expect(part.materialDefines!.isDirty).toBe(false);
+      expect(invalidate).not.toHaveBeenCalled();
+      expect(prepared(receiver, material)).toBe(defines);
+      // A mesh added later builds its order from scene.lights and matches.
+      const later = MeshBuilder.CreateBox("later", {}, scene);
+      later.material = material;
+      expect(later.lightSources).toEqual(receiver.lightSources);
+    });
+
+    it("changes only the exchanged slot and refreshes frozen receivers when the slot defines differ", () => {
+      const { scene, camera, lamps, material, receiver, part } = swapFixture([0, 4]);
+      material.freeze();
+      const before = slotKinds(part.materialDefines!.toString());
+      expect(before.slice(0, 5)).toEqual(["spot", "point", "point", "point", "spot"]);
+      camera.position.x = 90;
+      beginFrame(scene);
+      expect(receiver.lightSources[0]).toBe(lamps[9]);
+      material.isReadyForSubMesh(receiver, part);
+      expect(slotKinds(part.materialDefines!.toString())).toEqual(["point", ...before.slice(1)]);
+      expect(material.isFrozen).toBe(true);
+    });
+
+    it("leaves a receiver the admitted light excludes without either light", () => {
+      const { scene, camera, lamps, receiver } = swapFixture();
+      const excluded = MeshBuilder.CreateBox("excluded", {}, scene);
+      lamps[9]!.excludedMeshes.push(excluded);
+      camera.position.x = 90;
+      beginFrame(scene);
+      expect(receiver.lightSources[0]).toBe(lamps[9]);
+      expect(excluded.lightSources).toEqual(lamps.slice(1, 9));
+    });
   });
 
   it("restores all lights after adding them while the viewport is unlit", () => {

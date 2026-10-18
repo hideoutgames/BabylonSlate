@@ -1,9 +1,9 @@
 import {
   NodeMaterial,
+  ShadowLight,
   type Light,
   type MaterialDefines,
   type Scene,
-  type ShadowLight,
 } from "@babylonjs/core";
 import { hasClusteredLightPolicy } from "./clustered-light-policy";
 
@@ -19,8 +19,10 @@ const MAX_PENDING_HANDOFFS = 64;
 const journals = new WeakMap<Scene, Journal>();
 
 /** Every per-light input of Babylon 9.29 PrepareDefinesForLight except the generator. */
-function receiverSignature(light: ShadowLight): string {
+export function receiverSignature(light: Light): string {
   const defines: Record<string, unknown> = {};
+  // Light subclasses that add a define key rebuild the define set (area-rect-light).
+  Object.defineProperty(defines, "rebuild", { value: () => {} });
   light.prepareLightSpecificDefines(defines as unknown as MaterialDefines, 0);
   return JSON.stringify([
     light.getClassName(),
@@ -29,12 +31,12 @@ function receiverSignature(light: ShadowLight): string {
     light.specular.equalsFloats(0, 0, 0),
     light.lightmapMode,
     light.shadowEnabled,
-    light.needCube(),
+    light instanceof ShadowLight && light.needCube(),
   ]);
 }
 
 /** Node blocks bound to one light prepare its defines outside lightSources order. */
-function hasPinnedLightBlock(scene: Scene, lights: readonly Light[]): boolean {
+export function hasPinnedLightBlock(scene: Scene, lights: readonly Light[]): boolean {
   for (const material of scene.materials) {
     if (!(material instanceof NodeMaterial)) continue;
     for (const block of material.attachedBlocks) {
