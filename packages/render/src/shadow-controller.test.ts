@@ -20,6 +20,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { sceneShadowController } from "./shadow-controller";
+import { syncForwardLightPolicy } from "./light-policy";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import {
   sceneRenderingSettings,
@@ -805,6 +806,43 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     expect(controller.generator(next)).toBe(generator);
     expect(first.getShadowGenerator()).toBeNull();
+    expect(allocate).not.toHaveBeenCalled();
+    expect(dispose).not.toHaveBeenCalled();
+  });
+
+  it("keeps the map of a light the Forward budget dropped on standby until the light returns", () => {
+    const { scene, controller } = fixture();
+    scene.activeCamera!.position.set(0, 0, 0);
+    const receiver = MeshBuilder.CreateBox("receiver", {}, scene);
+    receiver.material = new StandardMaterial("receiver", scene);
+    controller.setParticipation(receiver, { castShadows: true, receiveShadows: true });
+    const shadowed = new PointLight("shadowed", new Vector3(5, 0, 0), scene);
+    const nearer = new PointLight("nearer", new Vector3(1, 0, 0), scene);
+    controller.register(shadowed, true);
+    syncForwardLightPolicy(scene, 2);
+    controller.sync();
+    const generator = controller.generator(shadowed)!;
+    const allocate = vi.spyOn(scene.getEngine(), "createRenderTargetCubeTexture");
+    const dispose = vi.spyOn(generator, "dispose");
+    const bytes = controller.metrics().bytes;
+    // One slot: the nearer unshadowed light displaces the shadowed one.
+    syncForwardLightPolicy(scene, 1);
+    controller.sync();
+    expect(shadowed.isEnabled()).toBe(false);
+    expect(nearer.isEnabled()).toBe(true);
+    expect(controller.generator(shadowed)).toBeNull();
+    expect(shadowed.getShadowGenerator()).toBe(generator);
+    expect(generator.getDarkness()).toBe(1);
+    expect(controller.metrics()).toEqual({ passes: 0, bytes });
+    expect(dispose).not.toHaveBeenCalled();
+    // Capacity returns: the same map is admitted again, neutral until redrawn.
+    syncForwardLightPolicy(scene, 2);
+    controller.sync();
+    expect(controller.generator(shadowed)).toBe(generator);
+    expect(controller.status(shadowed)).toBe("active");
+    expect(generator.getDarkness()).toBe(1);
+    prepareShadowLayers(generator);
+    expect(generator.getDarkness()).toBe(0);
     expect(allocate).not.toHaveBeenCalled();
     expect(dispose).not.toHaveBeenCalled();
   });

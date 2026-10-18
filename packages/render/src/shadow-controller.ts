@@ -873,9 +873,17 @@ export class SceneShadowController {
       const generator = entry.generator!;
       const bytes = generatorPasses(generator) * entry.mapSize ** 2 * bytesPerTexel;
       const samplers = admissionSamplers(entry.light, settings);
+      // The Forward light budget dropped this light for camera distance: it is
+      // camera-rejected like a budget-limited one. Releasing its map would
+      // dispose the generator, and readmission would rebuild every caster's
+      // depth effect.
+      const forwardLimited =
+        entry.status === "disabled" && isForwardLightExcluded(entry.light);
       if (
         clustered ||
-        (entry.status !== "outside-relevant-area" && entry.status !== "budget-limited") ||
+        (entry.status !== "outside-relevant-area" &&
+          entry.status !== "budget-limited" &&
+          !forwardLimited) ||
         JSON.stringify(entry.settings) !== settingsKey() ||
         pooled >= settings.maxLocalLights ||
         admitted.bytes + standby.bytes + bytes > byteBudget ||

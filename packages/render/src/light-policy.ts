@@ -4,6 +4,7 @@ import {
   RectAreaLight,
   ShadowLight,
   Vector3,
+  type Camera,
   type Light,
   type Scene,
 } from "@babylonjs/core";
@@ -22,11 +23,25 @@ const excluded = new WeakSet<Light>();
 const forwardExcluded = new WeakSet<Light>();
 const clusteredMembers = new WeakSet<Light>();
 const forwardSelections = new WeakMap<Scene, Set<Light>>();
+/**
+ * How long a local light keeps a conventional slot it just gained or lost.
+ * A swap re-resolves every lit material's light defines (and rebuilds a shadow
+ * caster's map unless it stands by), which costs far more than a frame, so a
+ * camera hovering at a ranking boundary must not swap the same lights back and
+ * forth. Priority, capacity and eligibility changes ignore the dwell.
+ */
+export const FORWARD_LIGHT_DWELL_MS = 1500;
+type ForwardDwell = { selected: boolean; until: number };
+/** Last selection of each candidate and the time before which it stays that way. */
+const forwardDwells = new WeakMap<Light, ForwardDwell>();
+/** A new active camera is a cut, not a drift: the dwell does not hold across it. */
+const forwardCameras = new WeakMap<Scene, Camera | null>();
 const scratchLightPosition = new Vector3();
 // Per-call scratch, emptied before each call returns so no light stays retained.
 const scratchCandidates: Light[] = [];
 const scratchCandidateSet = new Set<Light>();
 const scratchDistances = new Map<Light, number>();
+const scratchLocks = new Map<Light, number>();
 
 export function isAuthoredLightEnabled(light: Light): boolean {
   const current = light.isEnabled(false);
@@ -108,11 +123,15 @@ export function syncDirectionalLightPolicy(scene: Scene): void {
   }
 }
 
-/** Scene-local conventional selection; authored Enabled and priority are retained. */
+/**
+ * Scene-local conventional selection; authored Enabled and priority are
+ * retained. `now` (milliseconds) times the dwell of a changed local selection.
+ */
 export function syncForwardLightPolicy(
   scene: Scene,
   slots: number,
   localSlots = Number.MAX_SAFE_INTEGER,
+  now = performance.now(),
 ): {
   requested: number;
   admitted: number;
@@ -133,12 +152,27 @@ export function syncForwardLightPolicy(
   const capacity = Math.max(0, Math.floor(slots));
   const localCapacity = Math.max(0, Math.floor(localSlots));
   const samplerCapacity = lightingSamplerCapacity(scene);
+  const camera = scene.activeCamera;
+  const cameraCut = forwardCameras.has(scene) && forwardCameras.get(scene) !== camera;
+  forwardCameras.set(scene, camera);
   if (
     candidates.length > capacity ||
     countLocals(scene, candidates) > localCapacity ||
     lightSamplerCount(scene, candidates) > samplerCapacity
-  )
-    sortLightsByAdmission(scene, candidates, previous);
+  ) {
+    const locks = scratchLocks;
+    locks.clear();
+    if (!cameraCut)
+      for (const light of candidates) {
+        const dwell = forwardDwells.get(light);
+        if (dwell && dwell.until > now) locks.set(light, dwell.selected ? 1 : -1);
+      }
+    try {
+      sortLightsByAdmission(scene, candidates, previous, locks);
+    } finally {
+      locks.clear();
+    }
+  }
   const selected = previous;
   selected.clear();
   let selectedLocals = 0;
@@ -163,6 +197,7 @@ export function syncForwardLightPolicy(
       hasArea ||= light instanceof RectAreaLight;
       if (authoredLocal) selectedLocals++;
     }
+    if (authoredLocal) noteForwardSelection(light, selected.has(light), now);
   }
   // Test membership in the candidates snapshot rather than re-deriving it:
   // applyEnabled can change a descendant light's eligibility mid-loop. Fill
@@ -171,11 +206,14 @@ export function syncForwardLightPolicy(
   candidateSet.clear();
   for (const light of scene.lights) {
     const enabled = isAuthoredLightEnabled(light);
-    if (isForwardEligible(light) && !selected.has(light)) {
+    const eligible = isForwardEligible(light);
+    if (eligible && !selected.has(light)) {
       forwardExcluded.add(light);
       if (!candidateSet.size) for (const candidate of candidates) candidateSet.add(candidate);
       if (!candidateSet.has(light)) limited.push(light);
     } else forwardExcluded.delete(light);
+    // An ineligible light starts over, undwelled, when it becomes eligible again.
+    if (!eligible) forwardDwells.delete(light);
     applyEnabled(light, enabled);
   }
   candidates.length = 0;
@@ -192,6 +230,16 @@ export function syncForwardLightPolicy(
 
 function isForwardEligible(light: Light): boolean {
   return isIlluminatingLight(light) && !excluded.has(light);
+}
+
+/** The first sighting starts undwelled; a change of selection holds for the dwell. */
+function noteForwardSelection(light: Light, selected: boolean, now: number): void {
+  const dwell = forwardDwells.get(light);
+  if (!dwell) forwardDwells.set(light, { selected, until: 0 });
+  else if (dwell.selected !== selected) {
+    dwell.selected = selected;
+    dwell.until = now + FORWARD_LIGHT_DWELL_MS;
+  }
 }
 
 function isAuthoredLocal(scene: Scene, light: Light): boolean {
@@ -224,11 +272,16 @@ function admissionPosition(light: Light): Vector3 {
     : light.getAbsolutePosition();
 }
 
-/** Shared authored-local ordering before clustered and conventional resource admission. */
+/**
+ * Shared authored-local ordering before clustered and conventional resource
+ * admission. `locks` ranks a light inside its dwell: 1 keeps its slot ahead of
+ * unlocked lights, -1 waits behind them. Priority still outranks a lock.
+ */
 export function sortLightsByAdmission(
   scene: Scene,
   lights: Light[],
   previous: ReadonlySet<Light>,
+  locks?: ReadonlyMap<Light, number>,
 ): void {
   const camera = scene.activeCamera;
   camera?.getViewMatrix();
@@ -264,6 +317,7 @@ export function sortLightsByAdmission(
           Number(isManagedClusteredLight(scene, a)) ||
         (Number.isFinite(b.renderPriority) ? b.renderPriority : 0) -
           (Number.isFinite(a.renderPriority) ? a.renderPriority : 0) ||
+        (locks?.get(b) ?? 0) - (locks?.get(a) ?? 0) ||
         distances.get(a)! - distances.get(b)! ||
         a.uniqueId - b.uniqueId,
     );

@@ -55,7 +55,7 @@ Each scene can light a limited number of local (point, spot and area) lights at 
 - The directional sun and fill lights use separate slots.
 - The device's GPU can lower the budget further.
 
-When more local lights are on than the budget allows, Haptic keeps the lights nearest the camera and switches the rest off until the camera moves closer to them. Disabled lights and lights with zero intensity do not count. Their **Enabled** setting is not changed.
+When more local lights are on than the budget allows, Haptic keeps the lights nearest the camera and switches the rest off until the camera moves closer to them. A light that was just switched on or off keeps that state for about a second and a half, so lights at the edge of the budget do not flicker as the camera moves. Disabled lights and lights with zero intensity do not count. Their **Enabled** setting is not changed.
 
 ## Environment lighting
 
