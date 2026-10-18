@@ -90,6 +90,7 @@ import {
 } from "../context/scene-editing-context";
 import { IconActionButton } from "../components/icon-action-button";
 import { usePhoneLayout } from "../shell/use-platform-layout";
+import { QUIET_ROW_ACTION } from "../lib/row-action-classes";
 import { PlaceActorsDialog } from "../components/place-actors-dialog";
 import {
   duplicateSceneActor,
@@ -121,9 +122,6 @@ import { prefabAssetTemplateKey, prefabAssetTemplates } from "../lib/prefab-inst
 
 const CLASS_KINDS = ["graph"] as const;
 const PREFAB_KINDS = ["prefab"] as const;
-
-const QUIET_ROW_ACTION =
-  "[@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:hover_&]:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:focus-within_&]:opacity-100";
 
 const NO_MENU_ITEMS: NestedMenuItem[] = [];
 const NO_PLACE_ACTOR_ITEMS: PlaceActorItem[] = [];
