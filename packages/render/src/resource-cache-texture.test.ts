@@ -470,7 +470,9 @@ describe("resource cache getTexture", () => {
   // the texture was disposed meanwhile: that upload then binds no native texture.
   function pendingCubeFaces(engine: NullEngine) {
     const uploads: boolean[] = [];
-    const faces = { uploads, finish: () => {}, fail: (_message: string) => {} };
+    const faces: { uploads: boolean[]; finish(): void; fail(message: string): void } = {
+      uploads, finish: () => {}, fail: () => {},
+    };
     vi.mocked(engine.createCubeTexture).mockImplementationOnce((url, _scene, _files, noMipmap, onLoad, onError) => {
       const internal = engine.createTexture(url, noMipmap ?? false, false, null);
       internal.isCube = true; internal.isReady = false;
