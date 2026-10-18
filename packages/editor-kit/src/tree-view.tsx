@@ -86,6 +86,8 @@ export interface TreeViewNode {
   renameValue?: string;
   /** Read-only text kept beside the rename input, such as a bracketed asset name. */
   renameSuffix?: string;
+  /** False keeps the row from starting a reparent or external drag. */
+  draggable?: boolean;
 }
 
 export interface TreeViewProps {
@@ -531,9 +533,11 @@ export function TreeView({
               onContextMenu(nodeId, event.clientX, event.clientY);
             }, CONTEXT_MENU_LONG_PRESS_MS)
           : null;
-      const canDragNow =
-        Boolean(onReparent || onExternalDrop) && event.pointerType === "mouse";
-      const holdDrag = Boolean(onReparent || onExternalDrop) && !canDragNow;
+      const dragEnabled =
+        Boolean(onReparent || onExternalDrop) &&
+        nodes[indexById.get(nodeId) ?? -1]?.draggable !== false;
+      const canDragNow = dragEnabled && event.pointerType === "mouse";
+      const holdDrag = dragEnabled && !canDragNow;
       const dragArmTimer = holdDrag
         ? setTimeout(() => {
             const drag = dragRef.current;
@@ -568,7 +572,7 @@ export function TreeView({
         }
       }
     },
-    [clearDrag, onContextMenu, onExternalDrop, onReparent],
+    [clearDrag, indexById, nodes, onContextMenu, onExternalDrop, onReparent],
   );
 
   const onPointerMove = useCallback(
