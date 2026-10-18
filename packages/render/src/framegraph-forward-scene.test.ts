@@ -2,6 +2,7 @@ import { setSceneGameTimePaused } from "./scene-game-time";
 import { captureRenderFrame } from "./render-frame-report";
 import {
   Animation,
+  DirectionalLight,
   PrecisionDate,
   TransformNode,
   FreeCamera,
@@ -29,16 +30,25 @@ import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
 import { normalizeParticleEmitterPayload } from "@babylonslate/assets";
-import { DEFAULT_RENDER_EFFECTS, fogVolumeBindings, normalizeRenderingQuality, qualityPresetPatch } from "@babylonslate/core";
+import {
+  DEFAULT_RENDER_EFFECTS,
+  fogVolumeBindings,
+  normalizeRenderingQuality,
+  normalizeShadowSettings,
+  qualityPresetPatch,
+} from "@babylonslate/core";
 import { upsertFogVolumes } from "./fog-volumes";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { ParticleService } from "./particle-service";
 import {
+  sceneRenderingSettings,
   setSceneEffectsEnabled,
   updateSceneRenderingSettings,
 } from "./render-settings";
 import { setSceneRenderSettings } from "./scene-render-mode";
+import { sceneShadowController } from "./shadow-controller";
 import { configureCutoutSorting } from "./sorting";
+import { volumetricLayoutKey } from "./volumetric-lights";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -852,8 +862,15 @@ it("clears the temporal geometry attachments on their own target, never the back
   }
 });
 
-/** A spatial-effects host with one Fog Volume 10 units in front of the camera. */
-async function fogHost(effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, quality?: ReturnType<typeof normalizeRenderingQuality>) {
+/**
+ * A spatial-effects host with one Fog Volume 10 units in front of the camera, a light the volumetric march lights it
+ * with, and one beyond the march's reach (Max Distance plus the light's range) that tests can bring near.
+ */
+async function fogHost(
+  effects: Partial<typeof DEFAULT_RENDER_EFFECTS>,
+  quality?: ReturnType<typeof normalizeRenderingQuality>,
+  setup?: (scene: Scene) => void,
+) {
   const { engine, scene, camera } = host();
   // The spatial chain needs four float targets and depth sampling.
   Object.assign(engine.getCaps(), {
@@ -864,6 +881,10 @@ async function fogHost(effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, quality?
   const root = new TransformNode("fog", scene);
   root.position.z = 6;
   upsertFogVolumes(scene, "fog", root, fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]));
+  new PointLight("near", new Vector3(0, 2, 0), scene);
+  const far = new PointLight("far", new Vector3(500, 2, 0), scene);
+  far.range = 1;
+  setup?.(scene);
   const graph = new ForwardSceneFrameGraph(scene);
   await graph.prepare(camera);
   /** Names of the graph tasks that ran their disabled passes in one frame. */
@@ -872,9 +893,9 @@ async function fogHost(effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, quality?
     expect(frame.value).toEqual({ path: "frameGraph" });
     return frame.report.stages.filter((stage) => stage.kind === "task" && stage.fallbackPasses).map((stage) => stage.name);
   };
-  return { scene, camera, graph, skipped };
+  return { scene, camera, graph, skipped, far };
 }
-const FOG_ONLY_TASKS = ["Spatial Geometry Clear", "Spatial Geometry", "Scene Volumetric Lighting", "Scene Volumetric Compose"];
+const FOG_ONLY_TASKS = ["Spatial Geometry Clear", "Spatial Geometry", "Scene Volumetric Lighting", "Scene Volumetric Compose"].sort();
 
 it("skips the Fog Volume geometry and march while none is in front of the camera, without rebuilding", async () => {
   const { camera, graph, skipped } = await fogHost({});
@@ -883,12 +904,80 @@ it("skips the Fog Volume geometry and march while none is in front of the camera
   const tasks = graph.taskNames();
   expect(skipped()).toEqual([]);
   camera.rotation.y = Math.PI;
-  expect(skipped().sort()).toEqual([...FOG_ONLY_TASKS].sort());
+  expect(skipped().sort()).toEqual(FOG_ONLY_TASKS);
   camera.rotation.y = 0;
   expect(skipped()).toEqual([]);
   // Looking away and back only toggles tasks: the prepared graph is untouched.
   expect(graph.diagnostics().graphBuilds).toBe(builds);
   expect(graph.taskNames()).toEqual(tasks);
+  graph.dispose();
+});
+
+it("keeps an idle fog march's graph while lights come within reach, and re-plans it once the march runs", async () => {
+  const { camera, graph, skipped, far } = await fogHost({});
+  const builds = graph.diagnostics().graphBuilds;
+  camera.rotation.y = Math.PI;
+  expect(skipped().sort()).toEqual(FOG_ONLY_TASKS);
+  // The march's light slots follow the lights nearest the camera, but with no Fog Volume in view it binds none.
+  far.position.x = 1;
+  expect(skipped().sort()).toEqual(FOG_ONLY_TASKS);
+  expect(graph.diagnostics().graphBuilds).toBe(builds);
+  // Looking back at the Fog Volume runs the march, which must not light it with the slots it was built with.
+  camera.rotation.y = 0;
+  expect(graph.readiness(camera)).toMatchObject({ preparationRequired: true });
+  await graph.prepare(camera);
+  expect(graph.diagnostics().graphBuilds).toBe(builds + 1);
+  expect(skipped()).toEqual([]);
+  graph.dispose();
+});
+
+it.each([
+  ["a Fog Volume in view", {}, undefined, 0],
+  ["scene-wide fog", { volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, density: 0.3 } },
+    normalizeRenderingQuality(qualityPresetPatch("high")), Math.PI],
+] as const)("re-plans a running fog march for lights that come within reach (%s)", async (_, effects, quality, yaw) => {
+  const { camera, graph, skipped, far } = await fogHost(effects, quality);
+  camera.rotation.y = yaw;
+  expect(skipped()).toEqual([]);
+  const builds = graph.diagnostics().graphBuilds;
+  far.position.x = 1;
+  expect(graph.readiness(camera)).toMatchObject({ preparationRequired: true });
+  await graph.prepare(camera);
+  expect(graph.diagnostics().graphBuilds).toBe(builds + 1);
+  expect(skipped()).toEqual([]);
+  graph.dispose();
+});
+
+it("skips a fog march that wakes inside a frame while its lights' shadow maps differ from the ones it was built for", async () => {
+  let sun: DirectionalLight | undefined;
+  const { scene, camera, graph, skipped } = await fogHost({}, undefined, (scene) => {
+    // WebGL2 and WebGPU compare shadow maps in the sampler; NullEngine reports WebGL1's Poisson fallback.
+    Object.assign(scene.getEngine()._features, { supportShadowSamplers: true });
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, mapSize: 256 }) });
+    sun = new DirectionalLight("sun", new Vector3(0, -1, 0.2), scene);
+    const controller = sceneShadowController(scene);
+    controller.register(sun, true);
+    controller.sync();
+  });
+  const volume = sceneRenderingSettings(scene).effectsPlan!.volumetricLighting!;
+  const built = volumetricLayoutKey(scene, camera, volume);
+  const builds = graph.diagnostics().graphBuilds;
+  camera.rotation.y = Math.PI;
+  expect(skipped().sort()).toEqual(FOG_ONLY_TASKS);
+  const controller = sceneShadowController(scene);
+  controller.register(sun!, false);
+  controller.sync();
+  expect(volumetricLayoutKey(scene, camera, volume)).not.toBe(built);
+  // The dropped map re-prepares the lighting; the idle march keeps its graph.
+  await graph.prepare(camera);
+  expect(graph.diagnostics().graphBuilds).toBe(builds);
+  expect(skipped().sort()).toEqual(FOG_ONLY_TASKS);
+  // The view checks its graph before the frame moves the camera (inputs, animation): the march wakes after that check.
+  scene.onBeforeRenderObservable.addOnce(() => { camera.rotation.y = 0; });
+  expect(skipped().sort()).toEqual(FOG_ONLY_TASKS);
+  expect(graph.readiness(camera)).toMatchObject({ preparationRequired: true });
+  await graph.prepare(camera);
+  expect(skipped()).toEqual([]);
   graph.dispose();
 });
 

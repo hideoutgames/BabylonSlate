@@ -126,7 +126,15 @@ export function volumetricLayoutKey(
   camera: Camera,
   settings: VolumetricLightingSettings,
 ): string {
-  return selectVolumetricLights(scene, camera, settings)
+  return volumetricLightsLayoutKey(scene, selectVolumetricLights(scene, camera, settings));
+}
+
+/** The layout key of these lights in these slots, with their current shadow maps. */
+export function volumetricLightsLayoutKey(
+  scene: Scene,
+  lights: readonly VolumeLight[],
+): string {
+  return lights
     .map((light) => {
       const layout = volumeShadowLayout(scene, light);
       return `${light.uniqueId}:${layout.kind}:${layout.cascades}:${Number(layout.packed)}`;
