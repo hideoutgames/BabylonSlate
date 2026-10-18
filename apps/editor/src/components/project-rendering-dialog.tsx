@@ -3,8 +3,10 @@ import { Button } from "@babylonslate/ui/components/button";
 import { Progress, ProgressLabel } from "@babylonslate/ui/components/progress";
 import type { ProjectEngineState } from "../lib/project-engine";
 
-export function ProjectRenderingDialog({ state, onRetry, onDismiss }: {
+export function ProjectRenderingDialog({ state, retrying = false, onRetry, onDismiss }: {
   state: ProjectEngineState;
+  /** A Retry is waiting for a stopping game to release the old Engine. */
+  retrying?: boolean;
   onRetry(): void;
   onDismiss(): void;
 }) {
@@ -20,7 +22,7 @@ export function ProjectRenderingDialog({ state, onRetry, onDismiss }: {
       </DialogHeader>
       {failed ? <DialogFooter>
         <Button size="sm" variant="outline" onClick={onDismiss}>Close</Button>
-        <Button size="sm" disabled={state.retryable === false} onClick={onRetry}>Retry</Button>
+        <Button size="sm" disabled={state.retryable === false || retrying} onClick={onRetry}>Retry</Button>
       </DialogFooter> : <Progress value={state.phase === "preparing" ? 10 : 50}>
         <ProgressLabel>{state.phase === "preparing" ? "Preparing Rendering" : "Starting Renderer"}</ProgressLabel>
       </Progress>}
