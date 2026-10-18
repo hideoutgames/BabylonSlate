@@ -1366,6 +1366,13 @@ describe("view sun shadow maps", () => {
     controller.sync();
     const third = controller.viewBoundGenerator(sun, capture)!;
     expect(third.getShadowMap()).not.toBeNull();
+    // A spot map admitted while the view is attached stays shared, never mirrored.
+    const spot = new SpotLight("spot", new Vector3(0, 4, -4), new Vector3(0, -1, 0.5), 1, 1, scene);
+    controller.register(spot, true);
+    controller.sync();
+    expect(controller.generator(spot)).not.toBeNull();
+    expect(controller.viewBoundGenerator(spot, capture)).toBe(controller.generator(spot));
+    expect(spot.getShadowGenerators()?.size).toBe(1);
     await view.release();
     expect(third.getShadowMap()).toBeNull();
     expect(sun.getShadowGenerator(capture)).toBeNull();
