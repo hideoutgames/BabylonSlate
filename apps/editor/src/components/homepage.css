@@ -185,6 +185,7 @@
   display: flex;
   flex-direction: column;
   isolation: isolate;
+  background: var(--background);
 }
 /* haptic.no's horizon: a night-blue sky over a red-orange glow, with film
  * grain. Procedural only (gradients and SVG turbulence), no artwork. */
@@ -197,26 +198,33 @@
   opacity: var(--homepage-glow);
   background:
     radial-gradient(
-      ellipse 55% 9% at 50% 100%,
-      var(--brand-red),
-      transparent 100%
-    ),
-    radial-gradient(
-      ellipse 85% 16% at 50% 100%,
-      color-mix(in oklch, var(--brand-red) 70%, var(--brand-glow-magenta)),
-      transparent 100%
-    ),
-    radial-gradient(
-      ellipse 120% 30% at 50% 100%,
+      ellipse 26% 16% at 50% 104%,
       var(--brand-glow-violet),
       transparent 100%
     ),
     radial-gradient(
-      ellipse 160% 55% at 50% 100%,
+      ellipse 36% 28% at 50% 104%,
+      var(--brand-glow-magenta),
+      transparent 100%
+    ),
+    radial-gradient(
+      ellipse 38% 40% at 50% 104%,
+      var(--brand-red),
+      transparent 100%
+    ),
+    radial-gradient(
+      ellipse 34% 50% at 50% 104%,
+      var(--brand-glow-orange),
+      transparent 100%
+    ),
+    radial-gradient(
+      ellipse 52% 62% at 50% 104%,
       var(--brand-glow-blue),
       transparent 100%
     );
+  filter: blur(16px);
 }
+/* Film grain: monochrome noise at one pixel per grain, strongest on the glow. */
 .homepage-panel::after {
   content: "";
   position: absolute;
@@ -224,15 +232,16 @@
   z-index: -1;
   pointer-events: none;
   opacity: var(--homepage-grain);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='1' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncR type='linear' slope='3.4' intercept='-0.95'/%3E%3CfeFuncG type='linear' slope='3.4' intercept='-0.95'/%3E%3CfeFuncB type='linear' slope='3.4' intercept='-0.95'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 .homepage-theme {
-  --homepage-glow: 0.6;
-  --homepage-grain: 0.07;
+  --homepage-glow: 0.95;
+  --homepage-grain: 0.9;
 }
 .homepage-theme[data-slate-theme="light"] {
-  --homepage-glow: 0.22;
-  --homepage-grain: 0.08;
+  --homepage-glow: 0.3;
+  --homepage-grain: 0.35;
 }
 .homepage-panel-toolbar,
 .homepage-template-toolbar {

@@ -188,10 +188,10 @@
     --play-foreground: oklch(0.985 0.002 85);
     --brand-red: oklch(0.655 0.233 36);
     --brand-amber: oklch(0.81 0.17 76);
-    --brand-glow-blue: oklch(0.38 0.1 245);
-    --brand-glow-orange: oklch(0.64 0.18 45);
-    --brand-glow-magenta: oklch(0.52 0.19 355);
-    --brand-glow-violet: oklch(0.48 0.2 320);
+    --brand-glow-blue: oklch(0.42 0.11 240);
+    --brand-glow-orange: oklch(0.7 0.19 50);
+    --brand-glow-magenta: oklch(0.56 0.22 355);
+    --brand-glow-violet: oklch(0.55 0.24 320);
     --brand-fringe: -1.5px 0 1px -0.5px var(--brand-amber), 1.5px 0 1px -0.5px var(--brand-amber), -3px 0 1.5px -1px var(--brand-red), 3px 0 1.5px -1px var(--brand-red);
 }
 
@@ -301,9 +301,9 @@
     --play-foreground: oklch(0.15 0.004 75);
     --brand-red: oklch(0.655 0.233 36);
     --brand-amber: oklch(0.81 0.17 76);
-    --brand-glow-blue: oklch(0.38 0.1 245);
-    --brand-glow-orange: oklch(0.64 0.18 45);
-    --brand-glow-magenta: oklch(0.52 0.19 355);
-    --brand-glow-violet: oklch(0.48 0.2 320);
+    --brand-glow-blue: oklch(0.42 0.11 240);
+    --brand-glow-orange: oklch(0.7 0.19 50);
+    --brand-glow-magenta: oklch(0.56 0.22 355);
+    --brand-glow-violet: oklch(0.55 0.24 320);
     --brand-fringe: -1.5px 0 1px -0.5px var(--brand-amber), 1.5px 0 1px -0.5px var(--brand-amber), -3px 0 1.5px -1px var(--brand-red), 3px 0 1.5px -1px var(--brand-red);
 }
