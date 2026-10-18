@@ -13,6 +13,7 @@
  * analyses the frames; this module only records them.
  */
 import {
+  FrameGraph,
   Material,
   MaterialDefines,
   NodeMaterial,
@@ -75,6 +76,9 @@ export interface FlyFrame {
   /** Last view copy and pre-render preparation, as the renderer reports them for its latest frame. */
   copyMs: number;
   preparationMs: number;
+  /** Drawing-buffer size and hardware scaling level the renderer reports; a change re-plans the frame graph. */
+  size: [number, number];
+  scaling: number;
   activeMeshes: number;
   activeAdded: number;
   activeRemoved: number;
@@ -465,6 +469,15 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
       }
       return original.apply(this, args);
     })) instrumented.push(`MaterialDefines.${method}`);
+  // Frame graph re-plans: who released the prepared graph, and each rebuild.
+  for (const method of ["dispose", "buildAsync"] as const)
+    if (wrapMethod(FrameGraph.prototype, method, restores, (original) => function (this: FrameGraph, ...args: unknown[]) {
+      if (this.scene === scene) {
+        bump(`frameGraph.${method}`);
+        record(`frameGraph.${method}`, `${this.tasks.length} tasks`, true, `frame ${frameIndex}`);
+      }
+      return original.apply(this, args);
+    })) instrumented.push(`FrameGraph.${method}`);
   if (wrapMethod(NodeMaterial.prototype, "build", restores, (original) => function (this: NodeMaterial, ...args: unknown[]) {
     if (inScene(this)) {
       bump("nodeMaterial.build");
@@ -672,6 +685,8 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
       c: counters,
       copyMs: round2(presentation?.copyMs ?? 0),
       preparationMs: round2(presentation?.preparationMs ?? 0),
+      size: [state.width, state.height],
+      scaling: state.scalingLevel,
       activeMeshes: activeCount,
       activeAdded: added,
       activeRemoved: removed,

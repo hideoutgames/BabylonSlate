@@ -11,6 +11,7 @@ import {
   type FeatureTestSceneName,
 } from "./feature-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
+import { saveAllIfEnabled } from "./save-all";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 /**
@@ -135,6 +136,7 @@ type AnnotatedFrame = FlyFrame & { longTaskMs: number; heapDropMb: number };
 
 function annotate(result: FlyThroughResult): AnnotatedFrame[] {
   let previousHeap: number | null = null;
+  let previousSize: string | null = null;
   return result.frames.map((frame) => {
     let longTaskMs = 0;
     for (const [start, duration] of result.longTasks) {
@@ -146,6 +148,9 @@ function annotate(result: FlyThroughResult): AnnotatedFrame[] {
     const counters = { ...frame.c };
     if (heapDropMb > 0) counters["heap.drop"] = 1;
     if (frame.activeAdded + frame.activeRemoved > 0) counters["visible.churn"] = frame.activeAdded + frame.activeRemoved;
+    const size = `${frame.size[0]}x${frame.size[1]}@${frame.scaling}`;
+    if (previousSize !== null && size !== previousSize) counters["size.changed"] = 1;
+    previousSize = size;
     return { ...frame, c: counters, longTaskMs: Math.round(longTaskMs), heapDropMb: Math.round(heapDropMb * 10) / 10 };
   });
 }
@@ -157,7 +162,7 @@ const EVENT_KEYS = [
   "gl.texUpload", "gpu.buffer", "gl.createBuffer", "mat.dirty.light", "mat.dirty.texture", "mat.dirty.attributes", "mat.dirty.misc",
   "mat.markDirty", "defines.processed", "defines.light", "ready.false", "graph.strictChecks", "graph.builds", "view.held",
   "shadow.init", "shadow.dispose", "shadow.moved", "shadow.attached", "shadow.detached", "lights.changed", "heap.drop",
-  "nodeMaterial.build", "defines.lightDisposed",
+  "nodeMaterial.build", "defines.lightDisposed", "frameGraph.dispose", "frameGraph.buildAsync", "size.changed",
 ];
 
 function summarizePhase(frames: AnnotatedFrame[]) {
@@ -415,7 +420,30 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
 
   const scenes: Record<string, unknown> = {};
   const raw: Record<string, unknown> = {};
+  const report = () => ({
+    qualification:
+      "Per-frame event counts during a scripted editor fly-through. Counts are hardware-independent; times on software adapters are not device performance. Compare runs on the same machine, backend and build only. No frame-rate assertion.",
+    label: process.env.BL_PERF_LABEL ?? null,
+    browserProject: testInfo.project.name,
+    browserVersion: page.context().browser()?.version() ?? null,
+    env: { SCENES, PLAY_SCENES, BACKEND, NATIVE_GPU, SPEED, PASSES, WARMUP_MS, SETTLE_MS, PROFILE,
+      VIEWPORT_CAP: process.env.BL_PERF_VIEWPORT_CAP ?? null, SCALING: process.env.BL_PERF_SCALING ?? null },
+    createToInteractiveMs,
+    scenes,
+    pageErrors,
+  });
+  // Written after every scene, so a later failure keeps the finished flights.
+  const writeReport = () => {
+    const body = JSON.stringify({ ...report(), raw }, null, 1);
+    writeFileSync(testInfo.outputPath("feature-test-flythrough.json"), body);
+    if (process.env.BL_PERF_OUT) {
+      mkdirSync(path.dirname(process.env.BL_PERF_OUT), { recursive: true });
+      writeFileSync(process.env.BL_PERF_OUT, body);
+    }
+  };
   for (const scene of SCENES) {
+    // The backend is a project setting: unsaved documents would block opening the next scene.
+    await saveAllIfEnabled(page, 120_000);
     const { readyMs, loadRetries } = await openFeatureTestScene(page, scene);
     if (BACKEND) await expect.poll(() => viewportBackend(page), { timeout: 120_000 }).toBe(BACKEND);
     await page.waitForTimeout(SETTLE_MS);
@@ -428,28 +456,12 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
       scenes[`${scene}:play`] = { playBootMs: play.playBootMs, ...play.summary };
       raw[`${scene}:play`] = { frames: play.frames, log: play.result.log, longTasks: play.result.longTasks, totals: play.result.totals };
     }
+    writeReport();
   }
 
-  const report = {
-    qualification:
-      "Per-frame event counts during a scripted editor fly-through. Counts are hardware-independent; times on software adapters are not device performance. Compare runs on the same machine, backend and build only. No frame-rate assertion.",
-    label: process.env.BL_PERF_LABEL ?? null,
-    browserProject: testInfo.project.name,
-    browserVersion: page.context().browser()?.version() ?? null,
-    env: { SCENES, PLAY_SCENES, BACKEND, NATIVE_GPU, SPEED, PASSES, WARMUP_MS, SETTLE_MS, PROFILE,
-      VIEWPORT_CAP: process.env.BL_PERF_VIEWPORT_CAP ?? null, SCALING: process.env.BL_PERF_SCALING ?? null },
-    createToInteractiveMs,
-    scenes,
-    pageErrors,
-  };
-  const body = JSON.stringify({ ...report, raw }, null, 1);
-  writeFileSync(testInfo.outputPath("feature-test-flythrough.json"), body);
-  if (process.env.BL_PERF_OUT) {
-    mkdirSync(path.dirname(process.env.BL_PERF_OUT), { recursive: true });
-    writeFileSync(process.env.BL_PERF_OUT, body);
-  }
-  await testInfo.attach("feature-test-flythrough", { body: JSON.stringify(report, null, 1), contentType: "application/json" });
-  console.log(`[feature-test-flythrough] ${JSON.stringify(report)}`);
+  writeReport();
+  await testInfo.attach("feature-test-flythrough", { body: JSON.stringify(report(), null, 1), contentType: "application/json" });
+  console.log(`[feature-test-flythrough] ${JSON.stringify(report())}`);
 
   expect(SCENES.length).toBeGreaterThan(0);
   expect(pageErrors).toEqual([]);
