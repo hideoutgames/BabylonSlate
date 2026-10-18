@@ -15,6 +15,7 @@ import {
   keepsNativeEditing,
   type KeyChord,
 } from "@babylonslate/editor-kit";
+import { GraphKeybindsContext, type GraphKeybinds } from "@babylonslate/graph-ui";
 import {
   editorCommand,
   resolveKeybinds,
@@ -133,8 +134,25 @@ export function KeybindProvider({
     [],
   );
   const value = useMemo(() => ({ bindings, register }), [bindings, register]);
+  // Graph canvases own their Copy, Paste, Duplicate and Delete keys, so they
+  // read the same bindings the Outliner and Content Browser register.
+  const graphKeybinds = useMemo(
+    (): GraphKeybinds => ({
+      copy: bindings.get("edit.copy") ?? [],
+      paste: bindings.get("edit.paste") ?? [],
+      duplicate: bindings.get("edit.duplicate") ?? [],
+      delete: bindings.get("edit.delete") ?? [],
+    }),
+    [bindings],
+  );
 
-  return <KeybindContext.Provider value={value}>{children}</KeybindContext.Provider>;
+  return (
+    <KeybindContext.Provider value={value}>
+      <GraphKeybindsContext.Provider value={graphKeybinds}>
+        {children}
+      </GraphKeybindsContext.Provider>
+    </KeybindContext.Provider>
+  );
 }
 
 /** The primary chord shown in tooltips and menus, if the command is bound. */
