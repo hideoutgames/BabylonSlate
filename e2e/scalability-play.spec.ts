@@ -24,6 +24,9 @@ const read = (page: Page) => page.evaluate(() => {
   return { rendering: host.rendering(), scalability: host.scalability(), tasks: host.renderTasks() };
 });
 
+// Quality, pipeline and render-path commands apply multi-second synchronous work, which is slower on some hosted runners than the 5 s default allows.
+const APPLY_TIMEOUT_MS = 30_000;
+
 for (const backend of ["webgl2"] as const) {
 test(`saved Class scalability graphs compile and run with confirmed events in editor Play on ${backend}`, async ({ page }, testInfo) => {
   test.setTimeout(120_000);
@@ -100,18 +103,24 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
   await page.getByTestId("play-console-open").click();
   const command = async (name: string) => {
     await page.getByTestId("debug-console-input").fill(name);
+    const submitted = performance.now();
     await page.getByTestId("debug-console-submit").click();
     // Successful graph commands have no output row. Each caller waits for its
     // actual renderer acknowledgement; the next submit waits for Run admission.
     await expect(page.getByTestId("debug-console-input")).toHaveValue("");
+    return submitted;
+  };
+  // Submits a command, awaits its acknowledgements and prints the submit-to-acknowledged time for the job log.
+  const apply = async (name: string, ...acknowledgements: (() => Promise<void>)[]) => {
+    const submitted = await command(name);
+    for (const acknowledged of acknowledgements) await acknowledged();
+    console.log(`scalability-play apply ${name} ${Math.round(performance.now() - submitted)}ms`);
   };
   for (const preset of ["low", "medium", "high", "ultra"]) {
-    await command(`qual_${preset}`);
-    await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.lighting.profile).toBe(preset);
+    await apply(`qual_${preset}`, () => expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.lighting.profile, { timeout: APPLY_TIMEOUT_MS }).toBe(preset));
     expect((await read(page)).scalability?.effective?.render.mode).toBe("cel");
   }
-  await command("qual_settings");
-  await expect.poll(async () => (await read(page)).scalability?.effective?.render.environmentLighting?.rotationYDegrees).toBe(23);
+  await apply("qual_settings", () => expect.poll(async () => (await read(page)).scalability?.effective?.render.environmentLighting?.rotationYDegrees, { timeout: APPLY_TIMEOUT_MS }).toBe(23));
   const custom = await read(page);
   expect(custom.rendering).toMatchObject({ width: 300, height: 180 });
   expect(custom.scalability?.effective).toMatchObject({ frameCap: 24, render: { cel: { shadowBands: 6 }, quality: { lighting: { maxLocalLights: 3 }, textures: { anisotropy: 2 }, geometry: { autoLod: false, lodDistanceScale: 2 }, postprocessing: { resolutionScale: 0.5 } }, effects: { fxaa: false, vignette: { color: [0.2, 0.1, 0.3] } } } });
@@ -123,18 +132,20 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
   await command("qual_outline_roundtrip");
   expect((await read(page)).scalability?.revision).toBe(custom.scalability!.revision);
   await command("qual_invalid");
-  await command("qual_aa");
-  await expect.poll(async () => (await read(page)).tasks.some((name) => /FXAA/.test(name))).toBe(true);
-  await expect.poll(async () => (await read(page)).scalability?.revision).toBe(custom.scalability!.revision + 1);
-  await command("qual_reset");
-  await expect.poll(async () => (await read(page)).scalability?.effective?.frameCap).toBe(30);
-  await expect.poll(async () => (await read(page)).rendering?.width).toBe(384);
+  await apply(
+    "qual_aa",
+    () => expect.poll(async () => (await read(page)).tasks.some((name) => /FXAA/.test(name)), { timeout: APPLY_TIMEOUT_MS }).toBe(true),
+    () => expect.poll(async () => (await read(page)).scalability?.revision, { timeout: APPLY_TIMEOUT_MS }).toBe(custom.scalability!.revision + 1),
+  );
+  await apply(
+    "qual_reset",
+    () => expect.poll(async () => (await read(page)).scalability?.effective?.frameCap, { timeout: APPLY_TIMEOUT_MS }).toBe(30),
+    () => expect.poll(async () => (await read(page)).rendering?.width, { timeout: APPLY_TIMEOUT_MS }).toBe(384),
+  );
   await testInfo.attach("play-compiled-scalability", { body: JSON.stringify({ custom, reset: await read(page), evidence: renderingEvidence("e2e/scalability-play.spec.ts") }), contentType: "application/json" });
   await expect(transcript.locator('[data-severity="error"]')).toHaveCount(0);
-  await command("qual_cluster");
-  await expect.poll(async () => (await read(page)).scalability?.pipeline?.requested.renderPath).toBe("clusteredForward");
-  await command("quality resolution scale 0.5");
-  await expect.poll(async () => (await read(page)).rendering?.width).toBe(240);
+  await apply("qual_cluster", () => expect.poll(async () => (await read(page)).scalability?.pipeline?.requested.renderPath, { timeout: APPLY_TIMEOUT_MS }).toBe("clusteredForward"));
+  await apply("quality resolution scale 0.5", () => expect.poll(async () => (await read(page)).rendering?.width, { timeout: APPLY_TIMEOUT_MS }).toBe(240));
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   await expect.poll(() => page.getByTestId("viewport-canvas").evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height])).toEqual(editorSize);
