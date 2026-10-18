@@ -28,7 +28,7 @@ async function routeReleases(page: Page, respond: "notes" | "fail") {
 async function openChangelog(page: Page) {
   // The homepage mounts before its loading transition finishes.
   await expect(page.locator(".slate-loading")).toHaveCount(0, { timeout: 30_000 });
-  await page.getByRole("button", { name: "Profile", exact: true }).click();
+  await page.getByTestId("homepage-account").click();
   await page.getByRole("menuitem", { name: "Changelog" }).click();
   return page.getByRole("dialog", { name: "Changelog" });
 }
