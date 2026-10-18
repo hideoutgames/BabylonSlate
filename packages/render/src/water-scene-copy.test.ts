@@ -10,6 +10,7 @@ import {
   ScenePerformancePriority,
   StandardMaterial,
   TransformNode,
+  type Effect,
   type UniformBuffer,
   Vector3,
 } from "@babylonjs/core";
@@ -21,6 +22,7 @@ import {
   normalizeRenderingQuality,
   normalizeWaterBody,
 } from "@babylonslate/core";
+import { COMPILE_AHEAD_LIMIT } from "./driver-compile";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { updateSceneRenderingSettings } from "./render-settings";
@@ -541,6 +543,110 @@ it("compiles no pass-less water variant when the view's scene copy cannot be pla
   await settle(graph, camera);
   expect([...drawn].sort()).toEqual(["colour with copy", "depth"]);
   expect(compiledWaterVariants(engine)).toEqual(["colour with copy", "depth"]);
+  graph.dispose();
+});
+
+/**
+ * A parallel-compile driver (KHR_parallel_shader_compile) that keeps each water link pending until released: the
+ * driver reports a link's completion only, so its effect stays unready while the graph goes on probing. `requested`
+ * lists the water variants asked for so far, in order.
+ */
+function holdWaterLinks(engine: NullEngine) {
+  engine.getCaps().parallelShaderCompile = { COMPLETION_STATUS_KHR: 0x91b1 };
+  const held: Effect[] = [];
+  const released = new Set<Effect>();
+  let holding = true;
+  const createEffect = engine.createEffect.bind(engine);
+  vi.spyOn(engine, "createEffect").mockImplementation((...args) => {
+    const effect = createEffect(...args);
+    if (!held.includes(effect) && /#define SLATE_WATER\n/.test(effect.defines)) {
+      held.push(effect);
+      if (!holding) released.add(effect);
+      const isReady = effect.isReady.bind(effect);
+      vi.spyOn(effect, "isReady").mockImplementation(() => released.has(effect) && isReady());
+    }
+    return effect;
+  });
+  return {
+    requested: () => held.map((effect) => effect.defines.includes("#define PREPASS\n") ? "geometry" : waterVariant(effect.defines)),
+    /** Finish the first `count` links requested. */
+    release: (count: number) => { for (const effect of held.slice(0, count)) released.add(effect); },
+    /** Finish every link, and later ones as they are requested. */
+    releaseAll: () => { holding = false; for (const effect of held) released.add(effect); },
+    /** Hold the links requested from now on. */
+    hold: () => { holding = true; },
+  };
+}
+
+/** Realistic, Painted and Toon water side by side, warmed as a load warms: three bodies whose variants all differ. */
+async function threeWaterBodies(scene: Scene): Promise<void> {
+  const looks = [createDefaultWaterDefinition(), createDefaultWaterDefinition("stylized"), createDefaultWaterDefinition("stylized", "toon")];
+  looks.forEach((water, index) => {
+    const mesh = createWaterMesh(scene, `water-${index}`, normalizeWaterBody({ width: 4, length: 4, resolution: 8 }), water);
+    mesh.position.x = (index - 1) * 4;
+  });
+  await prewarmSceneMaterials(scene, undefined, isBuiltInWaterMesh);
+}
+
+/** Time for the graph's readiness loop, which probes every 16 ms, to probe several more times. */
+const moreProbes = () => new Promise((resolve) => setTimeout(resolve, 100));
+
+it("links the next water bodies' variants while the first still links, a bounded number at a time", async () => {
+  const { engine, scene, camera } = host();
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "ultra" } }) });
+  await threeWaterBodies(scene);
+  const links = holdWaterLinks(engine);
+  const graph = new ForwardSceneFrameGraph(scene);
+  const prepared = graph.prepare(camera);
+  // Each body draws a colour variant and a depth pre-pass: more links than may be pending at once.
+  expect(COMPILE_AHEAD_LIMIT + 1).toBeLessThan(6);
+  // The probe waits on the first body's colour variant; its depth pre-pass and the next body link meanwhile.
+  await vi.waitFor(() => expect(links.requested().length).toBeGreaterThan(2));
+  expect(links.requested().slice(0, 2)).toEqual(["colour with copy", "depth"]);
+  await moreProbes();
+  const pending = links.requested().length;
+  expect(pending).toBeLessThanOrEqual(COMPILE_AHEAD_LIMIT + 1);
+  // While none finishes, none more starts; as one finishes, the next start.
+  await moreProbes();
+  expect(links.requested()).toHaveLength(pending);
+  links.release(1);
+  await vi.waitFor(() => expect(links.requested().length).toBeGreaterThan(pending));
+  links.releaseAll();
+  expect(await prepared).toEqual({ path: "frameGraph" });
+  // Each body's two variants, once each: nothing linked that no pass draws.
+  expect(compiledWaterVariants(engine)).toEqual(["colour with copy", "colour with copy", "colour with copy", "depth", "depth", "depth"]);
+  // The next readiness episode links ahead again: fog changes every body's variants (outside Scene observables, so
+  // the change marks readiness dirty itself).
+  const episode = links.requested().length;
+  links.hold();
+  scene.fogMode = Scene.FOGMODE_EXP2;
+  graph.markReadinessDirty();
+  expect(graph.readiness(camera).ready).toBe(false);
+  expect(links.requested().length - episode).toBeGreaterThan(2);
+  links.releaseAll();
+  await vi.waitFor(() => expect(graph.readiness(camera).ready).toBe(true));
+  graph.dispose();
+});
+
+it("links the transparent pass's water while an earlier geometry pass still links its own", async () => {
+  const { engine, scene, camera } = host();
+  // The spatial chain (its geometry pass feeds the resolve's velocity) needs four float targets and depth sampling.
+  Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true, textureFloatRender: true, texelFetch: true });
+  updateSceneRenderingSettings(scene, {
+    quality: normalizeRenderingQuality({ water: { profile: "ultra" } }),
+    effects: { ...DEFAULT_RENDER_EFFECTS, temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } },
+  });
+  await threeWaterBodies(scene);
+  const links = holdWaterLinks(engine);
+  const graph = new ForwardSceneFrameGraph(scene);
+  const prepared = graph.prepare(camera);
+  // The geometry pass, which runs before the object passes, waits on the first body; the other bodies' geometry
+  // variants and the transparent pass's first variant link meanwhile.
+  await vi.waitFor(() => expect(links.requested()).toContain("colour with copy"));
+  expect(links.requested()[0]).toBe("geometry");
+  expect(links.requested().filter((variant) => variant === "geometry").length).toBeGreaterThan(1);
+  links.releaseAll();
+  expect(await prepared).toEqual({ path: "frameGraph" });
   graph.dispose();
 });
 
