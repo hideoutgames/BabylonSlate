@@ -13,8 +13,9 @@ Haptic has two kinds:
 
 1. In the **Content Browser**, choose **New Asset > World > Prefab**. A new Prefab holds one Box mesh, or nothing if the open Scene is 2D.
 2. Double-tap it. The editor shows the **Prefab** viewport, the **Components** list and the **Inspector**.
-3. Use **Add Component** in **Components** to add parts, and the remove button to delete the selected ones. Drag a component onto another to attach it.
-4. Select a component to edit its transform and settings in the **Inspector**, or move it with the gizmo in the viewport.
+3. Tap **+** in **Components** to add a part. It attaches to the selected component, or to **Prefab Root** when that is selected; the button's tooltip and the menu title name the target. Drag a component onto another to attach it.
+4. Open a row's **…** menu, or right-click or long-press the row, for **Add Child Component**, **Rename** and **Delete**. Press Delete to remove the selected components. Use the search field to find a component by name.
+5. Select a component to edit its transform and settings in the **Inspector**, or move it with the gizmo in the viewport.
 
 Prefab assets do not accept your scripted Actor Component Classes; use an Actor Class for those.
 

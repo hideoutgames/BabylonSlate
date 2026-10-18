@@ -16,7 +16,6 @@ import {
 } from "@babylonslate/editor-kit";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
-import { cn } from "@babylonslate/ui/lib/utils";
 import { MoreHorizontalIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useGraphEditing } from "../context/graph-editing-context";
@@ -323,7 +322,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
       <div ref={panelRef} className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 items-center gap-1 border-b border-border/60 bg-panel-header px-1 py-1">
           <SearchInput
-            className={cn("min-h-[var(--chrome-row,28px)]", phone && "min-h-11")}
+            className={phone ? "h-11" : "h-7"}
             placeholder="Search components"
             aria-label="Search components"
             value={search}

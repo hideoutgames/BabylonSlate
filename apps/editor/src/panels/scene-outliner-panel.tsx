@@ -53,7 +53,6 @@ import {
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
 import { Toggle } from "@babylonslate/ui/components/toggle";
-import { cn } from "@babylonslate/ui/lib/utils";
 import {
   CopyIcon,
   ClipboardPasteIcon,
@@ -1350,10 +1349,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         <div className="flex shrink-0 items-center gap-1 border-b border-border/60 bg-panel-header px-1 py-1">
           <SearchInput
             ref={searchRef}
-            className={cn(
-              "min-h-[var(--chrome-row,28px)]",
-              phone && "min-h-11",
-            )}
+            className={phone ? "h-11" : "h-7"}
             placeholder="Search actors"
             aria-label="Search actors"
             value={search}
