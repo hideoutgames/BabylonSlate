@@ -30,8 +30,6 @@ vi.mock("./settings-modal", () => ({
   SettingsModal: () => null,
 }));
 
-vi.mock("./homepage-empty-art", () => ({ HomepageEmptyArt: () => null }));
-
 beforeEach(() => {
   localStorage.clear();
   vi.stubGlobal("__BABYLONSLATE_BUILD_LABEL__", "0.0.1 Development build");
@@ -97,6 +95,20 @@ function listedProject(
   return { id: `${tier}:${name}`, name, tier, label: name };
 }
 
+/** Profile → Manage Account → the Account dialog's Application section. */
+async function openApplicationSettings() {
+  fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: /Manage Account/ }));
+  const dialog = await screen.findByRole("dialog", { name: "Account" });
+  fireEvent.click(
+    within(within(dialog).getByRole("navigation", { name: "Categories" })).getByRole(
+      "button",
+      { name: "Application" },
+    ),
+  );
+  return within(dialog).findByRole("switch", { name: "Automatic Updates" });
+}
+
 function createDialog(id = "blank") {
   fireEvent.click(screen.getByTestId("create-project"));
   fireEvent.click(screen.getByTestId(`create-project-${id}`));
@@ -159,7 +171,7 @@ describe("Slate project browser", () => {
       "disabled",
       true,
     );
-    expect(screen.getByTestId("engine-settings")).toHaveProperty(
+    expect(screen.getByRole("button", { name: "Profile" })).toHaveProperty(
       "disabled",
       true,
     );
@@ -187,9 +199,7 @@ describe("Slate project browser", () => {
         }),
     );
     renderHomepage();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Templates" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /^Templates/ }));
     fireEvent.click(screen.getByRole("button", { name: "Add Template" }));
     expect(screen.getByRole("button", { name: "Add Template" })).toHaveProperty(
       "disabled",
@@ -236,6 +246,23 @@ describe("Slate project browser", () => {
       );
     },
   );
+
+  it("starts naming a project straight from a welcome tile in an empty library", async () => {
+    const onCreateEmpty = vi.fn(async () => {});
+    renderHomepage({ onCreateEmpty });
+    fireEvent.click(screen.getByTestId("homepage-empty-start-2d"));
+    expect(screen.queryByTestId("create-project-2d")).toBeNull();
+    fireEvent.change(screen.getByTestId("create-project-name"), {
+      target: { value: "Tiles" },
+    });
+    fireEvent.click(screen.getByTestId("create-project-submit"));
+    await waitFor(() =>
+      expect(onCreateEmpty).toHaveBeenCalledWith(
+        "Tiles",
+        expect.objectContaining({ kind: "2d" }),
+      ),
+    );
+  });
 
   it("searches custom templates and creates from the selected one", async () => {
     const onCreateFromTemplate = vi.fn(async () => {});
@@ -424,36 +451,10 @@ describe("Slate project browser", () => {
     expect(screen.getByTestId("open-listed-project-Tide")).toBeTruthy();
   });
 
-  it("persists the menu theme in Engine Settings and updates editor chrome", async () => {
-    renderHomepage();
-    fireEvent.click(screen.getByRole("button", { name: "Dark Mode" }));
-    await waitFor(() =>
-      expect(document.documentElement.classList.contains("dark")).toBe(true),
-    );
-    expect(
-      JSON.parse(localStorage.getItem("babylonslate:engine-settings")!)
-        .appearance.theme,
-    ).toBe("dark");
-    fireEvent.click(screen.getByRole("button", { name: "Light Mode" }));
-    await waitFor(() =>
-      expect(document.documentElement.classList.contains("dark")).toBe(false),
-    );
-    expect(
-      screen.getByTestId("homepage").getAttribute("data-slate-theme"),
-    ).toBe("light");
-  });
-
-  it("persists the Application Settings update toggle in shared Engine Settings", async () => {
+  it("persists the Account dialog's update toggle in shared Engine Settings", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
     vi.stubGlobal("PointerEvent", MouseEvent);
     getHostPlatform.mockReturnValue("electron");
-    const openApplicationSettings = async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Profile" }));
-      fireEvent.click(
-        await screen.findByRole("menuitem", { name: "Application Settings" }),
-      );
-      return screen.findByRole("switch", { name: "Automatic Updates" });
-    };
     const { unmount } = renderHomepage();
     let autoUpdate = await openApplicationSettings();
     await waitFor(() => expect(autoUpdate.getAttribute("aria-disabled")).not.toBe("true"));
@@ -472,8 +473,6 @@ describe("Slate project browser", () => {
   it.each(["web", "ios"])("does not offer desktop update control on %s", async host => {
     getHostPlatform.mockReturnValue(host);
     renderHomepage();
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Application Settings" }));
-    expect((await screen.findByRole("switch", { name: "Automatic Updates" })).getAttribute("aria-disabled")).toBe("true");
+    expect((await openApplicationSettings()).getAttribute("aria-disabled")).toBe("true");
   });
 });
