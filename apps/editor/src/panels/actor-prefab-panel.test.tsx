@@ -130,7 +130,7 @@ describe("flattenPrefabComponents", () => {
   it("lists search matches flat under Prefab Root", () => {
     const body = createMeshComponent("body", "box");
     const arm = { ...createMeshComponent("arm", "box"), name: "Arm Mesh", parentId: "body" };
-    const light = { id: "light", classId: "PointLightComponent", name: "Lamp", parentId: "arm" };
+    const light = { id: "light", classId: "PointLightComponent", name: "Lamp", parentId: "arm", properties: {} };
     const nodes = flattenPrefabComponents([body, arm, light], new Set(["body"]), undefined, undefined, "arm");
     expect(nodes.map((node) => [node.id, node.depth, node.hasChildren])).toEqual([
       [PREFAB_ROOT_ID, 0, true],
