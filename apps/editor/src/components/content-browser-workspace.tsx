@@ -3126,7 +3126,9 @@ function ContentBrowserWorkspaceBody({
               data-testid="content-browser-delete-confirm"
               onClick={(event) => {
                 event.preventDefault();
-                if (deleteInboundRefs.length > 0) setConfirmReferencedDelete(true);
+                // The second step shows the Class replacements; other assets
+                // have nothing more to choose, so this Delete updates references.
+                if (hasReferencedClass) setConfirmReferencedDelete(true);
                 else void confirmDelete();
               }}
             >
