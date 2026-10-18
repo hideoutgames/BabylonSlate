@@ -1683,6 +1683,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         document.metadata,
         document.settings.sourceControl?.enabled === true,
       );
+      // Records from a session that never saved them wait for Recover or
+      // Discard; this session's saves and closes only truncate what it writes.
+      // Sealed before the editor shows, so its first edits are never offered.
+      const derived = await ensureDerived();
+      const guid = projectService.guid;
+      if (guid) {
+        await sealJournalForRecovery(derived, guid);
+        const unreplayed = resolveJournalLines(await readSealedJournalLines(derived, guid));
+        if (unreplayed.length === 0) await discardSealedJournal(derived, guid);
+        setRecoveryAvailable(unreplayed.length > 0);
+      }
       setRoute("editor");
       setAnimEditorModes({});
       const { probeKtx2TranscoderAvailable } = await import(
@@ -1692,17 +1703,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         editorKtx2PublicBase(),
       );
       await projectService.setTranscoderAvailable(transcoderOk);
-      const derived = await ensureDerived();
       projectService.setDerivedStorage(derived);
-      const guid = projectService.guid;
-      if (guid) {
-        // Records from a session that never saved them wait for Recover or
-        // Discard; this session's saves and closes only truncate what it writes.
-        await sealJournalForRecovery(derived, guid);
-        const unreplayed = resolveJournalLines(await readSealedJournalLines(derived, guid));
-        if (unreplayed.length === 0) await discardSealedJournal(derived, guid);
-        setRecoveryAvailable(unreplayed.length > 0);
-      }
       await refreshProjectList();
       await captureMtimeSnapshot();
       bump();
