@@ -20,13 +20,15 @@ import {
   ShaderMaterial,
   ShadowGenerator,
   StandardMaterial,
+  TargetCamera,
   Vector3,
   type AbstractEngine,
+  type Camera,
   type AbstractMesh,
   type Light,
   type Scene,
 } from "@babylonjs/core";
-import type { EngineHandle } from "@babylonslate/render";
+import { PLAY_FREE_CAM_NAME, type EngineHandle } from "@babylonslate/render";
 
 export type FlyVec3 = [number, number, number];
 
@@ -45,9 +47,9 @@ export interface FlyThroughOptions {
   lookAhead?: number;
   /** Metres the look target sits below the path, for a slight downward view. Default 1. */
   lookDrop?: number;
-  /** Detail log entries kept per kind. Default 300. */
+  /** Detail log entries kept per kind. Default 3000. */
   logLimit?: number;
-  /** Stacks captured per log kind. Default 40. */
+  /** Stacks captured per log kind; each distinct source is stacked once. Default 200. */
   stackLimit?: number;
 }
 
@@ -70,6 +72,9 @@ export interface FlyFrame {
   pos: FlyVec3;
   /** Non-zero event counters since the previous recorded frame (see the counter keys in the report). */
   c: Record<string, number>;
+  /** Last view copy and pre-render preparation, as the renderer reports them for its latest frame. */
+  copyMs: number;
+  preparationMs: number;
   activeMeshes: number;
   activeAdded: number;
   activeRemoved: number;
@@ -244,9 +249,13 @@ function createPath(points: FlyVec3[]) {
   return { length, at, end: vectors[vectors.length - 1]!, beforeEnd: vectors[vectors.length - 2]! };
 }
 
+/** The frame graph's main object renderer culls; the Scene's own list stays empty under a frame graph. */
 function activeMeshIds(scene: Scene, into: Set<number>): number {
   into.clear();
-  const active = scene.getActiveMeshes();
+  const task = scene.frameGraph?.getTaskByName("Forward objects") as
+    | { objectRenderer?: { getActiveMeshes(): ReturnType<Scene["getActiveMeshes"]> } }
+    | undefined;
+  const active = task?.objectRenderer?.getActiveMeshes() ?? scene.getActiveMeshes();
   for (let index = 0; index < active.length; index += 1) {
     const mesh = active.data[index] as AbstractMesh | undefined;
     if (mesh) into.add(mesh.uniqueId);
@@ -269,16 +278,54 @@ function lightGenerators(light: Light): ShadowGenerator[] {
   return list;
 }
 
+type CameraDriver = {
+  camera: Camera;
+  /** Place the eye and look along `direction` (unit length), as one fly or look step does. */
+  setPose: (eye: Vector3, direction: Vector3) => void;
+};
+
 /**
- * Fly the editor camera along `options.waypoints` and record every rendered
- * frame of the view. Instrumentation is installed for the run only and removed
- * before the promise settles.
+ * The editor viewport flies its ArcRotate camera by moving the target along
+ * the look direction (`EditorCameraController.fly`/`look`); Play's free camera
+ * (console `freecam 1`, the overlay fly stick) is a UniversalCamera.
+ */
+function cameraDriver(handle: EngineHandle): CameraDriver {
+  const controller = handle.editor?.camera;
+  if (controller) {
+    if (controller.mode !== "3d") throw new Error("Fly-through needs the 3D editor camera.");
+    const camera = controller.camera;
+    return {
+      camera,
+      setPose: (eye, direction) => {
+        const radius = camera.radius;
+        camera.target.set(eye.x + direction.x * radius, eye.y + direction.y * radius, eye.z + direction.z * radius);
+        camera.alpha = Math.atan2(-direction.z, -direction.x);
+        camera.beta = Math.min(Math.PI - 0.01, Math.max(0.01, Math.acos(Math.min(1, Math.max(-1, -direction.y)))));
+      },
+    };
+  }
+  const camera = handle.scene.activeCamera;
+  if (!(camera instanceof TargetCamera) || camera.name !== PLAY_FREE_CAM_NAME)
+    throw new Error("Fly-through in Play needs the free camera (console `freecam 1`).");
+  const target = new Vector3();
+  return {
+    camera,
+    setPose: (eye, direction) => {
+      camera.position.copyFrom(eye);
+      camera.setTarget(eye.addToRef(direction, target));
+    },
+  };
+}
+
+/**
+ * Fly the editor camera, or Play's free camera, along `options.waypoints` and
+ * record every rendered frame of the view. Instrumentation is installed for the
+ * run only and removed before the promise settles.
  */
 export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOptions): Promise<FlyThroughResult> {
-  const controller = handle.editor?.camera;
-  if (!controller || controller.mode !== "3d") throw new Error("Fly-through needs the 3D editor camera.");
   if (options.waypoints.length < 2) throw new Error("Fly-through needs at least two waypoints.");
-  const camera = controller.camera;
+  const driver = cameraDriver(handle);
+  const camera = driver.camera;
   const scene = handle.scene;
   const engine: AbstractEngine = handle.engine;
   const internals = engine as unknown as Record<string, unknown>;
@@ -288,8 +335,8 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
   const resetMs = Math.max(0, options.resetMs ?? 1500);
   const lookAhead = options.lookAhead ?? Math.max(4, speed * 0.75);
   const lookDrop = options.lookDrop ?? 1;
-  const logLimit = options.logLimit ?? 300;
-  const stackLimit = options.stackLimit ?? 40;
+  const logLimit = options.logLimit ?? 3000;
+  const stackLimit = options.stackLimit ?? 200;
   const path = createPath(options.waypoints);
   const passMs = (path.length / speed) * 1000;
 
@@ -305,14 +352,18 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
   const logCounts = new Map<string, number>();
   const stackCounts = new Map<string, number>();
   let frameIndex = 0;
-  const record = (kind: string, detail: string, withStack = false) => {
+  const stackedSources = new Set<string>();
+  /** `stackKey` stacks the first entry of each distinct source (default: the detail) and skips the rest. */
+  const record = (kind: string, detail: string, withStack = false, stackKey = detail) => {
     const count = logCounts.get(kind) ?? 0;
     if (count >= logLimit) return;
     logCounts.set(kind, count + 1);
     const entry: FlyLogEntry = { frame: frameIndex, kind, detail };
-    if (withStack) {
+    const source = `${kind}\u0000${stackKey}`;
+    if (withStack && !stackedSources.has(source)) {
       const stacks = stackCounts.get(kind) ?? 0;
       if (stacks < stackLimit) {
+        stackedSources.add(source);
         stackCounts.set(kind, stacks + 1);
         entry.stack = captureStack();
       }
@@ -338,7 +389,9 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
       bump("effect.new");
       const effectOptions = args[1] as Record<string, unknown> | undefined;
       const defines = (typeof args[4] === "string" ? args[4] : effectOptions?.defines) as string | undefined;
-      record("effect", `${effectBaseName(args[0])} @ ${(defines ?? "").replace(/\n/g, " ").replace(/#define /g, "").trim()}`, true);
+      const base = effectBaseName(args[0]);
+      // Node materials name effects by build id; stack each shader family once.
+      record("effect", `${base} @ ${(defines ?? "").replace(/\n/g, " ").replace(/#define /g, "").trim().slice(0, 2000)}`, true, base.replace(/\d+/g, "#"));
     }
     return effect;
   })) instrumented.push("engine.createEffect");
@@ -374,7 +427,8 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
     | undefined;
   if (pipelineCache && wrapMethod(pipelineCache, "_createRenderPipeline", restores, (original) => function (this: unknown, ...args: unknown[]) {
     const effect = args[0] as { name?: unknown; uniqueId?: number } | undefined;
-    record("pipeline", `${effectBaseName(effect?.name)} #${effect?.uniqueId ?? "?"} topology ${String(args[1])} samples ${String(args[2])}`, true);
+    const base = effectBaseName(effect?.name);
+    record("pipeline", `${base} #${effect?.uniqueId ?? "?"} topology ${String(args[1])} samples ${String(args[2])}`, true, base.replace(/\d+/g, "#"));
     return original.apply(this, args);
   })) instrumented.push("cacheRenderPipeline._createRenderPipeline");
   let lastPipelineMiss = pipelineStats?.NumCacheMiss ?? 0;
@@ -396,12 +450,28 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
     if (inScene(this)) bump("mat.markDirty");
     return original.apply(this, args);
   })) instrumented.push("Material.markDirty");
+  // One stack per frame for light-define marks: a mark with `disposed` set is a light leaving mesh.lightSources.
+  let lightMarkFrame = -1;
   for (const [method, key] of DEFINE_MARKS)
     if (wrapMethod(MaterialDefines.prototype, method, restores, (original) => function (this: MaterialDefines, ...args: unknown[]) {
       // Processing a clean define set is a no-op; count only real transitions.
       if (method !== "markAsProcessed" || this.isDirty) bump(key);
+      if (method === "markAsLightDirty") {
+        if (args[0]) bump("defines.lightDisposed");
+        if (lightMarkFrame !== frameIndex) {
+          lightMarkFrame = frameIndex;
+          record("defines.light", `first mark of frame${args[0] ? " (light removed)" : ""}`, true, `frame ${frameIndex}`);
+        }
+      }
       return original.apply(this, args);
     })) instrumented.push(`MaterialDefines.${method}`);
+  if (wrapMethod(NodeMaterial.prototype, "build", restores, (original) => function (this: NodeMaterial, ...args: unknown[]) {
+    if (inScene(this)) {
+      bump("nodeMaterial.build");
+      record("nodeMaterial.build", this.name, true, this.name.replace(/\d+/g, "#"));
+    }
+    return original.apply(this, args);
+  })) instrumented.push("NodeMaterial.build");
   let readyDepth = 0;
   for (const [name, prototype] of [
     ["PBRBaseMaterial", PBRBaseMaterial.prototype],
@@ -544,8 +614,6 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
     delta("view.held", presentation?.held, lastPresentation?.held);
     delta("view.drawn", presentation?.drawn, lastPresentation?.drawn);
     delta("view.copied", presentation?.copied, lastPresentation?.copied);
-    delta("view.copyMs", presentation?.copyMs, lastPresentation?.copyMs);
-    delta("view.preparationMs", presentation?.preparationMs, lastPresentation?.preparationMs);
     lastWork = work;
     lastPresentation = presentation;
     const enabled = enabledLightNames(scene);
@@ -602,6 +670,8 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
       skipped,
       pos: [round2(cameraEye.x), round2(cameraEye.y), round2(cameraEye.z)],
       c: counters,
+      copyMs: round2(presentation?.copyMs ?? 0),
+      preparationMs: round2(presentation?.preparationMs ?? 0),
       activeMeshes: activeCount,
       activeAdded: added,
       activeRemoved: removed,
@@ -631,10 +701,7 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
     ahead.subtractToRef(eye, direction);
     if (direction.lengthSquared() < 1e-6) direction.set(0, 0, 1);
     direction.normalize();
-    const radius = camera.radius;
-    camera.target.set(eye.x + direction.x * radius, eye.y + direction.y * radius, eye.z + direction.z * radius);
-    camera.alpha = Math.atan2(-direction.z, -direction.x);
-    camera.beta = Math.min(Math.PI - 0.01, Math.max(0.01, Math.acos(Math.min(1, Math.max(-1, -direction.y)))));
+    driver.setPose(eye, direction);
     handle.scheduler.invalidate("camera");
   };
 

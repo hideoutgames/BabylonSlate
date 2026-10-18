@@ -10,6 +10,7 @@ import {
   waitForTextureEncodes,
   type FeatureTestSceneName,
 } from "./feature-test-project";
+import { clickPlayAndWaitForOverlay } from "./play";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 /**
@@ -34,6 +35,8 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
  *      BL_FLY_WARMUP_MS (static hold before the first pass, default 5000), BL_PERF_SETTLE_MS (default 5000),
  *      BL_FLY_PATH (JSON array of [x, y, z] eye waypoints, applied to every selected scene),
  *      BL_FLY_PROFILE=1 (CDP CPU profile of the passes; spike frames list their hottest functions),
+ *      BL_FLY_PLAY (comma list of the selected scenes to fly again in overlay Play with the free camera,
+ *        `freecam`; main-scene Play does not finish loading on software GL),
  *      BL_PERF_VIEWPORT_CAP (Engine Settings viewport frame cap; default 30),
  *      BL_PERF_SCALING (Engine Settings hardware scaling level, e.g. 2 to cut software fill cost),
  *      BL_PERF_LABEL, BL_PERF_OUT (absolute path that also receives the JSON report).
@@ -50,10 +53,13 @@ const PASSES = number("BL_FLY_PASSES", 2, 1);
 const WARMUP_MS = number("BL_FLY_WARMUP_MS", 5_000);
 const SETTLE_MS = number("BL_PERF_SETTLE_MS", 5_000);
 const PROFILE = process.env.BL_FLY_PROFILE === "1";
-const SCENES = (process.env.BL_PERF_SCENES ?? "main,world")
-  .split(",")
-  .map((scene) => scene.trim())
-  .filter((scene): scene is FeatureTestSceneName => scene in FEATURE_TEST_SCENES);
+const sceneList = (value: string) =>
+  value
+    .split(",")
+    .map((scene) => scene.trim())
+    .filter((scene): scene is FeatureTestSceneName => scene in FEATURE_TEST_SCENES);
+const SCENES = sceneList(process.env.BL_PERF_SCENES ?? "main,world");
+const PLAY_SCENES = sceneList(process.env.BL_FLY_PLAY ?? "");
 
 /**
  * Eye paths at about 4 to 13 m over the ground, each 25 to 30 s at 8 m/s.
@@ -85,6 +91,12 @@ type ViewportHost = {
   __babylonslateViewportTest: {
     flyThrough: (options: FlyThroughOptions) => Promise<FlyThroughResult>;
     renderingBaseline: () => { backend: string } | null;
+  };
+};
+type PlayHost = {
+  __babylonslatePlayTest?: {
+    flyThrough: (options: FlyThroughOptions) => Promise<FlyThroughResult>;
+    tickIndex: () => number;
   };
 };
 
@@ -145,6 +157,7 @@ const EVENT_KEYS = [
   "gl.texUpload", "gpu.buffer", "gl.createBuffer", "mat.dirty.light", "mat.dirty.texture", "mat.dirty.attributes", "mat.dirty.misc",
   "mat.markDirty", "defines.processed", "defines.light", "ready.false", "graph.strictChecks", "graph.builds", "view.held",
   "shadow.init", "shadow.dispose", "shadow.moved", "shadow.attached", "shadow.detached", "lights.changed", "heap.drop",
+  "nodeMaterial.build", "defines.lightDisposed",
 ];
 
 function summarizePhase(frames: AnnotatedFrame[]) {
@@ -162,7 +175,7 @@ function summarizePhase(frames: AnnotatedFrame[]) {
     fps: seconds > 0 ? Math.round((frames.length / seconds) * 10) / 10 : null,
     intervalMs: distribution(frames.flatMap((frame) => (frame.intervalMs === null ? [] : [frame.intervalMs]))),
     cpuMs: distribution(frames.map((frame) => frame.cpuMs)),
-    copyMs: distribution(frames.map((frame) => frame.c["view.copyMs"] ?? 0)),
+    copyMs: distribution(frames.map((frame) => frame.copyMs)),
     longTaskMs: Math.round(frames.reduce((sum, frame) => sum + frame.longTaskMs, 0)),
     activeMeshes: distribution(frames.map((frame) => frame.activeMeshes)),
     drawCalls: distribution(frames.map((frame) => frame.drawCalls)),
@@ -212,14 +225,23 @@ function correlate(frames: AnnotatedFrame[]) {
   return { spikes: spikes.length, quietSpikes: spikes.filter((frame) => !EVENT_KEYS.some((key) => (frame.c[key] ?? 0) > 0)).length, rows };
 }
 
-/** Group log entries by kind and detail, so repeated churn reads as one line with a count and its frames. */
+/** Effects and pipelines group by shader family (digits folded: node materials name effects by build id). */
+function logGroupKey(entry: FlyThroughResult["log"][number]): string {
+  if (entry.kind === "effect" || entry.kind === "pipeline" || entry.kind === "nodeMaterial.build")
+    return entry.detail.split(" @ ")[0]!.split(" #")[0]!.replace(/\d+/g, "#");
+  // Light-define marks group by caller, which identifies what moved the light set.
+  if (entry.kind === "defines.light") return `${entry.detail} ${(entry.stack ?? "").split(" | ").slice(0, 8).join(" | ")}`;
+  return entry.detail;
+}
+
+/** Group log entries by kind and source, so repeated churn reads as one line with a count, its phases and frames. */
 function groupLog(result: FlyThroughResult, frames: AnnotatedFrame[]) {
   const phaseOf = new Map(frames.map((frame) => [frame.i, frame.phase] as const));
   const groups = new Map<string, { kind: string; detail: string; count: number; phases: Record<string, number>; frames: number[]; stack?: string }>();
   for (const entry of result.log) {
-    const key = `${entry.kind}\u0000${entry.detail}`;
+    const key = `${entry.kind}\u0000${logGroupKey(entry)}`;
     let group = groups.get(key);
-    if (!group) groups.set(key, (group = { kind: entry.kind, detail: entry.detail.slice(0, 600), count: 0, phases: {}, frames: [] }));
+    if (!group) groups.set(key, (group = { kind: entry.kind, detail: entry.detail.slice(0, 400), count: 0, phases: {}, frames: [] }));
     group.count += 1;
     const phase = phaseOf.get(entry.frame) ?? "outside";
     group.phases[phase] = (group.phases[phase] ?? 0) + 1;
@@ -300,7 +322,7 @@ function profileHotspots(profile: CpuProfile, markerPageMs: number, windows: Arr
 
 // ---------------------------------------------------------------------------
 
-async function flyScene(page: Page, cdp: CDPSession, scene: FeatureTestSceneName) {
+async function flyScene(page: Page, cdp: CDPSession, scene: FeatureTestSceneName, host: "editor" | "play") {
   const waypoints = pathFor(scene);
   if (!waypoints) throw new Error(`No fly-through path for ${scene}; set BL_FLY_PATH.`);
   const options: FlyThroughOptions = { waypoints, speed: SPEED, passes: PASSES, warmupMs: WARMUP_MS };
@@ -312,8 +334,11 @@ async function flyScene(page: Page, cdp: CDPSession, scene: FeatureTestSceneName
     markerPageMs = await profileMarker(page);
   }
   const result = await page.evaluate(
-    (flight) => (globalThis as unknown as ViewportHost).__babylonslateViewportTest.flyThrough(flight),
-    options,
+    ({ flight, play }) =>
+      play
+        ? (globalThis as unknown as PlayHost).__babylonslatePlayTest!.flyThrough(flight)
+        : (globalThis as unknown as ViewportHost).__babylonslateViewportTest.flyThrough(flight),
+    { flight: options, play: host === "play" },
   );
   const profile = PROFILE ? ((await cdp.send("Profiler.stop")).profile as unknown as CpuProfile) : null;
   if (PROFILE) await cdp.send("Profiler.disable");
@@ -337,7 +362,7 @@ async function flyScene(page: Page, cdp: CDPSession, scene: FeatureTestSceneName
       phases: Object.fromEntries(phases.map((phase) => [phase, summarizePhase(frames.filter((frame) => frame.phase === phase))])),
       spikes,
       correlation: correlate(passFrames),
-      events: groupLog(result, frames).slice(0, 80),
+      events: groupLog(result, frames).slice(0, 150),
       profile: profile
         ? profileHotspots(profile, markerPageMs, spikes.top.map((spike) => frames.find((frame) => frame.i === spike.i)!))
         : null,
@@ -346,15 +371,42 @@ async function flyScene(page: Page, cdp: CDPSession, scene: FeatureTestSceneName
   };
 }
 
+async function runConsoleCommand(page: Page, command: string): Promise<void> {
+  await page.getByTestId("play-console-open").click();
+  await page.getByTestId("debug-console-input").fill(command);
+  await page.getByTestId("debug-console-submit").click();
+  await page.keyboard.press("Escape");
+}
+
+/** Overlay Play with the free camera, flown along the editor path. */
+async function flyPlay(page: Page, cdp: CDPSession, scene: FeatureTestSceneName) {
+  const started = Date.now();
+  await clickPlayAndWaitForOverlay(page);
+  await expect(page.getByTestId("play-blocked-dialog")).toHaveCount(0);
+  await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({ timeout: 300_000 });
+  await expect(page.getByTestId("play-canvas")).toBeVisible({ timeout: 60_000 });
+  await expect
+    .poll(() => page.evaluate(() => (globalThis as unknown as PlayHost).__babylonslatePlayTest?.tickIndex() ?? -1), { timeout: 300_000 })
+    .toBeGreaterThan(30);
+  const playBootMs = Date.now() - started;
+  await runConsoleCommand(page, "freecam");
+  await page.waitForTimeout(SETTLE_MS);
+  const flight = await flyScene(page, cdp, scene, "play");
+  await page.getByTestId("play-overlay-close").click();
+  await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 60_000 });
+  return { playBootMs, ...flight };
+}
+
 test.skip(!ENABLED, "FeatureTest fly-through route; set BL_PERF_FLYTHROUGH=1 to run it.");
 
 test("FeatureTest fly-through route", async ({ page }, testInfo) => {
-  test.setTimeout(30 * 60_000 + SCENES.length * (PASSES * 60_000 + WARMUP_MS + SETTLE_MS + 300_000));
+  test.setTimeout(30 * 60_000 + (SCENES.length + PLAY_SCENES.length) * (PASSES * 60_000 + WARMUP_MS + SETTLE_MS + 300_000));
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await seedEngineSettings(page, (settings) => {
     if (process.env.BL_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("BL_PERF_VIEWPORT_CAP", 30, 10);
     if (process.env.BL_PERF_SCALING) settings.hardwareScalingLevel = number("BL_PERF_SCALING", 1, 0.25);
+    if (PLAY_SCENES.length) settings.debuggerDefaults.overlayConsole = true;
   });
   const cdp = await page.context().newCDPSession(page);
   const createToInteractiveMs = await createFeatureTestProject(page);
@@ -367,10 +419,15 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
     const { readyMs, loadRetries } = await openFeatureTestScene(page, scene);
     if (BACKEND) await expect.poll(() => viewportBackend(page), { timeout: 120_000 }).toBe(BACKEND);
     await page.waitForTimeout(SETTLE_MS);
-    const { frames, summary, result } = await flyScene(page, cdp, scene);
+    const { frames, summary, result } = await flyScene(page, cdp, scene, "editor");
     scenes[scene] = { sceneReadyMs: readyMs, loadRetries, ...summary };
     raw[scene] = { frames, log: result.log, longTasks: result.longTasks, totals: result.totals };
     await page.getByTestId("viewport-canvas").screenshot({ path: testInfo.outputPath(`${scene}-flythrough-end.png`) });
+    if (PLAY_SCENES.includes(scene)) {
+      const play = await flyPlay(page, cdp, scene);
+      scenes[`${scene}:play`] = { playBootMs: play.playBootMs, ...play.summary };
+      raw[`${scene}:play`] = { frames: play.frames, log: play.result.log, longTasks: play.result.longTasks, totals: play.result.totals };
+    }
   }
 
   const report = {
@@ -379,7 +436,7 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
     label: process.env.BL_PERF_LABEL ?? null,
     browserProject: testInfo.project.name,
     browserVersion: page.context().browser()?.version() ?? null,
-    env: { SCENES, BACKEND, NATIVE_GPU, SPEED, PASSES, WARMUP_MS, SETTLE_MS, PROFILE,
+    env: { SCENES, PLAY_SCENES, BACKEND, NATIVE_GPU, SPEED, PASSES, WARMUP_MS, SETTLE_MS, PROFILE,
       VIEWPORT_CAP: process.env.BL_PERF_VIEWPORT_CAP ?? null, SCALING: process.env.BL_PERF_SCALING ?? null },
     createToInteractiveMs,
     scenes,
