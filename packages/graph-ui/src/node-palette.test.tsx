@@ -102,6 +102,124 @@ describe("NodePalette", () => {
     expect(itemIds()).toEqual(["node-palette-item-flow.event.beginPlay"]);
   });
 
+  it("ranks title matches above description matches and highlights the row Enter adds", () => {
+    const asyncLoad: PaletteNode = {
+      id: "assets.asyncLoadAsset",
+      title: "Async Load Asset",
+      category: "assets",
+      description: "Starts loading an asset. Gameplay continues while it loads.",
+    };
+    const whileLoop: PaletteNode = { id: "flow.whileLoop", title: "While Loop", category: "flow" };
+    const onAddNode = vi.fn();
+    const { getByPlaceholderText, getByTestId } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={[asyncLoad, whileLoop]} onAddNode={onAddNode} />,
+    );
+    const input = getByPlaceholderText("Search nodes");
+    const categories = () =>
+      [...document.querySelectorAll('[data-testid^="node-palette-category-"]')].map((el) =>
+        el.getAttribute("data-testid"),
+      );
+    expect(categories()).toEqual(["node-palette-category-assets", "node-palette-category-flow"]);
+    expect(document.querySelector('[data-active="true"]')).toBeNull();
+
+    fireEvent.change(input, { target: { value: "While" } });
+    expect(categories()).toEqual(["node-palette-category-flow", "node-palette-category-assets"]);
+    expect(itemIds()).toEqual(["node-palette-item-flow.whileLoop", "node-palette-item-assets.asyncLoadAsset"]);
+    const target = getByTestId("node-palette-item-flow.whileLoop");
+    expect(target.getAttribute("data-active")).toBe("true");
+    expect(input.getAttribute("aria-activedescendant")).toBe(target.id);
+    expect(document.querySelectorAll('[data-active="true"]')).toHaveLength(1);
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onAddNode).toHaveBeenCalledWith(whileLoop);
+  });
+
+  it("moves from the highlighted first match with the arrow keys", () => {
+    const nodes: PaletteNode[] = [
+      { id: "a.second", title: "Second Loop", category: "a" },
+      { id: "b.first", title: "Loop", category: "b" },
+    ];
+    const { getByPlaceholderText, getByTestId } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={nodes} onAddNode={() => {}} />,
+    );
+    const input = getByPlaceholderText("Search nodes");
+    fireEvent.change(input, { target: { value: "loop" } });
+    expect(getByTestId("node-palette-item-b.first").getAttribute("data-active")).toBe("true");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(getByTestId("node-palette-category-a").getAttribute("data-active")).toBe("true");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(getByTestId("node-palette-item-a.second").getAttribute("data-active")).toBe("true");
+  });
+
+  it("orders matches by tier: exact title, prefix, title word prefixes, words in the title, alias, description", () => {
+    const node = (id: string, title: string, extra: Partial<PaletteNode> = {}): PaletteNode => ({
+      id,
+      title,
+      category: id,
+      ...extra,
+    });
+    // Listed worst tier first, so catalog order never explains the result.
+    const nodes = [
+      node("detail", "Format", { description: "Builds text from parts." }),
+      node("alias", "Caption", { searchAliases: ["text label"] }),
+      node("inside", "Context Menu"),
+      node("words", "Set Text Style"),
+      node("prefix", "Text Length"),
+      node("exact", "Text"),
+      node("none", "Branch"),
+    ];
+    const { getByPlaceholderText } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={nodes} onAddNode={() => {}} />,
+    );
+    fireEvent.change(getByPlaceholderText("Search nodes"), { target: { value: "text" } });
+    expect(itemIds()).toEqual(
+      ["exact", "prefix", "words", "inside", "alias", "detail"].map((id) => `node-palette-item-${id}`),
+    );
+  });
+
+  it("keeps catalog order inside a tier", () => {
+    const nodes: PaletteNode[] = ["Beta Move", "Alpha Move", "Gamma Move"].map((title) => ({
+      id: title,
+      title,
+      category: "move",
+    }));
+    const { getByPlaceholderText } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={nodes} onAddNode={() => {}} />,
+    );
+    fireEvent.change(getByPlaceholderText("Search nodes"), { target: { value: "move" } });
+    expect(itemIds()).toEqual(nodes.map((node) => `node-palette-item-${node.id}`));
+  });
+
+  it("matches query words in any order, so Int to String finds To String (Int)", () => {
+    const nodes: PaletteNode[] = [
+      { id: "literal.intToFloat", title: "Int To Float", category: "literal" },
+      { id: "literal.toStringFloat", title: "To String (Float)", category: "literal" },
+      { id: "literal.toStringInt", title: "To String (Int)", category: "literal" },
+      { id: "literal.makeInt", title: "Make Int", category: "literal" },
+    ];
+    const { getByPlaceholderText } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={nodes} onAddNode={() => {}} />,
+    );
+    const search = getByPlaceholderText("Search nodes");
+    for (const query of ["Int to String", "string int", "tostring(int)", "to string (int)"]) {
+      fireEvent.change(search, { target: { value: query } });
+      expect(itemIds(), query).toEqual(["node-palette-item-literal.toStringInt"]);
+    }
+  });
+
+  it("ranks pin-filtered suggestions by the typed query, keeping suggestion order within a tier", () => {
+    const makeLog: PaletteNode = { ...log, id: "debug.makeLog", title: "Make Log" };
+    const { getByPlaceholderText } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={[makeLog, log]} onAddNode={() => {}} filterPin={execOut} />,
+    );
+    expect(itemIds()).toEqual(["node-palette-item-debug.makeLog", "node-palette-item-debug.log"]);
+    fireEvent.change(getByPlaceholderText("Search nodes"), { target: { value: "log" } });
+    expect(itemIds()).toEqual(["node-palette-item-debug.log", "node-palette-item-debug.makeLog"]);
+    expect(document.querySelector('[data-active="true"]')?.getAttribute("data-testid")).toBe(
+      "node-palette-item-debug.log",
+    );
+  });
+
   it("expands categories by default, collapses on click, and expands every match while searching", () => {
     const { getByPlaceholderText, getByTestId, queryByTestId } = render(
       <NodePalette open onOpenChange={() => {}} paletteNodes={[log, begin]} onAddNode={() => {}} />,
@@ -116,10 +234,11 @@ describe("NodePalette", () => {
     expect(getByTestId("node-palette-category-Debug").getAttribute("aria-expanded")).toBe("false");
     expect(itemIds()).toEqual(["node-palette-item-flow.event.beginPlay"]);
 
+    // Event Begin Play starts with "e"; Log only matches through its category.
     fireEvent.change(getByPlaceholderText("Search nodes"), { target: { value: "e" } });
     expect(itemIds()).toEqual([
-      "node-palette-item-debug.log",
       "node-palette-item-flow.event.beginPlay",
+      "node-palette-item-debug.log",
     ]);
     fireEvent.change(getByPlaceholderText("Search nodes"), { target: { value: "log" } });
     expect(queryByTestId("node-palette-category-Flow")).toBeNull();
