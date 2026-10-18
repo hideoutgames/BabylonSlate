@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { LoaderCircleIcon } from "lucide-react";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { SelectableText } from "@babylonslate/editor-kit";
-import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -13,26 +12,20 @@ import { brandWordmarkSrc } from "../lib/branding";
 import { getApplicationVersion, type ReleaseNotes } from "../lib/changelog";
 import { loadReleaseNotes, useReleaseNotes, type ReleaseNotesState } from "../services/release-notes";
 
-/** One release: its version beside the title and changes. */
-function ReleaseEntry({ release, current }: { release: ReleaseNotes; current: boolean }) {
+/** The current version's notes: its title and changes. */
+function ReleaseEntry({ release }: { release: ReleaseNotes }) {
   return (
-    <article className="release-news-entry" data-current={current || undefined}>
-      <div className="release-news-meta">
-        <span className="release-news-version">{release.version}</span>
-        {current && <Badge variant="secondary">Current</Badge>}
-      </div>
-      <div className="release-news-content">
-        <h3><SelectableText>{release.title}</SelectableText></h3>
-        <ul>
-          {release.changes.map((change, index) => <li key={index}><SelectableText>{change}</SelectableText></li>)}
-        </ul>
-      </div>
+    <article className="release-news-entry">
+      <h3><SelectableText>{release.title}</SelectableText></h3>
+      <ul>
+        {release.changes.map((change, index) => <li key={index}><SelectableText>{change}</SelectableText></li>)}
+      </ul>
     </article>
   );
 }
 
 /** What the Changelog shows while notes load, after a failed load, or when none are published. */
-function ReleaseNotesStatus({ status }: { status: ReleaseNotesState["status"] }) {
+function ReleaseNotesStatus({ status, version }: { status: ReleaseNotesState["status"]; version: string }) {
   if (status === "failed") {
     return (
       <Empty data-testid="release-news-failed">
@@ -48,7 +41,7 @@ function ReleaseNotesStatus({ status }: { status: ReleaseNotesState["status"] })
       <Empty>
         <EmptyHeader>
           <EmptyTitle>No Patch Notes Yet</EmptyTitle>
-          <EmptyDescription>Release notes appear here once a version is published.</EmptyDescription>
+          <EmptyDescription>Notes for Haptic {version} appear here once it is published.</EmptyDescription>
         </EmptyHeader>
       </Empty>
     );
@@ -63,7 +56,7 @@ function ReleaseNotesStatus({ status }: { status: ReleaseNotesState["status"] })
   );
 }
 
-/** One dialog for first-launch news and the account menu's release history from GitHub Releases. */
+/** The current version's notes from GitHub Releases: first-launch news, and the account menu's Changelog. */
 export function ReleaseNews({
   open,
   onOpenChange,
@@ -88,7 +81,6 @@ export function ReleaseNews({
   const current = releases.find(release => release.version === version);
   const showNews = Boolean(ready && announce && hydrated && current && dismissed !== version && !settings.seenReleaseVersions.includes(version));
   const news = showNews && !open;
-  const visibleReleases = news && current ? [current] : releases;
 
   function close() {
     onOpenChange(false);
@@ -108,31 +100,19 @@ export function ReleaseNews({
         data-mode={news ? "news" : "history"}
       >
         <DialogHeader className="release-news-header">
-          {news ? (
-            <div className="release-news-brand">
-              <img className="release-news-wordmark" src={brandWordmarkSrc()} alt="" />
-              <span className="release-news-divider" aria-hidden="true" />
-              <DialogTitle>What's New</DialogTitle>
-              <DialogDescription className="release-news-version">
-                <span className="sr-only">Haptic </span>{version}
-              </DialogDescription>
-            </div>
-          ) : (
-            <>
-              <DialogTitle>Changelog</DialogTitle>
-              <DialogDescription>Every Haptic release, newest first.</DialogDescription>
-            </>
-          )}
+          <div className="release-news-brand">
+            <img className="release-news-wordmark" src={brandWordmarkSrc()} alt="" />
+            <span className="release-news-divider" aria-hidden="true" />
+            <DialogTitle>{news ? "What's New" : "Changelog"}</DialogTitle>
+            <DialogDescription className="release-news-version">
+              <span className="sr-only">Haptic </span>{version}
+            </DialogDescription>
+          </div>
         </DialogHeader>
         <div className="release-news-body">
-          {visibleReleases.length ? visibleReleases.map(release => (
-            <ReleaseEntry key={release.version} release={release} current={release.version === version} />
-          )) : (
-            <ReleaseNotesStatus status={notes.status} />
-          )}
+          {current ? <ReleaseEntry release={current} /> : <ReleaseNotesStatus status={notes.status} version={version} />}
         </div>
         <DialogFooter>
-          {news && <Button size="sm" variant="outline" onClick={() => onOpenChange(true)}>View Changelog</Button>}
           <Button size="sm" onClick={close}>Done</Button>
         </DialogFooter>
       </DialogContent>

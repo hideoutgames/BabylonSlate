@@ -5,9 +5,7 @@
       "version": "0.0.1",
       "title": "Updates And Release News",
       "changes": [
-        "The desktop app downloads updates from GitHub Releases on Windows, Linux (AppImage) and signed macOS builds, and installs them when you quit Haptic. Turn this off with Automatic Updates in Engine Settings.",
-        "What's New appears the first time you open each new version of Haptic.",
-        "Choose Changelog in the account menu at the bottom of the Homepage sidebar to read the notes for every release."
+        "The desktop app downloads updates from GitHub Releases on Windows, Linux (AppImage) and signed macOS builds, and installs them when you quit Haptic. Turn this off with Automatic Updates in Engine Settings."
       ]
     }
   ]

@@ -892,8 +892,8 @@
   }
 }
 /* --------------------------------------------------------- Release news */
-/* What's New shows one release as a hero; Changelog lists every release with
- * its version in a left column. */
+/* What's New and the Changelog show the current version's notes under one
+ * header row: the wordmark, the title and the version. */
 .release-news[data-slot="dialog-content"] {
   width: min(600px, calc(100vw - 32px));
   max-width: none;
@@ -932,21 +932,10 @@
   overscroll-behavior: contain;
 }
 .release-news-entry {
-  display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
-  gap: 16px;
-  padding: 16px 0;
-  border-top: 1px solid var(--border);
-}
-.release-news-entry:first-child {
-  padding-top: 4px;
-  border-top: 0;
-}
-.release-news-meta {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  gap: 12px;
+  padding: 4px 0 8px;
 }
 .release-news-version {
   padding: 2px 8px;
@@ -958,13 +947,14 @@
   font-variant-numeric: tabular-nums;
   line-height: 1.4;
 }
-.release-news-content h3 {
-  margin: 0 0 10px;
-  font-size: 14px;
+.release-news-entry h3 {
+  margin: 0;
+  font-size: 18px;
   font-weight: 500;
-  line-height: 1.4;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
 }
-.release-news-content ul {
+.release-news-entry ul {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -972,14 +962,14 @@
   padding: 0;
   list-style: none;
 }
-.release-news-content li {
+.release-news-entry li {
   position: relative;
   padding-left: 16px;
   color: color-mix(in oklch, var(--foreground) 80%, transparent);
   font-size: 13px;
   line-height: 1.5;
 }
-.release-news-content li::before {
+.release-news-entry li::before {
   content: "";
   position: absolute;
   top: 0.75em;
@@ -988,28 +978,6 @@
   height: 1.5px;
   border-radius: 1px;
   background: var(--muted-foreground);
-}
-.release-news[data-mode="news"] .release-news-entry {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-}
-/* The description already names the version. */
-.release-news[data-mode="news"] .release-news-meta {
-  display: none;
-}
-.release-news[data-mode="news"] .release-news-content h3 {
-  font-size: 18px;
-  letter-spacing: -0.01em;
-}
-@media (max-width: 520px) {
-  .release-news-entry {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
-  }
-  .release-news-meta {
-    flex-direction: row;
-    align-items: center;
-  }
 }
 
 /* ------------------------------------------------------ Template browser */
