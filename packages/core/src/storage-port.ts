@@ -74,10 +74,7 @@ export class ProjectOpenElsewhereError extends Error {
 
 /** True for a project another tab holds open; read the type, never the message. */
 export function isProjectOpenElsewhere(error: unknown): error is ProjectOpenElsewhereError {
-  if (error instanceof ProjectOpenElsewhereError) return true;
-  const candidate = error as { name?: unknown; code?: unknown } | null;
-  return typeof candidate === "object" && candidate !== null &&
-    candidate.name === "ProjectOpenElsewhereError" && candidate.code === "project-open-elsewhere";
+  return error instanceof ProjectOpenElsewhereError;
 }
 
 export interface StorageReadMetrics {
