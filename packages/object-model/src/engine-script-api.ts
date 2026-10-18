@@ -26,6 +26,8 @@ export type EngineScriptVariable = {
 export type EngineScriptFunction = {
   name: string;
   description?: string;
+  /** Extra Add Node search terms for the Call row. */
+  searchAliases?: readonly string[];
   pins: EngineScriptPin[];
   runtime: string;
 };
@@ -63,6 +65,8 @@ const EXEC_OUT: EngineScriptPin = {
 const SET_TEXT: EngineScriptFunction = {
   name: "Set Text",
   runtime: "setText",
+  description: "Replace the text this component shows and run Event On Text Changed.",
+  searchAliases: ["label", "caption", "text"],
   pins: [EXEC_IN, EXEC_OUT, { name: "text", typeId: "string", direction: "in" }],
 };
 

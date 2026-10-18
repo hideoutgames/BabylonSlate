@@ -44,6 +44,7 @@ Worker-side animation state machine plus per-instance Animation Object graphs th
 - Evaluation and pending Jump To State belong to one graph guid; switching graphs restarts at the entry state. Jumps apply on the next `tickAnimGraphs`, so Actor `onTick` cannot race the evaluator.
 - `self` in Animation Object scripts is the Actor. Actor Class graphs use `anim.actor.*` nodes with a required `AnimationGraphComponent` target; unwired targets are no-ops.
 - Play/export load only Animation Graphs in the session dependency closure; editor Compile compiles every project graph.
+- An Animation layer with neither clip name nor clip guid (a state with no clip) plays nothing and rests the slot's groups; it is not a missing clip. A named clip the slot lacks is warned once per slot and clip per Play session.
 - Trace frames record per-component evaluation, graph guid and pending jump; restore does not re-run On Initialize Animation.
 
 ## Render rules

@@ -96,12 +96,36 @@ export async function createAppWebGpuEngine(
   }
 }
 
+/** WebGPU's default `maxUniformBuffersPerShaderStage`; requesting it is a no-op. */
+const DEFAULT_UNIFORM_BUFFERS_PER_SHADER_STAGE = 12;
+
 /**
- * Limits the device takes at the adapter's maximum; every other limit keeps
- * its WebGPU default. Babylon's WGSL fragment input struct always declares
- * `@builtin(front_facing)`, which Chromium counts against
- * maxInterStageShaderVariables, so the default 16 leaves 15 user varyings,
- * fewer than a shadowed PBR material can need.
+ * Highest `maxUniformBuffersPerShaderStage` the Engine asks for. Babylon binds
+ * one uniform buffer per light in the vertex shader, and the forward light
+ * budget is this limit less four (`forwardLightBudget`), so 20 gives 16 slots:
+ * the Medium tier's 16 local lights, and every light of the Feature Test main
+ * scene (9) with room to spare. Past that, Clustered Forward is the route to
+ * many lights. The cap also keeps a Metal adapter that offers 44 from admitting
+ * 40-light shaders at High and Ultra, which would be well beyond the 11 to 13
+ * slots that WebGL2 desktops give. Babylon's known light bindings cover 32.
+ */
+export const REQUESTED_UNIFORM_BUFFERS_PER_SHADER_STAGE = 20;
+
+/**
+ * Limits the device requests; every other limit keeps its WebGPU default, and
+ * none is ever above the adapter's, so the device request cannot be refused
+ * for this. Babylon builds its caps from the granted device limits.
+ *
+ * - `maxInterStageShaderVariables` at the adapter's maximum: Babylon's WGSL
+ *   fragment input struct always declares `@builtin(front_facing)`, which
+ *   Chromium counts, so the default 16 leaves 15 user varyings, fewer than a
+ *   shadowed PBR material can need.
+ * - `maxUniformBuffersPerShaderStage` up to
+ *   {@link REQUESTED_UNIFORM_BUFFERS_PER_SHADER_STAGE}, only when the adapter
+ *   offers more than the default 12. D3D12 adapters report 12, so they keep
+ *   the default; Metal reports more (44 on Apple GPUs). The default's 8 light
+ *   slots made lights swap by camera distance in scenes with more, and each
+ *   swap recompiled every lit material.
  */
 function adapterRequiredLimits(
   supported: GPUSupportedLimits | undefined,
@@ -110,6 +134,16 @@ function adapterRequiredLimits(
   const interStage = supported?.maxInterStageShaderVariables;
   if (typeof interStage === "number")
     limits.maxInterStageShaderVariables = interStage;
+  const uniformBuffers = supported?.maxUniformBuffersPerShaderStage;
+  if (
+    typeof uniformBuffers === "number" &&
+    Number.isFinite(uniformBuffers) &&
+    uniformBuffers > DEFAULT_UNIFORM_BUFFERS_PER_SHADER_STAGE
+  )
+    limits.maxUniformBuffersPerShaderStage = Math.min(
+      Math.floor(uniformBuffers),
+      REQUESTED_UNIFORM_BUFFERS_PER_SHADER_STAGE,
+    );
   return limits;
 }
 

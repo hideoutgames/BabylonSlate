@@ -39,28 +39,69 @@ export interface NodePaletteProps {
 }
 
 const compact = (text: string) => text.toLowerCase().replace(/\s+/g, "");
+const wordsOf = (text: string) =>
+  text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+const startsAnyWord = (words: readonly string[], word: string) =>
+  words.some((candidate) => candidate.startsWith(word));
 
+/** Search tiers, best first; a node outside every tier is dropped. */
+const MATCH = {
+  exactTitle: 0,
+  titlePrefix: 1,
+  wordPrefixes: 2,
+  wordsInTitle: 3,
+  alias: 4,
+  detail: 5,
+} as const;
+
+/**
+ * Ranks nodes for a typed query: exact title, title prefix, every query word
+ * starting a title word, every query word inside the title (any order), alias,
+ * then category or description. Stable within a tier by catalog order.
+ */
 function filterNodes(nodes: PaletteNode[], query: string): PaletteNode[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return nodes;
   const formula = compact(needle);
   const symbolsOnly = /^[^\p{L}\p{N}\s]+$/u.test(formula);
-  return nodes.filter((node) => {
+  const queryWords = needle.split(/\s+/);
+
+  const tierOf = (node: PaletteNode): number | null => {
+    if (!symbolsOnly) {
+      // Spaces are optional against the Title Case title, so `BeginPlay`
+      // finds Event Begin Play.
+      const title = compact(node.title);
+      if (title === formula) return MATCH.exactTitle;
+      if (title.startsWith(formula)) return MATCH.titlePrefix;
+      const titleWords = wordsOf(node.title);
+      if (queryWords.every((word) => startsAnyWord(titleWords, word))) {
+        return MATCH.wordPrefixes;
+      }
+      if (queryWords.every((word) => title.includes(word))) return MATCH.wordsInTitle;
+    }
     const aliasMatch = node.searchAliases?.some((alias) => {
       const normalized = compact(alias);
       return symbolsOnly ? normalized === formula : normalized.includes(formula);
     });
-    if (aliasMatch) return true;
-    if (symbolsOnly) return false;
-    // Spaces are optional against the Title Case title, so `BeginPlay`
-    // finds Event Begin Play.
-    return (
-      compact(node.title).includes(formula) ||
-      `${node.title} ${node.category} ${humanizePropertyLabel(node.category)} ${node.description ?? ""}`
-        .toLowerCase()
-        .includes(needle)
-    );
+    if (aliasMatch) return MATCH.alias;
+    if (symbolsOnly) return null;
+    const detail = `${node.title} ${node.category} ${humanizePropertyLabel(node.category)} ${node.description ?? ""}`.toLowerCase();
+    if (detail.includes(needle)) return MATCH.detail;
+    if (queryWords.length > 1) {
+      const detailWords = wordsOf(detail);
+      if (queryWords.every((word) => startsAnyWord(detailWords, word))) return MATCH.detail;
+    }
+    return null;
+  };
+
+  const ranked: Array<{ node: PaletteNode; tier: number; order: number }> = [];
+  nodes.forEach((node, order) => {
+    const tier = tierOf(node);
+    if (tier !== null) ranked.push({ node, tier, order });
   });
+  return ranked
+    .sort((a, b) => a.tier - b.tier || a.order - b.order)
+    .map((entry) => entry.node);
 }
 
 function NodeRoleMark({ node }: { node: PaletteNode }) {
@@ -135,6 +176,7 @@ export function NodePalette({
       anchor={anchor}
       presentation={presentation}
       filterItems={filterItems}
+      rankedSearch
       flat={pinFiltered}
       renderLeading={(node) => <NodeRoleMark node={node} />}
       headerAccessory={

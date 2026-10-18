@@ -6,6 +6,7 @@ import {
   MAIN_SCENE_FILE,
   createActor,
   documentId,
+  isProjectOpenElsewhere,
   type DataDefinitionAsset,
   type DocumentRef,
   type SerializedComponent,
@@ -20,6 +21,7 @@ import {
   createDerivedStorage,
 } from "@babylonslate/vfs";
 import { FakeLockProvider } from "@babylonslate/source-control";
+import { createFakeWebLocks } from "../../../../packages/vfs/src/test-support/fake-web-locks";
 import { appendJournalLines, readJournalLines, sealJournalForRecovery } from "@babylonslate/assets";
 import { SetActorTransformCommand, SetSceneNameCommand, commandToJournalPayload, serializeJournalLine } from "@babylonslate/edit";
 import { UndoHistoryNotice } from "../components/undo-history-notice";
@@ -1168,6 +1170,28 @@ describe("DocumentProvider actions and route", () => {
 
     await act(() => actions.forceCloseProject());
     expect(seen.route).toBe("home");
+  });
+
+  it("stays on the Homepage while another tab has the project open, and opens it once that tab closes it", async () => {
+    Object.defineProperty(navigator, "locks", { configurable: true, value: createFakeWebLocks() });
+    try {
+      const actions = await openProject();
+      const listed = documents().listedProjects.find((project) => project.label === "Stable")!;
+      await act(() => actions.forceCloseProject());
+
+      const otherTab = new OpfsStorageAdapter();
+      await otherTab.openKnownFolder(listed);
+      await act(async () => { await expect(actions.openListedProject(listed)).rejects.toSatisfy(isProjectOpenElsewhere); });
+      expect(seen.route).toBe("home");
+      expect(documents().projectDocument).toBeNull();
+
+      await otherTab.releaseFolder();
+      await act(() => actions.openListedProject(listed));
+      expect(seen.route).toBe("editor");
+      await act(() => actions.forceCloseProject());
+    } finally {
+      delete (navigator as { locks?: unknown }).locks;
+    }
   });
 });
 

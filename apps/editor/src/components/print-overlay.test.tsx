@@ -28,6 +28,17 @@ describe("PrintOverlay", () => {
     expect(queryByText("flash")).toBeNull();
   });
 
+  it("shows an empty message as a row that keeps its line height", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const entries = applyPrintHudCommand([], { message: "", key: "gap", duration: 5 }, 1_000);
+    const { getByTestId } = render(<PrintOverlay entries={entries} />);
+    const rows = Array.from(getByTestId("print-overlay").children);
+    expect(rows).toHaveLength(1);
+    // A truly empty block collapses to its padding; a no-break space keeps one text line.
+    expect(rows[0]!.textContent).toBe(" ");
+  });
+
   it("lists the newest print first so clipping drops the oldest", () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000);

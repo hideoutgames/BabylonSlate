@@ -26,24 +26,104 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it("gives repeated toolbar node insertions distinct positions without moving existing nodes", () => {
-  const control = { id: "control", type: "debug.log", position: { x: -400, y: -400 }, data: {} };
-  let latest: GraphDocument = { nodes: [control], edges: [] };
-  const { getByTestId } = render(
-    <GraphEditor
-      initialGraph={latest}
-      paletteNodes={[{ id: "debug.log", title: "Log", category: "debug" }]}
-      onChange={(graph) => { latest = graph; }}
-    />,
-  );
-  for (let index = 0; index < 3; index++) {
-    fireEvent.click(getByTestId("graph-add-node"));
-    fireEvent.click(getByTestId("node-palette-item-debug.log"));
-    expect(latest.nodes).toHaveLength(index + 2);
+/** Gives the graph host a screen rectangle; jsdom has no layout. */
+function stubGraphBounds(
+  editor: HTMLElement,
+  bounds: { left: number; top: number; width: number; height: number },
+): void {
+  editor.getBoundingClientRect = () =>
+    ({
+      ...bounds,
+      right: bounds.left + bounds.width,
+      bottom: bounds.top + bounds.height,
+      x: bounds.left,
+      y: bounds.top,
+      toJSON() {
+        return {};
+      },
+    }) as DOMRect;
+}
+
+describe("toolbar Add Node placement", () => {
+  const logPalette = (pins: typeof debugLogPins) => [
+    { id: "debug.log", title: "Log", category: "debug", pins },
+  ];
+  const canvas = { left: 100, top: 50, width: 800, height: 600 };
+  // At zoom 1 with no pan, the centre of this canvas is flow point (500, 350).
+  const viewport = { x: 0, y: 0, zoom: 1 };
+  const canvasCenter = { x: 500, y: 350 };
+
+  function addLogNodes(getByTestId: (id: string) => HTMLElement, count: number) {
+    for (let index = 0; index < count; index++) {
+      fireEvent.click(getByTestId("graph-add-node"));
+      fireEvent.click(getByTestId("node-palette-item-debug.log"));
+    }
   }
-  expect(latest.nodes.find((node) => node.id === "control")?.position).toEqual({ x: -400, y: -400 });
-  const added = latest.nodes.filter((node) => node.id !== "control");
-  expect(new Set(added.map((node) => `${node.position.x},${node.position.y}`)).size).toBe(3);
+
+  it("centres on the canvas, not the window, and steps clear of earlier nodes", () => {
+    const control = { id: "control", type: "debug.log", position: { x: -400, y: -400 }, data: {} };
+    let latest: GraphDocument = { nodes: [control], edges: [] };
+    const { getByTestId } = render(
+      <GraphEditor
+        initialGraph={latest}
+        sessionViewport={viewport}
+        paletteNodes={logPalette(debugLogPins)}
+        onChange={(graph) => { latest = graph; }}
+      />,
+    );
+    stubGraphBounds(getByTestId("graph-editor"), canvas);
+    const size = estimateGraphNodeSize(debugLogPins);
+
+    addLogNodes(getByTestId, 4);
+
+    expect(latest.nodes.find((node) => node.id === "control")?.position).toEqual({ x: -400, y: -400 });
+    const added = latest.nodes.filter((node) => node.id !== "control");
+    expect(added).toHaveLength(4);
+    expect(added[0]!.position).toEqual({
+      x: canvasCenter.x - size.width / 2,
+      y: canvasCenter.y - size.height / 2,
+    });
+    // Every footprint stays clear of the others, not just offset by a few pixels.
+    for (const [index, node] of added.entries()) {
+      for (const other of added.slice(index + 1)) {
+        const apart =
+          Math.abs(node.position.x - other.position.x) >= size.width ||
+          Math.abs(node.position.y - other.position.y) >= size.height;
+        expect(apart, `${node.id} vs ${other.id}`).toBe(true);
+      }
+    }
+  });
+
+  it("treats an existing node as its measured size, not the larger estimate", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const size = estimateGraphNodeSize(debugLogPins);
+      const slot = { x: canvasCenter.x - size.width / 2, y: canvasCenter.y - size.height / 2 };
+      // Measured 180px wide and 30px clear of the slot; its 320px estimate would reach into it.
+      const neighbour = {
+        id: "neighbour",
+        type: "debug.log",
+        position: { x: slot.x - 180 - 30, y: slot.y },
+        data: {},
+      };
+      let latest: GraphDocument = { nodes: [neighbour], edges: [] };
+      const { getByTestId } = render(
+        <GraphEditor
+          initialGraph={latest}
+          sessionViewport={viewport}
+          paletteNodes={logPalette(debugLogPins)}
+          onChange={(graph) => { latest = graph; }}
+        />,
+      );
+      stubGraphBounds(getByTestId("graph-editor"), canvas);
+
+      addLogNodes(getByTestId, 1);
+
+      expect(latest.nodes.find((node) => node.id !== "neighbour")?.position).toEqual(slot);
+    } finally {
+      restoreLayout();
+    }
+  });
 });
 
 function dispatchPointerEvent(
