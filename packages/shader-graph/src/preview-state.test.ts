@@ -73,6 +73,18 @@ describe("material cost classification", () => {
     expect(fast).toBe("cheap");
   });
 
+  it("does not let one cold compile make a simple material manual", () => {
+    for (const observedCompileMs of [[900, 6], [6, 900], [900, 6, 7]]) {
+      expect(classifyMaterialCost(features(), { ...BUDGET, observedCompileMs })).toBe("cheap");
+    }
+  });
+
+  it("still calls consistently slow compiles expensive despite a fast outlier", () => {
+    expect(
+      classifyMaterialCost(features(), { ...BUDGET, observedCompileMs: [400, 5, 380] }),
+    ).toBe("expensive");
+  });
+
   it("scales the threshold with the frame budget rather than a fixed constant", () => {
     const observedCompileMs = [40, 42];
     expect(
