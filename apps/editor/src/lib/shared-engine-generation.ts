@@ -1,7 +1,14 @@
+/**
+ * False for a disposed Engine and for one whose context is lost: a lost
+ * WebGPU device never recovers in place, and a WebGL2 Engine draws nothing
+ * until Babylon restores it.
+ */
 export function isUsableEngine(
   engine: { isDisposed?: boolean } | null | undefined,
 ): boolean {
-  return Boolean(engine) && engine!.isDisposed !== true;
+  if (!engine || engine.isDisposed === true) return false;
+  // Pinned Babylon 9.29 lost-context flag (protected on AbstractEngine).
+  return (engine as { _contextWasLost?: boolean })._contextWasLost !== true;
 }
 
 export function nextSharedEngineGeneration(
