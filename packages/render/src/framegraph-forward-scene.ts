@@ -32,7 +32,7 @@ import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admi
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
 import { DriverCompileWatch } from "./driver-compile";
-import { heldThreadMs } from "./stall-deadline";
+import { SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
 import { isManagedClusteredLight } from "./clustered-light-policy";
 import { whenPresentationFenceClear } from "./presented-frame";
@@ -993,6 +993,7 @@ export class ForwardSceneFrameGraph {
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
       let deadline = performance.now() + 10_000;
       const compiles = new DriverCompileWatch(scene.getEngine());
+      let creditLeft = SCENE_THREAD_HELD_BUDGET_MS;
       for (;;) {
         // Readiness probes finalise effects; a synchronous GL query waits behind
         // an outstanding presentation fence's driver compile, so defer them.
@@ -1000,8 +1001,11 @@ export class ForwardSceneFrameGraph {
         const probeStart = performance.now();
         const ready = this.disposed || this.isReady();
         // Without parallel shader compile the probe links every effect before it
-        // returns: a probe that held the thread was compiling, not waiting.
-        deadline += heldThreadMs(performance.now() - probeStart);
+        // returns: the time inside it is compiling, not waiting. It extends the
+        // bound up to a budget, so a scene that never becomes ready still fails.
+        const grant = Math.min(performance.now() - probeStart, creditLeft);
+        creditLeft -= grant;
+        deadline += grant;
         if (ready) break;
         assertCurrent();
         // A failed shader never becomes ready; report it instead of timing out.
