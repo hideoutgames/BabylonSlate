@@ -6,7 +6,7 @@ import {
   readGolden,
   writeGolden,
 } from "@babylonslate/test-kit";
-import { tilemapChunkVertexData } from "./tilemap-chunk";
+import { tilemapChunkVertexData, tilePlaceholderHsl } from "./tilemap-chunk";
 import { emptyChunkTiles } from "./tilemap-payload";
 import { normalizeTilesetPayload } from "./tileset-payload";
 
@@ -138,6 +138,28 @@ describe("tilemapChunkVertexData", () => {
     expect(animatedData.positions).toHaveLength(12);
     expect(staticData.positions[0]).toBe(0);
     expect(animatedData.positions[0]).toBe(1);
+  });
+
+  it("colours each tile of an atlas without an image with the paint canvas hue", () => {
+    const tileset = normalizeTilesetPayload({ atlasWidth: 128, atlasHeight: 16, tileWidth: 16, tileHeight: 16 });
+    const tiles = emptyChunkTiles(2);
+    tiles[0] = 1;
+    tiles[1] = 2;
+    tiles[2] = 7;
+    const options = { tiles, chunkSize: 2, chunkX: 0, chunkY: 0, tileset, worldTileWidth: 1, worldTileHeight: 1 };
+    const withColors = tilemapChunkVertexData({ ...options, placeholderColors: true });
+    // Hand-derived from hsl(47 55% 48%), hsl(94 55% 48%) and hsl(329 55% 48%).
+    const expected = [[0.744, 0.6296, 0.216], [0.4448, 0.744, 0.216], [0.744, 0.216, 0.4888]];
+    expect(withColors.colors).toHaveLength(3 * 4 * 4);
+    expected.forEach((rgb, quad) => {
+      for (let corner = 0; corner < 4; corner++) {
+        const at = (quad * 4 + corner) * 4;
+        rgb.forEach((value, channel) => expect(withColors.colors![at + channel]).toBeCloseTo(value, 5));
+        expect(withColors.colors![at + 3]).toBe(1);
+      }
+    });
+    expect(tilemapChunkVertexData(options).colors).toBeUndefined();
+    expect(tilePlaceholderHsl(7)).toEqual({ h: 329, s: 55, l: 48 });
   });
 
   it("draws only GIDs that belong to the requested atlas", () => {

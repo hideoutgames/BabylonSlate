@@ -1,4 +1,4 @@
-import { Color3, Material, Mesh, StandardMaterial, VertexBuffer } from "@babylonjs/core";
+import { Color3, HemisphericLight, Material, Mesh, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, createMeshComponent } from "@babylonslate/core";
 import { createDefaultSpritePayload, createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@babylonslate/assets";
@@ -25,9 +25,9 @@ describe("tilemap rendering", () => {
     handle.engine.dispose();
   });
 
-  function content() {
+  function content(textureGuid: string | null = "atlas") {
     const tileset = normalizeTilesetPayload({
-      textureGuid: "atlas",
+      textureGuid,
       atlasWidth: 32,
       atlasHeight: 16,
       tileWidth: 16,
@@ -76,6 +76,45 @@ describe("tilemap rendering", () => {
     expect(material.fogEnabled).toBe(false);
     expect(material.imageProcessingConfiguration.isEnabled).toBe(false);
     expect(material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
+  });
+
+  it("draws a Tileset without an atlas image unlit with one placeholder colour per tile", async () => {
+    const { assets, actor, tilemap } = content(null);
+    const { scene } = handle;
+    new HemisphericLight("sun", new Vector3(0, 1, 0), scene);
+    scene.fogMode = 3;
+    // Five cells across three chunks of 2x2 cells.
+    let painted = tilemap;
+    for (const [x, y, id] of [[1, 0, 2], [0, 2, 1], [1, 2, 2], [3, 3, 1]] as const) painted = setTile(painted, "layer-1", x, y, id);
+    assets.tilemaps = new Map([["tilemap", painted]]);
+
+    const root = createActorMesh(scene, actor, assets);
+    const chunks = root.getChildMeshes();
+    expect(chunks).toHaveLength(3);
+    expect(chunks.reduce((vertices, tile) => vertices + tile.getTotalVertices(), 0)).toBe(5 * 4);
+    const material = chunks[0]!.material as StandardMaterial;
+    expect(chunks.every((tile) => tile.material === material)).toBe(true);
+    expect(material.diffuseTexture).toBeNull();
+    expect(material.disableLighting).toBe(true);
+    expect(material.backFaceCulling).toBe(false);
+    expect(material.fogEnabled).toBe(false);
+    expect(material.imageProcessingConfiguration.isEnabled).toBe(false);
+
+    // hsl(47 55% 48%) and hsl(94 55% 48%), the paint canvas colours of tiles 1 and 2.
+    const colors = chunks.find((tile) => tile.getTotalVertices() === 8)!.getVerticesData(VertexBuffer.ColorKind)!;
+    expect(colors).toHaveLength(8 * 4);
+    [0.744, 0.6296, 0.216, 1, 0.4448, 0.744, 0.216, 1].forEach((value, index) => {
+      expect(colors[(index < 4 ? 0 : 16) + (index % 4)]).toBeCloseTo(value, 5);
+    });
+
+    const tile = chunks[0]!;
+    scene.incrementRenderId();
+    await material.forceCompilationAsync(tile);
+    const subMesh = tile.subMeshes![0]!;
+    expect(material.isReadyForSubMesh(tile, subMesh)).toBe(true);
+    const defines = subMesh.effect!.defines;
+    expect(defines).toContain("#define VERTEXCOLOR");
+    expect(defines).not.toContain("#define LIGHT0");
   });
 
   it("decodes atlas colors once for a Scene Linear display stage, still without scene image processing", async () => {

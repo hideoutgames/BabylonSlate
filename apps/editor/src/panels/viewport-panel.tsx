@@ -411,6 +411,14 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     return () => registerNavBakeCollector(null);
   }, [registerNavBakeCollector]);
 
+  // A scene edit retries a failed overlay, so one cause is logged once.
+  const navmeshFailureRef = useRef<string | null>(null);
+  const reportNavmeshFailure = useCallback((error: unknown) => {
+    const reason = error instanceof Error ? error.message : String(error);
+    if (navmeshFailureRef.current === reason) return;
+    navmeshFailureRef.current = reason;
+    engineCommandBus.dispatch({ type: "log", message: `Show Navmesh could not draw the navmesh: ${reason}` });
+  }, []);
   const navmeshPath =
     doc && isSceneWorkspaceKind(doc.ref.kind) ? doc.ref.path : null;
   const navmeshOverlayOn = Boolean(
@@ -428,13 +436,19 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     if (!navmeshOverlayOn || !navmeshPath || lastBakedNavmesh) return;
     let cancelled = false;
     void (async () => {
-      const bytes = await readAssetChunk(navmeshPath, NAVMESH_CHUNK_ID);
-      if (!cancelled) setStoredNavmesh({ path: navmeshPath, bytes: bytes ?? null });
+      let bytes: Uint8Array | null = null;
+      try {
+        bytes = (await readAssetChunk(navmeshPath, NAVMESH_CHUNK_ID)) ?? null;
+      } catch (error) {
+        // The blockers still draw without the bake.
+        if (!cancelled) reportNavmeshFailure(error);
+      }
+      if (!cancelled) setStoredNavmesh({ path: navmeshPath, bytes });
     })();
     return () => {
       cancelled = true;
     };
-  }, [lastBakedNavmesh, navmeshOverlayOn, navmeshPath, readAssetChunk, registryEpoch]);
+  }, [lastBakedNavmesh, navmeshOverlayOn, navmeshPath, readAssetChunk, registryEpoch, reportNavmeshFailure]);
 
   useEffect(() => {
     const overlay = navDebugRef.current;
@@ -445,16 +459,17 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const stored = storedNavmesh?.path === navmeshPath ? storedNavmesh : null;
     // Wait for this scene's stored chunk unless a bake supplies the bytes.
     if (navmeshPath && !lastBakedNavmesh && !stored) return;
-    void overlay.sync(
+    overlay.sync(
       lastBakedNavmesh ?? stored?.bytes ?? null,
       navDebugBlockersFromActors(scene.actors),
       scene.settings.physicsWorld,
-    );
+    ).then(() => { navmeshFailureRef.current = null; }, reportNavmeshFailure);
   }, [
     lastBakedNavmesh,
     navOverlayGeneration,
     navmeshOverlayOn,
     navmeshPath,
+    reportNavmeshFailure,
     scene,
     storedNavmesh,
   ]);

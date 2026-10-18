@@ -19,7 +19,7 @@ Double-tap a Class to open it.
 - **Class**: the class's **Functions**, **Variables**, **Events** and **Interfaces**. Use **+** on a section to add one. Inherited members carry an **Inherited** badge.
 - **Inspector**: the selected node or member.
 - **Compiler Results**: errors and warnings for this class.
-- **Prefab** and **Components**: for classes that descend from Actor. Build the actor's components here.
+- **Prefab** and **Components**: for classes that descend from Actor. Build the actor's components here. A Class whose components you have not edited places as a Box mesh in a 3D Scene, and as an empty actor in a 2D Scene or a Scene Layer.
 
 Classes that do not descend from Actor, such as Actor Component and Function Library classes, open without **Prefab** and **Components**.
 
