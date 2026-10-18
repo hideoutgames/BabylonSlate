@@ -4,7 +4,7 @@ The editor shows each open asset as a document tab, and each document arranges i
 
 ## Documents and tabs
 
-- Double-tap an asset in the **Content Browser** to open it as a document. If it is already open, its tab comes forward.
+- Double-tap an asset tile in the **Content Browser** grid to open it as a document. If it is already open, its tab comes forward. In the folder tree beside the grid, double-tapping a name renames it instead.
 - The **Content Browser** tab is always first and cannot be closed.
 - One scene is open at a time. Its tab sits next to the Content Browser; opening another scene replaces it.
 - Hold a tab, then drag it sideways to reorder. The **Open Documents** menu at the end of the strip lists every tab and can close one or all of them.
