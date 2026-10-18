@@ -15,10 +15,12 @@ export { expect };
  */
 export const test = base.extend<{ profileContext: boolean }>({
   profileContext: [false, { option: true }],
-  context: async ({ baseURL, browser, browserName, playwright, profileContext }, use) => {
+  // The second argument is Playwright's `use`; the name differs so the React
+  // hooks lint rule does not mistake it for a hook.
+  context: async ({ baseURL, browser, browserName, playwright, profileContext }, provide) => {
     if (!profileContext) {
       const context = await browser.newContext();
-      await use(context);
+      await provide(context);
       await context.close();
       return;
     }
@@ -26,7 +28,7 @@ export const test = base.extend<{ profileContext: boolean }>({
     const context = await playwright[browserName].launchPersistentContext(profile);
     try {
       await emptyOriginPrivateFileSystem(context, baseURL);
-      await use(context);
+      await provide(context);
     } finally {
       await context.close();
       await rm(profile, { recursive: true, force: true });
