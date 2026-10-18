@@ -47,9 +47,9 @@ The graph toolbar also has **Copy**, **Paste**, **Delete**, **Break Links** (rem
 
 Graphs are checked as you edit. Problems appear in **Compiler Results** and as red badges on nodes; tap a result to jump to the node.
 
-1. Tap **Compile** in the toolbar, or press <kbd>F7</kbd>. **Compilation Error** appears next to it while a graph has errors.
-2. Press Play. Play compiles every graph in the project first.
-3. If any graph has errors, the **Compile errors** dialog lists them. Tap a row to go to the node, or choose **Play Anyway**.
+1. Tap **Compile** in the toolbar, or press <kbd>F7</kbd>. **Compiler Results** lists the errors and warnings of the class you have open, and **Compilation Error** appears next to the button while it has errors.
+2. Press Play. Play compiles the graphs the game uses: the scene it starts in, the Game Instance, the Game and Scene Subsystems, and every class they use. Other classes are not checked.
+3. If any of those graphs has errors, the **Compile errors** dialog lists them. Tap a row to go to the node, or choose **Play Anyway**.
 
 Warnings never block Play. A loop that never ends stops Play and reports **Infinite loop detected**.
 
