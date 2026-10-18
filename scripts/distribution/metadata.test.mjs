@@ -4,6 +4,7 @@ import { buildManifest } from "./metadata.mjs";
 
 const request = {
   channel: "test", platforms: "all", platform: "macos", macosSigned: false, sourceSha: "a".repeat(40), runNumber: 417, runAttempt: 2,
+  patchNotes: { version: "0.0.1", title: "Updates", changes: ["New editor features."] },
   toolchains: { node: "22.22.0", pnpm: "10.33.3", electron: "44.2.0", jdk: "21.0.5", gradle: "8.14.3", androidSdk: "36", token: "secret", privateKey: "secret" },
 };
 

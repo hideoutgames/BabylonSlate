@@ -31,6 +31,13 @@
   font-size: 12px;
 }
 
+/* The launcher runs to the bottom screen edge: surfaces and scrolling cards
+ * reach it, and only the sidebar's account row, the gallery's end and the
+ * build label keep clear of the home indicator. */
+.homepage.safe-frame {
+  padding-bottom: 0;
+}
+
 /* Sidebar: brand, library navigation, then settings and account. */
 .homepage-sidebar {
   display: flex;
@@ -38,7 +45,7 @@
   gap: 8px;
   width: 200px;
   flex-shrink: 0;
-  padding: 12px 8px 8px;
+  padding: 12px 8px calc(8px + var(--safe-bottom));
   border-right: 1px solid var(--border);
   background: var(--sidebar);
 }
@@ -154,7 +161,7 @@
 .homepage-status-version {
   position: absolute;
   right: 12px;
-  bottom: 8px;
+  bottom: calc(8px + var(--safe-bottom));
   z-index: 1;
   padding: 2px 6px;
   border-radius: var(--radius-sm);
@@ -316,7 +323,7 @@
   grid-template-columns: repeat(auto-fill, minmax(var(--gallery-min), 1fr));
   align-content: start;
   gap: 16px;
-  padding: 4px 20px 32px;
+  padding: 4px 20px calc(32px + var(--safe-bottom));
 }
 .homepage-gallery[data-layout="small"] .homepage-gallery-grid {
   --gallery-min: 176px;
@@ -884,6 +891,95 @@
     color: var(--foreground);
   }
 }
+/* --------------------------------------------------------- Release news */
+/* What's New and the Changelog show the current version's notes under one
+ * header row: the wordmark, the title and the version. */
+.release-news[data-slot="dialog-content"] {
+  width: min(600px, calc(100vw - 32px));
+  max-width: none;
+}
+.release-news-header {
+  gap: 4px;
+}
+/* What's New: the wordmark, a divider, the title and the version on one row. */
+.release-news-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 28px;
+}
+.release-news-wordmark {
+  width: auto;
+  height: 20px;
+}
+.release-news-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+}
+.release-news-brand [data-slot="dialog-title"] {
+  font-size: 15px;
+  font-weight: 500;
+}
+.release-news-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(60dvh, 560px);
+  margin-inline: -16px;
+  padding-inline: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.release-news-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0 8px;
+}
+.release-news-version {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+.release-news-entry h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+.release-news-entry ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.release-news-entry li {
+  position: relative;
+  padding-left: 16px;
+  color: color-mix(in oklch, var(--foreground) 80%, transparent);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.release-news-entry li::before {
+  content: "";
+  position: absolute;
+  top: 0.75em;
+  left: 2px;
+  width: 7px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: var(--muted-foreground);
+}
+
 /* ------------------------------------------------------ Template browser */
 .homepage-template-browser {
   flex: 1;
@@ -1818,7 +1914,7 @@ body:has(.homepage-theme) [data-slot="alert-dialog-overlay"] {
   .homepage-gallery-grid {
     --gallery-min: 200px;
     gap: 10px;
-    padding: 0 12px 12px;
+    padding: 0 12px calc(12px + var(--safe-bottom));
   }
   .homepage-gallery[data-layout="small"] .homepage-gallery-grid {
     --gallery-min: 140px;
@@ -1900,7 +1996,7 @@ body:has(.homepage-theme) [data-slot="alert-dialog-overlay"] {
     padding-block: 8px;
   }
   .homepage-gallery-grid {
-    padding-bottom: 8px;
+    padding-bottom: calc(8px + var(--safe-bottom));
   }
   .homepage-project-caption,
   .homepage-template-card [data-slot="card-header"] {

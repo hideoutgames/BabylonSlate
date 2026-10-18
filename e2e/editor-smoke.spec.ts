@@ -1,7 +1,7 @@
-import { expect, test } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
 import { WEBKIT_SMOKE_TAG } from "./ipad-tag";
 import { openListedTestProject, openTestProject } from "./open-test-project";
+import { expect, test } from "./profile-context";
 import { saveAllIfEnabled } from "./save-all";
 
 test.describe("BabylonSlate editor smoke", () => {

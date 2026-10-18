@@ -14,11 +14,9 @@ export function buildManifest(declared, request) {
       toolchains[key] = value;
     }
   }
-  const patchNotes = request.channel === "release" || request.patchNotes
-    ? validatePatchNotes(request.patchNotes, declared.version) : undefined;
   return {
     ...createIdentity({ ...request, version: declared.version, declaredVersion: declared.version, appleSequenceOffset: declared.appleSequenceOffset }),
-    ...(patchNotes ? { patchNotes } : {}),
+    patchNotes: validatePatchNotes(request.patchNotes, declared.version),
     toolchains,
     platform: request.platform,
     ...(request.macosSigned !== undefined ? { macosSigned: request.macosSigned } : {}),

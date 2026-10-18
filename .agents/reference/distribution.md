@@ -32,9 +32,10 @@ Vite reads the generated manifest for startup, project-loading and Engine Settin
 
 ## Changelog rule
 
-- Every `release/version.json` bump adds an entry to `release/changelog.json`: numeric `version`, nonempty `title`, nonempty `changes` array of plain-text notes. Keep older entries (in-app history). Notes are public release content.
-- Vite validates and bundles current and older entries for web, Electron and iOS, including offline launches; missing, empty, duplicate or mismatched notes fail the build. Native release preflight reads notes from the exact selected source commit; release manifests and GitHub Release bodies carry them.
-- The launcher shows **What's New** until that version's first dismissal (remembered in local Engine Settings; clearing app settings resets it; browser profiles and devices keep separate histories). **Account → Changelog** reopens the history. Dev servers and explicit QA `?test` sessions omit automatic news; the deployed web preview shows it.
+- Release notes are written in `release/changelog.json` and embedded in every build; the app makes no network request for them.
+- Every `release/version.json` bump adds an entry: numeric `version`, nonempty `title`, nonempty `changes` array of single-line plain-text notes. Keep older entries as the source history. Notes are public release content. Vite and `scripts/distribution/changelog.test.mjs` reject a declared version without notes; entries newer than the declared version are left out until the bump, so notes can be drafted ahead.
+- Distribution preflight reads the declared version's entry from the exact source commit for both channels into the build manifest, and Vite embeds that copy (`__BABYLONSLATE_RELEASE_NOTES__`, read by `apps/editor/src/lib/changelog.ts`); other builds embed the working tree's entry. Each GitHub Release body also starts with the notes as written by `patchNotesMarkdown`, for the release page only; editing them on GitHub does not change installed apps.
+- The launcher shows **What's New** with the running version's notes once its loading screen has gone, until that version's first dismissal (remembered in local Engine Settings; clearing app settings resets it; browser profiles and devices keep separate histories). The profile menu's **Changelog** shows the same notes again, offline included. Dev servers and explicit QA `?test` sessions omit automatic news.
 
 ## Desktop automatic updates
 

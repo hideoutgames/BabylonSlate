@@ -132,7 +132,8 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
     await dilation(1);
     await expect.poll(async () => posedMannequin(geometry, (await diagnostics(canvas, host))!), { timeout: 15_000 }).not.toEqual(before);
     await page.getByTestId(host === "play" ? "play-overlay-close" : "preview-build-close").click();
-    await expect(page.getByTestId(host === "play" ? "play-overlay" : "preview-build-overlay")).toHaveCount(0);
+    // Closing a session on software GL holds the page's thread with synchronous work: failed attempts saw the overlay still mounted after 5 s with only two polls answered.
+    await expect(page.getByTestId(host === "play" ? "play-overlay" : "preview-build-overlay")).toHaveCount(0, { timeout: 60_000 });
   }
   await testInfo.attach("effective-settings", { body: JSON.stringify({ buildSha: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(), os: process.platform, sourceSha256, scene, evidence }), contentType: "application/json" });
   expect(errors).toEqual([]);
