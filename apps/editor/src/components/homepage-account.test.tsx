@@ -55,6 +55,19 @@ vi.mock("@clerk/react", () => ({
   }),
 }));
 
+const purchases = vi.hoisted(() => ({ create: vi.fn() }));
+
+vi.mock("@babylonslate/vfs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@babylonslate/vfs")>();
+  return {
+    ...actual,
+    createPurchases: () => {
+      purchases.create();
+      return actual.createPurchases();
+    },
+  };
+});
+
 // The Clerk account UI is lazy-loaded. Transform it once up front so a cold
 // module graph cannot outlast the default findBy timeout under worker load.
 beforeAll(async () => {
@@ -70,6 +83,7 @@ afterEach(() => {
   clerk.signOut.mockClear();
   clerk.signedIn = false;
   clerk.failed = false;
+  purchases.create.mockClear();
   vi.unstubAllEnvs();
 });
 
@@ -115,6 +129,19 @@ describe("Homepage account", () => {
     expect(within(dialog).getByRole("alert").textContent).toMatch(/not set up/i);
     fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("asks guests to sign in before subscribing when billing is configured", async () => {
+    vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
+    vi.stubEnv("VITE_REVENUECAT_WEB_API_KEY", "rcb_test_example");
+    render(<HomepageAccount />);
+    const dialog = await openAccountSection("Subscription");
+    expect(within(dialog).getByRole("alert").textContent).toBe("Sign in to subscribe.");
+    expect(
+      within(dialog).getByRole("button", { name: "Subscribe" }),
+    ).toHaveProperty("disabled", true);
+    expect(within(dialog).queryByRole("button", { name: "Restore Purchases" })).toBeNull();
+    expect(purchases.create).not.toHaveBeenCalled();
   });
 
   it("restores configured Clerk on mount and opens its sign-in flow from the menu", async () => {

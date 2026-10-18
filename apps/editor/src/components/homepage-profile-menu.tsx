@@ -155,7 +155,10 @@ export function HomepageProfileMenu({
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 {onEngineSettings && (
-                  <DropdownMenuItem onClick={onEngineSettings}>
+                  <DropdownMenuItem
+                    data-testid="engine-settings"
+                    onClick={onEngineSettings}
+                  >
                     <Settings2Icon />
                     Engine Settings
                   </DropdownMenuItem>

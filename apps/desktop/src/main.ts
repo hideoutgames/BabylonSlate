@@ -25,6 +25,7 @@ import {
   allowsEditorPermission,
   externalOpenUrl,
   isBillingFrameUrl,
+  insidePreviewFrame,
   isEditorSender,
   isPreviewFrameUrl,
   knownProjectFolder,
@@ -126,9 +127,11 @@ async function createWindow(): Promise<void> {
   window.webContents.on("will-navigate", (event, url) => {
     if (!isEditorSender(url, true)) event.preventDefault();
   });
+  // Subframes may load the Preview player, or Web Billing checkout outside it.
   window.webContents.on("will-frame-navigate", event => {
-    if (!event.isMainFrame && !isPreviewFrameUrl(event.url) && !isBillingFrameUrl(event.url))
-      event.preventDefault();
+    if (event.isMainFrame || isPreviewFrameUrl(event.url)) return;
+    if (isBillingFrameUrl(event.url) && !insidePreviewFrame(event.frame)) return;
+    event.preventDefault();
   });
   window.webContents.on("will-attach-webview", event => event.preventDefault());
   await window.loadURL("app://babylonslate/index.html");

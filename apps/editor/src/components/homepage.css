@@ -809,6 +809,7 @@
   align-items: flex-start;
   aspect-ratio: 5 / 4;
   min-width: 0;
+  height: auto;
   padding: 16px;
   overflow: hidden;
   border: 0;
@@ -870,21 +871,10 @@
   transition-duration: 0ms;
 }
 .homepage-welcome-browse {
-  padding: 4px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
   color: var(--muted-foreground);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
 }
-.homepage-welcome-browse:hover,
-.homepage-welcome-browse:focus-visible {
+.homepage-welcome-browse:hover {
   color: var(--foreground);
-}
-.homepage-welcome-browse:focus-visible {
-  outline: 2px solid var(--ring);
 }
 @media (hover: hover) and (pointer: fine) {
   .homepage-welcome-tile:not(:disabled, [data-picture="true"]):hover {

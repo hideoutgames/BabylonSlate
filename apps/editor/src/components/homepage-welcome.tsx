@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import { Button } from "@babylonslate/ui/components/button";
 import { useHomepageCardTouch } from "./use-homepage-card-touch";
 
 export type WelcomeStarter = {
@@ -20,8 +21,9 @@ function WelcomeTile({
   const touch = useHomepageCardTouch(!disabled);
   const Icon = starter.icon;
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
       className="homepage-welcome-tile"
       data-testid={`homepage-empty-start-${starter.id}`}
       data-picture={starter.imageUrl ? "true" : undefined}
@@ -38,7 +40,7 @@ function WelcomeTile({
         <Icon aria-hidden="true" />
       )}
       <span>{starter.name}</span>
-    </button>
+    </Button>
   );
 }
 
@@ -74,14 +76,16 @@ export function HomepageWelcome({
           />
         ))}
       </div>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="sm"
         className="homepage-welcome-browse"
         disabled={disabled}
         onClick={onBrowse}
       >
         All Templates
-      </button>
+      </Button>
     </section>
   );
 }

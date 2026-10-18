@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { allowsEditorPermission, externalOpenUrl, isBillingFrameUrl, knownProjectFolder, rendererFile, isEditorSender, isPreviewFrameUrl, validateIpcArguments } from "./packaged-security";
+import { allowsEditorPermission, externalOpenUrl, insidePreviewFrame, isBillingFrameUrl, knownProjectFolder, rendererFile, isEditorSender, isPreviewFrameUrl, validateIpcArguments } from "./packaged-security";
 
 describe("packaged renderer boundary", () => {
   it("resolves encoded asset filenames without treating filename characters as URL delimiters", () => {
@@ -49,15 +49,28 @@ describe("packaged renderer boundary", () => {
       "app://babylonslate/index.html", "app://babylonslate/player/index.html", "about:blank", "not a url", "",
     ]) expect(isBillingFrameUrl(url)).toBe(false);
   });
-  it("hands only Haptic's site, Web Billing pages and mailto links to the system, normalized", () => {
+  it("keeps Web Billing frames out of the Preview player, where project scripts run", () => {
+    const editor = { url: "app://babylonslate/index.html", parent: null };
+    const player = { url: "app://babylonslate/player/index.html?preview=1", parent: editor };
+    const checkout = { url: "about:blank", parent: editor };
+    expect(insidePreviewFrame(checkout)).toBe(false);
+    expect(insidePreviewFrame({ url: "https://js.stripe.com/v3/", parent: checkout })).toBe(false);
+    expect(insidePreviewFrame(player)).toBe(true);
+    expect(insidePreviewFrame({ url: "about:blank", parent: { url: "https://js.stripe.com/", parent: player } })).toBe(true);
+    expect(insidePreviewFrame(null)).toBe(false);
+  });
+  it("hands only Haptic's site, Web Billing and store pages and mailto links to the system, normalized", () => {
     expect(externalOpenUrl("https://haptic.no/pricing")).toBe("https://haptic.no/pricing");
     expect(externalOpenUrl("HTTPS://Docs.Haptic.no")).toBe("https://docs.haptic.no/");
     expect(externalOpenUrl("https://billing.stripe.com/p/session/1#top")).toBe("https://billing.stripe.com/p/session/1#top");
     expect(externalOpenUrl("https://pay.rev.cat/manage")).toBe("https://pay.rev.cat/manage");
+    // Plans bought in the mobile apps are managed in the stores.
+    expect(externalOpenUrl("https://apps.apple.com/account/subscriptions")).toBe("https://apps.apple.com/account/subscriptions");
+    expect(externalOpenUrl("https://play.google.com/store/account/subscriptions")).toBe("https://play.google.com/store/account/subscriptions");
     expect(externalOpenUrl("mailto:hello@example.com?subject=Hi%20there")).toBe("mailto:hello@example.com?subject=Hi%20there");
     for (const url of [
       // Preview runs project scripts, so arbitrary sites and lookalikes stay denied.
-      "https://example.com/", "https://haptic.no.evil.example/", "https://evilhaptic.no/", "https://user:pass@haptic.no/",
+      "https://example.com/", "https://haptic.no.evil.example/", "https://evil.apps.apple.com/", "https://play.google.com.evil.example/", "https://evilhaptic.no/", "https://user:pass@haptic.no/",
       "http://haptic.no/", "http://example.com/", "javascript:alert(1)", "  JaVaScRiPt:alert(1)", "data:text/html,x", "vbscript:msgbox", "file:///etc/passwd",
       "app://babylonslate/index.html", "ftp://example.com/file", "ms-msdt:/id", "about:blank", "//example.com/", "/relative", "not a url", "",
     ]) expect(externalOpenUrl(url)).toBeNull();

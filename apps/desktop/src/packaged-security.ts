@@ -60,21 +60,42 @@ export function isBillingFrameUrl(rawUrl: string): boolean {
 
 /** Haptic's site, for pricing and plan details. */
 const HAPTIC_SITE_HOST = /(^|\.)haptic\.no$/;
+/** App Store and Google Play subscription management, for plans bought in the mobile apps. */
+const STORE_MANAGEMENT_HOSTS = new Set(["apps.apple.com", "play.google.com"]);
 
 /**
- * Links the editor hands to the system browser or mail client: Haptic's site
- * and Web Billing pages over HTTPS, and mailto. Anything else stays denied, so
- * project scripts in the Preview frame cannot open arbitrary sites.
+ * Links the editor hands to the system browser or mail client: Haptic's site,
+ * Web Billing and store subscription pages over HTTPS, and mailto. Anything
+ * else stays denied, so project scripts in the Preview frame cannot open
+ * arbitrary sites.
  */
 export function externalOpenUrl(rawUrl: string): string | null {
   try {
     const url = new URL(rawUrl);
     if (url.protocol === "mailto:") return url.href;
     if (url.protocol !== "https:" || url.username || url.password) return null;
-    return HAPTIC_SITE_HOST.test(url.hostname) || isBillingFrameUrl(url.href) ? url.href : null;
+    return HAPTIC_SITE_HOST.test(url.hostname) ||
+      STORE_MANAGEMENT_HOSTS.has(url.hostname) ||
+      isBillingFrameUrl(url.href)
+      ? url.href
+      : null;
   } catch {
     return null;
   }
+}
+
+/** A frame and its ancestors, as Electron's `WebFrameMain` exposes them. */
+export interface FrameChain {
+  readonly url: string;
+  readonly parent: FrameChain | null;
+}
+
+/** Whether a frame is the Preview player or sits inside it, where project scripts run. */
+export function insidePreviewFrame(frame: FrameChain | null | undefined): boolean {
+  for (let current = frame ?? null; current; current = current.parent) {
+    if (isPreviewFrameUrl(current.url)) return true;
+  }
+  return false;
 }
 
 /** The editor frame may write the clipboard; every other permission is denied. */

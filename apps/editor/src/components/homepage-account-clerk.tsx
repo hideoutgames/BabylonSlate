@@ -28,6 +28,7 @@ type Props = {
 function AccountButton({ onOverlayChange, ...props }: Props) {
   const { isSignedIn, user } = useUser();
   const clerk = useClerk();
+  const guestBilling = useSubscriptionBilling(undefined);
   useEffect(() => {
     const update = () =>
       onOverlayChange(Boolean(document.querySelector(".slate-clerk-overlay")));
@@ -43,6 +44,7 @@ function AccountButton({ onOverlayChange, ...props }: Props) {
     return (
       <HomepageProfileMenu
         {...props}
+        billing={guestBilling}
         onSignIn={() => clerk.openSignIn()}
         onSignUp={() => clerk.openSignUp()}
       />

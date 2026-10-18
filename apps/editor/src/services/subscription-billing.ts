@@ -2,6 +2,7 @@ import {
   cloneElement,
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import {
@@ -55,25 +56,36 @@ export function useSubscriptionBilling(
   const [entitlement, setEntitlement] = useState<EntitlementStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A slower lookup for a previous account must not land after a newer one.
+  const latestRequest = useRef(0);
 
   const refresh = useCallback(async () => {
+    const request = ++latestRequest.current;
     if (!apiKey || !appUserId) {
       setEntitlement(null);
       return;
     }
-    const purchases = createPurchases();
-    await purchases.configure({ apiKey, appUserId });
-    setEntitlement(await purchases.status(PRO_ENTITLEMENT));
+    try {
+      const purchases = createPurchases();
+      await purchases.configure({ apiKey, appUserId });
+      const status = await purchases.status(PRO_ENTITLEMENT);
+      if (request === latestRequest.current) setEntitlement(status);
+    } catch (cause) {
+      if (request === latestRequest.current) throw cause;
+    }
   }, [apiKey, appUserId]);
 
   useEffect(() => {
     setError(null);
+    setEntitlement(null);
     refresh().catch((cause: unknown) =>
       setError(cause instanceof Error ? cause.message : "Billing could not be loaded."),
     );
   }, [refresh]);
 
   if (!apiKey) return unconfiguredBilling();
+  // Purchases belong to an account, so guests and the demo session cannot buy or restore.
+  if (!appUserId) return { currentPlan: "free", unavailableReason: "Sign in to subscribe." };
 
   const purchases = createPurchases();
   const run = (action: () => Promise<unknown>) => {

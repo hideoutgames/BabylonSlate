@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { HomepageMobileAccountGate } from "./homepage-mobile-account-gate";
 import { HomepageAccount } from "./homepage-account";
@@ -92,7 +93,7 @@ describe("native mobile account requirement", () => {
       fireEvent.click(screen.getByRole("button", { name: "Use Temporary Demo Account" }));
       expect(screen.getByRole("button", { name: "Create Project" })).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "Profile" }));
-      expect(await screen.findByText("Temporary Demo")).toBeTruthy();
+      expect(within(await screen.findByRole("menu")).getByText("Temporary Demo")).toBeTruthy();
       expect(screen.getByText("Local Testing Only · Not Signed In")).toBeTruthy();
       fireEvent.click(screen.getByRole("menuitem", { name: "End Demo" }));
       expect(await screen.findByRole("heading", { name: "Sign-In Is Not Set Up" })).toBeTruthy();
@@ -124,7 +125,7 @@ describe("native mobile account requirement", () => {
     fireEvent.click(screen.getByRole("button", { name: "Use Temporary Demo Account" }));
     await act(async () => finishRestore(session));
     fireEvent.click(screen.getByRole("button", { name: "Profile" }));
-    expect(await screen.findByText("Temporary Demo")).toBeTruthy();
+    expect(within(await screen.findByRole("menu")).getByText("Temporary Demo")).toBeTruthy();
     expect(screen.queryByText("Ada Lovelace")).toBeNull();
     fireEvent.click(screen.getByRole("menuitem", { name: "End Demo" }));
     expect(await screen.findByLabelText("Email Address")).toBeTruthy();
@@ -235,7 +236,7 @@ describe("native mobile account requirement", () => {
     ).toBeTruthy();
     expect(auth.verifyCode).toHaveBeenCalledWith(challenge, "123456");
     fireEvent.click(await findProfileTrigger());
-    expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
+    expect(within(await screen.findByRole("menu")).getByText("Ada Lovelace")).toBeTruthy();
     expect(screen.getByText("ada@example.test")).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: "Sign Out" }));
     expect(await screen.findByLabelText("Email Address")).toBeTruthy();
