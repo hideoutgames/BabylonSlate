@@ -30,6 +30,9 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
  *
  * Env: BL_PERF_SCENES (comma list of main|world|clustered|stress|2d; default main,world),
  *      BL_PERF_BACKEND (webgl2|webgpu; default: the project's WebGL2),
+ *      BL_PERF_QUALITY (low|medium|high|ultra; default: the starter's Medium. Sets the project's Overall Quality in
+ *        Project Settings, with Dynamic Resolution off so the workload stays fixed. High and Ultra allow the starter's
+ *        scene-wide Volumetric Lighting, which Medium skips),
  *      BL_RENDER_NATIVE_GPU=1 keeps the project's launch arguments (perf-gpu); otherwise
  *        WebGPU runs use the software adapter and every run adds --enable-precise-memory-info,
  *      BL_FLY_SPEED (m/s, default 8, the editor's default fly speed), BL_FLY_PASSES (default 2),
@@ -48,6 +51,8 @@ const number = (name: string, fallback: number, min = 0) => {
   return process.env[name] !== undefined && Number.isFinite(value) && value >= min ? value : fallback;
 };
 const BACKEND = process.env.BL_PERF_BACKEND === "webgpu" ? "webgpu" : process.env.BL_PERF_BACKEND === "webgl2" ? "webgl2" : null;
+const QUALITIES = ["low", "medium", "high", "ultra"] as const;
+const QUALITY = QUALITIES.find((level) => level === process.env.BL_PERF_QUALITY) ?? null;
 const NATIVE_GPU = process.env.BL_RENDER_NATIVE_GPU === "1";
 const SPEED = number("BL_FLY_SPEED", 8, 0.5);
 const PASSES = number("BL_FLY_PASSES", 2, 1);
@@ -101,12 +106,25 @@ type PlayHost = {
   };
 };
 
-async function selectBackend(page: Page, backend: "webgl2" | "webgpu"): Promise<void> {
+/** Project Settings > Rendering: the GPU backend and the Overall Quality (with a fixed resolution) the run asks for. */
+async function applyProjectRendering(page: Page): Promise<void> {
   await page.getByTestId("settings-menu").click();
   await page.getByTestId("project-settings").click();
   await page.getByTestId("settings-modal-category-rendering").click();
-  await page.getByTestId("project-gpu-backend").click();
-  await page.getByRole("option", { name: backend === "webgpu" ? "WebGPU" : "WebGL2", exact: true }).click();
+  if (BACKEND) {
+    await page.getByTestId("project-gpu-backend").click();
+    await page.getByRole("option", { name: BACKEND === "webgpu" ? "WebGPU" : "WebGL2", exact: true }).click();
+  }
+  if (QUALITY) {
+    const scalability = page.getByTestId("settings-modal").getByRole("button", { name: "Scalability", exact: true });
+    if ((await scalability.getAttribute("aria-expanded")) !== "true") await scalability.click();
+    await page.getByLabel("Overall Quality", { exact: true }).click();
+    await page.getByRole("option", { name: QUALITY[0]!.toUpperCase() + QUALITY.slice(1), exact: true }).click();
+    // A preset turns dynamic resolution back on; the Feature Test starter keeps it off for fixed-workload runs.
+    const dynamic = page.getByRole("switch", { name: "Dynamic Resolution", exact: true });
+    if (await dynamic.isChecked()) await dynamic.click();
+    await expect(dynamic).not.toBeChecked();
+  }
   await page.getByRole("button", { name: "Done", exact: true }).click();
 }
 
@@ -416,9 +434,9 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
   const cdp = await page.context().newCDPSession(page);
   const createToInteractiveMs = await createFeatureTestProject(page);
   await waitForTextureEncodes(page);
-  if (BACKEND) {
-    await selectBackend(page, BACKEND);
-    // The backend is a project setting: save it now, before any scene changes.
+  if (BACKEND || QUALITY) {
+    await applyProjectRendering(page);
+    // The backend and quality are project settings: save them now, before any scene changes.
     await saveAllIfEnabled(page, 300_000);
   }
   // A flight can leave the scene dirty (Save All would then bake audio reverb on software GL for minutes);
@@ -435,7 +453,7 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
     label: process.env.BL_PERF_LABEL ?? null,
     browserProject: testInfo.project.name,
     browserVersion: page.context().browser()?.version() ?? null,
-    env: { SCENES, PLAY_SCENES, BACKEND, NATIVE_GPU, SPEED, PASSES, WARMUP_MS, SETTLE_MS, PROFILE,
+    env: { SCENES, PLAY_SCENES, BACKEND, QUALITY, NATIVE_GPU, SPEED, PASSES, WARMUP_MS, SETTLE_MS, PROFILE,
       VIEWPORT_CAP: process.env.BL_PERF_VIEWPORT_CAP ?? null, SCALING: process.env.BL_PERF_SCALING ?? null },
     createToInteractiveMs,
     scenes,
