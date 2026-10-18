@@ -12,7 +12,7 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { appendJournalLines, readJournalLines } from "@babylonslate/assets";
+import { appendJournalLines, readJournalLines, sealJournalForRecovery } from "@babylonslate/assets";
 import {
   commandToJournalPayload,
   DEFAULT_EDIT_BYTE_BUDGET,
@@ -260,6 +260,7 @@ describe("DocumentEditingService", () => {
       v: 1, docId: SCENE_ID, at: "2026-10-11T10:00:00Z",
       command: commandToJournalPayload(new SetSceneNameCommand(opened.name, opened.name)),
     }), "{\"v\":1,\"docId\""]);
+    await sealJournalForRecovery(derived, "project-guid");
 
     await editing.replayRecoveryJournal();
     expect(resolved).toHaveBeenCalled();
@@ -284,6 +285,7 @@ describe("DocumentEditingService", () => {
       v: 1, docId: SCENE_ID, at: "2026-10-11T10:00:00Z",
       command: commandToJournalPayload(new SetSceneNameCommand(opened.name, "Recovered")),
     })]);
+    await sealJournalForRecovery(derived, "project-guid");
     // The same Scene path in the project that replaced it.
     switchProject = () => { (project as { guid: string }).guid = "other-project-guid"; };
 

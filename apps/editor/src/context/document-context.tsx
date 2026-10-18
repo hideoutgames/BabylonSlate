@@ -38,10 +38,13 @@ import type {
 import { ASSET_DOCUMENT_KINDS, documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, remapAlwaysPackageFolders, removeAlwaysPackageFolders, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
 import {
   appendJournalLines,
+  discardSealedJournal,
   getTile,
   normalizeTilemapPayload,
   readJournalLines,
+  readSealedJournalLines,
   readThumbnail,
+  sealJournalForRecovery,
   writeThumbnail,
   ThumbnailDecodeLru,
   truncateJournal,
@@ -1685,7 +1688,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       projectService.setDerivedStorage(derived);
       const guid = projectService.guid;
       if (guid) {
-        setRecoveryAvailable(resolveJournalLines(await readJournalLines(derived, guid)).length > 0);
+        // Records from a session that never saved them wait for Recover or
+        // Discard; this session's saves and closes only truncate what it writes.
+        await sealJournalForRecovery(derived, guid);
+        const unreplayed = resolveJournalLines(await readSealedJournalLines(derived, guid));
+        if (unreplayed.length === 0) await discardSealedJournal(derived, guid);
+        setRecoveryAvailable(unreplayed.length > 0);
       }
       await refreshProjectList();
       await captureMtimeSnapshot();
@@ -1935,12 +1943,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           const derived = await ensureDerived();
           // The journal holds document edits only; Project Settings changed
           // during the save are not in it and must not keep saved edits there.
-          const cleared = await journalBuffer.clearAfterFlush(guid, () =>
+          // Records sealed for a pending recovery stay.
+          await journalBuffer.clearAfterFlush(guid, () =>
             truncateJournal(derived, guid, () =>
               projectService.guid === guid && documentService.getDirtyDocuments().length === 0,
             ),
           );
-          if (cleared) setRecoveryAvailable(false);
         }
         progress.phase("callbacks");
         if (savedScene) {
@@ -2313,12 +2321,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const dismissRecovery = useCallback(async () => {
     const guid = projectService.guid;
     if (guid) {
-      const derived = await ensureDerived();
-      await journalBuffer.clearAfterFlush(guid, () => truncateJournal(derived, guid));
+      // Edits made since the project opened are not part of the offer and stay.
+      await discardSealedJournal(await ensureDerived(), guid);
     }
     // The banner belongs to the project open now; another may have opened meanwhile.
     if (projectService.guid === guid) setRecoveryAvailable(false);
-  }, [ensureDerived, journalBuffer, projectService]);
+  }, [ensureDerived, projectService]);
 
   const keepRecovery = useCallback(() => {
     setRecoveryRequested(true);
