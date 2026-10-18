@@ -9,6 +9,12 @@ import { pruneWebGpuCachesNow } from "./webgpu-cache-pruning";
 const SETTLE_FRAMES = 3;
 /** A release that never settles (quarantine) leaves the rest to the next client's frames. */
 const DRAIN_DEADLINE_MS = 5_000;
+/**
+ * Replaces the deadline once the release settles, so a release that settles
+ * late still gets its settle frames. It stays a bound: a lost context makes
+ * Babylon request frames that never end, and a hidden page delivers none.
+ */
+const SETTLE_DEADLINE_MS = 1_000;
 
 /**
  * Keep empty frames coming after a client stops until its release settles,
@@ -34,13 +40,19 @@ export function drainEngineAfterRelease(engine: AbstractEngine, released: Promis
     engine.stopRenderLoop(frame);
     if (!engine.isDisposed) pruneWebGpuCachesNow(engine);
   };
+  // An Effect disposal queued through SetImmediate registers its own end-frame
+  // observer after this counter, so in the last settle frame it can land after
+  // the final prune; its ids wait for the next drain or the threshold prune.
   const counter = engine.onEndFrameObservable.add(() => {
     if (settledFrames >= 0 && ++settledFrames >= SETTLE_FRAMES) stop();
   });
   const disposed = engine.onDisposeObservable.addOnce(stop);
-  const deadline = setTimeout(stop, DRAIN_DEADLINE_MS);
+  let deadline = setTimeout(stop, DRAIN_DEADLINE_MS);
   void released.then(() => {
-    if (!stopped) settledFrames = 0;
+    if (stopped) return;
+    settledFrames = 0;
+    clearTimeout(deadline);
+    deadline = setTimeout(stop, SETTLE_DEADLINE_MS);
   }, stop);
   engine.runRenderLoop(frame);
 }

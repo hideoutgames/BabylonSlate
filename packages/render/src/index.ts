@@ -2,6 +2,7 @@ export { authoredActorWorldTransform } from "./authored-transform-matrices";
 export * from "./editor-clear-color";
 export * from "./create-engine";
 export { installDirectViewReadSync, setDirectViewPresentationEnabled, syncDirectViewCanvas } from "./direct-view-presentation";
+export { whenSubmittedWorkDone } from "./presented-frame";
 export { sceneRenderTargetCaptures, RenderTargetCaptures } from "./render-target-capture";
 export { setSceneRenderSettings } from "./scene-render-mode";
 export type { RenderShadingSettings } from "./render-settings";

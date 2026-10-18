@@ -122,6 +122,35 @@ describe("drainEngineAfterRelease", () => {
     expect(client).toHaveBeenCalledTimes(4);
   });
 
+  it("still gets its settle frames when the release settles just before the deadline", async () => {
+    vi.useFakeTimers();
+    const { engine, frame } = idleEngine();
+    const release = deferred();
+    drainEngineAfterRelease(engine, release.promise);
+
+    vi.advanceTimersByTime(4_900);
+    release.resolve();
+    await release.promise;
+    vi.advanceTimersByTime(200);
+    expect(engine.activeRenderLoops).toHaveLength(1);
+    for (let i = 0; i < 3; i++) frame();
+
+    expect(engine.activeRenderLoops).toHaveLength(0);
+  });
+
+  it("stops shortly after the release settles when no frame follows", async () => {
+    vi.useFakeTimers();
+    const { engine } = idleEngine();
+    const release = deferred();
+    drainEngineAfterRelease(engine, release.promise);
+
+    release.resolve();
+    await release.promise;
+    vi.advanceTimersByTime(1_000);
+
+    expect(engine.activeRenderLoops).toHaveLength(0);
+  });
+
   it("stops at its deadline when the release never settles", () => {
     vi.useFakeTimers();
     const { engine } = idleEngine();

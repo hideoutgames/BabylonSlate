@@ -30,6 +30,7 @@ import {
   selectionGizmoRoots,
   setDirectViewPresentationEnabled,
   syncEditorPlayState,
+  whenSubmittedWorkDone,
   engineAdapterInfo,
   type EngineHandle,
   type EditorSceneLoadOptions,
@@ -1215,6 +1216,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         setDirectViewPresentation: (enabled: boolean) => void;
         /** Destroys the project Engine's WebGPU device, as a real loss would; false on WebGL2 or without a view. */
         destroyGraphicsDevice: () => boolean;
+        /**
+         * Hold (or resume) this viewport's frames: no step draws or presents (scene loading still may), though a
+         * resize still resizes the Engine. Holding resolves once the GPU finished the submitted work, so a
+         * screenshot shows what stays on screen.
+         */
+        holdViewportFrames: (hold: boolean) => Promise<void>;
         webgpuPreviewsProof: (
           options?: import("../testing/webgpu-previews-proof").ViewportProofOptions,
         ) => Promise<
@@ -1231,6 +1238,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       viewportFrameCap = settings.viewportFrameCap;
     });
     const measurements = new Set<() => void>();
+    let releaseFrameHold: (() => void) | null = null;
 
       host.__babylonslateViewportTest = {
       environmentLightingProof: async () => {
@@ -1405,6 +1413,18 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         device.destroy();
         return true;
       },
+      holdViewportFrames: async (hold) => {
+        const handle = engineRef.current;
+        if (!handle) throw new Error("No active viewport to hold.");
+        if (!hold) {
+          releaseFrameHold?.();
+          releaseFrameHold = null;
+          return;
+        }
+        // An obstruction lease composes with the resize guard and modal obstruction, which set their own gates.
+        releaseFrameHold ??= handle.scheduler.acquireObstruction();
+        await whenSubmittedWorkDone(handle.engine);
+      },
       setShadowCaptureView: (position, target, fov) => {
         const handle = engineRef.current;
         const camera = handle?.editor?.camera.camera;
@@ -1554,6 +1574,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     return () => {
       for (const cancel of measurements) cancel();
       unsubscribeSettings();
+      releaseFrameHold?.();
       delete host.__babylonslateViewportTest;
     };
   }, [commitGizmoTransform, ensureSharedEngine]);
