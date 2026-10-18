@@ -12,6 +12,8 @@ import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from ".
 import { isDisposedGpuTexture, isDisposedNodeMaterial } from "./gpu-resource-live";
 import { OwnedPostProcess } from "./owned-post-process";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
+import { SCENE_THREAD_HELD_BUDGET_MS, SCENE_THREAD_HELD_MS } from "./stall-deadline";
+import { installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
 
 const disposers: Array<() => void> = [];
 
@@ -977,7 +979,10 @@ describe("material compiler", () => {
       return { texture, loaded, result };
     }
 
-    afterEach(() => { vi.useRealTimers(); });
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
 
     it("does not charge the texture wait against the shader compile budget", async () => {
       vi.useFakeTimers();
@@ -1011,6 +1016,46 @@ describe("material compiler", () => {
       vi.advanceTimersByTime(2_000);
       expect(result.buildState).toBe("failed");
       expect(await result.ready).toEqual([expect.objectContaining({ code: "material.compile.glsl", severity: "error" })]);
+    });
+
+    /**
+     * Texture loaded, so the readiness probe creates the probe effect. Each probe
+     * that finds the effect takes `held(probe)` of virtual time, and `ready(probe)`
+     * says whether the effect has compiled by then.
+     */
+    async function probeWithVirtualClock(held: (probe: number) => number, ready: (probe: number) => boolean) {
+      const clock = installVirtualClock();
+      const { texture, loaded, result } = await compileWithLoadingTexture();
+      loaded.mockReturnValue(true);
+      const isReadyForSubMesh = result.material.isReadyForSubMesh.bind(result.material);
+      let probe = 0;
+      vi.spyOn(result.material, "isReadyForSubMesh").mockImplementation((...args) => {
+        isReadyForSubMesh(...args);
+        if (!args[1].effect) return false;
+        probe += 1;
+        clock.advance(held(probe));
+        return ready(probe);
+      });
+      const rebuilt = new Promise((resolve) => result.material.onBuildObservable.addOnce(resolve));
+      texture.onLoadObservable.notifyObservers(texture);
+      await rebuilt;
+      return { clock, result };
+    }
+
+    // Without KHR_parallel_shader_compile the probe links the effect before it returns.
+    it("does not charge a probe that held the thread against the shader compile budget", async () => {
+      const { result } = await probeWithVirtualClock((probe) => probe === 1 ? 20_000 : POLL_MS, (probe) => probe > 1);
+      expect(await result.ready).toEqual([]);
+      expect(result.buildState).toBe("ready");
+    });
+
+    it("fails a shader that never compiles while every probe holds the thread, once the credit budget is spent", async () => {
+      const held = SCENE_THREAD_HELD_MS * 1.5;
+      const { clock, result } = await probeWithVirtualClock(() => held, () => false);
+      expect(await result.ready).toEqual([expect.objectContaining({ code: "material.compile.glsl", severity: "error" })]);
+      expect(result.buildState).toBe("failed");
+      expect(clock.elapsed()).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS);
+      expect(clock.elapsed()).toBeLessThanOrEqual(15_000 + SCENE_THREAD_HELD_BUDGET_MS + held);
     });
 
     it("reports a texture diagnostic instead of a GLSL timeout when textures never become ready", async () => {

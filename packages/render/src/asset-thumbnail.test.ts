@@ -1,4 +1,4 @@
-import { ArcRotateCamera, Color3, InputBlock, NodeMaterial, RenderTargetTexture, type Scene } from "@babylonjs/core";
+import { ArcRotateCamera, Color3, InputBlock, Mesh, NodeMaterial, RenderTargetTexture, type Scene } from "@babylonjs/core";
 import { normalizeModelPayload } from "@babylonslate/assets";
 import { createActor, createDefaultScene, createMeshComponent, identitySerializedTransform } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
@@ -18,6 +18,11 @@ import { MATERIAL_PREVIEW_MESH_NAME } from "./material-preview";
 import { encodeRgbaPng, PNG_SIGNATURE } from "./png-encode";
 import { acquireMaterialTexture, releaseResourceCacheForEngine, resourceCacheForEngine } from "./resource-cache";
 import { nativePreparationForEngine } from "./native-preparation";
+import { SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
+
+/** How long loading and readback may take before a capture expires. */
+const CAPTURE_BOUND_MS = 30_000;
 
 const handles: ReturnType<typeof createTestEngine>[] = [];
 afterEach(() => {
@@ -202,6 +207,82 @@ describe("asset thumbnail capture", () => {
     expect(await capture).toBeNull();
     expect(capturedScene?.isDisposed).toBe(true);
     expect(engine.scenes).toEqual([scene]);
+  });
+
+  // Without KHR_parallel_shader_compile (SwiftShader, WebKit WebGL2) one readiness probe links every
+  // effect before it returns, and a cold runner held the thread for 13 to 15 s.
+  describe("while the thread is held", () => {
+    const material = { kind: "Material", materialGuid: "paint", materials: new Map([["paint", createDefaultMaterialDocument()]]) } as const;
+
+    /** The thumbnail sphere's readiness probe: `held(probe)` virtual time per call, unready until `ready(probe)`. */
+    function probeSphere(held: (probe: number) => number, ready: (probe: number) => boolean) {
+      let probes = 0;
+      const isReady = Mesh.prototype.isReady;
+      vi.spyOn(Mesh.prototype, "isReady").mockImplementation(function (this: Mesh, ...args) {
+        const result = isReady.apply(this, args);
+        if (this.name !== MATERIAL_PREVIEW_MESH_NAME) return result;
+        probes += 1;
+        clock.advance(held(probes));
+        return result && ready(probes);
+      });
+    }
+    let clock: ReturnType<typeof installVirtualClock>;
+
+    afterEach(() => { vi.useRealTimers(); });
+
+    it("captures a mesh whose readiness probe outlasts the shader warm bound", async () => {
+      const { engine } = fixture();
+      clock = installVirtualClock();
+      probeSphere((probe) => probe === 1 ? 15_000 : POLL_MS, (probe) => probe > 1);
+      vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockResolvedValue(new Uint8Array(32 * 32 * 4));
+      const png = await captureAssetThumbnailPng(engine, material, undefined, 32);
+      expect(png?.subarray(0, 8)).toEqual(PNG_SIGNATURE);
+      expect(clock.elapsed()).toBeGreaterThan(SCENE_SHADER_WARM_TIMEOUT_MS);
+    });
+
+    it("gives up on a mesh that never becomes ready at the shader warm bound and keeps its icon", async () => {
+      const { engine } = fixture();
+      clock = installVirtualClock();
+      probeSphere(() => POLL_MS, () => false);
+      const read = vi.spyOn(RenderTargetTexture.prototype, "readPixels");
+      expect(await captureAssetThumbnailPng(engine, material, undefined, 32)).toBeNull();
+      expect(clock.elapsed()).toBeGreaterThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS);
+      expect(clock.elapsed()).toBeLessThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS + POLL_MS);
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    /** A readback that never returns until `release`; `onPoll` runs at each of the capture's 16 ms expiry checks. */
+    function stalledReadback(onPoll: (release: () => void) => void) {
+      let polling = false;
+      let release!: () => void;
+      vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockImplementation(() => {
+        polling = true;
+        return new Promise((resolve) => { release = () => resolve(new Uint8Array(32 * 32 * 4)); });
+      });
+      return () => { if (polling) onPoll(release); return true; };
+    }
+
+    it("lets a readback finish after a synchronous call held the thread past the capture bound", async () => {
+      const { engine } = fixture();
+      clock = installVirtualClock();
+      let polls = 0;
+      const shouldContinue = stalledReadback((release) => {
+        polls += 1;
+        if (polls === 1) clock.advance(CAPTURE_BOUND_MS + 10_000);
+        else release();
+      });
+      const png = await captureAssetThumbnailPng(engine, material, shouldContinue, 32);
+      expect(png?.subarray(0, 8)).toEqual(PNG_SIGNATURE);
+    });
+
+    it("expires a readback that never returns at the capture bound", async () => {
+      const { engine } = fixture();
+      clock = installVirtualClock();
+      const shouldContinue = stalledReadback(() => { clock.advance(POLL_MS); });
+      expect(await captureAssetThumbnailPng(engine, material, shouldContinue, 32)).toBeNull();
+      expect(clock.elapsed()).toBeGreaterThanOrEqual(CAPTURE_BOUND_MS);
+      expect(clock.elapsed()).toBeLessThanOrEqual(CAPTURE_BOUND_MS + POLL_MS);
+    });
   });
 
   it("keeps unavailable materials and empty prefabs on their fallback icons", async () => {

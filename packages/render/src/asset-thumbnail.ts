@@ -23,7 +23,8 @@ import { createMaterialPreviewScene, createPreviewRenderTarget, renderPreviewFra
 import type { MeshAssetContext } from "./mesh-assets";
 import { applyMaterialToVisualMeshes } from "./visual-meshes";
 import { acquireMaterialTexture, bindResourceCacheToHandle, resourceCacheForEngine } from "./resource-cache";
-import { SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { waitUntilReady } from "./preview-readiness";
+import { createHeldThreadBound } from "./stall-deadline";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { encodeRgbaPng } from "./png-encode";
 
@@ -40,16 +41,20 @@ export type AssetThumbnailRequest = ThumbnailAssets & (
 
 const PREPARATION_TIMEOUT_MS = 30_000;
 
-/** Bound loading/readback time and let a superseded project retire its capture. */
+/**
+ * Bound loading/readback time and let a superseded project retire its capture.
+ * Time the thread was held (a synchronous shader link, a throttled timer) is not
+ * charged against the bound, up to `SCENE_THREAD_HELD_BUDGET_MS`.
+ */
 async function whileCurrent<T>(work: Promise<T>, current: () => boolean, timeout = PREPARATION_TIMEOUT_MS): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = Date.now() + timeout;
+  const bound = createHeldThreadBound(timeout);
   try {
     return await Promise.race([
       work,
       new Promise<never>((_resolve, reject) => {
         const check = () => {
-          if (!current() || Date.now() >= deadline) {
+          if (!current() || bound.expired()) {
             reject(new Error("Asset thumbnail capture expired."));
             return;
           }
@@ -192,12 +197,7 @@ export async function captureAssetThumbnailPng(
     }
     if (unavailableMaterial || !frameMeshes(host, meshes)) return null;
     if (!(await whileCurrent(Promise.all(preparations), current)).every(Boolean)) return null;
-    const deadline = Date.now() + SCENE_SHADER_WARM_TIMEOUT_MS;
-    while (!meshes.every((mesh) => mesh.isReady(true))) {
-      if (!current() || Date.now() >= deadline) return null;
-      await new Promise<void>((resolve) => setTimeout(resolve, 16));
-    }
-    if (!current()) return null;
+    if (!(await waitUntilReady(() => meshes.every((mesh) => mesh.isReady(true)), current))) return null;
     // Scene sync applies the authored background; captures remain transparent.
     host.scene.clearColor = new Color4(0, 0, 0, 0);
     host.scene.activeCamera = host.camera;

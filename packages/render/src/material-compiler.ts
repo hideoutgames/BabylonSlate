@@ -85,6 +85,12 @@ import { WaterWavesBlock } from "./water-waves-block";
 import { registerLatticeShadowAdapter } from "./lattice-deformer-binding";
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { LinearColorBlock } from "./linear-color-block";
+import { createHeldThreadBound } from "./stall-deadline";
+
+/** Custom GLSL's hidden probe effect, from when the effect exists to its compile. */
+const CUSTOM_GLSL_COMPILE_TIMEOUT_MS = 15_000;
+/** The wait for blocking textures, which defer the probe effect. */
+const CUSTOM_GLSL_TEXTURE_TIMEOUT_MS = 120_000;
 
 export type AuthoredSurfaceVariant = "outlineMask" | "captureDepth" | "captureNormal" | "shadowDepth";
 
@@ -765,8 +771,10 @@ export function compileMaterialPlan(
           settleBuild([materialGlslDiagnostic(String(error), plan.operations)]);
           return;
         }
-        const dependenciesStarted = Date.now();
-        let started = dependenciesStarted;
+        // Without KHR_parallel_shader_compile the readiness probe links the probe
+        // effect before it returns; a link that held the thread is not charged.
+        const dependencyBound = createHeldThreadBound(CUSTOM_GLSL_TEXTURE_TIMEOUT_MS);
+        let compileBound = createHeldThreadBound(CUSTOM_GLSL_COMPILE_TIMEOUT_MS);
         const check = () => {
           if (disposed) return;
           try {
@@ -784,18 +792,18 @@ export function compileMaterialPlan(
             // Blocking textures defer effect creation. The compile budget starts
             // with the effect; a separate, longer bound covers the dependency wait.
             if (shaderProbe && !subMesh?.effect) {
-              if (Date.now() - dependenciesStarted > 120000) {
+              if (dependencyBound.expired()) {
                 finishShaderCheck();
                 buildState = "failed";
                 settleBuild([{ code: "material.missingTexture", message: "Material textures did not become ready", severity: "error" }]);
                 return;
               }
-              started = Date.now();
+              compileBound = createHeldThreadBound(CUSTOM_GLSL_COMPILE_TIMEOUT_MS);
             }
             const effect = subMesh?.effect ?? effects.find((entry) => entry?.getCompilationError());
             const error = effect?.getCompilationError();
             if (error && effect?.allFallbacksProcessed()) throw new Error(error);
-            if (Date.now() - started > 15000) throw new Error("Custom GLSL shader compilation timed out");
+            if (compileBound.expired()) throw new Error("Custom GLSL shader compilation timed out");
             shaderTimer = setTimeout(check, 16);
           } catch (error) {
             const diagnostic = materialGlslDiagnostic(error instanceof Error ? error.message : String(error), plan.operations, failedShaderEffect ?? shaderProbe?.subMeshes[0]?.effect ?? shaderPostProcess?.getEffect() ?? shaderParticles?.getCustomEffect());

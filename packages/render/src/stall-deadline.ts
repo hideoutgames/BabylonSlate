@@ -34,9 +34,9 @@ export const SCENE_THREAD_HELD_MS = 1_000;
 
 /**
  * The most one loading step (a `SceneRenderCoordinator.prepare` call, a forward
- * graph readiness loop) credits back for held time. Beyond it the wall-clock
- * bounds run as usual, so a scene that never becomes ready still fails; it
- * matches the bound on a pending parallel compile.
+ * graph readiness loop, a `createHeldThreadBound` wait) credits back for held
+ * time. Beyond it the wall-clock bounds run as usual, so a scene that never
+ * becomes ready still fails; it matches the bound on a pending parallel compile.
  */
 export const SCENE_THREAD_HELD_BUDGET_MS = 60_000;
 
@@ -47,6 +47,41 @@ export const SCENE_THREAD_HELD_BUDGET_MS = 60_000;
  */
 export function heldThreadMs(elapsed: number): number {
   return elapsed >= SCENE_THREAD_HELD_MS ? elapsed : 0;
+}
+
+export interface HeldThreadBound {
+  /**
+   * Call once per polling step, after its probe. Credits the gap since the
+   * previous call (or since the bound was created) when the thread was held,
+   * then reports whether the bound has run out.
+   */
+  expired(): boolean;
+}
+
+/**
+ * A wall-clock bound on a polling wait that does not charge the time a
+ * synchronous probe held the thread (`heldThreadMs`), up to `budgetMs` for the
+ * whole wait. A wait that never becomes ready therefore fails after at most
+ * `boundMs` plus `budgetMs`, and a slow host whose probes only link shaders
+ * does not time out spuriously. Uses the monotonic `performance.now()`.
+ */
+export function createHeldThreadBound(
+  boundMs: number,
+  budgetMs: number = SCENE_THREAD_HELD_BUDGET_MS,
+): HeldThreadBound {
+  let checkpoint = performance.now();
+  let deadline = checkpoint + boundMs;
+  let creditLeft = budgetMs;
+  return {
+    expired() {
+      const now = performance.now();
+      const grant = Math.min(heldThreadMs(now - checkpoint), creditLeft);
+      checkpoint = now;
+      creditLeft -= grant;
+      deadline += grant;
+      return now >= deadline;
+    },
+  };
 }
 
 export interface StallDeadline {
