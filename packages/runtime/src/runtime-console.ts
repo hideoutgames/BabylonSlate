@@ -183,6 +183,8 @@ export class RuntimeConsole {
       getVolume: () => this.volume,
       quit: () => {
         host.stop();
+        // The host cannot see the runtime stop itself; it ends its session on this.
+        host.emit({ type: "sessionEnded" });
       },
       setShowFps: (enabled) => {
         host.emit({ type: "setShowFps", enabled: Boolean(enabled) });

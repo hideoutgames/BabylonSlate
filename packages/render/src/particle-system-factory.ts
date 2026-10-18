@@ -103,6 +103,8 @@ const FACTOR_GRADIENTS: readonly FactorGradientFamily[] = [
  */
 class OwnedGPUParticleSystem extends GPUParticleSystem {
   simulationDelta = 0;
+  /** Scene frame of the last simulation step; -1 before the first. */
+  private steppedFrame = -1;
 
   constructor(name: string, capacity: number, scene: Scene) {
     super(name, { capacity, emitRateControl: true }, scene);
@@ -120,6 +122,28 @@ class OwnedGPUParticleSystem extends GPUParticleSystem {
     super.animate(preWarm);
     this.simulationDelta = this.updateSpeed *
       (preWarm ? this.preWarmStepOffset : this.getScene()?.getAnimationRatio() || 1);
+  }
+
+  /**
+   * One simulation step per scene frame, however many views draw the system.
+   * Babylon 9.29 steps on every draw with a new render id or camera, and a
+   * Render Target Capture draws in the scene view's frame: later draws in that
+   * frame show the stepped buffers (the `paused` draw path).
+   */
+  override render(preWarm = false, forceUpdateOnly = false): number {
+    const scene = this.getScene();
+    if (preWarm || forceUpdateOnly || this.paused || !scene) return super.render(preWarm, forceUpdateOnly);
+    const frame = scene.getFrameId();
+    if (frame === this.steppedFrame) {
+      this.paused = true;
+      try { return super.render(); } finally { this.paused = false; }
+    }
+    const internals = this as unknown as { _currentRenderId: number };
+    const renderId = internals._currentRenderId;
+    const drawn = super.render();
+    // Babylon records the render id once readiness and its per-draw guard admit the step.
+    if (internals._currentRenderId !== renderId) this.steppedFrame = frame;
+    return drawn;
   }
 
   /** `reset()` zeroes the ring; claim it again. */

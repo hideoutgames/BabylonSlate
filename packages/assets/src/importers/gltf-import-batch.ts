@@ -77,16 +77,34 @@ function isGltfSidecar(file: ImportFileBytes): boolean {
   return GLTF_SIDECAR_EXTENSIONS.has(extensionOf(file.name));
 }
 
+const MAX_LISTED_TEXTURES = 5;
+
+function missingTexturesWarning(
+  modelName: string,
+  uris: readonly string[],
+): string {
+  const listed = uris.slice(0, MAX_LISTED_TEXTURES).join(", ");
+  const more =
+    uris.length > MAX_LISTED_TEXTURES
+      ? ` and ${uris.length - MAX_LISTED_TEXTURES} more`
+      : "";
+  return `${modelName}: Imported without ${uris.length} texture file${uris.length === 1 ? "" : "s"} it references (${listed}${more}). Select the model and its textures together to include them.`;
+}
+
 /**
  * Embed matching sidecars into each GLB/glTF; embedded images are not
  * re-imported. A model that cannot be embedded (its BIN is missing) is kept
  * as picked, and its sidecars no other model embedded import on their own.
+ * `warnings` names the texture files a model references that were not picked:
+ * the model still imports, untextured.
  */
-export function embedGltfImportBatch(
-  files: ImportFileBytes[],
-): ImportFileBytes[] {
+export function embedGltfImportBatch(files: ImportFileBytes[]): {
+  files: ImportFileBytes[];
+  warnings: string[];
+} {
   const { models, rest } = groupGltfImportSidecars(files);
   const prepared: ImportFileBytes[] = [];
+  const warnings: string[] = [];
   const unusedSidecars = files.filter(
     (file) =>
       isGltfSidecar(file) &&
@@ -103,6 +121,11 @@ export function embedGltfImportBatch(
       const ingested = ingestGltfForImport(model.name, model.bytes, map);
       const name = model.name.replace(/\.gltf$/i, ".glb");
       prepared.push({ name, bytes: ingested.bytes });
+      if (ingested.missingImageUris.length > 0) {
+        warnings.push(
+          missingTexturesWarning(model.name, ingested.missingImageUris),
+        );
+      }
       for (const sidecar of sidecars) embedded.add(sidecar);
       const uris = collectGltfExternalUris(model.name, model.bytes);
       for (const extra of extras) {
@@ -115,9 +138,12 @@ export function embedGltfImportBatch(
       for (const sidecar of sidecars) released.add(sidecar);
     }
   }
-  return [
-    ...prepared,
-    ...rest.filter((file) => !consumedExtras.has(file)),
-    ...files.filter((file) => released.has(file) && !embedded.has(file)),
-  ];
+  return {
+    files: [
+      ...prepared,
+      ...rest.filter((file) => !consumedExtras.has(file)),
+      ...files.filter((file) => released.has(file) && !embedded.has(file)),
+    ],
+    warnings,
+  };
 }

@@ -58,8 +58,8 @@ With a keyboard attached, editor commands have shortcuts. You can change any of 
 
 | Command | Shortcut |
 | --- | --- |
-| Copy Actors | <kbd>Mod</kbd>+<kbd>C</kbd> |
-| Paste Actors | <kbd>Mod</kbd>+<kbd>V</kbd> |
+| Copy | <kbd>Mod</kbd>+<kbd>C</kbd> |
+| Paste | <kbd>Mod</kbd>+<kbd>V</kbd> |
 | Duplicate | <kbd>Mod</kbd>+<kbd>D</kbd> |
 | Rename | <kbd>F2</kbd> |
 | Delete | <kbd>Delete</kbd> or <kbd>Backspace</kbd> |
@@ -67,7 +67,7 @@ With a keyboard attached, editor commands have shortcuts. You can change any of 
 | New Folder | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> |
 | Place Actors | <kbd>Alt</kbd>+<kbd>A</kbd> |
 
-Duplicate, Rename, Delete, Search Panel and New Folder act on the panel that has keyboard focus, the **Outliner** or the **Content Browser**. Copy Actors, Paste Actors and Place Actors need the Outliner to have focus.
+Duplicate, Rename, Delete, Search Panel and New Folder act on the panel that has keyboard focus, the **Outliner** or the **Content Browser**. Copy, Paste and Place Actors need the Outliner to have focus. In a graph, Copy, Paste, Duplicate and Delete act on the selected nodes; see [When shortcuts work](#when-shortcuts-work).
 
 ### Content Browser
 
@@ -83,7 +83,7 @@ Duplicate, Rename, Delete, Search Panel and New Folder act on the panel that has
 - In a text field, only Save All, Search Project, Engine Settings and Search Panel work; other keys type as usual.
 - Holding a key repeats only Undo and Redo.
 - Commands whose button is hidden or unavailable do nothing.
-- In a graph, <kbd>Backspace</kbd> deletes the selected nodes and wires in the graph you last touched.
+- In a graph, Copy, Paste, Duplicate and Delete act on the graph you last tapped or focused, and your shortcuts for them apply. Delete removes the selected nodes and wires. Duplicate copies and pastes the selected nodes in one step without changing what Copy last stored, and keeps the browser's bookmark shortcut from opening. Protected nodes stay, and a graph that hides **Copy** and **Paste** in its toolbar has no shortcut for them. Keys typed in a text field, a menu or a dialog work as usual.
 
 ## Change a shortcut
 

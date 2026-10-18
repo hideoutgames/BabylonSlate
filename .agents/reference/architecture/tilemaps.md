@@ -35,6 +35,7 @@ Tileset and Tilemap assets, chunked geometry, merged chain collision, animated t
 ## Geometry and render
 
 - One draw per chunk per atlas, tile 0 skipped; quad order BL, BR, TR, TL like sprite `CreatePlane`. Quads occupy exact grid cells; UVs inset half a texel so NEAREST never samples a neighbor.
+- An atlas without a texture draws per-tile vertex colours (`tilePlaceholderHsl(gid)`, the same hue as the paint canvas) on one shared unlit, double-sided, fog-free Standard material per Scene (`applyTilemapAlbedoTextures`); chunks never keep Babylon's lit default material.
 - Albedo uses a per-sampling-key `ResourceCache` wrapper (`PIXEL_ART_TEXTURE_SAMPLING`). Extra keys use another `createObjectURL` of the same Blob — never `#nomip` / `#ninv` fragments on `blob:` URLs; use explicit loader hints.
 - Play builds `actor-N` plus one child per non-empty static chunk per atlas (`:a1`, `:a2` …) and an `:anim` sibling for animated tiles. Editor children are `editorActor:<id>:<layer>:<cx>:<cy>`; picking maps back to the actor.
 - Animated tiles update only their UV buffers. Play/Preview Build use the runtime `tilemapAnimationTime` (simulation time: pause holds, step advances, dilation scales); the editor uses presentation time. The binary snapshot format is unchanged.

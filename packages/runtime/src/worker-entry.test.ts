@@ -353,6 +353,37 @@ describe("worker entry snapshot transport", () => {
     await vi.waitFor(() => expect(commands().some((command) => command.type === "runtimeStopped")).toBe(true));
   });
 
+  it("reports a console quit to the host after its reply, once the save writes in flight are answered", async () => {
+    const { deliver, posts, saveStorage } = await bootWorker({ type: "load", sceneAssetGuid: "main", scene: createDefaultScene() });
+    const commands = () => posts.flatMap((post) => post.kind === "command" ? [post.command] : []);
+    const written = saveStorage().write("slot", "on game end");
+    await Promise.resolve();
+    const request = commands().find((command) => command.type === "saveStorageRequest");
+    if (request?.type !== "saveStorageRequest") throw new Error("No save request");
+    deliver({ channel: "control", payload: { type: "console", line: "quit" } });
+    await vi.waitFor(() => expect(commands().some((command) => command.type === "consoleResult")).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(commands().some((command) => command.type === "sessionEnded")).toBe(false);
+    deliver({ channel: "control", payload: { type: "saveStorageResponse", response: { id: request.request.id } } });
+    await written;
+    await vi.waitFor(() => expect(commands().some((command) => command.type === "sessionEnded")).toBe(true));
+    const types = commands().map((command) => command.type);
+    expect(types.indexOf("consoleResult")).toBeLessThan(types.indexOf("sessionEnded"));
+  });
+
+  it("does not report a quit to the session that replaced the quitting runtime", async () => {
+    const { deliver, posts, saveStorage } = await bootWorker({ type: "load", sceneAssetGuid: "main", scene: createDefaultScene() });
+    const commands = () => posts.flatMap((post) => post.kind === "command" ? [post.command] : []);
+    void saveStorage().write("slot", "on game end").catch(() => undefined);
+    await Promise.resolve();
+    deliver({ channel: "control", payload: { type: "console", line: "quit" } });
+    await vi.waitFor(() => expect(commands().some((command) => command.type === "consoleResult")).toBe(true));
+    // A reload disposes the save client, which settles the hold, and installs another runtime.
+    deliver({ channel: "control", payload: { type: "load", sceneAssetGuid: "main", scene: createDefaultScene() } });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(commands().some((command) => command.type === "sessionEnded")).toBe(false);
+  });
+
   it("ends a final capture with a failed result when stop supersedes it between chunks", async () => {
     const { deliver, posts, runFrames, kinds } = await bootWorker({ type: "load", sceneAssetGuid: "main", sessionGeneration: 4, sessionMode: "simulate",
       scene: { ...createDefaultScene(), actors: Array.from({ length: 120 }, (_, index) => createActor(`prop-${index}`, "Prop")) } });

@@ -83,6 +83,7 @@ import {
   TilemapChunkIndex,
   tilemapStrokeMergeKey,
   tilemapTilesetGuids,
+  tilePlaceholderHsl,
   tilesetTileRect,
   type TilemapPaintTool,
   type TilemapLayer,
@@ -1201,6 +1202,12 @@ export function TilemapPaint({
   );
 }
 
+/** Stand-in fill for a tile whose Tileset has no atlas image; chunk meshes draw the same colour. */
+function placeholderCss(gid: number): string {
+  const { h, s, l } = tilePlaceholderHsl(gid);
+  return `hsl(${h} ${s}% ${l}%)`;
+}
+
 function TileThumb({
   gid,
   localId,
@@ -1242,8 +1249,7 @@ function TileThumb({
         canvas.height,
       );
     } else {
-      ctx.fillStyle =
-        localId <= 0 ? "oklch(0.25 0 0)" : `hsl(${(gid * 47) % 360} 55% 48%)`;
+      ctx.fillStyle = localId <= 0 ? "oklch(0.25 0 0)" : placeholderCss(gid);
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
   }, [atlas, gid, localId, tileset]);
@@ -1477,7 +1483,7 @@ function drawTilemapCanvas(
               cellSize,
             );
           } else {
-            ctx.fillStyle = `hsl(${(gid * 47) % 360} 55% 48%)`;
+            ctx.fillStyle = placeholderCss(gid);
             ctx.fillRect(screenX, screenY, cellSize, cellSize);
           }
         }

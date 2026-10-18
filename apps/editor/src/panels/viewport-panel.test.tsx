@@ -744,6 +744,48 @@ describe("ViewportPanel engine", () => {
     expect(documents.readAssetChunk).toHaveBeenCalledOnce();
   });
 
+  describe("a Show Navmesh overlay that cannot be drawn", () => {
+    const scene = createDefaultScene();
+    const document = {
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: { ...scene, settings: { ...scene.settings, showNavmesh: true } },
+    };
+    const logs: string[] = [];
+    let stop = () => {};
+    beforeEach(() => {
+      logs.length = 0;
+      stop = engineCommandBus.subscribe((command) => {
+        if (command.type === "log") logs.push(command.message);
+      });
+      documents.openDocuments = [document];
+      navmeshOverlaySync.mockClear();
+    });
+    afterEach(() => {
+      stop();
+      navmeshOverlaySync.mockReset();
+    });
+
+    it("logs a failed draw once, however many scene edits retry it", async () => {
+      documents.readAssetChunk.mockReset().mockResolvedValue(new Uint8Array([1, 2, 3]));
+      navmeshOverlaySync.mockRejectedValue(new Error("bad navmesh bytes"));
+      const view = renderViewport();
+      await waitFor(() => expect(logs).toEqual(["Show Navmesh could not draw the navmesh: bad navmesh bytes"]));
+      const syncs = navmeshOverlaySync.mock.calls.length;
+      documents.openDocuments = [{ ...document, content: { ...document.content, actors: [createActor("box", "Box")] } }];
+      view.rerender(<DocumentWorkspaceProvider documentId="scene:S"><ViewportPanel {...({} as IDockviewPanelProps)} /></DocumentWorkspaceProvider>);
+      await waitFor(() => expect(navmeshOverlaySync.mock.calls.length).toBeGreaterThan(syncs));
+      await Promise.resolve();
+      expect(logs).toHaveLength(1);
+    });
+
+    it("logs a failed read of the stored navmesh and still draws the blockers", async () => {
+      documents.readAssetChunk.mockReset().mockRejectedValue(new Error("chunk unreadable"));
+      renderViewport();
+      await waitFor(() => expect(navmeshOverlaySync).toHaveBeenCalledWith(null, [], "3d"));
+      expect(logs).toEqual(["Show Navmesh could not draw the navmesh: chunk unreadable"]);
+    });
+  });
+
   it("disables Drop while changed scene models are loading", async () => {
     const actor = createActor("a", "Box");
     const document = {

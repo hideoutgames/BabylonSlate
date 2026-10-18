@@ -6,6 +6,7 @@ import {
   MAIN_SCENE_FILE,
   createActor,
   documentId,
+  isProjectOpenElsewhere,
   type DataDefinitionAsset,
   type DocumentRef,
   type SerializedComponent,
@@ -20,7 +21,8 @@ import {
   createDerivedStorage,
 } from "@babylonslate/vfs";
 import { FakeLockProvider } from "@babylonslate/source-control";
-import { appendJournalLines, readJournalLines } from "@babylonslate/assets";
+import { createFakeWebLocks } from "../../../../packages/vfs/src/test-support/fake-web-locks";
+import { appendJournalLines, readJournalLines, sealJournalForRecovery } from "@babylonslate/assets";
 import { SetActorTransformCommand, SetSceneNameCommand, commandToJournalPayload, serializeJournalLine } from "@babylonslate/edit";
 import { UndoHistoryNotice } from "../components/undo-history-notice";
 import { createProjectAsset } from "../lib/create-project-asset";
@@ -188,6 +190,8 @@ describe("DocumentProvider actions and route", () => {
     ].map((command) => serializeJournalLine({
       v: 1, docId: MAIN_SCENE_ID, at: new Date().toISOString(), command: commandToJournalPayload(command),
     })));
+    // Opening the project seals what an earlier session left behind.
+    await sealJournalForRecovery(derived, guid);
     act(() => actions.keepRecovery());
     await waitFor(async () => expect(await readJournalLines(derived, guid)).toEqual([]));
     expect(openScene(MAIN_SCENE_ID).name).toBe(originalName);
@@ -199,10 +203,13 @@ describe("DocumentProvider actions and route", () => {
     const target = await createScene(actions, "RecoverTarget");
     const targetId = documentId({ kind: "scene", path: target.path });
     await act(() => actions.saveAll());
-    await appendJournalLines(await createDerivedStorage(), documents().projectGuid!, [serializeJournalLine({
+    const derived = await createDerivedStorage();
+    const guid = documents().projectGuid!;
+    await appendJournalLines(derived, guid, [serializeJournalLine({
       v: 1, docId: targetId, at: new Date().toISOString(),
       command: commandToJournalPayload(new SetSceneNameCommand("RecoverTarget", "Recovered Scene")),
     })]);
+    await sealJournalForRecovery(derived, guid);
     let finishRead!: () => void;
     const heldRead = new Promise<void>((resolve) => { finishRead = resolve; });
     const realLoad = ProjectService.prototype.loadDocument;
@@ -648,6 +655,79 @@ describe("DocumentProvider actions and route", () => {
     await waitFor(() => expect(openScene(MAIN_SCENE_ID).actors[0]!.transform.position).toEqual(recovered.actors[0]!.transform.position));
     expect(documents().dirtyDocuments.map(doc => doc.id)).toContain(MAIN_SCENE_ID);
     expect(documents().recoveryAvailable).toBe(false);
+  });
+
+  /** Reopens "Stable" after a session that never saved `name`, with its edit in the journal. */
+  async function reopenAfterUnsavedSession(actions: DocumentActions, name: string) {
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.saveAll());
+    const original = openScene(MAIN_SCENE_ID);
+    const guid = documents().projectGuid!;
+    const listed = documents().listedProjects.find(project => project.label === "Stable")!;
+    await act(() => actions.forceCloseProject());
+    const derived = await createDerivedStorage();
+    const unsaved = serializeJournalLine({
+      v: 1, docId: MAIN_SCENE_ID, at: new Date().toISOString(),
+      command: commandToJournalPayload(new SetSceneNameCommand(original.name, name)),
+    });
+    await appendJournalLines(derived, guid, [unsaved]);
+    const reopen = async () => {
+      await act(() => actions.openListedProject(listed));
+      await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    };
+    await reopen();
+    return { derived, guid, original, unsaved, reopen };
+  }
+
+  const settleJournal = () => act(() => new Promise((resolve) => setTimeout(resolve, JOURNAL_FLUSH_DELAY_MS * 2)));
+
+  it("keeps edits the last session never saved through saves and a clean close, and Recover replays only them", async () => {
+    const actions = await openProject();
+    const { derived, guid, original, unsaved, reopen } = await reopenAfterUnsavedSession(actions, "Recovered Name");
+    expect(documents().recoveryAvailable).toBe(true);
+
+    // Edits since the reopen are journaled, and their own save truncates them.
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 5)));
+    await settleJournal();
+    expect(await readJournalLines(derived, guid)).toHaveLength(2);
+    expect(await act(() => actions.saveAll())).toBe(true);
+    expect(documents().dirtyDocuments).toEqual([]);
+    expect(documents().recoveryAvailable).toBe(true);
+    expect(await readJournalLines(derived, guid)).toEqual([unsaved]);
+
+    // A clean close does not settle the offer either: it returns on reopen.
+    expect((await act(() => actions.closeProject())).outcome).toBe("closed");
+    expect(await readJournalLines(derived, guid)).toEqual([unsaved]);
+    await reopen();
+    expect(documents().recoveryAvailable).toBe(true);
+
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+    act(() => actions.keepRecovery());
+    await waitFor(() => expect(documents().recoveryAvailable).toBe(false));
+    const recovered = openScene(MAIN_SCENE_ID);
+    expect(recovered.name).toBe("Recovered Name");
+    // The saved +5 and the unsaved +2 each count once.
+    expect(recovered.actors[0]!.transform.position[0]).toBe(original.actors[0]!.transform.position[0] + 7);
+    expect(documents().dirtyDocuments.map(doc => doc.id)).toContain(MAIN_SCENE_ID);
+
+    // The replayed edits stay journaled until saved, each exactly once.
+    await settleJournal();
+    expect(await readJournalLines(derived, guid)).toHaveLength(2);
+    expect(await act(() => actions.saveAll())).toBe(true);
+    await settleJournal();
+    expect(await readJournalLines(derived, guid)).toEqual([]);
+  });
+
+  it("discards only the edits of the last session and keeps the ones made since the reopen", async () => {
+    const actions = await openProject();
+    const { derived, guid, unsaved } = await reopenAfterUnsavedSession(actions, "Recovered Name");
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 3)));
+    await settleJournal();
+    await act(() => actions.dismissRecovery());
+    expect(documents().recoveryAvailable).toBe(false);
+    const remaining = await readJournalLines(derived, guid);
+    expect(remaining).toHaveLength(1);
+    expect(remaining).not.toContain(unsaved);
   });
 
   it("compiles the launch snapshot after an open Class is edited again", async () => {
@@ -1110,6 +1190,28 @@ describe("DocumentProvider actions and route", () => {
     await act(() => actions.forceCloseProject());
     expect(seen.route).toBe("home");
   });
+
+  it("stays on the Homepage while another tab has the project open, and opens it once that tab closes it", async () => {
+    Object.defineProperty(navigator, "locks", { configurable: true, value: createFakeWebLocks() });
+    try {
+      const actions = await openProject();
+      const listed = documents().listedProjects.find((project) => project.label === "Stable")!;
+      await act(() => actions.forceCloseProject());
+
+      const otherTab = new OpfsStorageAdapter();
+      await otherTab.openKnownFolder(listed);
+      await act(async () => { await expect(actions.openListedProject(listed)).rejects.toSatisfy(isProjectOpenElsewhere); });
+      expect(seen.route).toBe("home");
+      expect(documents().projectDocument).toBeNull();
+
+      await otherTab.releaseFolder();
+      await act(() => actions.openListedProject(listed));
+      expect(seen.route).toBe("editor");
+      await act(() => actions.forceCloseProject());
+    } finally {
+      delete (navigator as { locks?: unknown }).locks;
+    }
+  });
 });
 
 describe("DocumentProvider closed document history", () => {
@@ -1300,6 +1402,38 @@ describe("DocumentProvider closed document history", () => {
       expect(documents().projectDirty).toBe(false);
     } finally {
       save.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("holds auto-save while paused and starts a new interval when resumed", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.saveAll());
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+      act(() => actions.setAutoSavePaused(true));
+      // The interval already running and an edit made during the hold both wait.
+      await act(() => vi.advanceTimersByTimeAsync(300_000));
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+      await act(() => vi.advanceTimersByTimeAsync(300_000));
+      expect(documents().autoSaveStatus).toBeNull();
+      expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+
+      act(() => actions.setAutoSavePaused(false));
+      await act(() => vi.advanceTimersByTimeAsync(119_000));
+      expect(documents().autoSaveStatus).toBeNull();
+      await act(() => vi.advanceTimersByTimeAsync(1_000));
+      for (let i = 0; i < 1_000 && documents().autoSaveStatus?.state !== "saved"; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(100);
+          await new Promise((resolve) => setImmediate(resolve));
+        });
+      }
+      expect(documents().autoSaveStatus).toEqual({ state: "saved" });
+      expect(documents().dirtyDocuments).toHaveLength(0);
+    } finally {
       vi.useRealTimers();
     }
   });

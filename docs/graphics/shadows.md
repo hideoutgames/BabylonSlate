@@ -17,6 +17,7 @@ Shadows have a budget separate from the [light budget](lighting.md#light-budget)
 - A limited number of point and spot lights can cast shadows at once. A point light costs six shadow maps, so it is much more expensive than a spot light.
 - When too many lights ask for shadows, lights with a higher **Shadow Priority** win, then the lights nearest the camera. Local lights farther than Shadow Distance plus their Range get no shadow.
 - The device can lower these requests to fit its memory. A light whose shadows are unavailable shows a yellow icon in the viewport.
+- A Full Quality [Render Target Capture](render-targets.md#quality) draws its own directional shadows, fitted to its view, each captured frame. Point and spot lights share their shadow maps with the camera.
 
 ## Shadow settings
 

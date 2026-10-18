@@ -6,6 +6,8 @@ Models are imported 3D meshes. Importing one can also create its Materials, Text
 
 Import `.glb` or `.gltf` files, or `.fbx`, `.obj` and `.stl` files, which are converted on import. See [Importing](../editor/importing.md) for import settings.
 
+When a file refers to texture files outside it, pick them together with the model. Textures you leave out are skipped and the model imports without them.
+
 | Created asset | When |
 | --- | --- |
 | [Model](../assets/model.md) | Always. |
@@ -24,7 +26,7 @@ A Model has one material slot per material in the file.
 
 - In the Model's editor, each slot shows its Material. **Default** keeps the material from the file.
 - On a Mesh component, **Material** replaces every slot for that one actor. Choose **Model Materials** to go back to the Model's slots, or **None** for the engine's grey checker.
-- Meshes with no Material draw a grey checker, so missing materials are easy to spot.
+- Meshes with no Material draw a grey checker, so missing materials are easy to spot. The checker is lit like any other surface, so a 3D scene needs a [light](lighting.md) for it to show. A **Blank** project's scene has none: add a light, or the meshes draw black.
 
 When the file uses material features a Haptic Material cannot represent, the Model keeps the original material, and the imported Material asset says so.
 

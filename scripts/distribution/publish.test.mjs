@@ -3,10 +3,14 @@ import test from "node:test";
 import { createHash } from "node:crypto";
 import { artifactNames, createIdentity } from "./contract.mjs";
 import { publishRelease } from "./publish.mjs";
+import { patchNotesMarkdown } from "./changelog.mjs";
 
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 const sha512 = bytes => createHash("sha512").update(bytes).digest("base64");
-const identityFor = (patch = {}) => createIdentity({ version: "0.0.1", declaredVersion: "0.0.1", channel: "test", platforms: "windows", sourceSha: "a".repeat(40), runNumber: 417, runAttempt: 1, ...patch });
+const identityFor = (patch = {}) => {
+  const identity = createIdentity({ version: "0.0.1", declaredVersion: "0.0.1", channel: "test", platforms: "windows", sourceSha: "a".repeat(40), runNumber: 417, runAttempt: 1, ...patch });
+  return { ...identity, patchNotes: { version: identity.applicationVersion, title: "Editor Improvements", changes: ["Projects reopen faster."] } };
+};
 
 function packageFiles(platform, identity, toolchains = { node: "22.23.2", pnpm: "10.33.3" }, extra = {}) {
   const manifest = { ...identity, toolchains, platform, ...(platform === "macos" ? { macosSigned: extra.macosSigned === true } : {}) };
@@ -62,8 +66,20 @@ test("publication stages a draft, merges metadata and publishes an indev prerele
   assert.equal(release.target_commitish, identity.sourceSha);
   assert.equal(release.assets.length, 3);
   assert.equal(client.requests.find(item => item.path === "/releases").body.draft, true);
+  assert.ok(release.body.startsWith(`${patchNotesMarkdown(identity.patchNotes)}\n\nHaptic 0.0.1\n`));
   assert.match(release.body, /Unsigned x64 NSIS/);
   assert.match(release.body, /Android versionCode: 417001/);
+});
+
+test("test and release publication without the declared version's notes makes no GitHub writes", async () => {
+  for (const channel of ["test", "release"]) {
+    const { patchNotes, ...identity } = identityFor({ channel, runNumber: channel === "test" ? 417 : 418 });
+    for (const candidate of [identity, { ...identity, patchNotes: { ...patchNotes, version: "0.0.2" } }]) {
+      const client = fixture(candidate);
+      await assert.rejects(publishRelease({ identity: candidate, platformFiles: new Map([["windows", packageFiles("windows", candidate)]]) }, client.api), /Patch notes/);
+      assert.equal(client.requests.filter(item => item.method).length, 0);
+    }
+  }
 });
 
 test("every requested package is required before publication", async () => {
@@ -114,16 +130,16 @@ test("conflicting toolchain values fail before publication", async () => {
 });
 
 test("release publication validates patch notes, updater feed and Apple gate", async () => {
-  const identity = { ...identityFor({ version: "0.0.2", declaredVersion: "0.0.2", channel: "release", runNumber: 418 }), patchNotes: { version: "0.0.2", title: "Editor Improvements", changes: ["Projects reopen faster."] } };
+  const identity = identityFor({ version: "0.0.2", declaredVersion: "0.0.2", channel: "release", runNumber: 418 });
   const client = fixture(identity);
   await publishRelease({ identity, platformFiles: new Map([["windows", packageFiles("windows", identity)]]) }, client.api);
-  assert.match(client.current().body, /## Editor Improvements\n\n- Projects reopen faster\./);
+  assert.ok(client.current().body.startsWith(`${patchNotesMarkdown(identity.patchNotes)}\n\nHaptic 0.0.2\n`));
   assert.equal(client.current().prerelease, false);
   assert.ok(client.current().assets.some(asset => asset.name === "latest.yml"));
   const missingFeed = packageFiles("windows", identity);
   missingFeed.delete("latest.yml");
   await assert.rejects(publishRelease({ identity, platformFiles: new Map([["windows", missingFeed]]) }, fixture(identity).api), /allowlist/);
-  const mobile = { ...identityFor({ version: "0.0.2", declaredVersion: "0.0.2", channel: "release", runNumber: 418, platforms: "mobile" }), patchNotes: identity.patchNotes };
+  const mobile = identityFor({ version: "0.0.2", declaredVersion: "0.0.2", channel: "release", runNumber: 418, platforms: "mobile" });
   await assert.rejects(publishRelease({ identity: mobile, platformFiles: new Map([["android", packageFiles("android", mobile)]]), appleState: "failed" }, fixture(mobile).api), /Apple/);
 });
 

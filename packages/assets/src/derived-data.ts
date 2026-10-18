@@ -72,6 +72,26 @@ function segmentPath(projectGuid: string, index: number): string {
   return `${journalSegmentsPath(projectGuid)}/${String(index).padStart(8, "0")}.jsonl`;
 }
 
+/** Names the segments sealed for the recovery offer: `{"through": <last segment index>}`. */
+function sealMarkerPath(projectGuid: string): string {
+  return `${journalSegmentsPath(projectGuid)}/sealed.json`;
+}
+
+/** Highest segment index sealed for recovery, or null when none is. */
+async function sealedThrough(
+  storage: ProjectStorage,
+  projectGuid: string,
+): Promise<number | null> {
+  const path = sealMarkerPath(projectGuid);
+  if (!(await storage.exists(path))) return null;
+  try {
+    const { through } = JSON.parse(await storage.readText(path)) as { through?: unknown };
+    return typeof through === "number" && Number.isInteger(through) ? through : null;
+  } catch {
+    return null;
+  }
+}
+
 async function segmentIndices(
   storage: ProjectStorage,
   projectGuid: string,
@@ -139,8 +159,9 @@ export async function hasJournal(
 }
 
 /**
- * Remove the journal when `canClear()` still holds once every append queued
- * before this call has landed. Resolves false when it did not.
+ * Remove the live journal when `canClear()` still holds once every append
+ * queued before this call has landed. Resolves false when it did not. Segments
+ * sealed for recovery stay.
  */
 export async function truncateJournal(
   derivedStorage: ProjectStorage,
@@ -149,9 +170,75 @@ export async function truncateJournal(
 ): Promise<boolean> {
   return journalOperation(derivedStorage, projectGuid, async () => {
     const exists = await derivedStorage.exists(journalSegmentsPath(projectGuid));
+    const through = exists ? await sealedThrough(derivedStorage, projectGuid) : null;
+    const live =
+      through === null
+        ? []
+        : (await segmentIndices(derivedStorage, projectGuid)).filter((index) => index > through);
     if (!canClear()) return false;
-    await removeJournalFiles(derivedStorage, projectGuid, exists);
+    if (through === null) {
+      await removeJournalFiles(derivedStorage, projectGuid, exists);
+    } else {
+      tailsFor(derivedStorage).delete(projectGuid);
+      for (const index of live) await derivedStorage.remove(segmentPath(projectGuid, index));
+    }
     return true;
+  });
+}
+
+/**
+ * Hold every record written so far for the recovery offer. Truncation then
+ * removes only the segments written after this call, so the held records
+ * survive saves, autosaves and closes until `discardSealedJournal` or
+ * `unsealJournal`. Calling it again also holds what was written since.
+ */
+export async function sealJournalForRecovery(
+  derivedStorage: ProjectStorage,
+  projectGuid: string,
+): Promise<void> {
+  return journalOperation(derivedStorage, projectGuid, async () => {
+    // The next append starts a segment after the sealed ones.
+    tailsFor(derivedStorage).delete(projectGuid);
+    const last = (await segmentIndices(derivedStorage, projectGuid)).at(-1);
+    if (last !== undefined) {
+      await derivedStorage.writeText(
+        sealMarkerPath(projectGuid),
+        JSON.stringify({ through: last }),
+      );
+    } else if (await derivedStorage.exists(sealMarkerPath(projectGuid))) {
+      await derivedStorage.remove(sealMarkerPath(projectGuid));
+    }
+  });
+}
+
+/** Remove the sealed segments (Discard). Records written after the seal stay. */
+export async function discardSealedJournal(
+  derivedStorage: ProjectStorage,
+  projectGuid: string,
+): Promise<void> {
+  return journalOperation(derivedStorage, projectGuid, async () => {
+    const through = await sealedThrough(derivedStorage, projectGuid);
+    if (through === null) return;
+    for (const index of await segmentIndices(derivedStorage, projectGuid)) {
+      if (index <= through) await derivedStorage.remove(segmentPath(projectGuid, index));
+    }
+    // Last, so a failed removal leaves the rest sealed for a retry.
+    await derivedStorage.remove(sealMarkerPath(projectGuid));
+  });
+}
+
+/**
+ * Return the sealed segments to the live journal (Recover): the next save that
+ * writes the replayed edits truncates them with the rest.
+ */
+export async function unsealJournal(
+  derivedStorage: ProjectStorage,
+  projectGuid: string,
+): Promise<void> {
+  return journalOperation(derivedStorage, projectGuid, async () => {
+    if (await derivedStorage.exists(sealMarkerPath(projectGuid))) {
+      await derivedStorage.remove(sealMarkerPath(projectGuid));
+    }
   });
 }
 
@@ -196,8 +283,11 @@ export async function appendJournalLines(
     }
     const index =
       known?.index ??
-      (await segmentIndices(derivedStorage, projectGuid)).at(-1) ??
-      0;
+      Math.max(
+        (await segmentIndices(derivedStorage, projectGuid)).at(-1) ?? 0,
+        // A sealed segment is never rewritten.
+        ((await sealedThrough(derivedStorage, projectGuid)) ?? -1) + 1,
+      );
     const tail = segmentPath(projectGuid, index);
     const text = (await derivedStorage.exists(tail))
       ? await derivedStorage.readText(tail)
@@ -215,21 +305,48 @@ export async function appendJournalLine(
   return appendJournalLines(derivedStorage, projectGuid, [line]);
 }
 
-/** Read non-empty journal lines in segment order. */
+async function readSegmentLines(
+  storage: ProjectStorage,
+  projectGuid: string,
+  indices: readonly number[],
+): Promise<string[]> {
+  const texts: string[] = [];
+  for (const index of indices) {
+    texts.push(await storage.readText(segmentPath(projectGuid, index)));
+  }
+  return texts.flatMap((text) =>
+    text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0),
+  );
+}
+
+/** Read non-empty journal lines in segment order, sealed segments included. */
 export async function readJournalLines(
   derivedStorage: ProjectStorage,
   projectGuid: string,
 ): Promise<string[]> {
+  return journalOperation(derivedStorage, projectGuid, async () =>
+    readSegmentLines(
+      derivedStorage,
+      projectGuid,
+      await segmentIndices(derivedStorage, projectGuid),
+    ),
+  );
+}
+
+/** Read non-empty lines of the segments sealed for recovery, in order. */
+export async function readSealedJournalLines(
+  derivedStorage: ProjectStorage,
+  projectGuid: string,
+): Promise<string[]> {
   return journalOperation(derivedStorage, projectGuid, async () => {
-    const texts: string[] = [];
-    for (const index of await segmentIndices(derivedStorage, projectGuid)) {
-      texts.push(await derivedStorage.readText(segmentPath(projectGuid, index)));
-    }
-    return texts.flatMap((text) =>
-      text
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0),
+    const through = await sealedThrough(derivedStorage, projectGuid);
+    if (through === null) return [];
+    const sealed = (await segmentIndices(derivedStorage, projectGuid)).filter(
+      (index) => index <= through,
     );
+    return readSegmentLines(derivedStorage, projectGuid, sealed);
   });
 }

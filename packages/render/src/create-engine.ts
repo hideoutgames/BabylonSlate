@@ -26,7 +26,7 @@ import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { AreaRectLightGroup } from "./area-rect-light";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
-import { isBuiltInWaterMesh, setSceneWaterTime } from "./water-mesh";
+import { isBuiltInWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
@@ -221,7 +221,7 @@ import {
 } from "./snapshot-apply";
 import { applyAlbedoTexture, installModelSources, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
 import { FontRegistry, type FontAssetEntry } from "./font-registry";
-import { applyAnimStateToScene, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
+import { applyAnimStateToScene, onceMissingClip, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
 import { pickActorMeshName, pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
@@ -1240,6 +1240,8 @@ function initializeEngine(
   binding.renderTargetTextures = options.renderTargetTextures;
   const renderTargetCaptures = sceneRenderTargetCaptures(scene);
   renderTargetCaptures.setAssets(binding.renderTargets, binding.renderTargetTextures);
+  // Full Quality captures draw the scene's gameplay outlines, never the editor selection.
+  renderTargetCaptures.setOutlines((renderer, includes) => outlineHost.attachCaptureView(renderer, includes));
   const captureActorSlots = new Map<number, string>();
   const runtimeActorIdentities = new Map<number, import("@babylonslate/bridge").RuntimeObjectIdentity>();
   const runtimeComponentTokens = new Map<number, Map<string, number>>();
@@ -1387,10 +1389,14 @@ function initializeEngine(
     onMissingClip,
   });
   const animHost = sceneAnimHostFromBinding(binding, animHostOptions());
+  // Once per slot and clip for this Play session. A model whose clips are still loading is not
+  // reported, so it does not use up the warning.
+  const warnMissingClip = onceMissingClip((info) =>
+    console.warn(`[render] missing ${info.clipKind} clip "${info.clipName}" on slot ${info.slotId}`));
   const animHostReportingMissing = sceneAnimHostFromBinding(binding, animHostOptions((info) => {
     const groups = binding.slotAnimationGroups?.get(info.slotId);
     if (info.clipKind === "animation" && (!groups || groups.length === 0)) return;
-    console.warn(`[render] missing ${info.clipKind} clip "${info.clipName}" on slot ${info.slotId}`);
+    warnMissingClip(info);
   }));
   binding.slotVisualReady = (slotId, successor) => {
     // Move emitter nodes before recursive retirement of the old visual root.
@@ -1442,6 +1448,12 @@ function initializeEngine(
     retireAttachedStack();
     appliedPostProcessKey = key;
     appliedPostProcessCamera = camera;
+    // Full Quality captures run the scene view's stack, with the parameter
+    // writes made so far; later writes reach both through the parameter command.
+    renderTargetCaptures.setPostProcess(postProcessingEnabled && camera ? (renderer, captureCamera) => renderer.attachPostProcess({
+      scene, camera: captureCamera, library: materialLibrary, stack: postProcessParameters.effective(postProcessStack),
+      documentFor: (guid) => materialDocuments.get(guid) ?? null, resolutionScale,
+    }) : null);
     if (!postProcessingEnabled || !camera) return;
     attachedStack = worldRenderer.attachPostProcess({
       scene,
@@ -3198,8 +3210,11 @@ function initializeEngine(
       track(bounded, () => nativeRetirement.whenDisposed());
       track(bounded, () => worldRenderer.retire());
       track(bounded, () => sceneLayerCompositor?.dispose());
+      // Full Quality captures own forward views and borrowed outputs.
+      track(bounded, () => renderTargetCaptures.clear());
       track(actual, () => nativeRetirement.whenReleased());
       track(actual, () => worldRenderer.whenReleased());
+      track(actual, () => renderTargetCaptures.whenReleased());
       track(actual, () => outlineHost.whenReleased());
       track(actual, () => sceneLayerCompositor?.whenReleased());
       // Cancel graph preparation before restoring the editor's global request.
@@ -3681,6 +3696,7 @@ function initializeEngine(
             if (!postProcessStack.some((entry) => entry.id === write.entryId && entry.materialGuid === write.materialAssetGuid) || !validParameter() ||
               !postProcessParameters.set(postProcessStack, write.entryId, write.materialAssetGuid, write.parameterName, write.parameter)) return false;
             attachedStack?.setParameter(write.entryId, write.parameterName, write.parameter);
+            renderTargetCaptures.setPostProcessParameter(write.entryId, write.parameterName, write.parameter);
             return true;
           },
           setLayer: (id, write) => sceneLayerCompositor?.setPostProcessParameter(id, write.entryId, write.materialAssetGuid, write.parameterName, write.parameter, validParameter) ?? false,
@@ -4152,6 +4168,9 @@ function initializeEngine(
     prewarmSceneMaterials: async (owner) => {
       const scope = loadingScope(owner);
       applyRenderingQuality();
+      // Water's blend, placement (flat) and copy intent are otherwise first settled by the first frame's update, after
+      // the shader warm-up and the graph's probes compiled every variant without them: each then compiles twice.
+      updateSceneWater(scope.target);
       // Built-in water compiles the variant its pass draws when the graph below prepares: which one that is depends on
       // the view's plan, so a warm-up here would compile one nothing draws, and wait for its link.
       await warmSceneMaterials(scope.target, scope.assert, isBuiltInWaterMesh);

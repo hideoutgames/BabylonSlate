@@ -1,12 +1,23 @@
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
 
+/** Console display of one coordinate: four decimals, with float noise and -0 shown as 0. */
+function formatCoordinate(value: number): string {
+  if (!Number.isFinite(value)) return String(value);
+  const rounded = Math.round(value * 1e4) / 1e4;
+  return rounded === 0 ? "0" : String(rounded);
+}
+
+function formatPosition(position: readonly number[], separator: string): string {
+  return position.map(formatCoordinate).join(separator);
+}
+
 export function formatDumpActors(snapshot: DebugInspectSnapshot): string {
   const actors = snapshot.nodes.filter((node) => node.kind === "actor");
   if (actors.length === 0) return "(no actors)";
   return actors
     .map((actor) => {
       const position = actor.transform?.position ?? [0, 0, 0];
-      return `${actor.label} ${actor.classId} ${actor.id} ${position.join(",")}`;
+      return `${actor.label} ${actor.classId} ${actor.id} ${formatPosition(position, ",")}`;
     })
     .join("\n");
 }
@@ -27,7 +38,7 @@ export function formatInspectActor(
   if (!node) return `inspect: no actor matching '${target}'`;
   const position = node.transform?.position;
   const lines = [`${node.label} ${node.classId} ${node.id}`];
-  if (position) lines.push(`  position ${position.join(", ")}`);
+  if (position) lines.push(`  position ${formatPosition(position, ", ")}`);
   const keys = Object.keys(node.variables).sort();
   for (const key of keys) {
     lines.push(`  ${key}=${JSON.stringify(node.variables[key])}`);

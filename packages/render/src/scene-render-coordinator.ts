@@ -1,6 +1,6 @@
 import { activeRenderFrameCapture } from "./render-frame-report";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
-import type { Camera, Scene } from "@babylonjs/core";
+import type { Camera, FrameGraphObjectList, Scene } from "@babylonjs/core";
 import { ForwardSceneFrameGraph, type ForwardSceneGraphResult } from "./framegraph-forward-scene";
 import { onSceneReadinessDirty } from "./scene-perf";
 import type { SharedOutlineView } from "./shared-outline";
@@ -10,6 +10,7 @@ import { whenPresentationFenceClear } from "./presented-frame";
 import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
+import { heldThreadMs, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 
 class PreparationChanged extends Error {}
 
@@ -17,6 +18,8 @@ class PreparationChanged extends Error {}
 const PREPARATION_TIMEOUT_MS = 10_000;
 /** Bound on one owner's preparation across every invalidation restart. */
 const PREPARATION_TOTAL_TIMEOUT_MS = 60_000;
+/** An auxiliary view's wait before retrying a failed preparation. */
+const AUXILIARY_RETRY_MS = 1_000;
 
 function outputSnapshot(scene: Scene, camera: Camera) {
   const target = camera.outputRenderTarget;
@@ -25,6 +28,18 @@ function outputSnapshot(scene: Scene, camera: Camera) {
   return [camera, target, target?.getInternalTexture(), target?.depthStencilTexture,
     size?.width ?? engine.getRenderWidth(true), size?.height ?? engine.getRenderHeight(true)] as const;
 }
+
+export type SceneRenderCoordinatorOptions = {
+  /** Views may draw planar water reflections; previews, thumbnails and auxiliary views pass false. */
+  waterPlanarReflections?: boolean;
+  /**
+   * An auxiliary view (a Full Quality Render Target Capture): renders `camera`
+   * into its output target from inside the scene view's frame, drawing only
+   * `objects` (see ForwardSceneFrameGraphOptions). Its camera is never the
+   * scene's active camera.
+   */
+  auxiliary?: { camera: Camera; objects: FrameGraphObjectList };
+};
 
 /** Scene-owned graph lifetime; the host still owns scheduling and presentation. */
 export class SceneRenderCoordinator {
@@ -40,10 +55,14 @@ export class SceneRenderCoordinator {
   private editorOverlay: ((camera: Camera) => void) | undefined;
   /** Views may draw planar water reflections; previews and thumbnails never retain one. */
   private readonly releaseWaterPlanarReflections: () => void;
+  private readonly auxiliaryCamera: Camera | undefined;
+  private failedAt = 0;
+  private warnedFailure: string | undefined;
 
-  constructor(scene: Scene, options: { waterPlanarReflections?: boolean } = {}) {
+  constructor(scene: Scene, options: SceneRenderCoordinatorOptions = {}) {
     this.scene = scene;
-    this.graph = new ForwardSceneFrameGraph(scene);
+    this.auxiliaryCamera = options.auxiliary?.camera;
+    this.graph = new ForwardSceneFrameGraph(scene, options.auxiliary ? { auxiliary: { objects: options.auxiliary.objects } } : {});
     this.detachReadinessDirty = onSceneReadinessDirty(scene, () =>
       this.graph.markReadinessDirty(),
     );
@@ -91,6 +110,11 @@ export class SceneRenderCoordinator {
     return this.graph.sharedOutlineDiagnostics();
   }
 
+  /** The prepared graph's water scene copy plan and work; null when it plans none. */
+  waterSceneCopyDiagnostics(): ReturnType<ForwardSceneFrameGraph["waterSceneCopyDiagnostics"]> {
+    return this.graph.waterSceneCopyDiagnostics();
+  }
+
   retainResources(): () => void { return this.graph.retainResources(); }
 
   async retire(): Promise<void> {
@@ -125,7 +149,21 @@ export class SceneRenderCoordinator {
     const pending = { generation: this.generation, promise: undefined as unknown as Promise<ForwardSceneGraphResult> };
     let deadline = 0;
     let finalDeadline = Infinity;
+    let checkpoint = 0;
+    let creditLeft = 0;
     const restartDeadline = () => { deadline = Math.min(performance.now() + PREPARATION_TIMEOUT_MS, finalDeadline); };
+    /**
+     * A long gap between checkpoints is a synchronous call that held the thread,
+     * or a host that did not run this loop: time the preparation could neither
+     * spend nor observe. It extends both bounds, up to a budget per preparation,
+     * so a scene that never becomes ready still fails.
+     */
+    const creditHeldThread = () => {
+      const now = performance.now();
+      const grant = Math.min(heldThreadMs(now - checkpoint), creditLeft);
+      checkpoint = now;
+      if (grant > 0) { creditLeft -= grant; deadline += grant; finalDeadline += grant; }
+    };
     const compiles = new DriverCompileWatch(this.scene.getEngine());
     /** A driver still compiling reports completion only, so it renews both bounds. */
     const expired = () => {
@@ -135,10 +173,13 @@ export class SceneRenderCoordinator {
       restartDeadline();
       return false;
     };
-    const check = () => {
+    /** `credit: false` for a wait whose whole duration the caller already credits. */
+    const check = (credit = true) => {
       assertCurrent();
       if (this.disposed || this.scene.isDisposed)
         throw new PreparationChanged("Scene rendering preparation was superseded or disposed.");
+      if (credit) creditHeldThread();
+      else checkpoint = performance.now();
       if (this.generation !== pending.generation) {
         pending.generation = this.generation;
         restartDeadline();
@@ -150,7 +191,9 @@ export class SceneRenderCoordinator {
         try { await previous.promise; }
         catch { /* previous owner's outcome */ }
       }
-      finalDeadline = performance.now() + PREPARATION_TOTAL_TIMEOUT_MS;
+      checkpoint = performance.now();
+      creditLeft = SCENE_THREAD_HELD_BUDGET_MS;
+      finalDeadline = checkpoint + PREPARATION_TOTAL_TIMEOUT_MS;
       restartDeadline();
       check();
       for (;;) {
@@ -158,12 +201,12 @@ export class SceneRenderCoordinator {
         // Preparing creates and finalises effects, and each synchronous GL query
         // waits behind the presented draw's driver compile. The wait is not
         // preparation time, so it extends both bounds.
-        const waited = await whenPresentationFenceClear(this.scene.getEngine(), check);
+        const waited = await whenPresentationFenceClear(this.scene.getEngine(), () => check(false));
         if (waited > 0) { finalDeadline += waited; restartDeadline(); }
         flushSceneLatticeDeformers(this.scene);
         if (expired())
           throw new Error("Scene rendering preparation timed out.");
-        const camera = this.scene.activeCamera;
+        const camera = this.camera();
         if (!camera) throw new Error("Scene rendering requires an active camera.");
         const snapshot = outputSnapshot(this.scene, camera);
         const iteration = pending.generation;
@@ -175,7 +218,7 @@ export class SceneRenderCoordinator {
           if (expired())
             throw new Error("Scene rendering preparation timed out.");
           const current = outputSnapshot(this.scene, camera);
-          if (this.scene.activeCamera !== camera || snapshot.some((value, index) => value !== current[index]))
+          if (this.camera() !== camera || snapshot.some((value, index) => value !== current[index]))
             throw new PreparationChanged("Scene camera or output changed during rendering preparation.");
         };
         try {
@@ -230,7 +273,7 @@ export class SceneRenderCoordinator {
     this.refreshOutline();
     if (this.failure) throw this.failure;
     if (this.pending) return false;
-    const camera = this.scene.activeCamera;
+    const camera = this.camera();
     if (this.disposed || this.scene.isDisposed || !camera) return false;
     flushSceneLatticeDeformers(this.scene);
     if (!this.graph.sceneStrictlyReady(camera)) {
@@ -250,7 +293,7 @@ export class SceneRenderCoordinator {
    * is never readyForPresentation; the next frame's readiness admits again. */
   render(validatePresentation = true): ForwardSceneGraphResult & { rendered: boolean; readyForPresentation: boolean; reason?: string } {
     this.refreshOutline();
-    const camera = this.scene.activeCamera;
+    const camera = this.camera();
     if (this.disposed || this.scene.isDisposed || !camera)
       return { path: "frameGraph", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
     flushSceneLatticeDeformers(this.scene);
@@ -290,11 +333,31 @@ export class SceneRenderCoordinator {
     this.graph.dispose();
   }
 
+  /** The view's camera: an auxiliary view's own, otherwise the scene's active camera. */
+  private camera(): Camera | null {
+    return this.auxiliaryCamera ?? this.scene.activeCamera;
+  }
+
   private requestPreparation(): void {
     if (this.pending?.generation === this.generation) return;
+    // An auxiliary view retries a failed preparation (a refused budget, an
+    // unsupported scene) at most once per AUXILIARY_RETRY_MS instead of every
+    // frame, warning once per distinct failure. Its owner keeps the last image.
+    if (this.auxiliaryCamera && this.failure !== undefined) {
+      if (performance.now() - this.failedAt < AUXILIARY_RETRY_MS) return;
+      this.failure = undefined;
+      this.graph.clearFailure();
+    }
     const generation = this.generation;
     void this.prepare().catch((error: unknown) => {
-      if (!this.disposed && generation === this.generation) this.failure = error;
+      if (this.disposed || generation !== this.generation) return;
+      this.failure = error;
+      this.failedAt = performance.now();
+      const message = String(error);
+      if (this.auxiliaryCamera && message !== this.warnedFailure) {
+        this.warnedFailure = message;
+        console.warn(`[render] Full Quality capture is not drawn while its preparation fails: ${message}`);
+      }
     });
   }
 

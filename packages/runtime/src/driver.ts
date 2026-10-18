@@ -550,6 +550,7 @@ class InProcessRuntime implements RuntimeDriver {
       isStreamActor: (actor) => this.streams.isStreamActor(actor),
       actorName: (actor) => this.debugActorName(actor),
       emit: (command) => this.emit(command),
+      warn: (message) => this.reportLog(message, "warning", "Navigation"),
     }, nowMs);
   }
 

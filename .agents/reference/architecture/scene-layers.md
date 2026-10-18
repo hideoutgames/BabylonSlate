@@ -37,6 +37,7 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 - Instance actor guids are `<layer guid>:<authored id>` with references remapped ([object-model.md](object-model.md#guids-and-identity)); component ids stay authored. Repeated actor ids fail to load.
 - Every `2D*` component is overlay-only (`SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS`); world-only components (Landscape, Foliage, water, Skybox, cameras, lights, fog, streaming, Movement, buoyancy …) are stripped from layers and refused at runtime. `ENGINE_COMPONENT_DESCRIPTORS` decides placement for Add Component, Place Actors, serialization and instantiation.
 - Spawn Actor and world instantiation never create `SceneLayerActor`. World Place Actors uses `overlay: false` and never lists overlay stamps.
+- A Class or new Prefab with no authored components gets the starter Box only in a 3D world Scene (`defaultPrefabComponents`); overlay placement and 2D Scenes leave it empty, and `spawnPlacedActor` decides at placement time, not the Class.
 
 ## Runtime and render
 

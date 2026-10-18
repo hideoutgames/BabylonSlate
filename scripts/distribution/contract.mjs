@@ -60,7 +60,7 @@ export function createIdentity(request) {
     appleMarketingVersion: version,
     appleBuildNumber: `${sequence}.${channelCode}.${runAttempt}`,
     tag: `v${packageVersion}`,
-    title: `[${channel.toUpperCase()}] BabylonSlate ${packageVersion}`,
+    title: `[${channel.toUpperCase()}] Haptic ${packageVersion}`,
     prerelease: channel === "test",
     makeLatest: channel === "test" ? "false" : "legacy",
     testFlightGroup: channel === "test" ? "Test Builds" : "Release Candidates",

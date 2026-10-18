@@ -97,6 +97,12 @@ it("edits capture settings through typed controls and keeps actor filtering opt-
   expect(filter.value).toBe(false);
   filter.onChange(true);
   expect(update).toHaveBeenCalledWith("captureOnlyActors", true);
+  const quality = rows.find((row) => row.label === "Quality");
+  if (quality?.kind !== "enum") throw new Error("Missing capture quality");
+  expect(quality.value).toBe("fast");
+  expect(quality.options.map((option) => option.label)).toEqual(["Fast", "Full Quality"]);
+  quality.onChange("fullQuality");
+  expect(update).toHaveBeenCalledWith("quality", "fullQuality");
 });
 
 it("edits Global Water Volume settings without exposing finite bounds", () => {
@@ -783,6 +789,27 @@ describe("componentPropertyRows", () => {
       kind: "box2d",
       halfExtents: { x: 2, y: 0.001 },
     });
+  });
+
+  it("disables Box 2D Half Extents with a note while the actor's Sprite has an asset", () => {
+    const box = { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } } } };
+    const extentsFor = (sprites: SerializedComponent[], collider: SerializedComponent = box) => {
+      const { rows } = rowsFor(collider, { physicsWorld: "2d", actorComponents: () => [collider, ...sprites] });
+      return rows.find((row) => row.id.endsWith("-shape-half-extents"))!;
+    };
+    const sprite = (assetGuid: string) => ({ id: "sprite", classId: "SpriteComponent", properties: { assetGuid } });
+
+    const driven = extentsFor([sprite("sprite-1")]);
+    expect(driven.disabled).toBe(true);
+    expect(driven.description).toMatch(/Sprite.*Collision/);
+    for (const free of [extentsFor([]), extentsFor([sprite("")])]) {
+      expect(free.disabled).toBeFalsy();
+      expect(free.description).toBeUndefined();
+    }
+    // Circle and capsule keep their size, so they never carry the note.
+    const circle = { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "circle", radius: 0.5 } } };
+    const { rows } = rowsFor(circle, { physicsWorld: "2d", actorComponents: () => [circle, sprite("sprite-1")] });
+    expect(rows.some((row) => row.disabled || row.description)).toBe(false);
   });
 
   it("exposes RigidBody motionType as an enum and Light color as a color row", () => {

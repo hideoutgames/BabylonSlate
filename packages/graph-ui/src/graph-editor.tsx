@@ -43,10 +43,12 @@ import { pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { PinDefaultEditorContext, type PinDefaultEditorRenderer } from "./pin-default-editor-context";
 import { inlinePinDefaultStorageValue } from "./pin-default-value";
 import { PlusIcon } from "lucide-react";
+import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   AssetOpenProvider,
   ContextMenuOverlay,
+  normalizeChord,
   useContextMenu,
   useEditorReadOnly,
   type NestedMenuItem,
@@ -100,8 +102,10 @@ import {
   isClientPointOverHandle,
   nearestSnapConnectPin,
   finalizeOrientedConnection,
+  pinRefusalReason,
   pinWithDisplayType,
   pinsAreCompatible,
+  replacesExecOutputWire,
   screenPinsForSafeRefs,
   screenCentersForSafePins,
   type ConnectEndMode,
@@ -124,9 +128,11 @@ import {
   type GraphViewport,
 } from "./graph-viewport";
 import { formatGraphNodes } from "./graph-format";
+import { freeNodePosition } from "./graph-placement";
 import { findProximityConnections, type ProximityPin } from "./graph-proximity";
 import {
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
+  estimateGraphNodeSize,
   graphNodesBounds,
   selectVisibleGraphElements,
 } from "./graph-virtualize";
@@ -139,6 +145,12 @@ import {
   createGraphCanvasDropApi,
   type GraphCanvasDropApi,
 } from "./graph-canvas-api";
+import {
+  GraphKeybindsContext,
+  graphCommandForEvent,
+  type GraphCommand,
+  type GraphKeybinds,
+} from "./graph-keybinds";
 
 export type { GraphDocument, GraphDiagnostic, NavigateRequest, PaletteNode };
 export type { SerializedPin } from "./graph-types";
@@ -241,13 +253,17 @@ export interface GraphEditorProps {
   /** React Flow connection mode. Animation Graph uses Loose for side handles. */
   connectionMode?: "strict" | "loose";
   /**
-   * Keys that delete the selection (default Backspace) while this graph was the
-   * last surface pressed or focused. Behaviour trees pass null to avoid Delete
-   * trapping chrome.
+   * Keys that delete the selection (default: the Delete keybind, Delete and
+   * Backspace unless rebound) while this graph was the last surface pressed or
+   * focused. Behaviour trees pass null to avoid Delete trapping chrome.
    */
   deleteKeyCode?: string | string[] | null;
   /** Forwarded to React Flow. Default true; BT passes false to avoid focus traps. */
   nodesFocusable?: boolean;
+  /**
+   * Host actions for a node's menu (Rename Event). Script-style nodes list them
+   * above the graph's own Copy, Paste, Duplicate, Delete and Break Links.
+   */
   contextMenuItemsForNode?: (nodeId: string) => NestedMenuItem[];
   contextMenuItemsForAttachment?: (
     nodeId: string,
@@ -264,6 +280,14 @@ export interface GraphEditorProps {
 
 const DOUBLE_TAP_MS = 350;
 const PASTE_OFFSET = 40;
+/** Long enough to read; the hint never blocks editing meanwhile. */
+const WIRE_NOTICE_MS = 4000;
+/** A stable default, so the menu and key handlers do not rebuild every render. */
+const NO_HIDDEN_TOOLBAR_ACTIONS: NonNullable<GraphEditorProps["hiddenToolbarActions"]> = [];
+const REPLACED_WIRE_NOTICE = "Replaced the existing wire. Use a Sequence to run several.";
+/** Keys typed into these keep their meaning (text editing, menu navigation). */
+const KEY_EXEMPT_TARGETS =
+  'input, textarea, select, [contenteditable="true"], .nokey, [role="menu"], [role="listbox"], [role="combobox"]';
 
 /** `base`, or `base-2`, `base-3`, … when a node already uses it. */
 function uniqueNodeId(base: string, taken: ReadonlySet<string>): string {
@@ -276,12 +300,11 @@ function uniqueNodeId(base: string, taken: ReadonlySet<string>): string {
 
 /**
  * Nudge a placement by `PASTE_OFFSET` steps until none of `positions` lands
- * on an existing node, so repeated inserts and pastes cascade.
+ * on an existing node, so repeated pastes cascade.
  */
 function nonOverlappingOffset(
   positions: ReadonlyArray<{ x: number; y: number }>,
   existing: ReadonlyArray<{ position: { x: number; y: number } }>,
-  firstStep: number,
 ): number {
   const overlaps = (offset: number) =>
     positions.some((position) =>
@@ -291,7 +314,7 @@ function nonOverlappingOffset(
           Math.abs(node.position.y - (position.y + offset)) < PASTE_OFFSET,
       ),
     );
-  let offset = firstStep * PASTE_OFFSET;
+  let offset = PASTE_OFFSET;
   while (overlaps(offset)) offset += PASTE_OFFSET;
   return offset;
 }
@@ -473,6 +496,8 @@ function stationaryProximityPins(
   stationaryPins.set(node, { bounds, pins });
   return pins;
 }
+
+type GraphClip = { nodes: CanvasNode[]; edges: Edge[] };
 
 type VisibleGraph = { nodes: CanvasNode[]; edges: Edge[] };
 type VisibleGraphInputs = {
@@ -661,7 +686,7 @@ function GraphEditorCanvas({
   toolbarExtra,
   selectedAttachmentId = null,
   onAttachmentSelect,
-  hiddenToolbarActions = [],
+  hiddenToolbarActions = NO_HIDDEN_TOOLBAR_ACTIONS,
   lockNodeDragAxis: lockDragAxis,
   nodeDragHandle,
   connectEndMode = "default",
@@ -688,6 +713,7 @@ function GraphEditorCanvas({
   );
   const nodesDraggable = !readOnly && (nodesDraggableProp ?? true);
   const interactions = useContext(GraphInteractionSettingsContext);
+  const keybinds = useContext(GraphKeybindsContext);
   const inheritedPinEditor = useContext(PinDefaultEditorContext);
   const renderPinDefaultEditor = renderPinDefaultEditorProp ?? inheritedPinEditor;
   const pinDefaultsDisabled = readOnly || (readOnlyPinDefaultsProp ?? interactions.readOnlyPinDefaults ?? false);
@@ -761,9 +787,15 @@ function GraphEditorCanvas({
   } | null>(null);
   const [marqueeArmed, setMarqueeArmed] = useState(false);
   const [hasClipboard, setHasClipboard] = useState(false);
-  const clipboardRef = useRef<{ nodes: CanvasNode[]; edges: Edge[] } | null>(
-    null,
-  );
+  const clipboardRef = useRef<GraphClip | null>(null);
+  // Counts replaced-wire hints, so a second one restarts the timer.
+  const [wireNotice, setWireNotice] = useState(0);
+  const noteReplacedWire = useCallback(() => setWireNotice((count) => count + 1), []);
+  useEffect(() => {
+    if (wireNotice === 0) return;
+    const timer = setTimeout(() => setWireNotice(0), WIRE_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [wireNotice]);
   const lastPaneTapRef = useRef(0);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const skipPaneClickRef = useRef(false);
@@ -1041,6 +1073,17 @@ function GraphEditorCanvas({
         return;
       }
       const id = createEdgeId(source, sourceHandle, target, targetHandle);
+      if (
+        singleExecOutputOnConnect &&
+        replacesExecOutputWire(
+          graphStateRef.current.edges,
+          { source, sourceHandle, target, targetHandle },
+          (nodeId, pinId) =>
+            pinOnNode(graphStateRef.current.nodes, nodeId, pinId),
+        )
+      ) {
+        noteReplacedWire();
+      }
       setEdges((current) => {
         const next = edgesAfterConnect(
           current,
@@ -1079,6 +1122,7 @@ function GraphEditorCanvas({
     [
       defaultEdgeOptions.type,
       emitChange,
+      noteReplacedWire,
       replaceIncomingOnConnect,
       uniqueDirectedPairOnConnect,
       singleExecOutputOnConnect,
@@ -1143,6 +1187,47 @@ function GraphEditorCanvas({
       });
     },
     [canConnect, normalizeConnection, pinCompatibility],
+  );
+
+  // Read while a dragged wire hovers a pin XYFlow reports as invalid; it names
+  // the reason `isValidConnection` refused. Null when the wire is acceptable.
+  const connectionRefusal = useCallback(
+    (
+      from: { nodeId: string; pinId: string },
+      to: { nodeId: string; pinId: string },
+    ): string | null => {
+      const { nodes: current } = graphStateRef.current;
+      const fromPin = pinOnNode(current, from.nodeId, from.pinId);
+      const toPin = pinOnNode(current, to.nodeId, to.pinId);
+      if (!fromPin || !toPin) return null;
+      if (
+        isValidConnection({
+          source: from.nodeId,
+          sourceHandle: from.pinId,
+          target: to.nodeId,
+          targetHandle: to.pinId,
+        })
+      ) {
+        return null;
+      }
+      const disabled = (nodeId: string) => {
+        const node = current.find((entry) => entry.id === nodeId);
+        return node !== undefined && isDisabledNode(node);
+      };
+      if (disabled(from.nodeId) || disabled(to.nodeId)) {
+        return "Disabled nodes don't connect";
+      }
+      const displayTypes = pinDisplayTypesRef.current;
+      return (
+        pinRefusalReason(
+          overlayPin(fromPin, from.nodeId, displayTypes),
+          overlayPin(toPin, to.nodeId, displayTypes),
+          pinCompatibility,
+          pinTypeNames,
+        ) ?? "These pins can't connect"
+      );
+    },
+    [isValidConnection, pinCompatibility, pinTypeNames],
   );
 
   const collectProximityConnections = useCallback(
@@ -1744,18 +1829,20 @@ function GraphEditorCanvas({
 
   const handleAddPaletteNode = useCallback(
     (paletteNode: PaletteNode) => {
-      let position = pendingConnect?.position ??
-        screenToFlowPosition({
-          x: window.innerWidth / 2,
-          y: window.innerHeight / 2,
+      // Toolbar additions have no chosen point: centre them on the canvas and
+      // step by node footprint to a free slot.
+      let position = pendingConnect?.position;
+      if (!position) {
+        const bounds = wrapperRef.current?.getBoundingClientRect();
+        const center = screenToFlowPosition({
+          x: (bounds?.left ?? 0) + (bounds?.width ?? 0) / 2,
+          y: (bounds?.top ?? 0) + (bounds?.height ?? 0) / 2,
         });
-      if (!pendingConnect) {
-        const offset = nonOverlappingOffset(
-          [position],
+        position = freeNodePosition(
+          center,
+          estimateGraphNodeSize(paletteNode.pins),
           graphStateRef.current.nodes,
-          0,
         );
-        position = { x: position.x + offset, y: position.y + offset };
       }
       const id = uniqueNodeId(
         `${paletteNode.id}-${Date.now()}`,
@@ -1798,6 +1885,7 @@ function GraphEditorCanvas({
       ];
       const connect = pendingConnect;
       let nextEdges = withoutEdgeSelection(graphStateRef.current.edges);
+      let replacedWire = false;
       if (connect?.pin && connect.nodeId) {
         const dragged = overlayPin(
           connect.pin,
@@ -1816,6 +1904,13 @@ function GraphEditorCanvas({
           const target = sourceIsDragged ? id : connect.nodeId;
           const targetHandle = sourceIsDragged ? match.id : connect.pin.id;
           const edgeId = createEdgeId(source, sourceHandle, target, targetHandle);
+          replacedWire =
+            singleExecOutputOnConnect &&
+            replacesExecOutputWire(
+              nextEdges,
+              { source, sourceHandle, target, targetHandle },
+              (nodeId, pinId) => pinOnNode(next, nodeId, pinId),
+            );
           nextEdges = edgesAfterConnect(
             nextEdges,
             {
@@ -1834,6 +1929,7 @@ function GraphEditorCanvas({
         }
       }
       commitGraph(next, nextEdges);
+      if (replacedWire) noteReplacedWire();
       setPendingConnect(null);
     },
     [
@@ -1841,6 +1937,7 @@ function GraphEditorCanvas({
       defaultEdgeOptions.type,
       knownTypes,
       nodeDragHandle,
+      noteReplacedWire,
       pendingConnect,
       pinCompatibility,
       replaceIncomingOnConnect,
@@ -1889,83 +1986,109 @@ function GraphEditorCanvas({
     );
   }, [edgeSelectionKey]);
 
-  const copySelection = useCallback(() => {
-    const selected = selectedNodes.filter((node) => !isProtectedNode(node));
-    if (selected.length === 0) return;
+  // The selected, copyable nodes with the wires between them. Reads the graph
+  // ref, so a menu built before the next render still sees its own selection.
+  const clipFromSelection = useCallback((): GraphClip | null => {
+    const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+    const selected = currentNodes.filter(
+      (node) => node.selected && !isProtectedNode(node),
+    );
+    if (selected.length === 0) return null;
     const ids = new Set(selected.map((node) => node.id));
-    clipboardRef.current = {
+    return {
       nodes: selected.map((node) => ({
         ...node,
         data: { ...node.data },
       })),
-      edges: graphStateRef.current.edges.filter((edge) => {
+      edges: currentEdges.filter((edge) => {
         return ids.has(edge.source) && ids.has(edge.target);
       }),
     };
-    setHasClipboard(true);
-  }, [selectedNodes]);
+  }, []);
 
-  const pasteClipboard = useCallback(() => {
-    const clip = clipboardRef.current;
-    if (!clip) return;
-    const pasteable = clip.nodes.filter((node) => !isProtectedNode(node));
-    if (pasteable.length === 0) return;
-    const current = graphStateRef.current.nodes;
-    // Each paste lands one step past the copies already on the canvas.
-    const offset = nonOverlappingOffset(
-      pasteable.map((node) => node.position),
-      current,
-      1,
-    );
-    const taken = new Set(current.map((node) => node.id));
-    const idMap = new Map<string, string>();
-    const stamp = Date.now();
-    const nextNodes = pasteable.map((node, index) => {
-      const id = uniqueNodeId(`${node.id}-copy-${stamp}-${index}`, taken);
-      taken.add(id);
-      idMap.set(node.id, id);
-      return withDragHandle(
-        {
-          ...node,
-          id,
-          selected: true,
-          position: {
-            x: node.position.x + offset,
-            y: node.position.y + offset,
-          },
-          data: { ...node.data },
-        },
-        nodeDragHandle,
+  const copySelection = useCallback((): boolean => {
+    const clip = clipFromSelection();
+    if (!clip) return false;
+    clipboardRef.current = clip;
+    setHasClipboard(true);
+    return true;
+  }, [clipFromSelection]);
+
+  // One graph change, so one undo entry however many nodes arrive.
+  const pasteClip = useCallback(
+    (clip: GraphClip | null): boolean => {
+      if (!clip) return false;
+      const pasteable = clip.nodes.filter((node) => !isProtectedNode(node));
+      if (pasteable.length === 0) return false;
+      const current = graphStateRef.current.nodes;
+      // Each paste lands one step past the copies already on the canvas.
+      const offset = nonOverlappingOffset(
+        pasteable.map((node) => node.position),
+        current,
       );
-    });
-    const nextEdges = clip.edges.flatMap((edge) => {
-      const source = idMap.get(edge.source);
-      const target = idMap.get(edge.target);
-      if (!source || !target) return [];
-      const sourceHandle = edge.sourceHandle ?? "";
-      const targetHandle = edge.targetHandle ?? "";
-      return [
-        {
-          ...edge,
-          id: createEdgeId(source, sourceHandle, target, targetHandle),
-          source,
-          target,
-          selected: false,
-        },
-      ];
-    });
-    // The pasted nodes become the whole selection, wires included.
-    const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
-    commitGraph(
-      [
-        ...currentNodes.map((node) =>
-          node.selected ? { ...node, selected: false } : node,
-        ),
-        ...nextNodes,
-      ],
-      [...withoutEdgeSelection(currentEdges), ...nextEdges],
-    );
-  }, [commitGraph, nodeDragHandle]);
+      const taken = new Set(current.map((node) => node.id));
+      const idMap = new Map<string, string>();
+      const stamp = Date.now();
+      const nextNodes = pasteable.map((node, index) => {
+        const id = uniqueNodeId(`${node.id}-copy-${stamp}-${index}`, taken);
+        taken.add(id);
+        idMap.set(node.id, id);
+        return withDragHandle(
+          {
+            ...node,
+            id,
+            selected: true,
+            position: {
+              x: node.position.x + offset,
+              y: node.position.y + offset,
+            },
+            data: { ...node.data },
+          },
+          nodeDragHandle,
+        );
+      });
+      const nextEdges = clip.edges.flatMap((edge) => {
+        const source = idMap.get(edge.source);
+        const target = idMap.get(edge.target);
+        if (!source || !target) return [];
+        const sourceHandle = edge.sourceHandle ?? "";
+        const targetHandle = edge.targetHandle ?? "";
+        return [
+          {
+            ...edge,
+            id: createEdgeId(source, sourceHandle, target, targetHandle),
+            source,
+            target,
+            selected: false,
+          },
+        ];
+      });
+      // The pasted nodes become the whole selection, wires included.
+      const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+      commitGraph(
+        [
+          ...currentNodes.map((node) =>
+            node.selected ? { ...node, selected: false } : node,
+          ),
+          ...nextNodes,
+        ],
+        [...withoutEdgeSelection(currentEdges), ...nextEdges],
+      );
+      return true;
+    },
+    [commitGraph, nodeDragHandle],
+  );
+
+  const pasteClipboard = useCallback(
+    (): boolean => pasteClip(clipboardRef.current),
+    [pasteClip],
+  );
+
+  // Copy and paste in one step; the clipboard keeps what it held.
+  const duplicateSelection = useCallback(
+    (): boolean => pasteClip(clipFromSelection()),
+    [clipFromSelection, pasteClip],
+  );
 
   // Removes the nodes, their wires and the listed wires as one graph change.
   // Returns whether anything was removed.
@@ -2010,33 +2133,74 @@ function GraphEditorCanvas({
     );
   }, [graphViewport.fitViewOptions, setViewport, storeApi]);
 
-  // React Flow's own delete key listens on the whole document, so hidden tabs
-  // and other panels' Backspace deleted this graph's selection. Only the graph
-  // last pressed or focused reacts, and protected nodes stay. The selected
-  // nodes, their wires and the selected wires go in one graph change.
-  const deleteKeys = useMemo(
-    () => (deleteKeyCode === undefined ? ["Backspace"] : [deleteKeyCode ?? []].flat()),
-    [deleteKeyCode],
+  // The effective chords: the editor's keybinds, except a host that passes
+  // `deleteKeyCode` (null turns key deletion off) names its own delete keys.
+  const commandBindings = useMemo((): GraphKeybinds => {
+    if (deleteKeyCode === undefined) return keybinds;
+    const keys = deleteKeyCode === null ? [] : [deleteKeyCode].flat();
+    return {
+      ...keybinds,
+      delete: keys.flatMap((key) => normalizeChord(key) ?? []),
+    };
+  }, [deleteKeyCode, keybinds]);
+
+  // A toolbar action a host hides has no key either; Duplicate needs both
+  // halves. Returns whether the graph handled the command.
+  const runGraphCommand = useCallback(
+    (command: GraphCommand): boolean => {
+      switch (command) {
+        case "copy":
+          return !hiddenToolbar.has("copy") && copySelection();
+        case "paste":
+          return !hiddenToolbar.has("paste") && pasteClipboard();
+        case "duplicate":
+          if (hiddenToolbar.has("copy") || hiddenToolbar.has("paste")) return false;
+          // The graph owns this chord while it is engaged, even with nothing
+          // selected: the browser's bookmark dialog is never wanted here.
+          duplicateSelection();
+          return true;
+        case "delete": {
+          const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+          return removeGraphElements(
+            new Set(deletableNodeIds(currentNodes)),
+            new Set(currentEdges.filter((edge) => edge.selected).map((edge) => edge.id)),
+          );
+        }
+      }
+    },
+    [copySelection, duplicateSelection, hiddenToolbar, pasteClipboard, removeGraphElements],
   );
+  const commandRef = useRef({ readOnly, bindings: commandBindings, run: runGraphCommand });
+  useLayoutEffect(() => {
+    commandRef.current = { readOnly, bindings: commandBindings, run: runGraphCommand };
+  });
+
+  // React Flow's own delete key listens on the whole document, so hidden tabs
+  // and other panels' keys deleted this graph's selection. Only the graph last
+  // pressed or focused reacts to Copy, Paste, Duplicate and Delete; keys typed
+  // into a text field, menu or foreign dialog keep their meaning, and protected
+  // nodes stay. Deleting takes the selected nodes, their wires and the selected
+  // wires in one graph change. The listener reads everything through refs, so
+  // a host re-render never un-engages the graph.
   useEffect(() => {
     const root = wrapperRef.current;
-    if (readOnly || !root || deleteKeys.length === 0) return;
+    if (!root) return;
     let engaged = false;
     const inside = (target: EventTarget | null) => target instanceof Node && root.contains(target);
     const onPointerDown = (event: PointerEvent) => { engaged = inside(event.target); };
     const onFocusIn = (event: FocusEvent) => { if (inside(event.target)) engaged = true; };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!engaged || event.defaultPrevented || event.isComposing) return;
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
-      if (!deleteKeys.includes(event.key) && !deleteKeys.includes(event.code)) return;
-      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"], .nokey')) return;
+      const { readOnly: locked, bindings, run } = commandRef.current;
+      if (!engaged || locked || event.defaultPrevented || event.isComposing) return;
+      const command = graphCommandForEvent(event, bindings);
+      if (!command) return;
+      if (event.target instanceof Element) {
+        if (event.target.closest(KEY_EXEMPT_TARGETS)) return;
+        const dialog = event.target.closest('[role="dialog"], [role="alertdialog"]');
+        if (dialog && !dialog.contains(root)) return;
+      }
       if (!root.isConnected || !(root.checkVisibility?.() ?? true)) return;
-      const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
-      const removed = removeGraphElements(
-        new Set(deletableNodeIds(currentNodes)),
-        new Set(currentEdges.filter((edge) => edge.selected).map((edge) => edge.id)),
-      );
-      if (removed) event.preventDefault();
+      if (run(command)) event.preventDefault();
     };
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("focusin", onFocusIn, true);
@@ -2046,7 +2210,7 @@ function GraphEditorCanvas({
       document.removeEventListener("focusin", onFocusIn, true);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [deleteKeys, readOnly, removeGraphElements]);
+  }, []);
 
   const breakSelectionLinks = useCallback(() => {
     const selectedEdgeIds = new Set(
@@ -2122,6 +2286,110 @@ function GraphEditorCanvas({
       return next;
     });
   }, [emitChange]);
+
+  // The menu of a script-style node. A press on an unselected node replaces the
+  // selection first, like a tap; on a selected node the group stays. Everything
+  // reads the graph ref, because the items are built before the next render.
+  const resolveNodeMenu = useCallback(
+    (nodeId: string): NestedMenuItem[] => {
+      let { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+      const target = currentNodes.find((node) => node.id === nodeId);
+      if (!target) return [];
+      if (!target.selected) {
+        currentNodes = currentNodes.map((node) =>
+          Boolean(node.selected) === (node.id === nodeId)
+            ? node
+            : { ...node, selected: node.id === nodeId },
+        );
+        currentEdges = withoutEdgeSelection(currentEdges);
+        graphStateRef.current = { nodes: currentNodes, edges: currentEdges };
+        setNodes(currentNodes);
+        setEdges(currentEdges);
+      }
+      const hostItems = contextMenuItemsForNode?.(nodeId) ?? [];
+      if (readOnly) return hostItems;
+      const selectedIds = new Set(
+        currentNodes.filter((node) => node.selected).map((node) => node.id),
+      );
+      const editable = currentNodes.some(
+        (node) => node.selected && !isProtectedNode(node),
+      );
+      const canPaste = (clipboardRef.current?.nodes ?? []).some(
+        (node) => !isProtectedNode(node),
+      );
+      const hasLinks =
+        currentEdges.some((edge) => edge.selected) ||
+        edgesTouchingNodes(currentEdges, selectedIds).length > 0;
+      const items: NestedMenuItem[] = [];
+      if (!hiddenToolbar.has("copy")) {
+        items.push({
+          id: "copy",
+          label: "Copy",
+          shortcut: commandBindings.copy[0],
+          disabled: !editable,
+          onSelect: () => { copySelection(); },
+        });
+      }
+      if (!hiddenToolbar.has("paste")) {
+        items.push({
+          id: "paste",
+          label: "Paste",
+          shortcut: commandBindings.paste[0],
+          disabled: !canPaste,
+          onSelect: () => { pasteClipboard(); },
+        });
+      }
+      if (!hiddenToolbar.has("copy") && !hiddenToolbar.has("paste")) {
+        items.push({
+          id: "duplicate",
+          label: "Duplicate",
+          shortcut: commandBindings.duplicate[0],
+          disabled: !editable,
+          onSelect: () => { duplicateSelection(); },
+        });
+      }
+      if (!hiddenToolbar.has("delete")) {
+        items.push({
+          id: "delete",
+          label: "Delete",
+          shortcut: commandBindings.delete[0],
+          variant: "destructive",
+          disabled: !editable,
+          onSelect: deleteSelection,
+        });
+      }
+      if (!hiddenToolbar.has("breakLinks")) {
+        if (items.length > 0) items.push({ type: "separator", id: "break-links-separator" });
+        items.push({
+          id: "break-links",
+          label: "Break Links",
+          disabled: !hasLinks,
+          onSelect: breakSelectionLinks,
+        });
+      }
+      return hostItems.length > 0 && items.length > 0
+        ? [...hostItems, { type: "separator", id: "host-separator" }, ...items]
+        : [...hostItems, ...items];
+    },
+    [
+      breakSelectionLinks,
+      commandBindings,
+      contextMenuItemsForNode,
+      copySelection,
+      deleteSelection,
+      duplicateSelection,
+      hiddenToolbar,
+      pasteClipboard,
+      readOnly,
+    ],
+  );
+  const nodeMenu = useMemo(
+    () => ({
+      enabled: !readOnly || Boolean(contextMenuItemsForNode),
+      resolve: resolveNodeMenu,
+    }),
+    [contextMenuItemsForNode, readOnly, resolveNodeMenu],
+  );
 
   const clearSelection = useCallback(() => {
     setNodes((current) =>
@@ -2529,6 +2797,8 @@ function GraphEditorCanvas({
       contextMenuItemsForAttachment,
       onEdgeDoubleClick,
       renderNodeBody,
+      nodeMenu,
+      connectionRefusal,
       connectionLineKind:
         defaultEdgeOptions.type === "animTransition" ||
         defaultEdgeOptions.type === "animTransitionBoth"
@@ -2556,6 +2826,8 @@ function GraphEditorCanvas({
       contextMenuItemsForAttachment,
       onEdgeDoubleClick,
       renderNodeBody,
+      nodeMenu,
+      connectionRefusal,
       defaultEdgeOptions.type,
     ],
   );
@@ -2744,6 +3016,17 @@ function GraphEditorCanvas({
           />
         </ReactFlow>
         <GraphViewportControls onFitGraph={fitGraph} />
+        {wireNotice === 0 ? null : (
+          <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex justify-center">
+            <Alert
+              role="status"
+              className="w-auto max-w-sm shadow-md"
+              data-testid="graph-wire-notice"
+            >
+              <AlertDescription>{REPLACED_WIRE_NOTICE}</AlertDescription>
+            </Alert>
+          </div>
+        )}
         {marqueeScreen ? (
           <div
             data-testid="graph-marquee"

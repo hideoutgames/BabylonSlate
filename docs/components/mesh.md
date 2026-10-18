@@ -23,7 +23,10 @@ Select an actor, then choose **Add Component > Rendering > Mesh**. You can also 
 
 - Works in world scenes and in Scene Layers.
 - Simple collision uses the Model's simple colliders, or the built-in shape for a primitive. Complex collision uses the visible triangles and does not follow skeletal animation.
-- A Mesh with collision on is solid without a Rigid Body. Add a [Rigid Body](rigid-body.md) to make it move.
+- A Model with a skeleton starts with no simple colliders, so **Use Simple Collision** produces no collision for it. Add shapes under the Model's **Colliders**, or use **Use Complex Collision**. Compiler Results warns about this.
+- A Mesh with collision on is solid without a Rigid Body. Add a [Rigid Body](rigid-body.md) to make it move. A [Collider](collider.md) on the same actor adds its shape to the Mesh's body, for example as a trigger volume.
+- **No Collision** makes no body. A Collider on that actor then needs a Rigid Body.
+- Mesh collision works only in a 3D physics world. In a 2D scene the **Collision** setting is hidden, the Mesh does not collide, and Compiler Results warns when it was left on.
 - Name collision layers in **Project Settings > Physics > Collision Layers**.
 - Add a [Deformer](deformer.md) or [Outline](outline.md) to the same actor to bend or outline the mesh.
 

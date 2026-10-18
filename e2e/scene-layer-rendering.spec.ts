@@ -32,21 +32,27 @@ test("SceneLayer compiled Tweens fade, tint and move rendered components after o
     ["tint", "tween.tint", "2DMaterialComponent", { "default:a": { x: 1, y: 1, z: 1, w: 1 }, "default:b": { x: 1, y: 0, z: 0, w: 1 } }],
     ["move", "tween.componentPosition", "2DMaterialComponent", { "default:a": { x: -8, y: -3, z: 0 }, "default:b": { x: 8, y: -3, z: 0 } }],
   ];
-  // Separate native entries receive the same single key edge and run concurrently.
+  // One key edge runs every Tween through a Sequence; an event can be on a graph once.
   // No Tick loop or renderer mutation performs any part of the interpolation.
   const graph: SerializedGraph = {
     members: [], components,
-    nodes: actions.flatMap(([id, type, componentClassId, data], row) => [
-      { id: `${id}-trigger`, type: "input.onAnyKeyPressed", data: {}, position: { x: 0, y: row * 220 } },
-      { id: `${id}-target`, type: "component.getNamed", data: { componentClassId, implicitSelf: true }, position: { x: 200, y: row * 220 } },
-      { id, type, data: { ...data, "default:duration": 1 }, position: { x: 450, y: row * 220 } },
-      { id: `${id}-done`, type: "debug.print", data: { "default:value": `Tween ${id} completed`, "default:key": `tween-${id}`, "default:duration": 30 }, position: { x: 750, y: row * 220 } },
-    ]),
-    edges: actions.flatMap(([id]) => [
-      { id: `${id}-start`, source: `${id}-trigger`, sourceHandle: "execOut", target: id, targetHandle: "execIn" },
-      { id: `${id}-reference`, source: `${id}-target`, sourceHandle: "out", target: id, targetHandle: "target" },
-      { id: `${id}-completed`, source: id, sourceHandle: "execOut", target: `${id}-done`, targetHandle: "execIn" },
-    ]),
+    nodes: [
+      { id: "trigger", type: "input.onAnyKeyPressed", data: {}, position: { x: -400, y: 0 } },
+      { id: "sequence", type: "flow.sequence", data: { count: actions.length }, position: { x: -200, y: 0 } },
+      ...actions.flatMap(([id, type, componentClassId, data], row) => [
+        { id: `${id}-target`, type: "component.getNamed", data: { componentClassId, implicitSelf: true }, position: { x: 200, y: row * 220 } },
+        { id, type, data: { ...data, "default:duration": 1 }, position: { x: 450, y: row * 220 } },
+        { id: `${id}-done`, type: "debug.print", data: { "default:value": `Tween ${id} completed`, "default:key": `tween-${id}`, "default:duration": 30 }, position: { x: 750, y: row * 220 } },
+      ]),
+    ],
+    edges: [
+      { id: "trigger-sequence", source: "trigger", sourceHandle: "execOut", target: "sequence", targetHandle: "execIn" },
+      ...actions.flatMap(([id], row) => [
+        { id: `${id}-start`, source: "sequence", sourceHandle: `then${row}`, target: id, targetHandle: "execIn" },
+        { id: `${id}-reference`, source: `${id}-target`, sourceHandle: "out", target: id, targetHandle: "target" },
+        { id: `${id}-completed`, source: id, sourceHandle: "execOut", target: `${id}-done`, targetHandle: "execIn" },
+      ]),
+    ],
   };
   files.set(MAIN_CLASS_FILE, await encodeAssetDocument({
     guid: classGuid, type: "Class", name: "Main", version: versions.currentVersion("Class"), payload: graph as unknown as Record<string, unknown>,

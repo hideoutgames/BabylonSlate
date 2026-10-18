@@ -162,7 +162,7 @@ describe("interface nodes", () => {
           interfaceGuid: "iface-aim",
           method: "Aim",
           implicitSelf: true,
-          pins: [{ name: "target", typeId: "objectRef", typeClassId: "Hero", direction: "in" }],
+          pins: [{ name: "target", typeId: "object", typeClassId: "Hero", direction: "in" }],
         }),
       ],
       edges: [

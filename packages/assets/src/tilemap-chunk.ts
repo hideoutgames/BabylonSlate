@@ -6,6 +6,28 @@ export interface TilemapChunkVertexData {
   uvs: number[];
   indices: number[];
   animatedTiles: Array<{ uvOffset: number; tile: TilesetTile; tileset: TilesetPayload }>;
+  /** RGBA per vertex, only when `placeholderColors` was requested. */
+  colors?: number[];
+}
+
+/**
+ * Stand-in colour of a tile whose Tileset has no atlas image (hue in degrees,
+ * saturation and lightness in percent). The paint canvas and the chunk meshes
+ * draw the same colour so a painted map looks alike in both.
+ */
+export function tilePlaceholderHsl(gid: number): { h: number; s: number; l: number } {
+  return { h: (gid * 47) % 360, s: 55, l: 48 };
+}
+
+function tilePlaceholderRgb(gid: number): [number, number, number] {
+  const { h, s, l } = tilePlaceholderHsl(gid);
+  const chroma = (1 - Math.abs((2 * l) / 100 - 1)) * (s / 100);
+  const second = chroma * (1 - Math.abs(((h / 60) % 2) - 1));
+  const base = l / 100 - chroma / 2;
+  const sector = Math.floor(h / 60) % 6;
+  const [r, g, b] = [[chroma, second, 0], [second, chroma, 0], [0, chroma, second],
+    [0, second, chroma], [second, 0, chroma], [chroma, 0, second]][sector]!;
+  return [r! + base, g! + base, b! + base];
 }
 
 export type TilemapChunkDrawKind = "static" | "animated";
@@ -26,6 +48,8 @@ export function tilemapChunkVertexData(options: {
   ) => { tileset: TilesetPayload; localId: number; guid: string } | null;
   /** With `resolveGid`, emit only tiles that belong to this tileset guid. */
   atlasGuid?: string;
+  /** Emit a per-vertex `tilePlaceholderHsl` colour for an atlas without an image. */
+  placeholderColors?: boolean;
 }): TilemapChunkVertexData {
   const {
     tiles,
@@ -38,10 +62,12 @@ export function tilemapChunkVertexData(options: {
     kind,
     resolveGid,
     atlasGuid,
+    placeholderColors,
   } = options;
   const positions: number[] = [];
   const uvs: number[] = [];
   const indices: number[] = [];
+  const colors: number[] = [];
   const animatedTiles: TilemapChunkVertexData["animatedTiles"] = [];
   const originX = chunkX * chunkSize;
   const originY = chunkY * chunkSize;
@@ -72,10 +98,16 @@ export function tilemapChunkVertexData(options: {
       positions.push(x0, y0, 0, x1, y0, 0, x1, y1, 0, x0, y1, 0);
       if (animated && meta) animatedTiles.push({ uvOffset: uvs.length, tile: meta, tileset: atlas });
       uvs.push(uv.u0, uv.v0, uv.u1, uv.v0, uv.u1, uv.v1, uv.u0, uv.v1);
+      if (placeholderColors) {
+        const [r, g, b] = tilePlaceholderRgb(tileId);
+        for (let corner = 0; corner < 4; corner++) colors.push(r, g, b, 1);
+      }
       const base = quad * 4;
       indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
       quad += 1;
     }
   }
-  return { positions, uvs, indices, animatedTiles };
+  return placeholderColors
+    ? { positions, uvs, indices, animatedTiles, colors }
+    : { positions, uvs, indices, animatedTiles };
 }

@@ -121,7 +121,7 @@ describe("render bone attachment", () => {
     try {
       await runtime.loadScripts([
         { assetGuid: "hero", classId: "Hero", parentClassId: "Actor", source: "", anchors: [], entryPoints: [] },
-        { assetGuid: "item", classId: "Item", parentClassId: "Actor", source: 'export function onBeginPlay(ctx) { ctx.attachToBone(null, ctx.getActorOfClass("Hero"), "Hand"); }', anchors: [], entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] },
+        { assetGuid: "item", classId: "Item", parentClassId: "Actor", source: 'export function onBeginPlay(ctx) { ctx.attachToBone(ctx.self, ctx.getActorOfClass("Hero"), "Hand"); }', anchors: [], entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] },
       ]);
       const actor = runtime.spawnScriptedActor({ classId: "Hero", transform: { position: { x: 10, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 }, scale: { x: 2, y: 2, z: 2 } } })!;
       runtime.spawnScriptedActor({ classId: "Item" });

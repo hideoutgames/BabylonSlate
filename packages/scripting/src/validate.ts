@@ -1,6 +1,7 @@
-import type { GraphEdge, GraphNode, LogicGraph } from "./ir";
+import { formatEventTitle, humanizePropertyLabel } from "@babylonslate/core";
+import type { GraphEdge, GraphNode, GraphPin, LogicGraph } from "./ir";
 import { findNode, findPin } from "./ir";
-import { compiledNodeIds } from "./compiled-nodes";
+import { compiledNodeIds, entryNodes } from "./compiled-nodes";
 import { diagnostic, type Diagnostic } from "./diagnostics";
 import {
   listValidationRules,
@@ -434,15 +435,21 @@ function validatePinTyping(
   }
 
   for (const node of graph.nodes) {
+    let catalogPins: readonly GraphPin[] | undefined;
+    const catalogPinOf = (pinId: string) => {
+      catalogPins ??= registry?.get(node.typeId)?.pins(node.properties) ?? [];
+      return catalogPins.find((entry) => entry.id === pinId);
+    };
     for (const pin of node.pins) {
       if (pin.direction !== "in" || pin.kind !== "data" || pin.optional) {
         continue;
       }
+      const catalogPin = catalogPinOf(pin.id);
       const connected = incoming(node.id, pin.id) !== undefined;
       const stored = readPinDefaultForPin(node.properties, pin);
       const hasStored = stored !== undefined;
       const requiresReference = pin.reference === "required" ||
-        registry?.get(node.typeId)?.pins(node.properties).find((entry) => entry.id === pin.id)?.reference === "required";
+        catalogPin?.reference === "required";
       if (hasStored && (requiresReference || pinRejectsStoredDefault(pin.type))) {
         out.push(
           diagnostic({
@@ -461,27 +468,42 @@ function validatePinTyping(
           node.properties.implicitSelf === true &&
           (pin.type.kind === "objectRef" || pin.type.kind === "actorRef") &&
           (registry === undefined || registry.get(node.typeId)?.implicitSelfTarget === true);
+        // A catalog default is as authored as a stored one: compile and the
+        // editor both fall back to it before the type default.
+        const authored = hasStored || pin.defaultValue !== undefined ||
+          catalogPin?.defaultValue !== undefined;
         const defaultClearsMissing =
-          !requiresReference && hasStored &&
+          !requiresReference && authored &&
           (pinAcceptsLiteralDefault(pin.type) ||
             pin.type.kind === "boxedWildcard");
-        if (!defaultClearsMissing && !implicitSelfTarget) {
+        // A literal pin always has a value (stored, catalog or type default).
+        // Reference pins, which can really be empty, are the ones that warn.
+        const literalPin =
+          !requiresReference &&
+          pinAcceptsLiteralDefault(pin.type) &&
+          pin.type.kind !== "classRef" &&
+          pin.type.kind !== "assetRef";
+        const owner = ctx.members?.find(
+          (member) =>
+            member.kind === "function" &&
+            (member.id === graph.id || member.name === graph.id),
+        );
+        const interfaceOutput =
+          node.typeId === "flow.function.output" &&
+          (ctx.interfaceImplementation === true ||
+            Boolean(owner?.implementsInterface));
+        if (
+          !defaultClearsMissing &&
+          !implicitSelfTarget &&
+          (!literalPin || interfaceOutput)
+        ) {
           const liveRef =
             pin.type.kind === "objectRef" || pin.type.kind === "actorRef";
-          const owner = ctx.members?.find(
-            (member) =>
-              member.kind === "function" &&
-              (member.id === graph.id || member.name === graph.id),
-          );
-          const interfaceOutput =
-            node.typeId === "flow.function.output" &&
-            (ctx.interfaceImplementation === true ||
-              Boolean(owner?.implementsInterface));
           out.push(
             diagnostic({
               severity: requiresReference || liveRef || interfaceOutput ? "error" : "warning",
               code: "pin.missing_input",
-              message: `Required input "${pin.name}" is not connected`,
+              message: `Required input "${humanizePropertyLabel(pin.name)}" is not connected`,
               assetGuid: ctx.assetGuid,
               graphId: graph.id,
               nodeId: node.id,
@@ -1135,6 +1157,123 @@ function validateFlowSwitchCases(
   return out;
 }
 
+/** Editor-facing node name: the authored title, else the catalog title. */
+function nodeTitle(node: GraphNode, registry: ValidateOptions["registry"]): string {
+  return (
+    stringProp(node.properties, "title") ??
+    registry?.get(node.typeId)?.title ??
+    humanizePropertyLabel(node.typeId.replace(/^.*\./, ""))
+  );
+}
+
+function eventTitle(node: GraphNode, registry: ValidateOptions["registry"]): string {
+  const authored = stringProp(node.properties, "title");
+  if (authored) return authored;
+  if (node.typeId === "flow.event.custom") {
+    return formatEventTitle(String(node.properties.name ?? ""));
+  }
+  return (
+    registry?.get(node.typeId)?.title ??
+    formatEventTitle(
+      node.typeId.replace(/^.*\./, ""),
+      stringProp(node.properties, "eventQualifier"),
+    )
+  );
+}
+
+/**
+ * What makes two entry nodes the same event, or undefined when they cannot be
+ * told apart statically. Input events share one tick handler, so their
+ * identity is the Input Action or Axis they read, never the handler name.
+ */
+function singletonEventKey(node: GraphNode, incoming: IncomingEdge): string | undefined {
+  if (node.typeId === "flow.event.custom") {
+    return eventNameForEntry(node) ? `${node.typeId}\0${String(node.properties.name)}` : undefined;
+  }
+  if (eventNameForEntry(node) === undefined) return undefined;
+  if (node.typeId === "input.actionEvent" || node.typeId === "input.axisEvent") {
+    if (incoming(node.id, "binding")) return undefined;
+    const input = (node.properties["default:binding"] as { Input?: { Asset?: unknown; Name?: unknown } } | undefined)?.Input;
+    const asset = input?.Asset || input?.Name;
+    return typeof asset === "string" && asset ? `${node.typeId}\0${asset}` : undefined;
+  }
+  return `${node.typeId}\0${stringProp(node.properties, "componentId") ?? ""}`;
+}
+
+/**
+ * Every entry node runs its event once per dispatch, and the compiler exports
+ * a second entry of the same event under a renamed function that the runtime
+ * still dispatches, so a duplicate runs the event twice.
+ */
+function validateDuplicateEvents(
+  graph: LogicGraph,
+  ctx: TypeContext,
+  registry: ValidateOptions["registry"],
+  incoming: IncomingEdge,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const firstByKey = new Map<string, GraphNode>();
+  for (const node of entryNodes(graph)) {
+    const key = singletonEventKey(node, incoming);
+    if (key === undefined) continue;
+    const first = firstByKey.get(key);
+    if (!first) {
+      firstByKey.set(key, node);
+      continue;
+    }
+    out.push(
+      diagnostic({
+        code: "event.duplicate",
+        message: `${eventTitle(node, registry)} appears more than once in this graph. Keep one; use a Sequence to run several things.`,
+        assetGuid: ctx.assetGuid,
+        graphId: graph.id,
+        nodeId: node.id,
+        relatedNodeId: first.id,
+      }),
+    );
+  }
+  return out;
+}
+
+/**
+ * An impure node (one with exec pins) that no event reaches never runs, so
+ * its outputs keep their type defaults: the compiler declares each impure
+ * output slot at the top of the entry and only the node's own run fills it.
+ */
+function validateUnexecutedSources(
+  graph: LogicGraph,
+  ctx: TypeContext,
+  compiled: ReadonlySet<string>,
+  registry: ValidateOptions["registry"],
+  incoming: IncomingEdge,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  for (const edge of graph.edges) {
+    const source = findNode(graph, edge.sourceNodeId);
+    const target = findNode(graph, edge.targetNodeId);
+    if (!source || !target || compiled.has(source.id) || !compiled.has(target.id)) continue;
+    const sp = findPin(source, edge.sourcePinId);
+    const tp = findPin(target, edge.targetPinId);
+    if (sp?.kind !== "data" || sp.direction !== "out" || tp?.kind !== "data" || tp.direction !== "in") continue;
+    if (!source.pins.some((pin) => pin.kind === "exec")) continue;
+    // Only the first wire into an input is read.
+    if (incoming(target.id, tp.id) !== edge) continue;
+    out.push(
+      diagnostic({
+        severity: "warning",
+        code: "pin.unexecuted_source",
+        message: `Input "${humanizePropertyLabel(tp.name)}" reads from ${nodeTitle(source, registry)}, which never runs because no event reaches it. Connect it into the execution chain before this node.`,
+        assetGuid: ctx.assetGuid,
+        graphId: graph.id,
+        nodeId: target.id,
+        pinId: tp.id,
+        relatedNodeId: source.id,
+      }),
+    );
+  }
+  return out;
+}
+
 export function validateGraphs(
   graphs: readonly LogicGraph[],
   ctx: TypeContext,
@@ -1151,6 +1290,10 @@ export function validateGraphs(
     );
     diagnostics.push(...keep(validateBreakContext(graph, ctx, compiled, options)));
     diagnostics.push(...keep(validatePinTyping(graph, ctx, options.registry, incoming)));
+    diagnostics.push(...keep(validateDuplicateEvents(graph, ctx, options.registry, incoming)));
+    diagnostics.push(
+      ...keep(validateUnexecutedSources(graph, ctx, compiled, options.registry, incoming)),
+    );
     diagnostics.push(...keep(validateExecuteJavaScript(graph, ctx)));
     diagnostics.push(...keep(validateMemberBindings(graph, ctx)));
     diagnostics.push(...keep(validateComponentAndInheritedBindings(graph, ctx)));

@@ -10,7 +10,7 @@ The console runs commands that change quality, control time, show debug views an
 
 Exported games have no console window. They still run commands from **Execute Console Command**.
 
-The game keeps running while the console is open. As you type, a list suggests commands, arguments and values: use the arrow keys to choose, <kbd>Tab</kbd> or a tap to complete, and <kbd>Enter</kbd> to run. With no suggestions showing, the arrow keys step through earlier commands. **Clear** empties the transcript and **Copy Transcript** copies it.
+The game keeps running while the console is open, and pressing the game does not close it: use <kbd>Esc</kbd> or **Close**. The command field is ready to type in when the console opens. On touch devices it opens without the on-screen keyboard; tap the field to type. As you type, a list suggests commands, arguments and values: use the arrow keys to choose, <kbd>Tab</kbd> or a tap to complete, and <kbd>Enter</kbd> to run. With no suggestions showing, the arrow keys step through earlier commands. **Clear** empties the transcript and **Copy Transcript** copies it.
 
 ## Command syntax
 
@@ -38,7 +38,7 @@ The game keeps running while the console is open. As you type, a list suggests c
 | `renderpath` | `auto`, `forward`, `clusteredForward` or `reset` | Requests a render path for the session. No argument prints the requested and actual path and the GPU backend. |  |
 | `framecap` | fps | Limits the frame rate. 0 or less uses 60. |  |
 | `volume` | 0 to 1 | Sets the master volume, like [Set Global Volume](../scripting/class/set-global-volume.md). |  |
-| `quit` |  | Stops the session. |  |
+| `quit` |  | Stops the session. Play and Preview Build close and return to the editor; an exported game stops running. |  |
 | `help` | command name | Lists every command, or shows one command's arguments. |  |
 | `pause` |  | Pauses the game. | Yes |
 | `resume` |  | Resumes the game. | Yes |
@@ -64,8 +64,8 @@ The game keeps running while the console is open. As you type, a list suggests c
 | `shownavagent` | `on`/`off` | Shows agent bounds, paths, names and movement state. | Yes |
 | `behaviourtreedebug` | `on`/`off` | Opens the Behaviour Tree Debugger with live node states and Blackboards. | Yes |
 | `showaudiodebug` | `on`/`off` | Lists the sounds playing, with their volume, pitch and distance. | Yes |
-| `dumpactors` |  | Prints every actor with its name, class, GUID and position. | Yes |
-| `inspect` | actor name or GUID | Prints an actor's variables. With no argument it uses the actor selected in the Play Inspector. | Yes |
+| `dumpactors` |  | Prints every actor with its name, class, GUID and position, rounded to four decimals. | Yes |
+| `inspect` | actor name or GUID | Prints an actor's position and variables. With no argument it uses the actor selected in the Play Inspector. | Yes |
 | `destroyactor` | actor name or GUID | Destroys an actor for this session. | Yes |
 | `dumplog` |  | Prints the session log. | Yes |
 | `snapshot start` |  | Starts a trace recording. See [Profiler](profiler.md#trace-recording). | Yes |

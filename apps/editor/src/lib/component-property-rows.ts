@@ -14,6 +14,8 @@ import {
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   normalizeRenderTargetCaptureProperties,
+  RENDER_TARGET_CAPTURE_QUALITIES,
+  RENDER_TARGET_CAPTURE_QUALITY_LABELS,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   quaternionToEulerDegrees,
   isEditorGraphClass,
@@ -365,12 +367,20 @@ function colliderShapeRows(
         }),
     });
   } else if (shape.kind === "box2d") {
+    // Play sizes a Box 2D from the actor's first Sprite collision box whenever that Sprite has an asset.
+    const spriteSizesBox = guidValue(
+      siblings.find((sibling) => sibling.classId === "SpriteComponent")?.properties.assetGuid,
+    ) !== null;
     rows.push({
       kind: "vector3",
       id: rowId(actorId, component.id, "shape-half-extents"),
       label: "Half Extents",
       value: [shape.halfExtents.x, shape.halfExtents.y, 0],
       axes: ["X", "Y"],
+      disabled: spriteSizesBox,
+      description: spriteSizesBox
+        ? "No effect while the actor's Sprite has an asset: the Sprite's Collision box sets the size."
+        : undefined,
       onChange: (value) =>
         update("shape", {
           kind: "box2d",
@@ -636,6 +646,13 @@ export function componentPropertyRows(
       const capture = normalizeRenderTargetCaptureProperties(component.properties);
       return [
         assetRow(actorId, component, "renderTargetGuid", "Render Target", ["RenderTarget"], update, context, "Pick Render Target"),
+        {
+          kind: "enum", id: rowId(actorId, component.id, "quality"), label: "Quality", value: capture.quality,
+          defaultValue: "fast",
+          options: RENDER_TARGET_CAPTURE_QUALITIES.map((value) => ({ value, label: RENDER_TARGET_CAPTURE_QUALITY_LABELS[value] })),
+          description: "Full Quality renders like a camera here, with its own sun shadows, water refraction, post-processing and outlines. It differs only in planar water mirrors, and in which lights shine and which point and spot lights cast shadows when more ask than the device allows. It costs about a second camera, including its own sun shadow maps each captured frame: keep its Render Target at 512 × 512 or smaller, and turn off Capture Every Frame for images that rarely change. Scene Color targets only.",
+          onChange: (value) => update("quality", value),
+        },
         ...(["enabled", "captureEveryFrame", "captureOnlyActors"] as const).map((key): PropertyRow => ({
           kind: "boolean", id: rowId(actorId, component.id, key), label: humanizePropertyLabel(key), value: capture[key],
           defaultValue: key !== "captureOnlyActors",

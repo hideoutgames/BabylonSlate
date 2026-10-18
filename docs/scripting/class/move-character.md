@@ -25,3 +25,4 @@ Moves an actor by a distance, sliding along solid colliders instead of passing t
 
 - **Translation** is the distance to move in this call, in world units. It is not a speed, so multiply a velocity by the frame's delta time first.
 - The actor needs a collider; without one it does not move.
+- If **Target** is connected to a reference that is empty when the node runs, nothing happens.

@@ -22,3 +22,4 @@ Starts the particle systems on an actor.
 ## Notes
 
 - Plays every particle component on the actor.
+- If **Actor** is connected to a reference that is empty when the node runs, nothing happens.

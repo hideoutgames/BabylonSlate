@@ -1,4 +1,4 @@
-import { Color4, Effect, NodeMaterial, NodeMaterialModes, ParticleSystem, Vector3, type Scene } from "@babylonjs/core";
+import { Color4, Effect, GPUParticleSystem, NodeMaterial, NodeMaterialModes, ParticleSystem, Vector3, type Scene } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import {
@@ -75,6 +75,35 @@ describe("particle-system-factory", () => {
     expect(system.getActiveCount()).toBe(64);
     system.reset();
     expect(system.getActiveCount()).toBe(64);
+    system.dispose();
+  });
+
+  it("steps a GPU system once per scene frame however many views draw it", () => {
+    const { scene, engine } = host();
+    vi.spyOn(engine, "getCaps").mockReturnValue({ ...engine.getCaps(), supportTransformFeedbacks: true });
+    const system = createBabylonParticleSystem("views", scene, 64, true) as GPUParticleSystem;
+    system.emitter = Vector3.Zero();
+    system.start();
+    // Stand in for the GPU boundaries: readiness, buffer setup, the update pass and the draw.
+    const gpu = GPUParticleSystem.prototype as unknown as Record<"_initialize" | "_update" | "_render", () => unknown>;
+    vi.spyOn(system, "isReady").mockReturnValue(true);
+    vi.spyOn(gpu, "_initialize").mockImplementation(() => {});
+    vi.spyOn(gpu, "_render").mockReturnValue(0);
+    const update = vi.spyOn(gpu, "_update").mockImplementation(() => {});
+    const frame = () => {
+      (scene as unknown as { _frameId: number })._frameId += 1;
+      // A capture's pass, then the scene view's: each graph pass has its own render id.
+      scene.incrementRenderId();
+      system.render();
+      scene.incrementRenderId();
+      system.render();
+    };
+    frame();
+    expect(update).toHaveBeenCalledTimes(1);
+    frame();
+    frame();
+    expect(update).toHaveBeenCalledTimes(3);
+    expect(system.paused).toBe(false);
     system.dispose();
   });
 

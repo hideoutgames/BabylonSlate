@@ -230,7 +230,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
   - Draw Debug: world-space wireframes through commands; duration 0 lasts one simulation tick.
   - ExecuteConsoleCommand: works in every build; a stripped command returns failure with a message rather than throwing.
   - Print, Print String and Draw Debug default to **Development Only**: kept in editor Play and Preview Build, skipped by release export codegen (`stripDevelopmentOnly`). Any node can carry the flag.
-- **Validation**: one pure validator in `scripting` (catalog packages register rules through a hook; BT structure uses `validateBehaviourTree` with the same diagnostic shape). Same code runs on edit (250 ms debounce), on save, before Preview (startup scene, GameInstance, classes referenced by the open scene, enabled plugin editor objects), on export and in CI.
+- **Validation**: one pure validator in `scripting` (catalog packages register rules through a hook; BT structure uses `validateBehaviourTree` with the same diagnostic shape). Same code runs on edit (250 ms debounce), on save, before Preview (the scene being played, GameInstance, subsystems, the classes they reference, enabled plugin editor objects), on export and in CI.
 - Diagnostic shape: severity, message, `assetGuid`, `graphId`, `nodeId`, optional `pinId` / `relatedNodeId`, stable `code` (`type.mismatch`, `exec.cycle`, …). Compiler Results, node badges, Content Browser overlays and the session report share it.
 - Rule families: structural (unrooted nodes are omitted, not warned), pin typing (data inputs take one wire; exec inputs fan in; scripting exec outputs drive one wire), references, signatures, semantic, ExecuteJavaScript parse, behaviour tree. Export-preset rules (for example a debug-tier `ExecuteConsoleCommand`) run only at export.
 - Warnings never block. Errors block Preview with a dialog that lists them with tap-to-navigate and **Play Anyway**; no persistent bypass. If the block is routinely bypassed, demote rules rather than harden the dialog.
@@ -246,7 +246,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Rule: if a setting should change the exported game, it belongs in Project Settings; if it only changes how the editor feels on this machine, it belongs in Engine Settings. The two are separate modals, never nested.
 - Undo is **per document**, never global. `edit` command objects have `apply`, `invert` and a merge key; no surface mutates a document model directly. Continuous gestures coalesce into one entry; completed edits stay separate. Entry limit (default 50) and byte budget (default 16 MB) both apply.
 - Undo boundary = asset-file boundary: everything inside a document (including adding/removing actors, nodes, components) is undoable; asset/folder/plugin/project create and delete are not, and deletion uses a destructive dialog that names the selection and lists inbound references.
-- Autosave (default 120 s) and crash recovery: the command stream journals in batches to derived data; reopening offers recovery; clean Close truncates. Recovery reuses the command layer, never a second serialisation path.
+- Autosave (default 120 s) and crash recovery: the command stream journals in batches to derived data; reopening seals the earlier session's records and offers recovery, which only Recover or Discard ends (saves, autosave and Close truncate only edits made since the reopen). Recovery reuses the command layer, never a second serialisation path.
 - Preview Build is a Debug-menu checkbox (off by default); overlay Play remains the default and is never replaced. Play from Scene (default on) seeds the open scene tab, else the project startup scene.
 
 ## Touch-first design system
@@ -381,7 +381,7 @@ Deliberate product decisions that can look like bugs. Do not "fix" them without 
 - Print is HUD output; the console and log history are a separate sink. Development Only nodes run in editor Play and Preview Build and are stripped from release export.
 - The Play Inspector is a read-only snapshot (plus Use Camera and Destroy Actor); runtime changes never write back to authored content.
 - Play and Preview launch the open Scene tab (Play from Scene) or the startup scene, not the active asset tab.
-- Spawning every Tick is allowed: there is no actor cap, throttle or kill-Z. An empty class reference spawns nothing (safe null); Destroy Actor on null no-ops.
+- Spawning every Tick is allowed: there is no actor cap, throttle or kill-Z. An empty class reference spawns nothing (safe null); Destroy Actor on null no-ops. An Actor pin left unwired means Self only where the node says so (Destroy Actor, Get/Has/Add Component, Play/Stop Particles, Attach To Bone); a wired reference that is null never falls back to Self.
 - Class references and actor references are distinct pin kinds; a wrong-type wire is rejected.
 - Map and Array nodes are immutable values: Set/Append return new containers and need a write-back to the variable; value-type keys compare by value. Unwired impure nodes do not execute.
 - Releasing a dragged pin in the empty-canvas safe zone breaks its wires; a data input takes one wire (a new wire replaces it).

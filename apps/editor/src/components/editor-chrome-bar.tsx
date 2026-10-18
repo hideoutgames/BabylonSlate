@@ -80,7 +80,7 @@ import {
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
 import type { OpenDocument } from "../services/document-service";
-import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
+import { modelSimpleColliderCounter, physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
@@ -731,24 +731,33 @@ export function EditorChromeBar({
                 disabled={!projectName || !graphsNeedCompile}
                 onAction={async () => {
                   activateDockPanel("compiler-results");
+                  // The project compiles, but Compiler Results shows only this class, as live
+                  // validation does. Play validates the classes it needs when it starts.
+                  const focused = getOpenDocuments().find(
+                    (doc) => doc.id === activeDocumentId && doc.ref.kind === "graph",
+                  );
                   const result = await collectPlayPreviewScripts();
+                  const openDocuments = getOpenDocuments();
+                  const modelSimpleColliderCount = modelSimpleColliderCounter(
+                    assetRegistry,
+                    openDocuments.filter((doc) => doc.ref.kind === "model"),
+                  );
                   const diagnostics = [
-                    ...result.diagnostics,
-                    ...getOpenDocuments()
-                      .filter((doc) => doc.ref.kind === "graph" && doc.content)
-                      .flatMap((doc) =>
-                        physicsPairingDiagnostics(
+                    ...result.diagnostics.filter(
+                      (entry) => entry.assetGuid === focused?.ref.path,
+                    ),
+                    ...(focused?.content
+                      ? physicsPairingDiagnostics(
                           [
                             {
                               id: PREFAB_ROOT_ID,
                               components:
-                                (doc.content as SerializedGraph).components ??
-                                [],
+                                (focused.content as SerializedGraph).components ?? [],
                             },
                           ],
-                          { assetGuid: doc.ref.path, graphId: doc.id },
-                        ),
-                      ),
+                          { assetGuid: focused.ref.path, graphId: focused.id, modelSimpleColliderCount },
+                        )
+                      : []),
                   ];
                   setDiagnostics(diagnostics);
                   const errors = diagnostics.filter(

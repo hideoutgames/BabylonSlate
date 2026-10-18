@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine, PBRMaterial, Texture } from "@babylonjs/core";
+import { Constants, NullEngine, PBRMaterial, Texture } from "@babylonjs/core";
 import {
   bindResourceCacheToHandle,
+  describeEngineTexture,
   acquireMaterialTexture,
   acquireTextureVariant,
   PIXEL_ART_TEXTURE_SAMPLING,
@@ -466,6 +467,91 @@ describe("resource cache getTexture", () => {
     working.release(); cache.dispose(); scene.dispose(); engine.dispose();
   });
 
+  // Babylon's six-face loader uploads when the last face decodes, without checking that
+  // the texture was disposed meanwhile: that upload then binds no native texture.
+  function pendingCubeFaces(engine: NullEngine) {
+    const uploads: boolean[] = [];
+    const faces: { uploads: boolean[]; finish(): void; fail(message: string): void } = {
+      uploads, finish: () => {}, fail: () => {},
+    };
+    vi.mocked(engine.createCubeTexture).mockImplementationOnce((url, _scene, _files, noMipmap, onLoad, onError) => {
+      const internal = engine.createTexture(url, noMipmap ?? false, false, null);
+      internal.isCube = true; internal.isReady = false;
+      faces.finish = () => {
+        uploads.push(internal._references > 0);
+        internal.isReady = true;
+        internal.onLoadedObservable.notifyObservers(internal);
+        onLoad?.();
+      };
+      faces.fail = (message) => { internal.dispose(); onError?.(message); };
+      return internal;
+    });
+    return faces;
+  }
+
+  it("keeps the native texture of a cube released before its faces load until they upload", () => {
+    const engine = textureEngine(); const scene = new Scene(engine);
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const faces = pendingCubeFaces(engine);
+    const lease = cache.acquireCubeTextureFromImages("sky", scene, ["px", "py", "pz", "nx", "ny", "nz"]);
+    const cube = lease.resource;
+    const native = cube.getInternalTexture()!;
+    lease.release();
+    expect(isDisposedGpuTexture(cube)).toBe(true);
+    expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
+    faces.finish();
+    expect(faces.uploads).toEqual([true]);
+    expect(native._references).toBe(0);
+    cache.dispose(); scene.dispose(); engine.dispose();
+  });
+
+  it("releases the native texture of a released cube whose faces fail to load", () => {
+    const engine = textureEngine(); const scene = new Scene(engine);
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const faces = pendingCubeFaces(engine);
+    const lease = cache.acquireCubeTextureFromImages("sky", scene, ["px", "py", "pz", "nx", "ny", "nz"]);
+    const native = lease.resource.getInternalTexture()!;
+    lease.release();
+    faces.fail("controlled face failure");
+    expect(native._references).toBe(0);
+    cache.dispose(); scene.dispose(); engine.dispose();
+  });
+
+  it("stops holding the native texture of a released cube whose faces never settle", () => {
+    vi.useFakeTimers();
+    try {
+      const engine = textureEngine(); const scene = new Scene(engine);
+      const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+      pendingCubeFaces(engine);
+      const lease = cache.acquireCubeTextureFromImages("sky", scene, ["px", "py", "pz", "nx", "ny", "nz"]);
+      const native = lease.resource.getInternalTexture()!;
+      lease.release();
+      expect(native._references).toBe(1);
+      vi.advanceTimersByTime(30_000);
+      expect(native._references).toBe(0);
+      cache.dispose(); scene.dispose(); engine.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a released pending cube's native texture alive for a lease acquired before its faces load", async () => {
+    const engine = textureEngine(); const scene = new Scene(engine);
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const faces = pendingCubeFaces(engine);
+    const files = ["px", "py", "pz", "nx", "ny", "nz"];
+    const first = cache.acquireCubeTextureFromImages("sky", scene, files);
+    const native = first.resource.getInternalTexture()!;
+    first.release();
+    const second = cache.acquireCubeTextureFromImages("sky", scene, files);
+    expect(second.resource.getInternalTexture()).toBe(native);
+    faces.finish();
+    await second.ready;
+    expect(faces.uploads).toEqual([true]);
+    expect(native._references).toBe(1);
+    second.release(); cache.dispose(); scene.dispose(); engine.dispose();
+  });
+
   it("keeps a six-face cube off the scene so Play scene dispose cannot leak it", () => {
     const engine = textureEngine();
     const scene = new Scene(engine);
@@ -793,5 +879,23 @@ describe("KTX2 orientation", () => {
       expect(lowerAndUpper.map((v) => sampledImageRow(texture, v, 2, "block-compressed"))).toEqual([1, 0]);
     cache.dispose();
     engine.dispose();
+  });
+});
+
+describe("describeEngineTexture", () => {
+  it("names a native texture and says which ResourceCache entry uploads it, even once the entry is unreferenced", async () => {
+    const engine = textureEngine();
+    const cache = resourceCacheForEngine(engine);
+    const lease = cache.acquireTexture("asset-a", engine, new Uint8Array([1, 2, 3]));
+    await lease.ready;
+    const owned = lease.resource.getInternalTexture()!;
+    const stray = engine.createRawTexture(new Uint8Array(4), 1, 1, Constants.TEXTUREFORMAT_RGBA, false, false, Texture.NEAREST_SAMPLINGMODE);
+    try {
+      expect(describeEngineTexture(engine, owned)).toMatchObject({ name: owned.url, references: owned._references, resourceCache: { assetGuid: "asset-a", leases: 1 } });
+      expect(describeEngineTexture(engine, stray)).toMatchObject({ references: 1, resourceCache: null });
+      lease.release();
+      // Released but not evicted: the entry still holds the native texture.
+      expect(describeEngineTexture(engine, owned).resourceCache).toEqual({ assetGuid: "asset-a", leases: 0 });
+    } finally { releaseResourceCacheForEngine(engine); engine.dispose(); }
   });
 });

@@ -56,6 +56,7 @@ import {
   createEngine,
   createSceneLoadReadiness,
   createSceneStreamingReadiness,
+  describeEngineTexture,
   waitForSceneLoadingPaint,
   type SceneLoadProgress,
   navDebugBlockersFromActors,
@@ -329,10 +330,25 @@ export function playSessionBootControls(options: {
 export function texturesRetainedAfterPlay(
   engine: Pick<EngineHandle["engine"], "getLoadedTexturesCache">,
   before: ReadonlySet<unknown>,
-): number {
+): ReturnType<EngineHandle["engine"]["getLoadedTexturesCache"]> {
   const native = engine as unknown as Partial<Record<"_emptyTexture" | "_emptyCubeTexture" | "_emptyTexture3D" | "_emptyTexture2DArray", unknown>>;
   const placeholders = new Set([native._emptyTexture, native._emptyCubeTexture, native._emptyTexture3D, native._emptyTexture2DArray]);
-  return engine.getLoadedTexturesCache().filter((texture) => !before.has(texture) && !placeholders.has(texture)).length;
+  return engine.getLoadedTexturesCache().filter((texture) => !before.has(texture) && !placeholders.has(texture));
+}
+
+/** Each retained texture by name, with its size, native references and ResourceCache owner, so a leak report names the owner. */
+export function describeRetainedTextures(
+  engine: EngineHandle["engine"],
+  retained: ReturnType<typeof texturesRetainedAfterPlay>,
+): string {
+  const shown = retained.slice(0, 8).map((texture) => {
+    const description = describeEngineTexture(engine, texture);
+    const owner = description.resourceCache
+      ? `ResourceCache ${description.resourceCache.assetGuid} (${description.resourceCache.leases} leases)`
+      : "not ResourceCache-owned";
+    return `${description.name} ${description.size}${description.cube ? " cube" : ""}, ${description.references} reference(s), ${owner}`;
+  });
+  return retained.length > shown.length ? `${shown.join("; ")}; and ${retained.length - shown.length} more` : shown.join("; ");
 }
 
 export interface PlaySessionResult {
@@ -350,6 +366,8 @@ export interface PlaySessionResult {
     /** True when textures created during Play outlived its release. */
     textureLeak: boolean;
     quarantined: boolean;
+    /** When `textureLeak`: the retained textures by name, size, references and owner. */
+    textureLeakDetail?: string;
   }>;
   /** Which runtime host was used. */
   runtimeMode: "worker" | "in-process";
@@ -446,6 +464,25 @@ export function applyPlaySnapshotTick(
   buffer: Float32Array,
 ): number {
   return snapshotTickIndex(buffer) ?? previous;
+}
+
+/** One Print node message as the HUD and console show it. */
+export interface PlayPrintEntry {
+  message: string;
+  key: string;
+  duration: number;
+  color: string;
+}
+
+/** A worker `print` command as a HUD entry. An empty message is a valid empty line; a non-string is not. */
+export function printEntryFromCommand(command: CommandMessage): PlayPrintEntry | null {
+  if (command.type !== "print" || typeof command.message !== "string") return null;
+  return {
+    message: command.message,
+    key: command.key ?? "",
+    duration: command.duration ?? 2,
+    color: printHudCssColor(command.color),
+  };
 }
 
 export interface PlayHudStats {
@@ -565,12 +602,9 @@ export function startPlaySession(options: {
     frameId: number;
   }) => void;
   onLog?: (message: string, severity: string) => void;
-  onPrint?: (entry: {
-    message: string;
-    key: string;
-    duration: number;
-    color: string;
-  }) => void;
+  /** Each log the runtime raises (Log nodes included), with its category; the host's Output Log feed. */
+  onRuntimeLog?: (entry: { category: string; severity: string; message: string }) => void;
+  onPrint?: (entry: PlayPrintEntry) => void;
   /** Project `playFrameCap`; omitted or invalid → 60. */
   frameCap?: number;
   /** Engine Settings trace retention budget, captured when Play starts. */
@@ -650,6 +684,8 @@ export function startPlaySession(options: {
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   /** Called when a session-fatal diagnostic (infinite loop) arrives. */
   onFatalDiagnostic?: () => void;
+  /** Called when the runtime ended its own session (console `quit`); the host stops as for its Stop control. */
+  onSessionEnded?: () => void;
   /** When true, pause after Play boot so `boot.play`'s resume cannot undo it. */
   pauseOnPlay?: boolean;
   onSceneLoading?: (state: SceneLoadProgress | null) => void;
@@ -1362,6 +1398,11 @@ export function startPlaySession(options: {
       streamReadiness.receive(command);
     }
   };
+  const reportRuntimeLog = (command: Extract<CommandMessage, { type: "log" }>) => {
+    const severity = command.severity ?? "log";
+    options.onLog?.(command.message, severity);
+    options.onRuntimeLog?.({ category: command.category, severity, message: command.message });
+  };
   const onCommand = (command: CommandMessage) => {
     // Diagnostics finish their final recording while the session stops.
     if (command.type === "diagnosticOperationResult") { diagnosticClient.receive(command); return; }
@@ -1379,8 +1420,12 @@ export function startPlaySession(options: {
     if (stopped) {
       if (command.type === "saveStorageRequest") saveServer.receive(command.request);
       else if (command.type === "runtimeStopped") finishWorkerStop?.();
-      else if (command.type === "log") options.onLog?.(command.message, command.severity ?? "log");
+      else if (command.type === "log") reportRuntimeLog(command);
       else if (command.type === "diagnostic") options.onLog?.(command.message, command.severity ?? "error");
+      return;
+    }
+    if (command.type === "sessionEnded") {
+      queueMicrotask(() => options.onSessionEnded?.());
       return;
     }
     if (command.type === "simulationRetentionUnavailable") {
@@ -1432,17 +1477,9 @@ export function startPlaySession(options: {
     }
     sceneReadiness.receive(command);
     streamReadiness.receive(command);
-    if (command.type === "log") {
-      options.onLog?.(command.message, command.severity ?? "log");
-    }
-    if (command.type === "print" && command.message) {
-      options.onPrint?.({
-        message: command.message,
-        key: command.key ?? "",
-        duration: command.duration ?? 2,
-        color: printHudCssColor(command.color),
-      });
-    }
+    if (command.type === "log") reportRuntimeLog(command);
+    const printEntry = printEntryFromCommand(command);
+    if (printEntry) options.onPrint?.(printEntry);
     if (command.type === "stats") {
       emitHudStats(
         applyWorkerPlayStats(hudStats, {
@@ -2005,13 +2042,14 @@ export function startPlaySession(options: {
           const textureCountAfter =
             sharedEngine.getLoadedTexturesCache().length;
           const retained = texturesRetainedAfterPlay(sharedEngine, texturesBefore);
-          const textureLeak = retained > 0;
+          const textureLeak = retained.length > 0;
+          const textureLeakDetail = textureLeak ? describeRetainedTextures(sharedEngine, retained) : undefined;
           if (textureLeak && !quarantined) {
             console.error(
-              `[play] ${retained} texture(s) created during Play outlived it (cache ${textureCountBefore} → ${textureCountAfter})`,
+              `[play] ${retained.length} texture(s) created during Play outlived it (cache ${textureCountBefore} → ${textureCountAfter}): ${textureLeakDetail}`,
             );
           }
-          return { textureCountAfter, textureLeak, quarantined };
+          return { textureCountAfter, textureLeak, quarantined, textureLeakDetail };
         });
       stopResult = {
         diagnostics: sessionDiagnostics,
