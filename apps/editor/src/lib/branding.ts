@@ -18,3 +18,13 @@ export function brandIconSrc(theme: "light" | "dark"): string {
     theme === "dark" ? BRAND_ICON_ON_DARK : BRAND_ICON_ON_LIGHT,
   );
 }
+
+/** Wordmarks with the chromatic fringes of haptic.no's title. */
+export const BRAND_WORDMARK_ON_LIGHT = "branding/HapticWordmark-LightMode.png";
+export const BRAND_WORDMARK_ON_DARK = "branding/HapticWordmark-DarkMode.png";
+
+export function brandWordmarkSrc(theme: "light" | "dark"): string {
+  return publicAssetUrl(
+    theme === "dark" ? BRAND_WORDMARK_ON_DARK : BRAND_WORDMARK_ON_LIGHT,
+  );
+}

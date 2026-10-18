@@ -100,6 +100,7 @@
 }
 
 .dockview-theme-babylonslate .dv-active-tab {
+  position: relative;
   border-color: var(--border);
   color: var(--foreground);
   font-weight: 500;
@@ -348,4 +349,16 @@
   .dv-popover-anchor .dv-tabs-overflow-container {
     animation: none;
   }
+}
+
+/* Focused panel: a fringed underline on its visible tab, like the chrome tabs. */
+.dockview-theme-babylonslate .dv-groupview.dv-active-group .dv-active-tab::after {
+  content: "";
+  position: absolute;
+  inset: auto 8px -1px;
+  height: 1.5px;
+  border-radius: 2px;
+  background: var(--foreground);
+  box-shadow: var(--brand-fringe);
+  pointer-events: none;
 }

@@ -81,7 +81,7 @@ import {
   normalizeProjectFolderName,
   type CreateProjectOptions,
 } from "../lib/create-project";
-import { brandIconSrc } from "../lib/branding";
+import { brandWordmarkSrc } from "../lib/branding";
 import { getBuildLabel } from "../lib/build-identity";
 import { IconActionButton } from "./icon-action-button";
 import { HomepageAccount } from "./homepage-account";
@@ -345,8 +345,8 @@ export function Homepage({
       <style data-slate-home-styles>{homepageStyles}</style>
       <header className="homepage-titlebar">
         <div className="homepage-brand">
-          <img src={brandIconSrc(scheme)} alt="" />
-          <h1>Haptic</h1>
+          <img src={brandWordmarkSrc(scheme)} alt="" />
+          <h1 className="sr-only">Haptic</h1>
         </div>
         <ToggleGroup
           className="homepage-navigation"

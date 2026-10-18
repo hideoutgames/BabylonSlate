@@ -17,7 +17,7 @@
   --launcher-shadow: color-mix(in oklch, var(--shadow-color, #000) 22%, transparent);
   --launcher-ease: cubic-bezier(0.2, 0.75, 0.2, 1);
   /* Decorative viewports stay dark in both themes, like editor canvases. */
-  --launcher-viewport: oklch(0.2 0.003 75);
+  --launcher-viewport: oklch(0.145 0.004 75);
   color: var(--foreground);
 }
 
@@ -48,12 +48,12 @@
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-  padding-inline: 8px 12px;
+  padding-inline: 12px 14px;
   border-right: 1px solid var(--border);
 }
 .homepage-brand img {
-  width: 13px;
-  height: 17px;
+  width: auto;
+  height: 13px;
   object-fit: contain;
 }
 .homepage-brand h1 {
@@ -104,6 +104,7 @@
   height: 2px;
   border-radius: 2px 2px 0 0;
   background: var(--foreground);
+  box-shadow: var(--brand-fringe);
   transform: scaleX(0);
   transition: transform 220ms var(--launcher-ease);
 }
@@ -131,7 +132,7 @@
   flex-shrink: 0;
   padding: 2px 6px;
   border-bottom: 1px solid var(--border);
-  background: var(--panel-header);
+  background: var(--background);
 }
 .homepage-toolbar-start,
 .homepage-toolbar-end {
@@ -185,26 +186,53 @@
   flex-direction: column;
   isolation: isolate;
 }
-/* A faint graph-canvas dot field with a soft top light. */
+/* haptic.no's horizon: a night-blue sky over a red-orange glow, with film
+ * grain. Procedural only (gradients and SVG turbulence), no artwork. */
 .homepage-panel::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
   pointer-events: none;
+  opacity: var(--homepage-glow);
   background:
     radial-gradient(
-      ellipse 70% 55% at 50% 0%,
-      color-mix(in oklch, var(--foreground) 5%, transparent),
-      transparent 70%
+      ellipse 55% 9% at 50% 100%,
+      var(--brand-red),
+      transparent 100%
     ),
     radial-gradient(
-        circle,
-        color-mix(in oklch, var(--foreground) 9%, transparent) 0.7px,
-        transparent 1px
-      )
-      0 0 / 16px 16px;
-  mask-image: linear-gradient(to bottom, #000, transparent 85%);
+      ellipse 85% 16% at 50% 100%,
+      color-mix(in oklch, var(--brand-red) 70%, var(--brand-glow-magenta)),
+      transparent 100%
+    ),
+    radial-gradient(
+      ellipse 120% 30% at 50% 100%,
+      var(--brand-glow-violet),
+      transparent 100%
+    ),
+    radial-gradient(
+      ellipse 160% 55% at 50% 100%,
+      var(--brand-glow-blue),
+      transparent 100%
+    );
+}
+.homepage-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--homepage-grain);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.homepage-theme {
+  --homepage-glow: 0.6;
+  --homepage-grain: 0.07;
+}
+.homepage-theme[data-slate-theme="light"] {
+  --homepage-glow: 0.22;
+  --homepage-grain: 0.08;
 }
 .homepage-panel-toolbar,
 .homepage-template-toolbar {
@@ -423,7 +451,8 @@
   cursor: pointer;
 }
 .homepage-template-card[data-selected="true"] {
-  border-color: var(--ring);
+  border-color: var(--foreground);
+  box-shadow: var(--brand-fringe);
 }
 .homepage-project-card[data-touch-pressed="true"],
 .homepage-template-card[data-touch-pressed="true"] {
@@ -651,8 +680,10 @@
   .homepage-project-card:not([data-touch-input="true"]):hover,
   .homepage-template-card:not([data-touch-input="true"]):hover {
     transform: translateY(-2px);
-    border-color: color-mix(in oklch, var(--ring) 70%, var(--border));
-    box-shadow: 0 12px 24px -16px var(--launcher-shadow);
+    border-color: var(--foreground);
+    box-shadow:
+      var(--brand-fringe),
+      0 16px 32px -18px var(--launcher-shadow);
   }
   .homepage-project-card:not([data-touch-input="true"]):hover
     .homepage-project-cover
@@ -729,7 +760,7 @@
   background:
     radial-gradient(
       ellipse 60% 70% at 50% 42%,
-      oklch(0.32 0.004 75),
+      oklch(0.26 0.006 60),
       transparent 72%
     ),
     var(--launcher-viewport);
