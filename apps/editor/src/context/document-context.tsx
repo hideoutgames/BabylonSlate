@@ -398,6 +398,12 @@ interface DocumentContextValue {
   removeListedProject: (handle: ProjectFolderHandle) => Promise<void>;
   reconnectProject: () => Promise<void>;
   saveProject: () => Promise<boolean>;
+  /**
+   * Hold the auto-save timer while a prompt lists unsaved work, so the choice
+   * it asks for applies to that work. Resuming starts a new interval when
+   * something is still unsaved.
+   */
+  setAutoSavePaused: (paused: boolean) => void;
   saveAll: () => Promise<boolean>;
   /** Approve pending schema migrations and run the complete Save All; false when it did not save. */
   approveMigrationsAndSave: () => Promise<boolean>;
@@ -887,6 +893,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     () => new Set(),
   );
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSavePausedRef = useRef(false);
   const projectWriteQueue = useRef<Promise<void>>(Promise.resolve());
   const enqueueProjectWrite = useCallback(<T,>(operation: () => Promise<T>): Promise<T> => {
     const pending = projectWriteQueue.current.then(operation);
@@ -2014,7 +2021,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const approveMigrationsAndSave = useCallback(() => runSaveAll({ approveMigrations: true }), [runSaveAll]);
 
   const scheduleDebouncedSave = useCallback(() => {
-    if (saveDebounceRef.current) return;
+    if (saveDebounceRef.current || autoSavePausedRef.current) return;
     const interval =
       projectDocumentRef.current?.settings.autoSaveIntervalMs ?? 120_000;
     saveDebounceRef.current = setTimeout(() => {
@@ -2038,6 +2045,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       );
     }, interval);
   }, [projectService, saveProject]);
+
+  const setAutoSavePaused = useCallback((paused: boolean) => {
+    if (autoSavePausedRef.current === paused) return;
+    autoSavePausedRef.current = paused;
+    if (paused) {
+      if (saveDebounceRef.current) {
+        clearTimeout(saveDebounceRef.current);
+        saveDebounceRef.current = null;
+      }
+    } else if (
+      projectService.guid &&
+      (documentService.getDirtyDocuments().length > 0 || projectSaveState.current.isDirty(projectDocumentRef.current))
+    ) {
+      scheduleDebouncedSave();
+    }
+  }, [documentService, projectService, scheduleDebouncedSave]);
 
   // The edit pipeline (apply*, Undo / Redo, Simulation apply, journal append
   // and recovery replay, prefab sync). Every input is stable, so it is built
@@ -3811,6 +3834,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       removeListedProject,
       reconnectProject,
       saveProject,
+      setAutoSavePaused,
       saveAll,
       approveMigrationsAndSave,
       closeProject,
@@ -3922,6 +3946,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       removeListedProject,
       reconnectProject,
       saveProject,
+      setAutoSavePaused,
       saveAll,
       approveMigrationsAndSave,
       closeProject,

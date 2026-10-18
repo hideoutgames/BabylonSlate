@@ -241,9 +241,10 @@ function RecoveryBanner() {
  * re-render on every edit. Request handlers read open documents when they run.
  */
 function EditorChromeAndPrompts() {
-  const { dirtyDocuments } = useSaveState();
+  const { dirtyDocuments, projectDirty } = useSaveState();
   const { migrationPending, migrationPromptRequest, pendingExclusiveScene, externalChangePrompt } = useEditorShellState();
   const {
+    setAutoSavePaused,
     closeProject,
     releaseSessionsForProjectClose,
     forceCloseProject,
@@ -262,21 +263,16 @@ function EditorChromeAndPrompts() {
     resumePlayAfterMigration,
     cancelPlayMigration,
   } = usePlay();
-  const [dirtyPrompt, setDirtyPrompt] = useState<string[] | null>(null);
+  /** Close Project found unsaved work; the prompt lists it live. */
+  const [projectClosePrompt, setProjectClosePrompt] = useState(false);
   const closeRequest = useRef(0);
   /** The close request whose Save All pending migrations refused; Migrate On Save resumes it. */
   const closeAwaitingMigration = useRef<number | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [savingBeforeClose, setSavingBeforeClose] = useState(false);
   const [showMigrate, setShowMigrate] = useState(false);
-  const [pendingTabClose, setPendingTabClose] = useState<
-    | {
-        id: string;
-        name: string;
-        dirty: boolean;
-      }[]
-    | null
-  >(null);
+  /** The tabs a close request will close, listed by whichever of them are unsaved. */
+  const [pendingTabClose, setPendingTabClose] = useState<string[] | null>(null);
 
   useEffect(() => {
     if (playAwaitingMigration) setShowMigrate(true);
@@ -295,20 +291,17 @@ function EditorChromeAndPrompts() {
   /** A failed close keeps the project open; Close Project can be asked again. */
   const reportCloseFailure = (error: unknown) => {
     console.error("[editor] Close Project failed", error);
-    setDirtyPrompt(null);
+    setProjectClosePrompt(false);
     setCloseError(error instanceof Error ? error.message : String(error));
   };
 
   const requestClose = async () => {
     const result = await closeProject();
     if (result.outcome === "unsaved") {
-      setDirtyPrompt([
-        ...result.dirty.map((d) => d.ref.label),
-        ...(result.projectDirty ? ["Project Settings"] : []),
-      ]);
+      setProjectClosePrompt(true);
       return;
     }
-    setDirtyPrompt(null);
+    setProjectClosePrompt(false);
     if (result.outcome === "refused") setCloseError(SESSION_KEPT_PROJECT_OPEN);
   };
 
@@ -317,18 +310,24 @@ function EditorChromeAndPrompts() {
         .filter((doc) => doc.ref.kind === "scene")
         .map((doc) => doc.ref.label)
     : [];
+  // Listed from the live dirty state, so a save that lands while the prompt is
+  // open (an auto-save already running) shortens the list instead of leaving
+  // names that Discard no longer discards.
   const promptNames = pendingTabClose
-    ? pendingTabClose.filter((doc) => doc.dirty).map((doc) => doc.name)
-    : (dirtyPrompt ?? exclusiveDirtyNames);
+    ? dirtyDocuments.filter((doc) => pendingTabClose.includes(doc.id)).map((doc) => doc.ref.label)
+    : projectClosePrompt
+      ? [
+          ...dirtyDocuments.map((doc) => doc.ref.label),
+          ...(projectDirty ? ["Project Settings"] : []),
+        ]
+      : exclusiveDirtyNames;
 
   const requestCloseDocument = (id: string) => {
     closeRequest.current += 1;
     const doc = getOpenDocuments().find((entry) => entry.id === id);
     if (!doc) return;
     if (tabCloseDecision(doc.dirty) === "prompt") {
-      setPendingTabClose([
-        { id: doc.id, name: doc.ref.label, dirty: doc.dirty },
-      ]);
+      setPendingTabClose([doc.id]);
       return;
     }
     closeDocument(id);
@@ -338,22 +337,41 @@ function EditorChromeAndPrompts() {
     closeRequest.current += 1;
     const tabs = getOpenDocuments().filter((doc) => doc.id !== CONTENT_BROWSER_ID);
     if (tabs.some((doc) => doc.dirty)) {
-      setPendingTabClose(
-        tabs.map((doc) => ({
-          id: doc.id,
-          name: doc.ref.label,
-          dirty: doc.dirty,
-        })),
-      );
+      setPendingTabClose(tabs.map((doc) => doc.id));
       return;
     }
     for (const doc of tabs) closeDocument(doc.id);
   };
 
   const closePromptOpen =
-    dirtyPrompt !== null ||
+    projectClosePrompt ||
     pendingExclusiveScene !== null ||
     pendingTabClose !== null;
+
+  // An auto-save under the prompt would save what Discard is about to drop.
+  // Cancel resumes it with a new interval; closing the project ends it anyway.
+  useEffect(() => {
+    setAutoSavePaused(closePromptOpen);
+    return () => setAutoSavePaused(false);
+  }, [closePromptOpen, setAutoSavePaused]);
+
+  // Everything listed was saved anyway (an auto-save that began before the
+  // prompt opened): close as if nothing had been unsaved.
+  const nothingListed = promptNames.length === 0;
+  useEffect(() => {
+    if (!nothingListed || savingBeforeClose) return;
+    if (pendingTabClose) {
+      const tabs = getOpenDocuments().filter((doc) => pendingTabClose.includes(doc.id));
+      if (tabs.some((doc) => doc.dirty)) return;
+      setPendingTabClose(null);
+      for (const doc of tabs) closeDocument(doc.id);
+    } else if (projectClosePrompt) {
+      setProjectClosePrompt(false);
+      void requestClose().catch(reportCloseFailure);
+    }
+    // The handlers only read refs and live state, so they need not retrigger it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nothingListed, savingBeforeClose, pendingTabClose, projectClosePrompt]);
 
   const saveBeforeClose = () => {
     const request = ++closeRequest.current;
@@ -369,9 +387,9 @@ function EditorChromeAndPrompts() {
         }
         // A running session's authoring lock refuses Save All, so it stops
         // only now that the user chose to save, not when the prompt opened.
-        if (dirtyPrompt !== null && !await releaseSessionsForProjectClose()) {
+        if (projectClosePrompt && !await releaseSessionsForProjectClose()) {
           if (request !== closeRequest.current) return;
-          setDirtyPrompt(null);
+          setProjectClosePrompt(false);
           setCloseError(SESSION_KEPT_PROJECT_OPEN);
           return;
         }
@@ -384,11 +402,11 @@ function EditorChromeAndPrompts() {
           return;
         }
         if (pendingTabClose) {
-          const tabs = getOpenDocuments().filter((doc) => pendingTabClose.some((tab) => tab.id === doc.id));
+          const tabs = getOpenDocuments().filter((doc) => pendingTabClose.includes(doc.id));
           // A successful write can leave newer edits dirty. Keep the
           // request open until those edits are saved or discarded.
           if (tabs.some((doc) => doc.dirty)) {
-            setPendingTabClose(tabs.map((doc) => ({ id: doc.id, name: doc.ref.label, dirty: doc.dirty })));
+            setPendingTabClose(tabs.map((doc) => doc.id));
             return;
           }
           setPendingTabClose(null);
@@ -422,7 +440,7 @@ function EditorChromeAndPrompts() {
           closeRequest.current += 1;
           closeAwaitingMigration.current = null;
           setSavingBeforeClose(false);
-          setDirtyPrompt(null);
+          setProjectClosePrompt(false);
           setPendingTabClose(null);
           cancelExclusiveSceneOpen();
         }}
@@ -430,7 +448,7 @@ function EditorChromeAndPrompts() {
           closeRequest.current += 1;
           closeAwaitingMigration.current = null;
           if (pendingTabClose) {
-            for (const doc of pendingTabClose) closeDocument(doc.id);
+            for (const id of pendingTabClose) closeDocument(id);
             setPendingTabClose(null);
             return;
           }
@@ -438,7 +456,7 @@ function EditorChromeAndPrompts() {
             void confirmExclusiveSceneOpen("discard");
             return;
           }
-          setDirtyPrompt(null);
+          setProjectClosePrompt(false);
           void forceCloseProject().then((closed) => {
             if (!closed) setCloseError(SESSION_KEPT_PROJECT_OPEN);
           }, reportCloseFailure);

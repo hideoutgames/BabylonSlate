@@ -1363,6 +1363,38 @@ describe("DocumentProvider closed document history", () => {
     }
   });
 
+  it("holds auto-save while paused and starts a new interval when resumed", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.saveAll());
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+      act(() => actions.setAutoSavePaused(true));
+      // The interval already running and an edit made during the hold both wait.
+      await act(() => vi.advanceTimersByTimeAsync(300_000));
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+      await act(() => vi.advanceTimersByTimeAsync(300_000));
+      expect(documents().autoSaveStatus).toBeNull();
+      expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+
+      act(() => actions.setAutoSavePaused(false));
+      await act(() => vi.advanceTimersByTimeAsync(119_000));
+      expect(documents().autoSaveStatus).toBeNull();
+      await act(() => vi.advanceTimersByTimeAsync(1_000));
+      for (let i = 0; i < 1_000 && documents().autoSaveStatus?.state !== "saved"; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(100);
+          await new Promise((resolve) => setImmediate(resolve));
+        });
+      }
+      expect(documents().autoSaveStatus).toEqual({ state: "saved" });
+      expect(documents().dirtyDocuments).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("runs a complete Save All for Migrate On Save and asks only once per project session", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));

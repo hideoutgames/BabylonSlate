@@ -246,7 +246,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Rule: if a setting should change the exported game, it belongs in Project Settings; if it only changes how the editor feels on this machine, it belongs in Engine Settings. The two are separate modals, never nested.
 - Undo is **per document**, never global. `edit` command objects have `apply`, `invert` and a merge key; no surface mutates a document model directly. Continuous gestures coalesce into one entry; completed edits stay separate. Entry limit (default 50) and byte budget (default 16 MB) both apply.
 - Undo boundary = asset-file boundary: everything inside a document (including adding/removing actors, nodes, components) is undoable; asset/folder/plugin/project create and delete are not, and deletion uses a destructive dialog that names the selection and lists inbound references.
-- Autosave (default 120 s) and crash recovery: the command stream journals in batches to derived data; reopening offers recovery; clean Close truncates. Recovery reuses the command layer, never a second serialisation path.
+- Autosave (default 120 s) and crash recovery: the command stream journals in batches to derived data; reopening seals the earlier session's records and offers recovery, which only Recover or Discard ends (saves, autosave and Close truncate only edits made since the reopen). Recovery reuses the command layer, never a second serialisation path.
 - Preview Build is a Debug-menu checkbox (off by default); overlay Play remains the default and is never replaced. Play from Scene (default on) seeds the open scene tab, else the project startup scene.
 
 ## Touch-first design system
