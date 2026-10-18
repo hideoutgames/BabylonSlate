@@ -60,4 +60,18 @@ describe("mountPlayerPrintOverlay", () => {
     expect(host.hidden).toBe(true);
     overlay.dispose();
   });
+
+  it("shows an empty message as a row that keeps its line height", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const parent = fakeNode();
+    vi.stubGlobal("document", { createElement: () => fakeNode() });
+
+    const overlay = mountPlayerPrintOverlay(parent as unknown as HTMLElement);
+    overlay.applyPrint({ message: "", key: "gap", duration: 5 });
+    const rows = parent.children[0]!.children;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.textContent).toBe(" ");
+    overlay.dispose();
+  });
 });
