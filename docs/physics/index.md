@@ -55,7 +55,7 @@ A Ground shape placed from **Place Actors** does not stop anything until you giv
   - a Rigid Body has no shape to collide with: no Collider and no Mesh collision;
   - a Mesh is set to **Use Simple Collision** but its Model has no simple collision shapes, so it produces no collision;
   - a Mesh in a 2D scene has collision on, which only 3D physics supports. A Class does not know its scene, so only Scenes get this check.
-- The editor always draws Collider outlines. Turn on **Show Collisions** in **Viewport Settings** (<kbd>Alt</kbd>+<kbd>C</kbd>) to also see Mesh collision.
+- The editor always draws Collider outlines. Turn on **Show Collisions** in the viewport's **View** menu (<kbd>Alt</kbd>+<kbd>C</kbd>) to also see Mesh collision.
 - Turn on a Collider's **Render In Game** to draw its outline during Play, or type `showcollision` in the [console](../debugging/console.md).
 
 ## Drive physics from scripts

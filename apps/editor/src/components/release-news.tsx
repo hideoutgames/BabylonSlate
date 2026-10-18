@@ -8,18 +8,24 @@ import {
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { useAppSettings } from "../context/app-settings-context";
 import { brandWordmarkSrc } from "../lib/branding";
+import { getBuildIdentity } from "../lib/build-identity";
 import { getApplicationVersion, getReleaseNotes, type ReleaseNotes } from "../lib/changelog";
 
-/** The current version's notes: its title and changes. */
+/** The current version's changes; the dialog title already names the build. */
 function ReleaseEntry({ release }: { release: ReleaseNotes }) {
   return (
     <article className="release-news-entry">
-      <h3><SelectableText>{release.title}</SelectableText></h3>
       <ul>
         {release.changes.map((change, index) => <li key={index}><SelectableText>{change}</SelectableText></li>)}
       </ul>
     </article>
   );
+}
+
+/** The build's name as players see it: its channel, then its version. */
+function buildName(version: string): string {
+  const channel = getBuildIdentity()?.channel;
+  return `${channel === "release" ? "Release" : channel === "test" ? "Test" : "Development"} ${version}`;
 }
 
 /** Shown when the build carries no notes for its version. */
@@ -69,6 +75,7 @@ export function ReleaseNews({
     <Dialog open={open || showNews} onOpenChange={value => { if (!value) close(); }}>
       <DialogContent
         className="homepage-theme release-news"
+        bodyClassName="release-news-frame"
         data-testid="release-news"
         data-mode={news ? "news" : "history"}
       >
@@ -76,9 +83,9 @@ export function ReleaseNews({
           <div className="release-news-brand">
             <img className="release-news-wordmark" src={brandWordmarkSrc()} alt="" />
             <span className="release-news-divider" aria-hidden="true" />
-            <DialogTitle>{news ? "What's New" : "Changelog"}</DialogTitle>
-            <DialogDescription className="release-news-version">
-              <span className="sr-only">Haptic </span>{version}
+            <DialogTitle>{buildName(version)}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {news ? "What's New" : "Changelog"} for Haptic {version}
             </DialogDescription>
           </div>
         </DialogHeader>

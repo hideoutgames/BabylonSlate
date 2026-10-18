@@ -126,8 +126,9 @@ try {
   let page = await app.firstWindow();
   page.setDefaultTimeout(60000);
   await expect(page.getByTestId("homepage")).toBeVisible();
-  const news = page.getByRole("dialog", { name: "What's New" });
-  await expect(news).toContainText(manifest.applicationVersion);
+  // What's New is titled with the build name, such as "Release 1.0.2".
+  const news = page.locator('[data-testid="release-news"][data-mode="news"]');
+  await expect(page.getByRole("dialog", { name: `${manifest.channel === "test" ? "Test" : "Release"} ${manifest.applicationVersion}` })).toBeVisible();
   await news.getByRole("button", { name: "Done", exact: true }).click();
   assert.equal(page.url(), "app://babylonslate/index.html");
   assert.equal(await page.evaluate(() => typeof window.require), "undefined");
@@ -176,7 +177,7 @@ try {
   page = await app.firstWindow();
   page.setDefaultTimeout(60000);
   await expect(page.getByTestId("homepage")).toBeVisible();
-  await expect(page.getByRole("dialog", { name: "What's New" })).toHaveCount(0);
+  await expect(page.locator('[data-testid="release-news"][data-mode="news"]')).toHaveCount(0);
   await page.getByTestId(/^open-listed-project-DistributionSmoke(?:\.babproject)?$/).click();
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
   assert.deepEqual(await page.evaluate(async () => [...new Uint8Array(await window.babylonslate.project.readBinary("distribution-smoke.bin"))]), [17, 42, 99]);

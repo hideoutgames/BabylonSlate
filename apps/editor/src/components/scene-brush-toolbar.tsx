@@ -26,7 +26,7 @@ export function SceneBrushToolbar({ mode, scene, disabled }: { mode: SceneMode; 
     ? scene?.actors.find((actor) => actor.id === actorId && actor.components.some((component) => component.id === componentId && component.classId === "LandscapeComponent"))?.name
     : scene?.settings.foliageGroups?.find((group) => group.id === tools.groupId)?.name;
   const TargetIcon = landscape ? MountainIcon : TreesIcon;
-  return <div role="toolbar" aria-label={landscape ? "Landscape Tools" : "Foliage Tools"} className="flex flex-wrap items-center gap-1" data-testid="scene-brush-toolbar">
+  return <div role="toolbar" aria-label={landscape ? "Landscape Tools" : "Foliage Tools"} className="flex flex-wrap items-center gap-0.5" data-testid="scene-brush-toolbar">
     {groups.map((group, index) => <div key={group[0]!.value} className="contents">
       {index > 0 && <IslandSeparator />}
       <ToggleGroup variant="outline" size="sm" spacing={0} disabled={disabled} value={group.some((tool) => tool.value === active) ? [active] : []}

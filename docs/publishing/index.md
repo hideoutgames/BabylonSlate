@@ -4,7 +4,7 @@ Export Game packages your project as a web game in a ZIP file, ready for itch.io
 
 ## Before you export
 
-1. Set **Project Settings > Game > Startup Scene**. The exported game always starts there, whatever **Play from Scene** says.
+1. Set **Project Settings > Game > Startup Scene**. The exported game always starts there, whatever **Start In Open Scene** says.
 2. **Save All** (<kbd>Mod</kbd>+<kbd>S</kbd>). Export Game packages the saved project, not unsaved edits in open tabs.
 3. Bake each NavMesh your scenes use. Export does not bake navigation.
 4. Try a [Preview Build](preview-build.md) to check the packaged game.

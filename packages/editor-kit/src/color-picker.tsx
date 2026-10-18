@@ -2,6 +2,7 @@ import { useId, useRef, useState, type CSSProperties, type KeyboardEvent, type P
 import { ChevronDownIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Dialog, DialogContent, DialogTitle } from "@babylonslate/ui/components/dialog";
+import { usePopupOutsideDismiss } from "./use-popup-outside-dismiss";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@babylonslate/ui/components/field";
 import { Separator } from "@babylonslate/ui/components/separator";
 import { Slider } from "@babylonslate/ui/components/slider";
@@ -122,6 +123,7 @@ export function ColorPicker({
     dragRef.current = null;
     setDraft(null);
   };
+  usePopupOutsideDismiss(current !== null, close);
   const updatePalette = (event: PointerEvent<HTMLDivElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
     if (bounds.width <= 0 || bounds.height <= 0) return;
@@ -179,6 +181,7 @@ export function ColorPicker({
         className="catalog-menu catalog-menu-popup max-w-none translate-x-0 translate-y-0 rounded-lg sm:max-w-none"
         bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
         style={popupMenuFrame(current.anchor, { width: 360, height: withAlpha ? (coarse ? 492 : 440) : (coarse ? 420 : 368) })}
+        data-popup-picker=""
         data-testid={`${testId}-dialog`}
         onPointerDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}>

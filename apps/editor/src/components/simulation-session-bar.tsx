@@ -9,7 +9,7 @@ export function SimulationSessionBar({ keepChanges, onReturnToScene, onStop, sto
   stopping: boolean;
 }) {
   return (
-    <div className="fixed right-3 top-[max(0.5rem,env(safe-area-inset-top))] z-[70] flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-1 rounded-md border border-border bg-popover p-1 shadow-md"
+    <div className="fixed right-3 top-[max(0.5rem,env(safe-area-inset-top))] z-[70] toolbar-island max-w-[calc(100%-1.5rem)] flex-wrap"
       role="region" aria-label="Simulation Controls" data-testid="simulation-session-bar">
       <SelectableText className="px-1 text-xs">Simulation · {keepChanges ? "Keep Changes On Stop" : "Discard On Stop"}</SelectableText>
       <Button size="sm" variant="outline" onClick={onReturnToScene}>Return To Scene</Button>
