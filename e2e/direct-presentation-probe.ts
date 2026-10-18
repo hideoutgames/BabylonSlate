@@ -10,8 +10,9 @@ import { openMainScene, openTestProject, waitForSceneViewportReady } from "./ope
 
 type Presentation = { direct?: boolean; held: number; drawn: number };
 type Baseline = { backend?: string; render?: { presentation?: Presentation } };
-type Sample = { source: "engine" | "view" | "screen"; minAlpha: number; spread: number; width: number };
+type Sample = { source: "engine" | "view"; minAlpha: number; spread: number; width: number };
 type Probe = { stop: () => Promise<Sample[]> };
+type Backend = "webgl2" | "webgpu";
 
 declare global {
   interface Window {
@@ -47,9 +48,15 @@ async function presentation(page: Page): Promise<Presentation | undefined> {
  * Samples what the viewport shows after every Engine frame and after every
  * layout resize: the Engine canvas while it covers the view canvas, else the
  * view canvas. A blank image is transparent or a single flat colour.
+ *
+ * A page reads a WebGPU canvas back only in the task that acquired its
+ * texture, which a held frame never does. On WebGPU the probe therefore reads
+ * the covered view canvas: test builds first write the presented image into it
+ * (`installDirectViewReadSync`), which copies the held texture to the Engine
+ * canvas in this task and draws it from there.
  */
-async function startFrameProbe(page: Page): Promise<Probe> {
-  await page.evaluate(() => {
+async function startFrameProbe(page: Page, backend: Backend): Promise<Probe> {
+  await page.evaluate((readView) => {
     const probe = { samples: [] as Sample[], stop: false };
     window.__directPresentationProbe = probe;
     const engine = document.querySelector<HTMLCanvasElement>('[data-testid="project-engine-canvas"]')!;
@@ -59,7 +66,7 @@ async function startFrameProbe(page: Page): Promise<Probe> {
     const context = sampler.getContext("2d", { willReadFrequently: true })!;
     const sample = () => {
       const covered = engine.style.visibility === "visible" && engine.previousElementSibling === view;
-      const shown = covered ? engine : view;
+      const shown = covered && !readView ? engine : view;
       context.clearRect(0, 0, 16, 16);
       context.drawImage(shown, 0, 0, 16, 16);
       const data = context.getImageData(0, 0, 16, 16).data;
@@ -86,7 +93,7 @@ async function startFrameProbe(page: Page): Promise<Probe> {
     const resized = new ResizeObserver(() => { if (!probe.stop) sample(); });
     resized.observe(view);
     resized.observe(engine);
-  });
+  }, backend === "webgpu");
   return {
     stop: () => page.evaluate(() => {
       const probe = window.__directPresentationProbe!;
@@ -97,40 +104,30 @@ async function startFrameProbe(page: Page): Promise<Probe> {
 }
 
 /**
- * Samples the composited viewport with screenshots. A page reads a WebGPU
- * canvas back only in the task that drew it, while the screen keeps showing
- * its last presented frame, so the WebGPU path is checked on screen.
+ * The composited viewport, sampled once from a screenshot: the luma spread of
+ * a 16×16 reduction. Screenshots of a visible WebGPU canvas take seconds on the
+ * software adapter and stall under continuous heavy rendering, so this is a
+ * single check, taken before the probed changes.
  */
-function startScreenProbe(page: Page): Probe {
-  const samples: Sample[] = [];
-  const canvas = page.getByTestId("viewport-canvas");
-  let stopped = false;
-  const loop = (async () => {
-    while (!stopped) {
-      const box = await canvas.boundingBox();
-      if (!box) continue;
-      const png = (await page.screenshot({ clip: box })).toString("base64");
-      const spread = await page.evaluate(async (data) => {
-        const bytes = Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
-        const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
-        const sampler = document.createElement("canvas");
-        sampler.width = sampler.height = 16;
-        const context = sampler.getContext("2d", { willReadFrequently: true })!;
-        context.drawImage(bitmap, 0, 0, 16, 16);
-        const pixels = context.getImageData(0, 0, 16, 16).data;
-        let low = 255;
-        let high = 0;
-        for (let index = 0; index < pixels.length; index += 4) {
-          const luma = (2 * pixels[index]! + 5 * pixels[index + 1]! + pixels[index + 2]!) / 8;
-          low = Math.min(low, luma);
-          high = Math.max(high, luma);
-        }
-        return high - low;
-      }, png);
-      samples.push({ source: "screen", minAlpha: 255, spread, width: box.width });
+async function screenSpread(page: Page): Promise<number> {
+  const png = (await page.getByTestId("viewport-canvas").screenshot({ timeout: 60_000 })).toString("base64");
+  return page.evaluate(async (data) => {
+    const bytes = Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+    const sampler = document.createElement("canvas");
+    sampler.width = sampler.height = 16;
+    const context = sampler.getContext("2d", { willReadFrequently: true })!;
+    context.drawImage(bitmap, 0, 0, 16, 16);
+    const pixels = context.getImageData(0, 0, 16, 16).data;
+    let low = 255;
+    let high = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      const luma = (2 * pixels[index]! + 5 * pixels[index + 1]! + pixels[index + 2]!) / 8;
+      low = Math.min(low, luma);
+      high = Math.max(high, luma);
     }
-  })();
-  return { stop: async () => { stopped = true; await loop; return samples; } };
+    return high - low;
+  }, png);
 }
 
 async function switchToWebGpu(page: Page) {
@@ -149,7 +146,7 @@ async function switchToWebGpu(page: Page) {
  * requires the directly presented viewport to stay non-blank across the held
  * frames of a FrameGraph rebuild and across a resize.
  */
-export async function directViewportStaysNonBlank(page: Page, backend: "webgl2" | "webgpu") {
+export async function directViewportStaysNonBlank(page: Page, backend: Backend) {
   await openTestProject(page);
   await openMainScene(page);
   if (backend === "webgpu") await switchToWebGpu(page);
@@ -164,7 +161,9 @@ export async function directViewportStaysNonBlank(page: Page, backend: "webgl2" 
   );
   await expect(page.getByTestId("tree-row-actor:probe-box")).toBeVisible();
   await expect.poll(async () => (await presentation(page))?.direct).toBe(true);
-  const probe = backend === "webgpu" ? startScreenProbe(page) : await startFrameProbe(page);
+  // On screen, the copied canvas texture is what the browser composites.
+  if (backend === "webgpu") expect(await screenSpread(page), "the composited viewport is not blank").toBeGreaterThanOrEqual(8);
+  const probe = await startFrameProbe(page, backend);
 
   // A render mode change rebuilds the FrameGraph asynchronously; its frames are held.
   const before = (await presentation(page))!;
@@ -185,7 +184,7 @@ export async function directViewportStaysNonBlank(page: Page, backend: "webgl2" 
   expect((await presentation(page))!.direct).toBe(true);
 
   const samples = await probe.stop();
-  expect(samples.length).toBeGreaterThan(backend === "webgpu" ? 5 : 20);
+  expect(samples.length).toBeGreaterThan(20);
   expect(new Set(samples.map((sample) => sample.width)).size, "the probe saw the resize").toBeGreaterThan(1);
   const blank = samples.filter((sample) => sample.minAlpha < 250 || sample.spread < 8);
   expect(blank, JSON.stringify(samples.slice(0, 40))).toEqual([]);
