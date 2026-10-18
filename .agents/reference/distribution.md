@@ -33,8 +33,8 @@ Vite reads the generated manifest for startup, project-loading and Engine Settin
 ## Changelog rule
 
 - Every `release/version.json` bump adds an entry to `release/changelog.json`: numeric `version`, nonempty `title`, nonempty `changes` array of plain-text notes. Keep older entries (in-app history). Notes are public release content.
-- Vite validates and bundles current and older entries for web, Electron and iOS, including offline launches; missing, empty, duplicate or mismatched notes fail the build. Native release preflight reads notes from the exact selected source commit; release manifests and GitHub Release bodies carry them.
-- The launcher shows **What's New** until that version's first dismissal (remembered in local Engine Settings; clearing app settings resets it; browser profiles and devices keep separate histories). **Account → Changelog** reopens the history. Dev servers and explicit QA `?test` sessions omit automatic news; the deployed web preview shows it.
+- Vite validates and bundles current and older entries for web, Electron, iOS and Android, including offline launches; missing, empty, duplicate or mismatched notes fail the build, and `scripts/distribution/changelog.test.mjs` checks the tracked files for the declared version. Entries newer than `release/version.json` are left out until the bump, so notes can be drafted ahead. Native release preflight reads notes from the exact selected source commit; release manifests and GitHub Release bodies carry them.
+- The launcher shows **What's New** once its loading screen has gone, until that version's first dismissal (remembered in local Engine Settings; clearing app settings resets it; browser profiles and devices keep separate histories). The profile menu's **Changelog** reopens the history. Dev servers and explicit QA `?test` sessions omit automatic news; the deployed web preview shows it.
 
 ## Desktop automatic updates
 

@@ -5,6 +5,8 @@ import changelog from "../release/changelog.json" with { type: "json" };
 test("release news survives reload and the account menu reopens it offline", async ({ page }) => {
   // Exercise the real web launch, including Pages' QA storage configuration.
   await page.goto("/");
+  // News waits for the loading screen so it never opens behind it.
+  await expect(page.locator(".slate-loading")).toHaveCount(0, { timeout: 30_000 });
   const news = page.getByRole("dialog", { name: "What's New" });
   await expect(news).toBeVisible();
   await expect(news).toContainText(declared.version);

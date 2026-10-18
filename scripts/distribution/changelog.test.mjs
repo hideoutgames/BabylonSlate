@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { validateChangelog, validatePatchNotes } from "./changelog.mjs";
 import { buildManifest } from "./metadata.mjs";
@@ -17,6 +18,13 @@ test("missing, empty, mismatched and duplicate patch notes block builds", () => 
   }
   assert.throws(() => validateChangelog({ schemaVersion: 1, releases: [entry("1.2.2")] }, "1.2.3"), /Patch notes/);
   assert.throws(() => validateChangelog({ schemaVersion: 1, releases: [entry(), entry()] }, "1.2.3"), /Duplicate/);
+});
+
+test("the source changelog has notes for the declared version", () => {
+  const read = file => JSON.parse(readFileSync(new URL(`../../release/${file}`, import.meta.url), "utf8"));
+  const { version } = read("version.json");
+  const releases = validateChangelog(read("changelog.json"), version);
+  assert.equal(releases[0].version, version);
 });
 
 test("release metadata carries the required version's notes for either native platform", () => {

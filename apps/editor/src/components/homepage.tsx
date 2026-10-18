@@ -764,7 +764,7 @@ export function Homepage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <ReleaseNews open={changelogOpen} onOpenChange={setChangelogOpen} ready={dataReady && !accountOpen && !settingsOpen && !createOpen && !busy} />
+      <ReleaseNews open={changelogOpen} onOpenChange={setChangelogOpen} ready={dataReady && !transition.active && !accountOpen && !settingsOpen && !createOpen && !busy} />
       {settingsOpen && (
         <Suspense fallback={null}>
           <SettingsModal
