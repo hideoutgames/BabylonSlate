@@ -254,6 +254,25 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().assetRegistry?.getByGuid(asset.header.guid)?.path).toBe("assets/Champion.class.babasset");
   });
 
+  it("retitles an open Material's tab and payload name when its asset is renamed", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Material", name: "Shiny" }));
+    act(() => actions.noteAssetsCreated());
+    const ref: DocumentRef = { kind: "material", path: asset.path, label: "Shiny Material" };
+    await act(() => actions.openDocument(ref));
+    const oldId = documentId({ kind: "material", path: asset.path });
+    expect((documents().openDocuments.find((doc) => doc.id === oldId)?.content as { name?: string }).name).toBe("Shiny");
+
+    const renamed = await act(() => actions.renameAsset(asset.header.guid, "Glossy"));
+    act(() => actions.repathDocument("material", asset.path, renamed.path));
+
+    const open = documents().openDocuments.find((doc) => doc.id === documentId({ kind: "material", path: renamed.path }));
+    expect(open?.ref.label).toBe("Glossy Material");
+    expect((open?.content as { name?: string }).name).toBe("Glossy");
+    expect(documents().dirtyDocuments).toEqual([]);
+  });
+
   it.each([false, true])("recovers unsaved Class instances after a rename and crash (rolled back: %s)", async (failRename) => {
     const actions = await openProject();
     const registry = documents().assetRegistry!;

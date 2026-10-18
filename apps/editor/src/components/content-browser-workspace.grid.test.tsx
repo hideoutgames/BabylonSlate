@@ -13,6 +13,7 @@ import type { IndexedAsset } from "@babylonslate/assets";
 import { AssetRegistry, createDefaultPluginSettings, projectContentRoot } from "@babylonslate/assets";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
+import { KeybindProvider } from "../context/keybind-context";
 import { subscribeModelThumbnailJobs, type ModelThumbnailJob } from "../lib/model-thumbnail-queue";
 import {
   CONTENT_BROWSER_GRID_GAP_PX,
@@ -211,6 +212,7 @@ afterEach(async () => {
   docs.projectDocument.settings.editorUtilityObjects = [];
   docs.projectDocument.settings.startupSceneGuid = "";
   docs.replaceClassReferencesBeforeDelete.mockReset().mockResolvedValue(undefined);
+  docs.repairAfterAssetDelete.mockClear();
   if (clientWidthDescriptor) {
     Object.defineProperty(
       HTMLElement.prototype,
@@ -295,17 +297,26 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     expect(Array.from(rows).map((row) => row.textContent)).toEqual(["Actorsassets/Actors2 Assets"]);
   });
 
-  it("keeps referenced material deletion available", () => {
-    const { actorClass: material, scene } = classAndScene();
-    material.header.type = "Material";
+  it.each(["Material", "Prefab"])("deletes a referenced %s after one confirmation and updates its references", async (type) => {
+    const { actorClass: asset, scene } = classAndScene();
+    asset.header.type = type;
     scene.header.dependencies = ["hero"];
-    installRegistry([material, scene]);
+    installRegistry([asset, scene]);
+    const deleteAsset = vi.fn(async () => {});
+    Object.assign(docs.assetRegistry as object, { deleteAsset });
     render(<ContentBrowserWorkspace />);
-    fireEvent.click(screen.getByTestId(`content-item-${material.path}`));
+    fireEvent.click(screen.getByTestId(`content-item-${asset.path}`));
     fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
 
     expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("main");
     expect((screen.getByTestId("content-browser-delete-confirm") as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
+
+    // No Class is deleted, so there is nothing to replace and no second step.
+    expect(screen.queryByTestId("content-browser-delete-references-confirmation")).toBeNull();
+    await waitFor(() => expect(deleteAsset).toHaveBeenCalledWith("hero"));
+    expect(docs.replaceClassReferencesBeforeDelete).not.toHaveBeenCalled();
+    await waitFor(() => expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(new Set(["hero"]), new Set(), expect.any(Function), []));
   });
 
   it.each(["gameInstanceClass", "editorUtilityObjects"] as const)(
@@ -356,16 +367,19 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     expect(screen.getByTestId(`content-item-${actorClass.path}`)).toBeTruthy();
   });
 
-  it("also confirms twice when the deleted asset is the project startup scene", () => {
+  it("deletes the project startup scene after one confirmation that lists Project Settings", async () => {
     const { scene } = classAndScene();
     docs.projectDocument.settings.startupSceneGuid = scene.header.guid;
     installRegistry([scene]);
+    const deleteAsset = vi.fn(async () => {});
+    Object.assign(docs.assetRegistry as object, { deleteAsset });
     render(<ContentBrowserWorkspace />);
     fireEvent.click(screen.getByTestId(`content-item-${scene.path}`));
     fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
     expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("Project Settings");
     fireEvent.click(screen.getByTestId("content-browser-delete-confirm"));
-    expect(screen.getByTestId("content-browser-delete-references-confirmation")).toBeTruthy();
+    expect(screen.queryByTestId("content-browser-delete-references-confirmation")).toBeNull();
+    await waitFor(() => expect(deleteAsset).toHaveBeenCalledWith(scene.header.guid));
   });
 });
 
@@ -582,6 +596,19 @@ describe("ContentBrowserWorkspace grid window", () => {
     fireEvent.change(input, { target: { value: "Renamed" } });
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(renameAsset).toHaveBeenCalledWith(asset.header.guid, "Renamed"));
+  });
+
+  it("renames the selected asset with F2 once its clicked tile has focus", async () => {
+    const asset = texture(0);
+    installRegistry([asset]);
+    render(<KeybindProvider><ContentBrowserWorkspace /></KeybindProvider>);
+    const tile = screen.getByTestId(`content-item-${asset.path}`);
+    fireEvent.click(tile);
+    // A browser click focuses the tile: still inside the workspace's focus gate.
+    tile.focus();
+    fireEvent.keyDown(tile, { key: "F2", code: "F2" });
+    expect(await screen.findByTestId("content-browser-name-dialog")).toBeTruthy();
+    expect((screen.getByTestId("content-browser-name-input") as HTMLInputElement).value).toBe("tex-0");
   });
 
   it("opens the selected asset from the toolbar Open action", async () => {

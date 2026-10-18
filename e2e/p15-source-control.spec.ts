@@ -24,6 +24,9 @@ async function enableSourceControl(page: Page): Promise<void> {
   await page.getByTestId("settings-modal-category-sourceControl").click();
   const enable = page.getByTestId("settings-source-control-enabled");
   await expect(enable).toHaveAttribute("aria-checked", "false");
+  await page
+    .getByTestId("settings-source-control-url")
+    .fill("https://example.com/team/game.git");
   await enable.click();
   await expect(enable).toHaveAttribute("aria-checked", "true");
   await closeSettings(page);
