@@ -407,6 +407,7 @@ export function SettingsModal({
   const [exportProjectBusy, setExportProjectBusy] = useState(false);
   const [exportProjectError, setExportProjectError] = useState<string | null>(null);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [sourceControlUrlMissing, setSourceControlUrlMissing] = useState(false);
   const [disableSourceControlOpen, setDisableSourceControlOpen] =
     useState(false);
   const [utilityPick, setUtilityPick] = useState<"new" | number | null>(null);
@@ -1570,52 +1571,69 @@ export function SettingsModal({
                     setDisableSourceControlOpen(true);
                     return;
                   }
-                  updateProjectSettings({
-                    sourceControl: { ...current, enabled },
-                  });
-                  if (!current.repositoryUrl) {
-                    const requestedProject = projectGuid;
-                    void prefillSourceControlFromGit().then((prefill) => {
-                      if (!prefill.repositoryUrl && !prefill.branch) return;
-                      // Fill from the settings as they are now: a field typed
-                      // or a Disable confirmed during the Git read wins.
-                      const live = latest.current;
-                      if (!live.project || live.projectGuid !== requestedProject) return;
-                      const now = live.project.settings.sourceControl;
-                      if (!now.enabled) return;
-                      live.applyProjectSettings({
-                        sourceControl: {
-                          ...now,
-                          repositoryUrl: now.repositoryUrl || prefill.repositoryUrl,
-                          branch:
-                            now.branch === current.branch && prefill.branch
-                              ? prefill.branch
-                              : now.branch,
-                        },
-                      });
+                  if (current.repositoryUrl.trim()) {
+                    setSourceControlUrlMissing(false);
+                    updateProjectSettings({
+                      sourceControl: { ...current, enabled },
                     });
+                    return;
                   }
+                  // No URL typed: read the folder's Git settings, and refuse
+                  // to enable when they hold none either.
+                  const requestedProject = projectGuid;
+                  void prefillSourceControlFromGit().then((prefill) => {
+                    // Fill from the settings as they are now: a URL typed
+                    // during the Git read wins.
+                    const live = latest.current;
+                    if (!live.project || live.projectGuid !== requestedProject) return;
+                    const now = live.project.settings.sourceControl;
+                    const repositoryUrl = now.repositoryUrl.trim() || prefill.repositoryUrl;
+                    if (!repositoryUrl) {
+                      setSourceControlUrlMissing(true);
+                      return;
+                    }
+                    setSourceControlUrlMissing(false);
+                    live.applyProjectSettings({
+                      sourceControl: {
+                        ...now,
+                        enabled: true,
+                        repositoryUrl,
+                        branch:
+                          now.branch === current.branch && prefill.branch
+                            ? prefill.branch
+                            : now.branch,
+                      },
+                    });
+                  });
                 }}
                 data-testid="settings-source-control-enabled"
               />
             </Field>
-              <Field className="settings-field">
+              <Field className="settings-field" data-invalid={sourceControlUrlMissing || undefined}>
               <FieldLabel htmlFor="settings-source-control-url">
                 Repository URL
               </FieldLabel>
               <Input
                 id="settings-source-control-url"
                 value={projectDocument.settings.sourceControl.repositoryUrl}
-                onChange={(event) =>
+                aria-invalid={sourceControlUrlMissing || undefined}
+                aria-describedby={sourceControlUrlMissing ? "settings-source-control-url-error" : undefined}
+                onChange={(event) => {
+                  setSourceControlUrlMissing(false);
                   updateProjectSettings({
                     sourceControl: {
                       ...projectDocument.settings.sourceControl,
                       repositoryUrl: event.target.value,
                     },
-                  })
-                }
+                  });
+                }}
                 data-testid="settings-source-control-url"
               />
+              {sourceControlUrlMissing ? (
+                <FieldError id="settings-source-control-url-error" data-testid="settings-source-control-url-error">
+                  Enter a Repository URL before turning on Source Control.
+                </FieldError>
+              ) : null}
             </Field>
               <Field className="settings-field">
               <FieldLabel htmlFor="settings-source-control-branch">

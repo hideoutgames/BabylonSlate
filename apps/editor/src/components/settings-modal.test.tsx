@@ -772,6 +772,45 @@ describe("SettingsModal project authoring", () => {
     });
   });
 
+  it("turns Source Control on with the repository and branch read from Git", async () => {
+    sourceControl.readGitPrefill.mockResolvedValueOnce({ repositoryUrl: "https://example.com/origin.git", branch: "develop" });
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    fireEvent.click(screen.getByTestId("settings-source-control-enabled"));
+    await waitFor(() =>
+      expect(updateProjectSettings).toHaveBeenCalledWith({
+        sourceControl: expect.objectContaining({ enabled: true, repositoryUrl: "https://example.com/origin.git", branch: "develop" }),
+      }),
+    );
+    expect(screen.queryByTestId("settings-source-control-url-error")).toBeNull();
+  });
+
+  it("refuses to turn Source Control on without a Repository URL until one is entered", async () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    fireEvent.click(screen.getByTestId("settings-source-control-enabled"));
+    const error = await screen.findByTestId("settings-source-control-url-error");
+    expect(error.textContent).toBe("Enter a Repository URL before turning on Source Control.");
+    expect(screen.getByTestId("settings-source-control-url").getAttribute("aria-invalid")).toBe("true");
+    expect(updateProjectSettings).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByTestId("settings-source-control-url"), {
+      target: { value: "https://example.com/team.git" },
+    });
+    expect(screen.queryByTestId("settings-source-control-url-error")).toBeNull();
+  });
+
+  it("turns Source Control on at once when a Repository URL is already set", () => {
+    projectSourceControl.current = { repositoryUrl: "https://example.com/team.git" };
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    fireEvent.click(screen.getByTestId("settings-source-control-enabled"));
+    expect(updateProjectSettings).toHaveBeenCalledWith({
+      sourceControl: expect.objectContaining({ enabled: true, repositoryUrl: "https://example.com/team.git" }),
+    });
+    expect(sourceControl.readGitPrefill).not.toHaveBeenCalled();
+  });
+
   it("confirms before turning Source Control Enable off", () => {
     sourceControlEnabled.current = true;
     render(
