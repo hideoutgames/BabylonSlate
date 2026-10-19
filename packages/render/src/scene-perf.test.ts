@@ -99,6 +99,25 @@ describe("prewarmSceneMaterials", () => {
     }
   });
 
+  it("names the Material and mesh when a shader compile rejects with the bare log", async () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    try {
+      const mesh = MeshBuilder.CreateBox("crate", {}, scene);
+      const material = mesh.material = new PBRMaterial("painted", scene);
+      // Babylon's forceCompilationAsync rejects with the shader log itself, a string.
+      const log = "FRAGMENT SHADER ERROR: 0:7: syntax error";
+      vi.spyOn(material, "forceCompilationAsync").mockRejectedValue(log);
+      const failure: unknown = await prewarmSceneMaterials(scene).then(() => null, (error: unknown) => error);
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toBe(`Shader compilation failed for "painted" for "crate": ${log}`);
+      expect((failure as Error).cause).toBe(log);
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
+  });
+
   it("rejects a ready world frame while its shadow render target is unready", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
