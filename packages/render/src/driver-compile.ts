@@ -1,4 +1,4 @@
-import type { AbstractEngine, AbstractMesh, Effect } from "@babylonjs/core";
+import type { AbstractEngine, AbstractMesh, Effect, ObjectRenderer, Scene } from "@babylonjs/core";
 import { SCENE_DRIVER_COMPILE_TIMEOUT_MS } from "./stall-deadline";
 
 /** Babylon exposes no enumeration of the Engine's cached effects. */
@@ -22,6 +22,10 @@ export function pendingDriverCompiles(engine: AbstractEngine): string[] {
  * variants beyond the ones they wait for (`requestCompilesAhead`): enough to
  * overlap slow links (a cold Water shader takes seconds), few enough not to
  * queue a whole scene's variants in front of the one a probe needs next.
+ * The budget counts every compile pending on the Engine, whoever requested it
+ * (the camera-pass probe, a preview or thumbnail on the shared Engine). It is a
+ * soft bound: the probe that crosses it can start several compiles, one per
+ * distinct submesh material and its depth pre-pass.
  */
 export const COMPILE_AHEAD_LIMIT = 4;
 
@@ -42,8 +46,9 @@ export function compileAheadBudget(engine: AbstractEngine): number {
  * as well: `headRest`, for variants of the head its probe skipped, then the
  * meshes after it in the scan's `meshes`, with the scan's own filter and
  * `probe`. Each probed mesh joins `requested` and is not probed ahead again;
- * the owner clears it once its pass is ready. The results are discarded: the
- * scan alone decides readiness.
+ * the owner clears it once its pass is ready, the scene's readiness inputs
+ * change or the pass drops its objects. The results are discarded: the scan
+ * alone decides readiness.
  */
 export function requestCompilesAhead(
   engine: AbstractEngine,
@@ -63,9 +68,23 @@ export function requestCompilesAhead(
     const mesh = meshes[index]!;
     if (requested.has(mesh) || !mesh.isEnabled() || mesh.isBlocked || !mesh.isVisible || !mesh.subMeshes) continue;
     requested.add(mesh);
-    // A ready mesh started nothing; an unready one started any number of compiles, or none (a pending texture).
+    // A ready mesh started nothing. An unready one started none (a pending texture) or any number, which can take
+    // the pending count past the limit by more than one.
     if (!probe(mesh)) budget = compileAheadBudget(engine);
   }
+}
+
+/**
+ * The meshes an ObjectRenderer's readiness scan walks (Babylon 9.29
+ * `_checkReadiness`): its render list, or without one (an object list whose
+ * meshes are null) the scene's meshes while a frame graph renders the scene,
+ * and its active meshes otherwise.
+ */
+export function readinessScanMeshes(renderer: ObjectRenderer, scene: Scene): readonly AbstractMesh[] {
+  if (renderer.renderList) return renderer.renderList;
+  if (scene.frameGraph) return scene.meshes;
+  const active = scene.getActiveMeshes();
+  return active.data.slice(0, active.length);
 }
 
 /**

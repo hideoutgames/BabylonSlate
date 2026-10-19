@@ -32,6 +32,7 @@ import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admi
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
+import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
 import { isManagedClusteredLight } from "./clustered-light-policy";
@@ -87,7 +88,7 @@ export type ForwardSceneGraphReadiness = ForwardSceneGraphResult & {
   preparationRequired?: true;
 };
 /** Babylon 9.29 keeps private the render context whose copy effects FrameGraph.isReady checks first. */
-type FrameGraphContextInternals = { _renderContext: { _isReady(): boolean } };
+type FrameGraphContextInternals = { _renderContext?: { _isReady?: () => boolean } };
 const outlineAttachments = new WeakMap<SharedOutlineView, ForwardSceneFrameGraph>();
 /** Readiness-relevant collection sizes, compared in place each frame. */
 const membershipCounts: readonly ((scene: Scene) => number)[] = [
@@ -409,6 +410,9 @@ export class ForwardSceneFrameGraph {
   markReadinessDirty(): void {
     this.readinessDirtyFlag = true;
     this.readinessRevision += 1;
+    // A changed input can change the variants of meshes already probed ahead: their passes probe them ahead again.
+    for (const task of this.graph?.tasks ?? [])
+      if (task instanceof ManagedShadowObjectRendererTask || task instanceof LogicalGeometryTask) task.forgetCompilesAhead();
   }
 
   private markOutlineDirty(): void {
@@ -1277,7 +1281,10 @@ export class ForwardSceneFrameGraph {
   private graphReady(): boolean {
     const graph = this.graph!;
     const engine = this.scene.getEngine();
-    let ready = (graph as unknown as FrameGraphContextInternals)._renderContext._isReady();
+    const context = (graph as unknown as FrameGraphContextInternals)._renderContext;
+    if (typeof context?._isReady !== "function")
+      throw new Error("Unsupported Babylon frame graph readiness layout: _renderContext._isReady is missing.");
+    let ready = context._isReady();
     for (const task of graph.tasks) {
       if (ready) ready = task.isReady();
       else if (compileAheadBudget(engine) > 0) task.isReady();

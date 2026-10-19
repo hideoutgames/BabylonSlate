@@ -244,6 +244,10 @@ describe("editor-only assets", () => {
   });
 
   it("indexes prefab components on Class headers", () => {
+    const materialInstance = {
+      materialGuid: "material-1",
+      parameters: { Tint: { kind: "color" as const, value: [1, 0.5, 0, 1] as [number, number, number, number] } },
+    };
     expect(
       classHeaderMeta({
         members: [],
@@ -253,6 +257,14 @@ describe("editor-only assets", () => {
             classId: "MeshComponent",
             parentId: null,
             properties: { meshKind: "box" },
+          },
+          {
+            id: "trigger-1",
+            classId: "ColliderComponent",
+            name: " Launch Trigger ",
+            parentId: "mesh-1",
+            properties: {},
+            materialInstance,
           },
         ],
       }),
@@ -267,6 +279,14 @@ describe("editor-only assets", () => {
           classId: "MeshComponent",
           parentId: null,
           properties: { meshKind: "box" },
+        },
+        {
+          id: "trigger-1",
+          classId: "ColliderComponent",
+          name: "Launch Trigger",
+          parentId: "mesh-1",
+          properties: {},
+          materialInstance,
         },
       ],
     });

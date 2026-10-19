@@ -2,6 +2,7 @@ import {
   isFunctionLibraryClass,
   normalizeClassMemberCategory,
   normalizeDataDefinitionAsset,
+  normalizeMaterialInstanceOverrides,
   normalizeScene,
   type DataDefinitionField,
   type GraphClassMember,
@@ -385,9 +386,14 @@ export function classGraphFromHeaderPayload(
       const parentId = (entry as { parentId?: unknown }).parentId;
       const properties = (entry as { properties?: unknown }).properties;
       const transform = (entry as { transform?: unknown }).transform;
+      const rawName = (entry as { name?: unknown }).name;
+      const name = typeof rawName === "string" ? rawName.trim() : "";
+      const materialInstance = normalizeMaterialInstanceOverrides((entry as { materialInstance?: unknown }).materialInstance);
       components.push({
         id: id.trim(),
         classId: classId.trim(),
+        ...(name ? { name } : {}),
+        ...(materialInstance ? { materialInstance } : {}),
         properties:
           properties && typeof properties === "object"
             ? { ...(properties as Record<string, unknown>) }

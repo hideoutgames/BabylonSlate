@@ -302,6 +302,41 @@ describe("gpuPickMesh", () => {
       expect(f.livePickPassIds()).toEqual(built);
       expect(f.scene.objectRenderers).toHaveLength(1);
     });
+
+    it("probes the meshes behind a waiting one ahead again on the next tap after one that gave up", async () => {
+      const f = pickFixture();
+      // A driver that links in parallel: while the pass waits on one mesh it probes the next ones ahead.
+      f.engine.getCaps().parallelShaderCompile = { COMPLETION_STATUS_KHR: 0x91b1 };
+      let now = 1_000;
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      const [left] = f.meshes;
+      // Strict probes each mesh still answers unready; each of Left's costs 600 ms of the one-second budget.
+      const waits = new Map<AbstractMesh, number>(f.meshes.map((mesh) => [mesh, Infinity]));
+      const probes: string[] = [];
+      for (const mesh of f.meshes) {
+        const isReady = mesh.isReady.bind(mesh);
+        vi.spyOn(mesh, "isReady").mockImplementation((complete, ...rest) => {
+          if (!complete) return isReady(complete, ...rest);
+          const remaining = waits.get(mesh) ?? 0;
+          probes.push(`${mesh.name} ${remaining > 0 ? "waits" : "ready"}`);
+          if (remaining === 0) return isReady(complete, ...rest);
+          waits.set(mesh, remaining - 1);
+          if (mesh === left) now += 600;
+          return false;
+        });
+      }
+      // Nothing becomes ready: the tap gives up, after probing Middle and Right ahead.
+      expect(await f.tap()).toBeUndefined();
+      // Middle and Right are ready now and Left answers once more; changed readiness inputs make the next tap wait.
+      waits.clear();
+      waits.set(left!, 1);
+      markSceneReadinessDirty(f.scene);
+      probes.length = 0;
+      f.hit(1);
+      expect((await f.tap())?.name).toBe("Left");
+      // While the pass waits on Left, it probes the meshes behind it ahead again.
+      expect(probes.slice(0, 3)).toEqual(["Left waits", "Middle ready", "Right ready"]);
+    });
   });
 
   describe("candidates", () => {
