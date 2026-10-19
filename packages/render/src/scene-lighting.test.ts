@@ -6,6 +6,7 @@ import {
   syncForwardLightPolicy,
 } from "./light-policy";
 import { forwardLightBudget } from "./forward-light-budget";
+import { sortReceiverLightSources } from "./forward-light-slots";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { CelMaterial } from "./cel-material";
 import { updateSceneRenderingSettings } from "./render-settings";
@@ -320,6 +321,31 @@ describe("scene material lighting", () => {
     syncForwardLightPolicy(scene, 1);
     expect(dark.isEnabled()).toBe(true);
     expect(isForwardLightExcluded(visible)).toBe(true);
+  });
+
+  it("puts a re-enabled sun back in its scene-order slot so receivers ask for the shader they compiled before", () => {
+    const scene = host(false);
+    scene.activeCamera = new UniversalCamera("camera", Vector3.Zero(), scene);
+    const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+    const locals = lights(scene, 3);
+    const material = new StandardMaterial("receiver", scene);
+    const receiver = MeshBuilder.CreateBox("receiver", {}, scene);
+    receiver.material = material;
+    const part = receiver.subMeshes[0]!;
+    syncSceneLighting(scene);
+    material.isReadyForSubMesh(receiver, part);
+    const defines = part.materialDefines!.toString();
+    const effect = part.effect;
+    setAuthoredLightEnabled(sun, false);
+    beginFrame(scene);
+    material.isReadyForSubMesh(receiver, part);
+    // Babylon appends a re-enabled light after every light the receiver kept.
+    setAuthoredLightEnabled(sun, true);
+    beginFrame(scene);
+    expect(receiver.lightSources).toEqual([sun, ...locals]);
+    material.isReadyForSubMesh(receiver, part);
+    expect(part.materialDefines!.toString()).toBe(defines);
+    expect(part.effect).toBe(effect);
   });
 
   it("uses one directional light and transfers illumination without changing authored intent", () => {
@@ -728,6 +754,24 @@ describe("scene material lighting", () => {
       const defines = part.materialDefines!.toString();
       expect(defines).toContain("#define SPOTLIGHT8\n");
       expect(defines).not.toContain("#define SHADOW8\n");
+    });
+
+    it("re-sorts a receiver to scene order without dirtying it when only lights with one slot signature move", () => {
+      const { scene, lamps, material, receiver, part } = swapFixture([4]);
+      const other = MeshBuilder.CreateBox("other", {}, scene);
+      other.material = material;
+      material.isReadyForSubMesh(other, other.subMeshes[0]!);
+      const sources = receiver.lightSources;
+      const order = sources.slice();
+      // Two points trade places in one receiver, two lights of different kinds in the other.
+      [sources[0], sources[1]] = [sources[1]!, sources[0]!];
+      const spot = other.lightSources.indexOf(lamps[4]!);
+      [other.lightSources[0], other.lightSources[spot]] = [other.lightSources[spot]!, other.lightSources[0]!];
+      expect(sortReceiverLightSources(scene)).toBe(true);
+      expect(receiver.lightSources).toEqual(order);
+      expect(other.lightSources).toEqual(order);
+      expect(part.materialDefines!.isDirty).toBe(false);
+      expect(other.subMeshes[0]!.materialDefines!.isDirty).toBe(true);
     });
 
     it("hands an exchange back to Babylon when the admitted light's parent is the dropped light", async () => {
