@@ -288,6 +288,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     </Empty>
   );
   const [addComponentAnchor, setAddComponentAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [componentSearch, setComponentSearch] = useState("");
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   const [constraintTargetPick, setConstraintTargetPick] = useState<{ actorId: string; componentId: string } | null>(null);
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
@@ -1383,6 +1384,10 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
         entry.colliderRows.length ||
         entry.showExtras,
     );
+  const componentNeedle = componentSearch.trim().toLowerCase();
+  const shownComponentDetails = componentNeedle
+    ? componentDetails.filter(({ title }) => title.toLowerCase().includes(componentNeedle))
+    : componentDetails;
 
   return (
     <PanelFrame data-testid="scene-details-panel">
@@ -1420,19 +1425,31 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
         {!visibleTransformRows.length && !componentDetails.length
           ? noMatchingProperties
           : null}
-        <div className="mx-2 flex">
-          <Button
-            variant="outline"
-            size="sm"
-            aria-label={multiSelection ? `Add Component To ${actor.name}` : "Add Component"}
+        {/* The Components panel's header: find a component, or add one to this actor. */}
+        <div className="mx-2 flex items-center gap-1" data-testid="details-components-header">
+          <SearchInput
+            className="h-7 pointer-coarse:h-11"
+            placeholder="Search components"
+            aria-label="Search components"
+            value={componentSearch}
+            onChange={setComponentSearch}
+            data-testid="details-component-search"
+          />
+          <IconActionButton
+            label={`Add Component To ${actor.name}`}
+            className="pointer-coarse:size-11"
             onClick={(event) => setAddComponentAnchor(anchorBelow(event.currentTarget))}
             data-testid="details-add-component"
           >
-            <PlusIcon data-icon="inline-start" />
-            Add Component
-          </Button>
+            <PlusIcon />
+          </IconActionButton>
         </div>
-        {componentDetails.map(
+        {componentNeedle && !shownComponentDetails.length && componentDetails.length ? (
+          <p className="mx-2 text-xs text-muted-foreground" data-testid="details-component-search-empty">
+            No Matching Components
+          </p>
+        ) : null}
+        {shownComponentDetails.map(
           ({
             component,
             template,
@@ -1794,6 +1811,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
           if (!open) setAddComponentAnchor(null);
         }}
         anchor={addComponentAnchor}
+        title={`Add Component To ${actor.name}`}
         projectItems={projectComponentItems}
         overlay={overlay}
         physicsWorld={scene.settings.physicsWorld}
