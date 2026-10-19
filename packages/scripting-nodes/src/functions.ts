@@ -10,6 +10,7 @@ import {
   jsIdent,
   memberArgPinId,
   memberPinRows,
+  memberPinUnit,
   objectLiteralKey,
   type MemberPinRow,
   pinTypeForVariable,
@@ -41,14 +42,15 @@ export const functionCallNodes: NodeDefinition[] = [
       const sidePins = (direction: "in" | "out") =>
         rows
           .filter((row) => (row.direction === "out" ? "out" : "in") === direction)
-          .map((row) =>
-            pin(
+          .map((row) => ({
+            ...pin(
               memberArgPinId(row.name, CALL_PIN_IDS),
               row.name,
               direction,
               row.typeId === "exec" ? EXEC : pinTypeForVariable(row),
             ),
-          );
+            ...(direction === "in" ? memberPinUnit(row) : {}),
+          }));
       const inputs = hasExec
         ? sidePins("in")
         : [pin("execIn", "exec", "in", EXEC), ...sidePins("in")];

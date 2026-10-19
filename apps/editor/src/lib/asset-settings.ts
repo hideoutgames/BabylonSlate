@@ -121,6 +121,7 @@ export function patchStructureField(
       const next = { ...field, ...patch, id: dataFieldIdentity(field) };
       // Soft is the absence of the property.
       if ("loading" in patch && patch.loading !== "hard") delete next.loading;
+      if ("unit" in patch && !patch.unit) delete next.unit;
       return next;
     }),
   };

@@ -20,6 +20,7 @@ Variables store values on each object of a class, such as health, a score or a t
 | Class Type | Object, Actor and Class variables: the class they accept. Subclasses are accepted too. |
 | Asset Type | Asset variables: the kind of asset, such as Audio or Material. |
 | Enum Type, Record Type | Enum and structure variables: the [Enum, Structure](structures-and-enums.md) or [Data Definition](data.md) to use. |
+| Unit | Integer, Float and Vector variables: shows a unit after the value in number fields, such as 90° for **Degrees** or 16 px for **Pixels**. The value itself is unchanged. The default value, array and map items, and the value input of Set nodes show it. |
 | Loading | Asset and Class variables: **Soft (Load On Demand)** loads on first use or through the load nodes; **Hard (Load With Owner)** loads with the object. |
 | Default | The starting value. Arrays use **Add Item** and maps use **Add Entry**. Object and Actor variables start empty. |
 

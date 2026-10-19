@@ -216,7 +216,9 @@ function headerMetaForSave(
             typeId?: string;
             direction?: "in" | "out";
             typeClassId?: string;
+            unit?: string;
           }>;
+          unit?: string;
         }>;
       },
     );

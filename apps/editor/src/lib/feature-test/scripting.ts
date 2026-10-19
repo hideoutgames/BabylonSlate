@@ -112,7 +112,7 @@ const ZERO_ROTATOR = { pitch: 0, yaw: 0, roll: 0 };
 const DESCRIBE_METHOD = "Describe";
 const DESCRIBE_PINS: GraphClassMemberPin[] = [{ name: "Label", typeId: "string", direction: "out" }];
 const WAVE_PINS: GraphClassMemberPin[] = [
-  { name: "Time", typeId: "float", direction: "in" },
+  { name: "Time", typeId: "float", direction: "in", unit: "s" },
   { name: "Value", typeId: "float", direction: "out" },
 ];
 
@@ -125,7 +125,7 @@ const ITEM_FIELDS: DataDefinitionField[] = [
 
 const SPIN_CONFIG_FIELDS = [
   { id: "ft-script-field-label", name: "Label", typeId: "string", defaultValue: "Spinner" },
-  { id: "ft-script-field-rate", name: "Rate", typeId: "float", defaultValue: 1 },
+  { id: "ft-script-field-rate", name: "Rate", typeId: "float", defaultValue: 1, unit: "/s" },
 ];
 
 /** Save Game field node data (permanent field id, display name, type). */

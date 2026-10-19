@@ -1,4 +1,4 @@
-import { hardLoadingProperty } from "@babylonslate/core";
+import { hardLoadingProperty, normalizeValueUnit } from "@babylonslate/core";
 import {
   clampEnumValue,
   type EnumAsset,
@@ -58,6 +58,7 @@ export function asStructureAsset(
           ? { defaultValue: row.defaultValue }
           : {}),
         ...hardLoadingProperty(row),
+        ...(normalizeValueUnit(row.unit) ? { unit: normalizeValueUnit(row.unit) } : {}),
       };
     }),
   };

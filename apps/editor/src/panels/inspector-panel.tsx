@@ -5,7 +5,7 @@ import { useSimulationInspectionStore } from "../context/simulation-inspection-c
 import { GraphDataLiteralDefaults } from "../components/graph-data-literal-editor";
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
-import { carriesLoadingPolicy, normalizeClassMemberCategory, parseUIControl2DProperties, type CollisionPreset } from "@babylonslate/core";
+import { carriesLoadingPolicy, declaredValueUnit, normalizeClassMemberCategory, parseUIControl2DProperties, type CollisionPreset } from "@babylonslate/core";
 import { useMemo, useState } from "react";
 import { normalizeModelPayload } from "@babylonslate/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
@@ -144,6 +144,7 @@ import {
   variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
+import { unitPatchForType, valueUnitRow } from "../lib/value-unit-row";
 import { defaultValueForMember, keepsTypeClassId, pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { canRenameCustomEvent, customEventRenameError, patchClassMember, renameCustomEvent } from "../lib/class-members";
 import { classDocumentShowsPrefab, classIdFromClassAsset, classParentLookup, filterInspectorPinPickerAssets, materialDomainsFromAssets } from "../lib/content-browser-helpers";
@@ -225,6 +226,7 @@ function memberPinRows(
       type: pin.typeId,
       ...(pin.container ? { container: pin.container } : {}),
       ...(pin.typeClassId ? { typeClassId: pin.typeClassId } : {}),
+      ...(pin.unit ? { unit: pin.unit } : {}),
     }));
 }
 
@@ -240,6 +242,8 @@ function memberPinsFromRows(
     };
     if (row.container && row.container !== "single") pin.container = row.container;
     if (row.typeClassId?.trim()) pin.typeClassId = row.typeClassId.trim();
+    const unit = declaredValueUnit(pin.typeId, row.unit);
+    if (unit) pin.unit = unit;
     return pin;
   };
   return [
@@ -410,6 +414,7 @@ function ClassMemberDetails({
       };
       // Loading only applies to asset and Class references.
       if (member.loading && !carriesLoadingPolicy(patch)) patch.loading = undefined;
+      if (member.unit) Object.assign(patch, unitPatchForType(next.typeId));
       if (
         typeChanged ||
         containerChanged ||
@@ -438,8 +443,10 @@ function ClassMemberDetails({
         container,
         assetEntries,
         onPickAsset: (rowId, assetType) => setDefaultAssetPick({ rowId, assetType }),
+        unit: member.unit,
       },
     );
+    const unitRow = valueUnitRow("unit", typeId, member.unit, (unit) => commit({ unit }));
     return (
       <div
         className="flex flex-col gap-3 p-3"
@@ -561,6 +568,7 @@ function ClassMemberDetails({
             data-testid="inspector-member-loading"
           />
         ) : null}
+        {unitRow ? <PropertyGrid rows={[unitRow]} /> : null}
         {singleDefaultRows.length > 0 ? (
           <PropertyGrid rows={singleDefaultRows} />
         ) : null}
@@ -588,6 +596,7 @@ function ClassMemberDetails({
                   onPickClass: () => setEntryPick({ index, field: "value" }),
                   label: `Item ${index + 1}`,
                   pinId: `item-${index}`,
+                  unit: member.unit,
                 })}
               />
             )}
@@ -648,6 +657,7 @@ function ClassMemberDetails({
                       onPickClass: () =>
                         setEntryPick({ index, field: "value" }),
                       label: "Value",
+                      unit: member.unit,
                       pinId: `value-${index}`,
                     },
                   )}
@@ -854,6 +864,7 @@ function ClassMemberDetails({
           data-testid="inspector-member-inputs"
           showOptional={false}
           showDefault={false}
+          showUnit
           readOnly={lockSignature}
           onChange={(nextRows) => commitPins(nextRows, outputRows)}
         />
@@ -2069,6 +2080,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
             data-testid="inspector-event-outputs"
             showOptional={false}
             showDefault={false}
+            showUnit
             onChange={(rows) => {
               const pins = memberPinsFromRows([], rows);
               setEventPinRowIds(committedPinRowIds(selectedNode.id, pins, [], rows));

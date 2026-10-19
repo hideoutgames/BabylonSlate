@@ -298,6 +298,8 @@ export interface GraphClassMemberPin {
   direction: "in" | "out";
   /** Object/class pin constraint, or Structure/Enum asset guid. Missing means unconstrained BObject at pin conversion. */
   typeClassId?: string;
+  /** Number and vector inputs: display unit (`VALUE_UNITS`) on the pin's literal. Missing is none. */
+  unit?: string;
 }
 
 export interface GraphClassMemberImplementsInterface {
@@ -350,6 +352,8 @@ export interface GraphClassMember {
    * reference with its owner. Missing is Soft (load on demand).
    */
   loading?: "hard";
+  /** Number and vector variables: display unit (`VALUE_UNITS`). Missing is none. */
+  unit?: string;
 }
 
 export interface SerializedGraph {

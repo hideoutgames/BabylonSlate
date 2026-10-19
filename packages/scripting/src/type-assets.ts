@@ -36,6 +36,8 @@ export type StructField = {
   keyFields?: DataFieldSnapshot[];
   /** Asset and Class fields only: `"hard"` loads the reference with the asset that owns the value. Missing is Soft. */
   loading?: "hard";
+  /** Number and vector fields: display unit (`VALUE_UNITS`). Missing is none. */
+  unit?: string;
 };
 
 export type StructureAsset = {

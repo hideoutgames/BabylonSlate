@@ -1,3 +1,4 @@
+import { normalizeValueUnit } from "@babylonslate/core";
 import { pinTypeFromJson, type PinType } from "@babylonslate/scripting";
 import type {
   BehaviourTreeDocument,
@@ -191,6 +192,8 @@ function parseKey(value: unknown): BlackboardKey | null {
   const type: PinType = pinTypeFromJson(row.type);
   const key: BlackboardKey = { name: row.name, type };
   if ("defaultValue" in row) key.defaultValue = row.defaultValue;
+  const unit = normalizeValueUnit(row.unit);
+  if (unit) key.unit = unit;
   return key;
 }
 

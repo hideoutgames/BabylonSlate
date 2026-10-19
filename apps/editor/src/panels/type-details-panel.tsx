@@ -28,6 +28,7 @@ import {
   variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
+import { unitPatchForType, valueUnitRow } from "../lib/value-unit-row";
 import {
   collectGraphTypeAssets,
   typeAssetPickerEntries,
@@ -166,7 +167,11 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
           type: entry.type,
         })),
         onPickAsset: (rowId, assetType) => setDefaultAssetPick({ rowId, assetType }),
+        unit: field.unit,
       },
+    );
+    const unitRow = valueUnitRow("structure-field-unit", field.typeId, field.unit, (unit) =>
+      commit(patchStructureField(asset, selectedIndex, { unit })),
     );
     return (
       <PanelFrame data-testid="structure-details-panel">
@@ -206,6 +211,7 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
                     ),
                     // Loading only applies to asset and Class references.
                     ...(carriesLoadingPolicy({ ...field, typeId }) ? {} : { loading: undefined }),
+                    ...unitPatchForType(typeId),
                   }),
                 );
               }}
@@ -246,6 +252,7 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
               data-testid="structure-field-loading"
             />
           ) : null}
+          {unitRow ? <PropertyGrid rows={[unitRow]} /> : null}
           {defaultRows.length > 0 ? <PropertyGrid rows={defaultRows} /> : null}
           <AssetPicker
             open={typeAssetPickerOpen}

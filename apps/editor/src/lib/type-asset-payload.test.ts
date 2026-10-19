@@ -71,6 +71,17 @@ describe("asStructureAsset", () => {
     expect(asStructureAsset({ fields: JSON.parse(JSON.stringify(fields)) }).fields).toEqual(fields);
   });
 
+  it("keeps a known unit on a field across reopening and drops an unknown one", () => {
+    const fields = asStructureAsset({ fields: [
+      { id: "width", name: "Width", typeId: "float", unit: "px" },
+      { id: "delay", name: "Delay", typeId: "int", unit: "hours" },
+    ] }).fields;
+    expect(fields).toEqual([
+      { id: "width", name: "Width", typeId: "float", unit: "px" },
+      { id: "delay", name: "Delay", typeId: "int" },
+    ]);
+  });
+
   it("defaults field types and preserves defaultValue when present", () => {
     expect(
       asStructureAsset({

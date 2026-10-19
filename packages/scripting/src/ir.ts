@@ -16,6 +16,8 @@ export type GraphPin = {
   reference?: "required" | "writable";
   /** An unwired Actor input reads the actor running the graph (the node compiles it to `ctx.self`). */
   selfWhenUnwired?: boolean;
+  /** Display unit of a number or vector literal (`VALUE_UNITS`); values are never converted. */
+  unit?: string;
 };
 
 export type GraphNode = {

@@ -76,6 +76,7 @@ const KEY = {
   lastSeen: "lastSeen",
   alert: "alert",
   phase: "phase",
+  reactionTime: "reactionTime",
 } as const;
 
 // Workload knobs. Crowd agents are capped at 32 per navmesh; keep well below.
@@ -356,6 +357,8 @@ function blackboardDocument(name: string, defaults: { alert: boolean; phase: str
       { name: KEY.lastSeen, type: { kind: "vec3" } },
       { name: KEY.alert, type: { kind: "bool" }, defaultValue: defaults.alert },
       { name: KEY.phase, type: { kind: "string" }, defaultValue: defaults.phase },
+      // Shows a Blackboard key unit in the Blackboard editor.
+      { name: KEY.reactionTime, type: { kind: "float" }, defaultValue: 0.5, unit: "s" },
     ],
   };
 }

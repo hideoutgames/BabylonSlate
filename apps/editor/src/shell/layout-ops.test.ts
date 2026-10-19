@@ -47,11 +47,14 @@ describe("canFocusLayout", () => {
     expect(canFocusLayout("animation")).toBe(true);
   });
 
-  it("is disabled on Content Browser and compact asset tabs", () => {
+  it("is disabled on Content Browser and tabs without DockView windows", () => {
     expect(canFocusLayout("content-browser")).toBe(false);
-    expect(canFocusLayout("font")).toBe(false);
-    expect(canFocusLayout("blackboard")).toBe(false);
     expect(canFocusLayout(undefined)).toBe(false);
+  });
+
+  it("is enabled on Font and Blackboard documents, which have DockView windows", () => {
+    expect(canFocusLayout("font")).toBe(true);
+    expect(canFocusLayout("blackboard")).toBe(true);
   });
 });
 

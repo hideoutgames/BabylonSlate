@@ -1,6 +1,7 @@
 import { normalizeClassMemberCategory } from "./class-member-category";
 import { normalizeMaterialInstanceOverrides, type MaterialInstanceOverrides } from "./material-parameter-value";
 import type { SerializedComponent } from "./scene";
+import { declaredValueUnit } from "./value-units";
 
 /** Editor-only assets stripped from Play compile and game export (P12 / P14). */
 
@@ -83,6 +84,7 @@ export type ClassHeaderPin = {
   typeId?: string;
   direction?: "in" | "out";
   typeClassId?: string;
+  unit?: string;
 };
 
 export type ClassHeaderFunction = {
@@ -105,6 +107,7 @@ export type ClassHeaderVariable = {
   keyTypeClassId?: string;
   category?: string;
   loading?: "hard";
+  unit?: string;
 };
 
 export type ClassHeaderEvent = {
@@ -196,6 +199,8 @@ function headerPinsFromMember(
       direction: pin.direction,
     };
     if (pin.typeClassId) next.typeClassId = pin.typeClassId;
+    const unit = declaredValueUnit(pin.typeId, pin.unit);
+    if (unit) next.unit = unit;
     return next;
   });
 }
@@ -218,6 +223,7 @@ export function classHeaderMeta(graph: {
     overrides?: { classId: string; name: string };
     category?: string;
     loading?: "hard";
+    unit?: string;
   }>;
   components?: Array<Partial<ClassHeaderComponent>>;
 }): ClassHeaderMeta {
@@ -267,6 +273,8 @@ export function classHeaderMeta(graph: {
       const variableCategory = normalizeClassMemberCategory(member.category);
       if (variableCategory) variable.category = variableCategory;
       if (member.loading === "hard") variable.loading = "hard";
+      const unit = declaredValueUnit(member.typeId, member.unit);
+      if (unit) variable.unit = unit;
       variables.push(variable);
       continue;
     }

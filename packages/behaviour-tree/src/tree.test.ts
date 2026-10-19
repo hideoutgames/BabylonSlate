@@ -90,13 +90,17 @@ describe("behaviour tree documents", () => {
     const parsed = parseBlackboardDocument({
       name: "",
       keys: [
-        { name: "count", type: { kind: "int" }, defaultValue: 3 },
+        { name: "count", type: { kind: "int" }, defaultValue: 3, unit: "s" },
+        { name: "speed", type: { kind: "float" }, unit: "miles" },
         { type: { kind: "bool" } },
       ],
     });
     expect(parsed).toEqual({
       name: "Blackboard",
-      keys: [{ name: "count", type: { kind: "int" }, defaultValue: 3 }],
+      keys: [
+        { name: "count", type: { kind: "int" }, defaultValue: 3, unit: "s" },
+        { name: "speed", type: { kind: "float" } },
+      ],
     });
     expect(parseBlackboardDocument(null)).toBeNull();
   });

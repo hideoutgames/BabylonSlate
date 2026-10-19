@@ -36,6 +36,7 @@ import {
   variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
+import { unitPatchForType, valueUnitRow } from "../lib/value-unit-row";
 import {
   collectGraphTypeAssets,
   typeAssetPickerEntries,
@@ -128,7 +129,7 @@ export function BlackboardKeys({ payload, onChange, selected, onSelect }: Blackb
     commit({
       ...doc,
       keys: doc.keys.map((row, at) => at === index
-        ? { ...row, type: pinTypeForMember(typeId, nextTypeClassId), defaultValue: defaultValueForMember(typeId, nextTypeClassId, typeSchemas) }
+        ? { ...row, type: pinTypeForMember(typeId, nextTypeClassId), defaultValue: defaultValueForMember(typeId, nextTypeClassId, typeSchemas), ...unitPatchForType(typeId) }
         : row),
     });
   };
@@ -278,8 +279,11 @@ export function BlackboardInspector({ payload, onChange, selected }: BlackboardE
       enumMembers,
       assetEntries: pickerAssets.map((entry) => ({ id: entry.guid, name: entry.name, type: entry.type })),
       onPickAsset: (rowId, assetType) => setDefaultAssetPick({ rowId, assetType }),
+      unit: key.unit,
     },
   );
+  const unitRow = valueUnitRow("unit", pickerTypeId, key.unit, (unit) => patchKey({ unit }));
+  if (unitRow) keyRows.push(unitRow);
 
   return (
     <PanelFrame data-testid="blackboard-inspector-panel">
@@ -298,6 +302,7 @@ export function BlackboardInspector({ payload, onChange, selected }: BlackboardE
               patchKey({
                 type: pinTypeForMember(typeId, nextTypeClassId),
                 defaultValue: defaultValueForMember(typeId, nextTypeClassId, typeSchemas),
+                ...unitPatchForType(typeId),
               });
             }}
             data-testid="blackboard-key-type"

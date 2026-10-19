@@ -394,7 +394,7 @@ async function saveWalker(ctx: FeatureTestContext, palette: Palette): Promise<Pl
   const setInput = movementFunction("Set Movement Input");
   const jump = movementFunction("Jump");
   const turnRate = varMember("ft-phys-var-turn-rate", "TurnRate", "float", WALKER_TURN_RATE, { category: "Walker" });
-  const heading = varMember("ft-phys-var-heading", "Heading", "float", 0, { category: "Walker" });
+  const heading = varMember("ft-phys-var-heading", "Heading", "float", 0, { category: "Walker", unit: "deg" });
   const hop = varMember("ft-phys-var-hop", "Hop", "bool", false, { category: "Walker" });
   // Capsule: radius 0.4, height 1.8, centred on the actor origin.
   const components: SerializedComponent[] = [

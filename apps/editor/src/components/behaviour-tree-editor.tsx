@@ -830,9 +830,10 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
       fields.some((field) => field.kind === "blackboardKey") &&
       fields.some((field) => field.key === "value");
     const selectedKey = typeof properties.key === "string" ? properties.key : "";
-    const selectedType = blackboardKeyEntries.find(
+    const selectedEntry = blackboardKeyEntries.find(
       (entry) => entry.name === selectedKey,
-    )?.type;
+    );
+    const selectedType = selectedEntry?.type;
     return fields.flatMap<PropertyRow>((field) => {
       if (typedValue && field.key === "value") {
         if (!selectedKey || !selectedType) return [];
@@ -843,6 +844,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
               name: field.key,
               type: selectedType,
               value: propertyValue(field, properties),
+              unit: selectedEntry?.unit,
             },
           ],
           (patch) => {

@@ -4,7 +4,7 @@ import {
   pinTypeForVariable,
   type PinType,
 } from "@babylonslate/scripting";
-import { mapDefaultLiteral } from "@babylonslate/core";
+import { declaredValueUnit, mapDefaultLiteral } from "@babylonslate/core";
 
 export {
   pinTypeForMember,
@@ -25,7 +25,14 @@ export type MemberPinRow = {
   container?: string;
   keyTypeId?: string;
   keyTypeClassId?: string;
+  unit?: string;
 };
+
+/** A signature input's display unit, carried onto its pin for the literal field. */
+export function memberPinUnit(row: MemberPinRow): { unit?: string } {
+  const unit = declaredValueUnit(row.typeId, row.unit);
+  return unit ? { unit } : {};
+}
 
 export function jsIdent(name: string): string {
   const cleaned = name.replace(/[^A-Za-z0-9_$]/g, "_");
@@ -99,12 +106,15 @@ export function dataMemberPins(
     }
     if (row.typeId === "exec") return [];
     return [
-      pin(
-        memberArgPinId(row.name, fixedIds),
-        row.name,
-        direction,
-        pinTypeForVariable(row),
-      ),
+      {
+        ...pin(
+          memberArgPinId(row.name, fixedIds),
+          row.name,
+          direction,
+          pinTypeForVariable(row),
+        ),
+        ...(direction === "in" ? memberPinUnit(row) : {}),
+      },
     ];
   });
 }

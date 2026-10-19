@@ -4,7 +4,7 @@ A Behaviour Tree decides what an actor does next, and its Blackboard holds the v
 
 ## Create a tree and a Blackboard
 
-1. In the **Content Browser**, choose **New Asset > AI > Blackboard**. Open it, tap **Add Key** for each value the AI needs, and set each key's **Name**, **Type** and default value.
+1. In the **Content Browser**, choose **New Asset > AI > Blackboard**. Open it, tap **Add Key** for each value the AI needs, and set each key's **Name**, **Type** and default value. Integer, Float and Vector keys can also have a **Unit**, such as **Seconds**, shown after their values.
 2. Choose **New Asset > AI > Behaviour Tree** and open it. A new tree starts with a **Selector** root, one **Sequence** and a **Succeed** task.
 3. In the tree's **Blackboard** window, pick the Blackboard asset. Its keys are listed there for reference; edit them in the Blackboard asset.
 

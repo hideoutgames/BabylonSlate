@@ -31,7 +31,7 @@ When the Game Instance and subsystem events fire is described in [Game Instance 
 ## Custom events
 
 1. Tap **+** next to **Events** and choose **New Event**. Type a name.
-2. With the event selected, add **Outputs** in the **Inspector** for the values it receives. Use **Rename Event** to rename it together with its calls in this class.
+2. With the event selected, add **Outputs** in the **Inspector** for the values it receives. Integer, Float and Vector outputs can have a **Unit**, shown on the Call node's value field. Use **Rename Event** to rename it together with its calls in this class.
 3. To run it, drag the event from the **Class** window onto the graph, or choose **Call** followed by its name in **Add Node**. This places a [Call Custom Event](class/call-custom-event.md) node with one input per output.
 
 To run a custom event on another object, drag from a pin that holds that object and choose its Call entry; the node gets a **Target** pin. The caller continues straight away and does not wait for latent nodes inside the event.

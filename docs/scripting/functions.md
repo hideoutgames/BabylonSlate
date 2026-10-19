@@ -19,7 +19,7 @@ Select the function in the **Class** window to edit it in the **Inspector**.
 | Name | The function's name, shown on its Call nodes. |
 | Overridable | Lets child classes replace this function. Off by default. |
 | Category | Groups functions into folders in the **Class** window. |
-| Inputs | Values passed in. They appear as outputs of the **Input** node and as inputs of each Call node. |
+| Inputs | Values passed in. They appear as outputs of the **Input** node and as inputs of each Call node. Select an Integer, Float or Vector input to give it a **Unit**; the Call node's value field then shows it, such as 250 ms. |
 | Outputs | Values returned. They appear as inputs of the **Output** node and as outputs of each Call node. |
 
 Move a pin up or down in **Inputs** or **Outputs** to reorder it on the nodes.
