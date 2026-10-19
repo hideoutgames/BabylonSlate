@@ -4227,8 +4227,9 @@ function initializeEngine(
       let resolve!: () => void;
       let reject!: (error: Error) => void;
       const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
-      // Pipelines the first draws request can still be building on the driver,
-      // which reports completion only; renew the budget while it makes progress.
+      // The first draws' readiness probes can still be linking (one at a time
+      // where links are synchronous) or building on a parallel-compile driver,
+      // which reports completion only; renew the budget while shaders progress.
       const compiles = new DriverCompileWatch(engine);
       const expire = () => {
         const waiting = pendingPresentations.get(key);

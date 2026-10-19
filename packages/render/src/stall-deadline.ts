@@ -21,14 +21,26 @@ export const SCENE_DRIVER_COMPILE_TIMEOUT_MS = 60_000;
 export const SCENE_FIRST_FRAME_TIMEOUT_MS = 20_000;
 
 /**
+ * Absolute bound on one loading wait that renews while shaders keep compiling
+ * (`DriverCompileWatch.renew`), from the start of the wait whatever it credits.
+ * Renewals measure progress, so this only ends a wait that keeps compiling and
+ * never becomes ready (a define churn that recompiles forever), with an error
+ * instead of an endless loading screen. It is meant to sit well above any cold
+ * load that links every variant synchronously (WebKit WebGL2, SwiftShader).
+ */
+export const SCENE_PREPARATION_CEILING_MS = 300_000;
+
+/**
  * A gap of at least this long between two checkpoints of a polling loading step
  * is time the step could neither spend nor observe. The loops step every 16 ms
  * and a probe on a healthy host takes milliseconds, so a longer gap means a
  * synchronous call held the thread, or the host did not run the step (garbage
  * collection, a decode, or a hidden page, whose timers browsers align to a
- * second or more). Without KHR_parallel_shader_compile (SwiftShader, WebKit
- * WebGL2) a readiness probe links every effect before it returns, and a cold
- * two-core runner held the thread for 13 to 15 s.
+ * second or more). Where links are synchronous (SwiftShader without
+ * KHR_parallel_shader_compile; WebKit WebGL2, which exposes it but links inside
+ * `linkProgram`) a readiness probe links every effect before it returns, and a
+ * cold two-core runner held the thread for 13 to 15 s. Shorter links count as
+ * polling here; `DriverCompileWatch` renews the bounds for them instead.
  */
 export const SCENE_THREAD_HELD_MS = 1_000;
 

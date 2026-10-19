@@ -17,7 +17,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTextureManager } from "@babylonjs/core/FrameGraph/frameGraphTextureManager";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
-import { SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS, SCENE_THREAD_HELD_MS } from "./stall-deadline";
+import {
+  SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS, SCENE_THREAD_HELD_MS,
+} from "./stall-deadline";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { SharedOutlineOwner } from "./shared-outline";
 import { createGizmoHost } from "./gizmo-host";
@@ -508,7 +510,9 @@ describe("preparation while a synchronous probe holds the thread", () => {
     scene.addIsReadyCheck({ isReady: () => { clock.advance(held); renderer.invalidate(); return true; } });
     await expect(renderer.prepare()).rejects.toThrow("timed out");
     expect(clock.elapsed()).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS);
-    expect(clock.elapsed()).toBeLessThanOrEqual(2 * SCENE_THREAD_HELD_BUDGET_MS + 2 * held);
+    // The 60 s total bound and the credit budget, plus one 60 s renewal for the effects the first build compiled:
+    // every rebuild compiles the same variants again, which is no progress.
+    expect(clock.elapsed()).toBeLessThanOrEqual(3 * SCENE_THREAD_HELD_BUDGET_MS + 2 * held);
     renderer.dispose();
   }, 20_000);
 });
@@ -548,6 +552,62 @@ describe("preparation while the driver compiles", () => {
     await done;
     expect(settled.value).toEqual(expect.objectContaining({ message: expect.stringContaining("timed out") }));
     expect(polledMs()).toBeGreaterThan(SCENE_DRIVER_COMPILE_TIMEOUT_MS);
+    renderer.dispose();
+  });
+});
+
+// WebKit WebGL2 exposes KHR_parallel_shader_compile but links inside linkProgram, and SwiftShader has no parallel
+// compile: either way each probe links its variants before it returns and nothing is ever pending on the driver.
+// Links shorter than SCENE_THREAD_HELD_MS are polling to the held-thread credit; finished variants are progress.
+describe.each([false, true])("preparation while synchronous links finish one after another (parallel compile exposed: %s)", (exposed) => {
+  /** Each probe advances the virtual clock by `ms`; while `linking()` it also finishes one more shader variant. */
+  function linkingHost(ms: number, linking: (probe: number) => boolean, ready: (probe: number) => boolean) {
+    const made = host();
+    if (exposed) made.engine.getCaps().parallelShaderCompile = { COMPLETION_STATUS_KHR: 0x91b1 };
+    const effects = (made.engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
+    const clock = virtualClock();
+    let probes = 0;
+    let lastLink = 0;
+    made.scene.addIsReadyCheck({ isReady: () => {
+      probes += 1;
+      clock.advance(ms);
+      if (linking(probes)) {
+        effects[`linked-${probes}`] = { isReady: () => true, getCompilationError: () => "" };
+        lastLink = clock.elapsed();
+      }
+      return ready(probes);
+    } });
+    return { ...made, clock, lastLink: () => lastLink };
+  }
+
+  // Past the coordinator's 10 s and 60 s bounds, and the graph loop's 10 s bound plus its probe credit.
+  it("finishes a cold load whose short links together outlast every preparation bound", async () => {
+    const { renderer, clock } = linkingHost(500, () => true, (probe) => probe > 160);
+    await expect(renderer.prepare()).resolves.toEqual({ path: "frameGraph" });
+    expect(clock.elapsed()).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS + 20_000);
+    renderer.dispose();
+  });
+
+  it("fails once links stop finishing, a whole bound after the last one, and reports the shaders compiled", async () => {
+    const { renderer, clock, lastLink } = linkingHost(500, (probe) => probe <= 40, () => false);
+    const error = await renderer.prepare().then(() => null, (failure: unknown) => failure as Error);
+    expect(error?.message).toContain("timed out after 10 s without progress");
+    // The 40 links, and the graph's own effects.
+    expect(Number(/Shaders: (\d+) compiled while waiting/.exec(error?.message ?? "")?.[1])).toBeGreaterThanOrEqual(40);
+    expect(lastLink()).toBeCloseTo(20_000);
+    expect(clock.elapsed() - lastLink()).toBeGreaterThanOrEqual(10_000);
+    expect(clock.elapsed() - lastLink()).toBeLessThanOrEqual(20_000 + 500);
+    renderer.dispose();
+  });
+
+  // Every probe holds the thread for seconds, so the held-thread credit applies too until its budget is spent; neither
+  // it nor the progress extends the ceiling.
+  it("ends a preparation that keeps linking but never becomes ready at the ceiling", async () => {
+    const held = 5_000;
+    const { renderer, clock } = linkingHost(held, () => true, () => false);
+    await expect(renderer.prepare()).rejects.toThrow(`timed out after its ${SCENE_PREPARATION_CEILING_MS / 1000} s limit`);
+    expect(clock.elapsed()).toBeGreaterThanOrEqual(SCENE_PREPARATION_CEILING_MS);
+    expect(clock.elapsed()).toBeLessThanOrEqual(SCENE_PREPARATION_CEILING_MS + held);
     renderer.dispose();
   });
 });
