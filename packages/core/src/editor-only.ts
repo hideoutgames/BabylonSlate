@@ -1,4 +1,5 @@
 import { normalizeClassMemberCategory } from "./class-member-category";
+import { normalizeMaterialInstanceOverrides, type MaterialInstanceOverrides } from "./material-parameter-value";
 
 /** Editor-only assets stripped from Play compile and game export (P12 / P14). */
 
@@ -111,9 +112,15 @@ export type ClassHeaderEvent = {
   pins: ClassHeaderPin[];
 };
 
+/**
+ * A Class component as its header keeps it. A closed Class syncs its placed
+ * instances from these rows alone, so a row holds every component field sync
+ * copies onto an instance.
+ */
 export type ClassHeaderComponent = {
   id: string;
   classId: string;
+  name?: string;
   parentId?: string | null;
   properties?: Record<string, unknown>;
   transform?: {
@@ -121,6 +128,7 @@ export type ClassHeaderComponent = {
     rotation: [number, number, number, number];
     scale: [number, number, number];
   };
+  materialInstance?: MaterialInstanceOverrides;
 };
 
 export type ClassHeaderInterface = {
@@ -173,9 +181,11 @@ export function classHeaderMeta(graph: {
   components?: Array<{
     id?: string;
     classId?: string;
+    name?: string;
     parentId?: string | null;
     properties?: Record<string, unknown>;
     transform?: ClassHeaderComponent["transform"];
+    materialInstance?: MaterialInstanceOverrides;
   }>;
 }): ClassHeaderMeta {
   const functions: ClassHeaderFunction[] = [];
@@ -250,9 +260,13 @@ export function classHeaderMeta(graph: {
     const classId = component.classId?.trim();
     if (!id || !classId) continue;
     const row: ClassHeaderComponent = { id, classId };
+    const name = component.name?.trim();
+    if (name) row.name = name;
     if (component.parentId !== undefined) row.parentId = component.parentId;
     if (component.properties) row.properties = { ...component.properties };
     if (component.transform) row.transform = component.transform;
+    const materialInstance = normalizeMaterialInstanceOverrides(component.materialInstance);
+    if (materialInstance) row.materialInstance = materialInstance;
     components.push(row);
   }
   return { functions, variables, events, interfaces, components };

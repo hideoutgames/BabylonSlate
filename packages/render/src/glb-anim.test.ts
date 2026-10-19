@@ -1,6 +1,6 @@
 import { renderSceneWithGameTime, setSceneGameTimePaused } from "./scene-game-time";
 import { installAssetBytes } from "@babylonslate/assets";
-import { AnimationGroup, FreeCamera, Vector3, MeshBuilder, TransformNode, type Mesh } from "@babylonjs/core";
+import { AnimationGroup, FreeCamera, Vector3, Mesh, MeshBuilder, StandardMaterial, TransformNode } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
 import {
   applyAnimStateToScene,
@@ -16,8 +16,11 @@ import {
   beginSlotModelAnimLoad,
   createModelActorRoot,
   invalidateSlotAnimLoad,
+  prepareInstanceMaterials,
   reportGlbLoadFailure,
 } from "./glb-anim";
+import { SCENE_SHADER_WARM_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
+import { installTimerClock } from "./virtual-clock-test-fixtures";
 import {
   encodeParentedAnimatedTriangleGlb,
   encodeTranslatedTetrahedronGlb,
@@ -490,5 +493,62 @@ describe("beginSlotModelAnimLoad", () => {
     expect(warn).toHaveBeenCalled();
     expect(String(warn.mock.calls[0]?.join(" "))).toMatch(/model-bad/i);
     warn.mockRestore();
+  });
+});
+
+// Without KHR_parallel_shader_compile a material's compile poll links its effects before it returns, so the
+// stall deadline, due meanwhile, fires only once the thread is free again.
+describe("prepareInstanceMaterials while the thread is held", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** A model instance whose one material never finishes compiling until `compiled()`. */
+  function pendingModel() {
+    const { engine, scene } = createTestEngine();
+    const root = new Mesh("model", scene);
+    const part = MeshBuilder.CreateBox("part", {}, scene);
+    part.parent = root;
+    const material = new StandardMaterial("surface", scene);
+    part.material = material;
+    let compiled!: () => void;
+    vi.spyOn(material, "forceCompilationAsync").mockReturnValue(new Promise<void>((resolve) => { compiled = resolve; }));
+    const clock = installTimerClock();
+    let outcome = "pending";
+    prepareInstanceMaterials(root, () => {}, new Promise<never>(() => {})).then(
+      () => { outcome = "prepared"; },
+      (error: Error) => { outcome = error.message; },
+    );
+    return { clock, outcome: () => outcome, compiled: () => compiled(), dispose: () => { scene.dispose(); engine.dispose(); } };
+  }
+
+  it("waits out a compile that held the thread past the stall window", async () => {
+    const { clock, outcome, compiled, dispose } = pendingModel();
+    await vi.advanceTimersByTimeAsync(0);
+    clock.hold(SCENE_SHADER_WARM_TIMEOUT_MS * 4);
+    await clock.run(SCENE_SHADER_WARM_TIMEOUT_MS);
+    expect(outcome()).toBe("pending");
+    compiled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(outcome()).toBe("prepared");
+    dispose();
+  });
+
+  it("still fails a material that never compiles once the credit budget is spent", async () => {
+    const { clock, outcome, dispose } = pendingModel();
+    await vi.advanceTimersByTimeAsync(0);
+    // Each round the deadline fires 10 s late: the budget pays for six rounds, the seventh fails.
+    const held = 10_000;
+    let rounds = 0;
+    while (outcome() === "pending" && rounds < 20) {
+      clock.hold(held);
+      await clock.run(SCENE_SHADER_WARM_TIMEOUT_MS);
+      rounds += 1;
+    }
+    expect(outcome()).toMatch(/^Model material preparation stalled at material "surface" for "part"/);
+    expect(rounds).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS / held);
+    expect(rounds).toBeLessThanOrEqual(SCENE_THREAD_HELD_BUDGET_MS / held + 2);
+    dispose();
   });
 });
