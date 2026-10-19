@@ -42,7 +42,7 @@ import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fix
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
-import { MaterialLibrary } from "./material-library";
+import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
 import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_FIRST_FRAME_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 import { SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS } from "./stall-deadline";
@@ -316,6 +316,52 @@ describe("Play createEngine view", () => {
       for (const actor of next.actors)
         expect(handle.editor!.sync.meshForActor(actor.id)?.material).toBe(completedDuringLoad);
     } finally { scheduling.mockRestore(); }
+  });
+
+  it("compiles loaded Materials in the load's warm-up, under the scene's final fog", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(handle);
+    handle.loadScene({ ...createDefaultScene(), actors: [] });
+    const base = createDefaultScene();
+    const next = {
+      ...base,
+      settings: { ...base.settings, fogEnabled: true, fogMode: "exponential" as const, fogDensity: 0.02 },
+      actors: Array.from({ length: 80 }, (_, index) => {
+        const mesh = createMeshComponent(`mesh-${index}`, "ground");
+        mesh.properties.materialGuid = "surface";
+        return createActor(`receiver-${index}`, "Receiver", { components: [mesh] });
+      }),
+    };
+    const fogWhenCompiled: boolean[] = [];
+    const compile = vi.spyOn(NodeMaterial.prototype, "forceCompilationAsync").mockImplementation(async () => {
+      fogWhenCompiled.push(handle.scene.fogEnabled);
+    });
+    // The Material finishes between realization chunks, before the Scene's fog and lights are applied.
+    const run = sceneWork.runSceneWork;
+    let settled = false;
+    const scheduling = vi.spyOn(sceneWork, "runSceneWork").mockImplementation((steps, options) => run(steps, {
+      ...options,
+      stepsPerYield: 32,
+      yieldControl: async () => {
+        const candidate = handle.scene.getMaterialByName("material:surface");
+        if (!(candidate instanceof NodeMaterial) || settled) return;
+        settled = true;
+        await ownedMaterialPreparation(candidate);
+      },
+    }));
+    try {
+      await handle.loadSceneAsync(next, {
+        signal: new AbortController().signal,
+        materialDocuments: new Map([["surface", createDefaultMaterialDocument()]]),
+      });
+      await handle.whenEditorModelsReady();
+      expect(settled).toBe(true);
+      expect(fogWhenCompiled).toEqual([]);
+      await handle.prewarmSceneMaterials();
+      expect(fogWhenCompiled.length).toBeGreaterThan(0);
+      expect(fogWhenCompiled.every(Boolean)).toBe(true);
+    } finally { scheduling.mockRestore(); compile.mockRestore(); }
   });
 
   function sharedEngine(): NullEngine {

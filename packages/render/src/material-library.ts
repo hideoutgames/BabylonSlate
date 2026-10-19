@@ -322,7 +322,11 @@ export class MaterialLibrary {
       try {
         // A changed graph cannot retire its predecessor before the replacement
         // compiles for its actual users, including unpublished model meshes.
-        for (const mesh of scene.meshes) {
+        // A first acquisition has no predecessor to protect: its users are bound to
+        // it already and the host compiles what it draws, in a load's warm-up or a
+        // frame's readiness probe. Warming here ran before the Scene's lighting,
+        // fog and transforms were final, and built variants nothing draws.
+        if (existing) for (const mesh of scene.meshes) {
           if (!(mesh instanceof Mesh) || !mesh.getTotalVertices() || !uses(mesh.material)) continue;
           if (retired || scene.isDisposed) return [cancelledDiagnostic()];
           await prewarmMaterial(compiled.material, mesh);

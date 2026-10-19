@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MeshBuilder, NullEngine, Scene, Texture, TextureBlock } from "@babylonjs/core";
+import { MeshBuilder, NullEngine, Scene, Texture, TextureBlock, type Material } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -228,6 +228,43 @@ describe("material library", () => {
     expect(await material.ready).toEqual([expect.objectContaining({ code: "material.compile.cancelled" })]);
     expect(f.scene.materials).not.toContain(material.material);
     expect(f.cache.resourceStats().leases).toBe(0);
+  });
+
+  it("leaves the shaders of a first acquisition to its host", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "material", tinted(1));
+    if (!first.ok) throw new Error("Expected a compiled material");
+    // Resolving a Material binds it at once. Nothing it replaces is on screen, and the host compiles the variants it
+    // draws under its final lighting and fog (a load's warm-up, a frame's readiness probe).
+    const mesh = MeshBuilder.CreatePlane("bound", {}, scene);
+    mesh.material = first.material;
+    const compile = vi.spyOn(first.material, "forceCompilationAsync");
+    expect(await first.ready).toEqual([]);
+    expect(compile).not.toHaveBeenCalled();
+    expect(library.isReady(scene, "material", tinted(1))).toBe(true);
+  });
+
+  it("compiles a replacement for its meshes while the published generation stays bound", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "material", tinted(1));
+    if (!first.ok) throw new Error("Expected a compiled material");
+    await first.ready;
+    const mesh = MeshBuilder.CreatePlane("shown", {}, scene);
+    mesh.material = first.material;
+    const next = library.acquire(scene, "material", tinted(2));
+    if (!next.ok) throw new Error("Expected the replacement material");
+    let boundWhileCompiling: Material | null = null;
+    const compile = vi.spyOn(next.material, "forceCompilationAsync").mockImplementation(async () => {
+      boundWhileCompiling = mesh.material;
+    });
+    expect(await next.ready).toEqual([]);
+    expect(compile).toHaveBeenCalledWith(mesh);
+    expect(boundWhileCompiling).toBe(first.material);
+    expect(mesh.material).toBe(next.material);
   });
 
   it("retains the displayed material while dependencies are marked dirty", async () => {
