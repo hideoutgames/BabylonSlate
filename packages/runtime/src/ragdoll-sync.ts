@@ -27,7 +27,6 @@ interface RagdollState {
   properties: RagdollProperties | null;
   slotId: number;
   requestId: string;
-  requestedAt: number;
   phase: "pending" | "active" | "failed";
   physics: RagdollPhysics | null;
   pendingImpulse: Vec3;
@@ -75,16 +74,15 @@ export class RagdollWorldSync implements RuntimeSubsystem {
       if (old?.component === component && old.slotId === slotId && sameDescriptor(old.descriptor, descriptor)) {
         // Scripts may have been replaced since the bones were created.
         if (old.physics) this.host.physics().refreshContactReporting(actor);
-        if (old.phase === "pending" && this.host.world.clock.tickIndex - old.requestedAt > 600) {
-          this.fail(old, new Error("The renderer did not provide a skeletal pose within 600 simulation ticks"));
-        }
+        // A pending request waits for the renderer without a tick deadline: simulation keeps
+        // ticking while the renderer still loads the Model or holds frames that do not animate,
+        // and the renderer reports every capture failure itself.
         continue;
       }
       this.retireActor(actor);
       const state: RagdollState = {
         actor, component, descriptor, slotId,
         requestId: `ragdoll:${++this.sequence}:${actor.guid}:${component.guid}`,
-        requestedAt: this.host.world.clock.tickIndex,
         properties: null, phase: "pending", physics: null,
         pendingImpulse: { x: 0, y: 0, z: 0 },
         offset: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 },

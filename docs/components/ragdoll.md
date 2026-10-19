@@ -31,6 +31,7 @@ For a partial ragdoll, add the exact names of bones that form one connected chai
 
 - World scenes only.
 - One enabled Ragdoll per actor. Actor scale must be positive.
+- An enabled ragdoll starts once its Model has loaded; until then the actor keeps its ordinary collision.
 - While active, the bones replace the actor's ordinary collision. The actor follows the root bone.
 - There is no get-up animation and no blend between animation and physics.
 - [Add Impulse](../scripting/class/add-impulse.md) pushes the whole ragdoll. Set **Enabled** from a graph to trigger it.
