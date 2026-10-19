@@ -346,7 +346,8 @@ describe("ModelThumbnailCaptureHost", () => {
     await waitFor(() => expect(readAssetChunk).toHaveBeenCalledOnce());
     expect(readAssetChunk.mock.calls[0]![0]).toBe(jobs[0]!.path);
     release(new Uint8Array([1]));
-    await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledTimes(jobs.length));
+    // The queue yields a timer turn between captures: 130 of them outlast waitFor's default second on a slow host.
+    await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledTimes(jobs.length), { timeout: 10_000 });
     expect(readAssetChunk.mock.calls.map(([path]) => path)).toEqual(jobs.map(({ path }) => path));
     expect(scopes.every((scope) => scope.dispose.mock.calls.length === 1)).toBe(true);
   });
