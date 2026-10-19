@@ -12,6 +12,7 @@ import {
   type TypeContext,
   type LogicGraph,
 } from "@babylonslate/scripting";
+import { subject } from "./self-pin";
 
 const LAYER = objectRef("SceneLayer");
 const SCENE_LAYER_ASSET = assetRef("SceneLayer");
@@ -96,7 +97,7 @@ export const sceneLayerNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("layer", "Layer", "in", LAYER),
+      subject(pin("layer", "Layer", "in", LAYER)),
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.removeSceneLayer(${ctx.input("layer")});`);
@@ -121,7 +122,7 @@ export const sceneLayerNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("layer", "Layer", "in", LAYER),
+      subject(pin("layer", "Layer", "in", LAYER)),
       pin("material", "Material", "in", MATERIAL_ASSET),
     ],
     codegen: (ctx) => {
@@ -137,7 +138,7 @@ export const sceneLayerNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("layer", "Layer", "in", LAYER),
+      subject(pin("layer", "Layer", "in", LAYER)),
       pin("material", "Material", "in", MATERIAL_ASSET),
     ],
     codegen: (ctx) => {

@@ -1,4 +1,5 @@
 import { classIdForAssetPath, consoleCommandMetadataFromGraph } from "@babylonslate/core";
+import { stripAssetFileSuffix } from "@babylonslate/assets";
 import {
   type GraphClassMember,
   type SerializedGraph,
@@ -89,6 +90,15 @@ export function classIdForGraphPath(path: string): string {
   return classIdForAssetPath(path);
 }
 
+/**
+ * Name of a Class as the Content Browser shows it: the file name without its
+ * container suffix (`assets/My Hero.class.babasset` is "My Hero", its class id
+ * `My_Hero`). Null-access errors name the class this way.
+ */
+export function classDisplayNameForGraphPath(path: string): string {
+  return stripAssetFileSuffix(path.split("/").pop() ?? path) || classIdForGraphPath(path);
+}
+
 
 export function consoleCommandFromGraph(
   graph: LogicGraph,
@@ -108,6 +118,8 @@ export function compileGraphDocument(
     path: string;
     graphId?: string;
     classId?: string;
+    /** The Class's display name; its file name on `path` when omitted (a packed export keys by guid and passes it). */
+    className?: string;
     parentClassId?: string | null;
     stripDevelopmentOnly?: boolean;
     instrumentInfiniteLoops?: boolean;
@@ -132,6 +144,7 @@ export function compileGraphDocument(
     dataDefinitions: options.dataDefinitions,
   };
   const classId = options.classId?.trim() || classIdForGraphPath(options.path);
+  const className = options.className?.trim() || classDisplayNameForGraphPath(options.path);
   const parentOf =
     options.parentOf ??
     ((id: string) =>
@@ -173,6 +186,7 @@ export function compileGraphDocument(
     compiledPieces.push(
       compileGraph(logic, {
         assetGuid: options.path,
+        className,
         registry: defaultNodeRegistry,
         tagRegistry: options.tagRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
@@ -198,6 +212,7 @@ export function compileGraphDocument(
       compiledPieces.push(
         compileGraph(fnLogic, {
           assetGuid: options.path,
+          className,
           registry: defaultNodeRegistry,
           tagRegistry: options.tagRegistry,
           exportName,
@@ -213,6 +228,7 @@ export function compileGraphDocument(
     compiledPieces.push(
       compileGraph(logic, {
         assetGuid: options.path,
+        className,
         registry: defaultNodeRegistry,
         tagRegistry: options.tagRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
@@ -456,6 +472,7 @@ function graphDocumentCompileCacheKey(
     path: string;
     content: SerializedGraph | LogicGraph;
     classId?: string;
+    className?: string;
     parentClassId?: string | null;
   },
   options: GraphCompileCacheOptions &
@@ -474,6 +491,7 @@ function graphDocumentCompileCacheKey(
       { path: doc.path, content: content as SerializedGraph },
     ]),
     classId: doc.classId ?? null,
+    className: doc.className ?? null,
     parentClassId: doc.parentClassId ?? null,
     // An ancestor reparented into a subsystem or Game Instance lineage changes
     // whether an empty class still compiles.
@@ -581,6 +599,7 @@ function compileGraphDocumentCached(
     path: string;
     content: SerializedGraph | LogicGraph;
     classId?: string;
+    className?: string;
     parentClassId?: string | null;
   },
   options: GraphCompileCacheOptions & {
@@ -604,6 +623,7 @@ function compileGraphDocumentCached(
     const script = compileGraphDocument(doc.content, {
       path: doc.path,
       classId: doc.classId,
+      className: doc.className,
       parentClassId: doc.parentClassId,
       stripDevelopmentOnly: options.stripDevelopmentOnly,
       inputAssets: options.inputAssets,
@@ -697,6 +717,7 @@ export function compileGraphDocuments(
     path: string;
     content: SerializedGraph | LogicGraph;
     classId?: string;
+    className?: string;
     parentClassId?: string | null;
   }>,
   options: GraphDocumentsCompileOptions = {},
@@ -791,6 +812,7 @@ function compileAnimGraphDocument(
   const objectScript = compileGraphDocument(doc.animationObject, {
     ...options,
     path: entry.path,
+    className: entry.name,
     graphId: "animation-object",
     parentClassId: "BObject",
     stripDevelopmentOnly: options.stripDevelopmentOnly,
@@ -819,6 +841,7 @@ function compileAnimGraphDocument(
     const logic = materializeLogicGraph(ruleGraph, `rule-${transition.id}`, "event", options);
     const compiled = compileTransitionRuleGraph(logic, {
       assetGuid: entry.path,
+      className: entry.name?.trim() || classDisplayNameForGraphPath(entry.path),
       registry: defaultNodeRegistry,
       stripDevelopmentOnly: options.stripDevelopmentOnly,
       tagRegistry: options.tagRegistry,

@@ -123,12 +123,12 @@ describe("Tween compilation", () => {
       : valueType === "transform" ? { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } }
       : { x: 0, y: 0, z: 0, w: 1 };
     const b = valueType === "float" ? 1 : a;
-    const graph: LogicGraph = { id: "g", kind: "event", nodes: [node(registry, "entry", "flow.entry"),
+    const graph: LogicGraph = { id: "g", kind: "event", nodes: [node(registry, "entry", "flow.entry"), node(registry, "owner", "actor.getSelf"),
       node(registry, "tween", typeId!, { "default:a": a, "default:b": b, ...(space === "world" ? { "default:space": space } : {}) })],
-      edges: [edge("entry", "execOut", "tween", "execIn")] };
+      edges: [edge("entry", "execOut", "tween", "execIn"), edge("owner", "out", "tween", "target")] };
     const calls: unknown[][] = [];
-    await load(graph, registry)({ tweenProperty: async (...args: unknown[]) => { calls.push(args); return true; } });
-    expect(calls).toEqual([[null, property, valueType, a, b, 2, "linear", ...(space ? [space] : [])]]);
+    await load(graph, registry)({ self: "owner", tweenProperty: async (...args: unknown[]) => { calls.push(args); return true; } });
+    expect(calls).toEqual([["owner", property, valueType, a, b, 2, "linear", ...(space ? [space] : [])]]);
   });
 });
 

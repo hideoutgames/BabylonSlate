@@ -52,6 +52,47 @@ describe("output commands are detached from script state at emit", () => {
     }
   });
 
+  it("logs a wired empty reference as an error on every tick, anchored to the node that met it, and skips the node", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "find", "actor.getOfClass", { "default:classId": "Ghost" }),
+        node(registry, "destroy", "actor.destroy", { title: "Destroy Actor" }),
+      ],
+      edges: [
+        edge("e1", "tick", "execOut", "destroy", "execIn"),
+        edge("e2", "find", "out", "destroy", "target"),
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "painter-asset", registry, className: "Painter" });
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (command) => commands.push(command) });
+    try {
+      await runtime.loadScripts([{ assetGuid: "painter-asset", classId: "Painter", source: compiled.source,
+        anchors: compiled.anchors, entryPoints: compiled.entryPoints }]);
+      const actor = runtime.spawnScriptedActor({ classId: "Painter" })!;
+      runtime.start();
+      runtime.tick();
+      runtime.tick();
+      const message = "Painter: Destroy Actor (Target) tried to access null.";
+      // Not Self: the running actor survives, and each tick reports again.
+      expect(actor.destroyed).toBe(false);
+      expect(commands.filter((command) => command.type === "log")).toEqual([
+        expect.objectContaining({ severity: "error", category: "Script", message }),
+        expect.objectContaining({ severity: "error", category: "Script", message }),
+      ]);
+      expect(commands.filter((command) => command.type === "diagnostic")).toEqual([
+        expect.objectContaining({ message, nodeId: "destroy" }),
+        expect.objectContaining({ message, nodeId: "destroy" }),
+      ]);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("sends a Print String color as it was when printed", () => {
     const emitted: CommandMessage[] = [];
     const bindings = createOutputHostBindings({ frameId: () => 1, tickIndex: () => 1, anchors: new Map(),

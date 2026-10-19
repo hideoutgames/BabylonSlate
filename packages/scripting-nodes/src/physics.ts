@@ -21,6 +21,7 @@ import {
   type TypeContext,
   type LogicGraph,
 } from "@babylonslate/scripting";
+import { subject } from "./self-pin";
 import { enumGuidOf, enumValueOf } from "./enum";
 
 const HIT_RESULT = structRef(ENGINE_HIT_RESULT_STRUCT_ID);
@@ -227,7 +228,7 @@ export const physicsNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "target", "in", actorRef("Actor")),
+      subject(pin("target", "target", "in", actorRef("Actor"))),
       pin("impulse", "impulse", "in", VEC3),
       pin("strength", "strength", "in", FLOAT, "data", true, 1),
     ],
@@ -244,7 +245,7 @@ export const physicsNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "target", "in", actorRef("Actor")),
+      subject(pin("target", "target", "in", actorRef("Actor"))),
       pin("translation", "translation", "in", VEC3),
       pin("offset", "offset", "in", FLOAT, "data", true),
     ],

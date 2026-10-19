@@ -6,6 +6,7 @@ import {
   type TagRegistry,
 } from "@babylonslate/core";
 import {
+  classDisplayNameForGraphPath,
   classIdForGraphPath,
   compileGraphDocument,
   compileGraphDocuments,
@@ -809,7 +810,7 @@ describe("script compiler service", () => {
       path: "assets/Hero.class.babasset",
       classId: "Hero",
     });
-    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\(ctx\.self,\s*"Wait"/);
+    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\([^,]+,\s*"Wait"/);
     expect(script?.source).toContain("export async function onBeginPlay");
     expect(script?.source).toContain("export async function Wait");
     expect(
@@ -823,9 +824,9 @@ describe("script compiler service", () => {
       classId: "Hero",
     });
     expect(script?.source).toMatch(
-      /await\s+ctx\.invokeFunction\(ctx\.self,\s*"WaitThenJump"/,
+      /await\s+ctx\.invokeFunction\([^,]+,\s*"WaitThenJump"/,
     );
-    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\(ctx\.self,\s*"Wait"/);
+    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\([^,]+,\s*"Wait"/);
     expect(script?.source).toContain("export async function WaitThenJump");
   });
 
@@ -2119,5 +2120,43 @@ describe("compileAnimGraphScripts", () => {
     const rule = scripts.find((entry) => entry.classId === "AnimRule:graph-1:idle-to-run");
     expect(rule?.source).toContain("exit: (true)");
     expect(rule?.source).not.toContain("exit-state");
+  });
+});
+
+describe("class name in null-access errors", () => {
+  /** Begin Play into Destroy Actor, whose Target reads an actor of a class that does not exist: always empty. */
+  const destroysEmptyReference: SerializedGraph = {
+    nodes: [
+      { id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
+      { id: "find", type: "actor.getOfClass", position: { x: 0, y: 120 }, data: { "default:classId": "Ghost" } },
+      { id: "destroy", type: "actor.destroy", position: { x: 240, y: 0 }, data: { title: "Destroy Actor" } },
+    ],
+    edges: [
+      { id: "e1", source: "begin", target: "destroy", sourceHandle: "execOut", targetHandle: "execIn" },
+      { id: "e2", source: "find", target: "destroy", sourceHandle: "out", targetHandle: "target" },
+    ],
+  };
+
+  it.each([
+    ["assets/Gear/My Hero.class.babasset", "My Hero"],
+    ["assets/Hero.class.babasset", "Hero"],
+    ["Rig.babasset", "Rig"],
+  ])("shows %s as %s, the name the Content Browser lists", (path, name) => {
+    expect(classDisplayNameForGraphPath(path)).toBe(name);
+  });
+
+  it("names a class with a space as the Content Browser shows it, not by its class id", () => {
+    const script = compileGraphDocument(destroysEmptyReference, { path: "assets/My Hero.class.babasset" });
+    expect(script?.classId).toBe("My_Hero");
+    expect(script?.source).toContain('"My Hero: Destroy Actor (Target) tried to access null."');
+    expect(script?.source).not.toContain("My_Hero:");
+  });
+
+  it("keeps the name when a packed export keys the document by guid", () => {
+    const [script] = compileGraphDocuments([{
+      path: "guid-1234", classId: "My_Hero", className: classDisplayNameForGraphPath("assets/My Hero.class.babasset"),
+      content: destroysEmptyReference,
+    }]);
+    expect(script?.source).toContain('"My Hero: Destroy Actor (Target) tried to access null."');
   });
 });

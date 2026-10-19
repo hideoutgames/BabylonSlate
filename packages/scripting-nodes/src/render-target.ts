@@ -3,6 +3,7 @@ import {
   actorRef, arrayOf, assetRef, BOOL, enumRef, EXEC, FLOAT, pin,
   type NodeDefinition, type PinType,
 } from "@babylonslate/scripting";
+import { subject } from "./self-pin";
 
 const CAPTURE = actorRef("RenderTargetCapture");
 
@@ -17,7 +18,7 @@ function propertyNodes(
     title: `Get Capture ${label}`,
     category: "render",
     pure: true,
-    pins: () => [pin("capture", "Capture", "in", CAPTURE), pin("value", label, "out", type)],
+    pins: () => [subject(pin("capture", "Capture", "in", CAPTURE)), pin("value", label, "out", type)],
     codegen: (ctx) => ({ [label]: `ctx.getRenderTargetCaptureProperty(${ctx.input("Capture")}, ${JSON.stringify(key)})` }),
   }, {
     id: `render-target.set${suffix}`,
@@ -25,7 +26,7 @@ function propertyNodes(
     category: "render",
     pins: () => [
       pin("execIn", "Exec", "in", EXEC), pin("execOut", "Then", "out", EXEC),
-      pin("capture", "Capture", "in", CAPTURE), pin("value", label, "in", type),
+      subject(pin("capture", "Capture", "in", CAPTURE)), pin("value", label, "in", type),
     ],
     codegen: (ctx) => ctx.emit(`ctx.setRenderTargetCaptureProperty(${ctx.input("Capture")}, ${JSON.stringify(key)}, ${ctx.input(label)});`),
   }];
@@ -60,7 +61,7 @@ export const renderTargetNodes: NodeDefinition[] = [
     category: "render",
     pins: () => [
       pin("execIn", "Exec", "in", EXEC), pin("execOut", "Then", "out", EXEC),
-      pin("capture", "Capture", "in", CAPTURE),
+      subject(pin("capture", "Capture", "in", CAPTURE)),
     ],
     codegen: (ctx) => ctx.emit(`ctx.captureRenderTarget(${ctx.input("Capture")});`),
   },

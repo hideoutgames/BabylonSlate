@@ -9,6 +9,7 @@ import {
   BOXED_WILDCARD,
   objectRef,
 } from "@babylonslate/scripting";
+import { subject } from "./self-pin";
 
 function factExpr(field: string, fallback: string): string {
   return `(ctx.animFacts?.${field} ?? ${fallback})`;
@@ -123,7 +124,7 @@ export const animationNodes: NodeDefinition[] = [
     category: "animation",
     pure: true,
     pins: () => [
-      pin("target", "target", "in", objectRef("AnimationGraphComponent")),
+      subject(pin("target", "target", "in", objectRef("AnimationGraphComponent"))),
       pin("name", "name", "in", STRING),
       pin("value", "value", "out", BOXED_WILDCARD),
     ],
@@ -138,7 +139,7 @@ export const animationNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "target", "in", objectRef("AnimationGraphComponent")),
+      subject(pin("target", "target", "in", objectRef("AnimationGraphComponent"))),
       pin("name", "name", "in", STRING),
       pin("value", "value", "in", BOXED_WILDCARD),
     ],
@@ -154,7 +155,7 @@ export const animationNodes: NodeDefinition[] = [
     category: "animation",
     pure: true,
     pins: () => [
-      pin("target", "target", "in", objectRef("AnimationGraphComponent")),
+      subject(pin("target", "target", "in", objectRef("AnimationGraphComponent"))),
       pin("name", "name", "out", STRING),
       pin("id", "id", "out", STRING),
     ],
@@ -170,7 +171,7 @@ export const animationNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "target", "in", objectRef("AnimationGraphComponent")),
+      subject(pin("target", "target", "in", objectRef("AnimationGraphComponent"))),
       pin("state", "state", "in", STRING),
     ],
     codegen: (ctx) => {

@@ -23,5 +23,5 @@ Reads an object variable and runs **Is Valid** only if it holds an object.
 
 ## Notes
 
-- **Not Valid** runs when the variable is empty. It does not check whether the object has since been destroyed.
+- **Not Valid** runs when the variable is empty, or when **Target** is connected to an empty reference, which also logs an error. It does not check whether the object has since been destroyed.
 - Works with single Object and Actor reference variables. For arrays, maps, classes and assets, use [**Get Variable**](get-variable.md).

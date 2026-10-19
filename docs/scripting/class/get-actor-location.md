@@ -21,4 +21,4 @@ Returns an actor's location as a vector.
 ## Notes
 
 - For an attached actor, the location is relative to its parent.
-- Returns zero when the reference is empty.
+- Returns zero, and logs an error, when the reference is empty.

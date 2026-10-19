@@ -463,11 +463,8 @@ function validatePinTyping(
         );
       }
       if (!connected && pin.type.kind !== "exec") {
-        const implicitSelfTarget =
-          pin.id === "target" &&
-          node.properties.implicitSelf === true &&
-          (pin.type.kind === "objectRef" || pin.type.kind === "actorRef") &&
-          (registry === undefined || registry.get(node.typeId)?.implicitSelfTarget === true);
+        // A pin that reads Self while unwired always has an object to act on.
+        const readsSelf = (catalogPin ?? pin).selfWhenUnwired === true;
         // A catalog default is as authored as a stored one: compile and the
         // editor both fall back to it before the type default.
         const authored = hasStored || pin.defaultValue !== undefined ||
@@ -494,7 +491,7 @@ function validatePinTyping(
             Boolean(owner?.implementsInterface));
         if (
           !defaultClearsMissing &&
-          !implicitSelfTarget &&
+          !readsSelf &&
           (!literalPin || interfaceOutput)
         ) {
           const liveRef =
