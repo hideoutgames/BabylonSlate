@@ -33,6 +33,8 @@ const state = vi.hoisted(() => ({
   requestPlay: vi.fn(),
   requestSimulate: vi.fn(),
   simulationUnavailableReason: null as string | null,
+  sessionState: { generation: 0, mode: null as "simulate" | null, lifecycle: "idle", quarantined: false, error: null },
+  stopSession: vi.fn(),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -52,6 +54,7 @@ vi.mock("../context/play-context", () => ({
     requestPlay: state.requestPlay, requestSimulate: state.requestSimulate,
     simulationUnavailableReason: state.simulationUnavailableReason,
     previewBuild: false, setPreviewBuild: vi.fn(), playFromScene: true,
+    sessionState: state.sessionState, sessionOwner: { stop: state.stopSession }, simulationDocumentId: null,
   }),
 }));
 vi.mock("../context/validation-context", () => ({
@@ -114,6 +117,8 @@ afterEach(() => {
   state.requestPlay.mockClear();
   state.requestSimulate.mockClear();
   state.simulationUnavailableReason = null;
+  state.sessionState = { generation: 0, mode: null, lifecycle: "idle", quarantined: false, error: null };
+  state.stopSession.mockClear();
 });
 
 describe("chrome Play", () => {
@@ -145,6 +150,16 @@ describe("chrome Play Mode", () => {
     // Choosing a mode keeps the Debug menu open.
     fireEvent.click(screen.getByTestId("play-mode-play"));
     await waitFor(() => expect(screen.getByTestId("play-preview").textContent).toContain("Play"));
+  });
+});
+
+describe("chrome Simulation", () => {
+  it("turns Simulate into a Stop that ends the running Simulation", () => {
+    state.sessionState = { generation: 1, mode: "simulate", lifecycle: "running", quarantined: false, error: null };
+    render(<Chrome />);
+    expect(screen.queryByTestId("play-preview")).toBeNull();
+    fireEvent.click(screen.getByTestId("simulation-session-stop"));
+    expect(state.stopSession).toHaveBeenCalledOnce();
   });
 });
 

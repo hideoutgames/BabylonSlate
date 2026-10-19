@@ -78,6 +78,8 @@ import {
   useSaveState,
 } from "../context/document-context";
 import { usePlay } from "../context/play-context";
+import { useSimulationControls } from "../context/simulation-controls-context";
+import { SimulationToolbarControls } from "./simulation-toolbar-controls";
 import { useValidation } from "../context/validation-context";
 import type { OpenDocument } from "../services/document-service";
 import { modelSimpleColliderCounter, physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
@@ -305,7 +307,13 @@ export function EditorChromeBar({
     setPauseOnPlay,
     requestSimulate,
     simulationUnavailableReason,
+    sessionState,
+    sessionOwner,
+    simulationDocumentId,
   } = usePlay();
+  // A running Simulation turns Simulate into Stop with its controls beside it.
+  const simulationRunning = sessionState.mode === "simulate" && !sessionState.quarantined;
+  const simulationControls = useSimulationControls();
   const { errorCount, setDiagnostics } = useValidation();
   const [settingsScope, setSettingsScope] = useState<
     "project" | "engine" | null
@@ -820,6 +828,17 @@ export function EditorChromeBar({
 
         <div className="editor-global-toolbar-center">
           <div className="editor-play-island" data-testid="play-debug-island">
+            {simulationRunning ? (
+              <SimulationToolbarControls
+                controls={simulationControls}
+                stopping={sessionState.lifecycle === "stopping"}
+                phone={phone}
+                onStop={() => { void sessionOwner.stop(); }}
+                onReturnToScene={simulationDocumentId && activeDocumentId !== simulationDocumentId
+                  ? () => setActiveDocument(simulationDocumentId)
+                  : undefined}
+              />
+            ) : (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -870,6 +889,7 @@ export function EditorChromeBar({
                 </TooltipContent>
               ) : null}
             </Tooltip>
+            )}
             {!phone ? debugMenu : null}
           </div>
         </div>

@@ -5,6 +5,10 @@ import { SimulationRetentionDialog, SimulationRetentionHint } from "./simulation
 import { SimulationTransformToolbar } from "./simulation-transform-toolbar";
 import type { GizmoTool, RuntimeTransformTools } from "@babylonslate/render";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
+import {
+  SIMULATION_CONTROL_ATTRIBUTE,
+  usePublishSimulationControls,
+} from "../context/simulation-controls-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
@@ -458,6 +462,24 @@ function PlayOverlayView({
     }).finally(() => { if (sessionRef.current === session && reason === "user") setPausePending(false); });
   };
 
+  // The global toolbar presents Simulation's Pause, Stop and input mode.
+  const simulationKeepChanges = simulationSession?.keepChanges ?? false;
+  const simulationControls = useMemo(
+    () => simulating
+      ? {
+          paused,
+          pausePending,
+          inputMode,
+          inputPending,
+          keepChanges: simulationKeepChanges,
+          togglePause: () => pauseRef.current("user", !userPausedRef.current),
+          setInputMode: (mode: "game" | "edit") => changeInputModeRef.current(mode),
+        }
+      : null,
+    [simulating, paused, pausePending, inputMode, inputPending, simulationKeepChanges],
+  );
+  usePublishSimulationControls(simulationControls);
+
   useEffect(() => {
     if (!simulating) return;
     const releaseOutsideGame = (event: Event) => {
@@ -465,7 +487,7 @@ function PlayOverlayView({
       const target = event.target;
       // Chrome owns this gesture; it cannot also become a game or camera gesture.
       if (target instanceof Node && !canvasRef.current?.contains(target) &&
-        !(target instanceof Element && target.closest('[data-testid="simulation-input-mode"], [data-testid="play-overlay-pause"]'))) {
+        !(target instanceof Element && target.closest(`[${SIMULATION_CONTROL_ATTRIBUTE}]`))) {
         changeInputModeRef.current("edit");
       }
     };
@@ -1161,7 +1183,7 @@ function PlayOverlayView({
         showInspector={overlayInspector && !simulating}
         showProfiler={overlayProfiler}
         pausePending={pausePending}
-        simulation={simulating ? { inputMode, inputPending, keepChanges: simulationSession?.keepChanges, onInputModeChange: (mode) => changeInputModeRef.current(mode) } : undefined}
+        simulating={simulating}
         onPauseToggle={() => pauseRef.current("user", !userPausedRef.current)}
         onStatsToggle={() => setStatsOpen((open) => !open)}
         onConsoleOpen={() => setConsoleOpen(true)}
@@ -1193,7 +1215,6 @@ function PlayOverlayView({
             {controlError ? <p role="alert" className="pointer-events-auto text-xs text-destructive">{controlError}</p> : null}
             {simulating && inputMode === "edit" ? <>
               <SimulationTransformToolbar tool={transformTool} onToolChange={tool => { setTransformTool(tool); transformToolsRef.current?.setTool(tool); }} />
-              <p className="pointer-events-none text-xs text-muted-foreground">Pause to inspect without gameplay changing values. The editor camera does not change the game camera.</p>
             </> : null}
             {testMode ? <>
               <span
