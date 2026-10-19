@@ -2,6 +2,7 @@ import type { LogicGraph, GraphEdge, GraphNode, GraphPin } from "./ir";
 import { findPin } from "./ir";
 import type {
   NodeRegistry,
+  NodeDefinition,
   CodegenContext,
   HoistBodyAnchor,
 } from "./node-registry";
@@ -15,7 +16,7 @@ import { entryNodes } from "./compiled-nodes";
 import { isWritableVariableOutput } from "./variable-references";
 import { enumSwitchMemberNameFromPinId } from "./enum-switch-pins";
 import { flowSwitchCaseValueFromPinId } from "./flow-switch-pins";
-import { normalizeTag, normalizeTagContainer, type TagRegistry } from "@babylonslate/core";
+import { humanizePropertyLabel, normalizeTag, normalizeTagContainer, type TagRegistry } from "@babylonslate/core";
 import { tagCasesConstant, tagCasesOf, tagCasePinId, tagRuntimeSource } from "./tags";
 import {
   isFlowSwitchMeta,
@@ -141,6 +142,11 @@ export type CompileResult = {
 export type CompileOptions = {
   assetGuid: string;
   registry: NodeRegistry;
+  /**
+   * Display name of the class whose graph this is. Null-access errors name it:
+   * "Hero: Destroy Actor (Target) tried to access null."
+   */
+  className?: string;
   /** Project definitions are embedded so numeric Tag matching survives export. */
   tagRegistry?: TagRegistry;
   exportName?: string;
@@ -353,12 +359,81 @@ function catalogPinDefault(
   return catalogPin?.defaultValue;
 }
 
+/** Object and Actor reference inputs are the only pins that read Self or act as a node's subject. */
+function isObjectReferenceInput(pin: GraphPin): boolean {
+  return pin.direction === "in" && pin.kind === "data" &&
+    (pin.type.kind === "objectRef" || pin.type.kind === "actorRef");
+}
+
+/**
+ * The catalog's flag wins over the saved pin's, so a flag added to a node type
+ * reaches graphs saved before it.
+ */
+function catalogFlag(
+  node: GraphNode,
+  pin: GraphPin,
+  registry: NodeRegistry,
+  flag: "selfWhenUnwired" | "subject",
+): boolean {
+  if (!isObjectReferenceInput(pin)) return false;
+  const catalog = registry.get(node.typeId)?.pins(node.properties).find((entry) => entry.id === pin.id);
+  return (catalog ?? pin)[flag] === true;
+}
+
+type SubjectPin = { pin: GraphPin; message: string };
+
+/**
+ * A node's subject inputs: the objects it reads, writes, calls or moves. The
+ * message is logged each time one is null as the node runs.
+ */
+function subjectPinsOf(
+  node: GraphNode,
+  registry: NodeRegistry,
+  className: string | undefined,
+): SubjectPin[] {
+  const def = registry.get(node.typeId);
+  const references = node.pins.filter(isObjectReferenceInput);
+  if (!def || references.length === 0) return [];
+  const catalog = def.pins(node.properties);
+  const authored = typeof node.properties.title === "string" ? node.properties.title.trim() : "";
+  const where = `${className ? `${className}: ` : ""}${authored || def.title}`;
+  return references
+    .filter((pin) => (catalog.find((entry) => entry.id === pin.id) ?? pin).subject === true)
+    .map((pin) => ({
+      pin,
+      message: `${where} (${humanizePropertyLabel(pin.name)}) tried to access null.`,
+    }));
+}
+
+/**
+ * A pure node's output expression behind its subject guard: a null subject logs
+ * and the output reads `fallback`. The inputs are bound to `__s<n>` so each is
+ * evaluated once.
+ */
+function guardPureExpression(
+  subjects: readonly SubjectPin[],
+  args: readonly string[],
+  expression: string,
+  fallback: string,
+): string {
+  const names = subjects.map((_, index) => `__s${index}`);
+  const report = subjects
+    .map((subject, index) => {
+      const log = `ctx.nullAccess(${JSON.stringify(subject.message)})`;
+      return subjects.length === 1 ? log : `${names[index]} == null && ${log}`;
+    })
+    .join(", ");
+  const anyNull = names.map((name) => `${name} == null`).join(" || ");
+  return `((${names.join(", ")}) => ${anyNull} ? (${report}, ${fallback}) : (${expression}))(${args.join(", ")})`;
+}
+
 function disconnectedPinLiteral(
   node: GraphNode,
   dataPin: GraphPin,
   registry: NodeRegistry,
   fallbackLiteral?: string,
 ): string {
+  if (catalogFlag(node, dataPin, registry, "selfWhenUnwired")) return "ctx.self";
   const prop = readPinDefaultForPin(node.properties, dataPin);
   if (prop !== undefined && !pinRejectsStoredDefault(dataPin.type)) {
     if (dataPin.type.kind === "tag") return JSON.stringify(normalizeTag(prop));
@@ -521,8 +596,22 @@ export function compileGraph(
     return `ctx.variableReference(${owner}, ${JSON.stringify(property)}, ${implicitSelf})`;
   }
 
+  /** An input's expression, memoized per statement when its pure node feeds several outputs. */
+  function inputExpression(node: GraphNode, p: GraphPin): string {
+    const expression = pinExpr(node, p);
+    if (!sharedInputNodes.has(node.id)) return expression;
+    const edge = index.incoming(node.id, p.id);
+    const source = edge && index.node(edge.sourceNodeId);
+    if (!source || shouldStrip(source) || !options.registry.get(source.typeId)?.pure) {
+      return expression;
+    }
+    return memoExpression(`in:${node.id}:${p.id}`, expression);
+  }
+
+  /** `bound` names the variables that already hold a node's subject inputs. */
   function makeCtx(node: GraphNode, continuation?: (expression: string) => void,
-    branch?: (expression: string, truePin: string, falsePin: string) => void): CodegenContext {
+    branch?: (expression: string, truePin: string, falsePin: string) => void,
+    bound?: ReadonlyMap<string, string>): CodegenContext {
     return {
       graph,
       node,
@@ -530,14 +619,7 @@ export function compileGraph(
       input(pinName) {
         const p = pinForCodegen(node, pinName, "in");
         if (!p) return "undefined";
-        const expression = pinExpr(node, p);
-        if (!sharedInputNodes.has(node.id)) return expression;
-        const edge = index.incoming(node.id, p.id);
-        const source = edge && index.node(edge.sourceNodeId);
-        if (!source || shouldStrip(source) || !options.registry.get(source.typeId)?.pure) {
-          return expression;
-        }
-        return memoExpression(`in:${node.id}:${p.id}`, expression);
+        return bound?.get(p.id) ?? inputExpression(node, p);
       },
       isWired(pinId) { return index.incoming(node.id, pinId) !== undefined; },
       reference(pinName) { return referenceExpr(node, pinName); },
@@ -597,19 +679,81 @@ export function compileGraph(
     ) {
       return;
     }
+    const subjects = subjectPinsOf(node, options.registry, options.className);
     pureInProgress.add(node.id);
     let result: ReturnType<typeof def.codegen>;
+    let subjectArgs: string[] = [];
     try {
-      result = def.codegen(makeCtx(node));
+      // Read in progress: a pure cycle through a subject input ends here.
+      subjectArgs = subjects.map((subject) => inputExpression(node, subject.pin));
+      const bound = new Map(subjects.map((subject, i) => [subject.pin.id, `__s${i}`] as const));
+      result = def.codegen(makeCtx(node, undefined, undefined, bound));
     } finally {
       pureInProgress.delete(node.id);
     }
     if (result && typeof result === "object") {
       for (const [name, expr] of Object.entries(result)) {
         const outPin = pinForCodegen(node, name, "out");
-        if (outPin) exprCache.set(`${node.id}:${outPin.id}`, pureExpressions.expression(node, outPin, expr));
+        if (!outPin) continue;
+        const guarded = subjects.length > 0
+          ? guardPureExpression(subjects, subjectArgs, expr, defaultValueLiteral(outPin.type))
+          : expr;
+        exprCache.set(`${node.id}:${outPin.id}`, pureExpressions.expression(node, outPin, guarded));
       }
     }
+  }
+
+  /**
+   * Evaluates a statement node's subject inputs once and logs each null one. The
+   * node's statements run only when none is null; otherwise its data outputs read
+   * their defaults. Returns the context for the node's codegen and, for a node
+   * with subjects, the condition under which it runs.
+   */
+  function emitStatementNode(
+    node: GraphNode,
+    def: NodeDefinition,
+    flow?: {
+      continuation: (expression: string) => void;
+      branch: (expression: string, truePin: string, falsePin: string) => void;
+    },
+  ): { ctx: CodegenContext; condition?: string } {
+    const anchor = { column: 1, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id };
+    const subjects = subjectPinsOf(node, options.registry, options.className);
+    const bound = new Map<string, string>();
+    for (const subject of subjects) {
+      const slot = `__s_${jsIdent(node.id)}_${jsIdent(subject.pin.id)}`;
+      bound.set(subject.pin.id, slot);
+      outputDecls.set(slot, `  let ${slot};`);
+      emitBody(`  ${slot} = ${inputExpression(node, subject.pin)};`, anchor);
+    }
+    for (const subject of subjects) {
+      emitBody(`  if (${bound.get(subject.pin.id)} == null) ctx.nullAccess(${JSON.stringify(subject.message)});`, anchor);
+    }
+    const ctx = makeCtx(node, flow?.continuation, flow?.branch, bound);
+    if (def.latent) isAsync = true;
+    declareDataOuts(node, ctx);
+    if (subjects.length === 0) {
+      def.codegen(ctx);
+      return { ctx };
+    }
+    const condition = subjects.map((subject) => `${bound.get(subject.pin.id)} != null`).join(" && ");
+    emitBody(`  if (${condition}) {`, anchor);
+    const start = body.length;
+    def.codegen(ctx);
+    if (body.length === start) {
+      // The node emitted nothing (its work is a continuation): no empty block.
+      body.pop();
+      return { ctx, condition };
+    }
+    const resets = node.pins
+      .filter((pin) => pin.kind === "data" && pin.direction === "out")
+      .map((pin) => `    ${ctx.output(pin.id)} = ${defaultValueLiteral(pin.type)};`);
+    if (resets.length > 0) {
+      emitBody("  } else {", anchor);
+      for (const reset of resets) emitBody(reset, anchor);
+    }
+    emitBody("  }", anchor);
+    return { ctx, condition };
   }
 
   /**
@@ -1018,15 +1162,14 @@ export function compileGraph(
       }
 
       if (node.typeId === "variables.getValidated") {
-        const ctx = makeCtx(node);
         const anchor = {
           column: 1,
           assetGuid: options.assetGuid,
           graphId: graph.id,
           nodeId: node.id,
         };
-        declareDataOuts(node, ctx);
-        def.codegen(ctx);
+        // An empty Target leaves the value empty, so execution takes Not Valid.
+        const { ctx } = emitStatementNode(node, def);
         const value = ctx.output("value");
         emitBody(`  if (${value} != null) {`, anchor);
         emitAlong(execSuccessorEdges(index, node.id, "isValid"), visited);
@@ -1229,22 +1372,22 @@ export function compileGraph(
       }
 
       let continuation: string | undefined;
+      let runs: string | undefined;
       const flow: { branch?: { expression: string; truePin: string; falsePin: string } } = {};
       if (def.pure) {
         ensurePure(node);
       } else {
-        const ctx = makeCtx(node, (expression) => { continuation = expression; },
-          (expression, truePin, falsePin) => { flow.branch = { expression, truePin, falsePin }; });
-        if (def.latent) isAsync = true;
-        declareDataOuts(node, ctx);
-        def.codegen(ctx);
+        runs = emitStatementNode(node, def, {
+          continuation: (expression) => { continuation = expression; },
+          branch: (expression, truePin, falsePin) => { flow.branch = { expression, truePin, falsePin }; },
+        }).condition;
       }
 
       if (flow.branch) {
         const branch = flow.branch;
         const anchor = { column: 1, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id };
         if (instrumentLoops) emitBody(`  ${loopCheck(anchor.nodeId)}`, anchor);
-        emitBody(`  if (${branch.expression}) {`, anchor);
+        emitBody(`  if (${runs ? `${runs} && (${branch.expression})` : branch.expression}) {`, anchor);
         emitAlong(execSuccessorEdges(index, node.id, branch.truePin), visited);
         emitBody("  } else {", anchor);
         emitAlong(execSuccessorEdges(index, node.id, branch.falsePin), visited);
@@ -1258,7 +1401,7 @@ export function compileGraph(
       if (continuation !== undefined) {
         const anchor = { column: 1, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id };
         if (instrumentLoops) emitBody(`  ${loopCheck(anchor.nodeId)}`, anchor);
-        emitBody(`  if (${continuation}) {`, anchor);
+        emitBody(`  if (${runs ? `${runs} && (${continuation})` : continuation}) {`, anchor);
         emitAlong(edges, visited);
         emitBody("  }");
         break;
@@ -1471,7 +1614,7 @@ export function compileTransitionRuleGraph(
     return lit;
   }
 
-  function makeCtx(node: GraphNode): CodegenContext {
+  function makeCtx(node: GraphNode, bound?: ReadonlyMap<string, string>): CodegenContext {
     return {
       graph,
       node,
@@ -1479,7 +1622,7 @@ export function compileTransitionRuleGraph(
       input(pinName) {
         const p = pinForCodegen(node, pinName, "in");
         if (!p) return "undefined";
-        return pinExpr(node, p);
+        return bound?.get(p.id) ?? pinExpr(node, p);
       },
       inputType(pinName) {
         const p = pinForCodegen(node, pinName, "in");
@@ -1520,17 +1663,25 @@ export function compileTransitionRuleGraph(
     ) {
       return;
     }
+    const subjects = subjectPinsOf(node, options.registry, options.className);
     pureInProgress.add(node.id);
     let result: ReturnType<typeof def.codegen>;
+    let subjectArgs: string[] = [];
     try {
-      result = def.codegen(makeCtx(node));
+      subjectArgs = subjects.map((subject) => pinExpr(node, subject.pin));
+      const bound = new Map(subjects.map((subject, i) => [subject.pin.id, `__s${i}`] as const));
+      result = def.codegen(makeCtx(node, bound));
     } finally {
       pureInProgress.delete(node.id);
     }
     if (result && typeof result === "object") {
       for (const [name, expr] of Object.entries(result)) {
         const outPin = pinForCodegen(node, name, "out");
-        if (outPin) exprCache.set(`${node.id}:${outPin.id}`, pureExpressions.expression(node, outPin, expr));
+        if (!outPin) continue;
+        const guarded = subjects.length > 0
+          ? guardPureExpression(subjects, subjectArgs, expr, defaultValueLiteral(outPin.type))
+          : expr;
+        exprCache.set(`${node.id}:${outPin.id}`, pureExpressions.expression(node, outPin, guarded));
       }
     }
   }

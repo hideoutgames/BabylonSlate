@@ -11,7 +11,7 @@ Starts the particle systems on an actor.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Actor | Actor Reference | The actor to play. Leave it unconnected to use the actor running the graph. |
+| Actor | Actor Reference | The actor to play. Left unconnected the pin reads **Actor (Self)** and plays the actor running the graph. |
 
 ## Outputs
 
@@ -22,4 +22,4 @@ Starts the particle systems on an actor.
 ## Notes
 
 - Plays every particle component on the actor.
-- If **Actor** is connected to a reference that is empty when the node runs, nothing happens.
+- If **Actor** is connected to a reference that is empty when the node runs, nothing happens and an error is logged.

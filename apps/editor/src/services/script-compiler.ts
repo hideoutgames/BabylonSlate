@@ -173,6 +173,7 @@ export function compileGraphDocument(
     compiledPieces.push(
       compileGraph(logic, {
         assetGuid: options.path,
+        className: classId,
         registry: defaultNodeRegistry,
         tagRegistry: options.tagRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
@@ -198,6 +199,7 @@ export function compileGraphDocument(
       compiledPieces.push(
         compileGraph(fnLogic, {
           assetGuid: options.path,
+          className: classId,
           registry: defaultNodeRegistry,
           tagRegistry: options.tagRegistry,
           exportName,
@@ -213,6 +215,7 @@ export function compileGraphDocument(
     compiledPieces.push(
       compileGraph(logic, {
         assetGuid: options.path,
+        className: classId,
         registry: defaultNodeRegistry,
         tagRegistry: options.tagRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
@@ -819,6 +822,7 @@ function compileAnimGraphDocument(
     const logic = materializeLogicGraph(ruleGraph, `rule-${transition.id}`, "event", options);
     const compiled = compileTransitionRuleGraph(logic, {
       assetGuid: entry.path,
+      className: classIdForGraphPath(entry.path),
       registry: defaultNodeRegistry,
       stripDevelopmentOnly: options.stripDevelopmentOnly,
       tagRegistry: options.tagRegistry,

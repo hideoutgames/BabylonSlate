@@ -84,6 +84,30 @@ describe("hydrateSerializedGraphForEditor", () => {
     expect(ordinary.nodes.map((node) => node.data.__interface)).toEqual([false, false]);
   });
 
+  it("replaces the pins saved on nodes whose Target or Actor now reads Self, keeping their wires", () => {
+    // Pins as saved before these inputs were labelled "(Self)": required, with no Self flag, and no Target on an own-class call.
+    const stale = (typeId: string, properties: Record<string, unknown> = {}) =>
+      registry.get(typeId)!.pins(properties).filter((pin) => pin.id !== "target" && pin.id !== "actor");
+    const graph: SerializedGraph = {
+      nodes: [
+        { id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
+        { id: "destroy", type: "actor.destroy", position: { x: 0, y: 0 }, data: { __pins: [
+          ...stale("actor.destroy"), { id: "target", name: "target", kind: "data", direction: "in", type: { kind: "actorRef", classId: "Actor" } },
+        ] } },
+        { id: "call", type: "functions.call", position: { x: 0, y: 0 }, data: {
+          functionName: "Jump", classId: "Hero", implicitSelf: true, pins: [],
+          __pins: stale("functions.call", { functionName: "Jump", classId: "Hero", implicitSelf: true, pins: [] }),
+        } },
+      ],
+      edges: [{ id: "exec", source: "begin", sourceHandle: "execOut", target: "destroy", targetHandle: "execIn" }],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const pinsOf = (id: string) => hydrated.nodes.find((node) => node.id === id)!.data.__pins as SerializedPin[];
+    expect(pinsOf("destroy").find((pin) => pin.id === "target")).toMatchObject({ optional: true, selfWhenUnwired: true });
+    expect(pinsOf("call").find((pin) => pin.id === "target")).toMatchObject({ optional: true, selfWhenUnwired: true });
+    expect(hydrated.edges).toHaveLength(1);
+  });
+
   it("refreshes edited JavaScript pins and removes links to deleted pins", () => {
     const graph: SerializedGraph = {
       nodes: [{ id: "js", type: "debug.executeJavaScript", position: { x: 0, y: 0 }, data: {

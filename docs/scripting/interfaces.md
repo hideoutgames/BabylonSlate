@@ -27,7 +27,7 @@ Child classes inherit their parent's interfaces and implementations. A child can
 
 In **Add Node**, choose **Call Interface** followed by the method name. This places a [Call Interface Function](class/call-interface-function.md) node with the method's inputs and outputs.
 
-- Connect **Target** to the object to call. Left unconnected, it calls the object running the graph.
+- Connect **Target** to the object to call. Left unconnected the pin reads **Target (Self)** and calls the object running the graph.
 - The caller continues when the method returns.
 - If the target does not implement the interface, nothing runs: execution continues and the outputs return their default values.
 

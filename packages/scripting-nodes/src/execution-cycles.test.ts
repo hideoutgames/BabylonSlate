@@ -90,7 +90,8 @@ describe("execution cycles", () => {
       durations.push(duration);
       resumes.push(resolve);
     });
-    const ctx = { ...flowContext(), values: [] as number[], delay, invokeFunction: () => delay(0.25) };
+    // The function variant calls on Self, so the graph needs an owner.
+    const ctx = { ...flowContext(), self: {}, values: [] as number[], delay, invokeFunction: () => delay(0.25) };
     const pending = compiled.run(ctx);
     expect(compiled.isAsync).toBe(true);
     expect(ctx.values).toEqual([]);

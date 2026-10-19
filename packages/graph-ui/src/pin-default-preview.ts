@@ -199,15 +199,8 @@ export function pinDefaultPreview(
       return { kind: "classRef", text: pinDefaultAsString(selectedClass) };
     }
   }
-  // The node's own Target pin (a member argument named "target" is `target__arg`),
-  // or a pin the catalog says reads Self while unwired.
-  if (
-    ((pin.id === "target" && properties.implicitSelf === true) ||
-      pin.selfWhenUnwired === true) &&
-    (pin.type.kind === "objectRef" || pin.type.kind === "actorRef")
-  ) {
-    return { kind: pin.type.kind, text: "Self" };
-  }
+  // A pin that reads Self while unwired says so in its label, not in a field.
+  if (pin.selfWhenUnwired === true) return null;
   const constraint = pinConstraintPreview(pin, pinTypeNames);
   if (constraint) return constraint;
   const type = literalPinType(pin);

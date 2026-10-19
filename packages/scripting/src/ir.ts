@@ -14,8 +14,17 @@ export type GraphPin = {
   defaultValue?: unknown;
   /** Required storage input, or a variable output that can supply that storage. */
   reference?: "required" | "writable";
-  /** An unwired Actor input reads the actor running the graph (the node compiles it to `ctx.self`). */
+  /**
+   * An unwired reference input reads the object running the graph: the compiler passes `ctx.self`
+   * and the graph labels the pin "(Self)". A wired reference is used as is.
+   */
   selfWhenUnwired?: boolean;
+  /**
+   * The object the node reads, writes, calls or moves. A null value skips the node (a pure node
+   * returns its output defaults) and logs "<Class>: <Node> (<Pin>) tried to access null." each time.
+   * Inputs where null is a legitimate value never set it.
+   */
+  subject?: boolean;
 };
 
 export type GraphNode = {

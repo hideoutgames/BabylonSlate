@@ -226,7 +226,6 @@ describe("interface nodes", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toContain("ctx.callInterface(ctx.self");
     expect(compiled.source).toContain('"iface-damageable"');
     expect(compiled.source).toContain('"Apply Damage"');
     expect(compiled.source).toMatch(/amount:/);
@@ -246,15 +245,17 @@ describe("interface nodes", () => {
       },
     });
     expect(calls).toHaveLength(1);
+    // implicitSelf: the unwired Target is the running object.
+    expect(calls[0]?.[0]).toEqual({ classId: "Enemy" });
     expect(calls[0]?.[1]).toBe("iface-damageable");
     expect(calls[0]?.[2]).toBe("Apply Damage");
     expect(calls[0]?.[3]).toMatchObject({ amount: expect.anything() });
   });
 
   it.each([
-    [true, "self"],
-    [undefined, null],
-  ] as const)("an unwired Target with implicitSelf %s calls on %s", (implicitSelf, expected) => {
+    [true, ["self"], []],
+    [undefined, [], ["Call (Target) tried to access null."]],
+  ] as const)("an unwired Target with implicitSelf %s calls on %j and logs %j", (implicitSelf, expected, logged) => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -272,13 +273,17 @@ describe("interface nodes", () => {
       ],
     };
     const targets: unknown[] = [];
+    const reported: string[] = [];
     (loadModule(compileGraph(graph, { assetGuid: "a", registry }).source).onBeginPlay as (ctx: unknown) => void)({
       self: "self",
       callInterface: (target: unknown) => {
         targets.push(target);
         return {};
       },
+      nullAccess: (message: string) => reported.push(message),
     });
-    expect(targets).toEqual([expected]);
+    // Only a Self-bound row reads Self; any other unwired Target is empty and the call is skipped.
+    expect(targets).toEqual(expected);
+    expect(reported).toEqual(logged);
   });
 });

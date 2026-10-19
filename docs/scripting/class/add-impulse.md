@@ -25,4 +25,4 @@ Applies an instant push to an actor's dynamic Rigid Body.
 
 - The push is **Impulse** multiplied by **Strength**, applied at the body's centre of mass in world directions.
 - Nothing happens unless the actor has a Rigid Body whose motion type is Dynamic.
-- If **Target** is connected to a reference that is empty when the node runs, nothing happens.
+- If **Target** is connected to a reference that is empty when the node runs, nothing happens and an error is logged.
