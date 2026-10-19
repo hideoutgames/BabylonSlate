@@ -758,8 +758,8 @@ describe("preparation while the driver compiles", () => {
   });
 });
 
-// WebKit WebGL2 exposes KHR_parallel_shader_compile but links inside linkProgram, and SwiftShader has no parallel
-// compile: either way each probe links its variants before it returns and nothing is ever pending on the driver.
+// SwiftShader has no parallel compile, so each probe links its variants before it returns and nothing is ever pending
+// on the driver; with the extension exposed, a program already complete at its first check looks the same.
 // Links shorter than SCENE_THREAD_HELD_MS are polling to the held-thread credit; finished variants are progress.
 describe.each([false, true])("preparation while synchronous links finish one after another (parallel compile exposed: %s)", (exposed) => {
   /** Each probe advances the virtual clock by `ms`; while `linking()` it also finishes one more shader variant. */

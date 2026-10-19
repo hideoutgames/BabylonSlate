@@ -214,7 +214,7 @@ describe("asset thumbnail capture", () => {
     expect(engine.scenes).toEqual([scene]);
   });
 
-  // Without KHR_parallel_shader_compile (SwiftShader, WebKit WebGL2) one readiness probe links every
+  // Without KHR_parallel_shader_compile (SwiftShader) one readiness probe links every
   // effect before it returns, and a cold runner held the thread for 13 to 15 s.
   describe("while the thread is held", () => {
     const material = { kind: "Material", materialGuid: "paint", materials: new Map([["paint", createDefaultMaterialDocument()]]) } as const;

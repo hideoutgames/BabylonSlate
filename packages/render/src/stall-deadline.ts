@@ -26,7 +26,9 @@ export const SCENE_FIRST_FRAME_TIMEOUT_MS = 20_000;
  * Renewals measure progress, so this only ends a wait that keeps compiling and
  * never becomes ready (a define churn that recompiles forever), with an error
  * instead of an endless loading screen. It is meant to sit well above any cold
- * load that links every variant synchronously (WebKit WebGL2, SwiftShader).
+ * load whose variants link one after another: synchronously (SwiftShader), or
+ * on a parallel-compile driver that overlaps little for heavy programs (iPad
+ * WebKit WebGL2).
  */
 export const SCENE_PREPARATION_CEILING_MS = 300_000;
 
@@ -73,11 +75,16 @@ export function firstFrameCompletionMs(pipelines: number): number {
  * and a probe on a healthy host takes milliseconds, so a longer gap means a
  * synchronous call held the thread, or the host did not run the step (garbage
  * collection, a decode, or a hidden page, whose timers browsers align to a
- * second or more). Where links are synchronous (SwiftShader without
- * KHR_parallel_shader_compile; WebKit WebGL2, which exposes it but links inside
- * `linkProgram`) a readiness probe links every effect before it returns, and a
- * cold two-core runner held the thread for 13 to 15 s. Shorter links count as
- * polling here; `DriverCompileWatch` renews the bounds for them instead.
+ * second or more). Where links are synchronous (SwiftShader, which has no
+ * KHR_parallel_shader_compile) a readiness probe links every effect before it
+ * returns, and a cold two-core runner held the thread for 13 to 15 s. Shorter
+ * links count as polling here; `DriverCompileWatch` renews the bounds for them
+ * instead. A parallel-compile driver returns from the probe before the link
+ * completes (iPad WebKit WebGL2, Babylon 9.29: twelve new lit effects came back
+ * from `createEffect` in 5 ms and were ready 281 ms later), but a draw's first
+ * use of a program can still hold the thread there (about 100 ms a program in
+ * raw WebGL on an iPad, which no readiness probe sees), so a frame that draws
+ * ten new programs reaches this length.
  */
 export const SCENE_THREAD_HELD_MS = 1_000;
 
