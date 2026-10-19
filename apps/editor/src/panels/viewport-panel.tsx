@@ -495,6 +495,17 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   }, [applySceneChange, documentId]);
   const commitGizmoTransformRef = useRef(commitGizmoTransform);
   commitGizmoTransformRef.current = commitGizmoTransform;
+  /** A paused Game Camera pilot gesture becomes one undoable move of the camera actor. */
+  const commitPilotedActor = useCallback((live: Parameters<typeof applyLiveGizmoToActor>[1]) => {
+    const current = sceneRef.current;
+    if (!current) return;
+    void applySceneChange(documentId, {
+      ...current,
+      actors: current.actors.map((entry) => entry.id === live.actorId ? applyLiveGizmoToActor(entry, live) : entry),
+    });
+  }, [applySceneChange, documentId]);
+  const commitPilotedActorRef = useRef(commitPilotedActor);
+  commitPilotedActorRef.current = commitPilotedActor;
   /** A released shape handle becomes one undoable component property change. */
   const commitComponentShape = useCallback((edit: { actorId: string; componentId: string; properties: Record<string, unknown> }) => {
     const current = sceneRef.current;
@@ -598,6 +609,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           onGizmoDragEnd: () => commitGizmoTransformRef.current(),
           onComponentShapeEdit: (edit) => commitComponentShapeRef.current(edit),
           editorFlyEnabled: () => !playingRef.current,
+          onPilotedActorMoveEnd: (live) => commitPilotedActorRef.current(live),
           editorFlySpeed: () => flySpeedRef.current,
         });
         engineRef.current = handle;
@@ -1707,6 +1719,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
             onDrop={dropSelection}
             dropDisabled={dropDisabled}
             showViewportModeToggle={doc?.ref.kind !== "scene-layer"}
+            showGameCamera={doc?.ref.kind !== "scene-layer"}
             showGizmoTools={!overlayTransformBox}
           />}
         </div>
@@ -1771,8 +1784,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
             <ViewportJoystick
               speed={flySpeed}
               onFly={(forward, right) => {
-                const camera = engineRef.current?.editor?.camera;
-                if (camera) applyViewportJoystickSteer(camera, forward, right);
+                const navigation = engineRef.current?.editor?.navigation;
+                if (navigation) applyViewportJoystickSteer(navigation, forward, right);
               }}
               onActiveChange={(active) => {
                 const scheduler = engineRef.current?.scheduler;

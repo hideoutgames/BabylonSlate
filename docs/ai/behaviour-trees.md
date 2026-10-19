@@ -4,7 +4,7 @@ A Behaviour Tree decides what an actor does next, and its Blackboard holds the v
 
 ## Create a tree and a Blackboard
 
-1. In the **Content Browser**, choose **New Asset > AI > Blackboard**. Open it, tap **Add Key** for each value the AI needs, and set each key's **Name**, **Type** and default value.
+1. In the **Content Browser**, choose **New Asset > AI > Blackboard**. Open it, tap **Add Key** for each value the AI needs, and set each key's **Name**, **Type** and default value. Integer, Float and Vector keys can also have a **Unit**, such as **Seconds**, shown after their values.
 2. Choose **New Asset > AI > Behaviour Tree** and open it. A new tree starts with a **Selector** root, one **Sequence** and a **Succeed** task.
 3. In the tree's **Blackboard** window, pick the Blackboard asset. Its keys are listed there for reference; edit them in the Blackboard asset.
 
@@ -28,7 +28,7 @@ The tree editor has four windows: **Graph**, **Blackboard**, the **Inspector** f
 
 **Decorators** are conditions on a node: [Blackboard Is Set](../scripting/behaviour-tree/blackboard-is-set.md), [Compare Blackboard Value](../scripting/behaviour-tree/compare-blackboard-value.md), [Cooldown](../scripting/behaviour-tree/cooldown.md), [Loop](../scripting/behaviour-tree/loop.md) and [Time Limit](../scripting/behaviour-tree/time-limit.md).
 
-**Services** run on a timer while their node is active. The built-in [Set Blackboard](../scripting/behaviour-tree/set-blackboard-service.md) service writes a key every **Interval MS** (default 250), offset by up to **Random Deviation MS**.
+**Services** run on a timer while their node is active. The built-in [Set Blackboard](../scripting/behaviour-tree/set-blackboard-service.md) service writes a key every **Interval** (default 250 ms), offset by up to **Random Deviation**.
 
 ## Aborts
 

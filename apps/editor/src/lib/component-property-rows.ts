@@ -4,6 +4,7 @@ import { uiControlPropertyRows } from "./ui-control-property-rows";
 import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, WATER_REMOVAL_SHAPES, waterKindForClass } from "@babylonslate/core";
 import { humanizePropertyLabel } from "@babylonslate/editor-kit";
 import { isOverlayLayoutClass } from "@babylonslate/core";
+import { CUSTOM_COLLISION_PRESET, DEFAULT_COLLISION_PRESETS, findCollisionPreset, resolveCollisionFilter, type CollisionPreset } from "@babylonslate/core";
 import { overlayLayoutPropertyRows } from "./overlay-layout-property-rows";
 import type { PropertyRow } from "@babylonslate/editor-kit";
 import {
@@ -103,6 +104,8 @@ export type AssetPickRequest = {
 export type ComponentPropertyContext = {
   sortingLayers: readonly string[];
   collisionLayers: readonly string[];
+  /** Project Collision Presets; the Collision Preset row lists them. Omitted: the default preset only. */
+  collisionPresets?: readonly CollisionPreset[];
   assetLabel: (guid: string | null | undefined) => string | undefined;
   assetType?: (guid: string | null | undefined) => string | undefined;
   modelMaterialSlots?: (guid: string) => readonly ModelMaterialSlot[];
@@ -277,9 +280,10 @@ function collisionLayerRow(
   component: SerializedComponent,
   update: (property: string, value: unknown) => void,
   collisionLayers: readonly string[],
+  layer = asNumber(component.properties.layer, 1),
+  disabled = false,
 ): PropertyRow {
   const names = collisionLayerNames(collisionLayers);
-  const layer = asNumber(component.properties.layer, 1);
   const value = layerLabelFromBitmask(layer, names);
   const options = names.includes(value) ? names : [...names, value];
   return {
@@ -288,6 +292,7 @@ function collisionLayerRow(
     label: "Layer",
     value,
     options: options.map((name) => ({ value: name, label: name })),
+    disabled,
     onChange: (next) => {
       const bit = names.indexOf(next);
       update("layer", bit >= 0 ? 1 << bit : 1);
@@ -295,22 +300,58 @@ function collisionLayerRow(
   };
 }
 
-function collidesWithRow(
+/**
+ * Collision Preset, then Layer and Collision Responses (Ignore / Overlap /
+ * Block per layer). A preset supplies them and the rows show its values read
+ * only; Custom edits the collider's own. Picking a preset also stores its
+ * values on the component, so a later deleted preset falls back to what the
+ * collider last used, and switching to Custom starts from them.
+ */
+function collisionRows(
   actorId: string,
   component: SerializedComponent,
-  update: (property: string, value: unknown) => void,
-  collisionLayers: readonly string[],
-): PropertyRow {
-  const names = collisionLayerNames(collisionLayers);
-  return {
-    kind: "flags",
-    id: rowId(actorId, component.id, "mask"),
-    label: "Collides With",
-    value: asNumber(component.properties.mask, 0xffffffff),
-    bitCount: names.length,
-    labels: names,
-    onChange: (next) => update("mask", next),
-  };
+  update: ComponentPropertyUpdate,
+  context: Pick<ComponentPropertyContext, "collisionLayers" | "collisionPresets">,
+): PropertyRow[] {
+  const names = collisionLayerNames(context.collisionLayers);
+  const presets = context.collisionPresets ?? DEFAULT_COLLISION_PRESETS;
+  const preset = findCollisionPreset(presets, component.properties.collisionPreset);
+  const resolved = resolveCollisionFilter(
+    {
+      layer: asNumber(component.properties.layer, 1),
+      mask: asNumber(component.properties.mask, 0xffffffff),
+      overlapMask: asNumber(component.properties.overlapMask, 0),
+    },
+    component.properties.collisionPreset,
+    presets,
+  );
+  return [
+    {
+      kind: "enum",
+      id: rowId(actorId, component.id, "collisionPreset"),
+      label: "Collision Preset",
+      value: preset?.id ?? CUSTOM_COLLISION_PRESET,
+      options: [
+        ...presets.map((entry) => ({ value: entry.id, label: entry.name })),
+        { value: CUSTOM_COLLISION_PRESET, label: "Custom" },
+      ],
+      onChange: (next) => {
+        const picked = presets.find((entry) => entry.id === next);
+        const values = resolveCollisionFilter(resolved, picked?.id, presets);
+        update("collisionPreset", picked ? picked.id : CUSTOM_COLLISION_PRESET, { ...values });
+      },
+    },
+    collisionLayerRow(actorId, component, update, context.collisionLayers, resolved.layer, Boolean(preset)),
+    {
+      kind: "collision-responses",
+      id: rowId(actorId, component.id, "responses"),
+      label: "Collision Responses",
+      value: { mask: resolved.mask, overlapMask: resolved.overlapMask },
+      labels: names,
+      disabled: Boolean(preset),
+      onChange: (next) => update("mask", next.mask, { overlapMask: next.overlapMask }),
+    },
+  ];
 }
 
 function asRgb(value: unknown): [number, number, number] | null {
@@ -467,8 +508,7 @@ function meshCollisionRows(
   ];
   if (mode === "none") return rows;
   rows.push(
-    collisionLayerRow(actorId, component, update, context.collisionLayers),
-    collidesWithRow(actorId, component, update, context.collisionLayers),
+    ...collisionRows(actorId, component, update, context),
   );
   return rows;
 }
@@ -687,8 +727,7 @@ export function componentPropertyRows(
           description: "Use the runtime triangles for collision. Geometry edits rebuild collision on the next physics step.",
           onChange: (value) => update("enableCollision", value),
         },
-        collisionLayerRow(actorId, component, update, context.collisionLayers),
-        collidesWithRow(actorId, component, update, context.collisionLayers),
+        ...collisionRows(actorId, component, update, context),
         ...(["castShadows", "receiveShadows"] as const).map((key): PropertyRow => ({
           kind: "boolean", id: rowId(actorId, component.id, key),
           label: key === "castShadows" ? "Cast Shadows" : "Receive Shadows",
@@ -722,13 +761,12 @@ export function componentPropertyRows(
         },
         number("totalMass", "Total Mass", 0.001, "Mass shared across the selected bones, in kilograms."),
         number("radius", "Bone Radius", 0.001, "Collision radius of each bone, in scene units."),
-        number("angularLimit", "Angular Limit", 0, "Maximum rotation from the captured pose, in degrees.", 180),
+        { ...number("angularLimit", "Angular Limit", 0, "Maximum rotation from the captured pose.", 180), unit: "deg" },
         number("linearDamping", "Linear Damping", 0),
         number("angularDamping", "Angular Damping", 0),
         number("friction", "Friction", 0),
         number("restitution", "Restitution", 0, undefined, 1),
-        collisionLayerRow(actorId, component, update, context.collisionLayers),
-        collidesWithRow(actorId, component, update, context.collisionLayers),
+        ...collisionRows(actorId, component, update, context),
       ];
     }
     case "MeshComponent": {
@@ -991,6 +1029,7 @@ export function componentPropertyRows(
           kind: "number",
           id: rowId(actorId, component.id, "walkableSlopeAngle"),
           label: "Walkable Slope Angle",
+          unit: "deg",
           value: asNumber(component.properties.walkableSlopeAngle, 60),
           min: 0,
           max: 90,
@@ -1313,8 +1352,7 @@ export function componentPropertyRows(
           1,
           update,
         ),
-        collisionLayerRow(actorId, component, update, context.collisionLayers),
-        collidesWithRow(actorId, component, update, context.collisionLayers),
+        ...collisionRows(actorId, component, update, context),
         {
           kind: "boolean",
           id: rowId(actorId, component.id, "isTrigger"),
@@ -1522,6 +1560,7 @@ export function componentPropertyRows(
             kind: "number",
             id: rowId(actorId, component.id, "innerAngle"),
             label: "Inner Angle",
+            unit: "deg",
             value: asNumber(component.properties.innerAngle, 30),
             min: 0,
             max: 179,
@@ -1531,6 +1570,7 @@ export function componentPropertyRows(
             kind: "number",
             id: rowId(actorId, component.id, "outerAngle"),
             label: "Outer Angle",
+            unit: "deg",
             value: asNumber(component.properties.outerAngle, 45),
             min: 1,
             max: 179,
@@ -1607,9 +1647,9 @@ export function componentPropertyRows(
         { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: properties.enabled,
           description: "Outline this actor's geometry. Disabling reveals any applicable global CEL outline.", onChange: (next) => update("enabled", next) },
         { kind: "color", id: rowId(actorId, component.id, "color"), label: "Color", value: properties.color, onChange: (next) => update("color", next) },
-        { kind: "number", id: rowId(actorId, component.id, "width"), label: "Width", value: properties.width,
+        { kind: "number", id: rowId(actorId, component.id, "width"), label: "Width", unit: "px", value: properties.width,
           min: OUTLINE_WIDTH_LIMITS[0], max: OUTLINE_WIDTH_LIMITS[1], sensitivity: 0.025,
-          description: "Width in output pixels, independent of the actor's scale.", onChange: (next) => update("width", next) },
+          description: "In output pixels, independent of the actor's scale.", onChange: (next) => update("width", next) },
         { kind: "boolean", id: rowId(actorId, component.id, "throughMeshes"), label: "Render Through Meshes", value: properties.throughMeshes,
           description: "Show this outline through other geometry. Global CEL outlines remain occluded.", onChange: (next) => update("throughMeshes", next) },
       ];
@@ -1695,7 +1735,7 @@ export function componentPropertyRows(
           ],
           onChange: (next) => update("projectionMode", next),
         },
-        ...(projectionMode === "perspective" ? [sliderRow(
+        ...(projectionMode === "perspective" ? [{ ...sliderRow(
           actorId,
           component.id,
           "fieldOfView",
@@ -1706,7 +1746,7 @@ export function componentPropertyRows(
           update,
           1,
           DEFAULT_CAMERA_FIELD_OF_VIEW,
-        )] : [sliderRow(
+        ), unit: "deg" }] : [sliderRow(
           actorId,
           component.id,
           "orthographicSize",

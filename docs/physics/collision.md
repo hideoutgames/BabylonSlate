@@ -6,14 +6,33 @@ Control which colliders touch, react to hits and overlaps in scripts, and query 
 
 Layers decide which colliders interact. Set them up in **Project Settings > Physics > Collision Layers**: **Add Layer** creates a named layer, up to 32. Every project starts with **Default**.
 
-Each Collider, collidable Mesh and Ragdoll has two settings:
+Each Collider, collidable Mesh, Dynamic Runtime Mesh and Ragdoll has these settings:
 
 | Setting | Description |
 | --- | --- |
-| Layer | The one layer this collider belongs to. |
-| Collides With | The layers it reacts to. All layers by default. |
+| Collision Preset | A preset from Project Settings, or **Custom**. **Default** unless set. |
+| Layer | The one layer this collider belongs to. Read only unless Custom. |
+| Collision Responses | For every layer: **Ignore**, **Overlap** or **Block**. The column headers set every layer at once. Read only unless Custom. |
 
-Two colliders interact only when each one's **Collides With** includes the other's **Layer**. If either side leaves the other out, they pass through each other and raise no events.
+Two colliders use the weaker of their responses to each other's Layer:
+
+| Responses | Result |
+| --- | --- |
+| Both Block | They block each other and raise hits. |
+| Overlap and Overlap, or Overlap and Block | They pass through each other and raise overlap events, as a trigger does. |
+| Either Ignore | They pass through each other and raise no events. |
+
+A collider with **Is Trigger** on never blocks: a Block response counts as Overlap.
+
+### Collision Presets
+
+**Project Settings > Physics > Collision Presets** lists named presets with their Layer. Select one to edit its **Name**, **Layer** and **Collision Responses**. **Add Preset** creates one; every project keeps at least one, **Default** (Default layer, blocks everything).
+
+A collider on a preset uses the preset's Layer and responses, so editing the preset changes every collider that uses it. Switching a collider to **Custom** starts from the preset's values. If a preset is deleted, its colliders keep the values they last showed.
+
+Layers are stored by position: removing or reordering a layer in the list changes which layer a preset's responses refer to, as it does for every collider's Layer.
+
+A script that sets a component's **Layer**, **Mask** (blocked layers) or **Overlap Mask** (overlapped layers) switches it to Custom.
 
 ## Hits and overlaps
 

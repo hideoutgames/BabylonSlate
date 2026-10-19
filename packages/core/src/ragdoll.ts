@@ -19,6 +19,7 @@ export interface RagdollProperties {
   restitution: number;
   layer: number;
   mask: number;
+  overlapMask: number;
 }
 
 export function parseRagdollProperties(properties: Record<string, unknown>): RagdollProperties {
@@ -53,5 +54,6 @@ export function parseRagdollProperties(properties: Record<string, unknown>): Rag
     restitution: number("restitution", 0, 0, 1),
     layer: mask("layer", 1),
     mask: mask("mask", 0xffffffff),
+    overlapMask: mask("overlapMask", 0),
   };
 }

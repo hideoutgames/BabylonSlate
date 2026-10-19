@@ -6,7 +6,7 @@ import {
   type GraphPin,
   type PinType,
 } from "@babylonslate/scripting";
-import { mapDefaultLiteral } from "@babylonslate/core";
+import { declaredValueUnit, mapDefaultLiteral } from "@babylonslate/core";
 import { selfPin, subject } from "./self-pin";
 
 export {
@@ -28,7 +28,14 @@ export type MemberPinRow = {
   container?: string;
   keyTypeId?: string;
   keyTypeClassId?: string;
+  unit?: string;
 };
+
+/** A signature input's display unit, carried onto its pin for the literal field. */
+export function memberPinUnit(row: MemberPinRow): { unit?: string } {
+  const unit = declaredValueUnit(row.typeId, row.unit);
+  return unit ? { unit } : {};
+}
 
 /**
  * Target of a member Call node. A member of the graph's own class (implicitSelf)
@@ -117,12 +124,15 @@ export function dataMemberPins(
     }
     if (row.typeId === "exec") return [];
     return [
-      pin(
-        memberArgPinId(row.name, fixedIds),
-        row.name,
-        direction,
-        pinTypeForVariable(row),
-      ),
+      {
+        ...pin(
+          memberArgPinId(row.name, fixedIds),
+          row.name,
+          direction,
+          pinTypeForVariable(row),
+        ),
+        ...(direction === "in" ? memberPinUnit(row) : {}),
+      },
     ];
   });
 }

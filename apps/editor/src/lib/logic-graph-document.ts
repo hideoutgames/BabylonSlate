@@ -1,6 +1,7 @@
 import {
   classGraphComponentFromHeaderRow,
   classHeaderComponentRow,
+  declaredValueUnit,
   isFunctionLibraryClass,
   normalizeClassMemberCategory,
   normalizeDataDefinitionAsset,
@@ -132,6 +133,8 @@ function normalizeHeaderPins(value: unknown): GraphClassMemberPin[] {
     if (typeof typeClassId === "string" && typeClassId.trim()) {
       pin.typeClassId = typeClassId.trim();
     }
+    const unit = declaredValueUnit(pin.typeId, (row as { unit?: unknown }).unit);
+    if (unit) pin.unit = unit;
     pins.push(pin);
   }
   return pins;
@@ -318,7 +321,7 @@ export function classGraphFromHeaderPayload(
       const name = (entry as { name?: unknown }).name;
       const id = headerMemberId(entry);
       if (typeof name !== "string" || !name || !id) continue;
-      const { typeId, typeClassId, container, keyTypeId, keyTypeClassId, loading } =
+      const { typeId, typeClassId, container, keyTypeId, keyTypeClassId, loading, unit } =
         entry as Record<string, unknown>;
       const member: GraphClassMember = {
         id,
@@ -337,6 +340,8 @@ export function classGraphFromHeaderPayload(
         member.keyTypeClassId = keyTypeClassId.trim();
       }
       if (loading === "hard") member.loading = "hard";
+      const variableUnit = declaredValueUnit(member.typeId, unit);
+      if (variableUnit) member.unit = variableUnit;
       const variableCategory = normalizeClassMemberCategory(
         (entry as { category?: unknown }).category,
       );

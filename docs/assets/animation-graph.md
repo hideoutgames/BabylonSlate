@@ -38,7 +38,7 @@ A script graph that runs for each Animation Graph component using the graph. It 
 
 | Setting | Description |
 | --- | --- |
-| Blend Seconds | How long the old clip blends into the new one. |
+| Blend Time | How long the old clip blends into the new one. |
 | Priority | When several transitions leave a state, the lower number is checked first. |
 | Direction | **One Way** or **Both Ways**. Both Ways adds the reverse transition. |
 | Open Rule | Opens the transition's rule graph. The transition fires when its **Exit State** and **Enter State** nodes are both true. An unconnected one counts as true. |

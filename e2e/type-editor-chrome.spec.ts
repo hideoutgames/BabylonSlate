@@ -108,9 +108,9 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
       .locator('[data-asset-path="assets/Palette.babasset"]')
       .dblclick();
     await expect(page.getByTestId("document-workspace-enum")).toBeVisible();
-    await expect(page.getByTestId("enum-row-0")).toBeVisible();
+    await expect(page.getByTestId("tree-row-member:0")).toBeVisible();
     await page.getByTestId("enum-add-member").click();
-    await expect(page.getByTestId("enum-row-1")).toBeVisible();
+    await expect(page.getByTestId("tree-row-member:1")).toBeVisible();
   });
 
   test("Class panel add variable opens PinTypePicker in Inspector", async ({

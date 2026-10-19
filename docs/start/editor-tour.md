@@ -9,7 +9,7 @@ The top bar shows the project name and the document tabs. The toolbar sits below
 | Area | Controls |
 | --- | --- |
 | Left | **Save All** (a dot means something is unsaved), **Undo** and **Redo**. A Class adds **Compile**; a Material adds **Render**; a scene adds the scene mode picker (**Design**, **Landscape**, **Foliage**). |
-| Centre | **Play** (it reads **Preview** or **Simulate** for those Play Modes) and the **Debug** menu with Play options. While a Simulation runs, **Simulate** becomes a red **Stop** with **Pause**, **Game** / **Edit** and **Return To Scene** beside it, plus a **Debug Instance** picker while a Class, Behaviour Tree or Animation Graph is open ([Simulate controls](../debugging/index.md#simulate-controls)). |
+| Centre | **Play** (it reads **Preview** or **Simulate** for those Play Modes) and the **Debug** menu with Play options. While a Simulation runs, **Simulate** becomes a red **Stop** with **Pause**, a **Game** / **Edit** input toggle and **Return To Scene** beside it, plus a **Debug Instance** picker while a Class, Behaviour Tree or Animation Graph is open ([Simulate controls](../debugging/index.md#simulate-controls)). |
 | Right | **Windows**, **Focus**, **Search Project** and **Settings** (**Project Settings** and **Engine Settings**). |
 
 ## Document tabs
@@ -38,6 +38,8 @@ A scene opens with these windows:
 | Compiler Results | Errors and warnings from compiling scripts. |
 
 Other asset editors have their own windows, such as **Preview** and **Inspector** for a Texture. See [Scenes](../scenes/index.md) and [Actors](../scenes/actors.md).
+
+Number fields show their unit after the value, such as **45°**, **120 ms** or **50%**. You can type the unit or leave it out. Drag a field's handle to change the value, or type a sum such as `90+45`.
 
 ## Windows and Focus
 

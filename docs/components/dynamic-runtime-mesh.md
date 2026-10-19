@@ -13,7 +13,8 @@ Select an actor, then choose **Add Component > Rendering > Dynamic Runtime Mesh*
 | Material | A Material or Material Instance for the generated surface. |
 | Enable Collision | Uses the current triangles as collision. Default off. 3D physics only. |
 | Layer | The collision layer the mesh is on. |
-| Collides With | The layers the mesh collides with. |
+| Collision Preset | A project Collision Preset (default **Default**) or **Custom**; Layer and Collision Responses are read only unless Custom. |
+| Collision Responses | Ignore, Overlap or Block for every layer. |
 | Cast Shadows | Casts shadows. Default on. |
 | Receive Shadows | Receives shadows. Default on. |
 

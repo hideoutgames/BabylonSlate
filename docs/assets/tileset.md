@@ -38,7 +38,7 @@ A Tileset with no Texture still paints and plays: each tile draws as a flat colo
 | Chain Points | For Chain collision: points written as `x,y x,y …` in tile units, from 0,0 at the tile's bottom-left to 1,1 at its top-right. |
 | Tile Flags | Eight on/off flags stored with the tile. |
 | Animation Frames | Tile numbers to cycle through, separated by commas. Leave empty for a still tile. |
-| Frame Duration MS | Length of each animation frame. Default 100. |
+| Frame Duration | Length of each animation frame. Default 100. |
 
 ## Related
 

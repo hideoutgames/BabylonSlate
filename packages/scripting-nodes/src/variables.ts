@@ -5,8 +5,15 @@ import {
   objectRef,
   pinTypeForVariable,
 } from "@babylonslate/scripting";
+import { declaredValueUnit } from "@babylonslate/core";
 import { localVariableIdent } from "./member-pins";
 import { subject } from "./self-pin";
+
+/** The variable's display unit, stamped on its node, for the Set value literal. */
+function variableUnit(properties: Record<string, unknown>): { unit?: string } {
+  const unit = declaredValueUnit(typeof properties.typeId === "string" ? properties.typeId : "float", properties.unit);
+  return unit ? { unit } : {};
+}
 
 function variablePinType(properties: Record<string, unknown>) {
   return pinTypeForVariable({
@@ -116,7 +123,7 @@ export const variableNodes: NodeDefinition[] = [
         pin("execIn", "exec", "in", EXEC),
         pin("execOut", "then", "out", EXEC),
         ...targetPins(properties),
-        pin("value", name, "in", type),
+        { ...pin("value", name, "in", type), ...variableUnit(properties) },
         pin("out", name, "out", type),
       ];
     },

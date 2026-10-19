@@ -10,7 +10,7 @@ In the **Content Browser**, choose **New Asset > 2D > Sprite**. Import your imag
 
 Double-tap a Sprite to open it.
 
-- **Preview**: the image with a crosshair at the pivot and a dashed box for the collision. Drag the box or its handles to change the collision.
+- **Preview**: the frame at its own proportions with a crosshair at the pivot and a dashed box for the collision. Drag to move the view; pinch or use the mouse wheel to zoom. **Fit** and **Actual Size** return to their view. With **Collision** on, drag the box or its handles to change it: edges snap to whole pixels and the position and size show in pixels while you drag. **Reset Collision** makes the box cover the whole image again; turn **Collision** off to hide the box.
 - **Inspector**: the Sprite's settings.
 
 ## Settings
@@ -20,7 +20,7 @@ Double-tap a Sprite to open it.
 | Texture | The image to show. |
 | Pixels Per Unit | Image pixels per world unit, which sets the sprite's size in the world. Default 100. |
 | Pivot | The point of the image that sits at the actor's position, as fractions of the image. 0.5, 0.5 is the centre and 0, 0 the top-left corner. |
-| Frame Duration MS | Length of the frame in milliseconds. Default 100. |
+| Frame Duration | Length of the frame in milliseconds. Default 100. |
 | Collision | The collision box as fractions of the image: X, Y, W and H. The default covers the whole image. |
 
 ## Notes

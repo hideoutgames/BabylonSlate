@@ -1,4 +1,7 @@
 import {
+  CUSTOM_COLLISION_PRESET,
+  DEFAULT_COLLISION_PRESET_ID,
+  DEFAULT_COLLISION_PRESETS,
   parseRagdollProperties,
   type SerializedActor,
   type SerializedComponent,
@@ -34,6 +37,14 @@ const FOLDER = "Physics";
 export const FEATURE_TEST_COLLISION_LAYERS = ["Default", "Dynamic", "Trigger", "Water", "Ghost"] as const;
 const LAYER = { default: 1, dynamic: 2, trigger: 4, water: 8, ghost: 16 } as const;
 const ALL_LAYERS = 0xffffffff;
+const GHOST_PASS_PRESET = "ghost-pass";
+/** The Collision Preset each authored layer uses; a collider names its preset explicitly or gets its layer's. */
+const PRESET_FOR_LAYER: Partial<Record<number, string>> = {
+  [LAYER.default]: DEFAULT_COLLISION_PRESET_ID,
+  [LAYER.dynamic]: "dynamic",
+  [LAYER.trigger]: "trigger",
+  [LAYER.ghost]: "ghost",
+};
 
 /** Main-scene workload knobs. */
 const PYRAMID_LEVELS = 5;
@@ -111,13 +122,16 @@ export async function placeFeatureTestPhysics(ctx: FeatureTestContext): Promise<
   placeStress(ctx, refs, palette);
   ctx.patchSettings((settings) => {
     const names: readonly string[] = FEATURE_TEST_COLLISION_LAYERS;
-    return {
-      ...settings,
-      physics: {
-        ...settings.physics,
-        collisionLayers: [...names, ...settings.physics.collisionLayers.filter((name) => !names.includes(name))],
-      },
-    };
+    const collisionLayers = [...names, ...settings.physics.collisionLayers.filter((name) => !names.includes(name))];
+    const collisionPresets = [
+      ...DEFAULT_COLLISION_PRESETS,
+      { id: PRESET_FOR_LAYER[LAYER.dynamic]!, name: "Dynamic", layer: LAYER.dynamic, mask: ALL_LAYERS, overlapMask: 0 },
+      { id: PRESET_FOR_LAYER[LAYER.trigger]!, name: "Trigger", layer: LAYER.trigger, mask: ALL_LAYERS, overlapMask: 0 },
+      { id: PRESET_FOR_LAYER[LAYER.ghost]!, name: "Ghost", layer: LAYER.ghost, mask: ALL_LAYERS, overlapMask: 0 },
+      // Ghost Pass Ball: a Dynamic body that overlaps the Ghost layer instead of blocking it.
+      { id: GHOST_PASS_PRESET, name: "Ghost Pass", layer: LAYER.dynamic, mask: (ALL_LAYERS & ~LAYER.ghost) >>> 0, overlapMask: LAYER.ghost },
+    ];
+    return { ...settings, physics: { ...settings.physics, collisionLayers, collisionPresets } };
   });
 }
 
@@ -170,7 +184,8 @@ function collider(
   transform?: SerializedTransform,
   name?: string,
 ): SerializedComponent {
-  const component = comp(id, "ColliderComponent", { shape, ...extra }, transform, name ? { name } : {});
+  const preset = PRESET_FOR_LAYER[typeof extra.layer === "number" ? extra.layer : LAYER.default] ?? CUSTOM_COLLISION_PRESET;
+  const component = comp(id, "ColliderComponent", { shape, collisionPreset: preset, ...extra }, transform, name ? { name } : {});
   // Validate only: parsed mesh shapes hold typed arrays and must never be stored.
   parseColliderProperties(component.properties, "3d");
   return component;
@@ -398,7 +413,7 @@ async function saveWalker(ctx: FeatureTestContext, palette: Palette, withBody: b
   const setInput = movementFunction("Set Movement Input");
   const jump = movementFunction("Jump");
   const turnRate = varMember("ft-phys-var-turn-rate", "TurnRate", "float", WALKER_TURN_RATE, { category: "Walker" });
-  const heading = varMember("ft-phys-var-heading", "Heading", "float", 0, { category: "Walker" });
+  const heading = varMember("ft-phys-var-heading", "Heading", "float", 0, { category: "Walker", unit: "deg" });
   const hop = varMember("ft-phys-var-hop", "Hop", "bool", false, { category: "Walker" });
   // Capsule: radius 0.4, height 1.8, centred on the actor origin (the Rigid Body's collider too, as it has none).
   const components: SerializedComponent[] = [
@@ -681,7 +696,7 @@ function placeBodiesZone(ctx: FeatureTestContext, refs: PhysicsRefs, palette: Pa
     body: { linearDamping: 4, angularDamping: 2 },
   }));
 
-  // Collision layers: the Ghost wall blocks the default-mask ball; the masked ball falls through.
+  // Collision Presets: the Ghost wall blocks the Dynamic ball; the Ghost Pass ball overlaps it and falls through.
   label("layers", 8, 0, "Collision Layers");
   add(rigidActor("ft-phys-ghost-wall", "Ghost Layer Wall", tf(at(8, 1.5, 0)), {
     motion: "static",
@@ -691,7 +706,7 @@ function placeBodiesZone(ctx: FeatureTestContext, refs: PhysicsRefs, palette: Pa
   }));
   add(ball("ft-phys-ghost-pass", "Ghost Pass Ball", at(7.6, 6, 0), 0.35, {
     materialGuid: palette.emissive,
-    collider: { mask: ALL_LAYERS - LAYER.ghost },
+    collider: { collisionPreset: GHOST_PASS_PRESET },
   }));
   add(ball("ft-phys-ghost-blocked", "Ghost Blocked Ball", at(8.4, 6.5, 0), 0.35, { materialGuid: palette.instance }));
 

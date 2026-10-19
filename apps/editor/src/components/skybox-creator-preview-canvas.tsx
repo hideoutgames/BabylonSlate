@@ -8,6 +8,7 @@ import {
   type SkyboxFaceKey,
 } from "@babylonslate/core";
 import {
+  attachMaterialPreviewGestures,
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
   createSkyboxMeshForFaces,
@@ -27,7 +28,7 @@ function hideDefaultPreviewMesh(host: {
   if ("isVisible" in mesh) mesh.isVisible = false;
 }
 
-/** Live cubemap from in-memory sliced faces on the shared Engine. */
+/** Live cubemap from in-memory sliced faces on the shared Engine; drag to look around. */
 export function SkyboxCreatorPreviewCanvas({
   facePngs,
   testId = "skybox-creator-preview-canvas",
@@ -52,6 +53,7 @@ export function SkyboxCreatorPreviewCanvas({
     let presenter: ReturnType<typeof createMaterialPreviewPresenter> | null =
       null;
     let frame = 0;
+    let gestures: { dispose: () => void } | null = null;
     const overlay = watchBlockingEditorOverlay();
     try {
       host = createMaterialPreviewScene(engine);
@@ -62,7 +64,7 @@ export function SkyboxCreatorPreviewCanvas({
       }
       hideDefaultPreviewMesh(host);
       const cache = resourceCacheForEngine(engine);
-      // A fixed camera on a skybox: the frame changes only when the faces do, which rebuilds this scene.
+      // A skybox frame changes only when the faces or the look direction do.
       presenter = createMaterialPreviewPresenter(host, canvas, {
         staticContent: true,
         suspended: overlay.isOpen,
@@ -72,6 +74,11 @@ export function SkyboxCreatorPreviewCanvas({
         host.dispose();
         return;
       }
+      // Drag looks around the cube from its centre, like the other previews orbit.
+      const look = presenter;
+      gestures = attachMaterialPreviewGestures(canvas, host.camera, {
+        onChange: () => look.present({ force: true }),
+      });
       const faces = emptySkyboxFaces();
       const textureBytes = new Map<string, Uint8Array>();
       for (const key of SKYBOX_FACE_KEYS) {
@@ -88,6 +95,7 @@ export function SkyboxCreatorPreviewCanvas({
       );
     } catch {
       overlay.dispose();
+      gestures?.dispose();
       presenter?.dispose();
       host?.dispose();
       return;
@@ -100,6 +108,7 @@ export function SkyboxCreatorPreviewCanvas({
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(frame);
+      gestures?.dispose();
       overlay.dispose();
       presenter?.dispose();
       host?.dispose();
@@ -109,7 +118,7 @@ export function SkyboxCreatorPreviewCanvas({
   return (
     <canvas
       ref={canvasRef}
-      className="h-full w-full rounded-md border border-border"
+      className="h-full w-full cursor-grab touch-none rounded-md border border-border active:cursor-grabbing"
       data-testid={testId}
     />
   );

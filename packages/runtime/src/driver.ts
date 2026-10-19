@@ -887,6 +887,7 @@ class InProcessRuntime implements RuntimeDriver {
       tilemaps,
       tilesets,
       waterBlendDistance: options.renderSettings?.water?.blendDistance,
+      collisionPresets: options.collisionPresets,
     });
   }
 

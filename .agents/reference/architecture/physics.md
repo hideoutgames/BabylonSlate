@@ -10,7 +10,7 @@ Simulation in the game worker: the `PhysicsBackend` port, Havok / Rapier / softw
 - `SoftwarePhysicsBackend` (AABB) is for tests and explicit fallback only. Play and Preview Build pass `allowSoftwareFallback: false`: a failed engine load reports an error and simulation stays stopped. Software has no constraint solver or slopes.
 - Engines load lazily at Play (opening the editor never fetches physics wasm). A 3D export without physics SceneLayers omits Rapier; a 2D export omits Havok.
 - Within-build determinism is required (same build, backend and inputs → same transforms). Havok vs Rapier file goldens are never required; a Rapier upgrade changes 2D results between builds. Work reductions must leave `stringifyWorldSnapshot(createWorldSnapshot(world))` unchanged for acyclic hierarchies.
-- Out of scope: a collision matrix (named layers + mask only), configurable per-channel responses, a `CharacterControllerComponent`, flying/stair-climbing Movement, moving-platform carry, ragdoll get-up or animation blend.
+- Out of scope: configurable per-channel responses, a `CharacterControllerComponent`, flying/stair-climbing Movement, moving-platform carry, ragdoll get-up or animation blend.
 
 ## Ownership
 
@@ -43,7 +43,7 @@ Simulation in the game worker: the `PhysicsBackend` port, Havok / Rapier / softw
 | Component | Rule |
 | --- | --- |
 | `RigidBodyComponent` | `motionType` `static`/`kinematic`/`dynamic`, mass (Inspector ≥ 0.001; backends floor ≤ 0 at 1e-6), damping, `gravityScale` |
-| `ColliderComponent` | 3D or 2D `shape`, friction, restitution, `isTrigger`, `layer`, `mask`, `renderInGame` (default false). Component transform is baked into the `ColliderDesc` |
+| `ColliderComponent` | 3D or 2D `shape`, friction, restitution, `isTrigger`, `layer`, `mask`, `collisionPreset`, `renderInGame` (default false). Component transform is baked into the `ColliderDesc` |
 | `MeshComponent` | `collisionMode` `simple`/`complex`/`none`; **new components default `none`** (opt-in), a missing value parses as `simple`. 3D only |
 | `LandscapeComponent` | `collisionsEnabled` default false; triangle mesh from the heightfield |
 | `BlockingVolumeComponent`, Tilemap, `DynamicRuntimeMeshComponent` (Enable Collision) | Implicit static body |
@@ -58,6 +58,7 @@ Simulation in the game worker: the `PhysicsBackend` port, Havok / Rapier / softw
 - Complex collision is a `CollisionTriangleMesh` (flat typed arrays, transferable). `complexCollisionModelGuids` cooks only Models used with Complex Collision; a miss at runtime sends `requestComplexCollision` once per Model and the host answers `loadComplexCollision` (or `physics.complex_collision_unavailable`). The worker never receives a GLB.
 - Collider geometry assigned to a component is copied and frozen; replace a shape rather than mutating its vertices.
 - Collision layers: Project Settings `physics.collisionLayers` (default `["Default"]`, max 32); `layer` is one bit, `mask` 32 bits; both colliders must admit each other. Rapier hooks preserve bits above 15.
+- Collision Presets: `physics.collisionPresets` (`CollisionPreset { id, name, layer, mask, overlapMask }`, at least one, `default` first in new projects; `core/collision-presets.ts`). Responses are two disjoint masks: `mask` blocks, `overlapMask` overlaps, neither ignores; a pair takes the weaker side (`collisionPairResponse`; `physics/collision-response.ts` adds "a trigger never blocks"). Collider, Mesh, Dynamic Runtime Mesh, Landscape and Ragdoll `collisionPreset` holds a preset id or `"custom"`; a missing key means `"default"`, and `"custom"` or a deleted preset keeps the component's own values. Picking a preset in the editor also stores its `layer`/`mask`/`overlapMask` on the component (the fallback). `PhysicsWorldSync.collisionFilter` resolves all three at every `ColliderDesc` build site (`ColliderDesc.overlapMask`); engine-made colliders keep Default layer, block all. Backends: software and Rapier decide per pair (Rapier hooks return `SolverFlags.EMPTY` for Overlap, which still raises contact events); Havok has no per-pair hook, so a non-trigger collider with overlap bits gets a massless trigger proxy shape (`[layer, overlapMask]`) beside its solid (`[layer, mask]`), and real triggers collide with `mask|overlapMask`. That filter passes exactly one shape pair per Overlap pair and none per Block pair, so the existing body-level trigger events need no dedupe; queries resolve a proxy to its collider. Presets reach the runtime through the `load` control (`collisionPresets`), editor Play, Preview Build and `game.json` (required; a manifest without them is refused as outdated). A runtime `layer`, `mask` or `overlapMask` write switches the component to Custom, copying the preset's other values. Preset masks are positional like `layer` bits.
 
 ## Movement
 

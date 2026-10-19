@@ -7,6 +7,7 @@ import {
 } from "@babylonslate/core";
 import {
   ENGINE_PLACE_ACTORS,
+  featuredPlaceActors,
   duplicateSceneActor,
   duplicateSceneActors,
   nextActorId,
@@ -934,4 +935,22 @@ it("duplicates captured actor and component references by target instance while 
   expect(first!.properties!.nested).toEqual({ $sceneValue: "map", entries: [["actor", { $sceneValue: "reference", actorId: second!.id }]] });
   expect(first!.properties!.materialGuid).toBe("owner");
   expect(owner.properties!.self).toEqual({ $sceneValue: "reference", actorId: "owner", componentId: "mesh" });
+});
+
+describe("featuredPlaceActors", () => {
+  it("features only a Scene Layer's own 2D types, core blocks first", () => {
+    const projectClass = { id: "asset-hud", title: "Hud", category: "Project", kind: { type: "asset", guid: "hud", assetType: "Class" } } as unknown as Parameters<typeof featuredPlaceActors>[0][number];
+    const items = [...placeActorsForHost({ overlay: true }), projectClass];
+    const featured = featuredPlaceActors(items, { overlay: true });
+    expect(featured.slice(0, 4).map((item) => item.id)).toEqual(["2d-panel", "2d-text", "2d-rich-text", "2d-button"]);
+    expect(featured.every((item) => item.kind.type === "overlay-2d" || item.id === "scene-layer-switcher")).toBe(true);
+    expect(featured.map((item) => item.id)).not.toContain("empty");
+    expect(featured.map((item) => item.id)).not.toContain("asset-hud");
+  });
+
+  it("keeps the curated world Featured list for Scenes", () => {
+    const featured = featuredPlaceActors(placeActorsForHost({ overlay: false }), { overlay: false });
+    expect(featured[0]?.id).toBe("empty");
+    expect(featured.map((item) => item.id)).toContain("light-directional");
+  });
 });

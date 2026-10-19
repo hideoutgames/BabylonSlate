@@ -106,7 +106,14 @@ export type ColliderDesc = {
   restitution: number;
   isTrigger: boolean;
   layer: number;
+  /** Layers this collider blocks. */
   mask: number;
+  /**
+   * Layers this collider overlaps without blocking (overlap events only).
+   * Kept apart from `mask`; missing is none. A pair takes the weaker of its
+   * two responses (`colliderPairResponse`).
+   */
+  overlapMask?: number;
   /** Local offset from the rigid body origin (component transform position). */
   translation?: Vec3;
   /** Local rotation relative to the rigid body (component transform rotation). */

@@ -123,6 +123,7 @@ Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power i
 - New 3D scenes: a locked skybox, a daylight directional sun and a camera; 2D scenes are camera-only; Blank creates an empty 3D scene.
 - `environmentColor` is the clear colour for Play and the 3D editor; the 2D editor keeps the dark chrome clear for grid readability.
 - Game cameras are detached `UniversalCamera`s posed from the actor, looking along local +Z; never `ArcRotateCamera` (that stays the editor orbit camera).
+- Viewport **Game Camera** pilots the Default Camera actor ([game-camera-pilot.ts](../../packages/render/src/game-camera-pilot.ts)): `EditorTools.navigation` routes look, fly, pan and zoom to the actor's transform, and each input pause commits one undoable edit. No Default Camera actor, a locked one or Play leaves inputs off; the editor orbit camera is never moved.
 - Active camera: script **Possess Camera** > valid scene **Default Camera** (stored as actor + component ids) > a camera's `attemptPossessViewTarget` > the default Play camera. Never silently pick the first CameraComponent ([runtime-camera.ts](../../packages/runtime/src/runtime-camera.ts)).
 - Lens aspect is the buffer drawn (`applyAuthoredCameraLens`); a 0×0 buffer falls back to 16:9; orthographic half-width = half-height × live aspect. Never stretch with `object-fit: fill`; shared-Engine Play sizes with `setSize`, not `engine.resize()`.
 - 2D game cameras are orthographic looking +Z; pixel-perfect snapping applies to the game camera only.

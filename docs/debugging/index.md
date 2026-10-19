@@ -38,7 +38,7 @@ While a Simulation runs, its controls sit in the toolbar where **Simulate** was:
 | --- | --- |
 | **Pause** / **Resume** | Freezes gameplay so you can inspect values that would otherwise keep changing. |
 | **Stop** (red) | Ends the Simulation. Its tooltip says whether your changes are kept or discarded. |
-| **Game** / **Edit** | **Game** sends keys, touch and the mouse to the game. **Edit** lets you select, inspect and move runtime objects with the **Move**, **Rotate** and **Scale** tools in the viewport. Clicking outside the game, or pressing Esc or Tab, also switches to **Edit**. |
+| **Game** / **Edit** | One button showing the current input; tap it to switch. **Game** sends keys, touch and the mouse to the game. **Edit** lets you select, inspect and move runtime objects with the **Move**, **Rotate** and **Scale** tools in the viewport. Clicking outside the game, or pressing Esc or Tab, also switches to **Edit**. |
 | **Return To Scene** | Appears when another tab is open, and brings the simulated scene back. |
 | **Debug Instance** | Appears while a Class, Behaviour Tree or Animation Graph is open. Picks which object's graph run you watch ([Watch a graph run](#watch-a-graph-run)). |
 

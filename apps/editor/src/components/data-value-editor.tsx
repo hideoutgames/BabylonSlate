@@ -66,7 +66,7 @@ export function DataValueEditor({ field, value, defaultValue, onChange, label, p
   }
   const options = {
     typeClassId: field.typeClassId, schemas: catalog.schemas, enumMembers: catalog.enumMembers,
-    label, pinId: path, assetEntries: catalog.propertyAssets, classEntries: catalog.classEntries,
+    label, pinId: path, unit: field.unit, assetEntries: catalog.propertyAssets, classEntries: catalog.classEntries,
     onPickAsset: (rowId: string, type: string) => setAssetPicker({ rowId, allowedTypes: assetPickerAllowedTypes(type) }),
     onPickClass: (rowId: string, base: string) => setClassPicker({ rowId, base }),
   };

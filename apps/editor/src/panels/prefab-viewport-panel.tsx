@@ -647,6 +647,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
             testIdPrefix="prefab-"
             showDragSelect={false}
             showViewportModeToggle={!overlayPrefab}
+            showGameCamera={!overlayPrefab}
             showGizmoTools={!overlayPrefab}
             onDrop={dropSelection}
             dropDisabled={dropDisabled}

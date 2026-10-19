@@ -42,7 +42,8 @@ import {
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
-import { GridSizeDialog } from "./grid-size-dialog";
+import { GridSettingsFields, GridSizeDialog, type SnapValues } from "./grid-size-dialog";
+import { anchorBelow } from "../lib/menu-anchor";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { IconActionButton } from "./icon-action-button";
 import { useKeybindings, useKeybindCommand } from "../context/keybind-context";
@@ -77,6 +78,7 @@ export function ViewportToolbar({
   showDragSelect = true,
   showViewportModeToggle = true,
   showGizmoTools = true,
+  showGameCamera = true,
   onDrop,
   dropDisabled = true,
 }: {
@@ -84,6 +86,8 @@ export function ViewportToolbar({
   showDragSelect?: boolean;
   showViewportModeToggle?: boolean;
   showGizmoTools?: boolean;
+  /** SceneLayers draw over the game; they have no game camera to look through. */
+  showGameCamera?: boolean;
   onDrop?: () => void;
   dropDisabled?: boolean;
 }) {
@@ -96,9 +100,16 @@ export function ViewportToolbar({
   const [numberPrompt, setNumberPrompt] = useState<null | "grid" | "camera">(
     null,
   );
+  // Hold or right-click on Snap Grid opens Grid Settings as a context popup under it.
+  const [gridAnchor, setGridAnchor] = useState<{ x: number; y: number } | null>(null);
+  const openGridSettings = (fromTestId: string) => {
+    const from = toolbarRef.current?.querySelector(`[data-testid="${testIdPrefix}${fromTestId}"]`);
+    setGridAnchor(from ? anchorBelow(from) : null);
+    setNumberPrompt("grid");
+  };
   const snapMenu = useLongPressMenu({
     suppressClickAfterHold: true,
-    onMenu: () => setNumberPrompt("grid"),
+    onMenu: () => openGridSettings("gizmo-snap-toggle"),
   });
   const {
     gizmoTool,
@@ -206,7 +217,9 @@ export function ViewportToolbar({
   useKeybindCommand("viewport.toggleGrid", () => toggleGrid(!gridVisible), viewportKeys);
   useKeybindCommand("viewport.toggleCollisions", () => setCollisionsVisible(!collisionsVisible), viewportKeys);
   useKeybindCommand("viewport.toggleNavmesh", () => toggleNavmesh(!navmeshVisible), viewportKeys);
-  useKeybindCommand("viewport.toggleGameCamera", () => setPreviewGameCamera(!previewGameCamera), viewportKeys);
+  useKeybindCommand("viewport.toggleGameCamera", () => setPreviewGameCamera(!previewGameCamera), {
+    ...viewportKeys, enabled: showGameCamera,
+  });
   useKeybindCommand("viewport.toggleDragSelect", () => setDragSelectActive(!dragSelectActive), {
     ...viewportKeys, enabled: showDragSelect,
   });
@@ -277,6 +290,37 @@ export function ViewportToolbar({
       onCheckedChange: setCollisionsVisible,
     },
   ];
+  const gridValue: SnapValues = {
+    gridSize: scene?.settings.grid.tileSize ?? gridSize,
+    snapTranslate: scene?.settings.grid.snapTranslate ?? snapTranslate,
+    snapRotateDeg: scene?.settings.grid.snapRotateDeg ?? snapRotateDeg,
+    snapScale: scene?.settings.grid.snapScale ?? snapScale,
+  };
+  // A scene stores its grid; other viewports (Prefab) keep it in editor preferences.
+  const applyGridSettings = (value: SnapValues) => {
+    if (scene) {
+      void applySceneChange(documentId, {
+        ...scene,
+        settings: {
+          ...scene.settings,
+          grid: {
+            ...scene.settings.grid,
+            tileSize: value.gridSize,
+            snapTranslate: value.snapTranslate,
+            snapRotateDeg: value.snapRotateDeg,
+            snapScale: value.snapScale,
+          },
+        },
+      });
+      return;
+    }
+    void patchEngineViewportPrefs({
+      viewportGridSize: value.gridSize,
+      viewportSnapTranslate: value.snapTranslate,
+      viewportSnapRotateDeg: value.snapRotateDeg,
+      viewportSnapScale: value.snapScale,
+    });
+  };
   const settingsItems: NestedMenuItem[] = [
     {
       type: "checkbox",
@@ -298,10 +342,13 @@ export function ViewportToolbar({
     },
     { type: "separator", id: "settings-separator" },
     {
+      // Opens beside the menu like a submenu; the rows apply when the menu closes.
+      type: "panel",
       id: "grid-size",
       label: "Grid Settings",
       testId: `${testIdPrefix}viewport-grid-size`,
-      onSelect: () => setNumberPrompt("grid"),
+      contentTestId: `${testIdPrefix}viewport-grid-settings-panel`,
+      content: <GridSettingsFields value={gridValue} onSubmit={applyGridSettings} />,
     },
     {
       id: "camera-speed",
@@ -463,26 +510,28 @@ export function ViewportToolbar({
         {showViewportModeToggle ? <span>{shadingLabel}</span> : null}
         <ChevronDownIcon className="toolbar-island-caret" />
       </NestedMenu>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Toggle
-              variant="outline"
-              size="sm"
-              aria-label="Game Camera"
-              aria-keyshortcuts={gameCameraChord ? ariaKeyShortcuts(gameCameraChord) : undefined}
-              pressed={previewGameCamera}
-              onPressedChange={(pressed) => setPreviewGameCamera(pressed)}
-              data-testid={`${testIdPrefix}viewport-game-camera-toggle`}
-            >
-              <VideoIcon />
-            </Toggle>
-          }
-        />
-        <TooltipContent>
-          Look Through The Game Camera <ShortcutKeys chord={gameCameraChord} decorative />
-        </TooltipContent>
-      </Tooltip>
+      {showGameCamera ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Toggle
+                variant="outline"
+                size="sm"
+                aria-label="Game Camera"
+                aria-keyshortcuts={gameCameraChord ? ariaKeyShortcuts(gameCameraChord) : undefined}
+                pressed={previewGameCamera}
+                onPressedChange={(pressed) => setPreviewGameCamera(pressed)}
+                data-testid={`${testIdPrefix}viewport-game-camera-toggle`}
+              >
+                <VideoIcon />
+              </Toggle>
+            }
+          />
+          <TooltipContent>
+            Look Through The Game Camera <ShortcutKeys chord={gameCameraChord} decorative />
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
       <NestedMenu
         items={settingsItems}
         size="chrome"
@@ -507,28 +556,23 @@ export function ViewportToolbar({
           <Tooltip>
             <TooltipTrigger
               render={
-                <ToggleGroup
-                  variant="outline"
+                // One switch: a press anywhere on the track flips the dimension.
+                <Button
+                  type="button"
+                  variant="ghost"
                   size="sm"
-                  spacing={0}
-                  value={[viewportMode]}
-                  onValueChange={(value) => {
-                    const next = value[0] as "2d" | "3d" | undefined;
-                    if (next) setMode(next);
-                  }}
-                  aria-label="Viewport Dimension"
+                  role="switch"
+                  aria-checked={viewportMode === "3d"}
+                  aria-label="3D Viewport"
+                  onClick={() => setMode(viewportMode === "3d" ? "2d" : "3d")}
                   className="toolbar-island-segmented"
                   aria-keyshortcuts={modeChord ? ariaKeyShortcuts(modeChord) : undefined}
                   data-testid={`${testIdPrefix}viewport-mode-toggle`}
                 />
               }
             >
-              <ToggleGroupItem value="2d" aria-label="2D Viewport" data-testid={`${testIdPrefix}viewport-mode-2d`}>
-                2D
-              </ToggleGroupItem>
-              <ToggleGroupItem value="3d" aria-label="3D Viewport" data-testid={`${testIdPrefix}viewport-mode-3d`}>
-                3D
-              </ToggleGroupItem>
+              <span data-active={viewportMode === "2d"} data-testid={`${testIdPrefix}viewport-mode-2d`}>2D</span>
+              <span data-active={viewportMode === "3d"} data-testid={`${testIdPrefix}viewport-mode-3d`}>3D</span>
             </TooltipTrigger>
             <TooltipContent>
               Switch 2D / 3D <ShortcutKeys chord={modeChord} decorative />
@@ -538,40 +582,13 @@ export function ViewportToolbar({
       ) : null}
       <GridSizeDialog
         open={numberPrompt === "grid"}
+        anchor={gridAnchor}
         onOpenChange={(open) => {
           if (!open) setNumberPrompt(null);
         }}
-        initialValue={{
-          gridSize: scene?.settings.grid.tileSize ?? gridSize,
-          snapTranslate: scene?.settings.grid.snapTranslate ?? snapTranslate,
-          snapRotateDeg: scene?.settings.grid.snapRotateDeg ?? snapRotateDeg,
-          snapScale: scene?.settings.grid.snapScale ?? snapScale,
-        }}
+        initialValue={gridValue}
         data-testid={`${testIdPrefix}viewport-grid-size-dialog`}
-        onSubmit={(value) => {
-          if (scene) {
-            void applySceneChange(documentId, {
-              ...scene,
-              settings: {
-                ...scene.settings,
-                grid: {
-                  ...scene.settings.grid,
-                  tileSize: value.gridSize,
-                  snapTranslate: value.snapTranslate,
-                  snapRotateDeg: value.snapRotateDeg,
-                  snapScale: value.snapScale,
-                },
-              },
-            });
-            return;
-          }
-          void patchEngineViewportPrefs({
-            viewportGridSize: value.gridSize,
-            viewportSnapTranslate: value.snapTranslate,
-            viewportSnapRotateDeg: value.snapRotateDeg,
-            viewportSnapScale: value.snapScale,
-          });
-        }}
+        onSubmit={applyGridSettings}
       />
       <NumberPromptDialog
         open={numberPrompt === "camera"}

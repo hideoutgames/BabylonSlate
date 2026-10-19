@@ -1,10 +1,11 @@
 import { useOptionalPlay } from "../context/play-context";
 import { DataDefinitionEditingProvider } from "../context/data-definition-editing-context";
 import { InputAssetEditingProvider } from "../context/input-asset-editing-context";
+import { BlackboardEditingProvider } from "../context/blackboard-editing-context";
 import { SaveGameEditingProvider } from "../context/save-game-editing-context";
 import { DataAssetEditingProvider } from "../context/data-asset-editing-context";
 import { SceneToolsProvider } from "../context/scene-tools-context";
-import { CONTENT_BROWSER_ID, isAssetDocumentKind, isSceneWorkspaceKind, type SerializedScene } from "@babylonslate/core";
+import { CONTENT_BROWSER_ID, isSceneWorkspaceKind, type SerializedScene } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
@@ -44,7 +45,6 @@ import {
   useDocumentWorkingSet,
 } from "../lib/document-working-set";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
-import { AssetDocumentWorkspace } from "./asset-document-workspace";
 import { DocumentLockBanner } from "./document-lock-banner";
 import { UndoHistoryNotice } from "./undo-history-notice";
 import { WorkspaceErrorBoundary } from "./workspace-error-boundary";
@@ -56,10 +56,7 @@ import {
 } from "../lib/content-browser-helpers";
 import { EditorReadOnlyContext, walkAncestry } from "@babylonslate/editor-kit";
 import { useAuthoringLock } from "../lib/use-authoring-lock";
-import {
-  isDockviewDocumentKind,
-  type DockviewDocumentKind,
-} from "../shell/window-catalog";
+import { type DockviewDocumentKind } from "../shell/window-catalog";
 import { AnimEditorModeBar } from "./anim-editor-mode-bar";
 import { parseAnimDocumentLayout } from "../shell/anim-document-layout";
 import { cn } from "@babylonslate/ui/lib/utils";
@@ -365,25 +362,6 @@ export function DocumentWorkspace() {
           );
         }
 
-        if (
-          isAssetDocumentKind(doc.ref.kind) &&
-          !isDockviewDocumentKind(doc.ref.kind)
-        ) {
-          if (!shouldMount) return null;
-          return (
-            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
-              <DocumentShell
-                id={id}
-                path={doc.ref.path}
-                testId={`document-workspace-${doc.ref.kind}`}
-                active={active}
-              >
-                <AssetDocumentWorkspace documentId={id} />
-              </DocumentShell>
-            </WorkspaceErrorBoundary>
-          );
-        }
-
         const isTypeAsset =
           doc.ref.kind === "enum" ||
           doc.ref.kind === "structure" ||
@@ -639,6 +617,21 @@ export function DocumentWorkspace() {
           );
         }
 
+        if (doc.ref.kind === "blackboard") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <BlackboardEditingProvider>
+                  <DocumentShell id={id} path={doc.ref.path} testId="document-workspace-blackboard" active={active}>
+                    <RegisteredDockviewShell id={id} documentKind="blackboard" initialLayout={doc.layout} />
+                  </DocumentShell>
+                </BlackboardEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
         if (doc.ref.kind === "input-action" || doc.ref.kind === "input-axis") {
           if (!shouldMount) return null;
           return (
@@ -684,7 +677,8 @@ export function DocumentWorkspace() {
           doc.ref.kind === "skeleton" ||
           doc.ref.kind === "animation" ||
           doc.ref.kind === "skybox-creator" ||
-          doc.ref.kind === "texture"
+          doc.ref.kind === "texture" ||
+          doc.ref.kind === "font"
         ) {
           if (!shouldMount) return null;
           return (

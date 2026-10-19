@@ -30,11 +30,11 @@ See [Touch Gestures](../start/gestures.md) for the full list.
 | **Drag Select** | The next drag draws a selection box (<kbd>Q</kbd>). |
 | **Drop** | Drops the selected actors straight down onto the nearest collision surface (<kbd>End</kbd>). |
 | **View** | Shows how the viewport draws the scene (**PBR** or **CEL**, **Unlit**, **Wireframe**) and holds **Show Grid**, **Show Navmesh** and **Show Collisions**. |
-| **Game Camera** | Looks through the scene's Default Camera (<kbd>Shift</kbd>+<kbd>C</kbd>). |
+| **Game Camera** | Looks through the scene's Default Camera (<kbd>Shift</kbd>+<kbd>C</kbd>); viewport navigation then moves that camera. Not shown for Scene Layers, which have no camera of their own. |
 | **Viewport Settings** | **Joystick**, **Pivot Around Center**, **Grid Settings** and **Camera Speed**. |
-| **2D** / **3D** | Switches the scene between 2D and 3D (<kbd>Alt</kbd>+<kbd>V</kbd>). The active one is highlighted. |
+| **2D** / **3D** | One switch: tap anywhere on it to flip the scene between 2D and 3D (<kbd>Alt</kbd>+<kbd>V</kbd>). The active side is highlighted. |
 
-**Grid Settings** holds **Grid Size** (visible cell spacing), **Grid Snap** (move increment), **Rotation Snap (Degrees)** and **Scale Snap**. New scenes use 1, 1, 15 and 0.25. **Camera Speed** (default 8 units per second) and **Drop Distance** (default 10,000 units) are in **Engine Settings > Viewport**.
+**Grid Settings** holds **Grid Size** (visible cell spacing), **Grid Snap** (move increment), **Rotation Snap** and **Scale Snap**. From **Viewport Settings** it opens beside the menu; from **Snap Grid** it opens as a small popup under the button. Changes apply when you press Enter or close it by tapping outside. New scenes use 1, 1, 15 and 0.25. **Camera Speed** (default 8 units per second) and **Drop Distance** (default 10,000 units) are in **Engine Settings > Viewport**.
 
 ## Scene Settings
 

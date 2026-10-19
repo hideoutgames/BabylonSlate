@@ -85,6 +85,17 @@ export type NestedMenuItem =
         testId?: string;
       }>;
     }
+  | {
+      /** A submenu whose flyout holds a small form instead of items (Grid Settings). */
+      type: "panel";
+      id: string;
+      label: string;
+      content: ReactNode;
+      icon?: ReactNode;
+      disabled?: boolean;
+      testId?: string;
+      contentTestId?: string;
+    }
   | { type: "separator"; id: string };
 
 export interface NestedMenuProps {
@@ -162,6 +173,28 @@ function NestedMenuItems({
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
+          );
+        }
+        if (item.type === "panel") {
+          return (
+            <DropdownMenuSub key={item.id} disabled={item.disabled}>
+              <DropdownMenuSubTrigger
+                disabled={item.disabled}
+                openOnHover={false}
+                className={itemClass}
+                data-testid={itemTestId(item)}
+              >
+                {item.icon}
+                {item.label}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent
+                className="w-max min-w-48 px-2.5 py-2"
+                aria-label={item.label}
+                data-testid={item.contentTestId ?? `context-menu-sub-${item.id}`}
+              >
+                {item.content}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
           );
         }
         if (item.type === "submenu") {
@@ -340,7 +373,7 @@ function OverlayMenuItems({
             </div>
           );
         }
-        if (item.type === "submenu") {
+        if (item.type === "submenu" || item.type === "panel") {
           return (
             <button
               key={item.id}
@@ -407,6 +440,7 @@ function OverlayMenu({
   parentPanels,
   onBack,
   beforeSelect,
+  content,
 }: {
   items: NestedMenuItem[];
   x: number;
@@ -421,6 +455,8 @@ function OverlayMenu({
   parentPanels?: RefObject<Set<HTMLElement>>;
   onBack?: () => void;
   beforeSelect?: () => void;
+  /** A panel item's form, shown in place of items. */
+  content?: ReactNode;
 }) {
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
   const [position, setPosition] = useState({ x, y, width: 0 });
@@ -430,7 +466,7 @@ function OverlayMenu({
   // Every panel in one menu tree registers in the root's set.
   const focusPanelsRef = parentPanels ?? ownedPanels;
   const openSubmenu = items.find(
-    (item) => item.type === "submenu" && item.id === openSubmenuId,
+    (item) => (item.type === "submenu" || item.type === "panel") && item.id === openSubmenuId,
   );
   const [viewport, setViewport] = useState(readOverlayViewport);
   const prepareSelection =
@@ -597,17 +633,22 @@ function OverlayMenu({
         tabIndex={-1}
         onKeyDown={onKeyDown}
       >
-        <OverlayMenuItems
-          items={items}
-          openSubmenuId={openSubmenuId}
-          onOpenSubmenu={setOpenSubmenuId}
-          onClose={onClose}
-          onBeforeSelect={prepareSelection}
-        />
+        {content !== undefined ? (
+          <div className="px-2.5 py-2">{content}</div>
+        ) : (
+          <OverlayMenuItems
+            items={items}
+            openSubmenuId={openSubmenuId}
+            onOpenSubmenu={setOpenSubmenuId}
+            onClose={onClose}
+            onBeforeSelect={prepareSelection}
+          />
+        )}
       </div>
-      {openSubmenu && openSubmenu.type === "submenu" ? (
+      {openSubmenu && (openSubmenu.type === "submenu" || openSubmenu.type === "panel") ? (
         <OverlayMenu
-          items={openSubmenu.items}
+          items={openSubmenu.type === "submenu" ? openSubmenu.items : []}
+          content={openSubmenu.type === "panel" ? openSubmenu.content : undefined}
           x={position.x}
           y={position.y}
           besideWidth={position.width}

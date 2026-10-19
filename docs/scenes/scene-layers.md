@@ -6,7 +6,7 @@ A Scene Layer is a flat 2D overlay that draws on top of the world: a HUD, a paus
 
 1. In the **Content Browser**, choose **New Asset > World > Scene Layer**, then double-tap it.
 2. The viewport is always 2D and unlit. The orange frame is the layer's design canvas, centred on the origin.
-3. Add actors with **+** in the **Outliner**. **Place Actors** adds an **Overlay** category with ready-made 2D elements.
+3. Add actors with **+** in the **Outliner**. In a Scene Layer, **Featured** lists only the built-in 2D elements (**2D Panel**, **2D Text**, **2D Button** and the rest), and the **Overlay** category holds them too.
 4. Select an actor and use the box around it: drag inside to move, drag a handle to resize, drag the knob above it to rotate. For **2D Text**, resizing changes the text box rather than the letters.
 
 With nothing selected, the **Inspector** shows the layer's settings:

@@ -88,6 +88,8 @@ export interface RuntimeDriverOptions {
   /** Scene physics world kind (defaults to 3d). */
   physicsWorld?: PhysicsWorldKind;
   gravity?: [number, number, number];
+  /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`); omitted: every collider is Custom. */
+  collisionPresets?: readonly import("@babylonslate/core").CollisionPreset[];
   /** Worker-resolvable URL for HavokPhysics.wasm (3d Play). */
   havokWasmUrl?: string;
   /** Skip wasm backends (tests / CI without wasm). */

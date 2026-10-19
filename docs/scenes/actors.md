@@ -51,7 +51,7 @@ Use **Filter Properties** at the top to find a field by name.
 
 ## Add components
 
-1. Select an actor and tap **Add Component**.
+1. Select an actor and tap **+** beside **Search components** in the **Inspector**. Type in **Search components** to find a component on a busy actor.
 2. Search, or open a category. **Project** lists your Actor Component Classes and assets that bring their own component, such as Models and Sprites.
 3. The component appears as a card. Tap its header to collapse it, double-tap its name to rename it, or use its remove button to delete it.
 

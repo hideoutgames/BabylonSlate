@@ -93,6 +93,12 @@ type BodyRecord = {
 type ColliderRecord = {
   desc: ColliderDesc;
   shape: PhysicsShape;
+  /**
+   * Overlap proxy: a massless trigger copy of `shape` whose collide mask is the layers this collider overlaps. Havok
+   * has no per-pair response, so solids keep `[layer, mask]` (blocking) and the proxy raises the trigger events of
+   * Overlap pairs: exactly one shape pair passes the filter for each Overlap pair, and none for a Block pair.
+   */
+  proxy?: PhysicsShape;
   /** Convex and mesh bounds for contact attribution, computed on first use. */
   bounds?: LocalBounds | null;
   /**
@@ -114,6 +120,15 @@ type CharacterRecord = {
 const QUERY_SHAPE_LIMIT = 16;
 const MIN_CHARACTER_SOLVE_DT = 1e-3;
 const NOMINAL_CHARACTER_SOLVE_DT = 1 / 60;
+
+/** A non-trigger collider that overlaps some layer gets a trigger proxy (`ColliderRecord.proxy`). */
+function needsOverlapProxy(desc: ColliderDesc): boolean {
+  return !desc.isTrigger && (desc.overlapMask ?? 0) !== 0;
+}
+
+function colliderShapes(collider: ColliderRecord): PhysicsShape[] {
+  return collider.proxy ? [collider.shape, collider.proxy] : [collider.shape];
+}
 
 function miss(): HitResult {
   return {
@@ -712,9 +727,14 @@ export class HavokPhysicsBackend implements PhysicsBackend {
           ? previous.shape
           : this.createQueryShape(desc.shape);
         if (!sameGeometry) provisional.add(shape);
+        let proxy: PhysicsShape | undefined;
+        if (needsOverlapProxy(desc)) {
+          proxy = sameGeometry && previous.proxy ? previous.proxy : this.createQueryShape(desc.shape);
+          if (proxy !== previous?.proxy) provisional.add(proxy);
+        }
         topologyChanged ||=
-          !previous || !sameGeometry || !sameColliderPose(previous.desc, desc);
-        next.set(desc.id, { desc, shape, seq: 0 });
+          !previous || !sameGeometry || !sameColliderPose(previous.desc, desc) || proxy !== previous.proxy;
+        next.set(desc.id, { desc, shape, ...(proxy ? { proxy } : {}), seq: 0 });
       }
       // Container child indices are derived from this live order, never used as IDs.
       if (
@@ -722,17 +742,19 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         next.size &&
         !(
           next.size === 1 &&
+          !next.values().next().value!.proxy &&
           identityColliderPose(next.values().next().value!.desc)
         )
       ) {
         container = new PhysicsShapeContainer(this.scene);
         provisional.add(container);
         for (const child of next.values())
-          container.addChild(
-            child.shape,
-            toVector3(child.desc.translation!),
-            toQuaternion(child.desc.rotation!),
-          );
+          for (const shape of child.proxy ? [child.shape, child.proxy] : [child.shape])
+            container.addChild(
+              shape,
+              toVector3(child.desc.translation!),
+              toQuaternion(child.desc.rotation!),
+            );
       }
     } catch (error) {
       container?.dispose();
@@ -747,7 +769,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     try {
       if (topologyChanged) attachHavokShape(this.plugin, body, attachment);
       for (const child of next.values())
-        this.applyShapeTuning(child.shape, child.desc);
+        this.applyColliderTuning(child);
       if (topologyChanged) this.applyBodyTuning(record);
       body.setLinearVelocity(linear);
       body.setAngularVelocity(angular);
@@ -755,7 +777,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       try {
         if (topologyChanged) attachHavokShape(this.plugin, body, oldAttachment);
         for (const child of record.colliders.values())
-          this.applyShapeTuning(child.shape, child.desc);
+          this.applyColliderTuning(child);
         this.applyBodyTuning(record);
         body.setLinearVelocity(linear);
         body.setAngularVelocity(angular);
@@ -792,6 +814,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         (previous.isTrigger !== desc.isTrigger ||
           previous.layer !== desc.layer ||
           previous.mask !== desc.mask ||
+          (previous.overlapMask ?? 0) !== (desc.overlapMask ?? 0) ||
           previous.actorId !== desc.actorId)
       );
     });
@@ -806,16 +829,23 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     if (topologyChanged) {
       oldContainer?.dispose();
     }
-    const liveShapes = new Set([...next.values()].map((child) => child.shape));
+    const liveShapes = new Set([...next.values()].flatMap((child) => colliderShapes(child)));
     for (const child of oldColliders.values())
-      if (!liveShapes.has(child.shape)) child.shape.dispose();
+      for (const shape of colliderShapes(child)) if (!liveShapes.has(shape)) shape.dispose();
   }
 
-  private applyShapeTuning(shape: PhysicsShape, desc: ColliderDesc): void {
+  private applyColliderTuning(collider: ColliderRecord): void {
+    const { desc, shape, proxy } = collider;
     shape.isTrigger = desc.isTrigger;
     shape.material = { friction: desc.friction, restitution: desc.restitution };
     shape.filterMembershipMask = desc.layer;
-    shape.filterCollideMask = desc.mask;
+    // A trigger reports overlaps with every layer it does not ignore.
+    shape.filterCollideMask = desc.isTrigger ? (desc.mask | (desc.overlapMask ?? 0)) >>> 0 : desc.mask;
+    if (!proxy) return;
+    proxy.isTrigger = true;
+    proxy.density = 0;
+    proxy.filterMembershipMask = desc.layer;
+    proxy.filterCollideMask = desc.overlapMask ?? 0;
   }
 
   listDebugColliders() {
@@ -889,8 +919,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     const collider = record && this.shapeCollider(record, shape);
     if (!collider) return "stop";
     if (collider.desc.isTrigger) return "keep";
-    if (this.queryMemberships.has(collider.shape)) return "stop";
-    this.maskQueryShape(collider.shape);
+    if (this.queryMemberships.has(shape ?? collider.shape)) return "stop";
+    for (const owned of colliderShapes(collider)) this.maskQueryShape(owned);
     return "peeled";
   }
 
@@ -906,7 +936,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       if (ignored) {
         for (const actorId of ignored) {
           const owned = this.collidersByOwner.get(actorId);
-          if (owned) for (const collider of owned) this.maskQueryShape(collider.shape);
+          if (owned) for (const collider of owned) for (const shape of colliderShapes(collider)) this.maskQueryShape(shape);
         }
       }
       if (!queryHitsTriggers(options)) {
@@ -981,10 +1011,12 @@ export class HavokPhysicsBackend implements PhysicsBackend {
             owners.add(owner);
             found.set(record, owners);
             for (const collider of record.colliders.values()) {
-              const shape = collider.shape;
-              if ((collider.desc.actorId ?? record.desc.actorId) !== owner || memberships.has(shape)) continue;
-              memberships.set(shape, shape.filterMembershipMask);
-              shape.filterMembershipMask = 0;
+              if ((collider.desc.actorId ?? record.desc.actorId) !== owner) continue;
+              for (const shape of colliderShapes(collider)) {
+                if (memberships.has(shape)) continue;
+                memberships.set(shape, shape.filterMembershipMask);
+                shape.filterMembershipMask = 0;
+              }
             }
           }
         } finally {
@@ -1715,7 +1747,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   private shapeCollider(record: BodyRecord, shape: PhysicsShape | undefined): ColliderRecord | undefined {
     if (shape)
       for (const collider of record.colliders.values())
-        if (collider.shape === shape) return collider;
+        if (collider.shape === shape || collider.proxy === shape) return collider;
     // Havok reports no child shape for a body with a single collider.
     return record.colliders.size === 1 ? record.colliders.values().next().value : undefined;
   }
@@ -1727,7 +1759,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     // If rollback failed, both generations remain owned until the native user is gone.
     for (const shape of record.uncertainShapes)
       if (shape instanceof PhysicsShapeContainer) shape.dispose();
-    for (const collider of record.colliders.values()) collider.shape.dispose();
+    for (const collider of record.colliders.values()) for (const shape of colliderShapes(collider)) shape.dispose();
     for (const shape of record.uncertainShapes) shape.dispose();
     record.uncertainShapes.clear();
     for (const collider of record.colliders.values()) this.unindexCollider(record, collider);

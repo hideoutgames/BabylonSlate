@@ -1,5 +1,6 @@
 import {
   pin,
+  clampEnumValue,
   type EnumMember,
   type NodeDefinition,
   BOOL,
@@ -26,7 +27,7 @@ export function enumMembersOf(
     return [
       {
         name: member.name,
-        value: typeof member.value === "number" ? member.value : 0,
+        value: typeof member.value === "number" ? clampEnumValue(member.value) : 0,
       },
     ];
   });

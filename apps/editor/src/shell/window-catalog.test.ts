@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isDockviewDocumentKind,
   listDockWindows,
   primaryDockPanel,
   resolveDockInitialWidth,
@@ -153,6 +154,18 @@ describe("material dock catalog", () => {
   it("opens a Material Instance on its Preview with the Inspector beside it", () => {
     expect(listDockWindows("material-instance").map((entry) => entry.title)).toEqual(["Preview", "Inspector"]);
     expect(primaryDockPanel("material-instance")).toBe("material-instance-preview");
+  });
+
+  it("opens a Blackboard in DockView on its Keys with the Inspector beside it", () => {
+    expect(isDockviewDocumentKind("blackboard")).toBe(true);
+    expect(listDockWindows("blackboard").map((entry) => entry.title)).toEqual(["Keys", "Inspector"]);
+    expect(primaryDockPanel("blackboard")).toBe("blackboard-keys");
+  });
+
+  it("opens a Font in DockView on its Preview with the Inspector beside it", () => {
+    expect(isDockviewDocumentKind("font")).toBe(true);
+    expect(listDockWindows("font").map((entry) => entry.title)).toEqual(["Preview", "Inspector"]);
+    expect(primaryDockPanel("font")).toBe("font-preview");
   });
 
   it("anchors Locks under the material graph when source control is on", () => {

@@ -130,6 +130,8 @@ describe("Add Component catalog", () => {
       collisionMode: "none",
       layer: 1,
       mask: 0xffffffff,
+      overlapMask: 0,
+      collisionPreset: "default",
     });
   });
 
@@ -206,6 +208,8 @@ describe("Add Component catalog", () => {
       isTrigger: false,
       layer: 1,
       mask: 4294967295,
+      overlapMask: 0,
+      collisionPreset: "default",
       renderInGame: false,
     });
     expect(defaultPropertiesFor("ColliderComponent", "2d").shape).toEqual({

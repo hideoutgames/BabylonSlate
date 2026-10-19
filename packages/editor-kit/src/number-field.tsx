@@ -14,6 +14,7 @@ import { Input } from "@babylonslate/ui/components/input";
 import { parseNumberInput } from "./parse-number-input";
 import { evaluateNumericExpression } from "./numeric-expression";
 import { SelectAllInput } from "./select-all-input";
+import { stripNumberUnit, withNumberUnit } from "./number-units";
 
 export interface NumberFieldProps extends Omit<
   ComponentProps<typeof Input>,
@@ -34,6 +35,10 @@ export interface NumberFieldProps extends Omit<
   max?: number;
   /** Reject a typed value outside the range instead of adjusting it on blur. */
   rejectOutOfRange?: boolean;
+  /** Whole numbers only: drafts and expressions round to the nearest integer. */
+  integer?: boolean;
+  /** Shown after the value (`45°`); typing it is optional. */
+  unit?: string;
 }
 
 function clamp(value: number, min?: number, max?: number): number {
@@ -60,6 +65,8 @@ export function NumberField({
   min,
   max,
   rejectOutOfRange = false,
+  integer = false,
+  unit,
   onBlur,
   onKeyDown,
   onEnter,
@@ -74,14 +81,19 @@ export function NumberField({
   const feedbackId = useId();
   const baselineRef = useRef(value);
   const cancelledRef = useRef(false);
-  const parseDraft = (raw: string) =>
-    parseNumberInput(raw) ??
-    evaluateNumericExpression(raw, baselineRef.current);
+  const parseExact = (input: string) => {
+    const raw = stripNumberUnit(input, unit);
+    return parseNumberInput(raw) ?? evaluateNumericExpression(raw, baselineRef.current);
+  };
+  const parseDraft = (raw: string) => {
+    const parsed = parseExact(raw);
+    return integer && parsed !== undefined ? Math.round(parsed) : parsed;
+  };
   const finishDraft = (): number | undefined => {
     // A rejected draft stays rejected until the next edit, so a confirm button
     // that blurred the field first cannot submit the restored value.
     if (draft === null && feedback?.invalid) return undefined;
-    const parsed = parseDraft(draft ?? String(value));
+    const parsed = parseDraft(draft ?? withNumberUnit(String(value), unit));
     setDraft(null);
     if (parsed === undefined) {
       if (draft !== null)
@@ -105,6 +117,8 @@ export function NumberField({
         message: `Adjusted to ${next} to stay within the allowed range.`,
         invalid: false,
       });
+    else if (integer && draft !== null && parseExact(draft) !== next)
+      setFeedback({ message: `Rounded to ${next}; only whole numbers are allowed.`, invalid: false });
     if (next !== value) onChange(next);
     return next;
   };
@@ -129,7 +143,7 @@ export function NumberField({
         spellCheck={false}
         min={min}
         max={max}
-        value={draft ?? String(value)}
+        value={draft ?? withNumberUnit(String(value), unit)}
         onChange={(event) => {
           const raw = event.target.value;
           if (draft === null) baselineRef.current = value;

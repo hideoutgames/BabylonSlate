@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { TypeMembersPanel } from "./type-members-panel";
 import { TypeDetailsPanel } from "./type-details-panel";
@@ -12,6 +12,21 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
     }
   }
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
+}
+
+function dispatchPointer(target: Element, type: "pointerdown" | "pointerup"): void {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 10, clientY: 10 });
+  Object.defineProperty(event, "pointerId", { value: 1 });
+  Object.defineProperty(event, "pointerType", { value: "mouse" });
+  target.dispatchEvent(event);
+}
+
+function selectRow(id: string): void {
+  const row = screen.getByTestId(`tree-row-${id}`);
+  act(() => {
+    dispatchPointer(row, "pointerdown");
+    dispatchPointer(row, "pointerup");
+  });
 }
 
 const applyAssetDocumentChange = vi.hoisted(() => vi.fn(async () => true));
@@ -72,7 +87,7 @@ describe("type asset member table", () => {
         <TypeMembersPanel {...({} as IDockviewPanelProps)} />
       </TypeAssetEditingProvider>,
     );
-    expect(screen.getByTestId("enum-row-0")).toBeTruthy();
+    expect(screen.getByTestId("tree-row-member:0")).toBeTruthy();
     fireEvent.click(screen.getByTestId("enum-add-member"));
     expect(applyAssetDocumentChange).toHaveBeenCalledWith(
       "enum:assets/Colors.babasset",
@@ -84,27 +99,42 @@ describe("type asset member table", () => {
     );
   });
 
-  it.each(["enum", "structure"] as const)("keeps the %s name input mounted while its name is typed", (kind) => {
+  it.each(["enum", "structure"] as const)("renames a %s member from a double-tap on its name", async (kind) => {
     harness.kind = kind;
     harness.content = kind === "enum"
       ? { kind, guid: "e1", name: "Colors", members: [{ name: "None", value: 0 }] }
       : { kind, guid: "s1", name: "Stats", fields: [{ id: "health", name: "Health", typeId: "float" }] };
-    const panel = () => (
+    render(
       <TypeAssetEditingProvider>
         <TypeMembersPanel {...({} as IDockviewPanelProps)} />
-      </TypeAssetEditingProvider>
+      </TypeAssetEditingProvider>,
     );
-    const { rerender } = render(panel());
-    const label = kind === "enum" ? "Member 1 name" : "Field 1 name";
-    const input = screen.getByLabelText(label);
-    input.focus();
+    // Names are plain row labels, so a tap selects the row instead of focusing an input.
+    expect(screen.queryByRole("textbox", { name: /^Rename/ })).toBeNull();
+    const original = kind === "enum" ? "None" : "Health";
+    const label = screen.getByText(original);
+    for (let tap = 0; tap < 2; tap++) {
+      dispatchPointer(label, "pointerdown");
+      dispatchPointer(label, "pointerup");
+    }
+    const input = await screen.findByRole("textbox", { name: `Rename ${original}` });
     fireEvent.change(input, { target: { value: "Renamed" } });
-    // The document applies each keystroke, so the row re-renders with the new name.
-    const [, saved] = applyAssetDocumentChange.mock.calls.at(-1) as unknown as [string, Record<string, unknown>];
-    harness.content = saved;
-    rerender(panel());
-    expect(screen.getByLabelText(label)).toBe(input);
-    expect(document.activeElement).toBe(input);
+    fireEvent.keyDown(input, { key: "Enter" });
+    const [, saved] = applyAssetDocumentChange.mock.calls.at(-1) as unknown as [string, Record<string, Array<{ name: string }>>];
+    expect(saved[kind === "enum" ? "members" : "fields"]![0]!.name).toBe("Renamed");
+  });
+
+  it("keeps enum values whole numbers", () => {
+    render(
+      <TypeAssetEditingProvider>
+        <TypeMembersPanel {...({} as IDockviewPanelProps)} />
+      </TypeAssetEditingProvider>,
+    );
+    const value = screen.getByRole("textbox", { name: "None value" });
+    fireEvent.change(value, { target: { value: "2.6" } });
+    fireEvent.blur(value);
+    const [, saved] = applyAssetDocumentChange.mock.calls.at(-1) as unknown as [string, { members: Array<{ value: number }> }];
+    expect(saved.members[0]!.value).toBe(3);
   });
 
   it.each(["enum", "structure"] as const)("keeps a moved %s row selected in Details", (kind) => {
@@ -122,7 +152,7 @@ describe("type asset member table", () => {
       </TypeAssetEditingProvider>
     );
     const { rerender } = render(panels());
-    fireEvent.click(screen.getByTestId(`${kind}-row-0`));
+    selectRow("member:0");
     fireEvent.click(screen.getByRole("button", { name: "Move Red down" }));
     const [, saved] = applyAssetDocumentChange.mock.calls.at(-1) as unknown as [string, Record<string, unknown>];
     harness.content = saved;
@@ -144,7 +174,7 @@ describe("type asset member table", () => {
         <TypeDetailsPanel {...({} as IDockviewPanelProps)} />
       </TypeAssetEditingProvider>,
     );
-    fireEvent.click(screen.getByTestId("structure-row-0"));
+    selectRow("member:0");
     expect(screen.getByTestId("structure-field-type")).toBeTruthy();
     expect(
       screen.getByTestId("structure-field-type").compareDocumentPosition(
@@ -165,7 +195,7 @@ describe("type asset member table", () => {
       <TypeMembersPanel {...({} as IDockviewPanelProps)} />
       <TypeDetailsPanel {...({} as IDockviewPanelProps)} />
     </TypeAssetEditingProvider>);
-    fireEvent.click(screen.getByTestId("structure-row-0"));
+    selectRow("member:0");
     fireEvent.click(screen.getByTestId("structure-field-type-asset"));
     fireEvent.click(await screen.findByTestId("search-item-item"));
     expect(applyAssetDocumentChange).toHaveBeenCalledWith("enum:assets/Colors.babasset", expect.objectContaining({ fields: [{
@@ -183,9 +213,9 @@ describe("type asset member table", () => {
       <TypeMembersPanel {...({} as IDockviewPanelProps)} />
       <TypeDetailsPanel {...({} as IDockviewPanelProps)} />
     </TypeAssetEditingProvider>);
-    fireEvent.click(screen.getByTestId("structure-row-1"));
+    selectRow("member:1");
     expect(screen.queryByTestId("structure-field-loading")).toBeNull();
-    fireEvent.click(screen.getByTestId("structure-row-0"));
+    selectRow("member:0");
     const loading = screen.getByTestId("structure-field-loading");
     expect(loading.textContent).toContain("Hard (Load With Owner)");
     fireEvent.click(loading);

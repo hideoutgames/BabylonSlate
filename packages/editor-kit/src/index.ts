@@ -13,7 +13,9 @@ export {
   CatalogMenu,
   type CatalogMenuItem,
   type CatalogMenuProps,
+  popupMenuFrame,
 } from "./catalog-menu";
+export { POPUP_PICKER_ATTRIBUTE, usePopupOutsideDismiss } from "./use-popup-outside-dismiss";
 export {
   CatalogCard,
   CatalogCardGrid,
@@ -271,6 +273,30 @@ export {
   type AtlasTileGridTool,
 } from "./atlas-tile-grid";
 export {
+  centeredView,
+  contentToView,
+  fitScale,
+  panView,
+  pinchView,
+  viewToContent,
+  zoomViewAbout,
+  type PanZoomLimits,
+  type PanZoomSize,
+  type PanZoomView,
+} from "./pan-zoom-model";
+export {
+  isInlineNumberUnit,
+  numberUnitSuffix,
+  stripNumberUnit,
+  withNumberUnit,
+} from "./number-units";
+export {
+  usePanZoomSurface,
+  type PanZoomBase,
+  type PanZoomSurface,
+  type PanZoomSurfaceOptions,
+} from "./use-pan-zoom-surface";
+export {
   ADD_MEMBER_EMPTY_ID,
   AddMemberMenu,
   type AddMemberMenuItem,
@@ -302,6 +328,8 @@ export {
   type ColorValue,
 } from "./color-field";
 export { ColorPicker, type ColorPickerProps } from "./color-picker";
+export { CollisionPresetsField, type CollisionPresetsFieldProps } from "./collision-presets-field";
+export { CollisionResponsesField, type CollisionResponsesFieldProps, type CollisionResponsesValue } from "./collision-responses-field";
 export {
   FlagsField,
   DEFAULT_FLAG_BIT_COUNT,

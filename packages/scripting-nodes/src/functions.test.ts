@@ -90,6 +90,24 @@ describe("functions.call", () => {
     expect(calls).toEqual([["guard", "Aim", { target: 7 }], ["guard", "Aim", { target: 9 }]]);
   });
 
+  it("carries an input's unit onto its pin for the literal field, never onto outputs", () => {
+    const def = createDefaultNodeRegistry().get("functions.call")!;
+    const pins = def.pins({
+      functionName: "Turn",
+      pins: [
+        { name: "angle", typeId: "float", direction: "in", unit: "deg" },
+        { name: "label", typeId: "string", direction: "in", unit: "px" },
+        { name: "result", typeId: "float", direction: "out", unit: "deg" },
+      ],
+    });
+    expect(pins.filter((pin) => pin.kind === "data").map((pin) => [pin.id, pin.unit])).toEqual([
+      ["target", undefined],
+      ["angle", "deg"],
+      ["label", undefined],
+      ["result", undefined],
+    ]);
+  });
+
   it("gives Target a Self default and maps signature pins when implicitSelf is true", () => {
     const def = createDefaultNodeRegistry().get("functions.call")!;
     const pins = def.pins({

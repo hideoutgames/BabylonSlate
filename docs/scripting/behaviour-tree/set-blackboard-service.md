@@ -12,8 +12,8 @@ Writes a value to a Blackboard key at regular intervals while its node is active
 | --- | --- | --- |
 | Key |  | The Blackboard key to write. |
 | Value | true | The value to store. It appears once you pick a key, and its editor matches the key's type. |
-| Interval MS |  | How often the service writes, in milliseconds. The default is 250. |
-| Random Deviation MS |  | Varies each interval by up to this many milliseconds, either way. The default is 0. |
+| Interval |  | How often the service writes, in milliseconds. The default is 250. |
+| Random Deviation |  | Varies each interval by up to this many milliseconds, either way. The default is 0. |
 
 ## Notes
 

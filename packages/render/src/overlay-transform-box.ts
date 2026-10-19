@@ -277,11 +277,17 @@ function fillOverlayBoxSources(
   visuals: readonly AbstractMesh[],
 ): AbstractMesh[] {
   into.length = 0;
-  if (isText2DOverlayMesh(origin) || visuals.length === 0) {
+  // 2D Text frames its wrap box (the origin), not its glyphs. A multi-selection
+  // also lists the other selected actors' visuals, which still count.
+  const text = isText2DOverlayMesh(origin);
+  if (text || visuals.length === 0) {
     if (!skipOverlayBoxVisual(origin)) into.push(origin);
-    return into;
+    if (!text) return into;
   }
-  for (const mesh of visuals) if (!skipOverlayBoxVisual(mesh)) into.push(mesh);
+  for (const mesh of visuals) {
+    if (text && (mesh === origin || mesh.isDescendantOf(origin))) continue;
+    if (!skipOverlayBoxVisual(mesh)) into.push(mesh);
+  }
   return into;
 }
 
@@ -749,9 +755,11 @@ export function createOverlayTransformBox(
       applyOverlayBoxDrag(session, pointerFrom(world), snap),
       session.transform,
     );
+    // Followers in a multi-selection move in onDrag; lay out after them so the
+    // frame around the whole selection does not trail a step behind.
+    options.onDrag?.();
     layout();
     options.scheduler?.invalidate("gizmo");
-    options.onDrag?.();
   };
 
   const finish = (world: Vector3) => {

@@ -1798,6 +1798,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             pixelsPerUnit={
               projectDocument?.settings.twoD.pixelsPerUnit ?? 100
             }
+            collisionPresets={projectDocument?.settings.physics.collisionPresets}
             pixelPerfect={projectDocument?.settings.twoD.pixelPerfect === true}
             touchMinTargetPx={
               projectDocument?.settings.touchMinTargetPx ?? 44

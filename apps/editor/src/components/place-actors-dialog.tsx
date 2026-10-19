@@ -25,7 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
 import {
-  FEATURED_PLACE_ACTOR_IDS,
+  featuredPlaceActors,
   visualForPlaceActor,
   placeActorsForHost,
   type PlaceActorItem,
@@ -288,13 +288,7 @@ export function PlaceActorsDialog({
     () => [...placeActorsForHost({ overlay }), ...projectItems],
     [overlay, projectItems],
   );
-  const featured = useMemo(() => {
-    const byId = new Map(items.map((item) => [item.id, item]));
-    return FEATURED_PLACE_ACTOR_IDS.flatMap((id) => {
-      const item = byId.get(id);
-      return item ? [item] : [];
-    });
-  }, [items]);
+  const featured = useMemo(() => featuredPlaceActors(items, { overlay }), [items, overlay]);
   const models = useMemo(() => items.filter((item) => item.category === MODELS), [items]);
   const project = useMemo(() => items.filter((item) => item.category === PROJECT), [items]);
 
@@ -457,8 +451,9 @@ export function PlaceActorsDialog({
       open={open}
       onOpenChange={onOpenChange}
       title="Place Actors"
-      description="Spawn a shape, light, camera, volume, or project asset into the scene."
-      size="medium"
+      description={overlay
+        ? "Spawn a 2D element or project asset into the Scene Layer."
+        : "Spawn a shape, light, camera, volume, or project asset into the scene."}
       categories={categories}
       groups={groups}
       activeCategoryId={activeCategory}

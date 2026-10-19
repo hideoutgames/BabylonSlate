@@ -281,6 +281,44 @@ export const FEATURED_PLACE_ACTOR_IDS: readonly string[] = [
   "2d-texture",
 ];
 
+/** The core Scene Layer building blocks, shown first in a Scene Layer's Featured. */
+const FEATURED_OVERLAY_FIRST: readonly string[] = [
+  "2d-panel",
+  "2d-text",
+  "2d-rich-text",
+  "2d-button",
+  "2d-texture",
+  "2d-material",
+];
+
+/**
+ * Featured cards for a host. A Scene Layer features only its own 2D engine
+ * types: never world actors, shapes or project assets.
+ */
+export function featuredPlaceActors(
+  items: readonly PlaceActorItem[],
+  options: { overlay: boolean },
+): PlaceActorItem[] {
+  if (options.overlay) {
+    const overlayItems = items.filter((item) =>
+      OVERLAY_PLACE_ACTORS.some((overlayItem) => overlayItem.id === item.id),
+    );
+    const rank = (item: PlaceActorItem) => {
+      const index = FEATURED_OVERLAY_FIRST.indexOf(item.id);
+      return index < 0 ? FEATURED_OVERLAY_FIRST.length : index;
+    };
+    return overlayItems
+      .map((item, order) => ({ item, order }))
+      .sort((a, b) => rank(a.item) - rank(b.item) || a.order - b.order)
+      .map(({ item }) => item);
+  }
+  const byId = new Map(items.map((item) => [item.id, item]));
+  return FEATURED_PLACE_ACTOR_IDS.flatMap((id) => {
+    const item = byId.get(id);
+    return item ? [item] : [];
+  });
+}
+
 export const PLACEABLE_PROJECT_TYPES = new Set([
   "Class",
   "Prefab",

@@ -145,23 +145,9 @@
   opacity: 0.6;
 }
 
-/* Simulation's input segments sit flat inside the Play island. */
-.chrome-simulation-input {
-  gap: 1px;
-  padding: 2px;
-}
-
-.chrome-simulation-input > button {
-  height: auto;
-  border: 0;
-  border-radius: calc(var(--radius-sm) - 2px);
-  color: var(--muted-foreground);
-  box-shadow: none;
-}
-
-.chrome-simulation-input > button[aria-pressed="true"] {
+/* Edit input takes over the viewport, so the input toggle reads as engaged. */
+.chrome-simulation-input[data-input-mode="edit"] {
   background: color-mix(in oklch, var(--foreground) 14%, transparent);
-  color: var(--foreground);
 }
 
 .chrome-action-button {

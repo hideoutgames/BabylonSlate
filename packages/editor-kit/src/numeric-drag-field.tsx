@@ -7,6 +7,7 @@ import {
   formatNumericDisplay,
 } from "./numeric-expression";
 import { useSelectAllOnActivate } from "./select-all-on-activate";
+import { stripNumberUnit, withNumberUnit } from "./number-units";
 
 export interface NumericDragFieldProps {
   /** Visual scrub-handle text (axis letter). Omit for a compact unlabeled handle. */
@@ -30,6 +31,8 @@ export interface NumericDragFieldProps {
   onDragEnd?: (value: number) => void;
   /** Axis color token: X red, Y green, Z blue. */
   accent?: "x" | "y" | "z";
+  /** Shown after the value while idle (`45°`); typing it is optional. */
+  unit?: string;
   "data-testid"?: string;
 }
 
@@ -59,8 +62,11 @@ export function NumericDragField({
   onChange,
   onDragEnd,
   accent,
+  unit,
   "data-testid": testId,
 }: NumericDragFieldProps) {
+  const evaluate = (raw: string, baseline: number) =>
+    evaluateNumericExpression(stripNumberUnit(raw, unit), baseline);
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -183,7 +189,7 @@ export function NumericDragField({
           aria-describedby={error || notice ? errorId : undefined}
           data-testid={testId}
           disabled={disabled}
-          value={draft ?? (mixed ? "" : formatNumericDisplay(value, precision))}
+          value={draft ?? (mixed ? "" : withNumberUnit(formatNumericDisplay(value, precision), unit))}
           placeholder={mixed ? "Mixed" : undefined}
           onChange={(event) => {
             const raw = event.target.value;
@@ -191,7 +197,7 @@ export function NumericDragField({
             setDraft(raw);
             setError(null);
             setNotice(null);
-            const parsed = evaluateNumericExpression(raw, baselineRef.current);
+            const parsed = evaluate(raw, baselineRef.current);
             if (parsed === undefined) return;
             if (parsed !== clamp(parsed, min, max) || validate?.(parsed)) return;
             onChange(parsed);
@@ -227,7 +233,7 @@ export function NumericDragField({
               return;
             }
             if (draft === null) return;
-            const parsed = evaluateNumericExpression(draft, baselineRef.current);
+            const parsed = evaluate(draft, baselineRef.current);
             const next = parsed === undefined ? undefined : clamp(parsed, min, max);
             const validationError = next === undefined ? undefined : validate?.(next);
             if (next === undefined) {

@@ -453,6 +453,24 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
+  it("edits a Collision Preset's responses and adds one with a fresh id", () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-physics"));
+    const defaultPreset = { id: "default", name: "Default", layer: 1, mask: 0xffffffff, overlapMask: 0 };
+    fireEvent.click(screen.getByRole("radio", { name: "Default Overlap" }));
+    expect(updateProjectSettings).toHaveBeenLastCalledWith({
+      physics: { collisionLayers: ["Default"], collisionPresets: [{ ...defaultPreset, mask: 0xfffffffe, overlapMask: 1 }] },
+    });
+    fireEvent.change(screen.getByTestId("settings-collision-presets-add-value"), { target: { value: "Ghost Pass" } });
+    fireEvent.click(screen.getByTestId("settings-collision-presets-add"));
+    expect(updateProjectSettings).toHaveBeenLastCalledWith({
+      physics: {
+        collisionLayers: ["Default"],
+        collisionPresets: [defaultPreset, { id: "ghost-pass", name: "Ghost Pass", layer: 1, mask: 0xffffffff, overlapMask: 0 }],
+      },
+    });
+  });
+
   it("picks the packaged startup scene from Scene assets only", async () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,

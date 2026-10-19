@@ -1,6 +1,7 @@
 import { OVERLAY_CONTAINER_CLASSES, parseOverlayContainerProperties, isUIControl2DClass, parseUIControl2DProperties } from "@babylonslate/core";
 import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, waterKindForClass } from "@babylonslate/core";
 import { isOverlayLayoutClass, parseOverlayLayoutProperties } from "@babylonslate/core";
+import { DEFAULT_COLLISION_PRESET_ID } from "@babylonslate/core";
 import type {
   PhysicsWorldKind,
   ViewportMode,
@@ -61,7 +62,7 @@ export function defaultComponentAuthoringProperties(
     case "MovementComponent":
       return { ...parseMovementProperties({}) };
     case "DynamicRuntimeMeshComponent":
-      return { materialGuid: null, enableCollision: false, castShadows: true, receiveShadows: true, layer: 1, mask: 0xffffffff };
+      return { materialGuid: null, enableCollision: false, castShadows: true, receiveShadows: true, layer: 1, mask: 0xffffffff, overlapMask: 0, collisionPreset: DEFAULT_COLLISION_PRESET_ID };
     case "MeshComponent":
       return {
         meshKind: "box",
@@ -69,6 +70,8 @@ export function defaultComponentAuthoringProperties(
         collisionMode: "none",
         layer: 1,
         mask: 0xffffffff,
+        overlapMask: 0,
+        collisionPreset: DEFAULT_COLLISION_PRESET_ID,
       };
     case "SpriteComponent":
       return { assetGuid: null, sortingLayer: "Default", orderInLayer: 0 };
@@ -178,12 +181,13 @@ export function defaultComponentAuthoringProperties(
       return { ...parseRigidBodyProperties({}) };
     case "ColliderComponent": {
       const defaults = parseColliderProperties({}, physicsWorld);
-      return { ...defaults };
+      // New colliders use the project's Default Collision Preset; a missing key (older documents) is Custom.
+      return { ...defaults, collisionPreset: DEFAULT_COLLISION_PRESET_ID };
     }
     case "PhysicsConstraintComponent":
       return { ...parseConstraintProperties({}, physicsWorld) };
     case "RagdollComponent":
-      return { ...parseRagdollProperties({}) };
+      return { ...parseRagdollProperties({}), collisionPreset: DEFAULT_COLLISION_PRESET_ID };
     default:
       return {};
   }

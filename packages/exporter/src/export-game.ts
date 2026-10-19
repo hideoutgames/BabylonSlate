@@ -1,4 +1,4 @@
-import { err, ok, classIdForAssetPath, DEFAULT_LOOP_COUNT, normalizeSceneLayer, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, type Result } from "@babylonslate/core";
+import { err, ok, classIdForAssetPath, DEFAULT_LOOP_COUNT, normalizeSceneLayer, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, type Result } from "@babylonslate/core";
 import { collectAssetDependencyMetadata, decodePackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@babylonslate/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
@@ -347,6 +347,7 @@ export async function exportGame(
     pixelPerfect: options.pixelPerfect === true,
     sortingLayers: normalizeSortingLayers(options.sortingLayers),
     physicsWorld: options.physicsWorld ?? "3d",
+    collisionPresets: normalizeCollisionPresets(options.collisionPresets),
     assets: index,
     ...(options.bundleDebugger
       ? {
@@ -397,11 +398,12 @@ export function unzipExport(bytes: Uint8Array): Record<string, Uint8Array> {
 
 const OUTDATED_MANIFEST = "rebuild this game with the current exporter.";
 
+
 /** Fields `exportGame` always writes; a manifest without one predates the current exporter. */
 const REQUIRED_MANIFEST_FIELDS = [
   "project", "focusNavigation", "startupSceneGuid", "occlusionEnabled", "reverbWetScale", "reverbDecayScale",
   "reverbDampingScale", "bundleDebugger", "render", "playFrameCap", "touchMinTargetPx", "pixelsPerUnit",
-  "pixelPerfect", "sortingLayers", "physicsWorld", "assets",
+  "pixelPerfect", "sortingLayers", "physicsWorld", "collisionPresets", "assets",
 ] as const satisfies readonly (keyof GameManifest)[];
 const DEBUGGER_MANIFEST_FIELDS = ["infiniteLoopDetection", "loopCount"] as const satisfies readonly (keyof GameManifest)[];
 
@@ -430,6 +432,7 @@ export function parseGameManifest(source: string): GameManifest {
       ? parsed.audioMixerGuid.trim()
       : undefined;
   const bundleDebugger = parsed.bundleDebugger === true;
+  const collisionPresets = normalizeCollisionPresets(parsed.collisionPresets);
   return {
     ...parsed,
     render: normalizeRenderProjectSettings(parsed.render),
@@ -453,6 +456,7 @@ export function parseGameManifest(source: string): GameManifest {
         : 44,
     pixelPerfect: parsed.pixelPerfect === true,
     sortingLayers: [...sortingLayers],
+    collisionPresets,
     ...(bundleDebugger
       ? {
           infiniteLoopDetection: parsed.infiniteLoopDetection !== false,

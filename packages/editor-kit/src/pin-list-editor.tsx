@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { PlusIcon } from "lucide-react";
-import { normalizeTag } from "@babylonslate/core";
+import { VALUE_UNITS, normalizeTag, normalizeValueUnit, typeAcceptsUnit } from "@babylonslate/core";
 import { nextCopyName } from "@babylonslate/assets";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { EditableName } from "./inline-rename";
@@ -14,6 +14,13 @@ import {
   FieldLabel,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@babylonslate/ui/components/select";
 import { NamedListEditor } from "./named-list-editor";
 import { TypeColorMark } from "./type-color-mark";
 import { PinTypeMenu, PinTypePicker } from "./pin-type-picker";
@@ -45,6 +52,8 @@ export type PinListRow = {
   defaultValue?: string;
   enumValues?: readonly string[];
   typeClassId?: string;
+  /** Number and vector rows: display unit (`VALUE_UNITS`). */
+  unit?: string;
 };
 
 export type PinListEditorProps = {
@@ -57,6 +66,8 @@ export type PinListEditorProps = {
   showOptional?: boolean;
   showDefault?: boolean;
   showContainer?: boolean;
+  /** Offer a Unit for number and vector rows (function inputs, event parameters). */
+  showUnit?: boolean;
   /** Keep the list compact when another panel owns the selected row details. */
   showDetails?: boolean;
   addPosition?: "top" | "bottom";
@@ -101,6 +112,7 @@ function patchRow(
     if ("type" in resolved && (dropsClassId || (row.typeClassId === "engine:TagContainer" && patch.type !== "tagContainer" && patch.typeClassId === undefined))) {
       delete next.typeClassId;
     }
+    if (!next.unit || !typeAcceptsUnit(String(next.type))) delete next.unit;
     return next;
   });
 }
@@ -146,6 +158,7 @@ export function PinListEditor({
   showOptional = true,
   showDefault = true,
   showContainer = false,
+  showUnit = false,
   showDetails = true,
   addPosition = "bottom",
   types,
@@ -245,11 +258,12 @@ export function PinListEditor({
         const showDefaultField =
           showDefault && !showClassType && !showAssetType && !showTypeAsset;
         const showEnumValues = row.type === "enum" && !hasTypeAssets;
+        const showUnitField = showUnit && typeAcceptsUnit(String(row.type));
         const showExtras =
           selected &&
           showDetails &&
           !readOnly &&
-          (showContainer || showOptional ||
+          (showContainer || showOptional || showUnitField ||
             showDefaultField ||
             showClassType ||
             showAssetType ||
@@ -322,6 +336,34 @@ export function PinListEditor({
                     <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-optional`}>
                       Optional
                     </FieldLabel>
+                  </Field>
+                ) : null}
+                {showUnitField ? (
+                  <Field orientation="horizontal" className="w-auto">
+                    <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-unit`}>Unit</FieldLabel>
+                    <Select
+                      value={normalizeValueUnit(row.unit) ?? "none"}
+                      onValueChange={(unit) =>
+                        onChange(patchRow(rows, row.id, { unit: normalizeValueUnit(unit) }))
+                      }
+                    >
+                      <SelectTrigger
+                        id={`${testIdPrefix}-${row.id}-unit`}
+                        size="sm"
+                        className="w-32 text-xs"
+                        data-testid={`${testIdPrefix}-${row.id}-unit`}
+                      >
+                        <SelectValue>
+                          {(value: unknown) => VALUE_UNITS.find((unit) => unit.value === value)?.label ?? "None"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {VALUE_UNITS.map((unit) => (
+                          <SelectItem key={unit.value} value={unit.value}>{unit.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </Field>
                 ) : null}
                 {showClassType ? (

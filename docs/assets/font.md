@@ -10,20 +10,19 @@ To add an MSDF atlas to an existing Font, hold the Font in the **Content Browser
 
 ## Editor
 
-Double-tap a Font to open it. The editor is a single **Font** panel with a live preview.
+Double-tap a Font to open it. The window has **Preview** and an **Inspector**.
 
-- Type in **Sample Text** to see the font. The line under the preview lists any glyphs that fall back to another font.
-- Add **Fallbacks** for characters this font does not cover.
-- **Representations** shows which parts the Font has: **Source Font**, **Typeface**, **MSDF JSON** and **MSDF Atlas**, each **Yes** or **Missing**.
+- **Preview**: type in the sample field and set **Size** to see the font. Below the sample, a waterfall shows it from 12 to 48 pixels, and **Glyphs** shows letters, digits and common symbols. The toolbar lists any sample characters that fall back to another font.
+- **Inspector**: **Family**; **Fallbacks**, other Fonts tried in order for characters this font does not cover; and **Representations**, which shows whether the Font has a **Source Font**, **Typeface**, **MSDF JSON** and **MSDF Atlas** (**Present** or **Missing**). **Import MSDF Atlas** sits on the Representations header.
 
 ## Settings
 
 | Setting | Description |
 | --- | --- |
 | Family | The family name of the font. |
-| Sample Text | Text for the preview only. |
+| Sample text and Size | The preview's text and size only; not saved. |
 | Fallbacks | Other Fonts to try, in order, for characters this font lacks. **Add Fallback** picks a Font. |
-| MSDF Atlas | **Import MSDF Atlas…** attaches a JSON and PNG pair to this Font. |
+| MSDF Atlas | **Import MSDF Atlas** attaches a JSON and PNG pair to this Font. |
 
 In **Project Settings > Fonts**, **Default Font** is used when a requested font is unavailable, and **Global Fallback** picks the generic family (such as sans-serif) used last.
 

@@ -616,6 +616,35 @@ describe("overlayBoxLocalBounds", () => {
   });
 });
 
+describe("overlayBoxLocalBounds for a multi-selection", () => {
+  it("frames the visuals of every selected actor in the attached actor's space", () => {
+    const { scene } = createHandle();
+    const first = MeshBuilder.CreatePlane("first", { size: 1 }, scene);
+    const second = MeshBuilder.CreatePlane("second", { size: 1 }, scene);
+    second.position.set(4, 2, 0);
+    first.computeWorldMatrix(true);
+    second.computeWorldMatrix(true);
+    const bounds = overlayBoxLocalBounds(first, [first, second]);
+    expect(bounds).toMatchObject({ minX: -0.5, maxX: 4.5, minY: -0.5, maxY: 2.5 });
+  });
+
+  it("keeps the other actors' visuals when the attached actor is 2D text", () => {
+    const { scene } = createHandle();
+    const text = MeshBuilder.CreatePlane("text", { width: 2, height: 0.64 }, scene);
+    text.metadata = { text2d: true, text2dWrapWidth: 200, text2dWrapHeight: 64 };
+    const glyph = MeshBuilder.CreatePlane("glyph", { size: 4 }, scene);
+    glyph.parent = text;
+    const panel = MeshBuilder.CreatePlane("panel", { size: 1 }, scene);
+    panel.position.set(-3, 0, 0);
+    for (const mesh of [text, glyph, panel]) mesh.computeWorldMatrix(true);
+    const bounds = overlayBoxLocalBounds(text, [text, glyph, panel]);
+    expect(bounds.minX).toBeCloseTo(-3.5);
+    expect(bounds.maxX).toBeCloseTo(1);
+    // The overflowing glyph still does not stretch the frame.
+    expect(bounds.maxY).toBeCloseTo(0.5);
+  });
+});
+
 describe("overlayTextWrapFromResize", () => {
   it("maps E/W scale to wrapWidth and N/S scale to wrapHeight", () => {
     expect(

@@ -16,6 +16,8 @@ import {
   letterboxSize,
   normalizeSkyboxCreatorPayload,
   resizeSkyboxCreatorSourcePlacement,
+  rotateSkyboxCreatorSourcePlacement,
+  scaleSkyboxCreatorSourcePlacement,
   skyboxCreatorAssetDependencies,
   skyboxCreatorFaceRelativePath,
   planSkyboxCreatorFaceWrites,
@@ -363,6 +365,55 @@ describe("SkyboxCreator cubemap net", () => {
     );
     expect(explicit.dest).toEqual(auto.dest);
     expect([...explicit.faces.pz.rgba]).toEqual([...auto.faces.pz.rgba]);
+  });
+
+  it("keeps a placement's rotation in degrees, wrapped and omitted at zero", () => {
+    const parse = (rotation: number) =>
+      normalizeSkyboxCreatorPayload({ sourcePlacement: { x: 0, y: 0, width: 1, height: 1, rotation } }).sourcePlacement;
+    expect(parse(0)).toEqual({ x: 0, y: 0, width: 1, height: 1 });
+    expect(parse(270)?.rotation).toBe(-90);
+    expect(parse(540)?.rotation).toBe(180);
+  });
+
+  it("slices a turned placement so a half-turn swaps the face's corners", () => {
+    const width = 8;
+    const height = 8;
+    const rgba = new Uint8Array(width * height * 4);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        rgba.set(x < width / 2 ? [200, 0, 0, 255] : [0, 0, 200, 255], (y * width + x) * 4);
+      }
+    }
+    const front = { x: 1 / 4, y: 1 / 3, width: 1 / 4, height: 1 / 3 };
+    const upright = fitSourceIntoSkyboxNet(rgba, width, height, front);
+    const turned = fitSourceIntoSkyboxNet(rgba, width, height, { ...front, rotation: 180 });
+    expect(pixel(upright.faces.pz.rgba, upright.faceSize, 0, 0)).toEqual([200, 0, 0, 255]);
+    expect(pixel(turned.faces.pz.rgba, turned.faceSize, 0, 0)).toEqual([0, 0, 200, 255]);
+  });
+
+  it("turns, scales and resizes a rotated placement about the right points", () => {
+    const start = { x: 0.25, y: 0.25, width: 0.25, height: 0.5 };
+    const center = { x: 0.375, y: 0.5 };
+    // A quarter sweep from the right of the centre to below it is +90 degrees.
+    const turned = rotateSkyboxCreatorSourcePlacement(start, { x: center.x, y: 0.9 }, { x: 0.9, y: center.y });
+    expect(turned.rotation).toBeCloseTo(90);
+    expect(rotateSkyboxCreatorSourcePlacement(start, { x: 0.5, y: 0.6 }, { x: 0.9, y: center.y }, 15).rotation! % 15).toBe(0);
+    const scaled = scaleSkyboxCreatorSourcePlacement(turned, 2);
+    expect(scaled.width).toBeCloseTo(0.5);
+    expect(scaled.x + scaled.width / 2).toBeCloseTo(center.x);
+    expect(scaled.rotation).toBeCloseTo(90);
+    // Dragging the east handle of the turned box keeps its west edge in place.
+    const aspect = 4 / 3;
+    const westMid = (p: { x: number; y: number; width: number; height: number; rotation?: number }) => {
+      const c = { x: (p.x + p.width / 2) * aspect, y: p.y + p.height / 2 };
+      const r = ((p.rotation ?? 0) * Math.PI) / 180;
+      const dx = -(p.width / 2) * aspect;
+      return { x: (c.x + dx * Math.cos(r)) / aspect, y: c.y + dx * Math.sin(r) };
+    };
+    const resized = resizeSkyboxCreatorSourcePlacement(turned, "e", { x: center.x, y: 0.95 }, { x: center.x, y: 0.75 });
+    expect(resized.width).toBeGreaterThan(turned.width);
+    expect(westMid(resized).x).toBeCloseTo(westMid(turned).x);
+    expect(westMid(resized).y).toBeCloseTo(westMid(turned).y);
   });
 
   it("moves and resizes source placement without clamping onto the net", () => {

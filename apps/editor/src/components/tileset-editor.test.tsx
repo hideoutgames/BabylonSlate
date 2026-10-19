@@ -158,7 +158,7 @@ describe("TilesetEditor", () => {
       expect(screen.getByRole("option", { name: "Chain" })).toBeTruthy();
     });
     expect(screen.getByRole("option", { name: "Full" })).toBeTruthy();
-    expect((screen.getByTestId("property-animationFrameDurationMs") as HTMLInputElement).value).toBe("100");
+    expect((screen.getByTestId("property-animationFrameDurationMs") as HTMLInputElement).value).toBe("100 ms");
     fireEvent.change(screen.getByTestId("property-animationFrameDurationMs"), { target: { value: "250" } });
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       tiles: expect.arrayContaining([expect.objectContaining({ id: 1, animationFrameDurationMs: 250 })]),

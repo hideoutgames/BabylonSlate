@@ -22,9 +22,11 @@ import {
 import { Slider } from "@babylonslate/ui/components/slider";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { NumericDragField } from "./numeric-drag-field";
+import { isInlineNumberUnit } from "./number-units";
 import { humanizePropertyLabel } from "./humanize-property-label";
 import { ColorField, type ColorValue } from "./color-field";
 import { FlagsField } from "./flags-field";
+import { CollisionResponsesField, type CollisionResponsesValue } from "./collision-responses-field";
 import { PickerIdentity } from "./picker-identity";
 import { type TypeVisualQuery } from "./type-visuals";
 import { AssetPickerControl } from "./asset-picker-control";
@@ -48,7 +50,11 @@ interface PropertyRowBase {
   description?: string;
   /** Overrides the Field `data-testid` (`property-row-${id}` by default). */
   testId?: string;
-  /** Rendered verbatim after the label, e.g. "s", "/s", "deg"; never humanized. */
+  /**
+   * The value's unit, e.g. "s", "ms", "px", "%", "deg". Number, vector and
+   * slider fields show a short unit after the value (`45°`); longer phrases
+   * and other rows show it after the label. Never humanized.
+   */
   unit?: string;
   /**
    * Compact control on the label line before Reset (e.g. ValueModeField).
@@ -142,6 +148,14 @@ export type PropertyRow =
       onChange: (value: number) => void;
     })
   | (PropertyRowBase & {
+      /** Ignore / Overlap / Block per collision layer; full width. */
+      kind: "collision-responses";
+      value: CollisionResponsesValue;
+      defaultValue?: CollisionResponsesValue;
+      labels: readonly string[];
+      onChange: (value: CollisionResponsesValue) => void;
+    })
+  | (PropertyRowBase & {
       kind: "asset";
       value: string | null;
       defaultValue?: string | null;
@@ -222,6 +236,12 @@ function isAtDefault(row: PropertyRow): boolean {
   return JSON.stringify(row.value) === JSON.stringify(defaultValue);
 }
 
+/** A numeric row's short unit, which its fields show after the value instead of the label. */
+function inlineUnit(row: PropertyRow): string | undefined {
+  const numeric = row.kind === "number" || row.kind === "vector3" || row.kind === "slider";
+  return numeric && isInlineNumberUnit(row.unit) ? row.unit : undefined;
+}
+
 function resetRow(row: PropertyRow): void {
   if (!hasDefault(row)) return;
   switch (row.kind) {
@@ -283,6 +303,7 @@ function rowHasLabelTarget(row: PropertyRow): boolean {
   switch (row.kind) {
     case "vector3":
     case "flags":
+    case "collision-responses":
     case "range":
     case "curve":
     case "gradient":
@@ -353,6 +374,7 @@ function RowControl({ row }: { row: PropertyRow }) {
           validate={row.validate}
           sensitivity={row.sensitivity}
           precision={row.precision}
+          unit={inlineUnit(row)}
           disabled={row.disabled}
           onChange={row.onChange}
           onDragEnd={row.onCommit}
@@ -375,6 +397,7 @@ function RowControl({ row }: { row: PropertyRow }) {
                 mixed={row.mixedAxes?.[index] ?? row.mixed}
                 accent={axis.toLowerCase() as "x" | "y" | "z"}
                 sensitivity={row.sensitivity}
+                unit={inlineUnit(row)}
                 disabled={row.disabled}
                 onChange={(next) => {
                   if (row.onAxisChange) {
@@ -495,6 +518,7 @@ function RowControl({ row }: { row: PropertyRow }) {
               value={row.value}
               min={row.min}
               max={row.max}
+              unit={inlineUnit(row)}
               disabled={row.disabled}
               onChange={row.onChange}
               onDragEnd={row.onCommit}
@@ -502,6 +526,16 @@ function RowControl({ row }: { row: PropertyRow }) {
             />
           </div>
         </div>
+      );
+    case "collision-responses":
+      return (
+        <CollisionResponsesField
+          layers={row.labels}
+          value={row.value}
+          disabled={row.disabled}
+          onChange={row.onChange}
+          data-testid={`property-${row.id}`}
+        />
       );
     case "flags":
       return (
@@ -699,11 +733,11 @@ export function PropertyGrid({
               className={
                 hideLabels
                   ? "sr-only"
-                  : cn("w-auto min-w-0 flex-1 truncate", row.unit && "gap-1")
+                  : cn("w-auto min-w-0 flex-1 truncate", row.unit && !inlineUnit(row) && "gap-1")
               }
             >
               {humanizePropertyLabel(row.label)}
-              {row.unit ? (
+              {row.unit && !inlineUnit(row) ? (
                 <span className="font-normal text-muted-foreground">
                   {` (${row.unit})`}
                 </span>

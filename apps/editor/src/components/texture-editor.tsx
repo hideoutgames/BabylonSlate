@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { areaEmissionPreparation, areaEmissionPreparationsRevision, subscribeAreaEmissionPreparations } from "../lib/area-emission-preparation";
 import type { IDockviewPanelProps } from "dockview-react";
 import { BoxIcon, ImageIcon, Maximize2Icon, ScanIcon } from "lucide-react";
@@ -8,6 +8,7 @@ import {
   PropertySectionTitle,
   ToolbarStrip,
   type PropertyRow,
+  usePanZoomSurface,
 } from "@babylonslate/editor-kit";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Badge } from "@babylonslate/ui/components/badge";
@@ -196,24 +197,14 @@ export const TexturePreview = memo(function TexturePreview({
   const width = naturalSize?.width ?? payloadWidth;
   const height = naturalSize?.height ?? payloadHeight;
   const usage = typeof payload.usage === "string" ? payload.usage : "albedo";
-  const hostRef = useRef<HTMLDivElement>(null);
-  const [hostSize, setHostSize] = useState({ width: 0, height: 0 });
-  useLayoutEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
-    const measure = () => {
-      const next = { width: host.clientWidth - FIT_INSET * 2, height: host.clientHeight - FIT_INSET * 2 };
-      setHostSize((prev) => (prev.width === next.width && prev.height === next.height ? prev : next));
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(host);
-    return () => observer.disconnect();
-  }, []);
-  const scale =
-    zoom === "actual" || !width || !height || hostSize.width <= 0 || hostSize.height <= 0
-      ? 1
-      : Math.min(hostSize.width / width, hostSize.height / height);
+  const panZoom = usePanZoomSurface({
+    content: width && height ? { width, height } : null,
+    base: zoom,
+    inset: FIT_INSET,
+    enabled: !environment && url !== null,
+  });
+  const view = panZoom.view;
+  const scale = view?.scale ?? 1;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden" data-testid="texture-preview">
@@ -222,11 +213,14 @@ export const TexturePreview = memo(function TexturePreview({
           variant="outline"
           size="sm"
           spacing={0}
-          value={[zoom]}
+          // After a pan or zoom neither is pressed; either one returns to its view.
+          value={panZoom.adjusted ? [] : [zoom]}
           disabled={environment}
           onValueChange={(value) => {
             const next = value[0] as TextureZoom | undefined;
-            if (next) setZoom(next);
+            if (!next) return;
+            setZoom(next);
+            panZoom.reset();
           }}
           aria-label="Preview Zoom"
         >
@@ -256,10 +250,12 @@ export const TexturePreview = memo(function TexturePreview({
         </span>
       </ToolbarStrip>
       <div
-        ref={hostRef}
+        ref={panZoom.surfaceRef}
+        {...(url ? panZoom.surfaceProps : {})}
+        data-testid="texture-preview-surface"
         className={cn(
-          "relative flex min-h-0 flex-1 bg-sidebar",
-          zoom === "actual" ? "overflow-auto p-4" : "overflow-hidden",
+          "relative flex min-h-0 flex-1 overflow-hidden bg-sidebar",
+          url && "cursor-grab touch-none active:cursor-grabbing",
         )}
       >
         {environment ? (
@@ -290,14 +286,18 @@ export const TexturePreview = memo(function TexturePreview({
             src={url}
             alt=""
             data-testid="texture-preview-image"
+            draggable={false}
             className={cn(
-              "m-auto max-w-none shrink-0 ring-1 ring-border",
+              "absolute max-w-none ring-1 ring-border select-none",
+              !view && "invisible",
               (usage === "pixelArt" || scale >= 2) && "[image-rendering:pixelated]",
             )}
             style={{
               backgroundImage: CHECKERBOARD,
               backgroundSize: "16px 16px",
-              ...(width && height ? { width: width * scale, height: height * scale } : {}),
+              ...(view && width && height
+                ? { left: view.x, top: view.y, width: width * scale, height: height * scale }
+                : {}),
             }}
             onLoad={(event) =>
               setNaturalSize({

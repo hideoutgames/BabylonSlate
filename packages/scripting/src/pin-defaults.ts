@@ -96,6 +96,8 @@ export type LiteralPinDefault = {
   name: string;
   type: PinType;
   value: unknown;
+  /** Display unit of a number or vector literal. */
+  unit?: string;
 };
 
 export function listUnconnectedLiteralPinDefaults(
@@ -120,6 +122,7 @@ export function listUnconnectedLiteralPinDefaults(
           : pin.defaultValue !== undefined
             ? pin.defaultValue
             : defaultJsValue(pin.type),
+      ...(pin.unit ? { unit: pin.unit } : {}),
     });
   }
   return listed;

@@ -4,6 +4,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, humanizePropertyLabel, type PropertyRow } from "@babylonslate/editor-kit";
 import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, type RenderProjectSettings, type WaterDefinition } from "@babylonslate/core";
 import {
+  attachMaterialPreviewGestures,
   createMaterialPreviewPresenter, createParticlePreviewScene, createWaterMesh, setSceneRenderSettings, setSceneWaterTime, updateWaterMeshDefinition,
   MaterialLibrary, installTextureBytes, acquireMaterialTexture, resourceCacheForEngine, type RenderShadingSettings,
 } from "@babylonslate/render";
@@ -175,7 +176,11 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
     host.camera.radius = 28;
     host.camera.lowerRadiusLimit = 8;
     host.camera.upperRadiusLimit = 80;
+    // Orbit pivots on the lake's centre, above or below its surface.
+    host.camera.target = Vector3.Zero();
     const presenter = createMaterialPreviewPresenter(host, canvas, { onError: setError });
+    // Drag orbits about the centre, pinch and wheel zoom; the running loop redraws.
+    const gestures = attachMaterialPreviewGestures(canvas, host.camera);
     let materials: MaterialLibrary | null = null;
     let cancelled = false;
     let frame = 0;
@@ -232,7 +237,7 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
     return () => {
       cancelled = true; sceneRef.current = null; meshRef.current = null;
       resizeObserver?.disconnect(); document.removeEventListener("visibilitychange", resume);
-      cancelAnimationFrame(frame); presenter.dispose(); host.dispose(); materials?.dispose();
+      cancelAnimationFrame(frame); gestures.dispose(); presenter.dispose(); host.dispose(); materials?.dispose();
     };
   }, [engine, style, materialGuid, closureKey]);
 

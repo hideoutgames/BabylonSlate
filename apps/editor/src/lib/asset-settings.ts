@@ -1,6 +1,6 @@
 import { shouldCompressTexture, TEXTURE_DOWNSAMPLE_OPTIONS } from "@babylonslate/assets";
 import { newGuid } from "@babylonslate/core";
-import { dataFieldIdentity } from "@babylonslate/scripting";
+import { dataFieldIdentity, ENUM_VALUE_MAX } from "@babylonslate/scripting";
 import type {
   EnumAsset,
   EnumMember,
@@ -39,8 +39,14 @@ function moveIndex<T>(items: T[], index: number, delta: number): T[] {
 }
 
 export function addEnumMember(asset: EnumAsset): EnumAsset {
-  const nextValue =
-    asset.members.reduce((max, member) => Math.max(max, member.value), -1) + 1;
+  // The next value after the largest, or the lowest free byte once 255 is taken.
+  const used = new Set(asset.members.map((member) => member.value));
+  const afterLargest = asset.members.reduce((max, member) => Math.max(max, member.value), -1) + 1;
+  let nextValue = afterLargest;
+  if (nextValue > ENUM_VALUE_MAX) {
+    nextValue = 0;
+    while (used.has(nextValue) && nextValue < ENUM_VALUE_MAX) nextValue += 1;
+  }
   return {
     ...asset,
     members: [...asset.members, { name: "NewMember", value: nextValue }],
@@ -115,6 +121,7 @@ export function patchStructureField(
       const next = { ...field, ...patch, id: dataFieldIdentity(field) };
       // Soft is the absence of the property.
       if ("loading" in patch && patch.loading !== "hard") delete next.loading;
+      if ("unit" in patch && !patch.unit) delete next.unit;
       return next;
     }),
   };

@@ -206,6 +206,29 @@ describe("collectClassGraphsForPalette", () => {
     ]);
   });
 
+  it("keeps variable and input units through a closed Class header, only on number and vector types", () => {
+    const header = classHeaderMeta({
+      members: [
+        { id: "fn-1", kind: "function", name: "Turn", pins: [
+          { name: "Angle", typeId: "float", direction: "in", unit: "deg" },
+          { name: "Label", typeId: "string", direction: "in", unit: "px" },
+        ] },
+        { id: "var-1", kind: "variable", name: "Spin", typeId: "vec3", unit: "deg" },
+        { id: "var-2", kind: "variable", name: "Title", typeId: "string", unit: "ms" },
+      ],
+    });
+    expect(
+      classGraphFromHeaderPayload(JSON.parse(JSON.stringify(header))).members,
+    ).toEqual([
+      { id: "fn-1", kind: "function", name: "Turn", pins: [
+        { name: "Angle", typeId: "float", direction: "in", unit: "deg" },
+        { name: "Label", typeId: "string", direction: "in" },
+      ] },
+      { id: "var-1", kind: "variable", name: "Spin", typeId: "vec3", unit: "deg" },
+      { id: "var-2", kind: "variable", name: "Title", typeId: "string" },
+    ]);
+  });
+
   it("keeps component names and Material Instances through a closed Class header", () => {
     // Open-time sync copies both from the Class onto its instances, so a closed Class that lost them
     // would strip them from every placed instance.

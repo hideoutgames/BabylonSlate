@@ -518,7 +518,8 @@ export function SpriteAnimationDetails({
     {
       id: "frame-duration",
       kind: "number",
-      label: "Frame Duration MS",
+      label: "Frame Duration",
+      unit: "ms",
       value: animation.frameDurationMs,
       min: 1,
       onChange: (frameDurationMs) =>
@@ -545,7 +546,7 @@ export function SpriteAnimationDetails({
     {
       id: "frame-duration-override",
       kind: "boolean",
-      label: "Frame Duration MS Override",
+      label: "Frame Duration Override",
       value: frame?.durationMsOverride === true,
       onChange: setDurationOverride,
     },
@@ -554,7 +555,8 @@ export function SpriteAnimationDetails({
     frameRows.push({
       id: "override-frame-duration",
       kind: "number",
-      label: "Frame Duration MS",
+      label: "Frame Duration",
+      unit: "ms",
       value: frame.durationMs,
       min: 1,
       onChange: (durationMs) =>

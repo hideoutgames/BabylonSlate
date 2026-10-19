@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_RENDER_PROJECT_SETTINGS } from "@babylonslate/core";
+import { DEFAULT_COLLISION_PRESETS, DEFAULT_RENDER_PROJECT_SETTINGS } from "@babylonslate/core";
 import { createDefaultSpriteAnimationPayload } from "@babylonslate/assets";
 import { packedContentFromGame } from "./hydrate";
 import { gameSourceSubset, type GameSourceContent } from "./source-content";
@@ -11,7 +11,7 @@ function sources(assets: GameAssetIndexEntry[], payloads: Record<string, unknown
   return {
     manifest: {
       assetCatalogVersion: 1, startupSceneGuid: "scene", bundleDebugger: false, render: DEFAULT_RENDER_PROJECT_SETTINGS,
-      playFrameCap: 60, pixelsPerUnit: 100, pixelPerfect: false, sortingLayers: ["Default"], physicsWorld: "2d", assets,
+      playFrameCap: 60, pixelsPerUnit: 100, pixelPerfect: false, sortingLayers: ["Default"], physicsWorld: "2d", collisionPresets: [...DEFAULT_COLLISION_PRESETS], assets,
     },
     scripts: [], scenes: new Map(), sceneLayers: new Map(), textureBytes: new Map(), areaEmissions: new Map(),
     modelBytes: new Map(), modelPayloads: new Map(), complexMeshes: new Map(), fontBytes: new Map(), fontFacetypeBytes: new Map(),

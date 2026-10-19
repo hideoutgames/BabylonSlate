@@ -89,14 +89,16 @@ export function copyColliderDesc(desc: ColliderDesc): ColliderDesc {
     rotation: desc.rotation ?? { x: 0, y: 0, z: 0, w: 1 },
   });
   if (
-    ![desc.friction, desc.restitution, desc.layer, desc.mask].every(
+    ![desc.friction, desc.restitution, desc.layer, desc.mask, desc.overlapMask ?? 0].every(
       Number.isFinite,
     )
   ) {
     throw new Error("Collider tuning must be finite");
   }
+  const overlapMask = ((desc.overlapMask ?? 0) & ~desc.mask) >>> 0;
   return {
     ...desc,
+    overlapMask,
     shape: prepareColliderShape(desc.shape),
     translation: pose.position,
     rotation: pose.rotation,

@@ -18,9 +18,9 @@ Double-tap a Sprite Animation to open it.
 
 | Setting | Description |
 | --- | --- |
-| Frame Duration MS | Length of every frame in milliseconds. Default 100. |
+| Frame Duration | Length of every frame in milliseconds. Default 100. |
 | Texture | The selected frame's image. |
-| Frame Duration MS Override | Turn on to give the selected frame its own **Frame Duration MS**. |
+| Frame Duration Override | Turn on to give the selected frame its own **Frame Duration**. |
 | Pivot | The point of the frame that sits at the actor's position, as fractions of the image. 0.5, 0.5 is the centre. |
 | Collision | The frame's collision box as fractions of the image: X, Y, W and H. |
 

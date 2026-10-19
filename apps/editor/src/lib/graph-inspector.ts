@@ -1,4 +1,4 @@
-import { INPUT_KEYS, normalizeTag, normalizeTagContainer } from "@babylonslate/core";
+import { INPUT_KEYS, declaredValueUnit, normalizeTag, normalizeTagContainer } from "@babylonslate/core";
 import { dataGraphMetadata, dataGraphNodeTitle, isDataGraphNode, type DataGraphAssetEntry } from "./data-graph";
 import type {
   ParameterRow,
@@ -194,6 +194,7 @@ function flattenStructFieldRows(
             name: label,
             type,
             value: fieldValue,
+            unit: field.unit,
           },
         ],
         (patch) => {
@@ -247,6 +248,26 @@ export function pinDefaultPropertyRows(
 ): PropertyRow[] {
   const rows: PropertyRow[] = [];
   for (const entry of entries) {
+    const first = rows.length;
+    pushPinDefaultRows(rows, entry, onPatch, mappingNames);
+    const unit = declaredValueUnit(entry.type.kind, entry.unit);
+    if (unit) {
+      for (let index = first; index < rows.length; index += 1) {
+        const row = rows[index]!;
+        if (row.kind === "number" || row.kind === "vector3") rows[index] = { ...row, unit };
+      }
+    }
+  }
+  return rows;
+}
+
+function pushPinDefaultRows(
+  rows: PropertyRow[],
+  entry: LiteralPinDefault,
+  onPatch: (patch: Record<string, unknown>) => void,
+  mappingNames: Parameters<typeof pinDefaultPropertyRows>[2],
+): void {
+  {
     const key = pinDefaultPropertyKey(entry.pinId);
     const typeDefault = defaultJsValue(entry.type);
     switch (entry.type.kind) {
@@ -475,7 +496,6 @@ export function pinDefaultPropertyRows(
         break;
     }
   }
-  return rows;
 }
 
 export function variableDefaultPropertyRows(
@@ -493,6 +513,8 @@ export function variableDefaultPropertyRows(
     onPickClass?: (pinId: string, constraintClassId: string) => void;
     label?: string;
     pinId?: string;
+    /** Display unit for a number or vector (`VALUE_UNITS`). */
+    unit?: string;
   },
 ): PropertyRow[] {
   if (options?.container === "array" || options?.container === "map") return [];
@@ -530,7 +552,7 @@ export function variableDefaultPropertyRows(
   }
   const resolved = value === undefined ? defaultJsValue(type) : value;
   return pinDefaultPropertyRows(
-    [{ pinId, name: label, type, value: resolved }],
+    [{ pinId, name: label, type, value: resolved, unit: options?.unit }],
     (patch) => {
       const key = pinDefaultPropertyKey(pinId);
       if (key in patch) onChange(patch[key]);

@@ -15,6 +15,8 @@ export type SerializedPin = {
   /** Host-supplied numeric literal limits, shared by Inspector and inline edits. */
   min?: number;
   max?: number;
+  /** Display unit shown after a number or vector literal (`VALUE_UNITS`). */
+  unit?: string;
   reference?: "required" | "writable";
   /** An unwired reference input reads the actor running the graph and shows Self. */
   selfWhenUnwired?: boolean;

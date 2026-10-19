@@ -94,14 +94,14 @@ describe("SpriteEditor", () => {
     );
   });
 
-  it("renders a sprite preview with a pivot marker", () => {
+  it("keeps the pivot and collision box off a preview that has no Texture to frame", () => {
     render(
       <SpritePreview
         payload={createDefaultSpritePayload() as unknown as Record<string, unknown>}
       />,
     );
-    expect(screen.getByTestId("sprite-preview")).toBeTruthy();
-    expect(screen.getByTestId("sprite-pivot-marker")).toBeTruthy();
-    expect(screen.getByTestId("sprite-collision-overlay")).toBeTruthy();
+    expect(screen.getByTestId("sprite-preview-toolbar")).toBeTruthy();
+    expect(screen.queryByTestId("sprite-pivot-marker")).toBeNull();
+    expect(screen.queryByTestId("sprite-collision-overlay")).toBeNull();
   });
 });

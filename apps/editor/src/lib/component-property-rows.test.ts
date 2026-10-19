@@ -421,7 +421,7 @@ describe("componentPropertyRows", () => {
       ],
     });
     expect(simple.rows.find((row) => row.id.endsWith("-layer"))).toBeDefined();
-    expect(simple.rows.find((row) => row.id.endsWith("-mask"))).toBeDefined();
+    expect(simple.rows.find((row) => row.id.endsWith("-responses"))).toBeDefined();
 
     const none = rowsFor({
       id: "mesh",
@@ -429,7 +429,7 @@ describe("componentPropertyRows", () => {
       properties: { meshKind: "box", collisionMode: "none" },
     });
     expect(none.rows.find((row) => row.id.endsWith("-layer"))).toBeUndefined();
-    expect(none.rows.find((row) => row.id.endsWith("-mask"))).toBeUndefined();
+    expect(none.rows.find((row) => row.id.endsWith("-responses"))).toBeUndefined();
 
     const twoD = rowsFor(
       {
@@ -792,7 +792,7 @@ describe("componentPropertyRows", () => {
   });
 
   it("disables Box 2D Half Extents with a note while the actor's Sprite has an asset", () => {
-    const box = { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } } } };
+    const box = { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } }, collisionPreset: "custom" } };
     const extentsFor = (sprites: SerializedComponent[], collider: SerializedComponent = box) => {
       const { rows } = rowsFor(collider, { physicsWorld: "2d", actorComponents: () => [collider, ...sprites] });
       return rows.find((row) => row.id.endsWith("-shape-half-extents"))!;
@@ -807,7 +807,7 @@ describe("componentPropertyRows", () => {
       expect(free.description).toBeUndefined();
     }
     // Circle and capsule keep their size, so they never carry the note.
-    const circle = { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "circle", radius: 0.5 } } };
+    const circle = { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "circle", radius: 0.5 }, collisionPreset: "custom" } };
     const { rows } = rowsFor(circle, { physicsWorld: "2d", actorComponents: () => [circle, sprite("sprite-1")] });
     expect(rows.some((row) => row.disabled || row.description)).toBe(false);
   });
@@ -950,6 +950,7 @@ describe("componentPropertyRows", () => {
           isTrigger: false,
           layer: 1,
           mask: 1,
+          collisionPreset: "custom",
         },
       },
       { collisionLayers: ["Default", "Enemy"] },
@@ -996,12 +997,18 @@ describe("componentPropertyRows", () => {
       layer.onChange("Enemy");
     }
     expect(update).toHaveBeenCalledWith("layer", 2);
-    expect(rows.find((row) => row.id.endsWith("-mask"))).toMatchObject({
-      kind: "flags",
-      label: "Collides With",
-      value: 1,
-      bitCount: 2,
+    // Custom: the collider's own Layer and Collision Responses, editable.
+    expect(rows.find((row) => row.id.endsWith("-collisionPreset"))).toMatchObject({
+      kind: "enum",
+      label: "Collision Preset",
+      value: "custom",
+    });
+    expect(rows.find((row) => row.id.endsWith("-responses"))).toMatchObject({
+      kind: "collision-responses",
+      label: "Collision Responses",
+      value: { mask: 1, overlapMask: 0 },
       labels: ["Default", "Enemy"],
+      disabled: false,
     });
     expect(rows.find((row) => row.id.endsWith("-isTrigger"))).toMatchObject({
       kind: "boolean",
@@ -1015,13 +1022,27 @@ describe("componentPropertyRows", () => {
     });
   });
 
+  it("shows a Collision Preset's Layer and Collision Responses read only and starts Custom from them", () => {
+    const { rows, update } = rowsFor(
+      { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 0.5 }, layer: 1, mask: 0b11, collisionPreset: "enemy" } },
+      { collisionLayers: ["Default", "Enemy"], collisionPresets: [{ id: "enemy", name: "Enemy", layer: 2, mask: 0xfffffffd, overlapMask: 2 }] },
+    );
+    expect(rows.find((row) => row.id.endsWith("-layer"))).toMatchObject({ kind: "enum", value: "Enemy", disabled: true });
+    expect(rows.find((row) => row.id.endsWith("-responses"))).toMatchObject({ value: { mask: 0xfffffffd, overlapMask: 2 }, disabled: true });
+    const preset = rows.find((row) => row.id.endsWith("-collisionPreset"));
+    if (preset?.kind !== "enum") throw new Error("Missing Collision Preset row");
+    expect(preset.options.map((option) => option.label)).toEqual(["Enemy", "Custom"]);
+    preset.onChange("custom");
+    expect(update).toHaveBeenCalledWith("collisionPreset", "custom", { layer: 2, mask: 0xfffffffd, overlapMask: 2 });
+  });
+
   it.each([
     [0, "None"],
     [0b11, "Default, Enemy"],
     [0b100, "Layer 3"],
   ])("labels stored collision layer mask %i as %s instead of the first layer", (layer, label) => {
     const { rows } = rowsFor(
-      { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 0.5 }, layer } },
+      { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 0.5 }, layer, collisionPreset: "custom" } },
       { collisionLayers: ["Default", "Enemy"] },
     );
     const row = rows.find((entry) => entry.id.endsWith("-layer"));

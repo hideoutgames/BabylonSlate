@@ -40,7 +40,9 @@ export type DockviewDocumentKind =
   | "animation"
   | "skybox-creator"
   | "trace"
-  | "texture";
+  | "texture"
+  | "font"
+  | "blackboard";
 export type { DockWindowDirection };
 
 const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
@@ -82,6 +84,8 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "skybox-creator",
   "trace",
   "texture",
+  "font",
+  "blackboard",
 ]);
 
 export function isDockviewDocumentKind(
@@ -149,6 +153,8 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "skybox-creator": "skybox-creator-preview",
   trace: "trace-timeline",
   texture: "texture-preview",
+  font: "font-preview",
+  blackboard: "blackboard-keys",
 };
 
 export function primaryDockPanel(
@@ -649,6 +655,34 @@ const TEXTURE_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const FONT_WINDOWS: DockWindowDefinition[] = [
+  { id: "font-preview", component: "font-preview", title: "Preview" },
+  {
+    id: "font-details",
+    component: "font-details",
+    title: "Inspector",
+    defaultPosition: {
+      referencePanelId: "font-preview",
+      direction: "right",
+      initialWidth: 300,
+    },
+  },
+];
+
+const BLACKBOARD_WINDOWS: DockWindowDefinition[] = [
+  { id: "blackboard-keys", component: "blackboard-keys", title: "Keys" },
+  {
+    id: "blackboard-inspector",
+    component: "blackboard-inspector",
+    title: "Inspector",
+    defaultPosition: {
+      referencePanelId: "blackboard-keys",
+      direction: "right",
+      initialWidth: 340,
+    },
+  },
+];
+
 const SPRITE_ANIMATION_WINDOWS: DockWindowDefinition[] = [
   {
     id: "sprite-animation-preview",
@@ -1032,6 +1066,8 @@ export function listDockWindows(
   }
   if (kind === "trace") return withOptionalLocks(kind, TRACE_WINDOWS, options);
   if (kind === "texture") return withOptionalLocks(kind, TEXTURE_WINDOWS, options);
+  if (kind === "font") return withOptionalLocks(kind, FONT_WINDOWS, options);
+  if (kind === "blackboard") return withOptionalLocks(kind, BLACKBOARD_WINDOWS, options);
   if (kind === "sprite-animation") {
     return withOptionalLocks(kind, SPRITE_ANIMATION_WINDOWS, options);
   }

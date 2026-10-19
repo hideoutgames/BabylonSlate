@@ -45,6 +45,8 @@ export interface BlackboardKey {
   name: string;
   type: PinType;
   defaultValue?: unknown;
+  /** Number and vector keys: display unit (`VALUE_UNITS`). Missing is none. */
+  unit?: string;
 }
 
 export interface BlackboardDocument {

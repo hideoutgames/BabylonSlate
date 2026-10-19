@@ -97,6 +97,8 @@ import {
   TextureDetailsPanel,
   TexturePreviewPanel,
 } from "../components/texture-editor";
+import { FontDetailsPanel, FontPreviewPanel } from "../components/font-editor";
+import { BlackboardInspectorPanel, BlackboardKeysPanel } from "../components/blackboard-editor";
 import { LocksPanel } from "../panels/locks-panel";
 import {
   AnimGraphDetailsPanel,
@@ -299,6 +301,10 @@ export const panelComponents = {
   "texture-details": (props: IDockviewPanelProps) => (
     <TextureDetailsPanel {...props} />
   ),
+  "font-preview": (props: IDockviewPanelProps) => <FontPreviewPanel {...props} />,
+  "font-details": (props: IDockviewPanelProps) => <FontDetailsPanel {...props} />,
+  "blackboard-keys": (props: IDockviewPanelProps) => <BlackboardKeysPanel {...props} />,
+  "blackboard-inspector": (props: IDockviewPanelProps) => <BlackboardInspectorPanel {...props} />,
   "anim-graph-graph": (props: IDockviewPanelProps) => (
     <AnimGraphGraphPanel {...props} />
   ),

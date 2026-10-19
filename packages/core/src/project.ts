@@ -1,3 +1,4 @@
+import { normalizeCollisionPresets, type CollisionPreset } from "./collision-presets";
 import { normalizeRenderingQuality, type RenderingQuality } from "./render-quality";
 import { normalizeRenderingPipeline, type RenderPath, type GpuBackend } from "./render-path";
 import { lookAtRotation } from "./euler";
@@ -297,6 +298,8 @@ export interface GraphClassMemberPin {
   direction: "in" | "out";
   /** Object/class pin constraint, or Structure/Enum asset guid. Missing means unconstrained BObject at pin conversion. */
   typeClassId?: string;
+  /** Number and vector inputs: display unit (`VALUE_UNITS`) on the pin's literal. Missing is none. */
+  unit?: string;
 }
 
 export interface GraphClassMemberImplementsInterface {
@@ -349,6 +352,8 @@ export interface GraphClassMember {
    * reference with its owner. Missing is Soft (load on demand).
    */
   loading?: "hard";
+  /** Number and vector variables: display unit (`VALUE_UNITS`). Missing is none. */
+  unit?: string;
 }
 
 export interface SerializedGraph {
@@ -476,6 +481,11 @@ export interface PhysicsProjectSettings {
    * Havok membership/collide masks. Cap 32.
    */
   collisionLayers: string[];
+  /**
+   * Named collision filters colliders reference by id; at least one
+   * ([collision-presets.ts](./collision-presets.ts)).
+   */
+  collisionPresets: CollisionPreset[];
 }
 
 export const DEFAULT_TWO_D_PROJECT_SETTINGS: TwoDProjectSettings = {
@@ -512,6 +522,13 @@ function normalizeCollisionLayers(value: unknown): string[] {
     if (layers.length >= MAX_COLLISION_LAYERS) break;
   }
   return layers.length > 0 ? layers : [...DEFAULT_COLLISION_LAYERS];
+}
+
+function physicsSettings(physics: Partial<PhysicsProjectSettings> | undefined): PhysicsProjectSettings {
+  return {
+    collisionLayers: normalizeCollisionLayers(physics?.collisionLayers),
+    collisionPresets: normalizeCollisionPresets(physics?.collisionPresets),
+  };
 }
 
 function normalizePositiveAspect(value: unknown, fallback: number): number {
@@ -648,9 +665,10 @@ function normalizeEditorUtilityObjects(value: unknown): string[] {
 
 export function normalizeProjectSettings(
   settings:
-    | (Partial<Omit<ProjectSettings, "audio" | "render">> & {
+    | (Partial<Omit<ProjectSettings, "audio" | "render" | "physics">> & {
         audio?: Partial<AudioProjectSettings>;
         render?: Partial<RenderProjectSettings>;
+        physics?: Partial<PhysicsProjectSettings>;
       })
     | undefined,
 ): ProjectSettings {
@@ -682,9 +700,7 @@ export function normalizeProjectSettings(
       pixelPerfect: twoD?.pixelPerfect === true,
       sortingLayers: normalizeSortingLayers(twoD?.sortingLayers),
     },
-    physics: {
-      collisionLayers: normalizeCollisionLayers(settings?.physics?.collisionLayers),
-    },
+    physics: physicsSettings(settings?.physics),
     textures: {
       maxTextureDimension:
         settings?.textures?.maxTextureDimension ??

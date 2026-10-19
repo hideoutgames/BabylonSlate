@@ -10,7 +10,7 @@ Textures are not created from **New Asset**. In the **Content Browser**, choose 
 
 Double-tap the asset to open it. The window has **Preview** and an **Inspector**.
 
-- **Preview** shows the image at **Fit** or **Actual Size**, with its usage and pixel size. A cube Texture shows **Environment Cube** instead, because cube faces are not previewed.
+- **Preview** shows the image at **Fit** or **Actual Size**, with its usage, pixel size and zoom. Drag to move the image; pinch or use the mouse wheel to zoom about the pointer. **Fit** and **Actual Size** return to their view and undo any move or zoom. A cube Texture shows **Environment Cube** instead, because cube faces are not previewed.
 - The **Inspector** has **Import**, **Compression** and **Area Light Emission**.
 
 ## Settings

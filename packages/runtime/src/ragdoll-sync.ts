@@ -128,7 +128,9 @@ export class RagdollWorldSync implements RuntimeSubsystem {
     try {
       const sync = this.host.physics();
       const initialVelocity = sync.getActorVelocity(state.actor) ?? undefined;
-      physics = new RagdollPhysics(sync.getBackend(), state.actor.guid, state.requestId, message.bones, state.properties, initialVelocity,
+      physics = new RagdollPhysics(sync.getBackend(), state.actor.guid, state.requestId, message.bones,
+        { ...state.properties, ...sync.collisionFilter(state.properties, state.component.getVariable("collisionPreset")) },
+        initialVelocity,
         sync.claimContactReporting(state.actor));
       physics.addImpulse(state.pendingImpulse);
       state.pendingImpulse = { x: 0, y: 0, z: 0 };
@@ -223,7 +225,7 @@ export class RagdollWorldSync implements RuntimeSubsystem {
 
 function sourceDescriptor(actor: Actor, component: ActorComponent, scale: Vec3): unknown[] {
   const descriptor: unknown[] = [scale.x, scale.y, scale.z];
-  for (const name of ["enabled", "totalMass", "radius", "angularLimit", "linearDamping", "angularDamping", "friction", "restitution", "layer", "mask"]) {
+  for (const name of ["enabled", "totalMass", "radius", "angularLimit", "linearDamping", "angularDamping", "friction", "restitution", "layer", "mask", "overlapMask", "collisionPreset"]) {
     descriptor.push(component.getVariable(name));
   }
   const names = component.getVariable("boneNames");

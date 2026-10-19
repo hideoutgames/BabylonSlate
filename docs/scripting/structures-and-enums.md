@@ -26,7 +26,7 @@ Drag from an Enum pin to see these nodes first. When you remove a member, Switch
 
 1. In the **Content Browser**, choose **New Asset > Scripting > Structure**.
 2. Open it. In **Members**, tap **Add field** (**+**) for each value.
-3. Select a field to set its **Name**, **Type** and default value in the **Inspector**. A field can itself be an Enum, a Structure or a Data Definition.
+3. Select a field to set its **Name**, **Type** and default value in the **Inspector**. A field can itself be an Enum, a Structure or a Data Definition. Integer, Float and Vector fields also take a **Unit** (for example **Pixels**), shown after the value wherever the field is edited; the value is unchanged.
 
 ## Use a Structure in graphs
 

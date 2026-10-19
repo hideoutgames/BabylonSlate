@@ -34,6 +34,26 @@ describe("createAudioPreviewSession", () => {
     session.dispose();
   });
 
+  it("reports the played position at the voice's pitch from when playback starts", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    let time = 1000;
+    const session = createAudioPreviewSession({
+      backend,
+      readChunk: async () => new Uint8Array([1]),
+      random: () => 0,
+      now: () => time,
+    });
+    await session.prefetch(createDefaultAudioPayload());
+    session.play({ ...createDefaultAudioPayload(), pitch: 2 });
+    expect(session.playedSeconds()).toBeNull();
+    await Promise.resolve();
+    time += 500;
+    expect(session.playedSeconds()).toBeCloseTo(1);
+    session.stop();
+    expect(session.playedSeconds()).toBeNull();
+    session.dispose();
+  });
+
   it("diagnoses a cache miss instead of awaiting storage on Play", () => {
     const backend = new FakeAudioPlaybackBackend();
     const session = createAudioPreviewSession({

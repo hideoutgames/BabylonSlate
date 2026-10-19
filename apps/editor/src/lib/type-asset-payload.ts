@@ -1,8 +1,9 @@
-import { hardLoadingProperty } from "@babylonslate/core";
-import type {
-  EnumAsset,
-  ScriptInterfaceAsset,
-  StructureAsset,
+import { hardLoadingProperty, normalizeValueUnit } from "@babylonslate/core";
+import {
+  clampEnumValue,
+  type EnumAsset,
+  type ScriptInterfaceAsset,
+  type StructureAsset,
 } from "@babylonslate/scripting";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -21,7 +22,7 @@ export function asEnumAsset(payload: Record<string, unknown>): EnumAsset {
       const row = asRecord(raw);
       return {
         name: typeof row.name === "string" ? row.name : "Member",
-        value: typeof row.value === "number" ? row.value : 0,
+        value: typeof row.value === "number" ? clampEnumValue(row.value) : 0,
       };
     }),
   };
@@ -57,6 +58,7 @@ export function asStructureAsset(
           ? { defaultValue: row.defaultValue }
           : {}),
         ...hardLoadingProperty(row),
+        ...(normalizeValueUnit(row.unit) ? { unit: normalizeValueUnit(row.unit) } : {}),
       };
     }),
   };

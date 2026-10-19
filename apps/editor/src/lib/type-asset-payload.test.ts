@@ -9,6 +9,11 @@ import {
 } from "./type-asset-payload";
 
 describe("asEnumAsset", () => {
+  it("loads member values as bytes: whole numbers from 0 to 255", () => {
+    const members = asEnumAsset({ members: [{ name: "A", value: -3 }, { name: "B", value: 300 }, { name: "C", value: 2.6 }] }).members;
+    expect(members.map((member) => member.value)).toEqual([0, 255, 3]);
+  });
+
   it("fills defaults and coerces member rows", () => {
     expect(asEnumAsset({})).toEqual({
       kind: "enum",
@@ -64,6 +69,17 @@ describe("asStructureAsset", () => {
       { id: "boss", name: "Boss", typeId: "class" },
     ]);
     expect(asStructureAsset({ fields: JSON.parse(JSON.stringify(fields)) }).fields).toEqual(fields);
+  });
+
+  it("keeps a known unit on a field across reopening and drops an unknown one", () => {
+    const fields = asStructureAsset({ fields: [
+      { id: "width", name: "Width", typeId: "float", unit: "px" },
+      { id: "delay", name: "Delay", typeId: "int", unit: "hours" },
+    ] }).fields;
+    expect(fields).toEqual([
+      { id: "width", name: "Width", typeId: "float", unit: "px" },
+      { id: "delay", name: "Delay", typeId: "int" },
+    ]);
   });
 
   it("defaults field types and preserves defaultValue when present", () => {

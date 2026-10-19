@@ -937,6 +937,21 @@ describe("SceneDetailsPanel authoring", () => {
     });
   });
 
+  it("narrows the component cards from the Search components field", () => {
+    scene().actors = [createActor("actor-1", "Actor", { components: [
+      createMeshComponent("actor-1-component-1", "box"),
+      { id: "actor-1-component-2", classId: "PointLightComponent", properties: { intensity: 5 } },
+    ] })];
+    harness.selectedActorIds = ["actor-1"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("component-card-actor-1-component-1")).toBeTruthy();
+    fireEvent.change(screen.getByTestId("details-component-search"), { target: { value: "light" } });
+    expect(screen.queryByTestId("component-card-actor-1-component-1")).toBeNull();
+    expect(screen.getByTestId("component-card-actor-1-component-2")).toBeTruthy();
+    fireEvent.change(screen.getByTestId("details-component-search"), { target: { value: "zzz" } });
+    expect(screen.getByTestId("details-component-search-empty")).toBeTruthy();
+  });
+
   it("adds a distinct component when a deleted middle row left an id gap, without changing the remaining component", () => {
     const actor = createActor("actor-1", "Actor", { components: [
       createMeshComponent("actor-1-component-1", "box"),

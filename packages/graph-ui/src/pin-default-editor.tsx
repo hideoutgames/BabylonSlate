@@ -47,9 +47,9 @@ function StringDefault({ value, disabled, onChange, label, testId }: {
     }} />;
 }
 
-function NumberDefault({ value, integer, disabled, onChange, label, testId, min, max, axis, accent }: {
+function NumberDefault({ value, integer, disabled, onChange, label, testId, min, max, axis, accent, unit }: {
   value: unknown; integer: boolean; disabled: boolean; onChange: (value: unknown) => void; label: string; testId: string;
-  min?: number; max?: number; axis?: string; accent?: "x" | "y" | "z";
+  min?: number; max?: number; axis?: string; accent?: "x" | "y" | "z"; unit?: string;
 }) {
   const number = pinDefaultAsNumber(value);
   const [draft, setDraft] = useState<number | null>(null);
@@ -63,7 +63,7 @@ function NumberDefault({ value, integer, disabled, onChange, label, testId, min,
   };
   return <div className={axis ? "graph-pin-default-component w-16 min-w-0" : "graph-pin-default-number w-24"} onKeyDownCapture={cancel}>
     <NumericDragField key={revision} value={draft ?? number} precision={integer ? 0 : undefined} label={axis} accent={accent}
-      sensitivity={integer ? 1 : 0.01} min={min} max={max} disabled={disabled} aria-label={label} data-testid={testId}
+      sensitivity={integer ? 1 : 0.01} min={min} max={max} unit={unit} disabled={disabled} aria-label={label} data-testid={testId}
       onChange={(next) => setDraft(integer ? Math.trunc(next) : next)}
       onDragEnd={(next) => {
         const normalized = integer ? Math.trunc(next) : next;
@@ -87,7 +87,7 @@ function VectorDefault(request: PinDefaultEditorRequest & { testId: string }) {
       axis={kind === "rotator" ? ["P", "Y", "R"][index] : key.toUpperCase()}
       accent={index < 3 ? ["x", "y", "z"][index] as "x" | "y" | "z" : undefined}
       label={`${label} ${humanizePropertyLabel(key)}`} testId={`${request.testId}-${key}`}
-      min={request.pin.min} max={request.pin.max}
+      min={request.pin.min} max={request.pin.max} unit={request.pin.unit}
       onChange={(next) => {
         const updated = [...values];
         updated[index] = pinDefaultAsNumber(next);
@@ -132,7 +132,7 @@ export function PinDefaultEditor(request: EditorProps) {
     case "int":
     case "float":
       control = <NumberDefault key={draftKey()} value={value} integer={preview.kind === "int"} disabled={disabled} onChange={onChange} label={label} testId={testId}
-        min={pin.min} max={pin.max} />;
+        min={pin.min} max={pin.max} unit={pin.unit} />;
       break;
     case "vec2": case "vec3": case "vec4": case "quat": case "rotator":
       control = <VectorDefault {...request} testId={testId} />;

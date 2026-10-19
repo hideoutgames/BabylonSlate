@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createFontPayload } from "@babylonslate/assets";
-import { AssetDocumentWorkspace } from "./asset-document-workspace";
+import { FontInspector, FontPreview } from "./font-editor";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -12,7 +12,7 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-const applyAssetDocumentChange = vi.hoisted(() => vi.fn(async () => true));
+const applyAssetDocumentChange = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<boolean>>(async () => true));
 const fontHarness = vi.hoisted(() => ({
   content: null as Record<string, unknown> | null,
   importFile: vi.fn(async () => {}),
@@ -110,10 +110,14 @@ afterEach(() => {
   fontHarness.pickImportFiles.mockResolvedValue([]);
 });
 
-describe("AssetDocumentWorkspace authoring", () => {
+const PATH = "assets/Display.font.babasset";
+const payload = () => (fontHarness.content ?? createFontPayload("Display")) as unknown as Record<string, unknown>;
+const commit = (next: Record<string, unknown>) => void applyAssetDocumentChange("font:assets/Display.font.babasset", next, undefined);
+
+describe("Font editor", () => {
   it("reports an unavailable font source instead of claiming the preview is ready", async () => {
     readAssetChunk.mockResolvedValueOnce(new Uint8Array());
-    render(<AssetDocumentWorkspace documentId="font:assets/Display.font.babasset" />);
+    render(<FontPreview path={PATH} payload={payload()} />);
     expect(await screen.findByText("Font Preview Unavailable")).toBeTruthy();
     expect(screen.getByTestId("font-sample-preview").getAttribute("data-fonts-ready")).toBe("false");
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
@@ -136,7 +140,7 @@ describe("AssetDocumentWorkspace authoring", () => {
       },
     });
     try {
-      const { unmount } = render(<AssetDocumentWorkspace documentId="font:assets/Display.font.babasset" />);
+      const { unmount } = render(<FontPreview path={PATH} payload={payload()} />);
       await vi.waitFor(() => {
         expect(screen.getByTestId("font-sample-preview").getAttribute("data-fonts-ready")).toBe("true");
       });
@@ -150,7 +154,7 @@ describe("AssetDocumentWorkspace authoring", () => {
     }
   });
   it("picks Font fallbacks instead of typing guids", async () => {
-    render(<AssetDocumentWorkspace documentId="font:assets/Display.font.babasset" />);
+    render(<FontInspector path={PATH} payload={payload()} onChange={commit} />);
     fireEvent.click(screen.getByTestId("font-fallbacks-add"));
     expect(await screen.findByTestId("search-item-font-2")).toBeTruthy();
     expect(screen.queryByTestId("search-item-font-1")).toBeNull();
@@ -170,7 +174,7 @@ describe("AssetDocumentWorkspace authoring", () => {
       { name: "Display.json", bytes: new TextEncoder().encode('{"chars":[],"common":{}}') },
       { name: "Display.png", bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]) },
     ]);
-    render(<AssetDocumentWorkspace documentId="font:assets/Display.font.babasset" />);
+    render(<FontInspector path={PATH} payload={payload()} onChange={commit} />);
     fireEvent.click(screen.getByTestId("font-import-msdf"));
     await vi.waitFor(() => expect(applyAssetDocumentChange).toHaveBeenCalled());
     expect(fontHarness.importFile).toHaveBeenCalledWith(

@@ -16,6 +16,7 @@ import {
   CatalogDialog,
   DisclosureSection,
   ClassPicker,
+  CollisionPresetsField,
   NamedListEditor,
   NumberField,
   assetRowIdentity,
@@ -137,7 +138,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
   {
     id: "physics",
     label: "Physics",
-    keywords: "collision layers collide mask havok",
+    keywords: "collision layers presets collide mask havok",
   },
   { id: "focusNavigation", label: "Focus Navigation", keywords: "focus keyboard gamepad navigation repeat wrap input activate" },
   {
@@ -952,6 +953,7 @@ export function SettingsModal({
                 onChange={(collisionLayers) =>
                   updateProjectSettings({
                     physics: {
+                      ...projectDocument.settings.physics,
                       collisionLayers: collisionLayers.slice(
                         0,
                         MAX_COLLISION_LAYERS,
@@ -966,6 +968,22 @@ export function SettingsModal({
               />
               <FieldDescription>
                   Up to {MAX_COLLISION_LAYERS} layers.
+              </FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel>Collision Presets</FieldLabel>
+              <CollisionPresetsField
+                layers={projectDocument.settings.physics.collisionLayers}
+                value={projectDocument.settings.physics.collisionPresets}
+                onChange={(collisionPresets) =>
+                  updateProjectSettings({
+                    physics: { ...projectDocument.settings.physics, collisionPresets },
+                  })
+                }
+                data-testid="settings-collision-presets"
+              />
+              <FieldDescription>
+                Each preset sets a Layer and an Ignore, Overlap or Block response to every layer. Colliders pick a preset or Custom.
               </FieldDescription>
             </Field>
           </FieldSet>

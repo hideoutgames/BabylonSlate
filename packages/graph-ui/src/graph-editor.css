@@ -222,31 +222,52 @@
   z-index: 1;
 }
 
+/* A circle centred on the card border: a half-strength ring until a transition uses that side, then filled. */
 .anim-state-handle-source::after {
   content: "";
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 8px;
-  height: 8px;
-  background: var(--muted-foreground);
-  opacity: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--muted-foreground);
+  background: var(--graph-node);
+  opacity: 0.5;
   pointer-events: none;
-  transform: translate(-50%, -50%) rotate(45deg);
+  transform: translate(-50%, -50%);
   transition: opacity 120ms ease-out;
 }
 
-/* Connection affordances only appear where the pointer can use them. */
+/* Source plates overhang the card by 4px more than their half width. */
+.anim-state-handle-source.anim-state-handle-top::after {
+  top: calc(50% + 4px);
+}
+
+.anim-state-handle-source.anim-state-handle-bottom::after {
+  top: calc(50% - 4px);
+}
+
+.anim-state-handle-source.anim-state-handle-left::after {
+  left: calc(50% + 4px);
+}
+
+.anim-state-handle-source.anim-state-handle-right::after {
+  left: calc(50% - 4px);
+}
+
+.anim-state-handle-source[data-connected="true"]::after {
+  border-color: var(--graph-link);
+  background: var(--graph-link);
+  opacity: 1;
+}
+
+/* Hover or selection brings every side's ring to full strength. */
 .anim-state-node:hover .anim-state-handle-source::after,
 .anim-state-node-selected .anim-state-handle-source::after {
   opacity: 1;
 }
 
-@media (pointer: coarse) {
-  .anim-state-handle-source::after {
-    opacity: 0.6;
-  }
-}
 
 .anim-graph-canvas .react-flow__arrowhead polyline {
   stroke: var(--graph-link) !important;

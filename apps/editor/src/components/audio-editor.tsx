@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
@@ -194,6 +194,8 @@ export function AudioPreview({
     };
   }, [path, readAssetChunk, clipIds]);
 
+  const playedSeconds = useCallback(() => previewSessionRef.current?.playedSeconds() ?? null, []);
+
   const stopPreview = () => {
     previewSessionRef.current?.stop();
     setPlaying(false);
@@ -278,6 +280,8 @@ export function AudioPreview({
           peaks={waveformPeaks}
           durationSeconds={waveformDuration}
           color={AUDIO_VISUAL.colorVar}
+          loop={audio.loop}
+          playedSeconds={playing ? playedSeconds : null}
         />
       </div>
     </div>

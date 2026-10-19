@@ -1,4 +1,5 @@
 import {
+  declaredValueUnit,
   isFunctionLibraryClass,
   normalizeClassMemberCategory,
   type GraphClassMember,
@@ -1156,10 +1157,13 @@ function stampVariableTypeOnData(
   data: Record<string, unknown>,
   member: Pick<
     GraphClassMember,
-    "typeId" | "typeClassId" | "container" | "keyTypeId" | "keyTypeClassId"
+    "typeId" | "typeClassId" | "container" | "keyTypeId" | "keyTypeClassId" | "unit"
   >,
 ): void {
   data.typeId = member.typeId ?? "float";
+  const unit = declaredValueUnit(member.typeId ?? "float", member.unit);
+  if (unit) data.unit = unit;
+  else delete data.unit;
   if (member.typeClassId) data.typeClassId = member.typeClassId;
   else delete data.typeClassId;
   if (member.container === "array" || member.container === "map") {
@@ -1740,6 +1744,7 @@ export function patchClassMember(
     }
     // Soft is the absence of the property.
     if ("loading" in patch && patch.loading !== "hard") delete next.loading;
+    if ("unit" in patch && !patch.unit) delete next.unit;
     if ("category" in patch) {
       const category = normalizeClassMemberCategory(patch.category);
       if (category) next.category = category;

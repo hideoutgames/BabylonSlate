@@ -72,11 +72,12 @@ async function connectFloatToEmitRate(page: Page): Promise<void> {
   await expect(graph.locator('.react-flow__edge[data-id*=":out:output:emitRate"]')).toHaveCount(1);
 }
 
-async function setNumberRow(details: Locator, rowId: string, value: string): Promise<void> {
+async function setNumberRow(details: Locator, rowId: string, value: string, unit = ""): Promise<void> {
   const input = details.getByTestId(`property-${rowId}`);
   await input.fill(value);
   await input.press("Tab");
-  await expect(input).toHaveValue(value);
+  // A row with a unit shows it after the value (Rate: "60/s").
+  await expect(input).toHaveValue(`${value}${unit}`);
 }
 
 async function closeDocumentTab(page: Page, kind: string): Promise<void> {
@@ -300,7 +301,7 @@ test.describe("Particle Graph", () => {
     await hex.fill("#00ff00");
     await hex.press("Tab");
     await expect(hex).toHaveValue(/00ff00/i);
-    await setNumberRow(emitterDetails, "rate", "60");
+    await setNumberRow(emitterDetails, "rate", "60", "/s");
     await setNumberRow(emitterDetails, "size-max", "0.8");
     await setNumberRow(emitterDetails, "size-min", "0.6");
     // Each slot keeps its own backend: a GPU Basic emitter next to a graph reads GPU + CPU.

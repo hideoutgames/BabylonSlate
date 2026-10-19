@@ -19,6 +19,8 @@ export type GraphPin = {
    * and the graph labels the pin "(Self)". A wired reference is used as is.
    */
   selfWhenUnwired?: boolean;
+  /** Display unit of a number or vector literal (`VALUE_UNITS`); values are never converted. */
+  unit?: string;
   /**
    * The object the node reads, writes, calls or moves. A null value skips the node (a pure node
    * returns its output defaults) and logs "<Class>: <Node> (<Pin>) tried to access null." each time.
