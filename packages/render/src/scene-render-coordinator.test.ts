@@ -226,6 +226,17 @@ describe("effects the driver is still compiling", () => {
     renderer.dispose();
   });
 
+  it("does not hold for a scene the graph reports it cannot render", () => {
+    const { engine, renderer } = host(true);
+    linkingEffect(engine);
+    vi.spyOn(ForwardSceneFrameGraph.prototype, "readiness")
+      .mockReturnValue({ path: "frameGraph", ready: false, reason: "Unsupported scene.", preparationRequired: true });
+    vi.spyOn(ForwardSceneFrameGraph.prototype, "prepare").mockRejectedValue(new Error("Scene cannot render: unsupported."));
+    expect(renderer.render().rendered).toBe(false);
+    expect(renderer.holdingForPipelines).toBe(false);
+    renderer.dispose();
+  });
+
   it("ends the hold on invalidation and disposal", async () => {
     const { engine, scene, renderer } = host(true);
     const setReady = sceneReadiness(scene);
