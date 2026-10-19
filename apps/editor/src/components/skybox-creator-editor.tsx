@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
@@ -7,14 +7,15 @@ import {
   PropertySectionTitle,
   ToolbarStrip,
   assetRowIdentity,
+  usePanZoomSurface,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
   decodeSourceToRgba,
   defaultSkyboxCreatorSourcePlacement,
   fitSourceIntoSkyboxNet,
-  letterboxSize,
   newAssetGuid,
+  scaleSkyboxCreatorSourcePlacement,
   normalizeSkyboxCreatorPayload,
   SKYBOX_CREATOR_COMPASS_FACES,
   SKYBOX_CREATOR_COMPASS_TO_BABYLON,
@@ -40,7 +41,8 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
-import { BoxIcon, ImageIcon } from "lucide-react";
+import { BoxIcon, ImageIcon, Maximize2Icon } from "lucide-react";
+import { cn } from "@babylonslate/ui/lib/utils";
 import {
   useDocumentActions,
   useOpenDocument,
@@ -206,6 +208,7 @@ function placementFromKey(key: string): SkyboxCreatorSourcePlacement | null {
   const y = parts[1];
   const width = parts[2];
   const height = parts[3];
+  const rotation = parts[4] ?? 0;
   if (
     x === undefined ||
     y === undefined ||
@@ -214,7 +217,7 @@ function placementFromKey(key: string): SkyboxCreatorSourcePlacement | null {
   ) {
     return null;
   }
-  return { x, y, width, height };
+  return { x, y, width, height, ...(rotation ? { rotation } : {}) };
 }
 
 function CreateSkyboxButton({
@@ -394,8 +397,8 @@ export function SkyboxCreatorDetailsPanel(_props: IDockviewPanelProps) {
       <SkyboxCreatorEditor
         payload={payload}
         helperPath={helperPath}
-        onChange={(next) => {
-          void applyAssetDocumentChange(documentId, next);
+        onChange={(next, mergeKey) => {
+          void applyAssetDocumentChange(documentId, next, mergeKey);
         }}
       />
     </PanelFrame>
@@ -403,12 +406,16 @@ export function SkyboxCreatorDetailsPanel(_props: IDockviewPanelProps) {
 }
 
 
-function hostSize(element: HTMLElement): { width: number; height: number } {
-  const rect = element.getBoundingClientRect();
-  return {
-    width: element.clientWidth || rect.width,
-    height: element.clientHeight || rect.height,
-  };
+/** The net in artboard units: four by three square cells. */
+const NET_ARTBOARD = { width: SKYBOX_CREATOR_NET_COLS * 100, height: SKYBOX_CREATOR_NET_ROWS * 100 };
+const NET_INSET = 12;
+
+/** The fitted scale, so the zoom readout says 100% when the net fits. */
+function fitNetScale(surface: { width: number; height: number }): number {
+  const width = surface.width - NET_INSET * 2;
+  const height = surface.height - NET_INSET * 2;
+  if (width <= 0 || height <= 0) return 1;
+  return Math.min(width / NET_ARTBOARD.width, height / NET_ARTBOARD.height);
 }
 
 export function SkyboxCreatorPreview({
@@ -429,27 +436,10 @@ export function SkyboxCreatorPreview({
   const { assetRegistry } = useRegistryState();
   const [pickerOpen, setPickerOpen] = useState(false);
   const created = createdFaceCount(helper);
-  const hostRef = useRef<HTMLDivElement>(null);
   const netRef = useRef<HTMLDivElement>(null);
-  const [box, setBox] = useState({ width: 0, height: 0 });
-
-  useLayoutEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
-    const measure = () => {
-      const size = hostSize(host);
-      const next = letterboxSize(size.width, size.height);
-      setBox((prev) =>
-        prev.width === next.width && prev.height === next.height
-          ? prev
-          : { width: next.width, height: next.height },
-      );
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(host);
-    return () => observer.disconnect();
-  });
+  // The 4 x 3 net is an artboard: drag empty space to move it, pinch or wheel to zoom.
+  const panZoom = usePanZoomSurface({ content: NET_ARTBOARD, base: "fit", inset: NET_INSET });
+  const view = panZoom.view;
 
   const cells = useMemo(() => {
     const rows: Array<{
@@ -492,23 +482,39 @@ export function SkyboxCreatorPreview({
               ? `${created} of 6 Faces Created`
               : "No Faces Created"}
         </span>
-        {helper.sourceTextureGuid ? (
-          <span className="ml-auto min-w-0 truncate text-xs text-muted-foreground">
-            Drag the Texture to line up the faces.
+        <span className="ml-auto flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          {helper.sourceTextureGuid ? (
+            <span className="min-w-0 truncate">Drag the Texture to line up the faces.</span>
+          ) : null}
+          <span className="tabular-nums" data-testid="skybox-creator-zoom">
+            {view ? `${Math.round((view.scale / fitNetScale(panZoom.surfaceSize)) * 100)}%` : null}
           </span>
-        ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={TOOL_ITEM}
+            disabled={!panZoom.adjusted}
+            onClick={panZoom.reset}
+            data-testid="skybox-creator-fit"
+          >
+            <Maximize2Icon />
+            Fit
+          </Button>
+        </span>
       </ToolbarStrip>
-      <div className="flex min-h-0 flex-1 flex-col gap-2 bg-sidebar p-3">
-        {error ? <SkyboxCreatorAlert message={error} /> : null}
+      <div className="flex min-h-0 flex-1 flex-col gap-2 bg-sidebar">
+        {error ? <div className="px-3 pt-3"><SkyboxCreatorAlert message={error} /></div> : null}
         <div
-          ref={hostRef}
-          className="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
+          ref={panZoom.surfaceRef}
+          {...panZoom.surfaceProps}
+          className="relative min-h-0 flex-1 cursor-grab touch-none overflow-hidden active:cursor-grabbing"
           data-testid="skybox-creator-net-host"
         >
           <div
             ref={netRef}
-            className="relative overflow-hidden rounded-md bg-background ring-1 ring-border"
-            style={{ width: box.width, height: box.height }}
+            className={cn("absolute rounded-md bg-background ring-1 ring-border", !view && "invisible")}
+            style={view ? { left: view.x, top: view.y, width: NET_ARTBOARD.width * view.scale, height: NET_ARTBOARD.height * view.scale } : undefined}
             data-testid="skybox-creator-net"
           >
             {helper.sourceTextureGuid && overlayPlacement && onChange ? (
@@ -601,6 +607,16 @@ export function SkyboxCreatorPreview({
   );
 }
 
+/**
+ * Size against the contain-fit of an image with this placement's proportions:
+ * 100% is as large as the net allows without cropping.
+ */
+function placementScale(placement: SkyboxCreatorSourcePlacement): number {
+  const aspect = (placement.width * SKYBOX_CREATOR_NET_COLS) / (placement.height * SKYBOX_CREATOR_NET_ROWS);
+  const fitted = defaultSkyboxCreatorSourcePlacement(aspect * 1000, 1000);
+  return fitted.width > 0 ? placement.width / fitted.width : 1;
+}
+
 /** Quiet time after a placement change before the Cubemap preview rebuilds. */
 const CUBEMAP_PLACEMENT_SETTLE_MS = 150;
 
@@ -615,7 +631,7 @@ export function SkyboxCreatorCubemap({
     null,
   );
   const placementKey = helper.sourcePlacement
-    ? `${helper.sourcePlacement.x},${helper.sourcePlacement.y},${helper.sourcePlacement.width},${helper.sourcePlacement.height}`
+    ? `${helper.sourcePlacement.x},${helper.sourcePlacement.y},${helper.sourcePlacement.width},${helper.sourcePlacement.height},${helper.sourcePlacement.rotation ?? 0}`
     : "";
 
   const slicedSourceRef = useRef<typeof decoded>(null);
@@ -685,7 +701,8 @@ export function SkyboxCreatorEditor({
 }: {
   payload: Record<string, unknown>;
   helperPath: string;
-  onChange: (next: Record<string, unknown>) => void;
+  /** `mergeKey` groups one field scrub into one undo entry. */
+  onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const helper = normalizeSkyboxCreatorPayload(payload);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -696,9 +713,58 @@ export function SkyboxCreatorEditor({
     helperPath,
     onChange,
   );
-  const commit = (next: SkyboxCreatorPayload) => {
-    onChange(normalizeSkyboxCreatorPayload(next) as unknown as Record<string, unknown>);
+  const commit = (next: SkyboxCreatorPayload, mergeKey?: string) => {
+    const normalized = normalizeSkyboxCreatorPayload(next) as unknown as Record<string, unknown>;
+    if (mergeKey) onChange(normalized, mergeKey);
+    else onChange(normalized);
   };
+  // Before the image is first moved it sits contain-fitted; the Texture's own size gives that fit.
+  const sourceHeader = assets.find((asset) => asset.header.guid === helper.sourceTextureGuid)?.header as
+    | { payload?: { sourceWidth?: unknown; sourceHeight?: unknown } }
+    | undefined;
+  const sourceWidth = Number(sourceHeader?.payload?.sourceWidth);
+  const sourceHeight = Number(sourceHeader?.payload?.sourceHeight);
+  const placement = helper.sourcePlacement ??
+    (sourceWidth > 0 && sourceHeight > 0 ? defaultSkyboxCreatorSourcePlacement(sourceWidth, sourceHeight) : null);
+  const place = (next: SkyboxCreatorSourcePlacement, field: string) =>
+    commit({ ...helper, sourcePlacement: next }, `skybox-creator-placement:${field}`);
+  const placementRows: PropertyRow[] = placement
+    ? [
+        {
+          id: "placement-position",
+          kind: "vector3",
+          label: "Position (%)",
+          value: [placement.x * 100, placement.y * 100, 0],
+          axes: ["X", "Y"],
+          onChange: ([x, y]) => place({ ...placement, x: x / 100, y: y / 100 }, "position"),
+        },
+        {
+          id: "placement-size",
+          kind: "vector3",
+          label: "Size (%)",
+          value: [placement.width * 100, placement.height * 100, 0],
+          axes: ["W", "H"],
+          onChange: ([width, height]) =>
+            place({ ...placement, width: Math.max(0.1, width) / 100, height: Math.max(0.1, height) / 100 }, "size"),
+        },
+        {
+          id: "placement-rotation",
+          kind: "number",
+          label: "Rotation (Degrees)",
+          value: placement.rotation ?? 0,
+          onChange: (rotation) => place({ ...placement, rotation }, "rotation"),
+        },
+        {
+          id: "placement-scale",
+          kind: "number",
+          label: "Scale (%)",
+          value: placementScale(placement) * 100,
+          min: 1,
+          onChange: (scale) =>
+            place(scaleSkyboxCreatorSourcePlacement(placement, Math.max(1, scale) / 100 / placementScale(placement)), "scale"),
+        },
+      ]
+    : [];
 
   const sourceRows: PropertyRow[] = [
     {
@@ -734,6 +800,28 @@ export function SkyboxCreatorEditor({
         </div>
       ) : null}
       <PropertyGrid title="Source" rows={sourceRows} />
+      {placementRows.length > 0 ? (
+        <>
+          <PropertySectionTitle
+            aside={
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                className={TOOL_ITEM}
+                disabled={!helper.sourcePlacement}
+                onClick={() => commit({ ...helper, sourcePlacement: null })}
+                data-testid="skybox-creator-placement-reset"
+              >
+                Fit To Net
+              </Button>
+            }
+          >
+            Placement
+          </PropertySectionTitle>
+          <PropertyGrid rows={placementRows} />
+        </>
+      ) : null}
       <div className="flex px-2 pb-2">
         <CreateSkyboxButton
           className="flex-1"

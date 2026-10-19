@@ -54,6 +54,8 @@ export type SkyboxCreatorSourcePlacement = {
   y: number;
   width: number;
   height: number;
+  /** Degrees clockwise about the placement's centre; omitted when 0. */
+  rotation?: number;
 };
 
 export type SkyboxCreatorSourcePlacementHandle =
@@ -117,12 +119,80 @@ export function parseSkyboxCreatorSourcePlacement(
   if (x === null || y === null || width === null || height === null) {
     return null;
   }
+  const rotation = normalizeDegrees(finiteNumber(source.rotation) ?? 0);
   return {
     x,
     y,
     width: Math.max(0.001, width),
     height: Math.max(0.001, height),
+    ...(rotation !== 0 ? { rotation } : {}),
   };
+}
+
+/** Degrees in (-180, 180]. */
+function normalizeDegrees(degrees: number): number {
+  const wrapped = ((((degrees + 180) % 360) + 360) % 360) - 180;
+  return wrapped === -180 ? 180 : wrapped;
+}
+
+type NetPoint = { x: number; y: number };
+
+/** Normalized net units have a 4:3 aspect; rotation is measured where both axes share a unit. */
+function toSquare(point: NetPoint): NetPoint {
+  return { x: point.x * SKYBOX_CREATOR_NET_ASPECT, y: point.y };
+}
+
+function fromSquare(point: NetPoint): NetPoint {
+  return { x: point.x / SKYBOX_CREATOR_NET_ASPECT, y: point.y };
+}
+
+/** Rotates `point` clockwise (screen y down) about `center` by `degrees`, in square units. */
+function rotateAbout(point: NetPoint, center: NetPoint, degrees: number): NetPoint {
+  const radians = (degrees * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const dx = point.x - center.x;
+  const dy = point.y - center.y;
+  return { x: center.x + dx * cos - dy * sin, y: center.y + dx * sin + dy * cos };
+}
+
+function placementCenter(placement: SkyboxCreatorSourcePlacement): NetPoint {
+  return { x: placement.x + placement.width / 2, y: placement.y + placement.height / 2 };
+}
+
+/** Turns the placement about its centre by the pointer's sweep; `snapDegrees` rounds the result. */
+export function rotateSkyboxCreatorSourcePlacement(
+  start: SkyboxCreatorSourcePlacement,
+  pointer: NetPoint,
+  origin: NetPoint,
+  snapDegrees = 0,
+): SkyboxCreatorSourcePlacement {
+  const center = toSquare(placementCenter(start));
+  const angle = (point: NetPoint) => {
+    const square = toSquare(point);
+    return (Math.atan2(square.y - center.y, square.x - center.x) * 180) / Math.PI;
+  };
+  let rotation = (start.rotation ?? 0) + angle(pointer) - angle(origin);
+  if (snapDegrees > 0) rotation = Math.round(rotation / snapDegrees) * snapDegrees;
+  return parseSkyboxCreatorSourcePlacement({ ...start, rotation }) ?? start;
+}
+
+/** Scales the placement about its centre, keeping its aspect and rotation. */
+export function scaleSkyboxCreatorSourcePlacement(
+  start: SkyboxCreatorSourcePlacement,
+  factor: number,
+): SkyboxCreatorSourcePlacement {
+  if (!(factor > 0)) return start;
+  const center = placementCenter(start);
+  const width = start.width * factor;
+  const height = start.height * factor;
+  return parseSkyboxCreatorSourcePlacement({
+    ...start,
+    x: center.x - width / 2,
+    y: center.y - height / 2,
+    width,
+    height,
+  }) ?? start;
 }
 
 export function defaultSkyboxCreatorSourcePlacement(
@@ -184,16 +254,36 @@ export function resizeSkyboxCreatorSourcePlacement(
   pointer: { x: number; y: number },
   origin: { x: number; y: number },
 ): SkyboxCreatorSourcePlacement {
-  const right = start.x + start.width;
-  const bottom = start.y + start.height;
   if (handle === "move") {
-    return {
+    return parseSkyboxCreatorSourcePlacement({
+      ...start,
       x: start.x + (pointer.x - origin.x),
       y: start.y + (pointer.y - origin.y),
-      width: Math.max(0.001, start.width),
-      height: Math.max(0.001, start.height),
-    };
+    }) ?? start;
   }
+  const rotation = start.rotation ?? 0;
+  if (rotation !== 0) {
+    // Resize in the placement's own frame, then put the resized box back so
+    // the edge or corner opposite the handle stays where it was.
+    const center = toSquare(placementCenter(start));
+    const local = (point: NetPoint) => fromSquare(rotateAbout(toSquare(point), center, -rotation));
+    const resized = resizeSkyboxCreatorSourcePlacement(
+      { x: start.x, y: start.y, width: start.width, height: start.height },
+      handle,
+      local(pointer),
+      local(origin),
+    );
+    const moved = fromSquare(rotateAbout(toSquare(placementCenter(resized)), center, rotation));
+    return parseSkyboxCreatorSourcePlacement({
+      x: moved.x - resized.width / 2,
+      y: moved.y - resized.height / 2,
+      width: resized.width,
+      height: resized.height,
+      rotation,
+    }) ?? start;
+  }
+  const right = start.x + start.width;
+  const bottom = start.y + start.height;
   let x = start.x;
   let y = start.y;
   let width = start.width;
@@ -401,9 +491,23 @@ export function fitSourceIntoSkyboxNet(
   const destY = destPlacement.y * netHeight;
   const scaleX = destWidth / sourceWidth;
   const scaleY = destHeight / sourceHeight;
+  // Net pixels are square, so the placement turns about its centre here.
+  const turn = ((destPlacement.rotation ?? 0) * Math.PI) / 180;
+  const turnCos = Math.cos(-turn);
+  const turnSin = Math.sin(-turn);
+  const centerX = destX + destWidth / 2;
+  const centerY = destY + destHeight / 2;
   // Sample each face's cells straight from the source: the net's other six
   // cells are never read, so the full 4 x 3 net is not built.
-  const sampleNet = (target: Uint8Array, targetIndex: number, nx: number, ny: number) => {
+  const sampleNet = (target: Uint8Array, targetIndex: number, netX: number, netY: number) => {
+    let nx = netX;
+    let ny = netY;
+    if (turn !== 0) {
+      const dx = netX + 0.5 - centerX;
+      const dy = netY + 0.5 - centerY;
+      nx = centerX + dx * turnCos - dy * turnSin - 0.5;
+      ny = centerY + dx * turnSin + dy * turnCos - 0.5;
+    }
     const inside =
       nx >= destX &&
       nx < destX + destWidth &&

@@ -298,9 +298,10 @@ describe("SkyboxCreatorPreview", () => {
         onCreate={() => {}}
       />,
     );
+    // 12px stays clear around the fitted net.
     const net = screen.getByTestId("skybox-creator-net");
-    expect(net.style.width).toBe("400px");
-    expect(net.style.height).toBe("300px");
+    expect(net.style.width).toBe("368px");
+    expect(net.style.height).toBe("276px");
     const front = screen.getByTestId("skybox-creator-cell-front");
     expect(front.style.width).toBe("");
     expect(front.style.height).toBe("");
@@ -321,8 +322,8 @@ describe("SkyboxCreatorPreview", () => {
       />,
     );
     const net = screen.getByTestId("skybox-creator-net");
-    expect(net.style.width).toBe("400px");
-    expect(net.style.height).toBe("300px");
+    expect(net.style.width).toBe("376px");
+    expect(net.style.height).toBe("282px");
     const front = screen.getByTestId("skybox-creator-cell-front");
     expect(front.style.width).toBe("");
     expect(front.style.height).toBe("");
@@ -403,11 +404,12 @@ describe("SkyboxCreatorPreview", () => {
       }),
       "skybox-creator-source",
     );
+    // Inside the net the image is clipped at full strength; the frame's own copy shows past the net half-transparent.
     expect(source.className.split(" ")).not.toContain("overflow-hidden");
-    const image = source.querySelector("img");
-    expect(image).toBeTruthy();
-    expect(image!.parentElement).not.toBe(source);
-    expect(image!.parentElement?.className.split(" ")).toContain("overflow-hidden");
+    expect(source.querySelector("img")?.className.split(" ")).toContain("opacity-50");
+    const inside = screen.getByTestId("skybox-creator-source-inside");
+    expect(inside.className.split(" ")).toContain("overflow-hidden");
+    expect(inside.querySelector("img")).toBeTruthy();
     await waitFor(() => {
       expect(URL.createObjectURL).toHaveBeenCalled();
     });

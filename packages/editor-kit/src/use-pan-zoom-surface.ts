@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -77,17 +78,19 @@ export function usePanZoomSurface({
   const [surfaceSize, setSurfaceSize] = useState<PanZoomSize>({ width: 0, height: 0 });
   const [userView, setUserView] = useState<PanZoomView | null>(null);
 
-  useEffect(() => {
+  const measure = useCallback(() => {
     if (!element) return;
-    const measure = () => {
-      const next = { width: element.clientWidth, height: element.clientHeight };
-      setSurfaceSize((prev) => (prev.width === next.width && prev.height === next.height ? prev : next));
-    };
-    measure();
+    const next = { width: element.clientWidth, height: element.clientHeight };
+    setSurfaceSize((prev) => (prev.width === next.width && prev.height === next.height ? prev : next));
+  }, [element]);
+  useEffect(() => {
+    if (!element || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [element]);
+  }, [element, measure]);
+  // Also re-measure after each render: a layout change can land before the observer reports it.
+  useLayoutEffect(measure);
 
   const contentWidth = content?.width ?? 0;
   const contentHeight = content?.height ?? 0;
