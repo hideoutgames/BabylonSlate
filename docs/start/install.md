@@ -37,9 +37,11 @@ Open the account menu from your name at the bottom of the Homepage sidebar. It o
 
 | Section | What it holds |
 | --- | --- |
-| Account | Your name, email and sign-in methods, and **Sign Out**. On the web, **Profile and Security** changes your details. Guests can sign in or create an account here. |
+| Account | Your name, email and sign-in methods, and **Sign Out**. On the web, **Manage Account** changes your name, picture and connected accounts, or deletes your account. In the desktop and mobile apps you change your **First Name**, **Last Name** and profile picture here, and **Delete Account** appears when your account can be deleted. Guests can sign in or create an account here. |
 | Subscription | Your current plan, the Haptic plans, and **Manage Billing**. Store builds also offer **Restore Purchases**. |
 | Application | **Automatic Updates** for the desktop app. |
+
+Deleting your account removes it permanently and signs you out. Projects stored on your device are not deleted.
 
 Signing in does not sync projects. Projects stay where you saved them.
 

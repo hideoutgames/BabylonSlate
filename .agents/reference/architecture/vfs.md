@@ -69,7 +69,7 @@ The Documents tier crosses the Capacitor bridge once per asset write with base64
 | Electron | `secrets:get/set/delete` IPC → versioned file, atomic owner-only writes, values tagged `safeStorage` or plaintext; read failures reject, never reset | `lfs:fetch` → `net.fetch`, bodies ≤ 16 MiB, no redirects or cookies |
 | Web | `UnavailableSecretStore` (`available: false`): Source Control hidden | none |
 
-- `nativeHttp`: `{ method, url, headers, body? }` → `{ status, bodyText, headers? }`. Account tokens on Electron use a separate `accountSecrets` bridge.
+- `nativeHttp`: `{ method, url, headers, body?, upload? }` → `{ status, bodyText, headers? }`. `upload` is one base64 image (PNG, JPEG, GIF or WEBP) sent as a `multipart/form-data` POST instead of `body`; the transport owns the encoding and `Content-Type` (Capacitor `formData` entries, or Electron's main process), see [accounts](accounts.md#account-management). Account tokens on Electron use a separate `accountSecrets` bridge.
 - Preload exposes `babylonslate.userData`, `.project`, `.library`, `.secrets`, `.accountSecrets`, `.saveGames`, `.http`.
 
 ## Platform decisions
