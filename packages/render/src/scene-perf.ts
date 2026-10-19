@@ -126,7 +126,8 @@ export async function prewarmMeshMaterials(
     await deadline.race((async () => {
       for (const mesh of meshes) {
         check(mesh);
-        if (!(mesh instanceof Mesh) || skipMesh?.(mesh)) continue;
+        // A mesh without vertices draws nothing (empty roots, placeholders, geometry that arrives later).
+        if (!(mesh instanceof Mesh) || !mesh.getTotalVertices() || skipMesh?.(mesh)) continue;
         const material = mesh.material ?? scene.defaultMaterial;
         // The same material can have different effects for skinned, morphed,
         // instanced and static meshes. Warm each consumer, including submaterials.
@@ -135,10 +136,13 @@ export async function prewarmMeshMaterials(
           : new Set([material]);
         for (const entry of materials) {
           check(mesh);
-          const unit = `"${entry.name}" for "${mesh.name}"`;
-          deadline.advance(unit);
-          await attributeCompileFailure(unit, () => entry instanceof NodeMaterial ? prewarmMaterial(entry, mesh) : entry.forceCompilationAsync(mesh));
-          check(mesh);
+          // Babylon draws a mesh with thin instances only instanced; one with instances also draws plain while none shows.
+          if (!mesh.hasThinInstances) {
+            const unit = `"${entry.name}" for "${mesh.name}"`;
+            deadline.advance(unit);
+            await attributeCompileFailure(unit, () => entry instanceof NodeMaterial ? prewarmMaterial(entry, mesh) : entry.forceCompilationAsync(mesh));
+            check(mesh);
+          }
           if (mesh.hasThinInstances || mesh.instances.length > 0) {
             const instanced = `"${entry.name}" for instances of "${mesh.name}"`;
             deadline.advance(instanced);
