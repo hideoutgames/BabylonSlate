@@ -48,6 +48,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
       });
     },
   );
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("fixedLightProof")) {
+  void import("./testing/fixed-light-proof").then(({ runFixedLightProof }) => Object.assign(window, { __babylonslateFixedLightProof: runFixedLightProof }));
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("sharedOutlineProof")
