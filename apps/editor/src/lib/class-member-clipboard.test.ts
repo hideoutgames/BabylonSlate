@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GraphClassMember, GraphClassMemberPin, SerializedGraph } from "@babylonslate/core";
+import type { GraphClassMember, GraphClassMemberPin, SerializedComponent, SerializedGraph } from "@babylonslate/core";
 import {
   copyClassMembers,
   pasteClassMembers,
@@ -105,6 +105,14 @@ const BEGIN_PLAY_NODE = node(
   80,
   80,
 );
+
+const MESH: SerializedComponent = {
+  id: "prefab-mesh",
+  classId: "MeshComponent",
+  properties: { shape: "box", castShadows: true },
+  parentId: null,
+  transform: { position: [1, 2, 3], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+};
 
 function healBody(): { nodes: Node[]; edges: SerializedGraph["edges"] } {
   return {
@@ -255,13 +263,49 @@ describe("copyClassMembers", () => {
 
   it.each([
     ["a Script Interface", { id: "if-1", kind: "interface", name: "Damageable" } as ClassMemberCopyRow],
-    ["a component variable", { id: "c-1", kind: "variable", name: "Mesh", componentId: "c-1" } as ClassMemberCopyRow],
-    ["a local variable", { id: "var-temp", kind: "variable", name: "Temp", functionId: "fn-heal" } as ClassMemberCopyRow],
     ["a member that no longer exists", { id: "gone", kind: "variable", name: "Gone" } as ClassMemberCopyRow],
+    ["a local variable that no longer exists", { id: "gone", kind: "variable", name: "Gone", functionId: "fn-heal" } as ClassMemberCopyRow],
+    ["a component that no longer exists", { id: "component:gone", kind: "variable", name: "Mesh", componentId: "gone" } as ClassMemberCopyRow],
   ])("offers no snapshot for a selection that includes %s", (_name, bad) => {
     const hero = heroGraph();
     expect(copyClassMembers([row(hero, "variable", "Health"), bad], { graph: hero, classId: "Hero" })).toBeNull();
     expect(copyClassMembers([], { graph: hero, classId: "Hero" })).toBeNull();
+  });
+
+  it("copies a local variable alone or among other members, and a component variable with its component", () => {
+    const hero = heroGraph();
+    hero.components = [MESH, { ...MESH, id: "prefab-component-2", name: "Arm", parentId: "prefab-mesh" }];
+    const local: ClassMemberCopyRow = { id: "var-temp", kind: "variable", name: "Temp", functionId: "fn-heal" };
+    expect(copy([local], hero).variables).toEqual([{ member: TEMP, sourceClassId: "Hero" }]);
+
+    const clip = copy(
+      [row(hero, "variable", "Health"), local, { id: "component:prefab-component-2", kind: "variable", name: "Arm", componentId: "prefab-component-2" }],
+      hero,
+    );
+    expect(clip.variables.map((entry) => entry.member.name)).toEqual(["Health", "Temp", "Arm"]);
+    expect(clip.variables[2]).toMatchObject({
+      member: { id: "component:prefab-component-2", typeId: "object", typeClassId: "MeshComponent", componentId: "prefab-component-2" },
+      component: hero.components![1],
+    });
+  });
+
+  it("reads an inherited component from the parent, unless the Class overrides it", () => {
+    const parent: SerializedGraph = { nodes: [], edges: [], components: [MESH] };
+    const row: ClassMemberCopyRow = {
+      id: "component:prefab-mesh",
+      kind: "variable",
+      name: "Mesh",
+      componentId: "prefab-mesh",
+      inheritedFrom: "Base",
+    };
+    const inherited = copyClassMembers([row], { graph: emptyTarget(), classId: "Child", parentGraphs: { Base: parent } });
+    expect(inherited?.variables[0]?.component).toEqual(MESH);
+    const overridden = copyClassMembers([row], {
+      graph: { ...emptyTarget(), components: [{ ...MESH, properties: { shape: "sphere" } }] },
+      classId: "Child",
+      parentGraphs: { Base: parent },
+    });
+    expect(overridden?.variables[0]?.component?.properties).toEqual({ shape: "sphere" });
   });
 
   it("reads a row inherited from a parent Class out of the parent's graph by name", () => {
@@ -340,6 +384,168 @@ describe("pasteClassMembers variables", () => {
     expect(result.skipped).toEqual([{ kind: "variable", name: "Health", reason: "kind" }]);
     expect(result.pasted.map((entry) => entry.name)).toEqual(["Helper"]);
     expect(skippedMembersNotice(result.skipped)).toBe("Health can't be added to this Class.");
+  });
+
+  describe("local variables", () => {
+    const TEMP_ROW: ClassMemberCopyRow = { id: "var-temp", kind: "variable", name: "Temp", functionId: "fn-heal" };
+    const target = () => emptyTarget([{ id: "t-fn", kind: "function", name: "Tick Rate", pins: FUNCTION_PINS }]);
+
+    it("go into the target function, with a name free among the Class's variables", () => {
+      const clip = copy([TEMP_ROW]);
+      const graph = emptyTarget([
+        { id: "t-fn", kind: "function", name: "Tick Rate", pins: FUNCTION_PINS },
+        { id: "t-temp", kind: "variable", name: "Temp", typeId: "float" },
+      ]);
+      const result = paste(clip, graph, { targetFunctionId: "t-fn" });
+      expect(result.graph.members!.at(-1)).toEqual({ ...TEMP, id: "new-1", name: "Temp_1", functionId: "t-fn" });
+      expect(result.pasted).toEqual([{ kind: "variable", id: "new-1", name: "Temp_1", functionId: "t-fn" }]);
+      expect(result.skipped).toEqual([]);
+    });
+
+    it("are left out, and named, when no function of the target is chosen", () => {
+      const clip = copy([row(heroGraph(), "variable", "Health"), TEMP_ROW]);
+      for (const targetFunctionId of [undefined, null, "missing", "t-health"]) {
+        const graph = emptyTarget([{ id: "t-health", kind: "variable", name: "Mana", typeId: "int" }]);
+        const result = paste(clip, graph, { targetFunctionId });
+        expect(result.pasted.map((entry) => entry.name)).toEqual(["Health"]);
+        expect(result.skipped).toEqual([{ kind: "variable", name: "Temp", reason: "function" }]);
+        expect(skippedMembersNotice(result.skipped)).toBe("Temp needs a function. Select or open one first.");
+      }
+    });
+
+    it("go into a Function Library function, which has no other variables", () => {
+      const clip = copy([row(heroGraph(), "variable", "Health"), TEMP_ROW]);
+      const result = paste(clip, target(), {
+        targetFunctionId: "t-fn",
+        eventOptions: { parentClass: "FunctionLibrary" },
+      });
+      expect(result.pasted.map((entry) => entry.name)).toEqual(["Temp"]);
+      expect(result.skipped).toEqual([{ kind: "variable", name: "Health", reason: "kind" }]);
+    });
+  });
+
+  describe("component variables", () => {
+    const ARM: SerializedComponent = {
+      id: "prefab-component-2",
+      classId: "MeshComponent",
+      name: "Arm",
+      category: "Limbs",
+      properties: { shape: "box", targetComponentId: "prefab-mesh" },
+      parentId: "prefab-mesh",
+    };
+    const componentRow = (component: SerializedComponent): ClassMemberCopyRow => ({
+      id: `component:${component.id}`,
+      kind: "variable",
+      name: component.name ?? "Mesh",
+      componentId: component.id,
+    });
+    const source = (): SerializedGraph => ({ ...heroGraph(), components: [structuredClone(MESH), structuredClone(ARM)] });
+    const targetWith = (components?: SerializedComponent[], members: GraphClassMember[] = []): SerializedGraph => ({
+      ...emptyTarget(members),
+      ...(components ? { components } : {}),
+    });
+
+    it("add a copy of the component to the Class, with its type and settings, and a name free in the Class", () => {
+      const clip = copy([componentRow(MESH)], source());
+      const target = targetWith([{ id: "prefab-mesh", classId: "MeshComponent", properties: {} }]);
+      const result = paste(clip, target, { takenNames: { variable: ["Mesh"], function: [] } });
+
+      expect(result.graph.components).toEqual([
+        target.components![0],
+        {
+          id: "prefab-component-2",
+          classId: "MeshComponent",
+          name: "Mesh 2",
+          properties: MESH.properties,
+          parentId: null,
+          transform: MESH.transform,
+        },
+      ]);
+      expect(result.pasted).toEqual([
+        { kind: "variable", id: "component:prefab-component-2", name: "Mesh 2", componentId: "prefab-component-2" },
+      ]);
+      // No variable row is stored: the component is the variable.
+      expect(result.graph.members).toEqual([]);
+      expect(source().components![0]).toEqual(MESH);
+    });
+
+    it("keep a free name as the component's default label, and number repeated pastes", () => {
+      const clip = copy([componentRow(MESH)], source());
+      const first = paste(clip, targetWith([]));
+      expect(first.graph.components).toEqual([expect.not.objectContaining({ name: expect.anything() })]);
+      expect(first.pasted[0]!.name).toBe("Mesh");
+      const second = paste(clip, first.graph, { takenNames: { variable: ["Mesh", "Mesh 2"], function: [] } });
+      expect(second.pasted[0]!.name).toBe("Mesh 3");
+      expect(second.graph.components!.map((component) => component.id)).toEqual(["prefab-component-1", "prefab-component-2"]);
+    });
+
+    it("attach to the Class root, and to the copy of their parent when it was pasted too", () => {
+      const both = paste(copy([componentRow(MESH), componentRow(ARM)], source()), targetWith([]));
+      const [mesh, arm] = both.graph.components!;
+      expect(mesh!.parentId).toBeNull();
+      expect(arm).toMatchObject({ name: "Arm", category: "Limbs", parentId: mesh!.id });
+      // A reference to a sibling follows the copy of that sibling.
+      expect(arm!.properties).toEqual({ shape: "box", targetComponentId: mesh!.id });
+
+      const alone = paste(copy([componentRow(ARM)], source()), targetWith([]));
+      expect(alone.graph.components![0]).toMatchObject({ parentId: null, properties: { targetComponentId: "prefab-mesh" } });
+    });
+
+    it("leave the starter box in a Class that never authored components, and take no id a parent uses", () => {
+      const clip = copy([componentRow(ARM)], source());
+      const fresh = paste(clip, targetWith());
+      expect(fresh.graph.components!.map((component) => component.id)).toEqual(["prefab-mesh", "prefab-component-2"]);
+      expect(fresh.pasted[0]!.componentId).toBe("prefab-component-2");
+
+      const parent: SerializedGraph = { nodes: [], edges: [], components: [{ id: "prefab-component-1", classId: "MeshComponent", properties: {} }] };
+      const inheriting = paste(clip, targetWith(), { ancestors: [{ classId: "Base", graph: parent }] });
+      expect(inheriting.graph.components!.map((component) => component.id)).toEqual(["prefab-component-2"]);
+    });
+
+    it("are left out of a Class that cannot have that component", () => {
+      const anchor: SerializedComponent = { id: "prefab-anchor", classId: "2DAnchorComponent", properties: {}, parentId: null };
+      const land: SerializedComponent = { id: "prefab-land", classId: "LandscapeComponent", properties: {}, parentId: null };
+      const hero = { ...source(), components: [land, anchor] };
+      const clip = copy([componentRow({ ...land, name: "Land" }), componentRow({ ...anchor, name: "Anchor" })], hero);
+      const actor = paste(clip, targetWith([]));
+      expect(actor.skipped).toEqual([{ kind: "variable", name: "Anchor", reason: "kind" }]);
+      expect(actor.graph.components!.map((component) => component.classId)).toEqual(["LandscapeComponent"]);
+      const layer = paste(clip, targetWith([]), { eventOptions: { parentClass: "SceneLayerActor" } });
+      expect(layer.skipped).toEqual([{ kind: "variable", name: "Land", reason: "kind" }]);
+      expect(layer.graph.components!.map((component) => component.classId)).toEqual(["2DAnchorComponent"]);
+      const library = paste(clip, targetWith([]), { eventOptions: { parentClass: "FunctionLibrary" } });
+      expect(library.pasted).toEqual([]);
+      expect(library.skipped).toHaveLength(2);
+    });
+
+    it("rebind the component Get nodes of a pasted function to the copy", () => {
+      const hero = source();
+      const getMesh = node("get-mesh", "variables.get", {
+        title: "Get Mesh",
+        variableName: "Mesh",
+        variableId: "component:prefab-mesh",
+        componentId: "prefab-mesh",
+        typeId: "object",
+        typeClassId: "MeshComponent",
+        scope: "member",
+        classId: "Hero",
+      });
+      const other = { ...getMesh, id: "get-other", data: { ...getMesh.data, componentId: "other", variableId: "component:other" } };
+      hero.functionGraphs!["fn-helper"] = { nodes: [getMesh, other], edges: [] };
+      const clip = copy([componentRow(MESH), row(hero, "function", "Helper")], hero);
+      const result = paste(clip, targetWith([]), { takenNames: { variable: ["Mesh"], function: [] } });
+      const component = result.graph.components![0]!;
+      const helper = result.pasted.find((entry) => entry.kind === "function")!;
+      const [rebound, untouched] = result.graph.functionGraphs![helper.id]!.nodes;
+      expect(rebound!.data).toMatchObject({
+        componentId: component.id,
+        variableId: `component:${component.id}`,
+        variableName: "Mesh 2",
+        title: "Get Mesh 2",
+        classId: "Enemy",
+      });
+      expect(untouched!.data).toMatchObject({ componentId: "other", variableId: "component:other" });
+    });
   });
 });
 
@@ -599,11 +805,29 @@ describe("pasteClassMembers events", () => {
     expect(second.graph.nodes.filter((entry) => entry.type === "flow.event.beginPlay")).toHaveLength(1);
   });
 
-  it("counts a native event inherited from a parent Class as one the target already has", () => {
+  it("pastes a native event a parent Class authors as that event, wired to Call Parent like one added by hand", () => {
     const clip = copy([{ id: "evt-begin", kind: "event", name: "Event Begin Play" }]);
     const parent: SerializedGraph = { nodes: [node("p-begin", "flow.event.beginPlay", {})], edges: [] };
-    const result = paste(clip, emptyTarget(), { ancestors: [{ classId: "Base", graph: parent }] });
-    expect(result.graph.nodes[0]).toMatchObject({ type: "flow.event.custom", data: { name: "Begin Play 1" } });
+    const result = paste(clip, emptyTarget(), {
+      ancestors: [{ classId: "Base", graph: parent }],
+      eventOptions: { parentClass: "Base", parentOf: (id) => (id === "Base" ? "Actor" : null) },
+    });
+    expect(result.graph.nodes.map((entry) => entry.type)).toEqual(["flow.event.beginPlay", "flow.event.callParent"]);
+    expect(result.graph.nodes[1]!.data).toMatchObject({ eventType: "flow.event.beginPlay", parentClassId: "Base" });
+    expect(result.graph.edges).toEqual([
+      expect.objectContaining({
+        source: "new-1",
+        target: result.graph.nodes[1]!.id,
+        sourceHandle: "execOut",
+        targetHandle: "execIn",
+      }),
+    ]);
+    expect(result.pasted).toEqual([{ kind: "event", id: "new-1", name: "Event Begin Play" }]);
+  });
+
+  it("adds no Call Parent when the Class has no parent to call", () => {
+    const clip = copy([{ id: "evt-begin", kind: "event", name: "Event Begin Play" }]);
+    expect(paste(clip, emptyTarget()).graph.nodes.map((entry) => entry.type)).toEqual(["flow.event.beginPlay"]);
   });
 
   it("pastes two copies of one native event as the event and then a numbered custom event", () => {
@@ -622,12 +846,42 @@ describe("pasteClassMembers events", () => {
     ]);
   });
 
-  it("leaves out a native event the target's Class cannot have, and says so", () => {
+  it("pastes a native event the target's Class cannot have as a numbered custom event, with nothing left out", () => {
     const clip = copy([{ id: "evt-begin", kind: "event", name: "Event Begin Play" }]);
     const result = paste(clip, emptyTarget(), { eventOptions: { parentClass: "GameInstance" } });
-    expect(result.graph.nodes).toEqual([]);
-    expect(result.skipped).toEqual([{ kind: "event", name: "Event Begin Play", reason: "unavailable" }]);
-    expect(skippedMembersNotice(result.skipped)).toBe("Event Begin Play isn't available in this Class.");
+    expect(result.graph.nodes).toHaveLength(1);
+    expect(result.graph.nodes[0]).toMatchObject({ type: "flow.event.custom", data: { name: "Begin Play 1" } });
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("gives a native event turned custom the native event's data outputs as parameters, in order and typed", () => {
+    const hero = heroGraph();
+    hero.nodes.push(
+      node("evt-tick", "flow.event.tick", { title: "Event Tick" }),
+      node("evt-hit", "flow.event.hit", { title: "Event On Hit" }),
+    );
+    const clip = copy(
+      [
+        { id: "evt-tick", kind: "event", name: "Event Tick" },
+        { id: "evt-hit", kind: "event", name: "Event On Hit" },
+      ],
+      hero,
+    );
+    const target = emptyTarget([], [node("t-tick", "flow.event.tick", {}), node("t-hit", "flow.event.hit", {})]);
+    const result = paste(clip, target);
+    const [tick, hit] = result.graph.nodes.slice(2);
+    expect(tick!.data).toMatchObject({
+      name: "Tick 1",
+      pins: [{ name: "deltaSeconds", typeId: "float", direction: "out" }],
+    });
+    expect(hit!.data.pins).toEqual([
+      { name: "Hit Result", typeId: "struct", direction: "out", typeClassId: "engine:HitResult" },
+      { name: "Other Actor", typeId: "actor", direction: "out", typeClassId: "Actor" },
+      { name: "Location", typeId: "vec3", direction: "out" },
+      { name: "Normal", typeId: "vec3", direction: "out" },
+    ]);
+    // The Class member row carries the same signature as the node.
+    expect(result.graph.members!.find((member) => member.name === "On Hit 1")!.pins).toEqual(hit!.data.pins);
   });
 
   it("leaves a bound event out when the target already has it, and keeps one it can host", () => {
@@ -709,7 +963,7 @@ describe("pasteClassMembers a whole selection", () => {
   it("returns the graph itself when nothing could be pasted", () => {
     const clip = copy([{ id: "evt-begin", kind: "event", name: "Event Begin Play" }]);
     const target = emptyTarget();
-    const result = paste(clip, target, { eventOptions: { parentClass: "GameInstance" } });
+    const result = paste(clip, target, { eventOptions: { parentClass: "FunctionLibrary" } });
     expect(result.graph).toBe(target);
     expect(result.pasted).toEqual([]);
   });

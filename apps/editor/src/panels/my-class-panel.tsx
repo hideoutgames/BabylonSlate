@@ -956,6 +956,14 @@ export function ClassMembersView({
     const copied = copyClassMembers(copyRowsOf(ids), copySource);
     if (copied) sessionState.copyClassMembers(copied);
   };
+  /** The Class's own function in the selection: the primary one, else the only one. */
+  const selectedFunctionId = (): string | undefined => {
+    const own = selectionIds.filter((id) => {
+      const row = rowById.get(id);
+      return row?.kind === "function" && !row.inherited;
+    });
+    return selectedId && own.includes(selectedId) ? selectedId : own.length === 1 ? own[0] : undefined;
+  };
   const pasteMembers = () => {
     const copied = sessionState.readCopiedClassMembers();
     if (!graph || !copied) return;
@@ -970,6 +978,8 @@ export function ClassMembersView({
         parentGraphs: membersOptions?.parentGraphs,
       }),
       eventOptions: membersOptions,
+      // Local variables go into the selected function, else the one whose graph is open.
+      targetFunctionId: selectedFunctionId() ?? activeFunctionId,
       componentIds: new Set(
         componentGraphMembersForClass({
           graph,
@@ -992,7 +1002,13 @@ export function ClassMembersView({
       onFocusEventNode?.(last.id, last.name);
       return;
     }
-    onSelectMember?.(last.id, { kind: last.kind, name: last.name, detail: last.id });
+    onSelectMember?.(last.id, {
+      kind: last.kind,
+      name: last.name,
+      detail: last.id,
+      ...(last.componentId ? { componentId: last.componentId } : {}),
+      ...(last.functionId ? { functionId: last.functionId } : {}),
+    });
   };
   const deleteMembers = (ids: readonly string[]) => {
     if (!graph) return;
