@@ -1464,6 +1464,32 @@ export function addCallFunctionNode(
   );
 }
 
+/** `A`, `A and B`, `A, B and C`. */
+export function joinNames(names: readonly string[]): string {
+  return names.length > 1
+    ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
+    : (names[0] ?? "");
+}
+
+/**
+ * One sentence for the rows a drop left out, or null when it left out none:
+ * rows that are not variables, functions or custom events, and variables the
+ * chosen access cannot apply to.
+ */
+export function droppedRowsNotice(
+  unsupported: readonly string[],
+  refused: readonly string[] = [],
+  access?: VariableAccessKind,
+): string | null {
+  const sentences = [
+    unsupported.length > 0 ? `${joinNames(unsupported)} can't be added to a graph.` : null,
+    refused.length > 0
+      ? `${joinNames(refused)} can't be added as ${access === "set" ? "Set" : "Validated Get"}.`
+      : null,
+  ].filter((sentence): sentence is string => sentence !== null);
+  return sentences.length > 0 ? sentences.join(" ") : null;
+}
+
 export type ClassMemberDropKind = ClassBlueprintMemberKind;
 
 export type ClassMemberDropRow = {
@@ -1665,11 +1691,7 @@ export function resolveClassMemberDrop(options: {
     };
   }
   const placed = placeClassMemberDrop({ ...options, rows: droppable, position });
-  return {
-    kind: "spawn",
-    graph: placed.graph,
-    skipped: [...skipped, ...placed.skipped],
-  };
+  return { kind: "spawn", graph: placed.graph, skipped };
 }
 
 /** Finish a drop that asked Get / Set first: place every row with the chosen `access`. */

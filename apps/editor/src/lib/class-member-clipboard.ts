@@ -4,7 +4,12 @@ import type {
   SerializedGraph,
 } from "@babylonslate/core";
 import { nextCopyName } from "@babylonslate/assets";
-import { formatEventMemberName, formatEventTitle } from "@babylonslate/editor-kit";
+import {
+  engineParentOf,
+  formatEventMemberName,
+  formatEventTitle,
+  walkAncestry,
+} from "@babylonslate/editor-kit";
 import {
   NODE_PLACEMENT_GAP,
   estimateGraphNodeSize,
@@ -15,6 +20,7 @@ import {
   canRenameCustomEvent,
   classAllowsMemberKind,
   isScriptCatalogNodeAllowed,
+  joinNames,
   nativeEventTitle,
   patchVariableAccessNode,
   seedFunctionGraph,
@@ -78,13 +84,7 @@ export type ClassMemberCopySource = {
   parentGraphs?: Record<string, SerializedGraph>;
 };
 
-/**
- * Snapshot the selected rows, or null when Copy does not apply: nothing is
- * selected, or the selection holds a Script Interface, a component, a local
- * variable (it travels with its function) or a row whose source is gone.
- * Rows come in tree order; so do the members of the snapshot.
- */
-export function copyClassMembers(
+function collectClassMembers(
   rows: readonly ClassMemberCopyRow[],
   source: ClassMemberCopySource,
 ): ClassMemberClipboard | null {
@@ -128,7 +128,45 @@ export function copyClassMembers(
       ...(sourceClassId ? { sourceClassId } : {}),
     });
   }
-  return structuredClone(clip);
+  return clip;
+}
+
+/**
+ * Whether Copy applies to the selected rows: at least one, and only
+ * variables, functions and events. A Script Interface, a component, a local
+ * variable (it travels with its function) or a row whose source is gone rules
+ * it out.
+ */
+export function canCopyClassMembers(
+  rows: readonly ClassMemberCopyRow[],
+  source: ClassMemberCopySource,
+): boolean {
+  return collectClassMembers(rows, source) !== null;
+}
+
+/**
+ * Snapshot the selected rows (see `canCopyClassMembers`), or null. Rows come
+ * in tree order; so do the members of the snapshot.
+ */
+export function copyClassMembers(
+  rows: readonly ClassMemberCopyRow[],
+  source: ClassMemberCopySource,
+): ClassMemberClipboard | null {
+  const clip = collectClassMembers(rows, source);
+  return clip ? structuredClone(clip) : null;
+}
+
+/** The parent Classes whose graphs are known, nearest first. */
+export function classAncestorGraphs(options: {
+  parentClass?: string | null;
+  parentOf?: (id: string) => string | null | undefined;
+  parentGraphs?: Record<string, SerializedGraph>;
+}): Array<{ classId: string; graph: SerializedGraph }> {
+  const parentOf = options.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
+  return walkAncestry(options.parentClass ?? null, parentOf).flatMap((classId) => {
+    const graph = options.parentGraphs?.[classId];
+    return graph ? [{ classId, graph }] : [];
+  });
 }
 
 export type ClassMemberPasteOptions = {
@@ -627,12 +665,6 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
   };
 }
 
-function nameList(names: readonly string[]): string {
-  return names.length > 1
-    ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
-    : (names[0] ?? "");
-}
-
 /** One sentence per reason for the members a paste left out, or null when it left out none. */
 export function skippedMembersNotice(skipped: readonly SkippedClassMember[]): string | null {
   const sentences: string[] = [];
@@ -643,7 +675,7 @@ export function skippedMembersNotice(skipped: readonly SkippedClassMember[]): st
   ];
   for (const [reason, tail] of reasons) {
     const names = skipped.filter((entry) => entry.reason === reason).map((entry) => entry.name);
-    if (names.length > 0) sentences.push(`${nameList(names)} ${tail(names.length > 1)}`);
+    if (names.length > 0) sentences.push(`${joinNames(names)} ${tail(names.length > 1)}`);
   }
   return sentences.length > 0 ? sentences.join(" ") : null;
 }

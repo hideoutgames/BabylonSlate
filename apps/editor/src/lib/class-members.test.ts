@@ -8,6 +8,7 @@ import {
   blueprintSectionsForClass,
   classAllowsMemberKind,
   completeClassMemberDrop,
+  droppedRowsNotice,
   ensureCallParentForEvent,
   ensureEventNodeOnGraph,
   functionLibraryShowsEventGraphEmpty,
@@ -1268,5 +1269,21 @@ describe("ensureEventNodeOnGraph Call Parent", () => {
         (edge) => edge.source === "log-1" && edge.target === callId,
       ),
     ).toBe(true);
+  });
+});
+
+describe("droppedRowsNotice", () => {
+  it("says nothing when every row dropped", () => {
+    expect(droppedRowsNotice([], [])).toBeNull();
+  });
+
+  it("names the rows that cannot go on a graph and the variables the chosen node refuses", () => {
+    expect(droppedRowsNotice(["Event Begin Play", "Damageable"])).toBe(
+      "Event Begin Play and Damageable can't be added to a graph.",
+    );
+    expect(droppedRowsNotice([], ["Mesh"], "set")).toBe("Mesh can't be added as Set.");
+    expect(droppedRowsNotice(["Damageable"], ["Health"], "validatedGet")).toBe(
+      "Damageable can't be added to a graph. Health can't be added as Validated Get.",
+    );
   });
 });

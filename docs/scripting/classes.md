@@ -44,6 +44,33 @@ For components without any logic, a [Prefab](../assets/prefab.md) is lighter tha
 
 A new class starts with the events its parent uses most, such as [Event Begin Play](class/event-begin-play.md) and [Event Tick](class/event-tick.md) for actors.
 
+## Select, copy and paste members
+
+Select several entries in the **Class** window to drag, copy or delete them together.
+
+| Do this | Result |
+| --- | --- |
+| Tap or click an entry | Select only that entry. |
+| <kbd>Mod</kbd>-click an entry | Add it to the selection, or remove it. |
+| <kbd>Shift</kbd>-click an entry, or <kbd>Shift</kbd>+<kbd>Arrow</kbd> | Select every entry from the last one you chose without <kbd>Shift</kbd>. Section and folder rows are skipped. |
+| Two-finger tap an entry | The same range select, on touch. |
+| Hold or right-click an entry | Open its menu. An entry that is not selected becomes the only selection; on a selected entry the menu acts on the whole selection. |
+
+In the menu, **Deselect** takes an entry out of a selection. After you hold an unselected entry, **Select** adds it to what was selected before, which is how you build a selection on touch. The graph follows the entry you chose last, as it does for a single entry. **Rename**, **Get** and **Set** work on one entry at a time; **Delete** removes every selected entry as one undoable change.
+
+**Drag to the graph.** Drag any selected entry onto a graph to add a node for every selected entry, stacked down from where you drop, as one undoable change. Variables ask **Get** or **Set** once for all of them. Entries that cannot be dropped, such as native events and Script Interfaces, are skipped and a notice names them.
+
+**Copy and paste.** Choose **Copy** in the menu (<kbd>Mod</kbd>+<kbd>C</kbd> while the window has focus) for a selection of variables, functions and events, in any mix. **Copy** is not offered when the selection includes a Script Interface, a component variable or a local variable. The copy stays until you copy again, so you can paste it into any other Class, or the same one: **Paste** is in the menu of any entry, section or empty space of any **Class** window (<kbd>Mod</kbd>+<kbd>V</kbd>). A paste is one undoable change and never moves the original.
+
+- **Variables** keep their type, default value, category and other settings.
+- **Functions** keep their inputs, outputs, local variables, nodes and wires. A copy no longer implements a Script Interface or overrides a parent function; the original still does.
+- **Events** copy only the event node, not the nodes it runs. A custom event keeps its outputs. A native event that the target Class does not have is pasted as that event. If the Class has it, or inherits it from a parent, it is pasted as a custom event with the next free number, such as **Begin Play 2**. A native event the Class cannot have, such as **Event Begin Play** in a Game Instance, is left out, and so is a variable or event pasted into a Function Library.
+- **Names** that are taken get the next free `_1`, `_2`, ... suffix, as when you duplicate an asset: **Health** becomes **Health_1**, and a custom event **Open Door** becomes **Open Door 1**. This also applies to a function's local variables.
+- **Inside a copied function**, a variable, function or custom event it uses points to the copy that came in the same paste, even after a rename. Otherwise it points to the member of the target Class (or a parent) with the same name and type. If neither exists the node stays as it was and **Compiler Results** reports it; no member is created for it.
+- New event nodes are placed below the nodes already in the Event Graph, and the pasted entries become the selection.
+
+A notice names anything a paste left out.
+
 ## Inheritance
 
 A class inherits its parent's variables, functions, events, interfaces and components.

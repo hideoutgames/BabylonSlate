@@ -63,6 +63,8 @@ Double-tapping does not zoom. Shaking a node back and forth while dragging break
 
 The **Outliner** uses the same tree gestures. Drag an actor onto another actor to parent it, or onto a folder to move it there.
 
+In the **Class** window, tap selects one entry and a two-finger tap selects the range up to an entry. Hold an entry for its menu: **Select** adds it to the previous selection, **Deselect** removes it, and **Copy**, **Paste** and **Delete** act on the whole selection. Hold an entry, then drag it onto the graph to drop every selected entry. See [Select, copy and paste members](../scripting/classes.md#select-copy-and-paste-members).
+
 ## Sliders and curves
 
 - Drag a slider's thumb to change the value. Swiping across the track scrolls the panel instead.

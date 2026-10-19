@@ -26,10 +26,14 @@ Move a pin up or down in **Inputs** or **Outputs** to reorder it on the nodes.
 
 ## Call a function
 
-- Drag the function from the **Class** window onto the graph, or choose **Call** followed by its name in **Add Node**. Both place a [Call Function](class/call-function.md) node.
+- Drag the function from the **Class** window onto the graph, or choose **Call** followed by its name in **Add Node**. Both place a [Call Function](class/call-function.md) node. Select several entries to drop a node for each; see [Select, copy and paste members](classes.md#select-copy-and-paste-members).
 - To call a function on another object, drag from a pin that holds that object and choose the Call entry. The node gets a **Target** pin. A Call for a function of this class has a **Target (Self)** pin that calls the running object while it is unconnected; connect another object of the class to call that one.
 - The caller continues once the function reaches its **Output** node. If the function contains a latent node such as [Delay](class/delay.md), its Call node becomes latent too and waits for it.
 - An output the function never sets returns its type's default value.
+
+## Copy a function to another class
+
+Select functions in the **Class** window, choose **Copy**, then choose **Paste** in any **Class** window, including the same one. A pasted function keeps its inputs, outputs, local variables and graph, takes a free name such as **Heal_1**, and points to the variables, functions and events it used as described in [Select, copy and paste members](classes.md#select-copy-and-paste-members).
 
 ## Local variables
 

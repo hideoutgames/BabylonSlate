@@ -39,7 +39,7 @@ World Scene documents in the Haptic editor: schema, selection, command path, vie
 
 - `SceneEditingProvider` is the only selection owner; panels consume `useSceneEditing()` and never keep separate selection.
 - Locking an actor removes it from `selectedActorIds`; locked actors are unpickable and never get a gizmo.
-- `EditorSessionStateProvider` keeps camera poses, graph viewports and similar view state per document id for one project session (non-reactive; moves on `repathed`). Pivot Around Center, shading mode and Show Collisions are session-only, never scene JSON.
+- `EditorSessionStateProvider` keeps camera poses, graph viewports and similar view state per document id for one project session (non-reactive; moves on `repathed`). Pivot Around Center, shading mode and Show Collisions are session-only, never scene JSON. It also holds the two editor clipboards, each a `structuredClone` snapshot that outlives the document it came from: Outliner actors (`copyActors`) and Class members (`copyClassMembers`, see [scripting.md](scripting.md#class-member-copy-and-paste)). They are separate slots with distinct payload types; copying one never clears the other.
 
 ## Prefab instance sync
 
