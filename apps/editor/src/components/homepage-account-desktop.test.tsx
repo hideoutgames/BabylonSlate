@@ -20,6 +20,9 @@ const auth = vi.hoisted(() => ({
   updateName: vi.fn(),
   setProfileImage: vi.fn(),
   removeProfileImage: vi.fn(),
+  beginReverification: vi.fn(),
+  resendReverificationCode: vi.fn(),
+  completeReverification: vi.fn(),
   deleteAccount: vi.fn(),
   browserProvider: vi.fn(),
 }));
@@ -32,6 +35,11 @@ const session = {
 const challenge = {
   id: "sign_in_ada",
   kind: "sign-in",
+  email: "ada@example.test",
+};
+const reverification = {
+  sessionId: "session_ada",
+  emailAddressId: "email_ada",
   email: "ada@example.test",
 };
 const editable = {
@@ -222,37 +230,88 @@ describe("desktop account profile", () => {
     expect(within(dialog).queryByRole("button", { name: "Delete Account" })).toBeNull();
   });
 
-  it("deletes only after confirmation, says local projects stay, then returns the launcher to guest", async () => {
+  async function startDeletion(dialog: HTMLElement) {
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete Account" }));
+    const confirm = await screen.findByRole("alertdialog", { name: "Delete Account?" });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Send Code" }));
+    return { confirm, code: await within(confirm).findByLabelText("Verification Code") };
+  }
+
+  it("asks for confirmation, says local projects stay and that subscriptions are not cancelled", async () => {
     auth.restoreSession.mockResolvedValue(editable);
-    auth.deleteAccount.mockResolvedValue(undefined);
     render(<HomepageAccount />);
     const dialog = await openAccount();
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete Account" }));
     const confirm = await screen.findByRole("alertdialog", { name: "Delete Account?" });
     expect(confirm.textContent).toMatch(/Projects stored on this device are not deleted/);
+    expect(confirm.textContent).toMatch(/does not cancel an active subscription/);
     fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(auth.beginReverification).not.toHaveBeenCalled();
+    expect(auth.deleteAccount).not.toHaveBeenCalled();
+  });
+
+  it("deletes only after the emailed code is verified, then returns the launcher to guest", async () => {
+    auth.restoreSession.mockResolvedValue(editable);
+    auth.beginReverification.mockResolvedValue(reverification);
+    auth.completeReverification.mockResolvedValue(undefined);
+    auth.deleteAccount.mockResolvedValue(undefined);
+    render(<HomepageAccount />);
+    const dialog = await openAccount();
+    const { confirm, code } = await startDeletion(dialog);
+    expect(auth.beginReverification).toHaveBeenCalledWith(editable);
+    expect(confirm.textContent).toMatch(/code sent to ada@example\.test/);
+    expect(within(confirm).getByRole("button", { name: "Delete Account" })).toHaveProperty("disabled", true);
     expect(auth.deleteAccount).not.toHaveBeenCalled();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete Account" }));
-    fireEvent.click(
-      within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete Account" }),
-    );
+    fireEvent.change(code, { target: { value: "123456" } });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Delete Account" }));
     await waitFor(() => expect(launcher().getAttribute("aria-label")).toBe("Guest, Not Signed In"));
+    expect(auth.completeReverification).toHaveBeenCalledWith(reverification, "123456");
     expect(auth.deleteAccount).toHaveBeenCalledWith(editable);
+    expect(auth.completeReverification.mock.invocationCallOrder[0]).toBeLessThan(
+      auth.deleteAccount.mock.invocationCallOrder[0]!,
+    );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("keeps the account when the code is wrong and never asks Clerk to delete it", async () => {
+    auth.restoreSession.mockResolvedValue(editable);
+    auth.beginReverification.mockResolvedValue(reverification);
+    auth.completeReverification.mockRejectedValue(new Error("That code is not correct. Please try again."));
+    render(<HomepageAccount />);
+    const { confirm, code } = await startDeletion(await openAccount());
+    fireEvent.change(code, { target: { value: "000000" } });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Delete Account" }));
+    expect((await within(confirm).findByRole("alert")).textContent).toBe(
+      "That code is not correct. Please try again.",
+    );
+    expect(auth.deleteAccount).not.toHaveBeenCalled();
+    expect(launcher().getAttribute("aria-label")).toBe("Ada Lovelace, ada@example.test");
+    expect(within(confirm).getByLabelText("Verification Code")).toBeTruthy();
+  });
+
+  it("sends the code again to the same verification", async () => {
+    auth.restoreSession.mockResolvedValue(editable);
+    auth.beginReverification.mockResolvedValue(reverification);
+    auth.resendReverificationCode.mockResolvedValue(reverification);
+    render(<HomepageAccount />);
+    const { confirm } = await startDeletion(await openAccount());
+    fireEvent.click(within(confirm).getByRole("button", { name: "Resend Code" }));
+    await waitFor(() => expect(auth.resendReverificationCode).toHaveBeenCalledWith(reverification));
+    expect(auth.beginReverification).toHaveBeenCalledOnce();
   });
 
   it("keeps the account and explains when Clerk refuses the deletion", async () => {
     auth.restoreSession.mockResolvedValue(editable);
+    auth.beginReverification.mockResolvedValue(reverification);
+    auth.completeReverification.mockResolvedValue(undefined);
     auth.deleteAccount.mockRejectedValue(new Error("Your account could not be deleted. Please try again."));
     render(<HomepageAccount />);
     const dialog = await openAccount();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete Account" }));
-    fireEvent.click(
-      within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete Account" }),
-    );
-    const confirm = await screen.findByRole("alertdialog");
+    const { confirm, code } = await startDeletion(dialog);
+    fireEvent.change(code, { target: { value: "123456" } });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Delete Account" }));
     expect((await within(confirm).findByRole("alert")).textContent).toBe(
       "Your account could not be deleted. Please try again.",
     );

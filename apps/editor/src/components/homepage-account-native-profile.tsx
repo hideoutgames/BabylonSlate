@@ -22,7 +22,10 @@ import {
   FieldTitle,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
+import { getHostPlatform } from "@babylonslate/vfs";
+import type { NativeClerkReverification } from "../services/native-clerk";
 import type { NativeProfileEditing } from "./homepage-account-types";
+import { storeSubscriptionsUrl } from "./homepage-plans";
 
 function reason(cause: unknown, fallback: string) {
   return cause instanceof Error ? cause.message : fallback;
@@ -208,9 +211,36 @@ export function NativeProfileFields({
   );
 }
 
+/** What deleting the account leaves running: store subscriptions stay until the person cancels them. */
+function SubscriptionNote() {
+  const host = getHostPlatform();
+  const url = storeSubscriptionsUrl(host);
+  const store = host === "ios" ? "App Store" : "Google Play";
+  return (
+    <span className="mt-2 block" data-testid="homepage-account-delete-subscription">
+      {url ? (
+        <>
+          Deleting your account does not cancel your {store} subscription.{" "}
+          <a href={url} target="_blank" rel="noreferrer">
+            Manage Subscriptions
+          </a>
+          .
+        </>
+      ) : (
+        <>
+          Deleting your account does not cancel an active subscription. Cancel
+          it first with Manage Billing under Subscription.
+        </>
+      )}
+    </span>
+  );
+}
+
 /**
  * Self-service deletion, offered only when the Clerk dashboard allows it
  * (App Store guideline 5.1.1(v) requires it for apps with account creation).
+ * Confirming emails a code first, so a device left unlocked cannot delete the
+ * account; the account is deleted only once Clerk accepts that code.
  */
 export function NativeDeleteAccount({
   profile,
@@ -222,21 +252,50 @@ export function NativeDeleteAccount({
   onDeleted: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [pending, setPending] = useState<NativeClerkReverification | null>(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState<"send" | "delete" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Reading the code in a mail app must not run the foreground session check
+  // that hides the app (mobile) and would drop this dialog.
+  const codeHold = useRef<(() => void) | null>(null);
+  useEffect(() => () => release(codeHold), []);
   if (!profile.canDelete) return null;
 
+  function close() {
+    release(codeHold);
+    setOpen(false);
+    setPending(null);
+    setCode("");
+    setError(null);
+  }
+
+  async function sendCode() {
+    setBusy("send");
+    setError(null);
+    codeHold.current ??= profile.holdSessionCheck();
+    try {
+      setPending(await profile.sendDeleteCode(pending ?? undefined));
+    } catch (cause) {
+      setError(reason(cause, "The code could not be sent."));
+      if (!pending) release(codeHold);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function confirm() {
-    setDeleting(true);
+    if (!pending || !code.trim()) return;
+    setBusy("delete");
     setError(null);
     try {
-      await profile.deleteAccount();
-      setOpen(false);
+      await profile.deleteAccount(pending, code);
+      close();
       onDeleted();
     } catch (cause) {
       setError(reason(cause, "Your account could not be deleted."));
     } finally {
-      setDeleting(false);
+      setBusy(null);
     }
   }
 
@@ -252,7 +311,7 @@ export function NativeDeleteAccount({
             type="button"
             variant="outline"
             size="sm"
-            disabled={disabled || deleting}
+            disabled={disabled || open}
             onClick={() => setOpen(true)}
           >
             <Trash2Icon data-icon="inline-start" />
@@ -263,9 +322,9 @@ export function NativeDeleteAccount({
       <AlertDialog
         open={open}
         onOpenChange={(next) => {
-          if (deleting) return;
-          setOpen(next);
-          if (!next) setError(null);
+          if (busy) return;
+          if (next) setOpen(true);
+          else close();
         }}
       >
         <AlertDialogContent
@@ -279,22 +338,70 @@ export function NativeDeleteAccount({
               This permanently deletes your Haptic account and signs you out of
               this device. It cannot be undone. Projects stored on this device
               are not deleted.
+              <SubscriptionNote />
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {pending && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void confirm();
+              }}
+            >
+              <Field>
+                <FieldLabel htmlFor="native-delete-code">
+                  Verification Code
+                </FieldLabel>
+                <Input
+                  id="native-delete-code"
+                  name="code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  value={code}
+                  disabled={busy !== null}
+                  onChange={(event) => setCode(event.target.value)}
+                />
+                <FieldDescription>
+                  To confirm it is you, enter the code sent to {pending.email}.
+                </FieldDescription>
+              </Field>
+            </form>
+          )}
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={deleting}
-              onClick={() => void confirm()}
-            >
-              {deleting ? "Deleting…" : "Delete Account"}
-            </AlertDialogAction>
+            <AlertDialogCancel disabled={busy !== null}>Cancel</AlertDialogCancel>
+            {pending ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy !== null}
+                  onClick={() => void sendCode()}
+                >
+                  Resend Code
+                </Button>
+                <AlertDialogAction
+                  variant="destructive"
+                  disabled={busy !== null || !code.trim()}
+                  onClick={() => void confirm()}
+                >
+                  {busy === "delete" ? "Deleting…" : "Delete Account"}
+                </AlertDialogAction>
+              </>
+            ) : (
+              <AlertDialogAction
+                variant="destructive"
+                disabled={busy !== null}
+                onClick={() => void sendCode()}
+              >
+                {busy === "send" ? "Sending…" : "Send Code"}
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -22,6 +22,8 @@ const auth = vi.hoisted(() => ({
   signOut: vi.fn(),
   updateName: vi.fn(),
   setProfileImage: vi.fn(),
+  beginReverification: vi.fn(),
+  completeReverification: vi.fn(),
   deleteAccount: vi.fn(),
 }));
 const session = {
@@ -452,6 +454,12 @@ describe("native mobile account requirement", () => {
     auth.restoreSession.mockResolvedValue(editable);
     auth.updateName.mockResolvedValue({ ...editable, name: "Ada King", lastName: "King" });
     auth.deleteAccount.mockResolvedValue(undefined);
+    auth.beginReverification.mockResolvedValue({
+      sessionId: "session_ada",
+      emailAddressId: "email_ada",
+      email: "ada@example.test",
+    });
+    auth.completeReverification.mockResolvedValue(undefined);
     renderMobile();
     fireEvent.click(await findProfileTrigger());
     fireEvent.click(await screen.findByRole("menuitem", { name: /Manage Account/ }));
@@ -466,10 +474,20 @@ describe("native mobile account requirement", () => {
     expect(auth.updateName).toHaveBeenCalledWith(editable, { firstName: "Ada", lastName: "King" });
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete Account" }));
-    fireEvent.click(
-      within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete Account" }),
+    const confirm = await screen.findByRole("alertdialog");
+    expect(confirm.textContent).toMatch(/does not cancel your App Store subscription/);
+    expect(within(confirm).getByRole("link", { name: "Manage Subscriptions" }).getAttribute("href")).toBe(
+      "https://apps.apple.com/account/subscriptions",
     );
+    fireEvent.click(within(confirm).getByRole("button", { name: "Send Code" }));
+    // Reading the emailed code in a mail app returns through the foreground
+    // check, which must not hide the app and drop this dialog.
+    fireEvent.change(await within(confirm).findByLabelText("Verification Code"), { target: { value: "123456" } });
+    fireEvent(window, new Event("focus"));
+    expect(auth.restoreSession).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(confirm).getByRole("button", { name: "Delete Account" }));
     expect(await screen.findByLabelText("Email Address")).toBeTruthy();
+    expect(auth.completeReverification).toHaveBeenCalledOnce();
     expect(auth.deleteAccount).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();

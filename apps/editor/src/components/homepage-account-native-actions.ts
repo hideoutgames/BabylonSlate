@@ -11,7 +11,13 @@ import type { NativeProfileActions } from "./homepage-account-types";
 export function nativeProfileActions(
   client: Pick<
     NativeClerkClient,
-    "updateName" | "setProfileImage" | "removeProfileImage" | "deleteAccount"
+    | "updateName"
+    | "setProfileImage"
+    | "removeProfileImage"
+    | "beginReverification"
+    | "resendReverificationCode"
+    | "completeReverification"
+    | "deleteAccount"
   >,
   session: NativeClerkSession,
   owner: {
@@ -29,7 +35,13 @@ export function nativeProfileActions(
       owner.onSession(await client.setProfileImage(session, file)),
     removeImage: async () =>
       owner.onSession(await client.removeProfileImage(session)),
-    deleteAccount: async () => {
+    sendDeleteCode: (pending) =>
+      pending
+        ? client.resendReverificationCode(pending)
+        : client.beginReverification(session),
+    // Deleting is the last step: a wrong code or a lapsed verification stops here.
+    deleteAccount: async (pending, code) => {
+      await client.completeReverification(pending, code);
       await client.deleteAccount(session);
       owner.onDeleted();
     },

@@ -1,4 +1,5 @@
 import { BuildingIcon, MonitorIcon, SmartphoneIcon, type LucideIcon } from "lucide-react";
+import type { HostPlatform } from "@babylonslate/vfs";
 import type { HapticPlanId } from "./homepage-account-types";
 
 /** Public pricing, kept in step with https://haptic.no/pricing. */
@@ -45,3 +46,15 @@ export const HAPTIC_PLANS: ReadonlyArray<{
     icon: BuildingIcon,
   },
 ];
+
+/**
+ * The store page where a subscription bought in the phone or tablet app is
+ * managed. Deleting a Haptic account never cancels it. Desktop subscriptions
+ * run through Web Billing and are managed from Subscription instead.
+ */
+export function storeSubscriptionsUrl(host: HostPlatform): string | null {
+  if (host === "ios") return "https://apps.apple.com/account/subscriptions";
+  if (host === "android")
+    return "https://play.google.com/store/account/subscriptions";
+  return null;
+}

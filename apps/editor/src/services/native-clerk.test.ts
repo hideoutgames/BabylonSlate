@@ -426,6 +426,47 @@ describe("NativeClerkClient account management", () => {
     expect(await secrets.get(`slate-clerk-client:${key}`)).toBe("client-a");
   });
 
+  it("reverifies the session with an emailed first-factor code, as Clerk's own reverification does", async () => {
+    const factor = { strategy: "email_code", email_address_id: "idn_one", safe_identifier: "sam@example.com" };
+    const { auth, requests } = await signedIn([
+      response({ object: "session_verification", status: "needs_first_factor", supported_first_factors: [{ strategy: "password" }, factor] }),
+      response({ status: "needs_first_factor" }),
+      response({ status: "complete" }),
+    ]);
+    const pending = await auth.beginReverification(current);
+    expect(pending).toEqual({ sessionId: "sess_one", emailAddressId: "idn_one", email: "sam@example.com" });
+    expect(path(requests[0])).toBe("/v1/client/sessions/sess_one/verify?_is_native=1");
+    expect(requests[0]!.body).toBe("level=first_factor");
+    expect(path(requests[1])).toBe("/v1/client/sessions/sess_one/verify/prepare_first_factor?_is_native=1");
+    expect(requests[1]!.body).toBe("strategy=email_code&email_address_id=idn_one");
+
+    await auth.completeReverification(pending, " 123456 ");
+    expect(path(requests[2])).toBe("/v1/client/sessions/sess_one/verify/attempt_first_factor?_is_native=1");
+    expect(requests[2]!.body).toBe("strategy=email_code&code=123456");
+  });
+
+  it("refuses to reverify when Clerk offers no email code, so deletion stays blocked", async () => {
+    const { auth, requests } = await signedIn([
+      response({ status: "needs_first_factor", supported_first_factors: [{ strategy: "passkey" }] }),
+    ]);
+    await expect(auth.beginReverification(current)).rejects.toMatchObject({ code: "reverification_unavailable" });
+    expect(requests).toHaveLength(1);
+  });
+
+  it("rejects a wrong code and a verification that still needs another factor", async () => {
+    const pending = { sessionId: "sess_one", emailAddressId: "idn_one", email: "sam@example.com" };
+    const { auth } = await signedIn([
+      failure(422, "form_code_incorrect"),
+      response({ status: "needs_second_factor" }),
+    ]);
+    await expect(auth.completeReverification(pending, "000000")).rejects.toMatchObject({
+      code: "form_code_incorrect",
+    });
+    await expect(auth.completeReverification(pending, "123456")).rejects.toMatchObject({
+      code: "additional_verification_required",
+    });
+  });
+
   it("names rejected profile edits in plain words and never as a sign-in failure", async () => {
     const { auth } = await signedIn([
       failure(422, "form_param_nil"),

@@ -43,6 +43,9 @@ Open the account menu from your name at the bottom of the Homepage sidebar. It o
 
 Deleting your account removes it permanently and signs you out. Projects stored on your device are not deleted.
 
+Deleting your account does not cancel a subscription. Cancel it first: with **Manage Billing** under **Subscription**, or, in the iPad, iPhone and Android apps, with **Manage Subscriptions** in the delete confirmation, which opens the App Store or Google Play.
+
+In the desktop and mobile apps, **Delete Account** asks you to confirm and then to enter a code that Haptic emails to your account address, so someone using your unlocked device cannot delete the account. If you signed in on the web with GitHub, Discord or Apple, the code still goes to the email address on your account.
 Signing in does not sync projects. Projects stay where you saved them.
 
 ## Updates
