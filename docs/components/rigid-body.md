@@ -25,7 +25,7 @@ A Static body shows only Motion Type, because the other settings do nothing.
 - Compiler Results warns about a Rigid Body with no shape to collide with, and about a Collider that has no Rigid Body and is therefore not simulated. Mesh collision, Tilemaps and Blocking Volumes are solid without a Rigid Body, and a Collider beside them is simulated too.
 - Use **Motion Type** Static with a Collider for a trigger volume or a fixed collider.
 - [Add Impulse](../scripting/class/add-impulse.md) pushes a Dynamic body from a script.
-- Do not combine a Rigid Body with [Movement](movement.md) on one actor. Movement supplies its own body.
+- A Dynamic Rigid Body beside [Movement](movement.md) is steered by Movement and kept upright. A Kinematic one is moved by Movement's own character controller, and a Static one stops Movement.
 
 ## Related
 

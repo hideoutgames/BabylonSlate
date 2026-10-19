@@ -441,7 +441,9 @@ it("rejects a changed output the graph cannot draw without drawing a frame", asy
  * synchronous call that held the thread.
  */
 function virtualClock() {
-  const start = performance.now();
+  // A whole millisecond, so sums of whole-millisecond advances stay exact: from a
+  // fractional start, "now + bound" and the elapsed difference round apart.
+  const start = Math.floor(performance.now());
   let now = start;
   vi.spyOn(performance, "now").mockImplementation(() => now);
   return { advance: (ms: number) => { now += ms; }, elapsed: () => now - start };
