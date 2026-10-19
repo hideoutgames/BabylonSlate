@@ -17,6 +17,7 @@ import {
   recastWalkableQuadFromXy,
   solidBlockerMesh,
 } from "@babylonslate/navigation";
+import { followBehaviourTree } from "./behaviour-tree-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 
 function groundPrism(): { positions: number[]; indices: number[] } {
@@ -390,7 +391,7 @@ describe("runtime navmesh import and crowd", () => {
       await runtime.loadNavMesh(bytes);
       runtime.start();
       runtime.realizePlayWorld();
-      runtime.applyBehaviourTreeStateObserved(true);
+      followBehaviourTree(runtime, commands, "move-tree");
       for (let i = 0; i < 30; i += 1) runtime.tick();
       const actor = runtime.getWorld().findActor("agent")!;
       expect(actor.transform.position.y).toBeLessThan(5.5);

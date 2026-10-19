@@ -14,6 +14,7 @@ import {
   resolveAnimGraphClips,
   validateAnimGraph,
   animGraphToSerialized,
+  animTransitionEdgeId,
   serializedToAnimGraph,
   hydrateAnimGraphForEditor,
   animGraphMembersFromVariables,
@@ -323,6 +324,25 @@ describe("anim graph evaluator", () => {
     expect(next.transitions.map((row) => `${row.fromStateId}->${row.toStateId}`).sort()).toEqual(
       ["idle->run", "run->idle"],
     );
+  });
+
+  it("names the one canvas edge a taken transition is drawn on, in either direction of a pair", () => {
+    const transition = (id: string, fromStateId: string, toStateId: string) => ({
+      id, fromStateId, toStateId, blendSeconds: 0, priority: 0, ruleGraph: createDefaultTransitionRuleGraph(),
+    });
+    const transitions = [
+      transition("idle-run", "idle", "run"),
+      transition("run-idle", "run", "idle"),
+      transition("run-jump", "run", "jump"),
+      transition("run-jump-again", "run", "jump"),
+    ];
+    const edges = animGraphToSerialized({ ...createDefaultAnimGraph(), transitions }).edges.map((edge) => edge.id);
+    expect(edges).toEqual(["idle-run", "run-jump"]);
+    expect(animTransitionEdgeId(transitions, "idle", "run")).toBe("idle-run");
+    // The Both Ways pair is drawn as one edge, so the reverse transition lights it too.
+    expect(animTransitionEdgeId(transitions, "run", "idle")).toBe("idle-run");
+    expect(animTransitionEdgeId(transitions, "run", "jump")).toBe("run-jump");
+    expect(animTransitionEdgeId(transitions, "jump", "idle")).toBeUndefined();
   });
 
   it("flips a one-way transition and no-ops when a reverse row exists", () => {

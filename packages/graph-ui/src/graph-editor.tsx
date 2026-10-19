@@ -91,6 +91,8 @@ import { styleFlowEdges } from "./edge-style";
 import { edgeStyleForPin } from "./node-theme";
 import { NodePalette } from "./node-palette";
 import { GraphConnectionLine } from "./connection-line";
+import { GraphRunOverlay } from "./graph-run-overlay";
+import type { GraphRunTrace } from "./run-trace";
 import {
   collectDisplayConnectPins,
   connectEndAction,
@@ -204,6 +206,13 @@ export interface GraphEditorProps {
     y: number;
     zoom: number;
   }) => void;
+  /**
+   * What ran in this graph while its owner runs (a Simulation's followed instance). The canvas
+   * flashes the nodes, pins and wires that ran and shows a pin's last value, or a node's status
+   * where the graph has one, in a tip, all without rendering a node per run: it never edits the
+   * graph. Memoize it: a new identity re-renders every node.
+   */
+  runTrace?: GraphRunTrace;
   /** Pan/zoom only: no connect, node drag, palette, or Cut/Paste/Delete/Format. */
   readOnly?: boolean;
   /** Locks inline values without disabling node movement or graph connections. */
@@ -692,6 +701,7 @@ function GraphEditorCanvas({
   sessionViewport = null,
   onSessionViewportChange,
   readOnly: readOnlyProp = false,
+  runTrace,
   readOnlyPinDefaults: readOnlyPinDefaultsProp,
   onPinSelect,
   nodeTypes: nodeTypesProp,
@@ -832,6 +842,7 @@ function GraphEditorCanvas({
   useLayoutEffect(() => {
     graphStateRef.current = { nodes, edges };
   });
+  const runGraph = useCallback(() => graphStateRef.current, []);
   const proximityDragRef = useRef(false);
   const [proximityPaths, setProximityPaths] = useState<Array<{
     connection: OrientedConnection;
@@ -2834,6 +2845,7 @@ function GraphEditorCanvas({
       renderNodeBody,
       nodeMenu,
       connectionRefusal,
+      runTrace,
       connectionLineKind:
         defaultEdgeOptions.type === "animTransition" ||
         defaultEdgeOptions.type === "animTransitionBoth"
@@ -2863,6 +2875,7 @@ function GraphEditorCanvas({
       renderNodeBody,
       nodeMenu,
       connectionRefusal,
+      runTrace,
       defaultEdgeOptions.type,
     ],
   );
@@ -3045,6 +3058,7 @@ function GraphEditorCanvas({
           />
         </ReactFlow>
         <GraphViewportControls onFitGraph={fitGraph} />
+        {runTrace ? <GraphRunOverlay root={wrapperRef} trace={runTrace} graph={runGraph} /> : null}
         {notice === null ? null : (
           <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex justify-center">
             <Alert

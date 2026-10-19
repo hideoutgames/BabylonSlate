@@ -108,6 +108,7 @@ const harness = vi.hoisted(() => ({
   libraryOptions: null as {
     acquireTexture?: (guid: string) => { resource: unknown; release(): void } | null;
     functions?: () => unknown;
+    onTextureError?: (diagnostic: { code: string; message: string; severity: "error" }) => void;
   } | null,
   acquireCalls: 0,
   invalidateCalls: 0,
@@ -193,6 +194,7 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
       constructor(options: {
         acquireTexture?: (guid: string) => { resource: unknown; release(): void } | null;
         functions?: () => unknown;
+        onTextureError?: (diagnostic: { code: string; message: string; severity: "error" }) => void;
       }) {
         harness.libraryOptions = options;
       }
@@ -259,6 +261,11 @@ function LoweringProbe() {
 function PreviewStateProbe() {
   const { previewState } = useMaterialEditing();
   return <output data-testid="preview-state">{previewState.status}</output>;
+}
+
+function DiagnosticsProbe() {
+  const { compileDiagnostics, previewState } = useMaterialEditing();
+  return <output data-testid="diagnostics">{compileDiagnostics.map((entry) => entry.message).join("|")}::{previewState.lastError ?? ""}</output>;
 }
 
 function materialTree(active = true, children?: ReactNode) {
@@ -590,6 +597,19 @@ describe("MaterialEditingProvider preview isolation", () => {
     expect(harness.cachedTextures).toHaveLength(1);
     expect(harness.cachedTextures[0]!.guid).toBe("tex-1");
     expect(await readBlobBytes(harness.cachedTextures[0]!.bytes)).toEqual(new Uint8Array([9, 9, 9]));
+  });
+
+  it("shows a program the Engine could not link, which fails only after the compile was accepted", async () => {
+    mount(true, <><AttachCanvas /><PreviewStateProbe /><DiagnosticsProbe /></>);
+    await waitFor(() => expect(screen.getByTestId("preview-state").textContent).toBe("ready"));
+    expect(screen.getByTestId("diagnostics").textContent).toBe("::");
+    // The library retires the generation and reports the compiler's log; `ready` carried nothing.
+    const message = "FRAGMENT SHADER ERROR: 0:4: syntax error";
+    act(() => {
+      harness.libraryOptions!.onTextureError!({ code: "material.compile.failed", message, severity: "error" });
+      harness.libraryOptions!.onTextureError!({ code: "material.compile.failed", message, severity: "error" });
+    });
+    expect(screen.getByTestId("diagnostics").textContent).toBe(`${message}::${message}`);
   });
 
   it("finishes one manual Render after a cold Texture arrives for an expensive preview", async () => {

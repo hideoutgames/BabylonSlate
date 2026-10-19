@@ -31,7 +31,7 @@ import {
   Maximize2Icon,
   EllipsisIcon,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   CONTENT_BROWSER_ID,
   type DocumentRef,
@@ -79,7 +79,10 @@ import {
 } from "../context/document-context";
 import { usePlay } from "../context/play-context";
 import { useSimulationControls } from "../context/simulation-controls-context";
+import { useGraphDebugStore } from "../context/graph-debug-context";
 import { SimulationToolbarControls } from "./simulation-toolbar-controls";
+import { GraphDebugInstanceSelect } from "./graph-debug-instance-select";
+import { documentGraphDebugTarget } from "../lib/graph-debug-target";
 import { useValidation } from "../context/validation-context";
 import type { OpenDocument } from "../services/document-service";
 import { modelSimpleColliderCounter, physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
@@ -314,6 +317,7 @@ export function EditorChromeBar({
   // A running Simulation turns Simulate into Stop with its controls beside it.
   const simulationRunning = sessionState.mode === "simulate" && !sessionState.quarantined;
   const simulationControls = useSimulationControls();
+  const graphDebug = useGraphDebugStore();
   const { errorCount, setDiagnostics } = useValidation();
   const [settingsScope, setSettingsScope] = useState<
     "project" | "engine" | null
@@ -353,6 +357,20 @@ export function EditorChromeBar({
   );
   const activeKind = visibleDocuments.find((doc) => doc.id === activeDocumentId)
     ?.ref.kind;
+  // A running Simulation debugs the focused graph against the live objects that run it: a Class's
+  // instances, or the components that run a Behaviour Tree or Animation Graph.
+  const activeRef = visibleDocuments.find((doc) => doc.id === activeDocumentId)?.ref;
+  const activeRefKind = activeRef?.kind;
+  const activeRefPath = activeRef?.path;
+  const debugTarget = useMemo(() => {
+    void registryEpoch;
+    return simulationRunning && activeRefKind !== undefined && activeRefPath !== undefined
+      ? documentGraphDebugTarget({ kind: activeRefKind, path: activeRefPath }, assetRegistry)
+      : null;
+  }, [simulationRunning, activeRefKind, activeRefPath, assetRegistry, registryEpoch]);
+  useEffect(() => {
+    graphDebug?.setTarget(debugTarget);
+  }, [graphDebug, debugTarget]);
   const canFocus = canFocusLayout(activeKind);
 
   const sensors = useSensors(
@@ -829,15 +847,18 @@ export function EditorChromeBar({
         <div className="editor-global-toolbar-center">
           <div className="editor-play-island" data-testid="play-debug-island">
             {simulationRunning ? (
-              <SimulationToolbarControls
-                controls={simulationControls}
-                stopping={sessionState.lifecycle === "stopping"}
-                phone={phone}
-                onStop={() => { void sessionOwner.stop(); }}
-                onReturnToScene={simulationDocumentId && activeDocumentId !== simulationDocumentId
-                  ? () => setActiveDocument(simulationDocumentId)
-                  : undefined}
-              />
+              <>
+                <SimulationToolbarControls
+                  controls={simulationControls}
+                  stopping={sessionState.lifecycle === "stopping"}
+                  phone={phone}
+                  onStop={() => { void sessionOwner.stop(); }}
+                  onReturnToScene={simulationDocumentId && activeDocumentId !== simulationDocumentId
+                    ? () => setActiveDocument(simulationDocumentId)
+                    : undefined}
+                />
+                {debugTarget ? <GraphDebugInstanceSelect /> : null}
+              </>
             ) : (
             <Tooltip>
               <TooltipTrigger

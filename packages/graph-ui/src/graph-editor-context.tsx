@@ -5,6 +5,7 @@ import type { NestedMenuItem } from "@babylonslate/editor-kit";
 import type { PinDefaultEditorRenderer } from "./pin-default-editor-context";
 import type { PinTypeNames } from "./pin-default-preview";
 import type { ConnectEndMode, PinCompatibilityRule } from "./graph-connect";
+import type { GraphRunTrace } from "./run-trace";
 
 export type GraphEditorContextValue = {
   renderPinDefaultEditor?: PinDefaultEditorRenderer;
@@ -30,6 +31,8 @@ export type GraphEditorContextValue = {
   ) => NestedMenuItem[];
   onEdgeDoubleClick?: (edgeId: string) => void;
   connectionLineKind?: "default" | "animTransition";
+  /** What the running owner of the graph reports; nodes with a live status read theirs from it. */
+  runTrace?: GraphRunTrace;
   /**
    * Context menu of script-style nodes: Copy, Paste, Duplicate, Delete and
    * Break Links plus the host's items. `resolve` first applies the selection

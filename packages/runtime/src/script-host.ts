@@ -1,6 +1,7 @@
 import { createUnavailableEditorDataApi, type EditorDataApi } from "@babylonslate/scripting";
 import { assetLoadStateName, type AssetLoadHandleState, type AssetLoadStateName, type RuntimeAssetLoadState, type RuntimeAssetPreloadOptions, type RuntimeAssetPreloadResult } from "@babylonslate/core";
 import { RuntimeDataCatalog, type RuntimeDataApi } from "./data-catalog";
+import type { ScriptDebugTrace } from "./script-debug";
 import { EMPTY_ASSET_CATALOG, type RuntimeAssetCatalog, type ScriptAssetRegistry } from "./asset-catalog";
 import { emptyWaterSample, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@babylonslate/core";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@babylonslate/core";
@@ -337,6 +338,11 @@ export interface ScriptContext {
   self: BObject | null;
   deltaSeconds: number;
   tickIndex: number;
+  /**
+   * The recorder of the instance the editor's graph debugger follows; null for every other
+   * instance and outside the editor. Only debug-instrumented scripts read it.
+   */
+  debugTrace: ScriptDebugTrace | null;
   formatValue(value: unknown): string;
   checkInfiniteLoop(location?: ScriptLoopLocation): void;
   log(severity: LogSeverity, category: string, message: string): void;
@@ -830,6 +836,9 @@ export class ScriptHost {
     Record<string, unknown>
   >();
   private readonly services: ScriptHostServices;
+  /** The instance the editor's graph debugger follows, and where its scripts report. */
+  private debugObject: BObject | null = null;
+  private debugSink: ScriptDebugTrace | null = null;
   private invokingOwner: BObject | null = null;
   private finalizingOwner: BObject | null = null;
   /** The `ctx.callInterface` caller whose frame its interface handler runs in. */
@@ -842,6 +851,12 @@ export class ScriptHost {
     this.services = services;
     this.rng = createSeededRng(services.seed ?? 1);
     this.hostMembers = this.createHostMembers();
+  }
+
+  /** Routes `ctx.debugTrace` to `sink` for scripts that run on `object` (both null stops). */
+  setDebugTrace(object: BObject | null, sink: ScriptDebugTrace | null): void {
+    this.debugObject = object;
+    this.debugSink = sink;
   }
 
   /** The driver installs persistence before authored Init/Begin Play hooks run. */
@@ -1806,6 +1821,9 @@ export class ScriptHost {
       context.self = self;
       context.deltaSeconds = deltaSeconds;
       context.tickIndex = tickIndex;
+      // The instance is `self`, except for an Animation Graph's scripts, which run on the actor
+      // while the graph's instance is its component (the variable store).
+      context.debugTrace = this.debugObject !== null && store === this.debugObject ? this.debugSink : null;
       context.commandArgs = commandArgs;
       context.args = commandArgs;
       context.animFacts = extras?.animFacts;

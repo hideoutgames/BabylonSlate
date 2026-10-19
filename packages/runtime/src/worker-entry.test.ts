@@ -310,7 +310,7 @@ describe("worker entry snapshot transport", () => {
     expect(runtime.getWorld().clock.tickIndex).toBe(tickIndex);
   });
 
-  it("posts btState only while the host observes behaviour tree state, starting with the current state", async () => {
+  it("posts btState only while the host follows a behaviour tree, starting with the current state", async () => {
     const guard = createActor("guard", "Guard", {
       components: [{ id: "bt-1", classId: "BehaviourTreeComponent", properties: { treeGuid: "tree-1" } }],
     });
@@ -318,6 +318,7 @@ describe("worker entry snapshot transport", () => {
       { type: "load", sceneAssetGuid: "main", scene: { ...createDefaultScene(), actors: [guard] } },
       [{ type: "loadBehaviourTrees", trees: [{ guid: "tree-1", document: createDefaultBehaviourTree("Guard") }] }]);
     const btStates = () => posts.flatMap((post) => post.kind === "command" && post.command.type === "btState" ? [post.command] : []);
+    const rosters = () => posts.flatMap((post) => post.kind === "command" && post.command.type === "debugRoster" ? [post.command] : []);
     for (let i = 0; i < 100 && !kinds().includes("sceneRealized"); i++) {
       runFrames(1);
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -325,14 +326,61 @@ describe("worker entry snapshot transport", () => {
     runFrames(4);
     expect(btStates()).toEqual([]);
 
-    send!({ type: "setBehaviourTreeStateObserved", observed: true });
-    expect(btStates()).toEqual([expect.objectContaining({ type: "btState", status: "success" })]);
+    // Watching the tree lists the component that runs it; only following it sends its state.
+    const target = { kind: "behaviourTree", assetGuid: "tree-1" } as const;
+    send!({ type: "debugObserve", target, instanceId: null });
+    expect(btStates()).toEqual([]);
+    const instanceId = rosters()[0]?.added[0]?.id;
+    expect(instanceId).toEqual(expect.any(String));
+    send!({ type: "debugObserve", target, instanceId: instanceId! });
+    expect(btStates()).toEqual([expect.objectContaining({ type: "btState", instanceId, status: "success" })]);
     runFrames(4);
     expect(btStates()).toHaveLength(1);
 
-    send!({ type: "setBehaviourTreeStateObserved", observed: false });
-    send!({ type: "setBehaviourTreeStateObserved", observed: true });
+    send!({ type: "debugObserve", target: null, instanceId: null });
+    send!({ type: "debugObserve", target, instanceId: instanceId! });
     expect(btStates()).toHaveLength(2);
+  });
+
+  it("serves the graph debugger from the worker: the roster and only the followed instance's trace reach the host", async () => {
+    // What a debug-instrumented Class graph does for its first node, without compiling one here.
+    const source = [
+      "export function onTick(ctx) {",
+      '  const __dbg = ctx.debugTrace === null ? null : ctx.debugTrace.graph("hero.class", "event-graph");',
+      '  if (__dbg !== null) __dbg.exec("tick");',
+      "}",
+    ].join("\n");
+    const hero = { classId: "Hero", assetGuid: "hero.class", parentClassId: "Actor", source, anchors: [],
+      entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }] };
+    const { posts, runFrames, kinds } = await bootWorker(
+      { type: "load", sceneAssetGuid: "main", scene: { ...createDefaultScene(),
+        actors: [createActor("a", "Anna", { classId: "Hero" }), createActor("b", "Ben", { classId: "Hero" })] } },
+      [{ type: "loadScripts", scripts: [hero] }]);
+    const debugCommands = () => posts.flatMap((post) => post.kind === "command" &&
+      (post.command.type === "debugRoster" || post.command.type === "executionTrace") ? [post.command] : []);
+    for (let i = 0; i < 100 && !kinds().includes("sceneRealized"); i++) {
+      runFrames(1);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    runFrames(4);
+    expect(debugCommands()).toEqual([]);
+
+    const target = { kind: "class", classId: "Hero" } as const;
+    send!({ type: "debugObserve", target, instanceId: "b" });
+    runFrames(4);
+    const [roster, ...traces] = debugCommands();
+    expect(roster).toMatchObject({ type: "debugRoster", reset: true, added: [{ id: "a", label: "Anna" }, { id: "b", label: "Ben" }] });
+    expect(traces.length).toBeGreaterThan(0);
+    for (const trace of traces) {
+      expect(trace).toMatchObject({ type: "executionTrace", target, instanceId: "b" });
+      expect(trace.type === "executionTrace" && trace.graphs).toEqual([
+        { assetGuid: "hero.class", graphId: "event-graph", nodes: ["tick"], edges: [], values: [] }]);
+    }
+
+    send!({ type: "debugObserve", target: null, instanceId: null });
+    const seen = debugCommands().length;
+    runFrames(4);
+    expect(debugCommands()).toHaveLength(seen);
   });
 
   it("reports the stop only after the host answers the save writes still in flight", async () => {

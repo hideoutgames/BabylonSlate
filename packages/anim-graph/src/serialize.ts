@@ -138,6 +138,21 @@ export function visualTransitions(
   return visual;
 }
 
+/**
+ * The id of the canvas edge that draws a transition taken from one state to another: a Both Ways
+ * pair, like duplicate rows, shares the edge of the first row. The runtime's debug trace names the
+ * transition it took by it.
+ */
+export function animTransitionEdgeId(
+  transitions: readonly AnimTransition[],
+  fromStateId: string,
+  toStateId: string,
+): string | undefined {
+  return visualTransitions(transitions).find((row) =>
+    (row.fromStateId === fromStateId && row.toStateId === toStateId) ||
+    (row.fromStateId === toStateId && row.toStateId === fromStateId))?.id;
+}
+
 function uniqueTransitionId(doc: AnimGraphDocument): string {
   const ids = new Set(doc.transitions.map((row) => row.id));
   let index = 1;

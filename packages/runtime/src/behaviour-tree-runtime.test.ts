@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@babylonslate/bridge";
 import { createActor, createDefaultSceneSettings, quaternionToEulerDegrees, type SerializedScene } from "@babylonslate/core";
 import type { BehaviourTreeDocument, BlackboardDocument } from "@babylonslate/behaviour-tree";
+import { followBehaviourTree } from "./behaviour-tree-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 
 type BtNode = BehaviourTreeDocument["nodes"][number];
@@ -79,7 +80,7 @@ describe("BehaviourTreeRuntime", () => {
         entryPoints: [{ name: "activate", event: "onActivate", isAsync: false }] }]);
       runtime.start();
       runtime.realizePlayWorld();
-      runtime.applyBehaviourTreeStateObserved(true);
+      followBehaviourTree(runtime, commands, "tree-1");
       runtime.tick();
       expect(btStates(commands).at(-1)).toMatchObject({ btNodeId: "wait", blackboard: { items: ["pushed"] } });
 
@@ -132,7 +133,7 @@ describe("BehaviourTreeRuntime", () => {
         entryPoints: [{ name: "onBtTick", event: "onBtTick", isAsync: false }] }]);
       runtime.start();
       runtime.realizePlayWorld();
-      runtime.applyBehaviourTreeStateObserved(true);
+      followBehaviourTree(runtime, commands, "tree-1");
       const guard = runtime.getWorld().findActor("guard")!;
       const published = () => btStates(commands).length;
       /** Runs one tick doing `step` and returns the Blackboard published by it, if any. */

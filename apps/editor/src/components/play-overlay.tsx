@@ -5,6 +5,7 @@ import { SimulationRetentionDialog, SimulationRetentionHint } from "./simulation
 import { SimulationTransformToolbar } from "./simulation-transform-toolbar";
 import type { GizmoTool, RuntimeTransformTools } from "@babylonslate/render";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
+import { useGraphDebugStore } from "../context/graph-debug-context";
 import {
   SIMULATION_CONTROL_ATTRIBUTE,
   usePublishSimulationControls,
@@ -104,13 +105,10 @@ import {
 import { useInspectWorldPoll } from "../lib/use-inspect-world-poll";
 import { useDebugConsoleLogs } from "../lib/use-debug-console-logs";
 import { usePlay } from "../context/play-context";
-import type { BtStateObservers } from "../lib/bt-state-observers";
 
 export interface PlayOverlayProps {
   sessionOwner?: GameSessionOwner<PlaySessionResult>;
   sessionTicket?: GameSessionTicket;
-  /** Behaviour Tree editor panels showing live state; the runtime publishes `btState` only while one does. */
-  btStateObservers?: BtStateObservers;
   embedded?: boolean;
   simulationSession?: SimulationSession;
   simulationAssetGuids?: readonly string[];
@@ -232,7 +230,6 @@ function emptyPlayResult(): PlaySessionResult {
 function PlayOverlayView({
   sessionOwner,
   sessionTicket,
-  btStateObservers,
   embedded = false,
   simulationSaveStorage,
   simulationSession,
@@ -312,10 +309,11 @@ function PlayOverlayView({
   pauseOnPlay = false,
   onClose,
 }: PlayOverlayProps) {
-  const { appendLog, reportBtState, overlayStats, overlayConsole, overlayInspector, overlayProfiler } =
+  const { appendLog, overlayStats, overlayConsole, overlayInspector, overlayProfiler } =
     usePlay();
   const simulating = sessionTicket?.mode === "simulate";
   const inspectionStore = useSimulationInspectionStore();
+  const graphDebug = useGraphDebugStore();
   const diagnosticStore = useDiagnosticResultsStore();
   const diagnosticDetachRef = useRef<(() => void) | null>(null);
   const inspectionDetachRef = useRef<(() => void) | null>(null);
@@ -846,7 +844,10 @@ function PlayOverlayView({
             if (enabled) setConsoleOpen(false);
           },
           onBehaviourTreeSnapshot: setTrees,
-          onBtState: (state) => reportBtState(state),
+          // Only a Simulation debugs graphs; the store reads these off the render path.
+          onBtState: simulating ? (state) => graphDebug?.receiveBtState(state) : undefined,
+          onDebugRoster: simulating ? (roster) => graphDebug?.receiveRoster(roster) : undefined,
+          onExecutionTrace: simulating ? (trace) => graphDebug?.receiveTrace(trace) : undefined,
           onRenderOutputChanged: (settings) => {
             runtimeRenderRef.current = settings;
             liveSizeRef.current = null;
@@ -873,17 +874,10 @@ function PlayOverlayView({
         return;
       }
       sessionRef.current = session;
-      // The runtime publishes `btState` only while a Behaviour Tree editor shows it.
-      let btStateSent = false;
-      const syncBtStateObserved = (observed: boolean) => {
-        if (observed === btStateSent) return;
-        btStateSent = observed;
-        session.setBehaviourTreeStateObserved(observed);
-        // The editor would flash this stale state when it next opens, before fresh state arrives.
-        if (!observed) reportBtState(null);
-      };
-      syncBtStateObserved(btStateObservers?.observed() ?? false);
-      const unsubscribeBtStateObservers = btStateObservers?.subscribe(syncBtStateObserved);
+      // The graph debugger asks the runtime to watch the focused graph's instances.
+      const unsubscribeGraphDebug = simulating
+        ? graphDebug?.subscribeRequest((request) => session.observeGraphDebug(request.target, request.instanceId))
+        : undefined;
       if (simulationSession && sessionOwner && sessionTicket) {
         sessionOwner.setBeforeStop(sessionTicket, () => simulationSession.resolveStop(() => session.captureSimulationScene()));
       }
@@ -1033,13 +1027,13 @@ function PlayOverlayView({
         resizeObserver.disconnect();
         window.clearInterval(movePoll);
         detachLifecycle();
-        unsubscribeBtStateObservers?.();
-        reportBtState(null);
+        unsubscribeGraphDebug?.();
+        if (simulating) graphDebug?.setTarget(null);
         finishSessionRef.current();
       };
     });
     return () => { cancelled = true; disposePresentation?.(); };
-  }, [sharedEngine, injectFixtureThrow, reportBtState, btStateObservers, pushLog, appendLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, simulationSession, diagnosticStore, testMode]);
+  }, [sharedEngine, injectFixtureThrow, pushLog, appendLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, graphDebug, simulationSession, diagnosticStore, testMode]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;

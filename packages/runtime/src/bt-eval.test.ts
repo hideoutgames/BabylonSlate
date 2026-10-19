@@ -6,6 +6,7 @@ import {
   createDefaultSceneSettings,
   type SerializedScene,
 } from "@babylonslate/core";
+import { followBehaviourTree } from "./behaviour-tree-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 
 function aiScene(properties: Record<string, unknown>): SerializedScene {
@@ -91,7 +92,7 @@ describe("runtime behaviour tree evaluation", () => {
     }]);
     runtime.start();
     runtime.realizePlayWorld();
-    runtime.applyBehaviourTreeStateObserved(true);
+    followBehaviourTree(runtime, commands, "tree-1");
     runtime.executeConsoleCommand("behaviourtreedebug on");
     expect(() => runtime.tick()).not.toThrow();
     runtime.tick();
@@ -165,7 +166,7 @@ describe("runtime behaviour tree evaluation", () => {
     runtime.stop();
   });
 
-  it("emits btState from BehaviourTreeComponent and skips identical repeats", () => {
+  it("emits btState from the followed BehaviourTreeComponent and skips identical repeats", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
@@ -177,12 +178,13 @@ describe("runtime behaviour tree evaluation", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
-    runtime.applyBehaviourTreeStateObserved(true);
+    const instanceId = followBehaviourTree(runtime, commands, "tree-1");
     runtime.tick();
     const states = commands.filter((command) => command.type === "btState");
     expect(states).toHaveLength(1);
     expect(states[0]).toMatchObject({
       type: "btState",
+      instanceId,
       status: "success",
       btNodeId: null,
     });
@@ -194,7 +196,7 @@ describe("runtime behaviour tree evaluation", () => {
     runtime.stop();
   });
 
-  it("publishes no btState until the editor observes it, then every evaluated tree's current state at once", () => {
+  it("publishes btState for the followed tree only, starting with its current state", () => {
     const commands: CommandMessage[] = [];
     const playScene = aiScene({ treeGuid: "tree-1" });
     playScene.actors.push(createActor("scout", "Scout", {
@@ -214,24 +216,20 @@ describe("runtime behaviour tree evaluation", () => {
 
     // A paused session has no next tick to publish on.
     runtime.pause();
-    runtime.applyBehaviourTreeStateObserved(true);
-    expect(states()).toHaveLength(2);
-    expect(new Set(states().map((state) => state.slotId)).size).toBe(2);
-    expect(states()).toEqual([
-      expect.objectContaining({ status: "success", btNodeId: null }),
-      expect.objectContaining({ status: "success", btNodeId: null }),
-    ]);
-    runtime.applyBehaviourTreeStateObserved(true);
-    expect(states()).toHaveLength(2);
+    const guard = followBehaviourTree(runtime, commands, "tree-1", 0);
+    expect(states()).toEqual([expect.objectContaining({ instanceId: guard, status: "success", btNodeId: null })]);
+    runtime.applyDebugObserve({ kind: "behaviourTree", assetGuid: "tree-1" }, guard);
+    expect(states()).toHaveLength(1);
 
-    // A later observer starts blank, so it is sent both states again although nothing changed.
-    runtime.applyBehaviourTreeStateObserved(false);
-    runtime.applyBehaviourTreeStateObserved(true);
-    expect(states()).toHaveLength(4);
+    // Following the other tree starts it with its own state, and stops sending the first.
+    const scout = followBehaviourTree(runtime, commands, "tree-1", 1);
+    expect(scout).not.toBe(guard);
+    expect(states().map((state) => state.type === "btState" ? state.instanceId : null)).toEqual([guard, scout]);
+    expect(new Set(states().map((state) => state.type === "btState" ? state.slotId : null)).size).toBe(2);
     runtime.stop();
   });
 
-  it("stops publishing btState when observation ends and sends the current state when it resumes", () => {
+  it("stops publishing btState when the follow ends and sends the current state when it resumes", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1, maxActors: 4, seedDemoActors: false, dt: 0.1,
@@ -245,16 +243,16 @@ describe("runtime behaviour tree evaluation", () => {
     const states = () => commands.filter((command) => command.type === "btState");
     runtime.start();
     runtime.realizePlayWorld();
-    runtime.applyBehaviourTreeStateObserved(true);
+    followBehaviourTree(runtime, commands, "tree-1");
     runtime.tick();
     expect(states()).toEqual([expect.objectContaining({ status: "running", btNodeId: "wait" })]);
 
     // The 500 ms wait finishes on the fifth tick, before the tree restarts.
-    runtime.applyBehaviourTreeStateObserved(false);
+    runtime.applyDebugObserve(null, null);
     for (let i = 0; i < 4; i += 1) runtime.tick();
     expect(states()).toHaveLength(1);
 
-    runtime.applyBehaviourTreeStateObserved(true);
+    followBehaviourTree(runtime, commands, "tree-1");
     expect(states()).toHaveLength(2);
     expect(states().at(-1)).toMatchObject({ status: "success", btNodeId: null });
     runtime.stop();
@@ -271,7 +269,7 @@ describe("runtime behaviour tree evaluation", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
-    runtime.applyBehaviourTreeStateObserved(true);
+    followBehaviourTree(runtime, commands, "tree-1");
     runtime.tick();
     runtime.tick();
     expect(commands.filter((command) => command.type === "btState")).toHaveLength(1);
@@ -280,9 +278,13 @@ describe("runtime behaviour tree evaluation", () => {
       classId: "BehaviourTreeComponent", variables: { treeGuid: "tree-1" },
     }));
     runtime.tick();
+    // The late tree joins the roster, and evaluates once followed.
+    followBehaviourTree(runtime, commands, "tree-1", 1);
+    runtime.tick();
     const states = commands.filter((command) => command.type === "btState");
     expect(states).toHaveLength(2);
     expect(states[1]!.slotId).not.toBe(states[0]!.slotId);
+    expect(states[1]).toMatchObject({ status: "success" });
     runtime.stop();
   });
 
@@ -388,7 +390,7 @@ describe("runtime behaviour tree evaluation", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
-    runtime.applyBehaviourTreeStateObserved(true);
+    followBehaviourTree(runtime, commands, "tree-1");
     runtime.tick();
     expect(commands.filter((command) => command.type === "playSound")).toEqual([]);
     expect(commands.filter((command) => command.type === "btState").at(-1)).toMatchObject({

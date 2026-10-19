@@ -56,6 +56,8 @@ Graphs are checked as you edit. Problems appear in **Compiler Results** and as r
 
 Warnings never block Play. A loop that never ends stops Play and reports **Infinite loop detected**.
 
+To see a class run, start a Simulation with the class open: the nodes that run light up for the object you pick, and pins show their last values ([Watch a graph run](../debugging/index.md#watch-a-graph-run)). Behaviour Trees and Animation Graphs can be watched the same way.
+
 Results you may meet while wiring:
 
 | Result | Meaning |

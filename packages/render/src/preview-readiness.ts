@@ -39,11 +39,15 @@ export async function waitUntilReady(
   return false;
 }
 
-/** One-shot captures need shader/texture readiness without a later interaction. */
+/**
+ * One-shot captures need shader/texture readiness without a later interaction.
+ * `current` abandons the wait as soon as its owner stops wanting it.
+ */
 export function waitForPreviewMeshesReady(
   root: AbstractMesh,
   budget?: HeldThreadBudget,
   compiles: DriverCompileWatch = new DriverCompileWatch(root.getEngine()),
+  current: () => boolean = () => true,
 ): Promise<boolean> {
-  return waitUntilReady(() => previewMeshesReady(root), () => !root.isDisposed(), undefined, budget, compiles);
+  return waitUntilReady(() => previewMeshesReady(root), () => !root.isDisposed() && current(), undefined, budget, compiles);
 }
