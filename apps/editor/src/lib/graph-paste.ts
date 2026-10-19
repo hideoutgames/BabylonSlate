@@ -24,7 +24,7 @@ function bindingWiredNodes(edges: readonly PasteEdge[]): Set<string> {
  * Names collide when they compile to one identifier (the validator's rule) or
  * differ only in case (the rename rule).
  */
-function eventNameKeys(data: Record<string, unknown>): string[] {
+export function eventNameKeys(data: Record<string, unknown>): string[] {
   const name = formatEventMemberName(String(data.name ?? data.title ?? "")).toLowerCase();
   return [
     ...(typeof data.name === "string" && data.name ? [`id:${jsIdent(data.name)}`] : []),

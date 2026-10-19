@@ -7,6 +7,7 @@ import {
   addVariableAccessNode,
   blueprintSectionsForClass,
   classAllowsMemberKind,
+  completeClassMemberDrop,
   ensureCallParentForEvent,
   ensureEventNodeOnGraph,
   functionLibraryShowsEventGraphEmpty,
@@ -599,7 +600,7 @@ describe("addClassMember", () => {
     const graph = addClassMember(emptyGraph(), "variable", "Health", () => "var-1");
     const result = resolveClassMemberDrop({
       graph,
-      memberId: "var-1",
+      memberIds: ["var-1"],
       members: [{ id: "var-1", kind: "variable", name: "Health" }],
       clientX: 180,
       clientY: 90,
@@ -610,8 +611,9 @@ describe("addClassMember", () => {
     });
     expect(result).toEqual({
       kind: "choose-access",
-      memberId: "var-1",
+      memberIds: ["var-1"],
       position: { x: 170, y: 70 },
+      skipped: [],
     });
   });
 
@@ -626,7 +628,7 @@ describe("addClassMember", () => {
     };
     const callFn = resolveClassMemberDrop({
       graph,
-      memberId: "fn-1",
+      memberIds: ["fn-1"],
       members: [{ id: "fn-1", kind: "function", name: "Jump", pins: graph.members![0]!.pins }],
       clientX: 1,
       clientY: 1,
@@ -644,7 +646,7 @@ describe("addClassMember", () => {
 
     const callEvt = resolveClassMemberDrop({
       graph,
-      memberId: "evt-1",
+      memberIds: ["evt-1"],
       members: [
         {
           id: "evt-1",
@@ -682,7 +684,7 @@ describe("addClassMember", () => {
     expect(
       resolveClassMemberDrop({
         graph,
-        memberId: "section-events",
+        memberIds: ["section-events"],
         members,
         clientX: 0,
         clientY: 0,
@@ -692,7 +694,7 @@ describe("addClassMember", () => {
     expect(
       resolveClassMemberDrop({
         graph,
-        memberId: "native:flow.event.beginPlay",
+        memberIds: ["native:flow.event.beginPlay"],
         members,
         clientX: 0,
         clientY: 0,
@@ -702,7 +704,7 @@ describe("addClassMember", () => {
     expect(
       resolveClassMemberDrop({
         graph,
-        memberId: "evt-1",
+        memberIds: ["evt-1"],
         members: [
           { id: "evt-1", kind: "event", name: "On Hit", eventType: "flow.event.custom" },
         ],
@@ -711,6 +713,149 @@ describe("addClassMember", () => {
         canvas: { containsClientPoint: () => false, clientToFlow: () => ({ x: 0, y: 0 }) },
       }).kind,
     ).toBe("ignore");
+  });
+
+  describe("dropping several rows at once", () => {
+    const canvas = {
+      containsClientPoint: () => true,
+      clientToFlow: () => ({ x: 64, y: 32 }),
+    };
+    const pinsOf = (count: number) => [
+      ...Array.from({ length: count }, (_, index) => ({
+        name: `In${index}`,
+        typeId: "float",
+        direction: "in" as const,
+      })),
+    ];
+
+    function classWithMembers(): SerializedGraph {
+      let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-jump");
+      graph = addClassMember(graph, "function", "Cast", () => "fn-cast", { pins: pinsOf(6) });
+      graph = addClassMember(graph, "event", "On Hit", () => "evt-hit");
+      graph = addClassMember(graph, "variable", "Health", () => "var-health", { typeId: "float" });
+      graph = addClassMember(graph, "variable", "Pawn", () => "var-pawn", { typeId: "actor", typeClassId: "Actor" });
+      return graph;
+    }
+    const rows = [
+      { id: "fn-jump", kind: "function" as const, name: "Jump" },
+      { id: "fn-cast", kind: "function" as const, name: "Cast" },
+      { id: "evt-hit", kind: "event" as const, name: "On Hit", eventType: "flow.event.custom" },
+      { id: "var-health", kind: "variable" as const, name: "Health", typeId: "float" },
+      { id: "var-pawn", kind: "variable" as const, name: "Pawn", typeId: "actor", typeClassId: "Actor" },
+      { id: "native:flow.event.beginPlay", kind: "event" as const, name: "Event Begin Play", eventType: "flow.event.beginPlay" },
+      { id: "if-1", kind: "interface" as const, name: "Damageable" },
+    ];
+    /** The nodes a drop added: the Class's own event node is not one of them. */
+    const added = (graph: SerializedGraph) => graph.nodes.filter((node) => node.type !== "flow.event.custom");
+    const drop = (memberIds: string[], extra: Partial<Parameters<typeof resolveClassMemberDrop>[0]> = {}) =>
+      resolveClassMemberDrop({
+        graph: classWithMembers(),
+        memberIds,
+        members: rows,
+        clientX: 1,
+        clientY: 1,
+        canvas,
+        classId: "Hero",
+        idFactory: (() => {
+          let count = 0;
+          return () => `drop-${++count}`;
+        })(),
+        ...extra,
+      });
+
+    it("spawns every call at once in one stack from the drop point, tall nodes taking more room", () => {
+      const result = drop(["fn-jump", "fn-cast", "evt-hit", "fn-jump"]);
+      expect(result.kind).toBe("spawn");
+      if (result.kind !== "spawn") return;
+      const dropped = added(result.graph);
+      expect(dropped.map((node) => [node.type, node.data.functionName ?? node.data.name])).toEqual([
+        ["functions.call", "Jump"],
+        ["functions.call", "Cast"],
+        ["flow.event.call", "On Hit"],
+      ]);
+      expect(dropped[0]!.position).toEqual({ x: 64, y: 32 });
+      expect(dropped.every((node) => node.position.x === 64)).toBe(true);
+      const gaps = [
+        dropped[1]!.position.y - dropped[0]!.position.y,
+        dropped[2]!.position.y - dropped[1]!.position.y,
+      ];
+      // No node starts inside the one above it, and six more inputs make Cast taller than Jump.
+      expect(gaps[0]).toBeGreaterThanOrEqual(120);
+      expect(gaps[1]).toBeGreaterThan(gaps[0]!);
+      expect(result.skipped).toEqual([]);
+    });
+
+    it("places the stack in the open function graph", () => {
+      const result = drop(["fn-jump", "evt-hit"], { functionId: "fn-jump" });
+      expect(result.kind).toBe("spawn");
+      if (result.kind !== "spawn") return;
+      expect(added(result.graph)).toEqual([]);
+      expect(result.graph.functionGraphs!["fn-jump"]!.nodes.slice(2).map((node) => node.type)).toEqual([
+        "functions.call",
+        "flow.event.call",
+      ]);
+    });
+
+    it("skips the rows that cannot drop and reports them by name", () => {
+      const result = drop(["fn-jump", "native:flow.event.beginPlay", "if-1", "section-events"]);
+      expect(result.kind).toBe("spawn");
+      if (result.kind !== "spawn") return;
+      expect(added(result.graph).map((node) => node.data.functionName)).toEqual(["Jump"]);
+      expect(result.skipped).toEqual(["Event Begin Play", "Damageable"]);
+      expect(drop(["native:flow.event.beginPlay", "if-1"]).kind).toBe("ignore");
+    });
+
+    it("asks Get / Set once for the variables among them and keeps the order of the rest", () => {
+      const result = drop(["var-health", "fn-jump", "var-pawn", "if-1"]);
+      expect(result).toEqual({
+        kind: "choose-access",
+        memberIds: ["var-health", "fn-jump", "var-pawn"],
+        position: { x: 64, y: 32 },
+        skipped: ["Damageable"],
+      });
+    });
+
+    it.each([
+      ["get", ["Get Health", "Call Jump", "Get Pawn"], []],
+      ["set", ["Set Health", "Call Jump", "Set Pawn"], []],
+      ["validatedGet", ["Call Jump", "Validated Get Pawn"], ["Health"]],
+    ] as const)("places every row with the chosen %s access, skipping variables it cannot use", (access, titles, skipped) => {
+      const completed = completeClassMemberDrop({
+        graph: classWithMembers(),
+        memberIds: ["var-health", "fn-jump", "var-pawn"],
+        members: rows,
+        position: { x: 64, y: 32 },
+        access,
+        classId: "Hero",
+      });
+      expect(added(completed.graph).map((node) => node.data.title)).toEqual(titles);
+      expect(added(completed.graph)[0]!.position).toEqual({ x: 64, y: 32 });
+      expect(completed.skipped).toEqual(skipped);
+    });
+
+    it("stacks a Get as a compact pill, closer than a full node", () => {
+      const completed = completeClassMemberDrop({
+        graph: classWithMembers(),
+        memberIds: ["fn-jump", "var-health", "var-pawn"],
+        members: rows,
+        position: { x: 0, y: 0 },
+        access: "get",
+      });
+      const [first, second, third] = added(completed.graph).map((node) => node.position.y);
+      expect(third! - second!).toBeLessThan(second! - first!);
+    });
+
+    it("never lets a component variable be set", () => {
+      const completed = completeClassMemberDrop({
+        graph: classWithMembers(),
+        memberIds: ["var-health", "comp-mesh"],
+        members: [...rows, { id: "comp-mesh", kind: "variable", name: "Mesh", typeId: "object", componentId: "c-1" }],
+        position: { x: 0, y: 0 },
+        access: "set",
+      });
+      expect(added(completed.graph).map((node) => node.data.title)).toEqual(["Set Health"]);
+      expect(completed.skipped).toEqual(["Mesh"]);
+    });
   });
 
   it("copies typeClassId onto spawned Get nodes and synced access nodes", () => {

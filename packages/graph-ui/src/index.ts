@@ -4,8 +4,11 @@ export * from "./graph-editor";
 export { resolveGraphViewport, resolveGraphMountViewport } from "./graph-viewport";
 export {
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
+  estimateGraphNodeSize,
+  graphNodesBounds,
   selectVisibleGraphElements,
 } from "./graph-virtualize";
+export { NODE_PLACEMENT_GAP } from "./graph-placement";
 export * from "./graph-connect";
 export * from "./graph-canvas-api";
 export * from "./graph-model";
