@@ -16,7 +16,7 @@ import { markSceneReadinessDirty } from "./scene-perf";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTextureManager } from "@babylonjs/core/FrameGraph/frameGraphTextureManager";
-import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
+import { COMPILE_HOLD_STALL_MS, PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
 import {
   SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS, SCENE_THREAD_HELD_MS,
 } from "./stall-deadline";
@@ -135,44 +135,60 @@ describe("deferred WebGPU pipelines", () => {
 });
 
 describe("effects the driver is still compiling", () => {
-  /** An effect the driver is still linking, as `pendingDriverCompiles` sees it; `finish` completes the link. */
-  function linkingEffect(engine: NullEngine, exposed = true) {
+  type Link = { ready: boolean; linked: boolean; error: string };
+  /**
+   * A scene whose strict probe waits for an Effect the driver is still linking, requested the way a material's
+   * variant is: through `engine.createEffect`, by the scene's own readiness probe, the first time it fails.
+   * `foreign` leaves the request out, as for a preview's or thumbnail's compile on the shared Engine;
+   * `eager` makes the first probe request it even while the scene is ready.
+   */
+  function waitingScene(engine: NullEngine, scene: Scene, { exposed = true, foreign = false, eager = false } = {}) {
     if (exposed) engine.getCaps().parallelShaderCompile = { COMPLETION_STATUS_KHR: 0x91b1 };
+    const link: Link = { ready: true, linked: false, error: "" };
+    const effect = { isReady: () => link.linked, getCompilationError: () => link.error } as unknown as Effect;
     const effects = (engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
-    let linked = false;
-    effects["lit-variant"] = { isReady: () => linked, getCompilationError: () => "" };
-    return { finish: () => { linked = true; } };
-  }
-  /** A readiness check that fails the scene's strict probe until `set(true)`. */
-  function sceneReadiness(scene: Scene) {
-    let ready = true;
-    scene.addIsReadyCheck({ isReady: () => ready });
-    return (value: boolean) => { ready = value; markSceneReadinessDirty(scene); };
+    const create = engine.createEffect.bind(engine) as unknown as (...args: unknown[]) => Effect;
+    vi.spyOn(engine, "createEffect").mockImplementation(((name: unknown, ...rest: unknown[]) =>
+      name === "lit-variant" ? effect : create(name, ...rest)) as unknown as typeof engine.createEffect);
+    let requested = false;
+    scene.addIsReadyCheck({ isReady: () => {
+      if ((eager || !link.ready) && !requested) {
+        requested = true;
+        effects["lit-variant"] = effect;
+        if (!foreign) engine.createEffect("lit-variant", [], [], [], "");
+      }
+      return link.ready;
+    } });
+    return (change: Partial<Link>) => {
+      // A scene turning unready asks for its variant again, as a changed light would.
+      if (change.ready === false) requested = false;
+      Object.assign(link, change);
+      markSceneReadinessDirty(scene);
+    };
   }
 
   it("holds from the first unready frame until a frame draws, also after the effects finished", async () => {
     const { engine, scene, renderer } = host(true);
-    const setReady = sceneReadiness(scene);
+    const set = waitingScene(engine, scene);
     await renderer.prepare();
     expect(renderer.render().rendered).toBe(true);
-    const link = linkingEffect(engine);
-    setReady(false);
+    set({ ready: false });
     expect(renderer.render()).toMatchObject({ rendered: false, reason: "Scene is not ready to render." });
     expect(renderer.holdingForPipelines).toBe(true);
     // The picture is still frozen: the game does not resume before something draws.
-    link.finish();
-    markSceneReadinessDirty(scene);
+    set({ linked: true });
     expect(renderer.render().rendered).toBe(false);
     expect(renderer.holdingForPipelines).toBe(true);
-    setReady(true);
+    set({ ready: true });
     expect(renderer.render()).toMatchObject({ rendered: true });
     expect(renderer.holdingForPipelines).toBe(false);
     renderer.dispose();
   });
 
-  it("holds through the graph's own preparation once effects are compiling", async () => {
-    const { engine, renderer } = host(true);
-    linkingEffect(engine);
+  it("holds through the graph's own preparation once its effects are compiling", async () => {
+    const { engine, scene, renderer } = host(true);
+    // The scene's probe passes yet requests the Effect, so only the graph is left to prepare.
+    waitingScene(engine, scene, { eager: true });
     expect(renderer.render()).toMatchObject({ rendered: false, reason: "FrameGraph preparation is required." });
     expect(renderer.holdingForPipelines).toBe(true);
     await renderer.prepare();
@@ -182,16 +198,15 @@ describe("effects the driver is still compiling", () => {
   });
 
   it.each([
-    ["every effect has linked", { exposed: true, linked: true, defers: true }],
-    ["the driver reports no background compile", { exposed: false, linked: false, defers: true }],
-    ["the view does not hold its image for GPU work", { exposed: true, linked: false, defers: false }],
-  ])("does not hold for a wait that waits for no compile: %s", async (_name, { exposed, linked, defers }) => {
+    ["every effect has linked", { exposed: true, foreign: false, linked: true, defers: true }],
+    ["the driver reports no background compile", { exposed: false, foreign: false, linked: false, defers: true }],
+    ["the view does not hold its image for GPU work", { exposed: true, foreign: false, linked: false, defers: false }],
+    ["the pending effect is another owner's, a preview's or a thumbnail's", { exposed: true, foreign: true, linked: false, defers: true }],
+  ])("does not hold for a wait that waits for none of its own compiles: %s", async (_name, { exposed, foreign, linked, defers }) => {
     const { engine, scene, renderer } = host(defers);
-    const setReady = sceneReadiness(scene);
+    const set = waitingScene(engine, scene, { exposed, foreign });
     await renderer.prepare();
-    const link = linkingEffect(engine, exposed);
-    if (linked) link.finish();
-    setReady(false);
+    set({ ready: false, linked });
     expect(renderer.render().rendered).toBe(false);
     expect(renderer.holdingForPipelines).toBe(false);
     renderer.dispose();
@@ -199,14 +214,13 @@ describe("effects the driver is still compiling", () => {
 
   it("ends the hold for a skipped draw that is not a wait for readiness", async () => {
     const { engine, scene, renderer } = host(true);
-    const setReady = sceneReadiness(scene);
+    const set = waitingScene(engine, scene);
     await renderer.prepare();
-    linkingEffect(engine);
-    setReady(false);
+    set({ ready: false });
     renderer.render();
     expect(renderer.holdingForPipelines).toBe(true);
     // Once the scene is ready the graph can still refuse a draw, as for a paused redraw: waiting for the effects cannot end that.
-    setReady(true);
+    set({ ready: true });
     vi.spyOn(ForwardSceneFrameGraph.prototype, "render")
       .mockReturnValueOnce({ path: "frameGraph", reason: "Paused redraw is unavailable.", rendered: false });
     expect(renderer.render()).toMatchObject({ rendered: false, reason: "Paused redraw is unavailable." });
@@ -215,23 +229,26 @@ describe("effects the driver is still compiling", () => {
   });
 
   it("ends the hold when the preparation fails: an error is not a wait", async () => {
-    const { engine, renderer } = host(true);
-    linkingEffect(engine);
+    const { engine, scene, renderer } = host(true);
+    waitingScene(engine, scene, { eager: true });
     vi.spyOn(ForwardSceneFrameGraph.prototype, "prepare").mockRejectedValue(new Error("Scene cannot render: unsupported."));
     expect(renderer.render().rendered).toBe(false);
     expect(renderer.holdingForPipelines).toBe(true);
+    // A preparation that cannot finish latches its failure, which `isReady` rethrows.
     await vi.waitFor(() => expect(() => renderer.isReady()).toThrow("unsupported"));
     expect(renderer.render().rendered).toBe(false);
     expect(renderer.holdingForPipelines).toBe(false);
     renderer.dispose();
   });
 
-  it("does not hold for a scene the graph reports it cannot render", () => {
-    const { engine, renderer } = host(true);
-    linkingEffect(engine);
+  it("does not hold for a scene the graph reports it cannot render", async () => {
+    const { engine, scene, renderer } = host(true);
+    const set = waitingScene(engine, scene);
+    await renderer.prepare();
     vi.spyOn(ForwardSceneFrameGraph.prototype, "readiness")
       .mockReturnValue({ path: "frameGraph", ready: false, reason: "Unsupported scene.", preparationRequired: true });
     vi.spyOn(ForwardSceneFrameGraph.prototype, "prepare").mockRejectedValue(new Error("Scene cannot render: unsupported."));
+    set({ ready: false });
     expect(renderer.render().rendered).toBe(false);
     expect(renderer.holdingForPipelines).toBe(false);
     renderer.dispose();
@@ -239,10 +256,9 @@ describe("effects the driver is still compiling", () => {
 
   it("ends the hold on invalidation and disposal", async () => {
     const { engine, scene, renderer } = host(true);
-    const setReady = sceneReadiness(scene);
+    const set = waitingScene(engine, scene);
     await renderer.prepare();
-    linkingEffect(engine);
-    setReady(false);
+    set({ ready: false });
     renderer.render();
     expect(renderer.holdingForPipelines).toBe(true);
     renderer.invalidate();
@@ -252,6 +268,62 @@ describe("effects the driver is still compiling", () => {
     expect(renderer.holdingForPipelines).toBe(true);
     renderer.dispose();
     expect(renderer.holdingForPipelines).toBe(false);
+  });
+
+  describe("when the effects never finish", () => {
+    async function holdingView() {
+      const { engine, scene, renderer } = host(true);
+      const set = waitingScene(engine, scene);
+      await renderer.prepare();
+      let now = 1_000;
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      set({ ready: false });
+      renderer.render();
+      expect(renderer.holdingForPipelines).toBe(true);
+      return { renderer, set, advance: (ms: number) => { now += ms; markSceneReadinessDirty(scene); } };
+    }
+
+    it("releases the game, not the image, as soon as a link fails", async () => {
+      const { renderer, set } = await holdingView();
+      set({ error: "Uniform limit exceeded." });
+      expect(renderer.render()).toMatchObject({ rendered: false, reason: "Scene is not ready to render." });
+      expect(renderer.holdingForPipelines).toBe(false);
+      // The same wait starts no second hold, even when the scene keeps requesting compiles.
+      set({ error: "" });
+      expect(renderer.render().rendered).toBe(false);
+      expect(renderer.holdingForPipelines).toBe(false);
+      // A frame that draws ends the wait: a later one holds again.
+      set({ ready: true });
+      expect(renderer.render().rendered).toBe(true);
+      set({ ready: false });
+      expect(renderer.render().rendered).toBe(false);
+      expect(renderer.holdingForPipelines).toBe(true);
+      renderer.dispose();
+    });
+
+    it("releases the game after the stall bound once nothing of the view's is pending", async () => {
+      const { renderer, set, advance } = await holdingView();
+      // The link finished, yet the scene is still unready for another reason.
+      set({ linked: true });
+      advance(COMPILE_HOLD_STALL_MS - 1);
+      renderer.render();
+      expect(renderer.holdingForPipelines).toBe(true);
+      advance(1);
+      expect(renderer.render().rendered).toBe(false);
+      expect(renderer.holdingForPipelines).toBe(false);
+      renderer.dispose();
+    });
+
+    it("keeps waiting while the link is pending, up to the driver compile bound", async () => {
+      const { renderer, advance } = await holdingView();
+      advance(SCENE_DRIVER_COMPILE_TIMEOUT_MS - 1);
+      renderer.render();
+      expect(renderer.holdingForPipelines).toBe(true);
+      advance(1);
+      expect(renderer.render().rendered).toBe(false);
+      expect(renderer.holdingForPipelines).toBe(false);
+      renderer.dispose();
+    });
   });
 });
 

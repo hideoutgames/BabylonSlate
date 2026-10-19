@@ -469,9 +469,11 @@ export interface CreateEngineOptions {
   /**
    * The world view started (true) or stopped (false) holding its last image
    * while WebGPU render pipelines, or on any backend effects the driver still
-   * compiles, are needed. Play hosts pause the game runtime for the hold (pause
-   * reason `rendering`), as for a blocking load; this Engine already pauses its
-   * own game time, audio and particles. Disposing the Engine ends a hold.
+   * compiles, are needed, for `PIPELINE_HOLD_PAUSE_DELAY_MS`; the release is
+   * immediate. Play hosts pause the game runtime's time for the hold (pause
+   * reason `rendering`, which leaves input alone), as for a blocking load; this
+   * Engine already pauses its own game time, audio and particles. Disposing the
+   * Engine ends a hold.
    */
   onPipelineHold?: (held: boolean) => void;
   maxActors?: number;
@@ -844,6 +846,11 @@ export function createEngine(
 
 /** Render-loop passes (about ten seconds at 60 Hz) that frame-phase timing outlives its last `renderDiagnostics()` read. */
 const FRAME_PHASE_LEASE_FRAMES = 600;
+/**
+ * A hold for GPU work (`onPipelineHold`) pauses Play only once the view has held its image this long, so a
+ * brief wait costs no stop; the release is immediate.
+ */
+export const PIPELINE_HOLD_PAUSE_DELAY_MS = 250;
 /** Frames with no layer still presenting share this set instead of building one. */
 const NO_PRESENTING_LAYERS: ReadonlySet<string> = new Set();
 
@@ -3289,7 +3296,15 @@ function initializeEngine(
     audioService?.setPaused(paused || held);
     particleService?.setPaused(paused || held);
   };
+  /** When the current run of held frames began, until the hold pauses or ends. */
+  let holdSince: number | undefined;
   const syncPipelineHold = (held: boolean) => {
+    if (held) {
+      if (pipelineHold) return;
+      const now = performance.now();
+      holdSince ??= now;
+      if (now - holdSince < PIPELINE_HOLD_PAUSE_DELAY_MS) return;
+    } else holdSince = undefined;
     if (held === pipelineHold) return;
     pipelineHold = held;
     applyPause();
