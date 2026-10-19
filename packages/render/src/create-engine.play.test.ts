@@ -692,12 +692,7 @@ describe("Play createEngine view", () => {
     effects["lit-variant"] = { isReady: () => state.linked, getCompilationError: () => "" };
     handle.scene.addIsReadyCheck({ isReady: () => state.ready });
     const set = (change: Partial<typeof state>) => { Object.assign(state, change); markSceneReadinessDirty(handle.scene); };
-    // Each frame is 100 ms after the last, past the Play frame cap's cadence gate.
-    let now = performance.now();
-    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
-    handles.push({ dispose: () => clock.mockRestore() });
     const frame = () => {
-      now += 100;
       handle.scheduler.invalidate("manual");
       engine.onBeginFrameObservable.notifyObservers(engine);
       renderViews(engine);
