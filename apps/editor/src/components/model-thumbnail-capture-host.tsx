@@ -16,6 +16,7 @@ import {
   type ModelThumbnailJob,
 } from "../lib/model-thumbnail-queue";
 import { prepareAssetThumbnailInput } from "../lib/asset-thumbnail-input";
+import { blockingSceneLoadOpen, subscribeBlockingSceneLoads, whenNoBlockingSceneLoad } from "../lib/blocking-scene-loads";
 import { collectGpuTextureBytes } from "../lib/collect-gpu-texture-bytes";
 
 /**
@@ -23,6 +24,10 @@ import { collectGpuTextureBytes } from "../lib/collect-gpu-texture-bytes";
  * Model/Animation keep construction GLB materials; saved Materials and Actor
  * Prefabs resolve just their own dependencies through the shared resource cache.
  * Must sit under PlayProvider. Never holds the Importing overlay.
+ * The queue pauses while a blocking scene load is open (viewport, document or
+ * Play): a capture's shader compiles would count as that load's progress on the
+ * shared Engine and keep a stuck load alive. A capture in progress stops and is
+ * captured again once the load closes.
  */
 export function ModelThumbnailCaptureHost() {
   const play = useOptionalPlay();
@@ -38,9 +43,13 @@ export function ModelThumbnailCaptureHost() {
 
   useEffect(() => {
     let cancelled = false;
+    const lifetime = new AbortController();
     let draining = false;
     let activeKey: string | null = null;
-    let activeWork: { guid: string; cancel: () => void } | null = null;
+    let activeWork: { guid: string; cancel: () => void; interrupt: () => void } | null = null;
+    const unsubscribeLoads = subscribeBlockingSceneLoads(() => {
+      if (blockingSceneLoadOpen()) activeWork?.interrupt();
+    });
     const pending = new Map<string, ModelThumbnailJob>();
     // Jobs that found no shared Engine; they run once one is registered.
     const waitingForEngine = new Map<string, ModelThumbnailJob>();
@@ -80,6 +89,8 @@ export function ModelThumbnailCaptureHost() {
       tail.current = tail.current.then(async () => {
         try {
           while (!cancelled && pending.size > 0) {
+            await whenNoBlockingSceneLoad(lifetime.signal);
+            if (cancelled || pending.size === 0) break;
             const [guid, job] = pending.entries().next().value!;
             pending.delete(guid);
             activeKey = jobKey(job);
@@ -113,8 +124,12 @@ export function ModelThumbnailCaptureHost() {
         released = true;
         scope.dispose();
       };
-      const work = { guid: job.guid, cancel: () => { controller.abort(); release(); } };
+      let interrupted = false;
+      const cancel = () => { controller.abort(); release(); };
+      const work = { guid: job.guid, cancel, interrupt: () => { interrupted = true; cancel(); } };
       activeWork = work;
+      // A load that opened after the queue resumed.
+      if (blockingSceneLoadOpen()) work.interrupt();
       const { readAssetChunk } = latest.current;
       try {
         await captureOwnedJob(job, controller.signal, (path, chunkId) => {
@@ -124,6 +139,8 @@ export function ModelThumbnailCaptureHost() {
       } finally {
         release();
         if (activeWork === work) activeWork = null;
+        // Captured again once the load closes, unless a newer save replaced it.
+        if (interrupted && !cancelled && !pending.has(job.guid)) pending.set(job.guid, job);
       }
     }
 
@@ -211,6 +228,8 @@ export function ModelThumbnailCaptureHost() {
     }
     return () => {
       cancelled = true;
+      lifetime.abort();
+      unsubscribeLoads();
       activeWork?.cancel();
       pending.clear();
       waitingForEngine.clear();

@@ -87,7 +87,7 @@ Header-indexed asset catalog across content roots: file operations, dependency m
 
 ## Thumbnails
 
-- Stored under `derived/{projectGuid}/thumbnails/`; Texture thumbs generate at import. Model/Animation/Material/Prefab captures render on the shared project Engine through one serialized queue: never construct a second `ResourceCache` or extra GPU work for captures (it can lose the WebGL context).
+- Stored under `derived/{projectGuid}/thumbnails/`; Texture thumbs generate at import. Model/Animation/Material/Prefab captures render on the shared project Engine through one serialized queue: never construct a second `ResourceCache` or extra GPU work for captures (it can lose the WebGL context). The queue ([`model-thumbnail-capture-host.tsx`](../../../apps/editor/src/components/model-thumbnail-capture-host.tsx)) pauses while a blocking scene load is open (`blockingSceneLoadOpen`, held by every open, unfailed **SceneLoadingDialog**): loading budgets renew on any shader finishing on the Engine, so a capture's compiles would keep a stuck load alive. A load that opens mid-capture stops it, and the asset is captured again once the load closes unless a newer save replaced it.
 - Browsing only reads existing thumbnails; missing ones keep the type icon. `ThumbnailDecodeLru` is separate from scene payload caches. Tiles load 4 at a time with a 100 ms sync debounce.
 
 ## Area emission

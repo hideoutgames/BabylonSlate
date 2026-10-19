@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
+import { holdBlockingSceneLoad } from "../lib/blocking-scene-loads";
 import { ModelThumbnailCaptureHost } from "./model-thumbnail-capture-host";
 
 const captureModelThumbnailPng = vi.fn<
@@ -190,6 +191,47 @@ describe("ModelThumbnailCaptureHost", () => {
     await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("asset", expect.any(Uint8Array), { projectGuid, cacheKey: "new" }));
     expect(writeAssetThumbnail).toHaveBeenCalledOnce();
     expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(2);
+  });
+
+  // Uncached captures compile shaders on the shared Engine, which a blocking scene load would count as its own progress.
+  describe("while a blocking scene load is open", () => {
+    const holds: Array<() => void> = [];
+    afterEach(() => { for (const release of holds.splice(0)) release(); });
+    const openLoad = () => { const release = holdBlockingSceneLoad(); holds.push(release); return release; };
+    const material = { guid: "asset", path: "assets/preview.babasset", type: "Material" as const, payload: {}, cacheKey: "asset.revision-1", projectGuid };
+
+    it("starts no capture until the load closes", async () => {
+      assets.set("asset", { path: material.path, header: { type: "Material", payload: {} } });
+      const closeLoad = openLoad();
+      render(<ModelThumbnailCaptureHost />);
+      enqueueModelThumbnailJobs([material]);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(createAssetLoadScope).not.toHaveBeenCalled();
+      expect(captureAssetThumbnailPng).not.toHaveBeenCalled();
+      closeLoad();
+      await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("asset", expect.any(Uint8Array), { cacheKey: "asset.revision-1", projectGuid: "project-a" }));
+      expect(captureAssetThumbnailPng).toHaveBeenCalledOnce();
+    });
+
+    it("stops the capture in progress when a load opens and captures the asset again once it closes", async () => {
+      let finish!: (png: Uint8Array) => void;
+      captureAssetThumbnailPng.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+      assets.set("asset", { path: material.path, header: { type: "Material", payload: {} } });
+      render(<ModelThumbnailCaptureHost />);
+      enqueueModelThumbnailJobs([material]);
+      await waitFor(() => expect(captureAssetThumbnailPng).toHaveBeenCalledOnce());
+      const shouldContinue = captureAssetThumbnailPng.mock.calls[0]![2] as () => boolean;
+      const closeLoad = openLoad();
+      expect(shouldContinue()).toBe(false);
+      expect(scopes[0]!.dispose).toHaveBeenCalledOnce();
+      finish(new Uint8Array([1]));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(writeAssetThumbnail).not.toHaveBeenCalled();
+      expect(captureAssetThumbnailPng).toHaveBeenCalledOnce();
+      closeLoad();
+      await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledOnce());
+      expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("cancels a pending source read and releases its scope when the capture host closes", async () => {
