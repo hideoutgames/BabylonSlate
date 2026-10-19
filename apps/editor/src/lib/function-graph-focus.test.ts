@@ -26,7 +26,7 @@ describe("graphOwningNode", () => {
   it("has no owner for a node the document does not hold", () => {
     expect(graphOwningNode(CLASS_GRAPH, "gone")).toBeNull();
     expect(graphOwningNode(null, "print")).toBeNull();
-    expect(graphOwningNode({ nodes: [node("a")], edges: [] }, "b")).toBeNull();
+    expect(graphOwningNode({ nodes: [node("a")] }, "b")).toBeNull();
   });
 });
 

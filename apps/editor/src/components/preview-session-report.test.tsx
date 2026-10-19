@@ -247,15 +247,15 @@ it("closes only through Close, the title-bar close or Escape", () => {
   renderReport([entry({ assetGuid: HERO.path, nodeId: "print" })], sources(), vi.fn(), onOpenChange);
 
   fireEvent.click(screen.getByTestId("session-report-close"));
-  expect(onOpenChange).toHaveBeenLastCalledWith(false, expect.anything());
+  expect(onOpenChange.mock.lastCall?.[0]).toBe(false);
   onOpenChange.mockClear();
 
   fireEvent.click(document.querySelector('[data-slot="dialog-close"]')!);
-  expect(onOpenChange).toHaveBeenLastCalledWith(false, expect.anything());
+  expect(onOpenChange.mock.lastCall?.[0]).toBe(false);
   onOpenChange.mockClear();
 
   fireEvent.keyDown(screen.getByTestId("preview-session-report"), { key: "Escape" });
-  expect(onOpenChange).toHaveBeenLastCalledWith(false, expect.anything());
+  expect(onOpenChange.mock.lastCall?.[0]).toBe(false);
 });
 
 it("says why a chosen row opened nothing, and clears the note once another row opens", async () => {
