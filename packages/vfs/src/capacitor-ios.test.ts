@@ -166,6 +166,8 @@ describe("Capacitor 8 iOS host", () => {
       "<string>UIInterfaceOrientationLandscapeRight</string>",
     );
     expect(ipadOrientations).not.toContain("Portrait");
+    // App Store Connect rejects a landscape-only iPad app that still allows multitasking.
+    expect(plist).toMatch(/<key>UIRequiresFullScreen<\/key>\s*<true\/>/);
   });
 
   it("preserves the local plugin registration and clean signing configuration", () => {
