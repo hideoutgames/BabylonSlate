@@ -15,6 +15,7 @@ import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { validMaterialParameterValue } from "./material-parameters";
 import { applyMaterialBounds } from "./material-bounds";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
+import { shaderLinkLog } from "./material-glsl-diagnostics";
 import {
   compileMaterialPlan,
   materialCompileFailed,
@@ -119,6 +120,13 @@ export interface MaterialLibraryOptions {
   functions?: () => Record<string, MaterialFunctionDocument>;
   onTextureError?: (diagnostic: MaterialDiagnostic) => void;
   onMaterialReady?: (scene: Scene, assetGuid: string) => void;
+  /**
+   * Compile a first acquisition for the meshes already bound to it before `ready` settles, as a replacement
+   * always is. For a host that binds at acquisition and captures right after (a thumbnail): nothing else
+   * compiles until its own readiness wait, and a program that cannot link must fail the capture through
+   * `ready`. A Scene host leaves it off, because its warm-up compiles under the Scene's final lighting and fog.
+   */
+  warmFirstAcquisition?: boolean;
 }
 
 interface CacheEntry {
@@ -332,15 +340,18 @@ export class MaterialLibrary {
         // A first acquisition has no predecessor to protect: its users are bound to
         // it already and the host compiles what it draws, in a load's warm-up or a
         // frame's readiness probe. Warming here ran before the Scene's lighting,
-        // fog and transforms were final, and built variants nothing draws.
-        if (existing) for (const mesh of scene.meshes) {
+        // fog and transforms were final, and built variants nothing draws. A host
+        // that captures right after acquiring asks for it (`warmFirstAcquisition`).
+        if (existing || this.options.warmFirstAcquisition) for (const mesh of scene.meshes) {
           if (!(mesh instanceof Mesh) || !mesh.getTotalVertices() || !uses(mesh.material)) continue;
           if (retired || scene.isDisposed) return [cancelledDiagnostic()];
           await prewarmMaterial(compiled.material, mesh);
         }
         return retired || scene.isDisposed ? [cancelledDiagnostic()] : [];
       } catch (error) {
-        return [{ code: "material.compile.failed", message: error instanceof Error ? error.message : "Material shader preparation failed", severity: "error" as const }];
+        // Babylon rejects a failed compile with the shader log itself, a string.
+        const log = error instanceof Error ? error.message : typeof error === "string" ? shaderLinkLog(error) : "";
+        return [{ code: "material.compile.failed", message: log || "Material shader preparation failed", severity: "error" as const }];
       }
     });
     let retired = false;
@@ -477,29 +488,31 @@ export class MaterialLibrary {
     // probe or a draw creates its Effect, with the generation already bound. It never becomes ready, which would
     // hold every frame of the Scene. Retire it as a failed warm-up did: report the compiler's log and let its
     // meshes fall back to the default Material. Babylon reports from inside the Effect's link, so retire afterwards.
+    // The disposed entry stays in its map: holders still own its reference count, which the next acquisition of the
+    // key inherits (and replaces), so a holder's later `release` never lands on a newer generation.
+    let unlinkable = false;
     retireUnlinkable = (diagnostic) => queueMicrotask(() => {
-      const published = entries.get(key) === candidate;
-      if ((!published && pending.get(key) !== candidate) || scene.isDisposed) return;
-      if (published) entries.delete(key);
-      else {
-        pending.delete(key);
-        if (existing) {
-          existing.refCount = candidate.refCount;
-          rebindMaterial(scene, candidate.material, existing.material);
-        }
+      const current = entries.get(key) === candidate || pending.get(key) === candidate;
+      if (!current || unlinkable || scene.isDisposed) return;
+      unlinkable = true;
+      if (existing && pending.get(key) === candidate && !isDisposedNodeMaterial(existing.material, scene)) {
+        existing.refCount = candidate.refCount;
+        rebindMaterial(scene, candidate.material, existing.material);
       }
       candidate.dispose();
       markSceneReadinessDirty(scene);
-      this.options.onTextureError?.(diagnostic);
+      if (this.options.onTextureError) this.options.onTextureError(diagnostic);
+      else console.warn(`[render] Material "${assetGuid}" could not be linked: ${diagnostic.message}`);
     });
     {
       supersede(candidate);
       pending.set(key, candidate);
       void ready.then((errors) => {
-        if (pending.get(key) !== candidate) return;
+        if (unlinkable || pending.get(key) !== candidate) return;
         pending.delete(key);
         if (errors.length) {
-          if (existing) {
+          // A predecessor retired meanwhile (an unlinkable generation, a release) has no meshes to take back.
+          if (existing && !isDisposedNodeMaterial(existing.material, scene)) {
             existing.refCount = candidate.refCount;
             rebindMaterial(scene, candidate.material, existing.material);
           }

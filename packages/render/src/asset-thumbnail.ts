@@ -140,6 +140,8 @@ export async function captureAssetThumbnailPng(
       return bytes ? acquireMaterialTexture(binding.cache, guid, engine, bytes) : null;
     },
     textureIdentity: (guid) => request.assets?.textureBytes?.has(guid) ? guid : undefined,
+    // The capture binds each Material at acquisition and draws right after: a program that cannot link must fail it.
+    warmFirstAcquisition: true,
   });
   const resolveMaterial = (guid: string, options?: MaterialResolveOptions): Material | null => {
     if (options?.instanceKey) {

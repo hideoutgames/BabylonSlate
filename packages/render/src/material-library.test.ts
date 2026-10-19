@@ -257,10 +257,12 @@ describe("material library", () => {
     mesh.material = first.material;
     expect(await first.ready).toEqual([]);
     // Nothing compiled it, so the Engine first fails to link it when a probe or a draw creates its Effect.
+    // Babylon keeps the thrown Error's stack as the compile error: the shader log, then JS frames.
     const log = "FRAGMENT SHADER ERROR: 0:12: 'albedo' : undeclared identifier";
-    const effect = { getCompilationError: () => log } as Effect;
-    first.material.onError?.(effect, log);
-    first.material.onError?.(effect, log);
+    const stack = `Error: ${log}\n    at Effect._processCompilationErrors (http://localhost/index.js:1:1)\n    at Effect._prepareEffect (http://localhost/index.js:2:2)`;
+    const effect = { getCompilationError: () => stack } as Effect;
+    first.material.onError?.(effect, stack);
+    first.material.onError?.(effect, stack);
     await Promise.resolve();
     expect(onTextureError).toHaveBeenCalledTimes(1);
     expect(onTextureError).toHaveBeenCalledWith({ code: "material.compile.failed", message: log, severity: "error" });
@@ -270,6 +272,84 @@ describe("material library", () => {
     expect(library.materialFor(scene, "material")).toBeNull();
     const retry = library.acquire(scene, "material", tinted(1));
     expect(retry.ok && retry.material).not.toBe(first.material);
+  });
+
+  it("warns about a retired Material when its host takes no diagnostics", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const first = library.acquire(scene, "material", tinted(1));
+      if (!first.ok) throw new Error("Expected a compiled material");
+      await first.ready;
+      const log = "VERTEX SHADER ERROR: 0:3: syntax error";
+      first.material.onError?.({ getCompilationError: () => log } as Effect, log);
+      await Promise.resolve();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(log));
+    } finally { warn.mockRestore(); }
+  });
+
+  it("keeps a retired generation's holders accounted, so a stale release spares its successor", async () => {
+    const scene = host();
+    const library = new MaterialLibrary({ onTextureError: vi.fn() });
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "material", tinted(1));
+    if (!first.ok) throw new Error("Expected a compiled material");
+    await first.ready;
+    first.material.onError?.({ getCompilationError: () => "ERROR: 0:1" } as Effect, "ERROR: 0:1");
+    await Promise.resolve();
+    expect(library.materialFor(scene, "material")).toBeNull();
+    // The Scene resolves the key again, while the first holder still has to release its reference.
+    const again = library.acquire(scene, "material", tinted(1));
+    if (!again.ok) throw new Error("Expected a fresh generation");
+    await again.ready;
+    library.release(scene, "material");
+    expect(library.materialFor(scene, "material")).toBe(again.material);
+    library.release(scene, "material");
+    expect(library.materialFor(scene, "material")).toBeNull();
+  });
+
+  it("retires every material that shares a program the Engine cannot link", async () => {
+    const scene = host();
+    const onTextureError = vi.fn();
+    const library = new MaterialLibrary({ onTextureError });
+    disposers.push(() => library.dispose());
+    const root = library.acquire(scene, "material", tinted(1));
+    const instance = library.acquire(scene, "material", tinted(1), { instanceKey: "actor" });
+    if (!root.ok || !instance.ok) throw new Error("Expected compiled materials");
+    const rootMesh = MeshBuilder.CreatePlane("root", {}, scene);
+    const instanceMesh = MeshBuilder.CreatePlane("instance", {}, scene);
+    rootMesh.material = root.material;
+    instanceMesh.material = instance.material;
+    await Promise.all([root.ready, instance.ready]);
+    expect(instance.material.buildId).toBe(root.material.buildId);
+    // The Engine creates one Effect for both and hands only its first requester's `onError` the failure, then
+    // raises it for the Engine.
+    const log = "FRAGMENT SHADER ERROR: 0:7: syntax error";
+    const effect = { name: { vertex: `nodeMaterial${root.material.buildId}` }, getCompilationError: () => log } as unknown as Effect;
+    root.material.onError?.(effect, log);
+    scene.getEngine().onEffectErrorObservable.notifyObservers({ effect, errors: log });
+    await Promise.resolve();
+    expect(rootMesh.material).toBeNull();
+    expect(instanceMesh.material).toBeNull();
+    expect(onTextureError).toHaveBeenCalledTimes(2);
+    expect(library.materialFor(scene, "material", { instanceKey: "actor" })).toBeNull();
+  });
+
+  it("warms a first acquisition for its bound meshes when its host captures right after, failing with the compiler's log", async () => {
+    const scene = host();
+    const library = new MaterialLibrary({ warmFirstAcquisition: true });
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "material", tinted(1));
+    if (!first.ok) throw new Error("Expected a compiled material");
+    const mesh = MeshBuilder.CreatePlane("bound", {}, scene);
+    mesh.material = first.material;
+    const log = "FRAGMENT SHADER ERROR: 0:9: undeclared identifier";
+    // Babylon rejects a failed compile with the shader log itself, a string.
+    const compile = vi.spyOn(first.material, "forceCompilationAsync").mockRejectedValue(log);
+    expect(await first.ready).toEqual([{ code: "material.compile.failed", message: log, severity: "error" }]);
+    expect(compile).toHaveBeenCalledWith(mesh);
   });
 
   it("compiles a replacement for its meshes while the published generation stays bound", async () => {

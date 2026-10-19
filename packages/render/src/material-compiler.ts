@@ -47,7 +47,7 @@ import type {
   MaterialValueType,
 } from "@babylonslate/shader-graph";
 import { componentCount, materialNodeDefinition } from "@babylonslate/shader-graph";
-import { materialGlslDiagnostic } from "./material-glsl-diagnostics";
+import { materialGlslDiagnostic, shaderLinkLog } from "./material-glsl-diagnostics";
 import {
   blockAdapterFor,
   createConstantBlock,
@@ -711,18 +711,30 @@ export function compileMaterialPlan(
   let shaderProbe: Mesh | null = null;
   let failedShaderEffect: Effect | null = null;
   let linkReported = false;
-  material.onError = (effect, errors) => {
-    failedShaderEffect = effect;
+  const reportLinkFailure = (effect: Effect, errors: string) => {
     // While the build is pending, its own probe turns the failure into the result (`ready`).
     if (buildState !== "ready" || disposed || linkReported) return;
     linkReported = true;
     const diagnostic: MaterialDiagnostic = {
       code: "material.compile.failed",
-      message: errors || effect.getCompilationError() || "Material shader failed to link",
+      message: shaderLinkLog(errors || effect.getCompilationError()) || "Material shader failed to link",
       severity: "error",
     };
     (options.onLinkError ?? options.onTextureError)?.(diagnostic);
   };
+  material.onError = (effect, errors) => {
+    failedShaderEffect = effect;
+    reportLinkFailure(effect, errors);
+  };
+  // The Engine returns a cached Effect to a second requester without calling its `onError`. Materials that share a
+  // program (a root, its Material Instances and per-component copies adopt one build id) would otherwise stay bound
+  // to an Effect that never links. Babylon raises this once per failed Effect, named by its first creator's build id.
+  // A material built after the failure adopts the dead program without hearing of it.
+  const effectErrors = scene.getEngine().onEffectErrorObservable.add(({ effect, errors }) => {
+    const name: unknown = effect.name;
+    if (typeof name === "object" && name !== null && (name as { vertex?: unknown }).vertex === `nodeMaterial${material.buildId}`)
+      reportLinkFailure(effect, errors);
+  });
   let shaderPostProcess: OwnedPostProcess | null = null;
   let shaderParticles: ParticleSystem | null = null;
   const shaderRetirement = new PostProcessRetirement();
@@ -890,6 +902,7 @@ export function compileMaterialPlan(
   if (buildError !== null) {
     material.onBuildErrorObservable.remove(errorObserver);
     material.onBuildObservable.remove(buildObserver);
+    scene.getEngine().onEffectErrorObservable.remove(effectErrors);
     diagnostics.push({
       code: "material.compile.buildFailed",
       message: buildError,
@@ -1053,6 +1066,7 @@ export function compileMaterialPlan(
     }
     material.onBuildErrorObservable.remove(errorObserver);
     material.onBuildObservable.remove(buildObserver);
+    scene.getEngine().onEffectErrorObservable.remove(effectErrors);
     parameters.dispose();
     for (const unsubscribe of loadObservers) unsubscribe();
     detachEngineOwnedTextures(material);
