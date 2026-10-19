@@ -201,7 +201,7 @@ function SessionReportGroupSection({
  * Nonmodal panel of runtime errors from the last Play session, grouped by
  * owning asset. Groups start collapsed; a row opens its asset at the node and
  * leaves the report open, so the editor stays usable beside it. Only Close,
- * the title-bar close and Escape dismiss it.
+ * the title-bar close and Escape pressed inside the report dismiss it.
  */
 export function PreviewSessionReport({
   open,
@@ -212,6 +212,7 @@ export function PreviewSessionReport({
   locationSources,
 }: PreviewSessionReportProps) {
   const phone = usePhoneLayout();
+  const frameRef = useRef<HTMLDivElement>(null);
   const labels = useSessionReportLabels(open, entries, locationSources);
   const groups = useMemo(() => groupSessionReportEntries(entries), [entries]);
   // Expansion belongs to one report; a new report starts collapsed.
@@ -270,8 +271,28 @@ export function PreviewSessionReport({
   return (
     // No backdrop and no focus trap: the editor behind stays visible and
     // usable, and a press outside never dismisses the report.
-    <Dialog open={open} onOpenChange={onOpenChange} modal={false} disablePointerDismissal>
+    <Dialog
+      open={open}
+      onOpenChange={(next, details) => {
+        // Escape belongs to whatever has the keyboard: pressed in a graph or the
+        // viewport (cancelling a wire, clearing a selection, closing a menu) it
+        // must reach the editor, so it closes the report only from inside it.
+        if (
+          !next &&
+          details.reason === "escape-key" &&
+          !frameRef.current?.contains(document.activeElement)
+        ) {
+          details.cancel();
+          details.allowPropagation();
+          return;
+        }
+        onOpenChange(next);
+      }}
+      modal={false}
+      disablePointerDismissal
+    >
       <DialogContent
+        ref={frameRef}
         className={
           phone
             ? "max-h-[min(32rem,80vh)] w-full sm:max-w-lg"

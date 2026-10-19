@@ -77,7 +77,7 @@ Errors and warnings from the session appear in the **Output Log** window. When P
 - An entry that names no asset, or one the project no longer has, shows **No Source**. Selecting it says why nothing opens. If an asset cannot be opened, for example while a Simulation is still stopping, the report says why; select the entry again.
 - **Copy Report** copies every entry as text.
 
-The report closes only when you close it: choose **Close** or the close button in its title bar, or press <kbd>Esc</kbd>. Pressing the editor behind it, or opening an asset from it, leaves it open.
+The report closes only when you close it: choose **Close** or the close button in its title bar, or press <kbd>Esc</kbd> while the keyboard is inside the report. Pressing the editor behind it, opening an asset from it, or pressing <kbd>Esc</kbd> in a graph or the viewport leaves it open.
 
 ## Runaway loops
 

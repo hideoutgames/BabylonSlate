@@ -242,7 +242,7 @@ it("stays open, over a usable editor, while rows open their sources", async () =
   expect(screen.getByTestId("preview-session-report")).toBeTruthy();
 });
 
-it("closes only through Close, the title-bar close or Escape", () => {
+it("closes through Close, the title-bar close, or Escape pressed inside the report", () => {
   const onOpenChange = vi.fn();
   renderReport([entry({ assetGuid: HERO.path, nodeId: "print" })], sources(), vi.fn(), onOpenChange);
 
@@ -254,8 +254,28 @@ it("closes only through Close, the title-bar close or Escape", () => {
   expect(onOpenChange.mock.lastCall?.[0]).toBe(false);
   onOpenChange.mockClear();
 
-  fireEvent.keyDown(screen.getByTestId("preview-session-report"), { key: "Escape" });
+  const copy = screen.getByTestId("session-report-copy");
+  act(() => copy.focus());
+  fireEvent.keyDown(copy, { key: "Escape" });
   expect(onOpenChange.mock.lastCall?.[0]).toBe(false);
+});
+
+it("leaves Escape to the editor when the keyboard is outside the report", () => {
+  const onOpenChange = vi.fn();
+  renderReport([entry({ assetGuid: HERO.path, nodeId: "print" })], sources(), vi.fn(), onOpenChange);
+  // The editor's own Escape handling (cancel a wire, clear a selection, close a menu) still runs.
+  const reachedEditor = vi.fn();
+  window.addEventListener("keydown", reachedEditor);
+
+  const editor = screen.getByTestId("editor-behind");
+  act(() => editor.focus());
+  const notPrevented = fireEvent.keyDown(editor, { key: "Escape" });
+
+  window.removeEventListener("keydown", reachedEditor);
+  expect(onOpenChange).not.toHaveBeenCalled();
+  expect(reachedEditor).toHaveBeenCalledTimes(1);
+  expect(notPrevented).toBe(true);
+  expect(screen.getByTestId("preview-session-report")).toBeTruthy();
 });
 
 it("says why a chosen row opened nothing, and clears the note once another row opens", async () => {
