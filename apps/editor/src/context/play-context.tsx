@@ -1420,6 +1420,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           documentOverrides: playDocumentOverrides(assetRegistry, sourceDocuments),
           project: projectDocument,
           createScope: playRequestInputsRef.current.documents.createAssetLoadScope,
+          traceExecution: simulating,
           compile: required => collectPlayPreviewScripts(required, sourceDocuments, projectDocument, { traceExecution: simulating }),
         };
         playSourceHostRef.current = sourceHost;

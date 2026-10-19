@@ -64,6 +64,12 @@ export interface PlayAssetSourceHost {
   /** Fixed launch snapshots also used by subsequent streamed/demand acquisitions. */
   documentOverrides?: ReadonlyMap<string, PlayDocumentOverride>;
   createScope: (owner: string) => AssetLoadScope;
+  /**
+   * `compile` carries the graph debugger's execution probes (a Simulation). Compiled scripts stay
+   * cached after a session ends, so they are keyed on this: Play must never be handed a
+   * Simulation's probes, nor a Simulation Play's scripts.
+   */
+  traceExecution?: boolean;
   compile: (required: ReadonlySet<string>) => Promise<{ bundles: ScriptBundleEntry[]; diagnostics: readonly Diagnostic[] }>;
 }
 
@@ -471,7 +477,8 @@ async function acquirePlayAssetSourcesAttempt(
     const workingInputs = [...(host.documentOverrides ?? [])].map(([guid, value]) => [guid, value.cacheKey]).sort(([a], [b]) => a.localeCompare(b));
     const compiled = compileRoot ? await scope.acquire(compileRoot, {
       key: `play-scripts:v1:${JSON.stringify([compileInputs, host.registry.generation,
-        workingInputs, project.settings.tags, project.settings.infiniteLoopDetection, project.settings.loopCount])}`,
+        workingInputs, project.settings.tags, project.settings.infiniteLoopDetection, project.settings.loopCount,
+        host.traceExecution === true])}`,
       estimate: { sourceBytes: 0, decodedBytes: Math.max(4096, compileInputBytes * 8), temporaryBytes: Math.max(4096, compileInputBytes * 4) },
       load: async (_asset, signal) => {
         signal.throwIfAborted();

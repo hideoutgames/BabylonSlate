@@ -327,6 +327,39 @@ describe("Play source ownership", () => {
     cold.release(); loading.dispose();
   });
 
+  it("keeps a Simulation's instrumented scripts and Play's scripts apart in the shared compile cache", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    for (const id of ["scene-a", "script"]) await storage.writeBinary(`assets/${id}.babasset`, await encodeBabasset({
+      header: {
+        guid: id, name: id, type: id === "script" ? "Class" : "Scene", version: id === "script" ? 1 : SCENE_SCHEMA_VERSION, engineVersion: "0.0.0", mode: "thin",
+        dependencies: id === "script" ? [] : ["script"], requiredDependencies: id === "script" ? [] : ["script"], dependencyMetadataVersion: 1, requiredVariableNames: [],
+        payload: id === "script" ? { nodes: [], edges: [], members: [] } : { actors: [] },
+      }, chunks: [],
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "variants" });
+    const compiled = (source: string) => vi.fn(async () => ({ bundles: [{ assetGuid: "script", classId: "Shared", source, anchors: [], entryPoints: [] }], diagnostics: [] }));
+    const play = { registry, project: createEmptyProject("Variants"), createScope: (owner: string) => loading.createScope(owner), compile: compiled("play();") };
+    const simulation = { ...play, traceExecution: true, compile: compiled("simulate(__dbg);") };
+    const acquire = async (host: typeof play, consumer: string) => {
+      const prepared = await acquirePlayAssetSources(host, ["scene-a"], { consumer, signal: new AbortController().signal });
+      const scripts = prepared.game.scripts.map(script => script.source);
+      prepared.release();
+      return scripts;
+    };
+    // Each session's scripts stay cached after it ends, as the asset loader keeps them warm until trimmed.
+    expect(await acquire(simulation, "Simulation")).toEqual(["simulate(__dbg);"]);
+    expect(await acquire(play, "Play")).toEqual(["play();"]);
+    expect(await acquire(simulation, "Simulation again")).toEqual(["simulate(__dbg);"]);
+    expect(await acquire(play, "Play again")).toEqual(["play();"]);
+    expect(simulation.compile).toHaveBeenCalledTimes(1);
+    expect(play.compile).toHaveBeenCalledTimes(1);
+    loading.dispose();
+  });
+
   it("starts genuine subsystem leaves and the selected Game Instance using only class headers", async () => {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder();
