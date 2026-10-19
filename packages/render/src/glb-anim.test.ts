@@ -1,6 +1,6 @@
 import { renderSceneWithGameTime, setSceneGameTimePaused } from "./scene-game-time";
 import { installAssetBytes } from "@babylonslate/assets";
-import { AnimationGroup, FreeCamera, Vector3, Mesh, MeshBuilder, StandardMaterial, TransformNode } from "@babylonjs/core";
+import { AnimationGroup, FreeCamera, Matrix, Vector3, Mesh, MeshBuilder, StandardMaterial, TransformNode } from "@babylonjs/core";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
 import {
   applyAnimStateToScene,
@@ -551,5 +551,42 @@ describe("prepareInstanceMaterials while the thread is held", () => {
     expect(rounds).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS / held);
     expect(rounds).toBeLessThanOrEqual(SCENE_THREAD_HELD_BUDGET_MS / held + 2);
     dispose();
+  });
+});
+
+// A compile outside a held load links what the first draw would otherwise link, so it builds only the variants
+// Babylon draws the mesh with.
+describe("prepareInstanceMaterials compiles the variants Babylon draws", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function compiledVariants(shape: (part: Mesh) => void): Promise<string[]> {
+    const { engine, scene } = createTestEngine();
+    // Babylon adds thin instances only where instanced arrays exist.
+    engine.getCaps().instancedArrays = true;
+    try {
+      const root = new Mesh("model", scene);
+      const part = MeshBuilder.CreateBox("part", {}, scene);
+      part.parent = root;
+      const material = new StandardMaterial("surface", scene);
+      part.material = material;
+      shape(part);
+      const compile = vi.spyOn(material, "forceCompilationAsync").mockResolvedValue();
+      await prepareInstanceMaterials(root, () => {}, new Promise<never>(() => {}));
+      return compile.mock.calls.map(([, options]) => options?.useInstances ? "instanced" : "plain");
+    } finally { scene.dispose(); engine.dispose(); }
+  }
+
+  it("compiles a mesh with no instances plain only", async () => {
+    expect(await compiledVariants(() => {})).toEqual(["plain"]);
+  });
+
+  it("compiles a thin-instanced mesh (foliage) instanced only, as Babylon never draws it plain", async () => {
+    expect(await compiledVariants((part) => { part.thinInstanceAdd(Matrix.Identity()); })).toEqual(["instanced"]);
+  });
+
+  it("compiles a mesh with instances plain and instanced", async () => {
+    expect(await compiledVariants((part) => { part.createInstance("copy"); })).toEqual(["plain", "instanced"]);
   });
 });
