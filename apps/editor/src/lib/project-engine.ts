@@ -1,5 +1,10 @@
 import type { GpuBackend } from "@babylonslate/core";
-import { createBackendEngineSession, type BackendEngineSession } from "@babylonslate/render";
+import {
+  createBackendEngineSession,
+  setFixedShapeLightGuard,
+  setFixedShapeLightingEnabled,
+  type BackendEngineSession,
+} from "@babylonslate/render";
 import { editorDracoPublicBase, editorKtx2PublicBase, editorMeshoptPublicBase } from "./public-engine-assets";
 import { isUsableEngine } from "./shared-engine-generation";
 
@@ -60,7 +65,19 @@ export async function createProjectEngineSession(
     releaseCanvas: (canvas) => canvas.remove(),
   });
   if (constructorCanvas) constructorCanvas.style.display = "none";
+  if (import.meta.env.VITE_TEST_MODE === "true") applyTestFixedShapeLighting(session);
   return session;
+}
+
+/** Test builds' perf routes (`BL_PERF_FIXED_LIGHTS`): fixed-shape lighting from the Engine's first load. */
+export const TEST_FIXED_SHAPE_LIGHTING_KEY = "babylonslate:test-fixed-shape-lighting";
+
+function applyTestFixedShapeLighting(session: ProjectEngineSession): void {
+  let guard: string | null;
+  try { guard = localStorage.getItem(TEST_FIXED_SHAPE_LIGHTING_KEY); } catch { return; }
+  if (guard !== "multiply" && guard !== "branch") return;
+  setFixedShapeLightGuard(session.engine, guard);
+  setFixedShapeLightingEnabled(session.engine, true);
 }
 
 /** Serial ownership: a superseded device request settles before another Engine starts. */
