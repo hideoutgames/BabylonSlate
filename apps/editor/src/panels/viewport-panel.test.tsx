@@ -11,6 +11,7 @@ import { areaEmissionChunkId, encodeAssetDocument, readAssetDocumentHeader, type
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { playAudioLibraryFromAssets } from "../lib/play-audio";
 import type { SceneShapeEditTarget } from "../context/scene-editing-context";
+import type { SimulationViewport } from "../services/simulation-viewport";
 
 const navmeshOverlaySync = vi.hoisted(() => vi.fn(async () => {}));
 const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() => {
@@ -52,6 +53,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
     loadSceneAsync: vi.fn(async () => {}),
     resize: vi.fn(),
     dispose: vi.fn(),
+    whenReleased: vi.fn(async () => {}),
     resourceCache: {},
     registerFonts: vi.fn(async () => {}),
     setMeshAssets: vi.fn(),
@@ -124,6 +126,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
       playing: false,
       preparing: false,
       reportSceneViewportLoading: vi.fn(),
+      registerSimulationViewport: undefined as ((viewport: SimulationViewport) => () => void) | undefined,
     },
   };
 });
@@ -548,6 +551,34 @@ describe("ViewportPanel engine", () => {
       play.ensureSharedEngine.mockReturnValue(liveEngine);
       play.sharedEngineGeneration = 1;
       errorLog.mockRestore();
+    }
+  });
+
+  it("closes its loading dialog when a Simulation takes the viewport mid-load, and reloads on restore", async () => {
+    documents.openDocuments = [{
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: createDefaultScene(),
+    }];
+    let viewport!: SimulationViewport;
+    play.registerSimulationViewport = (registered) => { viewport = registered; return () => {}; };
+    // The first load never finishes warming shaders, as one blocked on a slow driver does.
+    handle.prewarmSceneMaterials.mockReturnValueOnce(new Promise<void>(() => {}));
+    try {
+      renderViewport();
+      await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("Warming Shaders"));
+      expect(play.reportSceneViewportLoading).toHaveBeenLastCalledWith("scene:S", true);
+      await act(async () => { await viewport.suspend(); });
+      // The Simulation is about to run over the viewport; a stale modal here would sit on top of it.
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(play.reportSceneViewportLoading).toHaveBeenLastCalledWith("scene:S", false);
+      expect(handle.dispose).toHaveBeenCalledOnce();
+      expect(createEngineMock).toHaveBeenCalledOnce();
+      act(() => viewport.restore());
+      await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+      expect(createEngineMock).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    } finally {
+      play.registerSimulationViewport = undefined;
     }
   });
 
