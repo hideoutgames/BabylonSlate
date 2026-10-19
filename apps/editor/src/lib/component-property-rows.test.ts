@@ -792,7 +792,7 @@ describe("componentPropertyRows", () => {
   });
 
   it("disables Box 2D Half Extents with a note while the actor's Sprite has an asset", () => {
-    const box = { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } } } };
+    const box = { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } }, collisionPreset: "custom" } };
     const extentsFor = (sprites: SerializedComponent[], collider: SerializedComponent = box) => {
       const { rows } = rowsFor(collider, { physicsWorld: "2d", actorComponents: () => [collider, ...sprites] });
       return rows.find((row) => row.id.endsWith("-shape-half-extents"))!;
@@ -807,7 +807,7 @@ describe("componentPropertyRows", () => {
       expect(free.description).toBeUndefined();
     }
     // Circle and capsule keep their size, so they never carry the note.
-    const circle = { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "circle", radius: 0.5 } } };
+    const circle = { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "circle", radius: 0.5 }, collisionPreset: "custom" } };
     const { rows } = rowsFor(circle, { physicsWorld: "2d", actorComponents: () => [circle, sprite("sprite-1")] });
     expect(rows.some((row) => row.disabled || row.description)).toBe(false);
   });
@@ -950,6 +950,7 @@ describe("componentPropertyRows", () => {
           isTrigger: false,
           layer: 1,
           mask: 1,
+          collisionPreset: "custom",
         },
       },
       { collisionLayers: ["Default", "Enemy"] },
@@ -996,7 +997,7 @@ describe("componentPropertyRows", () => {
       layer.onChange("Enemy");
     }
     expect(update).toHaveBeenCalledWith("layer", 2);
-    // No Collision Preset is Custom: the collider's own Layer and Collides With, editable.
+    // Custom: the collider's own Layer and Collision Responses, editable.
     expect(rows.find((row) => row.id.endsWith("-collisionPreset"))).toMatchObject({
       kind: "enum",
       label: "Collision Preset",
@@ -1041,7 +1042,7 @@ describe("componentPropertyRows", () => {
     [0b100, "Layer 3"],
   ])("labels stored collision layer mask %i as %s instead of the first layer", (layer, label) => {
     const { rows } = rowsFor(
-      { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 0.5 }, layer } },
+      { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 0.5 }, layer, collisionPreset: "custom" } },
       { collisionLayers: ["Default", "Enemy"] },
     );
     const row = rows.find((entry) => entry.id.endsWith("-layer"));

@@ -30,10 +30,9 @@ describe("Collision Presets", () => {
     expect(filterOf({ layer: 1, mask: 4, collisionPreset: "ghost-pass" }, PRESETS)).toEqual({ layer: 2, mask: 0xffffffef, overlapMask: 0x10 });
   });
 
-  it("keeps a Custom collider's own layer and responses, and a missing or removed preset is Custom", () => {
+  it("keeps a Custom collider's own layer and responses, as for a removed preset", () => {
     const own = { layer: 1, mask: 4, overlapMask: 8 };
     expect(filterOf({ ...own, collisionPreset: "custom" }, PRESETS)).toEqual(own);
-    expect(filterOf(own, PRESETS)).toEqual(own);
     expect(filterOf({ ...own, collisionPreset: "removed" }, PRESETS)).toEqual(own);
   });
 });

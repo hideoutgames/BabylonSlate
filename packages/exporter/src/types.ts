@@ -142,8 +142,8 @@ export type GameManifest = {
   sortingLayers: readonly string[];
   pixelPerfect: boolean;
   physicsWorld: "2d" | "3d";
-  /** Project Collision Presets; absent in older games, where every collider keeps its own layer and mask. */
-  collisionPresets?: import("@babylonslate/core").CollisionPreset[];
+  /** Project Collision Presets. */
+  collisionPresets: import("@babylonslate/core").CollisionPreset[];
   assets: GameAssetIndexEntry[];
   /** Present only when `bundleDebugger` is true. */
   infiniteLoopDetection?: boolean;

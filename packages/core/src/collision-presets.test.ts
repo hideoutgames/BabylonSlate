@@ -20,10 +20,10 @@ describe("Collision Presets", () => {
     ])).toEqual([{ id: "a", name: "A", layer: 4, mask: 1, overlapMask: 2 }]);
   });
 
-  it("uses the preset's filter, and the collider's own for Custom or a removed preset", () => {
+  it("uses the preset's filter, Default without one, and the collider's own for Custom or a removed preset", () => {
     expect(resolveCollisionFilter(own, "ghost-pass", presets)).toEqual({ layer: 2, mask: 0xffffffef, overlapMask: 0x10 });
+    expect(resolveCollisionFilter(own, undefined, normalizeCollisionPresets(undefined))).toEqual({ layer: 1, mask: 0xffffffff, overlapMask: 0 });
     expect(resolveCollisionFilter(own, "custom", presets)).toEqual(own);
-    expect(resolveCollisionFilter(own, undefined, presets)).toEqual(own);
     expect(resolveCollisionFilter(own, "removed", presets)).toEqual(own);
   });
 

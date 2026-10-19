@@ -10,7 +10,7 @@ Each Collider, collidable Mesh, Dynamic Runtime Mesh and Ragdoll has these setti
 
 | Setting | Description |
 | --- | --- |
-| Collision Preset | A preset from Project Settings, or **Custom**. New components use **Default**; components saved before presets existed are Custom. |
+| Collision Preset | A preset from Project Settings, or **Custom**. **Default** unless set. |
 | Layer | The one layer this collider belongs to. Read only unless Custom. |
 | Collision Responses | For every layer: **Ignore**, **Overlap** or **Block**. The column headers set every layer at once. Read only unless Custom. |
 

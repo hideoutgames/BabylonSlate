@@ -1,8 +1,9 @@
 /**
  * Project Collision Presets: named collision setups (a Layer and a response
  * to every layer: Ignore, Overlap or Block) that colliders reference by
- * preset id. A collider whose `collisionPreset` names no preset is Custom and
- * keeps its own `layer`, `mask` and `overlapMask`.
+ * preset id; a collider without one uses `default`. A collider whose
+ * `collisionPreset` is `custom`, or names a deleted preset, keeps its own
+ * `layer`, `mask` and `overlapMask`.
  *
  * Responses are two masks: `mask` holds the layers it blocks, `overlapMask`
  * the layers it overlaps; a layer in neither is ignored. A pair takes the
@@ -60,9 +61,9 @@ export function normalizeCollisionPresets(value: unknown): CollisionPreset[] {
   return presets.length > 0 ? presets : DEFAULT_COLLISION_PRESETS.map((preset) => ({ ...preset }));
 }
 
-/** A component's preset reference: a preset id, or Custom when missing or not a string. */
+/** A component's preset reference: a preset id or `custom`; the Default preset when missing. */
 export function parseCollisionPresetRef(value: unknown): string {
-  return typeof value === "string" && value.trim() ? value.trim() : CUSTOM_COLLISION_PRESET;
+  return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_COLLISION_PRESET_ID;
 }
 
 /** The preset a reference names, if it still exists. */
