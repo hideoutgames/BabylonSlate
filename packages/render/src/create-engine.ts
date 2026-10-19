@@ -3163,12 +3163,13 @@ function initializeEngine(
   let gameTimePaused = false;
   /** The world view holds its last image for WebGPU pipelines (`SceneRenderCoordinator.holdingForPipelines`). */
   let pipelineHold = false;
+  /** Play pauses its game time, audio and particles while the view holds, as
+   * for a blocking load, but keeps drawing: the frame that finds the
+   * pipelines ready ends the hold. Resuming never consumes the held interval. */
+  const heldForPipelines = () => pipelineHold && options.playMode === true;
   const applyPause = () => {
     const paused = callerPaused || sceneStreamingPaused || gameTimePaused;
-    // Play pauses its game time, audio and particles while the view holds, as
-    // for a blocking load, but keeps drawing: the frame that finds the
-    // pipelines ready ends the hold. Resuming never consumes the held interval.
-    const held = pipelineHold && options.playMode === true;
+    const held = heldForPipelines();
     setSceneGameTimePaused(scene, gameTimePaused || held);
     for (const layer of sceneLayerCompositor?.layers() ?? []) setSceneGameTimePaused(layer.scene, gameTimePaused || held);
     binding.paused = paused;
@@ -3553,7 +3554,7 @@ function initializeEngine(
         // through the world view.
         if (layer) {
           followSceneRenderSettings(layer.scene, scene);
-          setSceneGameTimePaused(layer.scene, gameTimePaused);
+          setSceneGameTimePaused(layer.scene, gameTimePaused || heldForPipelines());
           for (const texture of layer.scene.textures) applyTextureAnisotropy(texture);
           layer.scene.onNewTextureAddedObservable.add(applyTextureAnisotropy);
         }
