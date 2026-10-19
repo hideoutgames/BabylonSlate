@@ -8,10 +8,10 @@ In the **Content Browser**, choose **New Asset > AI > Blackboard**.
 
 ## Editor
 
-Double-tap a Blackboard to open it. The editor has two panels.
+Double-tap a Blackboard to open it. The window has **Keys** and an **Inspector**.
 
-- **Keys**: a button for each key, and **Add Key**.
-- **Inspector**: the settings of the selected key. Tap **Delete Key** to remove it.
+- **Keys**: one row per key with its type colour and type. **+** adds a key and the trash button deletes the selected one. Double-tap a name (or press <kbd>F2</kbd>) to rename it; tap the type to change it.
+- **Inspector**: the selected key's **Name**, **Type**, **Enum Type** or **Record Type**, and **Default Value**.
 
 ## Settings
 
@@ -19,7 +19,7 @@ Double-tap a Blackboard to open it. The editor has two panels.
 | --- | --- |
 | Name | The key's name. Tree nodes refer to the key by this name. |
 | Type | The kind of value the key holds, such as **Bool**, **Float**, **String** or **Vector 3**. For an **Enum** or **Structure / Data Definition** key, also pick the **Enum Type** or **Record Type**. See [Pin Types](../scripting/pin-types.md). |
-| Default | The value the key starts with. The fields depend on the type. |
+| Default Value | The value the key starts with. The fields depend on the type. |
 
 ## Notes
 

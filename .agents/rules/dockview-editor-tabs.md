@@ -1,6 +1,6 @@
 # DockView asset editor tabs
 
-An asset editor tab is a **DockView** document (`DockviewShell`), so its panels resize, dock beside each other and can take extra tabs later. Every new document kind belongs in `DOCKVIEW_KINDS`; `AssetDocumentWorkspace` serves only the one existing kind outside it (Blackboard). The toolbar **Windows** menu works only for kinds in `DockviewDocumentKind`, so a disabled Windows menu or a missing panel means the wiring is incomplete.
+An asset editor tab is a **DockView** document (`DockviewShell`), so its panels resize, dock beside each other and can take extra tabs later. Every document kind belongs in `DOCKVIEW_KINDS`; there is no non-DockView fallback page. The toolbar **Windows** menu works only for kinds in `DockviewDocumentKind`, so a disabled Windows menu or a missing panel means the wiring is incomplete.
 
 ## Required wiring, in one change
 

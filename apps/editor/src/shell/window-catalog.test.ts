@@ -156,6 +156,12 @@ describe("material dock catalog", () => {
     expect(primaryDockPanel("material-instance")).toBe("material-instance-preview");
   });
 
+  it("opens a Blackboard in DockView on its Keys with the Inspector beside it", () => {
+    expect(isDockviewDocumentKind("blackboard")).toBe(true);
+    expect(listDockWindows("blackboard").map((entry) => entry.title)).toEqual(["Keys", "Inspector"]);
+    expect(primaryDockPanel("blackboard")).toBe("blackboard-keys");
+  });
+
   it("opens a Font in DockView on its Preview with the Inspector beside it", () => {
     expect(isDockviewDocumentKind("font")).toBe(true);
     expect(listDockWindows("font").map((entry) => entry.title)).toEqual(["Preview", "Inspector"]);
