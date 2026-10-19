@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { NullEngine, RawTexture, Scene, StandardMaterial } from "@babylonjs/core";
+import { installEngineDefaultMaterial } from "@babylonslate/render";
 import { SessionDiagnosticAggregator } from "@babylonslate/runtime";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
 import {
@@ -33,11 +35,88 @@ describe("texturesRetainedAfterPlay", () => {
     const kept = {}, released = {}, placeholder = {}, leaked = {};
     const before = new Set([kept, released]);
     // Same size as before: one texture released, one session texture retained.
-    const engine = { getLoadedTexturesCache: () => [kept, leaked], _emptyTexture3D: placeholder };
-    expect(texturesRetainedAfterPlay(engine as never, before)).toEqual([leaked]);
+    const engine = { getLoadedTexturesCache: () => [kept, leaked], scenes: [], _emptyTexture3D: placeholder };
+    expect(texturesRetainedAfterPlay(engine as never, before, new Set())).toEqual([leaked]);
     // Babylon's lazily created placeholder grows the cache without a leak.
     engine.getLoadedTexturesCache = () => [kept, released, placeholder];
-    expect(texturesRetainedAfterPlay(engine as never, before)).toEqual([]);
+    expect(texturesRetainedAfterPlay(engine as never, before, new Set())).toEqual([]);
+  });
+
+  /** A NullEngine whose cache lists raw textures, as the WebGL and WebGPU Engines' do. */
+  function sharedEngine(): NullEngine {
+    const engine = new NullEngine();
+    const createRawTexture = engine.createRawTexture.bind(engine);
+    engine.createRawTexture = (...args: Parameters<typeof createRawTexture>) => {
+      const texture = createRawTexture(...args);
+      engine.getLoadedTexturesCache().push(texture);
+      return texture;
+    };
+    return engine;
+  }
+
+  const rawTexture = (owner: Scene | NullEngine, name: string) => {
+    const texture = RawTexture.CreateRGBATexture(new Uint8Array(16), 2, 2, owner);
+    texture.name = name;
+    return texture;
+  };
+
+  /** What an editor preview Scene creates on the shared Engine the first time it draws a PBR Material: the default checker and the BRDF table. */
+  function mountEditorPreview(engine: NullEngine) {
+    const scene = new Scene(engine);
+    const checker = installEngineDefaultMaterial(scene).albedoTexture!.getInternalTexture()!;
+    const brdfTexture = rawTexture(scene, "data:EnvironmentBRDFTexture2");
+    scene.environmentBRDFTexture = brdfTexture;
+    return { scene, checker, brdf: brdfTexture.getInternalTexture()! };
+  }
+
+  it("leaves out the textures of an editor Scene opened during the session, which it still references", () => {
+    const engine = sharedEngine();
+    const before = new Set(engine.getLoadedTexturesCache());
+    const play = new Scene(engine);
+    const preview = mountEditorPreview(engine);
+    play.dispose();
+    expect(engine.getLoadedTexturesCache()).toEqual(expect.arrayContaining([preview.checker, preview.brdf]));
+    expect(texturesRetainedAfterPlay(engine, before, new Set([play]))).toEqual([]);
+  });
+
+  it("leaves out a texture the live Scene references only through a Material, though it was built on the Engine", () => {
+    const engine = sharedEngine();
+    const before = new Set(engine.getLoadedTexturesCache());
+    const editor = new Scene(engine);
+    const sampled = rawTexture(engine, "engine-built");
+    new StandardMaterial("sampler", editor).diffuseTexture = sampled;
+    expect(editor.textures).not.toContain(sampled);
+    expect(engine.getLoadedTexturesCache()).toContain(sampled.getInternalTexture());
+    expect(texturesRetainedAfterPlay(engine, before, new Set())).toEqual([]);
+  });
+
+  it("reports a texture no live Scene references, while leaving out the ones the editor Scene holds", () => {
+    const engine = sharedEngine();
+    const before = new Set(engine.getLoadedTexturesCache());
+    mountEditorPreview(engine);
+    const orphan = rawTexture(engine, "play-orphan").getInternalTexture();
+    expect(texturesRetainedAfterPlay(engine, before, new Set())).toEqual([orphan]);
+  });
+
+  it("reports the textures of the disposed Play Scene that outlived it", () => {
+    const engine = sharedEngine();
+    const before = new Set(engine.getLoadedTexturesCache());
+    const play = new Scene(engine);
+    const gameTexture = rawTexture(play, "game-material").getInternalTexture();
+    mountEditorPreview(engine);
+    play.dispose();
+    expect(engine.scenes).not.toContain(play);
+    expect(texturesRetainedAfterPlay(engine, before, new Set([play]))).toEqual([gameTexture]);
+  });
+
+  it("does not let a Play Scene that is still alive excuse what it holds", () => {
+    const engine = sharedEngine();
+    const before = new Set(engine.getLoadedTexturesCache());
+    const play = new Scene(engine);
+    const gameTexture = rawTexture(play, "game-material").getInternalTexture();
+    mountEditorPreview(engine);
+    expect(engine.scenes).toContain(play);
+    expect(texturesRetainedAfterPlay(engine, before, new Set([play]))).toEqual([gameTexture]);
   });
 });
 
