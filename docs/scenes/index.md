@@ -32,7 +32,7 @@ See [Touch Gestures](../start/gestures.md) for the full list.
 | **View** | Shows how the viewport draws the scene (**PBR** or **CEL**, **Unlit**, **Wireframe**) and holds **Show Grid**, **Show Navmesh** and **Show Collisions**. |
 | **Game Camera** | Looks through the scene's Default Camera (<kbd>Shift</kbd>+<kbd>C</kbd>). |
 | **Viewport Settings** | **Joystick**, **Pivot Around Center**, **Grid Settings** and **Camera Speed**. |
-| **2D** / **3D** | Switches the scene between 2D and 3D (<kbd>Alt</kbd>+<kbd>V</kbd>). The active one is highlighted. |
+| **2D** / **3D** | One switch: tap anywhere on it to flip the scene between 2D and 3D (<kbd>Alt</kbd>+<kbd>V</kbd>). The active side is highlighted. |
 
 **Grid Settings** holds **Grid Size** (visible cell spacing), **Grid Snap** (move increment), **Rotation Snap (Degrees)** and **Scale Snap**. New scenes use 1, 1, 15 and 0.25. **Camera Speed** (default 8 units per second) and **Drop Distance** (default 10,000 units) are in **Engine Settings > Viewport**.
 

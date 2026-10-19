@@ -406,16 +406,26 @@
   align-self: center;
 }
 
-/* A two- or three-way mode switch inside an island: a flat track with a
+/* A two-way mode switch inside an island: one button, a flat track with a
  * neutral fill on the active option; orange stays for selected tools. */
-.toolbar-island .toolbar-island-segmented {
+.toolbar-island button.toolbar-island-segmented {
+  display: inline-flex;
+  align-items: center;
   gap: 1px;
   padding: 2px;
   border-radius: 8px;
   background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  cursor: pointer;
 }
 
-.toolbar-island .toolbar-island-segmented > button {
+.toolbar-island button.toolbar-island-segmented:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--foreground) 9%, transparent);
+}
+
+.toolbar-island .toolbar-island-segmented > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 24px;
   min-width: 30px;
   padding-inline: 8px;
@@ -425,11 +435,9 @@
   color: var(--muted-foreground);
 }
 
-.toolbar-island .toolbar-island-segmented > button[aria-pressed="true"],
-.toolbar-island .toolbar-island-segmented > button[aria-pressed="true"]:hover:not(:disabled) {
+.toolbar-island .toolbar-island-segmented > span[data-active="true"] {
   background: color-mix(in oklch, var(--foreground) 14%, transparent);
   color: var(--foreground);
-  box-shadow: none;
 }
 
 /* Coarse pointers get full touch targets in islands that live over a running

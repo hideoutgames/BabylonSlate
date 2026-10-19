@@ -507,28 +507,23 @@ export function ViewportToolbar({
           <Tooltip>
             <TooltipTrigger
               render={
-                <ToggleGroup
-                  variant="outline"
+                // One switch: a press anywhere on the track flips the dimension.
+                <Button
+                  type="button"
+                  variant="ghost"
                   size="sm"
-                  spacing={0}
-                  value={[viewportMode]}
-                  onValueChange={(value) => {
-                    const next = value[0] as "2d" | "3d" | undefined;
-                    if (next) setMode(next);
-                  }}
-                  aria-label="Viewport Dimension"
+                  role="switch"
+                  aria-checked={viewportMode === "3d"}
+                  aria-label="3D Viewport"
+                  onClick={() => setMode(viewportMode === "3d" ? "2d" : "3d")}
                   className="toolbar-island-segmented"
                   aria-keyshortcuts={modeChord ? ariaKeyShortcuts(modeChord) : undefined}
                   data-testid={`${testIdPrefix}viewport-mode-toggle`}
                 />
               }
             >
-              <ToggleGroupItem value="2d" aria-label="2D Viewport" data-testid={`${testIdPrefix}viewport-mode-2d`}>
-                2D
-              </ToggleGroupItem>
-              <ToggleGroupItem value="3d" aria-label="3D Viewport" data-testid={`${testIdPrefix}viewport-mode-3d`}>
-                3D
-              </ToggleGroupItem>
+              <span data-active={viewportMode === "2d"} data-testid={`${testIdPrefix}viewport-mode-2d`}>2D</span>
+              <span data-active={viewportMode === "3d"} data-testid={`${testIdPrefix}viewport-mode-3d`}>3D</span>
             </TooltipTrigger>
             <TooltipContent>
               Switch 2D / 3D <ShortcutKeys chord={modeChord} decorative />

@@ -442,10 +442,11 @@ describe("ViewportToolbar", () => {
     expect(harness.setGizmoSpace).toHaveBeenLastCalledWith("world");
   });
 
-  it("switches viewport mode in both directions from the 2D / 3D segments", () => {
+  it("flips the viewport dimension from a press anywhere on the 2D / 3D switch", () => {
     const { rerender } = renderToolbar();
-    expect(screen.getByTestId("viewport-mode-3d").getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(screen.getByTestId("viewport-mode-2d"));
+    expect(screen.getByTestId("viewport-mode-3d").getAttribute("data-active")).toBe("true");
+    // The active segment is part of the same switch.
+    fireEvent.click(screen.getByTestId("viewport-mode-3d"));
     expect(harness.setViewportMode).toHaveBeenCalledWith("2d");
     expect(harness.applySceneChange).toHaveBeenLastCalledWith(
       "scene:assets/Main.scene.babasset",
@@ -459,7 +460,7 @@ describe("ViewportToolbar", () => {
         <ViewportToolbar />
       </TooltipProvider>,
     );
-    expect(screen.getByTestId("viewport-mode-2d").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId("viewport-mode-2d").getAttribute("data-active")).toBe("true");
     fireEvent.click(screen.getByTestId("viewport-mode-3d"));
     expect(harness.setViewportMode).toHaveBeenLastCalledWith("3d");
     expect(harness.applySceneChange).toHaveBeenLastCalledWith(
@@ -667,7 +668,7 @@ describe("ViewportToolbar", () => {
     expect(screen.getByTestId("viewport-shading-wireframe")).toBeTruthy();
     expect(screen.queryByTestId("viewport-shading-points-cloud")).toBeNull();
     expect(
-      screen.getByTestId("viewport-mode-3d").getAttribute("aria-pressed"),
+      screen.getByTestId("viewport-mode-3d").getAttribute("data-active"),
     ).toBe("true");
   });
 
