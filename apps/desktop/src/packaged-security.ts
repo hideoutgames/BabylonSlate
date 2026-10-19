@@ -142,6 +142,25 @@ export const LIBRARY_FILE_OPERATIONS = [
   "readBinary", "readBinaryRange", "writeBinary", "exists", "readdir", "mkdir", "remove", "stat",
 ] as const;
 
+/** Matches `NativeHttpImageType` in `@babylonslate/vfs`; Clerk accepts exactly these profile picture types. */
+const UPLOAD_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+/** 10 MiB of image bytes, base64 encoded, with slack for padding. */
+const MAX_UPLOAD_BASE64_LENGTH = 14 * 1024 * 1024;
+
+/** An upload is one POST image part and never a text body: the field and file name end up in a multipart header. */
+function validateImageUpload(request: Record<string, unknown>): void {
+  requireValue(request.method === "POST" && request.body === undefined);
+  requireValue(request.upload && typeof request.upload === "object" && !Array.isArray(request.upload));
+  const upload = request.upload as Record<string, unknown>;
+  text(upload.field, 64);
+  requireValue(/^[A-Za-z][A-Za-z0-9_-]*$/.test(upload.field));
+  text(upload.fileName, 128);
+  requireValue(/^[A-Za-z0-9][A-Za-z0-9._ -]*$/.test(upload.fileName));
+  requireValue(UPLOAD_IMAGE_TYPES.includes(String(upload.contentType)));
+  text(upload.base64, MAX_UPLOAD_BASE64_LENGTH);
+  requireValue(/^[A-Za-z0-9+/]+={0,2}$/.test(upload.base64));
+}
+
 export function validateIpcArguments(channel: string, args: unknown[]): void {
   const operation = channel.startsWith("library:") ? channel.slice("library:".length) : null;
   if (operation !== null) {
@@ -197,6 +216,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     requireValue(url.protocol === "https:" && !url.username && !url.password);
     requireValue(request.method === undefined || ["GET", "POST", "PUT", "DELETE", "HEAD"].includes(String(request.method)));
     if (request.body !== undefined) text(request.body);
+    if (request.upload !== undefined) validateImageUpload(request);
     if (request.headers !== undefined) {
       requireValue(request.headers && typeof request.headers === "object" && !Array.isArray(request.headers));
       for (const [key, value] of Object.entries(request.headers)) {

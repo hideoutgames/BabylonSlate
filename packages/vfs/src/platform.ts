@@ -5,6 +5,7 @@ import type {
   ProjectFolderHandle,
 } from "@babylonslate/core";
 import type { LibraryFolder } from "./library-folders";
+import type { NativeHttpImageUpload } from "./native-http-port";
 
 export type HostPlatform = "ios" | "android" | "electron" | "web";
 
@@ -49,6 +50,7 @@ export interface ElectronHttpBridge {
     url: string;
     headers: Record<string, string>;
     body?: string;
+    upload?: NativeHttpImageUpload;
   }): Promise<{
     status: number;
     bodyText: string;

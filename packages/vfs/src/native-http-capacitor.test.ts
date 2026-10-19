@@ -30,4 +30,28 @@ describe("Capacitor nativeHttp", () => {
       responseType: "text",
     });
   });
+
+  // iOS and Android drop a body when Content-Type is missing, and treat a JSON
+  // or URL-encoded type as text, so an upload must reach them as `formData`
+  // entries under a multipart type whatever the caller sent.
+  it("sends an image upload as a native multipart form without the caller's Content-Type", async () => {
+    request.mockResolvedValueOnce({ status: 200, data: { response: {} }, headers: {} });
+    const http = createNativeHttp();
+    await http!({
+      method: "POST",
+      url: "https://example.clerk.accounts.dev/v1/me/profile_image",
+      headers: { Accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
+      upload: { field: "file", fileName: "avatar.png", contentType: "image/png", base64: "iVBORw0KGgo=" },
+    });
+    expect(request).toHaveBeenLastCalledWith({
+      url: "https://example.clerk.accounts.dev/v1/me/profile_image",
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "multipart/form-data" },
+      data: [
+        { type: "base64File", key: "file", value: "iVBORw0KGgo=", fileName: "avatar.png", contentType: "image/png" },
+      ],
+      dataType: "formData",
+      responseType: "text",
+    });
+  });
 });
