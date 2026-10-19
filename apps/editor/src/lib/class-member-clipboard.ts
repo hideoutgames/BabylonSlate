@@ -294,14 +294,6 @@ function uniqueEventName(name: string, taken: ReadonlySet<string>): string {
   }
 }
 
-/** A native event that is already there is pasted as a custom event: `Begin Play 2`, `Begin Play 3`, … */
-function numberedEventName(base: string, taken: ReadonlySet<string>): string {
-  for (let index = 2; ; index += 1) {
-    const candidate = `${base} ${index}`;
-    if (!eventNameKeys({ name: candidate }).some((key) => taken.has(key))) return candidate;
-  }
-}
-
 function withClassId(node: GraphNode, classId: string | undefined): GraphNode {
   const data = { ...node.data };
   if (classId) data.classId = classId;
@@ -452,7 +444,7 @@ function declaredMembers(graph: SerializedGraph | undefined, kind: GraphClassMem
  *   bindings stay with the original.
  * - Events go into the event graph below the existing nodes. A native event
  *   the target does not have, authored or inherited, is pasted as that
- *   event; one it has becomes a custom event named `<Event> <N>`.
+ *   event; one it has becomes a custom event named like a duplicate (`Begin Play 1`).
  */
 export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMemberPasteResult {
   const { clipboard, classId } = options;
@@ -636,7 +628,9 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
     }
     const key = eventKey(source);
     if (key !== undefined && (presentEvents.has(key) || inheritedEvents.has(key))) {
-      customEvent(numberedEventName(nativeEventBaseName(source), takenEvents), []);
+      // The native event holds its own name, so its copy is the first duplicate of it.
+      const base = nativeEventBaseName(source);
+      customEvent(uniqueEventName(base, new Set([...takenEvents, ...eventNameKeys({ name: base })])), []);
       continue;
     }
     if (key !== undefined) presentEvents.add(key);

@@ -49,7 +49,7 @@ A child class can override an inherited custom event by adding it from **Add Eve
 
 ## Copy events between classes
 
-Select events in the **Class** window, choose **Copy**, then choose **Paste** in any **Class** window. Only the event node is copied, not the nodes it runs. A custom event is pasted with a free name, such as **Open Door 1**. A native event such as **Event Begin Play** is pasted as that event when the class does not have it yet, and otherwise as a custom event named **Begin Play 2** (then **Begin Play 3**). See [Select, copy and paste members](classes.md#select-copy-and-paste-members).
+Select events in the **Class** window, choose **Copy**, then choose **Paste** in any **Class** window. Only the event node is copied, not the nodes it runs. A custom event is pasted with a free name, such as **Open Door 1**. A native event such as **Event Begin Play** is pasted as that event when the class does not have it yet, and otherwise as a custom event named like a duplicate, **Begin Play 1** (then **Begin Play 2**). See [Select, copy and paste members](classes.md#select-copy-and-paste-members).
 
 ## Actor Defaults
 

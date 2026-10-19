@@ -63,11 +63,11 @@ test("copies members from one Class and pastes them into another as one undoable
   await expect(entry(page, "Stamina")).toHaveCount(1);
   await expect(entry(page, "Sprint")).toHaveCount(1);
   // A new Class already has Begin Play, so the copy arrives as a numbered custom event.
-  await expect(entry(page, "Begin Play 2")).toHaveCount(1);
+  await expect(entry(page, "Begin Play 1")).toHaveCount(1);
 
   // The whole paste is one Undo step.
   await page.keyboard.press("ControlOrMeta+z");
   await expect(entry(page, "Stamina")).toHaveCount(0);
   await expect(entry(page, "Sprint")).toHaveCount(0);
-  await expect(entry(page, "Begin Play 2")).toHaveCount(0);
+  await expect(entry(page, "Begin Play 1")).toHaveCount(0);
 });

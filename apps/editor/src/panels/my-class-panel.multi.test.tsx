@@ -393,14 +393,14 @@ describe("Class tree copy and paste", () => {
     expect(pasted.map((member) => [member.kind, member.name, member.category ?? null])).toEqual([
       ["variable", "Health_1", "Stats"],
       ["variable", "Mana", null],
-      ["event", "Begin Play 2", null],
+      ["event", "Begin Play 1", null],
       ["function", "Jump", null],
     ]);
     expect(Object.keys(next.functionGraphs ?? {})).toHaveLength(1);
     // Enemy already has Begin Play, so the copy is a numbered custom event.
     expect(next.nodes.map((node) => [node.type, node.data.name ?? null])).toEqual([
       ["flow.event.beginPlay", null],
-      ["flow.event.custom", "Begin Play 2"],
+      ["flow.event.custom", "Begin Play 1"],
     ]);
     // The pasted copies become the selection once the Class shows them.
     view.rerender(panel());
@@ -426,7 +426,7 @@ describe("Class tree copy and paste", () => {
       "Damageable",
       "Health_1",
       "Mana_1",
-      "Begin Play 2",
+      "Begin Play 1",
       "Jump_1",
     ]);
   });

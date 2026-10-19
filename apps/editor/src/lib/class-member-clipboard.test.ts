@@ -583,18 +583,18 @@ describe("pasteClassMembers events", () => {
     expect(result.pasted).toEqual([{ kind: "event", id: "new-1", name: "Event Begin Play" }]);
   });
 
-  it("pastes a native event the target already has as a custom event with the next free number", () => {
+  it("pastes a native event the target already has as a custom event named like a duplicate of it", () => {
     const clip = copy([{ id: "evt-begin", kind: "event", name: "Event Begin Play" }]);
     const target = emptyTarget([], [node("t-begin", "flow.event.beginPlay", { title: "Event Begin Play" })]);
     const first = paste(clip, target);
     expect(first.graph.nodes.at(-1)).toMatchObject({
       type: "flow.event.custom",
-      data: { name: "Begin Play 2", title: "Event Begin Play 2", pins: [] },
+      data: { name: "Begin Play 1", title: "Event Begin Play 1", pins: [] },
     });
-    expect(first.graph.members).toEqual([{ id: "new-1", kind: "event", name: "Begin Play 2", pins: [] }]);
-    expect(first.pasted).toEqual([{ kind: "event", id: "new-1", name: "Begin Play 2" }]);
+    expect(first.graph.members).toEqual([{ id: "new-1", kind: "event", name: "Begin Play 1", pins: [] }]);
+    expect(first.pasted).toEqual([{ kind: "event", id: "new-1", name: "Begin Play 1" }]);
     const second = paste(clip, first.graph, { idFactory: sequence("more-") });
-    expect(second.graph.nodes.at(-1)!.data.name).toBe("Begin Play 3");
+    expect(second.graph.nodes.at(-1)!.data.name).toBe("Begin Play 2");
     // The authored native event is still the only one of its kind.
     expect(second.graph.nodes.filter((entry) => entry.type === "flow.event.beginPlay")).toHaveLength(1);
   });
@@ -603,7 +603,7 @@ describe("pasteClassMembers events", () => {
     const clip = copy([{ id: "evt-begin", kind: "event", name: "Event Begin Play" }]);
     const parent: SerializedGraph = { nodes: [node("p-begin", "flow.event.beginPlay", {})], edges: [] };
     const result = paste(clip, emptyTarget(), { ancestors: [{ classId: "Base", graph: parent }] });
-    expect(result.graph.nodes[0]).toMatchObject({ type: "flow.event.custom", data: { name: "Begin Play 2" } });
+    expect(result.graph.nodes[0]).toMatchObject({ type: "flow.event.custom", data: { name: "Begin Play 1" } });
   });
 
   it("pastes two copies of one native event as the event and then a numbered custom event", () => {
@@ -618,7 +618,7 @@ describe("pasteClassMembers events", () => {
     const result = paste(clip, emptyTarget());
     expect(result.graph.nodes.map((entry) => [entry.type, entry.data.name])).toEqual([
       ["flow.event.beginPlay", undefined],
-      ["flow.event.custom", "Begin Play 2"],
+      ["flow.event.custom", "Begin Play 1"],
     ]);
   });
 
@@ -695,7 +695,7 @@ describe("pasteClassMembers a whole selection", () => {
       "variable:Scores",
       "function:Heal",
       "function:Helper",
-      "event:Begin Play 2",
+      "event:Begin Play 1",
     ]);
     expect(result.graph.members!.find((member) => member.name === "Health")!.category).toBe("Stats|Core");
     expect(Object.keys(result.graph.functionGraphs!)).toEqual(
