@@ -4,10 +4,12 @@ import {
   Handle,
   Position,
   useReactFlow,
+  useStore,
   type EdgeProps,
   type Node,
   type NodeProps,
 } from "@xyflow/react";
+import { useCallback } from "react";
 import { Repeat2Icon } from "lucide-react";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { displayNodeTitle } from "./graph-connect";
@@ -38,6 +40,23 @@ const SIDE_POSITION: Record<AnimStateSide, Position> = {
   left: Position.Left,
 };
 
+/** Sides of a state that a transition starts or ends on, as a stable key. */
+function useConnectedSides(id: string): string {
+  return useStore(
+    useCallback(
+      (state: { edges: ReadonlyArray<{ source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }> }) => {
+        const sides = new Set<string>();
+        for (const edge of state.edges) {
+          if (edge.source === id) sides.add((edge.sourceHandle ?? "right-out").split("-")[0]!);
+          if (edge.target === id) sides.add((edge.targetHandle ?? "left-in").split("-")[0]!);
+        }
+        return [...sides].sort().join(" ");
+      },
+      [id],
+    ),
+  );
+}
+
 export function AnimStateNode({
   id,
   data,
@@ -47,6 +66,7 @@ export function AnimStateNode({
     typeof data.__nodeType === "string" ? data.__nodeType : "anim.state",
     typeof data.title === "string" ? data.title : undefined,
   );
+  const connectedSides = useConnectedSides(id).split(" ");
   return (
     <div
       className={cn(
@@ -71,6 +91,7 @@ export function AnimStateNode({
             type="source"
             position={SIDE_POSITION[side]}
             id={`${side}-out`}
+            data-connected={connectedSides.includes(side) ? "true" : undefined}
             className={cn(
               "anim-state-handle anim-state-handle-source",
               `anim-state-handle-${side}`,

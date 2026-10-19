@@ -222,18 +222,44 @@
   z-index: 1;
 }
 
+/* A circle centred on the card border: hollow until a transition uses that side. */
 .anim-state-handle-source::after {
   content: "";
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 8px;
-  height: 8px;
-  background: var(--muted-foreground);
+  width: 9px;
+  height: 9px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--muted-foreground);
+  background: var(--graph-node);
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, -50%) rotate(45deg);
+  transform: translate(-50%, -50%);
   transition: opacity 120ms ease-out;
+}
+
+/* Source plates overhang the card by 4px more than their half width. */
+.anim-state-handle-source.anim-state-handle-top::after {
+  top: calc(50% + 4px);
+}
+
+.anim-state-handle-source.anim-state-handle-bottom::after {
+  top: calc(50% - 4px);
+}
+
+.anim-state-handle-source.anim-state-handle-left::after {
+  left: calc(50% + 4px);
+}
+
+.anim-state-handle-source.anim-state-handle-right::after {
+  left: calc(50% - 4px);
+}
+
+.anim-state-handle-source[data-connected="true"]::after {
+  border-color: var(--graph-link);
+  background: var(--graph-link);
+  opacity: 1;
 }
 
 /* Connection affordances only appear where the pointer can use them. */
@@ -243,7 +269,7 @@
 }
 
 @media (pointer: coarse) {
-  .anim-state-handle-source::after {
+  .anim-state-handle-source:not([data-connected="true"])::after {
     opacity: 0.6;
   }
 }
