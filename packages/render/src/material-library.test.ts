@@ -326,6 +326,8 @@ describe("material library", () => {
     const again = library.acquire(scene, "material", tinted(1));
     expect(again).toEqual({ ok: false, diagnostics: [{ code: "material.compile.failed", message: log, severity: "error" }] });
     expect(library.resolve(scene, "material", tinted(1))).toBeNull();
+    // Per-component copies compile the same program, so they fail at once too.
+    expect(library.acquire(scene, "material", tinted(1), { instanceKey: "actor" }).ok).toBe(false);
     expect(compiled()).toBe(0);
     expect(onTextureError).toHaveBeenCalledTimes(1);
     expect(library.acquire(scene, "material", tinted(2)).ok).toBe(true);

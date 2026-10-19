@@ -165,10 +165,11 @@ export class MaterialLibrary {
   private readonly scenes = new WeakMap<Scene, Map<string, CacheEntry>>();
   private readonly pending = new WeakMap<Scene, Map<string, CacheEntry>>();
   /**
-   * The newest plan of each key that failed, with its diagnostics. A request for that hash fails at once instead of
-   * compiling again: the Engine hands a retry the failed program from its cache without telling anyone, so a bound
-   * retry would never become ready. A different hash (an edited graph, function or texture), `markDirty` and
-   * `releaseScene` end it; a release does not, because the next holder would adopt the same dead program.
+   * The newest plan of each asset (and shading variant) that failed, with its diagnostics, shared by its instance keys:
+   * their copies compile the same program. A request for that hash fails at once instead of compiling again, because
+   * the Engine hands a retry the failed program from its cache without telling anyone, so a bound retry would never
+   * become ready. A different hash (an edited graph, function or texture), `markDirty` and `releaseScene` end it; a
+   * release does not, because the next holder would adopt the same dead program.
    */
   private readonly failures = new WeakMap<Scene, Map<string, { hash: string; diagnostics: readonly MaterialDiagnostic[] }>>();
   private readonly tracked = new Set<Scene>();
@@ -303,7 +304,8 @@ export class MaterialLibrary {
       return { ok: true, material: existing.material, hash: existing.hash, plan: lowered.plan, ready: existing.ready };
     }
     const failures = this.failures.get(scene)!;
-    const failed = failures.get(key);
+    const failureKey = cacheKey(assetGuid, unlit, undefined, options?.logicalSceneBuffers);
+    const failed = failures.get(failureKey);
     if (failed?.hash === hash) return { ok: false, diagnostics: [...failed.diagnostics] };
 
     const textures = materialTextureBindings(this.options.acquireTexture ? (guid) => this.options.acquireTexture!(guid, scene) : undefined, this.options.textureIdentity);
@@ -328,7 +330,7 @@ export class MaterialLibrary {
     }
     if (materialCompileFailed(compiled)) {
       textures.dispose();
-      if (failsPlan(compiled.diagnostics)) failures.set(key, { hash, diagnostics: compiled.diagnostics });
+      if (failsPlan(compiled.diagnostics)) failures.set(failureKey, { hash, diagnostics: compiled.diagnostics });
       return { ok: false, diagnostics: compiled.diagnostics };
     }
     compiled.material.name = compiled.material.id = materialName;
@@ -521,7 +523,7 @@ export class MaterialLibrary {
       const current = entries.get(key) === candidate || pending.get(key) === candidate;
       if (!current || unlinkable || scene.isDisposed) return;
       unlinkable = true;
-      failures.set(key, { hash, diagnostics: [diagnostic] });
+      failures.set(failureKey, { hash, diagnostics: [diagnostic] });
       if (existing && pending.get(key) === candidate && !isDisposedNodeMaterial(existing.material, scene)) {
         existing.refCount = candidate.refCount;
         rebindMaterial(scene, candidate.material, existing.material);
@@ -544,7 +546,7 @@ export class MaterialLibrary {
             rebindMaterial(scene, candidate.material, existing.material);
           }
           candidate.dispose();
-          if (!stalled && failsPlan(errors)) failures.set(key, { hash, diagnostics: errors });
+          if (!stalled && failsPlan(errors)) failures.set(failureKey, { hash, diagnostics: errors });
           for (const error of errors) this.options.onTextureError?.(error);
           return;
         }
