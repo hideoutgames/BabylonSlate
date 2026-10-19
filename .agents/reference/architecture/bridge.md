@@ -59,7 +59,7 @@ Seq-lock: writer sets `seq` odd, writes header + rows, sets `seq` even; reader s
 ## Scene load handshake
 
 - `sceneLoadId` starts at 1 and increases per load, including same-asset reloads. Hosts identify loads by id, not guid equality.
-- `sceneLoading { sceneAssetGuid, sceneLoadId }` precedes departure; hosts with `deferSceneLoadingPaint` answer `sceneLoadingPainted` once Loading UI paints (30 s deadline). `activeScene` precedes spawning; `sceneRealized` follows all resource commands; `sceneLoadFailed` never releases readiness.
+- `sceneLoading { sceneAssetGuid, sceneLoadId }` precedes departure; hosts with `deferSceneLoadingPaint` answer `sceneLoadingPainted` once Loading UI paints (30 s deadline). `activeScene` precedes spawning; `sceneRealized` follows all resource commands; `sceneLoadFailed` never releases readiness; it reaches the Play Engine, which ends the load's instance compile hold ([render.md](render.md)).
 - With `deferSceneModelsReady`, On Scene Finish Loading waits for `sceneModelsReady` with the exact pending guid **and** load id (assignments, textures, shader warm-up, first frame). Stale or post-Stop acks complete nothing.
 - Cooperative loading (`cooperativeSceneLoading`, editor Play and player): chunks yield after an 8 ms budget or 256 steps ([`scene-realization-work.ts`](../../../packages/runtime/src/scene-realization-work.ts)); one actor's setup is indivisible. Departing objects and bodies retire before replacements exist. Game Instance keeps ticking; actors, components, physics, animation and BT stay suspended until the readiness ack. Partial preparations publish no snapshots.
 

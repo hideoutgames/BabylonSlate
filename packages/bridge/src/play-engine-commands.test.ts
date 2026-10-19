@@ -16,6 +16,7 @@ describe("isPlayEngineCommandType", () => {
   it("forwards Scene lifecycle, compositor commands and despawn onto the Play engine", () => {
     expect(isPlayEngineCommandType("sceneLoading")).toBe(true);
     expect(isPlayEngineCommandType("activeScene")).toBe(true);
+    expect(isPlayEngineCommandType("sceneLoadFailed")).toBe(true);
     expect(isPlayEngineCommandType("sceneStreamLoading")).toBe(true);
     expect(isPlayEngineCommandType("sceneStreamRemoved")).toBe(true);
     expect(isPlayEngineCommandType("sceneLayerLoading")).toBe(true);
