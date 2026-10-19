@@ -212,6 +212,10 @@ export function HomepageCreateDialog({
   return (
     <Dialog
       open={open}
+      // On iOS a tap on a control could count as an outside press (a target
+      // replaced by a re-render, a native picker closing onto the backdrop) and
+      // drop the form; only Cancel, the close button and Escape close it.
+      disablePointerDismissal
       onOpenChange={(next) => {
         if (!busy) onOpenChange(next);
       }}
