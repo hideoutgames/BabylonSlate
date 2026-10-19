@@ -19,6 +19,7 @@ import {
   outlineBindings,
   createDefaultScene,
   createDefaultRenderTargetCaptureProperties,
+  createDefaultWaterDefinition,
   createMeshComponent,
   DEFAULT_RENDER_EFFECTS,
   normalizeRenderProjectSettings,
@@ -54,6 +55,7 @@ import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
 import { createWaterMesh } from "./water-mesh";
+import type { WaterVariantRequest } from "./water-material";
 
 const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
 
@@ -536,8 +538,7 @@ describe("Play createEngine view", () => {
     createWaterMesh(handle.scene, "west", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }));
     // Within the blend distance of the first body: both blend once the water update has seen them.
     createWaterMesh(handle.scene, "east", normalizeWaterBody({ width: 24, length: 24, resolution: 24 })).position.set(16, 0.5, 0);
-    const compiled = () => Object.values((engine as unknown as { _compiledEffects: Record<string, { defines?: string }> })._compiledEffects)
-      .map((effect) => effect.defines ?? "").filter((defines) => /^#define SLATE_WATER$/m.test(defines));
+    const compiled = () => compiledWater(engine);
     await handle.prewarmSceneMaterials();
     const afterLoad = compiled();
     expect(afterLoad.length).toBeGreaterThan(0);
@@ -545,6 +546,108 @@ describe("Play createEngine view", () => {
     // The first frame's update finds nothing left to change, so no pass compiles a second variant.
     for (let index = 0; index < 2; index++) { engine.beginFrame(); renderViews(engine); engine.endFrame(); }
     expect(compiled()).toEqual(afterLoad);
+  });
+
+  /** The defines of every built-in water effect the Engine has compiled so far. */
+  function compiledWater(engine: NullEngine): string[] {
+    return Object.values((engine as unknown as { _compiledEffects: Record<string, { defines?: string }> })._compiledEffects)
+      .map((effect) => effect.defines ?? "").filter((defines) => /^#define SLATE_WATER$/m.test(defines));
+  }
+
+  /**
+   * Two water assets that sample no scene copy, so their bodies draw in the main pass and a graph that is already
+   * prepared probes one as soon as it appears. "glitter" adds a shader feature, so its variants differ from "calm".
+   */
+  const waterAssets = () => {
+    const calm = { ...createDefaultWaterDefinition(), refraction: 0, objectReflections: false };
+    return new Map([["calm", calm], ["glitter", { ...calm, sparkles: 0.5 }]]);
+  };
+
+  /** Frames with time for the graph's asynchronous preparation to finish in between. */
+  async function settleFrames(engine: NullEngine, count = 6): Promise<void> {
+    for (let index = 0; index < count; index++) {
+      engine.beginFrame(); renderViews(engine); engine.endFrame();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  /**
+   * Every built-in water variant requested while `work` runs: one per define change of a render pass, each a compile
+   * unless an equal variant exists. Effects the Engine replaces are dropped from its cache, so this, not the cache,
+   * shows a variant that compiled and was superseded within a frame.
+   */
+  async function waterRequestsDuring(work: () => Promise<void>): Promise<WaterVariantRequest[]> {
+    const requests: WaterVariantRequest[] = [];
+    const globals = globalThis as Record<string, unknown>;
+    globals.__slateWaterCompileLog = requests;
+    try { await work(); } finally { delete globals.__slateWaterCompileLog; }
+    return requests;
+  }
+
+  /** The new body's variants differ from every compiled one, so a request without Blend would be a compile nothing draws. */
+  function expectEveryRequestBlends(requests: readonly WaterVariantRequest[]): void {
+    expect(requests.length).toBeGreaterThan(0);
+    expect(requests.filter((request) => !request.blend).map((request) => request.mesh)).toEqual([]);
+  }
+
+  it("compiles a water body added beside another once, with Blend, though no prewarm runs", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(handle);
+    handle.setMeshAssets({ waters: waterAssets() });
+    const lake = (id: string, assetGuid: string, x: number) => createActor(id, id, {
+      transform: { position: [x, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+      components: [{ id: `${id}-water`, classId: "WaterLakeComponent", properties: { assetGuid, width: 24, length: 24, resolution: 24 } }],
+    });
+    handle.loadScene({ ...createDefaultScene(), actors: [lake("west", "calm", 0)] });
+    await handle.prewarmSceneMaterials();
+    await settleFrames(engine);
+    const before = compiledWater(engine);
+    expect(before.length).toBeGreaterThan(0);
+    // The editor's Drop and Inspector edits reach the viewport as `loadScene` with the next document, with no prewarm.
+    // The new lake sits within the blend distance, so both draw with Blend once the water update has seen them.
+    const requests = await waterRequestsDuring(async () => {
+      handle.loadScene({ ...createDefaultScene(), actors: [lake("west", "calm", 0), lake("east", "glitter", 16)] });
+      await settleFrames(engine);
+    });
+    expectEveryRequestBlends(requests);
+  });
+
+  // A fog volume in the stream makes publication wait for the graph's preparation, which probes before any frame runs.
+  it.each([false, true])("compiles a streamed water body once, with Blend, beside a settled one (fog volume: %s)", async (fog) => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    handle.setMeshAssets({ waters: waterAssets() });
+    const lake = (slotId: number, assetGuid: string, x: number, stream?: boolean) => {
+      const actorGuid = `lake-${slotId}`;
+      handle.applyCommand({ type: "spawn", slotId, actorGuid, classId: "Actor", ...(stream ? { sceneStreamActorGuid: "stream", streamLoadId: 1 } : {}) });
+      handle.applyCommand({ type: "assignMesh", slotId, actorGuid, meshAssetGuid: assetGuid, meshKind: "water", parts: [{
+        componentId: "water", meshKind: "water", meshAssetGuid: assetGuid, parentId: null, position: [x, 0, 0],
+        rotation: [0, 0, 0, 1], scale: [1, 1, 1], water: normalizeWaterBody({ assetGuid, width: 24, length: 24, resolution: 24 }),
+      }] });
+    };
+    const pose = (slots: readonly number[], frameId: number) => {
+      const snapshot = new Float32Array(snapshotFloatCount(8));
+      writeSnapshotHeader(snapshot, { frameId, tickIndex: frameId, actorCount: slots.length, scriptMs: 0, physicsMs: 0 });
+      slots.forEach((slotId, index) => writeActorSlot(snapshot, index, { slotId, position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 }, flags: SNAPSHOT_FLAG_VISIBLE }));
+      handle.pushSnapshot(snapshot);
+    };
+    lake(3, "calm", 0);
+    pose([3], 1);
+    await handle.prewarmSceneMaterials();
+    await settleFrames(engine);
+    const before = compiledWater(engine);
+    expect(before.length).toBeGreaterThan(0);
+    handle.applyCommand({ type: "sceneStreamLoading", actorGuid: "stream", streamLoadId: 1 });
+    const requests = await waterRequestsDuring(async () => {
+      lake(4, "glitter", 16, true);
+      if (fog) handle.applyCommand({ type: "setFogVolumes", slotId: 4, actorId: "lake-4", volumes: fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]) });
+      await handle.prepareSceneStream([4], new AbortController().signal, undefined, { actorGuid: "stream", streamLoadId: 1 });
+      pose([3, 4], 2);
+      await settleFrames(engine);
+    });
+    expectEveryRequestBlends(requests);
   });
 
   function renderViews(engine: NullEngine) {

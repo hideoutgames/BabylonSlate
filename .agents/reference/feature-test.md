@@ -179,6 +179,17 @@ Rules: compare runs on the same machine, browser project and build only; never a
 
 A switched backend or quality is saved before the first scene opens; scene edits a flight leaves behind are discarded when the next scene opens. On a GPU host (`perf-gpu`), set `BL_RENDER_NATIVE_GPU=1` so the project's launch arguments are kept. Main-scene Play (`BL_FLY_PLAY=main`) only loads on a real GPU.
 
+### Cold-load route
+
+`e2e/feature-test-load-route.spec.ts` (opt-in `BL_PERF_LOAD=1`, same config) measures shader compile work during a cold scene open. It creates FeatureTest, optionally switches the backend, then opens each scene once and records scene-ready time and, from page-level hooks installed before the editor boots (no editor code), every WebGL program link, WebGPU shader module and render pipeline: total, distinct by exact source, and distinct by normalized source (define lines sorted apart from the body, `SHADER_NAME` dropped). An Engine-level ledger records each Babylon Effect with its cache-key kind (named shader, inline source, shadow-depth token (unpatched Babylon)), defines, render pass, creation stack, cache hits, release and the GPU objects it built. The report groups Effects that built the same source and says why their keys differ, lists the define changes that recompiled one shader, and names the live draw wrappers (scene, pass, mesh, material) holding each Effect when the scene is ready; an Effect no wrapper holds was compiled for nothing. It also includes the water compile log. Counts are hardware-independent; never asserts timings.
+
+| Env | Default | Effect |
+| --- | --- | --- |
+| `BL_PERF_SCENES` | `main` | Any of `main`, `stress`, `world`, `clustered`, `2d` |
+| `BL_PERF_BACKEND` | project (WebGL2) | `webgl2` or `webgpu`; WebGPU uses the software adapter unless `BL_RENDER_NATIVE_GPU=1` |
+| `BL_PERF_SETTLE_MS` | 8000 | How long after ready the settled window keeps counting |
+| `BL_PERF_LABEL`, `BL_PERF_OUT` | none | Label; extra report path |
+
 ## Verification
 
 [`apps/editor/src/services/project-service.feature-test.test.ts`](../../apps/editor/src/services/project-service.feature-test.test.ts) (node) creates the project in memory and reopens it. It requires every `ENGINE_COMPONENT_CLASS_IDS` entry (`packages/core/src/engine-components.ts`), every creatable (`CREATABLE_ASSET_TYPES`) and imported asset type, and every `ENGINE_BASE_CLASSES` entry to be present; every dependency to resolve; every document to decode; Play validation to report no errors; every compiled script to load the way Play loads it; every Material and Material Instance to compile; every Particle and Animation Graph to validate; and physics pairing to be clean. Its browser route is perf-only.

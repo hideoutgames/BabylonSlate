@@ -4,7 +4,7 @@ Play mode has tools to pause and step the game, watch performance, inspect live 
 
 ## The Play toolbar
 
-While the game runs, the toolbar at the top right of the game view has:
+While the game runs, the toolbar at the top right of the game view has these buttons. Hover or long-press one to see its name.
 
 | Control | Use |
 | --- | --- |
@@ -20,13 +20,15 @@ While the game runs, the toolbar at the top right of the game view has:
 
 The **Debug** menu next to **Play** decides which controls appear. Set it before pressing Play: the menu is out of reach while the game covers the editor.
 
-| Group | Item | Default |
-| --- | --- | --- |
-| Play Overlay | Stats | On |
-| Play Overlay | Console, Inspector, Profiler | Off |
-| Session | Pause On Play | Off. Starts the game paused, ready for **Step**. |
-| Session | Preview Build | Off. Plays a packaged build instead. See [Preview Build](../publishing/preview-build.md). |
-| Session | Play from Scene | On. Starts from the open scene; off starts from the project's Startup Scene. |
+| Item | Default |
+| --- | --- |
+| **Play Mode** | **Play**. **Preview Build** plays a packaged build instead ([Preview Build](../publishing/preview-build.md)); **Simulate** runs the open scene inside the editor viewport. The **Play** button shows the mode you chose, and Haptic remembers it. |
+| **Start In Open Scene** | On. Starts from the open scene; off starts from the project's Startup Scene. Simulate always uses the open scene. |
+| **Start Paused** | Off. Starts the game paused, ready for **Step**. |
+| **Overlays** > **Stats** | On |
+| **Overlays** > **Console**, **Inspector**, **Profiler** | Off |
+
+**Simulate** needs an open world scene. Whether its changes are kept when you stop is set by **Keep Simulation Changes** in **Engine Settings > Debugger**.
 
 ## Stats
 

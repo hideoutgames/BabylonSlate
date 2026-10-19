@@ -387,14 +387,17 @@ describe("My Class members", () => {
       rows.findIndex((row) => row.id === "section-variables") + 1,
       rows.findIndex((row) => row.id === "section-events"),
     );
-    expect(variables.map((row) => [row.label, row.depth, row.hasChildren])).toEqual([
-      ["Stats", 1, true],
-      ["Vital", 2, true],
-      ["Health", 3, false],
-      ["Armor", 3, false],
-      ["Level", 2, false],
-      ["Score", 1, false],
+    expect(
+      variables.map((row) => [row.label, row.depth, row.hasChildren, row.draggable]),
+    ).toEqual([
+      ["Stats", 1, true, false],
+      ["Vital", 2, true, false],
+      ["Health", 3, false, true],
+      ["Armor", 3, false, true],
+      ["Level", 2, false, true],
+      ["Score", 1, false, true],
     ]);
+    expect(rows.find((row) => row.id === "section-variables")?.draggable).toBe(false);
     const functions = rows.slice(1, rows.findIndex((row) => row.id === "section-variables"));
     expect(functions.map((row) => [row.label, row.depth])).toEqual([
       ["Movement", 1],

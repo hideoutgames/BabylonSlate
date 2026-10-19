@@ -4,6 +4,7 @@ import { ChevronDownIcon, TagsIcon, TagIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@babylonslate/ui/components/dialog";
+import { usePopupOutsideDismiss } from "./use-popup-outside-dismiss";
 import { Field, FieldError, FieldLabel } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 import { Separator } from "@babylonslate/ui/components/separator";
@@ -60,6 +61,7 @@ export function TagPicker(props: TagPickerProps) {
   const multiple = props.mode === "multiple";
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+  usePopupOutsideDismiss(open, () => setOpen(false));
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
@@ -238,7 +240,7 @@ export function TagPicker(props: TagPickerProps) {
         initialFocus={(interaction) => coarse && interaction !== "keyboard" ? bodyRef.current : searchRef.current}
         className="catalog-menu catalog-menu-popup max-w-none translate-x-0 translate-y-0 rounded-lg sm:max-w-none"
         bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
-        style={popupMenuFrame(anchor, { width: 400, height: 470 })} data-testid={`${testId}-dialog`}>
+        style={popupMenuFrame(anchor, { width: 400, height: 470 })} data-popup-picker="" data-testid={`${testId}-dialog`}>
         <div className="flex shrink-0 items-center justify-between gap-2 px-3 pt-3 pb-2">
           <DialogTitle className="text-sm">{multiple ? "Select Tags" : "Select Tag"}</DialogTitle>
           <span className="text-xs text-muted-foreground">{selected.size} Selected</span>

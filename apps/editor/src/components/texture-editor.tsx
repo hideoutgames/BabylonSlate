@@ -1,4 +1,5 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { areaEmissionPreparation, areaEmissionPreparationsRevision, subscribeAreaEmissionPreparations } from "../lib/area-emission-preparation";
 import type { IDockviewPanelProps } from "dockview-react";
 import { BoxIcon, ImageIcon, Maximize2Icon, ScanIcon } from "lucide-react";
 import {
@@ -398,6 +399,9 @@ export function TextureDetails({
   useEffect(() => () => { emissionJob.current?.abort(); }, [guid]);
   const emissionHeader = guid ? assetRegistry?.getByGuid(guid)?.header : undefined;
   const emissionReady = emissionHeader && currentAreaEmissionChunk(emissionHeader);
+  useSyncExternalStore(subscribeAreaEmissionPreparations, areaEmissionPreparationsRevision);
+  // Assigning the Texture to a rectangular light prepares it without this editor.
+  const automaticEmission = guid ? areaEmissionPreparation(assetRegistry?.getByGuid(guid)) : undefined;
   const prepareEmission = async () => {
     if (!guid || emissionJob.current) return;
     const job = new AbortController();
@@ -483,7 +487,7 @@ export function TextureDetails({
   }
   const emissionStatus = emissionProgress
     ? `${emissionProgress.phase === "queued" ? "Queued" : emissionProgress.phase === "decoding" ? "Decoding" : emissionProgress.phase === "filtering" ? "Filtering" : "Saving"} ${Math.round(emissionProgress.progress * 100)}%`
-    : emissionReady ? "Ready" : "Not Prepared";
+    : emissionReady ? "Ready" : automaticEmission?.state === "preparing" ? "Preparing" : "Not Prepared";
 
   return (
     <div className="flex flex-col" data-testid="texture-details">
@@ -533,7 +537,7 @@ export function TextureDetails({
           </PropertySectionTitle>
           <div className="flex flex-col gap-2 px-2 py-2">
             <p className="text-xs text-muted-foreground">
-              Prepare this Texture for rectangular lights. The original image stays available for materials. Prepared data is saved with the asset and included in game exports.
+              Prepare this Texture for rectangular lights. Assigning it to a Rectangular Area Light prepares it automatically. The original image stays available for materials. Prepared data is saved with the asset and included in game exports.
             </p>
             <div className="flex items-center gap-2">
               <Button size="sm" variant="outline" disabled={emissionProgress !== null || encodeBlocked} onClick={() => void prepareEmission()}>

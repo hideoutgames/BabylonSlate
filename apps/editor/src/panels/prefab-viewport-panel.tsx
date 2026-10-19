@@ -59,6 +59,7 @@ import {
 import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
 import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
+import { prepareReferencedAreaEmissions } from "../lib/area-emission-preparation";
 import { sceneStreamingEditorComponents } from "../lib/scene-streaming-editor-labels";
 import {
   MATERIAL_DOCUMENT_KINDS,
@@ -105,6 +106,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
     collectPlayAreaEmissions,
+    prepareAreaEmission,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
     collectPlayFontCssStacks,
@@ -327,6 +329,10 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   }, [assetRegistry, registryEpoch]);
   const areaTextureGuids = useMemo(() => areaEmissionTextureGuids(components), [components]);
   const areaEmissionKey = savedAreaEmissionKey(areaTextureGuids, (guid) => assetRegistry?.getByGuid(guid));
+  // An assigned emission Texture without prepared data would leave its light off.
+  useEffect(() => {
+    if (assetRegistry) prepareReferencedAreaEmissions(areaTextureGuids, (guid) => assetRegistry.getByGuid(guid), (guid) => prepareAreaEmission(guid));
+  }, [areaTextureGuids, areaEmissionKey, assetRegistry, prepareAreaEmission]);
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
   const dropLoadKey = JSON.stringify([
     previewLoadKey,
@@ -636,7 +642,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       data-testid="prefab-viewport-panel"
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
-        <div className="pointer-events-auto rounded-lg border border-border bg-popover p-1 shadow-md">
+        <div className="pointer-events-auto toolbar-island">
           <ViewportToolbar
             testIdPrefix="prefab-"
             showDragSelect={false}

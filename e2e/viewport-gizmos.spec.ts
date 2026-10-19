@@ -46,7 +46,7 @@ test("selected objects show Move, Rotate, and Scale handles and a pointer drag i
   await page.getByTestId("tree-row-actor:gizmo-box").click();
   const canvas = page.getByTestId("viewport-canvas");
   for (const mode of ["3d", "2d"] as const) {
-    if (mode === "2d") await page.getByTestId("viewport-mode-toggle").click();
+    if (mode === "2d") await page.getByTestId("viewport-mode-2d").click();
     for (const tool of ["translate", "rotate", "scale"] as const) {
       await page.getByTestId(`gizmo-tool-${tool}`).click();
       await expect.poll(async () => (await handles(canvas)).colors.reduce((a, b) => a + b, 0)).toBeGreaterThan(30);

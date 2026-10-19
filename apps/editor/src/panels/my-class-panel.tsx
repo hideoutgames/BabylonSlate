@@ -38,6 +38,7 @@ import {
   variableFieldsForPickerType,
   patchClassMember,
   removeClassMember,
+  canDropClassMember,
   resolveClassMemberDrop,
   type GraphDropPoint,
   type VariableAccessKind,
@@ -388,6 +389,7 @@ function memberTreeNode(
     expanded: false,
     muted: member.hasError,
     icon: memberIcon(member),
+    draggable: canDropClassMember(member),
     trailing: member.inherited ? (
       <Badge
         variant="secondary"
@@ -426,6 +428,7 @@ export function blueprintTreeNodes(
       depth: 0,
       hasChildren: true,
       expanded,
+      draggable: false,
     });
     if (!expanded) continue;
     const pushFolder = (folder: CategoryFolder, depth: number) => {
@@ -439,6 +442,7 @@ export function blueprintTreeNodes(
           hasChildren: true,
           expanded: childExpanded,
           icon: <FolderIcon />,
+          draggable: false,
         });
         if (childExpanded) pushFolder(child, depth + 1);
       }

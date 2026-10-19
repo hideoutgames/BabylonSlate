@@ -393,10 +393,12 @@
   height: 100%;
   object-fit: cover;
 }
+/* Large icons sit on Lucide's 24-unit grid (48px, 1-unit lines) so every
+ * line lands on whole pixels instead of leaving a faint half-pixel edge. */
 .homepage-card-well > svg {
-  width: 36px;
-  height: 36px;
-  stroke-width: 1.2;
+  width: 48px;
+  height: 48px;
+  stroke-width: 1;
   color: var(--muted-foreground);
   transition: transform 260ms var(--launcher-ease), color 160ms ease;
 }
@@ -498,13 +500,15 @@
 }
 .homepage-project-cover > svg {
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
+  stroke-width: 1;
   transition: transform 260ms var(--launcher-ease);
 }
 .homepage-gallery[data-layout="small"] .homepage-project-cover > svg {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
+  stroke-width: 2;
 }
 .homepage-project-cover > img {
   position: absolute;
@@ -892,16 +896,21 @@
   }
 }
 /* --------------------------------------------------------- Release news */
-/* What's New and the Changelog show the current version's notes under one
- * header row: the wordmark, the title and the version. */
+/* What's New and the Changelog: a fixed-size window. The header row and Done
+ * stay put; only the change list scrolls. */
 .release-news[data-slot="dialog-content"] {
   width: min(600px, calc(100vw - 32px));
+  height: min(440px, calc(100dvh - 48px));
   max-width: none;
+}
+.release-news-frame {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
 }
 .release-news-header {
   gap: 4px;
 }
-/* What's New: the wordmark, a divider, the title and the version on one row. */
+/* What's New and the Changelog: the wordmark, a divider and the build name on one row. */
 .release-news-brand {
   display: flex;
   align-items: center;
@@ -920,12 +929,12 @@
 .release-news-brand [data-slot="dialog-title"] {
   font-size: 15px;
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 .release-news-body {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  max-height: min(60dvh, 560px);
   margin-inline: -16px;
   padding-inline: 16px;
   overflow-y: auto;
@@ -936,23 +945,6 @@
   flex-direction: column;
   gap: 12px;
   padding: 4px 0 8px;
-}
-.release-news-version {
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--foreground);
-  font-size: 12px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.4;
-}
-.release-news-entry h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 500;
-  line-height: 1.35;
-  letter-spacing: -0.01em;
 }
 .release-news-entry ul {
   display: flex;

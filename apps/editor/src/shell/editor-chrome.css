@@ -357,7 +357,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-top: 1px solid var(--border);
   background: var(--panel-header);
   padding-inline: 8px;
   color: var(--muted-foreground);

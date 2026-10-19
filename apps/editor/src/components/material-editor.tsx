@@ -523,7 +523,7 @@ export function MaterialPreviewSurface({
       <div className="relative flex h-full min-h-0 flex-col">
         {domain !== "particle" && domain !== "text" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
-            className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-md"
+            className="pointer-events-auto toolbar-island flex-wrap"
             data-testid="material-preview-overlay"
           >
             <ToggleGroup

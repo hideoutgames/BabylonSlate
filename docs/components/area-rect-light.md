@@ -22,7 +22,7 @@ Select an actor, then choose **Add Component > Rendering > Rectangular Area Ligh
 - World scenes only.
 - The light emits along the component's forward (+Z) axis. It lights through walls, because it casts no shadows.
 - Actor and parent scale apply to Width and Height. Sheared transforms are not supported.
-- To use an Emission Texture, open the Texture asset and choose **Prepare Emission**. A Texture that has not been prepared cannot be loaded for Play or export.
+- Picking an **Emission Texture** in a scene or prefab prepares it automatically. Until its emission data is ready the light stays off, and the Inspector says why. You can also prepare a Texture ahead of time: open it and choose **Prepare Emission**. A Texture that has not been prepared cannot be loaded for Play or export.
 - The emitter counts toward the local light budget.
 
 ## Related

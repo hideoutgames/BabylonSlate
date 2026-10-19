@@ -10,7 +10,7 @@ Choose **Place Actors > Navigation > NavMesh**. It is not in the **Add Component
 
 1. Select the NavMesh actor and choose **Bake NavMesh** on its component card.
 2. Wait for the bake to finish. A dialog shows progress, and **Cancel** works while the mesh is being generated.
-3. Turn on **Show Navmesh** in **Viewport Settings** to see the baked mesh in green.
+3. Turn on **Show Navmesh** in the viewport's **View** menu to see the baked mesh in green.
 
 The baked mesh is stored with the Scene. Bake again after you change level geometry. Play never bakes.
 

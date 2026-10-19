@@ -47,6 +47,11 @@ export interface SerializedComponent {
   classId: string;
   /** Editor display name; missing shows the class label. Asset details in brackets are never part of it. */
   name?: string;
+  /**
+   * Class tree category of this component's object-ref variable; `|` nests
+   * subcategories. Missing shows it under Components; empty is uncategorized.
+   */
+  category?: string;
   properties: Record<string, unknown>;
   /** Prefab / actor component attach parent; missing documents normalize to null. */
   parentId?: string | null;

@@ -38,7 +38,7 @@ If you delete the Default Camera's actor, pick a new one.
 
 ## Preview the game camera
 
-In the viewport, open **Viewport Settings** and turn on **Game Camera** (<kbd>Shift</kbd>+<kbd>C</kbd>). The viewport shows the Default Camera's view and a **Game Camera** badge. Editor navigation is paused until you turn it off, and your editor view is kept.
+In the viewport toolbar, turn on **Game Camera** (<kbd>Shift</kbd>+<kbd>C</kbd>). The viewport shows the Default Camera's view, and the button stays highlighted. Editor navigation is paused until you turn it off, and your editor view is kept.
 
 ## Follow an actor with a Spring Arm
 
