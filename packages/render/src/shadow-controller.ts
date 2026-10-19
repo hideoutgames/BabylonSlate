@@ -44,6 +44,7 @@ import {
   type ShadowParticipation,
 } from "./shadow-mesh-policy";
 import { ShadowSpatialIndex } from "./shadow-spatial-index";
+import { trackShadowSlotDefines } from "./shadow-slot-defines";
 import "./shadow-shader";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
 import {
@@ -1233,11 +1234,14 @@ export class SceneShadowController {
     const prepare = generator.prepareDefines.bind(generator);
     generator.prepareDefines = (defines, lightIndex) => {
       prepare(defines, lightIndex);
+      // Both values come from the generator in the slot now: a slot's previous
+      // cascaded map must not leave its fade behind.
       defines[`SLATE_SHADOW_AUTO${lightIndex}`] =
         directionalLight && slot.entry.settings!.autoBias && generator.usePercentageCloserFiltering;
-      if (generator instanceof CascadedShadowGenerator)
-        defines[`SLATE_SHADOW_FADE${lightIndex}`] = slot.entry.settings!.fadeFraction;
+      defines[`SLATE_SHADOW_FADE${lightIndex}`] =
+        generator instanceof CascadedShadowGenerator && slot.entry.settings!.fadeFraction;
       defines.rebuild();
+      trackShadowSlotDefines(defines, lightIndex);
     };
     validateAllocation(generator);
     const map = generator.getShadowMap();
