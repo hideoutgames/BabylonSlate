@@ -14,6 +14,7 @@ import {
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { validMaterialParameterValue } from "./material-parameters";
 import { applyMaterialBounds } from "./material-bounds";
+import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import {
   compileMaterialPlan,
   materialCompileFailed,
@@ -216,6 +217,10 @@ export class MaterialLibrary {
   /**
    * Compile (or reuse) the material for `assetGuid` in `scene` and take a
    * reference to it. Callers must `release` when they stop using it.
+   * `ready` settles once the graph is built and its textures are admitted. Only a
+   * replacement also links its program for the meshes bound to it; a first acquisition's
+   * program links when its host warms or probes it, and a link failure then reaches
+   * `onTextureError` and retires the generation.
    */
   acquire(
     scene: Scene,
@@ -277,6 +282,7 @@ export class MaterialLibrary {
     // names, and therefore the shader text, match and the GPU program is shared.
     const programGuid = doc.instanceOf ?? assetGuid;
     const materialName = unlit ? `material:${assetGuid}:unlit` : `material:${assetGuid}`;
+    let retireUnlinkable: (diagnostic: MaterialDiagnostic) => void = () => {};
     try { compiled = compileMaterialPlan(lowered.plan, {
       scene,
       name: unlit ? `material:${programGuid}:unlit` : `material:${programGuid}`,
@@ -285,6 +291,7 @@ export class MaterialLibrary {
       logicalSceneBuffers: options?.logicalSceneBuffers,
       resolveTexture: this.options.acquireTexture ? textures.resolve : this.options.resolveTexture,
       onTextureError: this.options.onTextureError,
+      onLinkError: (diagnostic) => retireUnlinkable(diagnostic),
     }); } catch (error) {
       textures.dispose();
       throw error;
@@ -466,6 +473,25 @@ export class MaterialLibrary {
       }
       entries.set(key, candidate);
     };
+    // A first acquisition is not compiled here, so a program the Engine cannot link first surfaces when a readiness
+    // probe or a draw creates its Effect, with the generation already bound. It never becomes ready, which would
+    // hold every frame of the Scene. Retire it as a failed warm-up did: report the compiler's log and let its
+    // meshes fall back to the default Material. Babylon reports from inside the Effect's link, so retire afterwards.
+    retireUnlinkable = (diagnostic) => queueMicrotask(() => {
+      const published = entries.get(key) === candidate;
+      if ((!published && pending.get(key) !== candidate) || scene.isDisposed) return;
+      if (published) entries.delete(key);
+      else {
+        pending.delete(key);
+        if (existing) {
+          existing.refCount = candidate.refCount;
+          rebindMaterial(scene, candidate.material, existing.material);
+        }
+      }
+      candidate.dispose();
+      markSceneReadinessDirty(scene);
+      this.options.onTextureError?.(diagnostic);
+    });
     {
       supersede(candidate);
       pending.set(key, candidate);
@@ -676,6 +702,7 @@ export class MaterialLibrary {
     for (const scene of [...this.tracked]) this.releaseScene(scene);
   }
 
+  /** The generation is published: its graph built and its textures were admitted. Its program links later (see `acquire`). */
   isReady(scene: Scene, assetGuid: string, doc: MaterialDocument, options?: MaterialAcquireOptions): boolean {
     return this.isReadyPlan(scene, assetGuid, this.planFor(doc, options?.unlit), options);
   }

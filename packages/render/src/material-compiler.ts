@@ -110,6 +110,12 @@ export interface CompileMaterialOptions {
   resolveTexture?: (guid: string) => Texture | null;
   /** Packed KTX2 / raster decode failure after the first `build()`. */
   onTextureError?: (diagnostic: MaterialDiagnostic) => void;
+  /**
+   * The Engine could not link one of the program's Effects after `ready` accepted the build, so the material
+   * cannot draw (a readiness probe never passes). Called once with the compiler's log; the owner retires the
+   * generation so its meshes fall back. Without it the diagnostic goes to `onTextureError`.
+   */
+  onLinkError?: (diagnostic: MaterialDiagnostic) => void;
 }
 
 export interface CompiledMaterial {
@@ -704,7 +710,19 @@ export function compileMaterialPlan(
   let shaderTimer: ReturnType<typeof setTimeout> | undefined;
   let shaderProbe: Mesh | null = null;
   let failedShaderEffect: Effect | null = null;
-  material.onError = (effect) => { failedShaderEffect = effect; };
+  let linkReported = false;
+  material.onError = (effect, errors) => {
+    failedShaderEffect = effect;
+    // While the build is pending, its own probe turns the failure into the result (`ready`).
+    if (buildState !== "ready" || disposed || linkReported) return;
+    linkReported = true;
+    const diagnostic: MaterialDiagnostic = {
+      code: "material.compile.failed",
+      message: errors || effect.getCompilationError() || "Material shader failed to link",
+      severity: "error",
+    };
+    (options.onLinkError ?? options.onTextureError)?.(diagnostic);
+  };
   let shaderPostProcess: OwnedPostProcess | null = null;
   let shaderParticles: ParticleSystem | null = null;
   const shaderRetirement = new PostProcessRetirement();
@@ -976,7 +994,8 @@ export function compileMaterialPlan(
       if (disposed) throw new Error("Cannot retain a disposed authored material.");
       let variant = variants.get(kind);
       if (!variant) {
-        const compiled = compileMaterialPlan(plan, { ...options, name: `${options.name}:${kind}`, surfaceVariant: kind });
+        // A variant's link failure is reported but never retires the surface that owns it.
+        const compiled = compileMaterialPlan(plan, { ...options, onLinkError: undefined, name: `${options.name}:${kind}`, surfaceVariant: kind });
         if (materialCompileFailed(compiled)) throw new Error(compiled.diagnostics.map((entry) => entry.message).join("; "));
         for (const operation of plan.operations) if (operation.nodeType.startsWith("param.") && operation.source.callPath.length === 0) {
           const name = String(operation.properties.name ?? "").trim();

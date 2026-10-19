@@ -364,6 +364,48 @@ describe("Play createEngine view", () => {
     } finally { scheduling.mockRestore(); compile.mockRestore(); }
   });
 
+  describe("a loaded Material whose program the Engine cannot compile", () => {
+    const log = "FRAGMENT SHADER ERROR: 0:12: 'albedo' : undeclared identifier";
+
+    async function loadReceiver(options: { onMaterialDiagnostic?: (diagnostic: { code: string; message: string; severity?: string }) => void } = {}) {
+      const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: sharedEngine(), editor: true, ...options });
+      handles.push(handle);
+      const mesh = createMeshComponent("mesh", "ground");
+      mesh.properties.materialGuid = "surface";
+      await handle.loadSceneAsync({ ...createDefaultScene(), actors: [createActor("receiver", "Receiver", { components: [mesh] })] }, {
+        signal: new AbortController().signal,
+        materialDocuments: new Map([["surface", createDefaultMaterialDocument()]]),
+      });
+      await handle.whenEditorModelsReady();
+      const material = handle.scene.getMaterialByName("material:surface");
+      if (!(material instanceof NodeMaterial)) throw new Error("Expected the loaded Material");
+      await ownedMaterialPreparation(material);
+      return { handle, material, receiver: handle.editor!.sync.meshForActor("receiver")! };
+    }
+
+    it("fails the load's warm-up naming the Material and mesh", async () => {
+      const { handle, receiver } = await loadReceiver();
+      const compile = vi.spyOn(NodeMaterial.prototype, "forceCompilationAsync").mockRejectedValue(log);
+      try {
+        await expect(handle.prewarmSceneMaterials()).rejects.toThrow(
+          `Shader compilation failed for "material:surface" for "${receiver.name}": ${log}`,
+        );
+      } finally { compile.mockRestore(); }
+    });
+
+    it("reports the compiler's log and keeps the mesh drawn with the default Material", async () => {
+      const diagnostics: Array<{ code: string; message: string; severity?: string }> = [];
+      const { handle, material, receiver } = await loadReceiver({ onMaterialDiagnostic: (diagnostic) => diagnostics.push(diagnostic) });
+      expect(receiver.material).toBe(material);
+      material.onError?.({ getCompilationError: () => log } as Effect, log);
+      await Promise.resolve();
+      expect(diagnostics).toEqual([{ code: "material.compile.failed", message: log, severity: "error" }]);
+      expect(receiver.material).toBeNull();
+      expect(handle.scene.getMaterialByName("material:surface")).toBeNull();
+      await expect(handle.prewarmSceneMaterials()).resolves.toBeUndefined();
+    });
+  });
+
   function sharedEngine(): NullEngine {
     // Production FrameGraph ownership; only absent NullEngine driver calls are adapted.
     const engine = adaptNullEngineFrameGraph(new NullEngine());

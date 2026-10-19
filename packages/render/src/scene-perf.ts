@@ -74,6 +74,18 @@ function describeShaderStall(stalled: string | null, completed: number): string 
 }
 
 /**
+ * Babylon rejects a failed compile with the bare shader log, a string. The warm-up is where a first acquisition's
+ * program first links, so the failure names the Material and mesh it was for.
+ */
+async function attributeCompileFailure(unit: string, compile: () => Promise<void>): Promise<void> {
+  try {
+    await compile();
+  } catch (error) {
+    throw new Error(`Shader compilation failed for ${unit}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
+}
+
+/**
  * `skipMesh` names meshes whose drawn variant a later readiness probe compiles under the pass that draws them (built-in
  * water, whose variant depends on the pass), so warming the pass-less variant here could compile one nothing draws.
  */
@@ -123,13 +135,14 @@ export async function prewarmMeshMaterials(
           : new Set([material]);
         for (const entry of materials) {
           check(mesh);
-          deadline.advance(`"${entry.name}" for "${mesh.name}"`);
-          if (entry instanceof NodeMaterial) await prewarmMaterial(entry, mesh);
-          else await entry.forceCompilationAsync(mesh);
+          const unit = `"${entry.name}" for "${mesh.name}"`;
+          deadline.advance(unit);
+          await attributeCompileFailure(unit, () => entry instanceof NodeMaterial ? prewarmMaterial(entry, mesh) : entry.forceCompilationAsync(mesh));
           check(mesh);
           if (mesh.hasThinInstances || mesh.instances.length > 0) {
-            deadline.advance(`"${entry.name}" for instances of "${mesh.name}"`);
-            await entry.forceCompilationAsync(mesh, { useInstances: true });
+            const instanced = `"${entry.name}" for instances of "${mesh.name}"`;
+            deadline.advance(instanced);
+            await attributeCompileFailure(instanced, () => entry.forceCompilationAsync(mesh, { useInstances: true }));
             check(mesh);
           }
         }

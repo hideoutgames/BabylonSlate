@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MeshBuilder, NullEngine, Scene, Texture, TextureBlock, type Material } from "@babylonjs/core";
+import { MeshBuilder, NullEngine, Scene, Texture, TextureBlock, type Effect, type Material } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -244,6 +244,32 @@ describe("material library", () => {
     expect(await first.ready).toEqual([]);
     expect(compile).not.toHaveBeenCalled();
     expect(library.isReady(scene, "material", tinted(1))).toBe(true);
+  });
+
+  it("retires a first acquisition whose program cannot link, reporting the compiler's log once", async () => {
+    const scene = host();
+    const onTextureError = vi.fn();
+    const library = new MaterialLibrary({ onTextureError });
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "material", tinted(1));
+    if (!first.ok) throw new Error("Expected a compiled material");
+    const mesh = MeshBuilder.CreatePlane("bound", {}, scene);
+    mesh.material = first.material;
+    expect(await first.ready).toEqual([]);
+    // Nothing compiled it, so the Engine first fails to link it when a probe or a draw creates its Effect.
+    const log = "FRAGMENT SHADER ERROR: 0:12: 'albedo' : undeclared identifier";
+    const effect = { getCompilationError: () => log } as Effect;
+    first.material.onError?.(effect, log);
+    first.material.onError?.(effect, log);
+    await Promise.resolve();
+    expect(onTextureError).toHaveBeenCalledTimes(1);
+    expect(onTextureError).toHaveBeenCalledWith({ code: "material.compile.failed", message: log, severity: "error" });
+    // The mesh falls back to the default Material instead of waiting forever on a program that cannot draw.
+    expect(mesh.material).toBeNull();
+    expect(scene.materials).not.toContain(first.material);
+    expect(library.materialFor(scene, "material")).toBeNull();
+    const retry = library.acquire(scene, "material", tinted(1));
+    expect(retry.ok && retry.material).not.toBe(first.material);
   });
 
   it("compiles a replacement for its meshes while the published generation stays bound", async () => {
