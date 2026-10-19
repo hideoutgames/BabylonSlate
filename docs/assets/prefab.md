@@ -11,7 +11,7 @@ In the **Content Browser**, choose **New Asset > World > Prefab**. A new Prefab 
 Double-tap a Prefab to open it.
 
 - **Prefab**: a viewport that previews the components. Select one to move it with the gizmo.
-- **Components**: the component tree. **Add Component** adds a part; the remove button deletes the selected ones. Drag a component onto another to attach it.
+- **Components**: the component tree, with a search field. **+** adds a part to the selected component. Each row's **…** menu (or right-click or long-press) offers **Add Child Component**, **Rename** and **Delete**; Delete also removes the selected components. Drag a component onto another to attach it.
 - **Inspector**: the selected component's transform and settings.
 
 The **Prefab Root** row is the actor's origin: the point that sits at the actor's position in a Scene. Select it and drag the gizmo to move the origin relative to the components.
