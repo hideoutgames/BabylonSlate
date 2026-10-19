@@ -104,6 +104,7 @@ describe.each(["worker", "in-process"] as const)(
         setGameTimePaused: options.onGameTimePaused ?? (() => {}),
         scheduler: { invalidate() {}, acquireObstruction: () => () => {}, gateState: () => ({ frameCap: 60 }), stats: () => ({ renderedFps: 0 }) },
         liveObjectCounts: () => ({ meshes: 0, textures: 0 }),
+        sceneLayerScenes: () => [],
         applyCommand: options.applyCommand ?? (() => {}),
         pushSnapshot: options.pushSnapshot ?? (() => {}),
         setGameInputEnabled() {},
