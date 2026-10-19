@@ -276,12 +276,25 @@ export interface GraphEditorProps {
   pinTypeNames?: PinTypeNames;
   /** Registers client hit-test / flow conversion for Class-member drops. */
   onCanvasApi?: (api: GraphCanvasDropApi | null) => void;
+  /**
+   * Host rewrite of the copies a Paste or Duplicate is about to add: they
+   * already carry new ids and offset positions, with the wires between them.
+   * Change their data or drop some; ids stay, and wires to a dropped node go
+   * with it. A `notice` appears on the canvas like the wire hints.
+   */
+  preparePaste?: (
+    pasted: GraphPasteElements,
+    current: GraphPasteElements,
+  ) => GraphPasteResult;
 }
+
+export type GraphPasteElements = { nodes: CanvasNode[]; edges: Edge[] };
+export type GraphPasteResult = { nodes: CanvasNode[]; notice?: string };
 
 const DOUBLE_TAP_MS = 350;
 const PASTE_OFFSET = 40;
 /** Long enough to read; the hint never blocks editing meanwhile. */
-const WIRE_NOTICE_MS = 4000;
+const NOTICE_MS = 4000;
 /** A stable default, so the menu and key handlers do not rebuild every render. */
 const NO_HIDDEN_TOOLBAR_ACTIONS: NonNullable<GraphEditorProps["hiddenToolbarActions"]> = [];
 const REPLACED_WIRE_NOTICE = "Replaced the existing wire. Use a Sequence to run several.";
@@ -704,6 +717,7 @@ function GraphEditorCanvas({
   pinCompatibility,
   pinTypeNames,
   onCanvasApi,
+  preparePaste,
 }: GraphEditorProps) {
   const inheritedReadOnly = useEditorReadOnly();
   const readOnly = readOnlyProp || inheritedReadOnly;
@@ -760,6 +774,10 @@ function GraphEditorCanvas({
   useLayoutEffect(() => {
     onPaletteOpenChangeRef.current = onPaletteOpenChange;
   });
+  const preparePasteRef = useRef(preparePaste);
+  useLayoutEffect(() => {
+    preparePasteRef.current = preparePaste;
+  });
   const setPaletteOpenState = useCallback((next: boolean) => {
     setPaletteOpen(next);
     onPaletteOpenChangeRef.current?.(next);
@@ -788,14 +806,15 @@ function GraphEditorCanvas({
   const [marqueeArmed, setMarqueeArmed] = useState(false);
   const [hasClipboard, setHasClipboard] = useState(false);
   const clipboardRef = useRef<GraphClip | null>(null);
-  // Counts replaced-wire hints, so a second one restarts the timer.
-  const [wireNotice, setWireNotice] = useState(0);
-  const noteReplacedWire = useCallback(() => setWireNotice((count) => count + 1), []);
+  // A fresh object per hint, so a second one restarts the timer.
+  const [notice, setNotice] = useState<{ message: string } | null>(null);
+  const showNotice = useCallback((message: string) => setNotice({ message }), []);
+  const noteReplacedWire = useCallback(() => showNotice(REPLACED_WIRE_NOTICE), [showNotice]);
   useEffect(() => {
-    if (wireNotice === 0) return;
-    const timer = setTimeout(() => setWireNotice(0), WIRE_NOTICE_MS);
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), NOTICE_MS);
     return () => clearTimeout(timer);
-  }, [wireNotice]);
+  }, [notice]);
   const lastPaneTapRef = useRef(0);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const skipPaneClickRef = useRef(false);
@@ -2042,7 +2061,8 @@ function GraphEditorCanvas({
               x: node.position.x + offset,
               y: node.position.y + offset,
             },
-            data: { ...node.data },
+            // Pin defaults and `__pins` nest, so each copy owns its own.
+            data: structuredClone(node.data),
           },
           nodeDragHandle,
         );
@@ -2063,20 +2083,33 @@ function GraphEditorCanvas({
           },
         ];
       });
-      // The pasted nodes become the whole selection, wires included.
       const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+      const prepared = preparePasteRef.current?.(
+        { nodes: nextNodes, edges: nextEdges },
+        { nodes: currentNodes, edges: currentEdges },
+      );
+      if (prepared?.notice) showNotice(prepared.notice);
+      const keptNodes = prepared?.nodes ?? nextNodes;
+      // A wire goes with the copy it ends at.
+      const keptIds = new Set(keptNodes.map((node) => node.id));
+      const keptEdges = nextEdges.filter(
+        (edge) => keptIds.has(edge.source) && keptIds.has(edge.target),
+      );
+      // The host may leave every copy out; the command was still handled.
+      if (keptNodes.length === 0) return true;
+      // The pasted nodes become the whole selection, wires included.
       commitGraph(
         [
           ...currentNodes.map((node) =>
             node.selected ? { ...node, selected: false } : node,
           ),
-          ...nextNodes,
+          ...keptNodes,
         ],
-        [...withoutEdgeSelection(currentEdges), ...nextEdges],
+        [...withoutEdgeSelection(currentEdges), ...keptEdges],
       );
       return true;
     },
-    [commitGraph, nodeDragHandle],
+    [commitGraph, nodeDragHandle, showNotice],
   );
 
   const pasteClipboard = useCallback(
@@ -3016,14 +3049,14 @@ function GraphEditorCanvas({
           />
         </ReactFlow>
         <GraphViewportControls onFitGraph={fitGraph} />
-        {wireNotice === 0 ? null : (
+        {notice === null ? null : (
           <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex justify-center">
             <Alert
               role="status"
               className="w-auto max-w-sm shadow-md"
-              data-testid="graph-wire-notice"
+              data-testid="graph-notice"
             >
-              <AlertDescription>{REPLACED_WIRE_NOTICE}</AlertDescription>
+              <AlertDescription>{notice.message}</AlertDescription>
             </Alert>
           </div>
         )}

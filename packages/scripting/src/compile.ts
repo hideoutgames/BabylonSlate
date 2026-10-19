@@ -106,7 +106,7 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
 
 /** Custom events use the member name; catalog events use EVENT_BY_TYPE_ID. */
 export function eventNameForEntry(
-  entry: GraphNode,
+  entry: Pick<GraphNode, "typeId" | "properties">,
 ): ScriptEventName | undefined {
   if (entry.typeId === "flow.event.custom") {
     const raw = entry.properties.name;
