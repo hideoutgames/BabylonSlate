@@ -23,3 +23,26 @@ export function installVirtualClock() {
     elapsed: () => Date.now() - start,
   };
 }
+
+/**
+ * Virtual timers and a virtual `performance.now()` for waits driven by
+ * `setTimeout`. `hold(ms)` models a synchronous call that held the thread: time
+ * passes and the timers that fell due in it fire late, on the next `run`.
+ * `run(ms)` lets time pass in 16 ms steps, firing timers as they fall due.
+ * Undo with `vi.useRealTimers()` and `vi.restoreAllMocks()`.
+ */
+export function installTimerClock() {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  let now = performance.now();
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  return {
+    hold: (ms: number) => { now += ms; },
+    async run(ms: number) {
+      for (let passed = 0; passed < ms; passed += 16) {
+        const step = Math.min(16, ms - passed);
+        now += step;
+        await vi.advanceTimersByTimeAsync(step);
+      }
+    },
+  };
+}

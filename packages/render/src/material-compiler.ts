@@ -85,7 +85,7 @@ import { WaterWavesBlock } from "./water-waves-block";
 import { registerLatticeShadowAdapter } from "./lattice-deformer-binding";
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { LinearColorBlock } from "./linear-color-block";
-import { createHeldThreadBound } from "./stall-deadline";
+import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 
 /** Custom GLSL's hidden probe effect, from when the effect exists to its compile. */
 const CUSTOM_GLSL_COMPILE_TIMEOUT_MS = 15_000;
@@ -1553,6 +1553,10 @@ function writeLinearSurfaceColor(
 /**
  * Pre-warm a compiled material so the first draw does not stall.
  * Surface materials compile against the mesh they will actually be drawn with.
+ * The compile may take `SCENE_SHADER_WARM_TIMEOUT_MS` plus the time it held the
+ * thread, up to one `SCENE_THREAD_HELD_BUDGET_MS`: without
+ * KHR_parallel_shader_compile one poll links the effect before it returns, and a
+ * plain timer would fire overdue ahead of the next poll.
  */
 export async function prewarmMaterial(
   material: NodeMaterial,
@@ -1568,10 +1572,17 @@ export async function prewarmMaterial(
   // do not start Babylon's uncancellable compilation poll before it finishes.
   if (material.attachedBlocks.some((block) => block instanceof TextMaterialBlock && !block.isReady(mesh))) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = createHeldThreadBound(SCENE_SHADER_WARM_TIMEOUT_MS);
   try {
     await Promise.race([
       material.forceCompilationAsync(mesh),
-      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Material shader compilation timed out")), 4000); }),
+      new Promise<never>((_, reject) => {
+        const check = () => {
+          if (bound.expired()) reject(new Error("Material shader compilation timed out"));
+          else timer = setTimeout(check, 16);
+        };
+        timer = setTimeout(check, 16);
+      }),
     ]);
   } finally {
     if (timer !== undefined) clearTimeout(timer);

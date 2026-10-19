@@ -2,7 +2,7 @@ import { MeshBuilder } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import { waitForPreviewMeshesReady, waitUntilReady } from "./preview-readiness";
-import { SCENE_SHADER_WARM_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS, SCENE_THREAD_HELD_MS } from "./stall-deadline";
+import { createHeldThreadBudget, SCENE_SHADER_WARM_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
 
 afterEach(() => {
@@ -46,11 +46,25 @@ describe("waitUntilReady", () => {
   // where every probe is slow) forever.
   it("fails a wait whose every probe holds the thread once the credit budget is spent", async () => {
     const clock = installVirtualClock();
-    const held = SCENE_THREAD_HELD_MS * 1.5;
+    const held = 10_000;
     const ready = await waitUntilReady(() => { clock.advance(held); return false; }, () => true);
     expect(ready).toBe(false);
     expect(clock.elapsed()).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS);
     expect(clock.elapsed()).toBeLessThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS + SCENE_THREAD_HELD_BUDGET_MS + held);
+  });
+
+  // A one-shot capture waits several times in a row; all of them spend the credit of the one capture.
+  it("spends one shared budget across sequential waits", async () => {
+    const clock = installVirtualClock();
+    const held = 10_000;
+    const budget = createHeldThreadBudget();
+    const hold = () => { clock.advance(held); return false; };
+    expect(await waitUntilReady(hold, () => true, undefined, budget)).toBe(false);
+    const spentFirst = clock.elapsed();
+    expect(spentFirst).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS);
+    // Nothing is left to credit: the next wait ends at its bound, within the one probe that crossed it.
+    expect(await waitUntilReady(hold, () => true, undefined, budget)).toBe(false);
+    expect(clock.elapsed() - spentFirst).toBeLessThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS + held);
   });
 
   it("stops at once when the owner moves on, without another probe", async () => {

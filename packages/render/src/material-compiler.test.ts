@@ -12,8 +12,8 @@ import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from ".
 import { isDisposedGpuTexture, isDisposedNodeMaterial } from "./gpu-resource-live";
 import { OwnedPostProcess } from "./owned-post-process";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
-import { SCENE_THREAD_HELD_BUDGET_MS, SCENE_THREAD_HELD_MS } from "./stall-deadline";
-import { installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
+import { SCENE_SHADER_WARM_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
+import { installTimerClock, installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
 
 const disposers: Array<() => void> = [];
 
@@ -1050,7 +1050,7 @@ describe("material compiler", () => {
     });
 
     it("fails a shader that never compiles while every probe holds the thread, once the credit budget is spent", async () => {
-      const held = SCENE_THREAD_HELD_MS * 1.5;
+      const held = 10_000;
       const { clock, result } = await probeWithVirtualClock(() => held, () => false);
       expect(await result.ready).toEqual([expect.objectContaining({ code: "material.compile.glsl", severity: "error" })]);
       expect(result.buildState).toBe("failed");
@@ -1673,6 +1673,61 @@ describe("material compiler", () => {
     const force = vi.spyOn(result.material, "forceCompilationAsync");
     await prewarmMaterial(result.material, mesh);
     expect(force).not.toHaveBeenCalled();
+  });
+
+  // Without KHR_parallel_shader_compile one of Babylon's compile polls links the effect before it returns, and a
+  // plain 4 s timer then fires overdue, ahead of the next poll.
+  describe("prewarmMaterial while the thread is held", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    /** A mesh whose compile never settles until `compiled()`. */
+    function pendingCompile() {
+      const scene = host();
+      const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), { scene, name: "held-prewarm" });
+      if (!result.ok) throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+      disposers.push(() => result.material.dispose());
+      const mesh = MeshBuilder.CreateBox("box", {}, scene);
+      disposers.push(() => mesh.dispose());
+      mesh.material = result.material;
+      let compiled!: () => void;
+      vi.spyOn(result.material, "forceCompilationAsync").mockReturnValue(new Promise<void>((resolve) => { compiled = resolve; }));
+      const clock = installTimerClock();
+      let outcome = "pending";
+      prewarmMaterial(result.material, mesh).then(
+        () => { outcome = "ready"; },
+        (error: Error) => { outcome = error.message; },
+      );
+      return { clock, outcome: () => outcome, compiled: () => compiled() };
+    }
+
+    it("waits out a compile poll that held the thread past the shader warm bound", async () => {
+      const { clock, outcome, compiled } = pendingCompile();
+      await vi.advanceTimersByTimeAsync(0);
+      clock.hold(SCENE_SHADER_WARM_TIMEOUT_MS * 4);
+      await clock.run(16);
+      expect(outcome()).toBe("pending");
+      compiled();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(outcome()).toBe("ready");
+    });
+
+    it("still reports a compile that never finishes once the credit budget is spent", async () => {
+      const { clock, outcome } = pendingCompile();
+      await vi.advanceTimersByTimeAsync(0);
+      const held = 10_000;
+      let elapsed = 0;
+      while (outcome() === "pending" && elapsed < 2 * SCENE_THREAD_HELD_BUDGET_MS) {
+        clock.hold(held);
+        await clock.run(16);
+        elapsed += held + 16;
+      }
+      expect(outcome()).toBe("Material shader compilation timed out");
+      expect(elapsed).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS);
+      expect(elapsed).toBeLessThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS + SCENE_THREAD_HELD_BUDGET_MS + held + 16);
+    });
   });
 
   it("keeps invertY false on the compiled sampling TextureBlock", () => {

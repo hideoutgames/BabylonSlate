@@ -36,6 +36,7 @@ import { createPreviewLighting } from "./preview-lighting";
 import { previewMeshesReady, waitUntilReady } from "./preview-readiness";
 import { createText2DMesh } from "./text2d-mesh";
 import { resolveSceneRenderingQuality } from "./render-settings";
+import type { HeldThreadBudget } from "./stall-deadline";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
 
@@ -323,11 +324,12 @@ export function createMaterialPreviewScene(
  * Prepare the preview renderer for the camera's current output target and draw
  * one validated frame into it. False when the frame never became presentable
  * before the shader warm deadline (not charged for time a frame held the
- * thread, see `waitUntilReady`) or `isCurrent` turned false.
+ * thread, up to `budget`, see `waitUntilReady`) or `isCurrent` turned false.
  */
 export async function renderPreviewFrame(
   host: MaterialPreviewScene,
   isCurrent: () => boolean = () => true,
+  budget?: HeldThreadBudget,
 ): Promise<boolean> {
   await host.renderer.prepare(() => {
     if (!isCurrent()) throw new Error("Preview frame was superseded.");
@@ -335,7 +337,7 @@ export async function renderPreviewFrame(
   return waitUntilReady(() => {
     const frame = host.renderer.render();
     return frame.rendered && frame.readyForPresentation;
-  }, isCurrent);
+  }, isCurrent, undefined, budget);
 }
 
 /** A preview output target the FrameGraph can draw into: color plus depth. */

@@ -214,13 +214,19 @@ describe("asset thumbnail capture", () => {
   describe("while the thread is held", () => {
     const material = { kind: "Material", materialGuid: "paint", materials: new Map([["paint", createDefaultMaterialDocument()]]) } as const;
 
-    /** The thumbnail sphere's readiness probe: `held(probe)` virtual time per call, unready until `ready(probe)`. */
+    /**
+     * The thumbnail sphere's readiness probe while the capture waits for its meshes,
+     * before it creates its frame target: `held(probe)` virtual time per call, unready
+     * until `ready(probe)`. Later probes (the renderer's own) take no part.
+     */
     function probeSphere(held: (probe: number) => number, ready: (probe: number) => boolean) {
       let probes = 0;
       const isReady = Mesh.prototype.isReady;
       vi.spyOn(Mesh.prototype, "isReady").mockImplementation(function (this: Mesh, ...args) {
         const result = isReady.apply(this, args);
-        if (this.name !== MATERIAL_PREVIEW_MESH_NAME) return result;
+        const waiting = this.name === MATERIAL_PREVIEW_MESH_NAME &&
+          !this.getScene().textures.some((texture) => texture.name === "assetThumbnail");
+        if (!waiting) return result;
         probes += 1;
         clock.advance(held(probes));
         return result && ready(probes);
@@ -262,17 +268,34 @@ describe("asset thumbnail capture", () => {
       return () => { if (polling) onPoll(release); return true; };
     }
 
-    it("lets a readback finish after a synchronous call held the thread past the capture bound", async () => {
-      const { engine } = fixture();
-      clock = installVirtualClock();
+    /** A readback that a synchronous call holds past the capture bound before it returns. */
+    function readbackHeldPastBound() {
       let polls = 0;
-      const shouldContinue = stalledReadback((release) => {
+      return stalledReadback((release) => {
         polls += 1;
         if (polls === 1) clock.advance(CAPTURE_BOUND_MS + 10_000);
         else release();
       });
-      const png = await captureAssetThumbnailPng(engine, material, shouldContinue, 32);
+    }
+
+    it("lets a readback finish after a synchronous call held the thread past the capture bound", async () => {
+      const { engine } = fixture();
+      clock = installVirtualClock();
+      const png = await captureAssetThumbnailPng(engine, material, readbackHeldPastBound(), 32);
       expect(png?.subarray(0, 8)).toEqual(PNG_SIGNATURE);
+    });
+
+    // The waits of one capture run one after another, so a capture that never becomes ready would otherwise
+    // hold the serialized thumbnail queue for a full budget at every step.
+    it("spends one budget across the capture's waits", async () => {
+      const { engine } = fixture();
+      clock = installVirtualClock();
+      // The mesh wait spends the whole 60 s of credit (six 10 s holds) and then succeeds...
+      probeSphere((probe) => probe <= 6 ? 10_000 : POLL_MS, (probe) => probe > 6);
+      // ...so the same readback that finishes above now has nothing left to be credited from.
+      expect(await captureAssetThumbnailPng(engine, material, readbackHeldPastBound(), 32)).toBeNull();
+      // The capture got as far as its readback before it gave up.
+      expect(RenderTargetTexture.prototype.readPixels).toHaveBeenCalledOnce();
     });
 
     it("expires a readback that never returns at the capture bound", async () => {
