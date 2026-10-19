@@ -61,6 +61,13 @@ import {
 } from "./actor-world-transform";
 
 /**
+ * How Movement moves an actor. `dynamic`: it steers the velocity of the actor's
+ * dynamic Rigid Body. Otherwise a kinematic capsule is moved by a character
+ * controller, and `mass` scales impulses into velocity.
+ */
+export type MovementDrive = { component: ActorComponent; dynamic: boolean; mass: number };
+
+/**
  * Keeps `@babylonslate/physics` bodies in sync with World actors that carry
  * RigidBodyComponent / ColliderComponent, MeshComponent collision, tilemap
  * collision, enabled Landscapes, or a Blocking Volume.
@@ -128,6 +135,8 @@ export class PhysicsWorldSync {
     {
       component: ActorComponent | null;
       value: ReturnType<typeof parseRigidBodyProperties>;
+      /** Movement steers this dynamic body, so it stays upright. */
+      lockRotation: boolean;
     }
   >();
   private readonly staticPoses = new Map<string, readonly unknown[]>();
@@ -558,9 +567,11 @@ export class PhysicsWorldSync {
     source: ActorComponent | null,
     world: (actor: Actor) => Transform,
   ): boolean {
-    // Movement never coexists with RigidBody or buoyancy, so one source suffices.
+    // A Movement source is a kinematic capsule or a dynamic Rigid Body Movement steers; buoyancy and Nav Agent never coexist with it.
     const movement = source?.classId === "MovementComponent" ? source : null;
-    const rigid = movement ? null : source;
+    const drive = movement ? this.movementDrive(actor) : undefined;
+    const steered = drive?.dynamic === true;
+    const rigid = movement ? (steered ? this.rigidComponent(actor) ?? null : null) : source;
     if (
       this.bodyOwnerByActor.has(actor.guid) &&
       this.bodyOwnerByActor.get(actor.guid) !== actor
@@ -573,12 +584,12 @@ export class PhysicsWorldSync {
     } else {
       const bodyId = this.bodyByActor.get(actor.guid)!;
       const pose = world(actor);
-      if (movement) {
+      if (movement && !steered) {
         this.applyBodyPolicy(actor.guid, bodyId, movement, MOVEMENT_BODY_PROPERTIES);
         this.backend.setBodyTargetTransform(bodyId, physicsPose(pose));
       } else if (rigid) {
         const props = this.rigidProps(rigid);
-        this.applyBodyPolicy(actor.guid, bodyId, rigid, props);
+        this.applyBodyPolicy(actor.guid, bodyId, rigid, props, steered);
         if (props.motionType === "kinematic") {
           this.backend.setBodyTargetTransform(bodyId, physicsPose(pose));
         } else if (props.motionType === "static") {
@@ -593,9 +604,9 @@ export class PhysicsWorldSync {
         );
         this.syncStaticPose(actor, bodyId, pose);
       }
-      this.applyActorColliders(actor, bodyId, pose, movement);
+      this.applyActorColliders(actor, bodyId, pose, drive ?? null);
     }
-    if (!movement && this.movementControllerDescriptors.has(actor.guid)) {
+    if ((!movement || steered) && this.movementControllerDescriptors.has(actor.guid)) {
       this.backend.destroyCharacterController(actor.guid);
       this.characterByActor.delete(actor.guid);
       this.movementControllerDescriptors.delete(actor.guid);
@@ -914,11 +925,12 @@ export class PhysicsWorldSync {
 
   /**
    * One membership scan per actor and tick. Returns false for an actor without
-   * a body source, otherwise its rigid component (RigidBody, or buoyancy in 3D),
-   * its Movement component (as `movementComponent` resolves it), or null for an
-   * implicit static body. Mesh collision sources still resolve for every live
-   * MeshComponent, and disabled dynamic meshes are released only when no
-   * earlier source supplies a body, as before.
+   * a body source, otherwise its Movement component (as `movementDrive`
+   * resolves it, whatever the motion of a Rigid Body beside it), its rigid
+   * component (RigidBody, or buoyancy in 3D), or null for an implicit static
+   * body. Mesh collision sources still resolve for every live MeshComponent,
+   * and disabled dynamic meshes are released only when no earlier source
+   * supplies a body, as before.
    */
   private classifyActor(actor: Actor): ActorComponent | null | false {
     const is3d = this.backend.kind === "3d";
@@ -937,7 +949,6 @@ export class PhysicsWorldSync {
       switch (component.classId) {
         case "RigidBodyComponent":
           rigidBody ??= component;
-          movementExcluded = true;
           break;
         case "WaterBuoyancyComponent":
           buoyancy ??= component;
@@ -966,9 +977,11 @@ export class PhysicsWorldSync {
           break;
       }
     }
+    // A static Rigid Body cannot move, so it keeps the actor and Movement is a conflict.
+    if (movement && !movementExcluded && (!rigidBody || this.rigidProps(rigidBody).motionType !== "static"))
+      return movement;
     const rigid = rigidBody ?? (is3d ? buoyancy : undefined);
     if (rigid) return rigid;
-    if (movement && !movementExcluded) return movement;
     if (implicit) return null;
     return dynamicMesh && this.dynamicMeshPhysicsComponents(actor).length > 0
       ? null
@@ -1017,13 +1030,15 @@ export class PhysicsWorldSync {
     bodyId: string,
     component: ActorComponent | null,
     value: ReturnType<typeof parseRigidBodyProperties>,
+    lockRotation = false,
   ): void {
     const applied = this.appliedBodyProperties.get(actorId);
-    if (applied?.component === component && applied.value === value) return;
+    if (applied?.component === component && applied.value === value && applied.lockRotation === lockRotation) return;
     // Static and Dynamic follow the motion type; other tuning does not reach a channel.
     if (applied?.value.motionType !== value.motionType) this.invalidateChannels();
-    this.backend.updateBody(bodyId, value);
-    this.appliedBodyProperties.set(actorId, { component, value });
+    // The lock is sent only when it changes (creation set the initial one).
+    this.backend.updateBody(bodyId, lockRotation === (applied?.lockRotation ?? false) ? value : { ...value, lockRotation });
+    this.appliedBodyProperties.set(actorId, { component, value, lockRotation });
     this.staticPoses.delete(actorId);
   }
 
@@ -1248,7 +1263,7 @@ export class PhysicsWorldSync {
     const matches = (actor: Actor) => {
       const motion = this.appliedBodyProperties.get(actor.guid)?.value.motionType ?? "static";
       return channel === "Static" ? motion === "static"
-        : channel === "Dynamic" ? motion !== "static" : this.movementComponent(actor) !== undefined;
+        : channel === "Dynamic" ? motion !== "static" : this.movementDrive(actor) !== undefined;
     };
     for (const [actorId, actor] of this.bodyOwnerByActor)
       if (!this.hostByActor.has(actorId) && !matches(actor)) ignored.add(actorId);
@@ -1365,8 +1380,11 @@ export class PhysicsWorldSync {
     const bodyId = this.bodyByActor.get(owner.guid);
     if (!bodyId) return;
     if (component.classId === "RigidBodyComponent") {
+      const drive = this.movementDrive(owner);
+      // Movement's kinematic capsule ignores these knobs; the next step reconciles a changed Motion Type.
+      if (drive && !drive.dynamic) return;
       const props = this.rigidProps(component);
-      this.applyBodyPolicy(owner.guid, bodyId, component, props);
+      this.applyBodyPolicy(owner.guid, bodyId, component, props, drive?.dynamic === true);
       return;
     }
     if (COLLIDER_REFRESH_CLASSES.has(component.classId) || component.classId === "MovementComponent") {
@@ -1435,7 +1453,7 @@ export class PhysicsWorldSync {
     props: MovementProperties,
   ): { position: Vec3; velocity: Vec3; grounded: boolean } | null {
     if (actor.destroyed || !this.actorFilter(actor) || this.suppressedActors.has(actor) ||
-      !this.movementComponent(actor) || !Number.isFinite(dt) || dt <= 0) return null;
+      this.movementDrive(actor)?.dynamic !== false || !Number.isFinite(dt) || dt <= 0) return null;
     const owner = this.bodyOwnerByActor.get(actor.guid);
     if (owner && owner !== actor) return null;
     // Motors run as `step`'s hook after its pre-step composition and reuse that
@@ -1472,17 +1490,78 @@ export class PhysicsWorldSync {
     return { position: moved.position, velocity: moved.velocity, grounded: moved.grounded };
   }
 
-  private movementComponent(actor: Actor): ActorComponent | undefined {
+  /**
+   * Physics-driven Movement: the steered body's linear velocity and the normal
+   * of the walkable ground under it (null in the air), as the last step left
+   * them. Null when Movement cannot steer this actor. A body not created yet
+   * reads as still and airborne.
+   */
+  movementBody(actor: Actor, props: MovementProperties): { velocity: Vec3; ground: Vec3 | null } | null {
+    if (actor.destroyed || !this.actorFilter(actor) || this.suppressedActors.has(actor) ||
+      this.movementDrive(actor)?.dynamic !== true) return null;
+    const bodyId = this.bodyByActor.get(actor.guid);
+    if (!bodyId || this.bodyOwnerByActor.get(actor.guid) !== actor) return { velocity: { x: 0, y: 0, z: 0 }, ground: null };
+    const velocity = this.backend.getBodyVelocity(bodyId);
+    return velocity && { velocity: velocity.linear, ground: this.groundUnder(actor, bodyId, props) };
+  }
+
+  /**
+   * The normal of the ground within Ground Snap Distance below the body: its
+   * own solid shapes swept down, starting a little above their pose so a body
+   * resting in contact is not an initial overlap. Hosted shapes, triggers and
+   * surfaces steeper than Max Slope Angle never count.
+   */
+  private groundUnder(actor: Actor, bodyId: string, props: MovementProperties): Vec3 | null {
+    const prepared = this.preparedByActor.get(actor.guid);
+    const pose = this.backend.getBodyTransform(bodyId);
+    if (prepared?.actor !== actor || !pose) return null;
+    const walkable = Math.cos((props.maxSlopeAngle * Math.PI) / 180);
+    let ignore: string[] | undefined;
+    for (const collider of prepared.colliders.values()) {
+      if (collider.isTrigger || (collider.actorId ?? actor.guid) !== actor.guid ||
+        collider.shape.kind === "mesh" || collider.shape.kind === "chain") continue;
+      const offset = collider.translation ? rotateQuatVec(pose.rotation, collider.translation) : undefined;
+      const rotation = collider.rotation ? multiplyQuat(pose.rotation, collider.rotation) : pose.rotation;
+      const x = pose.position.x + (offset?.x ?? 0), y = pose.position.y + (offset?.y ?? 0), z = pose.position.z + (offset?.z ?? 0);
+      ignore ??= [actor.guid, ...(this.hostedByHost.get(actor.guid)?.map((child) => child.guid) ?? [])];
+      const hit = this.backend.shapeSweep(collider.shape,
+        { position: { x, y: y + GROUND_PROBE_LIFT, z }, rotation },
+        { position: { x, y: y - props.groundSnapDistance - GROUND_PROBE_MARGIN, z }, rotation },
+        { ignoreActorIds: ignore, includeTriggers: false });
+      if (hit.hit && hit.normal && hit.normal.y >= walkable) return { ...hit.normal };
+    }
+    return null;
+  }
+
+  /**
+   * How Movement moves the actor, as `classifyActor` resolves it; undefined when
+   * there is no Movement or another motion owner (Nav Agent, Ragdoll, Water
+   * Buoyancy, a second Movement or a static Rigid Body) stops it.
+   */
+  movementDrive(actor: Actor): MovementDrive | undefined {
     let movement: ActorComponent | undefined;
+    let rigid: ActorComponent | undefined;
     for (const component of actor.components) {
       if (component.destroyed || component.owner !== actor) continue;
-      if (["RigidBodyComponent", "WaterBuoyancyComponent", "NavAgentComponent", "RagdollComponent"].includes(component.classId)) return undefined;
-      if (component.classId === "MovementComponent") {
-        if (movement) return undefined;
-        movement = component;
+      switch (component.classId) {
+        case "RigidBodyComponent":
+          rigid ??= component;
+          break;
+        case "WaterBuoyancyComponent":
+        case "NavAgentComponent":
+        case "RagdollComponent":
+          return undefined;
+        case "MovementComponent":
+          if (movement) return undefined;
+          movement = component;
+          break;
       }
     }
-    return movement;
+    if (!movement) return undefined;
+    if (!rigid) return { component: movement, dynamic: false, mass: 1 };
+    const props = this.rigidProps(rigid);
+    return props.motionType === "static" ? undefined
+      : { component: movement, dynamic: props.motionType === "dynamic", mass: Math.max(props.mass, MIN_MOVEMENT_MASS) };
   }
 
   private rigidComponent(actor: Actor): ActorComponent | undefined {
@@ -1498,7 +1577,7 @@ export class PhysicsWorldSync {
   private createForActor(actor: Actor, world: (actor: Actor) => Transform): void {
     if (this.suppressedActors.has(actor)) return;
     const rigid = this.rigidComponent(actor);
-    const movement = this.movementComponent(actor);
+    const drive = this.movementDrive(actor);
     const tilemap = actor.components.find(
       (c) =>
         c.classId === "TilemapComponent" && !c.destroyed && c.owner === actor,
@@ -1511,7 +1590,7 @@ export class PhysicsWorldSync {
     );
     if (
       !rigid &&
-      !movement &&
+      !drive &&
       !tilemap &&
       !blocking &&
       this.meshPhysicsComponents(actor).length === 0 &&
@@ -1522,7 +1601,9 @@ export class PhysicsWorldSync {
     // A hosted actor's solid shapes live on its host; only triggers need a body.
     if (this.hostByActor.has(actor.guid) && !this.hasTriggerCollider(actor)) return;
     const bodyId = `body:${actor.guid}`;
-    const props = movement ? MOVEMENT_BODY_PROPERTIES : rigid
+    const kinematicCapsule = drive !== undefined && !drive.dynamic;
+    const lockRotation = drive?.dynamic === true;
+    const props = kinematicCapsule ? MOVEMENT_BODY_PROPERTIES : rigid
       ? this.rigidProps(rigid)
       : parseRigidBodyProperties({
           motionType: "static",
@@ -1539,16 +1620,18 @@ export class PhysicsWorldSync {
       linearDamping: props.linearDamping,
       angularDamping: props.angularDamping,
       gravityScale: props.gravityScale,
+      lockRotation,
       transform: pose,
       reportContacts: this.claimContactReporting(actor),
     });
     try {
-      this.applyActorColliders(actor, bodyId, resolved, movement ?? null);
+      this.applyActorColliders(actor, bodyId, resolved, drive ?? null);
       this.bodyByActor.set(actor.guid, bodyId);
       this.bodyOwnerByActor.set(actor.guid, actor);
       this.appliedBodyProperties.set(actor.guid, {
-        component: movement ?? rigid ?? null,
-        value: movement || rigid ? props : STATIC_BODY_PROPERTIES,
+        component: kinematicCapsule ? drive.component : rigid ?? null,
+        value: kinematicCapsule || rigid ? props : STATIC_BODY_PROPERTIES,
+        lockRotation,
       });
       this.invalidateChannels();
       // Creation already installed this pose; caching it keeps later syncs
@@ -1566,39 +1649,36 @@ export class PhysicsWorldSync {
    * Prepare one complete logical collider set, then publish one native batch.
    * `world` is the actor's resolved world pose: the pre-step pass for per-tick
    * callers, its own current chain for call-time callers. Per-tick callers pass
-   * the Movement component they already classified.
+   * the Movement drive they already resolved. A kinematic Movement body is its
+   * capsule alone; a Rigid Body that Movement steers keeps its own shapes and
+   * takes the capsule only when it has no solid one.
    */
   private applyActorColliders(
     actor: Actor,
     bodyId: string,
     world: Transform,
-    movement: ActorComponent | null = this.movementComponent(actor) ?? null,
+    drive: MovementDrive | null = this.movementDrive(actor) ?? null,
   ): void {
     const hosted = this.hostedShapes(actor, world.scale);
     // A hosted actor's own body keeps only its triggers.
     const triggersOnly = this.hostByActor.has(actor.guid);
-    const current = this.actorCollisionDescriptor(actor, movement, world, triggersOnly, hosted);
+    const current = this.actorCollisionDescriptor(actor, drive, world, triggersOnly, hosted);
     const prepared = this.preparedByActor.get(actor.guid);
     if (current.matches(prepared?.actor === actor ? prepared.descriptor : undefined))
       return;
     const descriptor = current.copy();
     const colliders = new Map<string, ColliderDesc>();
-    if (movement) {
-      const props = parsedMovementProperties.get(movement);
-      const id = componentColliderPhysicsId(actor.guid, movement.guid);
-      const rotation = uprightCapsuleRotation(world.rotation);
-      colliders.set(id, {
-        id, bodyId,
-        shape: { kind: this.backend.kind === "3d" ? "capsule" : "capsule2d", radius: props.radius, halfHeight: props.height / 2 - props.radius },
-        rotation, friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff,
-      });
-    }
-
-    if (!movement) {
+    if (drive && !drive.dynamic) this.collectMovementCapsule(actor, bodyId, drive.component, world, colliders);
+    else {
       this.collectOwnColliders(actor, bodyId, { ...world.scale }, colliders);
       if (triggersOnly)
         for (const [id, collider] of colliders)
           if (!collider.isTrigger) colliders.delete(id);
+      if (drive) {
+        let solid = false;
+        for (const collider of colliders.values()) solid ||= !collider.isTrigger;
+        if (!solid) this.collectMovementCapsule(actor, bodyId, drive.component, world, colliders);
+      }
     }
     if (hosted)
       for (const shape of hosted) this.collectHostedColliders(actor, bodyId, shape, colliders);
@@ -1616,6 +1696,23 @@ export class PhysicsWorldSync {
     if (upsert.length || remove.length)
       this.backend.applyColliderChanges(bodyId, { upsert, remove });
     this.preparedByActor.set(actor.guid, { actor, descriptor, colliders });
+  }
+
+  /** Movement's upright capsule from Radius and Height, in world units whatever the actor's scale. */
+  private collectMovementCapsule(
+    actor: Actor,
+    bodyId: string,
+    movement: ActorComponent,
+    world: Transform,
+    colliders: Map<string, ColliderDesc>,
+  ): void {
+    const props = parsedMovementProperties.get(movement);
+    const id = componentColliderPhysicsId(actor.guid, movement.guid);
+    colliders.set(id, {
+      id, bodyId,
+      shape: { kind: this.backend.kind === "3d" ? "capsule" : "capsule2d", radius: props.radius, halfHeight: props.height / 2 - props.radius },
+      rotation: uprightCapsuleRotation(world.rotation), friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff,
+    });
   }
 
   /** Every collider an actor's own components supply, sized by its world `scale`. */
@@ -1785,7 +1882,7 @@ export class PhysicsWorldSync {
    */
   private actorCollisionDescriptor(
     actor: Actor,
-    movement: ActorComponent | null,
+    drive: MovementDrive | null,
     world: Transform,
     triggersOnly: boolean,
     hosted: readonly HostedShape[] | undefined,
@@ -1793,18 +1890,20 @@ export class PhysicsWorldSync {
     const descriptor = this.collisionScratch;
     descriptor.begin();
     descriptor.push(actor);
-    if (movement) {
+    if (drive) {
       const rotation = uprightCapsuleRotation(world.rotation);
-      // Movement owns a fixed world-sized capsule. Visual frames, authored
-      // colliders, local component transforms, and scale cannot change it.
-      descriptor.push(movement);
-      descriptor.push(movement.getVariable("radius"));
-      descriptor.push(movement.getVariable("height"));
+      // Movement's capsule is a fixed world size. Visual frames, local component
+      // transforms, and scale cannot change it.
+      descriptor.push(drive.component);
+      descriptor.push(drive.dynamic);
+      descriptor.push(drive.component.getVariable("radius"));
+      descriptor.push(drive.component.getVariable("height"));
       descriptor.push(rotation.x);
       descriptor.push(rotation.y);
       descriptor.push(rotation.z);
       descriptor.push(rotation.w);
-    } else {
+    }
+    if (!drive || drive.dynamic) {
       const scale = world.scale;
       descriptor.push(actorParentGuid(actor));
       descriptor.push(scale.x);
@@ -2433,6 +2532,13 @@ const STATIC_BODY_PROPERTIES = parseRigidBodyProperties({
   mass: 0,
   gravityScale: 0,
 });
+
+/** An impulse's velocity change is impulse / mass; mass stays positive. */
+const MIN_MOVEMENT_MASS = 1e-3;
+
+/** Ground probe: shapes start this far above their pose and reach Ground Snap Distance plus the margin below it. */
+const GROUND_PROBE_LIFT = 0.05;
+const GROUND_PROBE_MARGIN = 0.02;
 
 const MOVEMENT_BODY_PROPERTIES = parseRigidBodyProperties({
   motionType: "kinematic", mass: 1, gravityScale: 0, linearDamping: 0, angularDamping: 0,

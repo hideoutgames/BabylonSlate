@@ -31,7 +31,9 @@ import {
   type SimulationCaptureRequest,
   type DiagnosticOperationRequest,
   type DiagnosticOperationResult,
+  type DebugObserveTarget,
 } from "@babylonslate/bridge";
+import { ScriptDebugObserver } from "./script-debug";
 import {
   ClassRegistry,
   World,
@@ -149,6 +151,9 @@ function hasAnimatedTiles(tilemaps: ReadonlyMap<string, TilemapPayload>, tileset
     (tileset) => tileset.tiles.some((tile) => tile.animation.length > 0),
   );
 }
+
+/** The graph debugger's views: editor-bound, not scene state, so they stay out of the command revision a final capture compares. */
+const DEBUG_VIEW_COMMANDS: ReadonlySet<string> = new Set(["debugRoster", "executionTrace", "btState"]);
 
 /** The session class registry; `Enemy` is the class of the empty-Preview demo actor. */
 function createClassRegistry(): ClassRegistry {
@@ -304,6 +309,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly layers: SceneLayers;
   private readonly dataCatalog: RuntimeDataCatalog;
   private readonly scriptHost: ScriptHost;
+  private readonly scriptDebug: ScriptDebugObserver;
 
   get lastScriptMs(): number {
     return this.ticks.lastScriptMs;
@@ -489,6 +495,15 @@ class InProcessRuntime implements RuntimeDriver {
     for (const [guid, value] of Object.entries(options.renderTargets ?? {})) this.sourceRenderTargets.set(guid, value);
     for (const [guid, value] of Object.entries(options.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
     this.scriptHost = this.createScriptHost(options, registry);
+    this.scriptDebug = new ScriptDebugObserver({
+      world: () => this.world,
+      emit: (command) => this.emit(command),
+      setDebugTrace: (object, sink) => {
+        this.scriptHost.setDebugTrace(object, sink);
+        this.behaviourTrees.setDebugTrace(object, sink);
+        this.animGraphs.setDebugTrace(object, sink);
+      },
+    });
 
     // 8. Lifecycle hooks, in Stop order.
     this.registerSubsystems();
@@ -996,7 +1011,7 @@ class InProcessRuntime implements RuntimeDriver {
       eligible: (actor) => this.admission.canTickActor(actor),
       gravity: (actor) => -this.physics.gravityFor(actor)[1],
       warn: (component) => this.emit({ type: "log", severity: "warning", category: "Movement",
-        message: `Movement on ${component.owner?.guid ?? "actor"} could not create its motor. Use one Movement component without Rigid Body, Nav Agent, Ragdoll or Water Buoyancy components.`, frameId: this.frameId }),
+        message: `Movement on ${component.owner?.guid ?? "actor"} could not create its motor. Use one Movement component without Nav Agent, Ragdoll or Water Buoyancy components, and with a Rigid Body only if its Motion Type is Dynamic or Kinematic.`, frameId: this.frameId }),
       event: (component, event, args) => {
         const actor = component.owner;
         if (actor) this.admission.guard(() => this.scriptHost.invokeEvent(actor.classId, event, actor, args, component.guid));
@@ -1143,6 +1158,7 @@ class InProcessRuntime implements RuntimeDriver {
         layerPhysics: (layerGuid) => this.physics.layer(layerGuid),
         physicsFor: (actor) => this.physics.forActor(actor),
         ragdolls: this.ragdolls,
+        movement: this.movement,
         waterTime: () => this.waterClock.time,
         projectCursorToScene: (channel, options, sceneLayerId) => sceneLayerId
           ? this.camera.projectCursorToSceneLayer(sceneLayerId, channel)
@@ -1361,8 +1377,9 @@ class InProcessRuntime implements RuntimeDriver {
     this.overlay.focusNavigate(reverse);
   }
 
-  applyBehaviourTreeStateObserved(observed: boolean): void {
-    this.behaviourTrees.setStateObserved(observed);
+  applyDebugObserve(target: DebugObserveTarget | null, instanceId: string | null): void {
+    if (this.stopped) return;
+    this.scriptDebug.observe(target, instanceId);
   }
 
   applySceneLayerControl(message: Extract<ControlMessage, { type: "sceneLayerControl" }>): void {
@@ -1792,6 +1809,7 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.world.end();
     // Release scripts.
+    this.scriptDebug.dispose();
     this.scriptHost.dispose();
     this.scriptRuntime.unregisterClasses();
     this.anchors.clear();
@@ -1922,6 +1940,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.tickSceneSystems(simDt);
     if (this.stopped) return;
     this.ticks.closePhaseTiming();
+    this.scriptDebug.flush(this.world.clock.tickIndex);
     this.flushComponentCommands();
     const completedFrameId = this.frameId;
     this.frameId += 1;
@@ -2100,7 +2119,8 @@ class InProcessRuntime implements RuntimeDriver {
   private emit(command: CommandMessage): void {
     command = this.voices.prepare(this.inspector.annotate(command));
 
-    this.commandRevision++;
+    // Debug views carry no scene state; counting them would break a final-capture fence.
+    if (!DEBUG_VIEW_COMMANDS.has(command.type)) this.commandRevision++;
     // Every log line and Print String reaches the ring that `dumplog` and the
     // session report read, not only the ones routed through reportLog.
     if (command.type === "log") {

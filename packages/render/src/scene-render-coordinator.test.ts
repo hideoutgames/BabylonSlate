@@ -16,7 +16,7 @@ import { markSceneReadinessDirty } from "./scene-perf";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTextureManager } from "@babylonjs/core/FrameGraph/frameGraphTextureManager";
-import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
 import {
   SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS, SCENE_THREAD_HELD_MS,
 } from "./stall-deadline";
@@ -24,14 +24,25 @@ import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { SharedOutlineOwner } from "./shared-outline";
 import { createGizmoHost } from "./gizmo-host";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
+import { beginPipelineDeferral, PIPELINE_DEFERRAL_HOLD_CAP_MS } from "./webgpu-pipeline-deferral";
+import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
+
+// NullEngine is not WebGPU, so the deferral itself never engages; its scopes are the seam here.
+vi.mock("./webgpu-pipeline-deferral", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./webgpu-pipeline-deferral")>();
+  return { ...actual, beginPipelineDeferral: vi.fn(actual.beginPipelineDeferral) };
+});
+const { beginPipelineDeferral: actualBeginPipelineDeferral } =
+  await vi.importActual<typeof import("./webgpu-pipeline-deferral")>("./webgpu-pipeline-deferral");
 
 const engines: NullEngine[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.mocked(beginPipelineDeferral).mockImplementation(actualBeginPipelineDeferral);
   for (const engine of engines.splice(0)) engine.dispose();
 });
 
-function host() {
+function host(deferPipelines = false) {
   const options = new NullEngineOptions();
   options.renderWidth = 80;
   options.renderHeight = 64;
@@ -40,9 +51,88 @@ function host() {
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", new Vector3(0, 0, -4), scene);
   scene.activeCamera = camera;
-  const renderer = new SceneRenderCoordinator(scene);
+  const renderer = new SceneRenderCoordinator(scene, { deferPipelines });
   return { options, engine, scene, camera, renderer };
 }
+
+describe("deferred WebGPU pipelines", () => {
+  /** Every scope the view opens from now on skips `skipped` draws and waits while `waiting` says so. */
+  const scopes = (skipped: () => number, waiting: () => boolean) =>
+    vi.mocked(beginPipelineDeferral).mockImplementation(() => ({ close: skipped, waiting }));
+
+  it("holds the last image, drawing nothing more, until the pipelines a frame skipped exist", async () => {
+    const { scene, renderer } = host(true);
+    await renderer.prepare();
+    const draws = vi.spyOn(scene, "render");
+    let waiting = true;
+    scopes(() => 2, () => waiting);
+    expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false, reason: "Render pipelines are compiling." });
+    expect(renderer.holdingForPipelines).toBe(true);
+    expect(renderer.render().rendered).toBe(false);
+    expect(draws).toHaveBeenCalledTimes(1);
+    waiting = false;
+    scopes(() => 0, () => false);
+    expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
+    expect(renderer.holdingForPipelines).toBe(false);
+    expect(draws).toHaveBeenCalledTimes(2);
+    renderer.dispose();
+  });
+
+  it("starts no new deferrals once a hold outlasts its cap, until a frame draws or needs preparation", async () => {
+    const { renderer } = host(true);
+    await renderer.prepare();
+    let now = 1_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    let skipped = 1;
+    const begin = scopes(() => skipped, () => false);
+    const starts = () => (begin.mock.calls.at(-1)?.[2] as { startsDeferrals?: boolean } | undefined)?.startsDeferrals;
+    renderer.render();
+    expect(starts()).toBe(true);
+    now += PIPELINE_DEFERRAL_HOLD_CAP_MS;
+    renderer.render();
+    expect(starts()).toBe(false);
+    // A drawn frame ends the run of held frames.
+    skipped = 0;
+    expect(renderer.render().rendered).toBe(true);
+    skipped = 1;
+    renderer.render();
+    expect(starts()).toBe(true);
+    // So does a frame that skipped nothing because the graph needed preparation.
+    now += PIPELINE_DEFERRAL_HOLD_CAP_MS;
+    skipped = 0;
+    vi.spyOn(ForwardSceneFrameGraph.prototype, "render")
+      .mockReturnValueOnce({ path: "frameGraph", reason: "FrameGraph preparation is required.", rendered: false });
+    expect(renderer.render()).toMatchObject({ rendered: false, reason: "FrameGraph preparation is required." });
+    expect(starts()).toBe(false);
+    expect(renderer.holdingForPipelines).toBe(false);
+    skipped = 1;
+    renderer.render();
+    expect(starts()).toBe(true);
+    renderer.dispose();
+  });
+
+  it("ends a hold on invalidation: a switched scene's first frame neither waits for the old pipelines nor inherits an expired cap", async () => {
+    const { renderer } = host(true);
+    await renderer.prepare();
+    let now = 1_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const begin = scopes(() => 1, () => true);
+    const starts = () => (begin.mock.calls.at(-1)?.[2] as { startsDeferrals?: boolean } | undefined)?.startsDeferrals;
+    renderer.render();
+    expect(renderer.holdingForPipelines).toBe(true);
+    now += PIPELINE_DEFERRAL_HOLD_CAP_MS;
+    renderer.invalidate();
+    expect(renderer.holdingForPipelines).toBe(false);
+    await renderer.prepare();
+    // The old scene's pipelines are still pending, yet the new scene's first frame opens its own scope.
+    const frames = begin.mock.calls.length;
+    scopes(() => 0, () => false);
+    expect(renderer.render()).toMatchObject({ rendered: true });
+    expect(begin).toHaveBeenCalledTimes(frames + 1);
+    expect(starts()).toBe(true);
+    renderer.dispose();
+  });
+});
 
 function holdGraphInitialization() {
   let entered!: () => void;
@@ -441,7 +531,9 @@ it("rejects a changed output the graph cannot draw without drawing a frame", asy
  * synchronous call that held the thread.
  */
 function virtualClock() {
-  const start = performance.now();
+  // A whole millisecond, so sums of whole-millisecond advances stay exact: from a
+  // fractional start, "now + bound" and the elapsed difference round apart.
+  const start = Math.floor(performance.now());
   let now = start;
   vi.spyOn(performance, "now").mockImplementation(() => now);
   return { advance: (ms: number) => { now += ms; }, elapsed: () => now - start };
@@ -591,6 +683,7 @@ describe.each([false, true])("preparation while synchronous links finish one aft
   it("fails once links stop finishing, a whole bound after the last one, and reports the shaders compiled", async () => {
     const { renderer, clock, lastLink } = linkingHost(500, (probe) => probe <= 40, () => false);
     const error = await renderer.prepare().then(() => null, (failure: unknown) => failure as Error);
+    expect(error).toBeInstanceOf(PreparationTimedOut);
     expect(error?.message).toContain("timed out after 10 s without progress");
     // The 40 links, and the graph's own effects.
     expect(Number(/Shaders: (\d+) compiled while waiting/.exec(error?.message ?? "")?.[1])).toBeGreaterThanOrEqual(40);
@@ -605,7 +698,9 @@ describe.each([false, true])("preparation while synchronous links finish one aft
   it("ends a preparation that keeps linking but never becomes ready at the ceiling", async () => {
     const held = 5_000;
     const { renderer, clock } = linkingHost(held, () => true, () => false);
-    await expect(renderer.prepare()).rejects.toThrow(`timed out after its ${SCENE_PREPARATION_CEILING_MS / 1000} s limit`);
+    const error = await renderer.prepare().then(() => null, (failure: unknown) => failure as Error);
+    expect(error).toBeInstanceOf(PreparationTimedOut);
+    expect(error?.message).toContain(`timed out after its ${SCENE_PREPARATION_CEILING_MS / 1000} s limit`);
     expect(clock.elapsed()).toBeGreaterThanOrEqual(SCENE_PREPARATION_CEILING_MS);
     expect(clock.elapsed()).toBeLessThanOrEqual(SCENE_PREPARATION_CEILING_MS + held);
     renderer.dispose();

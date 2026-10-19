@@ -463,11 +463,8 @@ function validatePinTyping(
         );
       }
       if (!connected && pin.type.kind !== "exec") {
-        const implicitSelfTarget =
-          pin.id === "target" &&
-          node.properties.implicitSelf === true &&
-          (pin.type.kind === "objectRef" || pin.type.kind === "actorRef") &&
-          (registry === undefined || registry.get(node.typeId)?.implicitSelfTarget === true);
+        // A pin that reads Self while unwired always has an object to act on.
+        const readsSelf = (catalogPin ?? pin).selfWhenUnwired === true;
         // A catalog default is as authored as a stored one: compile and the
         // editor both fall back to it before the type default.
         const authored = hasStored || pin.defaultValue !== undefined ||
@@ -494,7 +491,7 @@ function validatePinTyping(
             Boolean(owner?.implementsInterface));
         if (
           !defaultClearsMissing &&
-          !implicitSelfTarget &&
+          !readsSelf &&
           (!literalPin || interfaceOutput)
         ) {
           const liveRef =
@@ -1186,13 +1183,17 @@ function eventTitle(node: GraphNode, registry: ValidateOptions["registry"]): str
  * told apart statically. Input events share one tick handler, so their
  * identity is the Input Action or Axis they read, never the handler name.
  */
-function singletonEventKey(node: GraphNode, incoming: IncomingEdge): string | undefined {
+export function singletonEventKey(
+  node: Pick<GraphNode, "typeId" | "properties">,
+  /** True when a wire feeds the Input Binding pin, so the asset is unknown until run time. */
+  bindingWired: boolean,
+): string | undefined {
   if (node.typeId === "flow.event.custom") {
     return eventNameForEntry(node) ? `${node.typeId}\0${String(node.properties.name)}` : undefined;
   }
   if (eventNameForEntry(node) === undefined) return undefined;
   if (node.typeId === "input.actionEvent" || node.typeId === "input.axisEvent") {
-    if (incoming(node.id, "binding")) return undefined;
+    if (bindingWired) return undefined;
     const input = (node.properties["default:binding"] as { Input?: { Asset?: unknown; Name?: unknown } } | undefined)?.Input;
     const asset = input?.Asset || input?.Name;
     return typeof asset === "string" && asset ? `${node.typeId}\0${asset}` : undefined;
@@ -1214,7 +1215,7 @@ function validateDuplicateEvents(
   const out: Diagnostic[] = [];
   const firstByKey = new Map<string, GraphNode>();
   for (const node of entryNodes(graph)) {
-    const key = singletonEventKey(node, incoming);
+    const key = singletonEventKey(node, incoming(node.id, "binding") !== undefined);
     if (key === undefined) continue;
     const first = firstByKey.get(key);
     if (!first) {

@@ -6,6 +6,7 @@ import { onSceneReadinessDirty } from "./scene-perf";
 import type { SharedOutlineView } from "./shared-outline";
 import { flushSceneCables } from "./cable-mesh";
 import { DriverCompileWatch } from "./driver-compile";
+import { beginPipelineDeferral, PIPELINE_DEFERRAL_HOLD_CAP_MS, type PipelineDeferral } from "./webgpu-pipeline-deferral";
 import { whenPresentationFenceClear } from "./presented-frame";
 import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { flushSceneLatticeDeformers } from "./lattice-deformer";
@@ -13,6 +14,9 @@ import { retainWaterPlanarReflections } from "./water-planar-reflection";
 import { heldThreadMs, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 
 class PreparationChanged extends Error {}
+
+/** A preparation ran out of its bound or ceiling; a one-shot capture reports it as expired, not failed. */
+export class PreparationTimedOut extends Error {}
 
 /** Bound on one preparation generation without readiness or compile progress. */
 const PREPARATION_TIMEOUT_MS = 10_000;
@@ -43,6 +47,17 @@ export type SceneRenderCoordinatorOptions = {
    * scene's active camera.
    */
   auxiliary?: { camera: Camera; objects: FrameGraphObjectList };
+  /**
+   * WebGPU: a draw in one of the graph's object passes whose render pipeline is
+   * not cached creates it asynchronously and is skipped (`beginPipelineDeferral`),
+   * and the frame is reported not rendered, so the owner keeps its last image
+   * until the pipelines exist. After `PIPELINE_DEFERRAL_HOLD_CAP_MS` of such
+   * frames in a row, new misses compile synchronously again. Only for a view
+   * that draws every frame and presents only rendered frames: the world view
+   * and its Full Quality captures, never previews or thumbnails. An auxiliary
+   * view defers only while its owner's frame does.
+   */
+  deferPipelines?: boolean;
 };
 
 /** Scene-owned graph lifetime; the host still owns scheduling and presentation. */
@@ -60,12 +75,19 @@ export class SceneRenderCoordinator {
   /** Views may draw planar water reflections; previews and thumbnails never retain one. */
   private readonly releaseWaterPlanarReflections: () => void;
   private readonly auxiliaryCamera: Camera | undefined;
+  private readonly deferPipelines: boolean;
+  /** The last drawn frame's deferral, while it skipped draws. */
+  private deferral: PipelineDeferral | undefined;
+  /** When the current run of frames held for deferred pipelines began. */
+  private deferredSince: number | undefined;
+  private readonly ownsPass = (renderPassId: number) => this.graph.ownsObjectPass(renderPassId);
   private failedAt = 0;
   private warnedFailure: string | undefined;
 
   constructor(scene: Scene, options: SceneRenderCoordinatorOptions = {}) {
     this.scene = scene;
     this.auxiliaryCamera = options.auxiliary?.camera;
+    this.deferPipelines = options.deferPipelines === true;
     this.graph = new ForwardSceneFrameGraph(scene, options.auxiliary ? { auxiliary: { objects: options.auxiliary.objects } } : {});
     this.detachReadinessDirty = onSceneReadinessDirty(scene, () =>
       this.graph.markReadinessDirty(),
@@ -135,6 +157,10 @@ export class SceneRenderCoordinator {
   invalidate(): void {
     this.generation += 1;
     this.failure = undefined;
+    // A rebuilt graph or switched scene starts a new run of frames: it neither
+    // waits for the old frame's pipelines nor inherits its hold's elapsed cap.
+    this.deferral = undefined;
+    this.deferredSince = undefined;
     this.graph.invalidate();
   }
 
@@ -168,8 +194,14 @@ export class SceneRenderCoordinator {
       checkpoint = now;
       if (grant > 0) { creditLeft -= grant; deadline += grant; finalDeadline += grant; }
     };
-    /** Created once a previous owner's preparation settled: its ceiling bounds this preparation alone. */
+    /**
+     * Created after the first presentation-fence wait (it asks every Engine
+     * effect for readiness, a synchronous GL query for one still linking), its
+     * ceiling counted from `started`, once a previous owner's preparation
+     * settled: it bounds this preparation alone.
+     */
     let compiles!: DriverCompileWatch;
+    let started = 0;
     /**
      * Shaders that finished compiling since the last renewal, or a driver still
      * compiling, renew both bounds: synchronous links each shorter than
@@ -188,7 +220,7 @@ export class SceneRenderCoordinator {
     const timedOut = () => {
       const limit = performance.now() >= compiles.ceiling
         ? `its ${SCENE_PREPARATION_CEILING_MS / 1000} s limit` : `${PREPARATION_TIMEOUT_MS / 1000} s without progress`;
-      return new Error(`Scene rendering preparation timed out after ${limit}. ${compiles.describe()}`);
+      return new PreparationTimedOut(`Scene rendering preparation timed out after ${limit}. ${compiles.describe()}`);
     };
     /** `credit: false` for a wait whose whole duration the caller already credits. */
     const check = (credit = true) => {
@@ -208,8 +240,7 @@ export class SceneRenderCoordinator {
         try { await previous.promise; }
         catch { /* previous owner's outcome */ }
       }
-      checkpoint = performance.now();
-      compiles = new DriverCompileWatch(this.scene.getEngine(), checkpoint);
+      checkpoint = started = performance.now();
       creditLeft = SCENE_THREAD_HELD_BUDGET_MS;
       finalDeadline = checkpoint + PREPARATION_TOTAL_TIMEOUT_MS;
       restartDeadline();
@@ -221,6 +252,7 @@ export class SceneRenderCoordinator {
         // preparation time, so it extends both bounds.
         const waited = await whenPresentationFenceClear(this.scene.getEngine(), () => check(false));
         if (waited > 0) { finalDeadline += waited; restartDeadline(); }
+        compiles ??= new DriverCompileWatch(this.scene.getEngine(), started);
         flushSceneLatticeDeformers(this.scene);
         if (expired()) throw timedOut();
         const camera = this.camera();
@@ -264,6 +296,11 @@ export class SceneRenderCoordinator {
    * for a restart, and no latched failure needs the retry an invalidation grants. */
   get settled(): boolean {
     return !this.pending && this.failure === undefined;
+  }
+
+  /** The view is holding its last image until render pipelines its last frame skipped exist. */
+  get holdingForPipelines(): boolean {
+    return this.deferral !== undefined;
   }
 
   /** True while strict readiness must be re-probed after an invalidation. */
@@ -323,8 +360,29 @@ export class SceneRenderCoordinator {
     flushDynamicRuntimeMeshes(this.scene);
     const status = this.graph.readiness(camera);
     if (!status.ready) this.requestPreparation();
+    // Like a scene that is not ready yet, a frame that skipped draws for
+    // pipelines still compiling draws nothing until they exist.
+    if (this.deferral?.waiting())
+      return { path: "frameGraph", reason: "Render pipelines are compiling.", rendered: false, readyForPresentation: false };
     // Draw on readiness's admission; graph preparation or invalidation re-admits.
-    const result = this.graph.render(camera, true, true);
+    // An auxiliary view defers only inside its owner's deferring frame, which then holds too.
+    const deferral = this.deferPipelines
+      ? beginPipelineDeferral(this.scene.getEngine(), this.ownsPass, {
+        startsDeferrals: this.deferredSince === undefined || performance.now() - this.deferredSince < PIPELINE_DEFERRAL_HOLD_CAP_MS,
+        nested: this.auxiliaryCamera !== undefined,
+      })
+      : undefined;
+    let result: ReturnType<ForwardSceneFrameGraph["render"]>;
+    try {
+      result = this.graph.render(camera, true, true);
+    } finally {
+      // Skipped draws (nested captures' included) leave this frame incomplete.
+      this.deferral = deferral?.close() ? deferral : undefined;
+      if (this.deferral) this.deferredSince ??= performance.now();
+      else this.deferredSince = undefined;
+    }
+    if (this.deferral)
+      return { ...result, reason: "Render pipelines are compiling.", rendered: false, readyForPresentation: false };
     if (result.rendered !== false && this.editorOverlay) {
       const capture = activeRenderFrameCapture(this.scene.getEngine());
       if (capture) capture.stage(this.scene, { name: "Viewport editor overlay", kind: "overlay" },

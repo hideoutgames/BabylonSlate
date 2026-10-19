@@ -86,7 +86,7 @@ describe("ScriptHost save APIs", () => {
     const host = new ScriptHost(services({ saveGame: next }));
     await host.load({ assetGuid: "migration-functions", classId: "Migrator", anchors: [],
       entryPoints: [{ name: "migrate", event: "onSaveMigration", isAsync: true }],
-      source: `export async function migrate(ctx) { await ctx.invokeFunction(null, 'convert', {}); }
+      source: `export async function migrate(ctx) { await ctx.invokeFunction(ctx.self, 'convert', {}); }
         export async function convert(ctx) {
           await Promise.resolve();
           ctx.setSaveMigrationField('coins', ctx.getSaveMigrationField('coins') * 2);

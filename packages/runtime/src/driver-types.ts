@@ -1,6 +1,7 @@
 import type {
   CommandMessage,
   ControlMessage,
+  DebugObserveTarget,
   DiagnosticOperationRequest,
   DiagnosticOperationResult,
   GameSessionMode,
@@ -258,8 +259,12 @@ export interface RuntimeDriver {
   ): void;
   applySceneLayerControl(message: Extract<ControlMessage, { type: "sceneLayerControl" }>): void;
   applySceneLayerFocusNavigate(reverse: boolean): void;
-  /** The Behaviour Tree editor shows live state: publish `btState` (off by default), starting with every tree's current state. */
-  applyBehaviourTreeStateObserved(observed: boolean): void;
+  /**
+   * The editor's graph debugger watches `target` and follows `instanceId`: publish `debugRoster` for
+   * the target and, for that instance only, a per-tick `executionTrace` (and a Behaviour Tree's
+   * `btState`, starting with its current state). Null `target` stops.
+   */
+  applyDebugObserve(target: DebugObserveTarget | null, instanceId: string | null): void;
   applySceneLayerScroll(layerId: string, actorId: string, componentId: string, deltaX: number, deltaY: number): void;
   applyAudioVoiceEnded(
     message: Extract<ControlMessage, { type: "audioVoiceEnded" }>,

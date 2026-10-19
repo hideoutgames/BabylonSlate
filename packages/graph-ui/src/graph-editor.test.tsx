@@ -2602,6 +2602,52 @@ describe("GraphEditor", () => {
     expect(thenLabel?.className).not.toMatch(/break-words/);
   });
 
+  describe("pins that read Self while unwired", () => {
+    const actor = { kind: "actorRef", classId: "Actor" };
+    const destroy = {
+      id: "destroy",
+      type: "actor.destroy",
+      position: { x: 280, y: 0 },
+      data: {
+        title: "Destroy Actor",
+        __nodeType: "actor.destroy",
+        __pins: [
+          { id: "execIn", name: "exec", kind: "exec", direction: "in", type: { kind: "exec" } },
+          { id: "target", name: "target", kind: "data", direction: "in", optional: true, selfWhenUnwired: true, type: actor },
+        ],
+      },
+    };
+    const getSelf = {
+      id: "self",
+      type: "actor.getSelf",
+      position: { x: 0, y: 0 },
+      data: {
+        title: "Get Self",
+        __nodeType: "actor.getSelf",
+        __pure: true,
+        __pins: [{ id: "out", name: "out", kind: "data", direction: "out", type: actor }],
+      },
+    };
+
+    it("labels an unwired pin 'Target (Self)' as text, not as a field", () => {
+      const { container } = render(<GraphEditor initialGraph={{ nodes: [destroy], edges: [] }} />);
+      const label = container.querySelector('[data-id="destroy"] [data-pin-label="target"]');
+      expect(label?.textContent).toBe("Target (Self)");
+      expect(container.querySelector('[data-id="destroy"] [data-handleid="target"]')?.getAttribute("aria-label")).toBe("Target (Self)");
+      expect(container.querySelector('[data-id="destroy"] [data-pin-default]')).toBeNull();
+    });
+
+    it("drops '(Self)' once a wire is plugged in", () => {
+      const graph: GraphDocument = {
+        nodes: [getSelf, destroy],
+        edges: [{ id: "e", source: "self", target: "destroy", sourceHandle: "out", targetHandle: "target" }],
+      };
+      const { container } = render(<GraphEditor initialGraph={graph} />);
+      expect(container.querySelector('[data-id="destroy"] [data-pin-label="target"]')?.textContent).toBe("Target");
+      expect(container.querySelector('[data-id="destroy"] [data-handleid="target"]')?.getAttribute("aria-label")).toBe("Target");
+    });
+  });
+
   it("renders Get Variable as a type-colored pill without a title bar", () => {
     const graph: GraphDocument = {
       nodes: [
@@ -4258,8 +4304,6 @@ describe("GraphEditor", () => {
                 classId: "bt.composite.selector",
                 sortIndex: 0,
                 __protected: true,
-                running: true,
-                lastResult: "running",
                 decorators: [
                   {
                     id: "dec-1",
@@ -4285,7 +4329,6 @@ describe("GraphEditor", () => {
                 kind: "task",
                 classId: "bt.task.wait",
                 sortIndex: 1,
-                lastResult: "success",
               },
             },
           ],
@@ -4293,6 +4336,11 @@ describe("GraphEditor", () => {
         }}
         nodeTypes={treeNodeTypes}
         nodeDragHandle=".bt-node-drag-handle"
+        runTrace={{
+          subscribe: () => () => {},
+          value: () => undefined,
+          status: (nodeId) => ({ root: "running", task: "success" })[nodeId],
+        }}
       />,
     );
     await waitFor(() => {

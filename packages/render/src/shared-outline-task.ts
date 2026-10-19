@@ -197,6 +197,10 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     }
     return ready;
   }
+  /** Whether `renderPassId` is one of this task's mask passes, which draw every frame. */
+  ownsRenderPass(renderPassId: number): boolean {
+    return this.masks.some((record) => record.objects.objectRenderer.renderPassIds.includes(renderPassId));
+  }
   reconcileResources(): void {
     if (this.committed || !this.lease) return;
     const resources = this.masks.flatMap((record) => [

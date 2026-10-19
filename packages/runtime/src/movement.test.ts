@@ -113,6 +113,7 @@ describe("the Movement component that moves an actor", () => {
     const moved: number[] = [];
     const physics = {
       getBackend: () => ({ kind: "3d" }),
+      movementDrive: () => ({ dynamic: false, mass: 1 }),
       moveMovement: (_actor: unknown, translation: Vec3, dt: number, props: MovementProperties) => {
         moved.push(props.maxSpeed);
         return { position: { x: 0, y: 0, z: 0 }, velocity: { x: translation.x / dt, y: 0, z: 0 }, grounded: true };

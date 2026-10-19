@@ -27,7 +27,7 @@ Move a pin up or down in **Inputs** or **Outputs** to reorder it on the nodes.
 ## Call a function
 
 - Drag the function from the **Class** window onto the graph, or choose **Call** followed by its name in **Add Node**. Both place a [Call Function](class/call-function.md) node.
-- To call a function on another object, drag from a pin that holds that object and choose the Call entry. The node gets a **Target** pin.
+- To call a function on another object, drag from a pin that holds that object and choose the Call entry. The node gets a **Target** pin. A Call for a function of this class has a **Target (Self)** pin that calls the running object while it is unconnected; connect another object of the class to call that one.
 - The caller continues once the function reaches its **Output** node. If the function contains a latent node such as [Delay](class/delay.md), its Call node becomes latent too and waits for it.
 - An output the function never sets returns its type's default value.
 

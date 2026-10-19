@@ -21,6 +21,7 @@ import {
   type Effect,
 } from "@babylonjs/core";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
+import { installTimerClock } from "./virtual-clock-test-fixtures";
 import {
   applyEditorMaterialFreeze,
   isSceneFrameReady,
@@ -92,6 +93,25 @@ describe("prewarmSceneMaterials", () => {
       expect(compile).toHaveBeenCalledWith(first);
       expect(compile).toHaveBeenCalledWith(second);
       expect(compile).toHaveBeenCalledWith(second, { useInstances: true });
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
+  });
+
+  it("names the Material and mesh when a shader compile rejects with the bare log", async () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    try {
+      const mesh = MeshBuilder.CreateBox("crate", {}, scene);
+      const material = mesh.material = new PBRMaterial("painted", scene);
+      // Babylon's forceCompilationAsync rejects with the shader log itself, a string.
+      const log = "FRAGMENT SHADER ERROR: 0:7: syntax error";
+      vi.spyOn(material, "forceCompilationAsync").mockRejectedValue(log);
+      const failure: unknown = await prewarmSceneMaterials(scene).then(() => null, (error: unknown) => error);
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toBe(`Shader compilation failed for "painted" for "crate": ${log}`);
+      expect((failure as Error).cause).toBe(log);
     } finally {
       scene.dispose();
       engine.dispose();
@@ -431,6 +451,31 @@ describe("prewarmSceneMaterials", () => {
       expect(unit.settled.value).toBeInstanceOf(Error);
       unit.dispose();
     });
+  });
+
+  // A synchronous call held the thread past the stall budget without finishing a shader; the stall timer, due
+  // meanwhile, fires late once the thread is free.
+  it("starts a fresh window when a held gap makes the stall timer fire late, and still fails a stuck unit", async () => {
+    const clock = installTimerClock();
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const mesh = new Mesh("held-mesh", scene);
+    mesh.material = new PBRMaterial("held-material", scene);
+    vi.spyOn(mesh.material, "forceCompilationAsync").mockReturnValue(new Promise(() => {}));
+    let outcome: string | null = null;
+    void prewarmSceneMaterials(scene).then(() => { outcome = "ready"; }, (error: Error) => { outcome = error.message; });
+    try {
+      clock.hold(15_000);
+      await clock.run(SCENE_SHADER_WARM_TIMEOUT_MS);
+      expect(outcome).toBeNull();
+      await clock.run(SCENE_SHADER_WARM_TIMEOUT_MS);
+      expect(outcome).toContain('Stalled compiling "held-material" for "held-mesh"');
+    } finally {
+      scene.dispose();
+      engine.dispose();
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
   });
 
   it("names the stalled variant after earlier variants completed", async () => {

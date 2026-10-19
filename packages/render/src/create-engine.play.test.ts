@@ -1,7 +1,7 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Effect, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type Effect, type Mesh } from "@babylonjs/core";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import {
@@ -42,10 +42,12 @@ import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fix
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 import { prewarmMaterial } from "./material-compiler";
-import { MaterialLibrary } from "./material-library";
+import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
 import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_FIRST_FRAME_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
+import { SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS } from "./stall-deadline";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { isSceneGameTimePaused } from "./scene-game-time";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
@@ -317,6 +319,94 @@ describe("Play createEngine view", () => {
     } finally { scheduling.mockRestore(); }
   });
 
+  it("compiles loaded Materials in the load's warm-up, under the scene's final fog", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(handle);
+    handle.loadScene({ ...createDefaultScene(), actors: [] });
+    const base = createDefaultScene();
+    const next = {
+      ...base,
+      settings: { ...base.settings, fogEnabled: true, fogMode: "exponential" as const, fogDensity: 0.02 },
+      actors: Array.from({ length: 80 }, (_, index) => {
+        const mesh = createMeshComponent(`mesh-${index}`, "ground");
+        mesh.properties.materialGuid = "surface";
+        return createActor(`receiver-${index}`, "Receiver", { components: [mesh] });
+      }),
+    };
+    const fogWhenCompiled: boolean[] = [];
+    const compile = vi.spyOn(NodeMaterial.prototype, "forceCompilationAsync").mockImplementation(async () => {
+      fogWhenCompiled.push(handle.scene.fogEnabled);
+    });
+    // The Material finishes between realization chunks, before the Scene's fog and lights are applied.
+    const run = sceneWork.runSceneWork;
+    let settled = false;
+    const scheduling = vi.spyOn(sceneWork, "runSceneWork").mockImplementation((steps, options) => run(steps, {
+      ...options,
+      stepsPerYield: 32,
+      yieldControl: async () => {
+        const candidate = handle.scene.getMaterialByName("material:surface");
+        if (!(candidate instanceof NodeMaterial) || settled) return;
+        settled = true;
+        await ownedMaterialPreparation(candidate);
+      },
+    }));
+    try {
+      await handle.loadSceneAsync(next, {
+        signal: new AbortController().signal,
+        materialDocuments: new Map([["surface", createDefaultMaterialDocument()]]),
+      });
+      await handle.whenEditorModelsReady();
+      expect(settled).toBe(true);
+      expect(fogWhenCompiled).toEqual([]);
+      await handle.prewarmSceneMaterials();
+      expect(fogWhenCompiled.length).toBeGreaterThan(0);
+      expect(fogWhenCompiled.every(Boolean)).toBe(true);
+    } finally { scheduling.mockRestore(); compile.mockRestore(); }
+  });
+
+  describe("a loaded Material whose program the Engine cannot compile", () => {
+    const log = "FRAGMENT SHADER ERROR: 0:12: 'albedo' : undeclared identifier";
+
+    async function loadReceiver(options: { onMaterialDiagnostic?: (diagnostic: { code: string; message: string; severity?: string }) => void } = {}) {
+      const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: sharedEngine(), editor: true, ...options });
+      handles.push(handle);
+      const mesh = createMeshComponent("mesh", "ground");
+      mesh.properties.materialGuid = "surface";
+      await handle.loadSceneAsync({ ...createDefaultScene(), actors: [createActor("receiver", "Receiver", { components: [mesh] })] }, {
+        signal: new AbortController().signal,
+        materialDocuments: new Map([["surface", createDefaultMaterialDocument()]]),
+      });
+      await handle.whenEditorModelsReady();
+      const material = handle.scene.getMaterialByName("material:surface");
+      if (!(material instanceof NodeMaterial)) throw new Error("Expected the loaded Material");
+      await ownedMaterialPreparation(material);
+      return { handle, material, receiver: handle.editor!.sync.meshForActor("receiver")! };
+    }
+
+    it("fails the load's warm-up naming the Material and mesh", async () => {
+      const { handle, receiver } = await loadReceiver();
+      const compile = vi.spyOn(NodeMaterial.prototype, "forceCompilationAsync").mockRejectedValue(log);
+      try {
+        await expect(handle.prewarmSceneMaterials()).rejects.toThrow(
+          `Shader compilation failed for "material:surface" for "${receiver.name}": ${log}`,
+        );
+      } finally { compile.mockRestore(); }
+    });
+
+    it("reports the compiler's log and keeps the mesh drawn with the default Material", async () => {
+      const diagnostics: Array<{ code: string; message: string; severity?: string }> = [];
+      const { handle, material, receiver } = await loadReceiver({ onMaterialDiagnostic: (diagnostic) => diagnostics.push(diagnostic) });
+      expect(receiver.material).toBe(material);
+      material.onError?.({ getCompilationError: () => log } as Effect, log);
+      await Promise.resolve();
+      expect(diagnostics).toEqual([{ code: "material.compile.failed", message: log, severity: "error" }]);
+      expect(receiver.material).toBeNull();
+      expect(handle.scene.getMaterialByName("material:surface")).toBeNull();
+      await expect(handle.prewarmSceneMaterials()).resolves.toBeUndefined();
+    });
+  });
+
   function sharedEngine(): NullEngine {
     // Production FrameGraph ownership; only absent NullEngine driver calls are adapted.
     const engine = adaptNullEngineFrameGraph(new NullEngine());
@@ -454,6 +544,38 @@ describe("Play createEngine view", () => {
     expect(mesh.isDisposed()).toBe(true);
     expect(() => handle.applyCommand({ type: "cableFrame", frameId: 2, data: new Float32Array([11, 3, -1, -1, 0, 0, 0, 0, 0, 0, 20, 50, 0, 30, 50, 0, 40, 50, 0]) })).not.toThrow();
     expect(handle.scene.getMeshByName("actor-7|rope")).toBeNull();
+  });
+
+  it("pauses Play's game time but keeps drawing while the world view holds for render pipelines", async () => {
+    const engine = sharedEngine();
+    const holds: boolean[] = [];
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true, onPipelineHold: (held) => holds.push(held) });
+    handles.push(handle);
+    await handle.prewarmSceneMaterials();
+    void handle.presentFirstFrame().catch(() => {});
+    const frame = () => {
+      handle.scheduler.invalidate("manual");
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+    };
+    // NullEngine never defers a pipeline; the world view's hold is the seam.
+    const holding = vi.spyOn(SceneRenderCoordinator.prototype, "holdingForPipelines", "get").mockReturnValue(true);
+    frame();
+    expect(holds).toEqual([true]);
+    expect(isSceneGameTimePaused(handle.scene)).toBe(true);
+    // A SceneLayer created mid-hold joins the pause instead of running its clock.
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+    const layerScene = handle.sceneLayerScenes().find(layer => layer.layerId === "hud")!.scene;
+    expect(isSceneGameTimePaused(layerScene)).toBe(true);
+    // The frame that finds the pipelines ready must still draw.
+    expect(handle.scheduler.shouldRender(Number.MAX_SAFE_INTEGER)).toBe(true);
+    holding.mockReturnValue(false);
+    frame();
+    expect(holds).toEqual([true, false]);
+    expect(isSceneGameTimePaused(handle.scene)).toBe(false);
+    expect(isSceneGameTimePaused(layerScene)).toBe(false);
   });
 
   it("keeps manual Pause and blocking streaming pauses independent", () => {
@@ -1160,6 +1282,38 @@ describe("Play createEngine view", () => {
     }
   });
 
+  // WebGPU builds each render pipeline a draw created in the GPU queue, inside that draw's submitted-work wait.
+  it("gives a validated first draw longer to complete for each render pipeline it created", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    handle.setPaused(true);
+    const pipelines = 30;
+    const cancel = vi.fn();
+    const submission = vi.spyOn(presentation, "submitPresentedFrame").mockImplementation((_engine, draw) => {
+      draw();
+      WebGPUCacheRenderPipeline.NumCacheMiss += pipelines;
+      return { completed: new Promise<void>(() => {}), cancel, fenceWaiting: () => false };
+    });
+    vi.useFakeTimers();
+    let state = "pending";
+    const frame = handle.presentFirstFrame().then(() => { state = "ready"; }, (error) => { state = "failed"; return error as Error; });
+    try {
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      await vi.advanceTimersByTimeAsync(SCENE_DRIVER_COMPILE_TIMEOUT_MS + 5_000);
+      expect(state).toBe("pending");
+      await vi.advanceTimersByTimeAsync(pipelines * SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS);
+      expect(await frame).toMatchObject({ message: expect.stringContaining(`render pipelines created: ${pipelines}.`) });
+      expect(state).toBe("failed");
+    } finally {
+      handle.dispose();
+      await frame;
+      submission.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it("does not spend a loading permit on a sibling view or a hidden document", async () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
@@ -1247,6 +1401,40 @@ describe("Play createEngine view", () => {
     } finally {
       handle.dispose();
       await frame;
+      vi.useRealTimers();
+    }
+  });
+
+  // Where links are synchronous the first draws' readiness probes link each variant themselves: a link shorter than a
+  // second earns no held-thread credit, but every one that finishes renews the budget.
+  it("renews the first-frame budget while shaders keep finishing on the Engine, and fails once they stop", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    handle.setPaused(true);
+    handle.scene.addIsReadyCheck({ isReady: () => false });
+    markSceneReadinessDirty(handle.scene);
+    vi.useFakeTimers();
+    // DriverCompileWatch reads performance.now; follow the faked clock whether or not it is faked itself.
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => Date.now());
+    const effects = (engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
+    let state = "pending";
+    const frame = handle.presentFirstFrame().then(() => { state = "ready"; }, (error) => { state = "failed"; return error as Error; });
+    try {
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      for (let second = 0; second < 2 * SCENE_FIRST_FRAME_TIMEOUT_MS / 1_000; second++) {
+        effects[`linked-${second}`] = { isReady: () => true, getCompilationError: () => "" };
+        await vi.advanceTimersByTimeAsync(1_000);
+      }
+      expect(state).toBe("pending");
+      await vi.advanceTimersByTimeAsync(2 * SCENE_FIRST_FRAME_TIMEOUT_MS);
+      expect(await frame).toMatchObject({ message: expect.stringContaining("loading deadline") });
+      expect(state).toBe("failed");
+    } finally {
+      handle.dispose();
+      await frame;
+      clock.mockRestore();
       vi.useRealTimers();
     }
   });

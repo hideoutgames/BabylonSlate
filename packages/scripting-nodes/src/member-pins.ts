@@ -1,10 +1,13 @@
 import {
   pin,
   defaultValueLiteral,
+  objectRef,
   pinTypeForVariable,
+  type GraphPin,
   type PinType,
 } from "@babylonslate/scripting";
 import { declaredValueUnit, mapDefaultLiteral } from "@babylonslate/core";
+import { selfPin, subject } from "./self-pin";
 
 export {
   pinTypeForMember,
@@ -32,6 +35,21 @@ export type MemberPinRow = {
 export function memberPinUnit(row: MemberPinRow): { unit?: string } {
   const unit = declaredValueUnit(row.typeId, row.unit);
   return unit ? { unit } : {};
+}
+
+/**
+ * Target of a member Call node. A member of the graph's own class (implicitSelf)
+ * reads Self while the pin is unwired, so another instance can be wired in;
+ * a member of another class needs the object to be wired.
+ */
+export function memberTargetPin(
+  properties: Record<string, unknown>,
+  name: string,
+  classId: string,
+): GraphPin {
+  return properties.implicitSelf === true
+    ? selfPin("target", name, objectRef(classId))
+    : subject(pin("target", name, "in", objectRef(classId)));
 }
 
 export function jsIdent(name: string): string {
@@ -76,7 +94,7 @@ export function memberPinRows(properties: Record<string, unknown>): MemberPinRow
 
 /** Fixed pins on member event entry and Call Parent nodes. */
 export const EXEC_PIN_IDS: ReadonlySet<string> = new Set(["execIn", "execOut"]);
-/** Fixed pins on member Call nodes; Target stays reserved when implicit self hides it. */
+/** Fixed pins on member Call nodes; an argument may not take the Target pin's id. */
 export const CALL_PIN_IDS: ReadonlySet<string> = new Set([
   "execIn",
   "execOut",

@@ -912,21 +912,48 @@ it("skips the Fog Volume geometry and march while none is in front of the camera
   graph.dispose();
 });
 
-it("keeps an idle fog march's graph while lights come within reach, and re-plans it once the march runs", async () => {
+/** Records what the volumetric march binds: per-slot light positions and shadow kinds, the slot count and textures. */
+function marchBindings() {
+  const float4 = vi.spyOn(Effect.prototype, "setFloat4");
+  const float2 = vi.spyOn(Effect.prototype, "setFloat2");
+  const float = vi.spyOn(Effect.prototype, "setFloat");
+  const texture = vi.spyOn(Effect.prototype, "setTexture");
+  const named = <T extends unknown[]>(spy: { mock: { calls: T[] } }, name: string) =>
+    spy.mock.calls.filter((call) => call[0] === name).map((call) => call.slice(1));
+  return {
+    clear: () => { for (const spy of [float4, float2, float, texture]) spy.mockClear(); },
+    position: (slot: number) => named(float4, `volumePosition${slot}`),
+    /** [kind, cascades] per bind: 0 none, 1 compare, 2 cube, 3 packed cube, 4 cascades. */
+    shadow: (slot: number) => named(float2, `volumeShadow${slot}`),
+    count: () => named(float, "volumeLightCount").map(([count]) => count),
+    texture: (name: string) => named(texture, name).map(([value]) => value),
+    /** The Effects the march bound its first slot on. */
+    marches: () => new Set(float4.mock.calls.flatMap((call, index) => call[0] === "volumePosition0" ? [float4.mock.contexts[index]] : [])),
+  };
+}
+
+it("keeps an idle fog march's graph while lights come within reach, and binds them once the march runs", async () => {
   const { camera, graph, skipped, far } = await fogHost({});
   const builds = graph.diagnostics().graphBuilds;
+  const bindings = marchBindings();
+  expect(skipped()).toEqual([]);
+  const marches = bindings.marches();
+  expect(marches.size).toBe(1);
   camera.rotation.y = Math.PI;
   expect(skipped().sort()).toEqual(FOG_ONLY_TASKS);
-  // The march's light slots follow the lights nearest the camera, but with no Fog Volume in view it binds none.
+  // With no Fog Volume in view the march binds no light.
   far.position.x = 1;
+  bindings.clear();
   expect(skipped().sort()).toEqual(FOG_ONLY_TASKS);
-  expect(graph.diagnostics().graphBuilds).toBe(builds);
-  // Looking back at the Fog Volume runs the march, which must not light it with the slots it was built with.
+  expect(bindings.count()).toEqual([]);
+  // Looking back at the Fog Volume runs the same march, which binds the light that came within reach.
   camera.rotation.y = 0;
-  expect(graph.readiness(camera)).toMatchObject({ preparationRequired: true });
-  await graph.prepare(camera);
-  expect(graph.diagnostics().graphBuilds).toBe(builds + 1);
+  expect(graph.readiness(camera)).not.toMatchObject({ preparationRequired: true });
   expect(skipped()).toEqual([]);
+  expect(bindings.count()).toEqual([2]);
+  expect(bindings.position(1)).toEqual([[1, 2, 0, 1]]);
+  expect(bindings.marches()).toEqual(marches);
+  expect(graph.diagnostics().graphBuilds).toBe(builds);
   graph.dispose();
 });
 
@@ -934,16 +961,32 @@ it.each([
   ["a Fog Volume in view", {}, undefined, 0],
   ["scene-wide fog", { volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, density: 0.3 } },
     normalizeRenderingQuality(qualityPresetPatch("high")), Math.PI],
-] as const)("re-plans a running fog march for lights that come within reach (%s)", async (_, effects, quality, yaw) => {
-  const { camera, graph, skipped, far } = await fogHost(effects, quality);
+] as const)("binds lights that come within reach of a running fog march and leave it, without re-planning it (%s)", async (_, effects, quality, yaw) => {
+  const { scene, camera, graph, skipped, far } = await fogHost(effects, quality);
   camera.rotation.y = yaw;
+  const bindings = marchBindings();
   expect(skipped()).toEqual([]);
+  const marches = bindings.marches();
+  expect(bindings.count()).toEqual([1]);
   const builds = graph.diagnostics().graphBuilds;
   far.position.x = 1;
-  expect(graph.readiness(camera)).toMatchObject({ preparationRequired: true });
-  await graph.prepare(camera);
-  expect(graph.diagnostics().graphBuilds).toBe(builds + 1);
+  expect(graph.readiness(camera)).not.toMatchObject({ preparationRequired: true });
+  bindings.clear();
   expect(skipped()).toEqual([]);
+  expect(bindings.count()).toEqual([2]);
+  expect(bindings.position(1)).toEqual([[1, 2, 0, 1]]);
+  // A light that moves within reach inside the frame, after the view's checks, is bound in that same frame.
+  far.position.x = 500;
+  scene.onBeforeRenderObservable.addOnce(() => { far.position.x = 1; });
+  bindings.clear();
+  expect(skipped()).toEqual([]);
+  expect(bindings.count()).toEqual([2]);
+  far.position.x = 500;
+  bindings.clear();
+  expect(skipped()).toEqual([]);
+  expect(bindings.count()).toEqual([1]);
+  expect(bindings.marches()).toEqual(marches);
+  expect(graph.diagnostics().graphBuilds).toBe(builds);
   graph.dispose();
 });
 
@@ -991,64 +1034,70 @@ async function shadowedFogHost() {
   return { ...host, sun: sun!, controller };
 }
 
-it("skips a fog march that wakes inside a frame while its lights' shadow maps differ from the ones it was built for", async () => {
+it("draws a running fog march's shadowed light with its map, and unshadowed with a placeholder once the map goes, without re-planning", async () => {
+  const { camera, graph, skipped, sun, controller } = await shadowedFogHost();
+  const builds = graph.diagnostics().graphBuilds;
+  const bindings = marchBindings();
+  expect(skipped()).toEqual([]);
+  const marches = bindings.marches();
+  // The shadowed sun ranks into the first slot (a directional light's type is 0), which samples its single map by
+  // comparison; the slot's other samplers take placeholders.
+  expect(bindings.position(0).map((position) => position[3])).toEqual([0]);
+  expect(bindings.shadow(0)).toEqual([[1, 1]]);
+  const placeholder = bindings.texture("shadowTextureCube0")[0];
+  expect(placeholder).toBeDefined();
+  expect(bindings.texture("shadowTexture0")).toEqual([]);
+  controller.register(sun, false);
+  controller.sync();
+  expect(controller.generator(sun)).toBeNull();
+  // The dropped map re-prepares the lighting, not the graph.
+  await graph.prepare(camera);
+  bindings.clear();
+  expect(skipped()).toEqual([]);
+  expect(bindings.shadow(0)).toEqual([[0, 0]]);
+  // The slot's comparison sampler takes a placeholder: the released map is never bound again.
+  expect(bindings.texture("shadowTexture0")).toHaveLength(1);
+  expect(bindings.texture("shadowTexture0")[0]).not.toBe(placeholder);
+  expect(bindings.marches()).toEqual(marches);
+  expect(graph.diagnostics().graphBuilds).toBe(builds);
+  graph.dispose();
+});
+
+it("draws a fog march that wakes inside a frame with the shadow kinds its lights have then", async () => {
   const { scene, camera, graph, skipped, sun, controller } = await shadowedFogHost();
   const builds = graph.diagnostics().graphBuilds;
   camera.rotation.y = Math.PI;
   expect(skipped().sort()).toEqual(FOG_ONLY_TASKS);
   controller.register(sun, false);
   controller.sync();
-  expect(controller.generator(sun)).toBeNull();
-  // The dropped map re-prepares the lighting; the idle march keeps its graph.
   await graph.prepare(camera);
-  expect(graph.diagnostics().graphBuilds).toBe(builds);
   expect(skipped().sort()).toEqual(FOG_ONLY_TASKS);
   // The view checks its graph before the frame moves the camera (inputs, animation): the march wakes after that check.
+  const bindings = marchBindings();
   scene.onBeforeRenderObservable.addOnce(() => { camera.rotation.y = 0; });
-  expect(skipped().sort()).toEqual(FOG_ONLY_TASKS);
-  expect(graph.readiness(camera)).toMatchObject({ preparationRequired: true });
-  await graph.prepare(camera);
   expect(skipped()).toEqual([]);
+  expect(bindings.shadow(0)).toEqual([[0, 0]]);
+  expect(graph.readiness(camera)).not.toMatchObject({ preparationRequired: true });
+  expect(graph.diagnostics().graphBuilds).toBe(builds);
   graph.dispose();
 });
 
-it("skips a running fog march for the frame in which shadow admission drops one of its lights' maps", async () => {
+it("keeps drawing a running fog march in the frame in which shadow admission drops one of its lights' maps", async () => {
   const { scene, camera, graph, skipped, sun, controller } = await shadowedFogHost();
+  const builds = graph.diagnostics().graphBuilds;
   expect(skipped()).toEqual([]);
-  // Shadow admission also runs inside the frame, after the view's check; the released map marks the frame stale.
+  // Shadow admission also runs inside the frame, after the view's check: the slot binds the sun unshadowed.
+  const bindings = marchBindings();
   scene.onBeforeRenderObservable.addOnce(() => {
     controller.register(sun, false);
     controller.sync();
   });
-  expect(skipped({ path: "frameGraph", rendered: false }).sort()).toEqual(FOG_ONLY_TASKS);
+  expect(skipped({ path: "frameGraph", rendered: false })).toEqual([]);
   expect(controller.generator(sun)).toBeNull();
-  expect(graph.readiness(camera)).toMatchObject({ preparationRequired: true });
+  expect(bindings.shadow(0)).toEqual([[0, 0]]);
   await graph.prepare(camera);
   expect(skipped()).toEqual([]);
-  graph.dispose();
-});
-
-it("draws a running fog march with the lights it bound for the frame in which the nearest lights stop filling its slots, then re-plans it", async () => {
-  const volumetricLighting = { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, density: 0.3 };
-  const { scene, camera, graph, skipped, far } = await fogHost({ volumetricLighting }, normalizeRenderingQuality(qualityPresetPatch("high")));
-  const builds = graph.diagnostics().graphBuilds;
-  expect(skipped()).toEqual([]);
-  const bound = vi.spyOn(Effect.prototype, "setFloat4");
-  const slotPositions = (slot: number) => bound.mock.calls.filter(([name]) => name === `volumePosition${slot}`).map(([, ...position]) => position);
-  // The view checked its graph before the frame moved a second light into reach. The one slot the march was built with
-  // cannot hold both, but the light it bound still fits, so the frame keeps its fog rather than present it unfogged
-  // while the graph is rebuilt.
-  scene.onBeforeRenderObservable.addOnce(() => { far.position.x = 1; });
-  bound.mockClear();
-  expect(skipped()).toEqual([]);
-  expect(slotPositions(0)).toEqual([[0, 2, 0, 1]]);
-  expect(slotPositions(1)).toEqual([]);
-  expect(graph.readiness(camera)).toMatchObject({ preparationRequired: true });
-  await graph.prepare(camera);
-  expect(graph.diagnostics().graphBuilds).toBe(builds + 1);
-  bound.mockClear();
-  expect(skipped()).toEqual([]);
-  expect(slotPositions(1)).toEqual([[1, 2, 0, 1]]);
+  expect(graph.diagnostics().graphBuilds).toBe(builds);
   graph.dispose();
 });
 

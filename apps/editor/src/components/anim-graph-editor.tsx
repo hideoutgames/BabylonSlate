@@ -63,6 +63,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useAnimGraphEditing } from "../context/anim-graph-editing-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { useGraphEditing } from "../context/graph-editing-context";
+import { useAnimStateMachineRunTrace } from "../context/graph-debug-context";
 import { commitAnimGraphVariables } from "../lib/anim-graph-variables";
 import { InspectorPanel } from "../panels/inspector-panel";
 import { useValidation } from "../context/validation-context";
@@ -268,7 +269,13 @@ function useAnimGraphDocument() {
       mergeKey,
     );
   };
-  return { doc, latestDoc, commit, assetRegistry, documentId, catalog };
+  // The graph's guid names it to the running game; a Simulation's live State Machine is reported under it.
+  const documentPath = entry?.ref.path;
+  const graphGuid = useMemo(() => {
+    void registryEpoch;
+    return documentPath ? assetRegistry?.getByPath(documentPath)?.header.guid : undefined;
+  }, [assetRegistry, registryEpoch, documentPath]);
+  return { doc, latestDoc, commit, assetRegistry, documentId, catalog, graphGuid };
 }
 
 function AnimGraphVariablesList({
@@ -436,7 +443,9 @@ export function AnimObjectVariablesPanel(_props: IDockviewPanelProps) {
 
 export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { doc, latestDoc, commit, documentId, catalog } = useAnimGraphDocument();
+  const { doc, latestDoc, commit, documentId, catalog, graphGuid } = useAnimGraphDocument();
+  // While a Simulation debugs this graph, the State Machine shows the states the followed instance samples and its transitions.
+  const runTrace = useAnimStateMachineRunTrace(graphGuid);
   const {
     selectedId,
     setSelectedId,
@@ -642,6 +651,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
       <div className="anim-graph-canvas flex h-full min-h-0 flex-col" data-testid="anim-graph-editor">
         <GraphEditor
           initialGraph={initialGraph}
+          runTrace={runTrace}
           commitPositionsOnDragEnd
           paletteNodes={animPaletteNodes()}
           nodeTypes={animGraphNodeTypes}

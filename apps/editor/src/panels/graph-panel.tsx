@@ -5,6 +5,7 @@ import {
   GraphEditor,
   GRAPH_DEFAULT_ZOOM,
   type GraphCanvasDropApi,
+  type GraphPasteElements,
   type PaletteNode,
 } from "@babylonslate/graph-ui";
 import { formatEventMemberName, NamePromptDialog, PanelFrame, walkAncestry } from "@babylonslate/editor-kit";
@@ -29,6 +30,7 @@ import { useGraphEditing } from "../context/graph-editing-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import { applyDataGraphAssetPicks } from "../lib/data-graph";
+import { prepareClassGraphPaste } from "../lib/graph-paste";
 import { canRenameCustomEvent, customEventRenameError, functionLibraryShowsEventGraphEmpty, renameCustomEvent } from "../lib/class-members";
 import {
   classMemberSymbolsFromGraphs,
@@ -42,7 +44,8 @@ import {
   validateSerializedGraph,
   defaultNodeRegistry,
 } from "../services/graph-validation";
-import { classIdForGraphPath } from "../services/script-compiler";
+import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
+import { useAnimObjectGraphRunTrace, useClassGraphRunTrace } from "../context/graph-debug-context";
 import { sceneAssetClassId } from "@babylonslate/object-model";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import {
@@ -61,7 +64,12 @@ import {
   collectImplementedInterfaceContexts,
   collectParentFunctionSignatures,
 } from "../lib/overridable-functions";
-import type { FunctionGraphPanelParams } from "../shell/function-graph-panels";
+import {
+  EVENT_GRAPH_PANEL_ID,
+  openFunctionGraphPanel,
+  type FunctionGraphPanelParams,
+} from "../shell/function-graph-panels";
+import { claimFocusRouting, graphOwningNode } from "../lib/function-graph-focus";
 
 const registry = defaultNodeRegistry;
 const VALIDATION_DEBOUNCE_MS = 250;
@@ -134,6 +142,20 @@ export function GraphPanel(
     () => serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),
     [doc?.ref.kind, doc?.content],
   );
+  // While a Simulation follows an instance of this Class, the canvas shows what that instance ran in this graph.
+  const runGraphId = activeFunctionId
+    ? functionGraphExportName({
+        id: activeFunctionId,
+        name: graphContent?.members?.find((member) => member.id === activeFunctionId)?.name,
+      })
+    : "event-graph";
+  const classRunTrace = useClassGraphRunTrace(doc?.ref.kind === "graph" ? doc.ref.path : undefined, classId, runGraphId);
+  // An Animation Graph's Animation Object graph is compiled like a Class graph, under its own id.
+  const animObjectRunTrace = useAnimObjectGraphRunTrace(
+    doc?.ref.kind === "anim-graph" ? doc.ref.path : undefined,
+    indexed?.header.guid,
+  );
+  const runTrace = classRunTrace ?? animObjectRunTrace;
   const memberSymbols = useMemo(() => {
     const graphs = { ...otherClassGraphs };
     if (classId && graphContent) graphs[classId] = graphContent;
@@ -248,6 +270,27 @@ export function GraphPanel(
     const title = functionId ? functionMember?.name : undefined;
     if (title && panelApi.title !== title) panelApi.setTitle(title);
   }, [functionId, functionMember?.name, functionMissing, panelApi]);
+
+  // A node chosen elsewhere (Session Report, project search) can live in a
+  // graph whose tab is not showing: bring that tab forward so the node frames.
+  const graphContentRef = useRef(graphContent);
+  graphContentRef.current = graphContent;
+  const containerApi = props.containerApi as
+    | IDockviewPanelProps["containerApi"]
+    | undefined;
+  useEffect(() => {
+    const nodeId = focusDiagnostic?.nodeId;
+    if (!focusDiagnostic || !nodeId || !containerApi || documentId !== activeDocumentId) return;
+    const content = graphContentRef.current;
+    const owner = graphOwningNode(content, nodeId);
+    if (!owner || !claimFocusRouting(focusDiagnostic)) return;
+    if (owner.kind === "event") {
+      if (functionId !== null) containerApi.getPanel(EVENT_GRAPH_PANEL_ID)?.api.setActive();
+    } else if (owner.functionId !== functionId) {
+      const name = content?.members?.find((member) => member.id === owner.functionId)?.name;
+      openFunctionGraphPanel(containerApi, owner.functionId, name ?? owner.functionId);
+    }
+  }, [activeDocumentId, containerApi, documentId, focusDiagnostic, functionId]);
 
   const [canvasApi, setCanvasApi] = useState<GraphCanvasDropApi | null>(null);
   useEffect(() => {
@@ -440,6 +483,12 @@ export function GraphPanel(
     [graphContent],
   );
 
+  const preparePaste = useCallback(
+    (pasted: GraphPasteElements, current: GraphPasteElements) =>
+      prepareClassGraphPaste(pasted, current, graphContent, activeFunctionId),
+    [activeFunctionId, graphContent],
+  );
+
   const showLibraryEmpty = functionLibraryShowsEventGraphEmpty({
     parentClass,
     parentOf,
@@ -464,6 +513,7 @@ export function GraphPanel(
             renderNodeBody={renderNodeBody}
             key={`${documentId}:${activeFunctionId ?? "event"}`}
             initialGraph={graph}
+            runTrace={runTrace}
             commitPositionsOnDragEnd
             singleExecOutputOnConnect
             colorMode="dark"
@@ -480,6 +530,7 @@ export function GraphPanel(
             onNavigateRequest={onNavigateRequest}
             onSelectionChange={setSelectedNodeIds}
             contextMenuItemsForNode={contextMenuItemsForNode}
+            preparePaste={preparePaste}
             onChange={(next) => {
               if (!doc) return;
               const edited = applyDataGraphAssetPicks(graph, next, dataAssets);

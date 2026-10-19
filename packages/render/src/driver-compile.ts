@@ -1,5 +1,6 @@
 import type { AbstractEngine, AbstractMesh, Effect, ObjectRenderer, Scene } from "@babylonjs/core";
 import { SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
+import { deferredPipelinesSettled } from "./webgpu-pipeline-deferral";
 
 /** Babylon exposes no enumeration of the Engine's cached effects. */
 type EngineEffects = { _compiledEffects?: Readonly<Record<string, Effect>> };
@@ -98,13 +99,17 @@ export function readinessScanMeshes(renderer: ObjectRenderer, scene: Scene): rea
  *   so Babylon's first completion check, inside the Effect constructor, already
  *   finds the program complete and nothing is ever pending. WebGPU effects are
  *   ready once created. A key compiled again after its release is no progress.
+ * - a WebGPU render pipeline a held view's skipped draw waited for that
+ *   finished (`deferredPipelinesSettled`); WebKit builds those one at a time.
  * - effects pending on a parallel-compile driver. A cascade, such as a Water
  *   shader and then its other pass variants, changes the pending set each time
  *   one finishes. The same set pending for `SCENE_DRIVER_COMPILE_TIMEOUT_MS`
- *   with nothing else finishing is a hung compile.
+ *   with nothing else finishing is a hung compile, so on such a driver a wait
+ *   whose own effect hangs ends about that long after its bound, not at it.
  * Progress is per Engine: a preview or thumbnail compiling on the shared Engine
  * also renews. Nothing renews from `ceiling` on, `SCENE_PREPARATION_CEILING_MS`
- * after the watch began, so a wait that keeps compiling forever still fails.
+ * (or the caller's) after the watch began, so a wait that keeps compiling
+ * forever still fails.
  */
 export class DriverCompileWatch {
   private signature = "";
@@ -115,14 +120,16 @@ export class DriverCompileWatch {
   private compiled = 0;
   private compiledAtRenewal = 0;
   private pending = 0;
+  private pipelinesSettled = 0;
 
   private readonly engine: AbstractEngine;
   /** No budget is renewed from this time (a `performance.now()` value) on. */
   readonly ceiling: number;
 
-  constructor(engine: AbstractEngine, now = performance.now()) {
+  /** `ceilingMs`: a thumbnail capture passes `SCENE_CAPTURE_CEILING_MS`. */
+  constructor(engine: AbstractEngine, now = performance.now(), ceilingMs = SCENE_PREPARATION_CEILING_MS) {
     this.engine = engine;
-    this.ceiling = now + SCENE_PREPARATION_CEILING_MS;
+    this.ceiling = now + ceilingMs;
     this.sample();
     this.compiled = 0;
   }
@@ -145,6 +152,12 @@ export class DriverCompileWatch {
     return progressed || now - this.since < SCENE_DRIVER_COMPILE_TIMEOUT_MS;
   }
 
+  /** Progress until now renews nothing more: a new wait on a shared watch counts only its own. */
+  restart(): void {
+    this.sample();
+    this.compiledAtRenewal = this.compiled;
+  }
+
   /** The compile state for a timeout message, such as the Scene Load Report's. */
   describe(): string {
     this.sample();
@@ -156,6 +169,10 @@ export class DriverCompileWatch {
 
   /** Counts keys that became ready and returns the keys still compiling on a parallel-compile driver. */
   private sample(): string[] {
+    // WebGPU render pipelines a held view waits for (`beginPipelineDeferral`) are progress too.
+    const settled = deferredPipelinesSettled(this.engine);
+    this.compiled += Math.max(0, settled - this.pipelinesSettled);
+    this.pipelinesSettled = settled;
     const parallel = Boolean(this.engine.getCaps().parallelShaderCompile);
     const pending: string[] = [];
     for (const [key, effect] of Object.entries((this.engine as unknown as EngineEffects)._compiledEffects ?? {})) {
@@ -169,4 +186,16 @@ export class DriverCompileWatch {
     this.pending = pending.length;
     return pending;
   }
+}
+
+/**
+ * `renew` for `createHeldThreadBound`, for a wait starting now: a fresh bound
+ * while the watch sees compile progress since then, up to its ceiling. Pass an
+ * Engine for a watch of the wait's own, or a watch a loading owner shares across
+ * its sequential waits (one ceiling for all of them).
+ */
+export function renewOnCompileProgress(source: DriverCompileWatch | AbstractEngine): (now: number) => boolean {
+  const watch = source instanceof DriverCompileWatch ? source : new DriverCompileWatch(source);
+  if (watch === source) watch.restart();
+  return (now) => watch.renew(now);
 }

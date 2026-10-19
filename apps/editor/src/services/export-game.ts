@@ -523,7 +523,7 @@ export async function collectAndExportGame(
   params.onPhase?.("Compiling");
   const scripts: ScriptBundleEntry[] = [];
   if (graphDocs.length || animDocs.length) {
-    const { compileAnimGraphScripts, compileGraphDocuments, classIdForGraphPath } = await import("./script-compiler");
+    const { compileAnimGraphScripts, compileGraphDocuments, classIdForGraphPath, classDisplayNameForGraphPath } = await import("./script-compiler");
     // A script that fails codegen fails the export instead of shipping without it.
     const compileOptions = {
       stripDevelopmentOnly: !bundleDebugger,
@@ -535,7 +535,7 @@ export async function collectAndExportGame(
     };
     try {
       scripts.push(
-        ...compileGraphDocuments(graphDocs.map(document => ({ ...document, classId: classIdForGraphPath(document.path), path: document.guid })), compileOptions),
+        ...compileGraphDocuments(graphDocs.map(document => ({ ...document, classId: classIdForGraphPath(document.path), className: classDisplayNameForGraphPath(document.path), path: document.guid })), compileOptions),
         // Exported Animation Graph scripts are keyed by guid, as the pack is.
         ...compileAnimGraphScripts(animDocs.map(document => ({ ...document, path: document.guid })), compileOptions),
       );

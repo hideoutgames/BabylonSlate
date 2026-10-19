@@ -11,9 +11,13 @@ In the **Content Browser**, choose **New Asset > AI > Behaviour Tree**. A new tr
 Double-tap a Behaviour Tree to open it.
 
 - **Graph**: the tree. Select a composite and choose **Add Node** to add a child. Children run left to right; drag a node sideways to reorder. Long-press a node for **Add Decorator**, **Wrap In Sequence**, **Duplicate** and **Delete**.
-- **Blackboard**: the tree's Blackboard asset and a read-only list of its keys. During Play it also shows live values.
+- **Blackboard**: the tree's Blackboard asset and a read-only list of its keys. While a Simulation runs it also shows the live values of the actor you watch.
 - **Inspector**: settings for the selected node.
 - **Compiler Results**: problems such as an empty composite or a missing Blackboard key. Tap a row to select the node.
+
+## Watch the tree run
+
+Start a Simulation with the tree open and pick an actor in **Debug Instance**. The nodes the tree works on light up, and each node shows **Running**, **Success** or **Failure**. See [Watch a graph run](../debugging/index.md#behaviour-trees).
 
 ## Settings
 

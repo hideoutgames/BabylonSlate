@@ -270,7 +270,7 @@ describe("flow nodes", () => {
     ]);
   });
 
-  it("omits Target on same-class Call Custom Event and keeps it for other classes", () => {
+  it("gives same-class Call Custom Event a Target that reads Self and needs one for other classes", () => {
     const call = flowNodes.find((node) => node.id === "flow.event.call");
     expect(call?.title).toBe("Call Custom Event");
     const selfPins = call?.pins({
@@ -291,8 +291,10 @@ describe("flow nodes", () => {
     ).toEqual([
       { id: "execIn", direction: "in", type: EXEC },
       { id: "execOut", direction: "out", type: EXEC },
+      { id: "target", direction: "in", type: objectRef("Hero") },
       { id: "amount", direction: "in", type: FLOAT },
     ]);
+    expect(selfPins?.find((pin) => pin.id === "target")).toMatchObject({ optional: true, selfWhenUnwired: true });
     const otherPins = call?.pins({
       name: "On Alert",
       classId: "Guard",
@@ -303,6 +305,7 @@ describe("flow nodes", () => {
     expect(otherPins?.find((pin) => pin.id === "target")?.type).toEqual(
       objectRef("Guard"),
     );
+    expect(otherPins?.find((pin) => pin.id === "target")?.selfWhenUnwired).toBeUndefined();
   });
 
   it("sends a custom event argument named target apart from the Target pin", () => {

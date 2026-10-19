@@ -73,6 +73,7 @@ import {
   snapshotTickIndex,
   type CommandMessage,
   type ControlMessage,
+  type DebugObserveTarget,
   type ScriptBundleEntry,
 } from "@babylonslate/bridge";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
@@ -248,18 +249,19 @@ export function applyPlaySessionStep(target: PlaySessionStepTarget): boolean {
   return false;
 }
 
-export type PlaySessionBtObservationTarget = {
+export type PlaySessionGraphDebugTarget = {
   worker?: { postControl: (message: ControlMessage) => void } | null;
-  runtime?: { applyBehaviourTreeStateObserved(observed: boolean): void } | null;
+  runtime?: { applyDebugObserve(target: DebugObserveTarget | null, instanceId: string | null): void } | null;
 };
 
-/** Start or stop the runtime's `btState` stream: a worker control, or the in-process runtime directly. */
-export function applyPlayBehaviourTreeStateObserved(
-  target: PlaySessionBtObservationTarget,
-  observed: boolean,
+/** Point the runtime's graph debugger at a target and instance: a worker control, or the in-process runtime directly. */
+export function applyPlayGraphDebugObserve(
+  target: PlaySessionGraphDebugTarget,
+  observe: DebugObserveTarget | null,
+  instanceId: string | null,
 ): void {
-  if (target.worker) target.worker.postControl({ type: "setBehaviourTreeStateObserved", observed });
-  else target.runtime?.applyBehaviourTreeStateObserved(observed);
+  if (target.worker) target.worker.postControl({ type: "debugObserve", target: observe, instanceId });
+  else target.runtime?.applyDebugObserve(observe, instanceId);
 }
 
 export function playSessionBootControls(options: {
@@ -388,10 +390,11 @@ export interface PlaySession {
   setInputMode: (mode: "game" | "edit") => Promise<void>;
   setEditorInputSuppressed: (suppressed: boolean) => Promise<void>;
   /**
-   * Start or stop the runtime's `btState` stream, which only the Behaviour Tree editor reads (off by
-   * default). Starting it publishes every tree's current state at once.
+   * Point the graph debugger at the live instances of `target` (null stops) and follow
+   * `instanceId`. The runtime answers with `onDebugRoster` and, for the followed instance
+   * only, `onExecutionTrace` each tick (and a Behaviour Tree's `onBtState`).
    */
-  setBehaviourTreeStateObserved: (observed: boolean) => void;
+  observeGraphDebug: (target: DebugObserveTarget | null, instanceId: string | null) => void;
   requestPausedRedraw: () => { accepted: boolean; reason?: string };
   /** Last resolved Move.x from the in-process runtime; null on the worker path. */
   lastMoveX: () => number | null;
@@ -691,6 +694,8 @@ export function startPlaySession(options: {
   /** When true, pause after Play boot so `boot.play`'s resume cannot undo it. */
   pauseOnPlay?: boolean;
   onSceneLoading?: (state: SceneLoadProgress | null) => void;
+  /** A scene load failed; it stays pending until the session stops, and the session reports a fatal diagnostic next. */
+  onSceneLoadFailed?: () => void;
   onSessionPaused?: (paused: boolean) => void;
   onShowFps?: (enabled: boolean) => void;
   onStatHighlight?: (name: string, enabled: boolean) => void;
@@ -701,14 +706,9 @@ export function startPlaySession(options: {
   onBehaviourTreeSnapshot?: (
     trees: readonly import("@babylonslate/bridge").DebugBehaviourTree[],
   ) => void;
-  onBtState?: (state: {
-    slotId: number;
-    status: string;
-    btNodeId: string | null;
-    lastResults: Record<string, string>;
-    blackboard: Record<string, unknown>;
-    stack: Array<{ nodeId: string; childIndex: number; opened: boolean }>;
-  }) => void;
+  onDebugRoster?: (roster: Extract<CommandMessage, { type: "debugRoster" }>) => void;
+  onExecutionTrace?: (trace: Extract<CommandMessage, { type: "executionTrace" }>) => void;
+  onBtState?: (state: Extract<CommandMessage, { type: "btState" }>) => void;
 }): PlaySession {
   options = { ...options };
   const { canvas, sharedEngine } = options;
@@ -792,7 +792,8 @@ export function startPlaySession(options: {
       if (result.success && result.requestId > lastBoundaryId) {
         lastBoundaryId = result.requestId;
         acknowledgedPaused = result.paused;
-        handle.setGameTimePaused(result.paused);
+        // A `rendering` hold keeps the view drawing; the Engine pauses its own game time for it.
+        handle.setGameTimePaused(result.pauseReasons.some((reason) => reason !== "rendering"));
         if (!result.paused) last = performance.now();
         suppressGameInput();
       }
@@ -828,6 +829,11 @@ export function startPlaySession(options: {
     physicsWorld: options.physics?.physicsWorld ?? options.scene?.settings.physicsWorld,
     sharedEngine,
     playMode: true,
+    // While the view holds for WebGPU render pipelines the game waits, as for a blocking load.
+    onPipelineHold: (held) => {
+      if (stopped || (!worker && !runtime)) return;
+      void setPauseReason("rendering", held).catch((error: unknown) => options.onLog?.(String(error), "error"));
+    },
     frameCap: resolvePlayFrameCap(options.frameCap),
     spritePayloads: options.spritePayloads,
     spriteAnimations: options.spriteAnimationPayloads,
@@ -1259,8 +1265,10 @@ export function startPlaySession(options: {
       hostDiagnostics.push({ code: "scene.loading.failed", severity: "error", message,
         assetGuid: scene.sceneAssetGuid, frameId: 0,
         stack: error instanceof Error ? error.stack : undefined });
-      try { options.onLog?.(message, "error"); }
-      finally { queueMicrotask(() => options.onFatalDiagnostic?.()); }
+      try {
+        options.onSceneLoadFailed?.();
+        options.onLog?.(message, "error");
+      } finally { queueMicrotask(() => options.onFatalDiagnostic?.()); }
     },
   });
   const streamReadiness = createSceneStreamingReadiness({
@@ -1436,6 +1444,10 @@ export function startPlaySession(options: {
     }
     if (command.type === "simulationQuiesced") { acceptQuiesced(command); return; }
     if (command.type === "simulationCaptureChunk" || command.type === "simulationCaptureResult") { captureClient.receive(command); return; }
+    // Debug views are not activity and never reach the renderer.
+    if (command.type === "debugRoster") { options.onDebugRoster?.(command); return; }
+    if (command.type === "executionTrace") { options.onExecutionTrace?.(command); return; }
+    if (command.type === "btState") { options.onBtState?.(command); return; }
     if (captureFenceActive && shouldForwardPlayEngineCommand(command.type)) captureFenceChanged = true;
     if (materialEditHost.receive(command)) return;
     if (command.type === "sessionBoundaryResult") { boundaryClient.receive(command); return; }
@@ -1522,16 +1534,6 @@ export function startPlaySession(options: {
       onStat: options.onStatHighlight,
       onFreeCam: options.onFreeCam,
     });
-    if (command.type === "btState") {
-      options.onBtState?.({
-        slotId: command.slotId,
-        status: command.status,
-        btNodeId: command.btNodeId,
-        lastResults: command.lastResults,
-        blackboard: command.blackboard,
-        stack: command.stack,
-      });
-    }
     if (command.type === "setBehaviourTreeDebug")
       options.onBehaviourTreeDebug?.(command.enabled);
     if (command.type === "behaviourTreeSnapshot")
@@ -1884,8 +1886,8 @@ export function startPlaySession(options: {
         }
       }
     },
-    setBehaviourTreeStateObserved: (observed) => {
-      if (!stopped) applyPlayBehaviourTreeStateObserved({ worker, runtime }, observed);
+    observeGraphDebug: (target, instanceId) => {
+      if (!stopped) applyPlayGraphDebugObserve({ worker, runtime }, target, instanceId);
     },
     requestPausedRedraw: () => handle.requestPausedRedraw(),
     lastMoveX: () => {
@@ -2067,5 +2069,3 @@ export function startPlaySession(options: {
     },
   };
 }
-
-export const PREVIEW_FIXTURE_NODE_ID = FIXTURE_NODE;

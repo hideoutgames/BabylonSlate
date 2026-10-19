@@ -205,7 +205,7 @@ export class SessionBoundaries {
     const invalid = request.sessionGeneration !== this.host.sessionGeneration() ? "Stale session generation." :
       !Number.isSafeInteger(request.requestId) || request.requestId <= this.lastBoundaryRequestId ? "Invalid or superseded request ID." :
       request.action?.kind !== "resetInput" && (request.action?.kind !== "pause" ||
-        !["user", "lifecycle", "loading"].includes(request.action.reason) || typeof request.action.paused !== "boolean") ? "Unsupported session boundary operation." :
+        !["user", "lifecycle", "loading", "rendering"].includes(request.action.reason) || typeof request.action.paused !== "boolean") ? "Unsupported session boundary operation." :
       this.host.stopped() ? "The game session has stopped." :
       this.boundaryRequests.length >= 64 ? "Session boundary queue is full." : null;
     if (invalid) return Promise.resolve(this.result(request, invalid));

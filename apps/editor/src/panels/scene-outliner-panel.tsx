@@ -1357,16 +1357,6 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
             data-testid="outliner-search"
           />
           <IconActionButton
-            label="Paste Actors"
-            shortcut={keybinds.get("edit.paste")?.[0]}
-            size={actionSize}
-            onClick={() => { void pasteActors(); }}
-            disabled={!scene || !canPaste}
-            data-testid="outliner-paste-actors"
-          >
-            <ClipboardPasteIcon />
-          </IconActionButton>
-          <IconActionButton
             label="New Folder"
             shortcut={keybinds.get("edit.newFolder")?.[0]}
             size={actionSize}

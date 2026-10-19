@@ -3,7 +3,6 @@ import type { SerializedGraph } from "@babylonslate/core";
 import type {
   BehaviourTreeDocument,
   BtDecorator,
-  BtEvalState,
   BtNode,
   BtNodeKind,
   BtService,
@@ -202,7 +201,13 @@ export function reorderSiblingsByPosition(
   };
 }
 
-export type BtGraphOverlay = Pick<BtEvalState, "lastResults" | "btNodeId" | "stack">;
+/**
+ * The id of the canvas wire from a parent to one of its children. The runtime's debug trace names
+ * the links an evaluation took by it.
+ */
+export function btEdgeId(parentId: string, childId: string): string {
+  return `bt-${parentId}-${childId}`;
+}
 
 function sortIndexFor(doc: BehaviourTreeDocument, nodeId: string): number {
   for (const node of doc.nodes) {
@@ -239,15 +244,8 @@ function parseKind(value: unknown, classId: string): BtNodeKind {
 
 export function behaviourTreeToSerialized(
   doc: BehaviourTreeDocument,
-  overlay?: BtGraphOverlay,
 ): SerializedGraph {
   const positions = layoutBehaviourTree(doc);
-  // A Parallel branch that yielded is off the stack but still `running`.
-  const running = new Set(overlay?.stack.map((frame) => frame.nodeId) ?? []);
-  if (overlay?.btNodeId) running.add(overlay.btNodeId);
-  for (const [id, result] of Object.entries(overlay?.lastResults ?? {})) {
-    if (result === "running") running.add(id);
-  }
   return {
     nodes: doc.nodes.map((node) => ({
       id: node.id,
@@ -267,15 +265,13 @@ export function behaviourTreeToSerialized(
           title: titleForBtClassId(row.classId),
         })),
         properties: node.properties,
-        lastResult: overlay?.lastResults[node.id] ?? null,
-        running: running.has(node.id),
         __pins: pinsForBtKind(node.kind, { isRoot: node.id === doc.rootId }),
         __protected: node.id === doc.rootId,
       },
     })),
     edges: doc.nodes.flatMap((node) =>
       node.children.map((childId) => ({
-        id: `bt-${node.id}-${childId}`,
+        id: btEdgeId(node.id, childId),
         source: node.id,
         target: childId,
         sourceHandle: BT_CHILDREN_HANDLE,

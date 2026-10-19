@@ -46,6 +46,8 @@ export const EMPTY_SESSION_REPORT_LABELS: SessionReportLabels = {
 };
 
 export const UNKNOWN_ASSET_LABEL = "Unknown Asset";
+/** The location of an entry that has no asset to open. */
+export const NO_SOURCE_LABEL = "No Source";
 
 export function sessionReportNodeId(
   entry: Pick<SessionReportEntry, "btNodeId" | "nodeId">,

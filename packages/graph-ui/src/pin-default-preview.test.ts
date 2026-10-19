@@ -305,11 +305,8 @@ describe("pinDefaultPreview", () => {
       text: "Actor",
       placeholder: true,
     });
-    // Only an implicit-self target is satisfied without a wire.
-    expect(pinDefaultPreview(objectPin, { implicitSelf: true }, false)).toEqual({
-      kind: "objectRef",
-      text: "Self",
-    });
+    // A pin that reads Self while unwired shows no field: its label says "(Self)".
+    expect(pinDefaultPreview({ ...objectPin, selfWhenUnwired: true }, {}, false)).toBeNull();
     expect(
       pinDefaultPreview(structPin, {}, false, { "struct-stats": "Stats" }),
     ).toEqual({ kind: "structRef", text: "Stats" });
@@ -449,18 +446,12 @@ describe("pinDefaultPreview", () => {
     });
   });
 
-  it("previews implicit Self only on the Target pin, not on an argument named target", () => {
-    const target = pin({ id: "target", name: "target", kind: "data", direction: "in", type: { kind: "actorRef" } });
-    const argument = pin({ id: "target__arg", name: "target", kind: "data", direction: "in", type: { kind: "actorRef" } });
-    expect(pinDefaultPreview(target, { implicitSelf: true }, false)).toEqual({ kind: "actorRef", text: "Self" });
-    expect(pinDefaultPreview(argument, { implicitSelf: true }, false)).toEqual({ kind: "actorRef", text: "", placeholder: true });
-  });
-
-  it("previews Self on an unwired pin the catalog marks selfWhenUnwired, and nothing once it is wired", () => {
+  it("shows no field on a pin the catalog marks selfWhenUnwired, wired or not", () => {
     const actor: SerializedPin = { id: "actor", name: "actor", kind: "data", direction: "in", optional: true, selfWhenUnwired: true, type: { kind: "actorRef", classId: "Actor" } };
     const water: SerializedPin = { id: "waterActor", name: "Water Actor", kind: "data", direction: "in", optional: true, type: { kind: "actorRef", classId: "Actor" } };
-    expect(pinDefaultPreview(actor, {}, false)).toEqual({ kind: "actorRef", text: "Self" });
+    expect(pinDefaultPreview(actor, {}, false)).toBeNull();
     expect(pinDefaultPreview(actor, {}, true)).toBeNull();
+    // An optional pin that does not read Self keeps its class placeholder.
     expect(pinDefaultPreview(water, {}, false)).toEqual({ kind: "actorRef", text: "Actor", placeholder: true });
   });
 

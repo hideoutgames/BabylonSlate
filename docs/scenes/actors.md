@@ -33,7 +33,7 @@ Drag the gizmo handles, or type values in the **Inspector**. When several actors
 | Group | Tap **New Folder** (<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd>), then drag rows into it. Folders only organise the list; the game ignores them. |
 | Hide or lock | Use the eye and lock buttons on a row. |
 | Rename | Double-tap the name, or press <kbd>F2</kbd>. |
-| Copy and paste | <kbd>Mod</kbd>+<kbd>C</kbd> and <kbd>Mod</kbd>+<kbd>V</kbd>, also between scenes in the same project. **Paste Actors** in the toolbar does the same, even in an empty scene. |
+| Copy and paste | <kbd>Mod</kbd>+<kbd>C</kbd> and <kbd>Mod</kbd>+<kbd>V</kbd>, also between scenes in the same project. In an empty scene, click the Outliner first. |
 | Duplicate | <kbd>Mod</kbd>+<kbd>D</kbd>, or **Duplicate** in the row menu. |
 | Delete | <kbd>Delete</kbd> or <kbd>Backspace</kbd>. Attached children are deleted too. |
 

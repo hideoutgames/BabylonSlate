@@ -6,6 +6,7 @@ import {
   type TagRegistry,
 } from "@babylonslate/core";
 import {
+  classDisplayNameForGraphPath,
   classIdForGraphPath,
   compileGraphDocument,
   compileGraphDocuments,
@@ -809,7 +810,7 @@ describe("script compiler service", () => {
       path: "assets/Hero.class.babasset",
       classId: "Hero",
     });
-    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\(ctx\.self,\s*"Wait"/);
+    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\([^,]+,\s*"Wait"/);
     expect(script?.source).toContain("export async function onBeginPlay");
     expect(script?.source).toContain("export async function Wait");
     expect(
@@ -823,9 +824,9 @@ describe("script compiler service", () => {
       classId: "Hero",
     });
     expect(script?.source).toMatch(
-      /await\s+ctx\.invokeFunction\(ctx\.self,\s*"WaitThenJump"/,
+      /await\s+ctx\.invokeFunction\([^,]+,\s*"WaitThenJump"/,
     );
-    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\(ctx\.self,\s*"Wait"/);
+    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\([^,]+,\s*"Wait"/);
     expect(script?.source).toContain("export async function WaitThenJump");
   });
 
@@ -971,6 +972,25 @@ describe("script compiler service", () => {
     expect(exported[0]?.source).not.toContain("ctx.print");
     expect(exported[0]?.source).toContain("ctx.log");
     expect(exported[0]?.source).not.toContain("checkInfiniteLoop");
+  });
+
+  it("instruments event and function graphs for the graph debugger only when a Simulation asks", () => {
+    const withFunction: SerializedGraph = {
+      ...tickToLog,
+      members: [{ id: "fn-open", kind: "function", name: "Open Door", pins: [] }],
+      functionGraphs: { "fn-open": { nodes: tickToLog.nodes, edges: tickToLog.edges } },
+    } as SerializedGraph;
+    const path = "assets/main.class.babasset";
+    const plain = compileGraphDocument(withFunction, { path });
+    expect(plain?.source).not.toContain("__dbg");
+
+    const traced = compileGraphDocument(withFunction, { path, instrumentExecutionTrace: true });
+    expect(traced?.source).toContain('ctx.debugTrace.graph("assets/main.class.babasset", "event-graph")');
+    // A function graph reports under its export name, which the editor maps from the member name.
+    expect(traced?.source).toContain('ctx.debugTrace.graph("assets/main.class.babasset", "Open_Door")');
+
+    const released = compileGraphDocument(withFunction, { path, instrumentExecutionTrace: true, stripDevelopmentOnly: true });
+    expect(released?.source).not.toContain("__dbg");
   });
 
   it("compiles OnCommandRun into a core console command", () => {
@@ -1315,6 +1335,42 @@ describe("GraphScriptCompileCache", () => {
     cache.clear();
     expect(cache.retainedBytes).toBe(0);
     expect(first.source).toContain("export function");
+  });
+
+  it("keeps instrumented and plain compiles apart, and never splits a release compile on the flag", () => {
+    const cache = new GraphScriptCompileCache();
+    const documents = [{ path: "assets/Door.class.babasset", content: tickToLog }];
+    const plain = compileGraphDocuments(documents, { cache })[0]!;
+    const traced = compileGraphDocuments(documents, { cache, instrumentExecutionTrace: true })[0]!;
+    expect(cache.compiles).toBe(2);
+    expect(plain.source).not.toContain("__dbg");
+    expect(traced.source).toContain("__dbg");
+    // Each is served from the cache now.
+    expect(compileGraphDocuments(documents, { cache })[0]).toBe(plain);
+    expect(compileGraphDocuments(documents, { cache, instrumentExecutionTrace: true })[0]).toBe(traced);
+    expect(cache.compiles).toBe(2);
+
+    // The compiler drops the trace for a release compile, so asking for it there is the plain release compile.
+    const release = compileGraphDocuments(documents, { cache, stripDevelopmentOnly: true })[0]!;
+    expect(compileGraphDocuments(documents, { cache, stripDevelopmentOnly: true, instrumentExecutionTrace: true })[0]).toBe(release);
+    expect(release.source).not.toContain("__dbg");
+  });
+
+  it("probes an Animation Object graph only for a Simulation compile, under the id the canvas reads", async () => {
+    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { compileAnimGraphScripts } = await import("./script-compiler");
+    const cache = new GraphScriptCompileCache();
+    const documents = [{ guid: "loco", path: "assets/Loco.anim.babasset", document: createDefaultAnimGraph() }];
+    const objectGraph = (options: Parameters<typeof compileAnimGraphScripts>[1]) =>
+      compileAnimGraphScripts(documents, { cache, ...options }).find((script) => script.classId === "AnimGraph:loco")!;
+    const plain = objectGraph({});
+    const traced = objectGraph({ instrumentExecutionTrace: true });
+    expect(plain.source).not.toContain("__dbg");
+    expect(traced.source).toContain('ctx.debugTrace.graph("assets/Loco.anim.babasset", "animation-object")');
+    // Each is cached under its own key, and a release compile never carries the probes.
+    expect(objectGraph({})).toBe(plain);
+    expect(objectGraph({ instrumentExecutionTrace: true })).toBe(traced);
+    expect(objectGraph({ stripDevelopmentOnly: true, instrumentExecutionTrace: true }).source).not.toContain("__dbg");
   });
 
   it("bounds combined graph and animation retention by bytes and skips oversized results", async () => {
@@ -2119,5 +2175,43 @@ describe("compileAnimGraphScripts", () => {
     const rule = scripts.find((entry) => entry.classId === "AnimRule:graph-1:idle-to-run");
     expect(rule?.source).toContain("exit: (true)");
     expect(rule?.source).not.toContain("exit-state");
+  });
+});
+
+describe("class name in null-access errors", () => {
+  /** Begin Play into Destroy Actor, whose Target reads an actor of a class that does not exist: always empty. */
+  const destroysEmptyReference: SerializedGraph = {
+    nodes: [
+      { id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
+      { id: "find", type: "actor.getOfClass", position: { x: 0, y: 120 }, data: { "default:classId": "Ghost" } },
+      { id: "destroy", type: "actor.destroy", position: { x: 240, y: 0 }, data: { title: "Destroy Actor" } },
+    ],
+    edges: [
+      { id: "e1", source: "begin", target: "destroy", sourceHandle: "execOut", targetHandle: "execIn" },
+      { id: "e2", source: "find", target: "destroy", sourceHandle: "out", targetHandle: "target" },
+    ],
+  };
+
+  it.each([
+    ["assets/Gear/My Hero.class.babasset", "My Hero"],
+    ["assets/Hero.class.babasset", "Hero"],
+    ["Rig.babasset", "Rig"],
+  ])("shows %s as %s, the name the Content Browser lists", (path, name) => {
+    expect(classDisplayNameForGraphPath(path)).toBe(name);
+  });
+
+  it("names a class with a space as the Content Browser shows it, not by its class id", () => {
+    const script = compileGraphDocument(destroysEmptyReference, { path: "assets/My Hero.class.babasset" });
+    expect(script?.classId).toBe("My_Hero");
+    expect(script?.source).toContain('"My Hero: Destroy Actor (Target) tried to access null."');
+    expect(script?.source).not.toContain("My_Hero:");
+  });
+
+  it("keeps the name when a packed export keys the document by guid", () => {
+    const [script] = compileGraphDocuments([{
+      path: "guid-1234", classId: "My_Hero", className: classDisplayNameForGraphPath("assets/My Hero.class.babasset"),
+      content: destroysEmptyReference,
+    }]);
+    expect(script?.source).toContain('"My Hero: Destroy Actor (Target) tried to access null."');
   });
 });

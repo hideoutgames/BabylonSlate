@@ -27,7 +27,8 @@ import { stressPoint, type FeatureTestZoneId } from "./layout";
  * gravity), every 3D collider shape, collision layers, a trigger, constraints
  * of every kind, ragdolls, a blocking volume and scripted Movement walkers in
  * the Physics and Constraints And Movement zones, plus the `FT_Stress` body
- * pile. Classes: `FT_PhysWalker`, `FT_PhysLaunchPad`, `FT_PhysSweeper`.
+ * pile. Classes: `FT_PhysWalker`, `FT_PhysBodyWalker`, `FT_PhysLaunchPad`,
+ * `FT_PhysSweeper`.
  */
 
 const FOLDER = "Physics";
@@ -52,6 +53,8 @@ const WALKER_SPEED = 2;
 /** Degrees per second; loop radius = speed / turn rate (≈ 2.5 m). */
 const WALKER_TURN_RATE = 45;
 const LAUNCH_IMPULSE = 14;
+/** Throws a walker (mass 1) about 0.8 m up. */
+const WALKER_LAUNCH_IMPULSE = 4;
 const SWEEPER_ARM = 5.6;
 const SWEEPER_RING_RADIUS = 3.3;
 
@@ -82,6 +85,7 @@ interface PlacedClass {
 
 interface PhysicsRefs {
   walker: PlacedClass;
+  bodyWalker: PlacedClass;
   launchPad: PlacedClass;
   sweeper: PlacedClass;
 }
@@ -95,13 +99,14 @@ interface Palette {
 
 const refsByContext = new WeakMap<FeatureTestContext, PhysicsRefs>();
 
-/** Save the walker (Movement), launch pad (trigger) and sweeper (kinematic) Classes. */
+/** Save the walker (Movement, plain and with a Rigid Body), launch pad (trigger) and sweeper (kinematic) Classes. */
 export async function buildFeatureTestPhysics(ctx: FeatureTestContext): Promise<void> {
   const palette = paletteOf(ctx);
-  const walker = await saveWalker(ctx, palette);
+  const walker = await saveWalker(ctx, palette, false);
+  const bodyWalker = await saveWalker(ctx, palette, true);
   const launchPad = await saveLaunchPad(ctx, palette);
   const sweeper = await saveSweeper(ctx, palette);
-  refsByContext.set(ctx, { walker, launchPad, sweeper });
+  refsByContext.set(ctx, { walker, bodyWalker, launchPad, sweeper });
 }
 
 /**
@@ -399,16 +404,18 @@ function componentCall(id: string, x: number, y: number, classId: string, fn: En
  * Movement pawn: each Tick advances Heading by TurnRate, converts a forward
  * stick through Convert Input and sets it as persistent Movement input, then
  * faces the heading, so the pawn walks a fixed loop. `Hop` instances jump on
- * Begin Play and on every landing.
+ * Begin Play and on every landing. `FT_PhysWalker` is Movement's kinematic
+ * character controller; `FT_PhysBodyWalker` adds a dynamic Rigid Body, so
+ * Movement steers a physics body that gravity, collisions and impulses move.
  */
-async function saveWalker(ctx: FeatureTestContext, palette: Palette): Promise<PlacedClass> {
+async function saveWalker(ctx: FeatureTestContext, palette: Palette, withBody: boolean): Promise<PlacedClass> {
   const convert = movementFunction("Convert Input");
   const setInput = movementFunction("Set Movement Input");
   const jump = movementFunction("Jump");
   const turnRate = varMember("ft-phys-var-turn-rate", "TurnRate", "float", WALKER_TURN_RATE, { category: "Walker" });
   const heading = varMember("ft-phys-var-heading", "Heading", "float", 0, { category: "Walker", unit: "deg" });
   const hop = varMember("ft-phys-var-hop", "Hop", "bool", false, { category: "Walker" });
-  // Capsule: radius 0.4, height 1.8, centred on the actor origin.
+  // Capsule: radius 0.4, height 1.8, centred on the actor origin (the Rigid Body's collider too, as it has none).
   const components: SerializedComponent[] = [
     visual("prefab-body", "cylinder", { position: [0, -0.3, 0], scale: fitCylinder(0.8, 1.2), materialGuid: palette.surface }),
     visual("prefab-head", "sphere", { position: [0, 0.55, 0], scale: fit(0.6), materialGuid: palette.surface }),
@@ -419,6 +426,7 @@ async function saveWalker(ctx: FeatureTestContext, palette: Palette): Promise<Pl
       acceleration: 20,
       jumpSpeed: 4,
     }, undefined, { name: "Movement" }),
+    ...(withBody ? [body("prefab-rigid-body", "dynamic")] : []),
   ];
   const graph = classGraph({
     members: [turnRate, heading, hop],
@@ -477,7 +485,7 @@ async function saveWalker(ctx: FeatureTestContext, palette: Palette): Promise<Pl
       gWire("movement", "out", "jump", "target"),
     ],
   });
-  const ref = await ctx.saveClass({ folder: FOLDER, name: "FT_PhysWalker", parentClass: "Actor", graph });
+  const ref = await ctx.saveClass({ folder: FOLDER, name: withBody ? "FT_PhysBodyWalker" : "FT_PhysWalker", parentClass: "Actor", graph });
   return { ref, components };
 }
 
@@ -846,13 +854,20 @@ function placeMovementZone(ctx: FeatureTestContext, refs: PhysicsRefs, palette: 
     collider: { layer: LAYER.dynamic },
   }));
 
-  // Movement: two walkers chase each other around one loop; the second hops.
+  // Movement: two character-controller walkers chase each other around one loop and the second hops;
+  // a third walks its own loop as a dynamic Rigid Body that Movement steers. Launch pads sit at the
+  // top of the first and third loops (Add Impulse throws the controller walker and the body walker).
   label("walkers", 4, 7, "Movement Walkers");
   const loopRadius = round(WALKER_SPEED / ((WALKER_TURN_RATE * Math.PI) / 180));
   add(classActor(refs.walker, "ft-phys-walker-a", "Movement Walker A", tf(at(round(4 - loopRadius), 1, 7))));
   add(classActor(refs.walker, "ft-phys-walker-b", "Movement Walker B",
     tf(at(round(4 + loopRadius), 1, 7), { rotationDeg: [0, 180, 0] }),
     { Heading: 180, Hop: true }));
+  add(classActor(refs.bodyWalker, "ft-phys-walker-c", "Movement Body Walker", tf(at(round(-4 - loopRadius), 1, 7))));
+  add(classActor(refs.launchPad, "ft-phys-walker-pad-a", "Walker Launch Pad A", tf(at(4, 0, round(7 + loopRadius))),
+    { LaunchImpulse: WALKER_LAUNCH_IMPULSE }));
+  add(classActor(refs.launchPad, "ft-phys-walker-pad-c", "Walker Launch Pad C", tf(at(-4, 0, round(7 + loopRadius))),
+    { LaunchImpulse: WALKER_LAUNCH_IMPULSE }));
 }
 
 // ---------------------------------------------------------------------------

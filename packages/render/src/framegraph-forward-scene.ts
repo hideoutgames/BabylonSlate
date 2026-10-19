@@ -8,7 +8,7 @@ import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
 import { SceneEffectsGraph } from "./scene-effects-graph";
 import { upscaledRenderSize } from "./scene-effects";
-import { liveSceneEffectsKey, volumetricLayoutCurrent } from "./spatial-effects";
+import { liveSceneEffectsKey } from "./spatial-effects";
 import type { SharedOutlineView } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
@@ -333,6 +333,20 @@ export class ForwardSceneFrameGraph {
     return this.graph?.tasks.map((task) => task.name) ?? [];
   }
 
+  /**
+   * Whether `renderPassId` is one of the prepared graph's object passes (opaque,
+   * transparent, geometry), their blended depth pre-passes or the shared
+   * outline masks, which all draw every frame. Shadow maps, which may draw
+   * once, and post-process draws under the camera's pass are not.
+   */
+  ownsObjectPass(renderPassId: number): boolean {
+    for (const task of this.graph?.tasks ?? []) {
+      const owner = task as { objectRenderer?: { renderPassIds?: readonly number[] }; ownsRenderPass?: (id: number) => boolean };
+      if (owner.objectRenderer?.renderPassIds?.includes(renderPassId) || owner.ownsRenderPass?.(renderPassId)) return true;
+    }
+    return false;
+  }
+
   /** Actual mask/compose drawing passes, separately from clear records. */
   sharedOutlineDiagnostics(): { drawingPassCount: number; renderRecordCount: number } {
     return {
@@ -498,8 +512,7 @@ export class ForwardSceneFrameGraph {
     // A settings change stales a prepared graph like a stack revision; with
     // no graph yet there is no baked chain to re-key.
     if (!this.readinessDirtyFlag &&
-      (!this.graph || this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches() && this.waterMatches(camera) &&
-        this.volumetricMatches(camera))) {
+      (!this.graph || this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches() && this.waterMatches(camera))) {
       // Outline membership or style alone: probe the outline task, not the scene.
       if (!this.graph || !this.outlineDirtyFlag) return true;
       if (!this.pending && this.outlineTask) {
@@ -513,8 +526,7 @@ export class ForwardSceneFrameGraph {
     if (
       this.graph && !this.pending &&
       this.preparedPostProcessRevision === this.postProcessRevision &&
-      this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches() && this.waterMatches(camera) &&
-      this.volumetricMatches(camera)
+      this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches() && this.waterMatches(camera)
     ) {
       this.assignCamera(camera);
       this.syncSceneInputs();
@@ -614,7 +626,6 @@ export class ForwardSceneFrameGraph {
     if (this.pending) return { path: "frameGraph", ready: false };
     if (!this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
-      !this.volumetricMatches(camera) ||
       this.shadows?.needsPreparation() ||
       this.clustered?.needsPreparation(camera) ||
       !outputCurrent)
@@ -651,7 +662,7 @@ export class ForwardSceneFrameGraph {
       (this.pending ||
       !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
-      !this.volumetricMatches(camera) || !outputCurrent
+      !outputCurrent
         ? "FrameGraph preparation is required."
         : undefined);
     if (this.graph && !outputCurrent) this.markReadinessDirty();
@@ -835,7 +846,7 @@ export class ForwardSceneFrameGraph {
       const renderSize = upscaledRenderSize(sceneRenderingSettings(scene).effectsPlan, output.width, output.height);
       if (this.preparedPostProcessRevision !== this.postProcessRevision ||
         this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
-        !this.volumetricMatches(camera) || this.clustered?.needsPreparation(camera) ||
+        this.clustered?.needsPreparation(camera) ||
         this.outputColor !== output.color || this.outputDepth !== output.depth ||
         (this.postProcessGraph || this.effectsGraph || this.outlineTask || this.ownScene) &&
           (this.preparedWidth !== output.width || this.preparedHeight !== output.height))
@@ -1076,13 +1087,16 @@ export class ForwardSceneFrameGraph {
         this.commitOwnSceneTargets();
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
-      let deadline = performance.now() + READINESS_STALL_MS;
-      const compiles = new DriverCompileWatch(scene.getEngine());
+      const started = performance.now();
+      let deadline = started + READINESS_STALL_MS;
+      // Created after the first fence wait: it asks every Engine effect for readiness.
+      let compiles: DriverCompileWatch | undefined;
       let creditLeft = SCENE_THREAD_HELD_BUDGET_MS;
       for (;;) {
         // Readiness probes finalise effects; a synchronous GL query waits behind
         // an outstanding presentation fence's driver compile, so defer them.
         deadline += await whenPresentationFenceClear(scene.getEngine(), assertCurrent);
+        compiles ??= new DriverCompileWatch(scene.getEngine(), started);
         const probeStart = performance.now();
         const ready = this.disposed || this.isReady();
         // Where links are synchronous (SwiftShader, WebKit WebGL2) the probe links
@@ -1192,13 +1206,6 @@ export class ForwardSceneFrameGraph {
   private waterMatches(camera: Camera): boolean {
     return this.preparedWaterRevision === sceneWaterQualityRevision(this.scene) &&
       this.preparedWaterDemand === waterSceneCopyDemand(this.scene, camera);
-  }
-
-  /** The volumetric march bakes the shadow sampler shapes of the lights nearest the camera into its slots, and binds
-   * whichever lights are nearest by shape. Only a march that runs re-plans for other shapes: an idle one binds none. */
-  private volumetricMatches(camera: Camera): boolean {
-    const built = this.effectsGraph?.spatial?.volumetricLayout;
-    return built === undefined || volumetricLayoutCurrent(this.scene, camera, built);
   }
 
   /** Every camera-bound task of the prepared graph follows the frame's camera. */

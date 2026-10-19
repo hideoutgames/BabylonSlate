@@ -383,7 +383,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     if (![velocity.x, velocity.y, velocity.z].every(Number.isFinite))
       throw new Error("Angular velocity must be finite");
     const body = this.bodies.get(bodyId);
-    if (!body || body.desc.motionType !== "dynamic") return;
+    if (!body || body.desc.motionType !== "dynamic" || body.desc.lockRotation) return;
     body.angularVelocity = this.kind === "2d" ? { x: 0, y: 0, z: velocity.z } : { ...velocity };
   }
 
@@ -414,6 +414,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     if (!body || body.desc.motionType !== "dynamic") return;
     if (![impulse.x, impulse.y, impulse.z, point.x, point.y, point.z].every(Number.isFinite)) return;
     this.addImpulse(bodyId, impulse);
+    if (body.desc.lockRotation) return;
     // The software fallback uses unit diagonal inertia; native backends use collider inertia.
     const r = { x: point.x - body.transform.position.x, y: point.y - body.transform.position.y, z: point.z - body.transform.position.z };
     const mass = Math.max(body.desc.mass, 1e-6);
@@ -431,7 +432,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     const r = { x: point.x - body.transform.position.x, y: point.y - body.transform.position.y, z: point.z - body.transform.position.z };
     return {
       linear: { x: impulse.x / mass, y: impulse.y / mass, z: this.kind === "3d" ? impulse.z / mass : 0 },
-      angular: {
+      angular: body.desc.lockRotation ? vec() : {
         x: this.kind === "3d" ? (r.y * impulse.z - r.z * impulse.y) / mass : 0,
         y: this.kind === "3d" ? (r.z * impulse.x - r.x * impulse.z) / mass : 0,
         z: (r.x * impulse.y - r.y * impulse.x) / mass,
@@ -444,6 +445,10 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     const body = this.bodies.get(bodyId);
     if (!body) return;
     if (tuning.motionType) body.desc.motionType = tuning.motionType;
+    if (typeof tuning.lockRotation === "boolean") {
+      body.desc.lockRotation = tuning.lockRotation;
+      if (tuning.lockRotation) body.angularVelocity = vec();
+    }
     if (typeof tuning.mass === "number" && Number.isFinite(tuning.mass)) {
       body.desc.mass = tuning.mass;
     }

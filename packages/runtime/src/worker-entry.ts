@@ -456,8 +456,8 @@ function handleControl(msg: ControlMessage): void {
     case "setPaused":
       pauseGate.setPaused(msg.paused);
       return;
-    case "setBehaviourTreeStateObserved":
-      runtime?.applyBehaviourTreeStateObserved(msg.observed);
+    case "debugObserve":
+      runtime?.applyDebugObserve(msg.target, msg.instanceId);
       return;
     case "console": {
       const rt = ensureRuntime();

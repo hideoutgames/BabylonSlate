@@ -143,6 +143,7 @@ type RapierBodyDesc = {
   setAngularDamping(v: number): RapierBodyDesc;
   setGravityScale(v: number): RapierBodyDesc;
   setAdditionalMass(v: number): RapierBodyDesc;
+  lockRotations(): RapierBodyDesc;
 };
 
 type RapierColliderDesc = {
@@ -177,6 +178,7 @@ type RapierRigidBody = {
   setLinearDamping(damping: number): void;
   setAngularDamping(damping: number): void;
   setAdditionalMass(mass: number, wakeUp: boolean): void;
+  lockRotations(locked: boolean, wakeUp: boolean): void;
   recomputeMassPropertiesFromColliders(): void;
 };
 
@@ -333,6 +335,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       .setLinearDamping(desc.linearDamping)
       .setAngularDamping(desc.angularDamping)
       .setGravityScale(desc.gravityScale);
+    if (desc.lockRotation) bodyDesc.lockRotations();
     const body = this.world.createRigidBody(bodyDesc);
     this.bodies.set(desc.id, { desc: { ...desc }, body });
     this.bodyIdByHandle.set(body.handle, desc.id);
@@ -525,6 +528,10 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     if (tuning.motionType) {
       record.desc.motionType = tuning.motionType;
       this.setBodyMotionType(bodyId, tuning.motionType);
+    }
+    if (typeof tuning.lockRotation === "boolean") {
+      record.desc.lockRotation = tuning.lockRotation;
+      record.body.lockRotations(tuning.lockRotation, true);
     }
     if (typeof tuning.mass === "number" && Number.isFinite(tuning.mass)) {
       record.desc.mass = tuning.mass;

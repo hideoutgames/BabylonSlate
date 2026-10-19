@@ -108,7 +108,7 @@ describe("ScriptContext shape", () => {
   // checks that it covers every member that is not inherited; the type check below does.
   const PER_CALL_KEYS = [
     "registerSaveMigration", "getSaveMigrationField", "setSaveMigrationField", "data", "readDataEntryAsync",
-    "editorData", "self", "deltaSeconds", "tickIndex", "commandArgs", "args", "animFacts", "animExitTimeReached",
+    "editorData", "self", "deltaSeconds", "tickIndex", "debugTrace", "commandArgs", "args", "animFacts", "animExitTimeReached",
     "flowState", "reportCommand", "random", "getVariable", "variableReference", "tweenValue", "tweenProperty",
     "setVariable", "getVariableFrom", "setVariableOn", "setMeshMaterialAsync", "setMaterialTextureParameterAsync",
     "destroyActor", "setActorLocation", "addActorWorldOffset", "setActorRotation", "setActorScale",

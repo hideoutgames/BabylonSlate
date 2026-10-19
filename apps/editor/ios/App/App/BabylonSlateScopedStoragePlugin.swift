@@ -40,6 +40,12 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     private var pendingPickCall: CAPPluginCall?
+    /// Folders resolved this session, each holding one security-scoped access.
+    /// Every bookmark resolution issues a new sandbox extension, and iOS caps
+    /// them per process: resolving per file operation exhausted the cap during
+    /// one project scaffold, so later folders failed as revoked until relaunch.
+    private var resolvedFolders: [String: URL] = [:]
+    private let resolvedFoldersLock = NSLock()
     /// One bridge transfer, whole-file or ranged, never exceeds this.
     private static let maxTransferBytes: Int64 = 512 * 1024 * 1024
 
@@ -352,6 +358,10 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func resolveFolder(id: String, call: CAPPluginCall) -> (URL, Bool)? {
+        resolvedFoldersLock.lock()
+        let cached = resolvedFolders[id]
+        resolvedFoldersLock.unlock()
+        if let cached = cached { return (cached, false) }
         guard let data = UserDefaults.standard.data(forKey: bookmarkKey(id)) else {
             call.reject("Folder bookmark not found; reconnect required", "STALE")
             return nil
@@ -362,21 +372,30 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
                               options: [],
                               relativeTo: nil,
                               bookmarkDataIsStale: &isStale)
+            // Held for the session; per-operation start/stop pairs on this URL
+            // only adjust its count and issue no new extension.
+            guard url.startAccessingSecurityScopedResource() else {
+                call.reject("Folder access has been revoked", "ACCESS_REVOKED")
+                return nil
+            }
             if isStale {
-                let accessing = url.startAccessingSecurityScopedResource()
-                guard accessing else {
-                    call.reject("Folder access has been revoked", "ACCESS_REVOKED")
-                    return nil
-                }
-                defer { url.stopAccessingSecurityScopedResource() }
                 guard let renewed = try? url.bookmarkData(options: [],
                                                            includingResourceValuesForKeys: nil,
                                                            relativeTo: nil) else {
+                    url.stopAccessingSecurityScopedResource()
                     call.reject("Bookmark is stale", "STALE")
                     return nil
                 }
                 UserDefaults.standard.set(renewed, forKey: bookmarkKey(id))
             }
+            resolvedFoldersLock.lock()
+            defer { resolvedFoldersLock.unlock() }
+            if let existing = resolvedFolders[id] {
+                // A concurrent call resolved it first; keep one held access.
+                url.stopAccessingSecurityScopedResource()
+                return (existing, false)
+            }
+            resolvedFolders[id] = url
             return (url, isStale)
         } catch {
             call.reject("Could not resolve folder", "STALE", error)

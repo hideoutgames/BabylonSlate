@@ -671,6 +671,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     ) {
       record.desc.gravityScale = tuning.gravityScale;
     }
+    if (typeof tuning.lockRotation === "boolean") {
+      record.desc.lockRotation = tuning.lockRotation;
+    }
     if (tuning.motionType) this.applyMotionType(record);
     this.applyBodyTuning(record);
   }
@@ -1646,6 +1649,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         record.desc.motionType === "static"
           ? 0
           : Math.max(record.desc.mass, 1e-6),
+      // Zero inertia is Havok's locked rotation; without it the shape's inertia is recomputed.
+      inertia:
+        record.desc.lockRotation && record.desc.motionType === "dynamic"
+          ? Vector3.Zero()
+          : undefined,
     });
   }
 

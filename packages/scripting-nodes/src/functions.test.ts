@@ -108,7 +108,7 @@ describe("functions.call", () => {
     ]);
   });
 
-  it("omits Target and maps signature pins when implicitSelf is true", () => {
+  it("gives Target a Self default and maps signature pins when implicitSelf is true", () => {
     const def = createDefaultNodeRegistry().get("functions.call")!;
     const pins = def.pins({
       functionName: "Jump",
@@ -135,6 +135,7 @@ describe("functions.call", () => {
       })),
     ).toEqual([
       { id: "exec", direction: "in", type: EXEC },
+      { id: "target", direction: "in", type: objectRef("Hero") },
       { id: "amount", direction: "in", type: FLOAT },
       { id: "flag", direction: "in", type: BOOL },
       { id: "count", direction: "in", type: INT },
@@ -223,7 +224,7 @@ describe("functions.call", () => {
     expect(compiled.source).not.toContain("_2_Jump_(ctx);");
   });
 
-  it("compiles a wired Call Function Target to invokeFunction input, not ctx.self", () => {
+  it("calls the wired Call Function Target, not the running object", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -266,10 +267,14 @@ describe("functions.call", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toMatch(
-      /ctx\.invokeFunction\([^,]*spawn[^,]*,\s*"Alert"/,
-    );
-    expect(compiled.source).not.toMatch(/ctx\.invokeFunction\(\s*ctx\.self\s*,/);
+    const run = new Function(`${compiled.source.replace(/^export /gm, "")}\nreturn onBeginPlay;`)() as (context: unknown) => Promise<void>;
+    const calls: unknown[][] = [];
+    await run({
+      self: "hero",
+      spawnActorAsync: async () => "guard",
+      invokeFunction: (...args: unknown[]) => { calls.push(args); return {}; },
+    });
+    expect(calls).toEqual([["guard", "Alert", {}]]);
   });
 
   it("falls back to fn when functionName is missing", () => {
@@ -292,7 +297,10 @@ describe("functions.call", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toContain('ctx.invokeFunction(ctx.self, "fn"');
+    const run = new Function(`${compiled.source.replace(/^export /gm, "")}\nreturn onBeginPlay;`)() as (context: unknown) => void;
+    const calls: unknown[][] = [];
+    run({ self: "hero", invokeFunction: (...args: unknown[]) => { calls.push(args); return {}; } });
+    expect(calls).toEqual([["hero", "fn", {}]]);
   });
 
   it("compiles a static library Call Function to invokeFunction with the class id", () => {
@@ -368,7 +376,7 @@ describe("functions.call", () => {
       isLatentFunction: (classId, functionName) =>
         classId === "Hero" && functionName === "Wait",
     });
-    expect(compiled.source).toMatch(/await\s+ctx\.invokeFunction\(ctx\.self,\s*"Wait"/);
+    expect(compiled.source).toMatch(/await\s+ctx\.invokeFunction\([^,]+,\s*"Wait"/);
     expect(compiled.entryPoints[0]?.isAsync).toBe(true);
     expect(compiled.source).toContain("export async function onBeginPlay");
   });

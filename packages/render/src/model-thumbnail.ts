@@ -18,16 +18,21 @@ import {
 } from "./material-preview";
 import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import { waitForPreviewMeshesReady } from "./preview-readiness";
-import { createHeldThreadBudget } from "./stall-deadline";
+import { PreparationTimedOut } from "./scene-render-coordinator";
+import { createHeldThreadBudget, SCENE_CAPTURE_CEILING_MS } from "./stall-deadline";
+import { DriverCompileWatch } from "./driver-compile";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { encodeRgbaPng } from "./png-encode";
 import { nativePreparationForEngine } from "./native-preparation";
+import { thumbnailMiss, type ThumbnailCaptureResult } from "./thumbnail-capture";
 
 type ModelThumbnailOptions = {
   importScale?: number;
   clipName?: string;
   sourceClipBytes?: Uint8Array | null;
   signal?: AbortSignal;
+  /** Ends the capture whatever compiles meanwhile (default `SCENE_CAPTURE_CEILING_MS`); a retry passes a longer one. */
+  ceilingMs?: number;
 };
 
 function rgbaBytesFromReadback(
@@ -51,7 +56,7 @@ function rgbaBytesFromReadback(
  * Transparent clear so Content Browser `--card` tiles show through.
  * Callers should pass `resolveMaterial: () => null` so construction materials
  * stay — compiling slot NodeMaterials on this throwaway Scene can lose the
- * shared Engine context.
+ * shared Engine context. A capture that runs out of time reports `expired`.
  */
 export async function captureModelThumbnailPng(
   engine: AbstractEngine,
@@ -60,8 +65,8 @@ export async function captureModelThumbnailPng(
   resolveMaterial: (guid: string, scene: Scene) => Material | null,
   maxEdge: number = DEFAULT_THUMBNAIL_MAX_EDGE,
   options: ModelThumbnailOptions = {},
-): Promise<Uint8Array | null> {
-  if (options.signal?.aborted) return null;
+): Promise<ThumbnailCaptureResult> {
+  if (options.signal?.aborted) return { outcome: "cancelled" };
   const size = Number.isFinite(maxEdge) ? Math.max(1, Math.min(512, Math.floor(maxEdge))) : DEFAULT_THUMBNAIL_MAX_EDGE;
   // Both decodes, their overlap, readback and cleanup share one reservation.
   // This construction-GLB path makes no nested scheduler requests. Prefab
@@ -73,7 +78,8 @@ export async function captureModelThumbnailPng(
       temporaryBytes: Math.max(1024, (bytes.byteLength + sourceClipBytes) * 4 + size * size * 16),
     }, () => captureAdmittedModelThumbnail(engine, bytes, slots, resolveMaterial, size, options));
   } catch {
-    return null;
+    // Refused or dropped before the capture started: not a capture that ran out of time.
+    return { outcome: options.signal?.aborted ? "cancelled" : "failed" };
   }
 }
 
@@ -84,11 +90,16 @@ async function captureAdmittedModelThumbnail(
   resolveMaterial: (guid: string, scene: Scene) => Material | null,
   size: number,
   options: ModelThumbnailOptions,
-): Promise<Uint8Array | null> {
+): Promise<ThumbnailCaptureResult> {
   // The readiness wait and the frame wait credit held time from one budget, so a
   // capture that never becomes ready cannot hold the serialized queue for a full
-  // budget at each step.
+  // budget at each step; one compile watch renews both up to one capture ceiling.
   const budget = createHeldThreadBudget();
+  const compiles = new DriverCompileWatch(engine, undefined, options.ceilingMs ?? SCENE_CAPTURE_CEILING_MS);
+  let timedOut = false;
+  const wanted = () => !options.signal?.aborted;
+  /** No image because a wait's bound or the capture's ceiling ran out, rather than for a reason of the asset. */
+  const ranOut = () => thumbnailMiss(wanted(), { ceiling: compiles.ceiling, stalled: timedOut });
   const host = createModelPreviewScene(engine, { transparent: true });
   let loaded: Awaited<ReturnType<typeof loadModelPreviewSource>> = null;
   let sourceHost: MaterialPreviewScene | null = null;
@@ -97,7 +108,7 @@ async function captureAdmittedModelThumbnail(
   let rtt: RenderTargetTexture | null = null;
   try {
     loaded = await loadModelPreviewSource(host, bytes, options.importScale);
-    if (!loaded || options.signal?.aborted) return null;
+    if (!loaded || !wanted()) return thumbnailMiss(wanted());
     for (const group of loaded.animationGroups) group.stop();
     if (options.clipName !== undefined) {
       let group: AnimationGroup | null = null;
@@ -107,7 +118,7 @@ async function captureAdmittedModelThumbnail(
           sourceHost,
           options.sourceClipBytes,
         );
-        if (options.signal?.aborted) return null;
+        if (!wanted()) return thumbnailMiss(false);
         const sourceGroup = sourceLoaded?.animationGroups.find(
           (entry) => entry.name === options.clipName,
         );
@@ -125,7 +136,7 @@ async function captureAdmittedModelThumbnail(
           ) ?? null;
       }
       // A missing clip must not be cached as an unrelated rest-pose thumbnail.
-      if (!group) return null;
+      if (!group) return thumbnailMiss(wanted());
       group.start(false);
       group.pause();
       group.goToFrame(group.from);
@@ -136,16 +147,31 @@ async function captureAdmittedModelThumbnail(
     );
     rtt = createPreviewRenderTarget("modelThumbnail", { width: size, height: size }, host.scene);
     host.camera.outputRenderTarget = rtt;
-    // A one-shot render must await imported PBR materials and textures.
-    if (!(await waitForPreviewMeshesReady(host.mesh, budget)) || options.signal?.aborted) return null;
-    if (!(await renderPreviewFrame(host, () => !options.signal?.aborted, budget))) return null;
+    // The capture's ceiling also ends the preview renderer's own preparation.
+    const current = () => wanted() && performance.now() < compiles.ceiling;
+    // A one-shot render must await imported PBR materials and textures. The wait
+    // ends unready when the capture stopped being current (cancelled or past its
+    // ceiling), its mesh was disposed, or its bound ran out. A disposed mesh is no
+    // time limit.
+    if (!(await waitForPreviewMeshesReady(host.mesh, budget, compiles, current))) {
+      timedOut = !host.mesh.isDisposed();
+      return ranOut();
+    }
+    if (!wanted()) return thumbnailMiss(false);
+    if (!(await renderPreviewFrame(host, current, budget, compiles))) {
+      timedOut = true;
+      return ranOut();
+    }
     const buffer = await rtt.readPixels();
-    if (!buffer || options.signal?.aborted) return null;
+    if (!buffer || !wanted()) return thumbnailMiss(wanted());
     const pixels = rgbaBytesFromReadback(buffer, size * size * 4);
-    if (!pixels) return null;
-    return encodeRgbaPng(size, size, new Uint8Array(flipReadPixelsRgba(pixels, size, size)));
-  } catch {
-    return null;
+    if (!pixels) return thumbnailMiss(wanted());
+    return { outcome: "captured", png: encodeRgbaPng(size, size, new Uint8Array(flipReadPixelsRgba(pixels, size, size))) };
+  } catch (error) {
+    // A wait that reached the ceiling rejects without saying why (ranOut tells it
+    // by the clock), unlike the frame graph's own preparation bound.
+    if (error instanceof PreparationTimedOut) timedOut = true;
+    return ranOut();
   } finally {
     host.camera.outputRenderTarget = null;
     rtt?.dispose();

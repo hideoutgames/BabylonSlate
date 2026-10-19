@@ -3,7 +3,7 @@ import {
   type NodeDefinition,
   EXEC,
 } from "@babylonslate/scripting";
-import { actorOrSelf, selfActorPin } from "./self-pin";
+import { selfActorPin } from "./self-pin";
 
 export const particleNodes: NodeDefinition[] = [
   {
@@ -16,7 +16,7 @@ export const particleNodes: NodeDefinition[] = [
       selfActorPin("actor"),
     ],
     codegen: (ctx) => {
-      ctx.emit(`ctx.playParticles(${actorOrSelf(ctx, "actor")});`);
+      ctx.emit(`ctx.playParticles(${ctx.input("actor")});`);
     },
   },
   {
@@ -29,7 +29,7 @@ export const particleNodes: NodeDefinition[] = [
       selfActorPin("actor"),
     ],
     codegen: (ctx) => {
-      ctx.emit(`ctx.stopParticles(${actorOrSelf(ctx, "actor")});`);
+      ctx.emit(`ctx.stopParticles(${ctx.input("actor")});`);
     },
   },
 ];

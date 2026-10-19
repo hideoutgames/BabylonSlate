@@ -10,6 +10,7 @@ import {
   type NodeDefinition,
   type PinType,
 } from "@babylonslate/scripting";
+import { subject } from "./self-pin";
 
 const TARGET = actorRef("SceneStreamingActor");
 
@@ -20,7 +21,7 @@ function query(method: string, title: string, result: PinType, description: stri
     category: "scene",
     description,
     pure: true,
-    pins: () => [pin("target", "Target", "in", TARGET), pin("out", "Out", "out", result)],
+    pins: () => [subject(pin("target", "Target", "in", TARGET)), pin("out", "Out", "out", result)],
     codegen: (ctx) => ({ out: `ctx.${method}(${ctx.input("target")})` }),
   };
 }
@@ -35,7 +36,7 @@ function operation(method: string, title: string, blocking: boolean, description
     pins: () => [
       pin("execIn", "Exec", "in", EXEC),
       pin("execOut", "Then", "out", EXEC),
-      pin("target", "Target", "in", TARGET),
+      subject(pin("target", "Target", "in", TARGET)),
     ],
     codegen: (ctx) => {
       ctx.emit(`${blocking ? "await " : ""}ctx.${method}(${ctx.input("target")});`);

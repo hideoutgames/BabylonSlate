@@ -101,7 +101,7 @@ import {
   type OpenDocument,
 } from "../services/document-service";
 import { DocumentEditingService } from "../services/document-editing-service";
-import { createPlayContentService, GRAPH_SIGNATURE_KINDS } from "../services/play-content-service";
+import { createPlayContentService, GRAPH_SIGNATURE_KINDS, type PlayScriptCompileOptions } from "../services/play-content-service";
 import { attachEditGestureBoundaries } from "../services/edit-gesture-boundaries";
 import { ProjectService, type PluginImportResult } from "../services/project-service";
 import { DocumentTransitionGate } from "../services/document-transition-gate";
@@ -545,7 +545,7 @@ interface DocumentContextValue {
   thumbnailVersions: Readonly<Record<string, number>>;
   thumbnailsEnabled: boolean;
   /** Compile requested Play graphs, or every graph for explicit project compilation. */
-  collectPlayPreviewScripts: (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], sourceProject?: ProjectDocument) => Promise<{
+  collectPlayPreviewScripts: (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], sourceProject?: ProjectDocument, compileOptions?: PlayScriptCompileOptions) => Promise<{
     bundles: ScriptBundleEntry[];
     diagnostics: Diagnostic[];
   }>;

@@ -99,4 +99,43 @@ describe("waitForPreviewMeshesReady", () => {
     expect(clock.elapsed()).toBeLessThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS + POLL_MS);
     dispose();
   });
+
+  // WebKit WebGL2 (which exposes KHR_parallel_shader_compile but links inside linkProgram) and SwiftShader link each
+  // variant inside the probe that requests it: links shorter than SCENE_THREAD_HELD_MS earn no held-thread credit,
+  // but every one that finishes is progress on the Engine.
+  describe("while short synchronous links keep finishing shaders", () => {
+    /** Each probe takes 500 ms; while `linking(probe)` it also finishes one more shader variant on the Engine. */
+    function linkingMesh(linking: (probe: number) => boolean, ready: (probe: number) => boolean) {
+      const made = previewMesh();
+      const effects = (made.mesh.getEngine() as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
+      const clock = installVirtualClock();
+      let probes = 0;
+      let lastLink = 0;
+      vi.spyOn(made.mesh, "isReady").mockImplementation(() => {
+        probes += 1;
+        clock.advance(500);
+        if (linking(probes)) {
+          effects[`linked-${probes}`] = { isReady: () => true, getCompilationError: () => "" };
+          lastLink = clock.elapsed();
+        }
+        return ready(probes);
+      });
+      return { ...made, clock, lastLink: () => lastLink };
+    }
+
+    it("keeps waiting past the bound and succeeds once the mesh is ready", async () => {
+      const { mesh, clock, dispose } = linkingMesh(() => true, (probe) => probe > 30);
+      expect(await waitForPreviewMeshesReady(mesh)).toBe(true);
+      expect(clock.elapsed()).toBeGreaterThan(3 * SCENE_SHADER_WARM_TIMEOUT_MS);
+      dispose();
+    });
+
+    it("gives up once links stop finishing, within two bounds of the last one", async () => {
+      const { mesh, clock, lastLink, dispose } = linkingMesh((probe) => probe <= 20, () => false);
+      expect(await waitForPreviewMeshesReady(mesh)).toBe(false);
+      expect(clock.elapsed() - lastLink()).toBeGreaterThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS);
+      expect(clock.elapsed() - lastLink()).toBeLessThanOrEqual(2 * SCENE_SHADER_WARM_TIMEOUT_MS + 500);
+      dispose();
+    });
+  });
 });

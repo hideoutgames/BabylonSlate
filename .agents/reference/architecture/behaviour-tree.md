@@ -8,8 +8,8 @@ Behaviour Tree and Blackboard documents, the deterministic evaluator, runtime ta
 | --- | --- |
 | Tree + Blackboard documents, parse/normalize, evaluator, abort matrix, validation, catalog, edit ops | [`packages/behaviour-tree/src/`](../../../packages/behaviour-tree/src/) (`evaluate.ts`, `validate.ts`, `builtins.ts`, `catalog.ts`, `edit.ts`, `serialize.ts`) |
 | Structural validation fixtures | [`packages/behaviour-tree/fixtures/`](../../../packages/behaviour-tree/fixtures/) |
-| Runtime host, task hosts, `btState` | [`packages/runtime/src/behaviour-tree-runtime.ts`](../../../packages/runtime/src/behaviour-tree-runtime.ts), [`bt-blackboard.ts`](../../../packages/runtime/src/bt-blackboard.ts) |
-| Editor selection and observers | [`apps/editor/src/context/behaviour-tree-editing-context.tsx`](../../../apps/editor/src/context/behaviour-tree-editing-context.tsx), [`apps/editor/src/lib/bt-state-observers.ts`](../../../apps/editor/src/lib/bt-state-observers.ts) |
+| Runtime host, task hosts, `btState`, debug trace | [`packages/runtime/src/behaviour-tree-runtime.ts`](../../../packages/runtime/src/behaviour-tree-runtime.ts), [`bt-blackboard.ts`](../../../packages/runtime/src/bt-blackboard.ts) |
+| Editor selection and live state | [`apps/editor/src/context/behaviour-tree-editing-context.tsx`](../../../apps/editor/src/context/behaviour-tree-editing-context.tsx), [`apps/editor/src/services/graph-debug-store.ts`](../../../apps/editor/src/services/graph-debug-store.ts) |
 
 ## Boundaries
 
@@ -47,8 +47,9 @@ Behaviour Tree and Blackboard documents, the deterministic evaluator, runtime ta
 
 ## Live editor state
 
-- `btState` has one consumer: the BT editor during editor Play. The runtime publishes it only while observed (`setBehaviourTreeStateObserved`) and only when state changed, so exported players and unobserved sessions do no sanitizing or sending.
-- The editor counts observers (`useObserveBtState` while Graph or Blackboard is on screen); `PlayOverlay` toggles the control on 0 ↔ non-zero.
+- The BT editor's live view belongs to the Simulation's graph debugger ([debugger.md](debugger.md#simulation-graph-debugging)): one followed `BehaviourTreeComponent`, chosen by the toolbar's **Debug Instance**. Nothing else shows live tree state, so a canvas cannot disagree with the Blackboard watch or with another instance.
+- `btState` (with the component's `instanceId`) is the followed tree's status source and Blackboard watch. The runtime publishes it only for that component, once as the follow starts and then when the state changed, so exported players and unobserved sessions do no sanitizing or sending. The editor derives each node's status from it with `btNodeStatuses` (running for the stack, the running leaf and any `running` result, else the last result) and draws it through a per-node subscription, not a canvas rebuild.
+- The same component reports each evaluation's touched nodes and links through `evaluateBehaviourTree`'s `trace` option, which the canvas flashes. The two come from one `evaluateBehaviourTree` call per tick, so they cannot contradict.
 - Change detection compares a raw Blackboard copy (`copyBlackboard` / `sameBlackboard`): plain data by content, actors/components by identity. Traces read evaluation state directly, not `btState`.
 - Console `behaviourtreedebug` is a separate debug-tier inspector with its own 5 Hz snapshots. All transported values are sanitized with the inspect formatter.
 

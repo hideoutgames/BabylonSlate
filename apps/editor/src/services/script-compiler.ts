@@ -1,12 +1,14 @@
 import { classIdForAssetPath, consoleCommandMetadataFromGraph } from "@babylonslate/core";
+import { stripAssetFileSuffix } from "@babylonslate/assets";
 import {
   type GraphClassMember,
   type SerializedGraph,
   type TagRegistry,
 } from "@babylonslate/core";
-import type {
-  ScriptBundleEntry,
-  ScriptConsoleCommand,
+import {
+  ANIM_OBJECT_DEBUG_GRAPH_ID,
+  type ScriptBundleEntry,
+  type ScriptConsoleCommand,
 } from "@babylonslate/bridge";
 import {
   animGraphScriptClassId,
@@ -89,6 +91,15 @@ export function classIdForGraphPath(path: string): string {
   return classIdForAssetPath(path);
 }
 
+/**
+ * Name of a Class as the Content Browser shows it: the file name without its
+ * container suffix (`assets/My Hero.class.babasset` is "My Hero", its class id
+ * `My_Hero`). Null-access errors name the class this way.
+ */
+export function classDisplayNameForGraphPath(path: string): string {
+  return stripAssetFileSuffix(path.split("/").pop() ?? path) || classIdForGraphPath(path);
+}
+
 
 export function consoleCommandFromGraph(
   graph: LogicGraph,
@@ -102,15 +113,27 @@ function jsIdent(name: string): string {
   return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`;
 }
 
+/**
+ * The id a Class's function graph compiles and reports under (script diagnostics,
+ * the graph debugger's execution trace): its export name, not the member id.
+ */
+export function functionGraphExportName(member: { id: string; name?: string }): string {
+  return jsIdent(member.name ?? member.id);
+}
+
 export function compileGraphDocument(
   content: SerializedGraph | LogicGraph,
   options: {
     path: string;
     graphId?: string;
     classId?: string;
+    /** The Class's display name; its file name on `path` when omitted (a packed export keys by guid and passes it). */
+    className?: string;
     parentClassId?: string | null;
     stripDevelopmentOnly?: boolean;
     instrumentInfiniteLoops?: boolean;
+    /** Simulation compiles report what runs for the instance the graph debugger follows. */
+    instrumentExecutionTrace?: boolean;
     inputAssets?: HydrateGraphOptions["inputAssets"];
     dataAssets?: HydrateGraphOptions["dataAssets"];
     enums?: HydrateGraphOptions["enums"];
@@ -132,6 +155,7 @@ export function compileGraphDocument(
     dataDefinitions: options.dataDefinitions,
   };
   const classId = options.classId?.trim() || classIdForGraphPath(options.path);
+  const className = options.className?.trim() || classDisplayNameForGraphPath(options.path);
   const parentOf =
     options.parentOf ??
     ((id: string) =>
@@ -173,10 +197,12 @@ export function compileGraphDocument(
     compiledPieces.push(
       compileGraph(logic, {
         assetGuid: options.path,
+        className,
         registry: defaultNodeRegistry,
         tagRegistry: options.tagRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
         instrumentInfiniteLoops,
+        instrumentExecutionTrace: options.instrumentExecutionTrace,
         isLatentFunction,
       }),
     );
@@ -184,7 +210,7 @@ export function compileGraphDocument(
   if (serialized?.functionGraphs) {
     for (const [memberId, slice] of Object.entries(serialized.functionGraphs)) {
       const member = serialized.members?.find((entry) => entry.id === memberId);
-      const exportName = jsIdent(member?.name ?? memberId);
+      const exportName = functionGraphExportName({ id: memberId, name: member?.name });
       const fnLogic = materializeLogicGraph(
         { nodes: slice.nodes, edges: slice.edges },
         exportName,
@@ -198,11 +224,13 @@ export function compileGraphDocument(
       compiledPieces.push(
         compileGraph(fnLogic, {
           assetGuid: options.path,
+          className,
           registry: defaultNodeRegistry,
           tagRegistry: options.tagRegistry,
           exportName,
           stripDevelopmentOnly: options.stripDevelopmentOnly,
           instrumentInfiniteLoops,
+          instrumentExecutionTrace: options.instrumentExecutionTrace,
           localPreamble: localVariablePreamble(locals),
           isLatentFunction,
         }),
@@ -213,10 +241,12 @@ export function compileGraphDocument(
     compiledPieces.push(
       compileGraph(logic, {
         assetGuid: options.path,
+        className,
         registry: defaultNodeRegistry,
         tagRegistry: options.tagRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
         instrumentInfiniteLoops,
+        instrumentExecutionTrace: options.instrumentExecutionTrace,
         isLatentFunction,
       }),
     );
@@ -423,6 +453,8 @@ export function graphsNeedCompile(
 
 export type GraphCompileCacheOptions = {
   stripDevelopmentOnly?: boolean;
+  /** Editor Simulation only; release compiles ignore it. Part of the cache key. */
+  instrumentExecutionTrace?: boolean;
   inputAssets?: HydrateGraphOptions["inputAssets"];
   dataAssets?: HydrateGraphOptions["dataAssets"];
   enums?: HydrateGraphOptions["enums"];
@@ -456,6 +488,7 @@ function graphDocumentCompileCacheKey(
     path: string;
     content: SerializedGraph | LogicGraph;
     classId?: string;
+    className?: string;
     parentClassId?: string | null;
   },
   options: GraphCompileCacheOptions &
@@ -474,6 +507,7 @@ function graphDocumentCompileCacheKey(
       { path: doc.path, content: content as SerializedGraph },
     ]),
     classId: doc.classId ?? null,
+    className: doc.className ?? null,
     parentClassId: doc.parentClassId ?? null,
     // An ancestor reparented into a subsystem or Game Instance lineage changes
     // whether an empty class still compiles.
@@ -487,6 +521,8 @@ function graphDocumentCompileCacheKey(
       parentClassId: doc.parentClassId,
     }),
     stripDevelopmentOnly: options.stripDevelopmentOnly === true,
+    // The compiler ignores the trace for a release compile, so it cannot split that key.
+    instrumentExecutionTrace: options.instrumentExecutionTrace === true && options.stripDevelopmentOnly !== true,
     types:
       options.typesFingerprint ??
       typeSchemasFingerprint(options.enums, options.structs, options.dataDefinitions),
@@ -581,6 +617,7 @@ function compileGraphDocumentCached(
     path: string;
     content: SerializedGraph | LogicGraph;
     classId?: string;
+    className?: string;
     parentClassId?: string | null;
   },
   options: GraphCompileCacheOptions & {
@@ -604,8 +641,10 @@ function compileGraphDocumentCached(
     const script = compileGraphDocument(doc.content, {
       path: doc.path,
       classId: doc.classId,
+      className: doc.className,
       parentClassId: doc.parentClassId,
       stripDevelopmentOnly: options.stripDevelopmentOnly,
+      instrumentExecutionTrace: options.instrumentExecutionTrace,
       inputAssets: options.inputAssets,
       dataAssets: options.dataAssets,
       enums: options.enums,
@@ -697,6 +736,7 @@ export function compileGraphDocuments(
     path: string;
     content: SerializedGraph | LogicGraph;
     classId?: string;
+    className?: string;
     parentClassId?: string | null;
   }>,
   options: GraphDocumentsCompileOptions = {},
@@ -773,6 +813,8 @@ function animGraphCompileCacheKey(
     guid: entry.guid,
     path: entry.path,
     stripDevelopmentOnly: options.stripDevelopmentOnly === true,
+    // Only the Animation Object graph carries probes; as for Class graphs, a release compile ignores them.
+    instrumentExecutionTrace: options.instrumentExecutionTrace === true && options.stripDevelopmentOnly !== true,
     tags: tagRegistryCompileFingerprint(options.tagRegistry),
     types: options.typesFingerprint,
     dataAssets: options.dataFingerprint,
@@ -791,7 +833,8 @@ function compileAnimGraphDocument(
   const objectScript = compileGraphDocument(doc.animationObject, {
     ...options,
     path: entry.path,
-    graphId: "animation-object",
+    className: entry.name,
+    graphId: ANIM_OBJECT_DEBUG_GRAPH_ID,
     parentClassId: "BObject",
     stripDevelopmentOnly: options.stripDevelopmentOnly,
     tagRegistry: options.tagRegistry,
@@ -819,6 +862,7 @@ function compileAnimGraphDocument(
     const logic = materializeLogicGraph(ruleGraph, `rule-${transition.id}`, "event", options);
     const compiled = compileTransitionRuleGraph(logic, {
       assetGuid: entry.path,
+      className: entry.name?.trim() || classDisplayNameForGraphPath(entry.path),
       registry: defaultNodeRegistry,
       stripDevelopmentOnly: options.stripDevelopmentOnly,
       tagRegistry: options.tagRegistry,

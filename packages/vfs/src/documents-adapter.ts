@@ -207,10 +207,12 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     const options = { path: this.abs(path), directory: this.directory, offset, length, expectedRevision };
     // Capacitor Filesystem.readFile loads the whole file. Native positioned I/O
     // is provided by our existing storage plugin instead of disguising that read.
+    // Check the Capacitor plugin first: its proxy answers every property name,
+    // so `readFileRange` looks present and rejects as unimplemented.
     const result = await this.reads.range(length, async () => {
       try {
-        if (this.fs.readFileRange) return await this.fs.readFileRange(options);
         if (this.fs === (Filesystem as unknown as DocumentsFilesystemApi)) return await BabylonSlateScopedStorage.readDocumentsRange(options);
+        if (this.fs.readFileRange) return await this.fs.readFileRange(options);
         throw new Error("Documents filesystem does not support bounded reads");
       } catch (error) { rethrowNativeStorageRangeError(error, path); }
     });

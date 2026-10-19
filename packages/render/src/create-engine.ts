@@ -64,6 +64,7 @@ import {
   NodeMaterial,
   Scene,
   ScenePerformancePriority,
+  WebGPUCacheRenderPipeline,
 } from "@babylonjs/core";
 import type {
   AudioProjectSettings,
@@ -259,11 +260,11 @@ import {
   applyEditorMaterialFreeze,
   pendingSceneTextures,
   prewarmSceneMaterials as warmSceneMaterials,
-  SCENE_DRIVER_COMPILE_TIMEOUT_MS,
   SCENE_LOOKUP_MAPS,
   SCENE_FIRST_FRAME_TIMEOUT_MS,
   SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
+import { firstFrameCompletionMs } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
 
 export interface EditorSceneLoadOptions {
@@ -463,6 +464,13 @@ export interface CreateEngineOptions {
   present?: "registerView" | "rtt";
   /** When true, use Play scene performance settings. */
   playMode?: boolean;
+  /**
+   * The world view started (true) or stopped (false) holding its last image
+   * while WebGPU render pipelines it needs compile. Play hosts pause the game
+   * runtime for the hold (pause reason `rendering`), as for a blocking load;
+   * this Engine already pauses its own game time, audio and particles.
+   */
+  onPipelineHold?: (held: boolean) => void;
   maxActors?: number;
   /** Attach the editor camera, gizmos, grid, selection and scene sync. */
   editor?: boolean;
@@ -947,7 +955,9 @@ function initializeEngine(
   const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
   // Every view shares the same graph path for authored and selection outlines.
   // The graph owns its active queue; editor world matrices still freeze.
-  const worldRenderer = new SceneRenderCoordinator(scene);
+  // The world view draws every frame and presents only rendered ones, so a
+  // draw whose WebGPU pipeline is still compiling holds the last image.
+  const worldRenderer = new SceneRenderCoordinator(scene, { deferPipelines: true });
   onRollback(() => worldRenderer.dispose());
   let disposed = false;
   let streamAdmission: ReturnType<typeof createSceneStreamAdmission> | undefined;
@@ -971,6 +981,8 @@ function initializeEngine(
     copied: boolean;
     completionStarted: boolean;
     errorsCleared: boolean;
+    /** WebGPU render pipelines the latest submitted draw created; they build inside its GPU completion. */
+    pipelines: number;
   };
   const pendingPresentations = new Map<string, PendingPresentation>();
   const frameOwners = new Map<string, PendingPresentation>();
@@ -987,7 +999,7 @@ function initializeEngine(
   const expirePresentation = (key: string) => {
     const pending = pendingPresentations.get(key);
     if (!pending) return;
-    cancelPresentation(new Error(`The scene did not present a frame before the loading deadline. Ready: ${pending.ready}; draws: ${pending.attempts}; rendered: ${pending.rendered}; GPU pending: ${Boolean(pending.submission)}; copied: ${pending.copied}.`), key);
+    cancelPresentation(new Error(`The scene did not present a frame before the loading deadline. Ready: ${pending.ready}; draws: ${pending.attempts}; rendered: ${pending.rendered}; GPU pending: ${Boolean(pending.submission)}; copied: ${pending.copied}; render pipelines created: ${pending.pipelines}.`), key);
   };
   const assertCurrent = (generation: number) => {
     if (disposed || scene.isDisposed || generation !== loadGeneration) {
@@ -2851,11 +2863,13 @@ function initializeEngine(
           return;
         }
         pending.copied = false;
+        const pipelinesBefore = WebGPUCacheRenderPipeline.NumCacheMiss;
         const submission = submitPresentedFrame(engine, () => {
           pending.attempts += 1;
           const rendered = draw();
           pending.rendered = rendered && presentationReady(pending);
         }, { errorStateKnownClear: pending.errorsCleared });
+        pending.pipelines = WebGPUCacheRenderPipeline.NumCacheMiss - pipelinesBefore;
         pending.submission = submission;
         // Unproven until this attempt's own fence-time read; a cancelled attempt leaves it unread.
         pending.errorsCleared = false;
@@ -2867,13 +2881,15 @@ function initializeEngine(
           // acknowledging before both this owner's fence and copy finish. The
           // fence is polled without blocking, so this budget also spans the
           // driver compiling the draw's programs: the longest compile the
-          // loading budgets already tolerate.
+          // loading budgets already tolerate. WebGPU builds every render
+          // pipeline the draw created in the GPU queue, inside this wait and
+          // with no progress to observe, so each adds an allowance.
           if (!pending.completionStarted) {
             pending.completionStarted = true;
             clearTimeout(pending.timer);
             pending.timer = setTimeout(() => {
               if (pendingPresentations.get(key) === pending) expirePresentation(key);
-            }, SCENE_DRIVER_COMPILE_TIMEOUT_MS);
+            }, firstFrameCompletionMs(pending.pipelines));
           }
         }
         void submission.completed.then(() => {
@@ -2893,6 +2909,7 @@ function initializeEngine(
             () => worldRenderer.render(true))
           : worldRenderer.render(pendingPresentations.has("world"));
         coherentFrame = result.rendered && (!frameScope || result.readyForPresentation);
+        syncPipelineHold(worldRenderer.holdingForPipelines);
         return result.readyForPresentation;
       }, () => {
         // A newly bound output may invalidate admission between scheduling and
@@ -3236,15 +3253,28 @@ function initializeEngine(
   let callerPaused = false;
   let sceneStreamingPaused = false;
   let gameTimePaused = false;
+  /** The world view holds its last image for WebGPU pipelines (`SceneRenderCoordinator.holdingForPipelines`). */
+  let pipelineHold = false;
+  /** Play pauses its game time, audio and particles while the view holds, as
+   * for a blocking load, but keeps drawing: the frame that finds the
+   * pipelines ready ends the hold. Resuming never consumes the held interval. */
+  const heldForPipelines = () => pipelineHold && options.playMode === true;
   const applyPause = () => {
     const paused = callerPaused || sceneStreamingPaused || gameTimePaused;
-    setSceneGameTimePaused(scene, gameTimePaused);
-    for (const layer of sceneLayerCompositor?.layers() ?? []) setSceneGameTimePaused(layer.scene, gameTimePaused);
+    const held = heldForPipelines();
+    setSceneGameTimePaused(scene, gameTimePaused || held);
+    for (const layer of sceneLayerCompositor?.layers() ?? []) setSceneGameTimePaused(layer.scene, gameTimePaused || held);
     binding.paused = paused;
     if (paused) resetJoysticks();
     scheduler.setPaused(paused);
-    audioService?.setPaused(paused);
-    particleService?.setPaused(paused);
+    audioService?.setPaused(paused || held);
+    particleService?.setPaused(paused || held);
+  };
+  const syncPipelineHold = (held: boolean) => {
+    if (held === pipelineHold) return;
+    pipelineHold = held;
+    applyPause();
+    options.onPipelineHold?.(held);
   };
 
   const engineHandle: EngineHandle = {
@@ -3616,7 +3646,7 @@ function initializeEngine(
         // through the world view.
         if (layer) {
           followSceneRenderSettings(layer.scene, scene);
-          setSceneGameTimePaused(layer.scene, gameTimePaused);
+          setSceneGameTimePaused(layer.scene, gameTimePaused || heldForPipelines());
           for (const texture of layer.scene.textures) applyTextureAnisotropy(texture);
           layer.scene.onNewTextureAddedObservable.add(applyTextureAnisotropy);
         }
@@ -4329,7 +4359,7 @@ function initializeEngine(
         else expirePresentation(key);
       };
       const timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
-      pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false });
+      pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false, pipelines: 0 });
       return promise;
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),

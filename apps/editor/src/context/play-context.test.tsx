@@ -7,12 +7,9 @@ import { enterPhoneDockLayout } from "../shell/phone-dock-layout";
 import { DocumentWorkspaceProvider } from "./document-workspace-context";
 import {
   PlayProvider,
-  useLiveBtState,
-  useObserveBtState,
   useOptionalPlay,
   useOutputLog,
   usePlay,
-  type LiveBtState,
 } from "./play-context";
 
 const host = vi.hoisted(() => {
@@ -52,8 +49,8 @@ afterEach(() => {
   host.documents = host.noProject;
 });
 
-it("delivers logs and BT snapshots only to their subscribers while Play controls stay live", async () => {
-  const renders = { play: 0, optional: 0, log: 0, bt: 0 };
+it("delivers logs only to their subscribers while Play controls stay live", async () => {
+  const renders = { play: 0, optional: 0, log: 0 };
   let controls!: ReturnType<typeof usePlay>;
   function PlayConsumer() {
     controls = usePlay();
@@ -78,26 +75,15 @@ it("delivers logs and BT snapshots only to their subscribers while Play controls
     renders.log += 1;
     return <output data-testid="logs">{lines.join("\n")}</output>;
   }
-  function BtConsumer() {
-    const state = useLiveBtState();
-    renders.bt += 1;
-    return (
-      <output data-testid="bt-state">
-        {state ? `${state.btNodeId}:${state.blackboard.hp}` : "None"}
-      </output>
-    );
-  }
   const view = render(
     <PlayProvider>
       <PlayConsumer />
       <OptionalConsumer />
       <LogConsumer />
-      <BtConsumer />
     </PlayProvider>,
   );
   expect(screen.getByTestId("play-controls").textContent).toBe("false");
   const initial = { ...renders };
-  const writer = controls.reportBtState;
   act(() =>
     engineCommandBus.dispatch({
       type: "log",
@@ -115,76 +101,15 @@ it("delivers logs and BT snapshots only to their subscribers while Play controls
   expect(renders.log).toBe(initial.log + 1);
   expect(renders.play).toBe(initial.play);
   expect(renders.optional).toBe(initial.optional);
-  expect(renders.bt).toBe(initial.bt);
 
-  const afterLogs = { ...renders };
-  const snapshot: LiveBtState = {
-    slotId: 1,
-    status: "running",
-    btNodeId: "wait",
-    lastResults: {},
-    blackboard: { hp: 3 },
-    stack: [{ nodeId: "sequence", childIndex: 0, opened: true }],
-  };
-  act(() => writer(snapshot));
-  expect(screen.getByTestId("bt-state").textContent).toBe("wait:3");
-  act(() => writer({ ...snapshot, btNodeId: "attack", blackboard: { hp: 2 } }));
-  expect(screen.getByTestId("bt-state").textContent).toBe("attack:2");
-  expect(renders.bt).toBeGreaterThan(afterLogs.bt);
-  expect(renders.log).toBe(afterLogs.log);
-  expect(renders.play).toBe(initial.play);
-  expect(renders.optional).toBe(initial.optional);
-  expect(controls.reportBtState).toBe(writer);
-
-  act(() => writer(null));
-  expect(screen.getByTestId("bt-state").textContent).toBe("None");
-  expect(renders.log).toBe(afterLogs.log);
-  expect(renders.play).toBe(initial.play);
   const beforeControlChange = { ...renders };
   act(() => controls.setOverlayStats(true));
   expect(screen.getByTestId("play-controls").textContent).toBe("true");
   expect(screen.getByTestId("optional-controls").textContent).toBe("true");
   expect(renders.play).toBeGreaterThan(beforeControlChange.play);
   expect(renders.log).toBe(beforeControlChange.log);
-  expect(renders.bt).toBe(beforeControlChange.bt);
-  expect(controls.reportBtState).toBe(writer);
   view.unmount();
   expect(host.diagnostics.size).toBe(0);
-});
-
-it("reports behaviour tree state as observed while any panel showing it is mounted and shown", () => {
-  let controls!: ReturnType<typeof usePlay>;
-  function Controls() {
-    controls = usePlay();
-    return null;
-  }
-  function Panel({ shown }: { shown: boolean }) {
-    useObserveBtState(shown);
-    return null;
-  }
-  const panels = (graph: boolean, blackboard: boolean | null) => (
-    <PlayProvider>
-      <Controls />
-      <Panel shown={graph} />
-      {blackboard === null ? null : <Panel shown={blackboard} />}
-    </PlayProvider>
-  );
-  const view = render(panels(false, null));
-  const changes: boolean[] = [];
-  controls.btStateObservers.subscribe((observed) => changes.push(observed));
-  expect(controls.btStateObservers.observed()).toBe(false);
-
-  view.rerender(panels(true, null));
-  expect(controls.btStateObservers.observed()).toBe(true);
-  // A second panel, and the first one leaving, change nothing while one remains.
-  view.rerender(panels(true, true));
-  view.rerender(panels(false, true));
-  expect(controls.btStateObservers.observed()).toBe(true);
-  expect(changes).toEqual([true]);
-
-  view.rerender(panels(false, null));
-  expect(controls.btStateObservers.observed()).toBe(false);
-  expect(changes).toEqual([true, false]);
 });
 
 it("keeps Play controls stable across document edits while Play saves the newest dirty documents", async () => {

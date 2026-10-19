@@ -1,10 +1,14 @@
-import type { VolumeShadow } from "./volumetric-lights";
+import { VOLUME_MAX_CASCADES, VOLUME_SHADOW_CODE, volumeShadowIndex, volumeSlotSamples } from "./volumetric-lights";
 import { MAX_FOG_VOLUMES } from "./fog-volumes";
 
-/** One bounded single-scattering shader, emitted for both native shader languages. */
+/**
+ * One bounded single-scattering shader, emitted for both native shader languages. It has `slots` light slots whatever
+ * lights are near: each reads its light's type, shadow kind (`VOLUME_SHADOW_CODE`) and cascade count from uniforms,
+ * and the march skips the slots past `volumeLightCount`, so only settings change the shader.
+ */
 export function volumetricShader(
   wgsl: boolean,
-  shadows: readonly VolumeShadow[],
+  slots: number,
   steps: number,
   halfZ: boolean,
   reverseZ: boolean,
@@ -47,7 +51,7 @@ export function volumetricShader(
 ${texture("depthSampler")}
 ${field(m4, "inverseProjection")}${field(m4, "inverseView")}${field(m4, "volumeView")}
 ${field(v4, "volumeSettings")}${field(v4, "volumeCamera")}
-${field(v3, "volumeShadowOffset")}
+${field(v3, "volumeShadowOffset")}${field(f, "volumeLightCount")}
 `;
   let functions = "",
     lighting = "";
@@ -142,49 +146,67 @@ ${loop("volume", u("fogVolumeCount"))} {
 }
 `;
   }
-  shadows.forEach((shadow, i) => {
-    for (const name of ["volumePosition", "volumeDirection", "volumeColor"])
-      header += field(v4, `${name}${i}`);
-    header += field(v2, `volumeCone${i}`) + field(v2, `volumeDepth${i}`);
-    const sampler = `shadowTexture${i}`;
-    let visibility = "return 1.0;";
-    if (shadow.kind === "cube") {
-      header += texture(sampler, "cube");
-      const sampled = wgsl
-        ? `textureSampleLevel(${sampler}, ${sampler}Sampler, direction * ${v3}(1.0,-1.0,1.0), 0.0)`
-        : `textureCube(${sampler}, direction * ${v3}(1.0,-1.0,1.0))`;
-      visibility = `${decl(v3, "direction", `p - ${u(`volumePosition${i}`)}.xyz`)}
-${decl(f, "metric", `(length(direction) + ${u(`volumeDepth${i}`)}.x) / max(${u(`volumeDepth${i}`)}.y, 0.0001)`)}
-${decl(v4, "stored", sampled)}
-${decl(f, "depth", shadow.packed ? `dot(stored, ${v4}(1.0/16581375.0,1.0/65025.0,1.0/255.0,1.0))` : "stored.r")}
-if (metric > depth) { return 0.0; } return 1.0;`;
-    } else if (shadow.kind !== "none") {
-      const cascaded = shadow.kind === "cascades";
-      header += wgsl
-        ? `var ${sampler}: texture_depth_${cascaded ? "2d_array" : "2d"}; var ${sampler}Sampler: sampler_comparison;`
-        : `uniform highp sampler${cascaded ? "2DArrayShadow" : "2DShadow"} ${sampler};`;
-      header += cascaded
-        ? array(m4, `lightMatrix${i}`, shadow.cascades) +
-          array(f, `viewFrustumZ${i}`, shadow.cascades)
-        : field(m4, `lightMatrix${i}`);
-      const layer = wgsl ? "layer" : "float(layer)";
-      const sampleCompare = wgsl
-        ? `textureSampleCompareLevel(${sampler}, ${sampler}Sampler, coord.xy, ${cascaded ? `${layer},` : ""} coord.z)`
-        : `texture(${sampler}, ${cascaded ? `vec4(coord.xy, ${layer}, coord.z)` : "coord"})`;
-      visibility = cascaded
-        ? `${decl(wgsl ? "i32" : "int", "layer", "0")}
-${Array.from({ length: shadow.cascades - 1 }, (_, n) => `if (viewZ > ${u(`viewFrustumZ${i}`)}[${n}]) { layer = ${n + 1}; }`).join("\n")}
-if (viewZ > ${u(`viewFrustumZ${i}`)}[${shadow.cascades - 1}]) { return 1.0; }
-`
-        : "";
-      visibility += `${decl(v4, "projected", `${u(`lightMatrix${i}`)}${cascaded ? "[layer]" : ""} * ${v4}(p - ${u("volumeShadowOffset")}, 1.0)`)}
+  const integerOf = (value: string) => (wgsl ? `i32(${value})` : `int(${value})`);
+  /** Projects `p` with `matrix` and compares the depth there, in `sampler` (a 2D array's `layer` when given). */
+  const compareTail = (matrix: string, sampler: string, layer?: string) => {
+    const sampleCompare = wgsl
+      ? `textureSampleCompareLevel(${sampler}, ${sampler}Sampler, coord.xy, ${layer ? `${layer},` : ""} coord.z)`
+      : `texture(${sampler}, ${layer ? `vec4(coord.xy, float(${layer}), coord.z)` : "coord"})`;
+    return `${decl(v4, "projected", `${matrix} * ${v4}(p - ${u("volumeShadowOffset")}, 1.0)`)}
 if (projected.w <= 0.0) { return 1.0; }
 ${decl(v3, "clip", "projected.xyz / projected.w")}
 ${decl(v3, "coord", `${v3}(clip.xy * 0.5 + ${v2}(0.5), ${halfZ ? "clip.z" : "clip.z * 0.5 + 0.5"})`)}
 if (coord.x < 0.0 || coord.x > 1.0 || coord.y < 0.0 || coord.y > 1.0 || coord.z < 0.0 || coord.z > 1.0) { return 1.0; }
 coord.z = clamp(coord.z ${reverseZ ? "+" : "-"} 0.0001, 0.0, 1.0);
 return ${sampleCompare};`;
-    }
+  };
+  const code = VOLUME_SHADOW_CODE;
+  for (let i = 0; i < slots; i++) {
+    for (const name of ["volumePosition", "volumeDirection", "volumeColor"])
+      header += field(v4, `${name}${i}`);
+    header += field(v2, `volumeCone${i}`) + field(v2, `volumeDepth${i}`) + field(v2, `volumeShadow${i}`);
+    // Each kind has its own sampler (and the index Babylon binds it under), so no sampler ever changes type.
+    const compare = `shadowTexture${volumeShadowIndex(i, "compare")}`;
+    const cube = `shadowTexture${volumeShadowIndex(i, "cube")}`;
+    header += field(m4, `lightMatrix${volumeShadowIndex(i, "compare")}`);
+    header += wgsl
+      ? `var ${compare}: texture_depth_2d; var ${compare}Sampler: sampler_comparison;`
+      : `uniform highp sampler2DShadow ${compare};`;
+    header += texture(cube, "cube");
+    const kind = `${u(`volumeShadow${i}`)}.x`;
+    const sampledCube = wgsl
+      ? `textureSampleLevel(${cube}, ${cube}Sampler, direction * ${v3}(1.0,-1.0,1.0), 0.0)`
+      : `textureCube(${cube}, direction * ${v3}(1.0,-1.0,1.0))`;
+    let visibility = `if (${kind} < ${code.compare - 0.5}) { return 1.0; }
+if (${kind} < ${code.compare + 0.5}) {
+${compareTail(u(`lightMatrix${volumeShadowIndex(i, "compare")}`), compare)}
+}
+if (${kind} < ${code.packedCube + 0.5}) {
+${decl(v3, "direction", `p - ${u(`volumePosition${i}`)}.xyz`)}
+${decl(f, "metric", `(length(direction) + ${u(`volumeDepth${i}`)}.x) / max(${u(`volumeDepth${i}`)}.y, 0.0001)`)}
+${decl(v4, "stored", sampledCube)}
+${decl(f, "depth", "stored.r")}
+if (${kind} > ${code.cube + 0.5}) { depth = dot(stored, ${v4}(1.0/16581375.0,1.0/65025.0,1.0/255.0,1.0)); }
+if (metric > depth) { return 0.0; }
+return 1.0;
+}
+`;
+    if (volumeSlotSamples(i, "cascades")) {
+      const cascades = `shadowTexture${volumeShadowIndex(i, "cascades")}`;
+      const matrices = `lightMatrix${volumeShadowIndex(i, "cascades")}`;
+      const splits = `viewFrustumZ${volumeShadowIndex(i, "cascades")}`;
+      header += array(m4, matrices, VOLUME_MAX_CASCADES) + array(f, splits, VOLUME_MAX_CASCADES);
+      header += wgsl
+        ? `var ${cascades}: texture_depth_2d_array; var ${cascades}Sampler: sampler_comparison;`
+        : `uniform highp sampler2DArrayShadow ${cascades};`;
+      // The cascade count is a uniform too: the last split the map covers ends its reach.
+      visibility += `${decl(integer, "cascades", integerOf(`${u(`volumeShadow${i}`)}.y + 0.5`))}
+${decl(integer, "layer", "0")}
+${Array.from({ length: VOLUME_MAX_CASCADES - 1 }, (_, n) => `if (cascades > ${n + 1} && viewZ > ${u(splits)}[${n}]) { layer = ${n + 1}; }`).join("\n")}
+${decl(integer, "last", "max(cascades - 1, 0)")}
+if (viewZ > ${u(splits)}[last]) { return 1.0; }
+${compareTail(`${u(matrices)}[layer]`, cascades, "layer")}`;
+    } else visibility += "return 1.0;";
     functions += fn(
       `visibility${i}`,
       [
@@ -194,7 +216,8 @@ return ${sampleCompare};`;
       f,
       visibility,
     );
-    lighting += `{
+    // Slots past the lights taking part this frame are skipped: one uniform branch per step.
+    lighting += `if (${u("volumeLightCount")} > ${i}.5) {
 ${decl(v3, "toLight", `${u(`volumePosition${i}`)}.xyz - p`)}
 ${decl(f, "distanceToLight", "max(length(toLight), 0.001)")}
 ${decl(v3, "lightDirection", "toLight / distanceToLight")}
@@ -212,7 +235,7 @@ ${decl(f, "phase", `(1.0-g*g) / (12.5663706 * pow(max(0.001, 1.0+g*g-2.0*g*dot(l
 illumination += ${u(`volumeColor${i}`)}.rgb * (attenuation * phase * visibility${i}(p, abs((${u("volumeView")} * ${v4}(p,1.0)).z)));
 }
 `;
-  });
+  }
   const body = `
 ${decl(f, "depth", `abs(${sample("depthSampler", uv)}.r)`)}
 if (depth < 0.000001) { depth = ${u("volumeCamera")}.y; }

@@ -9,7 +9,7 @@ The top bar shows the project name and the document tabs. The toolbar sits below
 | Area | Controls |
 | --- | --- |
 | Left | **Save All** (a dot means something is unsaved), **Undo** and **Redo**. A Class adds **Compile**; a Material adds **Render**; a scene adds the scene mode picker (**Design**, **Landscape**, **Foliage**). |
-| Centre | **Play** (it reads **Preview** or **Simulate** for those Play Modes) and the **Debug** menu with Play options. While a Simulation runs, **Simulate** becomes a red **Stop** with **Pause**, a **Game** / **Edit** input toggle and **Return To Scene** beside it ([Simulate controls](../debugging/index.md#simulate-controls)). |
+| Centre | **Play** (it reads **Preview** or **Simulate** for those Play Modes) and the **Debug** menu with Play options. While a Simulation runs, **Simulate** becomes a red **Stop** with **Pause**, a **Game** / **Edit** input toggle and **Return To Scene** beside it, plus a **Debug Instance** picker while a Class, Behaviour Tree or Animation Graph is open ([Simulate controls](../debugging/index.md#simulate-controls)). |
 | Right | **Windows**, **Focus**, **Search Project** and **Settings** (**Project Settings** and **Engine Settings**). |
 
 ## Document tabs

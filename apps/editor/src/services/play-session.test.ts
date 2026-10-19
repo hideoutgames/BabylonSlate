@@ -12,7 +12,7 @@ import {
   applyPlaySnapshotTick,
   diagnosticFromCommand,
   applyPlaySessionStep,
-  applyPlayBehaviourTreeStateObserved,
+  applyPlayGraphDebugObserve,
   applyPlaySessionPausedCommand,
   applyPlayHudConsoleCommand,
   shouldForwardPlayEngineCommand,
@@ -437,23 +437,25 @@ describe("applyPlaySessionStep", () => {
   });
 });
 
-describe("applyPlayBehaviourTreeStateObserved", () => {
-  it("posts the observation control to the worker instead of touching the in-process runtime", () => {
+describe("applyPlayGraphDebugObserve", () => {
+  const target = { kind: "class", classId: "Door" } as const;
+
+  it("posts the request to the worker instead of touching the in-process runtime", () => {
     const postControl = vi.fn();
-    const applyBehaviourTreeStateObserved = vi.fn();
-    applyPlayBehaviourTreeStateObserved({ worker: { postControl }, runtime: { applyBehaviourTreeStateObserved } }, true);
-    applyPlayBehaviourTreeStateObserved({ worker: { postControl }, runtime: { applyBehaviourTreeStateObserved } }, false);
+    const applyDebugObserve = vi.fn();
+    applyPlayGraphDebugObserve({ worker: { postControl }, runtime: { applyDebugObserve } }, target, "d1");
+    applyPlayGraphDebugObserve({ worker: { postControl }, runtime: { applyDebugObserve } }, null, null);
     expect(postControl.mock.calls).toEqual([
-      [{ type: "setBehaviourTreeStateObserved", observed: true }],
-      [{ type: "setBehaviourTreeStateObserved", observed: false }],
+      [{ type: "debugObserve", target, instanceId: "d1" }],
+      [{ type: "debugObserve", target: null, instanceId: null }],
     ]);
-    expect(applyBehaviourTreeStateObserved).not.toHaveBeenCalled();
+    expect(applyDebugObserve).not.toHaveBeenCalled();
   });
 
-  it("applies the observation directly to the in-process runtime when there is no worker", () => {
-    const applyBehaviourTreeStateObserved = vi.fn();
-    applyPlayBehaviourTreeStateObserved({ worker: null, runtime: { applyBehaviourTreeStateObserved } }, true);
-    expect(applyBehaviourTreeStateObserved).toHaveBeenCalledExactlyOnceWith(true);
+  it("applies the request directly to the in-process runtime when there is no worker", () => {
+    const applyDebugObserve = vi.fn();
+    applyPlayGraphDebugObserve({ worker: null, runtime: { applyDebugObserve } }, target, "d2");
+    expect(applyDebugObserve).toHaveBeenCalledExactlyOnceWith(target, "d2");
   });
 });
 
