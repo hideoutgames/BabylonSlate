@@ -937,8 +937,9 @@ function initializeEngine(
   const heldEngineViews = registeredView && options.playMode ? holdOtherEngineViews(engine, canvas) : [];
 
   const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
-  // The editor world view, Play and the exported player; Prefab Preview keeps the legacy lighting path.
-  if (!presentRtt) setFixedShapeLightingWorldScene(scene);
+  // The editor world view, Play and the exported player; Prefab Preview (and its two-fill studio lights) keeps the
+  // legacy lighting path.
+  if (!presentRtt && !options.previewLighting) setFixedShapeLightingWorldScene(scene);
   // Every view shares the same graph path for authored and selection outlines.
   // The graph owns its active queue; editor world matrices still freeze.
   // The world view draws every frame and presents only rendered ones, so a
