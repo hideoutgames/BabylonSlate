@@ -31,6 +31,34 @@ export const SCENE_FIRST_FRAME_TIMEOUT_MS = 20_000;
 export const SCENE_PREPARATION_CEILING_MS = 300_000;
 
 /**
+ * Absolute bound on one Content Browser thumbnail capture, which renews its
+ * waits on compile progress like a load. Captures queue one after another on
+ * the shared Engine, so unrelated compiles there (material editing, Play) must
+ * not hold the queue for a whole `SCENE_PREPARATION_CEILING_MS`; a capture that
+ * runs out keeps the asset's type icon.
+ */
+export const SCENE_CAPTURE_CEILING_MS = 90_000;
+
+/**
+ * Extra time a loading owner's validated first draw gets to complete on the GPU
+ * for each render pipeline it created. WebGPU builds new pipelines in the GPU
+ * queue, so they all finish inside that draw's submitted-work wait, which shows
+ * no progress until then; on an iPad (WebKit WebGPU) each was seen to take about
+ * a second. This allows twice that.
+ */
+export const SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS = 2_000;
+
+/**
+ * Budget for a validated first draw's GPU completion: the longest driver
+ * compile the loading budgets tolerate, plus `SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS`
+ * per render pipeline the draw created, at most `SCENE_PREPARATION_CEILING_MS`.
+ */
+export function firstFrameCompletionMs(pipelines: number): number {
+  return Math.min(SCENE_DRIVER_COMPILE_TIMEOUT_MS + Math.max(0, pipelines) * SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS,
+    SCENE_PREPARATION_CEILING_MS);
+}
+
+/**
  * A gap of at least this long between two checkpoints of a polling loading step
  * is time the step could neither spend nor observe. The loops step every 16 ms
  * and a probe on a healthy host takes milliseconds, so a longer gap means a
@@ -96,14 +124,17 @@ export interface HeldThreadBound {
 /**
  * A wall-clock bound on a polling wait that does not charge the time a
  * synchronous probe held the thread (`heldThreadMs`), up to `budget` (a fresh
- * `SCENE_THREAD_HELD_BUDGET_MS` unless the caller shares one). A wait that never
- * becomes ready therefore fails after at most `boundMs` plus the budget, and a
- * slow host whose probes only link shaders does not time out spuriously. Uses
- * the monotonic `performance.now()`.
+ * `SCENE_THREAD_HELD_BUDGET_MS` unless the caller shares one). When it runs out,
+ * `renew` (`renewOnCompileProgress`: shaders finished on the Engine since its
+ * last renewal) may grant a fresh `boundMs`; links shorter than
+ * `SCENE_THREAD_HELD_MS` earn no credit but are progress. A wait that never
+ * becomes ready therefore fails once a whole bound passes without progress, and
+ * at the latest at the renewal's ceiling. Uses the monotonic `performance.now()`.
  */
 export function createHeldThreadBound(
   boundMs: number,
   budget: HeldThreadBudget = createHeldThreadBudget(),
+  renew?: (now: number) => boolean,
 ): HeldThreadBound {
   let checkpoint = performance.now();
   let deadline = checkpoint + boundMs;
@@ -112,7 +143,10 @@ export function createHeldThreadBound(
       const now = performance.now();
       deadline += budget.grant(heldThreadMs(now - checkpoint));
       checkpoint = now;
-      return now >= deadline;
+      if (now < deadline) return false;
+      if (!renew?.(now)) return true;
+      deadline = now + boundMs;
+      return false;
     },
   };
 }
@@ -148,7 +182,9 @@ export function createStallDeadline(
     armedAt = performance.now();
     timer = setTimeout(() => {
       const late = held ? held.grant(heldThreadMs(performance.now() - armedAt - ms)) : 0;
-      if (late > 0 || renew?.()) arm();
+      // Asked even after a held fire, so the progress it saw does not renew the next window too.
+      const progressed = renew?.() ?? false;
+      if (late > 0 || progressed) arm();
       else reject?.(new Error(describe(current, Math.max(completed, 0))));
     }, ms);
   };

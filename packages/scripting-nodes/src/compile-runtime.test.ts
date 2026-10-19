@@ -340,7 +340,7 @@ describe("compiler emits runnable JavaScript", () => {
     expect(compiled.source).toContain("7");
   });
 
-  it("compiles a wired Call Target to invokeCustomEvent input, not ctx.self", () => {
+  it("calls a wired Call Target's custom event, not the running object's", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -363,12 +363,14 @@ describe("compiler emits runnable JavaScript", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "hero", registry });
-    expect(compiled.source).toMatch(
-      /ctx\.invokeCustomEvent\([^,]*spawn[^,]*,\s*"On_Alert"/,
-    );
-    expect(compiled.source).not.toMatch(
-      /ctx\.invokeCustomEvent\(\s*ctx\.self\s*,/,
-    );
+    const run = new Function(`${compiled.source.replace(/^export /gm, "")}\nreturn onBeginPlay;`)() as (context: unknown) => Promise<void>;
+    const calls: unknown[][] = [];
+    await run({
+      self: "hero",
+      spawnActorAsync: async () => "guard",
+      invokeCustomEvent: (...args: unknown[]) => calls.push(args),
+    });
+    expect(calls).toEqual([["guard", "On_Alert", { amount: 3 }]]);
   });
 
   it("anchors ExecuteJavaScript user-body lines with bodyLine", () => {

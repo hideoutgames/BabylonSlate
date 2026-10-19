@@ -223,13 +223,15 @@ function PinRow({
     ? Number(outgoing.id.slice(5)) : undefined;
   const incomingTag = data.__nodeType === "tags.select" && incoming?.id.startsWith("option:")
     ? Number(incoming.id.slice(7)) : undefined;
-  const incomingLabel = incomingTag !== undefined ? tagDisplayName(tags, incomingTag)
+  const incomingName = incomingTag !== undefined ? tagDisplayName(tags, incomingTag)
     : incoming ? humanizePropertyLabel(incoming.name) : "";
   const outgoingLabel = outgoingTag !== undefined ? tagDisplayName(tags, outgoingTag)
     : outgoing ? humanizePropertyLabel(outgoing.name) : "";
   const incomingConnected = useStore((state) =>
     incoming ? isPinWired(state.edges, nodeId, incoming) : false,
   );
+  // An unwired pin that reads Self says so in its label.
+  const incomingLabel = incoming?.selfWhenUnwired && !incomingConnected ? `${incomingName} (Self)` : incomingName;
   const outgoingConnected = useStore((state) =>
     outgoing ? isPinWired(state.edges, nodeId, outgoing) : false,
   );

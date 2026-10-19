@@ -2,13 +2,13 @@ import {
   pin,
   type NodeDefinition,
   EXEC,
-  objectRef,
 } from "@babylonslate/scripting";
 import {
   CALL_PIN_IDS,
   assignResultFields,
   memberArgPinId,
   memberPinRows,
+  memberTargetPin,
   objectLiteralKey,
   pinTypeForMember,
   type MemberPinRow,
@@ -54,7 +54,7 @@ function signaturePins(properties: Record<string, unknown>) {
   );
   return [
     ...exec,
-    pin("target", "Target", "in", objectRef(classId)),
+    memberTargetPin(properties, "Target", classId),
     ...dataPins,
   ];
 }
@@ -75,21 +75,12 @@ export function callInterfaceTitle(methodName: string): string {
 export const interfaceNodes: NodeDefinition[] = [
   {
     id: "interface.call",
-    implicitSelfTarget: true,
     title: "Call",
     category: "interface",
     pins: (properties) => signaturePins(properties),
     codegen: (ctx) => {
       const properties = ctx.node.properties;
-      const targetPin = ctx.node.pins.find(
-        (entry) => entry.id === "target" && entry.direction === "in",
-      );
-      const targetConnected = !!targetPin && ctx.isWired(targetPin.id);
-      // Like Call Function: only a Self-bound row turns an unwired Target into Self.
-      const targetExpr =
-        !targetConnected && properties.implicitSelf === true
-          ? "ctx.self"
-          : ctx.input("target");
+      const targetExpr = ctx.input("target");
       const args: string[] = [];
       for (const pinDef of ctx.node.pins) {
         if (

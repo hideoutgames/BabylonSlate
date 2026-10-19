@@ -377,7 +377,7 @@ describe("validateGraphs", () => {
     expect(diags.some((d) => d.code === "pin.missing_input")).toBe(true);
   });
 
-  it("does not warn pin.missing_input for an implicit-self Target, only for an argument named target", () => {
+  it("does not warn pin.missing_input for a pin that reads Self, only for an argument named target", () => {
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
@@ -389,7 +389,7 @@ describe("validateGraphs", () => {
           position: { x: 200, y: 0 },
           pins: [
             pin("execIn", "exec", "in", EXEC),
-            pin("target", "Target", "in", objectRef("Hero")),
+            { ...pin("target", "Target", "in", objectRef("Hero")), selfWhenUnwired: true },
             pin("target__arg", "target", "in", objectRef("Hero")),
           ],
           properties: { implicitSelf: true, method: "Hit", interfaceGuid: "iface-1" },

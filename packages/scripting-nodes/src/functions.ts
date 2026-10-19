@@ -2,7 +2,6 @@ import {
   pin,
   type NodeDefinition,
   EXEC,
-  objectRef,
 } from "@babylonslate/scripting";
 import {
   CALL_PIN_IDS,
@@ -10,6 +9,7 @@ import {
   jsIdent,
   memberArgPinId,
   memberPinRows,
+  memberTargetPin,
   objectLiteralKey,
   type MemberPinRow,
   pinTypeForVariable,
@@ -18,7 +18,6 @@ import {
 export const functionCallNodes: NodeDefinition[] = [
   {
     id: "functions.call",
-    implicitSelfTarget: true,
     title: "Call",
     category: "functions",
     declaredPinOrder: true,
@@ -27,10 +26,11 @@ export const functionCallNodes: NodeDefinition[] = [
         typeof properties.classId === "string" && properties.classId.trim()
           ? properties.classId.trim()
           : "BObject";
+      // A Function Library call names its class, so it has no Target.
       const targetPin =
-        properties.implicitSelf === true
+        properties.static === true
           ? []
-          : [pin("target", "target", "in", objectRef(classId))];
+          : [memberTargetPin(properties, "target", classId)];
       const rows = memberPinRows(properties).filter(
         (row): row is MemberPinRow & { name: string } =>
           Boolean(row) && typeof row.name === "string" && row.name.length > 0,
@@ -71,10 +71,6 @@ export const functionCallNodes: NodeDefinition[] = [
           ? ctx.node.properties.runtime.trim()
           : "";
       const functionName = runtime || jsIdent(raw);
-      const targetPin = ctx.node.pins.find(
-        (entry) => entry.id === "target" && entry.direction === "in",
-      );
-      const targetConnected = !!targetPin && ctx.isWired(targetPin.id);
       const classId =
         typeof ctx.node.properties.classId === "string" &&
         ctx.node.properties.classId.trim()
@@ -83,10 +79,7 @@ export const functionCallNodes: NodeDefinition[] = [
       const targetExpr =
         ctx.node.properties.static === true
           ? JSON.stringify(classId)
-          : !targetPin ||
-              (!targetConnected && ctx.node.properties.implicitSelf === true)
-            ? "ctx.self"
-            : ctx.input("target");
+          : ctx.input("target");
       const args: string[] = [];
       for (const pinDef of ctx.node.pins) {
         if (

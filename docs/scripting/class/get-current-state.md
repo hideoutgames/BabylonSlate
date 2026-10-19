@@ -21,5 +21,5 @@ Returns the name and ID of the state an Animation Graph is in.
 
 ## Notes
 
-- Before the graph's first update it returns the entry state. With an invalid target, the outputs are empty.
+- Before the graph's first update it returns the entry state. With an invalid target, the outputs are empty; an empty target also logs an error.
 - Only available in Actor class graphs.

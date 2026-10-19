@@ -215,11 +215,23 @@ function isInputEvent(typeId: string): boolean {
   return typeId === "input.actionEvent" || typeId === "input.axisEvent";
 }
 
+/** Nodes whose Actor input reads Self while unwired: saved pins from before it was labelled "(Self)" are replaced. */
+const SELF_ACTOR_NODE_IDS: ReadonlySet<string> = new Set([
+  "actor.destroy",
+  "actor.attachToBone",
+  "component.get",
+  "component.has",
+  "component.add",
+  "particles.play",
+  "particles.stop",
+]);
+
 function shouldRegeneratePins(typeId: string): boolean {
   if (isDataGraphNode(typeId)) return true;
   if (typeId.startsWith("tween.")) return true;
   if (typeId === "debug.executeJavaScript") return true;
   if (isInputEvent(typeId)) return true;
+  if (SELF_ACTOR_NODE_IDS.has(typeId)) return true;
   return (
     typeId === "flow.event.call" ||
     typeId === "flow.event.callParent" ||

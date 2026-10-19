@@ -1076,13 +1076,16 @@ export class ForwardSceneFrameGraph {
         this.commitOwnSceneTargets();
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
-      let deadline = performance.now() + READINESS_STALL_MS;
-      const compiles = new DriverCompileWatch(scene.getEngine());
+      const started = performance.now();
+      let deadline = started + READINESS_STALL_MS;
+      // Created after the first fence wait: it asks every Engine effect for readiness.
+      let compiles: DriverCompileWatch | undefined;
       let creditLeft = SCENE_THREAD_HELD_BUDGET_MS;
       for (;;) {
         // Readiness probes finalise effects; a synchronous GL query waits behind
         // an outstanding presentation fence's driver compile, so defer them.
         deadline += await whenPresentationFenceClear(scene.getEngine(), assertCurrent);
+        compiles ??= new DriverCompileWatch(scene.getEngine(), started);
         const probeStart = performance.now();
         const ready = this.disposed || this.isReady();
         // Where links are synchronous (SwiftShader, WebKit WebGL2) the probe links

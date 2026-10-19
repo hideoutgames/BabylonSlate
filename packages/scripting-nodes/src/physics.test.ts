@@ -368,10 +368,10 @@ describe("physics nodes", () => {
   it("Add Impulse applies Strength 1 when the pin is unwired", () => {
     const impulses: unknown[][] = [];
     runBeginPlay(
-      [["impulse", "physics.addImpulse", { "default:impulse": { x: 0, y: 5, z: 0 } }]],
-      [["begin", "execOut", "impulse", "execIn"]],
-      { addImpulse: (...args: unknown[]) => impulses.push(args) },
+      [["self", "actor.getSelf"], ["impulse", "physics.addImpulse", { "default:impulse": { x: 0, y: 5, z: 0 } }]],
+      [["begin", "execOut", "impulse", "execIn"], ["self", "out", "impulse", "target"]],
+      { self: "body", addImpulse: (...args: unknown[]) => impulses.push(args) },
     );
-    expect(impulses).toEqual([[null, { x: 0, y: 5, z: 0 }, 1]]);
+    expect(impulses).toEqual([["body", { x: 0, y: 5, z: 0 }, 1]]);
   });
 });

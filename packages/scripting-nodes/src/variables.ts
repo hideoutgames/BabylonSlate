@@ -6,6 +6,7 @@ import {
   pinTypeForVariable,
 } from "@babylonslate/scripting";
 import { localVariableIdent } from "./member-pins";
+import { subject } from "./self-pin";
 
 function variablePinType(properties: Record<string, unknown>) {
   return pinTypeForVariable({
@@ -37,32 +38,22 @@ function variableNameOf(properties: Record<string, unknown>): string {
     : "Value";
 }
 
+/** A variable of the graph's own class has no Target: it is Self. Another class's needs an object. */
 function targetPins(properties: Record<string, unknown>) {
   if (properties.implicitSelf === true) return [];
   const classId =
     typeof properties.classId === "string" && properties.classId.trim()
       ? properties.classId.trim()
       : "BObject";
-  return [pin("target", "target", "in", objectRef(classId))];
-}
-
-function targetConnected(
-  ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
-): boolean {
-  const targetPin = ctx.node.pins.find(
-    (entry) => entry.id === "target" && entry.direction === "in",
-  );
-  if (!targetPin) return false;
-  return ctx.isWired(targetPin.id);
+  return [subject(pin("target", "target", "in", objectRef(classId)))];
 }
 
 function usesImplicitSelf(
   ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
 ): boolean {
-  const hasTarget = ctx.node.pins.some(
+  return !ctx.node.pins.some(
     (entry) => entry.id === "target" && entry.direction === "in",
   );
-  return !hasTarget || (!targetConnected(ctx) && ctx.node.properties.implicitSelf === true);
 }
 
 function storeKeyOf(properties: Record<string, unknown>, name: string): string {
@@ -89,7 +80,6 @@ function memberGetExpr(
 export const variableNodes: NodeDefinition[] = [
   {
     id: "variables.get",
-    implicitSelfTarget: true,
     title: "Get Variable",
     category: "variables",
     pure: true,
@@ -117,7 +107,6 @@ export const variableNodes: NodeDefinition[] = [
   },
   {
     id: "variables.set",
-    implicitSelfTarget: true,
     title: "Set Variable",
     category: "variables",
     pins: (properties) => {
@@ -157,7 +146,6 @@ export const variableNodes: NodeDefinition[] = [
   },
   {
     id: "variables.getValidated",
-    implicitSelfTarget: true,
     title: "Validated Get",
     category: "variables",
     pins: (properties) => {
