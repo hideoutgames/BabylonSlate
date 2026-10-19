@@ -4,7 +4,7 @@ Play mode has tools to pause and step the game, watch performance, inspect live 
 
 ## The Play toolbar
 
-While the game runs, the toolbar at the top right of the game view has:
+While the game runs, the toolbar at the top right of the game view has these buttons. Hover or long-press one to see its name.
 
 | Control | Use |
 | --- | --- |
@@ -20,13 +20,28 @@ While the game runs, the toolbar at the top right of the game view has:
 
 The **Debug** menu next to **Play** decides which controls appear. Set it before pressing Play: the menu is out of reach while the game covers the editor.
 
-| Group | Item | Default |
-| --- | --- | --- |
-| Play Overlay | Stats | On |
-| Play Overlay | Console, Inspector, Profiler | Off |
-| Session | Pause On Play | Off. Starts the game paused, ready for **Step**. |
-| Session | Preview Build | Off. Plays a packaged build instead. See [Preview Build](../publishing/preview-build.md). |
-| Session | Play from Scene | On. Starts from the open scene; off starts from the project's Startup Scene. |
+| Item | Default |
+| --- | --- |
+| **Play Mode** | **Play**. **Preview Build** plays a packaged build instead ([Preview Build](../publishing/preview-build.md)); **Simulate** runs the open scene inside the editor viewport. The **Play** button shows the mode you chose, and Haptic remembers it. |
+| **Start In Open Scene** | On. Starts from the open scene; off starts from the project's Startup Scene. Simulate always uses the open scene. |
+| **Start Paused** | Off. Starts the game paused, ready for **Step**. |
+| **Overlays** > **Stats** | On |
+| **Overlays** > **Console**, **Inspector**, **Profiler** | Off |
+
+**Simulate** needs an open world scene. Whether its changes are kept when you stop is set by **Keep Simulation Changes** in **Engine Settings > Debugger**.
+
+## Simulate controls
+
+While a Simulation runs, its controls sit in the toolbar where **Simulate** was:
+
+| Control | Does |
+| --- | --- |
+| **Pause** / **Resume** | Freezes gameplay so you can inspect values that would otherwise keep changing. |
+| **Stop** (red) | Ends the Simulation. Its tooltip says whether your changes are kept or discarded. |
+| **Game** / **Edit** | **Game** sends keys, touch and the mouse to the game. **Edit** lets you select, inspect and move runtime objects with the **Move**, **Rotate** and **Scale** tools in the viewport. Clicking outside the game, or pressing Esc or Tab, also switches to **Edit**. |
+| **Return To Scene** | Appears when another tab is open, and brings the simulated scene back. |
+
+The editor camera you move in **Edit** does not change the game camera. Authored documents stay read-only until you stop.
 
 ## Stats
 

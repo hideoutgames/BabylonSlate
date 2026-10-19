@@ -39,7 +39,8 @@ Editor and launcher theme tokens, semantic color families, density, canvas and o
 
 - Compose chrome from `@babylonslate/ui` (shadcn) and `@babylonslate/editor-kit`. No raw styled `<input>`, `<select>` or `<button>` in `apps/editor/src`.
 - `outline` buttons for visible actions and for the trigger of an irreversible confirm; `ghost` for tabs, menu items and icon-only close; solid `destructive` only for the confirm inside a danger `AlertDialog` (`AlertDialogContent variant="destructive"`).
-- Exclusive tools use `Toggle` / `ToggleGroup` outline with accent fill + primary border + `aria-pressed`. Selected rows use a whole-row fill; no edge stripes or inset underlines.
+- Exclusive tools use `Toggle` / `ToggleGroup` outline with accent fill + primary border + `aria-pressed`. Inside a `.toolbar-island` the pressed tool instead takes the `--selection` orange (#ff8000, the viewport selection colour) as a tinted fill and text, and mode switches (`toolbar-island-segmented`) take a neutral fill. Selected rows use a whole-row fill; no edge stripes or inset underlines.
+- Large icons (asset tiles, catalog cards, project cards) draw at multiples of Lucide's 24-unit grid with whole-pixel line widths (48px with 1-unit lines, 24px with 2), so lines never straddle pixels and read as a faint outline.
 - Icon-only controls always have `aria-label`; tooltips are never the only way to discover an action.
 - Docked panels omit `PanelFrame` titles when Dockview already shows the tab name.
 - Large dialogs use `editor-dialog-large`; small prompts stay content-sized. Headers and actions stay outside scrolling bodies.
@@ -49,7 +50,7 @@ Editor and launcher theme tokens, semantic color families, density, canvas and o
 - Pins (`--pin-*`): arrays use the element color, maps the value color; resolved wildcards paint the connected type; `--pin-wildcard` when unbound.
 - Node title roles (`--node-*`) cover events, call parent, functions, pure, flow, variables, latent, debug, Development/Editor Only tape and Behaviour Tree roles. Particle stages map onto node roles through `PARTICLE_STAGE_ROLE` so Basic Emitter and Particle Graph agree.
 - Asset kinds (`--asset-*`) are at least 25° apart in hue; tiles tint only the thumbnail well border. Unknown types use a file glyph and `--muted-foreground`.
-- Status: `--destructive`, `--success`, `--warning`, `--play` / `--play-foreground`. Trace uses `--trace-*`.
+- Status: `--destructive`, `--success`, `--warning`, `--play` / `--play-foreground`, and `--stop` / `--stop-foreground` for the chrome Stop that replaces Simulate while a Simulation runs. Trace uses `--trace-*`.
 - Axes: `--axis-x` = destructive, `--axis-y` = success, `--axis-z` an independent blue (not `--primary`, which is ink). Babylon gizmos cannot read CSS, so `GIZMO_AXIS_COLORS` in [`gizmo-host.ts`](../../../packages/render/src/gizmo-host.ts) hardcodes matching `Color3`s; keep them in sync.
 
 ## Brand assets

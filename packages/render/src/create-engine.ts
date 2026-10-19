@@ -2715,10 +2715,11 @@ function initializeEngine(
     }) : null;
     admissionPreparationMs = 0;
     let coherentFrame = true;
-    // Water created or enabled since the last update (an editor edit or drop, a Play spawn) settles before the world's
-    // strict probes below request its variants.
-    settleSceneWater(scene);
     beginEngineDrawCallFrame(engine);
+    // Water created or enabled since the last update (an editor edit or drop, a Play spawn) settles before the world's
+    // strict probes below request its variants, and counts in this frame's draw calls. A load frame that draws no world
+    // leaves it to the load's own settle, so spawn batches arriving over frames never settle partial sets.
+    if (!worldLoading || pendingPresentations.has("world")) settleSceneWater(scene);
     if (rttPresent) rttPresent.bind();
     if (!options.playMode) {
       updateSceneTilemapAnimations(scene, frameStart - tilemapPreviewStart);
@@ -4226,8 +4227,9 @@ function initializeEngine(
       let resolve!: () => void;
       let reject!: (error: Error) => void;
       const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
-      // Pipelines the first draws request can still be building on the driver,
-      // which reports completion only; renew the budget while it makes progress.
+      // The first draws' readiness probes can still be linking (one at a time
+      // where links are synchronous) or building on a parallel-compile driver,
+      // which reports completion only; renew the budget while shaders progress.
       const compiles = new DriverCompileWatch(engine);
       const expire = () => {
         const waiting = pendingPresentations.get(key);

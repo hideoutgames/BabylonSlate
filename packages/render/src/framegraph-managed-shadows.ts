@@ -13,6 +13,7 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import type { FrameGraphShadowGeneratorTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/shadowGeneratorTask";
 import { findSceneShadowController } from "./shadow-controller";
+import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { configureCutoutSorting } from "./sorting";
@@ -94,21 +95,49 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
     shadowEnabled: boolean;
   }> = [];
 
+  /** Meshes this pass probed ahead of its readiness scan since it was last ready (`requestCompilesAhead`). */
+  private readonly requestedAhead = new Set<AbstractMesh>();
+
+  /** Forget the meshes probed ahead, so the next scan probes them ahead again: after a readiness invalidation. */
+  forgetCompilesAhead(): void {
+    this.requestedAhead.clear();
+  }
+
   override isReady(): boolean {
     const previous = this._renderer.customIsReadyFunction;
+    const engine = this._frameGraph.engine;
+    const depthReady = (mesh: AbstractMesh) => this._renderer.disableDepthPrePass || this.depthPrePass.isReady(mesh);
+    // Every variant this pass draws `mesh` with, the depth pre-pass even while the colour variant is unready.
+    const probeAhead = (mesh: AbstractMesh, rate: number, preWarm?: boolean) => {
+      if (previous && !previous(mesh, rate, preWarm)) return false;
+      if (this.neverDraws?.(mesh) === true) return true;
+      const colour = isMeshFrameReady(mesh);
+      return depthReady(mesh) && colour;
+    };
     try {
       // Only override the readiness probe. Actual rendering keeps the official
       // renderer's readiness/cache behavior and any existing custom callback.
-      this._renderer.customIsReadyFunction = (mesh, rate, preWarm) =>
-        (!previous || previous(mesh, rate, preWarm)) && (this.neverDraws?.(mesh) === true ||
-          isMeshFrameReady(mesh) && (this._renderer.disableDepthPrePass || this.depthPrePass.isReady(mesh)));
-      return super.isReady();
+      this._renderer.customIsReadyFunction = (mesh, rate, preWarm) => {
+        if (previous && !previous(mesh, rate, preWarm)) return false;
+        if (this.neverDraws?.(mesh) === true) return true;
+        const colour = isMeshFrameReady(mesh);
+        if (colour && depthReady(mesh)) return true;
+        // The scan stops here. A parallel-compile driver links this mesh's depth pre-pass, which an unready colour
+        // variant holds back, and the next meshes' variants meanwhile.
+        requestCompilesAhead(engine, readinessScanMeshes(this._renderer, this._frameGraph.scene), mesh, this.requestedAhead,
+          (other) => probeAhead(other, rate, preWarm), colour ? undefined : depthReady);
+        return false;
+      };
+      const ready = super.isReady();
+      if (ready) this.requestedAhead.clear();
+      return ready;
     } finally {
       this._renderer.customIsReadyFunction = previous;
     }
   }
 
   override dispose(): void {
+    this.requestedAhead.clear();
     this.depthPrePass.dispose();
     super.dispose();
   }

@@ -4,7 +4,7 @@ The console runs commands that change quality, control time, show debug views an
 
 ## Open the console
 
-- **Play:** turn on **Debug > Play Overlay > Console** before you play, then tap **Console** in the Play toolbar.
+- **Play:** turn on **Debug > Overlays > Console** before you play, then tap **Console** in the Play toolbar.
 - **Preview Build:** with the same Debug menu item on, tap **Console** over the game.
 - **Any graph:** [Execute Console Command](../scripting/class/execute-console-command.md) runs a command line and returns its **Success** and **Output**.
 

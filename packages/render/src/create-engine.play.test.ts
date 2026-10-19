@@ -54,7 +54,7 @@ import * as presentation from "./presented-frame";
 import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
-import { createWaterMesh } from "./water-mesh";
+import * as waterMesh from "./water-mesh";
 import type { WaterVariantRequest } from "./water-material";
 
 const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
@@ -535,9 +535,9 @@ describe("Play createEngine view", () => {
   it("compiles blending water bodies' variants once, with Blend, before the first frame's update", async () => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);
-    createWaterMesh(handle.scene, "west", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }));
+    waterMesh.createWaterMesh(handle.scene, "west", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }));
     // Within the blend distance of the first body: both blend once the water update has seen them.
-    createWaterMesh(handle.scene, "east", normalizeWaterBody({ width: 24, length: 24, resolution: 24 })).position.set(16, 0.5, 0);
+    waterMesh.createWaterMesh(handle.scene, "east", normalizeWaterBody({ width: 24, length: 24, resolution: 24 })).position.set(16, 0.5, 0);
     const compiled = () => compiledWater(engine);
     await handle.prewarmSceneMaterials();
     const afterLoad = compiled();
@@ -584,10 +584,16 @@ describe("Play createEngine view", () => {
     return requests;
   }
 
-  /** The new body's variants differ from every compiled one, so a request without Blend would be a compile nothing draws. */
+  /**
+   * The new body's variants differ from every compiled one, so a request without Blend would be a compile nothing draws,
+   * and a pass asked twice for one body's variant would compile twice.
+   */
   function expectEveryRequestBlends(requests: readonly WaterVariantRequest[]): void {
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.filter((request) => !request.blend).map((request) => request.mesh)).toEqual([]);
+    const perPass = new Map<string, number>();
+    for (const request of requests) perPass.set(`${request.mesh}|${request.pass}`, (perPass.get(`${request.mesh}|${request.pass}`) ?? 0) + 1);
+    expect([...perPass].filter(([, count]) => count > 1).map(([key]) => key)).toEqual([]);
   }
 
   it("compiles a water body added beside another once, with Blend, though no prewarm runs", async () => {
@@ -613,7 +619,8 @@ describe("Play createEngine view", () => {
     expectEveryRequestBlends(requests);
   });
 
-  // A fog volume in the stream makes publication wait for the graph's preparation, which probes before any frame runs.
+  // Without a fog volume the render loop's settle covers the published water; with one, publication waits for the graph's
+  // preparation, which probes before any frame runs, so the handler's own settle after publication is what counts.
   it.each([false, true])("compiles a streamed water body once, with Blend, beside a settled one (fog volume: %s)", async (fog) => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);
@@ -648,6 +655,29 @@ describe("Play createEngine view", () => {
       await settleFrames(engine);
     });
     expectEveryRequestBlends(requests);
+  });
+
+  it("leaves water that spawns while the world loads to the load's own settle, not to the frames that only draw a layer", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    handle.applyCommand({ type: "sceneLayerLoading", layerId: "global", layerLoadId: 1, assetGuid: "overlay" });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "global", assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, postProcessStack: [] });
+    const layer = engine.scenes.at(-1)!;
+    await handle.prewarmSceneMaterials({ layerId: "global", layerLoadId: 1 });
+    const layerFrames = vi.fn();
+    layer.onAfterRenderObservable.add(layerFrames);
+    const release = handle.scheduler.acquireObstruction();
+    handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 2 });
+    const first = handle.presentFirstFrame({ layerId: "global", layerLoadId: 1 });
+    // Spawn batches keep arriving while the loading world draws nothing; the ready layer keeps drawing meanwhile.
+    waterMesh.createWaterMesh(handle.scene, "lake", normalizeWaterBody({ width: 8, length: 8, resolution: 8 }));
+    const settle = vi.spyOn(waterMesh, "settleSceneWater");
+    renderViews(engine);
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await first;
+    expect(layerFrames).toHaveBeenCalledTimes(1);
+    expect(settle).not.toHaveBeenCalled();
+    release();
   });
 
   function renderViews(engine: NullEngine) {

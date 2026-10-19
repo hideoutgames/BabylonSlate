@@ -31,8 +31,9 @@ import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
-import { DriverCompileWatch } from "./driver-compile";
-import { SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
+import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
+import { LogicalGeometryTask } from "./framegraph-logical-buffers";
+import { SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
 import { isManagedClusteredLight } from "./clustered-light-policy";
 import { whenPresentationFenceClear } from "./presented-frame";
@@ -86,6 +87,10 @@ export type ForwardSceneGraphReadiness = ForwardSceneGraphResult & {
    * readiness failure on an already prepared path only needs another probe. */
   preparationRequired?: true;
 };
+/** Bound on the readiness loop without readiness or compile progress (`DriverCompileWatch`). */
+const READINESS_STALL_MS = 10_000;
+/** Babylon 9.29 keeps private the render context whose copy effects FrameGraph.isReady checks first. */
+type FrameGraphContextInternals = { _renderContext?: { _isReady?: () => boolean } };
 const outlineAttachments = new WeakMap<SharedOutlineView, ForwardSceneFrameGraph>();
 /** Readiness-relevant collection sizes, compared in place each frame. */
 const membershipCounts: readonly ((scene: Scene) => number)[] = [
@@ -407,6 +412,9 @@ export class ForwardSceneFrameGraph {
   markReadinessDirty(): void {
     this.readinessDirtyFlag = true;
     this.readinessRevision += 1;
+    // A changed input can change the variants of meshes already probed ahead: their passes probe them ahead again.
+    for (const task of this.graph?.tasks ?? [])
+      if (task instanceof ManagedShadowObjectRendererTask || task instanceof LogicalGeometryTask) task.forgetCompilesAhead();
   }
 
   private markOutlineDirty(): void {
@@ -1068,7 +1076,7 @@ export class ForwardSceneFrameGraph {
         this.commitOwnSceneTargets();
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
-      let deadline = performance.now() + 10_000;
+      let deadline = performance.now() + READINESS_STALL_MS;
       const compiles = new DriverCompileWatch(scene.getEngine());
       let creditLeft = SCENE_THREAD_HELD_BUDGET_MS;
       for (;;) {
@@ -1077,9 +1085,10 @@ export class ForwardSceneFrameGraph {
         deadline += await whenPresentationFenceClear(scene.getEngine(), assertCurrent);
         const probeStart = performance.now();
         const ready = this.disposed || this.isReady();
-        // Without parallel shader compile the probe links every effect before it
-        // returns: the time inside it is compiling, not waiting. It extends the
-        // bound up to a budget, so a scene that never becomes ready still fails.
+        // Where links are synchronous (SwiftShader, WebKit WebGL2) the probe links
+        // every effect before it returns: the time inside it is compiling, not
+        // waiting. It extends the bound up to a budget, so a scene that never
+        // becomes ready still fails.
         const grant = Math.min(performance.now() - probeStart, creditLeft);
         creditLeft -= grant;
         deadline += grant;
@@ -1088,10 +1097,16 @@ export class ForwardSceneFrameGraph {
         // A failed shader never becomes ready; report it instead of timing out.
         const compileFailure = this.effectsGraph?.spatial?.compileFailure.message ?? this.outlineTask?.compileFailure.message;
         if (compileFailure) throw new Error(compileFailure);
-        if (performance.now() >= deadline) {
-          // A driver still compiling reports completion only, never progress.
-          if (!compiles.renew()) throw new Error("Forward FrameGraph readiness timed out.");
-          deadline = performance.now() + 10_000;
+        const now = performance.now();
+        if (now >= deadline || now >= compiles.ceiling) {
+          // Shaders that finished compiling since the last renewal, or a driver
+          // still compiling (it reports completion only), renew the bound.
+          if (!compiles.renew(now)) {
+            const limit = now >= compiles.ceiling
+              ? `its ${SCENE_PREPARATION_CEILING_MS / 1000} s limit` : `${READINESS_STALL_MS / 1000} s without progress`;
+            throw new Error(`Forward FrameGraph readiness timed out after ${limit}. ${compiles.describe()}`);
+          }
+          deadline = now + READINESS_STALL_MS;
         }
         await new Promise<void>((resolve) => setTimeout(resolve, 16));
       }
@@ -1179,8 +1194,8 @@ export class ForwardSceneFrameGraph {
       this.preparedWaterDemand === waterSceneCopyDemand(this.scene, camera);
   }
 
-  /** The volumetric march bakes the lights nearest the camera, with their shadow samplers, into its slots. Only a
-   * march that runs re-plans for other lights: an idle one binds none, so passing lights never rebuild it. */
+  /** The volumetric march bakes the shadow sampler shapes of the lights nearest the camera into its slots, and binds
+   * whichever lights are nearest by shape. Only a march that runs re-plans for other shapes: an idle one binds none. */
   private volumetricMatches(camera: Camera): boolean {
     const built = this.effectsGraph?.spatial?.volumetricLayout;
     return built === undefined || volumetricLayoutCurrent(this.scene, camera, built);
@@ -1244,7 +1259,7 @@ export class ForwardSceneFrameGraph {
         const sources = this.outlineView?.sourceRevision ?? 0;
         // An auxiliary view's own passes are its readiness; the scene view gates the scene.
         const cameraReady = this.auxiliary || isSceneFrameReady(this.scene, [], this.water && this.skipCopyWater);
-        const ready = this.graph!.isReady() && cameraReady;
+        const ready = this.graphReady() && cameraReady;
         // A mask admitting an instance source late dirties attributes that the
         // earlier probes already accepted; the next probe sees the final state.
         return ready && (this.outlineView?.sourceRevision ?? 0) === sources;
@@ -1263,6 +1278,28 @@ export class ForwardSceneFrameGraph {
       this.probeLights = probeLights;
       this.probeFlags = probeFlags;
     }
+  }
+
+  /**
+   * Babylon 9.29's FrameGraph.isReady: its render context's copy effects, then
+   * each task in order. Babylon stops at the first unready task, so a pass would
+   * start linking only once every earlier pass is ready; while the compile-ahead
+   * budget lasts (parallel-compile drivers only), the later tasks are probed too,
+   * and their own scans request ahead in turn. Only the in-order result counts.
+   */
+  private graphReady(): boolean {
+    const graph = this.graph!;
+    const engine = this.scene.getEngine();
+    const context = (graph as unknown as FrameGraphContextInternals)._renderContext;
+    if (typeof context?._isReady !== "function")
+      throw new Error("Unsupported Babylon frame graph readiness layout: _renderContext._isReady is missing.");
+    let ready = context._isReady();
+    for (const task of graph.tasks) {
+      if (ready) ready = task.isReady();
+      else if (compileAheadBudget(engine) > 0) task.isReady();
+      else break;
+    }
+    return ready;
   }
 
   /** Re-probe what the pending invalidations stale: the whole graph, or only the outline task. */

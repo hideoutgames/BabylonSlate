@@ -907,6 +907,49 @@ describe("TreeView", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("does not drag a row marked draggable false", () => {
+    const onExternalDrop = vi.fn();
+    const onExternalDragMove = vi.fn();
+    render(
+      <TreeView
+        nodes={nodes.map((node) =>
+          node.id === "child" ? { ...node, draggable: false } : node,
+        )}
+        onExternalDrop={onExternalDrop}
+        onExternalDragMove={onExternalDragMove}
+        data-testid="tree"
+      />,
+    );
+    const tree = screen.getByTestId("tree");
+    tree.getBoundingClientRect = () =>
+      ({
+        top: 0,
+        left: 0,
+        right: 200,
+        bottom: 84,
+        width: 200,
+        height: 84,
+      }) as DOMRect;
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 40,
+    });
+    dispatchPointerEvent(row, "pointermove", {
+      pointerType: "mouse",
+      clientX: 260,
+      clientY: 180,
+    });
+    dispatchPointerEvent(row, "pointerup", {
+      pointerType: "mouse",
+      clientX: 260,
+      clientY: 180,
+    });
+    expect(onExternalDragMove).not.toHaveBeenCalled();
+    expect(onExternalDrop).not.toHaveBeenCalled();
+  });
+
   it("still external-drops after a horizontal move that would swipe-add", () => {
     const onExternalDrop = vi.fn();
     const onSelect = vi.fn();

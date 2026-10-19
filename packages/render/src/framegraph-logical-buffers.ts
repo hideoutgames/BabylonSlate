@@ -1,8 +1,9 @@
 import type { FrameGraphGeometryRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/geometryRendererTask";
-import { Color4, Constants, type EngineCapabilities } from "@babylonjs/core";
+import { Color4, Constants, type AbstractMesh, type EngineCapabilities } from "@babylonjs/core";
 import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
 import type { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPass";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
+import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { LightNeutralGeometryRendererTask } from "./light-neutral-tasks";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 
@@ -52,15 +53,37 @@ export class LogicalGeometryTask extends LightNeutralGeometryRendererTask {
     return layout;
   }
 
+  /** Meshes this pass probed ahead of its readiness scan since it was last ready (`requestCompilesAhead`). */
+  private readonly requestedAhead = new Set<AbstractMesh>();
+
+  /**
+   * Forget the meshes probed ahead, so the next scan probes them ahead again
+   * and the pass keeps none alive: after a readiness invalidation, or when the
+   * owner drops its object list.
+   */
+  forgetCompilesAhead(): void {
+    this.requestedAhead.clear();
+  }
+
   override isReady(): boolean {
     const ready = this.objectRenderer.customIsReadyFunction;
     // Native default refreshRate=1 probes only geometry, not its material.
     // Probe the actual MRT variant before the graph can acknowledge readiness.
-    this.objectRenderer.customIsReadyFunction = (mesh, _rate, prewarm) =>
+    const probe = (mesh: AbstractMesh, prewarm?: boolean) =>
       this.dontRenderWhenMaterialDepthWriteIsDisabled && mesh.material?.disableDepthWrite
         ? !!prewarm : isMeshFrameReady(mesh);
-    try { return withSceneReadinessState(this._frameGraph.scene, () => super.isReady()); }
-    finally { this.objectRenderer.customIsReadyFunction = ready; }
+    this.objectRenderer.customIsReadyFunction = (mesh, _rate, prewarm) => {
+      if (probe(mesh, prewarm)) return true;
+      // The scan stops here; a parallel-compile driver links the next meshes' variants meanwhile.
+      requestCompilesAhead(this._frameGraph.engine, readinessScanMeshes(this.objectRenderer, this._frameGraph.scene), mesh,
+        this.requestedAhead, (other) => probe(other, prewarm));
+      return false;
+    };
+    try {
+      const done = withSceneReadinessState(this._frameGraph.scene, () => super.isReady());
+      if (done) this.requestedAhead.clear();
+      return done;
+    } finally { this.objectRenderer.customIsReadyFunction = ready; }
   }
 
   protected override _checkTextureCompatibility(targets: FrameGraphTextureHandle[]): boolean {

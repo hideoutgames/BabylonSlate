@@ -52,6 +52,21 @@ describe("componentGraphMembers", () => {
     expect(members.map((member) => member.name)).toEqual(["3D Text", "3D Text 3", "3D Text 2"]);
   });
 
+  it("files variables under Components unless the component sets a category", () => {
+    const members = componentGraphMembers({
+      components: [
+        createMeshComponent("prefab-mesh", "box"),
+        { ...createText3DComponent("text-1"), category: "UI|Labels" },
+        { ...createText3DComponent("text-2"), category: "" },
+      ],
+    });
+    expect(members.map((member) => member.category)).toEqual([
+      "Components",
+      "UI|Labels",
+      undefined,
+    ]);
+  });
+
   it("drops a variable when the component is removed", () => {
     const withText = componentGraphMembers({
       components: [

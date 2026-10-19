@@ -4,7 +4,7 @@ Record frame and tick timings, capture the render stages of one frame, and recor
 
 ## Open the Profiler
 
-1. Turn on **Debug > Play Overlay > Profiler** before you play.
+1. Turn on **Debug > Overlays > Profiler** before you play.
 2. Press **Play**, or run a [Preview Build](../publishing/preview-build.md).
 3. Tap **Profiler** in the toolbar over the game.
 

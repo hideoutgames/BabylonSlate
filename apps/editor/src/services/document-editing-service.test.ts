@@ -209,6 +209,42 @@ describe("DocumentEditingService", () => {
     } finally { sourceControl.dispose(); }
   });
 
+  it("leaves a Scene, its Undo history and Auto-Save alone when its instances differ from the Class only by key order", async () => {
+    const saves = vi.fn();
+    const { documents, editSession, editing, open } = createEditing({ scheduleDebouncedSave: saves });
+    const classPath = "assets/Hero.class.babasset";
+    const properties = { speed: 2, tint: { r: 1, g: 0.5, b: 0 }, mode: "walk" };
+    const sprite: SerializedComponent = {
+      id: "component-sprite", classId: "SpriteComponent", properties, parentId: null,
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+    };
+    await open({ kind: "graph", path: classPath, label: "Hero" }, { nodes: [], edges: [], components: [sprite] });
+    // The same row as sync writes it, with every object's keys in another order.
+    const instanceRow: SerializedComponent = {
+      sourceId: sprite.id,
+      transform: { scale: [1, 1, 1], rotation: [0, 0, 0, 1], position: [0, 0, 0] },
+      parentId: null,
+      properties: { mode: "walk", tint: { b: 0, g: 0.5, r: 1 }, speed: 2 },
+      classId: "SpriteComponent",
+      id: "hero-SpriteComponent-1",
+    };
+    const instance = { ...createActor("hero", "Hero", { classId: classIdForGraphPath(classPath) }), components: [instanceRow] };
+    const sceneId = await open(
+      { kind: "scene", path: "assets/Level.scene.babasset", label: "Level" },
+      { ...createDefaultScene("2d"), actors: [instance] },
+    );
+    const edited = { ...(documents.getDocument(sceneId)!.content as SerializedScene), name: "Edited" };
+    expect(await editing.applySceneChange(sceneId, edited)).toBe(true);
+    const opened = documents.getDocument(sceneId)!.content;
+    saves.mockClear();
+
+    await editing.syncPrefabInstances({ quiet: true });
+
+    expect(documents.getDocument(sceneId)!.content).toBe(opened);
+    expect(editSession.getStack(sceneId).canUndo).toBe(true);
+    expect(saves).not.toHaveBeenCalled();
+  });
+
   it("keeps the Scene, dirty state and history when a Simulation result exceeds the Undo memory limit", async () => {
     const { documents, editSession, editing, open, journaled } = createEditing({ maxBytes: 1_024 });
     await open(SCENE_REF, createDefaultScene("2d"));

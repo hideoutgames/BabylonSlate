@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { StatsHud } from "./stats-hud";
 
@@ -32,18 +32,11 @@ function renderChrome(
 }
 
 describe("PlayOverlayChrome", () => {
-  it("keeps Stop usable during Simulation pause acknowledgment and exposes Return To Game without Step", () => {
-    const onInputModeChange = vi.fn();
-    const onClose = vi.fn();
-    const { getByTestId, queryByTestId } = renderChrome({
-      paused: true, pausePending: true, onClose,
-      simulation: { inputMode: "edit", inputPending: false, onInputModeChange },
-    });
-    expect((getByTestId("play-overlay-pause") as HTMLButtonElement).disabled).toBe(true);
+  it("leaves Pause, Step and Stop to the global toolbar during Simulation", () => {
+    const { getByTestId, queryByTestId } = renderChrome({ paused: true, simulating: true, onStep: vi.fn() });
+    expect(queryByTestId("play-overlay-pause")).toBeNull();
     expect(queryByTestId("play-overlay-step")).toBeNull();
-    fireEvent.click(getByTestId("simulation-input-mode"));
-    expect(onInputModeChange).toHaveBeenCalledWith("game");
-    fireEvent.click(getByTestId("play-overlay-close"));
-    expect(onClose).toHaveBeenCalledOnce();
+    expect(queryByTestId("play-overlay-close")).toBeNull();
+    expect(getByTestId("play-stats-toggle")).toBeTruthy();
   });
 });

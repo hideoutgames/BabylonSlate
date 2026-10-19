@@ -289,11 +289,12 @@ function sceneWaterTime(scene: Scene): number {
  * shader clock and keeps its grid and bounds current. Surfaces neither drawn last frame nor inside an active camera's
  * frustum skip their CPU vertex work (Custom Material water), their terrain and contact refreshes and their FFT detail
  * request until they are; the FFT simulations then update once for the whole scene. An editor-time clock advances by
- * the last frame's time (at most 0.1 s) unless `advanceClock` is false.
+ * the last frame's time (at most 0.1 s). An `early` run (`settleSceneWater`) precedes the frame's own: it leaves the
+ * clock and each surface's drawn flag, which the frame's own run consumes, to it.
  */
-export function updateSceneWater(scene: Scene, advanceClock = true): void {
+export function updateSceneWater(scene: Scene, early = false): void {
   const clock = sceneClock(scene);
-  if (advanceClock && !clock.runtime && !isSceneGameTimePaused(scene)) clock.time += Math.min(0.1, scene.getEngine().getDeltaTime() / 1000 || 0);
+  if (!early && !clock.runtime && !isSceneGameTimePaused(scene)) clock.time += Math.min(0.1, scene.getEngine().getDeltaTime() / 1000 || 0);
   const time = sceneWaterTime(scene);
   reflections.get(scene)?.sync();
   const entries = surfaces.get(scene);
@@ -326,7 +327,9 @@ export function updateSceneWater(scene: Scene, advanceClock = true): void {
       surface.released = false; surface.field?.restore(); surface.contacts?.restore(now);
     }
     const active = surface.drawn || inActiveView(scene, surface.mesh);
-    surface.drawn = false;
+    // Water drawn only by another pass (a capture, a planar reflection) and outside the active frusta keeps its CPU work
+    // running in the frame's own run, which an early run must not use up.
+    if (!early) surface.drawn = false;
     if (!active) continue;
     animateSurface(surface, time);
     // Waves never rebake either field: the shader reads contacts at each fragment's rendered height.
@@ -347,15 +350,16 @@ function waterUnsettled(scene: Scene): boolean {
 }
 
 /**
- * Runs the water update ahead of the frame's strict readiness probes, without advancing the clock, so a surface's blend,
- * placement (`flat`), enablement and the sky reflection view are final when its variants are first requested. The
- * before-render update runs after those probes, and every define it then changes compiles another variant. Copy intent
- * is counted when the surface is created and re-synced only when its enablement changes. Idempotent with the
- * before-render update. Without `force` it does nothing unless a surface was created or its enablement changed since the
- * last update (an editor edit or drop, a Play spawn, a published scene stream); a load forces it.
+ * Runs the water update ahead of the frame's strict readiness probes (an `early` run: it leaves the clock and the drawn
+ * flags to the frame's own run), so a surface's blend, placement (`flat`), enablement and the sky reflection view are
+ * final when its variants are first requested. The before-render update runs after those probes, and every define it
+ * then changes compiles another variant. Copy intent is counted when the surface is created and re-synced only when its
+ * enablement changes (or, for an edited asset, by `updateWaterMeshDefinition`). Idempotent with the before-render
+ * update. Without `force` it does nothing unless a surface was created or its enablement changed since the last update
+ * (an editor edit or drop, a Play spawn, a published scene stream); a load forces it.
  */
 export function settleSceneWater(scene: Scene, force = false): void {
-  if (force || waterUnsettled(scene)) updateSceneWater(scene, false);
+  if (force || waterUnsettled(scene)) updateSceneWater(scene, true);
 }
 
 const blendPosition = new Vector3(), blendScaling = new Vector3(), blendRotation = new Quaternion();

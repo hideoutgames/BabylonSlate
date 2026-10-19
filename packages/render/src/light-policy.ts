@@ -14,6 +14,7 @@ import {
   isManagedClusteredLight,
 } from "./clustered-light-policy";
 import {
+  canonicalizeForwardLightSlots,
   exchangeForwardLightSlots,
   NO_FORWARD_LIGHT_SLOT_EXCHANGES,
   settleForwardLightSlots,
@@ -228,10 +229,20 @@ export function syncForwardLightPolicy(
             : BudgetChange.Admitted,
       );
     }
-    exchanges = exchangeSlots(scene, lights, authored, budget);
+    const transition = exchangeSlots(scene, lights, authored, budget);
+    exchanges = transition.exchanges;
     for (let index = 0; index < lights.length; index++)
       applyEnabled(lights[index]!, authored[index]!);
     settleForwardLightSlots(scene, exchanges);
+    // Receivers refresh unless every toggle was a preserved exchange; then the
+    // canonical order makes their defines a function of the admitted set.
+    if (
+      transition.leaving + transition.entering > 0 &&
+      (exchanges.length !== transition.leaving ||
+        exchanges.length !== transition.entering ||
+        exchanges.some(({ preserved }) => !preserved))
+    )
+      canonicalizeForwardLightSlots(scene, (light) => isAuthoredLocal(scene, light));
   } finally {
     lights.length = 0;
     authored.length = 0;
@@ -250,6 +261,14 @@ export function syncForwardLightPolicy(
   };
 }
 
+type SlotTransition = {
+  exchanges: readonly ForwardLightSlotExchange[];
+  /** Local lights the budget turns off and on in this sync. */
+  leaving: number;
+  entering: number;
+};
+const NO_SLOT_TRANSITION: SlotTransition = { exchanges: NO_FORWARD_LIGHT_SLOT_EXCHANGES, leaving: 0, entering: 0 };
+
 /**
  * Lights the budget admits this sync take the shader indices of those it
  * drops. Authored Enabled, intensity and parent changes keep Babylon's order.
@@ -259,11 +278,11 @@ function exchangeSlots(
   lights: readonly Light[],
   authored: readonly boolean[],
   budget: readonly BudgetChange[],
-): readonly ForwardLightSlotExchange[] {
+): SlotTransition {
   // Clustered Forward orders lightSources itself; Babylon re-sorts a scene
   // that requires light sorting whenever a light is added or removed.
   if (hasClusteredLightPolicy(scene) || scene.requireLightSorting)
-    return NO_FORWARD_LIGHT_SLOT_EXCHANGES;
+    return NO_SLOT_TRANSITION;
   const leaving = scratchLeaving;
   const entering = scratchEntering;
   try {
@@ -280,9 +299,13 @@ function exchangeSlots(
       else if (budget[index] === BudgetChange.Admitted && !lit && next) entering.push(light);
     }
     // Removal alone keeps every remaining light's relative order.
-    return entering.length
-      ? exchangeForwardLightSlots(scene, leaving, entering)
-      : NO_FORWARD_LIGHT_SLOT_EXCHANGES;
+    return {
+      exchanges: entering.length
+        ? exchangeForwardLightSlots(scene, leaving, entering)
+        : NO_FORWARD_LIGHT_SLOT_EXCHANGES,
+      leaving: leaving.length,
+      entering: entering.length,
+    };
   } finally {
     leaving.length = 0;
     entering.length = 0;

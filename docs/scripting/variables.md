@@ -47,7 +47,7 @@ Work with containers through the **Array** and **Map** nodes, such as [Array Get
 
 ## Component variables
 
-In an actor class, every component also appears in the **Class** window as a Get-only variable in the **Components** folder. Drag it onto the graph, then drag from its pin to reach that component's settings and functions. See also [Get Component](class/get-component.md).
+In an actor class, every component also appears in the **Class** window as a Get-only variable in the **Components** folder. Select it to change its **Category** in the **Inspector**; clear the field to show it without a folder. Drag it onto the graph, then drag from its pin to reach that component's settings and functions. See also [Get Component](class/get-component.md).
 
 ## Local variables
 
