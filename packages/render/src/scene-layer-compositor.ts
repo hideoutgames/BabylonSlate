@@ -107,6 +107,8 @@ export class SceneLayerCompositor {
   private readonly slotLayer = new Map<number, string>();
   private readonly slotActor = new Map<number, string>();
   private readonly retiredLayers = new PostProcessRetirement();
+  /** Every Scene this compositor built and has not yet disposed: layers, blit Scenes, and retired generations still releasing. */
+  private readonly ownedSceneSet = new Set<Scene>();
   /** Draw order, rebuilt only when layers are created or removed. */
   private sortedCache: LayerRecord[] | null = null;
   private outputWidth = 0;
@@ -121,7 +123,7 @@ export class SceneLayerCompositor {
 
   create(command: SceneLayerCreateCommand): SceneLayerView {
     this.remove(command.layerId);
-    const scene = new Scene(this.engine);
+    const scene = this.ownScene(new Scene(this.engine));
     configureCutoutSorting(scene);
     installEngineDefaultMaterial(scene);
     scene.lightsEnabled = false;
@@ -164,6 +166,17 @@ export class SceneLayerCompositor {
     this.sortedCache = null;
     this.rebuildPostProcess(layer, false);
     return layer;
+  }
+
+  /** Scenes this compositor built that are still alive, retired layer and blit generations included. */
+  ownedScenes(): Scene[] {
+    return [...this.ownedSceneSet];
+  }
+
+  private ownScene(scene: Scene): Scene {
+    this.ownedSceneSet.add(scene);
+    scene.onDisposeObservable.addOnce(() => this.ownedSceneSet.delete(scene));
+    return scene;
   }
 
   remove(layerId: string): void {
@@ -735,7 +748,7 @@ export class SceneLayerCompositor {
   private prepareBlit(layer: LayerRecord): void {
     if (!layer.rtt) return;
     if (!layer.blitScene) {
-      const blitScene = new Scene(this.engine);
+      const blitScene = this.ownScene(new Scene(this.engine));
       blitScene.autoClear = false;
       blitScene.autoClearDepthAndStencil = false;
       blitScene.skipPointerMovePicking = true;
