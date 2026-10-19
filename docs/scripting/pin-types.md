@@ -47,7 +47,7 @@ Haptic has two kinds of wildcard pin:
 A connected reference is used as it is, even when it is empty when the node runs. It never turns into **Self**.
 
 - A node that acts on the object it is given (its **Target**, **Actor**, **Material** or similar input) does nothing when that object is empty, and execution continues. A node that returns a value returns its default instead.
-- Each time this happens the **Output Log** and the Play console show an error such as `Hero: Destroy Actor (Target) tried to access null.`, naming the class the graph belongs to, the node and the pin. It is shown every time the node runs, not only the first.
+- Each time this happens the **Output Log** and the Play console show an error such as `My Hero: Destroy Actor (Target) tried to access null.`, naming the class the graph belongs to as the **Content Browser** lists it, then the node and the pin. It is shown every time the node runs, not only the first.
 - Inputs where an empty value is meaningful do not report it, for example the **Value** of [Set Variable](class/set-variable.md), [Is Valid](class/is-valid.md), the input of [Cast To](class/cast-to.md), the **Owner** of [Set Owner](class/set-owner.md) and the **Parent** of [Attach Actor](class/attach-actor.md).
 
 ## Inline values
