@@ -15,8 +15,8 @@ Select an actor, then choose **Add Component > Rendering > Mesh**. You can also 
 | Material | A Material or Material Instance. With a Model, the default is the Model's own materials. |
 | Collision | **Use Simple Collision**, **Use Complex Collision** or **No Collision**. Default No Collision. 3D physics only. |
 | Layer | The collision layer this mesh is on. Shown when Collision is on. |
-| Collision Preset | A project Collision Preset (default **Default**) or **Custom**; Layer and Collides With are read only unless Custom. Shown when Collision is on. |
-| Collides With | The layers this mesh collides with. Shown when Collision is on. |
+| Collision Preset | A project Collision Preset (default **Default**) or **Custom**; Layer and Collision Responses are read only unless Custom. Shown when Collision is on. |
+| Collision Responses | Ignore, Overlap or Block for every layer. Shown when Collision is on. |
 | Cast Shadows | Casts shadows. Default on. |
 | Receive Shadows | Receives shadows. Default on. |
 

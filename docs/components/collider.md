@@ -21,7 +21,7 @@ A Collider is simulated only on an actor that has a body: a Rigid Body, or a [Me
 | Restitution | Bounciness, 0 to 1. Default 0. |
 | Layer | The collision layer the collider is on. |
 | Collision Preset | A project Collision Preset (default **Default**) or **Custom**. |
-| Collides With | The layers it collides with. Default all. |
+| Collision Responses | Ignore, Overlap or Block for every layer. Default Block. |
 | Is Trigger | Detects overlaps without blocking. Default off. |
 | Render In Game | Draws the shape in Play and exports. Default off. |
 | Transform | Position, rotation and scale of the shape relative to the actor. |
@@ -32,7 +32,7 @@ A Collider is simulated only on an actor that has a body: a Rigid Body, or a [Me
 - The shape kinds depend on the scene's **Physics World**, 3D or 2D. Scene Layers use 2D shapes.
 - A Collider is always drawn as a dashed outline in the editor.
 - A blocking Collider runs [Event On Hit](../scripting/class/event-on-hit.md). A trigger runs [Event On Begin Overlap](../scripting/class/event-on-begin-overlap.md) and [Event On End Overlap](../scripting/class/event-on-end-overlap.md).
-- Name layers in **Project Settings > Physics > Collision Layers** and define presets in **Collision Presets**. Layer and Collides With are read only unless the Collision Preset is Custom. Two colliders collide only if each one's Collides With includes the other's Layer. See [Collision](../physics/collision.md#collision-presets).
+- Name layers in **Project Settings > Physics > Collision Layers** and define presets in **Collision Presets**. Layer and Collision Responses are read only unless the Collision Preset is Custom. Two colliders block each other only when both Block the other's Layer; Overlap on either side makes them overlap instead. See [Collision](../physics/collision.md#collision-presets).
 - An actor can have several Colliders.
 - In 2D, only Box 2D follows the Sprite's collision box. Circle and Capsule 2D keep the size you set. See [Sprites](../2d/sprites.md#collision).
 

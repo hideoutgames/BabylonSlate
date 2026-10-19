@@ -50,7 +50,7 @@ A Ragdoll turns a skinned Model's skeleton into connected physics bodies, starti
 | Angular Limit | 45 | Largest rotation from the captured pose, in degrees. |
 | Linear Damping, Angular Damping | 0.05, 0.3 | Slow the bones down over time. |
 | Friction, Restitution | 0.5, 0 | Surface response of the bones. |
-| Layer, Collides With | Default, all | See [Collision](collision.md). |
+| Layer, Collision Responses | Default, Block all | See [Collision](collision.md). |
 
 While the ragdoll is active:
 

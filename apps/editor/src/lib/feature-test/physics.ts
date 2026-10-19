@@ -112,8 +112,8 @@ export async function placeFeatureTestPhysics(ctx: FeatureTestContext): Promise<
     const collisionPresets = [
       ...DEFAULT_COLLISION_PRESETS,
       { id: "dynamic", name: "Dynamic", layer: LAYER.dynamic, mask: ALL_LAYERS, overlapMask: 0 },
-      // Ghost Pass Ball: a Dynamic body that ignores the Ghost layer.
-      { id: GHOST_PASS_PRESET, name: "Ghost Pass", layer: LAYER.dynamic, mask: (ALL_LAYERS & ~LAYER.ghost) >>> 0, overlapMask: 0 },
+      // Ghost Pass Ball: a Dynamic body that overlaps the Ghost layer instead of blocking it.
+      { id: GHOST_PASS_PRESET, name: "Ghost Pass", layer: LAYER.dynamic, mask: (ALL_LAYERS & ~LAYER.ghost) >>> 0, overlapMask: LAYER.ghost },
     ];
     return { ...settings, physics: { ...settings.physics, collisionLayers, collisionPresets } };
   });
@@ -676,7 +676,7 @@ function placeBodiesZone(ctx: FeatureTestContext, refs: PhysicsRefs, palette: Pa
     body: { linearDamping: 4, angularDamping: 2 },
   }));
 
-  // Collision layers: the Ghost wall blocks the Custom all-layers ball; the Ghost Pass preset ball falls through.
+  // Collision layers: the Ghost wall blocks the Custom all-layers ball; the Ghost Pass preset ball overlaps it and falls through.
   label("layers", 8, 0, "Collision Layers");
   add(rigidActor("ft-phys-ghost-wall", "Ghost Layer Wall", tf(at(8, 1.5, 0)), {
     motion: "static",
