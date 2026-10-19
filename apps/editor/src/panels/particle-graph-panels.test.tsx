@@ -181,7 +181,7 @@ describe("ParticleGraphDetails", () => {
       expect(screen.getByTestId(`property-${id}`)).toBeTruthy();
     }
     // The unit comes verbatim from the catalog pin.
-    expect(screen.getByRole("textbox", { name: "Emit Rate (/s)" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Emit Rate" })).toBeTruthy();
   });
 
   it("stores Capacity up to 4096 with one undo entry per gesture", () => {
@@ -227,8 +227,8 @@ describe("ParticleGraphDetails", () => {
   it("edits a node's unconnected inputs within the pin range, one undo entry per gesture", () => {
     const history = renderDetails(createDefaultParticleGraphDocument("Embers"), "create");
     expect(screen.getByTestId("module-stage-node").textContent).toContain("Create Particle");
-    expect(screen.getByRole("textbox", { name: "Lifetime (s)" })).toBeTruthy();
-    expect(screen.getByRole("textbox", { name: "Angle (rad)" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Lifetime" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Angle" })).toBeTruthy();
     type("property-lifetime", "2");
     type("property-lifetime", "0");
     expect(nodeOf(history.read(), "create").properties["default:lifetime"]).toEqual([0.01]);

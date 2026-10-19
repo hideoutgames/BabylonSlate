@@ -671,7 +671,7 @@ describe("PropertyGrid", () => {
     });
   });
 
-  it("shows units verbatim after the humanized label, beside the label accessory", () => {
+  it("shows short units after the value and long ones after the label, beside the label accessory", () => {
     render(
       <PropertyGrid
         rows={[
@@ -692,13 +692,21 @@ describe("PropertyGrid", () => {
             value: 250,
             onChange: () => {},
           },
+          {
+            kind: "number",
+            id: "span",
+            label: "Span",
+            unit: "scene units",
+            value: 2,
+            onChange: () => {},
+          },
         ]}
       />,
     );
 
-    expect(screen.getByRole("textbox", { name: "Lifetime (s)" })).toBeTruthy();
-    expect(screen.getByRole("textbox", { name: "Duration (ms)" })).toBeTruthy();
-    expect(screen.queryByText(/\(S\)|\(MS\)/)).toBeNull();
+    expect((screen.getByRole("textbox", { name: "Lifetime" }) as HTMLInputElement).value).toBe("1 s");
+    expect((screen.getByRole("textbox", { name: "Duration" }) as HTMLInputElement).value).toBe("250 ms");
+    expect((screen.getByRole("textbox", { name: "Span (scene units)" }) as HTMLInputElement).value).toBe("2");
     expect(
       within(screen.getByTestId("property-row-lifetime")).getByRole("button", {
         name: "Value Mode",

@@ -1122,7 +1122,8 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
       rows.push({
         id: "intervalMs",
         kind: "number",
-        label: "Interval MS",
+        label: "Interval",
+        unit: "ms",
         value: attachment.intervalMs,
         min: 0,
         onChange: (intervalMs) =>
@@ -1138,7 +1139,8 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
       rows.push({
         id: "randomDeviationMs",
         kind: "number",
-        label: "Random Deviation MS",
+        label: "Random Deviation",
+        unit: "ms",
         value: attachment.randomDeviationMs,
         min: 0,
         onChange: (randomDeviationMs) =>

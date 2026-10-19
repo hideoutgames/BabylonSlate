@@ -733,7 +733,8 @@ export function SkyboxCreatorEditor({
         {
           id: "placement-position",
           kind: "vector3",
-          label: "Position (%)",
+          label: "Position",
+          unit: "%",
           value: [placement.x * 100, placement.y * 100, 0],
           axes: ["X", "Y"],
           onChange: ([x, y]) => place({ ...placement, x: x / 100, y: y / 100 }, "position"),
@@ -741,7 +742,8 @@ export function SkyboxCreatorEditor({
         {
           id: "placement-size",
           kind: "vector3",
-          label: "Size (%)",
+          label: "Size",
+          unit: "%",
           value: [placement.width * 100, placement.height * 100, 0],
           axes: ["W", "H"],
           onChange: ([width, height]) =>
@@ -750,14 +752,16 @@ export function SkyboxCreatorEditor({
         {
           id: "placement-rotation",
           kind: "number",
-          label: "Rotation (Degrees)",
+          label: "Rotation",
+          unit: "deg",
           value: placement.rotation ?? 0,
           onChange: (rotation) => place({ ...placement, rotation }, "rotation"),
         },
         {
           id: "placement-scale",
           kind: "number",
-          label: "Scale (%)",
+          label: "Scale",
+          unit: "%",
           value: placementScale(placement) * 100,
           min: 1,
           onChange: (scale) =>

@@ -722,7 +722,7 @@ export function componentPropertyRows(
         },
         number("totalMass", "Total Mass", 0.001, "Mass shared across the selected bones, in kilograms."),
         number("radius", "Bone Radius", 0.001, "Collision radius of each bone, in scene units."),
-        number("angularLimit", "Angular Limit", 0, "Maximum rotation from the captured pose, in degrees.", 180),
+        { ...number("angularLimit", "Angular Limit", 0, "Maximum rotation from the captured pose.", 180), unit: "deg" },
         number("linearDamping", "Linear Damping", 0),
         number("angularDamping", "Angular Damping", 0),
         number("friction", "Friction", 0),
@@ -991,6 +991,7 @@ export function componentPropertyRows(
           kind: "number",
           id: rowId(actorId, component.id, "walkableSlopeAngle"),
           label: "Walkable Slope Angle",
+          unit: "deg",
           value: asNumber(component.properties.walkableSlopeAngle, 60),
           min: 0,
           max: 90,
@@ -1522,6 +1523,7 @@ export function componentPropertyRows(
             kind: "number",
             id: rowId(actorId, component.id, "innerAngle"),
             label: "Inner Angle",
+            unit: "deg",
             value: asNumber(component.properties.innerAngle, 30),
             min: 0,
             max: 179,
@@ -1531,6 +1533,7 @@ export function componentPropertyRows(
             kind: "number",
             id: rowId(actorId, component.id, "outerAngle"),
             label: "Outer Angle",
+            unit: "deg",
             value: asNumber(component.properties.outerAngle, 45),
             min: 1,
             max: 179,
@@ -1607,9 +1610,9 @@ export function componentPropertyRows(
         { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: properties.enabled,
           description: "Outline this actor's geometry. Disabling reveals any applicable global CEL outline.", onChange: (next) => update("enabled", next) },
         { kind: "color", id: rowId(actorId, component.id, "color"), label: "Color", value: properties.color, onChange: (next) => update("color", next) },
-        { kind: "number", id: rowId(actorId, component.id, "width"), label: "Width", value: properties.width,
+        { kind: "number", id: rowId(actorId, component.id, "width"), label: "Width", unit: "px", value: properties.width,
           min: OUTLINE_WIDTH_LIMITS[0], max: OUTLINE_WIDTH_LIMITS[1], sensitivity: 0.025,
-          description: "Width in output pixels, independent of the actor's scale.", onChange: (next) => update("width", next) },
+          description: "In output pixels, independent of the actor's scale.", onChange: (next) => update("width", next) },
         { kind: "boolean", id: rowId(actorId, component.id, "throughMeshes"), label: "Render Through Meshes", value: properties.throughMeshes,
           description: "Show this outline through other geometry. Global CEL outlines remain occluded.", onChange: (next) => update("throughMeshes", next) },
       ];
@@ -1695,7 +1698,7 @@ export function componentPropertyRows(
           ],
           onChange: (next) => update("projectionMode", next),
         },
-        ...(projectionMode === "perspective" ? [sliderRow(
+        ...(projectionMode === "perspective" ? [{ ...sliderRow(
           actorId,
           component.id,
           "fieldOfView",
@@ -1706,7 +1709,7 @@ export function componentPropertyRows(
           update,
           1,
           DEFAULT_CAMERA_FIELD_OF_VIEW,
-        )] : [sliderRow(
+        ), unit: "deg" }] : [sliderRow(
           actorId,
           component.id,
           "orthographicSize",

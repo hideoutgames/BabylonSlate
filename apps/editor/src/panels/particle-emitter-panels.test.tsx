@@ -100,7 +100,7 @@ describe("ParticleEmitterEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Lifetime Value Mode, Random Range" }));
     fireEvent.click(screen.getByTestId("value-mode-lifetime-constant"));
     expect(history.read().initialize.lifetime).toEqual({ mode: "constant", value: 1 });
-    expect((screen.getByTestId("property-lifetime") as HTMLInputElement).value).toBe("1");
+    expect((screen.getByTestId("property-lifetime") as HTMLInputElement).value).toBe("1 s");
     expect(screen.queryByTestId("property-lifetime-min")).toBeNull();
     expect(history.stack.undoDepth).toBe(1);
   });
@@ -199,7 +199,7 @@ describe("ParticleEmitterEditor", () => {
       maxSize: 0.5,
       blendMode: "standard",
     } as unknown as ParticleEmitterPayload);
-    expect((screen.getByTestId("property-rate") as HTMLInputElement).value).toBe("20");
+    expect((screen.getByTestId("property-rate") as HTMLInputElement).value).toBe("20/s");
     expect(screen.getByTestId("property-blendMode").textContent).toContain("Additive");
     expect(screen.queryByTestId("property-texture")).toBeNull();
   });

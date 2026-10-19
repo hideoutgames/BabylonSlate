@@ -285,6 +285,12 @@ export {
   type PanZoomView,
 } from "./pan-zoom-model";
 export {
+  isInlineNumberUnit,
+  numberUnitSuffix,
+  stripNumberUnit,
+  withNumberUnit,
+} from "./number-units";
+export {
   usePanZoomSurface,
   type PanZoomBase,
   type PanZoomSurface,

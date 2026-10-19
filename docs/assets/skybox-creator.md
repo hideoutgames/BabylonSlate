@@ -24,7 +24,7 @@ Double-tap the asset to open it. The window has **Preview**, **Cubemap** and an 
 | Setting | Description |
 | --- | --- |
 | Texture | The source image. Picking another resets the alignment. |
-| Placement | **Position (%)**, **Size (%)**, **Rotation (Degrees)** and **Scale (%)** of the Texture on the net, for exact values. Position and size are percentages of the net's width and height; a scale of 100% is the largest size that fits the net. **Fit To Net** returns to that fit. |
+| Placement | **Position**, **Size**, **Rotation** and **Scale** of the Texture on the net, for exact values. Position and size are percentages of the net's width and height; a scale of 100% is the largest size that fits the net. **Fit To Net** returns to that fit. |
 | Generated Faces | Read-only list of the faces created so far, such as **Up (+Y)** and **Left (−X)**. A face that does not exist shows **Not Created**. |
 
 ## Related

@@ -433,7 +433,8 @@ export function TilesetEditor({
     {
       id: "animationFrameDurationMs",
       kind: "number",
-      label: "Frame Duration MS",
+      label: "Frame Duration",
+      unit: "ms",
       value: selected?.animationFrameDurationMs ?? DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS,
       min: 1,
       onChange: (value) =>

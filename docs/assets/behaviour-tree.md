@@ -30,8 +30,8 @@ With a decorator or service selected:
 | Abort Mode | **None**, **Self**, **Lower Priority** or **Both**. Decides what happens when the condition changes. |
 | Observed Keys | Blackboard keys that trigger the check again. **Add Key** adds one. |
 | Service | The service's type. |
-| Interval MS | How often the service runs. |
-| Random Deviation MS | Random offset added to the interval. |
+| Interval | How often the service runs. |
+| Random Deviation | Random offset added to the interval. |
 
 Tasks and decorators add their own settings. See the [node reference](../scripting/behaviour-tree/index.md).
 

@@ -285,7 +285,7 @@ test.describe("P17 particles", () => {
     const rate = page.getByTestId("property-rate");
     await rate.fill("35");
     await rate.press("Tab");
-    await expect(rate).toHaveValue("35");
+    await expect(rate).toHaveValue("35/s");
     await createContentBrowserAsset(page, "ParticleSystem", "ReopenFire");
     await openAssetFromBrowser(page, "assets/ReopenFire.particles.babasset");
     await expect(
@@ -310,7 +310,7 @@ test.describe("P17 particles", () => {
     ).toBeVisible();
     await openAssetFromBrowser(page, "assets/ReopenSparks.emitter.babasset");
     await expect(page.getByTestId("property-material")).toContainText(/ReopenMat/i);
-    await expect(page.getByTestId("property-rate")).toHaveValue("35");
+    await expect(page.getByTestId("property-rate")).toHaveValue("35/s");
     await openAssetFromBrowser(page, "assets/ReopenFire.particles.babasset");
     await expect(page.getByTestId("particle-system-emitter-0")).toContainText(
       /ReopenSparks/,

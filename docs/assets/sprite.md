@@ -20,7 +20,7 @@ Double-tap a Sprite to open it.
 | Texture | The image to show. |
 | Pixels Per Unit | Image pixels per world unit, which sets the sprite's size in the world. Default 100. |
 | Pivot | The point of the image that sits at the actor's position, as fractions of the image. 0.5, 0.5 is the centre and 0, 0 the top-left corner. |
-| Frame Duration MS | Length of the frame in milliseconds. Default 100. |
+| Frame Duration | Length of the frame in milliseconds. Default 100. |
 | Collision | The collision box as fractions of the image: X, Y, W and H. The default covers the whole image. |
 
 ## Notes

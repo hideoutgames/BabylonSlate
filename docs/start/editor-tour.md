@@ -39,6 +39,8 @@ A scene opens with these windows:
 
 Other asset editors have their own windows, such as **Preview** and **Inspector** for a Texture. See [Scenes](../scenes/index.md) and [Actors](../scenes/actors.md).
 
+Number fields show their unit after the value, such as **45°**, **120 ms** or **50%**. You can type the unit or leave it out. Drag a field's handle to change the value, or type a sum such as `90+45`.
+
 ## Windows and Focus
 
 - **Windows** lists the windows the active document can show. Tick or untick one to show or hide it.

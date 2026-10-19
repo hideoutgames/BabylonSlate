@@ -28,7 +28,7 @@ The tree editor has four windows: **Graph**, **Blackboard**, the **Inspector** f
 
 **Decorators** are conditions on a node: [Blackboard Is Set](../scripting/behaviour-tree/blackboard-is-set.md), [Compare Blackboard Value](../scripting/behaviour-tree/compare-blackboard-value.md), [Cooldown](../scripting/behaviour-tree/cooldown.md), [Loop](../scripting/behaviour-tree/loop.md) and [Time Limit](../scripting/behaviour-tree/time-limit.md).
 
-**Services** run on a timer while their node is active. The built-in [Set Blackboard](../scripting/behaviour-tree/set-blackboard-service.md) service writes a key every **Interval MS** (default 250), offset by up to **Random Deviation MS**.
+**Services** run on a timer while their node is active. The built-in [Set Blackboard](../scripting/behaviour-tree/set-blackboard-service.md) service writes a key every **Interval** (default 250 ms), offset by up to **Random Deviation**.
 
 ## Aborts
 

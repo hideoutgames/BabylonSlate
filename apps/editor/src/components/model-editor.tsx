@@ -299,6 +299,7 @@ function colliderPropertyRows(
       id: "rotation",
       kind: "vector3",
       label: "Rotation",
+      unit: "deg",
       value: euler,
       onChange: (value) =>
         commit({

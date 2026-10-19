@@ -715,7 +715,8 @@ function transitionPropertyRows(
       {
         id: `${transition.id}-blendSeconds`,
         kind: "number",
-        label: "Blend Seconds",
+        label: "Blend Time",
+        unit: "s",
         value: transition.blendSeconds,
         min: 0,
         onChange: (blendSeconds) =>

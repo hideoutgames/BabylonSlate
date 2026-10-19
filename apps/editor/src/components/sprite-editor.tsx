@@ -300,7 +300,8 @@ export function SpriteEditor({
     {
       id: "frame-duration",
       kind: "number",
-      label: "Frame Duration MS",
+      label: "Frame Duration",
+      unit: "ms",
       value: frame?.durationMs ?? 100,
       min: 1,
       onChange: (durationMs) => {

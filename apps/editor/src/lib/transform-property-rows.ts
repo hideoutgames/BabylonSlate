@@ -52,6 +52,7 @@ export function spatialTransformPropertyRows(
       kind: "vector3",
       id: `${idPrefix}-rotation`,
       label: "Rotation",
+      unit: "deg",
       value: twoD
         ? [quaternionToEulerDegrees(transform.rotation)[2], 0, 0]
         : quaternionToEulerDegrees(transform.rotation),

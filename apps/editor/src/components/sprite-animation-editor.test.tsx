@@ -282,7 +282,7 @@ describe("SpriteAnimation editor", () => {
     expect(preview.getAttribute("data-frame-index")).toBe("1");
   });
 
-  it("edits Frame Duration MS on the animation payload", () => {
+  it("edits Frame Duration on the animation payload", () => {
     const payload = createDefaultSpriteAnimationPayload();
     const onChange = vi.fn();
     render(
@@ -300,7 +300,7 @@ describe("SpriteAnimation editor", () => {
     );
   });
 
-  it("hides per-frame duration until Frame Duration MS Override is on and seeds the global value", () => {
+  it("hides per-frame duration until Frame Duration Override is on and seeds the global value", () => {
     const payload = createDefaultSpriteAnimationPayload();
     payload.frameDurationMs = 40;
     const onChange = vi.fn();

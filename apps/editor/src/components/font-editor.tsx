@@ -169,6 +169,7 @@ export function FontPreview({ path, payload }: { path: string; payload: Record<s
         <NumberField
           integer
           aria-label="Sample Size"
+          unit="px"
           data-testid="font-sample-size"
           className={cn("h-7 w-16 text-xs", TOOL_ITEM)}
           min={6}
