@@ -17,6 +17,11 @@ import {
 } from "./shadow-receiver-handoff";
 import { sortReceiverLightSources, type ForwardLightSlotExchange } from "./forward-light-slots";
 import {
+  fixedShapeLightingActive,
+  fixedShapeLightingLimits,
+  selectFixedShapeLights,
+} from "./fixed-light-admission";
+import {
   LightBlock,
   Material,
   NodeMaterial,
@@ -161,6 +166,8 @@ function installSceneLighting(scene: Scene): SceneLighting {
     exchanges: [],
   };
   let budget = forwardLightBudget(scene.getEngine());
+  // The last selection was fixed-shape lighting's per-class admission.
+  let fixedShape = false;
   const watchedLights = new Map<Light, Observer<boolean>>();
   const invalidate = () => {
     dirty = true;
@@ -188,6 +195,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.
     policyToggles = toggled;
+    fixedShape = fixedShapeLightingActive(scene);
     try {
       admission = syncForwardLightPolicy(
         scene,
@@ -197,6 +205,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
           sceneRenderingSettings(scene).localLightBudget -
             clusteredLocalContributionCount(scene),
         ),
+        fixedShape ? selectFixedShapeLights : undefined,
       );
     } finally {
       policyToggles = undefined;
@@ -338,7 +347,9 @@ function installSceneLighting(scene: Scene): SceneLighting {
     sync,
     invalidate,
     limits: () =>
-      admission.limited.length
+      fixedShape
+        ? fixedShapeLightingLimits(scene)
+        : admission.limited.length
         ? [
             `Conventional lighting: ${admission.admitted}/${admission.requested} requested lights admitted; ${sceneRenderingSettings(scene).localLightBudget} scalability local lights; ${budget.slots} shader slots (${budget.source}, ${budget.reservedBlocks} non-light blocks reserved); ${admission.samplers}/${lightingSamplerCapacity(scene)} lighting samplers, ${admission.samplerLimited.length} limited by sampler headroom. Limited: ${lightsInCreationOrder(admission.limited)
               .slice(0, 16)
