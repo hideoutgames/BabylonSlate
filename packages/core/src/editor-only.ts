@@ -1,5 +1,6 @@
 import { normalizeClassMemberCategory } from "./class-member-category";
 import { normalizeMaterialInstanceOverrides, type MaterialInstanceOverrides } from "./material-parameter-value";
+import type { SerializedComponent } from "./scene";
 
 /** Editor-only assets stripped from Play compile and game export (P12 / P14). */
 
@@ -131,6 +132,46 @@ export type ClassHeaderComponent = {
   materialInstance?: MaterialInstanceOverrides;
 };
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The header row for one Class component, from a Class document's component or
+ * a stored row alike, or null when it lacks an id or class. Every writer and
+ * reader of header rows goes through here, so a field cannot reach one side
+ * only. `category` stays out: it belongs to the Class tree, and sync never
+ * copies it onto an instance.
+ */
+export function classHeaderComponentRow(value: unknown): ClassHeaderComponent | null {
+  if (!isPlainObject(value)) return null;
+  const id = typeof value.id === "string" ? value.id.trim() : "";
+  const classId = typeof value.classId === "string" ? value.classId.trim() : "";
+  if (!id || !classId) return null;
+  const row: ClassHeaderComponent = { id, classId };
+  const name = typeof value.name === "string" ? value.name.trim() : "";
+  if (name) row.name = name;
+  if (value.parentId === null || typeof value.parentId === "string") row.parentId = value.parentId;
+  if (isPlainObject(value.properties)) row.properties = { ...value.properties };
+  if (isPlainObject(value.transform)) row.transform = value.transform as ClassHeaderComponent["transform"];
+  const materialInstance = normalizeMaterialInstanceOverrides(value.materialInstance);
+  if (materialInstance) row.materialInstance = materialInstance;
+  return row;
+}
+
+/** The Class graph component a header row stands for. */
+export function classGraphComponentFromHeaderRow(row: ClassHeaderComponent): SerializedComponent {
+  return {
+    id: row.id,
+    classId: row.classId,
+    ...(row.name ? { name: row.name } : {}),
+    properties: row.properties ? { ...row.properties } : {},
+    parentId: row.parentId ?? null,
+    ...(row.transform ? { transform: row.transform } : {}),
+    ...(row.materialInstance ? { materialInstance: row.materialInstance } : {}),
+  };
+}
+
 export type ClassHeaderInterface = {
   id: string;
   name: string;
@@ -178,15 +219,7 @@ export function classHeaderMeta(graph: {
     category?: string;
     loading?: "hard";
   }>;
-  components?: Array<{
-    id?: string;
-    classId?: string;
-    name?: string;
-    parentId?: string | null;
-    properties?: Record<string, unknown>;
-    transform?: ClassHeaderComponent["transform"];
-    materialInstance?: MaterialInstanceOverrides;
-  }>;
+  components?: Array<Partial<ClassHeaderComponent>>;
 }): ClassHeaderMeta {
   const functions: ClassHeaderFunction[] = [];
   const variables: ClassHeaderVariable[] = [];
@@ -256,18 +289,8 @@ export function classHeaderMeta(graph: {
   }
   const components: ClassHeaderComponent[] = [];
   for (const component of graph.components ?? []) {
-    const id = component.id?.trim();
-    const classId = component.classId?.trim();
-    if (!id || !classId) continue;
-    const row: ClassHeaderComponent = { id, classId };
-    const name = component.name?.trim();
-    if (name) row.name = name;
-    if (component.parentId !== undefined) row.parentId = component.parentId;
-    if (component.properties) row.properties = { ...component.properties };
-    if (component.transform) row.transform = component.transform;
-    const materialInstance = normalizeMaterialInstanceOverrides(component.materialInstance);
-    if (materialInstance) row.materialInstance = materialInstance;
-    components.push(row);
+    const row = classHeaderComponentRow(component);
+    if (row) components.push(row);
   }
   return { functions, variables, events, interfaces, components };
 }

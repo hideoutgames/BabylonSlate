@@ -82,8 +82,13 @@ function cloneTransform(
   };
 }
 
-/** Structural equality: object key order is not content, array order is. */
+/**
+ * Structural equality: object key order is not content, array order is. Every
+ * scene command compares each sourced component's values, and untouched ones
+ * are the same reference, so those skip the serialisation.
+ */
 function jsonEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
   return stableStringify(left) === stableStringify(right);
 }
 

@@ -137,7 +137,10 @@ describe("FeatureTest starter", () => {
       onRecoveryResolved: () => {},
     });
     // A scene the open-time sync rewrites is dirty before the user touches it, and a later scene's
-    // open asks to Save or Discard it.
+    // open asks to Save or Discard it. Every Class here is closed, so sync reads its header rows; this
+    // test cannot exercise the key-order-insensitive comparison, because bodies and headers are written
+    // with sorted keys. document-editing-service.test.ts covers key order and a Class that is open
+    // while its Scene opens.
     const dirtyOnOpen: string[] = [];
     for (const asset of reopened.registry!.list().filter((entry) => entry.header.type === "Scene")) {
       const id = await documents.openDocument(
