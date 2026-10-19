@@ -1707,6 +1707,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
             onDrop={dropSelection}
             dropDisabled={dropDisabled}
             showViewportModeToggle={doc?.ref.kind !== "scene-layer"}
+            showGameCamera={doc?.ref.kind !== "scene-layer"}
             showGizmoTools={!overlayTransformBox}
           />}
         </div>

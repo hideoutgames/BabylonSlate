@@ -77,6 +77,7 @@ export function ViewportToolbar({
   showDragSelect = true,
   showViewportModeToggle = true,
   showGizmoTools = true,
+  showGameCamera = true,
   onDrop,
   dropDisabled = true,
 }: {
@@ -84,6 +85,8 @@ export function ViewportToolbar({
   showDragSelect?: boolean;
   showViewportModeToggle?: boolean;
   showGizmoTools?: boolean;
+  /** SceneLayers draw over the game; they have no game camera to look through. */
+  showGameCamera?: boolean;
   onDrop?: () => void;
   dropDisabled?: boolean;
 }) {
@@ -206,7 +209,9 @@ export function ViewportToolbar({
   useKeybindCommand("viewport.toggleGrid", () => toggleGrid(!gridVisible), viewportKeys);
   useKeybindCommand("viewport.toggleCollisions", () => setCollisionsVisible(!collisionsVisible), viewportKeys);
   useKeybindCommand("viewport.toggleNavmesh", () => toggleNavmesh(!navmeshVisible), viewportKeys);
-  useKeybindCommand("viewport.toggleGameCamera", () => setPreviewGameCamera(!previewGameCamera), viewportKeys);
+  useKeybindCommand("viewport.toggleGameCamera", () => setPreviewGameCamera(!previewGameCamera), {
+    ...viewportKeys, enabled: showGameCamera,
+  });
   useKeybindCommand("viewport.toggleDragSelect", () => setDragSelectActive(!dragSelectActive), {
     ...viewportKeys, enabled: showDragSelect,
   });
@@ -463,26 +468,28 @@ export function ViewportToolbar({
         {showViewportModeToggle ? <span>{shadingLabel}</span> : null}
         <ChevronDownIcon className="toolbar-island-caret" />
       </NestedMenu>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Toggle
-              variant="outline"
-              size="sm"
-              aria-label="Game Camera"
-              aria-keyshortcuts={gameCameraChord ? ariaKeyShortcuts(gameCameraChord) : undefined}
-              pressed={previewGameCamera}
-              onPressedChange={(pressed) => setPreviewGameCamera(pressed)}
-              data-testid={`${testIdPrefix}viewport-game-camera-toggle`}
-            >
-              <VideoIcon />
-            </Toggle>
-          }
-        />
-        <TooltipContent>
-          Look Through The Game Camera <ShortcutKeys chord={gameCameraChord} decorative />
-        </TooltipContent>
-      </Tooltip>
+      {showGameCamera ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Toggle
+                variant="outline"
+                size="sm"
+                aria-label="Game Camera"
+                aria-keyshortcuts={gameCameraChord ? ariaKeyShortcuts(gameCameraChord) : undefined}
+                pressed={previewGameCamera}
+                onPressedChange={(pressed) => setPreviewGameCamera(pressed)}
+                data-testid={`${testIdPrefix}viewport-game-camera-toggle`}
+              >
+                <VideoIcon />
+              </Toggle>
+            }
+          />
+          <TooltipContent>
+            Look Through The Game Camera <ShortcutKeys chord={gameCameraChord} decorative />
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
       <NestedMenu
         items={settingsItems}
         size="chrome"
