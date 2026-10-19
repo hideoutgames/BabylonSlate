@@ -42,7 +42,7 @@ import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { PlayFailedDialog, PlayPrepareDialog } from "../components/play-prepare-dialog";
 import { PlayUnsavedDialog, type PlayUnsavedChoice } from "../components/play-unsaved-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
-import { SimulationSessionBar } from "../components/simulation-session-bar";
+import { SimulationControlsProvider } from "./simulation-controls-context";
 import { PlayOverlay } from "../components/play-overlay";
 import { PreparingPreviewDialog, type PreviewPreparePhase } from "../components/preparing-preview-dialog";
 import { PreviewBuildOverlay } from "../components/preview-build-overlay";
@@ -1845,15 +1845,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   return (
     <PlayContext.Provider value={value}>
       <SimulationInspectionProvider>
+        <SimulationControlsProvider>
         <PlayValueContexts simulationDocumentId={simulationDocumentId} focusedNodeId={focusedNodeId}>
           {children}
         </PlayValueContexts>
-        {sessionState.mode === "simulate" && !sessionState.quarantined ? (
-          <SimulationSessionBar stopping={sessionState.lifecycle === "stopping"}
-            keepChanges={simulationRef.current?.keepChanges ?? false}
-            onReturnToScene={() => { if (simulationDocumentId) setActiveDocument(simulationDocumentId); }}
-            onStop={() => { void sessionOwner.stop(); }} />
-        ) : null}
         {projectOpen && (projectEngineState.phase === "preparing" || projectEngineState.phase === "initializing" ||
           ((projectEngineState.phase === "failed" || renderingRetryFailure) && !renderingFailureDismissed)) ? (
           <ProjectRenderingDialog
@@ -2036,6 +2031,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             {lastRuntimeMode}
           </span>
         ) : null}
+        </SimulationControlsProvider>
       </SimulationInspectionProvider>
     </PlayContext.Provider>
   );

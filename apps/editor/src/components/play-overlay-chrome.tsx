@@ -25,7 +25,8 @@ export type PlayOverlayChromeProps = {
   showProfiler?: boolean;
   onPauseToggle: () => void;
   pausePending?: boolean;
-  simulation?: { keepChanges?: boolean; inputMode: "game" | "edit"; inputPending: boolean; onInputModeChange: (mode: "game" | "edit") => void };
+  /** Simulation keeps Pause, input mode and Stop in the global toolbar. */
+  simulating?: boolean;
   onStatsToggle: () => void;
   onConsoleOpen: () => void;
   onInspectorToggle?: () => void;
@@ -35,7 +36,7 @@ export type PlayOverlayChromeProps = {
   extras?: ReactNode;
 };
 
-/** Labeled Play chrome: Profiler, Pause, Stats, Console, Inspector, Stop. Stats stay collapsed until toggled. */
+/** Play chrome: Pause, Stats, Console, Inspector, Profiler, Stop. Stats stay collapsed until toggled. */
 export function PlayOverlayChrome({
   paused,
   statsOpen,
@@ -46,7 +47,7 @@ export function PlayOverlayChrome({
   showProfiler = false,
   onPauseToggle,
   pausePending = false,
-  simulation,
+  simulating = false,
   onStatsToggle,
   onConsoleOpen,
   onInspectorToggle,
@@ -64,65 +65,59 @@ export function PlayOverlayChrome({
         </div>
         {extras}
       </div>
-      <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-2">
-        {simulation ? (
-          <div className="toolbar-island toolbar-island-touch">
-            <span className="px-1.5 text-xs font-medium text-muted-foreground">
-              Simulation · {simulation.keepChanges ? "Keep Changes On Stop" : "Discard On Stop"}
-            </span>
-            <Button size="sm" variant="outline" disabled={simulation.inputPending}
-              data-testid="simulation-input-mode"
-              onClick={() => simulation.onInputModeChange(simulation.inputMode === "game" ? "edit" : "game")}>
-              {simulation.inputMode === "game" ? "Game Input · Edit" : "Edit · Return To Game"}
-            </Button>
+      {simulating && !showStats && !showConsole ? null : (
+        <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-2">
+          <div className="toolbar-island toolbar-island-touch" role="toolbar" aria-label="Play Controls">
+            {simulating ? null : <>
+              <PlayChromeTool
+                label={paused ? "Resume" : "Pause"}
+                data-testid="play-overlay-pause"
+                pressed={paused}
+                disabled={pausePending}
+                onClick={onPauseToggle}
+              >
+                {paused ? <PlayIcon fill="currentColor" /> : <PauseIcon />}
+              </PlayChromeTool>
+              {paused && onStep ? (
+                <PlayChromeTool label="Step" data-testid="play-overlay-step" onClick={() => onStep?.()}>
+                  <SkipForwardIcon />
+                </PlayChromeTool>
+              ) : null}
+              {showStats || showConsole || showInspector ? <Separator orientation="vertical" /> : null}
+            </>}
+            {showStats ? (
+              <PlayChromeTool label="Stats" data-testid="play-stats-toggle" pressed={statsOpen} onClick={onStatsToggle}>
+                <ActivityIcon />
+              </PlayChromeTool>
+            ) : null}
+            {showConsole ? (
+              <PlayChromeTool label="Console" data-testid="play-console-open" onClick={onConsoleOpen}>
+                <TerminalIcon />
+              </PlayChromeTool>
+            ) : null}
+            {showInspector ? (
+              <PlayChromeTool label="Inspector" data-testid="play-inspector-toggle" pressed={inspectorOpen} onClick={() => onInspectorToggle?.()}>
+                <ListTreeIcon />
+              </PlayChromeTool>
+            ) : null}
+            {!simulating && showProfiler && diagnostics ? <>
+              <Separator orientation="vertical" />
+              <PlayChromeTool label="Profiler" data-testid="play-profiler-open" onClick={() => diagnostics.open("summary")}>
+                <GaugeIcon />
+              </PlayChromeTool>
+              <PlayChromeTool label="Capture Frame" data-testid="play-capture-frame" onClick={() => void diagnostics.captureFrame()}>
+                <CameraIcon />
+              </PlayChromeTool>
+            </> : null}
+            {simulating ? null : <>
+              <Separator orientation="vertical" />
+              <PlayChromeTool label="Stop" data-testid="play-overlay-close" className="play-stop" onClick={onClose}>
+                <SquareIcon fill="currentColor" />
+              </PlayChromeTool>
+            </>}
           </div>
-        ) : null}
-        <div className="toolbar-island toolbar-island-touch" role="toolbar" aria-label="Play Controls">
-          <PlayChromeTool
-            label={paused ? "Resume" : "Pause"}
-            data-testid="play-overlay-pause"
-            pressed={paused}
-            disabled={pausePending}
-            onClick={onPauseToggle}
-          >
-            {paused ? <PlayIcon fill="currentColor" /> : <PauseIcon />}
-          </PlayChromeTool>
-          {paused && onStep ? (
-            <PlayChromeTool label="Step" data-testid="play-overlay-step" onClick={() => onStep?.()}>
-              <SkipForwardIcon />
-            </PlayChromeTool>
-          ) : null}
-          {showStats || showConsole || showInspector ? <Separator orientation="vertical" /> : null}
-          {showStats ? (
-            <PlayChromeTool label="Stats" data-testid="play-stats-toggle" pressed={statsOpen} onClick={onStatsToggle}>
-              <ActivityIcon />
-            </PlayChromeTool>
-          ) : null}
-          {showConsole ? (
-            <PlayChromeTool label="Console" data-testid="play-console-open" onClick={onConsoleOpen}>
-              <TerminalIcon />
-            </PlayChromeTool>
-          ) : null}
-          {showInspector ? (
-            <PlayChromeTool label="Inspector" data-testid="play-inspector-toggle" pressed={inspectorOpen} onClick={() => onInspectorToggle?.()}>
-              <ListTreeIcon />
-            </PlayChromeTool>
-          ) : null}
-          {!simulation && showProfiler && diagnostics ? <>
-            <Separator orientation="vertical" />
-            <PlayChromeTool label="Profiler" data-testid="play-profiler-open" onClick={() => diagnostics.open("summary")}>
-              <GaugeIcon />
-            </PlayChromeTool>
-            <PlayChromeTool label="Capture Frame" data-testid="play-capture-frame" onClick={() => void diagnostics.captureFrame()}>
-              <CameraIcon />
-            </PlayChromeTool>
-          </> : null}
-          <Separator orientation="vertical" />
-          <PlayChromeTool label="Stop" data-testid="play-overlay-close" className="play-stop" onClick={onClose}>
-            <SquareIcon fill="currentColor" />
-          </PlayChromeTool>
         </div>
-      </div>
+      )}
     </div>
   );
 }
