@@ -136,7 +136,7 @@ describe("fixed-shape light binding", () => {
     updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch("low")) });
     const { pairs } = receivers(scene);
     frame(scene);
-    const before = [];
+    const before: Effect[] = [];
     for (const [material, mesh] of pairs) before.push(await effectOf(material, mesh));
     expect(before[0]!.defines).toContain("#define SLATE_FIXED_LIGHTS");
     const compiled = compiledEffects(engine);
@@ -197,15 +197,15 @@ describe("fixed-shape light binding", () => {
     expect(calls.get("Light4")).toBe(buffer(points[0]!));
   });
 
-  it("guards each seat with a uniform branch or, as chosen, a multiplier, and compiles cone math only into spot seats", async () => {
+  it("scales each seat by its active flag without a branch, or as chosen behind a uniform branch, and compiles cone math only into spot seats", async () => {
     const { engine, scene } = world();
     lightRig(scene);
     const { pairs } = receivers(scene);
     frame(scene);
     for (const [material, mesh] of pairs) {
       const code = (await effectOf(material, mesh)).fragmentSourceCode;
-      for (let seat = 0; seat < 6; seat++) expect(code).toContain(`if (light${seat}.vLightDiffuse.a>=0.0) {`);
-      expect(code).not.toContain("step(0.0,light0.vLightDiffuse.a)");
+      for (let seat = 0; seat < 6; seat++) expect(code).toContain(`shadow*=step(0.0,light${seat}.vLightDiffuse.a);`);
+      expect(code).not.toContain("vLightDiffuse.a>=0.0");
     }
     const pbr = (await effectOf(...pairs[0])).fragmentSourceCode;
     for (const seat of [2, 3]) expect(pbr).toContain(`computeDirectionalLightFalloff(light${seat}.vLightDirection.xyz`);
@@ -214,16 +214,16 @@ describe("fixed-shape light binding", () => {
     expect(standard).toContain("info=computeSpotLighting(viewDirectionW,normalW,light2.vLightData");
     expect(standard).toContain("info=computeLighting(viewDirectionW,normalW,light4.vLightData");
 
-    const branched = await effectOf(...pairs[0]);
-    setFixedShapeLightGuard(engine, "multiply");
+    const multiplied = await effectOf(...pairs[0]);
+    setFixedShapeLightGuard(engine, "branch");
     frame(scene);
     for (const [material, mesh] of pairs) {
       const effect = await effectOf(material, mesh);
-      expect(effect.defines).toContain("#define SLATE_FIXED_LIGHT_MULTIPLY");
-      expect(effect.fragmentSourceCode).not.toContain("vLightDiffuse.a>=0.0");
-      for (let seat = 0; seat < 6; seat++) expect(effect.fragmentSourceCode).toContain(`shadow*=step(0.0,light${seat}.vLightDiffuse.a);`);
+      expect(effect.defines).toContain("#define SLATE_FIXED_LIGHT_BRANCH");
+      for (let seat = 0; seat < 6; seat++) expect(effect.fragmentSourceCode).toContain(`if (light${seat}.vLightDiffuse.a>=0.0) {`);
+      expect(effect.fragmentSourceCode).not.toContain("step(0.0,light0.vLightDiffuse.a)");
     }
-    expect(await effectOf(...pairs[0])).not.toBe(branched);
+    expect(await effectOf(...pairs[0])).not.toBe(multiplied);
   });
 
   it("keeps Babylon's light defines for the CEL adapter and on Engines without uniform buffers", async () => {

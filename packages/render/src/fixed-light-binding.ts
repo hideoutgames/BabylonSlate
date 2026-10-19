@@ -30,11 +30,12 @@ import { markSceneReadinessDirty } from "./scene-readiness-signal";
  * first ask `scene._materialLightHooks`, which this module installs:
  *
  * - Seat j of the layout is shader light j. Its light code depends on its
- *   class alone (the class's one light kind, default falloff), and runs behind
- *   `if (light{j}.vLightDiffuse.a>=0.0)`: Babylon writes a light's range there
- *   on every bind, and an empty seat binds a per-kind null buffer holding -1.
- *   A light switching on or off, or moving to another seat of its class,
- *   changes bindings only.
+ *   class alone (the class's one light kind, default falloff). It is active
+ *   while `light{j}.vLightDiffuse.a` is not negative: Babylon writes a light's
+ *   range there on every bind, and an empty seat binds a per-kind null buffer
+ *   holding -1 (`fixed-light-shader.ts` turns that into a multiplier or a
+ *   branch, `setFixedShapeLightGuard`). A light switching on or off, or moving
+ *   to another seat of its class, changes bindings only.
  * - Shadow sampling and area seats still follow their light: a seat of a
  *   shadowed class samples its light's map only while that light's shadow is
  *   active there (the map's defines, as Babylon sets them), and area seats are
@@ -163,7 +164,7 @@ function setDefine(defines: Defines, name: string, value: boolean | number, stat
 function clearSeatDefines(defines: Defines): void {
   if (!defines.SLATE_FIXED_LIGHTS) return;
   defines.SLATE_FIXED_LIGHTS = false;
-  defines.SLATE_FIXED_LIGHT_MULTIPLY = false;
+  defines.SLATE_FIXED_LIGHT_BRANCH = false;
   for (const name of SEAT) if (defines[name] !== undefined) defines[name] = false;
 }
 
@@ -230,7 +231,7 @@ function prepareSeatDefines(
     ((caps.textureFloatRender && caps.textureFloatLinearFiltering) ||
       (caps.textureHalfFloatRender && caps.textureHalfFloatLinearFiltering));
   defines.LIGHTMAPEXCLUDED = state.lightmapMode;
-  setDefine(defines, "SLATE_FIXED_LIGHT_MULTIPLY", fixedShapeLightGuard(scene.getEngine()) === "multiply", state);
+  setDefine(defines, "SLATE_FIXED_LIGHT_BRANCH", fixedShapeLightGuard(scene.getEngine()) === "branch", state);
   setDefine(defines, "SLATE_FIXED_LIGHTS", true, state);
   if (state.needRebuild) defines.rebuild();
   return state.needNormals;
@@ -307,19 +308,19 @@ const guards = new WeakMap<AbstractEngine, FixedLightGuard>();
 
 /**
  * How fixed seats skip an empty seat, a compile-time choice per Engine:
- * "branch" (default) runs each seat behind a uniform branch, "multiply"
- * evaluates every seat and scales its contribution. A change recompiles the
- * seated materials once.
+ * "multiply" (default) evaluates every seat without a branch and scales its
+ * contribution by the active flag; "branch" runs each seat behind a uniform
+ * branch. A change recompiles the seated materials once.
  */
 export function setFixedShapeLightGuard(engine: AbstractEngine, guard: FixedLightGuard): void {
   if (fixedShapeLightGuard(engine) === guard) return;
-  if (guard === "branch") guards.delete(engine);
+  if (guard === "multiply") guards.delete(engine);
   else guards.set(engine, guard);
   for (const scene of engine.scenes) markSceneReadinessDirty(scene);
 }
 
 export function fixedShapeLightGuard(engine: AbstractEngine): FixedLightGuard {
-  return guards.get(engine) ?? "branch";
+  return guards.get(engine) ?? "multiply";
 }
 
 function bindSeats(
