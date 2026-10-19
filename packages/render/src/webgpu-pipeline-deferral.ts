@@ -48,7 +48,12 @@ type DeferralState = {
   synchronous: WeakSet<CacheNode>;
   /** When a deferral last started or finished. */
   progressAt: number;
+  /** Deferred creations that finished (created or failed) since installation. */
+  settled: number;
 };
+
+/** Babylon 9.29 pipeline-cache statistics a synchronous creation updates. */
+const statistics = WebGPUCacheRenderPipeline as unknown as { NumCacheMiss: number; _NumPipelineCreationCurrentFrame: number };
 
 /** Thrown out of the pipeline cache to skip the draw that missed it. */
 const DEFERRED = Symbol("deferred render pipeline");
@@ -61,7 +66,7 @@ function install(engine: AbstractEngine): DeferralState {
   const create = cache?._createRenderPipeline;
   if (typeof draw !== "function" || typeof create !== "function" || typeof cache._buildRenderPipelineDescriptor !== "function")
     throw new Error("Unsupported Babylon WebGPU pipeline cache layout: _draw, _createRenderPipeline or _buildRenderPipelineDescriptor is missing.");
-  const state: DeferralState = { scopes: [], pending: new Set(), synchronous: new WeakSet(), progressAt: 0 };
+  const state: DeferralState = { scopes: [], pending: new Set(), synchronous: new WeakSet(), progressAt: 0, settled: 0 };
   // Babylon 9.29 calls `_createRenderPipeline` from `getRenderPipeline` only on
   // a cache miss, after the lookup left the missing tree node in
   // `_parameter.token`, and `_draw` changes no state between that call and its
@@ -91,13 +96,16 @@ function install(engine: AbstractEngine): DeferralState {
     const descriptor = this._buildRenderPipelineDescriptor(effect, topology, sampleCount);
     state.pending.add(node);
     state.progressAt = now;
+    // Counted where Babylon counts a synchronous creation: in the frame that missed.
+    statistics.NumCacheMiss++;
+    statistics._NumPipelineCreationCurrentFrame++;
     target._device.createRenderPipelineAsync(descriptor).then((pipeline) => {
       state.progressAt = performance.now();
-      if (!state.pending.delete(node)) return;
-      node.pipeline = pipeline;
-      WebGPUCacheRenderPipeline.NumCacheMiss++;
+      state.settled += 1;
+      if (state.pending.delete(node)) node.pipeline = pipeline;
     }, () => {
       state.progressAt = performance.now();
+      state.settled += 1;
       // The draw creates it synchronously and reports the error the usual way.
       if (state.pending.delete(node)) state.synchronous.add(node);
     });
@@ -140,19 +148,23 @@ export type PipelineDeferral = {
  * a draw. Scopes nest: a draw belongs to the innermost scope that allows its
  * pass, and a closed scope's skips count in its parent. `startsDeferrals: false`
  * still skips draws whose pipeline is already pending but compiles any other
- * miss synchronously. Only for output that is drawn again every frame, never
- * for a render-once target or a capture that is read back.
+ * miss synchronously. `nested` opens a scope only inside an open one, so a
+ * capture defers only while the view whose frame draws it does (that view then
+ * holds instead of presenting the capture's partial image). Only for output
+ * that is drawn again every frame, never for a render-once target or a capture
+ * that is read back.
  */
 export function beginPipelineDeferral(
   engine: AbstractEngine,
   allows: (renderPassId: number) => boolean,
-  startsDeferrals = true,
+  options: { startsDeferrals?: boolean; nested?: boolean } = {},
 ): PipelineDeferral | undefined {
   if (!engine.isWebGPU) return undefined;
+  if (options.nested && !states.get(engine)?.scopes.length) return undefined;
   const state = states.get(engine) ?? install(engine);
   states.set(engine, state);
   const scopes = state.scopes;
-  const scope: Scope = { allows, startsDeferrals, skipped: 0, nodes: new Set() };
+  const scope: Scope = { allows, startsDeferrals: options.startsDeferrals ?? true, skipped: 0, nodes: new Set() };
   scopes.push(scope);
   let closed = false;
   return {
@@ -179,4 +191,14 @@ export function beginPipelineDeferral(
 /** Render pipelines still being created for skipped draws on `engine`. */
 export function deferredPipelineCount(engine: AbstractEngine): number {
   return states.get(engine)?.pending.size ?? 0;
+}
+
+/**
+ * Deferred pipeline creations on `engine` that have finished, a monotonic count.
+ * Loading waits count each as compile progress (`DriverCompileWatch`): on
+ * WebKit, where pipelines build one after another, a held first frame may
+ * outlast a loading budget while they still arrive.
+ */
+export function deferredPipelinesSettled(engine: AbstractEngine): number {
+  return states.get(engine)?.settled ?? 0;
 }

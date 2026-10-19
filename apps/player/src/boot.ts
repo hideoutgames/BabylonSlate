@@ -251,9 +251,12 @@ function initializePlayer(
     else runtime?.applyRenderPathStatus(control);
   };
   let runtimeOutput = manifest.render;
+  /** Set once the runtime's pause paths exist (below). */
+  let pipelineHoldChanged: (held: boolean) => void = () => {};
   const handle: EngineHandle = createEngine(canvas, {
     sharedEngine: options.sharedEngine,
     playMode: true,
+    onPipelineHold: (held) => pipelineHoldChanged(held),
     frameCap: manifest.playFrameCap,
     renderSettings: manifest.render,
     spritePayloads: content.spritePayloads,
@@ -565,7 +568,8 @@ function initializePlayer(
       if (halted || result.requestId <= lastBoundaryId) return;
       lastBoundaryId = result.requestId;
       acknowledgedPaused = result.paused;
-      handle.setGameTimePaused(result.paused);
+      // A `rendering` hold keeps the view drawing; the Engine pauses its own game time for it.
+      handle.setGameTimePaused(result.pauseReasons.some((reason) => reason !== "rendering"));
       handle.setPaused(false);
       if (!result.paused) last = performance.now();
       applyInputOwnership();
@@ -928,7 +932,7 @@ function initializePlayer(
         void requestBoundary({ kind: "resetInput" });
       } else {
         const paused = pauseState.setConsolePaused(command.paused === true);
-        handle.setPaused(paused);
+        handle.setPaused(pauseState.viewPaused());
         pauseGate?.setPaused(paused);
         worker?.postControl({ type: "setPaused", paused });
       }
@@ -1157,7 +1161,7 @@ function initializePlayer(
         void requestBoundary({ kind: "pause", reason: "lifecycle", paused });
       } else {
         const effectivePaused = pauseState.setLifecyclePaused(paused);
-        handle.setPaused(effectivePaused);
+        handle.setPaused(pauseState.viewPaused());
         pauseGate?.setPaused(effectivePaused);
         worker?.postControl({ type: "setPaused", paused: effectivePaused });
       }
@@ -1170,6 +1174,18 @@ function initializePlayer(
       }
     });
   }
+  // While the view holds for WebGPU render pipelines the game waits, as for a blocking load.
+  pipelineHoldChanged = (held) => {
+    if (halted) return;
+    if (boundaryClient) {
+      void requestBoundary({ kind: "pause", reason: "rendering", paused: held });
+      return;
+    }
+    const paused = pauseState.setRenderingPaused(held);
+    pauseGate?.setPaused(paused);
+    worker?.postControl({ type: "setPaused", paused });
+    if (!held) last = performance.now();
+  };
 
   function stopPlayer(): { diagnostics: PlayerDiagnostic[] } {
     halted = true;

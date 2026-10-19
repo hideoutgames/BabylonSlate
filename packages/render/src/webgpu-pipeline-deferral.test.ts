@@ -2,11 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Observable } from "@babylonjs/core";
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
 import { WebGPUCacheRenderPipelineTree } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipelineTree";
+import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
 import {
   beginPipelineDeferral,
   deferredPipelineCount,
   PIPELINE_DEFERRAL_STALL_MS,
 } from "./webgpu-pipeline-deferral";
+import { DriverCompileWatch } from "./driver-compile";
 
 type Pipeline = { label: string };
 
@@ -33,6 +35,8 @@ function webGpuEngine() {
   const drawn: unknown[] = [];
   const engine = Object.assign(Object.create(WebGPUEngine.prototype), {
     _isWebGPU: true,
+    _caps: { parallelShaderCompile: false },
+    _compiledEffects: {},
     _device: device,
     _cacheRenderPipeline: cache,
     _snapshotRendering: { play: false, record: false },
@@ -60,10 +64,13 @@ describe("beginPipelineDeferral", () => {
 
   it("skips a draw whose pipeline is missing, creates it once asynchronously and draws with it once it exists", async () => {
     const { engine, device, drawn, draw, resolve } = webGpuEngine();
+    const misses = WebGPUCacheRenderPipeline.NumCacheMiss;
     const frame = beginPipelineDeferral(engine, objectPass)!;
     draw(7);
     draw(7);
     expect(frame.close()).toBe(2);
+    // One miss, counted in the frame that skipped it, as Babylon counts a synchronous creation.
+    expect(WebGPUCacheRenderPipeline.NumCacheMiss).toBe(misses + 1);
     expect(drawn).toEqual([]);
     expect(device.createRenderPipelineAsync).toHaveBeenCalledTimes(1);
     expect(device.createRenderPipeline).not.toHaveBeenCalled();
@@ -78,6 +85,34 @@ describe("beginPipelineDeferral", () => {
     expect(next.close()).toBe(0);
     expect(drawn).toEqual([pipeline]);
     expect(device.createRenderPipeline).not.toHaveBeenCalled();
+    expect(WebGPUCacheRenderPipeline.NumCacheMiss).toBe(misses + 1);
+  });
+
+  it("renews loading waits while deferred pipelines finish, and only then", async () => {
+    const { engine, draw, resolve } = webGpuEngine();
+    const watch = new DriverCompileWatch(engine);
+    const frame = beginPipelineDeferral(engine, objectPass)!;
+    draw(7);
+    frame.close();
+    // Pending alone is no progress: WebGPU reports none until a pipeline exists.
+    expect(watch.renew()).toBe(false);
+    resolve({ label: "async" });
+    await settle();
+    expect(watch.renew()).toBe(true);
+    expect(watch.renew()).toBe(false);
+  });
+
+  it("opens a nested scope only inside an open one", () => {
+    const { engine, device, draw } = webGpuEngine();
+    expect(beginPipelineDeferral(engine, objectPass, { nested: true })).toBeUndefined();
+    // Without an enclosing deferring view, a capture's miss compiles synchronously.
+    draw(3);
+    expect(device.createRenderPipeline).toHaveBeenCalledTimes(1);
+    const view = beginPipelineDeferral(engine, () => false)!;
+    const capture = beginPipelineDeferral(engine, objectPass, { nested: true })!;
+    draw(4);
+    expect(capture.close()).toBe(1);
+    expect(view.close()).toBe(1);
   });
 
   it("creates pipelines synchronously outside a scope and in passes no open scope admits", () => {
@@ -107,7 +142,7 @@ describe("beginPipelineDeferral", () => {
     const first = beginPipelineDeferral(engine, objectPass)!;
     draw(1);
     first.close();
-    const capped = beginPipelineDeferral(engine, objectPass, false)!;
+    const capped = beginPipelineDeferral(engine, objectPass, { startsDeferrals: false })!;
     draw(1);
     draw(2);
     expect(capped.close()).toBe(1);

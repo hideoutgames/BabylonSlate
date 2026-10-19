@@ -383,10 +383,12 @@ export class RenderTargetCaptures {
           this.retireCaptureMaterial(target, material);
         }
       }
-      // WebGPU: a draw whose pipeline is still compiling is skipped. The capture
-      // then neither publishes nor consumes a manual request, and the scene view
-      // whose frame this is holds its last image until a complete draw.
-      const deferral = beginPipelineDeferral(this.scene.getEngine(), (renderPassId) => destination.renderPassIds.includes(renderPassId));
+      // WebGPU, only inside a deferring view's frame: a draw whose pipeline is
+      // still compiling is skipped. The capture then neither publishes nor
+      // consumes a manual request, and that view holds its last image until a
+      // complete draw. Any other owner's frame creates pipelines synchronously.
+      const deferral = beginPipelineDeferral(this.scene.getEngine(),
+        (renderPassId) => destination.renderPassIds.includes(renderPassId), { nested: true });
       let drawn: boolean;
       let skipped: number;
       try {
@@ -601,8 +603,8 @@ export class RenderTargetCaptures {
       const objects: FrameGraphObjectList = { meshes, particleSystems: particles };
       camera.outputRenderTarget = texture;
       // Planar water mirrors are per scene view; capture water keeps its other reflections.
-      // Drawn every frame inside the scene view's frame, which holds while this
-      // view waits for a pipeline; the target keeps its last image meanwhile.
+      // Drawn inside the scene view's frame; it defers only while that frame
+      // does, which then holds, so a partly drawn capture is never presented.
       renderer = new SceneRenderCoordinator(this.scene, { waterPlanarReflections: false, auxiliary: { camera, objects }, deferPipelines: true });
       shadows = findSceneShadowController(this.scene)?.attachView(camera) ?? null;
       const target: Target = {

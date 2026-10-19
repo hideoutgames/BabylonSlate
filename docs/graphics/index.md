@@ -22,7 +22,7 @@ When **Render Mode** is **CEL**, a **CEL Shading** section appears in Project Se
 
 Clustered Forward requires WebGL2. On WebGPU, or when a scene cannot use it, Haptic falls back to Forward.
 
-On WebGPU, when a view needs shaders it has not drawn before (a scene opening, a light switching on, a new material), the view and its Render Target captures keep showing their last image until the shaders are ready, and the rest of the editor stays responsive.
+On WebGPU, when a view needs shaders it has not drawn before (a scene opening, a light switching on, a new material), the view and its Render Target captures keep showing their last image until the shaders are ready, and the rest of the editor stays responsive. In Play, Preview Build and exported games the game pauses meanwhile, as during a blocking load: game time, physics, scripts and sound wait, then continue from where they stopped.
 
 If WebGPU cannot start on your device, Haptic renders with WebGL2 and shows **WebGPU Unavailable** with the reason. **GPU Backend** keeps its WebGPU setting, so the next start tries WebGPU again.
 

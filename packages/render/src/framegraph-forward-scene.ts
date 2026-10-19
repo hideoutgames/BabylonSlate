@@ -335,13 +335,14 @@ export class ForwardSceneFrameGraph {
 
   /**
    * Whether `renderPassId` is one of the prepared graph's object passes (opaque,
-   * transparent, geometry), which draw every frame. Shadow maps, which may draw
-   * once, are not object-renderer tasks.
+   * transparent, geometry), their blended depth pre-passes or the shared
+   * outline masks, which all draw every frame. Shadow maps, which may draw
+   * once, and post-process draws under the camera's pass are not.
    */
   ownsObjectPass(renderPassId: number): boolean {
     for (const task of this.graph?.tasks ?? []) {
-      const renderer = (task as { objectRenderer?: { renderPassIds?: readonly number[] } }).objectRenderer;
-      if (renderer?.renderPassIds?.includes(renderPassId)) return true;
+      const owner = task as { objectRenderer?: { renderPassIds?: readonly number[] }; ownsRenderPass?: (id: number) => boolean };
+      if (owner.objectRenderer?.renderPassIds?.includes(renderPassId) || owner.ownsRenderPass?.(renderPassId)) return true;
     }
     return false;
   }

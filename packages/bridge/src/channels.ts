@@ -10,7 +10,8 @@ export type CookedCollisionMeshEntry = { guid: string } & CollisionTriangleMesh;
 export type { MaterialParameterValue } from "@babylonslate/core";
 
 export type GameSessionMode = "play" | "simulate" | "preview";
-export type SessionPauseReason = "user" | "lifecycle" | "loading";
+/** `rendering`: the view holds its last image while WebGPU render pipelines it needs compile. */
+export type SessionPauseReason = "user" | "lifecycle" | "loading" | "rendering";
 export type SessionBoundaryRequest = {
   sessionGeneration: number;
   /** Strictly increasing within this session; acknowledgments never use FIFO correlation. */

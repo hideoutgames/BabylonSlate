@@ -1,5 +1,6 @@
 import type { AbstractEngine, AbstractMesh, Effect, ObjectRenderer, Scene } from "@babylonjs/core";
 import { SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
+import { deferredPipelinesSettled } from "./webgpu-pipeline-deferral";
 
 /** Babylon exposes no enumeration of the Engine's cached effects. */
 type EngineEffects = { _compiledEffects?: Readonly<Record<string, Effect>> };
@@ -98,6 +99,8 @@ export function readinessScanMeshes(renderer: ObjectRenderer, scene: Scene): rea
  *   so Babylon's first completion check, inside the Effect constructor, already
  *   finds the program complete and nothing is ever pending. WebGPU effects are
  *   ready once created. A key compiled again after its release is no progress.
+ * - a WebGPU render pipeline a held view's skipped draw waited for that
+ *   finished (`deferredPipelinesSettled`); WebKit builds those one at a time.
  * - effects pending on a parallel-compile driver. A cascade, such as a Water
  *   shader and then its other pass variants, changes the pending set each time
  *   one finishes. The same set pending for `SCENE_DRIVER_COMPILE_TIMEOUT_MS`
@@ -117,6 +120,7 @@ export class DriverCompileWatch {
   private compiled = 0;
   private compiledAtRenewal = 0;
   private pending = 0;
+  private pipelinesSettled = 0;
 
   private readonly engine: AbstractEngine;
   /** No budget is renewed from this time (a `performance.now()` value) on. */
@@ -165,6 +169,10 @@ export class DriverCompileWatch {
 
   /** Counts keys that became ready and returns the keys still compiling on a parallel-compile driver. */
   private sample(): string[] {
+    // WebGPU render pipelines a held view waits for (`beginPipelineDeferral`) are progress too.
+    const settled = deferredPipelinesSettled(this.engine);
+    this.compiled += Math.max(0, settled - this.pipelinesSettled);
+    this.pipelinesSettled = settled;
     const parallel = Boolean(this.engine.getCaps().parallelShaderCompile);
     const pending: string[] = [];
     for (const [key, effect] of Object.entries((this.engine as unknown as EngineEffects)._compiledEffects ?? {})) {

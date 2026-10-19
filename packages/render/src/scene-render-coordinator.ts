@@ -54,7 +54,8 @@ export type SceneRenderCoordinatorOptions = {
    * until the pipelines exist. After `PIPELINE_DEFERRAL_HOLD_CAP_MS` of such
    * frames in a row, new misses compile synchronously again. Only for a view
    * that draws every frame and presents only rendered frames: the world view
-   * and its Full Quality captures, never previews or thumbnails.
+   * and its Full Quality captures, never previews or thumbnails. An auxiliary
+   * view defers only while its owner's frame does.
    */
   deferPipelines?: boolean;
 };
@@ -293,6 +294,11 @@ export class SceneRenderCoordinator {
     return !this.pending && this.failure === undefined;
   }
 
+  /** The view is holding its last image until render pipelines its last frame skipped exist. */
+  get holdingForPipelines(): boolean {
+    return this.deferral !== undefined;
+  }
+
   /** True while strict readiness must be re-probed after an invalidation. */
   get readinessDirty(): boolean {
     this.refreshOutline();
@@ -355,9 +361,12 @@ export class SceneRenderCoordinator {
     if (this.deferral?.waiting())
       return { path: "frameGraph", reason: "Render pipelines are compiling.", rendered: false, readyForPresentation: false };
     // Draw on readiness's admission; graph preparation or invalidation re-admits.
+    // An auxiliary view defers only inside its owner's deferring frame, which then holds too.
     const deferral = this.deferPipelines
-      ? beginPipelineDeferral(this.scene.getEngine(), this.ownsPass,
-        this.deferredSince === undefined || performance.now() - this.deferredSince < PIPELINE_DEFERRAL_HOLD_CAP_MS)
+      ? beginPipelineDeferral(this.scene.getEngine(), this.ownsPass, {
+        startsDeferrals: this.deferredSince === undefined || performance.now() - this.deferredSince < PIPELINE_DEFERRAL_HOLD_CAP_MS,
+        nested: this.auxiliaryCamera !== undefined,
+      })
       : undefined;
     let result: ReturnType<ForwardSceneFrameGraph["render"]>;
     try {
