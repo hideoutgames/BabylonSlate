@@ -455,14 +455,14 @@ describe("pasteClassMembers variables", () => {
         {
           id: "prefab-component-2",
           classId: "MeshComponent",
-          name: "Mesh 2",
+          name: "Mesh_1",
           properties: MESH.properties,
           parentId: null,
           transform: MESH.transform,
         },
       ]);
       expect(result.pasted).toEqual([
-        { kind: "variable", id: "component:prefab-component-2", name: "Mesh 2", componentId: "prefab-component-2" },
+        { kind: "variable", id: "component:prefab-component-2", name: "Mesh_1", componentId: "prefab-component-2" },
       ]);
       // No variable row is stored: the component is the variable.
       expect(result.graph.members).toEqual([]);
@@ -474,8 +474,8 @@ describe("pasteClassMembers variables", () => {
       const first = paste(clip, targetWith([]));
       expect(first.graph.components).toEqual([expect.not.objectContaining({ name: expect.anything() })]);
       expect(first.pasted[0]!.name).toBe("Mesh");
-      const second = paste(clip, first.graph, { takenNames: { variable: ["Mesh", "Mesh 2"], function: [] } });
-      expect(second.pasted[0]!.name).toBe("Mesh 3");
+      const second = paste(clip, first.graph, { takenNames: { variable: ["Mesh", "Mesh_1"], function: [] } });
+      expect(second.pasted[0]!.name).toBe("Mesh_2");
       expect(second.graph.components!.map((component) => component.id)).toEqual(["prefab-component-1", "prefab-component-2"]);
     });
 
@@ -540,8 +540,8 @@ describe("pasteClassMembers variables", () => {
       expect(rebound!.data).toMatchObject({
         componentId: component.id,
         variableId: `component:${component.id}`,
-        variableName: "Mesh 2",
-        title: "Get Mesh 2",
+        variableName: "Mesh_1",
+        title: "Get Mesh_1",
         classId: "Enemy",
       });
       expect(untouched!.data).toMatchObject({ componentId: "other", variableId: "component:other" });
@@ -905,6 +905,14 @@ describe("pasteClassMembers events", () => {
     };
     const hosted = paste(clip, emptyTarget(), { ancestors: [{ classId: "Base", graph: parent }] });
     expect(hosted.graph.nodes[0]).toMatchObject({ type: "flow.event.custom", data: { name: "Parent Event", eventQualifier: "Inherited" } });
+    // The override calls its parent's event, like one added from the Events menu.
+    expect(hosted.graph.nodes[1]).toMatchObject({
+      type: "flow.event.callParent",
+      data: { eventType: "flow.event.custom", eventName: "Parent Event", parentClassId: "Base" },
+    });
+    expect(hosted.graph.edges).toEqual([
+      expect.objectContaining({ source: hosted.graph.nodes[0]!.id, target: hosted.graph.nodes[1]!.id }),
+    ]);
 
     const present = emptyTarget([], [node("t", "flow.event.custom", { name: "Parent Event" })]);
     expect(paste(clip, present, { ancestors: [{ classId: "Base", graph: parent }] }).skipped).toEqual([
@@ -913,6 +921,30 @@ describe("pasteClassMembers events", () => {
     expect(paste(clip, emptyTarget()).skipped).toEqual([
       { kind: "event", name: "Parent Event", reason: "unavailable" },
     ]);
+  });
+
+  it("pastes a native event bound to a component the target lacks as a numbered custom event with its outputs", () => {
+    const hero = heroGraph();
+    hero.nodes.push(
+      node("evt-collide", "flow.event.hit", { title: "Event On Hit (Collider)", componentId: "prefab-collider" }),
+    );
+    const clip = copy([{ id: "evt-collide", kind: "event", name: "Event On Hit (Collider)" }], hero);
+
+    const lacking = paste(clip, emptyTarget(), { componentIds: new Set(["prefab-mesh"]) });
+    expect(lacking.skipped).toEqual([]);
+    expect(lacking.graph.nodes).toHaveLength(1);
+    expect(lacking.graph.nodes[0]).toMatchObject({
+      type: "flow.event.custom",
+      data: { name: "On Hit 1", pins: [expect.objectContaining({ name: "Hit Result" }), expect.anything(), expect.anything(), expect.anything()] },
+    });
+    expect(lacking.graph.nodes[0]!.data.componentId).toBeUndefined();
+
+    // A Class that has the component keeps the event bound to it.
+    const having = paste(clip, emptyTarget(), { componentIds: new Set(["prefab-collider"]) });
+    expect(having.graph.nodes[0]).toMatchObject({
+      type: "flow.event.hit",
+      data: { componentId: "prefab-collider" },
+    });
   });
 
   it("leaves events out of a Class that has no event graph", () => {

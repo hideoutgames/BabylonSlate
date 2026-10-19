@@ -592,3 +592,22 @@ describe("Class tree drag to the graph", () => {
     expect(screen.queryByTestId("class-notice")).toBeNull();
   });
 });
+
+describe("Events add menu", () => {
+  it("adds a native event of a Class with a parent wired to Call Parent, like its inherited row", () => {
+    harness.path = "assets/Child.class.babasset";
+    harness.graphs = { "assets/Child.class.babasset": { nodes: [], edges: [] } };
+    harness.assets = [
+      { path: "assets/Child.class.babasset", header: { type: "Class", name: "Child", guid: "child", parentClass: "Actor" } },
+    ];
+    render(panel());
+    fireEvent.click(screen.getByTestId("class-add-events"));
+    fireEvent.click(
+      within(screen.getByTestId("add-event-menu")).getByTestId("search-item-native:flow.event.beginPlay"),
+    );
+    const next = applyGraphChange.mock.calls[0]![1];
+    expect(next.nodes.map((node) => node.type)).toEqual(["flow.event.beginPlay", "flow.event.callParent"]);
+    expect(next.nodes[1]!.data).toMatchObject({ eventType: "flow.event.beginPlay", parentClassId: "Actor" });
+    expect(next.edges).toHaveLength(1);
+  });
+});
