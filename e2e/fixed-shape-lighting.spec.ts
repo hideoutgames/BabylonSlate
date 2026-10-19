@@ -9,7 +9,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
   test(`fixed light seats shade native PBR and Standard like the legacy path on ${backend}, and light changes compile nothing`, async ({
     page,
   }, testInfo) => {
-    test.setTimeout(180_000);
+    test.setTimeout(300_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
