@@ -199,7 +199,7 @@ export function playLoadControl(options: {
   seed?: number;
   physicsWorld?: PhysicsWorldKind;
   gravity?: [number, number, number];
-  collisionMatrix?: readonly number[];
+  collisionPresets?: readonly import("@babylonslate/core").CollisionPreset[];
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
   sceneNavmeshBytes?: Record<string, Uint8Array>;
@@ -247,7 +247,7 @@ export function playLoadControl(options: {
     seed: options.seed,
     physicsWorld: physics.physicsWorld,
     gravity: physics.gravity,
-    ...(options.collisionMatrix ? { collisionMatrix: [...options.collisionMatrix] } : {}),
+    ...(options.collisionPresets ? { collisionPresets: options.collisionPresets.map((preset) => ({ ...preset })) } : {}),
     havokWasmUrl: editorHavokWasmUrl(),
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,

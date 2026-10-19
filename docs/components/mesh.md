@@ -15,8 +15,8 @@ Select an actor, then choose **Add Component > Rendering > Mesh**. You can also 
 | Material | A Material or Material Instance. With a Model, the default is the Model's own materials. |
 | Collision | **Use Simple Collision**, **Use Complex Collision** or **No Collision**. Default No Collision. 3D physics only. |
 | Layer | The collision layer this mesh is on. Shown when Collision is on. |
-| Collides With | **Project Matrix** (default) follows the project Collision Matrix; **Custom** uses Layers. Shown when Collision is on. |
-| Layers | The layers this mesh collides with. Read only under Project Matrix. Shown when Collision is on. |
+| Collision Preset | A project Collision Preset (default **Default**) or **Custom**; Layer and Collides With are read only unless Custom. Shown when Collision is on. |
+| Collides With | The layers this mesh collides with. Shown when Collision is on. |
 | Cast Shadows | Casts shadows. Default on. |
 | Receive Shadows | Receives shadows. Default on. |
 
@@ -28,7 +28,7 @@ Select an actor, then choose **Add Component > Rendering > Mesh**. You can also 
 - A Mesh with collision on is solid without a Rigid Body. Add a [Rigid Body](rigid-body.md) to make it move. A [Collider](collider.md) on the same actor adds its shape to the Mesh's body, for example as a trigger volume.
 - **No Collision** makes no body. A Collider on that actor then needs a Rigid Body.
 - Mesh collision works only in a 3D physics world. In a 2D scene the **Collision** setting is hidden, the Mesh does not collide, and Compiler Results warns when it was left on.
-- Name collision layers in **Project Settings > Physics > Collision Layers** and set which pairs collide in **Collision Matrix**.
+- Name collision layers in **Project Settings > Physics > Collision Layers** and define presets in **Collision Presets**.
 - Add a [Deformer](deformer.md) or [Outline](outline.md) to the same actor to bend or outline the mesh.
 
 ## Related

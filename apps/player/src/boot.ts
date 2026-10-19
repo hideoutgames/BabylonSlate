@@ -504,7 +504,7 @@ function initializePlayer(
     pixelsPerUnit: content.pixelsPerUnit,
     texturePixelSizes: Object.fromEntries(content.texturePixelSizes),
     gravity: scene.settings.gravity,
-    ...(manifest.collisionMatrix ? { collisionMatrix: manifest.collisionMatrix } : {}),
+    ...(manifest.collisionPresets ? { collisionPresets: manifest.collisionPresets } : {}),
     havokWasmUrl: havokWasmUrl(),
     gameInstanceClass: manifest.gameInstanceClass,
     scenes,

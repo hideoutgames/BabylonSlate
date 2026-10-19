@@ -5,10 +5,9 @@ import { ClassRegistry, World } from "@babylonslate/object-model";
 import { PhysicsWorldSync } from "./physics-sync";
 
 const box = { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } };
-// Layer 1 does not collide with itself; every other pair collides.
-const MATRIX = [0xffffffff, 0xfffffffd];
+const PRESETS = [{ id: "ghost-pass", layer: 2, mask: 0xffffffef }];
 
-function maskOf(variables: Record<string, unknown>, collisionMatrix?: readonly number[]) {
+function filterOf(variables: Record<string, unknown>, collisionPresets?: typeof PRESETS) {
   const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
   const actor = world.createActor({ classId: "Actor", guid: "actor", transform: identityTransform() });
   actor.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType: "static", mass: 0 } }));
@@ -16,26 +15,24 @@ function maskOf(variables: Record<string, unknown>, collisionMatrix?: readonly n
   world.spawnActorNow(actor);
   const backend = physics.createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
   const commit = vi.spyOn(backend, "applyColliderChanges");
-  const sync = new PhysicsWorldSync(backend, { collisionMatrix });
+  const sync = new PhysicsWorldSync(backend, { collisionPresets });
   try {
     sync.syncFromWorld(world);
-    return commit.mock.calls.flatMap(([, changes]) => changes.upsert).at(-1)?.mask;
+    const desc = commit.mock.calls.flatMap(([, changes]) => changes.upsert).at(-1);
+    return desc && { layer: desc.layer, mask: desc.mask };
   } finally {
     sync.dispose();
   }
 }
 
-describe("Collision Matrix", () => {
-  it("gives a Project Matrix collider the row of its layer", () => {
-    expect(maskOf({ layer: 2, mask: 0xffffffff, maskSource: "project" }, MATRIX)).toBe(0xfffffffd);
+describe("Collision Presets", () => {
+  it("gives a collider its preset's layer and mask", () => {
+    expect(filterOf({ layer: 1, mask: 4, collisionPreset: "ghost-pass" }, PRESETS)).toEqual({ layer: 2, mask: 0xffffffef });
   });
 
-  it("keeps a Custom collider's own mask, and a missing source is Custom", () => {
-    expect(maskOf({ layer: 2, mask: 4, maskSource: "custom" }, MATRIX)).toBe(4);
-    expect(maskOf({ layer: 2, mask: 4 }, MATRIX)).toBe(4);
-  });
-
-  it("keeps the authored mask when the world has no matrix", () => {
-    expect(maskOf({ layer: 2, mask: 4, maskSource: "project" })).toBe(4);
+  it("keeps a Custom collider's own layer and mask, and a missing or removed preset is Custom", () => {
+    expect(filterOf({ layer: 1, mask: 4, collisionPreset: "custom" }, PRESETS)).toEqual({ layer: 1, mask: 4 });
+    expect(filterOf({ layer: 1, mask: 4 }, PRESETS)).toEqual({ layer: 1, mask: 4 });
+    expect(filterOf({ layer: 1, mask: 4, collisionPreset: "removed" }, PRESETS)).toEqual({ layer: 1, mask: 4 });
   });
 });

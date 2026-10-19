@@ -142,8 +142,8 @@ export type GameManifest = {
   sortingLayers: readonly string[];
   pixelPerfect: boolean;
   physicsWorld: "2d" | "3d";
-  /** Project Collision Matrix rows; absent in older games, where every collider keeps its own mask. */
-  collisionMatrix?: number[];
+  /** Project Collision Presets; absent in older games, where every collider keeps its own layer and mask. */
+  collisionPresets?: import("@babylonslate/core").CollisionPreset[];
   assets: GameAssetIndexEntry[];
   /** Present only when `bundleDebugger` is true. */
   infiniteLoopDetection?: boolean;
@@ -175,8 +175,8 @@ export type ExportGameOptions = {
   sortingLayers?: readonly string[];
   pixelPerfect?: boolean;
   physicsWorld?: "2d" | "3d";
-  /** Project Collision Matrix rows (`PhysicsProjectSettings.collisionMatrix`). */
-  collisionMatrix?: readonly number[];
+  /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`). */
+  collisionPresets?: readonly import("@babylonslate/core").CollisionPreset[];
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   scripts: readonly ScriptBundleEntry[];

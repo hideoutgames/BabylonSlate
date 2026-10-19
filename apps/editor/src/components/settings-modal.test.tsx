@@ -453,12 +453,21 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
-  it("clears a Collision Matrix pair and keeps the collision layers", () => {
+  it("edits Collision Presets and adds one with a fresh id", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-physics"));
+    const defaultPreset = { id: "default", name: "Default", layer: 1, mask: 0xffffffff };
     fireEvent.click(screen.getByRole("checkbox", { name: "Default Collides With Default" }));
-    expect(updateProjectSettings).toHaveBeenCalledWith({
-      physics: { collisionLayers: ["Default"], collisionMatrix: [0xfffffffe] },
+    expect(updateProjectSettings).toHaveBeenLastCalledWith({
+      physics: { collisionLayers: ["Default"], collisionPresets: [{ ...defaultPreset, mask: 0xfffffffe }] },
+    });
+    fireEvent.change(screen.getByTestId("settings-collision-presets-add-value"), { target: { value: "Ghost Pass" } });
+    fireEvent.click(screen.getByTestId("settings-collision-presets-add"));
+    expect(updateProjectSettings).toHaveBeenLastCalledWith({
+      physics: {
+        collisionLayers: ["Default"],
+        collisionPresets: [defaultPreset, { id: "ghost-pass", name: "Ghost Pass", layer: 1, mask: 0xffffffff }],
+      },
     });
   });
 

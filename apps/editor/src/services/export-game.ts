@@ -138,8 +138,8 @@ export type CollectExportGameParams = {
   sortingLayers?: readonly string[];
   pixelPerfect?: boolean;
   physicsWorld: "2d" | "3d";
-  /** Project Collision Matrix rows (`PhysicsProjectSettings.collisionMatrix`). */
-  collisionMatrix?: readonly number[];
+  /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`). */
+  collisionPresets?: readonly import("@babylonslate/core").CollisionPreset[];
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
@@ -578,7 +578,7 @@ export async function collectAndExportGame(
     sortingLayers: params.sortingLayers,
     pixelPerfect: params.pixelPerfect,
     physicsWorld: params.physicsWorld,
-    collisionMatrix: params.collisionMatrix,
+    collisionPresets: params.collisionPresets,
     infiniteLoopDetection: params.infiniteLoopDetection,
     loopCount: params.loopCount,
     inputAssets,

@@ -1,5 +1,6 @@
 import type { CommandMessage } from "@babylonslate/bridge";
 import {
+  CUSTOM_COLLISION_PRESET,
   isUIControl2DClass,
   parseOverlayVisualStyle,
   supportsOverlayVisualStyle,
@@ -49,7 +50,7 @@ interface RuntimePropertyWritesHost {
   ticks(): Pick<TickPipeline, "processing">;
   audioParticles(): Pick<AudioParticleEmitter, "emitParticles" | "emitVoiceGain">;
   navigation(): Pick<RuntimeNavigation, "updateAgentParams">;
-  physics(): Pick<RuntimePhysicsWorlds, "forActor">;
+  physics(): Pick<RuntimePhysicsWorlds, "forActor" | "collisionPreset">;
   ragdolls(): Pick<RagdollWorldSync, "sync">;
   layers(): Pick<SceneLayers, "get">;
   sceneRealizer(): Pick<SceneRealizer, "loadId">;
@@ -81,8 +82,14 @@ export class RuntimePropertyWrites {
   refreshComponent(component: ActorComponent, propertyName?: string): void {
     const owner = component.owner;
     if (!owner || owner.destroyed) return;
-    // A written Collides With mask is the collider's own from then on, not the Collision Matrix's.
-    if (propertyName === "mask" && component.getVariable("maskSource") === "project") component.setVariable("maskSource", "custom");
+    // A written Layer or Collides With makes the collider Custom, keeping its preset's other value.
+    if (propertyName === "layer" || propertyName === "mask") {
+      const preset = this.host.physics().collisionPreset(component.getVariable("collisionPreset"));
+      if (preset) {
+        component.setVariable(propertyName === "layer" ? "mask" : "layer", propertyName === "layer" ? preset.mask : preset.layer);
+        component.setVariable("collisionPreset", CUSTOM_COLLISION_PRESET);
+      }
+    }
     if (isUIControl2DClass(component.classId)) {
       this.host.uiControls().refresh(component);
       if (owner.sceneLayerId) this.host.overlay().applyLayouts();
@@ -115,7 +122,7 @@ export class RuntimePropertyWrites {
       return;
     }
     if (component.classId === "DynamicRuntimeMeshComponent" &&
-      (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask" || propertyName === "maskSource")) {
+      (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask" || propertyName === "collisionPreset")) {
       if (propertyName === "materialGuid" && slotId !== undefined) renderEmitter.emitMaterialAssignments([component], slotId, true);
       // Geometry collision changes are coalesced by the next physics step.
       return;

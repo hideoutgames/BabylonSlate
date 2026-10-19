@@ -73,7 +73,7 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["game", "Pixel Perfect", "settings-pixel-perfect"],
   ["game", "Sorting Layers"],
   ["physics", "Collision Layers"],
-  ["physics", "Collision Matrix", "settings-collision-matrix"],
+  ["physics", "Collision Presets", "settings-collision-presets"],
   ["focusNavigation", "Focus Navigation", "property-settings-focus-enabled"],
   ["focusNavigation", "Navigation Input", "property-settings-focus-navigationInputGuid"],
   ["focusNavigation", "Activate Input", "property-settings-focus-activateInputGuid"],

@@ -1,4 +1,4 @@
-import { normalizeCollisionMatrix } from "./collision-matrix";
+import { normalizeCollisionPresets, type CollisionPreset } from "./collision-presets";
 import { normalizeRenderingQuality, type RenderingQuality } from "./render-quality";
 import { normalizeRenderingPipeline, type RenderPath, type GpuBackend } from "./render-path";
 import { lookAtRotation } from "./euler";
@@ -478,11 +478,10 @@ export interface PhysicsProjectSettings {
    */
   collisionLayers: string[];
   /**
-   * One 32-bit row per collision layer: the layers it collides with. Symmetric;
-   * bits past the named layers stay set. Read by colliders whose Collides With
-   * is the project matrix ([collision-matrix.ts](./collision-matrix.ts)).
+   * Named collision filters colliders reference by id; at least one
+   * ([collision-presets.ts](./collision-presets.ts)).
    */
-  collisionMatrix: number[];
+  collisionPresets: CollisionPreset[];
 }
 
 export const DEFAULT_TWO_D_PROJECT_SETTINGS: TwoDProjectSettings = {
@@ -522,10 +521,9 @@ function normalizeCollisionLayers(value: unknown): string[] {
 }
 
 function physicsSettings(physics: Partial<PhysicsProjectSettings> | undefined): PhysicsProjectSettings {
-  const collisionLayers = normalizeCollisionLayers(physics?.collisionLayers);
   return {
-    collisionLayers,
-    collisionMatrix: normalizeCollisionMatrix(physics?.collisionMatrix, collisionLayers.length),
+    collisionLayers: normalizeCollisionLayers(physics?.collisionLayers),
+    collisionPresets: normalizeCollisionPresets(physics?.collisionPresets),
   };
 }
 

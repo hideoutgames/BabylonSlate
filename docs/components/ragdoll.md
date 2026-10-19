@@ -19,8 +19,8 @@ Select an actor with a [Mesh](mesh.md) that uses a Model with a skeleton, then c
 | Friction | Grip on contact. Default 0.5. |
 | Restitution | Bounciness, 0 to 1. Default 0. |
 | Layer | The collision layer the bones are on. |
-| Collides With | **Project Matrix** (default) follows the project Collision Matrix; **Custom** uses Layers. |
-| Layers | The layers they collide with. Read only under Project Matrix. |
+| Collision Preset | A project Collision Preset (default **Default**) or **Custom**; Layer and Collides With are read only unless Custom. |
+| Collides With | The layers they collide with. |
 | Bone Names | Optional. Empty uses the whole skeleton. |
 
 ## Bone Names

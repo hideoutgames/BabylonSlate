@@ -255,7 +255,7 @@ async function acquirePlayAssetSourcesAttempt(
       assetCatalogVersion: 1, startupSceneGuid: roots.find((id) => host.registry.getByGuid(id)?.header.type === "Scene") ?? "",
       bundleDebugger: true, render: project.settings.render, playFrameCap: project.settings.playFrameCap,
       pixelsPerUnit: project.settings.twoD.pixelsPerUnit, sortingLayers: project.settings.twoD.sortingLayers,
-      pixelPerfect: project.settings.twoD.pixelPerfect, physicsWorld: "3d", collisionMatrix: project.settings.physics.collisionMatrix,
+      pixelPerfect: project.settings.twoD.pixelPerfect, physicsWorld: "3d", collisionPresets: project.settings.physics.collisionPresets,
       audioMixerGuid: project.settings.audio.audioMixerGuid ?? undefined,
       assets: [],
     },

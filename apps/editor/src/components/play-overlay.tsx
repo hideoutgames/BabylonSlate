@@ -31,6 +31,7 @@ import {
   type SerializedScene,
   type SerializedSceneLayer,
   type CollisionTriangleMesh,
+  type CollisionPreset,
 } from "@babylonslate/core";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { SelectableText } from "@babylonslate/editor-kit";
@@ -187,8 +188,8 @@ export interface PlayOverlayProps {
   postProcessingEnabled?: boolean;
   hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
-  /** Project Collision Matrix rows (`PhysicsProjectSettings.collisionMatrix`). */
-  collisionMatrix?: readonly number[];
+  /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`). */
+  collisionPresets?: readonly CollisionPreset[];
   sortingLayers?: readonly string[];
   pixelPerfect?: boolean;
   touchMinTargetPx?: number;
@@ -303,7 +304,7 @@ function PlayOverlayView({
   postProcessingEnabled,
   hardwareScalingLevel,
   pixelsPerUnit,
-  collisionMatrix,
+  collisionPresets,
   sortingLayers,
   pixelPerfect,
   touchMinTargetPx,
@@ -589,8 +590,8 @@ function PlayOverlayView({
   sortingLayersRef.current = sortingLayers;
   const pixelsPerUnitRef = useRef(pixelsPerUnit);
   pixelsPerUnitRef.current = pixelsPerUnit;
-  const collisionMatrixRef = useRef(collisionMatrix);
-  collisionMatrixRef.current = collisionMatrix;
+  const collisionPresetsRef = useRef(collisionPresets);
+  collisionPresetsRef.current = collisionPresets;
   const touchMinTargetPxRef = useRef(touchMinTargetPx);
   touchMinTargetPxRef.current = touchMinTargetPx;
   const pixelPerfectRef = useRef(pixelPerfect);
@@ -801,7 +802,7 @@ function PlayOverlayView({
           consoleRenderSettings: initialConsoleRenderRef.current,
           hardwareScalingLevel,
           pixelsPerUnit: pixelsPerUnitRef.current,
-          collisionMatrix: collisionMatrixRef.current,
+          collisionPresets: collisionPresetsRef.current,
           sortingLayers: sortingLayersRef.current,
           touchMinTargetPx: touchMinTargetPxRef.current,
           pixelPerfect: pixelPerfectRef.current,

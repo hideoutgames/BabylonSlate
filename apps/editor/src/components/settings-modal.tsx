@@ -16,7 +16,7 @@ import {
   CatalogDialog,
   DisclosureSection,
   ClassPicker,
-  CollisionMatrixField,
+  CollisionPresetsField,
   NamedListEditor,
   NumberField,
   assetRowIdentity,
@@ -138,7 +138,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
   {
     id: "physics",
     label: "Physics",
-    keywords: "collision layers collide mask matrix havok",
+    keywords: "collision layers presets collide mask havok",
   },
   { id: "focusNavigation", label: "Focus Navigation", keywords: "focus keyboard gamepad navigation repeat wrap input activate" },
   {
@@ -971,19 +971,19 @@ export function SettingsModal({
               </FieldDescription>
             </Field>
             <Field>
-              <FieldLabel>Collision Matrix</FieldLabel>
-              <CollisionMatrixField
-                labels={projectDocument.settings.physics.collisionLayers}
-                value={projectDocument.settings.physics.collisionMatrix}
-                onChange={(collisionMatrix) =>
+              <FieldLabel>Collision Presets</FieldLabel>
+              <CollisionPresetsField
+                layers={projectDocument.settings.physics.collisionLayers}
+                value={projectDocument.settings.physics.collisionPresets}
+                onChange={(collisionPresets) =>
                   updateProjectSettings({
-                    physics: { ...projectDocument.settings.physics, collisionMatrix },
+                    physics: { ...projectDocument.settings.physics, collisionPresets },
                   })
                 }
-                data-testid="settings-collision-matrix"
+                data-testid="settings-collision-presets"
               />
               <FieldDescription>
-                Ticked layers collide. Colliders whose Collides With is Project Matrix follow it.
+                Each preset sets a Layer and the layers it collides with. Colliders pick a preset or Custom.
               </FieldDescription>
             </Field>
           </FieldSet>

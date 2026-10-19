@@ -168,8 +168,8 @@ export type ControlMessage =
       /** Scene physics world; defaults to 3d when omitted. */
       physicsWorld?: "3d" | "2d";
       gravity?: [number, number, number];
-      /** Project Collision Matrix rows (`PhysicsProjectSettings.collisionMatrix`). */
-      collisionMatrix?: number[];
+      /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`). */
+      collisionPresets?: import("@babylonslate/core").CollisionPreset[];
       /** Worker-resolvable URL for HavokPhysics.wasm (3d Play). */
       havokWasmUrl?: string;
       /** Session GameInstance class id from the scene/project picker. */

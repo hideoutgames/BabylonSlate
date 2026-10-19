@@ -996,15 +996,15 @@ describe("componentPropertyRows", () => {
       layer.onChange("Enemy");
     }
     expect(update).toHaveBeenCalledWith("layer", 2);
-    // No Collides With source is Custom: the collider's own mask, editable.
-    expect(rows.find((row) => row.id.endsWith("-maskSource"))).toMatchObject({
+    // No Collision Preset is Custom: the collider's own Layer and Collides With, editable.
+    expect(rows.find((row) => row.id.endsWith("-collisionPreset"))).toMatchObject({
       kind: "enum",
-      label: "Collides With",
+      label: "Collision Preset",
       value: "custom",
     });
     expect(rows.find((row) => row.id.endsWith("-mask"))).toMatchObject({
       kind: "flags",
-      label: "Layers",
+      label: "Collides With",
       value: 1,
       bitCount: 2,
       labels: ["Default", "Enemy"],
@@ -1022,17 +1022,18 @@ describe("componentPropertyRows", () => {
     });
   });
 
-  it("previews the project Collision Matrix row for a Project Matrix collider and keeps it on switching to Custom", () => {
+  it("shows a Collision Preset's Layer and Collides With read only and starts Custom from them", () => {
     const { rows, update } = rowsFor(
-      { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 0.5 }, layer: 2, mask: 0b11, maskSource: "project" } },
-      // Enemy does not collide with Enemy.
-      { collisionLayers: ["Default", "Enemy"], collisionMatrix: [0xffffffff, 0xfffffffd] },
+      { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 0.5 }, layer: 1, mask: 0b11, collisionPreset: "enemy" } },
+      { collisionLayers: ["Default", "Enemy"], collisionPresets: [{ id: "enemy", name: "Enemy", layer: 2, mask: 0xfffffffd }] },
     );
+    expect(rows.find((row) => row.id.endsWith("-layer"))).toMatchObject({ kind: "enum", value: "Enemy", disabled: true });
     expect(rows.find((row) => row.id.endsWith("-mask"))).toMatchObject({ kind: "flags", value: 0xfffffffd, disabled: true });
-    const source = rows.find((row) => row.id.endsWith("-maskSource"));
-    if (source?.kind !== "enum") throw new Error("Missing Collides With row");
-    source.onChange("custom");
-    expect(update).toHaveBeenCalledWith("maskSource", "custom", { mask: 0xfffffffd });
+    const preset = rows.find((row) => row.id.endsWith("-collisionPreset"));
+    if (preset?.kind !== "enum") throw new Error("Missing Collision Preset row");
+    expect(preset.options.map((option) => option.label)).toEqual(["Enemy", "Custom"]);
+    preset.onChange("custom");
+    expect(update).toHaveBeenCalledWith("collisionPreset", "custom", { layer: 2, mask: 0xfffffffd });
   });
 
   it.each([

@@ -1304,7 +1304,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
           {
             sortingLayers,
             collisionLayers,
-            collisionMatrix: projectDocument?.settings.physics?.collisionMatrix,
+            collisionPresets: projectDocument?.settings.physics?.collisionPresets,
             assetLabel,
             assetType,
             modelMaterialSlots: (guid) => normalizeModelPayload(

@@ -1,7 +1,6 @@
 import {
-  normalizeCollisionMatrix,
+  DEFAULT_COLLISION_PRESETS,
   parseRagdollProperties,
-  setCollisionMatrixPair,
   type SerializedActor,
   type SerializedComponent,
   type SerializedTransform,
@@ -34,6 +33,8 @@ const FOLDER = "Physics";
 /** Project collision layer names; bit `1 << index` is the Inspector's Layer value. */
 export const FEATURE_TEST_COLLISION_LAYERS = ["Default", "Dynamic", "Trigger", "Water", "Ghost"] as const;
 const LAYER = { default: 1, dynamic: 2, trigger: 4, water: 8, ghost: 16 } as const;
+const ALL_LAYERS = 0xffffffff;
+const GHOST_PASS_PRESET = "ghost-pass";
 
 /** Main-scene workload knobs. */
 const PYRAMID_LEVELS = 5;
@@ -108,14 +109,13 @@ export async function placeFeatureTestPhysics(ctx: FeatureTestContext): Promise<
   ctx.patchSettings((settings) => {
     const names: readonly string[] = FEATURE_TEST_COLLISION_LAYERS;
     const collisionLayers = [...names, ...settings.physics.collisionLayers.filter((name) => !names.includes(name))];
-    // Ghost and Dynamic do not collide under the project Collision Matrix (Ghost Pass Ball).
-    const collisionMatrix = setCollisionMatrixPair(
-      normalizeCollisionMatrix(undefined, collisionLayers.length),
-      collisionLayers.indexOf("Dynamic"),
-      collisionLayers.indexOf("Ghost"),
-      false,
-    );
-    return { ...settings, physics: { ...settings.physics, collisionLayers, collisionMatrix } };
+    const collisionPresets = [
+      ...DEFAULT_COLLISION_PRESETS,
+      { id: "dynamic", name: "Dynamic", layer: LAYER.dynamic, mask: ALL_LAYERS },
+      // Ghost Pass Ball: a Dynamic body that ignores the Ghost layer.
+      { id: GHOST_PASS_PRESET, name: "Ghost Pass", layer: LAYER.dynamic, mask: (ALL_LAYERS & ~LAYER.ghost) >>> 0 },
+    ];
+    return { ...settings, physics: { ...settings.physics, collisionLayers, collisionPresets } };
   });
 }
 
@@ -676,8 +676,7 @@ function placeBodiesZone(ctx: FeatureTestContext, refs: PhysicsRefs, palette: Pa
     body: { linearDamping: 4, angularDamping: 2 },
   }));
 
-  // Collision layers: the Ghost wall blocks the Custom all-layers ball; the Project Matrix ball (Dynamic, which the
-  // matrix keeps off Ghost) falls through.
+  // Collision layers: the Ghost wall blocks the Custom all-layers ball; the Ghost Pass preset ball falls through.
   label("layers", 8, 0, "Collision Layers");
   add(rigidActor("ft-phys-ghost-wall", "Ghost Layer Wall", tf(at(8, 1.5, 0)), {
     motion: "static",
@@ -687,7 +686,7 @@ function placeBodiesZone(ctx: FeatureTestContext, refs: PhysicsRefs, palette: Pa
   }));
   add(ball("ft-phys-ghost-pass", "Ghost Pass Ball", at(7.6, 6, 0), 0.35, {
     materialGuid: palette.emissive,
-    collider: { maskSource: "project" },
+    collider: { collisionPreset: GHOST_PASS_PRESET },
   }));
   add(ball("ft-phys-ghost-blocked", "Ghost Blocked Ball", at(8.4, 6.5, 0), 0.35, { materialGuid: palette.instance }));
 

@@ -30,7 +30,7 @@ An actor needs a **Rigid Body** and at least one **Collider** on the same actor.
 
 On dynamic and kinematic bodies you can also set **Mass** (at least 0.001), **Gravity Scale**, **Linear Damping** and **Angular Damping**. A static body hides these rows.
 
-Collider shapes are **box**, **sphere**, **capsule** and **cylinder** in 3D, and **box2d**, **circle** and **capsule2d** in 2D. Each Collider also has **Friction** (default 0.5), **Restitution** (bounciness, default 0), **Is Trigger**, **Layer**, **Collides With** (the project Collision Matrix or Custom) and **Layers**. See [Collision](collision.md).
+Collider shapes are **box**, **sphere**, **capsule** and **cylinder** in 3D, and **box2d**, **circle** and **capsule2d** in 2D. Each Collider also has **Friction** (default 0.5), **Restitution** (bounciness, default 0), **Is Trigger**, **Collision Preset**, **Layer** and **Collides With**. See [Collision](collision.md).
 
 ## Collision without a Rigid Body
 

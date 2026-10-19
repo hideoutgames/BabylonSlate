@@ -1,7 +1,7 @@
 import { WaterWorld } from "./water-world";
 import { dynamicRuntimeGeometry } from "./dynamic-runtime-mesh";
 import { DynamicMeshCollisionCache, dynamicMeshCollisionDescriptor } from "./dynamic-mesh-collision";
-import { landscapeCollisionMesh, normalizeWaterBuoyancy, parseCollisionMaskSource, resolveCollisionMask, sameCollisionTriangleMesh, type CollisionMaskSource, type CollisionTriangleMesh, type MovementProperties, type Transform } from "@babylonslate/core";
+import { landscapeCollisionMesh, normalizeWaterBuoyancy, resolveCollisionFilter, sameCollisionTriangleMesh, type CollisionPreset, type CollisionTriangleMesh, type MovementProperties, type Transform } from "@babylonslate/core";
 import { parsedMovementProperties } from "./movement-settings";
 import type {
   ColliderDesc,
@@ -214,7 +214,7 @@ export class PhysicsWorldSync {
   private complexMeshes = new Map<string, CollisionTriangleMesh>();
   private onMissingComplexMesh: ((assetGuid: string) => void) | null = null;
   private pixelsPerUnit = 100;
-  private readonly collisionMatrix: readonly number[] | undefined;
+  private readonly collisionPresets: readonly Pick<CollisionPreset, "id" | "layer" | "mask">[] | undefined;
 
   constructor(
     backend: PhysicsBackend,
@@ -240,15 +240,14 @@ export class PhysicsWorldSync {
        */
       observesContacts?: (actor: Actor) => boolean;
       /**
-       * The project Collision Matrix (`PhysicsProjectSettings.collisionMatrix`). Colliders whose Collides With is
-       * "project" take their mask from it, as do the engine's own colliders (on the Default layer). Omitted: every
-       * collider keeps its authored mask.
+       * The project Collision Presets (`PhysicsProjectSettings.collisionPresets`). A collider whose `collisionPreset`
+       * names one takes its layer and mask. Omitted: every collider keeps its own.
        */
-      collisionMatrix?: readonly number[];
+      collisionPresets?: readonly Pick<CollisionPreset, "id" | "layer" | "mask">[];
     },
   ) {
     this.backend = backend;
-    this.collisionMatrix = options?.collisionMatrix;
+    this.collisionPresets = options?.collisionPresets;
     this.observesContacts = options?.observesContacts;
     this.skipEmptySteps = options?.skipEmptySteps ?? false;
     this.actorsOf = options?.actorsOf;
@@ -260,25 +259,18 @@ export class PhysicsWorldSync {
     return this.backend;
   }
 
-  /** The mask a collider on `layer` uses in this world: its own, or the Collision Matrix rows for "project". */
-  resolveCollisionMask(layer: number, mask: number, source: CollisionMaskSource): number {
-    return resolveCollisionMask(layer, mask, source, this.collisionMatrix);
+  /** A collider's layer and mask in this world: its Collision Preset's, or its own when Custom. */
+  collisionFilter(layer: number, mask: number, presetRef: unknown): { layer: number; mask: number } {
+    return resolveCollisionFilter(layer, mask, presetRef, this.collisionPresets);
   }
 
-  /** Engine-made colliders (Movement capsule, Blocking Volume, tilemap chains) sit on the Default layer. */
-  private engineColliderMask(): number {
-    return this.resolveCollisionMask(1, 0xffffffff, "project");
-  }
-
-  /**
-   * Mesh, Dynamic Runtime Mesh and Landscape collision. Landscape has no Collides With setting, so without a
-   * written `maskSource` it follows the matrix like the engine's own colliders.
-   */
-  private meshCollisionFilter(component: ActorComponent, unsetSource: CollisionMaskSource = "custom"): { layer: number; mask: number } {
-    const layer = parseMeshCollisionLayer(component.getVariable("layer"));
-    const mask = parseMeshCollisionMask(component.getVariable("mask"));
-    const source = component.getVariable("maskSource");
-    return { layer, mask: this.resolveCollisionMask(layer, mask, source === undefined ? unsetSource : parseCollisionMaskSource(source)) };
+  /** Mesh, Dynamic Runtime Mesh and Landscape collision. */
+  private meshCollisionFilter(component: ActorComponent): { layer: number; mask: number } {
+    return this.collisionFilter(
+      parseMeshCollisionLayer(component.getVariable("layer")),
+      parseMeshCollisionMask(component.getVariable("mask")),
+      component.getVariable("collisionPreset"),
+    );
   }
 
   /** Capture native center-of-mass motion before replacing the actor's body. */
@@ -1595,7 +1587,7 @@ export class PhysicsWorldSync {
       colliders.set(id, {
         id, bodyId,
         shape: { kind: this.backend.kind === "3d" ? "capsule" : "capsule2d", radius: props.radius, halfHeight: props.height / 2 - props.radius },
-        rotation, friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: this.engineColliderMask(),
+        rotation, friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff,
       });
     }
 
@@ -1652,8 +1644,7 @@ export class PhysicsWorldSync {
         friction: collider.friction,
         restitution: collider.restitution,
         isTrigger: collider.isTrigger,
-        layer: collider.layer,
-        mask: this.resolveCollisionMask(collider.layer, collider.mask, collider.maskSource),
+        ...this.collisionFilter(collider.layer, collider.mask, component.getVariable("collisionPreset")),
         translation: baked.translation,
         rotation: baked.rotation,
       });
@@ -1690,7 +1681,7 @@ export class PhysicsWorldSync {
       // as the tilemap's visual does.
       for (const collider of prepared.colliders) {
         const baked = this.geometry(tilemap, collider.id).prepare(collider.shape, tilemap.transform, scale);
-        colliders.set(collider.id, { ...collider, bodyId, ...baked, mask: this.engineColliderMask() });
+        colliders.set(collider.id, { ...collider, bodyId, ...baked });
       }
     } else {
       this.tilemapCollidersByActor.delete(actor.guid);
@@ -1714,7 +1705,7 @@ export class PhysicsWorldSync {
       transform.position.x += offset.x; transform.position.y += offset.y; transform.position.z += offset.z;
       const baked = this.geometry(buoyancy, "water").prepare({ kind: "box", halfExtents: { x: props.width / 2, y: props.height / 2, z: props.length / 2 } }, transform, scale);
       const id = componentColliderPhysicsId(actor.guid, buoyancy.guid);
-      colliders.set(id, { ...collider, ...baked, id, bodyId, mask: this.engineColliderMask() });
+      colliders.set(id, { ...collider, ...baked, id, bodyId });
     }
   }
 
@@ -1756,7 +1747,7 @@ export class PhysicsWorldSync {
       this.ordinaryByComponent.set(component, prepared);
     }
     const tuning = Object.fromEntries(
-      ["friction", "restitution", "isTrigger", "layer", "mask", "maskSource"].map((name) => [
+      ["friction", "restitution", "isTrigger", "layer", "mask", "collisionPreset"].map((name) => [
         name,
         component.getVariable(name),
       ]),
@@ -1909,7 +1900,7 @@ export class PhysicsWorldSync {
       if (!source.shape) continue;
       const baked = this.geometry(component, "landscape").prepare(source.shape, component.transform, scale);
       const id = componentColliderPhysicsId(actor.guid, component.guid);
-      colliders.set(id, { id, bodyId, ...baked, friction: 0.5, restitution: 0, isTrigger: false, ...this.meshCollisionFilter(component, "project") });
+      colliders.set(id, { id, bodyId, ...baked, friction: 0.5, restitution: 0, isTrigger: false, ...this.meshCollisionFilter(component) });
     }
   }
 
@@ -2033,7 +2024,7 @@ export class PhysicsWorldSync {
       restitution: 0,
       isTrigger: false,
       layer: 1,
-      mask: this.engineColliderMask(),
+      mask: 0xffffffff,
     });
   }
 
@@ -2107,8 +2098,7 @@ export class PhysicsWorldSync {
         friction: collider.friction,
         restitution: collider.restitution,
         isTrigger: collider.isTrigger,
-        layer: collider.layer,
-        mask: this.resolveCollisionMask(collider.layer, collider.mask, collider.maskSource),
+        ...this.collisionFilter(collider.layer, collider.mask, component.getVariable("collisionPreset")),
         translation: baked.translation,
         rotation: baked.rotation,
       });
@@ -2376,7 +2366,7 @@ const COLLISION_DESCRIPTOR_VARIABLES = [
   "isTrigger",
   "layer",
   "mask",
-  "maskSource",
+  "collisionPreset",
   "collisionMode",
   "meshKind",
   "assetGuid",

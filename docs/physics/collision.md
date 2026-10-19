@@ -10,21 +10,21 @@ Each Collider, collidable Mesh, Dynamic Runtime Mesh and Ragdoll has these setti
 
 | Setting | Description |
 | --- | --- |
-| Layer | The one layer this collider belongs to. |
-| Collides With | **Project Matrix** follows the project Collision Matrix for this collider's Layer. **Custom** uses the collider's own Layers. New components use Project Matrix; components saved before the matrix existed stay Custom. |
-| Layers | The layers it reacts to. With Project Matrix it shows the matrix row and is read only; switching to Custom starts from that row. |
+| Collision Preset | A preset from Project Settings, or **Custom**. New components use **Default**; components saved before presets existed are Custom. |
+| Layer | The one layer this collider belongs to. Read only unless Custom. |
+| Collides With | The layers it reacts to. Read only unless Custom. |
 
-Two colliders interact only when each one's **Layers** includes the other's **Layer**. If either side leaves the other out, they pass through each other and raise no events.
+Two colliders interact only when each one's **Collides With** includes the other's **Layer**. If either side leaves the other out, they pass through each other and raise no events.
 
-### Collision Matrix
+### Collision Presets
 
-**Project Settings > Physics > Collision Matrix** is a grid of every pair of layers. Clear a box and the two layers stop colliding for every Project Matrix collider on them. All pairs collide by default.
+**Project Settings > Physics > Collision Presets** lists named presets, one row each: its **Layer** and a box for every layer it collides with. **Add Preset** creates one; every project keeps at least one, **Default** (Default layer, collides with everything).
 
-Engine-made colliders (the Movement capsule, Blocking Volumes and tilemap collision) sit on **Default** and follow its matrix row. Landscape collision also follows the matrix.
+A collider on a preset uses the preset's Layer and Collides With, so editing the preset changes every collider that uses it. Switching a collider to **Custom** starts from the preset's values. If a preset is deleted, its colliders keep the values they last showed.
 
-Layers are stored by position: removing or reordering a layer in the list moves the matrix rows with it, as it does for every collider's Layer.
+Layers are stored by position: removing or reordering a layer in the list changes which layer a preset's boxes refer to, as it does for every collider's Layer.
 
-A script that sets a component's **Mask** switches it to Custom.
+A script that sets a component's **Layer** or **Mask** switches it to Custom.
 
 ## Hits and overlaps
 

@@ -5,7 +5,7 @@ import { useSimulationInspectionStore } from "../context/simulation-inspection-c
 import { GraphDataLiteralDefaults } from "../components/graph-data-literal-editor";
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
-import { carriesLoadingPolicy, normalizeClassMemberCategory, parseUIControl2DProperties } from "@babylonslate/core";
+import { carriesLoadingPolicy, normalizeClassMemberCategory, parseUIControl2DProperties, type CollisionPreset } from "@babylonslate/core";
 import { useMemo, useState } from "react";
 import { normalizeModelPayload } from "@babylonslate/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
@@ -944,7 +944,7 @@ function PrefabComponentDetails({
   sceneLayerClasses,
   sortingLayers,
   collisionLayers,
-  collisionMatrix,
+  collisionPresets,
   physicsWorld,
   viewportMode,
   pickerAssets,
@@ -963,7 +963,7 @@ function PrefabComponentDetails({
   sceneLayerClasses: ClassPickerEntry[];
   sortingLayers: readonly string[];
   collisionLayers: readonly string[];
-  collisionMatrix?: readonly number[];
+  collisionPresets?: readonly CollisionPreset[];
   physicsWorld: "3d" | "2d";
   viewportMode: ViewportMode;
   pickerAssets: Array<{
@@ -1038,7 +1038,7 @@ function PrefabComponentDetails({
           rows={componentPropertyRows(PREFAB_ROOT_ID, component, onUpdate, {
             sortingLayers,
             collisionLayers,
-            collisionMatrix,
+            collisionPresets,
             assetLabel,
             assetType,
             modelMaterialSlots: (guid) => normalizeModelPayload(
@@ -1491,7 +1491,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           sceneLayerClasses={bobjectClassEntries.filter(entry => walkAncestry(entry.id, parentOf).includes("SceneLayerActor"))}
           sortingLayers={sortingLayers}
           collisionLayers={collisionLayers}
-          collisionMatrix={projectDocument?.settings.physics?.collisionMatrix}
+          collisionPresets={projectDocument?.settings.physics?.collisionPresets}
           physicsWorld={physicsWorld}
           viewportMode={viewportMode}
           pickerAssets={pickerAssets}

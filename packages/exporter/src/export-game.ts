@@ -1,4 +1,4 @@
-import { err, ok, classIdForAssetPath, DEFAULT_LOOP_COUNT, normalizeSceneLayer, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, type Result } from "@babylonslate/core";
+import { err, ok, classIdForAssetPath, DEFAULT_LOOP_COUNT, normalizeSceneLayer, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, type Result } from "@babylonslate/core";
 import { collectAssetDependencyMetadata, decodePackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@babylonslate/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
@@ -347,7 +347,7 @@ export async function exportGame(
     pixelPerfect: options.pixelPerfect === true,
     sortingLayers: normalizeSortingLayers(options.sortingLayers),
     physicsWorld: options.physicsWorld ?? "3d",
-    ...(options.collisionMatrix ? { collisionMatrix: collisionMatrixRows(options.collisionMatrix) } : {}),
+    ...(options.collisionPresets ? { collisionPresets: normalizeCollisionPresets(options.collisionPresets) } : {}),
     assets: index,
     ...(options.bundleDebugger
       ? {
@@ -398,10 +398,6 @@ export function unzipExport(bytes: Uint8Array): Record<string, Uint8Array> {
 
 const OUTDATED_MANIFEST = "rebuild this game with the current exporter.";
 
-/** Collision Matrix rows as unsigned 32-bit masks; a malformed row collides with every layer. */
-function collisionMatrixRows(rows: readonly unknown[]): number[] {
-  return rows.slice(0, 32).map(row => (typeof row === "number" && Number.isInteger(row) ? row >>> 0 : 0xffffffff));
-}
 
 /** Fields `exportGame` always writes; a manifest without one predates the current exporter. */
 const REQUIRED_MANIFEST_FIELDS = [
@@ -436,7 +432,7 @@ export function parseGameManifest(source: string): GameManifest {
       ? parsed.audioMixerGuid.trim()
       : undefined;
   const bundleDebugger = parsed.bundleDebugger === true;
-  const collisionMatrix = Array.isArray(parsed.collisionMatrix) ? collisionMatrixRows(parsed.collisionMatrix) : undefined;
+  const collisionPresets = parsed.collisionPresets === undefined ? undefined : normalizeCollisionPresets(parsed.collisionPresets);
   return {
     ...parsed,
     render: normalizeRenderProjectSettings(parsed.render),
@@ -460,7 +456,7 @@ export function parseGameManifest(source: string): GameManifest {
         : 44,
     pixelPerfect: parsed.pixelPerfect === true,
     sortingLayers: [...sortingLayers],
-    collisionMatrix,
+    collisionPresets,
     ...(bundleDebugger
       ? {
           infiniteLoopDetection: parsed.infiniteLoopDetection !== false,
