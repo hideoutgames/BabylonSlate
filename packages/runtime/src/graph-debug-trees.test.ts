@@ -101,6 +101,20 @@ describe("Behaviour Tree graph debugging", () => {
     expect(roster(bt("kitchen")).map((entry) => entry.id)).toEqual(["first"]);
   });
 
+  it("sends the roster once while the components stay the same, then only what changed", () => {
+    const { runtime, commands } = start({ playScene: guards(), behaviourTrees: trees() });
+    runtime.applyDebugObserve(bt("guard"), null);
+    for (let tick = 0; tick < 3; tick++) runtime.tick();
+    const rosters = () => commands.filter((command) => command.type === "debugRoster");
+    expect(rosters()).toHaveLength(1);
+
+    // A component handed another tree leaves the roster; a renamed actor is relabelled.
+    runtime.getWorld().findActor("g2")!.components[0]!.setVariable("treeGuid", "kitchen");
+    runtime.getWorld().findActor("g1")!.variables.set("name", "Captain");
+    runtime.tick();
+    expect(rosters().slice(1)).toMatchObject([{ reset: false, removed: ["bt-2"], added: [{ id: "bt-1", label: "Captain" }] }]);
+  });
+
   it("reports the nodes and links an evaluation touched, and only for the followed component", () => {
     const { runtime, commands, graphs } = start({ playScene: guards(), behaviourTrees: trees() });
     runtime.applyDebugObserve(bt("guard"), "bt-2");

@@ -291,6 +291,22 @@ function findInstance(world: World, target: DebugObserveTarget, id: string): BOb
   return match;
 }
 
+/** Whether the live components of a Behaviour Tree or Animation Graph target are the roster last sent, in order. */
+function sameComponentRoster(world: World, target: DebugObserveTarget, sent: ReadonlyMap<string, DebugInstance>): boolean {
+  const expected = sent.values();
+  let same = true;
+  let count = 0;
+  collectInstances(world, target, DEBUG_ROSTER_LIMIT, (object, _kind, owner) => {
+    const before = expected.next();
+    if (before.done || before.value.id !== object.guid || before.value.label !== instanceLabel(owner ?? object)) {
+      same = false;
+      return true;
+    }
+    count += 1;
+  });
+  return same && count === sent.size;
+}
+
 export interface ScriptDebugObserverHost {
   world(): World;
   emit(command: CommandMessage): void;
@@ -373,18 +389,20 @@ export class ScriptDebugObserver {
     const target = this.target;
     if (!target) return;
     const world = this.host.world();
-    // A class never changes, so the world's structure decides whether its roster can have changed. The
-    // asset a component runs is a variable a script can set, so a component target is walked each tick
-    // (only the actors owning such a component).
+    const previous = this.sent;
     if (target.kind === "class") {
+      // A class never changes, so the world's structure decides whether its roster can have changed.
       const subsystems = world.getGameSubsystems().length + world.getSceneSubsystems().length;
       const basis = this.basis;
       if (basis && basis.revision === world.structuralRevision && basis.gameInstance === world.gameInstance &&
         basis.subsystems === subsystems) return;
       this.basis = { revision: world.structuralRevision, gameInstance: world.gameInstance, subsystems };
+    } else if (previous && sameComponentRoster(world, target, previous)) {
+      // The asset a component runs is a variable a script can set, so a component target is walked each tick
+      // (only the actors owning such a component), allocating nothing while the roster holds.
+      return;
     }
     const current = debugInstancesOf(world, target);
-    const previous = this.sent;
     const next = new Map(current.map((instance) => [instance.id, instance]));
     this.sent = next;
     if (!previous) {
