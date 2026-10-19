@@ -138,6 +138,13 @@
   --tw-ring-shadow: 0 0 #0000;
 }
 
+/* Absolute positioning ignores the frame's safe-area padding, so the pinned
+ * close button adds the insets itself to stay clear of the status bar. */
+.editor-dialog-large:not(.catalog-dialog-medium, .editor-dialog-delete) > [data-slot="dialog-close"] {
+  top: calc(var(--safe-top) + 0.5rem);
+  right: calc(var(--safe-right) + 0.5rem);
+}
+
 /* Pick lists keep the editor in view; phones fall back to the large size. */
 .catalog-dialog-medium {
   width: min(56rem, calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge)));
