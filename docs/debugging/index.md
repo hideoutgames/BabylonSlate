@@ -56,9 +56,9 @@ While a Simulation runs, open a Class to see its graphs run for one object, the 
 
 When a node runs for that object, its outline turns orange and fades over a quarter of a second. Each new run starts the fade again, so a node that runs every tick stays lit. The pins and wires involved light up with it: the execution wire that was taken, and the data wires the node read, including those that pass through [pure nodes](../scripting/index.md#nodes-and-pins). Nodes without execution pins never get an outline of their own. With reduced motion turned on in your system settings the highlight does not fade: it stays lit for the same time, then clears.
 
-Hover a data pin on a computer, or tap its name on a touch screen, to see the last value it held: `3.5`, a piece of text, or the class and id of an object. Numbers show four decimals at most and long text is cut after about 100 characters. A pin that has not run yet shows **No value yet**. A pin that is not wired shows the value typed on the node itself, so it has no tip. A pure node's pins show the value a node that ran read through them.
+Hover a data pin on a computer, or tap its name on a touch screen (tap it again, or anywhere else, to close it), to see the last value it held: `3.5`, a piece of text, or the class and id of an object. Numbers show four decimals at most and long text is cut after about 100 characters. A pin that has not run yet shows **No value yet**. A pin that is not wired shows the value typed on the node itself, so it has no tip. A pure node's pins show the value a node that ran read through them.
 
-The graphs stay read-only: watching never changes your Class or the running game. Only a Simulation compiles Class graphs for this. Play, Preview Build and exported games do not, so they pay nothing for it.
+The graphs stay read-only: watching never changes your Class or the running game. Outside a Simulation a graph shows no highlights and no tips, and editing it works as always. Only a Simulation compiles Class graphs for this. Play, Preview Build and exported games do not, so they pay nothing for it.
 
 ## Stats
 
