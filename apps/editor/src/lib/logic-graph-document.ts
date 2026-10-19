@@ -1,8 +1,9 @@
 import {
+  classGraphComponentFromHeaderRow,
+  classHeaderComponentRow,
   isFunctionLibraryClass,
   normalizeClassMemberCategory,
   normalizeDataDefinitionAsset,
-  normalizeMaterialInstanceOverrides,
   normalizeScene,
   type DataDefinitionField,
   type GraphClassMember,
@@ -378,31 +379,8 @@ export function classGraphFromHeaderPayload(
   const rawComponents = payload?.components;
   if (Array.isArray(rawComponents)) {
     for (const entry of rawComponents) {
-      if (!entry || typeof entry !== "object") continue;
-      const id = (entry as { id?: unknown }).id;
-      const classId = (entry as { classId?: unknown }).classId;
-      if (typeof id !== "string" || !id.trim()) continue;
-      if (typeof classId !== "string" || !classId.trim()) continue;
-      const parentId = (entry as { parentId?: unknown }).parentId;
-      const properties = (entry as { properties?: unknown }).properties;
-      const transform = (entry as { transform?: unknown }).transform;
-      const rawName = (entry as { name?: unknown }).name;
-      const name = typeof rawName === "string" ? rawName.trim() : "";
-      const materialInstance = normalizeMaterialInstanceOverrides((entry as { materialInstance?: unknown }).materialInstance);
-      components.push({
-        id: id.trim(),
-        classId: classId.trim(),
-        ...(name ? { name } : {}),
-        ...(materialInstance ? { materialInstance } : {}),
-        properties:
-          properties && typeof properties === "object"
-            ? { ...(properties as Record<string, unknown>) }
-            : {},
-        parentId: typeof parentId === "string" ? parentId : null,
-        ...(transform && typeof transform === "object"
-          ? { transform: transform as NonNullable<SerializedGraph["components"]>[number]["transform"] }
-          : {}),
-      });
+      const row = classHeaderComponentRow(entry);
+      if (row) components.push(classGraphComponentFromHeaderRow(row));
     }
   }
   return {

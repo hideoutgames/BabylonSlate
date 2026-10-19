@@ -87,6 +87,10 @@ export async function reopenFeatureTestProject(page: Page, timeout = LONG_MS): P
  * waits forever for a Discard button that no longer exists and stalls every
  * later assertion until the test times out, although the editor opened the
  * Scene in seconds.
+ *
+ * The workspace check relies on opening through `openAssetFromBrowser`: its
+ * Content Browser tab is active, which hides the previous Scene's workspace,
+ * so a visible Scene workspace means the new Scene is the active one.
  */
 async function awaitSceneOpenPrompt(
   page: Page,
