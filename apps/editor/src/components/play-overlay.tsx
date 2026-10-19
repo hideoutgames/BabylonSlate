@@ -379,6 +379,9 @@ function PlayOverlayView({
     phase: "Preparing Scene",
     progress: 0,
   });
+  // A failed load stays pending until Play stops, which the failure starts: the
+  // dialog closes at once, so it stops pausing background captures.
+  const [sceneLoadFailed, setSceneLoadFailed] = useState(false);
   const printRef = useRef<PrintHudPrint | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -806,6 +809,7 @@ function PlayOverlayView({
           audioProjectSettings: audioProjectSettingsRef.current,
           pauseOnPlay: initialPauseOnPlayRef.current,
           onSceneLoading: setSceneLoading,
+          onSceneLoadFailed: () => setSceneLoadFailed(true),
           onSessionPaused: (next) => {
             if (!simulating) userPausedRef.current = next;
             setPaused(next);
@@ -1171,7 +1175,7 @@ function PlayOverlayView({
       data-assigned-materials={testMode ? assignedMaterials : undefined}
     >
       {simulationSession ? <SimulationRetentionDialog session={simulationSession} onStop={() => finishSessionRef.current()} /> : null}
-      <SceneLoadingDialog open={sceneLoading !== null} progress={sceneLoading?.progress ?? 0}
+      <SceneLoadingDialog open={sceneLoading !== null && !sceneLoadFailed} progress={sceneLoading?.progress ?? 0}
         phase={sceneLoading?.phase ?? "Preparing Scene"} onStop={() => finishSessionRef.current()} finalFocus={canvasRef}
         onCopyDetails={localEngineSettings.debugMode ? copyLoadDetails : undefined} />
       <PlayOverlayChrome

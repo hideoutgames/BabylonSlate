@@ -64,6 +64,7 @@ import {
   NodeMaterial,
   Scene,
   ScenePerformancePriority,
+  WebGPUCacheRenderPipeline,
 } from "@babylonjs/core";
 import type {
   AudioProjectSettings,
@@ -257,11 +258,11 @@ import {
   applyEditorMaterialFreeze,
   pendingSceneTextures,
   prewarmSceneMaterials as warmSceneMaterials,
-  SCENE_DRIVER_COMPILE_TIMEOUT_MS,
   SCENE_LOOKUP_MAPS,
   SCENE_FIRST_FRAME_TIMEOUT_MS,
   SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
+import { firstFrameCompletionMs } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
 
 export interface EditorSceneLoadOptions {
@@ -954,6 +955,8 @@ function initializeEngine(
     copied: boolean;
     completionStarted: boolean;
     errorsCleared: boolean;
+    /** WebGPU render pipelines the latest submitted draw created; they build inside its GPU completion. */
+    pipelines: number;
   };
   const pendingPresentations = new Map<string, PendingPresentation>();
   const frameOwners = new Map<string, PendingPresentation>();
@@ -970,7 +973,7 @@ function initializeEngine(
   const expirePresentation = (key: string) => {
     const pending = pendingPresentations.get(key);
     if (!pending) return;
-    cancelPresentation(new Error(`The scene did not present a frame before the loading deadline. Ready: ${pending.ready}; draws: ${pending.attempts}; rendered: ${pending.rendered}; GPU pending: ${Boolean(pending.submission)}; copied: ${pending.copied}.`), key);
+    cancelPresentation(new Error(`The scene did not present a frame before the loading deadline. Ready: ${pending.ready}; draws: ${pending.attempts}; rendered: ${pending.rendered}; GPU pending: ${Boolean(pending.submission)}; copied: ${pending.copied}; render pipelines created: ${pending.pipelines}.`), key);
   };
   const assertCurrent = (generation: number) => {
     if (disposed || scene.isDisposed || generation !== loadGeneration) {
@@ -2759,11 +2762,13 @@ function initializeEngine(
           return;
         }
         pending.copied = false;
+        const pipelinesBefore = WebGPUCacheRenderPipeline.NumCacheMiss;
         const submission = submitPresentedFrame(engine, () => {
           pending.attempts += 1;
           const rendered = draw();
           pending.rendered = rendered && presentationReady(pending);
         }, { errorStateKnownClear: pending.errorsCleared });
+        pending.pipelines = WebGPUCacheRenderPipeline.NumCacheMiss - pipelinesBefore;
         pending.submission = submission;
         // Unproven until this attempt's own fence-time read; a cancelled attempt leaves it unread.
         pending.errorsCleared = false;
@@ -2775,13 +2780,15 @@ function initializeEngine(
           // acknowledging before both this owner's fence and copy finish. The
           // fence is polled without blocking, so this budget also spans the
           // driver compiling the draw's programs: the longest compile the
-          // loading budgets already tolerate.
+          // loading budgets already tolerate. WebGPU builds every render
+          // pipeline the draw created in the GPU queue, inside this wait and
+          // with no progress to observe, so each adds an allowance.
           if (!pending.completionStarted) {
             pending.completionStarted = true;
             clearTimeout(pending.timer);
             pending.timer = setTimeout(() => {
               if (pendingPresentations.get(key) === pending) expirePresentation(key);
-            }, SCENE_DRIVER_COMPILE_TIMEOUT_MS);
+            }, firstFrameCompletionMs(pending.pipelines));
           }
         }
         void submission.completed.then(() => {
@@ -4237,7 +4244,7 @@ function initializeEngine(
         else expirePresentation(key);
       };
       const timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
-      pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false });
+      pendingPresentations.set(key, { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false, pipelines: 0 });
       return promise;
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),

@@ -9,6 +9,7 @@ import {
   ProgressDialogStatus,
 } from "./progress-dialog-parts";
 import { copyText } from "../lib/diagnostic-info";
+import { useBlockingSceneLoad } from "../lib/blocking-scene-loads";
 
 type SceneLoadingPhase = SceneViewportLoadPhase | SceneLoadPhase;
 
@@ -58,6 +59,11 @@ export function SceneLoadingDialog({
   onCopyDetails,
   reason,
 }: SceneLoadingDialogProps) {
+  // Every blocking load shows this dialog: while it shows a load's progress,
+  // background captures on the shared Engine wait. A rendering update does not
+  // hold them: each settings change starts one, and a dragged slider would
+  // interrupt the same capture over and over.
+  useBlockingSceneLoad(open && !failed && !rendering);
   return (
     <Dialog open={open} onOpenChange={() => {}}>
       <ProgressDialogContent

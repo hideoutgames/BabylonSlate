@@ -21,6 +21,7 @@ import {
   type Effect,
 } from "@babylonjs/core";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
+import { installTimerClock } from "./virtual-clock-test-fixtures";
 import {
   applyEditorMaterialFreeze,
   isSceneFrameReady,
@@ -431,6 +432,31 @@ describe("prewarmSceneMaterials", () => {
       expect(unit.settled.value).toBeInstanceOf(Error);
       unit.dispose();
     });
+  });
+
+  // A synchronous call held the thread past the stall budget without finishing a shader; the stall timer, due
+  // meanwhile, fires late once the thread is free.
+  it("starts a fresh window when a held gap makes the stall timer fire late, and still fails a stuck unit", async () => {
+    const clock = installTimerClock();
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const mesh = new Mesh("held-mesh", scene);
+    mesh.material = new PBRMaterial("held-material", scene);
+    vi.spyOn(mesh.material, "forceCompilationAsync").mockReturnValue(new Promise(() => {}));
+    let outcome: string | null = null;
+    void prewarmSceneMaterials(scene).then(() => { outcome = "ready"; }, (error: Error) => { outcome = error.message; });
+    try {
+      clock.hold(15_000);
+      await clock.run(SCENE_SHADER_WARM_TIMEOUT_MS);
+      expect(outcome).toBeNull();
+      await clock.run(SCENE_SHADER_WARM_TIMEOUT_MS);
+      expect(outcome).toContain('Stalled compiling "held-material" for "held-mesh"');
+    } finally {
+      scene.dispose();
+      engine.dispose();
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
   });
 
   it("names the stalled variant after earlier variants completed", async () => {
