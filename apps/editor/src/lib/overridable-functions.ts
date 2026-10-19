@@ -274,7 +274,8 @@ function localNativeEventTypes(graph?: SerializedGraph): Set<string> {
   return types;
 }
 
-function customEventsFromGraph(
+/** Custom events a graph declares, as members or event nodes, with their data output pins. */
+export function customEventsFromGraph(
   graph: SerializedGraph | undefined,
 ): Array<{ name: string; pins: GraphClassMemberPin[] }> {
   const rows: Array<{ name: string; pins: GraphClassMemberPin[] }> = [];

@@ -67,4 +67,19 @@ describe("MemberAccessChooser", () => {
     expect(screen.getByTestId("member-access-validated-get")).toBeTruthy();
     expect(screen.queryByTestId("member-access-set")).toBeNull();
   });
+
+  it("says the choice applies to each variable when several were dropped", () => {
+    render(
+      <MemberAccessChooser
+        open
+        memberName="3 Members"
+        variableCount={2}
+        onOpenChange={() => {}}
+        onChoose={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("member-access-chooser").textContent).toContain(
+      "Add a Get or Set node to the graph for each variable.",
+    );
+  });
 });

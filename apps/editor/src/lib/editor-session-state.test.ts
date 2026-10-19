@@ -56,4 +56,30 @@ describe("EditorSessionState", () => {
     state.saveCameraPose("graph:a", topDown);
     expect(state.loadCameraPose("graph:a")).toEqual(topDown);
   });
+
+  it("keeps copied Class members as a snapshot, apart from the Class they came from", () => {
+    const state = new EditorSessionState();
+    expect(state.hasCopiedClassMembers()).toBe(false);
+    expect(state.readCopiedClassMembers()).toBeNull();
+
+    const copied = {
+      variables: [{ member: { id: "v", kind: "variable" as const, name: "Health" } }],
+      functions: [],
+      events: [],
+    };
+    state.copyClassMembers(copied);
+    copied.variables[0]!.member.name = "Edited";
+    expect(state.hasCopiedClassMembers()).toBe(true);
+
+    const read = state.readCopiedClassMembers()!;
+    expect(read.variables[0]!.member.name).toBe("Health");
+    read.variables[0]!.member.name = "Edited again";
+    expect(state.readCopiedClassMembers()!.variables[0]!.member.name).toBe("Health");
+  });
+
+  it("does not take a copy with nothing in it for something to paste", () => {
+    const state = new EditorSessionState();
+    state.copyClassMembers({ variables: [], functions: [], events: [] });
+    expect(state.hasCopiedClassMembers()).toBe(false);
+  });
 });

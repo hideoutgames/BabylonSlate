@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AddMemberMenu,
@@ -14,7 +14,10 @@ import {
   pinShapeForContainer,
   formatEventTitle,
   pinPickerColorVar,
+  rangeSelectTreeIds,
   useContextMenu,
+  type ContextMenuItem,
+  type TreeSelectOptions,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
 import {
@@ -24,6 +27,7 @@ import {
 } from "@babylonslate/core";
 import { isLockedEngineClassId } from "@babylonslate/object-model";
 import { nextCopyName } from "@babylonslate/assets";
+import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
 import { Badge } from "@babylonslate/ui/components/badge";
 import {
   addClassMember,
@@ -39,10 +43,22 @@ import {
   patchClassMember,
   removeClassMember,
   canDropClassMember,
+  completeClassMemberDrop,
+  dropVariableBinding,
+  droppedRowsNotice,
   resolveClassMemberDrop,
+  type ClassMemberDropRow,
   type GraphDropPoint,
   type VariableAccessKind,
 } from "../lib/class-members";
+import {
+  canCopyClassMembers,
+  classAncestorGraphs,
+  copyClassMembers,
+  pasteClassMembers,
+  skippedMembersNotice,
+  type ClassMemberCopyRow,
+} from "../lib/class-member-clipboard";
 import { MemberAccessChooser } from "../components/member-access-chooser";
 import { FolderIcon, PlusIcon } from "lucide-react";
 import { GraphDropHint, type GraphDropHintState } from "@babylonslate/graph-ui";
@@ -52,6 +68,8 @@ import {
   useOpenDocument,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useEditorSessionState } from "../context/editor-session-state-context";
+import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
 import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { defaultNodeRegistry } from "../services/graph-validation";
@@ -101,26 +119,28 @@ export type MyClassMember = {
 
 export type MyClassPanelProps = IDockviewPanelProps;
 
-function variableForAccessDrop(
-  graph: SerializedGraph | undefined,
-  members: MyClassMember[],
-  memberId: string | undefined,
-): {
-  name?: string;
-  typeId?: string;
-  container?: string;
-  componentId?: string;
-  propertyKey?: string;
-} | undefined {
-  if (!memberId) return undefined;
-  const declared = (graph?.members ?? []).find(
-    (entry) => entry.id === memberId && entry.kind === "variable",
-  );
-  if (declared) return declared;
-  return members.find(
-    (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === memberId,
-  );
+/** The Class tree row id of a member. */
+function rowIdOf(member: MyClassMember): string {
+  return member.detail ?? `${member.kind}-${member.name}`;
 }
+
+function dropRowOf(member: MyClassMember): ClassMemberDropRow {
+  return {
+    id: rowIdOf(member),
+    kind: member.kind,
+    name: member.name,
+    eventType: member.eventType,
+    inherited: member.inherited,
+    inheritedFrom: member.inheritedFrom,
+    pins: member.pins,
+    typeId: member.typeId,
+    typeClassId: member.typeClassId,
+    componentId: member.componentId,
+  };
+}
+
+/** How long a floating notice stays up. */
+const NOTICE_MS = 4000;
 
 function sectionsForTree(
   activeFunctionId?: string | null,
@@ -482,6 +502,9 @@ export function ClassMembersView({
   onOpenInherited?: (member: MyClassMember) => void;
 }) {
   const phone = usePhoneLayout();
+  const keybinds = useKeybindings();
+  const sessionState = useEditorSessionState();
+  const treeRef = useRef<HTMLDivElement | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [memberPromptKind, setMemberPromptKind] =
     useState<GraphClassMemberKind | null>(null);
@@ -489,13 +512,33 @@ export function ClassMembersView({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
   const [accessDrop, setAccessDrop] = useState<{
-    memberId: string;
+    memberIds: string[];
     position: { x: number; y: number };
+    skipped: string[];
   } | null>(null);
   const [dropHint, setDropHint] = useState<GraphDropHintState | null>(null);
+  // The selected entries when there are several; `primary` is the one the
+  // graph follows and always equals `selectedId` while this applies.
+  const [multi, setMulti] = useState<{ primary: string; ids: string[] } | null>(null);
+  // Where a Shift range starts: the entry last chosen without Shift.
+  const anchor = useRef<string | null>(null);
+  // A fresh object per notice, so a second one restarts the timer.
+  const [notice, setNotice] = useState<{ message: string } | null>(null);
+  const showNotice = (message: string | null) => {
+    if (message) setNotice({ message });
+  };
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const members = useMemo(
     () => membersForGraph(graph, membersOptions),
     [graph, membersOptions],
+  );
+  const rowById = useMemo(
+    () => new Map(members.map((member) => [rowIdOf(member), member])),
+    [members],
   );
   const treeSections = sectionsForTree(activeFunctionId, membersOptions);
   const renamableIds = useMemo(() => {
@@ -669,66 +712,55 @@ export function ClassMembersView({
   const spawnAccess = (
     access: VariableAccessKind,
     memberId: string | null | undefined = selectedId,
-    position?: { x: number; y: number },
   ) => {
-    if (!graph || !memberId) return;
-    const row = members.find(
-      (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === memberId,
-    );
-    const declared = (graph.members ?? []).find(
-      (entry) => entry.id === memberId && entry.kind === "variable",
-    );
-    const binding =
-      declared ??
-      (row?.kind === "variable"
-        ? {
-            id: memberId,
-            kind: "variable" as const,
-            name: row.name,
-            typeId: row.typeId ?? "float",
-            ...(row.typeClassId ? { typeClassId: row.typeClassId } : {}),
-            ...(row.componentId ? { componentId: row.componentId } : {}),
-          }
-        : null);
-    if (!binding) return;
+    const row = memberId ? rowById.get(memberId) : undefined;
+    if (!graph || !memberId || row?.kind !== "variable") return;
     onGraphChange(
-      addVariableAccessNode(graph, binding, access, {
+      addVariableAccessNode(graph, dropVariableBinding(graph, dropRowOf(row)), access, {
         functionId: activeFunctionId,
-        classId: row?.inheritedFrom ?? classId,
-        ...(position ? { position } : {}),
+        classId: row.inheritedFrom ?? classId,
       }),
     );
   };
-  const dropMember = (id: string, clientX: number, clientY: number) => {
+  const dropMembers = (ids: readonly string[], clientX: number, clientY: number) => {
     if (!graph) return;
-    const row = members.find(
-      (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === id,
-    );
     const result = resolveClassMemberDrop({
       graph,
-      memberId: id,
-      members: members.map((member) => ({
-        id: member.detail ?? `${member.kind}-${member.name}`,
-        kind: member.kind,
-        name: member.name,
-        eventType: member.eventType,
-        inherited: member.inherited,
-        inheritedFrom: member.inheritedFrom,
-        pins: member.pins,
-      })),
+      memberIds: ids,
+      members: members.map(dropRowOf),
       clientX,
       clientY,
       canvas: canvasDropApi ?? null,
       functionId: activeFunctionId,
-      classId: row?.inheritedFrom ?? classId,
+      classId,
     });
     if (result.kind === "spawn") {
       onGraphChange(result.graph);
+      showNotice(droppedRowsNotice(result.skipped));
       return;
     }
     if (result.kind === "choose-access") {
-      setAccessDrop({ memberId: result.memberId, position: result.position });
+      setAccessDrop({
+        memberIds: result.memberIds,
+        position: result.position,
+        skipped: result.skipped,
+      });
     }
+  };
+  const chooseAccess = (access: VariableAccessKind) => {
+    if (!graph || !accessDrop) return;
+    const completed = completeClassMemberDrop({
+      graph,
+      memberIds: accessDrop.memberIds,
+      members: members.map(dropRowOf),
+      position: accessDrop.position,
+      access,
+      functionId: activeFunctionId,
+      classId,
+    });
+    onGraphChange(completed.graph);
+    showNotice(droppedRowsNotice(accessDrop.skipped, completed.skipped, access));
+    setAccessDrop(null);
   };
   const nodes = useMemo(
     () =>
@@ -834,156 +866,370 @@ export function ClassMembersView({
     ],
   );
 
-  const { menu, closeMenu, openMenuAt } = useContextMenu({
-    items: [
-      {
-        id: "rename",
-        label: "Rename",
-        onSelect: () => {
-          if (!selectedId || selectedId.startsWith("section-")) return;
-          startRename(selectedId);
+  const treeOrder = useMemo(() => {
+    const order = new Map<string, number>();
+    nodes.forEach((row, index) => order.set(row.id, index));
+    return order;
+  }, [nodes]);
+  const inTreeOrder = (ids: readonly string[]) =>
+    [...ids].sort(
+      (left, right) => (treeOrder.get(left) ?? 1e9) - (treeOrder.get(right) ?? 1e9),
+    );
+  const selectionIds = useMemo(() => {
+    if (multi && multi.primary === selectedId) {
+      const live = multi.ids.filter((id) => rowById.has(id));
+      if (live.length > 0) return live;
+    }
+    return selectedId ? [selectedId] : [];
+  }, [multi, rowById, selectedId]);
+
+  /**
+   * Select entries; the graph follows `primary` like a single selection:
+   * a function opens its tab, an event is focused, the Inspector shows it.
+   * `refocus` follows it again even when it is already the primary one.
+   */
+  const applySelection = (ids: readonly string[], primary: string | null, refocus: boolean) => {
+    if (primary === null || ids.length === 0) {
+      setMulti(null);
+      onSelectMember?.("", undefined);
+      return;
+    }
+    setMulti(ids.length > 1 ? { primary, ids: [...ids] } : null);
+    if (refocus || primary !== selectedId) onSelectMember?.(primary, rowById.get(primary));
+  };
+  /** Choose without Shift: the next range starts here. */
+  const chooseEntries = (ids: readonly string[], primary: string | null, refocus: boolean) => {
+    anchor.current = primary;
+    applySelection(ids, primary, refocus);
+  };
+  const selectEntry = (id: string, options?: TreeSelectOptions) => {
+    const current = selectionIds.filter((entry) => rowById.has(entry));
+    if (options?.range) {
+      // The range runs over the visible rows; section and folder rows are not members.
+      const from = anchor.current && current.includes(anchor.current) ? anchor.current : current[current.length - 1];
+      const range = rangeSelectTreeIds(
+        nodes.map((row) => row.id),
+        from,
+        id,
+      ).filter((entry) => rowById.has(entry));
+      if (range.length === 0) return;
+      applySelection(range, rowById.has(id) ? id : range[range.length - 1]!, true);
+      return;
+    }
+    if (!rowById.has(id)) return;
+    if (options?.additive) {
+      if (!current.includes(id)) {
+        chooseEntries([...current, id], id, true);
+        return;
+      }
+      const rest = current.filter((entry) => entry !== id);
+      chooseEntries(rest, rest[rest.length - 1] ?? null, false);
+      return;
+    }
+    chooseEntries([id], id, true);
+  };
+
+  const copySource = {
+    graph: graph ?? { nodes: [], edges: [] },
+    classId,
+    parentGraphs: membersOptions?.parentGraphs,
+  };
+  const copyRowsOf = (ids: readonly string[]): ClassMemberCopyRow[] =>
+    inTreeOrder(ids).flatMap((id) => {
+      const member = rowById.get(id);
+      if (!member) return [];
+      return [
+        {
+          id,
+          kind: member.kind,
+          name: member.name,
+          ...(member.inherited && member.inheritedFrom ? { inheritedFrom: member.inheritedFrom } : {}),
+          ...(member.componentId ? { componentId: member.componentId } : {}),
+          ...(member.functionId ? { functionId: member.functionId } : {}),
         },
-      },
-      {
-        id: "delete",
-        label: "Delete",
-        onSelect: () => {
-          if (!graph || !selectedId) return;
-          onGraphChange(removeClassMember(graph, selectedId, { ...membersOptions, classId }));
-        },
-      },
-    ],
+      ];
+    });
+  const canCopy = (ids: readonly string[]) =>
+    Boolean(graph) && canCopyClassMembers(copyRowsOf(ids), copySource);
+  const copyMembers = (ids: readonly string[]) => {
+    if (!graph) return;
+    const copied = copyClassMembers(copyRowsOf(ids), copySource);
+    if (copied) sessionState.copyClassMembers(copied);
+  };
+  const pasteMembers = () => {
+    const copied = sessionState.readCopiedClassMembers();
+    if (!graph || !copied) return;
+    const result = pasteClassMembers({
+      graph,
+      clipboard: copied,
+      classId,
+      takenNames: { variable: namesOfKind("variable"), function: namesOfKind("function") },
+      ancestors: classAncestorGraphs({
+        parentClass: membersOptions?.parentClass,
+        parentOf: membersOptions?.parentOf,
+        parentGraphs: membersOptions?.parentGraphs,
+      }),
+      eventOptions: membersOptions,
+      componentIds: new Set(
+        componentGraphMembersForClass({
+          graph,
+          classId,
+          parentClass: membersOptions?.parentClass,
+          parentOf: membersOptions?.parentOf,
+          parentGraphs: membersOptions?.parentGraphs,
+        }).map((member) => member.componentId),
+      ),
+    });
+    showNotice(skippedMembersNotice(result.skipped));
+    const last = result.pasted[result.pasted.length - 1];
+    if (!last) return;
+    onGraphChange(result.graph);
+    // The copies become the selection, so they can be dragged or copied on.
+    const ids = result.pasted.map((entry) => entry.id);
+    anchor.current = last.id;
+    setMulti(ids.length > 1 ? { primary: last.id, ids } : null);
+    if (last.kind === "event") {
+      onFocusEventNode?.(last.id, last.name);
+      return;
+    }
+    onSelectMember?.(last.id, { kind: last.kind, name: last.name, detail: last.id });
+  };
+  const deleteMembers = (ids: readonly string[]) => {
+    if (!graph) return;
+    onGraphChange(
+      ids.reduce(
+        (next, id) => removeClassMember(next, id, { ...membersOptions, classId }),
+        graph,
+      ),
+    );
+    setMulti(null);
+  };
+  const canDelete = (ids: readonly string[]) =>
+    ids.every((id) => {
+      const member = rowById.get(id);
+      return Boolean(member && !member.inherited && !member.componentId);
+    });
+
+  const pasteItem = (): ContextMenuItem => ({
+    id: "paste",
+    label: "Paste",
+    shortcut: keybinds.get("edit.paste")?.[0],
+    disabled: !graph || !sessionState.hasCopiedClassMembers(),
+    testId: "class-menu-paste",
+    onSelect: pasteMembers,
+  });
+  /**
+   * The menu of an entry acts on the group when the entry is part of one, on
+   * the entry alone otherwise. `previous` is the selection a long-press or
+   * right-click on an unselected entry replaced: Select adds that entry back.
+   */
+  const entryMenuItems = (
+    id: string,
+    targets: readonly string[],
+    previous: readonly string[],
+  ): ContextMenuItem[] => {
+    const member = rowById.get(id);
+    const single = targets.length === 1;
+    return [
+      ...(single && member?.kind === "variable"
+        ? [
+            { id: "get", label: "Get", onSelect: () => spawnAccess("get", id) },
+            ...(member.componentId
+              ? []
+              : [{ id: "set", label: "Set", onSelect: () => spawnAccess("set", id) }]),
+          ]
+        : []),
+      ...(targets.length > 1
+        ? [
+            {
+              id: "deselect",
+              label: "Deselect",
+              testId: "class-menu-deselect",
+              onSelect: () => {
+                const rest = targets.filter((entry) => entry !== id);
+                chooseEntries(rest, rest[rest.length - 1] ?? null, false);
+              },
+            },
+          ]
+        : previous.length > 0
+          ? [
+              {
+                id: "select",
+                label: "Select",
+                testId: "class-menu-select",
+                onSelect: () => chooseEntries([...previous, id], id, true),
+              },
+            ]
+          : []),
+      ...(single && renamableIds.has(id)
+        ? [{ id: "rename", label: "Rename", onSelect: () => startRename(id) }]
+        : []),
+      ...(canCopy(targets)
+        ? [
+            {
+              id: "copy",
+              label: "Copy",
+              shortcut: keybinds.get("edit.copy")?.[0],
+              testId: "class-menu-copy",
+              onSelect: () => copyMembers(targets),
+            },
+          ]
+        : []),
+      pasteItem(),
+      ...(canDelete(targets)
+        ? [
+            {
+              id: "delete",
+              label: "Delete",
+              testId: "class-menu-delete",
+              onSelect: () => deleteMembers(targets),
+            },
+          ]
+        : []),
+      ...(single && member?.inherited && member.inheritedFrom
+        ? [
+            {
+              id: "open-parent",
+              label: "Open Parent Class",
+              onSelect: () => onOpenInherited?.(member),
+            },
+          ]
+        : []),
+    ];
+  };
+
+  // The tree background and the section and folder rows only paste.
+  const { menu, closeMenu, openMenuAt, bind: backgroundMenu } = useContextMenu({
+    items: () => [pasteItem()],
+  });
+  const onBackground = (event: { target: EventTarget | null }) =>
+    !(event.target instanceof Element && event.target.closest('[role="treeitem"]'));
+
+  const treeKeys = { focusWithinRef: treeRef };
+  useKeybindCommand("edit.copy", () => copyMembers(selectionIds), {
+    ...treeKeys,
+    enabled: () => canCopy(selectionIds),
+  });
+  useKeybindCommand("edit.paste", pasteMembers, {
+    ...treeKeys,
+    enabled: () => Boolean(graph) && sessionState.hasCopiedClassMembers(),
   });
 
-  const accessVariable = variableForAccessDrop(
-    graph ?? undefined,
-    members,
-    accessDrop?.memberId,
-  );
+  const dragIdsOf = (id: string) =>
+    selectionIds.includes(id) ? inTreeOrder(selectionIds) : [id];
+
+  const accessVariables = accessDrop
+    ? accessDrop.memberIds.flatMap((id) => {
+        const row = rowById.get(id);
+        return graph && row?.kind === "variable"
+          ? [dropVariableBinding(graph, dropRowOf(row))]
+          : [];
+      })
+    : [];
 
   return (
     <>
-      <TreeView
-        rowHeight={phone ? 44 : undefined}
-        nodes={nodes}
-        selectedId={selectedId}
-        renamingId={renamingId}
-        onRenameRequest={startRename}
-        onRenameDone={finishRename}
-        onSelect={(id) => {
-          if (id.startsWith("section-")) return;
-          const member = members.find(
-            (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === id,
-          );
-          onSelectMember?.(id, member);
+      <div
+        ref={treeRef}
+        className="h-full min-h-0"
+        onContextMenu={(event) => {
+          if (onBackground(event)) backgroundMenu.onContextMenu(event);
         }}
-        onToggleExpanded={(id) => {
-          const sectionId = id.replace(/^section-/, "");
-          setCollapsed((current) => {
-            const next = new Set(current);
-            if (next.has(sectionId)) next.delete(sectionId);
-            else next.add(sectionId);
-            return next;
-          });
+        onPointerDown={(event) => {
+          if (onBackground(event)) backgroundMenu.onPointerDown(event);
         }}
-        onContextMenu={(id, x, y) => {
-          if (id.startsWith("section-")) return;
-          const member = members.find(
-            (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === id,
-          );
-          onSelectMember?.(id, member);
-          const items = [
-            ...(member?.kind === "variable"
-              ? [
-                  {
-                    id: "get",
-                    label: "Get",
-                    onSelect: () => spawnAccess("get", id),
-                  },
-                  ...(member.componentId
-                    ? []
-                    : [
-                        {
-                          id: "set",
-                          label: "Set",
-                          onSelect: () => spawnAccess("set", id),
-                        },
-                      ]),
-                ]
-              : []),
-            ...(renamableIds.has(id)
-              ? [
-                  {
-                    id: "rename",
-                    label: "Rename",
-                    onSelect: () => startRename(id),
-                  },
-                ]
-              : []),
-            ...(member && !member.inherited && !member.componentId
-              ? [
-                  {
-                    id: "delete",
-                    label: "Delete",
-                    onSelect: () => {
-                      if (!graph) return;
-                      onGraphChange(removeClassMember(graph, id, { ...membersOptions, classId }));
-                    },
-                  },
-                ]
-              : []),
-            ...(member?.inherited && member.inheritedFrom
-              ? [
-                  {
-                    id: "open-parent",
-                    label: "Open Parent Class",
-                    onSelect: () => onOpenInherited?.(member),
-                  },
-                ]
-              : []),
-          ];
-          openMenuAt(x, y, items);
-        }}
-        onExternalDrop={dropMember}
-        onExternalDragMove={(_id, clientX, clientY) => {
-          const allowed = Boolean(
-            canvasDropApi?.containsClientPoint(clientX, clientY),
-          );
-          setDropHint({ clientX, clientY, allowed });
-        }}
-        onExternalDragEnd={() => setDropHint(null)}
-        onActivate={(id) => {
-          if (id.startsWith("section-")) return;
-          const member = members.find(
-            (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === id,
-          );
-          if (member?.inherited) {
-            onOpenInherited?.(member);
-            return;
-          }
-          onSelectMember?.(id, member);
-        }}
-        emptyLabel="No class members"
-        data-testid="my-blueprint-tree"
-      />
+        onPointerMove={backgroundMenu.onPointerMove}
+        onPointerUp={backgroundMenu.onPointerUp}
+        onPointerCancel={backgroundMenu.onPointerCancel}
+      >
+        <TreeView
+          rowHeight={phone ? 44 : undefined}
+          nodes={nodes}
+          selectedId={selectedId}
+          selectedIds={selectionIds}
+          renamingId={renamingId}
+          onRenameRequest={startRename}
+          onRenameDone={finishRename}
+          onSelect={selectEntry}
+          onToggleExpanded={(id) => {
+            const sectionId = id.replace(/^section-/, "");
+            setCollapsed((current) => {
+              const next = new Set(current);
+              if (next.has(sectionId)) next.delete(sectionId);
+              else next.add(sectionId);
+              return next;
+            });
+          }}
+          onContextMenu={(id, x, y) => {
+            if (!rowById.has(id)) {
+              openMenuAt(x, y, [pasteItem()]);
+              return;
+            }
+            // Holding or right-clicking an unselected entry replaces the
+            // selection; on a selected one the menu acts on the whole group.
+            const inGroup = selectionIds.includes(id);
+            const targets = inGroup ? inTreeOrder(selectionIds.filter((entry) => rowById.has(entry))) : [id];
+            const previous = inGroup ? [] : selectionIds.filter((entry) => rowById.has(entry));
+            if (inGroup) {
+              if (targets.length === 1) onSelectMember?.(id, rowById.get(id));
+            } else {
+              chooseEntries([id], id, true);
+            }
+            openMenuAt(x, y, entryMenuItems(id, targets, previous));
+          }}
+          onExternalDrop={(id, clientX, clientY) => dropMembers(dragIdsOf(id), clientX, clientY)}
+          onExternalDragMove={(id, clientX, clientY) => {
+            const allowed = Boolean(canvasDropApi?.containsClientPoint(clientX, clientY));
+            const count = dragIdsOf(id).filter((entry) => {
+              const row = rowById.get(entry);
+              return row && canDropClassMember(row);
+            }).length;
+            setDropHint({
+              clientX,
+              clientY,
+              allowed,
+              ...(allowed && count > 1 ? { label: `Add ${count} Nodes` } : {}),
+            });
+          }}
+          onExternalDragEnd={() => setDropHint(null)}
+          onActivate={(id) => {
+            const member = rowById.get(id);
+            if (!member) return;
+            if (member.inherited) {
+              onOpenInherited?.(member);
+              return;
+            }
+            onSelectMember?.(id, member);
+          }}
+          emptyLabel="No class members"
+          data-testid="my-blueprint-tree"
+        />
+      </div>
       <GraphDropHint hint={dropHint} />
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
+      {notice === null ? null : (
+        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex justify-center">
+          <Alert role="status" className="w-auto max-w-sm shadow-md" data-testid="class-notice">
+            <AlertDescription>{notice.message}</AlertDescription>
+          </Alert>
+        </div>
+      )}
       <MemberAccessChooser
         open={accessDrop !== null}
-        memberName={accessVariable?.name ?? "Variable"}
-        showValidatedGet={isObjectInstanceVariableType(
-          accessVariable?.typeId,
-          accessVariable?.container,
+        memberName={
+          accessDrop && accessDrop.memberIds.length > 1
+            ? `${accessDrop.memberIds.length} Members`
+            : (accessVariables[0]?.name ?? "Variable")
+        }
+        variableCount={accessVariables.length}
+        showValidatedGet={accessVariables.some((variable) =>
+          isObjectInstanceVariableType(variable.typeId, variable.container),
         )}
-        showSet={!accessVariable?.componentId}
+        showSet={accessVariables.some((variable) => !variable.componentId)}
         onOpenChange={(open) => {
           if (!open) setAccessDrop(null);
         }}
-        onChoose={(access) => {
-          if (!accessDrop) return;
-          spawnAccess(access, accessDrop.memberId, accessDrop.position);
-          setAccessDrop(null);
-        }}
+        onChoose={chooseAccess}
       />
       <NamePromptDialog
         open={memberPromptKind !== null}
@@ -1162,7 +1408,7 @@ export function MyClassPanel(props: MyClassPanelProps) {
           {className}
         </p>
       ) : null}
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
       <ClassMembersView
         graph={graph}
         selectedId={selectedId}

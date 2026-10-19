@@ -34,7 +34,7 @@ When the Game Instance and subsystem events fire is described in [Game Instance 
 
 1. Tap **+** next to **Events** and choose **New Event**. Type a name.
 2. With the event selected, add **Outputs** in the **Inspector** for the values it receives. Integer, Float and Vector outputs can have a **Unit**, shown on the Call node's value field. Use **Rename Event** to rename it together with its calls in this class.
-3. To run it, drag the event from the **Class** window onto the graph, or choose **Call** followed by its name in **Add Node**. This places a [Call Custom Event](class/call-custom-event.md) node with one input per output.
+3. To run it, drag the event from the **Class** window onto the graph, or choose **Call** followed by its name in **Add Node**. This places a [Call Custom Event](class/call-custom-event.md) node with one input per output. Select several entries to drop a node for each.
 
 To run a custom event on another object, drag from a pin that holds that object and choose its Call entry; the node gets a **Target** pin. For an event of this class the pin reads **Target (Self)** while it is unconnected, so the event runs on the running object; connect another object of the class to run it there. The caller continues straight away and does not wait for latent nodes inside the event.
 
@@ -46,6 +46,10 @@ A child class can override an inherited custom event by adding it from **Add Eve
 
 - A custom event gets a new name: **Open Door** becomes **Open Door Copy**, then **Open Door Copy 2**. It never repeats the name of another custom event in the class, in this graph or a function graph. Calls to the original keep calling the original. A copy keeps its name only when no other custom event uses it, such as after you delete the original.
 - An event that cannot be renamed, such as **Event Tick**, **Event Begin Play**, a component event or an input event, is left out when the graph already has it. The wires to and from it are dropped, the rest of the selection is still pasted, and a notice such as **Event Tick is already in this graph.** appears for a few seconds. Pasting it into a graph without that event adds it.
+
+## Copy events between classes
+
+Select events in the **Class** window, choose **Copy**, then choose **Paste** in any **Class** window. Only the event node is copied, not the nodes it runs. A custom event is pasted with a free name, such as **Open Door 1**. A native event such as **Event Begin Play** is pasted as that event when the class does not have it yet, and otherwise as a custom event named like a duplicate, **Begin Play 1** (then **Begin Play 2**). See [Select, copy and paste members](classes.md#select-copy-and-paste-members).
 
 ## Actor Defaults
 

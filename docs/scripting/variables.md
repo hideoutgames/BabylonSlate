@@ -28,7 +28,7 @@ Changing the type or container resets the default.
 
 ## Get and set values
 
-- Drag a variable from the **Class** window onto the graph, then choose **Get** or **Set**. Single Object and Actor variables also offer **Validated Get**.
+- Drag a variable from the **Class** window onto the graph, then choose **Get** or **Set**. Single Object and Actor variables also offer **Validated Get**. To drop several at once, select them first: your choice applies to each one that can take it ([Select, copy and paste members](classes.md#select-copy-and-paste-members)).
 - Or open the variable's context menu and choose **Get** or **Set**.
 - **Add Node** lists a Get and Set entry for each variable of this class and its parents.
 

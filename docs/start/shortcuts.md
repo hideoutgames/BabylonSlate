@@ -67,7 +67,7 @@ With a keyboard attached, editor commands have shortcuts. You can change any of 
 | New Folder | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> |
 | Place Actors | <kbd>Alt</kbd>+<kbd>A</kbd> |
 
-Duplicate, Rename, Delete, Search Panel and New Folder act on the panel that has keyboard focus, the **Outliner** or the **Content Browser**. Copy, Paste and Place Actors need the Outliner to have focus. In a graph, Copy, Paste, Duplicate and Delete act on the selected nodes; see [When shortcuts work](#when-shortcuts-work).
+Duplicate, Rename, Delete, Search Panel and New Folder act on the panel that has keyboard focus, the **Outliner** or the **Content Browser**. Place Actors needs the Outliner to have focus. Copy and Paste copy actors when the Outliner has focus, and copy Class members when the **Class** window has focus ([Select, copy and paste members](../scripting/classes.md#select-copy-and-paste-members)). In a graph, Copy, Paste, Duplicate and Delete act on the selected nodes; see [When shortcuts work](#when-shortcuts-work).
 
 ### Content Browser
 
