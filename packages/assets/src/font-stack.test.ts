@@ -81,4 +81,11 @@ describe("glyphsFallingToFallback", () => {
       glyphsFallingToFallback("A字", "Missing", measure),
     ).toEqual(["字"]);
   });
+
+  it("does not flag a custom glyph whose advance happens to match the generic", () => {
+    const generic = (fontStack: string) => (fontStack.endsWith("monospace") ? 9 : 7);
+    const measure = (text: string, fontStack: string) =>
+      fontStack.includes("Coincident") && text !== "字" ? 7 : generic(fontStack);
+    expect(glyphsFallingToFallback("e字", "Coincident", measure)).toEqual(["字"]);
+  });
 });

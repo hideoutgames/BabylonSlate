@@ -106,17 +106,19 @@ export function compileText2DFontStacks(options: {
   return { defaultStack, byGuid };
 }
 
-/** Characters whose advance matches the generic-only stack (likely fallback). */
+/** Characters the custom family does not draw, judged by their advance under two different generic tails. */
 export function glyphsFallingToFallback(
   sample: string,
   customFamily: string,
   measure: (text: string, fontStack: string) => number,
   genericFallback = "sans-serif",
 ): string[] {
-  const customStack = compileFontStack({
-    family: customFamily,
-    globalFallback: genericFallback,
-  });
+  // A glyph the custom face draws measures the same whatever generic follows
+  // it; a missing one takes on the generic's width. Two generics with
+  // different advances tell the cases apart without trusting a coincidence.
+  const contrast = genericFallback === "monospace" ? "serif" : "monospace";
+  const customStack = compileFontStack({ family: customFamily, globalFallback: genericFallback });
+  const contrastStack = compileFontStack({ family: customFamily, globalFallback: contrast });
   const flagged: string[] = [];
   const seen = new Set<string>();
   for (const char of sample) {
@@ -124,9 +126,11 @@ export function glyphsFallingToFallback(
     seen.add(char);
     const withCustom = measure(char, customStack);
     const genericOnly = measure(char, genericFallback);
-    if (Math.abs(withCustom - genericOnly) < 0.5) {
-      flagged.push(char);
-    }
+    const generics = Math.abs(genericOnly - measure(char, contrast)) >= 0.5;
+    const falls = generics
+      ? Math.abs(withCustom - measure(char, contrastStack)) >= 0.5
+      : Math.abs(withCustom - genericOnly) < 0.5;
+    if (falls) flagged.push(char);
   }
   return flagged;
 }

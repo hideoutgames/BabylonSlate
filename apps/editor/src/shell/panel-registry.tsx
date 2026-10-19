@@ -97,6 +97,7 @@ import {
   TextureDetailsPanel,
   TexturePreviewPanel,
 } from "../components/texture-editor";
+import { FontDetailsPanel, FontPreviewPanel } from "../components/font-editor";
 import { LocksPanel } from "../panels/locks-panel";
 import {
   AnimGraphDetailsPanel,
@@ -299,6 +300,8 @@ export const panelComponents = {
   "texture-details": (props: IDockviewPanelProps) => (
     <TextureDetailsPanel {...props} />
   ),
+  "font-preview": (props: IDockviewPanelProps) => <FontPreviewPanel {...props} />,
+  "font-details": (props: IDockviewPanelProps) => <FontDetailsPanel {...props} />,
   "anim-graph-graph": (props: IDockviewPanelProps) => (
     <AnimGraphGraphPanel {...props} />
   ),

@@ -47,6 +47,7 @@ const KINDS = Object.keys({
   "skybox-creator": true,
   trace: true,
   texture: true,
+  font: true,
 } satisfies Record<DockviewDocumentKind, true>) as DockviewDocumentKind[];
 
 const OPTION_VARIANTS: DockWindowOptions[] = [
