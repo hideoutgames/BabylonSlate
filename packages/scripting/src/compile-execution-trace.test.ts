@@ -183,7 +183,7 @@ describe("compileGraph instrumentExecutionTrace", () => {
     expect(compile(makeThenLog(), TRACED).source).toBe(`//# sourceURL=babylonslate:///classes/Door.class.js
 var __dv = (t, node, pin, value) => (t === null ? value : t.read(node, pin, value));
 export function run(ctx) {
-  const __dbg = ctx.debugTrace?.graph("classes/Door.class", "event-graph") ?? null;
+  const __dbg = ctx.debugTrace === null ? null : ctx.debugTrace.graph("classes/Door.class", "event-graph");
   let _n_make_value = "";
   if (__dbg !== null) __dbg.exec("entry");
   if (__dbg !== null) __dbg.edge("e1");
@@ -213,18 +213,14 @@ export function run(ctx) {
     expect(logged).toEqual(["DOOR"]);
   });
 
-  it("behaves identically for an unobserved instance and for a host without a trace", () => {
+  it("behaves identically for an unobserved instance, and once the observation has ended", () => {
     const source = compile(makeThenLog(), TRACED).source;
     const baseline = run(compile(makeThenLog()).source).logged;
-    for (const debugTrace of [null, undefined]) {
+    for (const debugTrace of [null, { graph: () => null }]) {
       const { events, logged } = run(source, "run", { debugTrace });
       expect(events).toEqual([]);
       expect(logged).toEqual(baseline);
     }
-    // An observed class whose graph isn't traced yet answers null.
-    const { events, logged } = run(source, "run", { debugTrace: { graph: () => null } });
-    expect(events).toEqual([]);
-    expect(logged).toEqual(baseline);
   });
 
   it("reads an impure input once: the recorder sees the value the node used", () => {

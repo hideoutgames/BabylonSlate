@@ -339,7 +339,7 @@ describe("worker entry snapshot transport", () => {
     // What a debug-instrumented Class graph does for its first node, without compiling one here.
     const source = [
       "export function onTick(ctx) {",
-      '  const __dbg = ctx.debugTrace?.graph("hero.class", "event-graph") ?? null;',
+      '  const __dbg = ctx.debugTrace === null ? null : ctx.debugTrace.graph("hero.class", "event-graph");',
       '  if (__dbg !== null) __dbg.exec("tick");',
       "}",
     ].join("\n");

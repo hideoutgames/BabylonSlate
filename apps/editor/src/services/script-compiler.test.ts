@@ -985,9 +985,9 @@ describe("script compiler service", () => {
     expect(plain?.source).not.toContain("__dbg");
 
     const traced = compileGraphDocument(withFunction, { path, instrumentExecutionTrace: true });
-    expect(traced?.source).toContain('ctx.debugTrace?.graph("assets/main.class.babasset", "event-graph")');
+    expect(traced?.source).toContain('ctx.debugTrace.graph("assets/main.class.babasset", "event-graph")');
     // A function graph reports under its export name, which the editor maps from the member name.
-    expect(traced?.source).toContain('ctx.debugTrace?.graph("assets/main.class.babasset", "Open_Door")');
+    expect(traced?.source).toContain('ctx.debugTrace.graph("assets/main.class.babasset", "Open_Door")');
 
     const released = compileGraphDocument(withFunction, { path, instrumentExecutionTrace: true, stripDevelopmentOnly: true });
     expect(released?.source).not.toContain("__dbg");

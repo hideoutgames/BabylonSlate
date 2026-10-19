@@ -1552,7 +1552,7 @@ export function compileGraph(
       },
       declLines: [
         ...(traceExecution
-          ? [`  const __dbg = ctx.debugTrace?.graph(${JSON.stringify(options.assetGuid)}, ${JSON.stringify(graph.id)}) ?? null;`]
+          ? [`  const __dbg = ctx.debugTrace === null ? null : ctx.debugTrace.graph(${JSON.stringify(options.assetGuid)}, ${JSON.stringify(graph.id)});`]
           : []),
         ...outputDecls.values(),
         ...pureExpressions.declarations,
