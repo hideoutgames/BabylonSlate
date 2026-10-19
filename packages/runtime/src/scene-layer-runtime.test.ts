@@ -492,6 +492,10 @@ describe("SceneLayer runtime compositor", () => {
     runtime.applySceneLayerResize(16, 9);
     expect(badge()?.transform.position.x).toBe(-16);
     expect(badge()?.transform.position.y).toBe(9);
+    // Ultra-wide: the 32×18 canvas widens to 42×18, so the top-left badge follows the screen edge unscaled.
+    runtime.applySceneLayerResize(21, 9);
+    expect(badge()?.transform.position.x).toBeCloseTo(-21);
+    expect(badge()?.transform.position.y).toBe(9);
   });
 
   it("keeps graph-created overlays across scene travel until remove or clear", () => {
