@@ -130,9 +130,12 @@ const SEAT_LIGHTS = {
   point: seatLight("point"),
 };
 
-/** Whether Babylon would list the light in the mesh's `lightSources`. */
+/**
+ * Whether Babylon would list the light in the mesh's `lightSources`. A light
+ * disposed after the frame's lighting sync is still seated until the next one.
+ */
 function reaches(light: Light, mesh: AbstractMesh): boolean {
-  return light.isEnabled() && light.canAffectMesh(mesh);
+  return !light.isDisposed() && light.isEnabled() && light.canAffectMesh(mesh);
 }
 
 /** The one light kind a layout class compiles; classes host one kind each. */
