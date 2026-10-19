@@ -13,6 +13,8 @@ import type { ResourceLease } from "./resource-cache";
 import { admittedSceneParticles, createSceneStreamAdmission } from "./scene-stream-admission";
 import { createSnapshotSceneBinding } from "./snapshot-apply";
 import { participatesInShadows } from "./shadow-mesh-policy";
+import { SCENE_PREPARATION_CEILING_MS, SCENE_SHADER_WARM_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
+import { installTimerClock } from "./virtual-clock-test-fixtures";
 
 /** A Basic emitter using the "mat" Material unless the payload names another. */
 function basic(payload: { render?: Record<string, unknown> } & Record<string, unknown> = {}): ParticleLibraryEmitter {
@@ -630,5 +632,123 @@ describe("ParticleService", () => {
     system.animate(true);
     expect(angles()).not.toEqual(frozen);
     service.dispose();
+  });
+
+  // Where shader links are synchronous (WebKit WebGL2, SwiftShader) one link keeps the thread for seconds, and a
+  // plain timer armed before it fires only after it, ahead of the Material's own continuation.
+  describe("preparation bound while synchronous shader links hold the thread", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    /** A preparation waiting on a Material that `finish()` readies, on a virtual clock. */
+    function preparing() {
+      const clock = installTimerClock();
+      const startedAt = performance.now();
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve) => { finish = resolve; });
+      const made = host({ ready: () => pending });
+      made.service.setLibrary(library({ "em-1": basic() }));
+      made.assign();
+      expect(made.state()).toBe("preparing");
+      const effects = (made.engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
+      let linked = 0;
+      return {
+        ...made,
+        clock,
+        finish,
+        elapsed: () => performance.now() - startedAt,
+        /** A synchronous call held the thread: time passes, and the timers that fell due in it fire when it ends. */
+        hold: async (ms: number) => { clock.hold(ms); await vi.advanceTimersByTimeAsync(ms); },
+        /** One more shader variant finished linking on the Engine. */
+        link: () => { effects[`linked-${linked++}`] = { isReady: () => true, getCompilationError: () => "" }; },
+      };
+    }
+
+    it("keeps preparing after a link held the thread past the bound, and plays once the Material is ready", async () => {
+      const { hold, clock, finish, state, diagnostics, service, scene } = preparing();
+      await hold(5_000);
+      expect(state()).toBe("preparing");
+      expect(diagnostics).toEqual([]);
+      finish();
+      await clock.run(32);
+      expect(state()).toBe("playing");
+      expect(diagnostics).toEqual([]);
+      expect(scene.particleSystems).toHaveLength(1);
+      service.dispose();
+    });
+
+    it("keeps preparing while links shorter than a held thread keep finishing shaders", async () => {
+      const { clock, link, finish, elapsed, state, diagnostics, service } = preparing();
+      for (let seconds = 0; seconds < 20; seconds += 3) {
+        await clock.run(3_000);
+        link();
+        expect(state()).toBe("preparing");
+      }
+      expect(elapsed()).toBeGreaterThan(4 * SCENE_SHADER_WARM_TIMEOUT_MS);
+      finish();
+      await clock.run(32);
+      expect(state()).toBe("playing");
+      expect(diagnostics).toEqual([]);
+      service.dispose();
+    });
+
+    it("fails a preparation that is stuck at the bound, naming the slots and the shader state", async () => {
+      const { clock, elapsed, state, diagnostics, scene } = preparing();
+      await clock.run(SCENE_SHADER_WARM_TIMEOUT_MS - 100);
+      expect(state()).toBe("preparing");
+      await clock.run(200);
+      expect(state()).toBe("failed");
+      expect(elapsed()).toBeLessThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS + 100);
+      expect(diagnostics).toEqual([{ code: "particle.apply_failed", assetGuid: "sys-1",
+        message: expect.stringMatching(/^Particle preparation timed out \(slots not ready: 1 of 1\)\. Shaders: 0 compiled while waiting, 0 still compiling, \d+ on the Engine/) }]);
+      expect(scene.particleSystems).toHaveLength(0);
+    });
+
+    it("charges a stuck preparation only for the time the thread was not held", async () => {
+      const { hold, clock, elapsed, state, diagnostics } = preparing();
+      await hold(5_000);
+      await clock.run(SCENE_SHADER_WARM_TIMEOUT_MS - 100);
+      expect(state()).toBe("preparing");
+      await clock.run(200);
+      expect(state()).toBe("failed");
+      expect(elapsed()).toBeLessThanOrEqual(5_000 + SCENE_SHADER_WARM_TIMEOUT_MS + 100);
+      expect(diagnostics).toHaveLength(1);
+    });
+
+    it("stops crediting held time once its budget is spent", async () => {
+      const { hold, elapsed, state, diagnostics } = preparing();
+      const held = 10_000;
+      for (let holds = 0; holds < 20 && state() === "preparing"; holds += 1) await hold(held);
+      expect(state()).toBe("failed");
+      expect(elapsed()).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS);
+      expect(elapsed()).toBeLessThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS + SCENE_THREAD_HELD_BUDGET_MS + held);
+      expect(diagnostics).toHaveLength(1);
+    });
+
+    it("fails a preparation that keeps linking shaders but never readies, at the preparation ceiling", async () => {
+      const { clock, link, elapsed, state, diagnostics } = preparing();
+      while (state() === "preparing" && elapsed() < SCENE_PREPARATION_CEILING_MS + 10_000) {
+        await clock.run(3_000);
+        link();
+      }
+      expect(state()).toBe("failed");
+      expect(elapsed()).toBeGreaterThan(SCENE_PREPARATION_CEILING_MS - SCENE_SHADER_WARM_TIMEOUT_MS);
+      expect(elapsed()).toBeLessThanOrEqual(SCENE_PREPARATION_CEILING_MS + SCENE_SHADER_WARM_TIMEOUT_MS);
+      expect(diagnostics).toEqual([expect.objectContaining({ code: "particle.apply_failed",
+        message: expect.stringMatching(/timed out.*Shaders: \d+ compiled while waiting/) })]);
+    });
+
+    it("stops watching once the Material is ready, so a long wait afterwards never fails the playing system", async () => {
+      const { clock, finish, state, diagnostics, service } = preparing();
+      finish();
+      await clock.run(32);
+      expect(state()).toBe("playing");
+      await clock.run(2 * SCENE_SHADER_WARM_TIMEOUT_MS);
+      expect(state()).toBe("playing");
+      expect(diagnostics).toEqual([]);
+      service.dispose();
+    });
   });
 });
