@@ -18,6 +18,7 @@ import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { shaderLinkLog } from "./material-glsl-diagnostics";
 import {
   compileMaterialPlan,
+  MaterialCompileStalled,
   materialCompileFailed,
   prewarmMaterial,
 } from "./material-compiler";
@@ -102,6 +103,14 @@ const NO_FUNCTIONS: Record<string, MaterialFunctionDocument> = Object.freeze({})
 
 type PlanSlot = { functions: Record<string, MaterialFunctionDocument>; content: string; result: MaterialLowerResult };
 
+/**
+ * A failure that follows from the plan itself, so the same plan fails again: not a cancellation, not a texture that
+ * is not ready (its own preparation reports it, and the generation hash carries the texture's identity).
+ */
+function failsPlan(diagnostics: readonly MaterialDiagnostic[]): boolean {
+  return diagnostics.some((diagnostic) => diagnostic.code !== "material.compile.cancelled" && diagnostic.code !== "material.missingTexture");
+}
+
 function documentForPlan(
   doc: MaterialDocument,
   unlit?: boolean,
@@ -155,6 +164,13 @@ interface CacheEntry {
 export class MaterialLibrary {
   private readonly scenes = new WeakMap<Scene, Map<string, CacheEntry>>();
   private readonly pending = new WeakMap<Scene, Map<string, CacheEntry>>();
+  /**
+   * The newest plan of each key that failed, with its diagnostics. A request for that hash fails at once instead of
+   * compiling again: the Engine hands a retry the failed program from its cache without telling anyone, so a bound
+   * retry would never become ready. A different hash (an edited graph, function or texture), `markDirty` and
+   * `releaseScene` end it; a release does not, because the next holder would adopt the same dead program.
+   */
+  private readonly failures = new WeakMap<Scene, Map<string, { hash: string; diagnostics: readonly MaterialDiagnostic[] }>>();
   private readonly tracked = new Set<Scene>();
   private readonly disposeObservers = new WeakMap<Scene, Observer<Scene>>();
   // Reuse one lowering per document, shading variant and functions record
@@ -177,6 +193,7 @@ export class MaterialLibrary {
     const created = new Map<string, CacheEntry>();
     this.scenes.set(scene, created);
     this.pending.set(scene, new Map());
+    this.failures.set(scene, new Map());
     this.tracked.add(scene);
     // SceneLayer scenes are disposed without releaseScene. Babylon notifies
     // before it disposes materials, so the library retires its own first.
@@ -228,7 +245,9 @@ export class MaterialLibrary {
    * `ready` settles once the graph is built and its textures are admitted. Only a
    * replacement also links its program for the meshes bound to it; a first acquisition's
    * program links when its host warms or probes it, and a link failure then reaches
-   * `onTextureError` and retires the generation.
+   * `onTextureError` and retires the generation. A plan whose compile failed (or whose
+   * program, or one of its surface variants, could not link) fails again at once with the
+   * same diagnostics until its hash changes.
    */
   acquire(
     scene: Scene,
@@ -283,6 +302,9 @@ export class MaterialLibrary {
       supersede(existing);
       return { ok: true, material: existing.material, hash: existing.hash, plan: lowered.plan, ready: existing.ready };
     }
+    const failures = this.failures.get(scene)!;
+    const failed = failures.get(key);
+    if (failed?.hash === hash) return { ok: false, diagnostics: [...failed.diagnostics] };
 
     const textures = materialTextureBindings(this.options.acquireTexture ? (guid) => this.options.acquireTexture!(guid, scene) : undefined, this.options.textureIdentity);
     let compiled: ReturnType<typeof compileMaterialPlan>;
@@ -306,6 +328,7 @@ export class MaterialLibrary {
     }
     if (materialCompileFailed(compiled)) {
       textures.dispose();
+      if (failsPlan(compiled.diagnostics)) failures.set(key, { hash, diagnostics: compiled.diagnostics });
       return { ok: false, diagnostics: compiled.diagnostics };
     }
     compiled.material.name = compiled.material.id = materialName;
@@ -349,12 +372,15 @@ export class MaterialLibrary {
         }
         return retired || scene.isDisposed ? [cancelledDiagnostic()] : [];
       } catch (error) {
+        stalled = error instanceof MaterialCompileStalled;
         // Babylon rejects a failed compile with the shader log itself, a string.
         const log = error instanceof Error ? error.message : typeof error === "string" ? shaderLinkLog(error) : "";
         return [{ code: "material.compile.failed", message: log || "Material shader preparation failed", severity: "error" as const }];
       }
     });
     let retired = false;
+    // The warm-up saw no shader finish for its bound: nothing about the program, so a later request tries again.
+    let stalled = false;
     const cancelledDiagnostic = (): MaterialDiagnostic => ({ code: "material.compile.cancelled", message: "Material preparation was cancelled", severity: "error" });
     const ready = Promise.race([nativePrepared, new Promise<readonly MaterialDiagnostic[]>((resolve) => {
       cancelPreparation = () => { retired = true; resolve([cancelledDiagnostic()]); };
@@ -495,6 +521,7 @@ export class MaterialLibrary {
       const current = entries.get(key) === candidate || pending.get(key) === candidate;
       if (!current || unlinkable || scene.isDisposed) return;
       unlinkable = true;
+      failures.set(key, { hash, diagnostics: [diagnostic] });
       if (existing && pending.get(key) === candidate && !isDisposedNodeMaterial(existing.material, scene)) {
         existing.refCount = candidate.refCount;
         rebindMaterial(scene, candidate.material, existing.material);
@@ -517,6 +544,7 @@ export class MaterialLibrary {
             rebindMaterial(scene, candidate.material, existing.material);
           }
           candidate.dispose();
+          if (!stalled && failsPlan(errors)) failures.set(key, { hash, diagnostics: errors });
           for (const error of errors) this.options.onTextureError?.(error);
           return;
         }
@@ -568,6 +596,7 @@ export class MaterialLibrary {
     entries.clear();
     this.scenes.delete(scene);
     this.pending.delete(scene);
+    this.failures.delete(scene);
     this.tracked.delete(scene);
   }
 
@@ -736,6 +765,8 @@ export class MaterialLibrary {
         entry.dispose();
       }
       pending?.clear();
+      // A changed dependency may let a plan that failed compile.
+      this.failures.get(scene)?.clear();
     }
   }
 
