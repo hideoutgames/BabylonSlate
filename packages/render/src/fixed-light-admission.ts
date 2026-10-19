@@ -28,7 +28,7 @@ import {
   type FixedSeatCandidate,
 } from "./fixed-light-seats";
 import { forwardLightBudget } from "./forward-light-budget";
-import { lightingSamplerCapacity, lightSamplerCost, MATERIAL_SAMPLER_RESERVE } from "./light-sampler-budget";
+import { lightSamplerCost, MATERIAL_SAMPLER_RESERVE } from "./light-sampler-budget";
 import {
   isGlobalLight,
   lightsInCreationOrder,
