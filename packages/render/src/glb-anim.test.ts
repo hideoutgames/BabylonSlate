@@ -342,7 +342,8 @@ describe("beginSlotModelAnimLoad", () => {
     await beginSlotModelAnimLoad(handle.scene, createSnapshotSceneBinding(), 2, "model-1",
       installAssetBytes(encodeGlbJsonBin(split.json, split.bin)), root);
     expect(visualMeshes(root)).toHaveLength(2);
-    expect(accountedGeometryBytesForScene(handle.scene)).toBe(accountedGeometryBytes(4, 12));
+    // The fixture has no normals, so its four vertices unfold into twelve flat-shaded ones.
+    expect(accountedGeometryBytesForScene(handle.scene)).toBe(accountedGeometryBytes(12, 12));
   });
 
   it("loads a static GLB nested in a larger ArrayBuffer", async () => {

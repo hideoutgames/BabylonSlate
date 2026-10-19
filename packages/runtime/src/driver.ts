@@ -1010,7 +1010,7 @@ class InProcessRuntime implements RuntimeDriver {
       eligible: (actor) => this.admission.canTickActor(actor),
       gravity: (actor) => -this.physics.gravityFor(actor)[1],
       warn: (component) => this.emit({ type: "log", severity: "warning", category: "Movement",
-        message: `Movement on ${component.owner?.guid ?? "actor"} could not create its motor. Use one Movement component without Rigid Body, Nav Agent, Ragdoll or Water Buoyancy components.`, frameId: this.frameId }),
+        message: `Movement on ${component.owner?.guid ?? "actor"} could not create its motor. Use one Movement component without Nav Agent, Ragdoll or Water Buoyancy components, and with a Rigid Body only if its Motion Type is Dynamic or Kinematic.`, frameId: this.frameId }),
       event: (component, event, args) => {
         const actor = component.owner;
         if (actor) this.admission.guard(() => this.scriptHost.invokeEvent(actor.classId, event, actor, args, component.guid));
@@ -1157,6 +1157,7 @@ class InProcessRuntime implements RuntimeDriver {
         layerPhysics: (layerGuid) => this.physics.layer(layerGuid),
         physicsFor: (actor) => this.physics.forActor(actor),
         ragdolls: this.ragdolls,
+        movement: this.movement,
         waterTime: () => this.waterClock.time,
         projectCursorToScene: (channel, options, sceneLayerId) => sceneLayerId
           ? this.camera.projectCursorToSceneLayer(sceneLayerId, channel)

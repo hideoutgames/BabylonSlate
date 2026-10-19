@@ -33,4 +33,33 @@ describe.each([
       expect(backend.getBodyVelocity("body")).toBeNull();
     } finally { backend.dispose(); }
   });
+
+  it("keeps a locked body upright and spins it again once the lock is released", async () => {
+    const backend = await createPhysicsBackend({ kind, preferSoftware, allowSoftwareFallback: false, gravity: { x: 0, y: 0, z: 0 } });
+    const pose = { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
+    try {
+      backend.createBody({ id: "body", actorId: "actor", motionType: "dynamic", mass: 1,
+        linearDamping: 0, angularDamping: 0, gravityScale: 1, lockRotation: true, transform: pose });
+      backend.createCollider({ id: "shape", bodyId: "body", shape: kind === "3d"
+        ? { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } : { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } },
+        friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
+      // Pushing up at the right edge twists the body about Z.
+      const push = () => backend.addImpulseAtPoint("body", { x: 0, y: 1, z: 0 }, { x: 0.5, y: 0, z: 0 });
+      const spin = () => {
+        for (let i = 0; i < 10; i++) backend.step(1 / 60);
+        return Math.abs(backend.getBodyVelocity("body")!.angular.z);
+      };
+      push();
+      expect(spin()).toBe(0);
+      expect(backend.getBodyTransform("body")!.rotation.z).toBeCloseTo(0);
+      expect(backend.getBodyVelocity("body")!.linear.y).toBeGreaterThan(0.5);
+      backend.updateBody("body", { lockRotation: false });
+      push();
+      expect(spin()).toBeGreaterThan(0.1);
+      backend.updateBody("body", { lockRotation: true });
+      backend.setBodyAngularVelocity("body", { x: 0, y: 0, z: 0 });
+      push();
+      expect(spin()).toBe(0);
+    } finally { backend.dispose(); }
+  });
 });

@@ -19,6 +19,7 @@ import type { MaterialParameterValue } from "@babylonslate/bridge";
 import type { MaterialDocument, MaterialPreviewMesh } from "@babylonslate/shader-graph";
 import { createRttCanvasBlitter } from "./flip-read-pixels";
 import { adoptLoadedHierarchy } from "./glb-anim";
+import { addMissingFlatNormals } from "./model-container";
 import {
   gltfLoaderExtension,
   isGltfModelBytes,
@@ -234,6 +235,7 @@ export function createMaterialPreviewScene(
             container.dispose();
             return mesh;
           }
+          addMissingFlatNormals(container);
           container.addAllToScene();
           adoptLoadedHierarchy(mesh, container);
           customContainer = container;

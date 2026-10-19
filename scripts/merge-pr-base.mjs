@@ -4,8 +4,9 @@
 // GitHub's default pull_request checkout (refs/pull/N/merge) is a cached test
 // merge that GitHub recomputes lazily, not whenever the base branch moves, so a
 // job can test a merge on a base that has since gained other pull requests.
-// Verify checks out the pull-request head commit instead and runs this script,
-// which fetches the live tip of the base branch and merges it into the head.
+// Verify checks out the pull-request head commit instead and runs the base
+// branch's copy of this script (a head cut before it existed has none), which
+// fetches the live tip of the base branch and merges it into the head.
 //
 // Usage (the working directory is a full-history checkout of the head commit):
 //   BASE_REF=main HEAD_SHA=<head sha> node scripts/merge-pr-base.mjs

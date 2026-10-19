@@ -21,7 +21,7 @@ jobs:
   # queues jobs beyond the 20-job concurrency cap rather than failing them.
   #
   # Every job checks out the pull-request head with full history and merges the
-  # base branch as it is when the job runs (scripts/merge-pr-base.mjs). The
+  # base branch as it is when the job runs (the base's scripts/merge-pr-base.mjs). The
   # default pull_request checkout is GitHub's cached refs/pull/N/merge, which is
   # recomputed lazily, so a re-run could test a base that has since moved on.
   # A push to main checks out the pushed commit.
@@ -36,7 +36,11 @@ jobs:
           fetch-depth: 0
       - name: Merge the current base branch
         if: github.event_name == 'pull_request'
-        run: node scripts/merge-pr-base.mjs
+        # The base branch's copy of the script: a head cut before it existed has none.
+        run: |
+          git fetch --no-tags --quiet origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+          git show "refs/remotes/origin/$BASE_REF:scripts/merge-pr-base.mjs" > "$RUNNER_TEMP/merge-pr-base.mjs" || cp scripts/merge-pr-base.mjs "$RUNNER_TEMP/merge-pr-base.mjs"
+          node "$RUNNER_TEMP/merge-pr-base.mjs"
         env:
           BASE_REF: ${{ github.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -63,7 +67,11 @@ jobs:
           fetch-depth: 0
       - name: Merge the current base branch
         if: github.event_name == 'pull_request'
-        run: node scripts/merge-pr-base.mjs
+        # The base branch's copy of the script: a head cut before it existed has none.
+        run: |
+          git fetch --no-tags --quiet origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+          git show "refs/remotes/origin/$BASE_REF:scripts/merge-pr-base.mjs" > "$RUNNER_TEMP/merge-pr-base.mjs" || cp scripts/merge-pr-base.mjs "$RUNNER_TEMP/merge-pr-base.mjs"
+          node "$RUNNER_TEMP/merge-pr-base.mjs"
         env:
           BASE_REF: ${{ github.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -91,7 +99,11 @@ jobs:
           fetch-depth: 0
       - name: Merge the current base branch
         if: github.event_name == 'pull_request'
-        run: node scripts/merge-pr-base.mjs
+        # The base branch's copy of the script: a head cut before it existed has none.
+        run: |
+          git fetch --no-tags --quiet origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+          git show "refs/remotes/origin/$BASE_REF:scripts/merge-pr-base.mjs" > "$RUNNER_TEMP/merge-pr-base.mjs" || cp scripts/merge-pr-base.mjs "$RUNNER_TEMP/merge-pr-base.mjs"
+          node "$RUNNER_TEMP/merge-pr-base.mjs"
         env:
           BASE_REF: ${{ github.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}

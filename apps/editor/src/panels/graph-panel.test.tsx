@@ -212,6 +212,55 @@ describe("Graph panel", () => {
     ).toBeTruthy();
   });
 
+  it("duplicates a custom event under a free name and leaves a second Event Tick out", async () => {
+    render(
+      <DocumentProvider>
+        <MainClassGraph />
+      </DocumentProvider>,
+    );
+    await waitFor(() => expect(seen.documents?.homepageReady).toBe(true));
+    const actions = seen.actions!;
+    await act(() => actions.createEmptyProject("Events", { kind: "2d" }));
+    await act(() =>
+      actions.openDocument({ kind: "graph", path: MAIN_CLASS_FILE, label: "Main" }),
+    );
+    const tick = {
+      id: "tick",
+      type: "flow.event.tick",
+      position: { x: 80, y: 400 },
+      data: { title: "Event Tick", __nodeType: "flow.event.tick" },
+    };
+    await act(() =>
+      actions.applyGraphChange(
+        MAIN_CLASS_ID,
+        addClassMember(
+          { ...openContent<SerializedGraph>(MAIN_CLASS_ID), nodes: [tick], edges: [] },
+          "event",
+          "Open Door",
+          () => "open-door",
+        ),
+      ),
+    );
+    await waitFor(() => expect(document.querySelector('[data-id="open-door"]')).toBeTruthy());
+
+    fireEvent.pointerDown(screen.getByTestId("graph-editor"));
+    fireEvent.keyDown(document.body, { key: "Control", code: "ControlLeft" });
+    for (const id of ["open-door", "tick"]) {
+      fireEvent.click(document.querySelector(`.react-flow__node[data-id="${id}"]`)!);
+    }
+    fireEvent.keyUp(document.body, { key: "Control", code: "ControlLeft" });
+    fireEvent.keyDown(document.body, { key: "d", code: "KeyD", ctrlKey: true });
+    fireEvent.keyUp(document.body, { key: "d", code: "KeyD", ctrlKey: true });
+
+    await waitFor(() => expect(openContent<SerializedGraph>(MAIN_CLASS_ID).nodes).toHaveLength(3));
+    const nodes = openContent<SerializedGraph>(MAIN_CLASS_ID).nodes;
+    expect(
+      nodes.filter((node) => node.type === "flow.event.custom").map((node) => node.data.name),
+    ).toEqual(["Open Door", "Open Door Copy"]);
+    expect(nodes.filter((node) => node.type === "flow.event.tick")).toHaveLength(1);
+    expect(screen.getByTestId("graph-notice").textContent).toBe("Event Tick is already in this graph.");
+  });
+
   it("shows its function in a function tab, retitles on rename, and closes on delete", async () => {
     render(
       <DocumentProvider>

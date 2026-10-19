@@ -1,4 +1,4 @@
-import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
+import { createDefaultMaterialDocument, migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
 import { normalizeAnimationPayload } from "../animation-payload";
 import { newAssetGuid } from "../guid";
 import { sniffSourceImageSize } from "../image-size";
@@ -43,10 +43,10 @@ function importedMaterialPayload(
   textureGuid: string | undefined,
   unlit: boolean,
 ): Record<string, unknown> {
-  const document = migrateLegacyShaderPayload(
-    { shadingModel: unlit ? "unlit" : "pbr" },
-    { textureGuids: textureGuid ? [textureGuid] : [] },
-  );
+  // With no image there is nothing to sample, and a sampler with no image reads black.
+  const document = textureGuid
+    ? migrateLegacyShaderPayload({ shadingModel: unlit ? "unlit" : "pbr" }, { textureGuids: [textureGuid] })
+    : createDefaultMaterialDocument(name);
   return { ...document, name } as unknown as Record<string, unknown>;
 }
 export async function importModel(
@@ -132,20 +132,7 @@ function importFromBrowse(
   const materialGuids: string[] = [];
   const preservedMaterialSlots = new Set<number>();
   if (browse.materials.length === 0) {
-    const textureGuid = imageGuids[0] ?? newAssetGuid();
-    if (imageGuids.length === 0) {
-      results.push({
-        type: "Texture",
-        name: uniqueImportName(`${name}_Texture`, usedNames),
-        guid: textureGuid,
-        version: 1,
-        dependencies: [],
-        parentClass: null,
-        payload: { usage: "albedo" },
-        chunks: [],
-      });
-      imageGuids.push(textureGuid);
-    }
+    const textureGuid = imageGuids[0];
     const materialName = uniqueImportName(`${name}_Material`, usedNames);
     const materialGuid = newAssetGuid();
     materialGuids.push(materialGuid);
@@ -154,7 +141,7 @@ function importFromBrowse(
       name: materialName,
       guid: materialGuid,
       version: MATERIAL_PAYLOAD_VERSION,
-      dependencies: [textureGuid],
+      dependencies: textureGuid ? [textureGuid] : [],
       parentClass: null,
       payload: importedMaterialPayload(materialName, textureGuid, false),
       chunks: [],
