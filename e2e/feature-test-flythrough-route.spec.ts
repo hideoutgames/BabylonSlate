@@ -421,11 +421,6 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
     // The backend is a project setting: save it now, before any scene changes.
     await saveAllIfEnabled(page, 300_000);
   }
-  // A flight can leave the scene dirty (Save All would then bake audio reverb on software GL for minutes);
-  // opening the next scene discards it instead.
-  await page.addLocatorHandler(page.getByRole("alertdialog", { name: "Unsaved Documents" }), async (dialog) => {
-    await dialog.getByRole("button", { name: "Discard", exact: true }).click();
-  });
 
   const scenes: Record<string, unknown> = {};
   const raw: Record<string, unknown> = {};
@@ -451,7 +446,9 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
     }
   };
   for (const scene of SCENES) {
-    const { readyMs, loadRetries } = await openFeatureTestScene(page, scene);
+    // Save All would bake audio reverb on software GL for minutes, so edits a flight left behind are
+    // discarded when the next scene opens.
+    const { readyMs, loadRetries } = await openFeatureTestScene(page, scene, undefined, { discardUnsaved: true });
     if (BACKEND) await expect.poll(() => viewportBackend(page), { timeout: 120_000 }).toBe(BACKEND);
     await page.waitForTimeout(SETTLE_MS);
     const { frames, summary, result } = await flyScene(page, cdp, scene, "editor");

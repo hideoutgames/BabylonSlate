@@ -642,9 +642,6 @@ test("FeatureTest cold-load route", async ({ page }, testInfo) => {
   }
   const backendSwitchMs = BACKEND ? Date.now() - switchStarted : null;
   const afterSwitch = await take(page);
-  await page.addLocatorHandler(page.getByRole("alertdialog", { name: "Unsaved Documents" }), async (dialog) => {
-    await dialog.getByRole("button", { name: "Discard", exact: true }).click();
-  });
 
   const adapter = await page.evaluate(async () => {
     const canvas = document.createElement("canvas");
