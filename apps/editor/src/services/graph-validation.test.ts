@@ -482,7 +482,7 @@ describe("hydrateSerializedGraphForEditor", () => {
     expect(hydrated.nodes[0]?.data.__pins).toEqual(customPins);
   });
 
-  it("regenerates Call Custom Event pins so same-class Calls drop Target", () => {
+  it("regenerates Call Custom Event pins so same-class Calls read Self on Target", () => {
     const graph: SerializedGraph = {
       nodes: [
         {
@@ -509,7 +509,7 @@ describe("hydrateSerializedGraphForEditor", () => {
     };
     const hydrated = hydrateSerializedGraphForEditor(graph, registry);
     const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string }>;
-    expect(pins?.some((pin) => pin.id === "target")).toBe(false);
+    expect(pins?.find((pin) => pin.id === "target")).toMatchObject({ optional: true, selfWhenUnwired: true });
   });
 
   it("regenerates Change Scene string pins into a Scene assetRef", () => {
@@ -1557,7 +1557,7 @@ describe("scriptPaletteNodes", () => {
     expect(local?.pins?.some((pin) => pin.id === "amount" && pin.direction === "in")).toBe(
       true,
     );
-    expect(local?.pins?.some((pin) => pin.id === "target")).toBe(false);
+    expect(local?.pins?.find((pin) => pin.id === "target")).toMatchObject({ optional: true, selfWhenUnwired: true });
     expect(local?.outOfContext).toBeUndefined();
     const other = nodes.find(
       (node) => node.id === "flow.event.call:Guard:On Alert",
@@ -1609,7 +1609,7 @@ describe("scriptPaletteNodes", () => {
       classId: "Actor",
       implicitSelf: true,
     });
-    expect(inherited?.pins?.some((pin) => pin.id === "target")).toBe(false);
+    expect(inherited?.pins?.find((pin) => pin.id === "target")).toMatchObject({ optional: true, selfWhenUnwired: true });
   });
 
   it("injects Call nodes for class functions and other open classes", () => {
@@ -1651,7 +1651,7 @@ describe("scriptPaletteNodes", () => {
     expect(
       local?.pins?.some((pin) => pin.id === "height" && pin.direction === "in"),
     ).toBe(true);
-    expect(local?.pins?.some((pin) => pin.id === "target")).toBe(false);
+    expect(local?.pins?.find((pin) => pin.id === "target")).toMatchObject({ optional: true, selfWhenUnwired: true });
     const other = nodes.find(
       (node) => node.id === "functions.call:Guard:Alert",
     );
@@ -1754,7 +1754,7 @@ describe("scriptPaletteNodes", () => {
       classId: "Actor",
       implicitSelf: true,
     });
-    expect(inherited?.pins?.some((pin) => pin.id === "target")).toBe(false);
+    expect(inherited?.pins?.find((pin) => pin.id === "target")).toMatchObject({ optional: true, selfWhenUnwired: true });
   });
 
   it("injects Get/Set nodes for class variables and other open classes", () => {

@@ -809,7 +809,7 @@ describe("script compiler service", () => {
       path: "assets/Hero.class.babasset",
       classId: "Hero",
     });
-    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\(ctx\.self,\s*"Wait"/);
+    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\([^,]+,\s*"Wait"/);
     expect(script?.source).toContain("export async function onBeginPlay");
     expect(script?.source).toContain("export async function Wait");
     expect(
@@ -823,9 +823,9 @@ describe("script compiler service", () => {
       classId: "Hero",
     });
     expect(script?.source).toMatch(
-      /await\s+ctx\.invokeFunction\(ctx\.self,\s*"WaitThenJump"/,
+      /await\s+ctx\.invokeFunction\([^,]+,\s*"WaitThenJump"/,
     );
-    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\(ctx\.self,\s*"Wait"/);
+    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\([^,]+,\s*"Wait"/);
     expect(script?.source).toContain("export async function WaitThenJump");
   });
 

@@ -682,7 +682,7 @@ export function compileGraph(
     const subjects = subjectPinsOf(node, options.registry, options.className);
     pureInProgress.add(node.id);
     let result: ReturnType<typeof def.codegen>;
-    let subjectArgs: string[] = [];
+    let subjectArgs: string[];
     try {
       // Read in progress: a pure cycle through a subject input ends here.
       subjectArgs = subjects.map((subject) => inputExpression(node, subject.pin));
@@ -1666,7 +1666,7 @@ export function compileTransitionRuleGraph(
     const subjects = subjectPinsOf(node, options.registry, options.className);
     pureInProgress.add(node.id);
     let result: ReturnType<typeof def.codegen>;
-    let subjectArgs: string[] = [];
+    let subjectArgs: string[];
     try {
       subjectArgs = subjects.map((subject) => pinExpr(node, subject.pin));
       const bound = new Map(subjects.map((subject, i) => [subject.pin.id, `__s${i}`] as const));

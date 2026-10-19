@@ -370,7 +370,7 @@ describe("compiler emits runnable JavaScript", () => {
       spawnActorAsync: async () => "guard",
       invokeCustomEvent: (...args: unknown[]) => calls.push(args),
     });
-    expect(calls).toEqual([["guard", "On_Alert", {}]]);
+    expect(calls).toEqual([["guard", "On_Alert", { amount: 3 }]]);
   });
 
   it("anchors ExecuteJavaScript user-body lines with bodyLine", () => {

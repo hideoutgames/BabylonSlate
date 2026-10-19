@@ -2030,7 +2030,8 @@ export class ScriptHost {
       context.getComponent = (actor, classId) =>
         asActor(actor)?.components.find((c) => c.classId === classId && !c.destroyed) ??
         null;
-      context.getComponentById = (target, componentId) => {
+      context.getComponentById = (actor, componentId) => {
+        const target = actor ?? null;
         // Spawned prefabs resolve their own sourceId before an authored scene
         // component with the same id can claim the stream-wide translation.
         const local = findComponentById(asActor(target), componentId);
