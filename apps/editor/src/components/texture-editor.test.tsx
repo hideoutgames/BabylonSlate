@@ -235,6 +235,26 @@ describe("Texture editor", () => {
     expect(readAssetChunk).toHaveBeenCalledWith("assets/albedo.babasset", "pixels");
   });
 
+  it("zooms the preview on the wheel and returns to the fitted view from Fit", async () => {
+    const width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(232);
+    const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(232);
+    try {
+      render(<TexturePreview path="assets/albedo.babasset" payload={{ usage: "albedo", sourceWidth: 100, sourceHeight: 100 }} />);
+      await screen.findByTestId("texture-preview-image");
+      const zoom = () => screen.getByTestId("texture-preview-zoom").textContent;
+      await waitFor(() => expect(zoom()).toBe("200%"));
+      fireEvent.wheel(screen.getByTestId("texture-preview-surface"), { deltaY: -200, clientX: 10, clientY: 10 });
+      expect(zoom()).not.toBe("200%");
+      expect(screen.getByTestId("texture-zoom-fit").getAttribute("aria-pressed")).toBe("false");
+      fireEvent.click(screen.getByTestId("texture-zoom-fit"));
+      expect(zoom()).toBe("200%");
+      expect(screen.getByTestId("texture-zoom-fit").getAttribute("aria-pressed")).toBe("true");
+    } finally {
+      width.mockRestore();
+      height.mockRestore();
+    }
+  });
+
   it("explains a Texture without decoded pixels", async () => {
     readAssetChunk.mockResolvedValueOnce(new Uint8Array());
     render(<TexturePreview path="assets/empty.babasset" payload={{ usage: "albedo" }} />);

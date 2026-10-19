@@ -273,6 +273,24 @@ export {
   type AtlasTileGridTool,
 } from "./atlas-tile-grid";
 export {
+  centeredView,
+  contentToView,
+  fitScale,
+  panView,
+  pinchView,
+  viewToContent,
+  zoomViewAbout,
+  type PanZoomLimits,
+  type PanZoomSize,
+  type PanZoomView,
+} from "./pan-zoom-model";
+export {
+  usePanZoomSurface,
+  type PanZoomBase,
+  type PanZoomSurface,
+  type PanZoomSurfaceOptions,
+} from "./use-pan-zoom-surface";
+export {
   ADD_MEMBER_EMPTY_ID,
   AddMemberMenu,
   type AddMemberMenuItem,
