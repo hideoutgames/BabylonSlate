@@ -34,9 +34,10 @@ export const SCENE_THREAD_HELD_MS = 1_000;
 
 /**
  * The most one loading step (a `SceneRenderCoordinator.prepare` call, a forward
- * graph readiness loop) credits back for held time. Beyond it the wall-clock
- * bounds run as usual, so a scene that never becomes ready still fails; it
- * matches the bound on a pending parallel compile.
+ * graph readiness loop, or the waits sharing one `HeldThreadBudget`: a one-shot
+ * capture, a model instance's material preparation) credits back for held
+ * time. Beyond it the wall-clock bounds run as usual, so a scene that never
+ * becomes ready still fails; it matches the bound on a pending parallel compile.
  */
 export const SCENE_THREAD_HELD_BUDGET_MS = 60_000;
 
@@ -47,6 +48,61 @@ export const SCENE_THREAD_HELD_BUDGET_MS = 60_000;
  */
 export function heldThreadMs(elapsed: number): number {
   return elapsed >= SCENE_THREAD_HELD_MS ? elapsed : 0;
+}
+
+/** Held time that waits sharing it may still credit back. */
+export interface HeldThreadBudget {
+  /** Spend up to `ms` of the budget; the amount actually granted. */
+  grant(ms: number): number;
+}
+
+/**
+ * A fresh budget of `ms`. One loading owner (a one-shot capture, a model
+ * instance) shares one across its sequential waits, so a capture that never
+ * becomes ready cannot credit a full budget at every step.
+ */
+export function createHeldThreadBudget(ms: number = SCENE_THREAD_HELD_BUDGET_MS): HeldThreadBudget {
+  let left = ms;
+  return {
+    grant(request) {
+      const granted = Math.max(0, Math.min(request, left));
+      left -= granted;
+      return granted;
+    },
+  };
+}
+
+export interface HeldThreadBound {
+  /**
+   * Call once per polling step, after its probe. Credits the gap since the
+   * previous call (or since the bound was created) when the thread was held,
+   * then reports whether the bound has run out.
+   */
+  expired(): boolean;
+}
+
+/**
+ * A wall-clock bound on a polling wait that does not charge the time a
+ * synchronous probe held the thread (`heldThreadMs`), up to `budget` (a fresh
+ * `SCENE_THREAD_HELD_BUDGET_MS` unless the caller shares one). A wait that never
+ * becomes ready therefore fails after at most `boundMs` plus the budget, and a
+ * slow host whose probes only link shaders does not time out spuriously. Uses
+ * the monotonic `performance.now()`.
+ */
+export function createHeldThreadBound(
+  boundMs: number,
+  budget: HeldThreadBudget = createHeldThreadBudget(),
+): HeldThreadBound {
+  let checkpoint = performance.now();
+  let deadline = checkpoint + boundMs;
+  return {
+    expired() {
+      const now = performance.now();
+      deadline += budget.grant(heldThreadMs(now - checkpoint));
+      checkpoint = now;
+      return now >= deadline;
+    },
+  };
 }
 
 export interface StallDeadline {
@@ -60,20 +116,27 @@ export interface StallDeadline {
  * A deadline that measures stalls, not total duration. The rejection names the
  * unit in progress and how many settled before it. `renew` is asked when a
  * budget expires; true grants another budget (`DriverCompileWatch.renew`).
+ * With a `held` budget, a timer that fires a held gap late (`heldThreadMs`: a
+ * synchronous call kept the unit from progressing before the timer could run)
+ * starts a fresh window, spending the lateness from the budget.
  */
 export function createStallDeadline(
   describe: (stalled: string | null, completed: number) => string,
   ms: number,
   renew?: () => boolean,
+  held?: HeldThreadBudget,
 ): StallDeadline {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let current: string | null = null;
   let completed = -1;
   let reject: ((error: Error) => void) | undefined;
+  let armedAt = 0;
   const arm = () => {
     if (timer !== undefined) clearTimeout(timer);
+    armedAt = performance.now();
     timer = setTimeout(() => {
-      if (renew?.()) arm();
+      const late = held ? held.grant(heldThreadMs(performance.now() - armedAt - ms)) : 0;
+      if (late > 0 || renew?.()) arm();
       else reject?.(new Error(describe(current, Math.max(completed, 0))));
     }, ms);
   };

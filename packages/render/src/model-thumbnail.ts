@@ -18,6 +18,7 @@ import {
 } from "./material-preview";
 import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import { waitForPreviewMeshesReady } from "./preview-readiness";
+import { createHeldThreadBudget } from "./stall-deadline";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { encodeRgbaPng } from "./png-encode";
 import { nativePreparationForEngine } from "./native-preparation";
@@ -84,6 +85,10 @@ async function captureAdmittedModelThumbnail(
   size: number,
   options: ModelThumbnailOptions,
 ): Promise<Uint8Array | null> {
+  // The readiness wait and the frame wait credit held time from one budget, so a
+  // capture that never becomes ready cannot hold the serialized queue for a full
+  // budget at each step.
+  const budget = createHeldThreadBudget();
   const host = createModelPreviewScene(engine, { transparent: true });
   let loaded: Awaited<ReturnType<typeof loadModelPreviewSource>> = null;
   let sourceHost: MaterialPreviewScene | null = null;
@@ -132,8 +137,8 @@ async function captureAdmittedModelThumbnail(
     rtt = createPreviewRenderTarget("modelThumbnail", { width: size, height: size }, host.scene);
     host.camera.outputRenderTarget = rtt;
     // A one-shot render must await imported PBR materials and textures.
-    if (!(await waitForPreviewMeshesReady(host.mesh)) || options.signal?.aborted) return null;
-    if (!(await renderPreviewFrame(host, () => !options.signal?.aborted))) return null;
+    if (!(await waitForPreviewMeshesReady(host.mesh, budget)) || options.signal?.aborted) return null;
+    if (!(await renderPreviewFrame(host, () => !options.signal?.aborted, budget))) return null;
     const buffer = await rtt.readPixels();
     if (!buffer || options.signal?.aborted) return null;
     const pixels = rgbaBytesFromReadback(buffer, size * size * 4);

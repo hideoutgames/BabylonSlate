@@ -27,9 +27,12 @@ import {
   createMaterialPreviewMesh,
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
+  renderPreviewFrame,
   type MaterialPreviewScene,
 } from "./material-preview";
 import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
+import { SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
 import { visualMeshes } from "./visual-meshes";
 
 type Listener = (event: Event) => void;
@@ -402,6 +405,44 @@ describe("material preview scene", () => {
     release();
     await host.whenReleased();
     expect(scene.isDisposed).toBe(true);
+  });
+});
+
+describe("renderPreviewFrame", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** A preview host whose renderer answers its nth draw with `presentable(n)`. */
+  function previewHost(presentable: (draw: number) => boolean) {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    vi.spyOn(host.renderer, "prepare").mockResolvedValue({ path: "frameGraph" });
+    let draws = 0;
+    vi.spyOn(host.renderer, "render").mockImplementation(() => {
+      draws += 1;
+      return { path: "frameGraph", rendered: true, readyForPresentation: presentable(draws) };
+    });
+    return host;
+  }
+
+  // Without KHR_parallel_shader_compile a draw links the effects it needs before it returns.
+  it("presents a frame whose draw held the thread for longer than the shader warm bound", async () => {
+    const clock = installVirtualClock();
+    const host = previewHost((draw) => {
+      clock.advance(draw === 1 ? 15_000 : POLL_MS);
+      return draw > 1;
+    });
+    await expect(renderPreviewFrame(host)).resolves.toBe(true);
+    expect(clock.elapsed()).toBeGreaterThan(SCENE_SHADER_WARM_TIMEOUT_MS);
+  });
+
+  it("gives up on a frame that never becomes presentable at the shader warm bound", async () => {
+    const clock = installVirtualClock();
+    const host = previewHost(() => { clock.advance(POLL_MS); return false; });
+    await expect(renderPreviewFrame(host)).resolves.toBe(false);
+    expect(clock.elapsed()).toBeLessThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS + POLL_MS);
   });
 });
 
