@@ -46,11 +46,17 @@ describe("SimulationToolbarControls", () => {
     expect(screen.getByTestId("simulation-session-stop").getAttribute("aria-label")).toBe("Stop Simulation and Keep Changes");
   });
 
-  it("switches to Edit input from the toolbar", () => {
-    const current = controls();
-    renderControls({ controls: current });
-    fireEvent.click(screen.getByTestId("simulation-input-edit"));
-    expect(current.setInputMode).toHaveBeenCalledWith("edit");
+  it("toggles between Game and Edit input from one button", () => {
+    const game = controls();
+    renderControls({ controls: game });
+    fireEvent.click(screen.getByTestId("simulation-input-mode"));
+    expect(game.setInputMode).toHaveBeenCalledWith("edit");
+    cleanup();
+    const edit = controls({ inputMode: "edit" });
+    renderControls({ controls: edit });
+    expect(screen.getByTestId("simulation-input-mode").getAttribute("aria-label")).toBe("Edit Input");
+    fireEvent.click(screen.getByTestId("simulation-input-mode"));
+    expect(edit.setInputMode).toHaveBeenCalledWith("game");
   });
 
   it("offers Return To Scene only away from the Simulation's Scene", () => {

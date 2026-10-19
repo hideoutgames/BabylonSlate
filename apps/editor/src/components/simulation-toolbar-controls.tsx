@@ -95,9 +95,7 @@ export function SimulationToolbarControls({
           {phone ? null : inputMode === "game" ? "Game" : "Edit"}
         </TooltipTrigger>
         <TooltipContent>
-          {inputMode === "game"
-            ? "Switch To Edit: select, inspect and move runtime objects"
-            : "Switch To Game: the game receives keys, touch and the mouse"}
+          {inputMode === "game" ? "Switch To Edit" : "Switch To Game"}
         </TooltipContent>
       </Tooltip>
       {onReturnToScene ? (

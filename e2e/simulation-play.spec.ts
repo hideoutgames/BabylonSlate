@@ -68,9 +68,10 @@ async function startSimulation(page: Page) {
   await expect.poll(() => tick(page), { timeout: 30_000 }).toBeGreaterThan(2);
 }
 async function enterEdit(page: Page) {
-  await expect(page.getByTestId("simulation-input-game")).toHaveAttribute("aria-pressed", "true");
-  await page.getByTestId("simulation-input-edit").click();
-  await expect(page.getByTestId("simulation-input-edit")).toHaveAttribute("aria-pressed", "true");
+  const input = page.getByTestId("simulation-input-mode");
+  await expect(input).toHaveAttribute("data-input-mode", "game");
+  await input.click();
+  await expect(input).toHaveAttribute("data-input-mode", "edit");
   await expect(page.getByTestId("simulation-outliner")).toBeVisible();
   await expect(page.getByTestId("simulation-inspector")).toBeVisible();
 }
@@ -202,8 +203,8 @@ test("Simulation Edit and Pause neutralize held gamepad input until a fresh tran
     await expect.poll(moveX).toBeGreaterThan(0.5);
     await enterEdit(page);
     await expect.poll(moveX).toBe(0);
-    await page.getByTestId("simulation-input-game").click();
-    await expect(page.getByTestId("simulation-input-game")).toHaveAttribute("aria-pressed", "true");
+    await page.getByTestId("simulation-input-mode").click();
+    await expect(page.getByTestId("simulation-input-mode")).toHaveAttribute("data-input-mode", "game");
     await expect.poll(moveX).toBe(0);
     // Returning does not reinterpret the original still-held gesture.
     const returnTick = await tick(page);
