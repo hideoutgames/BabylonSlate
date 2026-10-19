@@ -19,6 +19,7 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
+  FieldTitle,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 import type { NativeProfileEditing } from "./homepage-account-types";
@@ -145,12 +146,13 @@ export function NativeProfileFields({
           </div>
         </form>
         <Field>
-          <FieldLabel htmlFor="native-profile-picture">Profile Picture</FieldLabel>
+          {/* Not a label: it would open the picker without holding the session check. */}
+          <FieldTitle>Profile Picture</FieldTitle>
           <div className="homepage-account-center-actions">
             <input
               ref={fileInput}
-              id="native-profile-picture"
               type="file"
+              aria-label="Profile Picture"
               accept="image/png,image/jpeg,image/gif,image/webp"
               className="sr-only"
               tabIndex={-1}
