@@ -1922,7 +1922,8 @@ function initializeEngine(
     if (!editorSync) throw new Error("Chunked scene realization requires an editor scene.");
     frameReportFeed.cancel("The scene changed before frame capture completed.");
     const generation = ++loadGeneration;
-    instanceCompileHold = () => generation === loadGeneration;
+    const hold = () => generation === loadGeneration;
+    instanceCompileHold = hold;
     worldRenderer.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
     if (load.materialDocuments) installMaterialDocuments(load.materialDocuments, load.materialFunctions);
@@ -1931,9 +1932,15 @@ function initializeEngine(
     postProcessParameters.clear();
     appliedPostProcessKey = undefined;
     postProcessStack = normalizePostProcessStack(sceneData.settings.postProcessStack);
-    await editorSync.applyAsync(sceneData, { signal: load.signal, assets, onProgress: load.onProgress });
-    load.signal.throwIfAborted();
-    assertCurrent(generation);
+    try {
+      await editorSync.applyAsync(sceneData, { signal: load.signal, assets, onProgress: load.onProgress });
+      load.signal.throwIfAborted();
+      assertCurrent(generation);
+    } catch (error) {
+      // A failed or cancelled load never reaches the warm-up that ends its hold; a newer load's hold is not this one's to end.
+      if (instanceCompileHold === hold) instanceCompileHold = null;
+      throw error;
+    }
     freezeLibraryMaterials();
     rebuildPostProcessStack();
     lastSceneAssetGuid = load.sceneAssetGuid;
@@ -3644,6 +3651,8 @@ function initializeEngine(
         worldRenderer.invalidate();
         cancelPresentation(new Error("Scene loading was superseded."), "world");
       }
+      // A failed load never reaches the warm-up that ends its hold.
+      if (command.type === "sceneLoadFailed" && command.sceneLoadId === worldLoadId) instanceCompileHold = null;
       if (command.type === "sceneLayerLoading") {
         const previous = layerLoads.get(command.layerId);
         if (!previous || previous.loadId < command.layerLoadId) {

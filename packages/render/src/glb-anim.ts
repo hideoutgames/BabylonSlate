@@ -30,6 +30,7 @@ import { ownedMaterialPreparation } from "./material-library";
 import { prewarmMaterial } from "./material-compiler";
 import { createHeldThreadBudget, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
+import { drawnMaterialVariants } from "./drawn-variants";
 import { attachModelLods, generateModelLods, type ModelLodSet } from "./model-lod";
 import { nativePreparationForEngine, type NativePreparationPriority } from "./native-preparation";
 
@@ -599,16 +600,25 @@ export async function prepareInstanceMaterials(
         // Each mesh's deadline renews only for what compiles in its own windows.
         compiles.restart();
         const deadline = createStallDeadline((unit) => `Model material preparation stalled${unit ? ` at ${unit}` : ""}`, SCENE_SHADER_WARM_TIMEOUT_MS, () => compiles.renew(), budget);
+        // The variants Babylon draws this mesh with: a thin-instanced mesh (foliage) never draws plain.
+        const drawn = drawnMaterialVariants(mesh);
         await deadline.race(Promise.race([(async () => {
           for (const material of materials) {
             check();
             if (!mesh.getScene().materials.includes(material)) throw new Error(`Model material "${material.name}" was retired during preparation`);
-            deadline.advance(`material "${material.name}" for "${mesh.name}"`);
             const hotSwap = material.allowShaderHotSwapping;
             try {
-              if (material instanceof NodeMaterial) await prewarmMaterial(material, mesh);
-              else await material.forceCompilationAsync(mesh);
-              check();
+              if (drawn.plain) {
+                deadline.advance(`material "${material.name}" for "${mesh.name}"`);
+                if (material instanceof NodeMaterial) await prewarmMaterial(material, mesh);
+                else await material.forceCompilationAsync(mesh);
+                check();
+              }
+              if (drawn.instanced) {
+                deadline.advance(`material "${material.name}" for instances of "${mesh.name}"`);
+                await material.forceCompilationAsync(mesh, { useInstances: true });
+                check();
+              }
             } finally { material.allowShaderHotSwapping = hotSwap; }
           }
         })(), cancellation]));
