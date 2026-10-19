@@ -1379,6 +1379,16 @@ svg.homepage-account-center-avatar {
   width: 11px;
   height: 11px;
 }
+.homepage-account-profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.homepage-account-profile-names {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
 .homepage-account-details {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -1784,7 +1794,8 @@ body:has(.homepage-theme) [data-slot="alert-dialog-overlay"] {
   .homepage-panel-toolbar [data-slot="input"],
   .homepage-template-toolbar [data-slot="input"],
   .homepage-template-sidebar [data-slot="input"],
-  .homepage-composer-form [data-slot="input"] {
+  .homepage-composer-form [data-slot="input"],
+  .homepage-account-center [data-slot="input"] {
     min-height: 32px;
     font-size: 16px;
   }

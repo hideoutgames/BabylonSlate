@@ -199,8 +199,14 @@ describe("Homepage account", () => {
     const dialog = await openAccountSection("Account");
     expect(within(dialog).getByText("ada@example.test", { selector: "dd" })).toBeTruthy();
     expect(within(dialog).getByText("Email, Google")).toBeTruthy();
+    // Clerk's own account screen edits the profile and deletes the account.
+    expect(within(dialog).queryByLabelText("First Name")).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Delete Account" })).toBeNull();
+    expect(
+      within(dialog).getByText(/change your name, picture and connected accounts, or delete your account/i),
+    ).toBeTruthy();
     fireEvent.click(
-      within(dialog).getByRole("button", { name: "Profile and Security" }),
+      within(dialog).getByRole("button", { name: "Manage Account" }),
     );
     expect(clerk.openUserProfile).toHaveBeenCalledOnce();
     fireEvent.click(within(dialog).getByRole("button", { name: "Sign Out" }));

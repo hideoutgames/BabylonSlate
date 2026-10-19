@@ -14,6 +14,7 @@ import {
   type NativeClerkSession,
 } from "../services/native-clerk";
 import { NativeHomepageAccountContext } from "./homepage-account-context";
+import { nativeProfileActions } from "./homepage-account-native-actions";
 import { HomepageMobileAccountFrame } from "./homepage-mobile-account-gate";
 
 function accountError(error: unknown) {
@@ -136,10 +137,28 @@ export default function HomepageNativeAccount({
     );
   }
   if (session) {
+    const leaveSession = () => {
+      currentSession.current = null;
+      setSession(null);
+      setChallenge(null);
+      setCode("");
+      setError(null);
+      setStatus(null);
+    };
     return (
       <NativeHomepageAccountContext.Provider
         value={{
           session,
+          profile: nativeProfileActions(client, session, {
+            onSession: (next) => {
+              if (!alive.current) return;
+              currentSession.current = next;
+              setSession(next);
+            },
+            onDeleted: () => {
+              if (alive.current) leaveSession();
+            },
+          }),
           signOut: async () => {
             if (busyRef.current) return;
             busyRef.current = true;
@@ -147,12 +166,7 @@ export default function HomepageNativeAccount({
             try {
               await client.signOut(session);
               if (!alive.current) return;
-              currentSession.current = null;
-              setSession(null);
-              setChallenge(null);
-              setCode("");
-              setError(null);
-              setStatus(null);
+              leaveSession();
             } catch (cause) {
               if (alive.current) setRestoreError(accountError(cause));
             } finally {

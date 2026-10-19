@@ -20,6 +20,8 @@ const auth = vi.hoisted(() => ({
   verifyCode: vi.fn(),
   resendCode: vi.fn(),
   signOut: vi.fn(),
+  updateName: vi.fn(),
+  deleteAccount: vi.fn(),
 }));
 const session = {
   id: "session_ada",
@@ -442,5 +444,36 @@ describe("native mobile account requirement", () => {
     expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Try Again" }));
     expect(await screen.findByLabelText("Email Address")).toBeTruthy();
+  });
+
+  it("edits the name from the Account dialog and deletes the account back to the sign-in gate", async () => {
+    const editable = { ...session, firstName: "Ada", lastName: "Lovelace", deleteSelfEnabled: true };
+    auth.restoreSession.mockResolvedValue(editable);
+    auth.updateName.mockResolvedValue({ ...editable, name: "Ada King", lastName: "King" });
+    auth.deleteAccount.mockResolvedValue(undefined);
+    renderMobile();
+    fireEvent.click(await findProfileTrigger());
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Manage Account/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Account" });
+    fireEvent.change(within(dialog).getByLabelText("Last Name"), { target: { value: "King" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save Name" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("homepage-account").getAttribute("aria-label")).toBe(
+        "Ada King, ada@example.test",
+      ),
+    );
+    expect(auth.updateName).toHaveBeenCalledWith(editable, { firstName: "Ada", lastName: "King" });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete Account" }));
+    fireEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete Account" }),
+    );
+    expect(await screen.findByLabelText("Email Address")).toBeTruthy();
+    expect(auth.deleteAccount).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // The gate stays closed: nothing restores the deleted account's session.
+    fireEvent(window, new Event("focus"));
+    expect(auth.restoreSession).toHaveBeenCalledTimes(1);
   });
 });

@@ -22,6 +22,7 @@ import {
   unconfiguredBilling,
   type AccountDetails,
   type BillingController,
+  type NativeProfileEditing,
 } from "./homepage-account-types";
 
 function ProfileAvatar({
@@ -51,6 +52,7 @@ export function HomepageProfileMenu({
   description,
   imageUrl,
   details,
+  nativeProfile,
   billing,
   onSignIn,
   onSignUp,
@@ -68,6 +70,8 @@ export function HomepageProfileMenu({
   imageUrl?: string;
   /** Extra account facts for the Account dialog. */
   details?: Pick<AccountDetails, "memberSince" | "lastSignInAt" | "signInMethods">;
+  /** Profile editing for native accounts; the Account dialog shows it in place of Manage Account. */
+  nativeProfile?: NativeProfileEditing;
   billing?: BillingController;
   onSignIn?: () => void;
   onSignUp?: () => void;
@@ -203,6 +207,7 @@ export function HomepageProfileMenu({
         open={accountOpen}
         onOpenChange={setAccountOpen}
         account={{ name, status, email, imageUrl, ...details }}
+        nativeProfile={nativeProfile}
         billing={billing ?? unconfiguredBilling()}
         busy={busy}
         onSignIn={onSignIn}

@@ -24,7 +24,12 @@ import { ApplicationSettingsFields } from "./homepage-application-settings";
 import type {
   AccountDetails,
   BillingController,
+  NativeProfileEditing,
 } from "./homepage-account-types";
+import {
+  NativeDeleteAccount,
+  NativeProfileFields,
+} from "./homepage-account-native-profile";
 import {
   HAPTIC_PLANS,
   HAPTIC_PRICING_URL,
@@ -32,7 +37,7 @@ import {
 } from "./homepage-plans";
 
 const SECTIONS = [
-  { id: "account", label: "Account", keywords: "account profile email security sign in out create" },
+  { id: "account", label: "Account", keywords: "account profile name picture photo avatar email security sign in out create delete" },
   { id: "subscription", label: "Subscription", keywords: "subscription plan pro free enterprise billing payment invoice" },
   { id: "application", label: "Application", keywords: "application updates automatic" },
 ] as const;
@@ -53,20 +58,24 @@ function DetailRow({ label, value }: { label: string; value?: string }) {
 
 function AccountSection({
   account,
+  nativeProfile,
   busy,
   onSignIn,
   onSignUp,
   onSignOut,
   signOutLabel,
   onManageAccount,
+  onAccountDeleted,
 }: {
   account: AccountDetails;
+  nativeProfile?: NativeProfileEditing;
   busy: boolean;
   onSignIn?: () => void;
   onSignUp?: () => void;
   onSignOut?: () => void;
   signOutLabel: string;
   onManageAccount?: () => void;
+  onAccountDeleted: () => void;
 }) {
   const signedIn = Boolean(onSignOut);
   return (
@@ -99,11 +108,14 @@ function AccountSection({
               value={account.signInMethods?.join(", ")}
             />
           </dl>
+          {nativeProfile && (
+            <NativeProfileFields profile={nativeProfile} disabled={busy} />
+          )}
           <div className="homepage-account-center-actions">
             {onManageAccount && (
               <Button variant="outline" size="sm" onClick={onManageAccount}>
                 <UserRoundCogIcon data-icon="inline-start" />
-                Profile and Security
+                Manage Account
               </Button>
             )}
             <Button variant="outline" size="sm" disabled={busy} onClick={onSignOut}>
@@ -113,10 +125,17 @@ function AccountSection({
           </div>
           {onManageAccount && (
             <p className="homepage-account-center-note">
-              Change your name, picture, email, password and connected
-              accounts, review signed-in devices, or delete your account in
-              Profile and Security.
+              Manage Account opens your account settings, where you can change
+              your name, picture and connected accounts, or delete your
+              account.
             </p>
+          )}
+          {nativeProfile && (
+            <NativeDeleteAccount
+              profile={nativeProfile}
+              disabled={busy}
+              onDeleted={onAccountDeleted}
+            />
           )}
         </>
       ) : (
@@ -271,6 +290,7 @@ export function HomepageAccountCenter({
   open,
   onOpenChange,
   account,
+  nativeProfile,
   billing,
   busy,
   onSignIn,
@@ -282,6 +302,8 @@ export function HomepageAccountCenter({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   account: AccountDetails;
+  /** Native accounts edit their profile here; web accounts use `onManageAccount`. */
+  nativeProfile?: NativeProfileEditing;
   billing: BillingController;
   busy: boolean;
   onSignIn?: () => void;
@@ -304,12 +326,14 @@ export function HomepageAccountCenter({
     content = (
       <AccountSection
         account={account}
+        nativeProfile={nativeProfile}
         busy={busy}
         onSignIn={onSignIn}
         onSignUp={onSignUp}
         onSignOut={onSignOut}
         signOutLabel={signOutLabel}
         onManageAccount={onManageAccount}
+        onAccountDeleted={() => onOpenChange(false)}
       />
     );
   } else if (active === "subscription") {
