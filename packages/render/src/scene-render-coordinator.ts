@@ -157,6 +157,10 @@ export class SceneRenderCoordinator {
   invalidate(): void {
     this.generation += 1;
     this.failure = undefined;
+    // A rebuilt graph or switched scene starts a new run of frames: it neither
+    // waits for the old frame's pipelines nor inherits its hold's elapsed cap.
+    this.deferral = undefined;
+    this.deferredSince = undefined;
     this.graph.invalidate();
   }
 

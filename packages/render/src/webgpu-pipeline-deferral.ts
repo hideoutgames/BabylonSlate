@@ -96,7 +96,11 @@ function install(engine: AbstractEngine): DeferralState {
     const descriptor = this._buildRenderPipelineDescriptor(effect, topology, sampleCount);
     state.pending.add(node);
     state.progressAt = now;
-    // Counted where Babylon counts a synchronous creation: in the frame that missed.
+    // Counted where Babylon counts a synchronous creation: in the frame that
+    // missed. A failed or stalled attempt that falls back to a synchronous
+    // creation is counted again by Babylon, in the frame that pays for it
+    // (the first-frame completion allowance reads each frame's count), so the
+    // two creations are not merged.
     statistics.NumCacheMiss++;
     statistics._NumPipelineCreationCurrentFrame++;
     target._device.createRenderPipelineAsync(descriptor).then((pipeline) => {
