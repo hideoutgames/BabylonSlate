@@ -39,13 +39,16 @@ export function fixedLightDeviceClass(device: { webgpu: boolean; slots: number }
 
 /**
  * One seat class. The list is data: classes are sized, trimmed and filled
- * generically, so a class can be split (LOCAL into LOCAL_SPOT and LOCAL_POINT)
- * without code changes.
+ * generically, and a seat compiles the light code of the one kind its class
+ * hosts.
  */
 export interface FixedLightClassSpec {
   /** Stable name; the layout key lists classes by it in canonical order. */
   readonly id: string;
-  /** Light kinds a seat hosts. */
+  /**
+   * Light kinds a seat hosts. The shaders bind by seat (one light type per
+   * seat, spot cone math only in spot seats), so classes host one kind each.
+   */
   readonly hosts: readonly FixedLightKind[];
   /** The kind of shadow map every seat samples. */
   readonly shadow?: FixedLightShadowKind;
@@ -59,7 +62,8 @@ export interface FixedLightClassSpec {
   readonly sizedBy: "lights" | "shadowCasters";
   /**
    * Most seats per device class. "remainder" takes the slots the capped
-   * classes leave; it is sized after them and binds no sampler.
+   * classes leave; it is sized after them and binds no sampler. Remainder
+   * classes share those slots one seat each in turn, in canonical order.
    */
   readonly caps: Readonly<Record<FixedLightDeviceClass, number | "remainder">>;
   /** Samplers each seat's shadow map binds, per filter (cube maps always filter with Poisson). */
@@ -91,7 +95,7 @@ export const FIXED_LIGHT_CLASSES: readonly FixedLightClassSpec[] = [
   { id: "FILL", hosts: ["hemispheric"], sizedBy: "lights", caps: one },
   {
     id: "SPOT_SHADOW",
-    hosts: ["spot", "point"],
+    hosts: ["spot"],
     shadow: "spot",
     sizedBy: "shadowCasters",
     caps: { webgl2: 2, webgpu: 2, webgpuRaised: 4 },
@@ -100,7 +104,7 @@ export const FIXED_LIGHT_CLASSES: readonly FixedLightClassSpec[] = [
   },
   {
     id: "POINT_SHADOW",
-    hosts: ["spot", "point"],
+    hosts: ["point"],
     shadow: "point",
     sizedBy: "shadowCasters",
     caps: { webgl2: 1, webgpu: 1, webgpuRaised: 2 },
@@ -108,8 +112,14 @@ export const FIXED_LIGHT_CLASSES: readonly FixedLightClassSpec[] = [
     trim: { seats: 1 },
   },
   {
-    id: "LOCAL",
-    hosts: ["spot", "point"],
+    id: "LOCAL_SPOT",
+    hosts: ["spot"],
+    sizedBy: "lights",
+    caps: { webgl2: "remainder", webgpu: "remainder", webgpuRaised: "remainder" },
+  },
+  {
+    id: "LOCAL_POINT",
+    hosts: ["point"],
     sizedBy: "lights",
     caps: { webgl2: "remainder", webgpu: "remainder", webgpuRaised: "remainder" },
   },
@@ -214,11 +224,12 @@ export interface FixedLightLayout {
 
 /**
  * Sizes the layout: each class seats min(cap, inventory) lights, capped
- * classes first in canonical order, then the remainder classes. Shadow classes
- * together stay within the shadow profile's local shadow lights, and the whole
- * layout within the lighting sampler headroom (trims in `trim` order); shadow
- * casters a trimmed seat would have held fall to the remainder classes, where
- * they light unshadowed. A light kind with no seat left is limited.
+ * classes first in canonical order, then the remainder classes, one seat each
+ * in turn. Shadow classes together stay within the shadow profile's local
+ * shadow lights, and the whole layout within the lighting sampler headroom
+ * (trims in `trim` order); shadow casters a trimmed seat would have held fall
+ * to the remainder class of their kind, where they light unshadowed. A light
+ * kind with no seat left is limited, even while another kind's seats are empty.
  */
 export function fixedLightLayout(input: FixedLightLayoutInput): FixedLightLayout {
   const specs = input.classes ?? FIXED_LIGHT_CLASSES;
@@ -245,32 +256,34 @@ export function fixedLightLayout(input: FixedLightLayoutInput): FixedLightLayout
   const trims = new Map<string, number>();
   const note = (message: string) => trims.set(message, (trims.get(message) ?? 0) + 1);
 
-  const size = (index: number) => {
+  /** Seats one more light in the class, if any slot and hosted light are left. */
+  const seatOne = (index: number) => {
     const spec = specs[index]!;
-    const cap = spec.caps[input.device];
-    const limit = cap === "remainder" ? free : Math.min(Math.max(0, Math.floor(cap)), free);
-    for (let seat = 0; seat < limit; seat++) {
-      let kind: FixedLightKind | undefined;
-      let caster = false;
-      if (spec.sizedBy === "shadowCasters") {
-        if (spec.shadow && casters[spec.shadow] > 0) {
-          kind = spec.shadow;
-          caster = true;
-        }
-      } else {
-        kind = spec.hosts.find((host) => plain[host] > 0);
-        if (!kind) {
-          kind = spec.hosts.find((host) => casters[host] > 0);
-          caster = kind !== undefined;
-        }
+    if (free <= 0) return false;
+    let kind: FixedLightKind | undefined;
+    let caster = false;
+    if (spec.sizedBy === "shadowCasters") {
+      if (spec.shadow && casters[spec.shadow] > 0) {
+        kind = spec.shadow;
+        caster = true;
       }
-      if (!kind) break;
-      if (caster) casters[kind] -= 1;
-      else plain[kind] -= 1;
-      taken[index]!.push({ kind, caster });
-      seats[index] = seats[index]! + 1;
-      free -= 1;
+    } else {
+      kind = spec.hosts.find((host) => plain[host] > 0);
+      if (!kind) {
+        kind = spec.hosts.find((host) => casters[host] > 0);
+        caster = kind !== undefined;
+      }
     }
+    if (!kind) return false;
+    if (caster) casters[kind] -= 1;
+    else plain[kind] -= 1;
+    taken[index]!.push({ kind, caster });
+    seats[index] = seats[index]! + 1;
+    free -= 1;
+    return true;
+  };
+  const sizeCapped = (index: number, cap: number) => {
+    for (let seat = 0; seat < Math.floor(cap) && seatOne(index); seat++);
   };
   const release = (index: number) => {
     const last = taken[index]!.pop();
@@ -294,7 +307,10 @@ export function fixedLightLayout(input: FixedLightLayoutInput): FixedLightLayout
   const capped = (index: number) => specs[index]!.caps[input.device] !== "remainder";
   const trimRank = (rank: number | undefined) => rank ?? Number.POSITIVE_INFINITY;
 
-  for (let index = 0; index < specs.length; index++) if (capped(index)) size(index);
+  for (let index = 0; index < specs.length; index++) {
+    const cap = specs[index]!.caps[input.device];
+    if (cap !== "remainder") sizeCapped(index, Math.max(0, cap));
+  }
 
   // The shadow profile bounds the local shadow seats together.
   const localShadowSeats = () =>
@@ -343,7 +359,13 @@ export function fixedLightLayout(input: FixedLightLayoutInput): FixedLightLayout
     }
   }
 
-  for (let index = 0; index < specs.length; index++) if (!capped(index)) size(index);
+  // Remainder classes share the slots left one seat each in turn, so when the
+  // slots run short each kind keeps some local seats.
+  const remainder = specs.flatMap((_spec, index) => (capped(index) ? [] : [index]));
+  for (let seated = true; seated; ) {
+    seated = false;
+    for (const index of remainder) seated = seatOne(index) || seated;
+  }
 
   const classes = specs.map((spec, index): FixedLightLayoutClass => ({
     id: spec.id,
