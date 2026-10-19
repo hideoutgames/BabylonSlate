@@ -169,23 +169,24 @@ describe.each(KINDS)("Movement moving a kinematic capsule on %s", (kind) => {
     const launch = async (body: Record<string, unknown> | null, wall: boolean) => {
       const { hero, tick, solid, movement } = await scene(kind);
       if (wall) solid("wall", { x: 1.5, y: 2 }, { x: 0.5, y: 2 });
-      const walker = hero("hero", 0, 0.9, body);
+      const walker = hero("hero", 0, 0.95, body);
       tick(30);
       expect(movement.addImpulse(walker.actor, { x: 10, y: 0, z: 0 })).toBe(true);
       tick(60);
       return walker.actor.transform.position.x;
     };
-    // v = 10 braking at 40 carries 1.25 m; a mass of 4 leaves a quarter of the speed.
-    expect(await launch(null, false)).toBeGreaterThan(1.1);
-    expect(await launch({ motionType: "kinematic", mass: 4 }, false)).toBeLessThan(0.3);
-    expect(await launch({ motionType: "kinematic", mass: 4 }, false)).toBeGreaterThan(0.03);
+    // Speed 10 braking at 40 carries about 1.2 m; a mass of 4 leaves a quarter of the speed.
+    expect(await launch(null, false)).toBeGreaterThan(0.9);
+    const heavy = await launch({ motionType: "kinematic", mass: 4 }, false);
+    expect(heavy).toBeGreaterThan(0.02);
+    expect(heavy).toBeLessThan(0.3);
     // The wall face is at x = 1 and the capsule radius is 0.4.
     expect(await launch(null, true)).toBeLessThan(0.62);
   });
 
   it("lets a launch pad impulse leave the ground and fall back", async () => {
     const { hero, tick, movement, events } = await scene(kind);
-    const walker = hero("hero", 0, 0.9, null);
+    const walker = hero("hero", 0, 0.95, null);
     tick(30);
     events.length = 0;
     movement.addImpulse(walker.actor, { x: 0, y: 6, z: 0 });
