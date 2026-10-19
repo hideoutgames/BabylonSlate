@@ -686,6 +686,34 @@ describe("scene material lighting", () => {
       expect(part.materialDefines!.toString()).toBe(defines);
     });
 
+    it("changes the admitted kinds back only past the same margin", () => {
+      // A spot at x = 0 against points from x = 50 to 130.
+      const { scene, camera, lamps } = swapFixture([0, 4], (index) => (index ? 40 + index * 10 : 0));
+      const spotAdmittedAt = (x: number) => {
+        camera.position.x = x;
+        beginFrame(scene);
+        return !isForwardLightExcluded(lamps[0]!);
+      };
+      expect([130, 60, 50, 60, 70, 100].map(spotAdmittedAt)).toEqual([false, false, true, true, true, false]);
+    });
+
+    it("hands a switched-off light's place to the next light of its kind within the margin", () => {
+      const scene = host(false);
+      scene.activeCamera = new UniversalCamera("camera", Vector3.Zero(), scene);
+      const points = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90].map((x) => new PointLight(`point-${x}`, new Vector3(x, 3, 0), scene));
+      const near = new SpotLight("near spot", new Vector3(5, 3, 0), Vector3.Down(), 1, 1, scene);
+      const far = new SpotLight("far spot", new Vector3(95, 3, 0), Vector3.Down(), 1, 1, scene);
+      MeshBuilder.CreateBox("receiver", {}, scene).material = new StandardMaterial("receiver", scene);
+      syncSceneLighting(scene);
+      // Nine slots: the near spot and the eight nearest points.
+      expect(isForwardLightExcluded(far)).toBe(true);
+      setAuthoredLightEnabled(near, false);
+      beginFrame(scene);
+      // The far spot is 95 / 80 times as far as the nearest point it keeps out.
+      expect(isForwardLightExcluded(far)).toBe(false);
+      expect(isForwardLightExcluded(points[8]!)).toBe(true);
+    });
+
     it("counts a light with a shadow map as another kind than one without", () => {
       const { scene, camera, lamps, receiver } = swapFixture([0, 9]);
       receiver.receiveShadows = true;

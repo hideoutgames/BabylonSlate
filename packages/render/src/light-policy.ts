@@ -293,11 +293,13 @@ function admit(
  * How much nearer the camera a light of another slot kind must be before the
  * Forward budget changes which kinds it admits: it keeps its current mix
  * unless that would keep a light more than this many times farther away than
- * the nearest light it leaves out instead (or one with a lower Light Priority).
- * Every lit material compiles a new shader the first time the admitted kinds
- * change (a point admitted for a shadowed spot); a swap between lights of one
- * kind compiles nothing. Going back takes the same margin, so the mix does not
- * flip at a boundary.
+ * the nearest light it leaves out instead, so a nearer light of another kind
+ * can stay off until it is this much nearer. Every lit material compiles a new
+ * shader the first time the admitted kinds change (a point admitted for a
+ * shadowed spot); a swap between lights of one kind compiles nothing. Going
+ * back takes the same margin, so the mix does not flip at a boundary. (A light
+ * priority makes Babylon sort lights per mesh, `requireLightSorting`, which
+ * this policy leaves alone.)
  */
 export const FORWARD_KIND_CHANGE_DISTANCE_RATIO = 1.25;
 
@@ -330,16 +332,15 @@ function keepAdmittedSlotKinds(scene: Scene, candidates: Light[], previous: Read
     const change = (set: ReadonlySet<Light>, light: Light, delta: number) => {
       if (set.has(light) && isAuthoredLocal(scene, light)) quotas.set(kind(light), (quotas.get(kind(light)) ?? 0) + delta);
     };
-    for (const light of candidates) {
-      change(previous, light, 1);
-      change(ranked, light, -1);
-    }
+    for (const light of previous) change(previous, light, 1);
+    for (const light of ranked) change(ranked, light, -1);
     let sameKinds = true;
     for (const count of quotas.values()) if (count !== 0) sameKinds = false;
     if (sameKinds) return;
-    // Places per kind the previous selection held, counting only lights still eligible.
+    // Places per kind the previous selection held, also those of lights no longer
+    // eligible: a disabled spot hands its place to the next spot, not a point.
     quotas.clear();
-    for (const light of candidates) change(previous, light, 1);
+    for (const light of previous) change(previous, light, 1);
     const order = scratchOrder;
     const rest = scratchRest;
     for (const light of candidates) {
@@ -359,14 +360,10 @@ function keepAdmittedSlotKinds(scene: Scene, candidates: Light[], previous: Read
       if (stable.has(light) && !ranked.has(light)) kept = light;
     }
     if (!kept) return;
-    if (entering) {
-      const priority = (light: Light) => (Number.isFinite(light.renderPriority) ? light.renderPriority : 0);
-      if (priority(kept) < priority(entering)) return;
-      const camera = scene.activeCamera;
-      if (camera) {
-        const distance = (light: Light) => Vector3.DistanceSquared(admissionPosition(light), camera.globalPosition);
-        if (distance(kept) > distance(entering) * FORWARD_KIND_CHANGE_DISTANCE_RATIO ** 2) return;
-      }
+    const camera = scene.activeCamera;
+    if (entering && camera) {
+      const distance = (light: Light) => Vector3.DistanceSquared(admissionPosition(light), camera.globalPosition);
+      if (distance(kept) > distance(entering) * FORWARD_KIND_CHANGE_DISTANCE_RATIO ** 2) return;
     }
     candidates.length = 0;
     candidates.push(...order);
