@@ -1,6 +1,6 @@
 import {
-  ShadowDepthWrapper, type AbstractMesh, type DrawWrapper, type Effect, type Node, type NodeMaterial,
-  type Observer, type ShadowGenerator, type SubMesh,
+  ShadowDepthWrapper, type AbstractMesh, type BaseTexture, type DrawWrapper, type Effect, type Node, type NodeMaterial,
+  type Observer, type RenderTargetTexture, type ShadowGenerator, type SubMesh,
 } from "@babylonjs/core";
 import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
 
@@ -17,6 +17,8 @@ export class AuthoredShadowDepthWrapper extends ShadowDepthWrapper {
   private released: Promise<void> | undefined;
   private readonly retirements = new Set<OwnedEffectRetirement>();
   private readonly meshObservers = new Map<AbstractMesh, Observer<Node>>();
+  /** ShadowGenerator.dispose never reaches the materials its map drew; its shadow map's disposal ends the generator's entries. */
+  private readonly mapObservers = new Map<ShadowGenerator,{ map: RenderTargetTexture; observer: Observer<BaseTexture> }>();
   private readonly effectObserver: Observer<{ effect: Effect; subMesh: SubMesh | null }>;
   private get native(): NativeShadowResources { return this as unknown as NativeShadowResources; }
   constructor(material: NodeMaterial) {
@@ -34,7 +36,7 @@ export class AuthoredShadowDepthWrapper extends ShadowDepthWrapper {
   }
   override isReadyForSubMesh(subMesh: SubMesh, defines: string[], generator: ShadowGenerator, instances: boolean, passId: number): boolean {
     if (this.released) return false;
-    for (const retirement of this.retirements) if (retirement.isReleased()) this.retirements.delete(retirement);
+    this.pruneRetirements();
     const entries = this.native._subMeshToDepthWrapper.mm.get(subMesh);
     const previous = entries?.get(generator);
     // Upstream overwrites its main Effect on a light/filter permutation change.
@@ -42,7 +44,28 @@ export class AuthoredShadowDepthWrapper extends ShadowDepthWrapper {
     if (previous && previous.depthDefines !== defines.join("\n")) {
       this.retireEntry(subMesh, previous); entries!.delete(generator);
     }
-    return super.isReadyForSubMesh(subMesh, defines, generator, instances, passId);
+    const ready = super.isReadyForSubMesh(subMesh, defines, generator, instances, passId);
+    if (!this.mapObservers.has(generator) && this.native._subMeshToDepthWrapper.mm.get(subMesh)?.has(generator)) this.observeShadowMap(generator);
+    return ready;
+  }
+  private pruneRetirements(): void {
+    for (const retirement of this.retirements) if (retirement.isReleased()) this.retirements.delete(retirement);
+  }
+  /** The map disposes with its generator, or when the generator recreates it (the old map's pass ids are then dead). */
+  private observeShadowMap(generator: ShadowGenerator): void {
+    const map = generator.getShadowMap();
+    if (map) this.mapObservers.set(generator, { map, observer: map.onDisposeObservable.addOnce(() => this.retireGenerator(generator)) });
+  }
+  private retireGenerator(generator: ShadowGenerator): void {
+    this.mapObservers.delete(generator);
+    this.pruneRetirements();
+    const subMeshes = this.native._subMeshToDepthWrapper.mm;
+    for (const [subMesh, entries] of subMeshes) {
+      const entry = entries.get(generator);
+      if (!entry) continue;
+      this.retireEntry(subMesh, entry); entries.delete(generator);
+      if (!entries.size) subMeshes.delete(subMesh);
+    }
   }
   private retireEntry(subMesh: SubMesh | null, entry: NativeShadowEntry): void {
     const effect = entry.mainDrawWrapper.effect;
@@ -62,6 +85,8 @@ export class AuthoredShadowDepthWrapper extends ShadowDepthWrapper {
     this.baseMaterial.onEffectCreatedObservable.remove(this.effectObserver);
     for (const [mesh, observer] of this.meshObservers) mesh.onDisposeObservable.remove(observer);
     this.meshObservers.clear();
+    for (const { map, observer } of this.mapObservers.values()) map.onDisposeObservable.remove(observer);
+    this.mapObservers.clear();
     super.dispose();
     for (const subMesh of this.native._subMeshToDepthWrapper.mm.keys()) this.retireSubMesh(subMesh);
     // Standalone NodeMaterial readiness creates a separate base program in the
