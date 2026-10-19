@@ -931,7 +931,9 @@ function initializeEngine(
   const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
   // Every view shares the same graph path for authored and selection outlines.
   // The graph owns its active queue; editor world matrices still freeze.
-  const worldRenderer = new SceneRenderCoordinator(scene);
+  // The world view draws every frame and presents only rendered ones, so a
+  // draw whose WebGPU pipeline is still compiling holds the last image.
+  const worldRenderer = new SceneRenderCoordinator(scene, { deferPipelines: true });
   onRollback(() => worldRenderer.dispose());
   let disposed = false;
   let streamAdmission: ReturnType<typeof createSceneStreamAdmission> | undefined;

@@ -27,6 +27,7 @@ import { retireOwnedEffect } from "./owned-effect-retirement";
 import type { AttachedPostProcessStack } from "./post-process-material";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { registerSceneAuxiliaryViews } from "./scene-auxiliary-views";
+import { beginPipelineDeferral } from "./webgpu-pipeline-deferral";
 import { findSceneShadowController, type ViewShadows } from "./shadow-controller";
 
 export { isRenderTargetCaptureCandidate } from "./render-target-capture-state";
@@ -382,7 +383,18 @@ export class RenderTargetCaptures {
           this.retireCaptureMaterial(target, material);
         }
       }
-      if (!this.stageDraw(target, guid, actorId, () => this.draw(() => this.drawReady(destination), !target.depth && !target.normals))) continue;
+      // WebGPU: a draw whose pipeline is still compiling is skipped. The capture
+      // then neither publishes nor consumes a manual request, and the scene view
+      // whose frame this is holds its last image until a complete draw.
+      const deferral = beginPipelineDeferral(this.scene.getEngine(), (renderPassId) => destination.renderPassIds.includes(renderPassId));
+      let drawn: boolean;
+      let skipped: number;
+      try {
+        drawn = this.stageDraw(target, guid, actorId, () => this.draw(() => this.drawReady(destination), !target.depth && !target.normals));
+      } finally {
+        skipped = deferral?.close() ?? 0;
+      }
+      if (!drawn || skipped) continue;
       if (target.spare) {
         const previous = { texture: target.texture, lease: target.lease };
         target.texture = target.spare.texture;
@@ -589,7 +601,9 @@ export class RenderTargetCaptures {
       const objects: FrameGraphObjectList = { meshes, particleSystems: particles };
       camera.outputRenderTarget = texture;
       // Planar water mirrors are per scene view; capture water keeps its other reflections.
-      renderer = new SceneRenderCoordinator(this.scene, { waterPlanarReflections: false, auxiliary: { camera, objects } });
+      // Drawn every frame inside the scene view's frame, which holds while this
+      // view waits for a pipeline; the target keeps its last image meanwhile.
+      renderer = new SceneRenderCoordinator(this.scene, { waterPlanarReflections: false, auxiliary: { camera, objects }, deferPipelines: true });
       shadows = findSceneShadowController(this.scene)?.attachView(camera) ?? null;
       const target: Target = {
         key, definition, quality: "fullQuality", texture, lease, owner,
