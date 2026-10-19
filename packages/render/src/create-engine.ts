@@ -126,6 +126,7 @@ import {
 } from "./gizmo-multi-select";
 import { attachViewportGestures } from "./viewport-gestures";
 import { attachViewportFlyKeys, DEFAULT_FLY_SPEED } from "./viewport-fly-keys";
+import { createGameCameraPilot, type GameCameraPilotFraming } from "./game-camera-pilot";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { MeshoptCompression } from "@babylonjs/core/Meshes/Compression/meshoptCompression";
 import {
@@ -497,8 +498,18 @@ export interface CreateEngineOptions {
    * Position/Rotation/Scale gizmos. World 2D scenes stay on axis gizmos.
    */
   overlayTransformBox?: boolean;
-  /** When false, WASD does not fly the editor camera (Play overlay). */
+  /** When false, WASD does not fly the editor camera (Play overlay) and Game Camera is not piloted. */
   editorFlyEnabled?: () => boolean;
+  /**
+   * Game Camera piloting paused: write the Default Camera actor's local
+   * transform to the document as one undoable edit.
+   */
+  onPilotedActorMoveEnd?: (transform: {
+    actorId: string;
+    position: [number, number, number];
+    rotation: [number, number, number, number];
+    scale: [number, number, number];
+  }) => void;
   /** World units/s for WASD. Read each tick so Engine Settings apply live. */
   editorFlySpeed?: () => number;
   /** Viewport clear color scheme; defaults from `html.dark` when present. */
@@ -665,6 +676,11 @@ export interface CreateEngineOptions {
 
 export interface EditorTools {
   camera: EditorCameraController;
+  /**
+   * The camera controller viewport input should steer: the editor camera, or
+   * the Default Camera actor while Game Camera is on and that actor can move.
+   */
+  navigation: EditorCameraController;
   gizmos: GizmoHost;
   grid: EditorGrid;
   selection: SceneOutlineSelection;
@@ -2185,10 +2201,71 @@ function initializeEngine(
       } : null);
     };
 
+    // Game Camera turns look, fly, pan and zoom onto the Default Camera actor.
+    const pilot = createGameCameraPilot({
+      mode: () => cameraController.mode,
+      target: () => {
+        if (!previewGameCamera || options.editorFlyEnabled?.() === false) return null;
+        const sceneData = editorSync.serializedScene();
+        const actorId = sceneData?.settings.mainCameraActorId;
+        const componentId = sceneData?.settings.mainCameraComponentId;
+        const actor = actorId ? sceneData?.actors.find((entry) => entry.id === actorId) : undefined;
+        if (!actor || actor.locked || !actor.components.some(
+          (component) => component.id === componentId && component.classId === "CameraComponent",
+        )) return null;
+        const mesh = editorSync.meshForActor(actor.id);
+        const camera = scene.activeCamera;
+        if (!mesh || !camera || camera === cameraController.camera) return null;
+        return { actorId: actor.id, mesh, camera };
+      },
+      onBegin: ({ mesh }) => unfreezeActorWorldMatrix(mesh as Mesh),
+      onMove: () => {
+        const sceneData = editorSync.serializedScene();
+        if (sceneData) syncAuthoredCamerasFromMeshes(scene, sceneData, (id) => editorSync.meshForActor(id));
+        scheduler.invalidate("camera");
+      },
+      onCommit: ({ actorId, mesh }) => {
+        freezeStaticActorWorldMatrix(mesh as Mesh);
+        options.onPilotedActorMoveEnd?.({ actorId, ...readMeshLocalTransform(mesh) });
+      },
+    });
+    onRollback(() => pilot.dispose());
+    type NavigationFraming = ReturnType<EditorCameraController["captureFraming"]> & {
+      pilot?: GameCameraPilotFraming | null;
+    };
+    const navigation: EditorCameraController = Object.assign(
+      Object.create(cameraController) as EditorCameraController,
+      {
+        look: (deltaYaw: number, deltaPitch: number) =>
+          pilot.active() ? pilot.look(deltaYaw, deltaPitch) : cameraController.look(deltaYaw, deltaPitch),
+        orbit: (deltaYaw: number, deltaPitch: number) =>
+          pilot.active() ? pilot.look(deltaYaw, deltaPitch) : cameraController.orbit(deltaYaw, deltaPitch),
+        fly: (forward: number, right: number) =>
+          pilot.active() ? pilot.fly(forward, right) : cameraController.fly(forward, right),
+        pan: (deltaX: number, deltaY: number) =>
+          pilot.active() ? pilot.pan(deltaX, deltaY) : cameraController.pan(deltaX, deltaY),
+        zoom: (factor: number, pivot?: Parameters<EditorCameraController["zoom"]>[1]) =>
+          pilot.active() ? pilot.zoom(factor) : cameraController.zoom(factor, pivot),
+        captureFraming: (): NavigationFraming => ({
+          ...cameraController.captureFraming(),
+          pilot: pilot.captureFraming(),
+        }),
+        restoreFraming: (framing: NavigationFraming) => {
+          if (framing.pilot) pilot.restoreFraming(framing.pilot);
+          else cameraController.restoreFraming(framing);
+        },
+      },
+    );
+    // The joystick orbits with Pivot Around Center; a piloted camera flies.
+    Object.defineProperty(navigation, "pivotAroundCenter", {
+      get: () => !pilot.active() && cameraController.pivotAroundCenter,
+    });
+    const navigationActive = () => !previewGameCamera || pilot.active();
+
     let tapPickSequence = 0;
-    const gestures = attachViewportGestures(canvas, cameraController, {
+    const gestures = attachViewportGestures(canvas, navigation, {
       scheduler,
-      editorCameraActive: () => !previewGameCamera,
+      editorCameraActive: navigationActive,
       blockLook: (x, y) =>
         gizmos.isDragging() || waterHandles.isDragging() || splineHandles.isDragging() || deformerHandles.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
       dragSelectActive: () => options.dragSelectActive?.() === true,
@@ -2233,11 +2310,11 @@ function initializeEngine(
     const flyKeys =
       typeof window === "undefined"
         ? null
-        : attachViewportFlyKeys(window, cameraController, canvas, {
+        : attachViewportFlyKeys(window, navigation, canvas, {
             scheduler,
             speed: () => options.editorFlySpeed?.() ?? DEFAULT_FLY_SPEED,
             isEnabled: () =>
-              !previewGameCamera && options.editorFlyEnabled?.() !== false,
+              navigationActive() && options.editorFlyEnabled?.() !== false,
           });
     onRollback(() => flyKeys?.dispose());
     disposeGestures = () => {
@@ -2247,6 +2324,7 @@ function initializeEngine(
 
     editor = {
       camera: cameraController,
+      navigation,
       gizmos,
       grid,
       selection,
@@ -2342,6 +2420,7 @@ function initializeEngine(
         );
       },
       setPreviewGameCamera: (enabled: boolean) => {
+        if (!enabled) pilot.flush();
         previewGameCamera = enabled;
         editorSync.setGameCameraPreview(enabled, cameraController.camera);
         scheduler.invalidate("camera");

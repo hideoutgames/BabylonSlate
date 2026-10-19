@@ -30,7 +30,7 @@ See [Touch Gestures](../start/gestures.md) for the full list.
 | **Drag Select** | The next drag draws a selection box (<kbd>Q</kbd>). |
 | **Drop** | Drops the selected actors straight down onto the nearest collision surface (<kbd>End</kbd>). |
 | **View** | Shows how the viewport draws the scene (**PBR** or **CEL**, **Unlit**, **Wireframe**) and holds **Show Grid**, **Show Navmesh** and **Show Collisions**. |
-| **Game Camera** | Looks through the scene's Default Camera (<kbd>Shift</kbd>+<kbd>C</kbd>). Not shown for Scene Layers, which have no camera of their own. |
+| **Game Camera** | Looks through the scene's Default Camera (<kbd>Shift</kbd>+<kbd>C</kbd>); viewport navigation then moves that camera. Not shown for Scene Layers, which have no camera of their own. |
 | **Viewport Settings** | **Joystick**, **Pivot Around Center**, **Grid Settings** and **Camera Speed**. |
 | **2D** / **3D** | One switch: tap anywhere on it to flip the scene between 2D and 3D (<kbd>Alt</kbd>+<kbd>V</kbd>). The active side is highlighted. |
 

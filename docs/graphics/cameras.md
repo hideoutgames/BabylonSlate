@@ -38,7 +38,7 @@ If you delete the Default Camera's actor, pick a new one.
 
 ## Preview the game camera
 
-In the viewport toolbar, turn on **Game Camera** (<kbd>Shift</kbd>+<kbd>C</kbd>). The viewport shows the Default Camera's view, and the button stays highlighted. Editor navigation is paused until you turn it off, and your editor view is kept.
+In the viewport toolbar, turn on **Game Camera** (<kbd>Shift</kbd>+<kbd>C</kbd>). The viewport shows the Default Camera's view, and the button stays highlighted. While it is on, the viewport's look, fly (<kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> and the joystick), pan and zoom inputs move the Default Camera's actor instead of the editor camera. Each pause in input saves the new transform as one undoable change. When the Default Camera's actor is locked or the scene has none, those inputs do nothing. Turning Game Camera off returns you to your editor view, which is unchanged.
 
 ## Follow an actor with a Spring Arm
 
