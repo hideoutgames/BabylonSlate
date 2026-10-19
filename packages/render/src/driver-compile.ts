@@ -11,10 +11,15 @@ type EngineEffects = { _compiledEffects?: Readonly<Record<string, Effect>> };
  * progress. Without it a compile blocks inside the call, so nothing is pending.
  */
 export function pendingDriverCompiles(engine: AbstractEngine): string[] {
+  return pendingDriverEffects(engine).map(([key]) => key);
+}
+
+/** `pendingDriverCompiles` with each pending Effect. */
+export function pendingDriverEffects(engine: AbstractEngine): Array<[string, Effect]> {
   if (!engine.getCaps().parallelShaderCompile) return [];
-  const pending: string[] = [];
-  for (const [key, effect] of Object.entries((engine as unknown as EngineEffects)._compiledEffects ?? {}))
-    if (!effect.isReady() && !effect.getCompilationError()) pending.push(key);
+  const pending: Array<[string, Effect]> = [];
+  for (const entry of Object.entries((engine as unknown as EngineEffects)._compiledEffects ?? {}))
+    if (!entry[1].isReady() && !entry[1].getCompilationError()) pending.push(entry);
   return pending;
 }
 

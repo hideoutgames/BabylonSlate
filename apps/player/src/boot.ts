@@ -568,9 +568,9 @@ function initializePlayer(
       if (!result.success) throw new Error(result.reason ?? "Preview runtime rejected the boundary.");
       if (halted || result.requestId <= lastBoundaryId) return;
       lastBoundaryId = result.requestId;
-      acknowledgedPaused = result.paused;
-      // A `rendering` hold keeps the view drawing; the Engine pauses its own game time for it.
-      handle.setGameTimePaused(result.pauseReasons.some((reason) => reason !== "rendering"));
+      // A `rendering` hold keeps the view drawing and the input flowing; the Engine pauses its own game time for it.
+      acknowledgedPaused = result.pauseReasons.some((reason) => reason !== "rendering");
+      handle.setGameTimePaused(acknowledgedPaused);
       handle.setPaused(false);
       if (!result.paused) last = performance.now();
       applyInputOwnership();
@@ -1175,16 +1175,15 @@ function initializePlayer(
       }
     });
   }
-  // While the view holds for WebGPU render pipelines the game waits, as for a blocking load.
+  // While the view holds for GPU work the game's time waits, as for a blocking load, but its input does not.
   pipelineHoldChanged = (held) => {
     if (halted) return;
     if (boundaryClient) {
       void requestBoundary({ kind: "pause", reason: "rendering", paused: held });
       return;
     }
-    const paused = pauseState.setRenderingPaused(held);
-    pauseGate?.setPaused(paused);
-    worker?.postControl({ type: "setPaused", paused });
+    if (held) runtime?.pause("rendering"); else runtime?.resume("rendering");
+    worker?.postControl({ type: "setPaused", paused: held, reason: "rendering" });
     if (!held) last = performance.now();
   };
 

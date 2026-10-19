@@ -454,7 +454,10 @@ function handleControl(msg: ControlMessage): void {
       return;
     }
     case "setPaused":
-      pauseGate.setPaused(msg.paused);
+      // A render hold is a time-only pause the runtime keeps apart from Pause; it never waits for the boot gate.
+      if (msg.reason === "rendering") {
+        if (msg.paused) runtime?.pause("rendering"); else runtime?.resume("rendering");
+      } else pauseGate.setPaused(msg.paused);
       return;
     case "debugObserve":
       runtime?.applyDebugObserve(msg.target, msg.instanceId);

@@ -74,6 +74,35 @@ describe("runtime session boundaries", () => {
     } finally { runtime.stop(); }
   });
 
+  it("keeps input flowing through a render hold: a held key stays held and a release during the hold lands", async () => {
+    const button = (guid: string, code: string) => ({ guid, type: "InputAction" as const, name: guid, valueType: "button" as const,
+      bindings: [{ id: "key", device: "key" as const, code }] });
+    const runtime = makeRuntime({ dt: 0.1, inputAssets: [button("Fire", "KeyF"), button("Jump", "KeyJ")] });
+    let requestId = 0;
+    const pause = (reason: "rendering" | "user", paused: boolean) => runtime.requestSessionBoundary({
+      sessionGeneration: 7, requestId: ++requestId, action: { kind: "pause", reason, paused } });
+    try {
+      runtime.realizePlayWorld(); runtime.start();
+      runtime.pushInput([{ kind: "key", tick: 0, code: "KeyF", phase: "down" }, { kind: "key", tick: 0, code: "KeyJ", phase: "down" }]);
+      runtime.tick();
+      await pause("rendering", true);
+      expect(runtime.getResolvedInput().actions).toMatchObject({ Fire: { held: true }, Jump: { held: true } });
+      runtime.pushInput([{ kind: "key", tick: 1, code: "KeyF", phase: "up" }]);
+      await pause("rendering", false);
+      runtime.tick();
+      expect(runtime.getResolvedInput().actions).toMatchObject({ Fire: { held: false }, Jump: { held: true } });
+      // Any other reason still takes input away, also while a render hold is active.
+      await pause("rendering", true);
+      await pause("user", true);
+      expect(runtime.getResolvedInput().actions).toMatchObject({ Jump: { held: false } });
+      runtime.pushInput([{ kind: "key", tick: 2, code: "KeyJ", phase: "down" }]);
+      await pause("rendering", false);
+      await pause("user", false);
+      runtime.tick();
+      expect(runtime.getResolvedInput().actions).toMatchObject({ Jump: { held: false } });
+    } finally { runtime.stop(); }
+  });
+
   it("rejects stale, repeated, malformed, overflowing and stopped requests without changing the world", async () => {
     const runtime = makeRuntime();
     const pause = (requestId: number, sessionGeneration = 7) => runtime.requestSessionBoundary({

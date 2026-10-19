@@ -1,17 +1,19 @@
 import { activeRenderFrameCapture } from "./render-frame-report";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
-import type { Camera, FrameGraphObjectList, Scene } from "@babylonjs/core";
-import { ForwardSceneFrameGraph, type ForwardSceneGraphResult } from "./framegraph-forward-scene";
+import type { Camera, Effect, FrameGraphObjectList, Scene } from "@babylonjs/core";
+import { ForwardSceneFrameGraph, type ForwardSceneGraphReadiness, type ForwardSceneGraphResult } from "./framegraph-forward-scene";
 import { onSceneReadinessDirty } from "./scene-perf";
 import type { SharedOutlineView } from "./shared-outline";
 import { flushSceneCables } from "./cable-mesh";
-import { DriverCompileWatch } from "./driver-compile";
+import { DriverCompileWatch, pendingDriverEffects } from "./driver-compile";
 import { beginPipelineDeferral, PIPELINE_DEFERRAL_HOLD_CAP_MS, type PipelineDeferral } from "./webgpu-pipeline-deferral";
 import { whenPresentationFenceClear } from "./presented-frame";
 import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
-import { heldThreadMs, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
+import {
+  heldThreadMs, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS,
+} from "./stall-deadline";
 
 class PreparationChanged extends Error {}
 
@@ -28,6 +30,22 @@ const PREPARATION_TIMEOUT_MS = 10_000;
 const PREPARATION_TOTAL_TIMEOUT_MS = 60_000;
 /** An auxiliary view's wait before retrying a failed preparation. */
 const AUXILIARY_RETRY_MS = 1_000;
+/**
+ * A compile hold ends this long after none of the view's own effects was pending and no preparation was
+ * running: what it waited for failed or went away, and nothing is left to wait for (the analogue of
+ * `PIPELINE_DEFERRAL_STALL_MS`). It also ends `SCENE_DRIVER_COMPILE_TIMEOUT_MS` after it began, for a link
+ * that hangs. The image stays held either way; only the owner's game stops waiting.
+ */
+export const COMPILE_HOLD_STALL_MS = 10_000;
+
+/** A run of unrendered frames the view's game waits through, for effects its own probes requested. */
+type CompileHold = {
+  since: number;
+  /** The last frame that saw one of the view's own effects pending, or a preparation running. */
+  activeAt: number;
+  /** Every Effect of the view found pending during the run, kept to see one fail. */
+  effects: Set<Effect>;
+};
 
 function outputSnapshot(scene: Scene, camera: Camera) {
   const target = camera.outputRenderTarget;
@@ -56,6 +74,16 @@ export type SceneRenderCoordinatorOptions = {
    * that draws every frame and presents only rendered frames: the world view
    * and its Full Quality captures, never previews or thumbnails. An auxiliary
    * view defers only while its owner's frame does.
+   *
+   * On any backend, such a view also reports `holdingForPipelines` while its
+   * frames wait for effects its own readiness probes requested and the driver
+   * still links in the background, once one frame found them pending, until a
+   * frame draws. The view keeps its image until then (a deferral can end by
+   * compiling synchronously; strict readiness has no such way to present), but
+   * the report ends when none of those effects is pending any more for
+   * `COMPILE_HOLD_STALL_MS`, as soon as one fails, and at
+   * `SCENE_DRIVER_COMPILE_TIMEOUT_MS`, so the owner's game never waits for
+   * something that will not come.
    */
   deferPipelines?: boolean;
 };
@@ -80,6 +108,10 @@ export class SceneRenderCoordinator {
   private deferral: PipelineDeferral | undefined;
   /** When the current run of frames held for deferred pipelines began. */
   private deferredSince: number | undefined;
+  /** The last frame waited for effects the driver is still compiling and every frame since has not drawn. */
+  private compileHold: CompileHold | undefined;
+  /** The run ended without a drawn frame (a stall, a failed link, the ceiling): it holds the image but no longer the game. */
+  private compileHoldReleased = false;
   private readonly ownsPass = (renderPassId: number) => this.graph.ownsObjectPass(renderPassId);
   private failedAt = 0;
   private warnedFailure: string | undefined;
@@ -161,6 +193,8 @@ export class SceneRenderCoordinator {
     // waits for the old frame's pipelines nor inherits its hold's elapsed cap.
     this.deferral = undefined;
     this.deferredSince = undefined;
+    this.compileHold = undefined;
+    this.compileHoldReleased = false;
     this.graph.invalidate();
   }
 
@@ -298,9 +332,13 @@ export class SceneRenderCoordinator {
     return !this.pending && this.failure === undefined;
   }
 
-  /** The view is holding its last image until render pipelines its last frame skipped exist. */
+  /**
+   * The view is holding its last image for GPU work: WebGPU render pipelines its
+   * last frame skipped, or effects the driver is still compiling that its last
+   * frame waited for (`deferPipelines` views only). The owner's game waits too.
+   */
   get holdingForPipelines(): boolean {
-    return this.deferral !== undefined;
+    return this.deferral !== undefined || this.compileHold !== undefined;
   }
 
   /** True while strict readiness must be re-probed after an invalidation. */
@@ -346,12 +384,16 @@ export class SceneRenderCoordinator {
    * is never readyForPresentation; the next frame's readiness admits again. */
   render(validatePresentation = true): ForwardSceneGraphResult & { rendered: boolean; readyForPresentation: boolean; reason?: string } {
     this.refreshOutline();
+    // Re-derived every frame: a frame that draws, throws, or cannot draw for any
+    // other reason (no camera, a failure, a paused redraw) ends the compile hold.
+    const holding = this.compileHold;
+    this.compileHold = undefined;
     const camera = this.camera();
     if (this.disposed || this.scene.isDisposed || !camera)
       return { path: "frameGraph", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
     flushSceneLatticeDeformers(this.scene);
     if (!this.graph.sceneStrictlyReady(camera)) {
-      this.advanceReadiness(camera);
+      this.compileHold = this.holdsForCompiles(holding, this.advanceReadiness(camera));
       return { path: "frameGraph", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
     }
     // Dynamic cable bounds must reach shadow admission before its cached caster
@@ -383,6 +425,10 @@ export class SceneRenderCoordinator {
     }
     if (this.deferral)
       return { ...result, reason: "Render pipelines are compiling.", rendered: false, readyForPresentation: false };
+    // A graph that is still preparing or probing its passes' variants holds the
+    // image as an unready scene does; a skipped draw for any other reason does not.
+    if (result.rendered === false && !status.ready) this.compileHold = this.holdsForCompiles(holding, status);
+    if (result.rendered !== false) this.compileHoldReleased = false;
     if (result.rendered !== false && this.editorOverlay) {
       const capture = activeRenderFrameCapture(this.scene.getEngine());
       if (capture) capture.stage(this.scene, { name: "Viewport editor overlay", kind: "overlay" },
@@ -435,14 +481,45 @@ export class SceneRenderCoordinator {
     });
   }
 
-  private advanceReadiness(camera: Camera): void {
+  private advanceReadiness(camera: Camera): ForwardSceneGraphReadiness {
     // A shader probe can still refer to the previous shadow layout. Admit the
     // requested lights/maps and prepare their graph even while that probe is
     // false, or neither the old shaders nor the new resources can progress.
     // A temporary check on current resources must recover on the next ready
     // frame without starting an unnecessary asynchronous preparation wait.
     // Dynamic geometry uploads remain behind successful scene admission.
-    if (this.graph.readiness(camera).preparationRequired) this.requestPreparation();
+    const status = this.graph.readiness(camera);
+    if (status.preparationRequired) this.requestPreparation();
+    return status;
+  }
+
+  /**
+   * The compile hold after a frame that was not drawn because its scene or graph
+   * is not ready: it starts when the driver reports one of the view's own effects
+   * (those its readiness probes requested, never a preview's or thumbnail's on
+   * the shared Engine) still compiling, and lasts until a frame draws, so the
+   * game never resumes under a picture that is still frozen. Waits that compile
+   * nothing (a graph rebuilt for a resize or a resolution step, a texture still
+   * decoding) hold the image only, as do errors (a latched failure, an
+   * unsupported scene). A run also ends without a drawn frame when one of its
+   * effects failed to link, when none was pending and no preparation ran for
+   * `COMPILE_HOLD_STALL_MS`, and at `SCENE_DRIVER_COMPILE_TIMEOUT_MS`; the image
+   * stays held and the same wait starts no second hold. Links that complete
+   * inside the call never leave a pending effect to wait for.
+   */
+  private holdsForCompiles(holding: CompileHold | undefined, status: ForwardSceneGraphReadiness): CompileHold | undefined {
+    if (!this.deferPipelines || this.auxiliaryCamera || this.compileHoldReleased || this.failure !== undefined ||
+      status.reason !== undefined) return undefined;
+    const now = performance.now();
+    const own = this.graph.requestedEffects;
+    const pending = own.size ? pendingDriverEffects(this.scene.getEngine()).filter(([, effect]) => own.has(effect)) : [];
+    if (!holding) return pending.length ? { since: now, activeAt: now, effects: new Set(pending.map(([, effect]) => effect)) } : undefined;
+    for (const [, effect] of pending) holding.effects.add(effect);
+    if (pending.length || this.pending) holding.activeAt = now;
+    const failed = [...holding.effects].some((effect) => effect.getCompilationError());
+    if (!failed && now - holding.activeAt < COMPILE_HOLD_STALL_MS && now - holding.since < SCENE_DRIVER_COMPILE_TIMEOUT_MS) return holding;
+    this.compileHoldReleased = true;
+    return undefined;
   }
 
   /** A corrected contribution may retry a failed preparation. Membership and

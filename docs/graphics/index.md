@@ -22,7 +22,9 @@ When **Render Mode** is **CEL**, a **CEL Shading** section appears in Project Se
 
 Clustered Forward requires WebGL2. On WebGPU, or when a scene cannot use it, Haptic falls back to Forward.
 
-On WebGPU, when a view needs shaders it has not drawn before (a scene opening, a light switching on, a new material), the view and its Render Target captures keep showing their last image until the shaders are ready, and the rest of the editor stays responsive. In Play, Preview Build and exported games the game pauses meanwhile, as during a blocking load: game time, physics, scripts and sound wait, then continue from where they stopped.
+On WebGPU, when a view needs shaders it has not drawn before (a scene opening, a light switching on, a new material), the view and its Render Target captures keep showing their last image until the shaders are ready, and the rest of the editor stays responsive. In Play, Preview Build and exported games the game pauses meanwhile, as during a blocking load: game time, physics, scripts and sound wait, then continue from where they stopped. The pause starts only if the wait lasts about a quarter of a second, so a short wait stops nothing, and it only stops time: keys and buttons you hold stay held, and the pointer stays locked.
+
+On WebGL2, a view keeps its last image the same way while the graphics driver compiles new shaders in the background (a light switching on, a new material), and the game pauses the same way until the view draws again. A device that finishes compiling within the frame has nothing to wait for and does not pause. If a shader fails to compile, or none of the shaders the view is waiting for is compiling any more for about ten seconds, the game continues and the view keeps its last image until the problem is fixed; a compile that takes longer than a minute does the same.
 
 If WebGPU cannot start on your device, Haptic renders with WebGL2 and shows **WebGPU Unavailable** with the reason. **GPU Backend** keeps its WebGPU setting, so the next start tries WebGPU again.
 

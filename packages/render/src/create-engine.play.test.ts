@@ -32,7 +32,7 @@ import {
   type RenderSettingsPatch,
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
-import { createEngine, syncEditorPlayState } from "./create-engine";
+import { createEngine, PIPELINE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from "./create-engine";
 import type { RenderPerformanceSample } from "./render-performance";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@babylonslate/assets";
@@ -643,8 +643,17 @@ describe("Play createEngine view", () => {
     expect(handle.scene.getMeshByName("actor-7|rope")).toBeNull();
   });
 
+  /** A frozen clock the tests advance, so a hold's pause delay passes without waiting. */
+  function frozenClock() {
+    let now = performance.now();
+    const spy = vi.spyOn(performance, "now").mockImplementation(() => now);
+    handles.push({ dispose: () => spy.mockRestore() });
+    return { advance: (ms: number) => { now += ms; } };
+  }
+
   it("pauses Play's game time but keeps drawing while the world view holds for render pipelines", async () => {
     const engine = sharedEngine();
+    const clock = frozenClock();
     const holds: boolean[] = [];
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, { sharedEngine: engine, playMode: true, onPipelineHold: (held) => holds.push(held) });
@@ -657,8 +666,14 @@ describe("Play createEngine view", () => {
       renderViews(engine);
       engine.onEndFrameObservable.notifyObservers(engine);
     };
-    // NullEngine never defers a pipeline; the world view's hold is the seam.
+    // NullEngine never defers a pipeline; the world view's hold is the seam. A failing assertion must not leak the spy.
     const holding = vi.spyOn(SceneRenderCoordinator.prototype, "holdingForPipelines", "get").mockReturnValue(true);
+    handles.push({ dispose: () => holding.mockRestore() });
+    frame();
+    // A brief hold costs no stop.
+    expect(holds).toEqual([]);
+    expect(isSceneGameTimePaused(handle.scene)).toBe(false);
+    clock.advance(PIPELINE_HOLD_PAUSE_DELAY_MS);
     frame();
     expect(holds).toEqual([true]);
     expect(isSceneGameTimePaused(handle.scene)).toBe(true);
@@ -673,6 +688,141 @@ describe("Play createEngine view", () => {
     expect(holds).toEqual([true, false]);
     expect(isSceneGameTimePaused(handle.scene)).toBe(false);
     expect(isSceneGameTimePaused(layerScene)).toBe(false);
+  });
+
+  /**
+   * A Play view on a driver that links effects in the background. While `ready` is false the scene fails its
+   * strict readiness probe, and `linked` says whether the Effect behind that wait has finished compiling:
+   * each time the scene turns unready its probe requests that Effect through `createEffect`, as a material does.
+   */
+  function playViewWithCompilingEffect() {
+    const engine = sharedEngine();
+    engine.getCaps().parallelShaderCompile = { COMPLETION_STATUS_KHR: 0x91b1 };
+    const clock = frozenClock();
+    const holds: boolean[] = [];
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true, onPipelineHold: (held) => holds.push(held) });
+    handles.push(handle);
+    const effects = (engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
+    const state = { ready: true, linked: true, error: "" };
+    const effect = { isReady: () => state.linked, getCompilationError: () => state.error } as unknown as Effect;
+    const create = engine.createEffect.bind(engine) as unknown as (...args: unknown[]) => Effect;
+    vi.spyOn(engine, "createEffect").mockImplementation(((name: unknown, ...rest: unknown[]) =>
+      name === "lit-variant" ? effect : create(name, ...rest)) as unknown as typeof engine.createEffect);
+    let requested = false;
+    handle.scene.addIsReadyCheck({ isReady: () => {
+      if (!state.ready && !requested) {
+        requested = true;
+        effects["lit-variant"] = effect;
+        engine.createEffect("lit-variant", [], [], [], "");
+      }
+      return state.ready;
+    } });
+    const set = (change: Partial<typeof state>) => {
+      if (change.ready === false) requested = false;
+      Object.assign(state, change);
+      markSceneReadinessDirty(handle.scene);
+    };
+    const frame = () => {
+      handle.scheduler.invalidate("manual");
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+    };
+    /** The first frame presents behind its load, which already pauses the game: effects compiling then raise no hold. */
+    const presentFirstFrame = async (whileCompiling = false) => {
+      await handle.prewarmSceneMaterials();
+      if (whileCompiling) set({ ready: false, linked: false });
+      const presented = handle.presentFirstFrame();
+      if (whileCompiling) {
+        frame();
+        clock.advance(PIPELINE_HOLD_PAUSE_DELAY_MS);
+        frame();
+        expect(holds).toEqual([]);
+        set({ ready: true, linked: true });
+      }
+      frame();
+      await presented;
+    };
+    return { handle, canvas, holds, set, frame, clock, presentFirstFrame };
+  }
+
+  it("pauses Play's game time but keeps drawing while an effect compiles mid-session, until a frame draws", async () => {
+    const { handle, holds, set, frame, clock, presentFirstFrame } = playViewWithCompilingEffect();
+    await presentFirstFrame(true);
+    expect(holds).toEqual([]);
+    // A light switches on: the view keeps its last image, and the game waits once the hold is no longer brief.
+    set({ ready: false, linked: false });
+    frame();
+    expect(holds).toEqual([]);
+    expect(isSceneGameTimePaused(handle.scene)).toBe(false);
+    clock.advance(PIPELINE_HOLD_PAUSE_DELAY_MS);
+    frame();
+    expect(holds).toEqual([true]);
+    expect(isSceneGameTimePaused(handle.scene)).toBe(true);
+    // The frame that finds the effects ready must still draw.
+    expect(handle.scheduler.shouldRender(Number.MAX_SAFE_INTEGER)).toBe(true);
+    // The picture is still frozen once the effect has linked, so the game keeps waiting.
+    set({ linked: true });
+    frame();
+    expect(holds).toEqual([true]);
+    expect(isSceneGameTimePaused(handle.scene)).toBe(true);
+    set({ ready: true });
+    frame();
+    expect(holds).toEqual([true, false]);
+    expect(isSceneGameTimePaused(handle.scene)).toBe(false);
+  });
+
+  it("does not pause Play for a hold that ends within the pause delay, and restarts the delay for the next one", async () => {
+    const { handle, holds, set, frame, clock, presentFirstFrame } = playViewWithCompilingEffect();
+    await presentFirstFrame();
+    set({ ready: false, linked: false });
+    frame();
+    clock.advance(PIPELINE_HOLD_PAUSE_DELAY_MS - 1);
+    frame();
+    expect(isSceneGameTimePaused(handle.scene)).toBe(false);
+    set({ ready: true, linked: true });
+    frame();
+    // The next hold is brief on its own, however long ago the last one began.
+    set({ ready: false, linked: false });
+    frame();
+    clock.advance(PIPELINE_HOLD_PAUSE_DELAY_MS - 1);
+    frame();
+    expect(holds).toEqual([]);
+    expect(isSceneGameTimePaused(handle.scene)).toBe(false);
+  });
+
+  it("stops game time for a hold without leaving pointer lock, which only a real pause does", async () => {
+    const { handle, canvas, holds, set, frame, clock, presentFirstFrame } = playViewWithCompilingEffect();
+    await presentFirstFrame();
+    const exitPointerLock = vi.fn();
+    Object.assign(canvas, { ownerDocument: { pointerLockElement: canvas, exitPointerLock } });
+    set({ ready: false, linked: false });
+    frame();
+    clock.advance(PIPELINE_HOLD_PAUSE_DELAY_MS);
+    frame();
+    expect(holds).toEqual([true]);
+    expect(isSceneGameTimePaused(handle.scene)).toBe(true);
+    expect(exitPointerLock).not.toHaveBeenCalled();
+    set({ ready: true });
+    frame();
+    handle.setGameTimePaused(true);
+    expect(exitPointerLock).toHaveBeenCalledOnce();
+  });
+
+  it("releases a compile hold when the Engine is disposed, so a host never keeps its rendering pause", async () => {
+    const { handle, holds, set, frame, clock, presentFirstFrame } = playViewWithCompilingEffect();
+    await presentFirstFrame();
+    set({ ready: false, linked: false });
+    frame();
+    clock.advance(PIPELINE_HOLD_PAUSE_DELAY_MS);
+    frame();
+    expect(holds).toEqual([true]);
+    handle.dispose();
+    expect(holds).toEqual([true, false]);
+    // Disposing again changes nothing.
+    handle.dispose();
+    expect(holds).toEqual([true, false]);
   });
 
   it("keeps manual Pause and blocking streaming pauses independent", () => {

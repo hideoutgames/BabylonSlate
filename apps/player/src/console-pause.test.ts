@@ -10,17 +10,6 @@ describe("Player console and lifecycle pause", () => {
     expect(pause.setConsolePaused(false)).toBe(false);
   });
 
-  it("pauses the game but never the view while the view holds for render pipelines", () => {
-    const pause = createPlayerPauseState();
-    expect(pause.setRenderingPaused(true)).toBe(true);
-    expect(pause.viewPaused()).toBe(false);
-    expect(pause.setConsolePaused(true)).toBe(true);
-    expect(pause.viewPaused()).toBe(true);
-    expect(pause.setRenderingPaused(false)).toBe(true);
-    expect(pause.setConsolePaused(false)).toBe(false);
-    expect(pause.viewPaused()).toBe(false);
-  });
-
   it("defers a console resume until the player returns to the foreground", () => {
     const pause = createPlayerPauseState();
     expect(pause.setLifecyclePaused(true)).toBe(true);

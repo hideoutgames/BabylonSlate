@@ -196,6 +196,55 @@ describe("player startup and Stop ownership", () => {
     expect(handle.setGameInputEnabled).toHaveBeenLastCalledWith(true);
   });
 
+  it("stops Preview game time for a render hold without taking input from the game", async () => {
+    const { game, canvas, handle } = await fixture();
+    game.manifest.bundleDebugger = true;
+    const session = startPlayer({ game, canvas, previewDiagnostics: true });
+    sessions.push(session);
+    const worker = TestWorker.instances[0]!;
+    const boundary = () => {
+      const message = [...worker.messages].reverse().find(entry => entry.channel === "control" && entry.payload.type === "sessionBoundary");
+      if (message?.channel !== "control" || message.payload.type !== "sessionBoundary") throw new Error("Missing boundary request");
+      return message.payload;
+    };
+    const acknowledge = (pauseReasons: Array<"user" | "rendering">) => worker.command({ channel: "command", payload: {
+      type: "sessionBoundaryResult", sessionGeneration: 0, requestId: boundary().requestId, success: true, paused: pauseReasons.length > 0,
+      pauseReasons, tickIndex: 3, sceneAssetGuid: "world", sceneLoadId: 1, commandRevision: 0,
+    } });
+    acknowledge([]);
+    await Promise.resolve();
+    await vi.waitFor(() => expect(rendering.createEngine).toHaveBeenCalled());
+    const hold = vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onPipelineHold!;
+    hold(true);
+    expect(boundary().action).toEqual({ kind: "pause", reason: "rendering", paused: true });
+    acknowledge(["rendering"]);
+    await vi.waitFor(() => expect(handle.setGameTimePaused).toHaveBeenLastCalledWith(false));
+    expect(handle.setGameInputEnabled).toHaveBeenLastCalledWith(true);
+    // The console's pause on top of the hold takes input and stops the Engine's own game time.
+    worker.command({ channel: "command", payload: { type: "sessionPaused", paused: true } });
+    acknowledge(["rendering", "user"]);
+    await vi.waitFor(() => expect(handle.setGameTimePaused).toHaveBeenLastCalledWith(true));
+    expect(handle.setGameInputEnabled).toHaveBeenLastCalledWith(false);
+  });
+
+  it("pauses an exported player's runtime for a render hold under its own reason, apart from Pause", async () => {
+    const { game, canvas } = await fixture();
+    const session = startPlayer({ game, canvas });
+    sessions.push(session);
+    const worker = TestWorker.instances[0]!;
+    await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
+    expect(rendering.createEngine).toHaveBeenCalled();
+    const pauses = () => worker.messages.flatMap(entry => entry.channel === "control" && entry.payload.type === "setPaused" ? [entry.payload] : []);
+    const hold = vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onPipelineHold!;
+    hold(true);
+    expect(pauses().at(-1)).toEqual({ type: "setPaused", paused: true, reason: "rendering" });
+    hold(false);
+    expect(pauses().at(-1)).toEqual({ type: "setPaused", paused: false, reason: "rendering" });
+    // The console's pause is a different message, so a hold never resumes it nor it the hold.
+    worker.command({ channel: "command", payload: { type: "sessionPaused", paused: true } });
+    expect(pauses().at(-1)).toEqual({ type: "setPaused", paused: true });
+  });
+
   it("reopens a packed player's checkpoint through the real in-process fallback", async () => {
     const files = new Map<string, string>();
     const saveStorage: SaveGameStorage = { read: async (key) => files.get(key) ?? null,

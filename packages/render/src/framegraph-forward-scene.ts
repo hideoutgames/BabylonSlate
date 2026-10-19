@@ -17,7 +17,7 @@ import { isBuiltInWaterMesh } from "./water-mesh";
 import { WaterSceneCopyGraph, waterSceneCopyDemand, waterSceneCopyScale } from "./water-scene-copy";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
 import { Constants } from "@babylonjs/core";
-import type { AbstractMesh, Camera, FrameGraphObjectList, InternalTexture, Light, Observable, Observer, Scene } from "@babylonjs/core";
+import type { AbstractMesh, Camera, Effect, FrameGraphObjectList, InternalTexture, Light, Observable, Observer, Scene } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import {
@@ -32,6 +32,7 @@ import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admi
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
+import { collectEffectRequests } from "./effect-requests";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
@@ -139,6 +140,8 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
 export class ForwardSceneFrameGraph {
   private measureWork = false;
   private readonly work = { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0 };
+  /** Effects this graph's readiness probes requested and that were not ready when their probe ended. */
+  readonly requestedEffects = new Set<Effect>();
 
   diagnostics() {
     this.measureWork = true;
@@ -537,7 +540,7 @@ export class ForwardSceneFrameGraph {
       // current demand, and that preparation's own probe compiles it under the pass that draws it.
       // An auxiliary view draws only inside the scene view's ready frames, and
       // the scene probe would bind (refit) shadow maps for its camera.
-      if (!this.auxiliary && !isSceneFrameReady(this.scene, [], isBuiltInWaterMesh)) return false;
+      if (!this.auxiliary && !this.collectingEffects(() => isSceneFrameReady(this.scene, [], isBuiltInWaterMesh))) return false;
       // A graph that is pending or stale is fully probed when its preparation finishes.
     }
     this.markGraphProbed();
@@ -731,6 +734,7 @@ export class ForwardSceneFrameGraph {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.requestedEffects.clear();
     if (this.outlineView) outlineAttachments.delete(this.outlineView);
     this.outlineView = undefined;
     const retained = [...this.retainedGraphs.values()];
@@ -1233,7 +1237,23 @@ export class ForwardSceneFrameGraph {
       this.outputColor === output.color && this.outputDepth === output.depth;
   }
 
+  /**
+   * Runs a readiness probe and records the Effects it requests (`requestedEffects`), so the owner can tell its
+   * own compiles from those of previews and thumbnails on the shared Engine. Ready ones leave the set.
+   */
+  private collectingEffects<T>(probe: () => T): T {
+    try {
+      return collectEffectRequests(this.scene.getEngine(), this.requestedEffects, probe);
+    } finally {
+      for (const effect of this.requestedEffects) if (effect.isReady()) this.requestedEffects.delete(effect);
+    }
+  }
+
   private isReady(): boolean {
+    return this.collectingEffects(() => this.probeReady());
+  }
+
+  private probeReady(): boolean {
     this.strictChecks += 1;
     const cameras = this.scene.activeCameras;
     const objectList = this.objects!.objectList;
@@ -1329,6 +1349,10 @@ export class ForwardSceneFrameGraph {
    * members were already probed are skipped.
    */
   private isOutlineReady(): boolean {
+    return this.collectingEffects(() => this.probeOutlineReady());
+  }
+
+  private probeOutlineReady(): boolean {
     const task = this.outlineTask;
     if (!task) return true;
     this.outlineChecks += 1;
