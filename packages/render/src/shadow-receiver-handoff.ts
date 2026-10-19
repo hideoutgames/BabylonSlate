@@ -6,6 +6,7 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import { hasClusteredLightPolicy } from "./clustered-light-policy";
+import { notifySceneReceiversChanged } from "./scene-readiness-signal";
 
 export type ShadowReceiverHandoff = {
   from: Light;
@@ -62,6 +63,8 @@ export function invalidateShadowReceiverHandoffs(scene: Scene): void {
   const current = journal(scene);
   current.invalid = true;
   current.handoffs.length = 0;
+  // Every caller changed what its receivers bind (a shadow map created, released, moved or retuned).
+  notifySceneReceiversChanged(scene);
 }
 
 /**

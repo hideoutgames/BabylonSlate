@@ -10,7 +10,7 @@ import {
   syncClusteredLightPolicy,
 } from "./clustered-light-policy";
 import { sceneRenderingSettings } from "./render-settings";
-import { markSceneReadinessDirty } from "./scene-readiness-signal";
+import { markSceneReadinessDirty, notifySceneReceiversChanged } from "./scene-readiness-signal";
 import {
   takeShadowReceiverHandoffs,
   type ShadowReceiverHandoff,
@@ -153,6 +153,8 @@ function installSceneLighting(scene: Scene): SceneLighting {
   let sceneShadowsEnabled = scene.shadowsEnabled;
   // The most lights the Scene has held, enabled or not; it never shrinks.
   let lightInventory = 0;
+  // The light capacity of the last refresh (every lit Effect's MAXLIGHTCOUNT).
+  let lightCapacity = -1;
   let enabledLights: Light[] = [];
   let nextEnabled: Light[] = [];
   let shadowLayout: unknown[] = [];
@@ -304,6 +306,10 @@ function installSceneLighting(scene: Scene): SceneLighting {
     // unused copies, and that JS cost is paid per Effect.
     lightInventory = Math.max(lightInventory, scene.lights.length);
     const capacity = Math.min(budget.slots, Math.max(4, lightInventory));
+    // Only a different light set or capacity gives receivers other defines. Other refreshes (a material added or
+    // retired) leave a program that failed to link failing, so they must not end the Material library's latch.
+    const receiversChanged = changed || capacity !== lightCapacity;
+    lightCapacity = capacity;
     const blocked = scene.blockMaterialDirtyMechanism;
     scene.blockMaterialDirtyMechanism = false;
     try {
@@ -320,6 +326,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
     } finally {
       scene.blockMaterialDirtyMechanism = blocked;
     }
+    if (receiversChanged) notifySceneReceiversChanged(scene);
   };
 
   const beforeRender = scene.onBeforeRenderObservable.add(sync);

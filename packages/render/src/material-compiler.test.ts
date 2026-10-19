@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, ParticleBlendMultiplyBlock, ParticleSystem, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock, type ClampBlock, type InputBlock, type NodeMaterialConnectionPoint } from "@babylonjs/core";
+import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, ParticleBlendMultiplyBlock, ParticleSystem, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock, type ClampBlock, type Effect, type InputBlock, type NodeMaterialConnectionPoint } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -1016,7 +1016,30 @@ describe("material compiler", () => {
       expect(result.buildState).toBe("pending");
       vi.advanceTimersByTime(2_000);
       expect(result.buildState).toBe("failed");
-      expect(await result.ready).toEqual([expect.objectContaining({ code: "material.compile.glsl", severity: "error" })]);
+      expect(await result.ready).toEqual([expect.objectContaining({ code: "material.compile.stalled", message: "Custom GLSL shader compilation timed out", severity: "error" })]);
+    });
+
+    // A stall says nothing about the program, but a compile error does: only the error is a GLSL diagnostic.
+    it("settles a Custom GLSL compile error as a GLSL diagnostic, not as a stall", async () => {
+      vi.useFakeTimers();
+      const { texture, loaded, result } = await compileWithLoadingTexture();
+      loaded.mockReturnValue(true);
+      const isReadyForSubMesh = result.material.isReadyForSubMesh.bind(result.material);
+      vi.spyOn(result.material, "isReadyForSubMesh").mockImplementation((...args) => {
+        isReadyForSubMesh(...args);
+        const effect = args[1].effect;
+        if (effect) {
+          vi.spyOn(effect, "isReady").mockReturnValue(false);
+          vi.spyOn(effect, "getCompilationError").mockReturnValue("FRAGMENT SHADER ERROR: 0:3: syntax error");
+          vi.spyOn(effect, "allFallbacksProcessed").mockReturnValue(true);
+        }
+        return false;
+      });
+      const rebuilt = new Promise((resolve) => result.material.onBuildObservable.addOnce(resolve));
+      texture.onLoadObservable.notifyObservers(texture);
+      await rebuilt;
+      vi.advanceTimersByTime(100);
+      expect(await result.ready).toEqual([expect.objectContaining({ code: "material.compile.glsl", message: expect.stringContaining("syntax error") })]);
     });
 
     // A parallel-compile driver (D3D11 through ANGLE) reports completion only, so a probe effect still pending is not
@@ -1039,7 +1062,7 @@ describe("material compiler", () => {
       expect(result.buildState).toBe("pending");
       vi.advanceTimersByTime(2_000);
       expect(result.buildState).toBe("failed");
-      expect(await result.ready).toEqual([expect.objectContaining({ code: "material.compile.glsl", severity: "error" })]);
+      expect(await result.ready).toEqual([expect.objectContaining({ code: "material.compile.stalled", message: "Custom GLSL shader compilation timed out", severity: "error" })]);
     });
 
     /**
@@ -1096,7 +1119,7 @@ describe("material compiler", () => {
     it("fails a shader that never compiles while every probe holds the thread, once the credit budget is spent", async () => {
       const held = 10_000;
       const { clock, result } = await probeWithVirtualClock(() => held, () => false);
-      expect(await result.ready).toEqual([expect.objectContaining({ code: "material.compile.glsl", severity: "error" })]);
+      expect(await result.ready).toEqual([expect.objectContaining({ code: "material.compile.stalled", message: "Custom GLSL shader compilation timed out", severity: "error" })]);
       expect(result.buildState).toBe("failed");
       expect(clock.elapsed()).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS);
       expect(clock.elapsed()).toBeLessThanOrEqual(15_000 + SCENE_THREAD_HELD_BUDGET_MS + held);
@@ -1717,6 +1740,42 @@ describe("material compiler", () => {
     const force = vi.spyOn(result.material, "forceCompilationAsync");
     await prewarmMaterial(result.material, mesh);
     expect(force).not.toHaveBeenCalled();
+  });
+
+  it("stops listening for Engine link failures when its material is disposed directly", async () => {
+    const scene = host();
+    const onLinkError = vi.fn();
+    const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), { scene, name: "direct-dispose", onLinkError });
+    if (!result.ok) throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    await result.ready;
+    // Babylon's own teardown, or a harness, never goes through the compiler's dispose.
+    result.material.dispose();
+    const log = "FRAGMENT SHADER ERROR: 0:3: syntax error";
+    const effect = { name: { vertex: `nodeMaterial${result.material.buildId}` }, getCompilationError: () => log } as unknown as Effect;
+    scene.getEngine().onEffectErrorObservable.notifyObservers({ effect, errors: log });
+    expect(onLinkError).not.toHaveBeenCalled();
+  });
+
+  it("builds its own program once the shared one failed to link, even while a material still uses it", async () => {
+    const scene = host();
+    const compile = (name: string) => {
+      const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), { scene, name: "shared-program", onLinkError: vi.fn() });
+      if (!result.ok) throw new Error(`${name}: ${result.diagnostics.map((row) => row.message).join(", ")}`);
+      disposers.push(() => result.material.dispose());
+      return result;
+    };
+    const first = compile("first");
+    const second = compile("second");
+    await Promise.all([first.ready, second.ready]);
+    expect(second.material.buildId).toBe(first.material.buildId);
+    const log = "VERTEX SHADER ERROR: 0:3: too many varying variables";
+    const effect = { name: { vertex: `nodeMaterial${first.material.buildId}` }, getCompilationError: () => log } as unknown as Effect;
+    scene.getEngine().onEffectErrorObservable.notifyObservers({ effect, errors: log });
+    // Neither material was disposed, as when their owner has not retired them yet; a new one still must not adopt the
+    // dead program, which the Engine would hand it without reporting anything.
+    const third = compile("third");
+    await third.ready;
+    expect(third.material.buildId).not.toBe(first.material.buildId);
   });
 
   // Without KHR_parallel_shader_compile one of Babylon's compile polls links the effect before it returns, and a

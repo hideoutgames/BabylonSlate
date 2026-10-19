@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MeshBuilder, NullEngine, Scene, Texture, TextureBlock, type Effect, type Material } from "@babylonjs/core";
+import { MeshBuilder, NullEngine, PointLight, Scene, Texture, TextureBlock, Vector3, type Effect, type Material } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -8,6 +8,9 @@ import {
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 import { MaterialLibrary } from "./material-library";
+import { acquireAuthoredMaterialVariant, MaterialCompileStalled } from "./material-compiler";
+import { syncSceneLighting } from "./scene-lighting";
+import { invalidateShadowReceiverHandoffs } from "./shadow-receiver-handoff";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { acquireMaterialTexture, ResourceCache, type ResourceLease } from "./resource-cache";
 
@@ -270,8 +273,184 @@ describe("material library", () => {
     expect(mesh.material).toBeNull();
     expect(scene.materials).not.toContain(first.material);
     expect(library.materialFor(scene, "material")).toBeNull();
-    const retry = library.acquire(scene, "material", tinted(1));
+    const retry = library.acquire(scene, "material", tinted(2));
     expect(retry.ok && retry.material).not.toBe(first.material);
+  });
+
+  it.each(["outlineMask", "captureDepth", "shadowDepth"] as const)(
+    "retires the generation when its %s program cannot link, naming the program",
+    async (kind) => {
+      const scene = host();
+      const onTextureError = vi.fn();
+      const library = new MaterialLibrary({ onTextureError });
+      disposers.push(() => library.dispose());
+      const first = library.acquire(scene, "material", tinted(1));
+      if (!first.ok) throw new Error("Expected a compiled material");
+      const mesh = MeshBuilder.CreatePlane("bound", {}, scene);
+      mesh.material = first.material;
+      await first.ready;
+      // The outline, capture and shadow passes each compile their own program; none of them can draw without it.
+      const variant = acquireAuthoredMaterialVariant(first.material, kind);
+      if (!variant) throw new Error("Expected an authored surface variant");
+      expect(await variant.compiled.ready).toEqual([]);
+      const log = "FRAGMENT SHADER ERROR: 0:4: undeclared identifier";
+      variant.compiled.material.onError?.({ getCompilationError: () => log } as Effect, log);
+      await Promise.resolve();
+      expect(onTextureError).toHaveBeenCalledTimes(1);
+      const [diagnostic] = onTextureError.mock.calls[0] as [{ code: string; message: string }];
+      expect(diagnostic.code).toBe("material.compile.failed");
+      expect(diagnostic.message).toMatch(/^[A-Za-z ]+ program: FRAGMENT SHADER ERROR/);
+      expect(mesh.material).toBeNull();
+      expect(library.materialFor(scene, "material")).toBeNull();
+      await variant.release();
+    },
+  );
+
+  /** Count the NodeMaterials compiled from now on (Babylon's own notification is deferred). */
+  function compiles(scene: Scene) {
+    const added = vi.spyOn(scene, "addMaterial");
+    return () => added.mock.calls.length;
+  }
+
+  it("fails a plan whose program could not link at once, until its hash changes", async () => {
+    const scene = host();
+    const onTextureError = vi.fn();
+    const library = new MaterialLibrary({ onTextureError });
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "material", tinted(1));
+    if (!first.ok) throw new Error("Expected a compiled material");
+    await first.ready;
+    const log = "FRAGMENT SHADER ERROR: 0:2: syntax error";
+    first.material.onError?.({ getCompilationError: () => log } as Effect, log);
+    await Promise.resolve();
+    const compiled = compiles(scene);
+    // The Engine would hand a second compile of the same program its failed Effect, with no error to report.
+    const again = library.acquire(scene, "material", tinted(1));
+    expect(again).toEqual({ ok: false, diagnostics: [{ code: "material.compile.failed", message: log, severity: "error" }] });
+    expect(library.resolve(scene, "material", tinted(1))).toBeNull();
+    // Per-component copies compile the same program, so they fail at once too.
+    expect(library.acquire(scene, "material", tinted(1), { instanceKey: "actor" }).ok).toBe(false);
+    expect(compiled()).toBe(0);
+    expect(onTextureError).toHaveBeenCalledTimes(1);
+    expect(library.acquire(scene, "material", tinted(2)).ok).toBe(true);
+    expect(compiled()).toBe(1);
+  });
+
+  /** A bound Material whose program the Engine cannot link, retired and latched. */
+  async function latchedFailure() {
+    const scene = host();
+    const library = new MaterialLibrary({ onTextureError: vi.fn() });
+    disposers.push(() => library.dispose());
+    new PointLight("key", new Vector3(0, 1, 0), scene);
+    const first = library.acquire(scene, "material", tinted(1));
+    if (!first.ok) throw new Error("Expected a compiled material");
+    await first.ready;
+    const log = "VERTEX SHADER ERROR: 0:3: too many varying variables";
+    first.material.onError?.({ getCompilationError: () => log } as Effect, log);
+    await Promise.resolve();
+    expect(library.acquire(scene, "material", tinted(1)).ok).toBe(false);
+    return { scene, library };
+  }
+
+  it("keeps a failed plan latched through a lighting refresh that changes no light", async () => {
+    const { scene, library } = await latchedFailure();
+    // Retiring the Material is itself a refresh of the Scene's lighting.
+    syncSceneLighting(scene);
+    expect(library.acquire(scene, "material", tinted(1)).ok).toBe(false);
+  });
+
+  it("compiles a failed plan again once the Scene's lights change", async () => {
+    const { scene, library } = await latchedFailure();
+    // A varying or uniform limit is hit by the lights the receivers bind: the same plan may link without one.
+    scene.lights[0]!.dispose();
+    syncSceneLighting(scene);
+    expect(library.acquire(scene, "material", tinted(1)).ok).toBe(true);
+  });
+
+  it("compiles a failed plan again once a shadow map changes what its receivers bind", async () => {
+    const { scene, library } = await latchedFailure();
+    invalidateShadowReceiverHandoffs(scene);
+    expect(library.acquire(scene, "material", tinted(1)).ok).toBe(true);
+  });
+
+  it("forgets failed plans on request without touching the published generations", async () => {
+    const { scene, library } = await latchedFailure();
+    const other = library.acquire(scene, "other", tinted(3));
+    if (!other.ok) throw new Error("Expected a compiled material");
+    await other.ready;
+    library.forgetFailures(scene);
+    expect(library.acquire(scene, "material", tinted(1)).ok).toBe(true);
+    expect(library.materialFor(scene, "other")).toBe(other.material);
+  });
+
+  it("retires an adopted instance that cannot link, under its component's key", async () => {
+    const scene = host();
+    const onTextureError = vi.fn();
+    const library = new MaterialLibrary({ onTextureError });
+    disposers.push(() => library.dispose());
+    const staged = library.acquire(scene, "material", tinted(1), { instanceKey: "runtime-edit:1" });
+    if (!staged.ok) throw new Error("Expected a compiled material");
+    await staged.ready;
+    const mesh = MeshBuilder.CreatePlane("bound", {}, scene);
+    mesh.material = staged.material;
+    library.adoptPreparedInstance(scene, "material", "runtime-edit:1", "slot|component", staged.material).commit();
+    // A define change after the commit (a new shadow caster) makes the Engine link the program again, and it fails.
+    const log = "VERTEX SHADER ERROR: 0:3: too many varying variables";
+    staged.material.onError?.({ getCompilationError: () => log } as Effect, log);
+    await Promise.resolve();
+    expect(onTextureError).toHaveBeenCalledTimes(1);
+    expect(mesh.material).toBeNull();
+    expect(library.materialFor(scene, "material", { instanceKey: "slot|component" })).toBeNull();
+  });
+
+  it("compiles a plan that failed again once its dependencies are marked dirty", async () => {
+    const scene = host();
+    const library = new MaterialLibrary({ onTextureError: vi.fn() });
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "material", tinted(1));
+    if (!first.ok) throw new Error("Expected a compiled material");
+    await first.ready;
+    first.material.onError?.({ getCompilationError: () => "ERROR: 0:1" } as Effect, "ERROR: 0:1");
+    await Promise.resolve();
+    expect(library.acquire(scene, "material", tinted(1)).ok).toBe(false);
+    library.markDirty();
+    expect(library.acquire(scene, "material", tinted(1)).ok).toBe(true);
+  });
+
+  it("fails a replacement that failed to build at once, keeping the published generation", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "material", tinted(1));
+    if (!first.ok) throw new Error("Expected a compiled material");
+    await first.ready;
+    const invalid = tinted(0.2);
+    invalid.nodes.push({ id: "normal", type: "shading.normalMap", position: { x: 0, y: 0 }, properties: {} });
+    invalid.edges.push({ id: "normal-output", sourceNodeId: "normal", sourcePinId: "normal", targetNodeId: "output", targetPinId: "normal" });
+    const failed = library.acquire(scene, "material", invalid);
+    const diagnostics = failed.ok ? await failed.ready : failed.diagnostics;
+    expect(diagnostics.length).toBeGreaterThan(0);
+    const compiled = compiles(scene);
+    expect(library.acquire(scene, "material", invalid)).toEqual({ ok: false, diagnostics });
+    expect(library.resolve(scene, "material", invalid)).toBe(first.material);
+    expect(compiled()).toBe(0);
+  });
+
+  it("tries a replacement again after its warm-up only stalled", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "material", tinted(1));
+    if (!first.ok) throw new Error("Expected a compiled material");
+    await first.ready;
+    const mesh = MeshBuilder.CreatePlane("shown", {}, scene);
+    mesh.material = first.material;
+    const next = library.acquire(scene, "material", tinted(2));
+    if (!next.ok) throw new Error("Expected the replacement material");
+    vi.spyOn(next.material, "forceCompilationAsync").mockRejectedValue(new MaterialCompileStalled());
+    expect(await next.ready).toEqual([{ code: "material.compile.stalled", message: "Material shader compilation timed out", severity: "error" }]);
+    // Nothing finished linking for its whole bound, which says nothing about the program.
+    expect(library.acquire(scene, "material", tinted(2)).ok).toBe(true);
   });
 
   it("warns about a retired Material when its host takes no diagnostics", async () => {
@@ -301,7 +480,7 @@ describe("material library", () => {
     await Promise.resolve();
     expect(library.materialFor(scene, "material")).toBeNull();
     // The Scene resolves the key again, while the first holder still has to release its reference.
-    const again = library.acquire(scene, "material", tinted(1));
+    const again = library.acquire(scene, "material", tinted(2));
     if (!again.ok) throw new Error("Expected a fresh generation");
     await again.ready;
     library.release(scene, "material");
