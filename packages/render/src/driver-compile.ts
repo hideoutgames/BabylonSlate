@@ -1,5 +1,5 @@
 import type { AbstractEngine, AbstractMesh, Effect, ObjectRenderer, Scene } from "@babylonjs/core";
-import { SCENE_DRIVER_COMPILE_TIMEOUT_MS } from "./stall-deadline";
+import { SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 
 /** Babylon exposes no enumeration of the Engine's cached effects. */
 type EngineEffects = { _compiledEffects?: Readonly<Record<string, Effect>> };
@@ -88,34 +88,85 @@ export function readinessScanMeshes(renderer: ObjectRenderer, scene: Scene): rea
 }
 
 /**
- * Decides whether an expired loading budget should be renewed because the
- * driver is still compiling. A compile cascade, such as a Water shader and then
- * its other pass variants, changes the pending set each time one finishes and
- * keeps renewing. The same set pending for `SCENE_DRIVER_COMPILE_TIMEOUT_MS`
- * is a hung compile: the budget is not renewed.
+ * Decides whether an expired loading budget should be renewed because shaders
+ * are still compiling, so a wait fails only once a whole budget passes without
+ * compile progress. Progress is either:
+ * - a shader variant (an Engine effect key) that finished compiling since the
+ *   previous renewal, or since the watch began. Where links are synchronous this
+ *   is the only sign: without KHR_parallel_shader_compile (SwiftShader), and on
+ *   WebKit WebGL2, which exposes the extension but links inside `linkProgram`,
+ *   so Babylon's first completion check, inside the Effect constructor, already
+ *   finds the program complete and nothing is ever pending. WebGPU effects are
+ *   ready once created. A key compiled again after its release is no progress.
+ * - effects pending on a parallel-compile driver. A cascade, such as a Water
+ *   shader and then its other pass variants, changes the pending set each time
+ *   one finishes. The same set pending for `SCENE_DRIVER_COMPILE_TIMEOUT_MS`
+ *   with nothing else finishing is a hung compile.
+ * Progress is per Engine: a preview or thumbnail compiling on the shared Engine
+ * also renews. Nothing renews from `ceiling` on, `SCENE_PREPARATION_CEILING_MS`
+ * after the watch began, so a wait that keeps compiling forever still fails.
  */
 export class DriverCompileWatch {
   private signature = "";
   private since = 0;
+  /** Effect keys seen ready since the watch began. */
+  private readonly seen = new Set<string>();
+  /** Keys that became ready after the watch began. */
+  private compiled = 0;
+  private compiledAtRenewal = 0;
+  private pending = 0;
 
   private readonly engine: AbstractEngine;
+  /** No budget is renewed from this time (a `performance.now()` value) on. */
+  readonly ceiling: number;
 
-  constructor(engine: AbstractEngine) {
+  constructor(engine: AbstractEngine, now = performance.now()) {
     this.engine = engine;
+    this.ceiling = now + SCENE_PREPARATION_CEILING_MS;
+    this.sample();
+    this.compiled = 0;
   }
 
   /** Call when a budget expires; true grants another full budget. */
   renew(now = performance.now()): boolean {
-    const pending = pendingDriverCompiles(this.engine);
+    const pending = this.sample();
+    const progressed = this.compiled > this.compiledAtRenewal;
+    this.compiledAtRenewal = this.compiled;
+    if (now >= this.ceiling) return false;
     if (pending.length === 0) {
       this.signature = "";
-      return false;
+      return progressed;
     }
     const signature = pending.sort().join("\n");
     if (signature !== this.signature) {
       this.signature = signature;
       this.since = now;
     }
-    return now - this.since < SCENE_DRIVER_COMPILE_TIMEOUT_MS;
+    return progressed || now - this.since < SCENE_DRIVER_COMPILE_TIMEOUT_MS;
+  }
+
+  /** The compile state for a timeout message, such as the Scene Load Report's. */
+  describe(): string {
+    this.sample();
+    const effects = Object.keys((this.engine as unknown as EngineEffects)._compiledEffects ?? {}).length;
+    const driver = this.engine.isWebGPU ? ""
+      : `; KHR_parallel_shader_compile ${this.engine.getCaps().parallelShaderCompile ? "exposed" : "not exposed"}`;
+    return `Shaders: ${this.compiled} compiled while waiting, ${this.pending} still compiling, ${effects} on the Engine${driver}.`;
+  }
+
+  /** Counts keys that became ready and returns the keys still compiling on a parallel-compile driver. */
+  private sample(): string[] {
+    const parallel = Boolean(this.engine.getCaps().parallelShaderCompile);
+    const pending: string[] = [];
+    for (const [key, effect] of Object.entries((this.engine as unknown as EngineEffects)._compiledEffects ?? {})) {
+      if (effect.isReady()) {
+        if (!this.seen.has(key)) {
+          this.seen.add(key);
+          this.compiled += 1;
+        }
+      } else if (parallel && !effect.getCompilationError()) pending.push(key);
+    }
+    this.pending = pending.length;
+    return pending;
   }
 }

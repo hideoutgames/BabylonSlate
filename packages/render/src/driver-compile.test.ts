@@ -3,7 +3,7 @@ import { FreeCamera, MeshBuilder, NullEngine, ObjectRenderer, Scene, Vector3, ty
 import {
   COMPILE_AHEAD_LIMIT, DriverCompileWatch, pendingDriverCompiles, readinessScanMeshes, requestCompilesAhead,
 } from "./driver-compile";
-import { SCENE_DRIVER_COMPILE_TIMEOUT_MS } from "./stall-deadline";
+import { SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 
 function engineWith(parallel: boolean) {
   const engine = new NullEngine();
@@ -62,13 +62,52 @@ describe("driver compile watch", () => {
     expect(watch.renew(SCENE_DRIVER_COMPILE_TIMEOUT_MS)).toBe(false);
   });
 
-  it("does not renew once nothing is pending", () => {
+  it("renews once for a compile that finished, and not again while nothing is pending or finishing", () => {
     const { engine, add } = setup();
     const watch = new DriverCompileWatch(engine);
     const effect = add("done");
     expect(watch.renew(0)).toBe(true);
     effect.ready = true;
+    expect(watch.renew(1)).toBe(true);
+    expect(watch.renew(2)).toBe(false);
+  });
+
+  // Synchronous links (SwiftShader; WebKit, which exposes parallel compile but links inside the call) never leave
+  // anything pending: variants that finished since the last renewal are the only sign of progress.
+  it.each([false, true])("renews for variants that finished since the last renewal (parallel compile exposed: %s)", (parallel) => {
+    const { engine, add } = setup(parallel);
+    add("before the watch", { ready: true });
+    const watch = new DriverCompileWatch(engine);
+    expect(watch.renew(0)).toBe(false);
+    add("first link", { ready: true });
+    add("second link", { ready: true });
+    expect(watch.renew(1)).toBe(true);
+    expect(watch.renew(2)).toBe(false);
+    add("third link", { ready: true });
+    expect(watch.renew(3)).toBe(true);
+    expect(watch.describe()).toContain("Shaders: 3 compiled while waiting, 0 still compiling, 4 on the Engine");
+  });
+
+  it("does not count a released variant compiled again as progress", () => {
+    const { engine, add } = setup(false);
+    const effects = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
+    const watch = new DriverCompileWatch(engine);
+    add("variant", { ready: true });
+    expect(watch.renew(0)).toBe(true);
+    delete effects["variant"];
+    add("variant", { ready: true });
     expect(watch.renew(1)).toBe(false);
+  });
+
+  it("renews nothing from its ceiling on, however much keeps compiling", () => {
+    const { engine, add } = setup();
+    const watch = new DriverCompileWatch(engine, 0);
+    expect(watch.ceiling).toBe(SCENE_PREPARATION_CEILING_MS);
+    add("pending");
+    add("finished", { ready: true });
+    expect(watch.renew(SCENE_PREPARATION_CEILING_MS - 1)).toBe(true);
+    add("finished later", { ready: true });
+    expect(watch.renew(SCENE_PREPARATION_CEILING_MS)).toBe(false);
   });
 });
 

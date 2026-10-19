@@ -99,9 +99,14 @@ export async function prewarmMeshMaterials(
   };
   check();
   syncSceneLighting(scene);
-  // The driver reports a parallel compile's completion only; a pending one is not a stall.
+  // A unit can outlast the budget while it compiles: variants that finished since the last renewal (each synchronous
+  // link), or a parallel compile pending on the driver (which reports completion only), are not a stall.
   const compiles = new DriverCompileWatch(scene.getEngine());
-  const deadline = createStallDeadline(describeShaderStall, SCENE_SHADER_WARM_TIMEOUT_MS, () => compiles.renew());
+  const deadline = createStallDeadline(
+    (stalled, completed) => `${describeShaderStall(stalled, completed)} ${compiles.describe()}`,
+    SCENE_SHADER_WARM_TIMEOUT_MS,
+    () => compiles.renew(),
+  );
   try {
     await deadline.race((async () => {
       for (const mesh of meshes) {

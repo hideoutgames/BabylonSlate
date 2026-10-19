@@ -33,7 +33,7 @@ import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
-import { SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
+import { SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
 import { isManagedClusteredLight } from "./clustered-light-policy";
 import { whenPresentationFenceClear } from "./presented-frame";
@@ -87,6 +87,8 @@ export type ForwardSceneGraphReadiness = ForwardSceneGraphResult & {
    * readiness failure on an already prepared path only needs another probe. */
   preparationRequired?: true;
 };
+/** Bound on the readiness loop without readiness or compile progress (`DriverCompileWatch`). */
+const READINESS_STALL_MS = 10_000;
 /** Babylon 9.29 keeps private the render context whose copy effects FrameGraph.isReady checks first. */
 type FrameGraphContextInternals = { _renderContext?: { _isReady?: () => boolean } };
 const outlineAttachments = new WeakMap<SharedOutlineView, ForwardSceneFrameGraph>();
@@ -1074,7 +1076,7 @@ export class ForwardSceneFrameGraph {
         this.commitOwnSceneTargets();
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
-      let deadline = performance.now() + 10_000;
+      let deadline = performance.now() + READINESS_STALL_MS;
       const compiles = new DriverCompileWatch(scene.getEngine());
       let creditLeft = SCENE_THREAD_HELD_BUDGET_MS;
       for (;;) {
@@ -1083,9 +1085,10 @@ export class ForwardSceneFrameGraph {
         deadline += await whenPresentationFenceClear(scene.getEngine(), assertCurrent);
         const probeStart = performance.now();
         const ready = this.disposed || this.isReady();
-        // Without parallel shader compile the probe links every effect before it
-        // returns: the time inside it is compiling, not waiting. It extends the
-        // bound up to a budget, so a scene that never becomes ready still fails.
+        // Where links are synchronous (SwiftShader, WebKit WebGL2) the probe links
+        // every effect before it returns: the time inside it is compiling, not
+        // waiting. It extends the bound up to a budget, so a scene that never
+        // becomes ready still fails.
         const grant = Math.min(performance.now() - probeStart, creditLeft);
         creditLeft -= grant;
         deadline += grant;
@@ -1094,10 +1097,16 @@ export class ForwardSceneFrameGraph {
         // A failed shader never becomes ready; report it instead of timing out.
         const compileFailure = this.effectsGraph?.spatial?.compileFailure.message ?? this.outlineTask?.compileFailure.message;
         if (compileFailure) throw new Error(compileFailure);
-        if (performance.now() >= deadline) {
-          // A driver still compiling reports completion only, never progress.
-          if (!compiles.renew()) throw new Error("Forward FrameGraph readiness timed out.");
-          deadline = performance.now() + 10_000;
+        const now = performance.now();
+        if (now >= deadline || now >= compiles.ceiling) {
+          // Shaders that finished compiling since the last renewal, or a driver
+          // still compiling (it reports completion only), renew the bound.
+          if (!compiles.renew(now)) {
+            const limit = now >= compiles.ceiling
+              ? `its ${SCENE_PREPARATION_CEILING_MS / 1000} s limit` : `${READINESS_STALL_MS / 1000} s without progress`;
+            throw new Error(`Forward FrameGraph readiness timed out after ${limit}. ${compiles.describe()}`);
+          }
+          deadline = now + READINESS_STALL_MS;
         }
         await new Promise<void>((resolve) => setTimeout(resolve, 16));
       }
