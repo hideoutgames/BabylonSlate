@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { physicsActorDiagnostics, type PhysicsActorLike } from "./pairing";
 
 describe("physicsActorDiagnostics", () => {
-  it.each(["RigidBodyComponent", "NavAgentComponent", "RagdollComponent", "WaterBuoyancyComponent"])(
+  it.each(["NavAgentComponent", "RagdollComponent", "WaterBuoyancyComponent"])(
     "reports a Movement conflict with %s even when a mesh supplies collision",
     (classId) => {
       const actor = { id: "hero", components: [
@@ -19,6 +19,35 @@ describe("physicsActorDiagnostics", () => {
       expect(physicsActorDiagnostics(actor)).toEqual([]);
     },
   );
+
+  it("accepts a dynamic or kinematic Rigid Body beside Movement, and reports a static one that cannot move", () => {
+    const actor = (properties?: Record<string, unknown>) => ({ id: "hero", components: [
+      { id: "body", classId: "RigidBodyComponent", properties },
+      { id: "motor", classId: "MovementComponent" },
+    ] });
+    // A missing Motion Type reads as Dynamic.
+    expect(physicsActorDiagnostics(actor())).toEqual([]);
+    expect(physicsActorDiagnostics(actor({ motionType: "dynamic" }))).toEqual([]);
+    expect(physicsActorDiagnostics(actor({ motionType: "kinematic" }))).toEqual([]);
+    expect(physicsActorDiagnostics(actor({ motionType: "static" }))).toEqual([
+      expect.objectContaining({
+        code: "physics.movement_conflict", componentId: "motor",
+        message: "Movement cannot simulate on this actor: set the Rigid Body's Motion Type to Dynamic or Kinematic.",
+      }),
+    ]);
+  });
+
+  it("reports every Movement problem together", () => {
+    expect(physicsActorDiagnostics({ id: "hero", components: [
+      { id: "body", classId: "RigidBodyComponent", properties: { motionType: "static" } },
+      { id: "agent", classId: "NavAgentComponent" },
+      { id: "motor", classId: "MovementComponent" },
+    ] })).toEqual([
+      expect.objectContaining({
+        message: "Movement cannot simulate on this actor: remove Nav Agent and set the Rigid Body's Motion Type to Dynamic or Kinematic.",
+      }),
+    ]);
+  });
 
   it("locates duplicate Movement warnings on each motor and clears them when only one remains", () => {
     const actor = { id: "hero", components: [

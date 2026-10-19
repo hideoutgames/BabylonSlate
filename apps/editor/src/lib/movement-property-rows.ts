@@ -43,7 +43,7 @@ export function movementPropertyRows(
     number("acceleration", "Acceleration", 0, "How quickly movement reaches its target speed.", undefined, "units/s²"),
     number("braking", "Braking", 0, "How quickly horizontal movement slows when input stops.", undefined, "units/s²"),
     number("jumpSpeed", "Jump Speed", 0, "Upward speed when a jump begins.", undefined, "units/s"),
-    number("gravityScale", "Gravity Scale", 0, "Multiplier for the scene's gravity."),
+    number("gravityScale", "Gravity Scale", 0, "Multiplier for the scene's gravity. A dynamic Rigid Body on the same actor uses its own Gravity Scale instead."),
     number("airControl", "Air Control", 0, "Horizontal steering strength while airborne; 0 keeps momentum and 1 gives full control.", 1),
     number("maxFallSpeed", "Max Fall Speed", 0, "Maximum downward speed.", undefined, "units/s"),
     ...(context.physicsWorld === "3d" ? [{
@@ -57,7 +57,7 @@ export function movementPropertyRows(
     number("radius", "Radius", 0.001, "Capsule radius in world units, centered on the actor. Actor scale and component transforms do not change it.", properties.height / 2),
     number("height", "Height", properties.radius * 2, "Total capsule height in world units, including its rounded ends. World Y is up in both 2D and 3D."),
     number("maxSlopeAngle", "Max Slope Angle", 0, "Steepest surface treated as ground.", 89.9, "°"),
-    number("groundSnapDistance", "Ground Snap Distance", 0, "Stay attached to nearby ground when walking down shallow changes in height."),
+    number("groundSnapDistance", "Ground Snap Distance", 0, "Stay attached to nearby ground when walking down shallow changes in height. With a dynamic Rigid Body, how far below the actor still counts as ground."),
     number("coyoteTime", "Coyote Time", 0, "Allow a jump briefly after walking off an edge.", undefined, "s"),
     number("jumpBufferTime", "Jump Buffer Time", 0, "Remember a jump pressed just before landing.", undefined, "s"),
   ];
