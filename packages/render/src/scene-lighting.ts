@@ -325,7 +325,9 @@ function installSceneLighting(scene: Scene): SceneLighting {
     // expands every per-light include this many times before dropping the
     // unused copies, and that JS cost is paid per Effect.
     lightInventory = Math.max(lightInventory, scene.lights.length);
-    const capacity = Math.min(budget.slots, Math.max(4, lightInventory));
+    // A fixed layout sizes each kind by its own high-water mark, which can
+    // seat more than the total inventory holds now: every seat must expand.
+    const capacity = Math.max(Math.min(budget.slots, Math.max(4, lightInventory)), table?.layout.seats ?? 0);
     // Only a different light set or capacity gives receivers other defines. Other refreshes (a material added or
     // retired) leave a program that failed to link failing, so they must not end the Material library's latch.
     const receiversChanged = changed || capacity !== lightCapacity;

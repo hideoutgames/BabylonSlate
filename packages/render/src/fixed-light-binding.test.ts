@@ -230,6 +230,31 @@ describe("fixed-shape light binding", () => {
     }
   });
 
+  it("compiles and binds every seat when the layout seats more lights than the Scene now holds", async () => {
+    const { scene } = world();
+    new DirectionalLight("sun", Vector3.Down(), scene);
+    new HemisphericLight("fill", Vector3.Up(), scene);
+    const spot = new SpotLight("spot", new Vector3(0, 3, 0), Vector3.Down(), 1, 2, scene);
+    new PointLight("point", new Vector3(1, 2, 0), scene);
+    const { pairs } = receivers(scene);
+    frame(scene);
+    // Five lights now, but the spot's seat stays: sun, fill, spot, and three point seats.
+    spot.dispose();
+    const last = [new PointLight("point 2", new Vector3(-1, 2, 0), scene), new PointLight("point 3", new Vector3(0, 2, 1), scene)][1]!;
+    frame(scene);
+    expect(seatOf(scene, last)).toBe(5);
+    for (const [material, mesh] of pairs) {
+      const effect = await effectOf(material, mesh);
+      expect(effect.defines).toContain("#define POINTLIGHT5\n");
+      expect(effect.fragmentSourceCode).toContain("light5.vLightData");
+      const bind = vi.spyOn(effect, "bindUniformBuffer");
+      material.bindForSubMesh(mesh.getWorldMatrix(), mesh, mesh.subMeshes[0]!);
+      expect(bind.mock.calls.find(([, name]) => name === "Light5")?.[0])
+        .toBe((last as unknown as { _uniformBuffer: { getBuffer(): unknown } })._uniformBuffer.getBuffer());
+      bind.mockRestore();
+    }
+  });
+
   it("binds each seat's light, and a null buffer of the seat's kind to an empty seat", async () => {
     const { engine, scene } = world();
     const { sun, fill, spots, points } = lightRig(scene);
