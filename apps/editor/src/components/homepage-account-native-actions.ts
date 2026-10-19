@@ -17,9 +17,12 @@ export function nativeProfileActions(
   owner: {
     onSession: (next: NativeClerkSession) => void;
     onDeleted: () => void;
+    /** Only the mobile account gate hides the app during a foreground check. */
+    holdSessionCheck?: () => () => void;
   },
 ): NativeProfileActions {
   return {
+    holdSessionCheck: owner.holdSessionCheck ?? (() => () => {}),
     updateName: async (name) =>
       owner.onSession(await client.updateName(session, name)),
     setImage: async (file) =>

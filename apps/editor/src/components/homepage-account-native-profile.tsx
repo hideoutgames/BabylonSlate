@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ImagePlusIcon, LoaderCircleIcon, Trash2Icon } from "lucide-react";
 import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
 import {
@@ -27,6 +27,11 @@ function reason(cause: unknown, fallback: string) {
   return cause instanceof Error ? cause.message : fallback;
 }
 
+function release(hold: { current: (() => void) | null }) {
+  hold.current?.();
+  hold.current = null;
+}
+
 /**
  * Name and picture for accounts on the email-code client. Clerk's own account
  * screen does this on the web; here the same first and last name fields and
@@ -45,6 +50,19 @@ export function NativeProfileFields({
   const [busy, setBusy] = useState<"name" | "image" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const pickerHold = useRef<(() => void) | null>(null);
+  const holdSessionCheck = profile.holdSessionCheck;
+  // Returning from the system picker must not run the foreground session
+  // check that hides the app (mobile) before the change event delivers the file.
+  useEffect(() => {
+    const input = fileInput.current;
+    const cancelled = () => release(pickerHold);
+    input?.addEventListener("cancel", cancelled);
+    return () => {
+      input?.removeEventListener("cancel", cancelled);
+      release(pickerHold);
+    };
+  }, []);
   // Drafts follow the stored name once Clerk has accepted a change.
   if (saved[0] !== profile.firstName || saved[1] !== profile.lastName) {
     setSaved([profile.firstName, profile.lastName]);
@@ -64,6 +82,7 @@ export function NativeProfileFields({
     } catch (cause) {
       setError(reason(cause, "Your profile could not be updated."));
     } finally {
+      if (kind === "image") release(pickerHold);
       setBusy(null);
     }
   }
@@ -140,6 +159,7 @@ export function NativeProfileFields({
                 const file = event.target.files?.[0];
                 event.target.value = "";
                 if (file) void run("image", () => profile.setImage(file));
+                else release(pickerHold);
               }}
             />
             <Button
@@ -147,7 +167,10 @@ export function NativeProfileFields({
               variant="outline"
               size="sm"
               disabled={locked}
-              onClick={() => fileInput.current?.click()}
+              onClick={() => {
+                pickerHold.current ??= holdSessionCheck();
+                fileInput.current?.click();
+              }}
             >
               {busy === "image" ? (
                 <LoaderCircleIcon

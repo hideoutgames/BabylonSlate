@@ -15,6 +15,12 @@ export interface NativeProfileActions {
   removeImage: () => Promise<void>;
   /** Also signs the account out of this device. */
   deleteAccount: () => Promise<void>;
+  /**
+   * Pauses the foreground session check while the system file picker is open:
+   * on mobile that check hides the app, which would drop the picked file.
+   * Returns the release function.
+   */
+  holdSessionCheck: () => () => void;
 }
 
 /**
