@@ -100,9 +100,23 @@ function sameOverrideKeys(
 
 const MESH_MATERIAL_KEYS = ["materialGuid", "materialSource"] as const;
 
-function expandMeshMaterialOverrides(keys: Set<string>, component: SerializedComponent): void {
+function expandMeshMaterialOverrides(keys: Set<string>, component: Pick<SerializedComponent, "classId">): void {
   if (component.classId !== "MeshComponent" || !MESH_MATERIAL_KEYS.some((key) => keys.has(key))) return;
   for (const key of MESH_MATERIAL_KEYS) keys.add(key);
+}
+
+/**
+ * The `overrideKeys` an instance row stores for the fields it owns. A Mesh
+ * overrides its two material fields together, so sync never has to widen the
+ * keys of a row authored with one of them.
+ */
+export function instanceOverrideKeys(
+  component: Pick<SerializedComponent, "classId">,
+  keys: Iterable<string>,
+): string[] {
+  const expanded = new Set(keys);
+  expandMeshMaterialOverrides(expanded, component);
+  return [...expanded];
 }
 
 function meshMaterialSelection(component: SerializedComponent): [string | null, boolean] {

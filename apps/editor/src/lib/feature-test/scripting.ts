@@ -18,6 +18,7 @@ import {
   type SerializedGraph,
 } from "@babylonslate/core";
 import { newAssetFileName } from "../content-browser-helpers";
+import { instanceOverrideKeys } from "../prefab-instance-sync";
 import {
   actor,
   comp,
@@ -1339,7 +1340,7 @@ function instanceComponents(
       parentId: template.parentId ? idOf(template.parentId) : null,
       sourceId: template.id,
       ...(override
-        ? { properties: { ...structuredClone(template.properties), ...override }, overrideKeys: Object.keys(override) }
+        ? { properties: { ...structuredClone(template.properties), ...override }, overrideKeys: instanceOverrideKeys(template, Object.keys(override)) }
         : {}),
     };
   });

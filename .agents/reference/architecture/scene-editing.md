@@ -46,6 +46,7 @@ World Scene documents in the Haptic editor: schema, selection, command path, vie
 - Place Actors copies the ancestor-merged Class prefab and stamps `sourceId`. Name, actor transform, visible, locked, `parentId`, `folderId` stay instance-owned.
 - `overrideKeys` mark instance-owned component fields; `suppressedComponentSourceIds` stops sync resurrecting deleted prefab rows.
 - Opening a Scene syncs instances in memory; if that changes it, history is dropped and the Scene is dirty. Closed Scene files are never rewritten in the background. Prefab edits with the Scene open sync through scene commands.
+- A closed Class or Prefab syncs from its header alone, so the header's component rows must carry every field sync copies onto an instance (`name`, `properties`, `transform`, `parentId`, `materialInstance`). A field the header drops is stripped from instances on every open and leaves the Scene dirty.
 - Prefab is a window of the Class document, not a `DocumentKind`. Its world origin is the Prefab Root, which equals `SerializedActor.transform` once placed.
 
 ## Viewport rules
