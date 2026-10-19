@@ -8,6 +8,7 @@ Worker-side animation state machine plus per-instance Animation Object graphs th
 - Render seeks `AnimationGroup`s and sprite frames from `animState` and never lets Babylon auto-advance gameplay animation. Groups stay paused with live animatables (`play()` then `pause()`); never `stop()`, which empties animatables and makes `goToFrame` a no-op.
 - `animState` is an extra command-channel message ([bridge.md](bridge.md)), not a snapshot stride change. One `animState` per actor slot: the last graph in component order wins playback.
 - Behaviour Tree Play Animation emits the same `animState`; there is no second playback clock.
+- A state's Speed scales its clip duration, and a state at Speed 0 or below holds its pose: its clock never advances (`clockStepSeconds`). The duration divides by Speed floored at 0.001 to stay finite.
 - Treat evaluated documents as immutable: derived lookups are cached per document object, so replace a document instead of mutating it.
 
 ## Ownership

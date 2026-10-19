@@ -31,7 +31,7 @@ A script graph that runs for each Animation Graph component using the graph. It 
 | Entry State | Turn on to make this the state the graph starts in. |
 | Clip Kind | **Animation** or **Sprite**. |
 | Clip Asset | An [Animation](animation.md) or a [Sprite Animation](sprite-animation.md), matching Clip Kind. |
-| Speed | Playback speed multiplier. |
+| Speed | Playback speed multiplier. At 0 the state holds its clip's first frame. |
 | Loop | Whether the clip repeats. |
 
 **Transition**
