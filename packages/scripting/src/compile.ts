@@ -485,6 +485,7 @@ export function compileGraph(
   // `var` stays valid when a document concatenates its graphs' modules.
   if (options.instrumentExecutionTrace === true && options.stripDevelopmentOnly !== true) {
     preamble.push("var __dv = (t, node, pin, value) => (t === null ? value : t.read(node, pin, value));");
+    preamble.push("var __dw = (t, node, pin, value) => (t === null ? value : (t.write(node, pin, value), value));");
   }
   if (graph.nodes.some((node) => node.typeId.startsWith("tags."))) {
     preamble.push(...tagRuntimeSource(options.tagRegistry).split("\n"));
@@ -645,8 +646,19 @@ export function compileGraph(
   }
 
   /**
-   * A node that runs records what it read from a wired data input. Pure nodes inline into their
-   * consumers, so they record nothing; an unwired input shows its literal on the node.
+   * A pure node's output expression, recording the value each time a consumer evaluates it. The
+   * wrapper evaluates `expression` exactly where it already ran, so a pure node is never evaluated
+   * an extra time and a chain of pure nodes records every link of it.
+   */
+  function tracedPureOutput(node: GraphNode, p: GraphPin, expression: string): string {
+    if (!traceExecution) return expression;
+    return `__dw(__dbg, ${JSON.stringify(node.id)}, ${JSON.stringify(p.id)}, ${expression})`;
+  }
+
+  /**
+   * A node that runs records what it read from a wired data input. A pure node records its outputs
+   * instead (`tracedPureOutput`); what flowed into its inputs is what their sources produced, and
+   * an unwired input shows its literal on the node.
    */
   function tracedRead(node: GraphNode, p: GraphPin, expression: string): string {
     if (!traceExecution || options.registry.get(node.typeId)?.pure) return expression;
@@ -746,7 +758,10 @@ export function compileGraph(
         const guarded = subjects.length > 0
           ? guardPureExpression(subjects, subjectArgs, expr, defaultValueLiteral(outPin.type))
           : expr;
-        exprCache.set(`${node.id}:${outPin.id}`, pureExpressions.expression(node, outPin, guarded));
+        exprCache.set(
+          `${node.id}:${outPin.id}`,
+          tracedPureOutput(node, outPin, pureExpressions.expression(node, outPin, guarded)),
+        );
       }
     }
   }

@@ -204,7 +204,7 @@ test("a Simulation lights up what a Class graph runs for the chosen instance and
   expect(alpha.staticNodes).toBe(false);
   expect(alpha.wiresStartHighlighted).toBe(true);
 
-  // Pin values: the last value read, rounded; and nothing for a pin that has not run.
+  // Pin values: the last value, rounded; and nothing for a pin that has not run.
   expect(await hoverPinTip(page, "printB", "value")).toBe("{x: -5, y: 0, z: 0}");
   expect(await hoverPinTip(page, "printA", "value")).toBe("No value yet");
   await page.mouse.move(0, 0);

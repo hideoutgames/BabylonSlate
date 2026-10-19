@@ -177,7 +177,11 @@ describe("runtime graph debugging", () => {
     expect(trace!.graphs).toEqual([{
       assetGuid: "Door.class", graphId: "event-graph",
       nodes: ["tick", "js"], edges: ["exec"],
-      values: [["js", "in_dt", "in", "0.0167"], ["js", "out_doubled", "out", "0.0333"]],
+      values: [
+        ["tick", "deltaSeconds", "out", "0.0167"],
+        ["js", "in_dt", "in", "0.0167"],
+        ["js", "out_doubled", "out", "0.0333"],
+      ],
     }]);
   });
 
@@ -188,7 +192,7 @@ describe("runtime graph debugging", () => {
     runtime.tick();
     runtime.tick();
     const [first, second] = traces(mark);
-    expect(first!.graphs[0]!.values).toHaveLength(2);
+    expect(first!.graphs[0]!.values).toHaveLength(3);
     expect(second!.graphs[0]!).toMatchObject({ nodes: ["tick", "js"], edges: ["exec"], values: [] });
   });
 
@@ -201,7 +205,7 @@ describe("runtime graph debugging", () => {
     runtime.tick();
     expect(traces(mark).map((trace) => trace.instanceId)).toEqual(["d2"]);
     // The new instance starts with no history, so its values arrive again.
-    expect(traces(mark)[0]!.graphs[0]!.values).toHaveLength(2);
+    expect(traces(mark)[0]!.graphs[0]!.values).toHaveLength(3);
   });
 
   it("follows nothing for a null instance and stops entirely for a null target", async () => {
