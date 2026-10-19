@@ -30,6 +30,7 @@ import {
   BugIcon,
   Maximize2Icon,
   EllipsisIcon,
+  CircleAlertIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
@@ -39,8 +40,13 @@ import {
 } from "@babylonslate/core";
 import {
   ShortcutKeys,
+  ToolbarOverflow,
+  ToolbarOverflowItem,
+  ToolbarOverflowMenu,
+  ToolbarOverflowTrack,
   TypeVisualIcon,
   ariaKeyShortcuts,
+  type NestedMenuItem,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Toggle } from "@babylonslate/ui/components/toggle";
@@ -65,7 +71,8 @@ import {
   SheetTrigger,
 } from "@babylonslate/ui/components/sheet";
 import { cn } from "@babylonslate/ui/lib/utils";
-import { usePhoneLayout } from "../shell/use-platform-layout";
+import { useCoarsePointer, usePhoneLayout } from "../shell/use-platform-layout";
+import { TOOLBAR_OVERFLOW_PRIORITY } from "../lib/toolbar-overflow-priority";
 import { ProjectIdentityMark } from "./project-identity-mark";
 import { DocumentSwitcher } from "./document-switcher";
 import {
@@ -338,6 +345,7 @@ export function EditorChromeBar({
   const debugMode = useDebugMode();
   const featureTestCheck = featureTestProject && debugMode;
   const phone = usePhoneLayout();
+  const coarse = useCoarsePointer();
   // Keeps its lazy class lookup until the registry changes, not per edit.
   const resolveDocumentVisual = useMemo(() => {
     void registryEpoch;
@@ -397,6 +405,9 @@ export function EditorChromeBar({
   const searchChord = useKeybindChord("editor.search");
   const focusChord = useKeybindChord("editor.focusLayout");
   const playChord = useKeybindChord("play.start");
+  const undoChord = useKeybindChord("editor.undo");
+  const redoChord = useKeybindChord("editor.redo");
+  const compileChord = useKeybindChord("graph.compile");
   const projectSettingsChord = useKeybindChord("editor.projectSettings");
   const engineSettingsChord = useKeybindChord("editor.engineSettings");
   // The Play Mode is a saved preference: Simulate wins over Preview Build.
@@ -488,6 +499,60 @@ export function EditorChromeBar({
       />
     </DropdownMenu>
   );
+  const compileFocusedGraph = async () => {
+    activateDockPanel("compiler-results");
+    // The project compiles, but Compiler Results shows only this class, as live
+    // validation does. Play validates the classes it needs when it starts.
+    const focused = getOpenDocuments().find(
+      (doc) => doc.id === activeDocumentId && doc.ref.kind === "graph",
+    );
+    const result = await collectPlayPreviewScripts();
+    const openDocuments = getOpenDocuments();
+    const modelSimpleColliderCount = modelSimpleColliderCounter(
+      assetRegistry,
+      openDocuments.filter((doc) => doc.ref.kind === "model"),
+    );
+    const diagnostics = [
+      ...result.diagnostics.filter(
+        (entry) => entry.assetGuid === focused?.ref.path,
+      ),
+      ...(focused?.content
+        ? physicsPairingDiagnostics(
+            [
+              {
+                id: PREFAB_ROOT_ID,
+                components:
+                  (focused.content as SerializedGraph).components ?? [],
+              },
+            ],
+            { assetGuid: focused.ref.path, graphId: focused.id, modelSimpleColliderCount },
+          )
+        : []),
+    ];
+    setDiagnostics(diagnostics);
+    const errors = diagnostics.filter(
+      (entry) => entry.severity === "error",
+    );
+    if (errors.length)
+      throw new Error(
+        `${errors.length} Error(s). See Compiler Results.`,
+      );
+  };
+  // The phone's More Tools sheet already holds the utilities; the desktop toolbar collapses them
+  // into More Actions, lowest tier first, when it is too narrow.
+  const collapsible = (
+    id: string,
+    priority: number | undefined,
+    items: NestedMenuItem[] | undefined,
+    node: ReactNode,
+  ) =>
+    phone ? (
+      node
+    ) : (
+      <ToolbarOverflowItem id={id} priority={priority} items={items}>
+        {node}
+      </ToolbarOverflowItem>
+    );
   const utilityTools = (
     <>
       {phone && activeKind === "graph" ? (
@@ -499,8 +564,17 @@ export function EditorChromeBar({
           }}
         />
       ) : null}
-      <WindowsMenu />
-      {!phone ? (
+      {collapsible("windows", undefined, undefined, <WindowsMenu />)}
+      {!phone ? collapsible("focus", TOOLBAR_OVERFLOW_PRIORITY.focus, [{
+        type: "checkbox",
+        id: "focus",
+        label: "Focus",
+        checked: isLayoutFocused,
+        shortcut: focusChord,
+        closeOnClick: true,
+        disabled: !projectName || !canFocus,
+        onCheckedChange: () => toggleLayoutFocus(),
+      }], (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -524,7 +598,7 @@ export function EditorChromeBar({
             <ShortcutKeys chord={focusChord} decorative />
           </TooltipContent>
         </Tooltip>
-      ) : null}
+      )) : null}
       {phone ? (
         <Button
           variant="outline"
@@ -535,7 +609,14 @@ export function EditorChromeBar({
         >
           <SearchIcon data-icon="inline-start" /> Search Project
         </Button>
-      ) : (
+      ) : collapsible("search", TOOLBAR_OVERFLOW_PRIORITY.search, [{
+        id: "search",
+        label: "Search Project",
+        icon: <SearchIcon />,
+        shortcut: searchChord,
+        disabled: !projectName,
+        onSelect: openSearch,
+      }], (
         <IconActionButton
           label="Search Project"
           shortcut={searchChord}
@@ -546,7 +627,28 @@ export function EditorChromeBar({
         >
           <SearchIcon />
         </IconActionButton>
-      )}
+      ))}
+      {collapsible("settings", TOOLBAR_OVERFLOW_PRIORITY.settings, [{
+        type: "submenu",
+        id: "settings",
+        label: "Settings",
+        icon: <SettingsIcon />,
+        disabled: !projectName,
+        items: [
+          {
+            id: "project-settings",
+            label: "Project Settings",
+            shortcut: projectSettingsChord,
+            onSelect: () => openSettings("project"),
+          },
+          {
+            id: "engine-settings",
+            label: "Engine Settings",
+            shortcut: engineSettingsChord,
+            onSelect: () => openSettings("engine"),
+          },
+        ],
+      }], (
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -591,6 +693,7 @@ export function EditorChromeBar({
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
+      ))}
     </>
   );
 
@@ -709,11 +812,11 @@ export function EditorChromeBar({
         )}
       </header>
 
-      <div
+      <ToolbarOverflow
         className="editor-global-toolbar"
         data-testid="editor-global-toolbar"
       >
-        <div className="editor-global-toolbar-start">
+        <ToolbarOverflowTrack className="editor-global-toolbar-start">
           <span className="relative inline-flex">
             <ActionFeedbackButton
               key={`save:${projectName}`}
@@ -739,6 +842,18 @@ export function EditorChromeBar({
               />
             ) : null}
           </span>
+          <ToolbarOverflowItem
+            id="undo"
+            priority={TOOLBAR_OVERFLOW_PRIORITY.history}
+            items={[{
+              id: "undo",
+              label: "Undo",
+              icon: <Undo2Icon />,
+              shortcut: undoChord,
+              disabled: !canUndoActiveDocument,
+              onSelect: () => undoActiveDocument(),
+            }]}
+          >
           <ActionFeedbackButton
             key={`undo:${activeDocumentId}`}
             icon={Undo2Icon}
@@ -751,6 +866,19 @@ export function EditorChromeBar({
             disabled={!canUndoActiveDocument}
             onAction={() => undoActiveDocument()}
           />
+          </ToolbarOverflowItem>
+          <ToolbarOverflowItem
+            id="redo"
+            priority={TOOLBAR_OVERFLOW_PRIORITY.history}
+            items={[{
+              id: "redo",
+              label: "Redo",
+              icon: <Redo2Icon />,
+              shortcut: redoChord,
+              disabled: !canRedoActiveDocument,
+              onSelect: () => redoActiveDocument(),
+            }]}
+          >
           <ActionFeedbackButton
             key={`redo:${activeDocumentId}`}
             icon={Redo2Icon}
@@ -763,9 +891,27 @@ export function EditorChromeBar({
             disabled={!canRedoActiveDocument}
             onAction={() => redoActiveDocument()}
           />
-          {activeKind === "scene" ? <SceneModeSelect disabled={playing || preparing} /> : null}
+          </ToolbarOverflowItem>
+          {activeKind === "scene" ? (
+            <ToolbarOverflowItem id="scene-mode">
+              <SceneModeSelect disabled={playing || preparing} />
+            </ToolbarOverflowItem>
+          ) : null}
           {activeKind === "graph" ? (
             <>
+              <ToolbarOverflowItem
+                id="compile"
+                priority={TOOLBAR_OVERFLOW_PRIORITY.documentAction}
+                items={[{
+                  id: "compile",
+                  label: "Compile",
+                  icon: <HammerIcon />,
+                  shortcut: compileChord,
+                  disabled: !projectName || !graphsNeedCompile,
+                  // The toolbar button reports a failure on itself; here Compiler Results has it.
+                  onSelect: () => { void compileFocusedGraph().catch(() => undefined); },
+                }]}
+              >
               <ActionFeedbackButton
                 key={`compile:${activeDocumentId}`}
                 icon={HammerIcon}
@@ -774,57 +920,42 @@ export function EditorChromeBar({
                 className="chrome-action-button"
                 label="Compile"
                 disabled={!projectName || !graphsNeedCompile}
-                onAction={async () => {
-                  activateDockPanel("compiler-results");
-                  // The project compiles, but Compiler Results shows only this class, as live
-                  // validation does. Play validates the classes it needs when it starts.
-                  const focused = getOpenDocuments().find(
-                    (doc) => doc.id === activeDocumentId && doc.ref.kind === "graph",
-                  );
-                  const result = await collectPlayPreviewScripts();
-                  const openDocuments = getOpenDocuments();
-                  const modelSimpleColliderCount = modelSimpleColliderCounter(
-                    assetRegistry,
-                    openDocuments.filter((doc) => doc.ref.kind === "model"),
-                  );
-                  const diagnostics = [
-                    ...result.diagnostics.filter(
-                      (entry) => entry.assetGuid === focused?.ref.path,
-                    ),
-                    ...(focused?.content
-                      ? physicsPairingDiagnostics(
-                          [
-                            {
-                              id: PREFAB_ROOT_ID,
-                              components:
-                                (focused.content as SerializedGraph).components ?? [],
-                            },
-                          ],
-                          { assetGuid: focused.ref.path, graphId: focused.id, modelSimpleColliderCount },
-                        )
-                      : []),
-                  ];
-                  setDiagnostics(diagnostics);
-                  const errors = diagnostics.filter(
-                    (entry) => entry.severity === "error",
-                  );
-                  if (errors.length)
-                    throw new Error(
-                      `${errors.length} Error(s). See Compiler Results.`,
-                    );
-                }}
+                onAction={compileFocusedGraph}
               >
                 <span className="chrome-optional-label">Compile</span>
               </ActionFeedbackButton>
+              </ToolbarOverflowItem>
               {!phone ? (
-                <CompilationErrorIndicator
-                  errorCount={errorCount}
-                  onOpenResults={() => activateDockPanel("compiler-results")}
-                />
+                <ToolbarOverflowItem
+                  id="compilation-error"
+                  priority={TOOLBAR_OVERFLOW_PRIORITY.compilationError}
+                  items={errorCount > 0 ? [{
+                    id: "compilation-error",
+                    label: "Compilation Error",
+                    icon: <CircleAlertIcon />,
+                    onSelect: () => activateDockPanel("compiler-results"),
+                  }] : []}
+                >
+                  <CompilationErrorIndicator
+                    errorCount={errorCount}
+                    onOpenResults={() => activateDockPanel("compiler-results")}
+                  />
+                </ToolbarOverflowItem>
               ) : null}
             </>
           ) : null}
           {activeKind === "material" ? (
+            <ToolbarOverflowItem
+              id="material-render"
+              priority={TOOLBAR_OVERFLOW_PRIORITY.documentAction}
+              items={[{
+                id: "material-render",
+                label: "Render",
+                icon: <RefreshCwIcon />,
+                disabled: !projectName || !materialRenderControl || materialRenderControl.disabled,
+                onSelect: () => materialRenderControl?.requestRender(),
+              }]}
+            >
             <ActionFeedbackButton
               key={`render:${activeDocumentId}`}
               icon={RefreshCwIcon}
@@ -841,10 +972,11 @@ export function EditorChromeBar({
             >
               <span className="chrome-optional-label">Render</span>
             </ActionFeedbackButton>
+            </ToolbarOverflowItem>
           ) : null}
-        </div>
+        </ToolbarOverflowTrack>
 
-        <div className="editor-global-toolbar-center">
+        <ToolbarOverflowTrack className="editor-global-toolbar-center">
           <div className="editor-play-island" data-testid="play-debug-island">
             {simulationRunning ? (
               <>
@@ -857,7 +989,11 @@ export function EditorChromeBar({
                     ? () => setActiveDocument(simulationDocumentId)
                     : undefined}
                 />
-                {debugTarget ? <GraphDebugInstanceSelect /> : null}
+                {debugTarget ? (
+                  <ToolbarOverflowItem id="debug-instance">
+                    <GraphDebugInstanceSelect />
+                  </ToolbarOverflowItem>
+                ) : null}
               </>
             ) : (
             <Tooltip>
@@ -913,9 +1049,14 @@ export function EditorChromeBar({
             )}
             {!phone ? debugMenu : null}
           </div>
-        </div>
+        </ToolbarOverflowTrack>
 
-        <div className="editor-global-toolbar-end">
+        <ToolbarOverflowTrack className="editor-global-toolbar-end">
+          <ToolbarOverflowMenu
+            touch={phone || coarse}
+            className="chrome-icon-button"
+            data-testid="toolbar-overflow"
+          />
           {phone ? (
             <Sheet open={toolsOpen} onOpenChange={setToolsOpen}>
               <SheetTrigger
@@ -947,8 +1088,8 @@ export function EditorChromeBar({
           ) : (
             utilityTools
           )}
-        </div>
-      </div>
+        </ToolbarOverflowTrack>
+      </ToolbarOverflow>
 
       <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       {featureTestCheck ? (

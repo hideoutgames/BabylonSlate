@@ -12,6 +12,10 @@ The top bar shows the project name and the document tabs. The toolbar sits below
 | Centre | **Play** (it reads **Preview** or **Simulate** for those Play Modes) and the **Debug** menu with Play options. While a Simulation runs, **Simulate** becomes a red **Stop** with **Pause**, a **Game** / **Edit** input toggle and **Return To Scene** beside it, plus a **Debug Instance** picker while a Class, Behaviour Tree or Animation Graph is open ([Simulate controls](../debugging/index.md#simulate-controls)). |
 | Right | **Windows**, **Focus**, **Search Project** and **Settings** (**Project Settings** and **Engine Settings**). |
 
+### Narrow windows
+
+When the window is too narrow for the whole toolbar, the least important controls move into the **More Actions** menu (the ⋮ button before the right-hand controls). They keep their names, shortcuts and disabled state, and return as soon as there is room again. **Save All**, **Play** or **Simulate**, the Simulation controls (**Pause**, **Stop**, **Game** / **Edit**) and the **Debug** menu never move.
+
 ## Document tabs
 
 Every asset you open becomes a document tab.

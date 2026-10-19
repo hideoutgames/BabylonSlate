@@ -43,6 +43,10 @@ import {
   NamePromptDialog,
   AddMemberMenu,
   NestedMenu,
+  ToolbarOverflow,
+  ToolbarOverflowItem,
+  ToolbarOverflowMenu,
+  ToolbarOverflowTrack,
   NumericDragField,
   PanelFrame,
   ParameterListEditor,
@@ -471,6 +475,31 @@ function GalleryNestedMenus() {
         </Button>
       </div>
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
+    </div>
+  );
+}
+
+function GalleryToolbarOverflow() {
+  const actions = ["Undo", "Redo", "Compile"] as const;
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-sm font-medium">Toolbar overflow</h3>
+      <ToolbarOverflow className="w-44 rounded-md border" data-testid="gallery-toolbar-overflow">
+        <ToolbarOverflowTrack className="flex items-center gap-0.5 p-0.5">
+          <Button size="sm" variant="outline">Save</Button>
+          {actions.map((label, index) => (
+            <ToolbarOverflowItem
+              key={label}
+              id={label}
+              priority={index + 1}
+              items={[{ id: label, label, onSelect: () => undefined, disabled: label === "Redo" }]}
+            >
+              <Button size="sm" variant="outline">{label}</Button>
+            </ToolbarOverflowItem>
+          ))}
+          <ToolbarOverflowMenu />
+        </ToolbarOverflowTrack>
+      </ToolbarOverflow>
     </div>
   );
 }
@@ -1200,6 +1229,7 @@ function GalleryComposites() {
         </AddMemberMenu>
       </div>
       <GalleryNestedMenus />
+      <GalleryToolbarOverflow />
       <GalleryCatalogRows />
       <GalleryDisclosure />
       <GalleryModuleStack />

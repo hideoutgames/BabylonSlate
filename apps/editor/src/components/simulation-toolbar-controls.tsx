@@ -1,6 +1,8 @@
+import { ToolbarOverflowItem } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@babylonslate/ui/components/tooltip";
 import { GamepadIcon, LocateFixedIcon, MousePointer2Icon, PauseIcon, PlayIcon, SquareIcon } from "lucide-react";
+import { TOOLBAR_OVERFLOW_PRIORITY } from "../lib/toolbar-overflow-priority";
 import {
   SIMULATION_CONTROL_ATTRIBUTE,
   type SimulationControls,
@@ -99,6 +101,16 @@ export function SimulationToolbarControls({
         </TooltipContent>
       </Tooltip>
       {onReturnToScene ? (
+        <ToolbarOverflowItem
+          id="return-to-scene"
+          priority={TOOLBAR_OVERFLOW_PRIORITY.returnToScene}
+          items={[{
+            id: "return-to-scene",
+            label: "Return To Scene",
+            icon: <LocateFixedIcon />,
+            onSelect: onReturnToScene,
+          }]}
+        >
         <Tooltip>
           <TooltipTrigger
             render={
@@ -117,6 +129,7 @@ export function SimulationToolbarControls({
           </TooltipTrigger>
           <TooltipContent>Return To Scene</TooltipContent>
         </Tooltip>
+        </ToolbarOverflowItem>
       ) : null}
     </>
   );
