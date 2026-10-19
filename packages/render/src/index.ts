@@ -129,6 +129,7 @@ export {
   type FixedLightSlotTable,
 } from "./fixed-light-admission";
 export type { FixedLightSeat } from "./fixed-light-seats";
+export { fixedShapeLightGuard, setFixedShapeLightGuard, type FixedLightGuard } from "./fixed-light-binding";
 export * from "./shared-outline";
 export { CommandSourcePreparation, commandSourceGuids, type CommandSourceLoader, type CommandFontMode, type CommandFontModes } from "./command-source-preparation";
 export * from "./shared-outline-task";

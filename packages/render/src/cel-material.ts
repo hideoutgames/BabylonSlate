@@ -9,7 +9,9 @@ import {
   type AbstractMesh,
   type Observer,
   type Scene,
+  type SubMesh,
 } from "@babylonjs/core";
+import { withLegacyLightDefines } from "./fixed-light-binding";
 import { defaultVertexShader } from "@babylonjs/core/Shaders/default.vertex";
 import { defaultPixelShader } from "@babylonjs/core/Shaders/default.fragment";
 import { defaultVertexShaderWGSL } from "@babylonjs/core/ShadersWGSL/default.vertex";
@@ -105,6 +107,11 @@ export class CelMaterial extends StandardMaterial {
 
   override getClassName(): string {
     return "CelMaterial";
+  }
+
+  /** CEL's light include is derived from Babylon's own, so it keeps Babylon's light defines under fixed-shape lighting. */
+  override isReadyForSubMesh(mesh: AbstractMesh, subMesh: SubMesh, useInstances?: boolean): boolean {
+    return withLegacyLightDefines(() => super.isReadyForSubMesh(mesh, subMesh, useInstances));
   }
 
   /** Shadow caching may rely only on the adapter's own vertex/bind hooks. */

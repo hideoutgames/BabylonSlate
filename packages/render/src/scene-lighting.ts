@@ -17,10 +17,12 @@ import {
 } from "./shadow-receiver-handoff";
 import { sortReceiverLightSources, type ForwardLightSlotExchange } from "./forward-light-slots";
 import {
+  fixedLightSlotTable,
   fixedShapeLightingActive,
   fixedShapeLightingLimits,
   selectFixedShapeLights,
 } from "./fixed-light-admission";
+import { fixedLightDefinesSignature } from "./fixed-light-binding";
 import {
   LightBlock,
   Material,
@@ -170,6 +172,10 @@ function installSceneLighting(scene: Scene): SceneLighting {
   let budget = forwardLightBudget(scene.getEngine());
   // The last selection was fixed-shape lighting's per-class admission.
   let fixedShape = false;
+  // What seated materials' light defines depend on (fixedLightDefinesSignature), as of the last refresh.
+  let refreshedFixedShape = false;
+  let fixedDefines: unknown[] = [];
+  let nextFixedDefines: unknown[] = [];
   const watchedLights = new Map<Light, Observer<boolean>>();
   const invalidate = () => {
     dirty = true;
@@ -234,7 +240,18 @@ function installSceneLighting(scene: Scene): SceneLighting {
       );
     }
     const handoffs = takeShadowReceiverHandoffs(scene);
+    nextFixedDefines.length = 0;
+    const table = fixedShape ? fixedLightSlotTable(scene) : null;
+    if (table) fixedLightDefinesSignature(scene, table, nextFixedDefines);
+    // Seated materials' defines changed (a lit material refreshes, which also
+    // leaves Babylon's path when the switch turns off). Lights moving through
+    // unshadowed seats only rebind.
+    const fixedChanged =
+      refreshedFixedShape !== fixedShape ||
+      nextFixedDefines.length !== fixedDefines.length ||
+      nextFixedDefines.some((entry, index) => entry !== fixedDefines[index]);
     const changed =
+      fixedChanged ||
       sceneLightsEnabled !== scene.lightsEnabled ||
       sceneShadowsEnabled !== scene.shadowsEnabled ||
       nextEnabled.length !== enabledLights.length ||
@@ -248,7 +265,8 @@ function installSceneLighting(scene: Scene): SceneLighting {
       lightCount === scene.lights.length &&
       materialCount === scene.materials.length &&
       (!changed ||
-        (sceneLightsEnabled === scene.lightsEnabled &&
+        (!fixedChanged &&
+          sceneLightsEnabled === scene.lightsEnabled &&
           sceneShadowsEnabled === scene.shadowsEnabled &&
           !handoffs?.invalid &&
           (!!handoffs?.handoffs.length || admission.exchanges.length > 0) &&
@@ -291,6 +309,8 @@ function installSceneLighting(scene: Scene): SceneLighting {
     const previousEnabled = enabledLights;
     enabledLights = nextEnabled;
     nextEnabled = previousEnabled;
+    refreshedFixedShape = fixedShape;
+    [fixedDefines, nextFixedDefines] = [nextFixedDefines, fixedDefines];
     const previousShadowLayout = shadowLayout;
     shadowLayout = nextShadowLayout;
     nextShadowLayout = previousShadowLayout;
