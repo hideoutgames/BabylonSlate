@@ -2,7 +2,7 @@
 // that may reach the public log: lines naming an ITMS code or an error, with identifiers,
 // paths and token-like strings removed, capped in count and length.
 const MAX_LINES = 6;
-const MAX_LINE_LENGTH = 200;
+const MAX_LINE_LENGTH = 300;
 
 export function appleUploadErrors(output, privateValues = []) {
   const lines = [];
@@ -14,7 +14,8 @@ export function appleUploadErrors(output, privateValues = []) {
       .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, "[email]")
       .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "[id]")
       .replace(/(?:~|\.{1,2})?\/(?:[^\s/'"]+\/)+[^\s'"]*/g, "[path]")
-      .replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[token]")
+      // Long runs mixing letters and digits; plain words such as Info.plist key names stay readable.
+      .replace(/\b(?=[A-Za-z0-9+/=_-]*\d)(?=[A-Za-z0-9+/=_-]*[A-Za-z])[A-Za-z0-9+/=_-]{32,}\b/g, "[token]")
       .slice(0, MAX_LINE_LENGTH);
     if (line && !lines.includes(line)) lines.push(line);
     if (lines.length === MAX_LINES) break;
