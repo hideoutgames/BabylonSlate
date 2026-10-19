@@ -6,7 +6,7 @@ import { DataAssetEditingProvider } from "../context/data-asset-editing-context"
 import { SceneToolsProvider } from "../context/scene-tools-context";
 import { CONTENT_BROWSER_ID, isAssetDocumentKind, isSceneWorkspaceKind, type SerializedScene } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
   useDocumentActions,
   useActiveDocumentId,
@@ -39,6 +39,7 @@ import { SpriteAnimationEditingProvider } from "./sprite-animation-editor";
 import { TracePlaybackProvider } from "./trace-editor";
 import { ModelColliderSessionProvider } from "../context/model-collider-session";
 import { sceneFocusActorId } from "../lib/search-navigation";
+import { useDocumentFocusRequest } from "../lib/document-focus-request";
 import {
   useDocumentWorkingSet,
 } from "../lib/document-working-set";
@@ -149,9 +150,13 @@ function DocumentShell({
 }) {
   const { sourceControl } = useSourceControl();
   const authoringLock = useAuthoringLock();
+  // Navigation from outside the document (Session Report rows) moves the keyboard here.
+  const shellRef = useRef<HTMLDivElement>(null);
+  useDocumentFocusRequest(id, active, shellRef);
   return (
     <div
-      className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+      ref={shellRef}
+      className={active ? "flex min-h-0 flex-1 flex-col outline-none" : "hidden"}
       data-testid={testId}
     >
       <DocumentLockBanner path={path} sourceControl={sourceControl} authoringReason={authoringLock.readOnly ? authoringLock.reason : null} />

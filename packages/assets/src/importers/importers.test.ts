@@ -113,6 +113,25 @@ describe("importers", () => {
     expect(colliders[0]!.kind).toBe("generated");
   });
 
+  it("gives a model whose file has no materials a plain Material, not one sampling an empty Texture", async () => {
+    const results = await importModel(buildBoxGlbFixture(1), {
+      fileName: "crate.glb",
+      existingGuids: new Set(),
+    });
+    // A sampler with no image reads transparent black, so the model would draw black.
+    expect(results.filter((result) => result.type === "Texture")).toEqual([]);
+    const material = results.find((result) => result.type === "Material")!;
+    expect(material.dependencies).toEqual([]);
+    const nodes = (material.payload as { nodes: { type: string }[] }).nodes;
+    expect(nodes.map((node) => node.type)).not.toContain("texture.sample");
+    expect(nodes.map((node) => node.type)).toContain("const.color");
+    const model = results.find((result) => result.type === "Model")!;
+    expect(model.dependencies).toEqual([material.guid]);
+    expect(model.payload.materialSlots).toEqual([
+      expect.objectContaining({ index: 0, materialGuid: material.guid }),
+    ]);
+  });
+
   it("leaves simpleColliders empty when the GLB creates a Skeleton", async () => {
     const { readFile } = await import("node:fs/promises");
     const { resolve } = await import("node:path");

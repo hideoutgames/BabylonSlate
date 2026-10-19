@@ -42,7 +42,7 @@ Type in **Search Nodes** or browse the categories. Search words can be in any or
 
 The graph toolbar also has icon buttons for **Copy**, **Paste**, **Delete**, **Break Links** (removes the wires of the selected nodes) and **Format** (tidies the selected chains); hover or long-press one to see its name. The zoom controls at the bottom left show the zoom level; tap it to return to 100%.
 
-Right-click a node (long-press on touch) for a menu with **Copy**, **Paste**, **Duplicate**, **Delete** and **Break Links**, plus actions such as **Rename Event** where they apply. Opening the menu on an unselected node selects only that node; opening it on a selected node keeps the whole selection. Nodes a graph protects, such as a function's **Input** and **Output**, cannot be copied, duplicated or deleted. The same actions have keyboard shortcuts: <kbd>Mod</kbd>+<kbd>C</kbd>, <kbd>Mod</kbd>+<kbd>V</kbd>, <kbd>Mod</kbd>+<kbd>D</kbd> and <kbd>Delete</kbd> or <kbd>Backspace</kbd> ([Keyboard Shortcuts](../start/shortcuts.md)). Gestures are listed in [Touch gestures](../start/gestures.md).
+Right-click a node (long-press on touch) for a menu with **Copy**, **Paste**, **Duplicate**, **Delete** and **Break Links**, plus actions such as **Rename Event** where they apply. Opening the menu on an unselected node selects only that node; opening it on a selected node keeps the whole selection. **Paste** and **Duplicate** add new nodes with the same values and the wires that ran between the copied nodes, offset from the originals. Nodes a graph protects, such as a function's **Input** and **Output**, cannot be copied, duplicated or deleted. Events keep their one place on the graph: a copied custom event gets a new name, and an event the graph already has is left out, as described in [Copy and duplicate events](events.md#copy-and-duplicate-events). The same actions have keyboard shortcuts: <kbd>Mod</kbd>+<kbd>C</kbd>, <kbd>Mod</kbd>+<kbd>V</kbd>, <kbd>Mod</kbd>+<kbd>D</kbd> and <kbd>Delete</kbd> or <kbd>Backspace</kbd> ([Keyboard Shortcuts](../start/shortcuts.md)). Gestures are listed in [Touch gestures](../start/gestures.md).
 
 **Engine Settings > Graph** controls the **Node Connection Assistant** (suggests wires when you move a node near compatible pins), its **Connection Distance (Pixels)** (48 by default), **Shake Nodes To Disconnect**, **Read-Only Pin Defaults** and **Graph Default Zoom**.
 
@@ -55,6 +55,8 @@ Graphs are checked as you edit. Problems appear in **Compiler Results** and as r
 3. If any of those graphs has errors, the **Compile errors** dialog lists them. Tap a row to go to the node, or choose **Play Anyway**.
 
 Warnings never block Play. A loop that never ends stops Play and reports **Infinite loop detected**.
+
+To see a class run, start a Simulation with the class open: the nodes that run light up for the object you pick, and pins show their last values ([Watch a graph run](../debugging/index.md#watch-a-graph-run)).
 
 Results you may meet while wiring:
 

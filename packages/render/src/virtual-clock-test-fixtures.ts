@@ -14,7 +14,8 @@ export const POLL_MS = SCENE_THREAD_HELD_MS - 100;
  * `vi.restoreAllMocks()`.
  */
 export function installVirtualClock() {
-  const origin = performance.now();
+  // A whole millisecond, so deadlines and elapsed differences stay exact.
+  const origin = Math.floor(performance.now());
   vi.useFakeTimers({ toFake: ["Date"] });
   const start = Date.now();
   vi.spyOn(performance, "now").mockImplementation(() => origin + (Date.now() - start));
@@ -33,7 +34,7 @@ export function installVirtualClock() {
  */
 export function installTimerClock() {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-  let now = performance.now();
+  let now = Math.floor(performance.now());
   vi.spyOn(performance, "now").mockImplementation(() => now);
   return {
     hold: (ms: number) => { now += ms; },

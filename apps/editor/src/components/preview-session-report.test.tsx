@@ -1,11 +1,14 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { SessionReportEntry } from "@babylonslate/runtime";
 import type {
   SessionReportAsset,
   SessionReportLocationSources,
 } from "../lib/session-report-locations";
-import { PreviewSessionReport } from "./preview-session-report";
+import {
+  PreviewSessionReport,
+  type PreviewSessionReportProps,
+} from "./preview-session-report";
 
 afterEach(cleanup);
 
@@ -78,17 +81,21 @@ function sources(overrides: Partial<SessionReportLocationSources> = {}): Session
 function renderReport(
   entries: SessionReportEntry[],
   locationSources?: SessionReportLocationSources,
-  onNavigate = vi.fn(),
+  onNavigate: PreviewSessionReportProps["onNavigate"] = vi.fn(),
+  onOpenChange: PreviewSessionReportProps["onOpenChange"] = () => undefined,
 ) {
   render(
-    <PreviewSessionReport
-      open
-      entries={entries}
-      dropped={0}
-      onOpenChange={() => undefined}
-      onNavigate={onNavigate}
-      locationSources={locationSources}
-    />,
+    <>
+      <button type="button" data-testid="editor-behind">Editor</button>
+      <PreviewSessionReport
+        open
+        entries={entries}
+        dropped={0}
+        onOpenChange={onOpenChange}
+        onNavigate={onNavigate}
+        locationSources={locationSources}
+      />
+    </>,
   );
   return onNavigate;
 }
@@ -181,11 +188,12 @@ it("falls back to raw ids when an asset or its document cannot be resolved", asy
   expect(within(expand("Hero")).getByTestId("session-report-row").textContent).toContain(
     "Hero › print",
   );
+  // An entry with no asset to open says so instead of pointing at a raw id.
   expect(within(expand("missing-guid")).getByTestId("session-report-row").textContent).toContain(
-    "missing-guid › n1",
+    "No Source",
   );
   expect(within(expand("Unknown Asset")).getByTestId("session-report-row").textContent).toContain(
-    "Unknown Asset › orphan",
+    "No Source",
   );
 });
 
@@ -197,4 +205,117 @@ it("navigates with the clicked entry and exposes its node id", async () => {
   expect(row.getAttribute("data-node-id")).toBe("move");
   fireEvent.click(row);
   expect(onNavigate).toHaveBeenCalledWith(target);
+});
+
+it("stays open, over a usable editor, while rows open their sources", async () => {
+  const onOpenChange = vi.fn();
+  const onNavigate = vi.fn(async () => ({ opened: true as const }));
+  renderReport(
+    [
+      entry({ assetGuid: ENEMY_AI.guid, btNodeId: "move" }),
+      entry({ assetGuid: HERO.path, nodeId: "print", code: "runtime.log" }),
+    ],
+    sources(),
+    onNavigate,
+    onOpenChange,
+  );
+  await screen.findByText("Enemy AI");
+  expect(document.querySelector('[data-slot="dialog-overlay"]')).toBeNull();
+  expect(screen.getByTestId("preview-session-report").getAttribute("aria-modal")).toBeNull();
+
+  fireEvent.click(within(expand("Enemy AI")).getByTestId("session-report-row"));
+  await waitFor(() => expect(onNavigate).toHaveBeenCalledTimes(1));
+  // A second row can be chosen straight away: the report is still there to consult.
+  fireEvent.click(within(expand("Hero")).getByTestId("session-report-row"));
+  await waitFor(() => expect(onNavigate).toHaveBeenCalledTimes(2));
+
+  // Pressing the editor behind the report does not dismiss it.
+  const editor = screen.getByTestId("editor-behind");
+  fireEvent.pointerDown(editor);
+  fireEvent.mouseDown(editor);
+  fireEvent.pointerUp(editor);
+  fireEvent.mouseUp(editor);
+  fireEvent.click(editor);
+  act(() => editor.focus());
+
+  expect(onOpenChange).not.toHaveBeenCalled();
+  expect(screen.getByTestId("preview-session-report")).toBeTruthy();
+});
+
+it("closes through Close, the title-bar close, or Escape pressed inside the report", () => {
+  const onOpenChange = vi.fn();
+  renderReport([entry({ assetGuid: HERO.path, nodeId: "print" })], sources(), vi.fn(), onOpenChange);
+
+  fireEvent.click(screen.getByTestId("session-report-close"));
+  expect(onOpenChange.mock.lastCall?.[0]).toBe(false);
+  onOpenChange.mockClear();
+
+  fireEvent.click(document.querySelector('[data-slot="dialog-close"]')!);
+  expect(onOpenChange.mock.lastCall?.[0]).toBe(false);
+  onOpenChange.mockClear();
+
+  const copy = screen.getByTestId("session-report-copy");
+  act(() => copy.focus());
+  fireEvent.keyDown(copy, { key: "Escape" });
+  expect(onOpenChange.mock.lastCall?.[0]).toBe(false);
+});
+
+it("leaves Escape to the editor when the keyboard is outside the report", () => {
+  const onOpenChange = vi.fn();
+  renderReport([entry({ assetGuid: HERO.path, nodeId: "print" })], sources(), vi.fn(), onOpenChange);
+  // The editor's own Escape handling (cancel a wire, clear a selection, close a menu) still runs.
+  const reachedEditor = vi.fn();
+  window.addEventListener("keydown", reachedEditor);
+
+  const editor = screen.getByTestId("editor-behind");
+  act(() => editor.focus());
+  const notPrevented = fireEvent.keyDown(editor, { key: "Escape" });
+
+  window.removeEventListener("keydown", reachedEditor);
+  expect(onOpenChange).not.toHaveBeenCalled();
+  expect(reachedEditor).toHaveBeenCalledTimes(1);
+  expect(notPrevented).toBe(true);
+  expect(screen.getByTestId("preview-session-report")).toBeTruthy();
+});
+
+it("says why a chosen row opened nothing, and clears the note once another row opens", async () => {
+  const onNavigate = vi.fn<PreviewSessionReportProps["onNavigate"]>(async (target) =>
+    target.assetGuid
+      ? { opened: true }
+      : { opened: false, message: "This entry names no asset, so there is no source to open." },
+  );
+  renderReport(
+    [entry({ nodeId: "orphan" }), entry({ assetGuid: HERO.path, nodeId: "print", code: "runtime.log" })],
+    sources(),
+    onNavigate,
+  );
+  await screen.findByText("Hero");
+  expect(screen.queryByTestId("session-report-notice")).toBeNull();
+
+  fireEvent.click(within(expand("Unknown Asset")).getByTestId("session-report-row"));
+  expect((await screen.findByTestId("session-report-notice")).textContent).toContain("no source to open");
+
+  fireEvent.click(within(expand("Hero")).getByTestId("session-report-row"));
+  await waitFor(() => expect(screen.queryByTestId("session-report-notice")).toBeNull());
+});
+
+it("keeps a refused open readable instead of failing silently", async () => {
+  renderReport(
+    [entry({ assetGuid: HERO.path, nodeId: "print" })],
+    sources(),
+    async () => {
+      throw new Error("Read-only during Simulation Play");
+    },
+  );
+  await screen.findByText("Hero");
+  fireEvent.click(within(expand("Hero")).getByTestId("session-report-row"));
+  expect((await screen.findByTestId("session-report-notice")).textContent).toContain(
+    "Read-only during Simulation Play",
+  );
+});
+
+it("shows an empty report as such when the last session reported nothing", () => {
+  renderReport([], sources());
+  expect(screen.getByTestId("session-report-empty").textContent).toContain("No Entries");
+  expect(screen.getByTestId("session-report-close")).toBeTruthy();
 });

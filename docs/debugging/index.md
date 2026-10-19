@@ -40,8 +40,25 @@ While a Simulation runs, its controls sit in the toolbar where **Simulate** was:
 | **Stop** (red) | Ends the Simulation. Its tooltip says whether your changes are kept or discarded. |
 | **Game** / **Edit** | **Game** sends keys, touch and the mouse to the game. **Edit** lets you select, inspect and move runtime objects with the **Move**, **Rotate** and **Scale** tools in the viewport. Clicking outside the game, or pressing Esc or Tab, also switches to **Edit**. |
 | **Return To Scene** | Appears when another tab is open, and brings the simulated scene back. |
+| **Debug Instance** | Appears while a Class is open. Picks which object's graph run you watch ([Watch a graph run](#watch-a-graph-run)). |
 
 The editor camera you move in **Edit** does not change the game camera. Authored documents stay read-only until you stop.
+
+## Watch a graph run
+
+While a Simulation runs, open a Class to see its graphs run for one object, the way a debugger would.
+
+**Debug Instance** lists every live object whose class is exactly the open Class: actors, components, the Game Instance and subsystems. An object of a subclass is not listed here; open the subclass instead. Objects with the same name show the start of their id after the name, and a component shows its actor in brackets. The list holds the first 128 objects.
+
+- It starts on the first object in the list, shows **None** when there are none, and moves to the first remaining object when the one you watch is destroyed. Choose **None** to stop watching; it stays on **None** until you open another Class.
+- Pick another object at any time. The graphs show only the object you picked.
+- Changing the open Class, or a Class that has no objects (a function library, for example), changes or removes the list.
+
+When a node runs for that object, its outline turns orange and fades over a quarter of a second. Each new run starts the fade again, so a node that runs every tick stays lit. The pins and wires involved light up with it: the execution wire that was taken, and the data wires the node read, including those that pass through [pure nodes](../scripting/index.md#nodes-and-pins). Nodes without execution pins never get an outline of their own. With reduced motion turned on in your system settings the highlight does not fade: it stays lit for the same time, then clears.
+
+Hover a data pin on a computer, or tap its name on a touch screen (tap it again, or anywhere else, to close it), to see the last value it held: `3.5`, a piece of text, or the class and id of an object. Numbers show four decimals at most and long text is cut after about 100 characters. A pin that has not run yet shows **No value yet**. A pin that is not wired shows the value typed on the node itself, so it has no tip. A pure node's pins show the value a node that ran read through them.
+
+The graphs stay read-only: watching never changes your Class or the running game. Outside a Simulation a graph shows no highlights and no tips, and editing it works as always. Only a Simulation compiles Class graphs for this. Play, Preview Build and exported games do not, so they pay nothing for it.
 
 ## Stats
 
@@ -70,7 +87,14 @@ Print and Draw Debug nodes are **Development Only** by default: release exports 
 
 ## After Play
 
-Errors and warnings from the session appear in the **Output Log** window. When Play stops after errors or warnings, the **Preview Session Report** lists them; tap a row to open the graph or tree node that caused it.
+Errors and warnings from the session appear in the **Output Log** window. When Play, Simulate or Preview Build stops after errors or warnings, the **Preview Session Report** opens at the top right of the editor (centered on a phone). It lists the entries under the asset that reported each one; the groups start collapsed.
+
+- Select an entry to open the asset that caused it. A Class opens at the node, including a node inside a function, and a behaviour tree opens at the node.
+- The report stays open while you work through the entries, and the editor behind it stays usable.
+- An entry that names no asset, or one the project no longer has, shows **No Source**. Selecting it says why nothing opens. If an asset cannot be opened, for example while a Simulation is still stopping, the report says why; select the entry again.
+- **Copy Report** copies every entry as text.
+
+The report closes only when you close it: choose **Close** or the close button in its title bar, or press <kbd>Esc</kbd> while the keyboard is inside the report. Pressing the editor behind it, opening an asset from it, or pressing <kbd>Esc</kbd> in a graph or the viewport leaves it open.
 
 ## Runaway loops
 

@@ -252,7 +252,11 @@ function PinRow({
       data-pin-row
       className="flex w-full min-h-[var(--touch-target,44px)] min-w-max items-center justify-between gap-12"
     >
-      <div className="flex shrink-0 items-center gap-1">
+      <div
+        className="flex shrink-0 items-center gap-1"
+        data-pin-side={incoming ? "in" : undefined}
+        data-pin-id={incoming?.id}
+      >
         {incoming ? (
           <>
             <PinHandle
@@ -283,7 +287,11 @@ function PinRow({
           <span className="size-11 shrink-0" />
         )}
       </div>
-      <div className="flex shrink-0 items-center justify-end gap-1">
+      <div
+        className="flex shrink-0 items-center justify-end gap-1"
+        data-pin-side={outgoing ? "out" : undefined}
+        data-pin-id={outgoing?.id}
+      >
         {outgoing ? (
           <>
             <span

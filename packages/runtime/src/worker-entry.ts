@@ -459,6 +459,9 @@ function handleControl(msg: ControlMessage): void {
     case "setBehaviourTreeStateObserved":
       runtime?.applyBehaviourTreeStateObserved(msg.observed);
       return;
+    case "debugObserve":
+      runtime?.applyDebugObserve(msg.target, msg.instanceId);
+      return;
     case "console": {
       const rt = ensureRuntime();
       const generation = bootGeneration;

@@ -281,6 +281,12 @@ export type ControlMessage =
    * observation starts.
    */
   | { type: "setBehaviourTreeStateObserved"; observed: boolean }
+  /**
+   * The editor's graph debugger watches `target` (null stops) and follows `instanceId` (null follows
+   * nothing). The runtime publishes `debugRoster` for the target and, only for the followed instance,
+   * a per-tick `executionTrace`. Each message replaces the previous request.
+   */
+  | { type: "debugObserve"; target: DebugObserveTarget | null; instanceId: string | null }
   | { type: "console"; line: string }
   | { type: "inspect" }
   | { type: "sceneLayerFocusNavigate"; reverse: boolean }
@@ -425,6 +431,37 @@ export type DebugBehaviourTree = {
     decorators: Array<{ id: string; classId: string }>;
     services: Array<{ id: string; classId: string }>;
   }>;
+};
+
+/**
+ * What the editor's graph debugger watches while a Simulation runs. Class graphs watch the live
+ * instances whose class is exactly `classId`; other graph kinds add members here.
+ */
+export type DebugObserveTarget = { kind: "class"; classId: string };
+
+/** One live object a graph can be debugged against. */
+export type DebugInstance = {
+  /** Guid of the actor, component, Game Instance or subsystem. */
+  id: string;
+  kind: "actor" | "component" | "gameInstance" | "subsystem";
+  /** The object's name, else its class id. */
+  label: string;
+  /** A component's owning actor, by the same rule. */
+  ownerLabel?: string;
+};
+
+/** What ran in one graph for the observed instance during one tick. */
+export type DebugGraphTrace = {
+  /** The graph's asset, as script diagnostics name it (a Class asset path). */
+  assetGuid: string;
+  /** `event-graph`, or a function graph's export name. */
+  graphId: string;
+  /** Nodes that ran, in first-visit order. */
+  nodes: string[];
+  /** Exec wires taken. */
+  edges: string[];
+  /** Values that changed since the last report: node id, pin id, whether read or produced, display text. */
+  values: Array<[nodeId: string, pinId: string, direction: "in" | "out", text: string]>;
 };
 
 export type CommandMessage =
@@ -841,6 +878,13 @@ export type CommandMessage =
       blackboard: Record<string, unknown>;
       stack: Array<{ nodeId: string; childIndex: number; opened: boolean }>;
     }
+  /**
+   * The live instances of an observed target: the whole list when `reset`, else the changes. An
+   * `added` entry replaces any entry with its id. The list is capped; later instances join as earlier ones go.
+   */
+  | { type: "debugRoster"; target: DebugObserveTarget; reset: boolean; added: DebugInstance[]; removed: string[] }
+  /** What the followed instance ran during one tick; sent only when something ran. */
+  | { type: "executionTrace"; target: DebugObserveTarget; instanceId: string; tickIndex: number; graphs: DebugGraphTrace[] }
   | {
       type: "playSound";
       assetGuid: string;

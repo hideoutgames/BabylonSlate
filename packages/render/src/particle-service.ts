@@ -36,13 +36,14 @@ import { describeParticleThrow, realizeParticleGraph, type ParticleGraphCompileC
 import {
   applyBasicEmitterPlan,
   bindParticleMaterial,
+  boundParticlePreparation,
   createBabylonParticleSystem,
   gpuParticlesSupported,
   particleLifetimeBound,
   particleSimBackend,
   particleSimulationDelta,
 } from "./particle-system-factory";
-import { markSceneReadinessDirty, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
+import { markSceneReadinessDirty } from "./scene-perf";
 import { applySortingToParticleSystem, resolveSortingLayer, type SortingLayerResolution } from "./sorting";
 
 export type { ParticleLibrary, ParticleLibraryEmitter } from "@babylonslate/assets";
@@ -149,7 +150,8 @@ type LiveComponent = {
   source: BundleSource | null;
   cancel: Array<() => void>;
   building: boolean;
-  timer?: ReturnType<typeof setTimeout>;
+  /** Stops the bound on a preparation that waits for its Materials (`boundParticlePreparation`). */
+  stopBound?: () => void;
   preparationCheck?: () => void;
   /** Native/resource failure, distinct from a bundle whose authored slots were skipped. */
   preparationFailed?: boolean;
@@ -503,7 +505,10 @@ export class ParticleService {
           host.removeIsReadyCheck(readiness);
           markSceneReadinessDirty(host);
         };
-        entry.timer = setTimeout(() => this.fail(entry, generation, new Error("Particle preparation timed out.")), SCENE_SHADER_WARM_TIMEOUT_MS);
+        entry.stopBound = boundParticlePreparation(host.getEngine(), () => {
+          const waiting = entry.systems.filter((record) => record.pending).length;
+          return `Particle preparation timed out (slots not ready: ${waiting} of ${entry.systems.length}).`;
+        }, (error) => this.fail(entry, generation, error));
       }
       this.startIfReady(entry);
     } catch (error) { this.fail(entry, generation, error); }
@@ -670,7 +675,7 @@ export class ParticleService {
   private startIfReady(entry: LiveComponent): void {
     if (!this.current(entry, entry.generation) || entry.building || !entry.systems.length || entry.systems.some((record) => record.pending)) return;
     if (entry.state !== "preparing" && entry.state !== "ready-stopped") return;
-    if (entry.timer !== undefined) { clearTimeout(entry.timer); entry.timer = undefined; }
+    entry.stopBound?.(); entry.stopBound = undefined;
     entry.preparationCheck?.(); entry.preparationCheck = undefined;
     entry.state = entry.desiredPlaying ? "playing" : "ready-stopped";
     if (entry.desiredPlaying) this.startSystems(entry);
@@ -911,7 +916,7 @@ export class ParticleService {
 
   private releaseBundle(entry: LiveComponent): void {
     entry.generation = ++this.generation;
-    if (entry.timer !== undefined) { clearTimeout(entry.timer); entry.timer = undefined; }
+    entry.stopBound?.(); entry.stopBound = undefined;
     entry.preparationCheck?.(); entry.preparationCheck = undefined;
     for (const cancel of entry.cancel.splice(0)) cancel();
     const records = entry.systems.splice(0);

@@ -25,7 +25,6 @@ import {
   DEFAULT_LOOP_COUNT,
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
-  documentId,
   engineCommandBus,
   isErr,
   normalizeRenderingPipeline,
@@ -43,6 +42,7 @@ import { PlayFailedDialog, PlayPrepareDialog } from "../components/play-prepare-
 import { PlayUnsavedDialog, type PlayUnsavedChoice } from "../components/play-unsaved-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
 import { SimulationControlsProvider } from "./simulation-controls-context";
+import { GraphDebugProvider } from "./graph-debug-context";
 import { PlayOverlay } from "../components/play-overlay";
 import { PreparingPreviewDialog, type PreviewPreparePhase } from "../components/preparing-preview-dialog";
 import { PreviewBuildOverlay } from "../components/preview-build-overlay";
@@ -93,7 +93,6 @@ import { SimulationSession } from "../services/simulation-session";
 import { simulationSceneDocument, type SimulationViewport } from "../services/simulation-viewport";
 import { GameSessionOwner, transitionClosesSessionSource, type GameSessionState, type GameSessionTicket } from "../services/game-session-owner";
 import { automatedSessionReportingHeld, publishPlaySessionClosed } from "../services/runtime-probes";
-import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
 import {
   canonicalPlaySceneGuid,
   playPhysicsFromOpenDocuments,
@@ -105,7 +104,8 @@ import {
   resolvePreviewStartupGuid,
   type PlaySceneLoad,
 } from "../services/play-physics";
-import { documentIdToRevealForDiagnostic, sessionReportNavigation } from "../services/diagnostic-navigation";
+import { documentIdToRevealForDiagnostic, navigateToSessionReportEntry } from "../services/diagnostic-navigation";
+import { requestDocumentFocus } from "../lib/document-focus-request";
 import type {
   PlayAnimGraphEntry,
   PlayBehaviourTreeEntry,
@@ -297,7 +297,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   return (
     <DiagnosticResultsProvider>
       <PlayDiagnosticsProvider>
-        <PlaySessionProvider>{children}</PlaySessionProvider>
+        <GraphDebugProvider>
+          <PlaySessionProvider>{children}</PlaySessionProvider>
+        </GraphDebugProvider>
       </PlayDiagnosticsProvider>
     </DiagnosticResultsProvider>
   );
@@ -597,6 +599,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const {
     activeDocumentId,
     assetRegistry,
+    getOpenDocuments,
     migrationPending,
     onSessionDiagnostic,
     openDocument,
@@ -607,12 +610,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     registryEpoch,
     registerBeforeTransition,
     setActiveDocument,
+    setAnimEditorMode,
   } = documents;
   const projectOpen = projectDocument != null;
   const requestedBackend = normalizeRenderingPipeline(projectDocument?.settings.render).gpuBackend;
   const projectOpenRef = useRef(projectOpen);
   projectOpenRef.current = projectOpen;
-  const { setDiagnostics, setFocusDiagnostic } = useValidation();
+  const { setDiagnostics, focusDiagnostic, setFocusDiagnostic } = useValidation();
   // First indexed asset per path; rebuilt only when the registry reports a change.
   const guidByPath = useMemo(() => {
     void registryEpoch;
@@ -1417,7 +1421,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           documentOverrides: playDocumentOverrides(assetRegistry, sourceDocuments),
           project: projectDocument,
           createScope: playRequestInputsRef.current.documents.createAssetLoadScope,
-          compile: required => collectPlayPreviewScripts(required, sourceDocuments, projectDocument),
+          traceExecution: simulating,
+          compile: required => collectPlayPreviewScripts(required, sourceDocuments, projectDocument, { traceExecution: simulating }),
         };
         playSourceHostRef.current = sourceHost;
         const projectAssets = requiredProjectAssets(assetRegistry, projectDocument);
@@ -1983,34 +1988,28 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           />
         ) : null}
         <PreviewSessionReport
-          open={reportOpen}
+          // A game that covers the editor hides the report instead of closing it; it returns when the game stops.
+          open={reportOpen && !previewOpen && !(playOpen && sessionTicketRef.current?.mode !== "simulate")}
           entries={reportEntries}
           dropped={dropped}
           onOpenChange={setReportOpen}
           locationSources={reportLocationSources}
-          onNavigate={(entry) => {
-            const nav = sessionReportNavigation(entry, {
-              getByGuid: (guid) => assetRegistry?.getByGuid(guid),
-              getByPath: (path) => assetRegistry?.getByPath(path),
-            });
-            setFocusedNodeId(nav.focusedNodeId || PREVIEW_FIXTURE_NODE_ID);
-            setFocusDiagnostic({
-              severity: entry.severity,
-              code: entry.code,
-              message: entry.message,
-              assetGuid: entry.assetGuid ?? "",
-              graphId: entry.graphId ?? "",
-              nodeId: nav.focusedNodeId || undefined,
-              bodyLine: nav.bodyLine ?? entry.bodyLine,
-            }, nav.document ? documentId(nav.document) : undefined);
-            if (nav.document) {
-              void openDocument(nav.document);
-            }
-            setReportOpen(false);
-            appendLog(
-              `Navigate to node ${nav.focusedNodeId || PREVIEW_FIXTURE_NODE_ID}`,
-            );
-          }}
+          // Rows open their source beside the report; only its own close actions dismiss it.
+          onNavigate={(entry) =>
+            navigateToSessionReportEntry(entry, {
+              findAsset: reportLocationSources.findAsset,
+              currentFocus: () => focusDiagnostic,
+              setFocusDiagnostic,
+              setFocusedNodeId,
+              openDocument,
+              isDocumentOpen: (id) =>
+                getOpenDocuments().some((doc) => doc.id === id && doc.content !== null),
+              setActiveDocument,
+              setAnimEditorMode,
+              requestDocumentFocus,
+              log: appendLog,
+            })
+          }
         />
         {/* Focus marker for Playwright / graph navigation hook. */}
         {focusedNodeId ? (

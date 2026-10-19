@@ -5,6 +5,7 @@ import { SimulationRetentionDialog, SimulationRetentionHint } from "./simulation
 import { SimulationTransformToolbar } from "./simulation-transform-toolbar";
 import type { GizmoTool, RuntimeTransformTools } from "@babylonslate/render";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
+import { useGraphDebugStore } from "../context/graph-debug-context";
 import {
   SIMULATION_CONTROL_ATTRIBUTE,
   usePublishSimulationControls,
@@ -316,6 +317,7 @@ function PlayOverlayView({
     usePlay();
   const simulating = sessionTicket?.mode === "simulate";
   const inspectionStore = useSimulationInspectionStore();
+  const graphDebug = useGraphDebugStore();
   const diagnosticStore = useDiagnosticResultsStore();
   const diagnosticDetachRef = useRef<(() => void) | null>(null);
   const inspectionDetachRef = useRef<(() => void) | null>(null);
@@ -847,6 +849,9 @@ function PlayOverlayView({
           },
           onBehaviourTreeSnapshot: setTrees,
           onBtState: (state) => reportBtState(state),
+          // Only a Simulation debugs graphs; the store reads these off the render path.
+          onDebugRoster: simulating ? (roster) => graphDebug?.receiveRoster(roster) : undefined,
+          onExecutionTrace: simulating ? (trace) => graphDebug?.receiveTrace(trace) : undefined,
           onRenderOutputChanged: (settings) => {
             runtimeRenderRef.current = settings;
             liveSizeRef.current = null;
@@ -884,6 +889,10 @@ function PlayOverlayView({
       };
       syncBtStateObserved(btStateObservers?.observed() ?? false);
       const unsubscribeBtStateObservers = btStateObservers?.subscribe(syncBtStateObserved);
+      // The graph debugger asks the runtime to watch the focused Class graph's instances.
+      const unsubscribeGraphDebug = simulating
+        ? graphDebug?.subscribeRequest((request) => session.observeGraphDebug(request.target, request.instanceId))
+        : undefined;
       if (simulationSession && sessionOwner && sessionTicket) {
         sessionOwner.setBeforeStop(sessionTicket, () => simulationSession.resolveStop(() => session.captureSimulationScene()));
       }
@@ -1034,12 +1043,14 @@ function PlayOverlayView({
         window.clearInterval(movePoll);
         detachLifecycle();
         unsubscribeBtStateObservers?.();
+        unsubscribeGraphDebug?.();
+        if (simulating) graphDebug?.setTarget(null);
         reportBtState(null);
         finishSessionRef.current();
       };
     });
     return () => { cancelled = true; disposePresentation?.(); };
-  }, [sharedEngine, injectFixtureThrow, reportBtState, btStateObservers, pushLog, appendLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, simulationSession, diagnosticStore, testMode]);
+  }, [sharedEngine, injectFixtureThrow, reportBtState, btStateObservers, pushLog, appendLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, graphDebug, simulationSession, diagnosticStore, testMode]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;

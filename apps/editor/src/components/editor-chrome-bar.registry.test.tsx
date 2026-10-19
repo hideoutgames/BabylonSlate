@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -16,8 +17,10 @@ import {
 } from "@babylonslate/core";
 import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
 import { MaterialRenderControlProvider } from "../context/material-render-control-context";
 import type { OpenDocument } from "../services/document-service";
+import type { GraphDebugStore } from "../services/graph-debug-store";
 import { EditorChromeBar } from "./editor-chrome-bar";
 
 const state = vi.hoisted(() => ({
@@ -160,6 +163,98 @@ describe("chrome Simulation", () => {
     expect(screen.queryByTestId("play-preview")).toBeNull();
     fireEvent.click(screen.getByTestId("simulation-session-stop"));
     expect(state.stopSession).toHaveBeenCalledOnce();
+  });
+});
+
+describe("chrome graph debugger", () => {
+  let store: GraphDebugStore | null = null;
+  function StoreProbe() {
+    store = useGraphDebugStore();
+    return null;
+  }
+  function DebugChrome() {
+    return (
+      <GraphDebugProvider>
+        <StoreProbe />
+        <Chrome />
+      </GraphDebugProvider>
+    );
+  }
+  const simulate = () => {
+    state.sessionState = { generation: 1, mode: "simulate", lifecycle: "running", quarantined: false, error: null };
+  };
+  const classGraph = (id: string, name: string) => openDocument(id, createDocumentRef("graph", `assets/${name}.class.babasset`));
+  const instance = (id: string, label: string) => ({ id, kind: "actor" as const, label });
+
+  afterEach(() => { store = null; });
+
+  it("aims the debugger at the focused Class while a Simulation runs and lists its instances", async () => {
+    await createRegistry();
+    simulate();
+    state.activeId = "door";
+    state.documents = [openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF), classGraph("door", "Door")];
+    render(<DebugChrome />);
+    const target = { kind: "class", classId: "Door" } as const;
+    expect(store!.getSnapshot().target).toEqual(target);
+
+    // Nothing is listed yet, so the select reads None and cannot be opened.
+    const select = screen.getByRole("combobox", { name: "Debug Instance" });
+    expect(select.textContent).toContain("None");
+    expect(select.hasAttribute("disabled")).toBe(true);
+
+    act(() => store!.receiveRoster({ target, reset: true, added: [instance("d1", "Front"), instance("d2", "Back")], removed: [] }));
+    expect(screen.getByRole("combobox", { name: "Debug Instance" }).textContent).toContain("Front");
+    const requests: unknown[] = [];
+    store!.subscribeRequest((request) => requests.push(request));
+
+    fireEvent.click(screen.getByRole("combobox", { name: "Debug Instance" }));
+    const back = screen.getByRole("option", { name: "Back" });
+    fireEvent.pointerDown(back);
+    fireEvent.click(back);
+    expect(requests.at(-1)).toEqual({ target, instanceId: "d2" });
+    expect(screen.getByRole("combobox", { name: "Debug Instance" }).textContent).toContain("Back");
+
+    // The pick falls back when its instance despawns.
+    act(() => store!.receiveRoster({ target, reset: false, added: [], removed: ["d2"] }));
+    expect(screen.getByRole("combobox", { name: "Debug Instance" }).textContent).toContain("Front");
+  });
+
+  it("follows the focused document: another Class retargets, a Scene or a stopped Simulation ends it", async () => {
+    await createRegistry();
+    simulate();
+    state.activeId = "door";
+    state.documents = [openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF), classGraph("door", "Door"), classGraph("lamp", "Lamp")];
+    const { rerender } = render(<DebugChrome />);
+    expect(store!.getSnapshot().target).toEqual({ kind: "class", classId: "Door" });
+
+    state.activeId = "lamp";
+    rerender(<DebugChrome />);
+    expect(store!.getSnapshot().target).toEqual({ kind: "class", classId: "Lamp" });
+
+    state.activeId = CONTENT_BROWSER_ID;
+    rerender(<DebugChrome />);
+    expect(store!.getSnapshot().target).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Debug Instance" })).toBeNull();
+
+    state.activeId = "door";
+    state.sessionState = { generation: 1, mode: null, lifecycle: "idle", quarantined: false, error: null };
+    rerender(<DebugChrome />);
+    expect(store!.getSnapshot().target).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Debug Instance" })).toBeNull();
+  });
+
+  it("offers no select for a Class that never has instances", async () => {
+    const registry = await createRegistry();
+    void registry;
+    simulate();
+    state.activeId = "helpers";
+    state.documents = [openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF), classGraph("helpers", "Helpers")];
+    vi.spyOn(state.registry!, "list").mockReturnValue([
+      { path: "assets/Helpers.class.babasset", header: { type: "Class", name: "Helpers", parentClass: "FunctionLibrary" } },
+    ] as unknown as ReturnType<AssetRegistry["list"]>);
+    render(<DebugChrome />);
+    expect(store!.getSnapshot().target).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Debug Instance" })).toBeNull();
   });
 });
 

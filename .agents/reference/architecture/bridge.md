@@ -68,6 +68,7 @@ Seq-lock: writer sets `seq` odd, writes header + rows, sets `seq` even; reader s
 - Plain commands batch into one `commands` post. The queue flushes at the end of each message handler and tick, in error handlers, and **before every other post**, so poses never overtake earlier commands. Batching clones at flush, so emitted payloads must not alias state mutated later in the pump: copy at the emit boundary.
 - Hosts dispatch a batch through `dispatchCommandBatch`: a throwing handler does not skip the rest.
 - Snapshots use `TransferablePingPong`: hosts return buffers with `recycleSnapshot` (in a `finally`); spare pool `MAX_FREE_BUFFERS = 2`; at `MAX_IN_FLIGHT_SNAPSHOTS = 2` the worker skips the pose and publishes the newest when a buffer returns. Poses are latest-state; nothing else rides on them.
+- Graph debugger views (`debugRoster`, `executionTrace`, answering `debugObserve`) are sent only while the editor observes a target, once per tick at most, and are neither render commands nor part of the command revision ([debugger.md](debugger.md#simulation-graph-debugging)).
 - Realized markers (`sceneRealized`, `sceneLayerRealized`, `sceneStreamRealized`) and `runtimeInspectorResult` mutation replies are held until the next pose is sent, so a paused host never redraws an older pose.
 - Hosts copy one snapshot per `advance()` catch-up burst; Step and readiness publishes write immediately.
 
