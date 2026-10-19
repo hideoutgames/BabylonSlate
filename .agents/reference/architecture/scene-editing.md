@@ -65,5 +65,5 @@ World Scene documents in the Haptic editor: schema, selection, command path, vie
 ## Modes, Play seed and Simulation
 
 - Scene Mode Design / Landscape / Foliage share one scene and history; each has its own DockView layout. Foliage is static thin-instanced geometry (no actors, scripts or bodies). Landscape sculpting edits one `LandscapeSculptSession` and rebuilds once per pointer event.
-- Play from Scene (default on) seeds the open Scene tab, else `startupSceneGuid`, which Preview never writes. Overlay Play and Preview Build never share an Engine.
+- Start In Open Scene (Debug menu, default on) seeds the open Scene tab, else `startupSceneGuid`, which Preview never writes. Overlay Play and Preview Build never share an Engine.
 - `captureSimulationScene` captures only at an acknowledged quiescent boundary and returns a complete scene or a named failure, never a subset. It rejects streamed/overlay instances, Dynamic Runtime Mesh and ambiguous identities. References use `$sceneValue` tags resolved by `hydrateScenePropertyReferences`.

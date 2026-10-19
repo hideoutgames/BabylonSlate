@@ -96,6 +96,10 @@ import { useOptionalAnimGraphEditing } from "../context/anim-graph-editing-conte
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
+import {
+  COMPONENT_GRAPH_MEMBER_CATEGORY,
+  componentGraphMembers,
+} from "../lib/component-graph-members";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
 import {
   fontAssetHasFacetype,
@@ -1163,6 +1167,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     components: prefabComponents,
     updateComponent,
     updateComponentTransform,
+    setComponentCategory,
   } = usePrefabEditing();
   const viewportMode = useOptionalSceneEditing()?.viewportMode ?? "3d";
   const [parentClassPickOpen, setParentClassPickOpen] = useState(false);
@@ -1499,6 +1504,46 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
             updateComponentTransform(selectedPrefabComponent.id, transform)
           }
         />
+      </PanelFrame>
+    );
+  }
+
+  const selectedComponentMember =
+    graph && !selectedMember && selectedMemberId && !openRuleId
+      ? componentGraphMembers({ components: prefabComponents, assetLabel }).find(
+          (member) => member.id === selectedMemberId,
+        )
+      : undefined;
+
+  if (selectedComponentMember) {
+    const { componentId, name, category } = selectedComponentMember;
+    return (
+      <PanelFrame data-testid="inspector-panel">
+        <div
+          className="flex flex-col gap-3 p-3"
+          data-testid="inspector-member-component"
+        >
+          <div className="text-sm font-medium">{name}</div>
+          <PropertyGrid
+            rows={[
+              {
+                id: "category",
+                kind: "text",
+                label: "Category",
+                value: category ?? "",
+                onChange: () => {},
+                onCommit: (next: string) => {
+                  const normalized = normalizeClassMemberCategory(next) ?? "";
+                  if (normalized === (category ?? "")) return;
+                  setComponentCategory(
+                    componentId,
+                    normalized === COMPONENT_GRAPH_MEMBER_CATEGORY ? undefined : normalized,
+                  );
+                },
+              },
+            ]}
+          />
+        </div>
       </PanelFrame>
     );
   }

@@ -199,6 +199,8 @@ export const engineSettingsSchema = z.object({
   debuggerDefaults: z
     .object({
       previewBuild: z.boolean().default(false),
+      /** Play starts Simulate; Preview Build is ignored while this is set. */
+      simulate: z.boolean().default(false),
       playFromScene: z.boolean().default(true),
       overlayStats: z.boolean().default(true),
       overlayConsole: z.boolean().default(false),
@@ -218,6 +220,7 @@ export const engineSettingsSchema = z.object({
     })
     .default({
       previewBuild: false,
+      simulate: false,
       playFromScene: true,
       overlayStats: true,
       overlayConsole: false,

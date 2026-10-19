@@ -131,15 +131,15 @@ test.describe("P6 first-playable scene editing", () => {
       ok: true, reason: "saved", dirtyAfter: 0,
     });
 
-    await page.getByTestId("viewport-mode-toggle").click();
-    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
+    await page.getByTestId("viewport-mode-2d").click();
+    await expect(page.getByTestId("viewport-mode-2d")).toHaveAttribute("aria-pressed", "true");
     // Local toolbar state updates before the scene command lands; wait for dirty
     // so undo reverts viewport mode rather than the previous actor edit.
     await expect(page.getByTestId("save-all-dirty")).toBeVisible();
     await page.getByTestId("undo-document").click();
-    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("3D");
-    await page.getByTestId("viewport-mode-toggle").click();
-    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
+    await expect(page.getByTestId("viewport-mode-3d")).toHaveAttribute("aria-pressed", "true");
+    await page.getByTestId("viewport-mode-2d").click();
+    await expect(page.getByTestId("viewport-mode-2d")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("save-all-dirty")).toBeVisible();
     await saveAllIfEnabled(page, 30_000);
     expect((await readSaveAllDiagnostics(page)).save).toMatchObject({
@@ -151,12 +151,12 @@ test.describe("P6 first-playable scene editing", () => {
     await page.getByTestId("open-listed-project-TestProject").click();
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await openMainScene(page);
-    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
+    await expect(page.getByTestId("viewport-mode-2d")).toHaveAttribute("aria-pressed", "true");
 
     await playWithGamepad(page);
 
-    await page.getByTestId("viewport-mode-toggle").click();
-    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("3D");
+    await page.getByTestId("viewport-mode-3d").click();
+    await expect(page.getByTestId("viewport-mode-3d")).toHaveAttribute("aria-pressed", "true");
     await playWithGamepad(page);
   });
 

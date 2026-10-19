@@ -3,6 +3,7 @@ import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { ownedVisualTexturePreparation } from "./mesh-assets";
 import { createStallDeadline, prewarmMeshMaterials, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
+import { isBuiltInWaterMesh } from "./water-mesh";
 
 /** Prepare an additive actor batch; parent and sibling resources are not load dependencies. */
 export async function prepareSceneStream(
@@ -100,10 +101,12 @@ export async function prepareSceneStream(
       await wait(new Promise<void>((resolve) => setTimeout(resolve, 16)));
     }
     options.onProgress?.(0.75);
+    // Built-in water is left to the graph's probe after publication, under the pass that draws it: a pass-less warm-up
+    // would compile a variant nothing draws.
     await wait(prewarmMeshMaterials(scene, meshSlots.keys(), (mesh) => {
       check();
       if (mesh) checkAssignment(meshSlots.get(mesh)!);
-    }));
+    }, isBuiltInWaterMesh));
     checkAssignments();
     options.onProgress?.(0.95);
   } finally {
