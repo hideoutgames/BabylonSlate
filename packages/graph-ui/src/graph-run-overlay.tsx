@@ -130,6 +130,8 @@ export function GraphRunOverlay({
       if (anchor) show(anchor);
     };
     const onPointerOut = (event: PointerEvent) => {
+      // A touch pointer leaves right after every tap, before the click that opens or toggles the tip.
+      if (event.pointerType === "touch") return;
       const anchor = anchorAt(event.target);
       if (!anchor || (event.relatedTarget instanceof Node && anchor.contains(event.relatedTarget))) return;
       hide();

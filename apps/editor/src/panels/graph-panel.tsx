@@ -42,10 +42,8 @@ import {
   validateSerializedGraph,
   defaultNodeRegistry,
 } from "../services/graph-validation";
-import { ANIM_OBJECT_DEBUG_GRAPH_ID } from "@babylonslate/bridge";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
-import { useGraphDebugStore, useGraphDebugTarget } from "../context/graph-debug-context";
-import { createGraphRunTrace } from "../lib/graph-run-trace";
+import { useAnimObjectGraphRunTrace, useClassGraphRunTrace } from "../context/graph-debug-context";
 import { sceneAssetClassId } from "@babylonslate/object-model";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import {
@@ -137,26 +135,20 @@ export function GraphPanel(
     () => serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),
     [doc?.ref.kind, doc?.content],
   );
-  // While a Simulation runs, the canvas shows what the followed instance ran in this graph.
-  const graphDebug = useGraphDebugStore();
+  // While a Simulation follows an instance of this Class, the canvas shows what that instance ran in this graph.
   const runGraphId = activeFunctionId
     ? functionGraphExportName({
         id: activeFunctionId,
         name: graphContent?.members?.find((member) => member.id === activeFunctionId)?.name,
       })
     : "event-graph";
-  const documentKind = doc?.ref.kind;
-  const documentPath = doc?.ref.path;
-  const debugTarget = useGraphDebugTarget();
-  // Only a Simulation that debugs this Class, or this Animation Graph, has a run to show.
-  const debugging = debugTarget?.kind === (documentKind === "anim-graph" ? "animationGraph" : "class");
-  const runTrace = useMemo(() => {
-    if (!graphDebug || !debugging || documentPath === undefined) return undefined;
-    // An Animation Graph's Animation Object graph is compiled like a Class graph, under its own id.
-    if (documentKind === "graph") return createGraphRunTrace(graphDebug, documentPath, runGraphId);
-    if (documentKind === "anim-graph") return createGraphRunTrace(graphDebug, documentPath, ANIM_OBJECT_DEBUG_GRAPH_ID);
-    return undefined;
-  }, [graphDebug, debugging, documentKind, documentPath, runGraphId]);
+  const classRunTrace = useClassGraphRunTrace(doc?.ref.kind === "graph" ? doc.ref.path : undefined, classId, runGraphId);
+  // An Animation Graph's Animation Object graph is compiled like a Class graph, under its own id.
+  const animObjectRunTrace = useAnimObjectGraphRunTrace(
+    doc?.ref.kind === "anim-graph" ? doc.ref.path : undefined,
+    indexed?.header.guid,
+  );
+  const runTrace = classRunTrace ?? animObjectRunTrace;
   const memberSymbols = useMemo(() => {
     const graphs = { ...otherClassGraphs };
     if (classId && graphContent) graphs[classId] = graphContent;

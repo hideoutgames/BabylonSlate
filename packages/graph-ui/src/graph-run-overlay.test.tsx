@@ -141,8 +141,11 @@ describe("pin value tip on desktop", () => {
 });
 
 describe("pin value tip on touch", () => {
+  /** A browser's order for a touch tap: the pointer lifts and leaves, then the click arrives. */
   const tap = (target: Element) => {
     pointer(target, "pointerdown", { pointerType: "touch" });
+    pointer(target, "pointerup", { pointerType: "touch" });
+    pointer(target, "pointerout", { pointerType: "touch", relatedTarget: null });
     act(() => { target.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
   };
 

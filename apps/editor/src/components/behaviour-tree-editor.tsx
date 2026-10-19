@@ -83,11 +83,9 @@ import {
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useBehaviourTreeEditing } from "../context/behaviour-tree-editing-context";
-import { sameDebugObserveTarget } from "@babylonslate/bridge";
 import { usePlay } from "../context/play-context";
-import { useGraphDebugStore, useGraphDebugTarget } from "../context/graph-debug-context";
+import { useBehaviourTreeRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
-import { createBehaviourTreeRunTrace } from "../lib/graph-run-trace";
 
 /** Org-chart wires: a trunk from the parent splits into square drops to each child. */
 const BT_EDGE_OPTIONS = { type: "smoothstep", pathOptions: { borderRadius: 8 } };
@@ -368,13 +366,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
   const { sessionViewport, onSessionViewportChange } =
     useGraphSessionViewport(documentId);
   // While a Simulation debugs this tree, the canvas shows what the followed instance ran and each node's status.
-  const graphDebug = useGraphDebugStore();
-  const debugTarget = useGraphDebugTarget();
-  const debugging = treeGuid !== undefined && sameDebugObserveTarget(debugTarget, { kind: "behaviourTree", assetGuid: treeGuid });
-  const runTrace = useMemo(
-    () => graphDebug && treeGuid && debugging ? createBehaviourTreeRunTrace(graphDebug, treeGuid) : undefined,
-    [graphDebug, treeGuid, debugging],
-  );
+  const runTrace = useBehaviourTreeRunTrace(treeGuid);
   const {
     selectedId,
     attachmentId,
