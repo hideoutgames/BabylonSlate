@@ -10,7 +10,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// Without KHR_parallel_shader_compile (SwiftShader, WebKit WebGL2) one probe links
+// Without KHR_parallel_shader_compile (SwiftShader) one probe links
 // every effect before it returns, and a cold runner held the thread for 13 to 15 s.
 describe("waitUntilReady", () => {
   it("keeps waiting after a probe held the thread past the bound, and succeeds when the next one is ready", async () => {
@@ -100,9 +100,8 @@ describe("waitForPreviewMeshesReady", () => {
     dispose();
   });
 
-  // WebKit WebGL2 (which exposes KHR_parallel_shader_compile but links inside linkProgram) and SwiftShader link each
-  // variant inside the probe that requests it: links shorter than SCENE_THREAD_HELD_MS earn no held-thread credit,
-  // but every one that finishes is progress on the Engine.
+  // SwiftShader (no KHR_parallel_shader_compile) links each variant inside the probe that requests it: links shorter
+  // than SCENE_THREAD_HELD_MS earn no held-thread credit, but every one that finishes is progress on the Engine.
   describe("while short synchronous links keep finishing shaders", () => {
     /** Each probe takes 500 ms; while `linking(probe)` it also finishes one more shader variant on the Engine. */
     function linkingMesh(linking: (probe: number) => boolean, ready: (probe: number) => boolean) {
