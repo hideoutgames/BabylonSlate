@@ -2,14 +2,16 @@ import { expect, test } from "@playwright/test";
 import type { runFixedLightProof } from "../apps/editor/src/testing/fixed-light-proof";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
-// BL_RENDER_NATIVE_GPU=1 keeps the perf-gpu project's launch arguments (playwright.perf.config.ts).
-if (process.env.BL_RENDER_NATIVE_GPU !== "1") test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+// CI runs WebGL2. BL_RENDER_NATIVE_GPU=1 (perf-gpu, playwright.perf.config.ts) keeps the machine GPU's
+// launch arguments and adds WebGPU, which is too slow on the software adapter.
+const NATIVE_GPU = process.env.BL_RENDER_NATIVE_GPU === "1";
+if (!NATIVE_GPU) test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
-for (const backend of ["webgl2", "webgpu"] as const) {
+for (const backend of NATIVE_GPU ? (["webgl2", "webgpu"] as const) : (["webgl2"] as const)) {
   test(`fixed light seats shade native PBR and Standard like the legacy path on ${backend}, and light changes compile nothing`, async ({
     page,
   }, testInfo) => {
-    test.setTimeout(300_000);
+    test.setTimeout(180_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
