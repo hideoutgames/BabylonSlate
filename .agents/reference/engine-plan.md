@@ -270,7 +270,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Release exports honour bundle-debugger and `stripDevelopmentOnly`; Preview Build always bundles the debugger and keeps Development Only nodes.
 - Preview session report: uncaught worker errors, Error logs, engine assertions and BT node throws (a BT Failure is control flow, never an error), deduplicated by `(code, assetGuid, nodeId)` with counts and a per-session cap; stack frames map to nodes through anchor tables; WebKit and V8 stack formats both parse.
 - Simulation Play (run in the viewport with live runtime edits and Keep) is internal and reachable only from tests until browser and device qualification completes.
-- Simulation graph debugging (Class graphs): with a Class open, a toolbar **Debug Instance** select follows one live instance of exactly that class; its nodes, wires and pins flash for a quarter second when they run and pins show their last value on hover or label tap. Editor-only, read-only, Simulation-only and free when unobserved; Behaviour Trees and Animation Graphs reuse the same store, message and canvas pieces.
+- Simulation graph debugging: with a Class, Behaviour Tree or Animation Graph open, a toolbar **Debug Instance** select follows one live object that runs it (a Class's exact instances, or the components that run the tree or graph); its nodes, wires and pins flash for a quarter second when they run. Class pins show their last value on hover or label tap; Behaviour Tree nodes show **Running**, **Success** or **Failure**; an Animation Graph flashes the states it samples and the transitions it takes. Editor-only, read-only, Simulation-only and free when unobserved.
 
 ## Plugins and extensions
 

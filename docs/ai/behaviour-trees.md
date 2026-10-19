@@ -66,6 +66,7 @@ The tree starts from its root when Play begins, and restarts from the root each 
 ## Debug the tree
 
 - **Compiler Results** lists problems such as an empty composite or a missing Blackboard key. Tap a row to select the node.
+- During a Simulation, open the tree and pick an actor in **Debug Instance**. The nodes the tree works on light up in orange, each node shows its **Running**, **Success** or **Failure** status, and the **Blackboard** window shows the actor's live values ([Watch a graph run](../debugging/index.md#behaviour-trees)).
 - During Play, type `behaviourtreedebug` in the [console](../debugging/console.md) to open the **Behaviour Tree Debugger**. Choose an actor to see its current node, execution stack, node results, decorators, services and live Blackboard values.
 - After Play, errors from a tree node in the **Preview Session Report** open the tree at that node.
 
