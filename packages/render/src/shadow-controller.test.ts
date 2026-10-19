@@ -4,6 +4,7 @@ import {
   InternalTexture,
   InternalTextureSource,
   DirectionalLight,
+  HemisphericLight,
   MeshBuilder,
   MaterialDefines,
   NullEngine,
@@ -487,6 +488,71 @@ describe("shared shadow lifecycle", () => {
     expect(dirty).toHaveBeenCalledTimes(count);
     expect(controller.generator(sun)).toBe(directional);
     expect(controller.generator(spot)).toBe(local);
+  });
+  // The define text is the Effect cache key: a leftover per-slot define with the
+  // same shader source would link the same program again for a toggled light.
+  it.each([
+    {
+      name: "a hemispheric fill takes the slot",
+      slot: 0,
+      lights: (scene: Scene) => ({
+        sun: new DirectionalLight("sun", new Vector3(0.4, -1, 0.6), scene),
+        other: new HemisphericLight("fill", Vector3.Up(), scene),
+      }),
+    },
+    {
+      name: "the slot falls beyond the light count",
+      slot: 1,
+      lights: (scene: Scene) => ({
+        other: new HemisphericLight("fill", Vector3.Up(), scene),
+        sun: new DirectionalLight("sun", new Vector3(0.4, -1, 0.6), scene),
+      }),
+    },
+    {
+      name: "a shadowed spot without cascades takes the slot",
+      slot: 0,
+      lights: (scene: Scene) => ({
+        sun: new DirectionalLight("sun", new Vector3(0.4, -1, 0.6), scene),
+        other: new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 1, scene),
+      }),
+    },
+  ])("gives a receiver the defines of a fresh one after the cascaded sun leaves its slot: $name", ({ slot, lights }) => {
+    const { scene, controller } = fixture();
+    enableHeadlessCascades(scene.getEngine());
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ cascades: 2, distance: 40, mapSize: 1024, filterQuality: "low" }),
+    });
+    const addReceiver = (name: string) => {
+      const mesh = MeshBuilder.CreateBox(name, {}, scene);
+      mesh.material = new StandardMaterial(name, scene);
+      controller.setParticipation(mesh, { castShadows: true, receiveShadows: true });
+      controller.sync();
+      return {
+        mesh,
+        defines: () => {
+          // A ready receiver answers from its cache within one render.
+          scene.incrementRenderId();
+          mesh.material!.isReadyForSubMesh(mesh, mesh.subMeshes[0]!);
+          return mesh.subMeshes[0]!.materialDefines!.toString();
+        },
+      };
+    };
+    const { sun, other } = lights(scene);
+    controller.register(sun, true);
+    controller.register(other, true);
+    controller.sync();
+    const receiver = addReceiver("receiver");
+    const cascaded = receiver.defines();
+    expect(cascaded).toContain(`#define SLATE_SHADOW_AUTO${slot}\n`);
+    expect(cascaded).toContain(`#define SLATE_SHADOW_FADE${slot} `);
+
+    sun.setEnabled(false);
+    controller.sync();
+    receiver.mesh._markSubMeshesAsLightDirty();
+    const toggled = receiver.defines();
+    expect(toggled).not.toContain(`SLATE_SHADOW_AUTO${slot}`);
+    expect(toggled).not.toContain(`SLATE_SHADOW_FADE${slot}`);
+    expect(toggled).toBe(addReceiver("fresh").defines());
   });
   it("budgets local lights separately and transfers capacity when an owner is disabled", () => {
     const { scene, controller } = fixture();
