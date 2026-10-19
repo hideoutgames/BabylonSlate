@@ -97,11 +97,15 @@ export async function selectContentBrowserAssetsFolder(
   await assetsRow.click();
 }
 
-/** Create an authored asset from the Content Browser New Asset dialog. */
+/**
+ * Create an authored asset from the Content Browser New Asset dialog.
+ * `parentClass` picks the Class parent (default BObject).
+ */
 export async function createContentBrowserAsset(
   page: Page,
   type: string,
   name: string,
+  parentClass?: string,
 ): Promise<void> {
   await openContentBrowser(page);
   await selectContentBrowserAssetsFolder(page);
@@ -112,6 +116,12 @@ export async function createContentBrowserAsset(
   await page.getByTestId("new-asset-type-search").fill(type);
   await page.getByTestId(`new-asset-type-${type}`).click();
   await page.getByTestId("new-asset-name").fill(name);
+  if (parentClass) {
+    await page
+      .getByRole("tree", { name: "Parent Class" })
+      .getByTestId(`tree-row-${parentClass}`)
+      .click();
+  }
   await page.getByTestId("content-browser-new-asset-create").click();
   await expect(
     page.getByTestId("content-browser-new-asset-dialog"),
