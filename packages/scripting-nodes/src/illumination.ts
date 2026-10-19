@@ -8,6 +8,7 @@ import {
   actorRef,
   objectRef,
 } from "@babylonslate/scripting";
+import { subject } from "./self-pin";
 
 const CAMERA = objectRef("CameraComponent");
 const LIGHT = objectRef("LightComponent");
@@ -21,7 +22,7 @@ export const illuminationNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "target", "in", ACTOR),
+      subject(pin("target", "target", "in", ACTOR)),
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.possessCamera(${ctx.input("target")});`);
@@ -33,7 +34,7 @@ export const illuminationNodes: NodeDefinition[] = [
     category: "camera",
     pure: true,
     pins: () => [
-      pin("target", "target", "in", CAMERA),
+      subject(pin("target", "target", "in", CAMERA)),
       pin("out", "fov", "out", FLOAT),
     ],
     codegen: (ctx) => ({
@@ -47,7 +48,7 @@ export const illuminationNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "target", "in", CAMERA),
+      subject(pin("target", "target", "in", CAMERA)),
       pin("fov", "fov", "in", FLOAT),
     ],
     codegen: (ctx) => {
@@ -62,7 +63,7 @@ export const illuminationNodes: NodeDefinition[] = [
     category: "camera",
     pure: true,
     pins: () => [
-      pin("target", "target", "in", CAMERA),
+      subject(pin("target", "target", "in", CAMERA)),
       pin("out", "size", "out", FLOAT),
     ],
     codegen: (ctx) => ({
@@ -76,7 +77,7 @@ export const illuminationNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "target", "in", CAMERA),
+      subject(pin("target", "target", "in", CAMERA)),
       pin("size", "size", "in", FLOAT),
     ],
     codegen: (ctx) => {
@@ -92,7 +93,7 @@ export const illuminationNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "target", "in", LIGHT),
+      subject(pin("target", "target", "in", LIGHT)),
       pin("enabled", "enabled", "in", BOOL),
     ],
     codegen: (ctx) => {
@@ -108,7 +109,7 @@ export const illuminationNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "target", "in", LIGHT),
+      subject(pin("target", "target", "in", LIGHT)),
       pin("color", "color", "in", COLOR),
     ],
     codegen: (ctx) => {
@@ -124,7 +125,7 @@ export const illuminationNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "target", "in", LIGHT),
+      subject(pin("target", "target", "in", LIGHT)),
       pin("intensity", "intensity", "in", FLOAT),
     ],
     codegen: (ctx) => {

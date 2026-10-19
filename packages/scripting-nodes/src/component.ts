@@ -9,7 +9,7 @@ import {
   BOOL,
   TRANSFORM,
 } from "@babylonslate/scripting";
-import { actorOrSelf, selfActorPin } from "./self-pin";
+import { selfActorPin, selfPin, subject } from "./self-pin";
 
 export const componentNodes: NodeDefinition[] = [
   {
@@ -49,7 +49,7 @@ export const componentNodes: NodeDefinition[] = [
       pin("out", "out", "out", objectRef("ActorComponent")),
     ],
     codegen: (ctx) => ({
-      out: `ctx.getComponent(${actorOrSelf(ctx, "actor")}, ${ctx.input("classId")})`,
+      out: `ctx.getComponent(${ctx.input("actor")}, ${ctx.input("classId")})`,
     }),
   },
   {
@@ -63,12 +63,10 @@ export const componentNodes: NodeDefinition[] = [
         properties.componentClassId.trim()
           ? properties.componentClassId.trim()
           : "ActorComponent";
-      const targetPin =
-        properties.implicitSelf === true
-          ? []
-          : [pin("actor", "actor", "in", actorRef("Actor"))];
       return [
-        ...targetPin,
+        properties.implicitSelf === true
+          ? selfPin("actor", "Target", actorRef("Actor"))
+          : subject(pin("actor", "Target", "in", actorRef("Actor"))),
         pin("out", "out", "out", objectRef(classId)),
       ];
     },
@@ -78,17 +76,8 @@ export const componentNodes: NodeDefinition[] = [
         ctx.node.properties.componentClassId.trim()
           ? ctx.node.properties.componentClassId.trim()
           : "ActorComponent";
-      const targetPin = ctx.node.pins.find(
-        (entry) => entry.name === "actor" && entry.direction === "in",
-      );
-      const targetConnected = !!targetPin && ctx.isWired(targetPin.id);
-      const actorExpr =
-        !targetPin ||
-        (!targetConnected && ctx.node.properties.implicitSelf === true)
-          ? "ctx.self"
-          : ctx.input("actor");
       return {
-        out: `ctx.getComponent(${actorExpr}, ${JSON.stringify(classId)})`,
+        out: `ctx.getComponent(${ctx.input("actor")}, ${JSON.stringify(classId)})`,
       };
     },
   },
@@ -103,7 +92,7 @@ export const componentNodes: NodeDefinition[] = [
       pin("out", "out", "out", BOOL),
     ],
     codegen: (ctx) => ({
-      out: `(ctx.getComponent(${actorOrSelf(ctx, "actor")}, ${ctx.input("classId")}) != null)`,
+      out: `(ctx.getComponent(${ctx.input("actor")}, ${ctx.input("classId")}) != null)`,
     }),
   },
   {
@@ -121,7 +110,7 @@ export const componentNodes: NodeDefinition[] = [
     codegen: (ctx) => {
       const out = ctx.output("out");
       ctx.emit(
-        `${out} = ctx.addComponent(${actorOrSelf(ctx, "actor")}, ${ctx.input("classId")}, ${ctx.input("transform")});`,
+        `${out} = ctx.addComponent(${ctx.input("actor")}, ${ctx.input("classId")}, ${ctx.input("transform")});`,
       );
     },
   },

@@ -18,7 +18,7 @@ import { MATERIAL_PREVIEW_MESH_NAME } from "./material-preview";
 import { encodeRgbaPng, PNG_SIGNATURE } from "./png-encode";
 import { acquireMaterialTexture, releaseResourceCacheForEngine, resourceCacheForEngine } from "./resource-cache";
 import { nativePreparationForEngine } from "./native-preparation";
-import { SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { SCENE_CAPTURE_CEILING_MS, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
 
 /** How long loading and readback may take before a capture expires. */
@@ -255,6 +255,20 @@ describe("asset thumbnail capture", () => {
       expect(clock.elapsed()).toBeGreaterThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS);
       expect(clock.elapsed()).toBeLessThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS + POLL_MS);
       expect(read).not.toHaveBeenCalled();
+    });
+
+    // Captures queue one after another on the shared Engine, where other work (material editing, Play) compiles too.
+    it("ends a capture at its ceiling while unrelated shaders keep finishing on the Engine", async () => {
+      const { engine } = fixture();
+      clock = installVirtualClock();
+      const effects = (engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
+      probeSphere((probe) => {
+        effects[`elsewhere-${probe}`] = { isReady: () => true, getCompilationError: () => "" };
+        return POLL_MS;
+      }, () => false);
+      expect(await captureAssetThumbnailPng(engine, material, undefined, 32)).toBeNull();
+      expect(clock.elapsed()).toBeGreaterThanOrEqual(SCENE_CAPTURE_CEILING_MS);
+      expect(clock.elapsed()).toBeLessThanOrEqual(SCENE_CAPTURE_CEILING_MS + POLL_MS);
     });
 
     /** A readback that never returns until `release`; `onPoll` runs at each of the capture's 16 ms expiry checks. */

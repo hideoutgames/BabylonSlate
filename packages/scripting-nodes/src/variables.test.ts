@@ -358,7 +358,7 @@ describe("variables.get / variables.set", () => {
     expect(compiled.source).not.toContain("ctx.setVariable");
   });
 
-  it("compiles a wired Target Get to getVariableFrom", () => {
+  it("reads a wired Target Get through getVariableFrom on that object", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -406,10 +406,19 @@ describe("variables.get / variables.set", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toMatch(
-      /ctx\.getVariableFrom\([^,]*spawn[^,]*,\s*"Health"/,
-    );
-    expect(compiled.source).toContain('"Health"');
+    const run = new Function(`${compiled.source.replace(/^export /gm, "")}\nreturn onBeginPlay;`)() as (context: unknown) => Promise<void>;
+    const guard = { who: "guard" };
+    const reads: unknown[][] = [];
+    const logs: unknown[] = [];
+    await run({
+      self: { who: "hero" },
+      spawnActorAsync: async () => guard,
+      getVariableFrom: (...args: unknown[]) => { reads.push(args); return 12; },
+      formatValue: String,
+      log: (_severity: string, _category: string, message: unknown) => logs.push(message),
+    });
+    expect(reads).toEqual([[guard, "Health"]]);
+    expect(logs).toEqual(["12"]);
   });
 
   it.each([true, false])("Set Variable stores and passes through one sample of the value (implicitSelf %s)", (implicitSelf) => {

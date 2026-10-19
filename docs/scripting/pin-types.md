@@ -42,14 +42,21 @@ Haptic has two kinds of wildcard pin:
 - **Generic pins**, on nodes such as [Array Get](class/array-get.md), [For Each](class/for-each.md) and [Select](class/select.md), take the type of the first wire you connect. The node's other generic pins then use that type too.
 - **Any pins**, such as the **Value** of [Print](class/print.md), accept every type. To turn an Any value back into a typed value, use a Wildcard To node such as [Wildcard To float](class/wildcard-to-float.md). It returns **Success** and uses **Fallback** when the value has another type. [Wildcard Type Of](class/wildcard-type-of.md) and [Wildcard Is](class/wildcard-is.md) check the type first.
 
+## Empty references
+
+A connected reference is used as it is, even when it is empty when the node runs. It never turns into **Self**.
+
+- A node that acts on the object it is given (its **Target**, **Actor**, **Material** or similar input) does nothing when that object is empty, and execution continues. A node that returns a value returns its default instead.
+- Each time this happens the **Output Log** and the Play console show an error such as `My Hero: Destroy Actor (Target) tried to access null.`, naming the class the graph belongs to as the **Content Browser** lists it, then the node and the pin. It is shown every time the node runs, not only the first.
+- Inputs where an empty value is meaningful do not report it, for example the **Value** of [Set Variable](class/set-variable.md), [Is Valid](class/is-valid.md), the input of [Cast To](class/cast-to.md), the **Owner** of [Set Owner](class/set-owner.md) and the **Parent** of [Attach Actor](class/attach-actor.md).
+
 ## Inline values
 
 An unconnected input can hold a value, edited on the node or under **Defaults** in the **Inspector**.
 
 - Bool, Int, Float, String, vectors, Rotator, Quaternion, Color, Tag, TagContainer, Enum, Class and Asset inputs have inline editors. Color opens a colour picker; confirm it with **Done**.
 - An input with an inline editor always has a value: the one you set, else the pin's own default, else zero, false or empty. **Compiler Results** never reports it as not connected. The exceptions are Class and Asset inputs, which warn while nothing is selected, and the outputs of an [Interface Implementation](interfaces.md), which need a wire or a value.
-- Object and Actor inputs must be wired; **Compiler Results** reports them as errors until they are. The exceptions are a **Target** pin that shows **Self** when unconnected, which uses the object running the graph, and the Actor inputs that say so on their node page, such as [Destroy Actor](class/destroy-actor.md), [Get Component](class/get-component.md), [Has Component](class/has-component.md) and [Add Component](class/add-component.md). Those pins show **Self** while unconnected.
-- An Actor input that is wired to a reference that is empty when the node runs never falls back to the running actor: the node does nothing, or returns an empty value.
+- Object and Actor inputs must be wired; **Compiler Results** reports them as errors until they are. The exception is a pin whose label ends in **(Self)**, such as **Target (Self)** on [Destroy Actor](class/destroy-actor.md) or **Actor (Self)** on [Get Component](class/get-component.md). While nothing is connected it uses the object running the graph; once you connect a reference the label drops **(Self)**. Calls to a function, custom event or interface function of this graph's own class have such a **Target (Self)** pin, so you can wire in another object of the class instead.
 - Build arrays with [Make Array](class/make-array.md), maps with [Make Map](class/make-map.md), structures with [Make Structure](class/make-structure.md) and transforms with [Make Transform](class/make-transform.md).
 
 Text values are saved when you press <kbd>Enter</kbd> or leave the field; <kbd>Esc</kbd> cancels. To stop accidental edits on touch screens, turn on **Engine Settings > Graph > Read-Only Pin Defaults**. The **Inspector** stays editable.

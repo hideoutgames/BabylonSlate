@@ -21,4 +21,4 @@ Returns an actor's scale on each axis as a vector.
 ## Notes
 
 - A scale of 1 on every axis is the actor's original size.
-- Returns 1 on every axis when the reference is empty.
+- Returns 1 on every axis, and logs an error, when the reference is empty.

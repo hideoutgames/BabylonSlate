@@ -11,7 +11,7 @@ Calls a Script Interface method on another object and continues when it returns.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Target | Object Reference | Object to call. Left unconnected, it calls the object that runs the graph. |
+| Target | Object Reference | Object to call. Left unconnected the pin reads **Target (Self)** and calls the object that runs the graph. |
 
 ## Outputs
 
@@ -23,3 +23,4 @@ Calls a Script Interface method on another object and continues when it returns.
 
 - **Add Node** lists one Call Interface entry for each method of each Script Interface in the project; the method's inputs and outputs appear as extra pins.
 - If the target does not implement the interface, no handler runs, **Out** still runs and the outputs return their defaults.
+- If **Target** is connected to a reference that is empty, nothing runs, **Out** still runs, the outputs return the default for their type and an error is logged.

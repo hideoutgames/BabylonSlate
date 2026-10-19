@@ -11,8 +11,8 @@ afterEach(() => {
 // stall timer, due meanwhile, fires only once the thread is free again.
 describe("createStallDeadline with a held-thread budget", () => {
   /** A deadline over work that never settles; `outcome()` is its rejection message, once it has one. */
-  function stalledWork(held?: ReturnType<typeof createHeldThreadBudget>) {
-    const deadline = createStallDeadline((unit) => `stalled at ${unit}`, SCENE_SHADER_WARM_TIMEOUT_MS, undefined, held);
+  function stalledWork(held?: ReturnType<typeof createHeldThreadBudget>, renew?: () => boolean) {
+    const deadline = createStallDeadline((unit) => `stalled at ${unit}`, SCENE_SHADER_WARM_TIMEOUT_MS, renew, held);
     deadline.advance("material");
     let message: string | undefined;
     deadline.race(new Promise<void>(() => {})).catch((error: Error) => { message = error.message; });
@@ -39,6 +39,20 @@ describe("createStallDeadline with a held-thread budget", () => {
       expect(work.outcome()).toBeUndefined();
     }
     clock.hold(15_000);
+    await clock.run(SCENE_SHADER_WARM_TIMEOUT_MS);
+    expect(work.outcome()).toBe("stalled at material");
+  });
+
+  // `renew` reports progress since its previous call, as `DriverCompileWatch.renew` does.
+  it("spends progress seen during a held window there, so it renews no later window", async () => {
+    const clock = installTimerClock();
+    let finished = false;
+    const work = stalledWork(createHeldThreadBudget(), () => { const progressed = finished; finished = false; return progressed; });
+    // A shader finishes inside the call that held the thread.
+    finished = true;
+    clock.hold(15_000);
+    await clock.run(SCENE_SHADER_WARM_TIMEOUT_MS);
+    expect(work.outcome()).toBeUndefined();
     await clock.run(SCENE_SHADER_WARM_TIMEOUT_MS);
     expect(work.outcome()).toBe("stalled at material");
   });
