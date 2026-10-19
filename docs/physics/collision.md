@@ -20,7 +20,7 @@ Two colliders interact only when each one's **Layers** includes the other's **La
 
 **Project Settings > Physics > Collision Matrix** is a grid of every pair of layers. Clear a box and the two layers stop colliding for every Project Matrix collider on them. All pairs collide by default.
 
-Engine-made colliders (the Movement capsule, Blocking Volumes and tilemap collision) sit on **Default** and follow its matrix row.
+Engine-made colliders (the Movement capsule, Blocking Volumes and tilemap collision) sit on **Default** and follow its matrix row. Landscape collision also follows the matrix.
 
 Layers are stored by position: removing or reordering a layer in the list moves the matrix rows with it, as it does for every collider's Layer.
 

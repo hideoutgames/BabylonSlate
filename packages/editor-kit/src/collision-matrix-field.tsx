@@ -31,8 +31,8 @@ export function CollisionMatrixField({
           <tr>
             <th />
             {columns.map((column) => (
-              <th key={column.index} scope="col" className="h-20 w-6 p-0 align-bottom font-normal text-muted-foreground">
-                <span className="mx-auto block max-h-20 truncate [writing-mode:vertical-rl] rotate-180 pb-1">
+              <th key={column.index} scope="col" className="w-6 p-0 align-bottom font-normal text-muted-foreground">
+                <span className="mx-auto block max-h-24 truncate [writing-mode:vertical-rl] rotate-180 pb-1">
                   {column.label}
                 </span>
               </th>

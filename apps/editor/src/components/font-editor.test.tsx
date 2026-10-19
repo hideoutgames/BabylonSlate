@@ -12,7 +12,7 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-const applyAssetDocumentChange = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => true));
+const applyAssetDocumentChange = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<boolean>>(async () => true));
 const fontHarness = vi.hoisted(() => ({
   content: null as Record<string, unknown> | null,
   importFile: vi.fn(async () => {}),

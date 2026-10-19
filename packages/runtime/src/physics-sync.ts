@@ -270,11 +270,15 @@ export class PhysicsWorldSync {
     return this.resolveCollisionMask(1, 0xffffffff, "project");
   }
 
-  /** Mesh, Dynamic Runtime Mesh and Landscape collision. */
-  private meshCollisionFilter(component: ActorComponent): { layer: number; mask: number } {
+  /**
+   * Mesh, Dynamic Runtime Mesh and Landscape collision. Landscape has no Collides With setting, so without a
+   * written `maskSource` it follows the matrix like the engine's own colliders.
+   */
+  private meshCollisionFilter(component: ActorComponent, unsetSource: CollisionMaskSource = "custom"): { layer: number; mask: number } {
     const layer = parseMeshCollisionLayer(component.getVariable("layer"));
     const mask = parseMeshCollisionMask(component.getVariable("mask"));
-    return { layer, mask: this.resolveCollisionMask(layer, mask, parseCollisionMaskSource(component.getVariable("maskSource"))) };
+    const source = component.getVariable("maskSource");
+    return { layer, mask: this.resolveCollisionMask(layer, mask, source === undefined ? unsetSource : parseCollisionMaskSource(source)) };
   }
 
   /** Capture native center-of-mass motion before replacing the actor's body. */
@@ -1905,7 +1909,7 @@ export class PhysicsWorldSync {
       if (!source.shape) continue;
       const baked = this.geometry(component, "landscape").prepare(source.shape, component.transform, scale);
       const id = componentColliderPhysicsId(actor.guid, component.guid);
-      colliders.set(id, { id, bodyId, ...baked, friction: 0.5, restitution: 0, isTrigger: false, ...this.meshCollisionFilter(component) });
+      colliders.set(id, { id, bodyId, ...baked, friction: 0.5, restitution: 0, isTrigger: false, ...this.meshCollisionFilter(component, "project") });
     }
   }
 
