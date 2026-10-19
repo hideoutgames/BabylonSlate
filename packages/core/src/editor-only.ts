@@ -113,9 +113,9 @@ export type ClassHeaderEvent = {
 };
 
 /**
- * A Class component as its header keeps it. Open-time sync of a closed Class
- * copies every field the row holds onto placed instances, so the row carries
- * each field of the Class document's component that sync reads.
+ * A Class component as its header keeps it. A closed Class syncs its placed
+ * instances from these rows alone, so a row holds every component field sync
+ * copies onto an instance.
  */
 export type ClassHeaderComponent = {
   id: string;

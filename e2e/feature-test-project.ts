@@ -82,11 +82,11 @@ export async function reopenFeatureTestProject(page: Page, timeout = LONG_MS): P
  * a route that leaves edits behind on purpose (a fly-through) discards them.
  *
  * The answer is a plain click, never `page.addLocatorHandler`: while the next
- * Scene realizes, the main thread is busy and the prompt's exit animation
- * cannot finish, so Playwright re-fires the handler on the dialog that is
- * about to unmount. That second run waits forever for a Discard button that no
- * longer exists and stalls every later assertion until the test times out,
- * although the editor opened the Scene in seconds.
+ * Scene realizes, the main thread is busy for about a second, and Playwright
+ * runs the handler a second time on the dialog as it unmounts. That second run
+ * waits forever for a Discard button that no longer exists and stalls every
+ * later assertion until the test times out, although the editor opened the
+ * Scene in seconds.
  */
 async function awaitSceneOpenPrompt(
   page: Page,
