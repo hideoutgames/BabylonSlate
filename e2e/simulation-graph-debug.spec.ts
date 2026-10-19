@@ -12,7 +12,7 @@ import { clickPlayAndWaitForOverlay } from "./play";
 import { setPreviewScene } from "./preview-parity";
 
 type TestHost = typeof globalThis & {
-  __babylonslateSimulationTest: { start(): Promise<void> };
+  __babylonslateSimulationTest: { start(): Promise<void>; state(): { lifecycle: string } };
   __babylonslatePlayTest: { tickIndex(): number };
   __babylonslateTest: { setMainGraphContent(graph: SerializedGraph): Promise<boolean> };
 };
@@ -238,4 +238,27 @@ test("a Simulation lights up what a Class graph runs for the chosen instance and
   await expect(select(page)).toHaveCount(0);
   await pinSide(page, "printB", "value").hover();
   await expect(page.getByTestId("graph-pin-value-tip")).toHaveCount(0);
+});
+
+test("a Class graph first opened during a Simulation does not make Stop report a texture leak", async ({ page }) => {
+  test.setTimeout(120_000);
+  const textureLeaks: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error" && /^\[play\] \d+ texture\(s\)/.test(message.text())) textureLeaks.push(message.text());
+  });
+  await openMinimalTestProject(page);
+  await openMainScene(page);
+  expect(await page.evaluate((graph) => (globalThis as TestHost).__babylonslateTest.setMainGraphContent(graph), CLASS_GRAPH)).toBe(true);
+
+  // The Class graph's viewport draws on the Simulation's Engine and creates its own textures after the Simulation began.
+  await startSimulation(page);
+  await focusClassGraph(page);
+  await page.getByTestId("simulation-session-stop").click();
+  await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 30_000 });
+
+  // The session owner goes idle only after the leak check has run.
+  await expect
+    .poll(() => page.evaluate(() => (globalThis as TestHost).__babylonslateSimulationTest.state().lifecycle), { timeout: 30_000 })
+    .toBe("idle");
+  expect(textureLeaks).toEqual([]);
 });
