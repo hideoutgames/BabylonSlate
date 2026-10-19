@@ -137,6 +137,23 @@ describe("skeletal ragdoll runtime lifecycle", () => {
     } finally { runtime.stop(); }
   });
 
+  it("waits for a capture that arrives after a long renderer load instead of failing on simulation ticks", async () => {
+    const { runtime, commands } = fixture();
+    try {
+      const actor = await prepare(runtime);
+      runtime.invokeScriptEvent("Hero", "Enable", actor);
+      const request = latestCapture(commands);
+      const errorCount = runtime.getDiagnostics().entries().reduce((total, entry) => total + entry.count, 0);
+      for (let i = 0; i < 1200; i++) runtime.tick();
+      const ragdoll = actor.components.find((component) => component.guid === "ragdoll")!;
+      expect(ragdoll.getVariable("status")).toBe("pending");
+      runtime.applyRagdollPoseCaptured({ type: "ragdollPoseCaptured", slotId: request.slotId, requestId: request.requestId, bones: pose });
+      expect(ragdoll.getVariable("status")).toBe("active");
+      expect(runtime.getPhysicsSync()!.getBackend().getBodyTransform("body:hero")).toBeNull();
+      expect(runtime.getDiagnostics().entries().reduce((total, entry) => total + entry.count, 0)).toBe(errorCount);
+    } finally { runtime.stop(); }
+  });
+
   it("reports failed capture and explicit software support once while preserving ordinary collision", async () => {
     for (const software of [false, true]) {
       const { runtime, commands } = fixture(software);
