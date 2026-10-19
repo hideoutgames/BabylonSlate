@@ -31,6 +31,13 @@ test("workflow admission and required-check policy agree on every browser partit
   ]);
 });
 
+const mergeCommand = [
+  'git fetch --no-tags --quiet origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"',
+  'git show "refs/remotes/origin/$BASE_REF:scripts/merge-pr-base.mjs" > "$RUNNER_TEMP/merge-pr-base.mjs" || cp scripts/merge-pr-base.mjs "$RUNNER_TEMP/merge-pr-base.mjs"',
+  'node "$RUNNER_TEMP/merge-pr-base.mjs"',
+  "",
+].join("\n");
+
 test("every pull-request job tests the head merged with the base branch as it is when the job runs", async () => {
   const workflow = parse(
     await readFile(
@@ -55,7 +62,8 @@ test("every pull-request job tests the head merged with the base branch as it is
     );
     // The merge needs the history that joins the head to the base.
     assert.equal(checkout.with["fetch-depth"], 0, name);
-    assert.equal(merge.run, "node scripts/merge-pr-base.mjs", name);
+    // The base branch's copy, so heads cut before the script existed still merge.
+    assert.equal(merge.run, mergeCommand, name);
     assert.equal(merge.if, "github.event_name == 'pull_request'", name);
     assert.deepEqual(
       merge.env,

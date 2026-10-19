@@ -1,5 +1,6 @@
 import { emptyWaterSample } from "@babylonslate/core";
 import { Actor, ActorComponent, SceneLayer, type BObject, type World } from "@babylonslate/object-model";
+import type { MovementWorldSync } from "./movement";
 import type { PhysicsWorldSync } from "./physics-sync";
 import type { RagdollWorldSync } from "./ragdoll-sync";
 import type { ScriptHostServices } from "./script-host";
@@ -15,6 +16,8 @@ interface PhysicsHostDeps {
   /** The world that simulates an actor (its Scene Layer's own, or main); null for a layer without physics. */
   physicsFor(actor: Actor): PhysicsWorldSync | null;
   ragdolls: Pick<RagdollWorldSync, "addImpulse" | "retireActor">;
+  /** Takes the impulse of an actor whose Movement is moved by its character controller. */
+  movement: Pick<MovementWorldSync, "addImpulse">;
   /** Simulated water time including the current tick (`WaterClock.time`). */
   waterTime(): number;
   /** Project the cursor through the main Play camera, or through Scene Layer `sceneLayerId`'s camera. */
@@ -72,6 +75,7 @@ export function createPhysicsHostBindings(deps: PhysicsHostDeps): Pick<ScriptHos
       const target = actor;
       if (!target) return;
       if (deps.ragdolls.addImpulse(target, impulse, strength)) return;
+      if (deps.movement.addImpulse(target, impulse, strength)) return;
       deps.physicsFor(target)?.addImpulse(
         target.guid,
         impulse,
