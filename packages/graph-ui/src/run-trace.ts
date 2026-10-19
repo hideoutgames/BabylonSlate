@@ -115,9 +115,10 @@ export function pinShowsValue(graph: RunGraph, nodeId: string, pinId: string, di
 }
 
 /**
- * The last value of a pin. A node that ran reports what it read and produced; a pure node
- * reports nothing itself, so its output shows what a node that read it got, and a wired
- * input shows what its source produced.
+ * The last value of a pin. A node that ran reports what it read and produced, and a Class
+ * graph's pure nodes report their outputs each time they are evaluated. A wired input shows what
+ * its source produced; an output nothing recorded (a graph whose pure nodes do not report, such
+ * as a Behaviour Tree's) shows what a node that read it got.
  */
 export function resolvePinValue(
   trace: Pick<GraphRunTrace, "value">,

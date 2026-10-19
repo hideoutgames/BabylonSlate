@@ -90,7 +90,8 @@ describe("resolvePinValue", () => {
   });
 
   it("falls back to what a node that ran read from the source when the source is pure", () => {
-    // Scale reports nothing itself; Add reads it but is pure too, so nothing records Add.b. Not known.
+    // Scale reports nothing and Add, which reads it, is pure and reports nothing either (a graph whose
+    // pure nodes do not record). Not known.
     expect(resolvePinValue(traceOf({ "log.message.in": "7" }), graph(), "add", "b", "in")).toBeUndefined();
     expect(resolvePinValue(traceOf({}), graph(), "make", "value", "out")).toBeUndefined();
   });

@@ -82,6 +82,17 @@ function registry(): NodeRegistry {
     codegen: (ctx) => ({ result: `String(${ctx.input("text")}).toUpperCase()` }),
   });
   nodes.register({
+    id: "test.exclaim",
+    title: "Exclaim",
+    category: "test",
+    pure: true,
+    pins: () => [
+      pin("text", "text", "in", STRING),
+      pin("result", "result", "out", STRING),
+    ],
+    codegen: (ctx) => ({ result: `ctx.exclaim(${ctx.input("text")})` }),
+  });
+  nodes.register({
     id: "test.who",
     title: "Who",
     category: "test",
@@ -201,9 +212,10 @@ describe("compileGraph instrumentExecutionTrace", () => {
     expect(release.anchors).toEqual(plain.anchors);
   });
 
-  it("emits visits, wires taken and the values nodes read and produce", () => {
+  it("emits visits, wires taken and the values nodes read and produce, pure nodes included", () => {
     expect(compile(makeThenLog(), TRACED).source).toBe(`//# sourceURL=babylonslate:///classes/Door.class.js
 var __dv = (t, node, pin, value) => (t === null ? value : t.read(node, pin, value));
+var __dw = (t, node, pin, value) => (t === null ? value : (t.write(node, pin, value), value));
 export function run(ctx) {
   const __dbg = ctx.debugTrace === null ? null : ctx.debugTrace.graph("classes/Door.class", "event-graph");
   let _n_make_value = "";
@@ -214,7 +226,7 @@ export function run(ctx) {
   if (__dbg !== null) { __dbg.write("make", "value", _n_make_value); }
   if (__dbg !== null) __dbg.edge("e2");
   if (__dbg !== null) __dbg.exec("log");
-  ctx.log(__dv(__dbg, "log", "message", (String(_n_make_value).toUpperCase())));
+  ctx.log(__dv(__dbg, "log", "message", __dw(__dbg, "shout", "result", (String(_n_make_value).toUpperCase()))));
 }
 `);
   });
@@ -228,6 +240,7 @@ export function run(ctx) {
       "write make.value=door",
       "edge e2",
       "exec log",
+      "write shout.result=DOOR",
       "read log.message=DOOR",
     ]);
     expect(graphs).toEqual(["classes/Door.class#event-graph"]);
@@ -256,6 +269,40 @@ export function run(ctx) {
     expect(events).toContain("read log.message=DOOR1");
   });
 
+  it("records every pure node of a chain the consumer evaluates, without evaluating any twice", () => {
+    const graph = makeThenLog();
+    graph.nodes.push(node("exclaim", "test.exclaim"));
+    graph.edges = graph.edges.filter((e) => e.id !== "d2").concat(
+      edge("d2", "shout", "result", "exclaim", "text"),
+      edge("d3", "exclaim", "result", "log", "message"),
+    );
+    const source = compile(graph, TRACED).source;
+    let exclaimed = 0;
+    const exclaim = (text: string) => (exclaimed += 1, `${text}!`);
+    const { events, logged } = run(source, "run", { exclaim });
+    expect(events.filter((event) => /^(write|read) (shout|exclaim|log)\./.test(event))).toEqual([
+      "write shout.result=DOOR",
+      "write exclaim.result=DOOR!",
+      "read log.message=DOOR!",
+    ]);
+    expect(logged).toEqual(["DOOR!"]);
+    expect(exclaimed).toBe(1);
+
+    // Unobserved, and without probes, the pure node runs as often.
+    exclaimed = 0;
+    run(source, "run", { exclaim, debugTrace: null });
+    expect(exclaimed).toBe(1);
+    run(compile(graph).source, "run", { exclaim });
+    expect(exclaimed).toBe(2);
+  });
+
+  it("records a pure node that nothing downstream evaluates not at all", () => {
+    const graph = makeThenLog();
+    graph.edges = graph.edges.filter((e) => e.id !== "d2");
+    const { events } = run(compile(graph, TRACED).source);
+    expect(events.some((event) => event.includes("shout"))).toBe(false);
+  });
+
   it("records a subject input once, where the compiler reads it, and keeps its null guard", () => {
     const graph: LogicGraph = {
       id: "event-graph",
@@ -270,7 +317,7 @@ export function run(ctx) {
     const acted: unknown[] = [];
     let reads = 0;
     const present = run(source, "run", { who: () => (reads += 1, "door"), act: (who: unknown) => acted.push(who) });
-    expect(present.events).toEqual(["exec entry", "edge e1", "exec act", "read act.target=door"]);
+    expect(present.events).toEqual(["exec entry", "edge e1", "exec act", "write who.actor=door", "read act.target=door"]);
     expect(reads).toBe(1);
     expect(acted).toEqual(["door"]);
 
