@@ -21,6 +21,7 @@ import {
   type ForwardLightSlotExchange,
 } from "./forward-light-slots";
 import { lightingSamplerCapacity, lightSamplerCost, lightSamplerCount } from "./light-sampler-budget";
+import { receiverSignature } from "./shadow-receiver-handoff";
 
 const authoredEnabled = new WeakMap<
   Light,
@@ -40,6 +41,12 @@ const scratchAuthored: boolean[] = [];
 const scratchBudget: BudgetChange[] = [];
 const scratchLeaving: Light[] = [];
 const scratchEntering: Light[] = [];
+const scratchRanked = new Set<Light>();
+const scratchStable = new Set<Light>();
+const scratchKinds = new Map<Light, string>();
+const scratchQuotas = new Map<string, number>();
+const scratchOrder: Light[] = [];
+const scratchRest: Light[] = [];
 
 /** How this sync's budget selection changed a light's Forward limit. */
 const BudgetChange = { None: 0, Dropped: 1, Admitted: 2 } as const;
@@ -167,40 +174,26 @@ export function syncForwardLightPolicy(
       (!isAuthoredLocal(scene, light) || isClusteredLocalAllowed(scene, light))
     )
       candidates.push(light);
-  const capacity = Math.max(0, Math.floor(slots));
-  const localCapacity = Math.max(0, Math.floor(localSlots));
-  const samplerCapacity = lightingSamplerCapacity(scene);
+  const capacity: Capacity = {
+    lights: Math.max(0, Math.floor(slots)),
+    locals: Math.max(0, Math.floor(localSlots)),
+    samplers: lightingSamplerCapacity(scene),
+  };
   if (
-    candidates.length > capacity ||
-    countLocals(scene, candidates) > localCapacity ||
-    lightSamplerCount(scene, candidates) > samplerCapacity
-  )
+    candidates.length > capacity.lights ||
+    countLocals(scene, candidates) > capacity.locals ||
+    lightSamplerCount(scene, candidates) > capacity.samplers
+  ) {
     sortLightsByAdmission(scene, candidates, previous);
+    // Clustered Forward orders lights itself; light sorting re-sorts every receiver.
+    if (!hasClusteredLightPolicy(scene) && !scene.requireLightSorting)
+      keepAdmittedSlotKinds(scene, candidates, previous, capacity);
+  }
   const selected = previous;
   selected.clear();
-  let selectedLocals = 0;
-  let samplers = 0, hasArea = false;
   const limited: Light[] = [];
   const samplerLimited: Light[] = [];
-  for (const light of candidates) {
-    const authoredLocal = isAuthoredLocal(scene, light);
-    const samplerCost = lightSamplerCost(scene, light, hasArea);
-    if (
-      selected.size >= capacity ||
-      (authoredLocal && selectedLocals >= localCapacity)
-    )
-      limited.push(light);
-    else if (samplers + samplerCost > samplerCapacity) {
-      limited.push(light);
-      samplerLimited.push(light);
-    }
-    else {
-      selected.add(light);
-      samplers += samplerCost;
-      hasArea ||= light instanceof RectAreaLight;
-      if (authoredLocal) selectedLocals++;
-    }
-  }
+  const samplers = admit(scene, candidates, capacity, selected, limited, samplerLimited);
   // Decide every light before toggling any, so receivers can be prepared for
   // the whole change. An eligible light the clustered policy kept out of the
   // candidates is limited too; fill that set once, and only when needed.
@@ -259,6 +252,131 @@ export function syncForwardLightPolicy(
     samplers,
     exchanges,
   };
+}
+
+type Capacity = { lights: number; locals: number; samplers: number };
+
+/**
+ * The budget's selection: admits `candidates` in order while the shader slots,
+ * the local-light budget and the lighting samplers allow. Returns the samplers
+ * the admitted lights use.
+ */
+function admit(
+  scene: Scene,
+  candidates: readonly Light[],
+  capacity: Capacity,
+  selected: Set<Light>,
+  limited?: Light[],
+  samplerLimited?: Light[],
+): number {
+  let selectedLocals = 0;
+  let samplers = 0, hasArea = false;
+  for (const light of candidates) {
+    const authoredLocal = isAuthoredLocal(scene, light);
+    const samplerCost = lightSamplerCost(scene, light, hasArea);
+    if (selected.size >= capacity.lights || (authoredLocal && selectedLocals >= capacity.locals))
+      limited?.push(light);
+    else if (samplers + samplerCost > capacity.samplers) {
+      limited?.push(light);
+      samplerLimited?.push(light);
+    } else {
+      selected.add(light);
+      samplers += samplerCost;
+      hasArea ||= light instanceof RectAreaLight;
+      if (authoredLocal) selectedLocals++;
+    }
+  }
+  return samplers;
+}
+
+/**
+ * How much nearer the camera a light of another slot kind must be before the
+ * Forward budget changes which kinds it admits: it keeps its current mix
+ * unless that would keep a light more than this many times farther away than
+ * the nearest light it leaves out instead (or one with a lower Light Priority).
+ * Every lit material compiles a new shader the first time the admitted kinds
+ * change (a point admitted for a shadowed spot); a swap between lights of one
+ * kind compiles nothing. Going back takes the same margin, so the mix does not
+ * flip at a boundary.
+ */
+export const FORWARD_KIND_CHANGE_DISTANCE_RATIO = 1.25;
+
+/**
+ * When the ranked selection would change the admitted local lights' mix of
+ * slot kinds (`receiverSignature`: type, cast shadows and the other per-light
+ * defines), reorder `candidates` so each kind first fills as many places as it
+ * held before (its nearest lights by rank), unless that keeps a light more than
+ * FORWARD_KIND_CHANGE_DISTANCE_RATIO times farther than the light the ranked
+ * selection would admit in its place.
+ */
+function keepAdmittedSlotKinds(scene: Scene, candidates: Light[], previous: ReadonlySet<Light>, capacity: Capacity): void {
+  if (!previous.size) return;
+  const ranked = scratchRanked;
+  const stable = scratchStable;
+  const kinds = scratchKinds;
+  const quotas = scratchQuotas;
+  try {
+    admit(scene, candidates, capacity, ranked);
+    // Most syncs keep their selection, and every unchanged one ends here.
+    let unchanged = ranked.size === previous.size;
+    for (const light of ranked) if (unchanged && !previous.has(light)) unchanged = false;
+    if (unchanged) return;
+    const kind = (light: Light) => {
+      let value = kinds.get(light);
+      if (value === undefined) kinds.set(light, (value = receiverSignature(light)));
+      return value;
+    };
+    const change = (set: ReadonlySet<Light>, light: Light, delta: number) => {
+      if (set.has(light) && isAuthoredLocal(scene, light)) quotas.set(kind(light), (quotas.get(kind(light)) ?? 0) + delta);
+    };
+    for (const light of candidates) {
+      change(previous, light, 1);
+      change(ranked, light, -1);
+    }
+    let sameKinds = true;
+    for (const count of quotas.values()) if (count !== 0) sameKinds = false;
+    if (sameKinds) return;
+    // Places per kind the previous selection held, counting only lights still eligible.
+    quotas.clear();
+    for (const light of candidates) change(previous, light, 1);
+    const order = scratchOrder;
+    const rest = scratchRest;
+    for (const light of candidates) {
+      const quota = isAuthoredLocal(scene, light) ? (quotas.get(kind(light)) ?? 0) : 1;
+      if (quota > 0) {
+        if (isAuthoredLocal(scene, light)) quotas.set(kind(light), quota - 1);
+        order.push(light);
+      } else rest.push(light);
+    }
+    order.push(...rest);
+    admit(scene, order, capacity, stable);
+    // The nearest light only the ranked selection admits, the farthest only the stable one keeps.
+    let entering: Light | undefined;
+    let kept: Light | undefined;
+    for (const light of candidates) {
+      if (!entering && ranked.has(light) && !stable.has(light)) entering = light;
+      if (stable.has(light) && !ranked.has(light)) kept = light;
+    }
+    if (!kept) return;
+    if (entering) {
+      const priority = (light: Light) => (Number.isFinite(light.renderPriority) ? light.renderPriority : 0);
+      if (priority(kept) < priority(entering)) return;
+      const camera = scene.activeCamera;
+      if (camera) {
+        const distance = (light: Light) => Vector3.DistanceSquared(admissionPosition(light), camera.globalPosition);
+        if (distance(kept) > distance(entering) * FORWARD_KIND_CHANGE_DISTANCE_RATIO ** 2) return;
+      }
+    }
+    candidates.length = 0;
+    candidates.push(...order);
+  } finally {
+    ranked.clear();
+    stable.clear();
+    kinds.clear();
+    quotas.clear();
+    scratchOrder.length = 0;
+    scratchRest.length = 0;
+  }
 }
 
 type SlotTransition = {

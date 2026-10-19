@@ -600,12 +600,12 @@ describe("scene material lighting", () => {
     // Nine shader slots; ten lamps 10 m apart. The first sync drops lamp 9 and
     // orders the admitted lamps points first, then spots, each in creation
     // order. With the camera at x = 90 the budget drops lamp 0 and admits lamp 9.
-    function swapFixture(spots: readonly number[] = []) {
+    function swapFixture(spots: readonly number[] = [], x = (index: number) => index * 10) {
       const scene = host(false);
       const camera = new UniversalCamera("camera", Vector3.Zero(), scene);
       scene.activeCamera = camera;
       const lamps = Array.from({ length: 10 }, (_, index) => {
-        const position = new Vector3(index * 10, 3, 0);
+        const position = new Vector3(x(index), 3, 0);
         return spots.includes(index)
           ? new SpotLight(`lamp-${index}`, position, Vector3.Down(), 1, 1, scene)
           : new PointLight(`lamp-${index}`, position, scene);
@@ -670,12 +670,29 @@ describe("scene material lighting", () => {
       );
     });
 
-    it("re-sorts the admitted lights by slot kind and refreshes frozen receivers when the slot defines differ", async () => {
+    it("keeps the admitted mix of slot kinds while a light of another kind is at most FORWARD_KIND_CHANGE_DISTANCE_RATIO times nearer", async () => {
       const { scene, camera, lamps, material, receiver, part } = swapFixture([0, 4]);
       material.freeze();
       await ready(receiver, material);
-      expect(slotKinds(part.materialDefines!.toString())).toEqual([...points(7), "spot", "spot"]);
+      const defines = part.materialDefines!.toString();
+      // The spot at x = 0 is farthest, but only 90 / 80 times as far as the nearest point it would keep out.
       camera.position.x = 90;
+      beginFrame(scene);
+      expect(isForwardLightExcluded(lamps[1]!)).toBe(true);
+      expect(isForwardLightExcluded(lamps[0]!)).toBe(false);
+      // The admitted point takes the dropped point's slot: no receiver changes.
+      expect(receiver.lightSources).toEqual([9, 2, 3, 5, 6, 7, 8, 0, 4].map((index) => lamps[index]));
+      expect(part.materialDefines!.isDirty).toBe(false);
+      expect(part.materialDefines!.toString()).toBe(defines);
+    });
+
+    it("re-sorts the admitted lights by slot kind and refreshes frozen receivers when the slot defines differ", async () => {
+      // The spot at x = 0 ends up 130 / 80 times as far as the nearest point it would keep out.
+      const { scene, camera, lamps, material, receiver, part } = swapFixture([0, 4], (index) => (index ? 40 + index * 10 : 0));
+      material.freeze();
+      await ready(receiver, material);
+      expect(slotKinds(part.materialDefines!.toString())).toEqual([...points(7), "spot", "spot"]);
+      camera.position.x = 130;
       beginFrame(scene);
       // The admitted point joins the points; the remaining spot moves to the end.
       expect(receiver.lightSources).toEqual([1, 2, 3, 5, 6, 7, 8, 9, 4].map((index) => lamps[index]));
