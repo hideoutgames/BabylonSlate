@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { NullEngine, RawTexture, Scene, StandardMaterial } from "@babylonjs/core";
 import { installEngineDefaultMaterial } from "@babylonslate/render";
 import { SessionDiagnosticAggregator } from "@babylonslate/runtime";
@@ -42,9 +42,15 @@ describe("texturesRetainedAfterPlay", () => {
     expect(texturesRetainedAfterPlay(engine as never, before, new Set())).toEqual([]);
   });
 
+  const engines: NullEngine[] = [];
+  afterEach(() => {
+    while (engines.length > 0) engines.pop()?.dispose();
+  });
+
   /** A NullEngine whose cache lists raw textures, as the WebGL and WebGPU Engines' do. */
   function sharedEngine(): NullEngine {
     const engine = new NullEngine();
+    engines.push(engine);
     const createRawTexture = engine.createRawTexture.bind(engine);
     engine.createRawTexture = (...args: Parameters<typeof createRawTexture>) => {
       const texture = createRawTexture(...args);
