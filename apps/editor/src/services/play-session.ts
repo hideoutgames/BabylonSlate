@@ -790,7 +790,8 @@ export function startPlaySession(options: {
       if (result.success && result.requestId > lastBoundaryId) {
         lastBoundaryId = result.requestId;
         acknowledgedPaused = result.paused;
-        handle.setGameTimePaused(result.paused);
+        // A `rendering` hold keeps the view drawing; the Engine pauses its own game time for it.
+        handle.setGameTimePaused(result.pauseReasons.some((reason) => reason !== "rendering"));
         if (!result.paused) last = performance.now();
         suppressGameInput();
       }
@@ -826,6 +827,11 @@ export function startPlaySession(options: {
     physicsWorld: options.physics?.physicsWorld ?? options.scene?.settings.physicsWorld,
     sharedEngine,
     playMode: true,
+    // While the view holds for WebGPU render pipelines the game waits, as for a blocking load.
+    onPipelineHold: (held) => {
+      if (stopped || (!worker && !runtime)) return;
+      void setPauseReason("rendering", held).catch((error: unknown) => options.onLog?.(String(error), "error"));
+    },
     frameCap: resolvePlayFrameCap(options.frameCap),
     spritePayloads: options.spritePayloads,
     spriteAnimations: options.spriteAnimationPayloads,

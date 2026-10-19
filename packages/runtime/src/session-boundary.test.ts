@@ -54,6 +54,26 @@ describe("runtime session boundaries", () => {
     } finally { runtime.stop(); }
   });
 
+  it("holds the game while the view waits for render pipelines and resumes without catching up", async () => {
+    const runtime = makeRuntime({ dt: 0.1 });
+    let requestId = 0;
+    const hold = (paused: boolean) => runtime.requestSessionBoundary({
+      sessionGeneration: 7, requestId: ++requestId, action: { kind: "pause", reason: "rendering", paused } });
+    try {
+      runtime.realizePlayWorld(); runtime.start(); runtime.advance(0.15);
+      expect(runtime.getWorld().clock.tickIndex).toBe(1);
+      expect(await hold(true)).toMatchObject({ success: true, paused: true, pauseReasons: ["rendering"] });
+      runtime.advance(2); runtime.tick();
+      expect(runtime.getWorld().clock.tickIndex).toBe(1);
+      expect((await hold(false)).paused).toBe(false);
+      // The elapsed time that spans the hold is discarded, not replayed as a burst of ticks.
+      runtime.advance(2);
+      expect(runtime.getWorld().clock.tickIndex).toBe(1);
+      runtime.advance(0.1);
+      expect(runtime.getWorld().clock.tickIndex).toBe(2);
+    } finally { runtime.stop(); }
+  });
+
   it("rejects stale, repeated, malformed, overflowing and stopped requests without changing the world", async () => {
     const runtime = makeRuntime();
     const pause = (requestId: number, sessionGeneration = 7) => runtime.requestSessionBoundary({

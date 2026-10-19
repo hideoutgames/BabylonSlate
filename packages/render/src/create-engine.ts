@@ -462,6 +462,13 @@ export interface CreateEngineOptions {
   present?: "registerView" | "rtt";
   /** When true, use Play scene performance settings. */
   playMode?: boolean;
+  /**
+   * The world view started (true) or stopped (false) holding its last image
+   * while WebGPU render pipelines it needs compile. Play hosts pause the game
+   * runtime for the hold (pause reason `rendering`), as for a blocking load;
+   * this Engine already pauses its own game time, audio and particles.
+   */
+  onPipelineHold?: (held: boolean) => void;
   maxActors?: number;
   /** Attach the editor camera, gizmos, grid, selection and scene sync. */
   editor?: boolean;
@@ -931,7 +938,9 @@ function initializeEngine(
   const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
   // Every view shares the same graph path for authored and selection outlines.
   // The graph owns its active queue; editor world matrices still freeze.
-  const worldRenderer = new SceneRenderCoordinator(scene);
+  // The world view draws every frame and presents only rendered ones, so a
+  // draw whose WebGPU pipeline is still compiling holds the last image.
+  const worldRenderer = new SceneRenderCoordinator(scene, { deferPipelines: true });
   onRollback(() => worldRenderer.dispose());
   let disposed = false;
   let streamAdmission: ReturnType<typeof createSceneStreamAdmission> | undefined;
@@ -2808,6 +2817,7 @@ function initializeEngine(
             () => worldRenderer.render(true))
           : worldRenderer.render(pendingPresentations.has("world"));
         coherentFrame = result.rendered && (!frameScope || result.readyForPresentation);
+        syncPipelineHold(worldRenderer.holdingForPipelines);
         return result.readyForPresentation;
       }, () => {
         // A newly bound output may invalidate admission between scheduling and
@@ -3151,15 +3161,27 @@ function initializeEngine(
   let callerPaused = false;
   let sceneStreamingPaused = false;
   let gameTimePaused = false;
+  /** The world view holds its last image for WebGPU pipelines (`SceneRenderCoordinator.holdingForPipelines`). */
+  let pipelineHold = false;
   const applyPause = () => {
     const paused = callerPaused || sceneStreamingPaused || gameTimePaused;
-    setSceneGameTimePaused(scene, gameTimePaused);
-    for (const layer of sceneLayerCompositor?.layers() ?? []) setSceneGameTimePaused(layer.scene, gameTimePaused);
+    // Play pauses its game time, audio and particles while the view holds, as
+    // for a blocking load, but keeps drawing: the frame that finds the
+    // pipelines ready ends the hold. Resuming never consumes the held interval.
+    const held = pipelineHold && options.playMode === true;
+    setSceneGameTimePaused(scene, gameTimePaused || held);
+    for (const layer of sceneLayerCompositor?.layers() ?? []) setSceneGameTimePaused(layer.scene, gameTimePaused || held);
     binding.paused = paused;
     if (paused) resetJoysticks();
     scheduler.setPaused(paused);
-    audioService?.setPaused(paused);
-    particleService?.setPaused(paused);
+    audioService?.setPaused(paused || held);
+    particleService?.setPaused(paused || held);
+  };
+  const syncPipelineHold = (held: boolean) => {
+    if (held === pipelineHold) return;
+    pipelineHold = held;
+    applyPause();
+    options.onPipelineHold?.(held);
   };
 
   const engineHandle: EngineHandle = {

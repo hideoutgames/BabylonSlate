@@ -47,6 +47,7 @@ import { OwnedPostProcess } from "./owned-post-process";
 import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_FIRST_FRAME_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 import { SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS } from "./stall-deadline";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { isSceneGameTimePaused } from "./scene-game-time";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
@@ -543,6 +544,33 @@ describe("Play createEngine view", () => {
     expect(mesh.isDisposed()).toBe(true);
     expect(() => handle.applyCommand({ type: "cableFrame", frameId: 2, data: new Float32Array([11, 3, -1, -1, 0, 0, 0, 0, 0, 0, 20, 50, 0, 30, 50, 0, 40, 50, 0]) })).not.toThrow();
     expect(handle.scene.getMeshByName("actor-7|rope")).toBeNull();
+  });
+
+  it("pauses Play's game time but keeps drawing while the world view holds for render pipelines", async () => {
+    const engine = sharedEngine();
+    const holds: boolean[] = [];
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true, onPipelineHold: (held) => holds.push(held) });
+    handles.push(handle);
+    await handle.prewarmSceneMaterials();
+    void handle.presentFirstFrame().catch(() => {});
+    const frame = () => {
+      handle.scheduler.invalidate("manual");
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+    };
+    // NullEngine never defers a pipeline; the world view's hold is the seam.
+    const holding = vi.spyOn(SceneRenderCoordinator.prototype, "holdingForPipelines", "get").mockReturnValue(true);
+    frame();
+    expect(holds).toEqual([true]);
+    expect(isSceneGameTimePaused(handle.scene)).toBe(true);
+    // The frame that finds the pipelines ready must still draw.
+    expect(handle.scheduler.shouldRender(Number.MAX_SAFE_INTEGER)).toBe(true);
+    holding.mockReturnValue(false);
+    frame();
+    expect(holds).toEqual([true, false]);
+    expect(isSceneGameTimePaused(handle.scene)).toBe(false);
   });
 
   it("keeps manual Pause and blocking streaming pauses independent", () => {
