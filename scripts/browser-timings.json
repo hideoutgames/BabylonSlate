@@ -29,6 +29,7 @@
     "[desktop-chrome] > engine-settings.spec.ts > editor viewport applies hardware scaling and the post-processing gate": 25400,
     "[desktop-chrome] > environment-texture.spec.ts > imports HDR environment cubes and consumes linear faces and roughness mips in Scene and Play": 18500,
     "[desktop-chrome] > fbx-import.spec.ts > FBX worker imports a canonical model and opens its preview": 13400,
+    "[desktop-chrome] > fixed-shape-lighting.spec.ts > fixed light seats shade native PBR and Standard like the legacy path on webgl2, and light changes compile nothing": 25000,
     "[desktop-chrome] > framegraph-forward.spec.ts > opt-in Forward FrameGraph preserves surface pixels and scene ownership on webgl2 backbuffer": 10800,
     "[desktop-chrome] > global-search.spec.ts > Global project search > searching a graph node property opens the graph and focuses the node": 10400,
     "[desktop-chrome] > global-search.spec.ts > Global project search > toolbar search opens a dialog and focuses a scene actor": 10200,

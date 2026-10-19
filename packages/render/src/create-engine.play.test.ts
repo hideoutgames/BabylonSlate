@@ -41,6 +41,8 @@ import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
+import { isFixedShapeLightingEnabled } from "./fixed-light-admission";
+import { fixedShapeLightGuard } from "./fixed-light-binding";
 import { prewarmMaterial } from "./material-compiler";
 import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
@@ -548,6 +550,20 @@ describe("Play createEngine view", () => {
     expect(handle.lightsDebugEnabled()).toBe(true);
     handle.applyCommand({ type: "setLightsDebug", enabled: false });
     expect(handle.lightsDebugEnabled()).toBe(false);
+  });
+
+  it("switches fixed-shape lighting on the shared Engine for Play and restores the editor's state when Play stops", () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    handle.applyCommand({ type: "setFixedShapeLighting", enabled: true, guard: "branch" });
+    expect(isFixedShapeLightingEnabled(engine)).toBe(true);
+    expect(fixedShapeLightGuard(engine)).toBe("branch");
+    handle.applyCommand({ type: "setFixedShapeLighting", enabled: false, guard: "branch" });
+    expect(isFixedShapeLightingEnabled(engine)).toBe(false);
+    handle.applyCommand({ type: "setFixedShapeLighting", enabled: true, guard: "multiply" });
+    handle.dispose();
+    expect(isFixedShapeLightingEnabled(engine)).toBe(false);
+    expect(fixedShapeLightGuard(engine)).toBe("multiply");
   });
 
   it("ignores commands and snapshots that arrive after the view stops", () => {

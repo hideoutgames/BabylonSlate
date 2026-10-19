@@ -393,6 +393,11 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
       const effectOptions = args[1] as Record<string, unknown> | undefined;
       const defines = (typeof args[4] === "string" ? args[4] : effectOptions?.defines) as string | undefined;
       const base = effectBaseName(args[0]);
+      // Lit Effects, split by fixed-shape seats versus Babylon's lightSources path.
+      if (defines?.includes("#define LIGHT0\n")) {
+        bump("effect.lit");
+        bump(defines.includes("#define SLATE_FIXED_LIGHTS\n") ? "effect.lit.fixed" : "effect.lit.legacy");
+      }
       // Node materials name effects by build id; stack each shader family once.
       record("effect", `${base} @ ${(defines ?? "").replace(/\n/g, " ").replace(/#define /g, "").trim().slice(0, 2000)}`, true, base.replace(/\d+/g, "#"));
     }

@@ -126,6 +126,44 @@ index 801aa3c223053ecfb677eb540ffe18ad03b03025..94cc6e2a27e92f4b473d28aef5670062
              this._vertexSourceCode = migratedVertexCode;
              this._fragmentSourceCode = migratedFragmentCode;
              this._prepareEffect(keepExistingPipelineContext);
+diff --git a/Materials/materialHelper.functions.js b/Materials/materialHelper.functions.js
+index 81218c39625f0efe767d0d29227f5bc9a673d714..1b1f8d30725c747ca935f15038267c76f1e138d9 100644
+--- a/Materials/materialHelper.functions.js
++++ b/Materials/materialHelper.functions.js
+@@ -484,6 +484,10 @@ function WarnAboutClampedLights(engine, requested, supported, lightsInUse) {
+  * @param maxSimultaneousLights The maximum number of light that can be bound to the effect
+  */
+ export function BindLights(scene, mesh, effect, defines, maxSimultaneousLights = 4) {
++    // An application light-slot hook (scene._materialLightHooks) may bind the effect's lights itself.
++    if (scene._materialLightHooks?.bindLights(scene, mesh, effect, defines, maxSimultaneousLights)) {
++        return;
++    }
+     const len = Math.min(mesh.lightSources.length, maxSimultaneousLights);
+     for (let i = 0; i < len; i++) {
+         const light = mesh.lightSources[i];
+@@ -617,6 +621,10 @@ export function AreLightsTexturesReady(scene, mesh, maxSimultaneousLights, disableLighting = false) {
+     if (!scene.lightsEnabled || disableLighting) {
+         return true;
+     }
++    const hooked = scene._materialLightHooks?.areLightsTexturesReady(scene, mesh, maxSimultaneousLights);
++    if (hooked !== undefined) {
++        return hooked;
++    }
+     const lights = mesh.lightSources;
+     const count = Math.min(lights.length, maxSimultaneousLights);
+     for (let i = 0; i < count; i++) {
+@@ -640,6 +648,11 @@ export function PrepareDefinesForLights(scene, mesh, defines, specularSupported, maxSimultaneousLights = 4, disableLighting = false) {
+     if (!defines._areLightsDirty) {
+         return defines._needNormals;
+     }
++    // An application light-slot hook may set the light defines itself; undefined keeps Babylon's.
++    const hooked = scene._materialLightHooks?.prepareDefinesForLights(scene, mesh, defines, specularSupported, maxSimultaneousLights, disableLighting);
++    if (hooked !== undefined) {
++        return hooked;
++    }
+     // Some engines cannot render as many lights as requested (see GetSupportedSimultaneousLights). Clamp the
+     // count so the scene renders with fewer lights, rather than failing pipeline creation and rendering nothing.
+     const requestedSimultaneousLights = maxSimultaneousLights;
 diff --git a/Materials/shadowDepthWrapper.js b/Materials/shadowDepthWrapper.js
 index 517e24c3ff098b6717db92924b5c4e21332c1f0a..db039329c78de733894dbe71bcaa2c1f7cba58f6 100644
 --- a/Materials/shadowDepthWrapper.js

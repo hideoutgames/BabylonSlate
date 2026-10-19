@@ -19,14 +19,21 @@ export function featureTestCheckCommands(sceneName: string, mode: FeatureTestChe
 
 export type FeatureTestCheckMode = "quick" | "full" | "benchmark";
 
-/** Performance profiles a Benchmark sweeps per scene: each quality tier, then Clustered Forward at High. */
-export const FEATURE_TEST_BENCHMARK_PROFILES = [
+/**
+ * Performance profiles a Benchmark sweeps per scene: each quality tier, then
+ * Clustered Forward at High, then fixed-shape forward lighting at Medium with
+ * each seat guard (compare with "medium · forward"). `recompiles` profiles
+ * rebuild every lit shader, so sampling waits for the view to draw again.
+ */
+export const FEATURE_TEST_BENCHMARK_PROFILES: readonly { label: string; commands: readonly string[]; recompiles?: true }[] = [
   { label: "low · forward", commands: ["renderpath forward", "quality low"] },
   { label: "medium · forward", commands: ["renderpath forward", "quality medium"] },
   { label: "high · forward", commands: ["renderpath forward", "quality high"] },
   { label: "ultra · forward", commands: ["renderpath forward", "quality ultra"] },
   { label: "high · clustered", commands: ["renderpath clusteredForward", "quality high"] },
-] as const;
+  { label: "medium · fixed lights", commands: ["renderpath forward", "quality medium", "fixedlights multiply"], recompiles: true },
+  { label: "medium · fixed lights · branch", commands: ["renderpath forward", "quality medium", "fixedlights branch"], recompiles: true },
+];
 
 /** Above any display refresh, so a Benchmark measures the device rather than the project frame cap. */
 const BENCHMARK_FRAME_CAP = 240;
@@ -128,6 +135,8 @@ export interface FeatureTestCheckTimeouts {
   releaseMs: number;
   /** Wait after a profile change for shaders and render targets to settle. */
   profileSettleMs: number;
+  /** Most a recompiling profile waits for the view to draw again without held frames, before the settle. */
+  profileCompileMs: number;
   editorSampleMs: number;
   playSampleMs: number;
 }
@@ -139,6 +148,7 @@ export const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
   commandMs: 60_000,
   releaseMs: 10_000,
   profileSettleMs: 3_000,
+  profileCompileMs: 90_000,
   editorSampleMs: 3_000,
   playSampleMs: 5_000,
 };
@@ -353,9 +363,31 @@ async function runCommand(
     : { line, success: outcome.success, output: outcome.output, ms };
 }
 
+/** Polls of new draws without a held one before a recompiling profile samples (one second at POLL_MS). */
+const STEADY_POLLS = 4;
+
+/**
+ * Waits, bounded by `ms`, until the Play view draws without holding frames
+ * (shaders and WebGPU pipelines a profile asked for are ready). True when it
+ * did, or when the view reports no presentation counts to watch.
+ */
+async function viewDrawsSteadily(play: PlayProbe, deps: FeatureTestCheckDeps, signal: AbortSignal, ms: number): Promise<boolean> {
+  let last: { drawn: number; held: number } | null = null;
+  let steady = 0;
+  const done = await waitFor(deps, signal, ms, () => {
+    const presentation = play.snapshot().rendering?.presentation;
+    if (!presentation) return true;
+    steady = last && presentation.held === last.held && presentation.drawn > last.drawn ? steady + 1 : 0;
+    last = { drawn: presentation.drawn, held: presentation.held };
+    return steady >= STEADY_POLLS ? true : null;
+  });
+  return done === true;
+}
+
 /**
  * Sweeps FEATURE_TEST_BENCHMARK_PROFILES on the running scene with the frame
- * cap lifted, then restores the session's quality, render path and cap.
+ * cap lifted, then restores the session's fixed-shape lighting, quality, render
+ * path and cap.
  */
 async function benchmarkProfiles(
   sceneName: string,
@@ -376,6 +408,8 @@ async function benchmarkProfiles(
         const command = await run(line);
         if (!command.success) failed.push(`${line} failed: ${sentence(command.output || "no output")}`);
       }
+      if (profile.recompiles && !(await viewDrawsSteadily(play, deps, signal, limits.profileCompileMs)))
+        failed.push(`The view still held frames for new shaders after ${seconds(limits.profileCompileMs)}.`);
       await deps.sleep(limits.profileSettleMs, signal);
       const cpu: number[] = [];
       const gpu: number[] = [];
@@ -405,6 +439,7 @@ async function benchmarkProfiles(
     }
   } finally {
     if (!signal.aborted) {
+      await run("fixedlights reset");
       await run("quality reset");
       await run("renderpath reset");
       await run(`framecap ${cap ?? 60}`);

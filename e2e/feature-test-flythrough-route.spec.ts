@@ -43,6 +43,8 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
  *        `freecam`; main-scene Play does not finish loading on software GL),
  *      BL_PERF_VIEWPORT_CAP (Engine Settings viewport frame cap; default 30),
  *      BL_PERF_SCALING (Engine Settings hardware scaling level, e.g. 2 to cut software fill cost),
+ *      BL_PERF_FIXED_LIGHTS (multiply|branch: fixed-shape forward lighting from the Engine's first load, with that
+ *        seat guard; default off),
  *      BL_PERF_LABEL, BL_PERF_OUT (absolute path that also receives the JSON report).
  */
 const ENABLED = process.env.BL_PERF_FLYTHROUGH === "1";
@@ -54,6 +56,7 @@ const BACKEND = process.env.BL_PERF_BACKEND === "webgpu" ? "webgpu" : process.en
 const QUALITIES = ["low", "medium", "high", "ultra"] as const;
 const QUALITY = QUALITIES.find((level) => level === process.env.BL_PERF_QUALITY) ?? null;
 const NATIVE_GPU = process.env.BL_RENDER_NATIVE_GPU === "1";
+const FIXED_LIGHTS = (["multiply", "branch"] as const).find((guard) => guard === process.env.BL_PERF_FIXED_LIGHTS) ?? null;
 const SPEED = number("BL_FLY_SPEED", 8, 0.5);
 const PASSES = number("BL_FLY_PASSES", 2, 1);
 const WARMUP_MS = number("BL_FLY_WARMUP_MS", 5_000);
@@ -431,6 +434,8 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
     if (process.env.BL_PERF_SCALING) settings.hardwareScalingLevel = number("BL_PERF_SCALING", 1, 0.25);
     if (PLAY_SCENES.length) settings.debuggerDefaults.overlayConsole = true;
   });
+  // Read by test builds when the project Engine starts (TEST_FIXED_SHAPE_LIGHTING_KEY, apps/editor/src/lib/project-engine.ts).
+  if (FIXED_LIGHTS) await page.evaluate((guard) => localStorage.setItem("babylonslate:test-fixed-shape-lighting", guard), FIXED_LIGHTS);
   const cdp = await page.context().newCDPSession(page);
   const createToInteractiveMs = await createFeatureTestProject(page);
   await waitForTextureEncodes(page);
@@ -448,7 +453,7 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
     label: process.env.BL_PERF_LABEL ?? null,
     browserProject: testInfo.project.name,
     browserVersion: page.context().browser()?.version() ?? null,
-    env: { SCENES, PLAY_SCENES, BACKEND, QUALITY, NATIVE_GPU, SPEED, PASSES, WARMUP_MS, SETTLE_MS, PROFILE,
+    env: { SCENES, PLAY_SCENES, BACKEND, QUALITY, NATIVE_GPU, FIXED_LIGHTS, SPEED, PASSES, WARMUP_MS, SETTLE_MS, PROFILE,
       VIEWPORT_CAP: process.env.BL_PERF_VIEWPORT_CAP ?? null, SCALING: process.env.BL_PERF_SCALING ?? null },
     createToInteractiveMs,
     scenes,

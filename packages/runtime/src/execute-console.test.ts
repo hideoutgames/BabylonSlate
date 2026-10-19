@@ -455,6 +455,35 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.stop();
   });
 
+  it("switches fixed-shape lighting and its seat guard for the session from a release build's console", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      includeDebugCommands: false,
+      onCommand: (command) => commands.push(command),
+    });
+    const run = (line: string) => runtime.executeConsoleCommand(line);
+    expect(run("fixedlights")).toEqual({ success: true, output: "fixedlights off" });
+    expect(run("fixedlights on")).toEqual({ success: true, output: "fixedlights on (multiply)" });
+    expect(run("fixedlights branch")).toEqual({ success: true, output: "fixedlights on (branch)" });
+    // Off keeps the chosen guard for the next `on`.
+    expect(run("fixedlights off")).toEqual({ success: true, output: "fixedlights off" });
+    expect(run("fixedlights on")).toEqual({ success: true, output: "fixedlights on (branch)" });
+    expect(run("fixedlights")).toEqual({ success: true, output: "fixedlights on (branch)" });
+    expect(run("fixedlights reset")).toEqual({ success: true, output: "fixedlights off" });
+    expect(run("fixedlights sideways").success).toBe(false);
+    expect(commands.filter((command) => command.type === "setFixedShapeLighting")).toEqual([
+      { type: "setFixedShapeLighting", enabled: true, guard: "multiply" },
+      { type: "setFixedShapeLighting", enabled: true, guard: "branch" },
+      { type: "setFixedShapeLighting", enabled: false, guard: "branch" },
+      { type: "setFixedShapeLighting", enabled: true, guard: "branch" },
+      { type: "setFixedShapeLighting", enabled: false, guard: "multiply" },
+    ]);
+    runtime.stop();
+  });
+
   it("dispatches complete presets after manual lighting edits and reports Custom without resetting simulation", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, includeDebugCommands: false, onCommand: (command) => commands.push(command) });

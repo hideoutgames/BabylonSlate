@@ -4,6 +4,7 @@ import { lightFragmentWGSL } from "@babylonjs/core/ShadersWGSL/ShadersInclude/li
 import { shadowsFragmentFunctions } from "@babylonjs/core/Shaders/ShadersInclude/shadowsFragmentFunctions";
 import { shadowsFragmentFunctionsWGSL } from "@babylonjs/core/ShadersWGSL/ShadersInclude/shadowsFragmentFunctions";
 import { checkedShader } from "./checked-shader";
+import { withFixedLightSeats } from "./fixed-light-shader";
 import { withDirectionalPcfFunctions, withDirectionalPcfReceiverBias } from "./shadow-receiver";
 
 export function withShadowDistanceFade(source: string, wgsl: boolean): string {
@@ -29,9 +30,13 @@ for (const wgsl of [false, true]) {
       (wgsl ? shadowsFragmentFunctionsWGSL : shadowsFragmentFunctions).shader,
       wgsl,
     );
+  // Native PBR and Standard materials; CEL derives its own from Babylon's include.
   ShaderStore.GetIncludesShadersStore(wgsl ? 1 : 0).lightFragment =
-    withShadowDistanceFade(
-      (wgsl ? lightFragmentWGSL : lightFragment).shader,
+    withFixedLightSeats(
+      withShadowDistanceFade(
+        (wgsl ? lightFragmentWGSL : lightFragment).shader,
+        wgsl,
+      ),
       wgsl,
     );
 }

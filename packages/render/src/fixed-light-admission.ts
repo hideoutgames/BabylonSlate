@@ -21,6 +21,7 @@ import {
   type FixedLightLayout,
 } from "@babylonslate/core";
 import { hasClusteredLightPolicy } from "./clustered-light-policy";
+import { installFixedLightBinding } from "./fixed-light-binding";
 import {
   assignFixedLightSeats,
   type FixedLightLimit,
@@ -41,8 +42,9 @@ import { findSceneShadowController } from "./shadow-controller";
 
 /**
  * The seats of a world Scene's fixed light layout and the light in each, as
- * the last lighting sync admitted them. Informational until the shaders bind
- * by seat: lights still reach materials through Babylon's `lightSources`.
+ * the last lighting sync admitted them. Native PBR and Standard materials bind
+ * lights by seat (`fixed-light-binding.ts`); node and CEL materials still bind
+ * through Babylon's `lightSources`.
  */
 export interface FixedLightSlotTable {
   readonly layout: FixedLightLayout;
@@ -91,9 +93,11 @@ export function isFixedShapeLightingEnabled(engine: AbstractEngine): boolean {
 /**
  * Marks a world Scene (editor world view, Play, the exported player): only
  * these take fixed-shape lighting. Previews and thumbnails keep the legacy path.
+ * Its native lit materials bind lights by seat while the switch is on.
  */
 export function setFixedShapeLightingWorldScene(scene: Scene): void {
   worldScenes.add(scene);
+  installFixedLightBinding(scene, () => fixedLightSlotTable(scene));
 }
 
 /** Whether the Scene admits lights through the fixed layout. Clustered Forward keeps the legacy path. */

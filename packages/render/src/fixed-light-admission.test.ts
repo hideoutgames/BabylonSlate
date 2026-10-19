@@ -81,7 +81,7 @@ describe("fixed-shape light admission", () => {
     const lamps = Array.from({ length: 12 }, (_, index) => new PointLight(`lamp-${index}`, new Vector3(index * 10, 3, 0), scene));
     sync();
     const layout = table().layout;
-    expect(layout.classes.find((entry) => entry.id === "LOCAL")?.seats).toBe(9);
+    expect(layout.classes.find((entry) => entry.id === "LOCAL_POINT")?.seats).toBe(9);
     const before = lamps.map(seatOf);
     expect(before.slice(0, 9).every(Boolean)).toBe(true);
     expect(lamps.slice(9).every(isForwardLightExcluded)).toBe(true);
@@ -115,7 +115,7 @@ describe("fixed-shape light admission", () => {
     // Two shadow casters, but the profile has one local shadow light: one shadow seat.
     expect(table().layout.classes.find((entry) => entry.id === "SPOT_SHADOW")?.seats).toBe(1);
     expect(seatOf(near)).toBe("SPOT_SHADOW:0 shadowed");
-    expect(seatOf(far)).toBe("LOCAL:0");
+    expect(seatOf(far)).toBe("LOCAL_SPOT:0");
     const layout = table().layout;
 
     clock.mockReturnValue(1_000);
@@ -123,11 +123,11 @@ describe("fixed-shape light admission", () => {
     sync();
     expect(shadows.generator(far)).not.toBeNull();
     expect(seatOf(far)).toBe("SPOT_SHADOW:0 shadowed");
-    expect(seatOf(near)).toBe("LOCAL:0");
+    expect(seatOf(near)).toBe("LOCAL_SPOT:0");
     expect(table().layout).toBe(layout);
   });
 
-  it("seats a shadowed light beyond its class unshadowed in a local seat while its map stays admitted", () => {
+  it("seats a shadowed spot beyond its class unshadowed in a local spot seat while its map stays admitted", () => {
     const { scene, shadows, sync, seatOf } = world();
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 3 }) });
     const spots = [0, 5, 10].map((x, index) => spot(scene, `spot-${index}`, x));
@@ -135,10 +135,10 @@ describe("fixed-shape light admission", () => {
     sync();
     expect(spots.every((light) => shadows.generator(light) !== null)).toBe(true);
     // WebGL2 seats two spot shadows; the farthest spot lights without its shadow.
-    expect(spots.map(seatOf)).toEqual(["SPOT_SHADOW:0 shadowed", "SPOT_SHADOW:1 shadowed", "LOCAL:0"]);
+    expect(spots.map(seatOf)).toEqual(["SPOT_SHADOW:0 shadowed", "SPOT_SHADOW:1 shadowed", "LOCAL_SPOT:0"]);
   });
 
-  it("seats unshadowed lights in free shadow seats with the shadow off, so turning shadows off keeps the layout and every light", () => {
+  it("keeps a caster's shadow seat with the shadow off when scene shadows turn off, and every light's seat", () => {
     const { scene, shadows, sync, table, seatOf } = world();
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1 }) });
     const caster = spot(scene, "caster", 0);
@@ -148,7 +148,7 @@ describe("fixed-shape light admission", () => {
     const layout = table().layout;
     expect(seatOf(caster)).toBe("SPOT_SHADOW:0 shadowed");
     const pointSeats = points.map(seatOf);
-    expect(pointSeats.every((seat) => seat?.startsWith("LOCAL:"))).toBe(true);
+    expect(pointSeats.every((seat) => seat?.startsWith("LOCAL_POINT:"))).toBe(true);
     // The inventory's high-water mark still holds the caster, so its seat stays; it lights unshadowed there.
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1, enabled: false }) });
     sync();
@@ -159,10 +159,10 @@ describe("fixed-shape light admission", () => {
     // A new plain light grows the local seats; everyone keeps their seat.
     const added = new PointLight("added", new Vector3(20, 3, 0), scene);
     sync();
-    expect(table().layout.classes.find((entry) => entry.id === "LOCAL")?.seats).toBe(4);
+    expect(table().layout.classes.find((entry) => entry.id === "LOCAL_POINT")?.seats).toBe(4);
     expect(seatOf(caster)).toBe("SPOT_SHADOW:0");
     expect(points.map(seatOf)).toEqual(pointSeats);
-    expect(seatOf(added)).toBe("LOCAL:3");
+    expect(seatOf(added)).toBe("LOCAL_POINT:3");
   });
 
   it("limits lights beyond their class or the scalability local lights and names them", () => {

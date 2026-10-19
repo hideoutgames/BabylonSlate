@@ -3,6 +3,7 @@ import type { SessionReportEntry } from "@babylonslate/runtime";
 import { FEATURE_TEST_BENCHMARK_PROFILES, runFeatureTestCheck, type FeatureTestCheckDeps } from "./feature-test-check";
 import type { PlaySessionResult } from "./play-session";
 import type { PlayProbe } from "./runtime-probes";
+import type { RenderDiagnostics } from "@babylonslate/render";
 
 type SceneBehavior = {
   open?: "ready" | "failed" | "blocked";
@@ -16,7 +17,12 @@ function diagnostic(severity: "error" | "warning", message: string): SessionRepo
 }
 
 /** A fake editor whose clock advances only when the runner sleeps. */
-function fakeEditor(scenes: Record<string, SceneBehavior>, onSleep?: (now: number) => void) {
+function fakeEditor(
+  scenes: Record<string, SceneBehavior>,
+  onSleep?: (now: number) => void,
+  /** The Play view's presentation counts at a time, after the given commands. */
+  presentation?: (now: number, commands: readonly string[]) => { drawn: number; held: number },
+) {
   let now = 0;
   let active: string | null = null;
   let play: PlayProbe | null = null;
@@ -25,7 +31,8 @@ function fakeEditor(scenes: Record<string, SceneBehavior>, onSleep?: (now: numbe
   const started: string[] = [];
   const stopped: string[] = [];
   const commands: string[] = [];
-  const behavior = (path: string | null) => scenes[(path ?? "").replace(/^scene:/, "")] ?? {};
+  const sampled: { now: number; after: string | null }[] = [];
+  const behavior =(path: string | null) => scenes[(path ?? "").replace(/^scene:/, "")] ?? {};
   const deps: FeatureTestCheckDeps = {
     openScene: async (path) => { if (behavior(path).open !== "blocked") active = `scene:${path}`; },
     activeDocumentId: () => active,
@@ -44,7 +51,15 @@ function fakeEditor(scenes: Record<string, SceneBehavior>, onSleep?: (now: numbe
         loadingPhase: () => scene.play === "stuck" ? { phase: "Loading Models", progress: 45 } : null,
         tickIndex: () => 12,
         runtimeFps: () => 60,
-        snapshot: () => ({ drawCalls: 10, meshes: 20, textures: 5, accountedBytes: 0, rendering: null }),
+        snapshot: () => ({
+          drawCalls: 10, meshes: 20, textures: 5, accountedBytes: 0,
+          rendering: presentation
+            ? ({
+              presentation: presentation(now, commands), cpuMs: 4, gpuMs: null, width: 100, height: 100, scalingLevel: 1,
+              pipeline: { effective: { renderPath: "forward" } },
+            } as unknown as RenderDiagnostics)
+            : null,
+        }),
         problemLogs: () => [],
         executeConsoleCommand: async (line) => {
           commands.push(line);
@@ -67,7 +82,10 @@ function fakeEditor(scenes: Record<string, SceneBehavior>, onSleep?: (now: numbe
     play: () => play,
     sessionIdle: () => play === null,
     onSessionClosed: (listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    sampleFrames: async () => ({ frames: 60, durationMs: 1000, fps: 60, p95Ms: 17, maxMs: 20, stalls: 0 }),
+    sampleFrames: async () => {
+      sampled.push({ now, after: commands.at(-1) ?? null });
+      return { frames: 60, durationMs: 1000, fps: 60, p95Ms: 17, maxMs: 20, stalls: 0 };
+    },
     now: () => now,
     sleep: async (ms, signal) => {
       signal.throwIfAborted();
@@ -76,7 +94,7 @@ function fakeEditor(scenes: Record<string, SceneBehavior>, onSleep?: (now: numbe
       signal.throwIfAborted();
     },
   };
-  return { deps, started, stopped, commands };
+  return { deps, started, stopped, commands, sampled };
 }
 
 const scene = (name: string) => ({ name, path: `assets/${name}.scene.babasset` });
@@ -148,8 +166,36 @@ describe("runFeatureTestCheck", () => {
     expect(main.passed).toBe(true);
     expect(main.play.benchmark.map((sample) => sample.label)).toEqual(FEATURE_TEST_BENCHMARK_PROFILES.map((profile) => profile.label));
     expect(editor.commands.slice(0, 2)).toEqual(["framecap", "framecap 240"]);
-    expect(editor.commands.slice(-3)).toEqual(["quality reset", "renderpath reset", "framecap 30"]);
+    expect(editor.commands.slice(-4)).toEqual(["fixedlights reset", "quality reset", "renderpath reset", "framecap 30"]);
+    expect(editor.commands).toContain("fixedlights branch");
     expect(editor.commands).toContain("renderpath clusteredForward");
     expect(editor.commands).not.toContain("ft_stats");
+  });
+
+  it("samples a recompiling profile only once the view draws without held frames, within a bound", async () => {
+    // `fixedlights multiply` holds the view for 20 s of new shaders; `fixedlights branch` never stops holding.
+    const counts = { drawn: 0, held: 0 };
+    const issuedAt = new Map<string, number>();
+    let heldUntil = -1;
+    const editor = fakeEditor({}, undefined, (now, commands) => {
+      const last = commands.at(-1) ?? "";
+      if (!issuedAt.has(last) && (last === "fixedlights multiply" || last === "fixedlights branch")) {
+        issuedAt.set(last, now);
+        heldUntil = last === "fixedlights multiply" ? now + 20_000 : Number.POSITIVE_INFINITY;
+      }
+      if (now < heldUntil) counts.held++;
+      else counts.drawn++;
+      return { ...counts };
+    });
+    const report = await runFeatureTestCheck({
+      mode: "benchmark", scenes: [scene("main")], deps: editor.deps, signal: new AbortController().signal,
+    });
+    const sampledAt = editor.sampled.find((sample) => sample.after === "fixedlights multiply")!.now;
+    // Held 20 s, then steady draws and the 3 s settle.
+    expect(sampledAt - issuedAt.get("fixedlights multiply")!).toBeGreaterThanOrEqual(23_000);
+    const benchmark = report.scenes[0]!.play.benchmark;
+    expect(benchmark.find((sample) => sample.label === "medium · fixed lights")!.failed).toEqual([]);
+    expect(benchmark.find((sample) => sample.label === "medium · fixed lights · branch")!.failed)
+      .toEqual(["The view still held frames for new shaders after 90 s."]);
   });
 });
