@@ -33,7 +33,7 @@ The toolbar over the game shows the controls you enabled under **Debug > Overlay
 
 There are no Pause, Step or Inspector buttons. Use the `pause`, `resume` and `step` commands in the console instead.
 
-When you stop a preview that reported errors or warnings, the **Preview Session Report** lists them.
+When you stop a preview that reported errors or warnings, the **Preview Session Report** lists them and opens the asset behind each one. See [After Play](../debugging/index.md).
 
 ## How it differs from Play and Export Game
 
