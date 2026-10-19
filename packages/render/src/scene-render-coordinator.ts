@@ -14,6 +14,9 @@ import { heldThreadMs, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS
 
 class PreparationChanged extends Error {}
 
+/** A preparation ran out of its bound or ceiling; a one-shot capture reports it as expired, not failed. */
+export class PreparationTimedOut extends Error {}
+
 /** Bound on one preparation generation without readiness or compile progress. */
 const PREPARATION_TIMEOUT_MS = 10_000;
 /**
@@ -194,7 +197,7 @@ export class SceneRenderCoordinator {
     const timedOut = () => {
       const limit = performance.now() >= compiles.ceiling
         ? `its ${SCENE_PREPARATION_CEILING_MS / 1000} s limit` : `${PREPARATION_TIMEOUT_MS / 1000} s without progress`;
-      return new Error(`Scene rendering preparation timed out after ${limit}. ${compiles.describe()}`);
+      return new PreparationTimedOut(`Scene rendering preparation timed out after ${limit}. ${compiles.describe()}`);
     };
     /** `credit: false` for a wait whose whole duration the caller already credits. */
     const check = (credit = true) => {

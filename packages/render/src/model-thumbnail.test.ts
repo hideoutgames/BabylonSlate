@@ -16,6 +16,7 @@ import {
 import { captureModelThumbnailPng } from "./model-thumbnail";
 import { PNG_SIGNATURE } from "./png-encode";
 import { nativePreparationForEngine } from "./native-preparation";
+import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SCENE_CAPTURE_CEILING_MS } from "./stall-deadline";
 import type { ThumbnailCaptureResult } from "./thumbnail-capture";
 import { installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
@@ -247,7 +248,7 @@ describe("captureModelThumbnailPng", () => {
       () => null,
     );
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(await capture).toEqual({ outcome: "expired" });
+    expect(await capture).toEqual({ outcome: "expired", reason: "bound" });
     expect(readback).not.toHaveBeenCalled();
     expect(handle.engine.scenes).toEqual([handle.scene]);
   });
@@ -274,7 +275,7 @@ describe("captureModelThumbnailPng", () => {
       const handle = createTestEngine();
       handles.push(handle);
       const clock = neverReady(handle);
-      expect(await captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], () => null, undefined, options)).toEqual({ outcome: "expired" });
+      expect(await captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], () => null, undefined, options)).toEqual({ outcome: "expired", reason: "ceiling" });
       expect(clock.elapsed()).toBeGreaterThanOrEqual(ceiling);
       expect(clock.elapsed()).toBeLessThanOrEqual(ceiling + POLL_MS);
     });
@@ -308,6 +309,24 @@ describe("captureModelThumbnailPng", () => {
     ).toEqual({ outcome: "failed" });
     expect(readback).not.toHaveBeenCalled();
     expect(handle.engine.scenes).toEqual([handle.scene]);
+  });
+
+  describe("when the frame graph's preparation rejects before the ceiling", () => {
+    it("reports a render error as a failure, which another attempt would repeat", async () => {
+      const handle = createTestEngine();
+      handles.push(handle);
+      vi.spyOn(SceneRenderCoordinator.prototype, "prepare").mockRejectedValue(new Error("Scene rendering requires an active camera."));
+      expect(await captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], () => null)).toEqual({ outcome: "failed" });
+      expect(handle.engine.scenes).toEqual([handle.scene]);
+    });
+
+    it("reports its own timeout as an expired bound, which a longer ceiling does not change", async () => {
+      const handle = createTestEngine();
+      handles.push(handle);
+      vi.spyOn(SceneRenderCoordinator.prototype, "prepare").mockRejectedValue(new PreparationTimedOut("Scene rendering preparation timed out."));
+      expect(await captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], () => null)).toEqual({ outcome: "expired", reason: "bound" });
+      expect(handle.engine.scenes).toEqual([handle.scene]);
+    });
   });
 
   it("reports a failure for OBJ stubs with no loadable mesh", async () => {

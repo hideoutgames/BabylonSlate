@@ -8,7 +8,7 @@ import { ModelThumbnailCaptureHost } from "./model-thumbnail-capture-host";
 function captured(bytes: number[] = [137, 80, 78, 71]): ThumbnailCaptureResult {
   return { outcome: "captured", png: new Uint8Array(bytes) };
 }
-const expired: ThumbnailCaptureResult = { outcome: "expired" };
+const expired: ThumbnailCaptureResult = { outcome: "expired", reason: "ceiling" };
 const retryCeilingMs = vi.hoisted(() => 300_000);
 
 const captureModelThumbnailPng = vi.fn<
@@ -305,9 +305,13 @@ describe("ModelThumbnailCaptureHost", () => {
       expect(scopes.every((scope) => scope.dispose.mock.calls.length === 1)).toBe(true);
     });
 
-    it("is not retried when the capture failed", async () => {
+    // A longer ceiling does not change a wait that saw no progress for its whole bound.
+    it.each<[string, ThumbnailCaptureResult]>([
+      ["failed", { outcome: "failed" }],
+      ["expired on a wait's bound", { outcome: "expired", reason: "bound" }],
+    ])("is not retried when the capture %s", async (_name, result) => {
       register("a");
-      captureAssetThumbnailPng.mockResolvedValue({ outcome: "failed" });
+      captureAssetThumbnailPng.mockResolvedValue(result);
       render(<ModelThumbnailCaptureHost />);
       enqueueModelThumbnailJobs([backfill("a")]);
       await waitFor(() => expect(captureAssetThumbnailPng).toHaveBeenCalledOnce());
@@ -365,6 +369,63 @@ describe("ModelThumbnailCaptureHost", () => {
       expect(capturedPaths()).toEqual(["assets/a.babasset", "assets/a.babasset", "assets/b.babasset", "assets/a.babasset"]);
       expect(ceilings()).toEqual([undefined, retryCeilingMs, undefined, retryCeilingMs]);
       expect(writtenGuids()).toEqual(["b", "a"]);
+    });
+
+    // Each run starts over, so a steady trickle of saves must not make one retry burn its ceiling again and again.
+    it("spends its attempt when new work has interrupted it three times", async () => {
+      for (const guid of ["a", "b", "c", "d"]) register(guid);
+      const retryRuns: Array<(capture: ThumbnailCaptureResult) => void> = [];
+      const holdRetry = () => new Promise<ThumbnailCaptureResult>((resolve) => { retryRuns.push(resolve); });
+      captureAssetThumbnailPng
+        .mockResolvedValueOnce(expired)
+        .mockImplementationOnce(holdRetry).mockResolvedValueOnce(captured())
+        .mockImplementationOnce(holdRetry).mockResolvedValueOnce(captured())
+        .mockImplementationOnce(holdRetry).mockResolvedValueOnce(captured());
+      render(<ModelThumbnailCaptureHost />);
+      enqueueModelThumbnailJobs([backfill("a")]);
+      for (const [index, guid] of ["b", "c", "d"].entries()) {
+        await waitFor(() => expect(retryRuns).toHaveLength(index + 1));
+        enqueueModelThumbnailJobs([backfill(guid)]);
+        retryRuns[index]!({ outcome: "cancelled" });
+        await waitFor(() => expect(writtenGuids()).toContain(guid));
+      }
+      await settle();
+      expect(capturedPaths().filter((path) => path === "assets/a.babasset")).toHaveLength(4);
+      expect(writtenGuids()).toEqual(["b", "c", "d"]);
+    });
+
+    it("keeps the image of a retry that finished as new work arrived, when the asset is unchanged", async () => {
+      register("a");
+      register("b");
+      captureAssetThumbnailPng
+        .mockResolvedValueOnce(expired)
+        .mockImplementationOnce(async () => {
+          enqueueModelThumbnailJobs([backfill("b")]);
+          return captured([1]);
+        });
+      render(<ModelThumbnailCaptureHost />);
+      enqueueModelThumbnailJobs([backfill("a")]);
+      await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledTimes(2));
+      await settle();
+      expect(writtenGuids()).toEqual(["a", "b"]);
+      // The interrupted retry was written, so it is not run again.
+      expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(3);
+    });
+
+    it("discards the image of a retry that finished as a newer save of the asset arrived", async () => {
+      register("a");
+      captureAssetThumbnailPng
+        .mockResolvedValueOnce(expired)
+        .mockImplementationOnce(async () => {
+          enqueueModelThumbnailJobs([backfill("a", 2)]);
+          return captured([1]);
+        });
+      render(<ModelThumbnailCaptureHost />);
+      enqueueModelThumbnailJobs([backfill("a")]);
+      await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("a", expect.any(Uint8Array), { cacheKey: "a.revision-2", projectGuid }));
+      await settle();
+      expect(writeAssetThumbnail).toHaveBeenCalledOnce();
+      expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(3);
     });
   });
 

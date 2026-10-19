@@ -18,6 +18,7 @@ import {
 } from "./material-preview";
 import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import { waitForPreviewMeshesReady } from "./preview-readiness";
+import { PreparationTimedOut } from "./scene-render-coordinator";
 import { createHeldThreadBudget, SCENE_CAPTURE_CEILING_MS } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
@@ -98,7 +99,7 @@ async function captureAdmittedModelThumbnail(
   let timedOut = false;
   const wanted = () => !options.signal?.aborted;
   /** No image because a wait's bound or the capture's ceiling ran out, rather than for a reason of the asset. */
-  const ranOut = () => thumbnailMiss(wanted(), timedOut || performance.now() >= compiles.ceiling);
+  const ranOut = () => thumbnailMiss(wanted(), { ceiling: compiles.ceiling, stalled: timedOut });
   const host = createModelPreviewScene(engine, { transparent: true });
   let loaded: Awaited<ReturnType<typeof loadModelPreviewSource>> = null;
   let sourceHost: MaterialPreviewScene | null = null;
@@ -149,9 +150,11 @@ async function captureAdmittedModelThumbnail(
     // The capture's ceiling also ends the preview renderer's own preparation.
     const current = () => wanted() && performance.now() < compiles.ceiling;
     // A one-shot render must await imported PBR materials and textures. The wait
-    // ends unready only when the capture stopped being current or its bound ran out.
+    // ends unready when the capture stopped being current (cancelled or past its
+    // ceiling), its mesh was disposed, or its bound ran out. A disposed mesh is no
+    // time limit.
     if (!(await waitForPreviewMeshesReady(host.mesh, budget, compiles, current))) {
-      timedOut = true;
+      timedOut = !host.mesh.isDisposed();
       return ranOut();
     }
     if (!wanted()) return thumbnailMiss(false);
@@ -164,8 +167,10 @@ async function captureAdmittedModelThumbnail(
     const pixels = rgbaBytesFromReadback(buffer, size * size * 4);
     if (!pixels) return thumbnailMiss(wanted());
     return { outcome: "captured", png: encodeRgbaPng(size, size, new Uint8Array(flipReadPixelsRgba(pixels, size, size))) };
-  } catch {
-    // A wait that ran out rejects without saying why; so does a render error.
+  } catch (error) {
+    // A wait that reached the ceiling rejects without saying why (ranOut tells it
+    // by the clock), unlike the frame graph's own preparation bound.
+    if (error instanceof PreparationTimedOut) timedOut = true;
     return ranOut();
   } finally {
     host.camera.outputRenderTarget = null;

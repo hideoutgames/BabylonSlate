@@ -24,6 +24,7 @@ import type { MeshAssetContext } from "./mesh-assets";
 import { applyMaterialToVisualMeshes } from "./visual-meshes";
 import { acquireMaterialTexture, bindResourceCacheToHandle, resourceCacheForEngine } from "./resource-cache";
 import { waitUntilReady } from "./preview-readiness";
+import { PreparationTimedOut } from "./scene-render-coordinator";
 import { createHeldThreadBound, createHeldThreadBudget, SCENE_CAPTURE_CEILING_MS, type HeldThreadBudget } from "./stall-deadline";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
@@ -142,7 +143,7 @@ export async function captureAssetThumbnailPng(
   const controller = new AbortController();
   const current = () => shouldContinue() && !host.scene.isDisposed && performance.now() < compiles.ceiling;
   /** No image because a wait's bound or the capture's ceiling ran out, rather than for a reason of the asset. */
-  const ranOut = () => thumbnailMiss(shouldContinue(), bounds.timedOut || performance.now() >= compiles.ceiling);
+  const ranOut = () => thumbnailMiss(shouldContinue(), { ceiling: compiles.ceiling, stalled: bounds.timedOut });
   const preparations: Promise<boolean>[] = [];
   const resolved = new Map<string, Material | null>();
   const functions = request.functions ?? {};
@@ -224,9 +225,11 @@ export async function captureAssetThumbnailPng(
     }
     if (unavailableMaterial || !frameMeshes(host, meshes)) return thumbnailMiss(shouldContinue());
     if (!(await whileCurrent(Promise.all(preparations), current, bounds)).every(Boolean)) return thumbnailMiss(shouldContinue());
-    // A wait ends unready only when the capture stopped being current or its bound ran out.
+    // A wait ends unready when the capture stopped being current (cancelled, past
+    // its ceiling, or its Scene was disposed) or its bound ran out. A disposed
+    // Scene is no time limit, as in `whileCurrent`.
     if (!(await waitUntilReady(() => meshes.every((mesh) => mesh.isReady(true)), current, undefined, budget, compiles))) {
-      bounds.timedOut = true;
+      bounds.timedOut = !host.scene.isDisposed;
       return ranOut();
     }
     // Scene sync applies the authored background; captures remain transparent.
@@ -236,7 +239,7 @@ export async function captureAssetThumbnailPng(
     target = createPreviewRenderTarget("assetThumbnail", { width: size, height: size }, host.scene);
     host.camera.outputRenderTarget = target;
     if (!(await renderPreviewFrame(host, current, budget, compiles))) {
-      bounds.timedOut = true;
+      bounds.timedOut = !host.scene.isDisposed;
       return ranOut();
     }
     const readback = await whileCurrent(Promise.resolve(target.readPixels()), current, bounds);
@@ -245,8 +248,10 @@ export async function captureAssetThumbnailPng(
       : new Uint8Array(readback.buffer, readback.byteOffset, readback.byteLength);
     if (pixels.byteLength < size * size * 4) return thumbnailMiss(shouldContinue());
     return { outcome: "captured", png: encodeRgbaPng(size, size, new Uint8Array(flipReadPixelsRgba(pixels.subarray(0, size * size * 4), size, size))) };
-  } catch {
-    // A wait that ran out rejects without saying why; so does a render error.
+  } catch (error) {
+    // A wait that reached the ceiling rejects without saying why (ranOut tells it
+    // by the clock), unlike the frame graph's own preparation bound.
+    if (error instanceof PreparationTimedOut) bounds.timedOut = true;
     return ranOut();
   } finally {
     controller.abort();
