@@ -244,7 +244,7 @@ export type SkippedClassMember = {
   kind: "variable" | "function" | "event";
   name: string;
   /**
-   * `kind`: the Class cannot have that member. `unavailable`: the Class lacks what it needs.
+   * `kind`: the Class cannot have that member. `unavailable`: a bound custom event whose component or inherited event the Class lacks.
    * `present`: it already has it. `function`: a local variable with no function to go into.
    */
   reason: "kind" | "unavailable" | "present" | "function";
@@ -538,14 +538,6 @@ function componentTarget(options: ClassMemberPasteOptions): {
   };
 }
 
-/** A component label that is free: unchanged, else the next ` 2`, ` 3`, … as component rows are numbered. */
-function uniqueComponentName(name: string, taken: Set<string>): string {
-  let unique = name;
-  for (let suffix = 2; taken.has(unique); suffix++) unique = `${name.replace(/ \d+$/, "")} ${suffix}`;
-  taken.add(unique);
-  return unique;
-}
-
 /** Properties that name another component (`targetComponentId`) follow it when that one was copied too. */
 function remapComponentReferences(
   properties: Record<string, unknown>,
@@ -572,9 +564,12 @@ function remapComponentReferences(
  *   to the root, or to the copy of its parent when that came too).
  * - Events go into the event graph below the existing nodes. A native event
  *   the target's own graph lacks, and its Class can have, is pasted as that
- *   event, wired to Call Parent like one added by hand; otherwise it becomes
+ *   event, wired to Call Parent like one added by hand; otherwise (the Class
+ *   cannot have it, has it, or lacks the component it is bound to) it becomes
  *   a custom event named like a duplicate (`Begin Play 1`) with the native
  *   event's data outputs as its parameters.
+ * - An override of an inherited custom event is wired to Call Parent as well.
+ * - A component added by a paste is named like a variable (`Mesh_1`).
  */
 export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMemberPasteResult {
   const { clipboard, classId } = options;
@@ -634,7 +629,7 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
         skipped.push({ kind: "variable", name, reason: "kind" });
         continue;
       }
-      const label = uniqueComponentName(name, takenVariables);
+      const label = uniqueName(name, takenVariables);
       const copy: SerializedComponent = {
         id: nextPrefabComponentId([...target.components, ...pastedComponents.map((entry) => entry.copy)]),
         classId: source.classId,
@@ -724,7 +719,13 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
 
   // Events: names and nodes first, so function bodies can call the copies.
   const eventNodes: GraphNode[] = [];
-  const callParents: Array<{ id: string; eventType: string }> = [];
+  const callParents: Array<{
+    id: string;
+    eventType: string;
+    eventName?: string;
+    parentClassId: string;
+    pins?: GraphClassMemberPin[];
+  }> = [];
   const parentClassId = options.eventOptions?.parentClass?.trim();
   const eventsAllowed = classAllowsMemberKind("event", options.eventOptions);
   const presentEvents = new Set<string>();
@@ -737,11 +738,13 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
     if (key !== undefined) presentEvents.add(key);
   }
   // Only the target's own nodes make a native event present; a parent's does not.
-  const inheritedEvents = new Set<string>();
+  // Each inherited custom event maps to the nearest ancestor that has it.
+  const inheritedEvents = new Map<string, string>();
   for (const ancestor of ancestors) {
     for (const event of customEventsFromGraph(ancestor.graph)) {
       claimEvent(event.name);
-      inheritedEvents.add(`${CUSTOM_EVENT}\0${event.name}`);
+      const inheritedKey = `${CUSTOM_EVENT}\0${event.name}`;
+      if (!inheritedEvents.has(inheritedKey)) inheritedEvents.set(inheritedKey, ancestor.classId);
     }
   }
   for (const event of customEventsFromGraph(options.graph)) claimEvent(event.name);
@@ -806,17 +809,30 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
         if (key !== undefined) presentEvents.add(key);
         const node = placeEvent(source, pins);
         pasted.push({ kind: "event", id: node.id, name: customEventName(source) });
+        // An override of an inherited event calls its parent's, like one added from the Events menu.
+        const inheritedFrom = inheritedEvents.get(`${CUSTOM_EVENT}\0${customEventName(source)}`);
+        if (source.data.eventQualifier === "Inherited" && inheritedFrom) {
+          callParents.push({
+            id: node.id,
+            eventType: node.type,
+            eventName: customEventName(source),
+            parentClassId: inheritedFrom,
+            pins,
+          });
+        }
       }
       continue;
     }
-    if (typeof source.data.componentId === "string" && !options.componentIds?.has(source.data.componentId)) {
-      skipped.push({ kind: "event", name: title, reason: "unavailable" });
-      continue;
-    }
     const key = eventKey(source);
-    if (!isScriptCatalogNodeAllowed(source.type, options.eventOptions) || (key !== undefined && presentEvents.has(key))) {
-      // A native event the Class cannot have, or already has, is a custom event that
-      // takes its outputs. The native event holds its own name, so its copy is the first duplicate of it.
+    const componentMissing =
+      typeof source.data.componentId === "string" && !options.componentIds?.has(source.data.componentId);
+    if (
+      componentMissing ||
+      !isScriptCatalogNodeAllowed(source.type, options.eventOptions) ||
+      (key !== undefined && presentEvents.has(key))
+    ) {
+      // A native event the Class cannot have or already has, or whose component it lacks, is a
+      // custom event that takes its outputs. The native event holds its own name, so its copy is the first duplicate of it.
       const base = nativeEventBaseName(source);
       customEvent(
         uniqueEventName(base, new Set([...takenEvents, ...eventNameKeys({ name: base })])),
@@ -833,7 +849,7 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
       typeof source.data.componentId !== "string" &&
       nativeEventStubs(options.eventOptions).some((stub) => stub.eventType === source.type)
     ) {
-      callParents.push({ id: node.id, eventType: node.type });
+      callParents.push({ id: node.id, eventType: node.type, parentClassId });
     }
   }
 
@@ -857,7 +873,9 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
     graph = ensureCallParentForEvent(graph, {
       eventNodeId: call.id,
       eventType: call.eventType,
-      parentClassId: parentClassId!,
+      ...(call.eventName ? { eventName: call.eventName } : {}),
+      parentClassId: call.parentClassId,
+      ...(call.pins ? { pins: call.pins } : {}),
     });
   }
   return { graph, pasted, skipped };

@@ -684,7 +684,7 @@ export function ClassMembersView({
     if (!row || row.overwritten) return;
     const next =
       row.kind === "native"
-        ? ensureEventNodeOnGraph(graph, row.eventType)
+        ? ensureEventNodeOnGraph(graph, row.eventType, { parentClassId: membersOptions?.parentClass })
         : row.kind === "component"
           ? ensureEventNodeOnGraph(graph, row.eventType, {
               name: row.eventType === "flow.event.custom" ? row.name : undefined,
