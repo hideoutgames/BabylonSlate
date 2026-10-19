@@ -4,7 +4,7 @@ import { normalizeRenderingQuality } from "../packages/core/src/index";
 import type { RenderShadingSettings, ShadowDiagnostics } from "../packages/render/src/index";
 import { openMainScene, waitForEditorInteractive } from "./open-test-project";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
-import { captureMannequinPixels as capture, mannequinContactCoverage, mannequinShadowMetrics, mannequinShadowSamples, type MannequinGeometry } from "./mannequin-shadow-pixels";
+import { captureMannequinLuminance as luminance, captureMannequinPixels as capture, mannequinContactCoverage, mannequinShadowEdgeError, mannequinShadowMetrics, mannequinShadowPixels, mannequinShadowSamples, type MannequinGeometry } from "./mannequin-shadow-pixels";
 
 if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
@@ -47,8 +47,8 @@ test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} k
     mode: variant.mode, shadows: initial.requestedShadows,
     quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }),
   };
-  // The template Mannequin faces the default camera (-Z); view its front from the Sun's side.
-  await page.evaluate(() => window.__babylonslateViewportTest.setShadowCaptureView([-3, 2, -4], [0, 1.35, 0], 0.7));
+  // The template Mannequin faces the default camera (-Z); frame its front, which the sun lights at a wide angle.
+  await page.evaluate(() => window.__babylonslateViewportTest.setShadowCaptureView([0, 1.9, -5.5], [0, 1.35, 0], 0.7));
   const beforeSettings = await page.evaluate(() => window.__babylonslateViewportTest.renderingBaseline());
   await page.evaluate(settings => window.__babylonslateViewportTest.setRenderSettings(settings), settings);
   try {
@@ -94,7 +94,9 @@ test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} k
   const size = await canvas.evaluate((node: HTMLCanvasElement) => ({ width: node.width, height: node.height }));
   const points = mannequinShadowSamples(geometry, state, size.width, size.height);
   const visible = await page.evaluate(points => window.__babylonslateViewportTest.mannequinShadowVisibility(points), points);
+  const oracle = mannequinShadowPixels(geometry, state, size.width, size.height);
   const authored = await capture(canvas, points);
+  const authoredLuminance = await luminance(canvas, oracle.box);
   await page.evaluate(() => window.__babylonslateViewportTest.mannequinShadowProbe(true));
   await frames();
   const modelOnly = await capture(canvas, points);
@@ -103,12 +105,14 @@ test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} k
   await page.evaluate(settings => window.__babylonslateViewportTest.setRenderSettings(settings), { ...settings, shadows: { ...settings.shadows!, enabled: false } });
   await frames();
   const directOnly = await capture(canvas, points);
+  const directLuminance = await luminance(canvas, oracle.box);
   for (const [name, value] of Object.entries({ authored, modelOnly, directOnly }))
     await testInfo.attach(name, { body: Buffer.from(value.png, "base64"), contentType: "image/png" });
   const regions = mannequinShadowMetrics(points, authored.pixels, directOnly.pixels, { modelOnly: modelOnly.pixels, visible });
+  const edgeError = mannequinShadowEdgeError(oracle, authoredLuminance, directLuminance, state.camera!.fov!, size.height);
   await testInfo.attach("effective-settings", { body: JSON.stringify({
     buildSha: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
-    host: "fresh Basic 3D editor", os: process.platform, variant, initial, state, regions,
+    host: "fresh Basic 3D editor", os: process.platform, variant, initial, state, regions, edgeError,
     samples: points.map((point, index) => ({ ...point, visible: visible[index], authored: authored.pixels.slice(index * 3, index * 3 + 3), direct: directOnly.pixels.slice(index * 3, index * 3 + 3) })),
     geometry: geometry.map(({ name, vertices, indices }) => ({ name, vertices, indices })),
   }, null, 2), contentType: "application/json" });
@@ -130,6 +134,10 @@ test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} k
   expect(contact.contacts).toBeGreaterThan(5);
   expect(contact.coverage, "total contact coverage").toBeGreaterThan(0.8);
   expect(Object.values(regions).reduce((sum, region) => sum + region.edges, 0)).toBeGreaterThan(20);
+  // The sample classes above forgive a band of two shadow-map texels stretched by the sun's incidence,
+  // which on a grazed face spans most of a limb. This one holds the drawn edge to the ray-cast one in metres.
+  expect(edgeError.edge, "shadow edge pixels measured").toBeGreaterThan(100);
+  expect(edgeError.widthMetres, "mean width of the wrong band along the shadow edges").toBeLessThan(0.02);
   await page.evaluate(() => window.__babylonslateViewportTest.mannequinShadowProbe(false));
   await page.evaluate(settings => window.__babylonslateViewportTest.setRenderSettings(settings), settings);
   await frames();

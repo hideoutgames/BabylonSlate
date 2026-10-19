@@ -120,7 +120,7 @@ Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power i
 - Shadows are budgeted and camera-relative; one directional light illuminates at a time; helpers, skyboxes and debug overlays never cast or receive.
 - IBL is optional and off by default (`environmentTextureGuid`). Never auto-generate IBL from a sky; the skybox mesh never writes `scene.environmentTexture`.
 - `SkyboxComponent` builds its own box (unlit PBR, `SKYBOX_MODE`, depth writes off, never `infiniteDistance`, never pickable, shadowed or nav geometry). Never call `scene.createDefaultSkybox`. Empty faces use the Engine-owned default cube from `engine-content/skybox`, which Play must not evict ([default-skybox](../../packages/render/src/default-skybox/)).
-- New 3D scenes: a locked skybox, a daylight directional sun and a camera; 2D scenes are camera-only; Blank creates an empty 3D scene.
+- New 3D scenes: a locked skybox, a daylight directional sun that meets faces turned to the default camera at cos 0.6 (a grazing sun smears shadow-map edges) and a camera; 2D scenes are camera-only; Blank creates an empty 3D scene.
 - `environmentColor` is the clear colour for Play and the 3D editor; the 2D editor keeps the dark chrome clear for grid readability.
 - Game cameras are detached `UniversalCamera`s posed from the actor, looking along local +Z; never `ArcRotateCamera` (that stays the editor orbit camera).
 - Active camera: script **Possess Camera** > valid scene **Default Camera** (stored as actor + component ids) > a camera's `attemptPossessViewTarget` > the default Play camera. Never silently pick the first CameraComponent ([runtime-camera.ts](../../packages/runtime/src/runtime-camera.ts)).

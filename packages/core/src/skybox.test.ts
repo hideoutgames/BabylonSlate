@@ -81,7 +81,7 @@ describe("createDefaultScene skybox", () => {
     expect(scene.settings.environmentColor).toEqual([0.45, 0.62, 0.85]);
   });
 
-  it("lights upright surfaces that face the default camera from above", () => {
+  it("lights upright surfaces that face the default camera from above and at a wide angle", () => {
     const scene = createDefaultScene();
     const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
     const sun = scene.actors.find((actor) => actor.id === "actor-sun")!;
@@ -92,6 +92,10 @@ describe("createDefaultScene skybox", () => {
     // A vertical face at the origin turned toward the camera receives light.
     expect(light.x * cx + light.z * cz).toBeLessThan(0);
     expect(light.y).toBeLessThan(0);
+    // Shadow-map texels stretch by 1 / cos along a face, so a grazing sun smears every edge
+    // the camera sees and lengthens the shadow of each overhang by the same factor.
+    const cosine = -(light.x * cx + light.z * cz) / Math.hypot(cx, cz);
+    expect(cosine).toBeGreaterThan(0.5);
   });
 
   it("lets authors remove the seeded skybox like any other actor", () => {
