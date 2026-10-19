@@ -93,3 +93,28 @@ export function onSceneReadinessDirty(
     if (!listeners.size) readinessDirtyListeners.delete(scene);
   };
 }
+
+const receiverChangeListeners = new WeakMap<Scene, Set<() => void>>();
+
+/**
+ * The lights or shadow maps the scene's lit receivers bind changed (Forward light admission, a shadow map created,
+ * released or retuned): their shader defines differ, so a program that failed to link for the old set may link now.
+ * Called once per change, never per frame.
+ */
+export function notifySceneReceiversChanged(scene: Scene): void {
+  for (const listener of receiverChangeListeners.get(scene) ?? []) listener();
+}
+
+/** Subscribe to `notifySceneReceiversChanged`; returns an unsubscribe. */
+export function onSceneReceiversChanged(scene: Scene, listener: () => void): () => void {
+  let listeners = receiverChangeListeners.get(scene);
+  if (!listeners) {
+    listeners = new Set();
+    receiverChangeListeners.set(scene, listeners);
+  }
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (!listeners.size) receiverChangeListeners.delete(scene);
+  };
+}

@@ -723,6 +723,8 @@ export function compileMaterialPlan(
     // While the build is pending, its own probe turns the failure into the result (`ready`).
     if (buildState !== "ready" || disposed || linkReported) return;
     linkReported = true;
+    // Whoever compiles the same shaders next must not adopt this build id, whether or not the owner retires this one.
+    forgetSharedProgram(material);
     const log = shaderLinkLog(errors || effect.getCompilationError()) || "Material shader failed to link";
     const diagnostic: MaterialDiagnostic = {
       code: "material.compile.failed",
@@ -861,10 +863,11 @@ export function compileMaterialPlan(
             const effect = subMesh?.effect ?? effects.find((entry) => entry?.getCompilationError());
             const error = effect?.getCompilationError();
             if (error && effect?.allFallbacksProcessed()) throw new Error(error);
-            if (compileBound.expired()) throw new Error("Custom GLSL shader compilation timed out");
+            if (compileBound.expired()) throw new MaterialCompileStalled("Custom GLSL shader compilation timed out");
             shaderTimer = setTimeout(check, 16);
           } catch (error) {
-            const diagnostic = materialGlslDiagnostic(error instanceof Error ? error.message : String(error), plan.operations, failedShaderEffect ?? shaderProbe?.subMeshes[0]?.effect ?? shaderPostProcess?.getEffect() ?? shaderParticles?.getCustomEffect());
+            const glsl = materialGlslDiagnostic(error instanceof Error ? error.message : String(error), plan.operations, failedShaderEffect ?? shaderProbe?.subMeshes[0]?.effect ?? shaderPostProcess?.getEffect() ?? shaderParticles?.getCustomEffect());
+            const diagnostic = error instanceof MaterialCompileStalled ? { ...glsl, code: "material.compile.stalled" } : glsl;
             finishShaderCheck();
             buildState = "failed";
             settleBuild([diagnostic]);
@@ -1114,6 +1117,12 @@ export function compileMaterialPlan(
 /** Live materials on each program keep its entry; the last one to dispose drops it. */
 type SharedProgram = { buildId: number; shaders: string; users: Set<NodeMaterial> };
 const sharedPrograms = new WeakMap<AbstractEngine, Map<string, SharedProgram>>();
+const sharedProgramForgetters = new WeakMap<NodeMaterial, () => void>();
+
+/** Drop the program a material shares from the registry, so no later compile adopts its build id. */
+function forgetSharedProgram(material: NodeMaterial): void {
+  sharedProgramForgetters.get(material)?.();
+}
 
 function freshBuildId(): number {
   // Babylon's own build-id source, so an assigned id can never collide.
@@ -1135,6 +1144,8 @@ export function shareCompiledProgram(material: NodeMaterial, key: string): void 
   let programs = sharedPrograms.get(engine);
   if (!programs) sharedPrograms.set(engine, (programs = new Map()));
   const registry = programs;
+  // The program failed to link: the Engine hands a later requester that Effect without an error to report.
+  sharedProgramForgetters.set(material, () => { if (registry.get(key)?.users.has(material)) registry.delete(key); });
   let adopted: number | undefined;
   let firstBuild = true;
   // First observer: later observers (shadow/cluster policies) record the final id.
@@ -1610,10 +1621,13 @@ function writeLinearSurfaceColor(
   imageProcessing.rgb.connectTo(fragment.rgb);
 }
 
-/** The warm-up saw no shader finish for its whole bound: a stall, which says nothing about the program. */
+/**
+ * A compile saw no shader finish for its whole bound (the replacement warm-up, Custom GLSL's probe): a stall, which
+ * says nothing about the program. It settles as `material.compile.stalled`, which the library never latches.
+ */
 export class MaterialCompileStalled extends Error {
-  constructor() {
-    super("Material shader compilation timed out");
+  constructor(message = "Material shader compilation timed out") {
+    super(message);
     this.name = "MaterialCompileStalled";
   }
 }

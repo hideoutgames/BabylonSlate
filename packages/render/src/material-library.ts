@@ -14,7 +14,7 @@ import {
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { validMaterialParameterValue } from "./material-parameters";
 import { applyMaterialBounds } from "./material-bounds";
-import { markSceneReadinessDirty } from "./scene-readiness-signal";
+import { markSceneReadinessDirty, onSceneReceiversChanged } from "./scene-readiness-signal";
 import { shaderLinkLog } from "./material-glsl-diagnostics";
 import {
   compileMaterialPlan,
@@ -105,11 +105,13 @@ type PlanSlot = { functions: Record<string, MaterialFunctionDocument>; content: 
 
 /**
  * A failure that follows from the plan itself, so the same plan fails again: not a cancellation, not a texture that
- * is not ready (its own preparation reports it, and the generation hash carries the texture's identity).
+ * is not ready (its own preparation reports it, and the generation hash carries the texture's identity), and not a
+ * stall (a compile that saw no shader finish for its bound says nothing about the program).
  */
 function failsPlan(diagnostics: readonly MaterialDiagnostic[]): boolean {
-  return diagnostics.some((diagnostic) => diagnostic.code !== "material.compile.cancelled" && diagnostic.code !== "material.missingTexture");
+  return diagnostics.some((diagnostic) => !NOT_THE_PLAN.has(diagnostic.code));
 }
+const NOT_THE_PLAN: ReadonlySet<string> = new Set(["material.compile.cancelled", "material.missingTexture", "material.compile.stalled"]);
 
 function documentForPlan(
   doc: MaterialDocument,
@@ -174,6 +176,7 @@ export class MaterialLibrary {
   private readonly failures = new WeakMap<Scene, Map<string, { hash: string; diagnostics: readonly MaterialDiagnostic[] }>>();
   private readonly tracked = new Set<Scene>();
   private readonly disposeObservers = new WeakMap<Scene, Observer<Scene>>();
+  private readonly receiverSubscriptions = new WeakMap<Scene, () => void>();
   // Reuse one lowering per document, shading variant and functions record
   // while the document content is unchanged (hosts may edit documents in place).
   private readonly plans = new WeakMap<MaterialDocument, { lit?: PlanSlot; unlit?: PlanSlot }>();
@@ -200,6 +203,8 @@ export class MaterialLibrary {
     // before it disposes materials, so the library retires its own first.
     const observer = scene.onDisposeObservable.addOnce(() => this.releaseScene(scene));
     if (observer) this.disposeObservers.set(scene, observer);
+    // A program can fail to link for the lights and shadow maps its receivers bind (a varying or uniform limit).
+    this.receiverSubscriptions.set(scene, onSceneReceiversChanged(scene, () => this.forgetFailures(scene)));
     return created;
   }
 
@@ -374,15 +379,13 @@ export class MaterialLibrary {
         }
         return retired || scene.isDisposed ? [cancelledDiagnostic()] : [];
       } catch (error) {
-        stalled = error instanceof MaterialCompileStalled;
         // Babylon rejects a failed compile with the shader log itself, a string.
         const log = error instanceof Error ? error.message : typeof error === "string" ? shaderLinkLog(error) : "";
-        return [{ code: "material.compile.failed", message: log || "Material shader preparation failed", severity: "error" as const }];
+        const code = error instanceof MaterialCompileStalled ? "material.compile.stalled" : "material.compile.failed";
+        return [{ code, message: log || "Material shader preparation failed", severity: "error" as const }];
       }
     });
     let retired = false;
-    // The warm-up saw no shader finish for its bound: nothing about the program, so a later request tries again.
-    let stalled = false;
     const cancelledDiagnostic = (): MaterialDiagnostic => ({ code: "material.compile.cancelled", message: "Material preparation was cancelled", severity: "error" });
     const ready = Promise.race([nativePrepared, new Promise<readonly MaterialDiagnostic[]>((resolve) => {
       cancelPreparation = () => { retired = true; resolve([cancelledDiagnostic()]); };
@@ -520,11 +523,13 @@ export class MaterialLibrary {
     // key inherits (and replaces), so a holder's later `release` never lands on a newer generation.
     let unlinkable = false;
     retireUnlinkable = (diagnostic) => queueMicrotask(() => {
-      const current = entries.get(key) === candidate || pending.get(key) === candidate;
+      // An adopted instance moved to its component's key (`adoptPreparedInstance` rewrites `instanceKey`).
+      const heldKey = cacheKey(assetGuid, unlit, candidate.instanceKey, options?.logicalSceneBuffers);
+      const current = entries.get(heldKey) === candidate || pending.get(heldKey) === candidate;
       if (!current || unlinkable || scene.isDisposed) return;
       unlinkable = true;
       failures.set(failureKey, { hash, diagnostics: [diagnostic] });
-      if (existing && pending.get(key) === candidate && !isDisposedNodeMaterial(existing.material, scene)) {
+      if (existing && pending.get(heldKey) === candidate && !isDisposedNodeMaterial(existing.material, scene)) {
         existing.refCount = candidate.refCount;
         rebindMaterial(scene, candidate.material, existing.material);
       }
@@ -546,7 +551,7 @@ export class MaterialLibrary {
             rebindMaterial(scene, candidate.material, existing.material);
           }
           candidate.dispose();
-          if (!stalled && failsPlan(errors)) failures.set(failureKey, { hash, diagnostics: errors });
+          if (failsPlan(errors)) failures.set(failureKey, { hash, diagnostics: errors });
           for (const error of errors) this.options.onTextureError?.(error);
           return;
         }
@@ -592,6 +597,8 @@ export class MaterialLibrary {
     if (!entries) return;
     const observer = this.disposeObservers.get(scene);
     if (observer) { scene.onDisposeObservable.remove(observer); this.disposeObservers.delete(scene); }
+    this.receiverSubscriptions.get(scene)?.();
+    this.receiverSubscriptions.delete(scene);
     for (const entry of entries.values()) entry.dispose();
     const pending = this.pending.get(scene);
     if (pending) { for (const entry of pending.values()) entry.dispose(); pending.clear(); }
@@ -770,6 +777,15 @@ export class MaterialLibrary {
       // A changed dependency may let a plan that failed compile.
       this.failures.get(scene)?.clear();
     }
+  }
+
+  /**
+   * Forget the plans that failed in `scene`, so the next request compiles again. The Scene does this itself when its
+   * lights or shadow maps change (`onSceneReceiversChanged`): a program can fail to link for the set its receivers
+   * bind and link without it, while the plan hash stays the same. Cheap, and unlike `markDirty` it touches no entry.
+   */
+  forgetFailures(scene: Scene): void {
+    this.failures.get(scene)?.clear();
   }
 
   /** Cancel every unpublished generation of an asset, whatever its variant or instance key. */
