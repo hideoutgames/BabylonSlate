@@ -24,7 +24,9 @@ import { prewarmMaterial } from "./material-compiler";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import { PARTICLE_BILLBOARD_MODES, PARTICLE_BLEND_MODES } from "./particle-render-modes";
-import { markSceneReadinessDirty, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
+import { markSceneReadinessDirty } from "./scene-perf";
+import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
+import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 
 export function gpuParticlesSupported(engine: AbstractEngine, requested = true): boolean {
   const caps = engine.getCaps();
@@ -333,6 +335,42 @@ function editGradientsInPlace(system: IParticleSystem, gradients: BasicEmitterPl
   return true;
 }
 
+/**
+ * Spacing of a preparation bound's checks. It stays well under `SCENE_THREAD_HELD_MS`, so a gap that long
+ * between two checks is a held thread, not polling.
+ */
+const PREPARATION_POLL_MS = 16;
+
+/**
+ * Bounds one particle preparation like the other loading waits (`createHeldThreadBound`): it fails after
+ * `SCENE_SHADER_WARM_TIMEOUT_MS` without progress, not in total. A synchronous shader link (WebKit WebGL2,
+ * SwiftShader) keeps a plain timer from firing until the link returns, so the thread-held gap is not
+ * charged, up to the bound's own held-thread budget; and the bound starts again while shaders keep
+ * finishing on the Engine, up to `SCENE_PREPARATION_CEILING_MS` (`DriverCompileWatch`). A preparation that
+ * is stuck therefore still fails, after its bound plus the credited time. `message` is asked when it runs
+ * out and the error handed to `onTimeout` ends with the watch's shader counts. Returns the stop function:
+ * call it when the preparation settles or is cancelled.
+ */
+export function boundParticlePreparation(
+  engine: AbstractEngine,
+  message: () => string,
+  onTimeout: (error: Error) => void,
+): () => void {
+  const compiles = new DriverCompileWatch(engine);
+  const bound = createHeldThreadBound(SCENE_SHADER_WARM_TIMEOUT_MS, undefined, renewOnCompileProgress(compiles));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const check = () => {
+    timer = undefined;
+    if (bound.expired()) onTimeout(new Error(`${message()} ${compiles.describe()}`));
+    else timer = setTimeout(check, PREPARATION_POLL_MS);
+  };
+  timer = setTimeout(check, PREPARATION_POLL_MS);
+  return () => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+}
+
 /** Settles a pending bind: with its successor's bind when one replaces it, or at once (a disposed system). */
 const pendingParticleMaterials = new WeakMap<IParticleSystem, (successor?: Promise<void>) => void>();
 
@@ -375,7 +413,7 @@ function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMateri
     pendingParticleMaterials.delete(system);
     scene.removeIsReadyCheck(readiness);
     system.onDisposeObservable.remove(disposeObserver);
-    if (timer !== undefined) clearTimeout(timer);
+    stopBound();
     markSceneReadinessDirty(scene);
     if (successor) successor.then(resolve, reject);
     else resolve();
@@ -391,7 +429,7 @@ function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMateri
     reject(error);
     cancel();
   };
-  const timer = setTimeout(() => fail(new Error("Particle material preparation timed out.")), SCENE_SHADER_WARM_TIMEOUT_MS);
+  const stopBound = boundParticlePreparation(scene.getEngine(), () => "Particle material preparation timed out.", fail);
   // Babylon's first NodeMaterial build can finish asynchronously. Creating the
   // particle effect before then registers no fragment source and fetches a .fx URL.
   void prewarmMaterial(material, null).then(() => {
