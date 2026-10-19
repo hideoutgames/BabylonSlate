@@ -61,7 +61,12 @@ import {
   collectImplementedInterfaceContexts,
   collectParentFunctionSignatures,
 } from "../lib/overridable-functions";
-import type { FunctionGraphPanelParams } from "../shell/function-graph-panels";
+import {
+  EVENT_GRAPH_PANEL_ID,
+  openFunctionGraphPanel,
+  type FunctionGraphPanelParams,
+} from "../shell/function-graph-panels";
+import { claimFocusRouting, graphOwningNode } from "../lib/function-graph-focus";
 
 const registry = defaultNodeRegistry;
 const VALIDATION_DEBOUNCE_MS = 250;
@@ -248,6 +253,27 @@ export function GraphPanel(
     const title = functionId ? functionMember?.name : undefined;
     if (title && panelApi.title !== title) panelApi.setTitle(title);
   }, [functionId, functionMember?.name, functionMissing, panelApi]);
+
+  // A node chosen elsewhere (Session Report, project search) can live in a
+  // graph whose tab is not showing: bring that tab forward so the node frames.
+  const graphContentRef = useRef(graphContent);
+  graphContentRef.current = graphContent;
+  const containerApi = props.containerApi as
+    | IDockviewPanelProps["containerApi"]
+    | undefined;
+  useEffect(() => {
+    const nodeId = focusDiagnostic?.nodeId;
+    if (!focusDiagnostic || !nodeId || !containerApi || documentId !== activeDocumentId) return;
+    const content = graphContentRef.current;
+    const owner = graphOwningNode(content, nodeId);
+    if (!owner || !claimFocusRouting(focusDiagnostic)) return;
+    if (owner.kind === "event") {
+      if (functionId !== null) containerApi.getPanel(EVENT_GRAPH_PANEL_ID)?.api.setActive();
+    } else if (owner.functionId !== functionId) {
+      const name = content?.members?.find((member) => member.id === owner.functionId)?.name;
+      openFunctionGraphPanel(containerApi, owner.functionId, name ?? owner.functionId);
+    }
+  }, [activeDocumentId, containerApi, documentId, focusDiagnostic, functionId]);
 
   const [canvasApi, setCanvasApi] = useState<GraphCanvasDropApi | null>(null);
   useEffect(() => {
