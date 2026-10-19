@@ -53,7 +53,6 @@ import {
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
 import { Toggle } from "@babylonslate/ui/components/toggle";
-import { cn } from "@babylonslate/ui/lib/utils";
 import {
   CopyIcon,
   ClipboardPasteIcon,
@@ -90,6 +89,7 @@ import {
 } from "../context/scene-editing-context";
 import { IconActionButton } from "../components/icon-action-button";
 import { usePhoneLayout } from "../shell/use-platform-layout";
+import { QUIET_ROW_ACTION } from "../lib/row-action-classes";
 import { PlaceActorsDialog } from "../components/place-actors-dialog";
 import {
   duplicateSceneActor,
@@ -121,9 +121,6 @@ import { prefabAssetTemplateKey, prefabAssetTemplates } from "../lib/prefab-inst
 
 const CLASS_KINDS = ["graph"] as const;
 const PREFAB_KINDS = ["prefab"] as const;
-
-const QUIET_ROW_ACTION =
-  "[@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:hover_&]:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:focus-within_&]:opacity-100";
 
 const NO_MENU_ITEMS: NestedMenuItem[] = [];
 const NO_PLACE_ACTOR_ITEMS: PlaceActorItem[] = [];
@@ -1352,10 +1349,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         <div className="flex shrink-0 items-center gap-1 border-b border-border/60 bg-panel-header px-1 py-1">
           <SearchInput
             ref={searchRef}
-            className={cn(
-              "min-h-[var(--chrome-row,28px)]",
-              phone && "min-h-11",
-            )}
+            className={phone ? "h-11" : "h-7"}
             placeholder="Search actors"
             aria-label="Search actors"
             value={search}

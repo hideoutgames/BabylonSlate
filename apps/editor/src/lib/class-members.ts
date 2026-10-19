@@ -1485,6 +1485,17 @@ export type ClassMemberDropResult =
   | { kind: "spawn"; graph: SerializedGraph };
 
 /** Decide Get/Set vs Call spawn when a Class tree row is dropped on the graph. */
+/** Whether dragging this member onto a graph spawns a node: variables, functions and custom events. */
+export function canDropClassMember(
+  row: Pick<ClassMemberDropRow, "kind" | "eventType">,
+): boolean {
+  return (
+    row.kind === "variable" ||
+    row.kind === "function" ||
+    (row.kind === "event" && row.eventType === "flow.event.custom")
+  );
+}
+
 export function resolveClassMemberDrop(options: {
   graph: SerializedGraph;
   memberId: string;
@@ -1503,7 +1514,7 @@ export function resolveClassMemberDrop(options: {
     return { kind: "ignore" };
   }
   const row = options.members.find((entry) => entry.id === options.memberId);
-  if (!row) return { kind: "ignore" };
+  if (!row || !canDropClassMember(row)) return { kind: "ignore" };
   const declared =
     options.graph.members?.find((entry) => entry.id === options.memberId) ??
     options.graph.members?.find(
@@ -1528,13 +1539,10 @@ export function resolveClassMemberDrop(options: {
       graph: addCallFunctionNode(options.graph, declared ?? row, spawn),
     };
   }
-  if (row.kind === "event" && row.eventType === "flow.event.custom") {
-    return {
-      kind: "spawn",
-      graph: addCallEventNode(options.graph, declared ?? row, spawn),
-    };
-  }
-  return { kind: "ignore" };
+  return {
+    kind: "spawn",
+    graph: addCallEventNode(options.graph, declared ?? row, spawn),
+  };
 }
 
 /** Append a named class member. Events insert a custom event node; functions seed a graph. */
