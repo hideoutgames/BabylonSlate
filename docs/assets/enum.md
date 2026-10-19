@@ -10,7 +10,7 @@ In the **Content Browser**, choose **New Asset > Scripting > Enum**.
 
 Double-tap an Enum to open it.
 
-- **Members**: one row per option, with its name and value. Tap **Add member** (**+**) to add one, and the remove button to delete the selected one. The arrows move a member up or down.
+- **Members**: one row per option, with its name and value. Tap a row to select it; double-tap its name (or press F2) to rename it. Values are whole numbers; a decimal rounds to the nearest one. Tap **Add member** (**+**) to add one, and the remove button to delete the selected one. The arrows move a member up or down.
 - **Inspector**: the selected member's settings.
 
 ## Settings

@@ -10,7 +10,7 @@ In the **Content Browser**, choose **New Asset > Scripting > Structure**.
 
 Double-tap a Structure to open it.
 
-- **Members**: one row per field, with its name and type. Tap **Add field** (**+**) to add one, and the remove button to delete the selected one. The arrows move a field up or down.
+- **Members**: one row per field, with its name and type. Tap a row to select it; double-tap its name (or press F2) to rename it. Tap **Add field** (**+**) to add one, and the remove button to delete the selected one. The arrows move a field up or down.
 - **Inspector**: the selected field's settings.
 
 ## Settings

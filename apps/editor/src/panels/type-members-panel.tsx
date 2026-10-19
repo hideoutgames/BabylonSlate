@@ -1,14 +1,14 @@
-import type { MouseEvent } from "react";
+import { useState, type MouseEvent } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   NumberField,
   PanelFrame,
+  TreeView,
   TypeColorMark,
   pinPickerColorVar,
   pinPickerLabel,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
-import { Input } from "@babylonslate/ui/components/input";
 import {
   ChevronDownIcon,
   ChevronUpIcon,
@@ -45,6 +45,8 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   const kind = doc?.ref.kind;
   const selectedIndex = parseMemberIndex(selectedMemberId);
+  // Double-tap, double-click or F2 on a member renames it in place.
+  const [renamingId, setRenamingId] = useState<string | null>(null);
 
   const commit = (next: Record<string, unknown>) => {
     void applyAssetDocumentChange(documentId, next);
@@ -94,64 +96,47 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
           </>
         }
       >
-        <div className="flex flex-col">
-          {asset.members.map((member, index) => {
-            const selected = selectedIndex === index;
-            return (
-              // The name commits on each keystroke, so a name-based key would
-              // remount the input and drop focus.
-              <div
-                key={index}
-                className={`flex min-h-[var(--chrome-row,28px)] items-center gap-1 px-2 ${
-                  selected ? "bg-accent" : "hover:bg-accent/50"
-                }`}
-                data-testid={`enum-row-${index}`}
-                onClick={() => setSelectedMemberId(memberKey(index))}
-              >
-                <Input
-                  className="h-7 min-h-7 min-w-0 flex-1"
-                  value={member.name}
-                  aria-label={`Member ${index + 1} name`}
-                  onChange={(event) =>
-                    commit(
-                      patchEnumMember(asset, index, {
-                        name: event.target.value,
-                      }),
-                    )
-                  }
-                />
+        <TreeView
+          nodes={asset.members.map((member, index) => ({
+            id: memberKey(index),
+            label: member.name,
+            depth: 0,
+            hasChildren: false,
+            expanded: false,
+            renamable: true,
+            draggable: false,
+            trailing: (
+              <>
                 <NumberField
-                  className="h-7 min-h-7 w-20"
+                  integer
+                  className="h-6 min-h-6 w-16 text-xs"
                   value={member.value}
-                  aria-label={`Member ${index + 1} value`}
-                  onChange={(value) =>
-                    commit(patchEnumMember(asset, index, { value }))
-                  }
+                  aria-label={`${member.name} value`}
+                  onChange={(value) => commit(patchEnumMember(asset, index, { value }))}
                 />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Move ${member.name} up`}
-                  disabled={index === 0}
-                  onClick={(event) => moveRow(event, moveEnumMember(asset, index, -1), index - 1)}
-                >
-                  <ChevronUpIcon />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Move ${member.name} down`}
-                  disabled={index === asset.members.length - 1}
-                  onClick={(event) => moveRow(event, moveEnumMember(asset, index, 1), index + 1)}
-                >
-                  <ChevronDownIcon />
-                </Button>
-              </div>
-            );
-          })}
-        </div>
+                <MoveButtons
+                  name={member.name}
+                  first={index === 0}
+                  last={index === asset.members.length - 1}
+                  onUp={(event) => moveRow(event, moveEnumMember(asset, index, -1), index - 1)}
+                  onDown={(event) => moveRow(event, moveEnumMember(asset, index, 1), index + 1)}
+                />
+              </>
+            ),
+          }))}
+          selectedId={selectedIndex === null ? null : memberKey(selectedIndex)}
+          onSelect={(id) => setSelectedMemberId(id)}
+          renamingId={renamingId}
+          onRenameRequest={setRenamingId}
+          onRenameDone={(id, name) => {
+            setRenamingId(null);
+            const index = parseMemberIndex(id);
+            if (name !== null && index !== null) commit(patchEnumMember(asset, index, { name }));
+          }}
+          emptyLabel="No Members"
+          aria-label="Enum Members"
+          data-testid="enum-members-tree"
+        />
       </PanelFrame>
     );
   }
@@ -189,58 +174,42 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
           </>
         }
       >
-        <div className="flex flex-col">
-          {asset.fields.map((field, index) => {
-            const selected = selectedIndex === index;
-            return (
-              <div
-                key={field.id ?? `index:${index}`}
-                className={`flex min-h-[var(--chrome-row,28px)] items-center gap-1 px-2 ${
-                  selected ? "bg-accent" : "hover:bg-accent/50"
-                }`}
-                data-testid={`structure-row-${index}`}
-                onClick={() => setSelectedMemberId(memberKey(index))}
-              >
-                <TypeColorMark colorVar={pinPickerColorVar(field.typeId)} />
-                <Input
-                  className="h-7 min-h-7 min-w-0 flex-1"
-                  value={field.name}
-                  aria-label={`Field ${index + 1} name`}
-                  onChange={(event) =>
-                    commit(
-                      patchStructureField(asset, index, {
-                        name: event.target.value,
-                      }),
-                    )
-                  }
-                />
-                <span className="text-xs text-muted-foreground">
-                  {pinPickerLabel(field.typeId)}
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Move ${field.name} up`}
-                  disabled={index === 0}
-                  onClick={(event) => moveRow(event, moveStructureField(asset, index, -1), index - 1)}
-                >
-                  <ChevronUpIcon />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Move ${field.name} down`}
-                  disabled={index === asset.fields.length - 1}
-                  onClick={(event) => moveRow(event, moveStructureField(asset, index, 1), index + 1)}
-                >
-                  <ChevronDownIcon />
-                </Button>
-              </div>
-            );
-          })}
-        </div>
+        <TreeView
+          nodes={asset.fields.map((field, index) => ({
+            id: memberKey(index),
+            label: field.name,
+            depth: 0,
+            hasChildren: false,
+            expanded: false,
+            renamable: true,
+            draggable: false,
+            icon: <TypeColorMark colorVar={pinPickerColorVar(field.typeId)} />,
+            preview: (
+              <span className="text-xs text-muted-foreground">{pinPickerLabel(field.typeId)}</span>
+            ),
+            trailing: (
+              <MoveButtons
+                name={field.name}
+                first={index === 0}
+                last={index === asset.fields.length - 1}
+                onUp={(event) => moveRow(event, moveStructureField(asset, index, -1), index - 1)}
+                onDown={(event) => moveRow(event, moveStructureField(asset, index, 1), index + 1)}
+              />
+            ),
+          }))}
+          selectedId={selectedIndex === null ? null : memberKey(selectedIndex)}
+          onSelect={(id) => setSelectedMemberId(id)}
+          renamingId={renamingId}
+          onRenameRequest={setRenamingId}
+          onRenameDone={(id, name) => {
+            setRenamingId(null);
+            const index = parseMemberIndex(id);
+            if (name !== null && index !== null) commit(patchStructureField(asset, index, { name }));
+          }}
+          emptyLabel="No Fields"
+          aria-label="Structure Fields"
+          data-testid="structure-fields-tree"
+        />
       </PanelFrame>
     );
   }
@@ -249,5 +218,31 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
     <PanelFrame data-testid="type-members-panel">
       <p className="p-3 text-sm text-muted-foreground">No members</p>
     </PanelFrame>
+  );
+}
+
+/** Reorder controls at the end of a member row. */
+function MoveButtons({
+  name,
+  first,
+  last,
+  onUp,
+  onDown,
+}: {
+  name: string;
+  first: boolean;
+  last: boolean;
+  onUp: (event: MouseEvent) => void;
+  onDown: (event: MouseEvent) => void;
+}) {
+  return (
+    <>
+      <Button type="button" variant="ghost" size="icon-xs" aria-label={`Move ${name} up`} disabled={first} onClick={onUp}>
+        <ChevronUpIcon />
+      </Button>
+      <Button type="button" variant="ghost" size="icon-xs" aria-label={`Move ${name} down`} disabled={last} onClick={onDown}>
+        <ChevronDownIcon />
+      </Button>
+    </>
   );
 }
