@@ -52,9 +52,9 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
   await openMainScene(page);
   const scene = await page.evaluate(() => (window as unknown as { __babylonslateTest: { activeSceneContent(): SerializedScene } }).__babylonslateTest.activeSceneContent());
   const camera = scene.actors.find(actor => actor.id === scene.settings.mainCameraActorId)!;
-  // The template Mannequin faces the default camera (-Z); view its front from the Sun's side.
-  camera.transform.position = [-3, 2, -4];
-  camera.transform.rotation = lookAtRotation([-3, 2, -4], [0, 1.35, 0]);
+  // The template Mannequin faces the default camera (-Z); frame its front, which the sun lights at a wide angle.
+  camera.transform.position = [0, 1.9, -5.5];
+  camera.transform.rotation = lookAtRotation([0, 1.9, -5.5], [0, 1.35, 0]);
   Object.assign(camera.components.find(component => component.classId === "CameraComponent")!.properties, { fieldOfView: 0.7 * 180 / Math.PI });
   // Preserve the real template's model, animation, light and clipping settings.
   await setPreviewScene(page, scene);

@@ -99,12 +99,14 @@ export const DEFAULT_SCENE_SUN_COLOR: [number, number, number] = [
 export const DEFAULT_SCENE_SUN_INTENSITY = 1.5;
 
 /**
- * High sun slightly left on the default camera's side (-Z), so surfaces
- * facing that camera are lit; the editor billboard sits above the origin.
+ * About 45° up and 35° left of the default camera's line (-Z), so surfaces
+ * facing that camera take the sun at cos 0.6. A grazing sun stretches a shadow
+ * map's texels by 1/cos along every face the camera sees, which smears shadow
+ * edges into streaks and lengthens an overhang's shadow by the same factor.
  * Rotation aims Babylon local +Z toward the origin.
  */
 export const DEFAULT_SCENE_SUN_POSITION: [number, number, number] = [
-  -1.05, 3, -0.6,
+  -2, 3.5, -2.9,
 ];
 
 export function createDefaultSkyboxActor() {

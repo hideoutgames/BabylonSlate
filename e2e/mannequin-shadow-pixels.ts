@@ -44,17 +44,19 @@ export function posedMannequin(geometry: MannequinGeometry, state: ShadowDiagnos
   });
 }
 
+const mannequinTriangles = (geometry: MannequinGeometry) => geometry.flatMap(part => {
+  const result = [];
+  const indices = part.indices.length ? part.indices : part.vertices.map((_, i) => i);
+  for (let i = 0; i < indices.length; i += 3) {
+    const vertices = indices.slice(i, i + 3).map(index => part.vertices[index]!);
+    result.push({ name: part.name, a: vertices[0]!.position, b: vertices[1]!.position, c: vertices[2]!.position, normal: vertices[0]!.normal });
+  }
+  return result;
+});
+
 /** Independent triangle/ray geometry oracle; no renderer shadow code is used. */
 export function mannequinShadowSamples(geometry: MannequinGeometry, state: ShadowDiagnostics, width: number, height: number) {
-  const triangles = geometry.flatMap(part => {
-    const result = [];
-    const indices = part.indices.length ? part.indices : part.vertices.map((_, i) => i);
-    for (let i = 0; i < indices.length; i += 3) {
-      const vertices = indices.slice(i, i + 3).map(index => part.vertices[index]!);
-      result.push({ name: part.name, a: vertices[0]!.position, b: vertices[1]!.position, c: vertices[2]!.position, normal: vertices[0]!.normal });
-    }
-    return result;
-  });
+  const triangles = mannequinTriangles(geometry);
   const hit = (origin: V, direction: V, limit = Infinity) => {
     for (const tri of triangles) {
       const e1 = sub(tri.b, tri.a), e2 = sub(tri.c, tri.a);
@@ -156,4 +158,94 @@ export function mannequinContactCoverage(regions: Record<string, ShadowRegion>) 
   const contacts = Object.values(regions).reduce((sum, region) => sum + region.contacts, 0);
   const retained = Object.values(regions).reduce((sum, region) => sum + region.retained, 0);
   return { contacts, retained, coverage: contacts ? retained / contacts : 0 };
+}
+
+/** Screen rectangle holding the mannequin, read back as one luminance value per pixel. */
+export type MannequinBox = { x: number; y: number; width: number; height: number };
+
+export async function captureMannequinLuminance(canvas: Locator, box: MannequinBox) {
+  return canvas.evaluate((node: HTMLCanvasElement, box) => {
+    const copy = document.createElement("canvas");
+    copy.width = node.width; copy.height = node.height;
+    const context = copy.getContext("2d")!;
+    context.drawImage(node, 0, 0);
+    const bytes = context.getImageData(box.x, box.y, box.width, box.height).data;
+    return Array.from({ length: box.width * box.height }, (_, i) => (bytes[i * 4]! + bytes[i * 4 + 1]! + bytes[i * 4 + 2]!) / 3);
+  }, box);
+}
+
+/**
+ * What every pixel of the mannequin's screen box should show, ray-cast from the
+ * posed triangles alone: 1 for a face the sun lights, 2 for one it cannot
+ * reach, 0 for background and faces turned from the sun. `distance` is the
+ * camera distance of the surface each pixel sees.
+ */
+export function mannequinShadowPixels(geometry: MannequinGeometry, state: ShadowDiagnostics, width: number, height: number) {
+  const triangles = mannequinTriangles(geometry).map(tri => ({ a: tri.a, e1: sub(tri.b, tri.a), e2: sub(tri.c, tri.a), normal: tri.normal }));
+  const sun = state.lights.find(light => light.type === "DirectionalLight")!;
+  const toLight = unit(sun.worldDirection!.map(v => -v!));
+  const camera = state.camera!;
+  const origin = camera.position as V, basis = camera.worldMatrix as V, projection = camera.projection as V;
+  // The nearest triangle a ray meets, in world units (Infinity and -1 when it meets none).
+  const trace = (from: V, direction: V) => {
+    let distance = Infinity, index = -1;
+    triangles.forEach((tri, at) => {
+      const p = cross(direction, tri.e2), determinant = dot(tri.e1, p);
+      if (Math.abs(determinant) < 1e-10) return;
+      const relative = sub(from, tri.a), u = dot(relative, p) / determinant;
+      if (u < 0 || u > 1) return;
+      const q = cross(relative, tri.e1), v = dot(direction, q) / determinant;
+      if (v < 0 || u + v > 1) return;
+      const hit = dot(tri.e2, q) / determinant;
+      if (hit > 1e-5 && hit < distance) { distance = hit; index = at; }
+    });
+    return { distance, index };
+  };
+  const projected = mannequinTriangles(geometry).flatMap(tri => [tri.a, tri.b, tri.c]).map(point => {
+    const [x, y, , w] = transform(point, camera.viewProjection as V) as [number, number, number, number];
+    return { x: (x / w * 0.5 + 0.5) * width, y: (0.5 - y / w * 0.5) * height };
+  });
+  const x0 = Math.max(0, Math.floor(Math.min(...projected.map(p => p.x))) - 1), x1 = Math.min(width, Math.ceil(Math.max(...projected.map(p => p.x))) + 1);
+  const y0 = Math.max(0, Math.floor(Math.min(...projected.map(p => p.y))) - 1), y1 = Math.min(height, Math.ceil(Math.max(...projected.map(p => p.y))) + 1);
+  const box: MannequinBox = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+  const kind = new Uint8Array(box.width * box.height), distance = new Float32Array(box.width * box.height);
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    const cx = ((x + 0.5) / width * 2 - 1) / projection[0]!, cy = (1 - (y + 0.5) / height * 2) / projection[5]!;
+    // Babylon's camera world matrix rows are its right, up and forward axes.
+    const direction = unit([0, 1, 2].map(i => cx * basis[i]! + cy * basis[i + 4]! + basis[i + 8]!));
+    const seen = trace(origin, direction);
+    if (seen.index < 0) continue;
+    const tri = triangles[seen.index]!;
+    if (dot(tri.normal, direction) >= 0 || dot(tri.normal, toLight) <= 0.02) continue;
+    const at = (y - y0) * box.width + (x - x0);
+    distance[at] = seen.distance;
+    kind[at] = trace(add(add(origin, direction, seen.distance), tri.normal, 1e-4), toLight).index < 0 ? 1 : 2;
+  }
+  return { box, kind, distance };
+}
+
+/**
+ * How far the drawn shadow edge strays from the ray-cast one: the light a lit
+ * pixel lost plus the light a shadowed pixel kept (against the same view with
+ * shadows off), summed over the figure and divided by the length of its shadow
+ * edges. That is the mean width of the wrong band along an edge, in world
+ * metres at the surface. Pixels with no direct light to lose (authored black
+ * texture) take no part. Editor guides drawn over the figure read as lit in both
+ * views, a small constant no shadow fix removes.
+ */
+export function mannequinShadowEdgeError(oracle: ReturnType<typeof mannequinShadowPixels>, shadowed: number[], direct: number[], fieldOfView: number, viewHeight: number) {
+  const { box, kind, distance } = oracle;
+  let error = 0, edge = 0, pixelMetres = 0;
+  for (let y = 0; y < box.height; y++) for (let x = 0; x < box.width; x++) {
+    const at = y * box.width + x;
+    if (!kind[at] || direct[at]! < 25) continue;
+    if (kind[at] === 1 && [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]].some(([nx, ny]) => nx! >= 0 && ny! >= 0 && nx! < box.width && ny! < box.height && kind[ny! * box.width + nx!] === 2)) {
+      edge++;
+      pixelMetres += distance[at]! * 2 * Math.tan(fieldOfView / 2) / viewHeight;
+    }
+    const kept = Math.min(1, shadowed[at]! / direct[at]!);
+    error += kind[at] === 1 ? 1 - kept : kept;
+  }
+  const width = error / edge;
+  return { edge, widthPixels: width, widthMetres: width * pixelMetres / edge };
 }

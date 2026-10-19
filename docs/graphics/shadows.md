@@ -66,6 +66,7 @@ Applying a level also resets a Manual **Local Shadow Light Budget** to that leve
 - **Stripes or speckles on lit surfaces (shadow acne):** raise **Shadow Normal Bias** slightly, or turn on **Automatic Shadow Bias**.
 - **Shadows float away from objects:** lower **Shadow Depth Bias**.
 - **Blurry directional shadows:** reduce **Shadow Distance**, add cascades or raise **Directional Map Size**.
+- **Streaks or smeared edges on a surface the light barely touches:** a light skimming a surface stretches each shadow texel along it. Rotate the light so it meets the surface at a wider angle, or sharpen the shadows as above.
 - **A spot or point light has no shadow:** check **Cast Shadows**, the local shadow budget and **Shadow Priority**.
 
 ## Control shadows from scripts
