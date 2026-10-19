@@ -36,6 +36,7 @@ export {
   listDebugCollidersFromRecords,
 } from "./debug-colliders";
 export { SoftwarePhysicsBackend } from "./software-backend";
+export { colliderPairResponse } from "./collision-response";
 export {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,

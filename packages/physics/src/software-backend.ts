@@ -2,6 +2,7 @@ import type { PhysicsBackend } from "./backend";
 import { copyColliderDesc, linearSweepPoses, normalizedPhysicsPose } from "./collider-validation";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { queryAdmitsShape } from "./query-filter";
+import { colliderPairResponse } from "./collision-response";
 import { isIdentityQuat, rotateQuatVec, multiplyQuat } from "./collider-bake";
 import type {
   CharacterControllerDesc,
@@ -517,7 +518,8 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       for (let j = i + 1; j < list.length; j++) {
         const colliderA = list[i]!;
         const colliderB = list[j]!;
-        if (!(colliderA.desc.layer & colliderB.desc.mask) || !(colliderB.desc.layer & colliderA.desc.mask)) continue;
+        const response = colliderPairResponse(colliderA.desc, colliderB.desc);
+        if (response === "ignore") continue;
         const bodyA = this.bodies.get(colliderA.desc.bodyId);
         const bodyB = this.bodies.get(colliderB.desc.bodyId);
         if (!bodyA || !bodyB || bodyA === bodyB) continue;
@@ -540,8 +542,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
           colliderBId = swapCollider;
         }
         const key = `${actorAId}\t${colliderAId}\t${actorBId}\t${colliderBId}`;
-        const isTrigger = colliderA.desc.isTrigger || colliderB.desc.isTrigger;
-        if (isTrigger) {
+        if (response === "overlap") {
           currentOverlap.add(key);
           if (!this.previousOverlapKeys.has(key))
             events.push({ kind: "overlapBegin", actorAId, actorBId, colliderAId, colliderBId });

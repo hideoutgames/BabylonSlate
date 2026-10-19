@@ -29,6 +29,8 @@ import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { quatToPlanarAngle } from "./collider-bake";
 import { queryAdmitsEveryShape, queryAdmitsShape } from "./query-filter";
 import { copyColliderDesc, linearSweepPoses, normalizedPhysicsPose } from "./collider-validation";
+import { colliderPairResponse } from "./collision-response";
+import type { CollisionResponse } from "@babylonslate/core";
 import { copyConstraintDesc } from "./constraint-validation";
 
 type RapierEventQueue = {
@@ -44,7 +46,7 @@ type RapierApi = {
   ActiveEvents: { COLLISION_EVENTS: number };
   ActiveCollisionTypes: { ALL: number };
   ActiveHooks: { FILTER_CONTACT_PAIRS: number; FILTER_INTERSECTION_PAIRS: number };
-  SolverFlags: { COMPUTE_IMPULSE: number };
+  SolverFlags: { EMPTY: number; COMPUTE_IMPULSE: number };
   World: new (gravity: { x: number; y: number }) => {
     gravity: { x: number; y: number };
     timestep: number;
@@ -261,9 +263,14 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.eventQueue = new RAPIER.EventQueue(true);
     // Rapier interaction groups only contain 16 membership bits; authored
     // BabylonSlate masks have 32. Hooks retain all bits for contacts and sensors.
+    // An Overlap pair keeps its contact (and its events) with the solver off.
     this.collisionHooks = {
-      filterContactPair: (a, b) => this.collisionPairAllowed(a, b) ? RAPIER.SolverFlags.COMPUTE_IMPULSE : null,
-      filterIntersectionPair: (a, b) => this.collisionPairAllowed(a, b),
+      filterContactPair: (a, b) => {
+        const response = this.pairResponse(a, b);
+        return response === "block" ? RAPIER.SolverFlags.COMPUTE_IMPULSE
+          : response === "overlap" ? RAPIER.SolverFlags.EMPTY : null;
+      },
+      filterIntersectionPair: (a, b) => this.pairResponse(a, b) !== "ignore",
     };
   }
 
@@ -1036,10 +1043,10 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     return bodyId ? (this.bodies.get(bodyId)?.desc.actorId ?? null) : null;
   }
 
-  private collisionPairAllowed(handleA: number, handleB: number): boolean {
+  private pairResponse(handleA: number, handleB: number): CollisionResponse {
     const a = this.colliders.get(this.colliderIdByHandle.get(handleA) ?? "")?.desc;
     const b = this.colliders.get(this.colliderIdByHandle.get(handleB) ?? "")?.desc;
-    return !!a && !!b && (a.layer & b.mask) !== 0 && (b.layer & a.mask) !== 0;
+    return a && b ? colliderPairResponse(a, b) : "ignore";
   }
 
   private recordCollisionEvent(
@@ -1071,8 +1078,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       idB = swapCollider;
     }
     const key = contactKey(actorAId, idA, actorBId, idB);
-    const isTrigger = colliderA.desc.isTrigger || colliderB.desc.isTrigger;
-    if (isTrigger) {
+    if (colliderPairResponse(colliderA.desc, colliderB.desc) === "overlap") {
       if (started) {
         if (this.triggerPairs.has(key)) {
           // A replaced collider's overlap continues without a second begin.
@@ -1169,6 +1175,7 @@ function sameContactPolicy(a: ColliderDesc, b: ColliderDesc): boolean {
     a.isTrigger === b.isTrigger &&
     a.layer === b.layer &&
     a.mask === b.mask &&
+    (a.overlapMask ?? 0) === (b.overlapMask ?? 0) &&
     a.actorId === b.actorId
   );
 }
