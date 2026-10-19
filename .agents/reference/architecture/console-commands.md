@@ -31,6 +31,7 @@ Built-in Play/export console command catalog, its principles, host wiring and us
 | `changescene <scene>` | Same path as `ctx.changeScene`; guid or display name from the Play scene library |
 | `quality [tier\|reset]` and `quality shadows\|resolution\|textures\|geometry\|water\|postprocessing\|lighting …` | Shared `RenderingQualitySession`; session overrides via `setScalability`; water fields from `WATER_QUALITY_FIELDS`; cleared at next Play |
 | `renderpath [auto\|forward\|clusteredForward\|reset]` | Session-only render path request, never persisted |
+| `fixedlights [on\|off\|multiply\|branch\|reset]` | Session fixed-shape forward lighting (`setFixedShapeLighting` → `setFixedShapeLightingEnabled` / `setFixedShapeLightGuard` on the Play Engine); `multiply` / `branch` pick the seat guard and turn it on; the Play view restores the Engine's previous state on dispose. Core tier so release exports can A/B it on devices |
 | `framecap [fps]` | Render cap only; fixed simulation step and input polling unchanged. Initial value from project `playFrameCap` |
 | `volume [0..1]` | `setGlobalVolume` (same as the graph node) |
 | `quit` | `runtime.stop()`, then a `sessionEnded` command: editor Play ends its session through the Stop path, Preview Build closes, a standalone player stops itself. Also runs from `ExecuteConsoleCommand` |
