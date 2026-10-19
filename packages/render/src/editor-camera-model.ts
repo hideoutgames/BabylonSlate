@@ -1,6 +1,7 @@
 import { Color3, Geometry, Mesh, StandardMaterial, VertexData, type Scene } from "@babylonjs/core";
 import geometryData from "./editor-camera-geometry.json";
 import { applyEditorBillboardPass } from "./editor-billboard";
+import { shareHelperProgram } from "./helper-program";
 
 /** Outside Babylon's default camera mask; only the editor navigation camera opts in. */
 export const EDITOR_CAMERA_MODEL_LAYER = 0x10000000;
@@ -33,7 +34,7 @@ export function createEditorCameraModel(scene: Scene, name: string): Mesh {
         1,
       );
     }
-    const material = new StandardMaterial("editorCameraMaterial", scene);
+    const material = shareHelperProgram(new StandardMaterial("editorCameraMaterial", scene));
     material.disableLighting = true;
     material.emissiveColor = Color3.White();
     material.diffuseColor = Color3.Black();

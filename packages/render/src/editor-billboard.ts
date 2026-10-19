@@ -14,6 +14,7 @@ import {
 } from "@babylonjs/core";
 import type { SerializedActor } from "@babylonslate/core";
 import { engineBillboardUrl } from "./default-billboard/urls";
+import { shareHelperProgram } from "./helper-program";
 import { createEngineTextureFromUrl } from "./resource-cache";
 import { RENDERING_GROUP } from "./sorting";
 
@@ -130,7 +131,7 @@ export function createEditorBillboard(
     syncEditorBillboardParentScale(mesh);
   });
 
-  const material = new StandardMaterial(`${name}-billboard`, scene);
+  const material = shareHelperProgram(new StandardMaterial(`${name}-billboard`, scene));
   material.disableLighting = true;
   material.backFaceCulling = false;
   material.emissiveColor = DEFAULT_FILL.clone();

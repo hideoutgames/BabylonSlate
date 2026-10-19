@@ -19,6 +19,7 @@ import {
   type EditorVolumeKind,
 } from "./editor-volume";
 import { markEditorHelperMesh } from "./helper-mesh";
+import { shareHelperProgram } from "./helper-program";
 import { RENDERING_GROUP } from "./sorting";
 
 export const NAVMESH_DEBUG_Y_OFFSET = 0.04;
@@ -136,7 +137,7 @@ export class NavMeshDebugOverlay {
       data.positions = positions;
       data.indices = indices;
       data.applyToMesh(mesh);
-      const material = new StandardMaterial("navmeshDebugMat", this.scene);
+      const material = shareHelperProgram(new StandardMaterial("navmeshDebugMat", this.scene));
       material.disableLighting = true;
       material.diffuseColor = Color3.Black();
       material.emissiveColor = NAVMESH_DEBUG_FILL.clone();
