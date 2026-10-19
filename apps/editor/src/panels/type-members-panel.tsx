@@ -15,6 +15,7 @@ import {
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
+import { ENUM_VALUE_MAX } from "@babylonslate/scripting";
 import { useDocumentActions, useOpenDocument } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useTypeAssetEditing } from "../context/type-asset-editing-context";
@@ -109,6 +110,8 @@ export function TypeMembersPanel(_props: IDockviewPanelProps) {
               <>
                 <NumberField
                   integer
+                  min={0}
+                  max={ENUM_VALUE_MAX}
                   className="h-6 min-h-6 w-16 text-xs"
                   value={member.value}
                   aria-label={`${member.name} value`}

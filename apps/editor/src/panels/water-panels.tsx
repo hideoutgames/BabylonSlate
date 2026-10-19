@@ -176,9 +176,8 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
     host.camera.radius = 28;
     host.camera.lowerRadiusLimit = 8;
     host.camera.upperRadiusLimit = 80;
-    // Orbit pivots on the lake's centre and stays above its surface.
+    // Orbit pivots on the lake's centre, above or below its surface.
     host.camera.target = Vector3.Zero();
-    host.camera.upperBetaLimit = Math.PI / 2 - 0.08;
     const presenter = createMaterialPreviewPresenter(host, canvas, { onError: setError });
     // Drag orbits about the centre, pinch and wheel zoom; the running loop redraws.
     const gestures = attachMaterialPreviewGestures(canvas, host.camera);

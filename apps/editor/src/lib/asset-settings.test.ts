@@ -36,6 +36,16 @@ describe("asset settings payloads", () => {
     expect(asset.members).toEqual([{ name: "Red", value: 1 }]);
   });
 
+  it("keeps a new enum member inside the byte range once 255 is taken", () => {
+    const asset = addEnumMember({
+      kind: "enum",
+      guid: "e1",
+      name: "Flags",
+      members: [{ name: "Zero", value: 0 }, { name: "Last", value: 255 }],
+    });
+    expect(asset.members.at(-1)?.value).toBe(1);
+  });
+
   it("appends, patches, and removes structure fields including defaults", () => {
     let asset = addStructureField({
       kind: "structure",

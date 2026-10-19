@@ -3,6 +3,15 @@ import type { DataFieldSnapshot } from "@babylonslate/core";
 
 export type EnumMember = { name: string; value: number };
 
+/** Enum member values are bytes: whole numbers from 0 to 255. */
+export const ENUM_VALUE_MAX = 255;
+
+/** Rounds and clamps a stored or typed member value into the byte range. */
+export function clampEnumValue(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(ENUM_VALUE_MAX, Math.max(0, Math.round(value)));
+}
+
 export type EnumAsset = {
   kind: "enum";
   guid: string;

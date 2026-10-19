@@ -1,6 +1,6 @@
 # Enum
 
-A fixed list of named options, each with a whole-number value, used by pins and variables.
+A fixed list of named options, each with a value from 0 to 255, used by pins and variables.
 
 ## Create
 
@@ -10,7 +10,7 @@ In the **Content Browser**, choose **New Asset > Scripting > Enum**.
 
 Double-tap an Enum to open it.
 
-- **Members**: one row per option, with its name and value. Tap a row to select it; double-tap its name (or press F2) to rename it. Values are whole numbers; a decimal rounds to the nearest one. Tap **Add member** (**+**) to add one, and the remove button to delete the selected one. The arrows move a member up or down.
+- **Members**: one row per option, with its name and value. Tap a row to select it; double-tap its name (or press F2) to rename it. Values are whole numbers from 0 to 255; a decimal rounds to the nearest one and a value outside the range moves to the nearest end. Tap **Add member** (**+**) to add one, and the remove button to delete the selected one. The arrows move a member up or down.
 - **Inspector**: the selected member's settings.
 
 ## Settings
@@ -18,7 +18,7 @@ Double-tap an Enum to open it.
 | Setting | Description |
 | --- | --- |
 | Name | The member's name. |
-| Value | The member's whole number. |
+| Value | The member's whole number, from 0 to 255. Older values outside this range load as 0 or 255. |
 
 ## Notes
 

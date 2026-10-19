@@ -9,6 +9,11 @@ import {
 } from "./type-asset-payload";
 
 describe("asEnumAsset", () => {
+  it("loads member values as bytes: whole numbers from 0 to 255", () => {
+    const members = asEnumAsset({ members: [{ name: "A", value: -3 }, { name: "B", value: 300 }, { name: "C", value: 2.6 }] }).members;
+    expect(members.map((member) => member.value)).toEqual([0, 255, 3]);
+  });
+
   it("fills defaults and coerces member rows", () => {
     expect(asEnumAsset({})).toEqual({
       kind: "enum",

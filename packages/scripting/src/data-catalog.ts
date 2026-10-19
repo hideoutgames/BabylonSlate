@@ -1,5 +1,6 @@
 import { hardLoadingProperty, type DataAssetCatalogEntry, type DataFieldSnapshot } from "@babylonslate/core";
 import { mergeEngineTypeSchemas, type EnumSchema, type StructSchema, type TypeSchemas } from "./type-defaults";
+import { clampEnumValue } from "./type-assets";
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -51,7 +52,7 @@ export function dataTypeSchemas(entries: readonly DataAssetCatalogEntry[]): Type
       const members = payload.members.flatMap((raw) => {
         const member = record(raw);
         return member && typeof member.name === "string" && typeof member.value === "number" && Number.isFinite(member.value)
-          ? [{ name: member.name, value: member.value }] : [];
+          ? [{ name: member.name, value: clampEnumValue(member.value) }] : [];
       });
       if (members.length === payload.members.length) enums[entry.guid] = { name: entry.name, members };
     }
