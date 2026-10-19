@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GraphEditor } from "./graph-editor";
+import { GraphEditor, type GraphPasteElements, type GraphPasteResult } from "./graph-editor";
 import { useGraphEditorContext, type GraphEditorContextValue } from "./graph-editor-context";
 import { DEFAULT_GRAPH_KEYBINDS, GraphKeybindsContext } from "./graph-keybinds";
 import type { GraphDocument, SerializedPin } from "./graph-types";
@@ -147,6 +147,26 @@ describe("graph keyboard shortcuts", () => {
     expect(selectedIds(container).every((id) => id.includes("-copy-"))).toBe(true);
     expect(browserKeepsKey(ctrl("V"))).toBe(true);
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives each copy its own nested data", () => {
+    const onChange = vi.fn();
+    const graph: GraphDocument = {
+      nodes: [logNode("log-a", 0, { defaults: { value: { x: 1 } } })],
+      edges: [],
+    };
+    const { container } = render(<GraphEditor initialGraph={graph} onChange={onChange} />);
+    engage();
+    selectNodes(container, "log-a");
+    browserKeepsKey(ctrl("C"));
+    browserKeepsKey(ctrl("V"));
+    browserKeepsKey(ctrl("V"));
+    const [original, first, second] = lastGraph(onChange).nodes;
+    const valueOf = (node: typeof original) => (node!.data.defaults as { value: { x: number } }).value;
+    expect(valueOf(first)).toEqual({ x: 1 });
+    valueOf(first).x = 2;
+    expect(valueOf(original)).toEqual({ x: 1 });
+    expect(valueOf(second)).toEqual({ x: 1 });
   });
 
   it("claims Mod+D while engaged even with nothing to duplicate", () => {
@@ -342,6 +362,61 @@ describe("node context menu", () => {
   });
 });
 
+describe("host paste hook", () => {
+  it("lets the host rewrite or leave out copies, drops their wires and shows its notice", () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    let seen: { pasted: GraphPasteElements; current: GraphPasteElements } | undefined;
+    const preparePaste = (pasted: GraphPasteElements, current: GraphPasteElements): GraphPasteResult => {
+      seen = { pasted, current };
+      return {
+        nodes: pasted.nodes
+          .filter((node) => !node.id.startsWith("log-b-"))
+          .map((node) => ({ ...node, data: { ...node.data, message: "Renamed" } })),
+        notice: "Log B is already in this graph.",
+      };
+    };
+    const { container } = render(
+      <GraphEditor initialGraph={wiredGraph()} preparePaste={preparePaste} onChange={onChange} />,
+    );
+    engage();
+    selectNodes(container, "log-a", "log-b");
+    browserKeepsKey(ctrl("D"));
+    // The host sees the copies with their new ids and the wire between them.
+    expect(seen!.pasted.nodes.map((node) => node.id.replace(/-copy-.*/, ""))).toEqual(["log-a", "log-b"]);
+    expect(seen!.pasted.edges).toHaveLength(1);
+    expect(seen!.current.nodes.map((node) => node.id)).toEqual(["log-a", "log-b", "log-c", "log-d"]);
+    const graph = lastGraph(onChange);
+    expect(graph.nodes).toHaveLength(5);
+    expect(graph.nodes[4]!.data.message).toBe("Renamed");
+    // Only the original wires remain: the copied wire ended at the node left out.
+    expect(graph.edges).toHaveLength(2);
+    expect(selectedIds(container)).toHaveLength(1);
+    expect(screen.getByTestId("graph-notice").textContent).toBe("Log B is already in this graph.");
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
+    expect(screen.queryByTestId("graph-notice")).toBeNull();
+  });
+
+  it("keeps the command handled and the graph untouched when the host leaves every copy out", () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <GraphEditor
+        initialGraph={wiredGraph()}
+        preparePaste={() => ({ nodes: [], notice: "Everything is already in this graph." })}
+        onChange={onChange}
+      />,
+    );
+    engage();
+    selectNodes(container, "log-a");
+    expect(browserKeepsKey(ctrl("D"))).toBe(false);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(selectedIds(container)).toEqual(["log-a"]);
+    expect(screen.getByTestId("graph-notice").textContent).toBe("Everything is already in this graph.");
+  });
+});
+
 describe("wire feedback", () => {
   function probeGraph(): GraphDocument {
     const floatOut: SerializedPin = { id: "f", name: "f", kind: "data", direction: "out", type: { kind: "float" } };
@@ -402,26 +477,26 @@ describe("wire feedback", () => {
       vi.useFakeTimers();
       const onChange = vi.fn();
       const { container } = render(<GraphEditor initialGraph={graph()} singleExecOutputOnConnect onChange={onChange} />);
-      expect(screen.queryByTestId("graph-wire-notice")).toBeNull();
+      expect(screen.queryByTestId("graph-notice")).toBeNull();
       tap(container, "log-a", "log-c");
       expect(lastGraph(onChange).edges.map((edge) => edge.target)).toEqual(["log-c"]);
-      const notice = screen.getByTestId("graph-wire-notice");
+      const notice = screen.getByTestId("graph-notice");
       expect(notice.textContent).toBe("Replaced the existing wire. Use a Sequence to run several.");
       expect(notice.getAttribute("role")).toBe("status");
       act(() => {
         vi.advanceTimersByTime(4000);
       });
-      expect(screen.queryByTestId("graph-wire-notice")).toBeNull();
+      expect(screen.queryByTestId("graph-notice")).toBeNull();
     });
 
     it("stays quiet when nothing was replaced or the graph fans out", () => {
       const first = render(<GraphEditor initialGraph={graph()} singleExecOutputOnConnect />);
       tap(first.container, "log-b", "log-c");
-      expect(screen.queryByTestId("graph-wire-notice")).toBeNull();
+      expect(screen.queryByTestId("graph-notice")).toBeNull();
       first.unmount();
       const second = render(<GraphEditor initialGraph={graph()} />);
       tap(second.container, "log-a", "log-c");
-      expect(screen.queryByTestId("graph-wire-notice")).toBeNull();
+      expect(screen.queryByTestId("graph-notice")).toBeNull();
     });
   });
 });

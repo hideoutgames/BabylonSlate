@@ -863,6 +863,7 @@ export function evaluateBehaviourTree(
   const nodeMemory = cloneMemory(previous?.nodeMemory);
   const stack: BtStackFrame[] = (previous?.stack ?? []).map((frame) => ({ ...frame }));
   const seed = options?.seed ?? 0;
+  const trace = options?.trace;
 
   if (stack.length === 0) {
     for (const key of Object.keys(lastResults)) delete lastResults[key];
@@ -952,6 +953,7 @@ export function evaluateBehaviourTree(
       stack.pop();
       continue;
     }
+    trace?.visit(node.id);
 
     if (node.kind === "task") {
       if (!frame.opened) {
@@ -1057,6 +1059,7 @@ export function evaluateBehaviourTree(
         delete lastResults[childId];
         enterNode(stack, childId, nodeMemory);
       }
+      trace?.link(node.id, childId);
       frame.childIndex += 1;
       continue;
     }
@@ -1078,10 +1081,12 @@ export function evaluateBehaviourTree(
       break;
     }
     if (childResult === undefined) {
+      trace?.link(node.id, childId);
       enterNode(stack, childId, nodeMemory);
       continue;
     }
     if (childResult === "running") {
+      trace?.link(node.id, childId);
       stack.push({ nodeId: childId, childIndex: 0, opened: true });
       continue;
     }

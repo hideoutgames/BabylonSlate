@@ -15,6 +15,7 @@ export type {
   BtServiceHost,
   BtStackFrame,
   BtTaskHost,
+  BtEvalTrace,
   EvaluateBehaviourTreeOptions,
 } from "./types";
 
@@ -26,6 +27,7 @@ export {
 } from "./tree";
 export { validateBehaviourTree, type BehaviourTreeValidateContext } from "./validate";
 export { evaluateBehaviourTree } from "./evaluate";
+export { btNodeStatuses, type BtNodeStatus } from "./status";
 export { builtinClassId, BT_CLASS_ALIASES } from "./builtins";
 export {
   BT_COMPARE_OPS,
@@ -64,6 +66,7 @@ export {
   applyNodePositions,
   arrangeBehaviourTree,
   behaviourTreeToSerialized,
+  btEdgeId,
   hydrateBehaviourTreeForEditor,
   keepEditorPositionsFor,
   layoutBehaviourTree,
@@ -71,6 +74,5 @@ export {
   reorderSiblingsByPosition,
   serializedToBehaviourTree,
   withEditorPositions,
-  type BtGraphOverlay,
   type BtPin,
 } from "./serialize";

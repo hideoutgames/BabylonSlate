@@ -18,15 +18,12 @@ import {
   bindVolumetricLights,
   createVolumetricSlots,
   fillVolumetricSlots,
-  lightsFillVolumetricLayout,
   selectVolumetricLights,
-  volumetricLayout,
-  volumetricLayoutMatches,
   type VolumeShadow,
+  type VolumeShadowPlaceholders,
 } from "./volumetric-lights";
 
 const NONE: VolumeShadow = { kind: "none", cascades: 0, packed: false };
-const COMPARE: VolumeShadow = { kind: "compare", cascades: 1, packed: false };
 
 /** A scene with its own engine; the sun's map compares in the sampler, as WebGL2 and WebGPU do. */
 function shadowedScene() {
@@ -136,78 +133,16 @@ it("keeps the slot order while selected lights cross in distance", () => {
   }
 });
 
-it.each([true, false])("orders the slots by shadow shape whatever the lights' creation order (shadowed sun first: %s)", (sunFirst) => {
+it.each([true, false])("gives the sun the first slot, the only one that reads cascades, whatever the creation order (sun first: %s)", (sunFirst) => {
   const { engine, scene, camera, shadowed } = shadowedScene();
   try {
     const sun = () => shadowed(new DirectionalLight("sun", new Vector3(0, -1, 0.2), scene));
     if (sunFirst) sun();
     new PointLight("point", new Vector3(1, 0, 0), scene);
+    new PointLight("other", new Vector3(2, 0, 0), scene);
     if (!sunFirst) sun();
-    const settings = { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, maxLights: 2, maxDistance: 10 };
-    expect(volumetricLayout(scene, camera, settings)).toEqual([NONE, COMPARE]);
-    expect(selectVolumetricLights(scene, camera, settings).map((light) => light.name)).toEqual(["point", "sun"]);
-  } finally {
-    scene.dispose();
-    engine.dispose();
-  }
-});
-
-it("matches a built layout while lights of the same shadow shape trade places, and not once the shapes or their count change", () => {
-  const { engine, scene, camera, shadowed } = shadowedScene();
-  try {
-    const sun = shadowed(new DirectionalLight("sun", new Vector3(0, -1, 0.2), scene));
-    const spot = shadowed(new SpotLight("spot", new Vector3(100, 0, 0), Vector3.Down(), 1, 1, scene));
-    const near = new PointLight("near", new Vector3(1, 0, 0), scene);
-    const other = new PointLight("other", new Vector3(100, 0, 0), scene);
-    spot.range = near.range = other.range = 1;
-    const settings = { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, maxLights: 2, maxDistance: 10 };
-    // The shadowed sun and the nearest unshadowed point light; the other two lights are out of reach.
-    const built = volumetricLayout(scene, camera, settings);
-    expect(built).toEqual([NONE, COMPARE]);
-    expect(volumetricLayoutMatches(scene, camera, settings, built)).toBe(true);
-    // The other point light comes nearer: another light in the same slot, the same layout.
-    other.position.x = 0.5;
-    expect(selectVolumetricLights(scene, camera, settings)).toEqual([other, sun]);
-    expect(volumetricLayoutMatches(scene, camera, settings, built)).toBe(true);
-    // The shadowed spot light takes that place instead: the slot compiled for no shadow would sample its map.
-    spot.position.x = 0.25;
-    expect(selectVolumetricLights(scene, camera, settings)).toEqual([sun, spot]);
-    expect(volumetricLayoutMatches(scene, camera, settings, built)).toBe(false);
-    expect(volumetricLayoutMatches(scene, camera, settings, [COMPARE, COMPARE])).toBe(true);
-    // The sun's map goes away: the layout follows the shadows the lights have now.
-    spot.position.x = 100;
-    sun.shadowEnabled = false;
-    expect(volumetricLayoutMatches(scene, camera, settings, built)).toBe(false);
-    expect(volumetricLayoutMatches(scene, camera, settings, [NONE, NONE])).toBe(true);
-    // Another count of slots is another layout.
-    other.setEnabled(false);
-    near.setEnabled(false);
-    expect(volumetricLayoutMatches(scene, camera, settings, [NONE, NONE])).toBe(false);
-    expect(volumetricLayoutMatches(scene, camera, settings, [NONE])).toBe(true);
-  } finally {
-    scene.dispose();
-    engine.dispose();
-  }
-});
-
-it("lets lights stay in a layout's slots only while they are alive and their maps are the slots' shapes", () => {
-  const { engine, scene, shadowed } = shadowedScene();
-  try {
-    const sun = shadowed(new DirectionalLight("sun", new Vector3(0, -1, 0.2), scene));
-    const near = new PointLight("near", new Vector3(1, 0, 0), scene);
-    const scratch: VolumeShadow = { kind: "none", cascades: 0, packed: false };
-    const fills = (lights: Parameters<typeof lightsFillVolumetricLayout>[1]) =>
-      lightsFillVolumetricLayout(scene, lights, [NONE, COMPARE], scratch);
-    expect(fills([near, sun])).toBe(true);
-    // A light with the other shape, a missing light and a map that went away are no longer what the slots sample.
-    expect(fills([sun, near])).toBe(false);
-    expect(fills([near])).toBe(false);
-    sun.shadowEnabled = false;
-    expect(fills([near, sun])).toBe(false);
-    sun.shadowEnabled = true;
-    expect(fills([near, sun])).toBe(true);
-    near.dispose();
-    expect(fills([near, sun])).toBe(false);
+    const settings = { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, maxLights: 3, maxDistance: 10 };
+    expect(selectVolumetricLights(scene, camera, settings).map((light) => light.name)).toEqual(["sun", "point", "other"]);
   } finally {
     scene.dispose();
     engine.dispose();
@@ -235,17 +170,44 @@ it("lets go of the lights a smaller fill leaves out", () => {
   }
 });
 
-it("binds a shadow map only to a slot compiled for one", () => {
+it("binds each slot's map for its light's shadow kind and a placeholder to every sampler that kind leaves unread", () => {
   const { engine, scene, camera, shadowed } = shadowedScene();
   try {
     const sun = shadowed(new DirectionalLight("sun", new Vector3(0, -1, 0.2), scene));
+    const point = new PointLight("point", new Vector3(1, 0, 0), scene);
     const bindShadowLight = vi.spyOn(sceneShadowController(scene).generator(sun)!, "bindShadowLight").mockImplementation(() => {});
-    const effect = { setFloat4: vi.fn(), setFloat2: vi.fn() } as unknown as Effect;
-    // The sun's map is not what a slot compiled without a shadow samples.
-    bindVolumetricLights(effect, scene, camera, [sun], [NONE]);
-    expect(bindShadowLight).not.toHaveBeenCalled();
-    bindVolumetricLights(effect, scene, camera, [sun], [COMPARE]);
+    const effect = { setFloat4: vi.fn(), setFloat2: vi.fn(), setFloat: vi.fn(), setTexture: vi.fn() };
+    const textures = { compare: { name: "compare" }, cube: { name: "cube" }, cascades: { name: "cascades" } } as unknown as VolumeShadowPlaceholders;
+    const slots = createVolumetricSlots();
+    const settings = { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, maxLights: 3, maxDistance: 10 };
+    const bind = () => {
+      for (const spy of Object.values(effect)) spy.mockClear();
+      bindShadowLight.mockClear();
+      fillVolumetricSlots(slots, scene, camera, settings);
+      bindVolumetricLights(effect as unknown as Effect, scene, camera, slots, 3, textures, { ...NONE });
+    };
+    const shadows = () => effect.setFloat2.mock.calls.filter(([name]) => String(name).startsWith("volumeShadow"));
+    const placeholders = () => effect.setTexture.mock.calls.map(([name, texture]) => [name, (texture as { name: string }).name]);
+    bind();
+    // Two lights in three slots: the sun compares its map in the first; the unshadowed point light and the empty slot
+    // sample nothing, so every one of their samplers holds a placeholder.
+    expect(effect.setFloat).toHaveBeenCalledExactlyOnceWith("volumeLightCount", 2);
+    expect(shadows()).toEqual([["volumeShadow0", 1, 1], ["volumeShadow1", 0, 0], ["volumeShadow2", 0, 0]]);
     expect(bindShadowLight).toHaveBeenCalledExactlyOnceWith("0", effect);
+    expect(placeholders()).toEqual([
+      ["shadowTextureCube0", "cube"], ["shadowTextureCascades0", "cascades"],
+      ["shadowTexture1", "compare"], ["shadowTextureCube1", "cube"],
+      ["shadowTexture2", "compare"], ["shadowTextureCube2", "cube"],
+    ]);
+    expect(effect.setFloat4.mock.calls.some(([name]) => name === "volumePosition2")).toBe(false);
+    // The sun's map stands by: the slot keeps the sun, unshadowed, and its comparison sampler takes the placeholder.
+    sceneShadowController(scene).register(sun, false);
+    sceneShadowController(scene).sync();
+    bind();
+    expect(slots.lights.slice(0, slots.count)).toEqual([sun, point]);
+    expect(shadows()[0]).toEqual(["volumeShadow0", 0, 0]);
+    expect(bindShadowLight).not.toHaveBeenCalled();
+    expect(placeholders()[0]).toEqual(["shadowTexture0", "compare"]);
   } finally {
     scene.dispose();
     engine.dispose();

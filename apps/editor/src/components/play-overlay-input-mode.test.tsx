@@ -7,10 +7,9 @@ import { PlayOverlay } from "./play-overlay";
 
 vi.mock("../services/play-session", () => ({ startPlaySession: vi.fn() }));
 vi.mock("../context/play-context", () => ({
-  usePlay: () => ({ reportBtState }),
+  usePlay: () => ({}),
 }));
 // Stable: a new callback each render would restart the session effect.
-const { reportBtState } = vi.hoisted(() => ({ reportBtState: () => {} }));
 vi.mock("../context/app-settings-context", () => ({
   useAppSettings: () => ({ settings: {} }),
 }));

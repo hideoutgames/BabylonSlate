@@ -56,6 +56,8 @@ export * from "./model-mesh";
 export * from "./model-preview";
 export * from "./model-thumbnail";
 export * from "./asset-thumbnail";
+export type { ThumbnailCaptureResult } from "./thumbnail-capture";
+export { SCENE_CAPTURE_RETRY_CEILING_MS } from "./stall-deadline";
 export * from "./png-encode";
 export * from "./scene-illumination";
 export * from "./skybox";

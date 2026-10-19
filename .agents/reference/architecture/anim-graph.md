@@ -19,7 +19,7 @@ Worker-side animation state machine plus per-instance Animation Object graphs th
 | Runtime host (`AnimGraphRuntime.tick`) | [`packages/runtime/src/anim-graph-runtime.ts`](../../../packages/runtime/src/anim-graph-runtime.ts) |
 | Scene apply (`applyAnimStateToScene`, sprite frames) | [`packages/render/src/anim-apply.ts`](../../../packages/render/src/anim-apply.ts) |
 | Model material slots | [`packages/render/src/model-preview.ts`](../../../packages/render/src/model-preview.ts) |
-| Compile (`compileAnimGraphScripts`) | [`apps/editor/src/services/script-compiler.ts`](../../../apps/editor/src/services/script-compiler.ts) |
+| Compile (`compileAnimGraphScripts`, with `instrumentExecutionTrace` for a Simulation) | [`apps/editor/src/services/script-compiler.ts`](../../../apps/editor/src/services/script-compiler.ts) |
 | Editor document, mode bar, provider | [`apps/editor/src/components/document-workspace.tsx`](../../../apps/editor/src/components/document-workspace.tsx), [`apps/editor/src/context/anim-graph-editing-context.tsx`](../../../apps/editor/src/context/anim-graph-editing-context.tsx), [`apps/editor/src/shell/window-catalog.ts`](../../../apps/editor/src/shell/window-catalog.ts) |
 
 ## Document format
@@ -46,6 +46,7 @@ Worker-side animation state machine plus per-instance Animation Object graphs th
 - Play/export load only Animation Graphs in the session dependency closure; editor Compile compiles every project graph.
 - An Animation layer with neither clip name nor clip guid (a state with no clip) plays nothing and rests the slot's groups; it is not a missing clip. A named clip the slot lacks is warned once per slot and clip per Play session.
 - Trace frames record per-component evaluation, graph guid and pending jump; restore does not re-run On Initialize Animation.
+- The Simulation's graph debugger follows one `AnimationGraphComponent` ([debugger.md](debugger.md#simulation-graph-debugging)): `AnimGraphRuntime` reports the sampled states and the taken transition for it only (`reportStateMachine`), and its Animation Object scripts get `ctx.debugTrace` through the component, their variable store. Transition rule graphs carry no probes.
 
 ## Render rules
 

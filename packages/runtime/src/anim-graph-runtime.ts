@@ -1,16 +1,19 @@
-import type { CommandMessage } from "@babylonslate/bridge";
+import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type CommandMessage } from "@babylonslate/bridge";
 import type { TraceAnimGraphState } from "@babylonslate/debugger";
-import { Actor, ActorComponent, type World } from "@babylonslate/object-model";
+import { Actor, ActorComponent, type BObject, type World } from "@babylonslate/object-model";
 import {
   animGraphScriptClassId,
   animRuleScriptClassId,
+  animTransitionEdgeId,
   clipForState,
   defaultAnimVariableValue,
   evaluateAnimGraph,
   type AnimEvalState,
   type AnimGraphDocument,
 } from "@babylonslate/anim-graph";
+import { animGraphGuidOf } from "./component-assets";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
+import type { ScriptDebugTrace } from "./script-debug";
 import type { AnimGraphControl, ScriptHost } from "./script-host";
 import { walkComponentOwners } from "./world-component-index";
 
@@ -41,12 +44,26 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   private readonly pendingJumpByComponent = new Map<string, string>();
   /** The graph guid a component's evaluation and queued jump belong to. */
   private readonly graphByComponent = new Map<string, string>();
+  /** The AnimationGraphComponent the editor's graph debugger follows, and where its State Machine reports. */
+  private debugComponent: BObject | null = null;
+  private debugSink: ScriptDebugTrace | null = null;
   private readonly host: AnimGraphRuntimeHost;
 
   constructor(host: AnimGraphRuntimeHost) { this.host = host; }
 
   register(guid: string, document: AnimGraphDocument): void {
     this.documents.set(guid, document);
+  }
+
+  /**
+   * The editor's graph debugger follows `object` (an AnimationGraphComponent; anything else follows
+   * nothing here). Only that component reports the states it samples and the transitions it takes.
+   * Its Animation Object graph reports through `ctx.debugTrace`, which `ScriptHost` routes.
+   */
+  setDebugTrace(object: BObject | null, sink: ScriptDebugTrace | null): void {
+    const followed = sink && object?.classId === "AnimationGraphComponent";
+    this.debugComponent = followed ? object : null;
+    this.debugSink = followed ? sink : null;
   }
 
   /** Drop documents a replaced source catalog no longer retains. */
@@ -133,7 +150,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     const owner = target.owner;
     if (!(owner instanceof Actor) || owner.destroyed) return null;
     const hasSlot = this.host.hasRenderSlot(owner);
-    const guid = this.graphGuid(target);
+    const guid = animGraphGuidOf(target);
     const document = guid ? this.documents.get(guid) : undefined;
     const evalKey = target.guid;
     return {
@@ -160,15 +177,6 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         this.pendingJumpByComponent.set(evalKey, match.id);
       },
     };
-  }
-
-  private graphGuid(component: {
-    assetGuid: string | null;
-    getVariable(name: string): unknown;
-  }): string | null {
-    const graphGuid = component.getVariable("graphGuid");
-    if (typeof graphGuid === "string" && graphGuid.length > 0) return graphGuid;
-    return component.assetGuid;
   }
 
   private seedVariables(
@@ -211,6 +219,27 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     liveEvalKeys.clear();
   }
 
+  /**
+   * What the followed component's State Machine did this tick: every state it sampled (the active
+   * one, and the one a blend is leaving) and, when the active state changed, the transition taken.
+   * A Jump To State replaces the previous evaluation, so it is no transition.
+   */
+  private reportStateMachine(
+    graphGuid: string,
+    document: AnimGraphDocument,
+    previous: AnimEvalState | null,
+    next: AnimEvalState,
+  ): void {
+    const recorder = this.debugSink?.graph(graphGuid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID);
+    if (!recorder) return;
+    recorder.exec(next.stateId);
+    for (const layer of next.layers) recorder.exec(layer.stateId);
+    if (previous && previous.stateId !== next.stateId) {
+      const edge = animTransitionEdgeId(document.transitions, previous.stateId, next.stateId);
+      if (edge !== undefined) recorder.edge(edge);
+    }
+  }
+
   private tickActor(actor: Actor, dtSeconds: number): void {
     const slotId = this.host.slot(actor);
     // A graph skipped this tick (owner not admitted, no slot, or a Behaviour
@@ -223,7 +252,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
       ) {
         continue;
       }
-      const guid = this.graphGuid(component);
+      const guid = animGraphGuidOf(component);
       if (!guid) continue;
       const document = this.documents.get(guid);
       if (!document) continue;
@@ -288,9 +317,10 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         dtSeconds,
         extras,
       );
+      const previous = this.evalByComponent.get(evalKey) ?? null;
       const next = evaluateAnimGraph(
         document,
-        this.evalByComponent.get(evalKey) ?? null,
+        previous,
         dtSeconds,
         {
           decideTransition: (transition, facts) =>
@@ -302,6 +332,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         },
       );
       this.evalByComponent.set(evalKey, next);
+      if (component === this.debugComponent) this.reportStateMachine(guid, document, previous, next);
       const clip = clipForState(document, next.stateId);
       if (clip?.kind === "sprite" && clip.assetGuid) {
         this.host.setSpriteClip(actor, {

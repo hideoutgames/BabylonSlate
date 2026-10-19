@@ -348,8 +348,18 @@
   --graph-link: color-mix(in oklch, var(--muted-foreground) 70%, var(--graph-canvas));
 }
 
+/*
+ * A stylesheet !important outranks a stroke animation, so these wires fade their run highlight
+ * through --run-flash instead: a run animates it from 100% to 0%, and at rest the mix is the plain link colour.
+ */
+@property --run-flash {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 0%;
+}
+
 :is(.bt-graph-canvas, .anim-graph-canvas) .react-flow__edge-path {
-  stroke: var(--graph-link) !important;
+  stroke: color-mix(in oklch, var(--selection) var(--run-flash), var(--graph-link)) !important;
   stroke-width: 2.5px !important;
 }
 
