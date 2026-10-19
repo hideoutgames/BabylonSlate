@@ -21,8 +21,8 @@ function fixture(states = ["VALID"]) {
     if (path === "/v1/apps/123") return { data: { attributes: { bundleId: "no.hideout.babylonslate" } } };
     if (options.method) { writes.push({ path, ...options }); if (path.endsWith("/relationships/builds")) assigned = true; return {}; }
     if (path.startsWith("/v1/builds?")) return { data: [build()], included: [{ id: "version1", type: "preReleaseVersions", attributes: { version: "0.0.1", platform: "IOS" } }, { id: "detail1", type: "buildBetaDetails", attributes: { externalBuildState: "IN_BETA_TESTING" } }] };
-    if (path === "/v1/builds/build1/betaGroups?limit=200") return { data: assigned ? [group] : [] };
-    if (path.startsWith("/v1/buildBetaLocalizations?")) return { data: [] };
+    if (path === "/v1/betaGroups?filter[builds]=build1&limit=200") return { data: assigned ? [group] : [] };
+    if (path.startsWith("/v1/betaBuildLocalizations?")) return { data: [] };
     throw new Error(`Unexpected endpoint ${path}`);
   };
   return { api, writes, now: () => now, sleep: async ms => { now += ms; } };
