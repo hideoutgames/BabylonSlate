@@ -145,6 +145,12 @@ export class DriverCompileWatch {
     return progressed || now - this.since < SCENE_DRIVER_COMPILE_TIMEOUT_MS;
   }
 
+  /** Progress until now renews nothing more: a new wait on a shared watch counts only its own. */
+  restart(): void {
+    this.sample();
+    this.compiledAtRenewal = this.compiled;
+  }
+
   /** The compile state for a timeout message, such as the Scene Load Report's. */
   describe(): string {
     this.sample();
@@ -169,4 +175,16 @@ export class DriverCompileWatch {
     this.pending = pending.length;
     return pending;
   }
+}
+
+/**
+ * `renew` for `createHeldThreadBound`, for a wait starting now: a fresh bound
+ * while the watch sees compile progress since then, up to its ceiling. Pass an
+ * Engine for a watch of the wait's own, or a watch a loading owner shares across
+ * its sequential waits (one ceiling for all of them).
+ */
+export function renewOnCompileProgress(source: DriverCompileWatch | AbstractEngine): (now: number) => boolean {
+  const watch = source instanceof DriverCompileWatch ? source : new DriverCompileWatch(source);
+  if (watch === source) watch.restart();
+  return (now) => watch.renew(now);
 }

@@ -62,6 +62,16 @@ describe("driver compile watch", () => {
     expect(watch.renew(SCENE_DRIVER_COMPILE_TIMEOUT_MS)).toBe(false);
   });
 
+  it("renews past the compile bound for a stuck pending set while other variants finish, and not after", () => {
+    const { engine, add } = setup();
+    const watch = new DriverCompileWatch(engine);
+    add("water");
+    expect(watch.renew(0)).toBe(true);
+    add("finished", { ready: true });
+    expect(watch.renew(SCENE_DRIVER_COMPILE_TIMEOUT_MS + 1_000)).toBe(true);
+    expect(watch.renew(SCENE_DRIVER_COMPILE_TIMEOUT_MS + 2_000)).toBe(false);
+  });
+
   it("renews once for a compile that finished, and not again while nothing is pending or finishing", () => {
     const { engine, add } = setup();
     const watch = new DriverCompileWatch(engine);

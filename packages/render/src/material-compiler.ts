@@ -86,6 +86,7 @@ import { registerLatticeShadowAdapter } from "./lattice-deformer-binding";
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { LinearColorBlock } from "./linear-color-block";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { renewOnCompileProgress } from "./driver-compile";
 
 /** Custom GLSL's hidden probe effect, from when the effect exists to its compile. */
 const CUSTOM_GLSL_COMPILE_TIMEOUT_MS = 15_000;
@@ -771,10 +772,13 @@ export function compileMaterialPlan(
           settleBuild([materialGlslDiagnostic(String(error), plan.operations)]);
           return;
         }
-        // Without KHR_parallel_shader_compile the readiness probe links the probe
-        // effect before it returns; a link that held the thread is not charged.
-        const dependencyBound = createHeldThreadBound(CUSTOM_GLSL_TEXTURE_TIMEOUT_MS);
-        let compileBound = createHeldThreadBound(CUSTOM_GLSL_COMPILE_TIMEOUT_MS);
+        // Where links are synchronous the readiness probe links the probe effect
+        // before it returns; a link that held the thread is not charged, and both
+        // bounds start again while shaders keep finishing on the Engine. Each has
+        // its own watch, so one bound's renewal never spends the other's progress.
+        const dependencyBound = createHeldThreadBound(CUSTOM_GLSL_TEXTURE_TIMEOUT_MS, undefined, renewOnCompileProgress(scene.getEngine()));
+        const compileProgress = renewOnCompileProgress(scene.getEngine());
+        let compileBound = createHeldThreadBound(CUSTOM_GLSL_COMPILE_TIMEOUT_MS, undefined, compileProgress);
         const check = () => {
           if (disposed) return;
           try {
@@ -800,7 +804,7 @@ export function compileMaterialPlan(
                 settleBuild([{ code: "material.missingTexture", message: "Material textures did not become ready", severity: "error" }]);
                 return;
               }
-              compileBound = createHeldThreadBound(CUSTOM_GLSL_COMPILE_TIMEOUT_MS);
+              compileBound = createHeldThreadBound(CUSTOM_GLSL_COMPILE_TIMEOUT_MS, undefined, compileProgress);
             }
             const effect = subMesh?.effect ?? effects.find((entry) => entry?.getCompilationError());
             const error = effect?.getCompilationError();
@@ -1554,9 +1558,10 @@ function writeLinearSurfaceColor(
  * Pre-warm a compiled material so the first draw does not stall.
  * Surface materials compile against the mesh they will actually be drawn with.
  * The compile may take `SCENE_SHADER_WARM_TIMEOUT_MS` plus the time it held the
- * thread, up to one `SCENE_THREAD_HELD_BUDGET_MS`: without
- * KHR_parallel_shader_compile one poll links the effect before it returns, and a
- * plain timer would fire overdue ahead of the next poll.
+ * thread, up to one `SCENE_THREAD_HELD_BUDGET_MS`: where links are synchronous
+ * one poll links the effect before it returns, and a plain timer would fire
+ * overdue ahead of the next poll. The bound starts again while shaders keep
+ * finishing on the Engine (`renewOnCompileProgress`), up to its ceiling.
  */
 export async function prewarmMaterial(
   material: NodeMaterial,
@@ -1572,7 +1577,7 @@ export async function prewarmMaterial(
   // do not start Babylon's uncancellable compilation poll before it finishes.
   if (material.attachedBlocks.some((block) => block instanceof TextMaterialBlock && !block.isReady(mesh))) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const bound = createHeldThreadBound(SCENE_SHADER_WARM_TIMEOUT_MS);
+  const bound = createHeldThreadBound(SCENE_SHADER_WARM_TIMEOUT_MS, undefined, renewOnCompileProgress(mesh.getEngine()));
   try {
     await Promise.race([
       material.forceCompilationAsync(mesh),

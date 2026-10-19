@@ -29,6 +29,7 @@ import { VisualBundle } from "./visual-bundle";
 import { ownedMaterialPreparation } from "./material-library";
 import { prewarmMaterial } from "./material-compiler";
 import { createHeldThreadBudget, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { DriverCompileWatch } from "./driver-compile";
 import { attachModelLods, generateModelLods, type ModelLodSet } from "./model-lod";
 import { nativePreparationForEngine, type NativePreparationPriority } from "./native-preparation";
 
@@ -533,8 +534,11 @@ function keepSourceName(sourceName: string): string {
 /**
  * Prepare only this unpublished instance's actual material/mesh variants. A
  * stall deadline that fires a held gap late (a synchronous shader link kept the
- * material from progressing) starts a fresh window. All the meshes of one call
- * share one `SCENE_THREAD_HELD_BUDGET_MS`, so a stuck material still fails.
+ * material from progressing) starts a fresh window, and so does one that
+ * expires while shaders keep finishing on the Engine (short synchronous links
+ * earn no held credit). All the meshes of one call share one
+ * `SCENE_THREAD_HELD_BUDGET_MS` and one compile watch, so a stuck material
+ * still fails.
  */
 export async function prepareInstanceMaterials(
   root: Mesh,
@@ -542,6 +546,7 @@ export async function prepareInstanceMaterials(
   cancellation: Promise<never>,
 ): Promise<void> {
   const budget = createHeldThreadBudget();
+  const compiles = new DriverCompileWatch(root.getEngine());
   let finished = false;
   const check = () => {
     if (finished) throw new Error("Model material preparation was cancelled");
@@ -574,7 +579,7 @@ export async function prepareInstanceMaterials(
           return leaves.length === materials.length && leaves.every((material, index) => material === materials[index]);
         };
         if (!stillAssigned()) continue;
-        const deadline = createStallDeadline((unit) => `Model material preparation stalled${unit ? ` at ${unit}` : ""}`, SCENE_SHADER_WARM_TIMEOUT_MS, undefined, budget);
+        const deadline = createStallDeadline((unit) => `Model material preparation stalled${unit ? ` at ${unit}` : ""}`, SCENE_SHADER_WARM_TIMEOUT_MS, () => compiles.renew(), budget);
         await deadline.race(Promise.race([(async () => {
           for (const material of materials) {
             check();

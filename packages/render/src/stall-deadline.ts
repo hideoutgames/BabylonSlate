@@ -96,14 +96,17 @@ export interface HeldThreadBound {
 /**
  * A wall-clock bound on a polling wait that does not charge the time a
  * synchronous probe held the thread (`heldThreadMs`), up to `budget` (a fresh
- * `SCENE_THREAD_HELD_BUDGET_MS` unless the caller shares one). A wait that never
- * becomes ready therefore fails after at most `boundMs` plus the budget, and a
- * slow host whose probes only link shaders does not time out spuriously. Uses
- * the monotonic `performance.now()`.
+ * `SCENE_THREAD_HELD_BUDGET_MS` unless the caller shares one). When it runs out,
+ * `renew` (`renewOnCompileProgress`: shaders finished on the Engine since its
+ * last renewal) may grant a fresh `boundMs`; links shorter than
+ * `SCENE_THREAD_HELD_MS` earn no credit but are progress. A wait that never
+ * becomes ready therefore fails once a whole bound passes without progress, and
+ * at the latest at the renewal's ceiling. Uses the monotonic `performance.now()`.
  */
 export function createHeldThreadBound(
   boundMs: number,
   budget: HeldThreadBudget = createHeldThreadBudget(),
+  renew?: (now: number) => boolean,
 ): HeldThreadBound {
   let checkpoint = performance.now();
   let deadline = checkpoint + boundMs;
@@ -112,7 +115,10 @@ export function createHeldThreadBound(
       const now = performance.now();
       deadline += budget.grant(heldThreadMs(now - checkpoint));
       checkpoint = now;
-      return now >= deadline;
+      if (now < deadline) return false;
+      if (!renew?.(now)) return true;
+      deadline = now + boundMs;
+      return false;
     },
   };
 }
@@ -148,7 +154,9 @@ export function createStallDeadline(
     armedAt = performance.now();
     timer = setTimeout(() => {
       const late = held ? held.grant(heldThreadMs(performance.now() - armedAt - ms)) : 0;
-      if (late > 0 || renew?.()) arm();
+      // Asked even after a held fire, so the progress it saw does not renew the next window too.
+      const progressed = renew?.() ?? false;
+      if (late > 0 || progressed) arm();
       else reject?.(new Error(describe(current, Math.max(completed, 0))));
     }, ms);
   };

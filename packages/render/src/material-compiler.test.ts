@@ -1002,10 +1002,11 @@ describe("material compiler", () => {
       vi.useFakeTimers();
       const { texture, loaded, result } = await compileWithLoadingTexture();
       loaded.mockReturnValue(true);
-      // The real readiness check creates the probe effect, which never compiles.
+      // The real readiness check creates the probe effect, which never compiles, so the Engine never sees it ready.
       const isReadyForSubMesh = result.material.isReadyForSubMesh.bind(result.material);
       vi.spyOn(result.material, "isReadyForSubMesh").mockImplementation((...args) => {
         isReadyForSubMesh(...args);
+        if (args[1].effect) vi.spyOn(args[1].effect, "isReady").mockReturnValue(false);
         return false;
       });
       const rebuilt = new Promise((resolve) => result.material.onBuildObservable.addOnce(resolve));
@@ -1021,20 +1022,29 @@ describe("material compiler", () => {
     /**
      * Texture loaded, so the readiness probe creates the probe effect. Each probe
      * that finds the effect takes `held(probe)` of virtual time, and `ready(probe)`
-     * says whether the effect has compiled by then.
+     * says whether the effect has compiled by then (the Engine sees it ready only
+     * then). `held` gets the Engine's compiled effects, so it can model other
+     * shaders finishing meanwhile.
      */
-    async function probeWithVirtualClock(held: (probe: number) => number, ready: (probe: number) => boolean) {
+    async function probeWithVirtualClock(
+      held: (probe: number, effects: Record<string, unknown>) => number,
+      ready: (probe: number) => boolean,
+    ) {
       const clock = installVirtualClock();
       const { texture, loaded, result } = await compileWithLoadingTexture();
       loaded.mockReturnValue(true);
       const isReadyForSubMesh = result.material.isReadyForSubMesh.bind(result.material);
+      const effects = (result.material.getScene().getEngine() as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
       let probe = 0;
       vi.spyOn(result.material, "isReadyForSubMesh").mockImplementation((...args) => {
         isReadyForSubMesh(...args);
-        if (!args[1].effect) return false;
+        const effect = args[1].effect;
+        if (!effect) return false;
         probe += 1;
-        clock.advance(held(probe));
-        return ready(probe);
+        clock.advance(held(probe, effects));
+        const compiled = ready(probe);
+        vi.spyOn(effect, "isReady").mockReturnValue(compiled);
+        return compiled;
       });
       const rebuilt = new Promise((resolve) => result.material.onBuildObservable.addOnce(resolve));
       texture.onLoadObservable.notifyObservers(texture);
@@ -1047,6 +1057,17 @@ describe("material compiler", () => {
       const { result } = await probeWithVirtualClock((probe) => probe === 1 ? 20_000 : POLL_MS, (probe) => probe > 1);
       expect(await result.ready).toEqual([]);
       expect(result.buildState).toBe("ready");
+    });
+
+    // Links shorter than SCENE_THREAD_HELD_MS earn no held-thread credit; each shader that finishes is progress.
+    it("keeps waiting past the shader compile budget while short links keep finishing shaders on the Engine", async () => {
+      const { clock, result } = await probeWithVirtualClock((probe, effects) => {
+        effects[`linked-${probe}`] = { isReady: () => true, getCompilationError: () => "" };
+        return 500;
+      }, (probe) => probe > 50);
+      expect(await result.ready).toEqual([]);
+      expect(result.buildState).toBe("ready");
+      expect(clock.elapsed()).toBeGreaterThan(20_000);
     });
 
     it("fails a shader that never compiles while every probe holds the thread, once the credit budget is spent", async () => {
@@ -1700,7 +1721,10 @@ describe("material compiler", () => {
         () => { outcome = "ready"; },
         (error: Error) => { outcome = error.message; },
       );
-      return { clock, outcome: () => outcome, compiled: () => compiled() };
+      const effects = (scene.getEngine() as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
+      /** Another shader variant finishes compiling on the Engine. */
+      const finishShader = (key: string) => { effects[key] = { isReady: () => true, getCompilationError: () => "" }; };
+      return { clock, outcome: () => outcome, compiled: () => compiled(), finishShader };
     }
 
     it("waits out a compile poll that held the thread past the shader warm bound", async () => {
@@ -1727,6 +1751,31 @@ describe("material compiler", () => {
       expect(outcome()).toBe("Material shader compilation timed out");
       expect(elapsed).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS);
       expect(elapsed).toBeLessThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS + SCENE_THREAD_HELD_BUDGET_MS + held + 16);
+    });
+
+    // Links shorter than SCENE_THREAD_HELD_MS earn no held-thread credit; each one that finishes is progress.
+    it("keeps waiting past the bound while short links keep finishing shaders on the Engine", async () => {
+      const { clock, outcome, compiled, finishShader } = pendingCompile();
+      await vi.advanceTimersByTimeAsync(0);
+      for (let step = 0; step < 6 * SCENE_SHADER_WARM_TIMEOUT_MS / 500; step++) {
+        finishShader(`linked-${step}`);
+        await clock.run(500);
+      }
+      expect(outcome()).toBe("pending");
+      compiled();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(outcome()).toBe("ready");
+    });
+
+    it("times out within two bounds once no shader finishes", async () => {
+      const { clock, outcome, finishShader } = pendingCompile();
+      await vi.advanceTimersByTimeAsync(0);
+      for (let step = 0; step < 10; step++) {
+        finishShader(`linked-${step}`);
+        await clock.run(500);
+      }
+      await clock.run(2 * SCENE_SHADER_WARM_TIMEOUT_MS);
+      expect(outcome()).toBe("Material shader compilation timed out");
     });
   });
 
