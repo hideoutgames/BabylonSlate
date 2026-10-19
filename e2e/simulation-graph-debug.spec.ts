@@ -8,6 +8,7 @@ import {
 } from "../packages/core/src/index";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene } from "./open-test-project";
+import { clickPlayAndWaitForOverlay } from "./play";
 import { setPreviewScene } from "./preview-parity";
 
 type TestHost = typeof globalThis & {
@@ -162,6 +163,12 @@ test("a Simulation lights up what a Class graph runs for the chosen instance and
     })),
   ];
   await setPreviewScene(page, scene);
+
+  // A Play before the Simulation leaves its compiled scripts cached; the Simulation must still run its own, with probes.
+  await clickPlayAndWaitForOverlay(page);
+  await expect(page.getByTestId("print-overlay")).toContainText(/\d/, { timeout: 30_000 });
+  await page.getByTestId("play-overlay-close").click();
+  await expect(page.getByTestId("play-overlay")).toHaveCount(0);
 
   // Plain editing: no instance select, no pin tip.
   await focusClassGraph(page);
