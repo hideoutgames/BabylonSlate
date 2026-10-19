@@ -12,6 +12,7 @@ import {
   createDashedEdgesMesh,
   cylinderEdges,
 } from "./collider-visual";
+import { shareHelperProgram } from "./helper-program";
 import { RENDERING_GROUP } from "./sorting";
 
 export const NAV_BLOCKER_VOLUME_COLOR = new Color3(1, 0.45, 0.15);
@@ -75,7 +76,7 @@ export function createNavDebugBlockerMesh(
 export function volumeFillMaterial(scene: Scene): StandardMaterial {
   const existing = volumeMaterials.get(scene);
   if (existing) return existing;
-  const material = new StandardMaterial("editorVolumeFill", scene);
+  const material = shareHelperProgram(new StandardMaterial("editorVolumeFill", scene));
   material.disableLighting = true;
   material.backFaceCulling = false;
   material.diffuseColor = Color3.Black();

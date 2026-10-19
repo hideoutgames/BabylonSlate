@@ -10,6 +10,7 @@ import {
   PointLight,
   Scene,
   ShaderMaterial,
+  StandardMaterial,
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
@@ -19,6 +20,7 @@ import {
   registerClusteredSurfaceMaterial,
   registerClusteredUnlitMaterial,
 } from "./clustered-material-policy";
+import { shareHelperProgram } from "./helper-program";
 import { ResourceCache } from "./resource-cache";
 import { createText2DMesh } from "./text2d-mesh";
 
@@ -206,6 +208,14 @@ describe("clustered material consumers", () => {
     mesh.material = helper;
     expect(clusteredSceneMaterialReason(scene)).toContain('Material "helper"');
     registerClusteredUnlitMaterial(helper);
+    expect(clusteredSceneMaterialReason(scene)).toBeUndefined();
+  });
+
+  it("keeps owned unlit helpers that share their program on the Clustered path", () => {
+    const { scene, mesh } = fixture();
+    const helper = shareHelperProgram(new StandardMaterial("helper", scene));
+    helper.disableLighting = true;
+    mesh.material = helper;
     expect(clusteredSceneMaterialReason(scene)).toBeUndefined();
   });
 

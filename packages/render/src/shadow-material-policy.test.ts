@@ -23,7 +23,8 @@ import {
 } from "@babylonslate/shader-graph";
 import { CelMaterial } from "./cel-material";
 import { compileMaterialPlan } from "./material-compiler";
-import { canCacheShadowMaterial } from "./shadow-material-policy";
+import { HelperProgramPlugin, shareHelperProgram } from "./helper-program";
+import { canCacheShadowMaterial, hasStockVertexStage } from "./shadow-material-policy";
 import { TextureQualityPlugin } from "./texture-quality";
 
 const engines: NullEngine[] = [];
@@ -86,6 +87,13 @@ describe("shadow material cache policy", () => {
       expect(canCacheShadowMaterial(material, mesh)).toBe(false);
     },
   );
+
+  it("treats a helper that shares its program as a stock vertex stage, which GPU picking relies on", () => {
+    const { scene } = fixture();
+    const helper = shareHelperProgram(nativeMaterial(new StandardMaterial("helper", scene)));
+    expect(helper.pluginManager?.getPlugin("SlateHelperProgram")).toBeInstanceOf(HelperProgramPlugin);
+    expect(hasStockVertexStage(helper)).toBe(true);
+  });
 
   it("rejects untrusted materials, plugins, bind hooks and shadow wrappers", () => {
     const { scene, mesh } = fixture();

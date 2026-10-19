@@ -21,6 +21,7 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import { CelMaterial } from "./cel-material";
+import { HelperProgramPlugin } from "./helper-program";
 import { TextureQualityPlugin } from "./texture-quality";
 import { LatticeDeformerPlugin } from "./lattice-deformer-native";
 
@@ -47,6 +48,7 @@ const nativePlugins = new Set<unknown>([
   PBRSubSurfaceConfiguration,
   TextureQualityPlugin,
   LatticeDeformerPlugin,
+  HelperProgramPlugin,
 ]);
 
 /**

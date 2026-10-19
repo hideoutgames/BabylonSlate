@@ -16,6 +16,7 @@ import { createUIControl2DMesh } from "./ui-controls2d-mesh";
 import { isUIControl2DClass, UI_CONTROL_2D_CLASS_IDS } from "@babylonslate/core";
 import { createPainter2DMesh } from "./painter2d-mesh";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
+import { shareHelperProgram } from "./helper-program";
 import { supportsOverlayVisualStyle } from "@babylonslate/core";
 import {
   identitySerializedTransform,
@@ -180,7 +181,7 @@ function createPivotMarkerMesh(scene: Scene, name: string): Mesh {
   root.isPickable = true;
   const bundle = new VisualBundle();
   root.onDisposeObservable.addOnce(() => bundle.dispose());
-  const material = bundle.ownMaterial(new StandardMaterial(`${name}-pivot`, scene));
+  const material = bundle.ownMaterial(shareHelperProgram(new StandardMaterial(`${name}-pivot`, scene)));
   material.disableLighting = true;
   material.emissiveColor = new Color3(0.92, 0.93, 0.96);
   material.diffuseColor = Color3.Black();

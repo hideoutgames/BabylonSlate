@@ -11,6 +11,7 @@ import {
 } from "@babylonjs/core";
 import { convexHullEdges } from "@babylonslate/assets";
 import type { ColliderShape } from "@babylonslate/physics";
+import { shareHelperProgram } from "./helper-program";
 import { RENDERING_GROUP } from "./sorting";
 
 export const COLLIDER_DASH_SIZE = 0.12;
@@ -91,7 +92,7 @@ function colliderMaterial(scene: Scene, color: Color3): StandardMaterial {
   const key = colorKey(color);
   const existing = byColor.get(key);
   if (existing) return existing;
-  const material = new StandardMaterial(`colliderDash:${key}`, scene);
+  const material = shareHelperProgram(new StandardMaterial(`colliderDash:${key}`, scene));
   material.disableLighting = true;
   material.disableDepthWrite = false;
   material.backFaceCulling = false;
