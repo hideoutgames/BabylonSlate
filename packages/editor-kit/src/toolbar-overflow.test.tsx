@@ -106,7 +106,7 @@ describe("ToolbarOverflow", () => {
     const onSelect = vi.fn();
     render(
       <ToolbarOverflow>
-        <ToolbarOverflowTrack data-limit={50}>
+        <ToolbarOverflowTrack data-limit={30}>
           <ToolbarOverflowItem id="compile" priority={1} items={entry("compile", "Compile", { onSelect })}>
             <button type="button" data-w="40">Compile</button>
           </ToolbarOverflowItem>

@@ -39,8 +39,8 @@ export {
   ToolbarOverflowItem,
   ToolbarOverflowMenu,
   ToolbarOverflowTrack,
-  useToolbarOverflowEntry,
 } from "./toolbar-overflow";
+export { useToolbarOverflowEntry } from "./toolbar-overflow-registry";
 export {
   clampOverlayMenuPosition,
   overlaySubmenuOrigin,
