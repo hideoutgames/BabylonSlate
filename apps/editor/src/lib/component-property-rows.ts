@@ -301,11 +301,11 @@ function collisionLayerRow(
 }
 
 /**
- * Collision Preset, then Layer and Collides With. A preset supplies both and
- * the rows show its values read only; Custom edits the collider's own.
- * Picking a preset also stores its values on the component, so a later
- * deleted preset falls back to what the collider last used, and switching
- * to Custom starts from the preset's values.
+ * Collision Preset, then Layer and Collision Responses (Ignore / Overlap /
+ * Block per layer). A preset supplies them and the rows show its values read
+ * only; Custom edits the collider's own. Picking a preset also stores its
+ * values on the component, so a later deleted preset falls back to what the
+ * collider last used, and switching to Custom starts from them.
  */
 function collisionRows(
   actorId: string,
@@ -317,8 +317,11 @@ function collisionRows(
   const presets = context.collisionPresets ?? DEFAULT_COLLISION_PRESETS;
   const preset = findCollisionPreset(presets, component.properties.collisionPreset);
   const resolved = resolveCollisionFilter(
-    asNumber(component.properties.layer, 1),
-    asNumber(component.properties.mask, 0xffffffff),
+    {
+      layer: asNumber(component.properties.layer, 1),
+      mask: asNumber(component.properties.mask, 0xffffffff),
+      overlapMask: asNumber(component.properties.overlapMask, 0),
+    },
     component.properties.collisionPreset,
     presets,
   );
@@ -334,20 +337,19 @@ function collisionRows(
       ],
       onChange: (next) => {
         const picked = presets.find((entry) => entry.id === next);
-        const values = picked ? { layer: picked.layer, mask: picked.mask } : resolved;
-        update("collisionPreset", picked ? picked.id : CUSTOM_COLLISION_PRESET, values);
+        const values = resolveCollisionFilter(resolved, picked?.id, presets);
+        update("collisionPreset", picked ? picked.id : CUSTOM_COLLISION_PRESET, { ...values });
       },
     },
     collisionLayerRow(actorId, component, update, context.collisionLayers, resolved.layer, Boolean(preset)),
     {
-      kind: "flags",
-      id: rowId(actorId, component.id, "mask"),
-      label: "Collides With",
-      value: resolved.mask,
-      bitCount: names.length,
+      kind: "collision-responses",
+      id: rowId(actorId, component.id, "responses"),
+      label: "Collision Responses",
+      value: { mask: resolved.mask, overlapMask: resolved.overlapMask },
       labels: names,
       disabled: Boolean(preset),
-      onChange: (next) => update("mask", next),
+      onChange: (next) => update("mask", next.mask, { overlapMask: next.overlapMask }),
     },
   ];
 }

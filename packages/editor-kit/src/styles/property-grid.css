@@ -38,7 +38,7 @@
 @container property-grid (min-width: 16rem) {
   [data-slot="property-grid"]:not([data-hide-labels="true"]):not([data-density="compact"])
     > [data-slot="field-group"]
-    > [data-slot="field"][data-orientation="vertical"]:not([data-kind="vector3"], [data-kind="asset"], [data-kind="range"], [data-kind="curve"], [data-kind="gradient"], [data-kind="color4"], [data-described]) {
+    > [data-slot="field"][data-orientation="vertical"]:not([data-kind="vector3"], [data-kind="asset"], [data-kind="range"], [data-kind="curve"], [data-kind="gradient"], [data-kind="color4"], [data-kind="collision-responses"], [data-described]) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     align-items: start;
@@ -47,14 +47,14 @@
 
   [data-slot="property-grid"]:not([data-hide-labels="true"]):not([data-density="compact"])
     > [data-slot="field-group"]
-    > [data-slot="field"][data-orientation="vertical"]:not([data-kind="vector3"], [data-kind="asset"], [data-kind="range"], [data-kind="curve"], [data-kind="gradient"], [data-kind="color4"], [data-described])
+    > [data-slot="field"][data-orientation="vertical"]:not([data-kind="vector3"], [data-kind="asset"], [data-kind="range"], [data-kind="curve"], [data-kind="gradient"], [data-kind="color4"], [data-kind="collision-responses"], [data-described])
     > :first-child {
     min-height: var(--chrome-row, 28px);
   }
 
   [data-slot="property-grid"]:not([data-hide-labels="true"]):not([data-density="compact"])
     > [data-slot="field-group"]
-    > [data-slot="field"][data-orientation="vertical"]:not([data-kind="vector3"], [data-kind="asset"], [data-kind="range"], [data-kind="curve"], [data-kind="gradient"], [data-kind="color4"], [data-described])
+    > [data-slot="field"][data-orientation="vertical"]:not([data-kind="vector3"], [data-kind="asset"], [data-kind="range"], [data-kind="curve"], [data-kind="gradient"], [data-kind="color4"], [data-kind="collision-responses"], [data-described])
     [data-slot="field-label"] {
     overflow: visible;
     white-space: normal;

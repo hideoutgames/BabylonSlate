@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { newCollisionPresetId, type CollisionPreset } from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
-import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import { Input } from "@babylonslate/ui/components/input";
 import {
   Select,
@@ -10,6 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@babylonslate/ui/components/select";
+import { cn } from "@babylonslate/ui/lib/utils";
+import { CollisionResponsesField } from "./collision-responses-field";
 import { ListRowActions } from "./list-row-actions";
 
 export interface CollisionPresetsFieldProps {
@@ -22,15 +23,12 @@ export interface CollisionPresetsFieldProps {
 
 const ROW_CONTROL = "h-6 text-xs pointer-coarse:h-9";
 
-const layerIndex = (layer: number) => {
-  const index = Math.clz32(layer & -layer) ^ 31;
-  return layer === 0 ? -1 : index;
-};
+const layerIndex = (layer: number) => (layer === 0 ? -1 : Math.clz32(layer & -layer) ^ 31);
 
 /**
- * Collision Presets as a grid: one row per preset with its name, Layer and a
- * checkbox per collision layer it collides with. Rows reorder and delete with
- * the list row actions; the last preset cannot be deleted.
+ * Collision Presets like Unreal's: a list of presets (name and Layer) and,
+ * for the selected one, its Name, Layer and Collision Responses. Rows
+ * reorder and delete with the list row actions; the last preset stays.
  */
 export function CollisionPresetsField({
   layers,
@@ -39,117 +37,118 @@ export function CollisionPresetsField({
   "data-testid": testId = "collision-presets",
 }: CollisionPresetsFieldProps) {
   const [draft, setDraft] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIndex = Math.max(0, value.findIndex((preset) => preset.id === selectedId));
+  const selected = value[selectedIndex];
   const patch = (index: number, change: Partial<CollisionPreset>) =>
     onChange(value.map((preset, row) => (row === index ? { ...preset, ...change } : preset)));
   const add = () => {
     const name = draft.trim();
     if (!name) return;
-    onChange([...value, { id: newCollisionPresetId(name, value), name, layer: 1, mask: 0xffffffff }]);
+    const id = newCollisionPresetId(name, value);
+    onChange([...value, { id, name, layer: 1, mask: 0xffffffff, overlapMask: 0 }]);
+    setSelectedId(id);
     setDraft("");
   };
+  const layerName = (layer: number) => layers[layerIndex(layer)] ?? `Layer ${layerIndex(layer) + 1}`;
 
   return (
-    <div className="flex flex-col gap-1" data-testid={testId}>
-      <div className="overflow-x-auto">
-        <table className="border-separate border-spacing-x-1 border-spacing-y-0.5 text-xs" role="grid" aria-label="Collision Presets">
-          <thead>
-            <tr>
-              <th scope="col" className="px-0 text-left align-bottom font-normal text-muted-foreground">Preset</th>
-              <th scope="col" className="px-0 text-left align-bottom font-normal text-muted-foreground">Layer</th>
-              {layers.map((name) => (
-                <th key={name} scope="col" className="w-5 p-0 align-bottom font-normal text-muted-foreground">
-                  <span className="mx-auto block max-h-24 truncate [writing-mode:vertical-rl] rotate-180 pb-1">{name}</span>
-                </th>
-              ))}
-              <th aria-label="Actions" />
-            </tr>
-          </thead>
-          <tbody>
-            {value.map((preset, row) => {
-              const current = layerIndex(preset.layer);
-              return (
-                <tr key={preset.id}>
-                  <td className="p-0">
-                    <Input
-                      aria-label={`Preset ${row + 1} Name`}
-                      className={`${ROW_CONTROL} w-32`}
-                      value={preset.name}
-                      onChange={(event) => patch(row, { name: event.target.value })}
-                      data-testid={`${testId}-${row}-name`}
-                    />
-                  </td>
-                  <td className="p-0">
-                    <Select
-                      value={String(current)}
-                      onValueChange={(next) => patch(row, { layer: (1 << Number(next)) >>> 0 })}
-                    >
-                      <SelectTrigger
-                        aria-label={`${preset.name} Layer`}
-                        className="w-28 py-0 text-xs data-[size=default]:h-6 pointer-coarse:data-[size=default]:h-9"
-                        data-testid={`${testId}-${row}-layer`}
-                      >
-                        <SelectValue>{() => layers[current] ?? `Layer ${current + 1}`}</SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {layers.map((name, index) => (
-                          <SelectItem key={name} value={String(index)}>{name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </td>
-                  {layers.map((name, index) => (
-                    <td key={name} className="p-0 text-center">
-                      <Checkbox
-                        className="size-3.5"
-                        checked={((preset.mask >>> index) & 1) === 1}
-                        aria-label={`${preset.name} Collides With ${name}`}
-                        data-testid={`${testId}-${row}-${index}`}
-                        onCheckedChange={(checked) =>
-                          patch(row, { mask: (checked === true ? preset.mask | (1 << index) : preset.mask & ~(1 << index)) >>> 0 })
-                        }
-                      />
-                    </td>
-                  ))}
-                  <td className="p-0">
-                    <ListRowActions
-                      index={row}
-                      count={value.length}
-                      name={preset.name}
-                      testIdPrefix={testId}
-                      touchAdaptive
-                      removeDisabled={value.length <= 1}
-                      onMove={(delta) => {
-                        const target = row + delta;
-                        if (target < 0 || target >= value.length) return;
-                        const next = [...value];
-                        [next[row], next[target]] = [next[target]!, next[row]!];
-                        onChange(next);
-                      }}
-                      onRemove={() => onChange(value.filter((_, index) => index !== row))}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+    <div className="flex flex-wrap items-start gap-3" data-testid={testId}>
+      <div className="flex w-64 flex-col gap-1">
+        <div role="listbox" aria-label="Collision Presets" className="flex flex-col">
+          {value.map((preset, row) => (
+            <div
+              key={preset.id}
+              role="option"
+              aria-selected={row === selectedIndex}
+              tabIndex={0}
+              data-testid={`${testId}-${row}`}
+              className={cn(
+                "group/pin-row flex min-h-[var(--chrome-row,28px)] cursor-default items-center gap-2 rounded-md px-2 text-xs pointer-coarse:min-h-[var(--touch-target,44px)]",
+                row === selectedIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+              )}
+              onClick={() => setSelectedId(preset.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") setSelectedId(preset.id);
+              }}
+            >
+              <span className="min-w-0 flex-1 truncate">{preset.name}</span>
+              <span className="truncate text-muted-foreground">{layerName(preset.layer)}</span>
+              <ListRowActions
+                index={row}
+                count={value.length}
+                name={preset.name}
+                testIdPrefix={testId}
+                touchAdaptive
+                removeDisabled={value.length <= 1}
+                onMove={(delta) => {
+                  const target = row + delta;
+                  if (target < 0 || target >= value.length) return;
+                  const next = [...value];
+                  [next[row], next[target]] = [next[target]!, next[row]!];
+                  onChange(next);
+                }}
+                onRemove={() => onChange(value.filter((_, index) => index !== row))}
+              />
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-1">
+          <Input
+            aria-label="New Preset Name"
+            className={`${ROW_CONTROL} min-w-0 flex-1`}
+            value={draft}
+            placeholder="New Preset"
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") add();
+            }}
+            data-testid={`${testId}-add-value`}
+          />
+          <Button type="button" variant="outline" size="sm" className={ROW_CONTROL} onClick={add} data-testid={`${testId}-add`}>
+            Add Preset
+          </Button>
+        </div>
       </div>
-      <div className="flex gap-1">
-        <Input
-          aria-label="Add Preset"
-          className={`${ROW_CONTROL} w-32`}
-          value={draft}
-          placeholder="New Preset"
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") add();
-          }}
-          data-testid={`${testId}-add-value`}
-        />
-        <Button type="button" variant="outline" size="sm" className={ROW_CONTROL} onClick={add} data-testid={`${testId}-add`}>
-          Add Preset
-        </Button>
-      </div>
+      {selected ? (
+        <div className="flex w-72 flex-col gap-1.5" data-testid={`${testId}-editor`}>
+          <label className="grid grid-cols-[4rem_1fr] items-center gap-2 text-xs">
+            Name
+            <Input
+              className={ROW_CONTROL}
+              value={selected.name}
+              onChange={(event) => patch(selectedIndex, { name: event.target.value })}
+              data-testid={`${testId}-name`}
+            />
+          </label>
+          <div className="grid grid-cols-[4rem_1fr] items-center gap-2 text-xs">
+            <span>Layer</span>
+            <Select
+              value={String(layerIndex(selected.layer))}
+              onValueChange={(next) => patch(selectedIndex, { layer: (1 << Number(next)) >>> 0 })}
+            >
+              <SelectTrigger
+                aria-label={`${selected.name} Layer`}
+                className="w-full py-0 text-xs data-[size=default]:h-6 pointer-coarse:data-[size=default]:h-9"
+                data-testid={`${testId}-layer`}
+              >
+                <SelectValue>{() => layerName(selected.layer)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {layers.map((name, index) => (
+                  <SelectItem key={name} value={String(index)}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <CollisionResponsesField
+            layers={layers}
+            value={selected}
+            onChange={(responses) => patch(selectedIndex, responses)}
+            data-testid={`${testId}-responses`}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

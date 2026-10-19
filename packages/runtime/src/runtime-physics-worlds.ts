@@ -60,7 +60,7 @@ interface RuntimePhysicsWorldsOptions {
   /** Project Water Blend Distance (`RenderProjectSettings.water.blendDistance`); default when absent. */
   waterBlendDistance?: number;
   /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`); every world resolves preset colliders with them. */
-  collisionPresets?: readonly Pick<CollisionPreset, "id" | "layer" | "mask">[];
+  collisionPresets?: readonly Pick<CollisionPreset, "id" | "layer" | "mask" | "overlapMask">[];
 }
 
 const vec3 = (value: readonly number[]) => ({ x: value[0], y: value[1], z: value[2] });
@@ -112,7 +112,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
   private spriteAnimations = new Map<string, SpriteAnimationPayload>();
   private models = new Map<string, ModelPayload>();
   private _pixelsPerUnit = 100;
-  private readonly collisionPresets: readonly Pick<CollisionPreset, "id" | "layer" | "mask">[] | undefined;
+  private readonly collisionPresets: readonly Pick<CollisionPreset, "id" | "layer" | "mask" | "overlapMask">[] | undefined;
   /** Installed union: on-demand answers overlaid by the latest `loadModels` meshes. */
   private complexMeshes = new Map<string, CollisionTriangleMesh>();
   private lastProvidedComplexMeshes: ReadonlyMap<string, CollisionTriangleMesh> = new Map();
@@ -179,7 +179,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
   get pixelsPerUnit(): number { return this._pixelsPerUnit; }
 
   /** The project Collision Preset with this id, if any. */
-  collisionPreset(id: unknown): Pick<CollisionPreset, "id" | "layer" | "mask"> | undefined {
+  collisionPreset(id: unknown): Pick<CollisionPreset, "id" | "layer" | "mask" | "overlapMask"> | undefined {
     return findCollisionPreset(this.collisionPresets, id);
   }
 

@@ -214,7 +214,7 @@ export class PhysicsWorldSync {
   private complexMeshes = new Map<string, CollisionTriangleMesh>();
   private onMissingComplexMesh: ((assetGuid: string) => void) | null = null;
   private pixelsPerUnit = 100;
-  private readonly collisionPresets: readonly Pick<CollisionPreset, "id" | "layer" | "mask">[] | undefined;
+  private readonly collisionPresets: readonly Pick<CollisionPreset, "id" | "layer" | "mask" | "overlapMask">[] | undefined;
 
   constructor(
     backend: PhysicsBackend,
@@ -243,7 +243,7 @@ export class PhysicsWorldSync {
        * The project Collision Presets (`PhysicsProjectSettings.collisionPresets`). A collider whose `collisionPreset`
        * names one takes its layer and mask. Omitted: every collider keeps its own.
        */
-      collisionPresets?: readonly Pick<CollisionPreset, "id" | "layer" | "mask">[];
+      collisionPresets?: readonly Pick<CollisionPreset, "id" | "layer" | "mask" | "overlapMask">[];
     },
   ) {
     this.backend = backend;
@@ -261,7 +261,8 @@ export class PhysicsWorldSync {
 
   /** A collider's layer and mask in this world: its Collision Preset's, or its own when Custom. */
   collisionFilter(layer: number, mask: number, presetRef: unknown): { layer: number; mask: number } {
-    return resolveCollisionFilter(layer, mask, presetRef, this.collisionPresets);
+    const resolved = resolveCollisionFilter({ layer, mask, overlapMask: 0 }, presetRef, this.collisionPresets);
+    return { layer: resolved.layer, mask: resolved.mask };
   }
 
   /** Mesh, Dynamic Runtime Mesh and Landscape collision. */

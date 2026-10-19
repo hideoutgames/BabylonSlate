@@ -111,9 +111,9 @@ export async function placeFeatureTestPhysics(ctx: FeatureTestContext): Promise<
     const collisionLayers = [...names, ...settings.physics.collisionLayers.filter((name) => !names.includes(name))];
     const collisionPresets = [
       ...DEFAULT_COLLISION_PRESETS,
-      { id: "dynamic", name: "Dynamic", layer: LAYER.dynamic, mask: ALL_LAYERS },
+      { id: "dynamic", name: "Dynamic", layer: LAYER.dynamic, mask: ALL_LAYERS, overlapMask: 0 },
       // Ghost Pass Ball: a Dynamic body that ignores the Ghost layer.
-      { id: GHOST_PASS_PRESET, name: "Ghost Pass", layer: LAYER.dynamic, mask: (ALL_LAYERS & ~LAYER.ghost) >>> 0 },
+      { id: GHOST_PASS_PRESET, name: "Ghost Pass", layer: LAYER.dynamic, mask: (ALL_LAYERS & ~LAYER.ghost) >>> 0, overlapMask: 0 },
     ];
     return { ...settings, physics: { ...settings.physics, collisionLayers, collisionPresets } };
   });

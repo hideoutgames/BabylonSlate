@@ -5,7 +5,7 @@ import { ClassRegistry, World } from "@babylonslate/object-model";
 import { PhysicsWorldSync } from "./physics-sync";
 
 const box = { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } };
-const PRESETS = [{ id: "ghost-pass", layer: 2, mask: 0xffffffef }];
+const PRESETS = [{ id: "ghost-pass", layer: 2, mask: 0xffffffef, overlapMask: 0 }];
 
 function filterOf(variables: Record<string, unknown>, collisionPresets?: typeof PRESETS) {
   const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });

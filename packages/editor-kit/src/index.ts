@@ -329,6 +329,7 @@ export {
 } from "./color-field";
 export { ColorPicker, type ColorPickerProps } from "./color-picker";
 export { CollisionPresetsField, type CollisionPresetsFieldProps } from "./collision-presets-field";
+export { CollisionResponsesField, type CollisionResponsesFieldProps, type CollisionResponsesValue } from "./collision-responses-field";
 export {
   FlagsField,
   DEFAULT_FLAG_BIT_COUNT,

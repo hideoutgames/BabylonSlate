@@ -26,6 +26,7 @@ import { isInlineNumberUnit } from "./number-units";
 import { humanizePropertyLabel } from "./humanize-property-label";
 import { ColorField, type ColorValue } from "./color-field";
 import { FlagsField } from "./flags-field";
+import { CollisionResponsesField, type CollisionResponsesValue } from "./collision-responses-field";
 import { PickerIdentity } from "./picker-identity";
 import { type TypeVisualQuery } from "./type-visuals";
 import { AssetPickerControl } from "./asset-picker-control";
@@ -145,6 +146,14 @@ export type PropertyRow =
       bitCount?: number;
       labels?: readonly string[];
       onChange: (value: number) => void;
+    })
+  | (PropertyRowBase & {
+      /** Ignore / Overlap / Block per collision layer; full width. */
+      kind: "collision-responses";
+      value: CollisionResponsesValue;
+      defaultValue?: CollisionResponsesValue;
+      labels: readonly string[];
+      onChange: (value: CollisionResponsesValue) => void;
     })
   | (PropertyRowBase & {
       kind: "asset";
@@ -294,6 +303,7 @@ function rowHasLabelTarget(row: PropertyRow): boolean {
   switch (row.kind) {
     case "vector3":
     case "flags":
+    case "collision-responses":
     case "range":
     case "curve":
     case "gradient":
@@ -516,6 +526,16 @@ function RowControl({ row }: { row: PropertyRow }) {
             />
           </div>
         </div>
+      );
+    case "collision-responses":
+      return (
+        <CollisionResponsesField
+          layers={row.labels}
+          value={row.value}
+          disabled={row.disabled}
+          onChange={row.onChange}
+          data-testid={`property-${row.id}`}
+        />
       );
     case "flags":
       return (

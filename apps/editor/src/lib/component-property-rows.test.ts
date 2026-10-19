@@ -421,7 +421,7 @@ describe("componentPropertyRows", () => {
       ],
     });
     expect(simple.rows.find((row) => row.id.endsWith("-layer"))).toBeDefined();
-    expect(simple.rows.find((row) => row.id.endsWith("-mask"))).toBeDefined();
+    expect(simple.rows.find((row) => row.id.endsWith("-responses"))).toBeDefined();
 
     const none = rowsFor({
       id: "mesh",
@@ -429,7 +429,7 @@ describe("componentPropertyRows", () => {
       properties: { meshKind: "box", collisionMode: "none" },
     });
     expect(none.rows.find((row) => row.id.endsWith("-layer"))).toBeUndefined();
-    expect(none.rows.find((row) => row.id.endsWith("-mask"))).toBeUndefined();
+    expect(none.rows.find((row) => row.id.endsWith("-responses"))).toBeUndefined();
 
     const twoD = rowsFor(
       {
@@ -1002,11 +1002,10 @@ describe("componentPropertyRows", () => {
       label: "Collision Preset",
       value: "custom",
     });
-    expect(rows.find((row) => row.id.endsWith("-mask"))).toMatchObject({
-      kind: "flags",
-      label: "Collides With",
-      value: 1,
-      bitCount: 2,
+    expect(rows.find((row) => row.id.endsWith("-responses"))).toMatchObject({
+      kind: "collision-responses",
+      label: "Collision Responses",
+      value: { mask: 1, overlapMask: 0 },
       labels: ["Default", "Enemy"],
       disabled: false,
     });
@@ -1022,18 +1021,18 @@ describe("componentPropertyRows", () => {
     });
   });
 
-  it("shows a Collision Preset's Layer and Collides With read only and starts Custom from them", () => {
+  it("shows a Collision Preset's Layer and Collision Responses read only and starts Custom from them", () => {
     const { rows, update } = rowsFor(
       { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 0.5 }, layer: 1, mask: 0b11, collisionPreset: "enemy" } },
-      { collisionLayers: ["Default", "Enemy"], collisionPresets: [{ id: "enemy", name: "Enemy", layer: 2, mask: 0xfffffffd }] },
+      { collisionLayers: ["Default", "Enemy"], collisionPresets: [{ id: "enemy", name: "Enemy", layer: 2, mask: 0xfffffffd, overlapMask: 2 }] },
     );
     expect(rows.find((row) => row.id.endsWith("-layer"))).toMatchObject({ kind: "enum", value: "Enemy", disabled: true });
-    expect(rows.find((row) => row.id.endsWith("-mask"))).toMatchObject({ kind: "flags", value: 0xfffffffd, disabled: true });
+    expect(rows.find((row) => row.id.endsWith("-responses"))).toMatchObject({ value: { mask: 0xfffffffd, overlapMask: 2 }, disabled: true });
     const preset = rows.find((row) => row.id.endsWith("-collisionPreset"));
     if (preset?.kind !== "enum") throw new Error("Missing Collision Preset row");
     expect(preset.options.map((option) => option.label)).toEqual(["Enemy", "Custom"]);
     preset.onChange("custom");
-    expect(update).toHaveBeenCalledWith("collisionPreset", "custom", { layer: 2, mask: 0xfffffffd });
+    expect(update).toHaveBeenCalledWith("collisionPreset", "custom", { layer: 2, mask: 0xfffffffd, overlapMask: 2 });
   });
 
   it.each([
