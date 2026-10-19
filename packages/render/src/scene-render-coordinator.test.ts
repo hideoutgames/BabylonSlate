@@ -16,7 +16,7 @@ import { markSceneReadinessDirty } from "./scene-perf";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTextureManager } from "@babylonjs/core/FrameGraph/frameGraphTextureManager";
-import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
 import {
   SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS, SCENE_THREAD_HELD_MS,
 } from "./stall-deadline";
@@ -593,6 +593,7 @@ describe.each([false, true])("preparation while synchronous links finish one aft
   it("fails once links stop finishing, a whole bound after the last one, and reports the shaders compiled", async () => {
     const { renderer, clock, lastLink } = linkingHost(500, (probe) => probe <= 40, () => false);
     const error = await renderer.prepare().then(() => null, (failure: unknown) => failure as Error);
+    expect(error).toBeInstanceOf(PreparationTimedOut);
     expect(error?.message).toContain("timed out after 10 s without progress");
     // The 40 links, and the graph's own effects.
     expect(Number(/Shaders: (\d+) compiled while waiting/.exec(error?.message ?? "")?.[1])).toBeGreaterThanOrEqual(40);
@@ -607,7 +608,9 @@ describe.each([false, true])("preparation while synchronous links finish one aft
   it("ends a preparation that keeps linking but never becomes ready at the ceiling", async () => {
     const held = 5_000;
     const { renderer, clock } = linkingHost(held, () => true, () => false);
-    await expect(renderer.prepare()).rejects.toThrow(`timed out after its ${SCENE_PREPARATION_CEILING_MS / 1000} s limit`);
+    const error = await renderer.prepare().then(() => null, (failure: unknown) => failure as Error);
+    expect(error).toBeInstanceOf(PreparationTimedOut);
+    expect(error?.message).toContain(`timed out after its ${SCENE_PREPARATION_CEILING_MS / 1000} s limit`);
     expect(clock.elapsed()).toBeGreaterThanOrEqual(SCENE_PREPARATION_CEILING_MS);
     expect(clock.elapsed()).toBeLessThanOrEqual(SCENE_PREPARATION_CEILING_MS + held);
     renderer.dispose();

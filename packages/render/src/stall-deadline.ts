@@ -40,6 +40,15 @@ export const SCENE_PREPARATION_CEILING_MS = 300_000;
 export const SCENE_CAPTURE_CEILING_MS = 90_000;
 
 /**
+ * Ceiling of the one retry a thumbnail capture gets after it ran out at
+ * `SCENE_CAPTURE_CEILING_MS` (a heavy Prefab on a device that links shaders
+ * synchronously can need longer). The retry starts only while nothing else is
+ * queued and yields to new work, so the reason for the shorter first ceiling
+ * does not hold; it matches a loading wait's.
+ */
+export const SCENE_CAPTURE_RETRY_CEILING_MS = SCENE_PREPARATION_CEILING_MS;
+
+/**
  * Extra time a loading owner's validated first draw gets to complete on the GPU
  * for each render pipeline it created. WebGPU builds new pipelines in the GPU
  * queue, so they all finish inside that draw's submitted-work wait, which shows

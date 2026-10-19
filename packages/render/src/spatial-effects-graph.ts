@@ -11,7 +11,6 @@ import {
 } from "./spatial-effects";
 import type { SceneEffectsPlan } from "./scene-effects";
 import type { TemporalJitter } from "./temporal-anti-aliasing";
-import type { VolumetricLayout } from "./volumetric-lights";
 import {
   releaseManagedRenderLeaseAfterDisposal,
   type ManagedRenderCategory,
@@ -106,8 +105,6 @@ export class SpatialEffectsGraph {
   /** Present with temporal anti-aliasing; jitters the geometry pass already.
    * The view's main object renderer must be registered by its owner. */
   readonly jitter?: TemporalJitter;
-  /** Present with a volumetric march: the slot layout it was built for (`SpatialStage.lightLayout`). */
-  readonly volumetricLayout?: VolumetricLayout;
   private readonly lease: ManagedRenderLease;
   private readonly handles: {
     handle: FrameGraphTextureHandle;
@@ -234,7 +231,6 @@ export class SpatialEffectsGraph {
       for (const stage of stages) unattached.add(stage);
       this.jitter = stages.find((stage) => stage.history)?.history;
       this.jitter?.jitterRenderer(this.geometry.objectRenderer);
-      this.volumetricLayout = stages.find((stage) => stage.lightLayout !== undefined)?.lightLayout;
       const inputs: FrameGraphTextureHandle[] = [];
       for (const stage of stages) {
         inputs.push(source);

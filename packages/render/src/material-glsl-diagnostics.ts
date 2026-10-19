@@ -1,6 +1,13 @@
 import type { Effect } from "@babylonjs/core";
 import type { MaterialDiagnostic, MaterialOperation } from "@babylonslate/shader-graph";
 
+/** Babylon keeps a failed link as the thrown Error's `stack`: the shader log, then JS frames. Report the log. */
+export function shaderLinkLog(errors: string): string {
+  const lines = errors.split("\n");
+  const frame = lines.findIndex((line, index) => index > 0 && /^\s+at\s/.test(line));
+  return (frame < 0 ? lines : lines.slice(0, frame)).join("\n").replace(/^Error:\s*/, "").trim();
+}
+
 export function customGlslFunctionName(id: string): string {
   return `custom_${Array.from(id, (char) => char.codePointAt(0)!.toString(16)).join("_")}`;
 }

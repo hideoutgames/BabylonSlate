@@ -313,6 +313,14 @@ export function MaterialEditingProvider({
         const engine = engineRef.current;
         return bytes && engine ? acquireMaterialTexture(resourceCacheForEngine(engine), guid, engine, bytes) : null;
       },
+      // A program the Engine cannot link is first created when the preview draws, after `ready` accepted the build, so
+      // `compile` never sees it. The library has already retired the generation. The result for that compile is
+      // dropped by the reducer (it is not newer than the ready one), so the failure takes the preview-error slot.
+      onTextureError: (diagnostic) => {
+        if (diagnostic.code !== "material.compile.failed") return;
+        setCompileDiagnostics((current) => current.some((entry) => entry.code === diagnostic.code && entry.message === diagnostic.message) ? current : [...current, diagnostic]);
+        dispatch({ type: "previewError", error: diagnostic.message });
+      },
     });
   }, []);
 
