@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, ParticleBlendMultiplyBlock, ParticleSystem, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock, type ClampBlock, type InputBlock, type NodeMaterialConnectionPoint } from "@babylonjs/core";
+import { Bone, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, PBRMetallicRoughnessBlock, ParticleBlendMultiplyBlock, ParticleSystem, Scene, ShaderMaterial, Texture, TextureBlock, ScaleBlock, FragmentOutputBlock, type ClampBlock, type Effect, type InputBlock, type NodeMaterialConnectionPoint } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -1717,6 +1717,20 @@ describe("material compiler", () => {
     const force = vi.spyOn(result.material, "forceCompilationAsync");
     await prewarmMaterial(result.material, mesh);
     expect(force).not.toHaveBeenCalled();
+  });
+
+  it("stops listening for Engine link failures when its material is disposed directly", async () => {
+    const scene = host();
+    const onLinkError = vi.fn();
+    const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), { scene, name: "direct-dispose", onLinkError });
+    if (!result.ok) throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    await result.ready;
+    // Babylon's own teardown, or a harness, never goes through the compiler's dispose.
+    result.material.dispose();
+    const log = "FRAGMENT SHADER ERROR: 0:3: syntax error";
+    const effect = { name: { vertex: `nodeMaterial${result.material.buildId}` }, getCompilationError: () => log } as unknown as Effect;
+    scene.getEngine().onEffectErrorObservable.notifyObservers({ effect, errors: log });
+    expect(onLinkError).not.toHaveBeenCalled();
   });
 
   // Without KHR_parallel_shader_compile one of Babylon's compile polls links the effect before it returns, and a

@@ -95,6 +95,14 @@ const CUSTOM_GLSL_TEXTURE_TIMEOUT_MS = 120_000;
 
 export type AuthoredSurfaceVariant = "outlineMask" | "captureDepth" | "captureNormal" | "shadowDepth";
 
+/** Names the program in a variant's link diagnostic, which the Material editor shows beside the base program's. */
+const SURFACE_VARIANT_LABELS: Record<AuthoredSurfaceVariant, string> = {
+  outlineMask: "Outline mask",
+  captureDepth: "Depth capture",
+  captureNormal: "Normal capture",
+  shadowDepth: "Shadow depth",
+};
+
 export interface CompileMaterialOptions {
   /** SceneLayer surfaces bind independent tint/opacity and retain smooth transparency. */
   overlay?: boolean;
@@ -715,9 +723,10 @@ export function compileMaterialPlan(
     // While the build is pending, its own probe turns the failure into the result (`ready`).
     if (buildState !== "ready" || disposed || linkReported) return;
     linkReported = true;
+    const log = shaderLinkLog(errors || effect.getCompilationError()) || "Material shader failed to link";
     const diagnostic: MaterialDiagnostic = {
       code: "material.compile.failed",
-      message: shaderLinkLog(errors || effect.getCompilationError()) || "Material shader failed to link",
+      message: options.surfaceVariant ? `${SURFACE_VARIANT_LABELS[options.surfaceVariant]} program: ${log}` : log,
       severity: "error",
     };
     (options.onLinkError ?? options.onTextureError)?.(diagnostic);
@@ -730,11 +739,14 @@ export function compileMaterialPlan(
   // program (a root, its Material Instances and per-component copies adopt one build id) would otherwise stay bound
   // to an Effect that never links. Babylon raises this once per failed Effect, named by its first creator's build id.
   // A material built after the failure adopts the dead program without hearing of it.
-  const effectErrors = scene.getEngine().onEffectErrorObservable.add(({ effect, errors }) => {
+  const effectErrorObservable = scene.getEngine().onEffectErrorObservable;
+  const effectErrors = effectErrorObservable.add(({ effect, errors }) => {
     const name: unknown = effect.name;
     if (typeof name === "object" && name !== null && (name as { vertex?: unknown }).vertex === `nodeMaterial${material.buildId}`)
       reportLinkFailure(effect, errors);
   });
+  // A material disposed directly (a harness, Babylon's own teardown) never reaches `disposeCompiled`.
+  material.onDisposeObservable.addOnce(() => effectErrorObservable.remove(effectErrors));
   let shaderPostProcess: OwnedPostProcess | null = null;
   let shaderParticles: ParticleSystem | null = null;
   const shaderRetirement = new PostProcessRetirement();
@@ -902,7 +914,7 @@ export function compileMaterialPlan(
   if (buildError !== null) {
     material.onBuildErrorObservable.remove(errorObserver);
     material.onBuildObservable.remove(buildObserver);
-    scene.getEngine().onEffectErrorObservable.remove(effectErrors);
+    effectErrorObservable.remove(effectErrors);
     diagnostics.push({
       code: "material.compile.buildFailed",
       message: buildError,
@@ -1007,8 +1019,9 @@ export function compileMaterialPlan(
       if (disposed) throw new Error("Cannot retain a disposed authored material.");
       let variant = variants.get(kind);
       if (!variant) {
-        // A variant's link failure is reported but never retires the surface that owns it.
-        const compiled = compileMaterialPlan(plan, { ...options, onLinkError: undefined, name: `${options.name}:${kind}`, surfaceVariant: kind });
+        // A variant that cannot link would never be ready for its pass (outline, capture, shadow) while the surface
+        // stays bound, so its failure reaches the owner like the surface's own: the owner retires the generation.
+        const compiled = compileMaterialPlan(plan, { ...options, name: `${options.name}:${kind}`, surfaceVariant: kind });
         if (materialCompileFailed(compiled)) throw new Error(compiled.diagnostics.map((entry) => entry.message).join("; "));
         for (const operation of plan.operations) if (operation.nodeType.startsWith("param.") && operation.source.callPath.length === 0) {
           const name = String(operation.properties.name ?? "").trim();
@@ -1066,7 +1079,7 @@ export function compileMaterialPlan(
     }
     material.onBuildErrorObservable.remove(errorObserver);
     material.onBuildObservable.remove(buildObserver);
-    scene.getEngine().onEffectErrorObservable.remove(effectErrors);
+    effectErrorObservable.remove(effectErrors);
     parameters.dispose();
     for (const unsubscribe of loadObservers) unsubscribe();
     detachEngineOwnedTextures(material);
@@ -1597,6 +1610,14 @@ function writeLinearSurfaceColor(
   imageProcessing.rgb.connectTo(fragment.rgb);
 }
 
+/** The warm-up saw no shader finish for its whole bound: a stall, which says nothing about the program. */
+export class MaterialCompileStalled extends Error {
+  constructor() {
+    super("Material shader compilation timed out");
+    this.name = "MaterialCompileStalled";
+  }
+}
+
 /**
  * Pre-warm a compiled material so the first draw does not stall.
  * Surface materials compile against the mesh they will actually be drawn with.
@@ -1626,7 +1647,7 @@ export async function prewarmMaterial(
       material.forceCompilationAsync(mesh),
       new Promise<never>((_, reject) => {
         const check = () => {
-          if (bound.expired()) reject(new Error("Material shader compilation timed out"));
+          if (bound.expired()) reject(new MaterialCompileStalled());
           else timer = setTimeout(check, 16);
         };
         timer = setTimeout(check, 16);
