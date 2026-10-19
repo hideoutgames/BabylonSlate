@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compileGraph, type CompileOptions } from "./compile";
 import type { GraphEdge, GraphNode, LogicGraph } from "./ir";
 import { NodeRegistry, pin } from "./node-registry";
-import { BOOL, EXEC, INT, STRING } from "./types";
+import { BOOL, EXEC, INT, STRING, actorRef } from "./types";
 
 function registry(): NodeRegistry {
   const nodes = new NodeRegistry();
@@ -80,6 +80,28 @@ function registry(): NodeRegistry {
       pin("result", "result", "out", STRING),
     ],
     codegen: (ctx) => ({ result: `String(${ctx.input("text")}).toUpperCase()` }),
+  });
+  nodes.register({
+    id: "test.who",
+    title: "Who",
+    category: "test",
+    pure: true,
+    pins: () => [pin("actor", "actor", "out", actorRef("Actor"))],
+    codegen: () => ({ actor: "ctx.who()" }),
+  });
+  // Acts on its Target, a subject input the compiler reads once into a slot before the node runs.
+  nodes.register({
+    id: "test.act",
+    title: "Act",
+    category: "test",
+    pins: () => [
+      pin("exec", "exec", "in", EXEC),
+      pin("then", "then", "out", EXEC),
+      { ...pin("target", "Target", "in", actorRef("Actor")), subject: true },
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.act(${ctx.input("target")});`);
+    },
   });
   nodes.register({
     id: "test.log",
@@ -232,6 +254,31 @@ export function run(ctx) {
     expect(samples).toBe(1);
     expect(logged).toEqual(["DOOR1"]);
     expect(events).toContain("read log.message=DOOR1");
+  });
+
+  it("records a subject input once, where the compiler reads it, and keeps its null guard", () => {
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [node("entry", "flow.entry"), node("who", "test.who"), node("act", "test.act")],
+      edges: [
+        edge("e1", "entry", "execOut", "act", "exec"),
+        edge("d1", "who", "actor", "act", "target"),
+      ],
+    };
+    const source = compile(graph, TRACED).source;
+    const acted: unknown[] = [];
+    let reads = 0;
+    const present = run(source, "run", { who: () => (reads += 1, "door"), act: (who: unknown) => acted.push(who) });
+    expect(present.events).toEqual(["exec entry", "edge e1", "exec act", "read act.target=door"]);
+    expect(reads).toBe(1);
+    expect(acted).toEqual(["door"]);
+
+    // A null subject is still recorded as read, and the node still does not act.
+    const missing: unknown[] = [];
+    const nothing = run(source, "run", { who: () => null, act: (who: unknown) => missing.push(who), nullAccess: () => {} });
+    expect(nothing.events).toContain("read act.target=null");
+    expect(missing).toEqual([]);
   });
 
   it("reports the arm a Branch takes and visits only that arm", () => {
