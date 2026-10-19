@@ -26,7 +26,10 @@ export function pendingDriverCompiles(engine: AbstractEngine): string[] {
  * The budget counts every compile pending on the Engine, whoever requested it
  * (the camera-pass probe, a preview or thumbnail on the shared Engine). It is a
  * soft bound: the probe that crosses it can start several compiles, one per
- * distinct submesh material and its depth pre-pass.
+ * distinct submesh material and its depth pre-pass. It throttles on every
+ * parallel-compile driver, iPad WebKit WebGL2 included: its new effects stay
+ * pending while they link, although heavy programs there finish roughly one
+ * after another.
  */
 export const COMPILE_AHEAD_LIMIT = 4;
 
@@ -94,16 +97,17 @@ export function readinessScanMeshes(renderer: ObjectRenderer, scene: Scene): rea
  * compile progress. Progress is either:
  * - a shader variant (an Engine effect key) that finished compiling since the
  *   previous renewal, or since the watch began. Where links are synchronous this
- *   is the only sign: without KHR_parallel_shader_compile (SwiftShader), and on
- *   WebKit WebGL2, which exposes the extension but links inside `linkProgram`,
- *   so Babylon's first completion check, inside the Effect constructor, already
+ *   is the only sign: without KHR_parallel_shader_compile (SwiftShader),
+ *   Babylon's first completion check, inside the Effect constructor, already
  *   finds the program complete and nothing is ever pending. WebGPU effects are
  *   ready once created. A key compiled again after its release is no progress.
  * - a WebGPU render pipeline a held view's skipped draw waited for that
  *   finished (`deferredPipelinesSettled`); WebKit builds those one at a time.
- * - effects pending on a parallel-compile driver. A cascade, such as a Water
- *   shader and then its other pass variants, changes the pending set each time
- *   one finishes. The same set pending for `SCENE_DRIVER_COMPILE_TIMEOUT_MS`
+ * - effects pending on a parallel-compile driver (D3D11 through ANGLE; iPad
+ *   WebKit WebGL2, whose new effects stay pending until the link completes and
+ *   whose heavy programs finish roughly one after another). A cascade, such as a
+ *   Water shader and then its other pass variants, changes the pending set each
+ *   time one finishes. The same set pending for `SCENE_DRIVER_COMPILE_TIMEOUT_MS`
  *   with nothing else finishing is a hung compile, so on such a driver a wait
  *   whose own effect hangs ends about that long after its bound, not at it.
  * Progress is per Engine: a preview or thumbnail compiling on the shared Engine

@@ -634,7 +634,7 @@ describe("ParticleService", () => {
     service.dispose();
   });
 
-  // Where shader links are synchronous (WebKit WebGL2, SwiftShader) one link keeps the thread for seconds, and a
+  // Where shader links are synchronous (SwiftShader) one link keeps the thread for seconds, and a
   // plain timer armed before it fires only after it, ahead of the Material's own continuation.
   describe("preparation bound while synchronous shader links hold the thread", () => {
     afterEach(() => {

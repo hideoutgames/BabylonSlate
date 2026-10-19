@@ -80,12 +80,13 @@ async function pause(page: Page) {
   await expect(page.getByTestId("simulation-pause")).toHaveAccessibleName("Resume");
   await expect.poll(async () => (await state(page)).lifecycle).toBe("paused");
 }
-async function stopSimulation(page: Page) {
+/** `viewportReloaded: false` leaves Stop's restored authoring viewport still loading. */
+async function stopSimulation(page: Page, { viewportReloaded = true } = {}) {
   await page.getByTestId("simulation-session-stop").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 30_000 });
   // UI closure is insufficient: idle is admitted only after the native release promise.
   await expect.poll(() => state(page), { timeout: 30_000 }).toMatchObject({ mode: null, lifecycle: "idle", quarantined: false, error: null });
-  await expect(page.getByTestId("viewport-panel")).toHaveAttribute("aria-busy", "false", { timeout: 30_000 });
+  if (viewportReloaded) await expect(page.getByTestId("viewport-panel")).toHaveAttribute("aria-busy", "false", { timeout: 30_000 });
 }
 async function selectRuntimeActor(page: Page, name: string) {
   await page.getByTestId("simulation-outliner").getByText(name, { exact: true }).click();
@@ -185,6 +186,18 @@ test("Simulation discard preserves unsaved authoring content and the existing Un
   await expect.poll(() => content(page)).toEqual(before);
   expect((await readSaveAllDiagnostics(page)).dirty).toEqual(dirtyBefore);
   await evidence(page, testInfo, { dirtyBefore, savedSceneUnchanged: true, priorUndoRedoPreserved: true });
+});
+
+test("A second Simulation reaches running while the viewport Stop restored is still loading", async ({ page }) => {
+  test.setTimeout(180_000);
+  await openMinimalTestProject(page);
+  await openMainScene(page);
+  await startSimulation(page);
+  await stopSimulation(page, { viewportReloaded: false });
+  // Stop reloads the authoring Scene behind its own Scene Loading dialog; the next Simulation takes the viewport mid-load.
+  await expect(page.getByTestId("viewport-panel")).toHaveAttribute("aria-busy", "true");
+  await startSimulation(page);
+  await stopSimulation(page);
 });
 
 test("Simulation Edit and Pause neutralize held gamepad input until a fresh transition", async ({ page }) => {

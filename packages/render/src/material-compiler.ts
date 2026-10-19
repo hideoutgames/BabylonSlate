@@ -1633,7 +1633,7 @@ export class MaterialCompileStalled extends Error {
 }
 
 /**
- * Pre-warm a compiled material so the first draw does not stall.
+ * Pre-warm a compiled material so the first draw does not wait for its link.
  * Surface materials compile against the mesh they will actually be drawn with.
  * The compile may take `SCENE_SHADER_WARM_TIMEOUT_MS` plus the time it held the
  * thread, up to one `SCENE_THREAD_HELD_BUDGET_MS`: where links are synchronous
