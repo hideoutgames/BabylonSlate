@@ -1,7 +1,7 @@
 import { WaterWorld } from "./water-world";
 import { dynamicRuntimeGeometry } from "./dynamic-runtime-mesh";
 import { DynamicMeshCollisionCache, dynamicMeshCollisionDescriptor } from "./dynamic-mesh-collision";
-import { landscapeCollisionMesh, normalizeWaterBuoyancy, sameCollisionTriangleMesh, type CollisionTriangleMesh, type MovementProperties, type Transform } from "@babylonslate/core";
+import { landscapeCollisionMesh, normalizeWaterBuoyancy, parseCollisionMaskSource, resolveCollisionMask, sameCollisionTriangleMesh, type CollisionMaskSource, type CollisionTriangleMesh, type MovementProperties, type Transform } from "@babylonslate/core";
 import { parsedMovementProperties } from "./movement-settings";
 import type {
   ColliderDesc,
@@ -214,6 +214,7 @@ export class PhysicsWorldSync {
   private complexMeshes = new Map<string, CollisionTriangleMesh>();
   private onMissingComplexMesh: ((assetGuid: string) => void) | null = null;
   private pixelsPerUnit = 100;
+  private readonly collisionMatrix: readonly number[] | undefined;
 
   constructor(
     backend: PhysicsBackend,
@@ -238,9 +239,16 @@ export class PhysicsWorldSync {
        * events (`PhysicsBackend.setContactReporting`). Omitted: every actor is observed.
        */
       observesContacts?: (actor: Actor) => boolean;
+      /**
+       * The project Collision Matrix (`PhysicsProjectSettings.collisionMatrix`). Colliders whose Collides With is
+       * "project" take their mask from it, as do the engine's own colliders (on the Default layer). Omitted: every
+       * collider keeps its authored mask.
+       */
+      collisionMatrix?: readonly number[];
     },
   ) {
     this.backend = backend;
+    this.collisionMatrix = options?.collisionMatrix;
     this.observesContacts = options?.observesContacts;
     this.skipEmptySteps = options?.skipEmptySteps ?? false;
     this.actorsOf = options?.actorsOf;
@@ -250,6 +258,23 @@ export class PhysicsWorldSync {
 
   getBackend(): PhysicsBackend {
     return this.backend;
+  }
+
+  /** The mask a collider on `layer` uses in this world: its own, or the Collision Matrix rows for "project". */
+  resolveCollisionMask(layer: number, mask: number, source: CollisionMaskSource): number {
+    return resolveCollisionMask(layer, mask, source, this.collisionMatrix);
+  }
+
+  /** Engine-made colliders (Movement capsule, Blocking Volume, tilemap chains) sit on the Default layer. */
+  private engineColliderMask(): number {
+    return this.resolveCollisionMask(1, 0xffffffff, "project");
+  }
+
+  /** Mesh, Dynamic Runtime Mesh and Landscape collision. */
+  private meshCollisionFilter(component: ActorComponent): { layer: number; mask: number } {
+    const layer = parseMeshCollisionLayer(component.getVariable("layer"));
+    const mask = parseMeshCollisionMask(component.getVariable("mask"));
+    return { layer, mask: this.resolveCollisionMask(layer, mask, parseCollisionMaskSource(component.getVariable("maskSource"))) };
   }
 
   /** Capture native center-of-mass motion before replacing the actor's body. */
@@ -1566,7 +1591,7 @@ export class PhysicsWorldSync {
       colliders.set(id, {
         id, bodyId,
         shape: { kind: this.backend.kind === "3d" ? "capsule" : "capsule2d", radius: props.radius, halfHeight: props.height / 2 - props.radius },
-        rotation, friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff,
+        rotation, friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: this.engineColliderMask(),
       });
     }
 
@@ -1624,7 +1649,7 @@ export class PhysicsWorldSync {
         restitution: collider.restitution,
         isTrigger: collider.isTrigger,
         layer: collider.layer,
-        mask: collider.mask,
+        mask: this.resolveCollisionMask(collider.layer, collider.mask, collider.maskSource),
         translation: baked.translation,
         rotation: baked.rotation,
       });
@@ -1661,7 +1686,7 @@ export class PhysicsWorldSync {
       // as the tilemap's visual does.
       for (const collider of prepared.colliders) {
         const baked = this.geometry(tilemap, collider.id).prepare(collider.shape, tilemap.transform, scale);
-        colliders.set(collider.id, { ...collider, bodyId, ...baked });
+        colliders.set(collider.id, { ...collider, bodyId, ...baked, mask: this.engineColliderMask() });
       }
     } else {
       this.tilemapCollidersByActor.delete(actor.guid);
@@ -1673,8 +1698,7 @@ export class PhysicsWorldSync {
       const shape = this.dynamicMeshCollisions.prepare(component, scale);
       if (!shape) continue;
       const id = componentColliderPhysicsId(actor.guid, component.guid);
-      colliders.set(id, { id, bodyId, shape, friction: 0.5, restitution: 0, isTrigger: false,
-        layer: parseMeshCollisionLayer(component.getVariable("layer")), mask: parseMeshCollisionMask(component.getVariable("mask")) });
+      colliders.set(id, { id, bodyId, shape, friction: 0.5, restitution: 0, isTrigger: false, ...this.meshCollisionFilter(component) });
     }
     // Adding buoyancy alone is enough for a physical float. Authored collision wins.
     const buoyancy = actor.components.find((c) => c.classId === "WaterBuoyancyComponent" && !c.destroyed && c.owner === actor);
@@ -1686,7 +1710,7 @@ export class PhysicsWorldSync {
       transform.position.x += offset.x; transform.position.y += offset.y; transform.position.z += offset.z;
       const baked = this.geometry(buoyancy, "water").prepare({ kind: "box", halfExtents: { x: props.width / 2, y: props.height / 2, z: props.length / 2 } }, transform, scale);
       const id = componentColliderPhysicsId(actor.guid, buoyancy.guid);
-      colliders.set(id, { ...collider, ...baked, id, bodyId });
+      colliders.set(id, { ...collider, ...baked, id, bodyId, mask: this.engineColliderMask() });
     }
   }
 
@@ -1728,7 +1752,7 @@ export class PhysicsWorldSync {
       this.ordinaryByComponent.set(component, prepared);
     }
     const tuning = Object.fromEntries(
-      ["friction", "restitution", "isTrigger", "layer", "mask"].map((name) => [
+      ["friction", "restitution", "isTrigger", "layer", "mask", "maskSource"].map((name) => [
         name,
         component.getVariable(name),
       ]),
@@ -1881,8 +1905,7 @@ export class PhysicsWorldSync {
       if (!source.shape) continue;
       const baked = this.geometry(component, "landscape").prepare(source.shape, component.transform, scale);
       const id = componentColliderPhysicsId(actor.guid, component.guid);
-      colliders.set(id, { id, bodyId, ...baked, friction: 0.5, restitution: 0, isTrigger: false,
-        layer: parseMeshCollisionLayer(component.getVariable("layer")), mask: parseMeshCollisionMask(component.getVariable("mask")) });
+      colliders.set(id, { id, bodyId, ...baked, friction: 0.5, restitution: 0, isTrigger: false, ...this.meshCollisionFilter(component) });
     }
   }
 
@@ -1935,8 +1958,7 @@ export class PhysicsWorldSync {
     colliders: Map<string, ColliderDesc>,
   ): void {
     for (const component of this.meshPhysicsComponents(actor)) {
-      const layer = parseMeshCollisionLayer(component.getVariable("layer"));
-      const mask = parseMeshCollisionMask(component.getVariable("mask"));
+      const { layer, mask } = this.meshCollisionFilter(component);
       for (const collision of this.resolvedMeshCollisions(component)) {
         const colliderId = componentColliderPhysicsId(
           actor.guid,
@@ -2007,7 +2029,7 @@ export class PhysicsWorldSync {
       restitution: 0,
       isTrigger: false,
       layer: 1,
-      mask: 0xffffffff,
+      mask: this.engineColliderMask(),
     });
   }
 
@@ -2082,7 +2104,7 @@ export class PhysicsWorldSync {
         restitution: collider.restitution,
         isTrigger: collider.isTrigger,
         layer: collider.layer,
-        mask: collider.mask,
+        mask: this.resolveCollisionMask(collider.layer, collider.mask, collider.maskSource),
         translation: baked.translation,
         rotation: baked.rotation,
       });
@@ -2350,6 +2372,7 @@ const COLLISION_DESCRIPTOR_VARIABLES = [
   "isTrigger",
   "layer",
   "mask",
+  "maskSource",
   "collisionMode",
   "meshKind",
   "assetGuid",

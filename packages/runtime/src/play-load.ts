@@ -33,6 +33,7 @@ export function runtimeOptionsFromLoadControl(
   | "assetCatalog"
   | "physicsWorld"
   | "gravity"
+  | "collisionMatrix"
   | "havokWasmUrl"
   | "playScene"
   | "playSceneGuid"
@@ -106,6 +107,7 @@ export function runtimeOptionsFromLoadControl(
     ...(msg.inputAssets !== undefined ? { inputAssets: msg.inputAssets } : {}),
     physicsWorld: msg.physicsWorld === "2d" ? "2d" : "3d",
     gravity: msg.gravity ?? [0, -9.81, 0],
+    ...(msg.collisionMatrix ? { collisionMatrix: msg.collisionMatrix } : {}),
     havokWasmUrl: msg.havokWasmUrl,
     playScene: msg.scene,
     playSceneGuid: msg.sceneAssetGuid,

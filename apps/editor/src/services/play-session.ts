@@ -667,6 +667,8 @@ export function startPlaySession(options: {
   postProcessingEnabled?: boolean;
   hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
+  /** Project Collision Matrix rows (`PhysicsProjectSettings.collisionMatrix`). */
+  collisionMatrix?: readonly number[];
   sortingLayers?: readonly string[];
   pixelPerfect?: boolean;
   /** Overlay 2DButton pick floor in CSS pixels. */
@@ -1572,6 +1574,7 @@ export function startPlaySession(options: {
     assetCatalog: options.assetCatalog,
     focusNavigation: options.focusNavigation,
     pixelsPerUnit: options.pixelsPerUnit,
+    collisionMatrix: options.collisionMatrix,
     texturePixelSizes: Object.fromEntries(options.texturePixelSizes ?? []),
     audioAssetGuids: options.audioAssetGuids ?? [...(options.audioLibrary?.audio.keys() ?? [])],
     materialParameterCatalog: buildMaterialParameterCatalog(options.materialDocuments ?? new Map(), options.materialFunctions),

@@ -4,6 +4,7 @@ import { uiControlPropertyRows } from "./ui-control-property-rows";
 import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, WATER_REMOVAL_SHAPES, waterKindForClass } from "@babylonslate/core";
 import { humanizePropertyLabel } from "@babylonslate/editor-kit";
 import { isOverlayLayoutClass } from "@babylonslate/core";
+import { normalizeCollisionMatrix, parseCollisionMaskSource, resolveCollisionMask } from "@babylonslate/core";
 import { overlayLayoutPropertyRows } from "./overlay-layout-property-rows";
 import type { PropertyRow } from "@babylonslate/editor-kit";
 import {
@@ -103,6 +104,8 @@ export type AssetPickRequest = {
 export type ComponentPropertyContext = {
   sortingLayers: readonly string[];
   collisionLayers: readonly string[];
+  /** Project Collision Matrix rows; Project Matrix colliders preview their row from it. */
+  collisionMatrix?: readonly number[];
   assetLabel: (guid: string | null | undefined) => string | undefined;
   assetType?: (guid: string | null | undefined) => string | undefined;
   modelMaterialSlots?: (guid: string) => readonly ModelMaterialSlot[];
@@ -295,22 +298,53 @@ function collisionLayerRow(
   };
 }
 
-function collidesWithRow(
+/**
+ * Collides With: the project Collision Matrix or the collider's own mask. In
+ * Project Matrix mode the Layers row shows the resolved mask, read only;
+ * switching to Custom starts from that mask so behaviour does not change.
+ */
+function collidesWithRows(
   actorId: string,
   component: SerializedComponent,
-  update: (property: string, value: unknown) => void,
-  collisionLayers: readonly string[],
-): PropertyRow {
-  const names = collisionLayerNames(collisionLayers);
-  return {
-    kind: "flags",
-    id: rowId(actorId, component.id, "mask"),
-    label: "Collides With",
-    value: asNumber(component.properties.mask, 0xffffffff),
-    bitCount: names.length,
-    labels: names,
-    onChange: (next) => update("mask", next),
-  };
+  update: ComponentPropertyUpdate,
+  context: Pick<ComponentPropertyContext, "collisionLayers" | "collisionMatrix">,
+): PropertyRow[] {
+  const names = collisionLayerNames(context.collisionLayers);
+  const source = parseCollisionMaskSource(component.properties.maskSource);
+  const layer = asNumber(component.properties.layer, 1);
+  const mask = asNumber(component.properties.mask, 0xffffffff);
+  const resolved = resolveCollisionMask(
+    layer,
+    mask,
+    source,
+    context.collisionMatrix ?? normalizeCollisionMatrix(undefined, names.length),
+  );
+  return [
+    {
+      kind: "enum",
+      id: rowId(actorId, component.id, "maskSource"),
+      label: "Collides With",
+      value: source,
+      options: [
+        { value: "project", label: "Project Matrix" },
+        { value: "custom", label: "Custom" },
+      ],
+      onChange: (next) =>
+        next === "custom"
+          ? update("maskSource", "custom", { mask: resolved })
+          : update("maskSource", "project"),
+    },
+    {
+      kind: "flags",
+      id: rowId(actorId, component.id, "mask"),
+      label: "Layers",
+      value: resolved,
+      bitCount: names.length,
+      labels: names,
+      disabled: source === "project",
+      onChange: (next) => update("mask", next),
+    },
+  ];
 }
 
 function asRgb(value: unknown): [number, number, number] | null {
@@ -468,7 +502,7 @@ function meshCollisionRows(
   if (mode === "none") return rows;
   rows.push(
     collisionLayerRow(actorId, component, update, context.collisionLayers),
-    collidesWithRow(actorId, component, update, context.collisionLayers),
+    ...collidesWithRows(actorId, component, update, context),
   );
   return rows;
 }
@@ -688,7 +722,7 @@ export function componentPropertyRows(
           onChange: (value) => update("enableCollision", value),
         },
         collisionLayerRow(actorId, component, update, context.collisionLayers),
-        collidesWithRow(actorId, component, update, context.collisionLayers),
+        ...collidesWithRows(actorId, component, update, context),
         ...(["castShadows", "receiveShadows"] as const).map((key): PropertyRow => ({
           kind: "boolean", id: rowId(actorId, component.id, key),
           label: key === "castShadows" ? "Cast Shadows" : "Receive Shadows",
@@ -728,7 +762,7 @@ export function componentPropertyRows(
         number("friction", "Friction", 0),
         number("restitution", "Restitution", 0, undefined, 1),
         collisionLayerRow(actorId, component, update, context.collisionLayers),
-        collidesWithRow(actorId, component, update, context.collisionLayers),
+        ...collidesWithRows(actorId, component, update, context),
       ];
     }
     case "MeshComponent": {
@@ -1315,7 +1349,7 @@ export function componentPropertyRows(
           update,
         ),
         collisionLayerRow(actorId, component, update, context.collisionLayers),
-        collidesWithRow(actorId, component, update, context.collisionLayers),
+        ...collidesWithRows(actorId, component, update, context),
         {
           kind: "boolean",
           id: rowId(actorId, component.id, "isTrigger"),

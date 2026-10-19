@@ -20,7 +20,8 @@ A Collider is simulated only on an actor that has a body: a Rigid Body, or a [Me
 | Friction | Grip on contact, 0 to 1. Default 0.5. |
 | Restitution | Bounciness, 0 to 1. Default 0. |
 | Layer | The collision layer the collider is on. |
-| Collides With | The layers it collides with. Default all. |
+| Collides With | **Project Matrix** (default) follows the project Collision Matrix; **Custom** uses Layers. |
+| Layers | The layers it collides with. Read only under Project Matrix, where it shows the matrix row. |
 | Is Trigger | Detects overlaps without blocking. Default off. |
 | Render In Game | Draws the shape in Play and exports. Default off. |
 | Transform | Position, rotation and scale of the shape relative to the actor. |
@@ -31,7 +32,7 @@ A Collider is simulated only on an actor that has a body: a Rigid Body, or a [Me
 - The shape kinds depend on the scene's **Physics World**, 3D or 2D. Scene Layers use 2D shapes.
 - A Collider is always drawn as a dashed outline in the editor.
 - A blocking Collider runs [Event On Hit](../scripting/class/event-on-hit.md). A trigger runs [Event On Begin Overlap](../scripting/class/event-on-begin-overlap.md) and [Event On End Overlap](../scripting/class/event-on-end-overlap.md).
-- Name layers in **Project Settings > Physics > Collision Layers**. Two colliders collide only if each one's Collides With includes the other's Layer.
+- Name layers in **Project Settings > Physics > Collision Layers** and choose which pairs collide in **Collision Matrix**. Two colliders collide only if each one's Layers includes the other's Layer. See [Collision](../physics/collision.md#collision-matrix).
 - An actor can have several Colliders.
 - In 2D, only Box 2D follows the Sprite's collision box. Circle and Capsule 2D keep the size you set. See [Sprites](../2d/sprites.md#collision).
 

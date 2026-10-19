@@ -453,6 +453,15 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
+  it("clears a Collision Matrix pair and keeps the collision layers", () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-physics"));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Default Collides With Default" }));
+    expect(updateProjectSettings).toHaveBeenCalledWith({
+      physics: { collisionLayers: ["Default"], collisionMatrix: [0xfffffffe] },
+    });
+  });
+
   it("picks the packaged startup scene from Scene assets only", async () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,

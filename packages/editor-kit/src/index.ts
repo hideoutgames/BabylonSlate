@@ -328,6 +328,7 @@ export {
   type ColorValue,
 } from "./color-field";
 export { ColorPicker, type ColorPickerProps } from "./color-picker";
+export { CollisionMatrixField, type CollisionMatrixFieldProps } from "./collision-matrix-field";
 export {
   FlagsField,
   DEFAULT_FLAG_BIT_COUNT,

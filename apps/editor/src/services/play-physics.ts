@@ -199,6 +199,7 @@ export function playLoadControl(options: {
   seed?: number;
   physicsWorld?: PhysicsWorldKind;
   gravity?: [number, number, number];
+  collisionMatrix?: readonly number[];
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
   sceneNavmeshBytes?: Record<string, Uint8Array>;
@@ -246,6 +247,7 @@ export function playLoadControl(options: {
     seed: options.seed,
     physicsWorld: physics.physicsWorld,
     gravity: physics.gravity,
+    ...(options.collisionMatrix ? { collisionMatrix: [...options.collisionMatrix] } : {}),
     havokWasmUrl: editorHavokWasmUrl(),
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,

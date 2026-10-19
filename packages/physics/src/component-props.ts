@@ -1,4 +1,4 @@
-import { packCollisionTriangleMesh } from "@babylonslate/core";
+import { packCollisionTriangleMesh, parseCollisionMaskSource, type CollisionMaskSource } from "@babylonslate/core";
 import { validateColliderShape } from "./collider-validation";
 import type { ColliderShape, ConstraintDesc, MotionType, Quat, Vec3 } from "./types";
 
@@ -79,6 +79,8 @@ export type ColliderProperties = {
   isTrigger: boolean;
   layer: number;
   mask: number;
+  /** "project" takes the mask from the project Collision Matrix at runtime. */
+  maskSource: CollisionMaskSource;
   /** Play/export world dashes; editor always draws them. Default false. */
   renderInGame: boolean;
 };
@@ -119,6 +121,7 @@ export function parseColliderProperties(
     isTrigger: source.isTrigger === true,
     layer: numberOr(source.layer, 1),
     mask: numberOr(source.mask, 0xffffffff),
+    maskSource: parseCollisionMaskSource(source.maskSource),
     renderInGame: source.renderInGame === true,
   };
 }

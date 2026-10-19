@@ -16,6 +16,7 @@ import {
   CatalogDialog,
   DisclosureSection,
   ClassPicker,
+  CollisionMatrixField,
   NamedListEditor,
   NumberField,
   assetRowIdentity,
@@ -137,7 +138,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
   {
     id: "physics",
     label: "Physics",
-    keywords: "collision layers collide mask havok",
+    keywords: "collision layers collide mask matrix havok",
   },
   { id: "focusNavigation", label: "Focus Navigation", keywords: "focus keyboard gamepad navigation repeat wrap input activate" },
   {
@@ -952,6 +953,7 @@ export function SettingsModal({
                 onChange={(collisionLayers) =>
                   updateProjectSettings({
                     physics: {
+                      ...projectDocument.settings.physics,
                       collisionLayers: collisionLayers.slice(
                         0,
                         MAX_COLLISION_LAYERS,
@@ -966,6 +968,22 @@ export function SettingsModal({
               />
               <FieldDescription>
                   Up to {MAX_COLLISION_LAYERS} layers.
+              </FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel>Collision Matrix</FieldLabel>
+              <CollisionMatrixField
+                labels={projectDocument.settings.physics.collisionLayers}
+                value={projectDocument.settings.physics.collisionMatrix}
+                onChange={(collisionMatrix) =>
+                  updateProjectSettings({
+                    physics: { ...projectDocument.settings.physics, collisionMatrix },
+                  })
+                }
+                data-testid="settings-collision-matrix"
+              />
+              <FieldDescription>
+                Ticked layers collide. Colliders whose Collides With is Project Matrix follow it.
               </FieldDescription>
             </Field>
           </FieldSet>

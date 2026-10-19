@@ -142,6 +142,8 @@ export type GameManifest = {
   sortingLayers: readonly string[];
   pixelPerfect: boolean;
   physicsWorld: "2d" | "3d";
+  /** Project Collision Matrix rows; absent in older games, where every collider keeps its own mask. */
+  collisionMatrix?: number[];
   assets: GameAssetIndexEntry[];
   /** Present only when `bundleDebugger` is true. */
   infiniteLoopDetection?: boolean;
@@ -173,6 +175,8 @@ export type ExportGameOptions = {
   sortingLayers?: readonly string[];
   pixelPerfect?: boolean;
   physicsWorld?: "2d" | "3d";
+  /** Project Collision Matrix rows (`PhysicsProjectSettings.collisionMatrix`). */
+  collisionMatrix?: readonly number[];
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   scripts: readonly ScriptBundleEntry[];

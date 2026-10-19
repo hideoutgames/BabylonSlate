@@ -944,6 +944,7 @@ function PrefabComponentDetails({
   sceneLayerClasses,
   sortingLayers,
   collisionLayers,
+  collisionMatrix,
   physicsWorld,
   viewportMode,
   pickerAssets,
@@ -962,6 +963,7 @@ function PrefabComponentDetails({
   sceneLayerClasses: ClassPickerEntry[];
   sortingLayers: readonly string[];
   collisionLayers: readonly string[];
+  collisionMatrix?: readonly number[];
   physicsWorld: "3d" | "2d";
   viewportMode: ViewportMode;
   pickerAssets: Array<{
@@ -1036,6 +1038,7 @@ function PrefabComponentDetails({
           rows={componentPropertyRows(PREFAB_ROOT_ID, component, onUpdate, {
             sortingLayers,
             collisionLayers,
+            collisionMatrix,
             assetLabel,
             assetType,
             modelMaterialSlots: (guid) => normalizeModelPayload(
@@ -1488,6 +1491,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           sceneLayerClasses={bobjectClassEntries.filter(entry => walkAncestry(entry.id, parentOf).includes("SceneLayerActor"))}
           sortingLayers={sortingLayers}
           collisionLayers={collisionLayers}
+          collisionMatrix={projectDocument?.settings.physics?.collisionMatrix}
           physicsWorld={physicsWorld}
           viewportMode={viewportMode}
           pickerAssets={pickerAssets}

@@ -74,6 +74,7 @@ export * from "./fog-volume";
 export * from "./outline-component";
 export * from "./deformer-component";
 export * from "./ragdoll";
+export * from "./collision-matrix";
 export * from "./movement";
 export * from "./water";
 export * from "./water-blend";

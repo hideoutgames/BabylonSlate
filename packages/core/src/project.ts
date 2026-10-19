@@ -1,3 +1,4 @@
+import { normalizeCollisionMatrix } from "./collision-matrix";
 import { normalizeRenderingQuality, type RenderingQuality } from "./render-quality";
 import { normalizeRenderingPipeline, type RenderPath, type GpuBackend } from "./render-path";
 import { lookAtRotation } from "./euler";
@@ -476,6 +477,12 @@ export interface PhysicsProjectSettings {
    * Havok membership/collide masks. Cap 32.
    */
   collisionLayers: string[];
+  /**
+   * One 32-bit row per collision layer: the layers it collides with. Symmetric;
+   * bits past the named layers stay set. Read by colliders whose Collides With
+   * is the project matrix ([collision-matrix.ts](./collision-matrix.ts)).
+   */
+  collisionMatrix: number[];
 }
 
 export const DEFAULT_TWO_D_PROJECT_SETTINGS: TwoDProjectSettings = {
@@ -512,6 +519,14 @@ function normalizeCollisionLayers(value: unknown): string[] {
     if (layers.length >= MAX_COLLISION_LAYERS) break;
   }
   return layers.length > 0 ? layers : [...DEFAULT_COLLISION_LAYERS];
+}
+
+function physicsSettings(physics: Partial<PhysicsProjectSettings> | undefined): PhysicsProjectSettings {
+  const collisionLayers = normalizeCollisionLayers(physics?.collisionLayers);
+  return {
+    collisionLayers,
+    collisionMatrix: normalizeCollisionMatrix(physics?.collisionMatrix, collisionLayers.length),
+  };
 }
 
 function normalizePositiveAspect(value: unknown, fallback: number): number {
@@ -648,9 +663,10 @@ function normalizeEditorUtilityObjects(value: unknown): string[] {
 
 export function normalizeProjectSettings(
   settings:
-    | (Partial<Omit<ProjectSettings, "audio" | "render">> & {
+    | (Partial<Omit<ProjectSettings, "audio" | "render" | "physics">> & {
         audio?: Partial<AudioProjectSettings>;
         render?: Partial<RenderProjectSettings>;
+        physics?: Partial<PhysicsProjectSettings>;
       })
     | undefined,
 ): ProjectSettings {
@@ -682,9 +698,7 @@ export function normalizeProjectSettings(
       pixelPerfect: twoD?.pixelPerfect === true,
       sortingLayers: normalizeSortingLayers(twoD?.sortingLayers),
     },
-    physics: {
-      collisionLayers: normalizeCollisionLayers(settings?.physics?.collisionLayers),
-    },
+    physics: physicsSettings(settings?.physics),
     textures: {
       maxTextureDimension:
         settings?.textures?.maxTextureDimension ??

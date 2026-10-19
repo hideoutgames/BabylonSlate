@@ -61,7 +61,7 @@ export function defaultComponentAuthoringProperties(
     case "MovementComponent":
       return { ...parseMovementProperties({}) };
     case "DynamicRuntimeMeshComponent":
-      return { materialGuid: null, enableCollision: false, castShadows: true, receiveShadows: true, layer: 1, mask: 0xffffffff };
+      return { materialGuid: null, enableCollision: false, castShadows: true, receiveShadows: true, layer: 1, mask: 0xffffffff, maskSource: "project" };
     case "MeshComponent":
       return {
         meshKind: "box",
@@ -69,6 +69,7 @@ export function defaultComponentAuthoringProperties(
         collisionMode: "none",
         layer: 1,
         mask: 0xffffffff,
+        maskSource: "project",
       };
     case "SpriteComponent":
       return { assetGuid: null, sortingLayer: "Default", orderInLayer: 0 };
@@ -178,12 +179,13 @@ export function defaultComponentAuthoringProperties(
       return { ...parseRigidBodyProperties({}) };
     case "ColliderComponent": {
       const defaults = parseColliderProperties({}, physicsWorld);
-      return { ...defaults };
+      // New colliders follow the project Collision Matrix; a missing key (older documents) stays Custom.
+      return { ...defaults, maskSource: "project" };
     }
     case "PhysicsConstraintComponent":
       return { ...parseConstraintProperties({}, physicsWorld) };
     case "RagdollComponent":
-      return { ...parseRagdollProperties({}) };
+      return { ...parseRagdollProperties({}), maskSource: "project" };
     default:
       return {};
   }

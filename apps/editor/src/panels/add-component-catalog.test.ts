@@ -130,6 +130,7 @@ describe("Add Component catalog", () => {
       collisionMode: "none",
       layer: 1,
       mask: 0xffffffff,
+      maskSource: "project",
     });
   });
 
@@ -206,6 +207,7 @@ describe("Add Component catalog", () => {
       isTrigger: false,
       layer: 1,
       mask: 4294967295,
+      maskSource: "project",
       renderInGame: false,
     });
     expect(defaultPropertiesFor("ColliderComponent", "2d").shape).toEqual({

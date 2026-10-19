@@ -6,14 +6,25 @@ Control which colliders touch, react to hits and overlaps in scripts, and query 
 
 Layers decide which colliders interact. Set them up in **Project Settings > Physics > Collision Layers**: **Add Layer** creates a named layer, up to 32. Every project starts with **Default**.
 
-Each Collider, collidable Mesh and Ragdoll has two settings:
+Each Collider, collidable Mesh, Dynamic Runtime Mesh and Ragdoll has these settings:
 
 | Setting | Description |
 | --- | --- |
 | Layer | The one layer this collider belongs to. |
-| Collides With | The layers it reacts to. All layers by default. |
+| Collides With | **Project Matrix** follows the project Collision Matrix for this collider's Layer. **Custom** uses the collider's own Layers. New components use Project Matrix; components saved before the matrix existed stay Custom. |
+| Layers | The layers it reacts to. With Project Matrix it shows the matrix row and is read only; switching to Custom starts from that row. |
 
-Two colliders interact only when each one's **Collides With** includes the other's **Layer**. If either side leaves the other out, they pass through each other and raise no events.
+Two colliders interact only when each one's **Layers** includes the other's **Layer**. If either side leaves the other out, they pass through each other and raise no events.
+
+### Collision Matrix
+
+**Project Settings > Physics > Collision Matrix** is a grid of every pair of layers. Clear a box and the two layers stop colliding for every Project Matrix collider on them. All pairs collide by default.
+
+Engine-made colliders (the Movement capsule, Blocking Volumes and tilemap collision) sit on **Default** and follow its matrix row.
+
+Layers are stored by position: removing or reordering a layer in the list moves the matrix rows with it, as it does for every collider's Layer.
+
+A script that sets a component's **Mask** switches it to Custom.
 
 ## Hits and overlaps
 

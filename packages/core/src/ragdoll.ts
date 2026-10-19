@@ -1,3 +1,5 @@
+import { parseCollisionMaskSource, type CollisionMaskSource } from "./collision-matrix";
+
 /** Serializable skeletal pose shared by the render host and worker physics. */
 export interface RagdollBonePose {
   name: string;
@@ -19,6 +21,7 @@ export interface RagdollProperties {
   restitution: number;
   layer: number;
   mask: number;
+  maskSource: CollisionMaskSource;
 }
 
 export function parseRagdollProperties(properties: Record<string, unknown>): RagdollProperties {
@@ -53,5 +56,6 @@ export function parseRagdollProperties(properties: Record<string, unknown>): Rag
     restitution: number("restitution", 0, 0, 1),
     layer: mask("layer", 1),
     mask: mask("mask", 0xffffffff),
+    maskSource: parseCollisionMaskSource(properties.maskSource),
   };
 }

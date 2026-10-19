@@ -81,6 +81,8 @@ export class RuntimePropertyWrites {
   refreshComponent(component: ActorComponent, propertyName?: string): void {
     const owner = component.owner;
     if (!owner || owner.destroyed) return;
+    // A written Collides With mask is the collider's own from then on, not the Collision Matrix's.
+    if (propertyName === "mask" && component.getVariable("maskSource") === "project") component.setVariable("maskSource", "custom");
     if (isUIControl2DClass(component.classId)) {
       this.host.uiControls().refresh(component);
       if (owner.sceneLayerId) this.host.overlay().applyLayouts();
@@ -113,7 +115,7 @@ export class RuntimePropertyWrites {
       return;
     }
     if (component.classId === "DynamicRuntimeMeshComponent" &&
-      (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask")) {
+      (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask" || propertyName === "maskSource")) {
       if (propertyName === "materialGuid" && slotId !== undefined) renderEmitter.emitMaterialAssignments([component], slotId, true);
       // Geometry collision changes are coalesced by the next physics step.
       return;

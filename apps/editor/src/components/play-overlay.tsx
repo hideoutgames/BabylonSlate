@@ -187,6 +187,8 @@ export interface PlayOverlayProps {
   postProcessingEnabled?: boolean;
   hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
+  /** Project Collision Matrix rows (`PhysicsProjectSettings.collisionMatrix`). */
+  collisionMatrix?: readonly number[];
   sortingLayers?: readonly string[];
   pixelPerfect?: boolean;
   touchMinTargetPx?: number;
@@ -301,6 +303,7 @@ function PlayOverlayView({
   postProcessingEnabled,
   hardwareScalingLevel,
   pixelsPerUnit,
+  collisionMatrix,
   sortingLayers,
   pixelPerfect,
   touchMinTargetPx,
@@ -586,6 +589,8 @@ function PlayOverlayView({
   sortingLayersRef.current = sortingLayers;
   const pixelsPerUnitRef = useRef(pixelsPerUnit);
   pixelsPerUnitRef.current = pixelsPerUnit;
+  const collisionMatrixRef = useRef(collisionMatrix);
+  collisionMatrixRef.current = collisionMatrix;
   const touchMinTargetPxRef = useRef(touchMinTargetPx);
   touchMinTargetPxRef.current = touchMinTargetPx;
   const pixelPerfectRef = useRef(pixelPerfect);
@@ -796,6 +801,7 @@ function PlayOverlayView({
           consoleRenderSettings: initialConsoleRenderRef.current,
           hardwareScalingLevel,
           pixelsPerUnit: pixelsPerUnitRef.current,
+          collisionMatrix: collisionMatrixRef.current,
           sortingLayers: sortingLayersRef.current,
           touchMinTargetPx: touchMinTargetPxRef.current,
           pixelPerfect: pixelPerfectRef.current,

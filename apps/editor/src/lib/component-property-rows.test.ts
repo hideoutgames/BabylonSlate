@@ -996,12 +996,19 @@ describe("componentPropertyRows", () => {
       layer.onChange("Enemy");
     }
     expect(update).toHaveBeenCalledWith("layer", 2);
+    // No Collides With source is Custom: the collider's own mask, editable.
+    expect(rows.find((row) => row.id.endsWith("-maskSource"))).toMatchObject({
+      kind: "enum",
+      label: "Collides With",
+      value: "custom",
+    });
     expect(rows.find((row) => row.id.endsWith("-mask"))).toMatchObject({
       kind: "flags",
-      label: "Collides With",
+      label: "Layers",
       value: 1,
       bitCount: 2,
       labels: ["Default", "Enemy"],
+      disabled: false,
     });
     expect(rows.find((row) => row.id.endsWith("-isTrigger"))).toMatchObject({
       kind: "boolean",
@@ -1013,6 +1020,19 @@ describe("componentPropertyRows", () => {
       label: "Render In Game",
       value: false,
     });
+  });
+
+  it("previews the project Collision Matrix row for a Project Matrix collider and keeps it on switching to Custom", () => {
+    const { rows, update } = rowsFor(
+      { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 0.5 }, layer: 2, mask: 0b11, maskSource: "project" } },
+      // Enemy does not collide with Enemy.
+      { collisionLayers: ["Default", "Enemy"], collisionMatrix: [0xffffffff, 0xfffffffd] },
+    );
+    expect(rows.find((row) => row.id.endsWith("-mask"))).toMatchObject({ kind: "flags", value: 0xfffffffd, disabled: true });
+    const source = rows.find((row) => row.id.endsWith("-maskSource"));
+    if (source?.kind !== "enum") throw new Error("Missing Collides With row");
+    source.onChange("custom");
+    expect(update).toHaveBeenCalledWith("maskSource", "custom", { mask: 0xfffffffd });
   });
 
   it.each([

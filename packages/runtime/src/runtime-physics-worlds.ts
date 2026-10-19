@@ -57,6 +57,8 @@ interface RuntimePhysicsWorldsOptions {
   tilesets: Map<string, TilesetPayload>;
   /** Project Water Blend Distance (`RenderProjectSettings.water.blendDistance`); default when absent. */
   waterBlendDistance?: number;
+  /** Project Collision Matrix (`PhysicsProjectSettings.collisionMatrix`); every world resolves "project" masks with it. */
+  collisionMatrix?: readonly number[];
 }
 
 const vec3 = (value: readonly number[]) => ({ x: value[0], y: value[1], z: value[2] });
@@ -108,6 +110,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
   private spriteAnimations = new Map<string, SpriteAnimationPayload>();
   private models = new Map<string, ModelPayload>();
   private _pixelsPerUnit = 100;
+  private readonly collisionMatrix: readonly number[] | undefined;
   /** Installed union: on-demand answers overlaid by the latest `loadModels` meshes. */
   private complexMeshes = new Map<string, CollisionTriangleMesh>();
   private lastProvidedComplexMeshes: ReadonlyMap<string, CollisionTriangleMesh> = new Map();
@@ -150,11 +153,13 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     this.tilemaps = options.tilemaps;
     this.tilesets = options.tilesets;
     this.waterBlendDistance = normalizeWaterBlendDistance(options.waterBlendDistance);
+    this.collisionMatrix = options.collisionMatrix;
     this.mainSync = new PhysicsWorldSync(
       createSoftwarePhysicsBackend(this.worldKind, vec3(this.currentGravity)),
       {
         actorFilter: (actor) => actor.sceneLayerId == null && this.host.mainActorReady(actor),
         observesContacts: this.observesContacts,
+        collisionMatrix: this.collisionMatrix,
         deferUnsupportedConstraints: !this.preferSoftwarePhysics,
       },
     );
@@ -276,6 +281,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     const physicsSync = new PhysicsWorldSync(backend, {
       actorFilter: (actor) => actor.sceneLayerId == null && this.host.mainActorReady(actor),
       observesContacts: this.observesContacts,
+      collisionMatrix: this.collisionMatrix,
     });
     this.nativeLayerBackend = layerBackend;
     // Layer worlds already created move to native worlds with their own gravity.
@@ -325,6 +331,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       sync = new PhysicsWorldSync(backend, {
         actorFilter: (actor) => actor.sceneLayerId == null && this.host.mainActorReady(actor),
         observesContacts: this.observesContacts,
+        collisionMatrix: this.collisionMatrix,
         deferUnsupportedConstraints: !this.preferSoftwarePhysics && backend instanceof SoftwarePhysicsBackend,
       });
       this.bindContent(sync);
@@ -565,6 +572,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       actorFilter: (actor) => actor.sceneLayerId === layerGuid && this.host.overlayActorReady(actor),
       actorsOf: (world) => sceneLayerActors(world, layerGuid),
       observesContacts: this.observesContacts,
+      collisionMatrix: this.collisionMatrix,
       deferUnsupportedConstraints: !this.preferSoftwarePhysics && backend instanceof SoftwarePhysicsBackend,
       skipEmptySteps: true,
     });

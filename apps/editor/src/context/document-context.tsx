@@ -2326,6 +2326,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           "2d"
             ? "2d"
             : "3d",
+        collisionMatrix: exportDocument?.settings.physics.collisionMatrix,
         infiniteLoopDetection:
           exportDocument?.settings.infiniteLoopDetection,
         loopCount: exportDocument?.settings.loopCount,
