@@ -1,5 +1,4 @@
 import { Button } from "@babylonslate/ui/components/button";
-import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@babylonslate/ui/components/tooltip";
 import { GamepadIcon, LocateFixedIcon, MousePointer2Icon, PauseIcon, PlayIcon, SquareIcon } from "lucide-react";
 import {
@@ -11,7 +10,7 @@ const controlProps = { [SIMULATION_CONTROL_ATTRIBUTE]: "" };
 
 /**
  * The running Simulation in the global toolbar's Play island: Pause, a red
- * Stop in place of Simulate, Game / Edit input and, away from its Scene,
+ * Stop in place of Simulate, a Game / Edit input toggle and, away from its Scene,
  * Return To Scene.
  */
 export function SimulationToolbarControls({
@@ -30,6 +29,7 @@ export function SimulationToolbarControls({
   onReturnToScene?: () => void;
 }) {
   const paused = controls?.paused ?? false;
+  const inputMode = controls?.inputMode ?? "game";
   const stopLabel = controls?.keepChanges
     ? "Stop Simulation and Keep Changes"
     : "Stop Simulation and Discard Changes";
@@ -75,30 +75,31 @@ export function SimulationToolbarControls({
         </TooltipTrigger>
         <TooltipContent>{stopLabel}</TooltipContent>
       </Tooltip>
-      <ToggleGroup
-        variant="outline"
-        size="sm"
-        spacing={0}
-        value={[controls?.inputMode ?? "game"]}
-        className="chrome-simulation-input"
-        aria-label="Simulation Input"
-        disabled={!controls || controls.inputPending || stopping}
-        onValueChange={(values) => {
-          const next = values[0];
-          if (next === "game" || next === "edit") controls?.setInputMode(next);
-        }}
-        data-testid="simulation-input-mode"
-        {...controlProps}
-      >
-        <ToggleGroupItem value="game" aria-label="Game Input" title="Game Input: the game receives keys, touch and the mouse" data-testid="simulation-input-game">
-          <GamepadIcon />
-          {phone ? null : "Game"}
-        </ToggleGroupItem>
-        <ToggleGroupItem value="edit" aria-label="Edit" title="Edit: select, inspect and move runtime objects" data-testid="simulation-input-edit">
-          <MousePointer2Icon />
-          {phone ? null : "Edit"}
-        </ToggleGroupItem>
-      </ToggleGroup>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              size="sm"
+              variant="ghost"
+              className="chrome-action-button chrome-simulation-input"
+              aria-label={inputMode === "game" ? "Game Input" : "Edit Input"}
+              data-input-mode={inputMode}
+              disabled={!controls || controls.inputPending || stopping}
+              onClick={() => controls?.setInputMode(inputMode === "game" ? "edit" : "game")}
+              data-testid="simulation-input-mode"
+              {...controlProps}
+            />
+          }
+        >
+          {inputMode === "game" ? <GamepadIcon data-icon={phone ? undefined : "inline-start"} /> : <MousePointer2Icon data-icon={phone ? undefined : "inline-start"} />}
+          {phone ? null : inputMode === "game" ? "Game" : "Edit"}
+        </TooltipTrigger>
+        <TooltipContent>
+          {inputMode === "game"
+            ? "Switch To Edit: select, inspect and move runtime objects"
+            : "Switch To Game: the game receives keys, touch and the mouse"}
+        </TooltipContent>
+      </Tooltip>
       {onReturnToScene ? (
         <Tooltip>
           <TooltipTrigger
