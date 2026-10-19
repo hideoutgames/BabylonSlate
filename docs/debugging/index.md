@@ -40,8 +40,25 @@ While a Simulation runs, its controls sit in the toolbar where **Simulate** was:
 | **Stop** (red) | Ends the Simulation. Its tooltip says whether your changes are kept or discarded. |
 | **Game** / **Edit** | **Game** sends keys, touch and the mouse to the game. **Edit** lets you select, inspect and move runtime objects with the **Move**, **Rotate** and **Scale** tools in the viewport. Clicking outside the game, or pressing Esc or Tab, also switches to **Edit**. |
 | **Return To Scene** | Appears when another tab is open, and brings the simulated scene back. |
+| **Debug Instance** | Appears while a Class is open. Picks which object's graph run you watch ([Watch a graph run](#watch-a-graph-run)). |
 
 The editor camera you move in **Edit** does not change the game camera. Authored documents stay read-only until you stop.
+
+## Watch a graph run
+
+While a Simulation runs, open a Class to see its graphs run for one object, the way a debugger would.
+
+**Debug Instance** lists every live object whose class is exactly the open Class: actors, components, the Game Instance and subsystems. An object of a subclass is not listed here; open the subclass instead. Objects with the same name show the start of their id after the name, and a component shows its actor in brackets. The list holds the first 128 objects.
+
+- It starts on the first object in the list, shows **None** when there are none, and moves to the first remaining object when the one you watch is destroyed. Choose **None** to stop watching; it stays on **None** until you open another Class.
+- Pick another object at any time. The graphs show only the object you picked.
+- Changing the open Class, or a Class that has no objects (a function library, for example), changes or removes the list.
+
+When a node runs for that object, its outline turns orange and fades over a quarter of a second. Each new run starts the fade again, so a node that runs every tick stays lit. The pins and wires involved light up with it: the execution wire that was taken, and the data wires the node read, including those that pass through [pure nodes](../scripting/index.md#nodes-and-pins). Nodes without execution pins never get an outline of their own. With reduced motion turned on in your system settings the highlight does not fade: it stays lit for the same time, then clears.
+
+Hover a data pin on a computer, or tap its name on a touch screen, to see the last value it held: `3.5`, a piece of text, or the class and id of an object. Numbers show four decimals at most and long text is cut after about 100 characters. A pin that has not run yet shows **No value yet**. A pin that is not wired shows the value typed on the node itself, so it has no tip. A pure node's pins show the value a node that ran read through them.
+
+The graphs stay read-only: watching never changes your Class or the running game. Only a Simulation compiles Class graphs for this. Play, Preview Build and exported games do not, so they pay nothing for it.
 
 ## Stats
 
