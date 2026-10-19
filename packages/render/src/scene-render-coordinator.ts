@@ -10,13 +10,17 @@ import { whenPresentationFenceClear } from "./presented-frame";
 import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
-import { heldThreadMs, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
+import { heldThreadMs, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 
 class PreparationChanged extends Error {}
 
-/** Bound on one preparation generation without observable readiness. */
+/** Bound on one preparation generation without readiness or compile progress. */
 const PREPARATION_TIMEOUT_MS = 10_000;
-/** Bound on one owner's preparation across every invalidation restart. */
+/**
+ * Bound on one owner's preparation across every invalidation restart without
+ * compile progress. Progress renews both; `SCENE_PREPARATION_CEILING_MS` bounds
+ * the whole preparation.
+ */
 const PREPARATION_TOTAL_TIMEOUT_MS = 60_000;
 /** An auxiliary view's wait before retrying a failed preparation. */
 const AUXILIARY_RETRY_MS = 1_000;
@@ -164,14 +168,33 @@ export class SceneRenderCoordinator {
       checkpoint = now;
       if (grant > 0) { creditLeft -= grant; deadline += grant; finalDeadline += grant; }
     };
-    const compiles = new DriverCompileWatch(this.scene.getEngine());
-    /** A driver still compiling reports completion only, so it renews both bounds. */
+    /**
+     * Created after the first presentation-fence wait (it asks every Engine
+     * effect for readiness, a synchronous GL query for one still linking), its
+     * ceiling counted from `started`, once a previous owner's preparation
+     * settled: it bounds this preparation alone.
+     */
+    let compiles!: DriverCompileWatch;
+    let started = 0;
+    /**
+     * Shaders that finished compiling since the last renewal, or a driver still
+     * compiling, renew both bounds: synchronous links each shorter than
+     * SCENE_THREAD_HELD_MS are progress the held-thread credit never sees. Only
+     * the ceiling ends a preparation that keeps progressing.
+     */
     const expired = () => {
-      if (performance.now() < deadline) return false;
-      if (!compiles.renew()) return true;
-      finalDeadline = performance.now() + PREPARATION_TOTAL_TIMEOUT_MS;
+      const now = performance.now();
+      if (now >= compiles.ceiling) return true;
+      if (now < deadline) return false;
+      if (!compiles.renew(now)) return true;
+      finalDeadline = now + PREPARATION_TOTAL_TIMEOUT_MS;
       restartDeadline();
       return false;
+    };
+    const timedOut = () => {
+      const limit = performance.now() >= compiles.ceiling
+        ? `its ${SCENE_PREPARATION_CEILING_MS / 1000} s limit` : `${PREPARATION_TIMEOUT_MS / 1000} s without progress`;
+      return new Error(`Scene rendering preparation timed out after ${limit}. ${compiles.describe()}`);
     };
     /** `credit: false` for a wait whose whole duration the caller already credits. */
     const check = (credit = true) => {
@@ -191,7 +214,7 @@ export class SceneRenderCoordinator {
         try { await previous.promise; }
         catch { /* previous owner's outcome */ }
       }
-      checkpoint = performance.now();
+      checkpoint = started = performance.now();
       creditLeft = SCENE_THREAD_HELD_BUDGET_MS;
       finalDeadline = checkpoint + PREPARATION_TOTAL_TIMEOUT_MS;
       restartDeadline();
@@ -203,9 +226,9 @@ export class SceneRenderCoordinator {
         // preparation time, so it extends both bounds.
         const waited = await whenPresentationFenceClear(this.scene.getEngine(), () => check(false));
         if (waited > 0) { finalDeadline += waited; restartDeadline(); }
+        compiles ??= new DriverCompileWatch(this.scene.getEngine(), started);
         flushSceneLatticeDeformers(this.scene);
-        if (expired())
-          throw new Error("Scene rendering preparation timed out.");
+        if (expired()) throw timedOut();
         const camera = this.camera();
         if (!camera) throw new Error("Scene rendering requires an active camera.");
         const snapshot = outputSnapshot(this.scene, camera);
@@ -215,8 +238,7 @@ export class SceneRenderCoordinator {
           // An invalidated build is stale: abort it and rebuild for the new generation.
           if (pending.generation !== iteration)
             throw new PreparationChanged("Scene rendering was invalidated during preparation.");
-          if (expired())
-            throw new Error("Scene rendering preparation timed out.");
+          if (expired()) throw timedOut();
           const current = outputSnapshot(this.scene, camera);
           if (this.camera() !== camera || snapshot.some((value, index) => value !== current[index]))
             throw new PreparationChanged("Scene camera or output changed during rendering preparation.");

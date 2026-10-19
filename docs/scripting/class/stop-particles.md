@@ -22,4 +22,4 @@ Stops the particle systems on an actor from emitting.
 ## Notes
 
 - Stops every particle component on the actor. Particles already in flight finish their lifetime.
-- If **Actor** is connected to a reference that is empty when the node runs, nothing happens.
+- If **Actor** is connected to a reference that is empty when the node runs, nothing happens and an error is logged.

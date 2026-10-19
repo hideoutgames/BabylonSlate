@@ -27,7 +27,7 @@ function tweenNode(
     pins: () => [
       pin("execIn", "Exec", "in", EXEC),
       pin("execOut", "Completed", "out", EXEC),
-      { ...pin("target", "Target", "in", target ?? value), ...(!target ? { reference: "required" as const } : {}) },
+      { ...pin("target", "Target", "in", target ?? value), ...(target ? { subject: true } : { reference: "required" as const }) },
       pin("a", "A", "in", value, "data", true, value.kind === "transform" ? identityTransform : defaultJsValue(value)),
       pin("b", "B", "in", value, "data", true, value.kind === "transform" ? identityTransform : defaultJsValue(value)),
       pin("duration", "Duration", "in", FLOAT, "data", true, 2),

@@ -85,6 +85,13 @@ import { WaterWavesBlock } from "./water-waves-block";
 import { registerLatticeShadowAdapter } from "./lattice-deformer-binding";
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { LinearColorBlock } from "./linear-color-block";
+import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
+
+/** Custom GLSL's hidden probe effect, from when the effect exists to its compile. */
+const CUSTOM_GLSL_COMPILE_TIMEOUT_MS = 15_000;
+/** The wait for blocking textures, which defer the probe effect. */
+const CUSTOM_GLSL_TEXTURE_TIMEOUT_MS = 120_000;
 
 export type AuthoredSurfaceVariant = "outlineMask" | "captureDepth" | "captureNormal" | "shadowDepth";
 
@@ -765,8 +772,18 @@ export function compileMaterialPlan(
           settleBuild([materialGlslDiagnostic(String(error), plan.operations)]);
           return;
         }
-        const dependenciesStarted = Date.now();
-        let started = dependenciesStarted;
+        // Where links are synchronous the readiness probe links the probe effect
+        // before it returns; a link that held the thread is not charged, and both
+        // bounds start again while shaders keep finishing on the Engine. Each has
+        // its own watch, so one bound's renewal never spends the other's progress.
+        // On a parallel-compile driver a probe effect still pending renews either
+        // bound until it has been pending SCENE_DRIVER_COMPILE_TIMEOUT_MS
+        // (DriverCompileWatch), so a hung compile fails after about 75 s, not 15 s.
+        const dependencyBound = createHeldThreadBound(CUSTOM_GLSL_TEXTURE_TIMEOUT_MS, undefined, renewOnCompileProgress(scene.getEngine()));
+        const compileWatch = new DriverCompileWatch(scene.getEngine());
+        const compileProgress = (now: number) => compileWatch.renew(now);
+        let compileBound = createHeldThreadBound(CUSTOM_GLSL_COMPILE_TIMEOUT_MS, undefined, compileProgress);
+        let awaitingEffect = false;
         const check = () => {
           if (disposed) return;
           try {
@@ -783,19 +800,26 @@ export function compileMaterialPlan(
             }
             // Blocking textures defer effect creation. The compile budget starts
             // with the effect; a separate, longer bound covers the dependency wait.
+            // It is checked at every poll, so a long compile never reads as one held gap.
+            const dependenciesExpired = dependencyBound.expired();
             if (shaderProbe && !subMesh?.effect) {
-              if (Date.now() - dependenciesStarted > 120000) {
+              if (dependenciesExpired) {
                 finishShaderCheck();
                 buildState = "failed";
                 settleBuild([{ code: "material.missingTexture", message: "Material textures did not become ready", severity: "error" }]);
                 return;
               }
-              started = Date.now();
+              compileBound = createHeldThreadBound(CUSTOM_GLSL_COMPILE_TIMEOUT_MS, undefined, compileProgress);
+              awaitingEffect = true;
+            } else if (awaitingEffect) {
+              // The compile budget starts with the effect: shaders that finished while textures loaded renew nothing.
+              awaitingEffect = false;
+              compileWatch.restart();
             }
             const effect = subMesh?.effect ?? effects.find((entry) => entry?.getCompilationError());
             const error = effect?.getCompilationError();
             if (error && effect?.allFallbacksProcessed()) throw new Error(error);
-            if (Date.now() - started > 15000) throw new Error("Custom GLSL shader compilation timed out");
+            if (compileBound.expired()) throw new Error("Custom GLSL shader compilation timed out");
             shaderTimer = setTimeout(check, 16);
           } catch (error) {
             const diagnostic = materialGlslDiagnostic(error instanceof Error ? error.message : String(error), plan.operations, failedShaderEffect ?? shaderProbe?.subMeshes[0]?.effect ?? shaderPostProcess?.getEffect() ?? shaderParticles?.getCustomEffect());
@@ -1543,6 +1567,11 @@ function writeLinearSurfaceColor(
 /**
  * Pre-warm a compiled material so the first draw does not stall.
  * Surface materials compile against the mesh they will actually be drawn with.
+ * The compile may take `SCENE_SHADER_WARM_TIMEOUT_MS` plus the time it held the
+ * thread, up to one `SCENE_THREAD_HELD_BUDGET_MS`: where links are synchronous
+ * one poll links the effect before it returns, and a plain timer would fire
+ * overdue ahead of the next poll. The bound starts again while shaders keep
+ * finishing on the Engine (`renewOnCompileProgress`), up to its ceiling.
  */
 export async function prewarmMaterial(
   material: NodeMaterial,
@@ -1558,10 +1587,17 @@ export async function prewarmMaterial(
   // do not start Babylon's uncancellable compilation poll before it finishes.
   if (material.attachedBlocks.some((block) => block instanceof TextMaterialBlock && !block.isReady(mesh))) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = createHeldThreadBound(SCENE_SHADER_WARM_TIMEOUT_MS, undefined, renewOnCompileProgress(mesh.getEngine()));
   try {
     await Promise.race([
       material.forceCompilationAsync(mesh),
-      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Material shader compilation timed out")), 4000); }),
+      new Promise<never>((_, reject) => {
+        const check = () => {
+          if (bound.expired()) reject(new Error("Material shader compilation timed out"));
+          else timer = setTimeout(check, 16);
+        };
+        timer = setTimeout(check, 16);
+      }),
     ]);
   } finally {
     if (timer !== undefined) clearTimeout(timer);

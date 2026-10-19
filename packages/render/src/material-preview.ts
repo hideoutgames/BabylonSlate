@@ -34,10 +34,11 @@ import type { MaterialLibrary } from "./material-library";
 import type { AttachedPostProcessStack, PostProcessStackDiagnostic } from "./post-process-material";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { createPreviewLighting } from "./preview-lighting";
-import { previewMeshesReady } from "./preview-readiness";
+import { previewMeshesReady, waitUntilReady } from "./preview-readiness";
 import { createText2DMesh } from "./text2d-mesh";
 import { resolveSceneRenderingQuality } from "./render-settings";
-import { SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { DriverCompileWatch } from "./driver-compile";
+import type { HeldThreadBudget } from "./stall-deadline";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
 
@@ -325,23 +326,23 @@ export function createMaterialPreviewScene(
 /**
  * Prepare the preview renderer for the camera's current output target and draw
  * one validated frame into it. False when the frame never became presentable
- * before the shader warm deadline or `isCurrent` turned false.
+ * before the shader warm deadline (not charged for time a frame held the
+ * thread, up to `budget`, and renewed while `compiles` sees shaders finish, see
+ * `waitUntilReady`) or `isCurrent` turned false.
  */
 export async function renderPreviewFrame(
   host: MaterialPreviewScene,
   isCurrent: () => boolean = () => true,
+  budget?: HeldThreadBudget,
+  compiles?: DriverCompileWatch,
 ): Promise<boolean> {
   await host.renderer.prepare(() => {
     if (!isCurrent()) throw new Error("Preview frame was superseded.");
   });
-  const deadline = performance.now() + SCENE_SHADER_WARM_TIMEOUT_MS;
-  while (isCurrent()) {
+  return waitUntilReady(() => {
     const frame = host.renderer.render();
-    if (frame.rendered && frame.readyForPresentation) return true;
-    if (performance.now() >= deadline) return false;
-    await new Promise<void>((resolve) => setTimeout(resolve, 16));
-  }
-  return false;
+    return frame.rendered && frame.readyForPresentation;
+  }, isCurrent, undefined, budget, compiles ?? new DriverCompileWatch(host.scene.getEngine()));
 }
 
 /** A preview output target the FrameGraph can draw into: color plus depth. */

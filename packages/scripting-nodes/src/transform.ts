@@ -7,6 +7,7 @@ import {
   ROTATOR,
   actorRef,
 } from "@babylonslate/scripting";
+import { subject } from "./self-pin";
 
 export const transformNodes: NodeDefinition[] = [
   {
@@ -15,7 +16,7 @@ export const transformNodes: NodeDefinition[] = [
     category: "transform",
     pure: true,
     pins: () => [
-      pin("target", "Target", "in", actorRef("Actor")),
+      subject(pin("target", "Target", "in", actorRef("Actor"))),
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
@@ -29,7 +30,7 @@ export const transformNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "Target", "in", actorRef("Actor")),
+      subject(pin("target", "Target", "in", actorRef("Actor"))),
       pin("location", "Location", "in", VEC3),
     ],
     codegen: (ctx) => {
@@ -44,7 +45,7 @@ export const transformNodes: NodeDefinition[] = [
     category: "transform",
     pure: true,
     pins: () => [
-      pin("target", "Target", "in", actorRef("Actor")),
+      subject(pin("target", "Target", "in", actorRef("Actor"))),
       pin("out", "Out", "out", ROTATOR),
     ],
     codegen: (ctx) => ({
@@ -58,7 +59,7 @@ export const transformNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "Target", "in", actorRef("Actor")),
+      subject(pin("target", "Target", "in", actorRef("Actor"))),
       pin("rotation", "Rotation", "in", ROTATOR),
     ],
     codegen: (ctx) => {
@@ -73,7 +74,7 @@ export const transformNodes: NodeDefinition[] = [
     category: "transform",
     pure: true,
     pins: () => [
-      pin("target", "Target", "in", actorRef("Actor")),
+      subject(pin("target", "Target", "in", actorRef("Actor"))),
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
@@ -87,7 +88,7 @@ export const transformNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "Target", "in", actorRef("Actor")),
+      subject(pin("target", "Target", "in", actorRef("Actor"))),
       pin("scale", "Scale", "in", VEC3),
     ],
     codegen: (ctx) => {
@@ -102,7 +103,7 @@ export const transformNodes: NodeDefinition[] = [
     category: "transform",
     pure: true,
     pins: () => [
-      pin("target", "Target", "in", actorRef("Actor")),
+      subject(pin("target", "Target", "in", actorRef("Actor"))),
       pin("out", "Out", "out", TRANSFORM),
     ],
     codegen: (ctx) => ({
@@ -116,7 +117,7 @@ export const transformNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "Target", "in", actorRef("Actor")),
+      subject(pin("target", "Target", "in", actorRef("Actor"))),
       pin("transform", "Transform", "in", TRANSFORM),
     ],
     codegen: (ctx) => {
@@ -131,7 +132,7 @@ export const transformNodes: NodeDefinition[] = [
     category: "transform",
     pure: true,
     pins: () => [
-      pin("target", "Target", "in", actorRef("Actor")),
+      subject(pin("target", "Target", "in", actorRef("Actor"))),
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
@@ -144,7 +145,7 @@ export const transformNodes: NodeDefinition[] = [
     category: "transform",
     pure: true,
     pins: () => [
-      pin("target", "Target", "in", actorRef("Actor")),
+      subject(pin("target", "Target", "in", actorRef("Actor"))),
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
@@ -157,7 +158,7 @@ export const transformNodes: NodeDefinition[] = [
     category: "transform",
     pure: true,
     pins: () => [
-      pin("target", "Target", "in", actorRef("Actor")),
+      subject(pin("target", "Target", "in", actorRef("Actor"))),
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
@@ -171,7 +172,7 @@ export const transformNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "Target", "in", actorRef("Actor")),
+      subject(pin("target", "Target", "in", actorRef("Actor"))),
       pin("offset", "Offset", "in", VEC3),
     ],
     codegen: (ctx) => {

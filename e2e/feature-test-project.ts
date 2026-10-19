@@ -76,18 +76,63 @@ export async function reopenFeatureTestProject(page: Page, timeout = LONG_MS): P
 }
 
 /**
+ * Opening a Scene while another one has unsaved edits raises the Unsaved
+ * Documents prompt before anything loads. Fresh FeatureTest scenes are clean,
+ * so a prompt is an unexpected state and fails the route with the dirty names;
+ * a route that leaves edits behind on purpose (a fly-through) discards them.
+ *
+ * The answer is a plain click, never `page.addLocatorHandler`: while the next
+ * Scene realizes, the main thread is busy for about a second, and Playwright
+ * runs the handler a second time on the dialog as it unmounts. That second run
+ * waits forever for a Discard button that no longer exists and stalls every
+ * later assertion until the test times out, although the editor opened the
+ * Scene in seconds.
+ *
+ * The workspace check relies on opening through `openAssetFromBrowser`: its
+ * Content Browser tab is active, which hides the previous Scene's workspace,
+ * so a visible Scene workspace means the new Scene is the active one.
+ */
+async function awaitSceneOpenPrompt(
+  page: Page,
+  scene: FeatureTestSceneName,
+  discardUnsaved: boolean,
+  deadline: number,
+): Promise<void> {
+  const workspace = page.getByTestId("document-workspace-scene");
+  const prompt = page.getByTestId("dirty-close-dialog");
+  for (;;) {
+    if (await prompt.isVisible()) {
+      if (!discardUnsaved) {
+        throw new Error(`Opening ${scene} asked to Save or Discard unsaved documents: ${await prompt.innerText()}`);
+      }
+      await page.getByTestId("dirty-discard").click();
+      await expect(prompt).toHaveCount(0, { timeout: Math.max(1_000, deadline - Date.now()) });
+      return;
+    }
+    if (await workspace.isVisible()) return;
+    if (Date.now() > deadline) return;
+    await page.waitForTimeout(100);
+  }
+}
+
+/**
  * Open a FeatureTest scene and wait for its viewport to finish loading. A
  * loading-deadline miss on a slow software-GL runner is retried once and
- * counted; a second failure fails the route.
+ * counted; a second failure fails the route. `discardUnsaved` answers the
+ * Unsaved Documents prompt with Discard instead of failing on it.
  */
 export async function openFeatureTestScene(
   page: Page,
   scene: FeatureTestSceneName,
   timeout = SCENE_OPEN_MS,
+  options: { discardUnsaved?: boolean } = {},
 ): Promise<{ readyMs: number; loadRetries: number }> {
   const started = Date.now();
   await openAssetFromBrowser(page, FEATURE_TEST_SCENES[scene]);
-  await expect(page.getByTestId("document-workspace-scene")).toBeVisible({ timeout });
+  await awaitSceneOpenPrompt(page, scene, options.discardUnsaved === true, started + timeout);
+  await expect(page.getByTestId("document-workspace-scene")).toBeVisible({
+    timeout: Math.max(1_000, started + timeout - Date.now()),
+  });
   const panel = page.getByTestId("viewport-panel");
   await expect(page.getByTestId("viewport-canvas")).toBeVisible({ timeout });
   const retry = page.getByTestId("scene-loading-dialog").getByRole("button", { name: "Retry" });

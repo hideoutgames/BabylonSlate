@@ -10,6 +10,7 @@ import {
   type NodeDefinition,
   type PinType,
 } from "@babylonslate/scripting";
+import { subject } from "./self-pin";
 
 function setter(
   kind: "Float" | "Color" | "Texture",
@@ -23,7 +24,7 @@ function setter(
     pins: () => [
       pin("execIn", "Exec", "in", EXEC),
       pin("execOut", "Then", "out", EXEC),
-      pin("material", "Material", "in", objectRef("MaterialObject")),
+      subject(pin("material", "Material", "in", objectRef("MaterialObject"))),
       { ...pin("name", "Name", "in", STRING), defaultValue: "" },
       pin("value", "Value", "in", valueType),
     ],
@@ -45,7 +46,7 @@ function getter(
     category: "material",
     pure: true,
     pins: () => [
-      pin("material", "Material", "in", objectRef("MaterialObject")),
+      subject(pin("material", "Material", "in", objectRef("MaterialObject"))),
       { ...pin("name", "Name", "in", STRING), defaultValue: "" },
       pin("value", "Value", "out", valueType),
       pin("found", "Found", "out", BOOL),
@@ -64,7 +65,7 @@ function resetter(kind: "Float" | "Color" | "Texture"): NodeDefinition {
     pins: () => [
       pin("execIn", "Exec", "in", EXEC),
       pin("execOut", "Then", "out", EXEC),
-      pin("material", "Material", "in", objectRef("MaterialObject")),
+      subject(pin("material", "Material", "in", objectRef("MaterialObject"))),
       { ...pin("name", "Name", "in", STRING), defaultValue: "" },
       pin("success", "Success", "out", BOOL),
     ],
@@ -86,7 +87,7 @@ export const materialNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "Exec", "in", EXEC),
       pin("execOut", "Then", "out", EXEC),
-      pin("target", "Target", "in", objectRef("ActorComponent")),
+      subject(pin("target", "Target", "in", objectRef("ActorComponent"))),
       pin("instance", "Instance", "in", assetRef("MaterialInstance")),
       pin("material", "Material", "out", objectRef("MaterialObject")),
     ],
@@ -102,7 +103,7 @@ export const materialNodes: NodeDefinition[] = [
     category: "material",
     pure: true,
     pins: () => [
-      pin("material", "Material", "in", objectRef("MaterialObject")),
+      subject(pin("material", "Material", "in", objectRef("MaterialObject"))),
       pin("asset", "Asset", "out", assetRef("Material")),
     ],
     codegen: (ctx) => ({
@@ -115,7 +116,7 @@ export const materialNodes: NodeDefinition[] = [
     category: "material",
     pure: true,
     pins: () => [
-      pin("owner", "Owner", "in", objectRef("BObject")),
+      subject(pin("owner", "Owner", "in", objectRef("BObject"))),
       { ...pin("entryId", "Entry ID", "in", STRING), defaultValue: "" },
       pin("material", "Material", "out", objectRef("MaterialObject")),
     ],

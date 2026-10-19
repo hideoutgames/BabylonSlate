@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { MeshBuilder, NullEngine, Scene, type AbstractMesh, type Effect } from "@babylonjs/core";
-import { COMPILE_AHEAD_LIMIT, DriverCompileWatch, pendingDriverCompiles, requestCompilesAhead } from "./driver-compile";
-import { SCENE_DRIVER_COMPILE_TIMEOUT_MS } from "./stall-deadline";
+import { FreeCamera, MeshBuilder, NullEngine, ObjectRenderer, Scene, Vector3, type AbstractMesh, type Effect } from "@babylonjs/core";
+import {
+  COMPILE_AHEAD_LIMIT, DriverCompileWatch, pendingDriverCompiles, readinessScanMeshes, requestCompilesAhead,
+} from "./driver-compile";
+import { SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 
 function engineWith(parallel: boolean) {
   const engine = new NullEngine();
@@ -60,13 +62,93 @@ describe("driver compile watch", () => {
     expect(watch.renew(SCENE_DRIVER_COMPILE_TIMEOUT_MS)).toBe(false);
   });
 
-  it("does not renew once nothing is pending", () => {
+  it("renews past the compile bound for a stuck pending set while other variants finish, and not after", () => {
+    const { engine, add } = setup();
+    const watch = new DriverCompileWatch(engine);
+    add("water");
+    expect(watch.renew(0)).toBe(true);
+    add("finished", { ready: true });
+    expect(watch.renew(SCENE_DRIVER_COMPILE_TIMEOUT_MS + 1_000)).toBe(true);
+    expect(watch.renew(SCENE_DRIVER_COMPILE_TIMEOUT_MS + 2_000)).toBe(false);
+  });
+
+  it("renews once for a compile that finished, and not again while nothing is pending or finishing", () => {
     const { engine, add } = setup();
     const watch = new DriverCompileWatch(engine);
     const effect = add("done");
     expect(watch.renew(0)).toBe(true);
     effect.ready = true;
+    expect(watch.renew(1)).toBe(true);
+    expect(watch.renew(2)).toBe(false);
+  });
+
+  // Synchronous links (SwiftShader; WebKit, which exposes parallel compile but links inside the call) never leave
+  // anything pending: variants that finished since the last renewal are the only sign of progress.
+  it.each([false, true])("renews for variants that finished since the last renewal (parallel compile exposed: %s)", (parallel) => {
+    const { engine, add } = setup(parallel);
+    add("before the watch", { ready: true });
+    const watch = new DriverCompileWatch(engine);
+    expect(watch.renew(0)).toBe(false);
+    add("first link", { ready: true });
+    add("second link", { ready: true });
+    expect(watch.renew(1)).toBe(true);
+    expect(watch.renew(2)).toBe(false);
+    add("third link", { ready: true });
+    expect(watch.renew(3)).toBe(true);
+    expect(watch.describe()).toContain("Shaders: 3 compiled while waiting, 0 still compiling, 4 on the Engine");
+  });
+
+  it("does not count a released variant compiled again as progress", () => {
+    const { engine, add } = setup(false);
+    const effects = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
+    const watch = new DriverCompileWatch(engine);
+    add("variant", { ready: true });
+    expect(watch.renew(0)).toBe(true);
+    delete effects["variant"];
+    add("variant", { ready: true });
     expect(watch.renew(1)).toBe(false);
+  });
+
+  // A watch shared by sequential waits restarts at each one: only that wait's progress renews it.
+  it("renews a restarted watch only for variants that finish after the restart", () => {
+    const { engine, add } = setup(false);
+    const watch = new DriverCompileWatch(engine);
+    add("before the restart", { ready: true });
+    watch.restart();
+    expect(watch.renew(0)).toBe(false);
+    add("after the restart", { ready: true });
+    expect(watch.renew(1)).toBe(true);
+  });
+
+  it("keeps a hung pending set's age across restarts, so each wait does not grant it the compile bound again", () => {
+    const { engine, add } = setup();
+    const watch = new DriverCompileWatch(engine);
+    add("water");
+    expect(watch.renew(0)).toBe(true);
+    watch.restart();
+    expect(watch.renew(SCENE_DRIVER_COMPILE_TIMEOUT_MS / 2)).toBe(true);
+    watch.restart();
+    expect(watch.renew(SCENE_DRIVER_COMPILE_TIMEOUT_MS + 1_000)).toBe(false);
+  });
+
+  it("ends at the ceiling its owner gives it", () => {
+    const { engine, add } = setup();
+    const watch = new DriverCompileWatch(engine, 0, 90_000);
+    add("finished", { ready: true });
+    expect(watch.renew(89_999)).toBe(true);
+    add("finished later", { ready: true });
+    expect(watch.renew(90_000)).toBe(false);
+  });
+
+  it("renews nothing from its ceiling on, however much keeps compiling", () => {
+    const { engine, add } = setup();
+    const watch = new DriverCompileWatch(engine, 0);
+    expect(watch.ceiling).toBe(SCENE_PREPARATION_CEILING_MS);
+    add("pending");
+    add("finished", { ready: true });
+    expect(watch.renew(SCENE_PREPARATION_CEILING_MS - 1)).toBe(true);
+    add("finished later", { ready: true });
+    expect(watch.renew(SCENE_PREPARATION_CEILING_MS)).toBe(false);
   });
 });
 
@@ -153,5 +235,22 @@ describe("compiles requested ahead of a readiness scan", () => {
     ahead(requested, (head) => { rest.push(head.name); return false; });
     expect(probed).toEqual([]);
     expect(rest).toEqual([]);
+  });
+
+  it("walks the meshes a renderer without a render list scans: outside a frame graph, the scene's active ones", () => {
+    const { engine } = engineWith(true);
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 0, -5), scene);
+    camera.setTarget(Vector3.Zero());
+    const inView = MeshBuilder.CreateBox("in view", {}, scene);
+    MeshBuilder.CreateBox("behind the camera", {}, scene).position.z = -20;
+    scene.render();
+    const renderer = new ObjectRenderer("probe", scene);
+    renderer.renderList = null;
+    expect(readinessScanMeshes(renderer, scene)).toEqual([inView]);
+    renderer.renderList = [inView];
+    expect(readinessScanMeshes(renderer, scene)).toBe(renderer.renderList);
+    renderer.dispose();
   });
 });

@@ -30,6 +30,19 @@ The **Debug** menu next to **Play** decides which controls appear. Set it before
 
 **Simulate** needs an open world scene. Whether its changes are kept when you stop is set by **Keep Simulation Changes** in **Engine Settings > Debugger**.
 
+## Simulate controls
+
+While a Simulation runs, its controls sit in the toolbar where **Simulate** was:
+
+| Control | Does |
+| --- | --- |
+| **Pause** / **Resume** | Freezes gameplay so you can inspect values that would otherwise keep changing. |
+| **Stop** (red) | Ends the Simulation. Its tooltip says whether your changes are kept or discarded. |
+| **Game** / **Edit** | **Game** sends keys, touch and the mouse to the game. **Edit** lets you select, inspect and move runtime objects with the **Move**, **Rotate** and **Scale** tools in the viewport. Clicking outside the game, or pressing Esc or Tab, also switches to **Edit**. |
+| **Return To Scene** | Appears when another tab is open, and brings the simulated scene back. |
+
+The editor camera you move in **Edit** does not change the game camera. Authored documents stay read-only until you stop.
+
 ## Stats
 
 Stats shows **fps**, the frame time, and the **script** and **physics** time of the last tick. When script and physics together take more than 8 ms, Stats shows **over 8 ms budget**. Add more rows with the `stat unit`, `stat memory`, `stat draws` and `stat threads` [console commands](console.md).

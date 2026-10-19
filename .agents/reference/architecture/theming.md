@@ -50,7 +50,7 @@ Editor and launcher theme tokens, semantic color families, density, canvas and o
 - Pins (`--pin-*`): arrays use the element color, maps the value color; resolved wildcards paint the connected type; `--pin-wildcard` when unbound.
 - Node title roles (`--node-*`) cover events, call parent, functions, pure, flow, variables, latent, debug, Development/Editor Only tape and Behaviour Tree roles. Particle stages map onto node roles through `PARTICLE_STAGE_ROLE` so Basic Emitter and Particle Graph agree.
 - Asset kinds (`--asset-*`) are at least 25° apart in hue; tiles tint only the thumbnail well border. Unknown types use a file glyph and `--muted-foreground`.
-- Status: `--destructive`, `--success`, `--warning`, `--play` / `--play-foreground`. Trace uses `--trace-*`.
+- Status: `--destructive`, `--success`, `--warning`, `--play` / `--play-foreground`, and `--stop` / `--stop-foreground` for the chrome Stop that replaces Simulate while a Simulation runs. Trace uses `--trace-*`.
 - Axes: `--axis-x` = destructive, `--axis-y` = success, `--axis-z` an independent blue (not `--primary`, which is ink). Babylon gizmos cannot read CSS, so `GIZMO_AXIS_COLORS` in [`gizmo-host.ts`](../../../packages/render/src/gizmo-host.ts) hardcodes matching `Color3`s; keep them in sync.
 
 ## Brand assets

@@ -8,6 +8,7 @@ import {
   type SerializedScene,
   type SerializedTransform,
 } from "@babylonslate/core";
+import { stableStringify } from "@babylonslate/assets";
 import { mergePrefabComponents } from "./prefab-preview";
 
 export const PREFAB_TRANSFORM_OVERRIDE = "transform";
@@ -81,8 +82,14 @@ function cloneTransform(
   };
 }
 
+/**
+ * Structural equality: object key order is not content, array order is. Every
+ * scene command compares each sourced component's values, and untouched ones
+ * are the same reference, so those skip the serialisation.
+ */
 function jsonEqual(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  if (left === right) return true;
+  return stableStringify(left) === stableStringify(right);
 }
 
 function overrideSet(keys: readonly string[] | undefined): Set<string> {
@@ -100,9 +107,23 @@ function sameOverrideKeys(
 
 const MESH_MATERIAL_KEYS = ["materialGuid", "materialSource"] as const;
 
-function expandMeshMaterialOverrides(keys: Set<string>, component: SerializedComponent): void {
+function expandMeshMaterialOverrides(keys: Set<string>, component: Pick<SerializedComponent, "classId">): void {
   if (component.classId !== "MeshComponent" || !MESH_MATERIAL_KEYS.some((key) => keys.has(key))) return;
   for (const key of MESH_MATERIAL_KEYS) keys.add(key);
+}
+
+/**
+ * The `overrideKeys` an instance row stores for the fields it owns. A Mesh
+ * overrides its two material fields together, so sync never has to widen the
+ * keys of a row authored with one of them.
+ */
+export function instanceOverrideKeys(
+  component: Pick<SerializedComponent, "classId">,
+  keys: Iterable<string>,
+): string[] {
+  const expanded = new Set(keys);
+  expandMeshMaterialOverrides(expanded, component);
+  return [...expanded];
 }
 
 function meshMaterialSelection(component: SerializedComponent): [string | null, boolean] {

@@ -58,7 +58,7 @@ Merge to `main` automatically when every gate passes; do not ask first. Complete
 
 - The task is complete, not exploratory or waiting on the user.
 - Targeted local checks cover the current changes and pass (prose-only changes: diff and link review).
-- The latest Verify run for the head (`.github/workflows/verify.yml`) passes `static`, `unit` and all four `e2e` shards, and every other required check passes. Draft skips, missing, pending, cancelled or superseded runs are not a pass.
+- The latest Verify run for the head (`.github/workflows/verify.yml`) passes `static`, `unit` and all four `e2e` shards, and every other required check passes. Draft skips, missing, pending, cancelled or superseded runs are not a pass. A pull-request run tests the head merged with the base branch as it was when each job started, not GitHub's cached merge; a base that moves afterwards is not covered.
 - No merge conflicts, no user hold ("PR only", "don't merge", "keep it draft"), and the session is not read-only.
 - Branch protection and required reviews are satisfied; never admin-merge.
 

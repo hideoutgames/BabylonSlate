@@ -7,7 +7,7 @@ import {
   type QualityLevel, type WaterBodyProperties, type WaterDefinition,
 } from "@babylonslate/core";
 import {
-  createWaterMesh, sceneWaterSamplesSceneCopy, setSceneWaterTime, setWaterGpuWaves, updateSceneWater, updateWaterMeshBody, updateWaterMeshDefinition,
+  createWaterMesh, sceneWaterSamplesSceneCopy, setSceneWaterTime, setWaterGpuWaves, settleSceneWater, updateSceneWater, updateWaterMeshBody, updateWaterMeshDefinition,
   waterMeshBody, WATER_BLEND_REFRESH_MS, WATER_FINITE_CELL_BUDGET, WATER_GLOBAL_CELL_BUDGET, WATER_RESTORES_PER_FRAME,
 } from "./water-mesh";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
@@ -336,6 +336,32 @@ describe("Water rendering", () => {
       expect(drawnTime()).toBeCloseTo(0.2, 12);
       setSceneWaterTime(scene, 0.25, 6);
       expect(drawnTime()).toBeCloseTo(0.25, 12);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("leaves the CPU work of water drawn only by another pass to the frame's own update after an early settle", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      // The camera looks away from the lake, so only another pass (a capture, a planar reflection) draws it.
+      const camera = new FreeCamera("away", new Vector3(0, 2, -20), scene);
+      camera.setTarget(new Vector3(0, 2, -100));
+      scene.activeCamera = camera;
+      setSceneWaterTime(scene, 0);
+      const mesh = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 10, length: 10, resolution: 16 }));
+      setWaterGpuWaves(mesh, false);
+      updateSceneWater(scene);
+      mesh.onBeforeRenderObservable.notifyObservers(mesh);
+      setSceneWaterTime(scene, 1);
+      settleSceneWater(scene, true);
+      // The settle ran before the frame's draw; the frame's own update still resamples the vertices for its time.
+      setSceneWaterTime(scene, 2);
+      const resampled = vi.spyOn(mesh, "updateVerticesData");
+      updateSceneWater(scene);
+      expect(resampled).toHaveBeenCalled();
+      // Nothing draws it since, and it stays outside the frustum: the next update leaves it alone.
+      resampled.mockClear();
+      setSceneWaterTime(scene, 3);
+      updateSceneWater(scene);
+      expect(resampled).not.toHaveBeenCalled();
     } finally { scene.dispose(); engine.dispose(); }
   });
   it("resamples CPU-displaced waves for an edited definition while the water clock is paused", () => {

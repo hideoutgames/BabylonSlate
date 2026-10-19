@@ -23,7 +23,9 @@ import { createMaterialPreviewScene, createPreviewRenderTarget, renderPreviewFra
 import type { MeshAssetContext } from "./mesh-assets";
 import { applyMaterialToVisualMeshes } from "./visual-meshes";
 import { acquireMaterialTexture, bindResourceCacheToHandle, resourceCacheForEngine } from "./resource-cache";
-import { SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { waitUntilReady } from "./preview-readiness";
+import { createHeldThreadBound, createHeldThreadBudget, SCENE_CAPTURE_CEILING_MS, type HeldThreadBudget } from "./stall-deadline";
+import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { encodeRgbaPng } from "./png-encode";
 
@@ -40,16 +42,25 @@ export type AssetThumbnailRequest = ThumbnailAssets & (
 
 const PREPARATION_TIMEOUT_MS = 30_000;
 
-/** Bound loading/readback time and let a superseded project retire its capture. */
-async function whileCurrent<T>(work: Promise<T>, current: () => boolean, timeout = PREPARATION_TIMEOUT_MS): Promise<T> {
+/** What every wait of one capture shares: its held-thread budget and its compile progress watch. */
+type CaptureBounds = { budget: HeldThreadBudget; compiles: DriverCompileWatch };
+
+/**
+ * Bound loading/readback time and let a superseded project retire its capture.
+ * Time the thread was held (a synchronous shader link, a throttled timer) is not
+ * charged against the bound, up to the capture's shared budget, and the bound
+ * starts again while shaders keep finishing on the Engine, up to the watch's
+ * ceiling.
+ */
+async function whileCurrent<T>(work: Promise<T>, current: () => boolean, { budget, compiles }: CaptureBounds, timeout = PREPARATION_TIMEOUT_MS): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = Date.now() + timeout;
+  const bound = createHeldThreadBound(timeout, budget, renewOnCompileProgress(compiles));
   try {
     return await Promise.race([
       work,
       new Promise<never>((_resolve, reject) => {
         const check = () => {
-          if (!current() || Date.now() >= deadline) {
+          if (!current() || bound.expired()) {
             reject(new Error("Asset thumbnail capture expired."));
             return;
           }
@@ -107,10 +118,17 @@ export async function captureAssetThumbnailPng(
   maxEdge = DEFAULT_THUMBNAIL_MAX_EDGE,
 ): Promise<Uint8Array | null> {
   if (!shouldContinue()) return null;
+  // Every wait of this capture credits held time from one budget, so a capture
+  // that never becomes ready cannot hold the serialized thumbnail queue for a
+  // full budget at each step; one compile watch gives them one ceiling, which
+  // also ends the capture's own preparation (`current`).
+  const compiles = new DriverCompileWatch(engine, undefined, SCENE_CAPTURE_CEILING_MS);
+  const bounds: CaptureBounds = { budget: createHeldThreadBudget(), compiles };
+  const { budget } = bounds;
   const host = createMaterialPreviewScene(engine, { mesh: "sphere" });
   const binding = bindResourceCacheToHandle(resourceCacheForEngine(engine));
   const controller = new AbortController();
-  const current = () => shouldContinue() && !host.scene.isDisposed;
+  const current = () => shouldContinue() && !host.scene.isDisposed && performance.now() < compiles.ceiling;
   const preparations: Promise<boolean>[] = [];
   const resolved = new Map<string, Material | null>();
   const functions = request.functions ?? {};
@@ -172,8 +190,8 @@ export async function captureAssetThumbnailPng(
       await whileCurrent(sync.applyAsync(request.prefab, {
         signal: controller.signal,
         assets: { ...request.assets, modelPayloads, resourceCache: binding.cache, resolveMaterial },
-      }), current);
-      await whileCurrent(sync.whenEditorModelsReady(), current);
+      }), current, bounds);
+      await whileCurrent(sync.whenEditorModelsReady(), current, bounds);
       for (const animation of host.scene.animationGroups) animation.stop();
       meshes = [...new Set(request.prefab.actors.flatMap((actor) => {
         if (!hasSurfaceVisual(actor)) return [];
@@ -191,21 +209,16 @@ export async function captureAssetThumbnailPng(
       }
     }
     if (unavailableMaterial || !frameMeshes(host, meshes)) return null;
-    if (!(await whileCurrent(Promise.all(preparations), current)).every(Boolean)) return null;
-    const deadline = Date.now() + SCENE_SHADER_WARM_TIMEOUT_MS;
-    while (!meshes.every((mesh) => mesh.isReady(true))) {
-      if (!current() || Date.now() >= deadline) return null;
-      await new Promise<void>((resolve) => setTimeout(resolve, 16));
-    }
-    if (!current()) return null;
+    if (!(await whileCurrent(Promise.all(preparations), current, bounds)).every(Boolean)) return null;
+    if (!(await waitUntilReady(() => meshes.every((mesh) => mesh.isReady(true)), current, undefined, budget, compiles))) return null;
     // Scene sync applies the authored background; captures remain transparent.
     host.scene.clearColor = new Color4(0, 0, 0, 0);
     host.scene.activeCamera = host.camera;
     const size = Number.isFinite(maxEdge) ? Math.max(1, Math.min(512, Math.floor(maxEdge))) : DEFAULT_THUMBNAIL_MAX_EDGE;
     target = createPreviewRenderTarget("assetThumbnail", { width: size, height: size }, host.scene);
     host.camera.outputRenderTarget = target;
-    if (!(await renderPreviewFrame(host, current))) return null;
-    const readback = await whileCurrent(Promise.resolve(target.readPixels()), current);
+    if (!(await renderPreviewFrame(host, current, budget, compiles))) return null;
+    const readback = await whileCurrent(Promise.resolve(target.readPixels()), current, bounds);
     if (!readback || !current()) return null;
     const pixels = readback instanceof ArrayBuffer ? new Uint8Array(readback)
       : new Uint8Array(readback.buffer, readback.byteOffset, readback.byteLength);

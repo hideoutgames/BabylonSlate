@@ -79,11 +79,6 @@ export type NodeDefinition = {
   /** No observable reads/effects beyond inputs. Allows caching immutable outputs
    * only when every dependency is also referentially transparent. */
   referentiallyTransparent?: boolean;
-  /**
-   * An unwired `target` input resolves to Self when the node's `implicitSelf`
-   * property is true, so validation does not report it missing.
-   */
-  implicitSelfTarget?: boolean;
   latent?: boolean;
   /**
    * Render pins in their declared order instead of lifting exec pins to the

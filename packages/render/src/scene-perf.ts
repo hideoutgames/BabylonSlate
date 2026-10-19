@@ -16,7 +16,7 @@ import { isEngineDefaultMaterial } from "./default-material";
 import { syncSceneLighting } from "./scene-lighting";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { withSceneReadinessState } from "./scene-readiness-signal";
-import { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { createHeldThreadBudget, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
 import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } from "./scene-stream-admission";
 // Kept on the ./scene-perf subpath. Modules in scene-perf's transitive import
@@ -99,9 +99,17 @@ export async function prewarmMeshMaterials(
   };
   check();
   syncSceneLighting(scene);
-  // The driver reports a parallel compile's completion only; a pending one is not a stall.
+  // A unit can outlast the budget while it compiles: variants that finished since the last renewal (each synchronous
+  // link), or a parallel compile pending on the driver (which reports completion only), are not a stall. Like every
+  // stall deadline, a timer that fires a held gap late (a hidden page, a call that held the thread and finished no
+  // variant) also starts a fresh window, from the warm-up's own held-thread budget.
   const compiles = new DriverCompileWatch(scene.getEngine());
-  const deadline = createStallDeadline(describeShaderStall, SCENE_SHADER_WARM_TIMEOUT_MS, () => compiles.renew());
+  const deadline = createStallDeadline(
+    (stalled, completed) => `${describeShaderStall(stalled, completed)} ${compiles.describe()}`,
+    SCENE_SHADER_WARM_TIMEOUT_MS,
+    () => compiles.renew(),
+    createHeldThreadBudget(),
+  );
   try {
     await deadline.race((async () => {
       for (const mesh of meshes) {

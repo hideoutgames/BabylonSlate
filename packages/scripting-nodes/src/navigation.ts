@@ -11,6 +11,7 @@ import {
   enumRef,
   ENGINE_NAV_OBSTACLE_KIND_ENUM_ID,
 } from "@babylonslate/scripting";
+import { subject } from "./self-pin";
 
 /**
  * A navigation point query: the host returns null on a miss. Found reports
@@ -54,7 +55,7 @@ export const navigationNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "target", "in", actorRef("Actor")),
+      subject(pin("target", "target", "in", actorRef("Actor"))),
       pin("destination", "destination", "in", VEC3),
     ],
     codegen: (ctx) => {
@@ -70,7 +71,7 @@ export const navigationNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("target", "target", "in", actorRef("Actor")),
+      subject(pin("target", "target", "in", actorRef("Actor"))),
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.stopMovement(${ctx.input("target")});`);

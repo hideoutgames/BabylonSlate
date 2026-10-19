@@ -1,7 +1,7 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Effect, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type Effect, type Mesh } from "@babylonjs/core";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import {
@@ -45,6 +45,7 @@ import { prewarmMaterial } from "./material-compiler";
 import { MaterialLibrary } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
 import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_FIRST_FRAME_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
+import { SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS } from "./stall-deadline";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { SharedOutlineView } from "./shared-outline";
@@ -54,7 +55,7 @@ import * as presentation from "./presented-frame";
 import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
-import { createWaterMesh } from "./water-mesh";
+import * as waterMesh from "./water-mesh";
 import type { WaterVariantRequest } from "./water-material";
 
 const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
@@ -535,9 +536,9 @@ describe("Play createEngine view", () => {
   it("compiles blending water bodies' variants once, with Blend, before the first frame's update", async () => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);
-    createWaterMesh(handle.scene, "west", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }));
+    waterMesh.createWaterMesh(handle.scene, "west", normalizeWaterBody({ width: 24, length: 24, resolution: 24 }));
     // Within the blend distance of the first body: both blend once the water update has seen them.
-    createWaterMesh(handle.scene, "east", normalizeWaterBody({ width: 24, length: 24, resolution: 24 })).position.set(16, 0.5, 0);
+    waterMesh.createWaterMesh(handle.scene, "east", normalizeWaterBody({ width: 24, length: 24, resolution: 24 })).position.set(16, 0.5, 0);
     const compiled = () => compiledWater(engine);
     await handle.prewarmSceneMaterials();
     const afterLoad = compiled();
@@ -584,10 +585,16 @@ describe("Play createEngine view", () => {
     return requests;
   }
 
-  /** The new body's variants differ from every compiled one, so a request without Blend would be a compile nothing draws. */
+  /**
+   * The new body's variants differ from every compiled one, so a request without Blend would be a compile nothing draws,
+   * and a pass asked twice for one body's variant would compile twice.
+   */
   function expectEveryRequestBlends(requests: readonly WaterVariantRequest[]): void {
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.filter((request) => !request.blend).map((request) => request.mesh)).toEqual([]);
+    const perPass = new Map<string, number>();
+    for (const request of requests) perPass.set(`${request.mesh}|${request.pass}`, (perPass.get(`${request.mesh}|${request.pass}`) ?? 0) + 1);
+    expect([...perPass].filter(([, count]) => count > 1).map(([key]) => key)).toEqual([]);
   }
 
   it("compiles a water body added beside another once, with Blend, though no prewarm runs", async () => {
@@ -613,7 +620,8 @@ describe("Play createEngine view", () => {
     expectEveryRequestBlends(requests);
   });
 
-  // A fog volume in the stream makes publication wait for the graph's preparation, which probes before any frame runs.
+  // Without a fog volume the render loop's settle covers the published water; with one, publication waits for the graph's
+  // preparation, which probes before any frame runs, so the handler's own settle after publication is what counts.
   it.each([false, true])("compiles a streamed water body once, with Blend, beside a settled one (fog volume: %s)", async (fog) => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);
@@ -648,6 +656,29 @@ describe("Play createEngine view", () => {
       await settleFrames(engine);
     });
     expectEveryRequestBlends(requests);
+  });
+
+  it("leaves water that spawns while the world loads to the load's own settle, not to the frames that only draw a layer", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    handle.applyCommand({ type: "sceneLayerLoading", layerId: "global", layerLoadId: 1, assetGuid: "overlay" });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "global", assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, postProcessStack: [] });
+    const layer = engine.scenes.at(-1)!;
+    await handle.prewarmSceneMaterials({ layerId: "global", layerLoadId: 1 });
+    const layerFrames = vi.fn();
+    layer.onAfterRenderObservable.add(layerFrames);
+    const release = handle.scheduler.acquireObstruction();
+    handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 2 });
+    const first = handle.presentFirstFrame({ layerId: "global", layerLoadId: 1 });
+    // Spawn batches keep arriving while the loading world draws nothing; the ready layer keeps drawing meanwhile.
+    waterMesh.createWaterMesh(handle.scene, "lake", normalizeWaterBody({ width: 8, length: 8, resolution: 8 }));
+    const settle = vi.spyOn(waterMesh, "settleSceneWater");
+    renderViews(engine);
+    engine.onEndFrameObservable.notifyObservers(engine);
+    await first;
+    expect(layerFrames).toHaveBeenCalledTimes(1);
+    expect(settle).not.toHaveBeenCalled();
+    release();
   });
 
   function renderViews(engine: NullEngine) {
@@ -1130,6 +1161,38 @@ describe("Play createEngine view", () => {
     }
   });
 
+  // WebGPU builds each render pipeline a draw created in the GPU queue, inside that draw's submitted-work wait.
+  it("gives a validated first draw longer to complete for each render pipeline it created", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    handle.setPaused(true);
+    const pipelines = 30;
+    const cancel = vi.fn();
+    const submission = vi.spyOn(presentation, "submitPresentedFrame").mockImplementation((_engine, draw) => {
+      draw();
+      WebGPUCacheRenderPipeline.NumCacheMiss += pipelines;
+      return { completed: new Promise<void>(() => {}), cancel, fenceWaiting: () => false };
+    });
+    vi.useFakeTimers();
+    let state = "pending";
+    const frame = handle.presentFirstFrame().then(() => { state = "ready"; }, (error) => { state = "failed"; return error as Error; });
+    try {
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      await vi.advanceTimersByTimeAsync(SCENE_DRIVER_COMPILE_TIMEOUT_MS + 5_000);
+      expect(state).toBe("pending");
+      await vi.advanceTimersByTimeAsync(pipelines * SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS);
+      expect(await frame).toMatchObject({ message: expect.stringContaining(`render pipelines created: ${pipelines}.`) });
+      expect(state).toBe("failed");
+    } finally {
+      handle.dispose();
+      await frame;
+      submission.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it("does not spend a loading permit on a sibling view or a hidden document", async () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
@@ -1217,6 +1280,40 @@ describe("Play createEngine view", () => {
     } finally {
       handle.dispose();
       await frame;
+      vi.useRealTimers();
+    }
+  });
+
+  // Where links are synchronous the first draws' readiness probes link each variant themselves: a link shorter than a
+  // second earns no held-thread credit, but every one that finishes renews the budget.
+  it("renews the first-frame budget while shaders keep finishing on the Engine, and fails once they stop", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    handle.setPaused(true);
+    handle.scene.addIsReadyCheck({ isReady: () => false });
+    markSceneReadinessDirty(handle.scene);
+    vi.useFakeTimers();
+    // DriverCompileWatch reads performance.now; follow the faked clock whether or not it is faked itself.
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => Date.now());
+    const effects = (engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
+    let state = "pending";
+    const frame = handle.presentFirstFrame().then(() => { state = "ready"; }, (error) => { state = "failed"; return error as Error; });
+    try {
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      for (let second = 0; second < 2 * SCENE_FIRST_FRAME_TIMEOUT_MS / 1_000; second++) {
+        effects[`linked-${second}`] = { isReady: () => true, getCompilationError: () => "" };
+        await vi.advanceTimersByTimeAsync(1_000);
+      }
+      expect(state).toBe("pending");
+      await vi.advanceTimersByTimeAsync(2 * SCENE_FIRST_FRAME_TIMEOUT_MS);
+      expect(await frame).toMatchObject({ message: expect.stringContaining("loading deadline") });
+      expect(state).toBe("failed");
+    } finally {
+      handle.dispose();
+      await frame;
+      clock.mockRestore();
       vi.useRealTimers();
     }
   });

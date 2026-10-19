@@ -689,6 +689,8 @@ export function startPlaySession(options: {
   /** When true, pause after Play boot so `boot.play`'s resume cannot undo it. */
   pauseOnPlay?: boolean;
   onSceneLoading?: (state: SceneLoadProgress | null) => void;
+  /** A scene load failed; it stays pending until the session stops, and the session reports a fatal diagnostic next. */
+  onSceneLoadFailed?: () => void;
   onSessionPaused?: (paused: boolean) => void;
   onShowFps?: (enabled: boolean) => void;
   onStatHighlight?: (name: string, enabled: boolean) => void;
@@ -1257,8 +1259,10 @@ export function startPlaySession(options: {
       hostDiagnostics.push({ code: "scene.loading.failed", severity: "error", message,
         assetGuid: scene.sceneAssetGuid, frameId: 0,
         stack: error instanceof Error ? error.stack : undefined });
-      try { options.onLog?.(message, "error"); }
-      finally { queueMicrotask(() => options.onFatalDiagnostic?.()); }
+      try {
+        options.onSceneLoadFailed?.();
+        options.onLog?.(message, "error");
+      } finally { queueMicrotask(() => options.onFatalDiagnostic?.()); }
     },
   });
   const streamReadiness = createSceneStreamingReadiness({

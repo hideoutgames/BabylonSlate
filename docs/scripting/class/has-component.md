@@ -10,7 +10,7 @@ Returns true when an actor has a component of a given type.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Actor | Actor Reference | The actor to check. Left unconnected, it checks the actor running the graph. |
+| Actor | Actor Reference | The actor to check. Left unconnected the pin reads **Actor (Self)** and checks the actor running the graph. |
 | Class ID | ActorComponent Class |  |
 
 ## Outputs
@@ -22,4 +22,4 @@ Returns true when an actor has a component of a given type.
 ## Notes
 
 - Only components of exactly that type count; components of a derived type do not.
-- Returns false when **Actor** is connected to a reference that is empty.
+- Returns false, and logs an error, when **Actor** is connected to a reference that is empty.

@@ -26,6 +26,7 @@ import {
   jsIdent,
   memberArgPinId,
   memberPinRows,
+  memberTargetPin,
   objectLiteralKey,
   pinTypeForMember,
 } from "./member-pins";
@@ -510,7 +511,6 @@ export const flowNodes: NodeDefinition[] = [
   },
   {
     id: "flow.event.call",
-    implicitSelfTarget: true,
     title: "Call Custom Event",
     category: "flow",
     pins: (properties) => {
@@ -518,14 +518,10 @@ export const flowNodes: NodeDefinition[] = [
         typeof properties.classId === "string" && properties.classId.trim()
           ? properties.classId.trim()
           : "BObject";
-      const targetPin =
-        properties.implicitSelf === true
-          ? []
-          : [pin("target", "target", "in", objectRef(classId))];
       return [
         pin("execIn", "exec", "in", EXEC),
         pin("execOut", "then", "out", EXEC),
-        ...targetPin,
+        memberTargetPin(properties, "target", classId),
         ...dataMemberPins(properties, "in", CALL_PIN_IDS),
       ];
     },
@@ -535,14 +531,7 @@ export const flowNodes: NodeDefinition[] = [
           ? ctx.node.properties.name
           : "Custom";
       const eventName = jsIdent(raw);
-      const targetPin = ctx.node.pins.find(
-        (entry) => entry.id === "target" && entry.direction === "in",
-      );
-      const targetConnected = !!targetPin && ctx.isWired(targetPin.id);
-      const targetExpr =
-        !targetPin || (!targetConnected && ctx.node.properties.implicitSelf === true)
-          ? "ctx.self"
-          : ctx.input("target");
+      const targetExpr = ctx.input("target");
       const args: string[] = [];
       for (const pinDef of ctx.node.pins) {
         if (

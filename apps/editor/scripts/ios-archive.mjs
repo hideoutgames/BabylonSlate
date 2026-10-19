@@ -9,6 +9,7 @@ import { assertAppleBuildAvailable } from "../../../scripts/distribution/contrac
 import { allApplePages, validatePrivateGroups } from "../../../scripts/distribution/testflight.mjs";
 import { applePrivateDirectory, cleanupApple } from "../../../scripts/distribution/apple-cleanup.mjs";
 import { privateCommand } from "../../../scripts/distribution/private-command.mjs";
+import { appleUploadErrors } from "../../../scripts/distribution/apple-upload-errors.mjs";
 import { validateAppIcon, validatePrivacyManifest } from "../../../scripts/distribution/apple-assets.mjs";
 
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
@@ -16,13 +17,14 @@ const editor = join(repo, "apps/editor");
 let originalInfo;
 let stage = "configuration";
 let uploaded = false;
+let privateDir;
 const infoPath = join(editor, "ios/App/App/Info.plist");
 try {
   if (process.platform !== "darwin" || process.env.DEVELOPER_DIR !== "/Applications/Xcode_26.6.app/Contents/Developer") throw new Error("Pinned macOS toolchain required");
   const identityText = await readFile(join(repo, "release/generated/ipados-manifest.json"), "utf8");
   const identity = JSON.parse(identityText);
   validateAppleConfiguration(process.env, identity);
-  const privateDir = applePrivateDirectory();
+  privateDir = applePrivateDirectory();
   await mkdir(privateDir, { mode: 0o700 });
   const run = (command, args, label, cwd = editor, env = process.env) => privateCommand(command, args, { directory: privateDir, stage: label, cwd, env });
   const plist = async (file, label) => JSON.parse(await run("python3", ["-c", "import json,plistlib,sys; print(json.dumps(plistlib.load(open(sys.argv[1], 'rb')), default=str))", file], label));
@@ -122,7 +124,12 @@ try {
 } catch (error) {
   if (["configuration", "asset-and-privacy-validation", "apple-preflight"].includes(stage) && error instanceof Error && !error.message.includes("ENOENT")) console.error(error.message);
   else if (uploaded) console.error(`Apple ${stage} failed. Upload completed; preserve its identity. Private diagnostics were not published.`);
-  else if (stage === "upload") console.error("Apple upload failed. Check App Store Connect before retrying an uncertain upload. Private diagnostics were not published.");
+  else if (stage === "upload") {
+    console.error("Apple upload failed. Check App Store Connect before retrying an uncertain upload. Other private diagnostics were not published.");
+    const output = (await Promise.all(["stdout", "stderr"].map(stream => readFile(join(privateDir, `upload.${stream}`), "utf8").catch(() => "")))).join("\n");
+    const reasons = appleUploadErrors(output, [process.env.APPLE_TEAM_ID, process.env.ASC_KEY_ID, process.env.ASC_ISSUER_ID, process.env.ASC_APP_ID]);
+    if (reasons.length) console.error(`Apple's response:\n${reasons.map(reason => `  ${reason}`).join("\n")}`);
+  }
   else console.error(`Apple ${stage} failed before upload. Private diagnostics were not published.`);
   process.exitCode = 1;
 } finally {

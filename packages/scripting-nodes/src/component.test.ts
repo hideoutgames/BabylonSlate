@@ -62,13 +62,17 @@ describe("component nodes", () => {
     });
   });
 
-  it("Get Component Ref uses typed objectRef and implicit self", () => {
+  it("Get Component Ref uses typed objectRef and a Target that reads Self", () => {
     const def = componentNodes.find((node) => node.id === "component.getNamed");
     const pins = def?.pins({
       componentClassId: "MeshComponent",
       implicitSelf: true,
     });
-    expect(pins?.find((entry) => entry.id === "actor")).toBeUndefined();
+    expect(pins?.find((entry) => entry.id === "actor")).toMatchObject({
+      name: "Target",
+      optional: true,
+      selfWhenUnwired: true,
+    });
     expect(pins?.find((entry) => entry.id === "out")?.type).toEqual({
       kind: "objectRef",
       classId: "MeshComponent",

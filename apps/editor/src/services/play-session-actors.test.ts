@@ -62,6 +62,7 @@ describe.each(["worker", "in-process"] as const)(
         gameInstanceClass?: string;
         presentFirstFrame?: () => Promise<void>;
         onFatalDiagnostic?: () => void;
+        onSceneLoadFailed?: () => void;
         onSessionEnded?: () => void;
         onRuntimeLog?: (entry: { category: string; severity: string; message: string }) => void;
         scenes?: Parameters<typeof startPlaySession>[0]["scenes"];
@@ -216,6 +217,7 @@ describe.each(["worker", "in-process"] as const)(
         scripts: [mainScript, ...(options.scripts ?? [])],
         gameInstanceClass: options.gameInstanceClass,
         onFatalDiagnostic: options.onFatalDiagnostic,
+        onSceneLoadFailed: options.onSceneLoadFailed,
         onSessionEnded: options.onSessionEnded,
         onRuntimeLog: options.onRuntimeLog,
         acquireAssetSources: options.acquireAssetSources,
@@ -479,7 +481,7 @@ describe.each(["worker", "in-process"] as const)(
       await vi.waitFor(() => expect(runtime.getWorld().gameInstance?.getVariable("finished")).toBe(true));
     });
 
-    it("retains first-frame failure diagnostics after the Play overlay closes", async () => {
+    it("tells the host a scene load failed and retains its diagnostics after the Play overlay closes", async () => {
       let rejectPresentation!: (error: Error) => void;
       const presentFirstFrame = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectPresentation = reject; }));
       let stopped: ReturnType<PlaySession["stop"]> | undefined;
@@ -487,11 +489,15 @@ describe.each(["worker", "in-process"] as const)(
         stopped = session!.stop();
         session = undefined;
       });
-      await play({ presentFirstFrame, onFatalDiagnostic });
+      // The failed load stays pending until the session stops, so the host learns of it here, not from progress.
+      const onSceneLoadFailed = vi.fn();
+      await play({ presentFirstFrame, onFatalDiagnostic, onSceneLoadFailed });
       await vi.waitFor(() => expect(presentFirstFrame).toHaveBeenCalledOnce());
+      expect(onSceneLoadFailed).not.toHaveBeenCalled();
       const failure = new Error("First frame shader pipeline unavailable");
       rejectPresentation(failure);
       await vi.waitFor(() => expect(onFatalDiagnostic).toHaveBeenCalledOnce());
+      expect(onSceneLoadFailed).toHaveBeenCalledOnce();
       expect(stopped?.diagnostics).toEqual([expect.objectContaining({
         code: "scene.loading.failed", assetGuid: "scene", severity: "error",
         message: "Scene loading failed: First frame shader pipeline unavailable", stack: failure.stack,

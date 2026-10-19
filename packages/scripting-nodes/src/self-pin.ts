@@ -1,21 +1,24 @@
-import { actorRef, pin, type CodegenContext, type GraphPin } from "@babylonslate/scripting";
+import { actorRef, pin, type GraphPin, type PinType } from "@babylonslate/scripting";
 
 /**
- * An optional Actor input that reads the actor running the graph while it is
- * unwired; the node pairs it with `actorOrSelf`. The graph shows it as Self.
+ * Marks an object or Actor input as the node's subject: the object it reads,
+ * writes, calls or moves. A null value skips the node and logs an error. Leave
+ * it off inputs where null is a legitimate value (a Set Variable value, Is
+ * Valid, Cast, a Spawn owner, a pin documented to accept None).
  */
-export function selfActorPin(id: string, name: string = id): GraphPin {
-  return { ...pin(id, name, "in", actorRef("Actor"), "data", true), selfWhenUnwired: true };
+export function subject(input: GraphPin): GraphPin {
+  return { ...input, subject: true };
 }
 
 /**
- * An optional Actor pin left unwired reads the actor running the graph. A wired
- * reference is passed through as is, so one that is null at runtime stays null
- * and the node does nothing instead of acting on Self.
+ * An optional reference input that reads the object running the graph while it
+ * is unwired, and the node's subject once wired. The graph labels it "(Self)".
  */
-export function actorOrSelf(
-  ctx: Pick<CodegenContext, "input" | "isWired">,
-  pinId: string,
-): string {
-  return ctx.isWired(pinId) ? ctx.input(pinId) : "ctx.self";
+export function selfPin(id: string, name: string, type: PinType): GraphPin {
+  return { ...subject(pin(id, name, "in", type, "data", true)), selfWhenUnwired: true };
+}
+
+/** {@link selfPin} for an Actor input. */
+export function selfActorPin(id: string, name: string = id): GraphPin {
+  return selfPin(id, name, actorRef("Actor"));
 }
