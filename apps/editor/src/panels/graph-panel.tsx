@@ -5,6 +5,7 @@ import {
   GraphEditor,
   GRAPH_DEFAULT_ZOOM,
   type GraphCanvasDropApi,
+  type GraphPasteElements,
   type PaletteNode,
 } from "@babylonslate/graph-ui";
 import { formatEventMemberName, NamePromptDialog, PanelFrame, walkAncestry } from "@babylonslate/editor-kit";
@@ -29,6 +30,7 @@ import { useGraphEditing } from "../context/graph-editing-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import { applyDataGraphAssetPicks } from "../lib/data-graph";
+import { prepareClassGraphPaste } from "../lib/graph-paste";
 import { canRenameCustomEvent, customEventRenameError, functionLibraryShowsEventGraphEmpty, renameCustomEvent } from "../lib/class-members";
 import {
   classMemberSymbolsFromGraphs,
@@ -466,6 +468,12 @@ export function GraphPanel(
     [graphContent],
   );
 
+  const preparePaste = useCallback(
+    (pasted: GraphPasteElements, current: GraphPasteElements) =>
+      prepareClassGraphPaste(pasted, current, graphContent, activeFunctionId),
+    [activeFunctionId, graphContent],
+  );
+
   const showLibraryEmpty = functionLibraryShowsEventGraphEmpty({
     parentClass,
     parentOf,
@@ -506,6 +514,7 @@ export function GraphPanel(
             onNavigateRequest={onNavigateRequest}
             onSelectionChange={setSelectedNodeIds}
             contextMenuItemsForNode={contextMenuItemsForNode}
+            preparePaste={preparePaste}
             onChange={(next) => {
               if (!doc) return;
               const edited = applyDataGraphAssetPicks(graph, next, dataAssets);
