@@ -42,7 +42,7 @@ import {
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
-import { GridSizeDialog } from "./grid-size-dialog";
+import { GridSettingsFields, GridSizeDialog, type SnapValues } from "./grid-size-dialog";
 import { anchorBelow } from "../lib/menu-anchor";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { IconActionButton } from "./icon-action-button";
@@ -100,7 +100,7 @@ export function ViewportToolbar({
   const [numberPrompt, setNumberPrompt] = useState<null | "grid" | "camera">(
     null,
   );
-  // Grid Settings opens as a context popup under the control that asked for it.
+  // Hold or right-click on Snap Grid opens Grid Settings as a context popup under it.
   const [gridAnchor, setGridAnchor] = useState<{ x: number; y: number } | null>(null);
   const openGridSettings = (fromTestId: string) => {
     const from = toolbarRef.current?.querySelector(`[data-testid="${testIdPrefix}${fromTestId}"]`);
@@ -290,6 +290,37 @@ export function ViewportToolbar({
       onCheckedChange: setCollisionsVisible,
     },
   ];
+  const gridValue: SnapValues = {
+    gridSize: scene?.settings.grid.tileSize ?? gridSize,
+    snapTranslate: scene?.settings.grid.snapTranslate ?? snapTranslate,
+    snapRotateDeg: scene?.settings.grid.snapRotateDeg ?? snapRotateDeg,
+    snapScale: scene?.settings.grid.snapScale ?? snapScale,
+  };
+  // A scene stores its grid; other viewports (Prefab) keep it in editor preferences.
+  const applyGridSettings = (value: SnapValues) => {
+    if (scene) {
+      void applySceneChange(documentId, {
+        ...scene,
+        settings: {
+          ...scene.settings,
+          grid: {
+            ...scene.settings.grid,
+            tileSize: value.gridSize,
+            snapTranslate: value.snapTranslate,
+            snapRotateDeg: value.snapRotateDeg,
+            snapScale: value.snapScale,
+          },
+        },
+      });
+      return;
+    }
+    void patchEngineViewportPrefs({
+      viewportGridSize: value.gridSize,
+      viewportSnapTranslate: value.snapTranslate,
+      viewportSnapRotateDeg: value.snapRotateDeg,
+      viewportSnapScale: value.snapScale,
+    });
+  };
   const settingsItems: NestedMenuItem[] = [
     {
       type: "checkbox",
@@ -311,10 +342,13 @@ export function ViewportToolbar({
     },
     { type: "separator", id: "settings-separator" },
     {
+      // Opens beside the menu like a submenu; the rows apply when the menu closes.
+      type: "panel",
       id: "grid-size",
       label: "Grid Settings",
       testId: `${testIdPrefix}viewport-grid-size`,
-      onSelect: () => openGridSettings("viewport-settings"),
+      contentTestId: `${testIdPrefix}viewport-grid-settings-panel`,
+      content: <GridSettingsFields value={gridValue} onSubmit={applyGridSettings} />,
     },
     {
       id: "camera-speed",
@@ -552,37 +586,9 @@ export function ViewportToolbar({
         onOpenChange={(open) => {
           if (!open) setNumberPrompt(null);
         }}
-        initialValue={{
-          gridSize: scene?.settings.grid.tileSize ?? gridSize,
-          snapTranslate: scene?.settings.grid.snapTranslate ?? snapTranslate,
-          snapRotateDeg: scene?.settings.grid.snapRotateDeg ?? snapRotateDeg,
-          snapScale: scene?.settings.grid.snapScale ?? snapScale,
-        }}
+        initialValue={gridValue}
         data-testid={`${testIdPrefix}viewport-grid-size-dialog`}
-        onSubmit={(value) => {
-          if (scene) {
-            void applySceneChange(documentId, {
-              ...scene,
-              settings: {
-                ...scene.settings,
-                grid: {
-                  ...scene.settings.grid,
-                  tileSize: value.gridSize,
-                  snapTranslate: value.snapTranslate,
-                  snapRotateDeg: value.snapRotateDeg,
-                  snapScale: value.snapScale,
-                },
-              },
-            });
-            return;
-          }
-          void patchEngineViewportPrefs({
-            viewportGridSize: value.gridSize,
-            viewportSnapTranslate: value.snapTranslate,
-            viewportSnapRotateDeg: value.snapRotateDeg,
-            viewportSnapScale: value.snapScale,
-          });
-        }}
+        onSubmit={applyGridSettings}
       />
       <NumberPromptDialog
         open={numberPrompt === "camera"}

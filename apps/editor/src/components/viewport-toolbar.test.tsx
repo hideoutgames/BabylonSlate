@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { createDefaultScene, type SerializedScene } from "@babylonslate/core";
 import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
@@ -246,9 +247,9 @@ describe("ViewportToolbar", () => {
     renderToolbar();
     const snap = screen.getByTestId("gizmo-snap-toggle");
     fireEvent.contextMenu(snap);
-    expect(screen.getByLabelText("Rotation Snap (Degrees)")).toHaveProperty(
+    expect(screen.getByLabelText("Rotation Snap")).toHaveProperty(
       "value",
-      "45",
+      "45°",
     );
     expect(screen.getByLabelText("Scale Snap")).toHaveProperty("value", "0.1");
     // Unchanged values close without writing the scene.
@@ -271,6 +272,26 @@ describe("ViewportToolbar", () => {
     await waitFor(() => expect(screen.queryByTestId("viewport-grid-size-dialog")).toBeNull());
     fireEvent.click(snap, { detail: 0 });
     expect(harness.setSnapEnabled).toHaveBeenCalledWith(true);
+  });
+
+  it("edits Grid Settings in a flyout beside the Settings menu and applies them when the menu closes", async () => {
+    harness.scene!.settings.grid.snapRotateDeg = 15;
+    renderToolbar();
+    fireEvent.click(screen.getByTestId("viewport-settings"));
+    fireEvent.click(await screen.findByTestId("viewport-grid-size"));
+    const panel = await screen.findByTestId("viewport-grid-settings-panel");
+    const rotation = within(panel).getByLabelText("Rotation Snap") as HTMLInputElement;
+    expect(rotation.value).toBe("15°");
+    expect(within(panel).queryByRole("button")).toBeNull();
+    fireEvent.change(rotation, { target: { value: "30°" } });
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+    fireEvent.keyDown(rotation, { key: "Enter" });
+    expect(harness.applySceneChange).toHaveBeenLastCalledWith(
+      "scene:assets/Main.scene.babasset",
+      expect.objectContaining({
+        settings: expect.objectContaining({ grid: expect.objectContaining({ snapRotateDeg: 30 }) }),
+      }),
+    );
   });
 
   it("opens on a stationary touch hold and consumes its release click", () => {
@@ -326,15 +347,15 @@ describe("ViewportToolbar", () => {
     harness.snapScale = 0.2;
     renderToolbar({ testIdPrefix: "prefab-" });
     fireEvent.contextMenu(screen.getByTestId("prefab-gizmo-snap-toggle"));
-    expect(screen.getByLabelText("Rotation Snap (Degrees)")).toHaveProperty(
+    expect(screen.getByLabelText("Rotation Snap")).toHaveProperty(
       "value",
-      "60",
+      "60°",
     );
     fireEvent.change(
       screen.getByRole("textbox", { name: "Grid Size" }),
       { target: { value: "2" } },
     );
-    fireEvent.change(screen.getByLabelText("Rotation Snap (Degrees)"), {
+    fireEvent.change(screen.getByLabelText("Rotation Snap"), {
       target: { value: "45" },
     });
     fireEvent.change(screen.getByLabelText("Scale Snap"), {
@@ -343,7 +364,7 @@ describe("ViewportToolbar", () => {
     fireEvent.change(screen.getByLabelText("Grid Snap"), {
       target: { value: "0.25" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.pointerDown(document.body);
     expect(harness.patchPrefs).toHaveBeenCalledWith({
       viewportGridSize: 2,
       viewportSnapTranslate: 0.25,
@@ -534,7 +555,7 @@ describe("ViewportToolbar", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
     fireEvent.click(screen.getByTestId("viewport-grid-size"));
-    expect(screen.getByTestId("viewport-grid-size-dialog")).toBeTruthy();
+    expect(screen.getByTestId("viewport-grid-settings-panel")).toBeTruthy();
     expect(screen.getByTestId("number-prompt-input")).toHaveProperty(
       "value",
       "2",
@@ -575,21 +596,19 @@ describe("ViewportToolbar", () => {
     );
   });
 
-  it("finishes field drafts on Done, keeping the popup open for an invalid one", () => {
+  it("never saves an invalid draft and saves an out-of-range one adjusted, on Enter", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
     fireEvent.click(screen.getByTestId("viewport-grid-size"));
     fireEvent.change(screen.getByTestId("number-prompt-input"), {
       target: { value: "40/" },
     });
-    fireEvent.click(screen.getByTestId("number-prompt-confirm"));
+    fireEvent.keyDown(screen.getByTestId("number-prompt-input"), { key: "Enter" });
     expect(harness.applySceneChange).not.toHaveBeenCalled();
-    expect(screen.getByTestId("viewport-grid-size-dialog")).toBeTruthy();
-    // An out-of-range draft saves its adjusted value, as Enter does.
     fireEvent.change(screen.getByTestId("number-prompt-input"), {
       target: { value: "0" },
     });
-    fireEvent.click(screen.getByTestId("number-prompt-confirm"));
+    fireEvent.keyDown(screen.getByTestId("number-prompt-input"), { key: "Enter" });
     expect(harness.applySceneChange).toHaveBeenCalledWith(
       "scene:assets/Main.scene.babasset",
       expect.objectContaining({
