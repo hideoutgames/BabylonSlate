@@ -97,6 +97,20 @@ describe("packaged renderer boundary", () => {
       ["lfs:fetch", [{ url: "file:///secret" }]], ["unknown", []],
     ] as Array<[string, unknown[]]>) expect(() => validateIpcArguments(channel, args)).toThrow();
   });
+  it("accepts only a bounded POST image upload through native HTTP", () => {
+    const upload = { field: "file", fileName: "avatar.png", contentType: "image/png", base64: "iVBORw0KGgo=" };
+    const request = { url: "https://example.clerk.accounts.dev/v1/me/profile_image", method: "POST", headers: {}, upload };
+    expect(() => validateIpcArguments("lfs:fetch", [request])).not.toThrow();
+    for (const bad of [
+      { ...request, method: "GET" }, { ...request, method: undefined },
+      { ...request, body: "name=x" }, { ...request, upload: [upload] }, { ...request, upload: null },
+      { ...request, upload: { ...upload, field: 'file"; x="y' } }, { ...request, upload: { ...upload, field: "" } },
+      { ...request, upload: { ...upload, fileName: 'a.png"\r\nX-Injected: 1' } }, { ...request, upload: { ...upload, fileName: "../a.png" } },
+      { ...request, upload: { ...upload, contentType: "text/html" } }, { ...request, upload: { ...upload, contentType: "image/svg+xml" } },
+      { ...request, upload: { ...upload, base64: "" } }, { ...request, upload: { ...upload, base64: "not base64!" } },
+      { ...request, upload: { ...upload, base64: "A".repeat(14 * 1024 * 1024 + 1) } },
+    ]) expect(() => validateIpcArguments("lfs:fetch", [bad])).toThrow();
+  });
   it("validates positioned reads before native allocation", () => {
     expect(() => validateIpcArguments("project:readBinaryRange", ["asset.babasset", 12, 24, "revision"])).not.toThrow();
     for (const args of [

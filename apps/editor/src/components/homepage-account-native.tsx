@@ -14,6 +14,7 @@ import {
   type NativeClerkSession,
 } from "../services/native-clerk";
 import { NativeHomepageAccountContext } from "./homepage-account-context";
+import { nativeProfileActions } from "./homepage-account-native-actions";
 import { HomepageMobileAccountFrame } from "./homepage-mobile-account-gate";
 
 function accountError(error: unknown) {
@@ -50,6 +51,8 @@ export default function HomepageNativeAccount({
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  // Open system file pickers; the foreground check waits for them to close.
+  const pickers = useRef(0);
   const alive = useRef(true);
   const currentSession = useRef<NativeClerkSession | null>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -59,7 +62,7 @@ export default function HomepageNativeAccount({
     let cancelled = false;
     let pending = false;
     const restore = () => {
-      if (cancelled || pending || busyRef.current) return;
+      if (cancelled || pending || busyRef.current || pickers.current > 0) return;
       pending = true;
       setRestoring(true);
       setRestoreError(null);
@@ -136,10 +139,37 @@ export default function HomepageNativeAccount({
     );
   }
   if (session) {
+    const leaveSession = () => {
+      currentSession.current = null;
+      setSession(null);
+      setChallenge(null);
+      setCode("");
+      setError(null);
+      setStatus(null);
+    };
     return (
       <NativeHomepageAccountContext.Provider
         value={{
           session,
+          profile: nativeProfileActions(client, session, {
+            onSession: (next) => {
+              if (!alive.current) return;
+              currentSession.current = next;
+              setSession(next);
+            },
+            onDeleted: () => {
+              if (alive.current) leaveSession();
+            },
+            holdSessionCheck: () => {
+              pickers.current += 1;
+              let held = true;
+              return () => {
+                if (!held) return;
+                held = false;
+                pickers.current -= 1;
+              };
+            },
+          }),
           signOut: async () => {
             if (busyRef.current) return;
             busyRef.current = true;
@@ -147,12 +177,7 @@ export default function HomepageNativeAccount({
             try {
               await client.signOut(session);
               if (!alive.current) return;
-              currentSession.current = null;
-              setSession(null);
-              setChallenge(null);
-              setCode("");
-              setError(null);
-              setStatus(null);
+              leaveSession();
             } catch (cause) {
               if (alive.current) setRestoreError(accountError(cause));
             } finally {

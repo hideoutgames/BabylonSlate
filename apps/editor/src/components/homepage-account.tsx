@@ -18,9 +18,12 @@ import {
 import { getHostPlatform } from "@babylonslate/vfs";
 import { HomepageProfileMenu } from "./homepage-profile-menu";
 import {
+  nativeProfileEditing,
   useNativeHomepageAccount,
   type NativeHomepageAccount,
 } from "./homepage-account-context";
+import { nativeProfileActions } from "./homepage-account-native-actions";
+import { nativeAccountName } from "./homepage-account-types";
 import type { NativeClerkSession } from "../services/native-clerk";
 import { useMobileDemoSession } from "../context/mobile-demo-context";
 import { useSubscriptionBilling } from "../services/subscription-billing";
@@ -75,13 +78,18 @@ export function HomepageAccount({
     async (session: NativeClerkSession) => {
       const client = await desktopClient;
       if (!client) return;
-      setDesktopAccount({
-        session,
+      const accountFor = (current: NativeClerkSession): NativeHomepageAccount => ({
+        session: current,
         signOut: async () => {
-          await client.signOut(session);
+          await client.signOut(current);
           setDesktopAccount(null);
         },
+        profile: nativeProfileActions(client, current, {
+          onSession: (next) => setDesktopAccount(accountFor(next)),
+          onDeleted: () => setDesktopAccount(null),
+        }),
       });
+      setDesktopAccount(accountFor(session));
       setAuthOpen(false);
     },
     [desktopClient],
@@ -134,11 +142,14 @@ export function HomepageAccount({
       name={
         demoActive
           ? "Temporary Demo"
-          : account?.session.name || (account ? "Your Account" : "Guest")
+          : account
+            ? nativeAccountName(account.session)
+            : "Guest"
       }
       description={demoActive ? "Local Testing Only · Not Signed In" : undefined}
       email={account?.session.email}
       imageUrl={account?.session.imageUrl}
+      nativeProfile={account ? nativeProfileEditing(account) : undefined}
       billing={billing}
       onSignOut={demoActive ? async () => demo.end() : account?.signOut}
       signOutLabel={demoActive ? "End Demo" : undefined}

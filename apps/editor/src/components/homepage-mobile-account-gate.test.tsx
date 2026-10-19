@@ -20,6 +20,9 @@ const auth = vi.hoisted(() => ({
   verifyCode: vi.fn(),
   resendCode: vi.fn(),
   signOut: vi.fn(),
+  updateName: vi.fn(),
+  setProfileImage: vi.fn(),
+  deleteAccount: vi.fn(),
 }));
 const session = {
   id: "session_ada",
@@ -442,5 +445,72 @@ describe("native mobile account requirement", () => {
     expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Try Again" }));
     expect(await screen.findByLabelText("Email Address")).toBeTruthy();
+  });
+
+  it("edits the name from the Account dialog and deletes the account back to the sign-in gate", async () => {
+    const editable = { ...session, firstName: "Ada", lastName: "Lovelace", deleteSelfEnabled: true };
+    auth.restoreSession.mockResolvedValue(editable);
+    auth.updateName.mockResolvedValue({ ...editable, name: "Ada King", lastName: "King" });
+    auth.deleteAccount.mockResolvedValue(undefined);
+    renderMobile();
+    fireEvent.click(await findProfileTrigger());
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Manage Account/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Account" });
+    fireEvent.change(within(dialog).getByLabelText("Last Name"), { target: { value: "King" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save Name" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("homepage-account").getAttribute("aria-label")).toBe(
+        "Ada King, ada@example.test",
+      ),
+    );
+    expect(auth.updateName).toHaveBeenCalledWith(editable, { firstName: "Ada", lastName: "King" });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete Account" }));
+    fireEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete Account" }),
+    );
+    expect(await screen.findByLabelText("Email Address")).toBeTruthy();
+    expect(auth.deleteAccount).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // The gate stays closed: nothing restores the deleted account's session.
+    fireEvent(window, new Event("focus"));
+    expect(auth.restoreSession).toHaveBeenCalledTimes(1);
+  });
+
+  // Returning from the system file picker fires window focus. The foreground
+  // check hides the app, which would unmount the file input before its change
+  // event delivers the picture and close the dialog the person is working in.
+  it("does not hide the Account dialog for the foreground check while the file picker is open", async () => {
+    auth.restoreSession.mockResolvedValue(session);
+    auth.setProfileImage.mockResolvedValue({ ...session, imageUrl: "https://img.example.test/ada.png" });
+    renderMobile();
+    fireEvent.click(await findProfileTrigger());
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Manage Account/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Account" });
+    const input = within(dialog).getByLabelText("Profile Picture");
+    const upload = () => fireEvent.click(within(dialog).getByRole("button", { name: /Upload Picture/ }));
+
+    upload();
+    fireEvent(window, new Event("focus"));
+    expect(screen.getByRole("dialog", { name: "Account" })).toBe(dialog);
+    expect(auth.restoreSession).toHaveBeenCalledTimes(1);
+
+    // A cancelled pick ends the hold.
+    fireEvent(input, new Event("cancel"));
+    upload();
+    const picture = new File([Uint8Array.of(1, 2, 3)], "ada.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [picture] } });
+    await waitFor(() => expect(auth.setProfileImage).toHaveBeenCalledWith(session, picture));
+    await waitFor(() =>
+      expect(screen.getByTestId("homepage-account").querySelector("img")?.getAttribute("src")).toBe(
+        "https://img.example.test/ada.png",
+      ),
+    );
+
+    // Once the upload settles the foreground check runs again.
+    fireEvent(window, new Event("focus"));
+    expect(auth.restoreSession).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

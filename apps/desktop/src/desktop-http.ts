@@ -1,9 +1,37 @@
+import { randomUUID } from "node:crypto";
+
+/** One image sent as the only part of a multipart body; see `NativeHttpImageUpload`. */
+export type DesktopHttpImageUpload = {
+  field: string;
+  fileName: string;
+  contentType: string;
+  base64: string;
+};
+
 export type DesktopHttpRequest = {
   method?: string;
   url: string;
   headers?: Record<string, string>;
   body?: string;
+  upload?: DesktopHttpImageUpload;
 };
+
+/** Writes the upload as one `multipart/form-data` part under a fresh boundary. */
+export function encodeMultipartImage(upload: DesktopHttpImageUpload) {
+  const boundary = `----haptic-${randomUUID()}`;
+  const head =
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="${upload.field}"; filename="${upload.fileName}"\r\n` +
+    `Content-Type: ${upload.contentType}\r\n\r\n`;
+  return {
+    contentType: `multipart/form-data; boundary=${boundary}`,
+    body: Buffer.concat([
+      Buffer.from(head),
+      Buffer.from(upload.base64, "base64"),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]),
+  };
+}
 
 /** LFS lock pages and account JSON are small; larger bodies never reach the renderer. */
 export const MAX_DESKTOP_HTTP_RESPONSE_BYTES = 16 * 1024 * 1024;
@@ -39,10 +67,19 @@ export async function fetchDesktopHttp(
   fetchRequest: (url: string, init: RequestInit) => Promise<Response>,
   maxResponseBytes = MAX_DESKTOP_HTTP_RESPONSE_BYTES,
 ) {
+  const multipart = request.upload ? encodeMultipartImage(request.upload) : null;
   const response = await fetchRequest(request.url, {
     method: request.method ?? "GET",
-    headers: request.headers ?? {},
-    body: request.body,
+    // A caller's Content-Type cannot carry the boundary, so the upload sets its own.
+    headers: multipart
+      ? {
+          ...Object.fromEntries(
+            Object.entries(request.headers ?? {}).filter(([name]) => name.toLowerCase() !== "content-type"),
+          ),
+          "Content-Type": multipart.contentType,
+        }
+      : (request.headers ?? {}),
+    body: multipart ? multipart.body : request.body,
     redirect: "error",
     credentials: "omit",
   });

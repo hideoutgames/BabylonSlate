@@ -1,4 +1,39 @@
 import type { MouseEvent, ReactElement } from "react";
+import type { NativeClerkSession } from "../services/native-clerk";
+
+/** What the launcher calls a native account: full name, else username, else email. */
+export function nativeAccountName(
+  session: Pick<NativeClerkSession, "name" | "username" | "email">,
+): string {
+  return session.name || session.username || session.email;
+}
+
+/** Profile changes on a native account; each settles after Clerk has answered. */
+export interface NativeProfileActions {
+  updateName: (name: { firstName: string; lastName: string }) => Promise<void>;
+  setImage: (file: File) => Promise<void>;
+  removeImage: () => Promise<void>;
+  /** Also signs the account out of this device. */
+  deleteAccount: () => Promise<void>;
+  /**
+   * Pauses the foreground session check while the system file picker is open:
+   * on mobile that check hides the app, which would drop the picked file.
+   * Returns the release function.
+   */
+  holdSessionCheck: () => () => void;
+}
+
+/**
+ * What the Account dialog edits for accounts on the email-code client
+ * (desktop, iOS, Android). On the web, Clerk's own account screen does this.
+ */
+export interface NativeProfileEditing extends NativeProfileActions {
+  firstName: string;
+  lastName: string;
+  hasImage: boolean;
+  /** Clerk's `delete_self_enabled`; the dashboard decides whether people may delete themselves. */
+  canDelete: boolean;
+}
 
 /** A plan action button that billing wraps with its own click handler. */
 export type BillingButton = ReactElement<{

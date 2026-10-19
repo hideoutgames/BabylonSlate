@@ -106,6 +106,8 @@ describe("NativeClerkClient", () => {
       userId: "user_one",
       email: "sam@example.com",
       name: "Sam Slate",
+      firstName: "Sam",
+      lastName: "Slate",
     });
     expect(
       await new NativeClerkClient(key, http, secrets).restoreSession(),
@@ -279,5 +281,177 @@ describe("NativeClerkClient", () => {
         ),
     ).toThrow(/configuration/i);
     expect(http).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("NativeClerkClient account management", () => {
+  const user = {
+    ...session.user,
+    username: null,
+    image_url: "https://img.clerk.com/default-avatar",
+    has_image: false,
+    delete_self_enabled: true,
+  };
+  const clientOf = (overrides: Record<string, unknown> = {}) => ({
+    ...client,
+    sessions: [{ ...session, user: { ...user, ...overrides } }],
+  });
+  const current = {
+    id: "sess_one",
+    userId: "user_one",
+    email: "sam@example.com",
+    name: "Sam Slate",
+    firstName: "Sam",
+    lastName: "Slate",
+    deleteSelfEnabled: true,
+  };
+  const failure = (status: number, code: string): NativeHttpResponse => ({
+    status,
+    bodyText: JSON.stringify({ errors: [{ code, long_message: "secret server detail" }] }),
+  });
+  async function signedIn(replies: NativeHttpResponse[]) {
+    const secrets = new MemorySecretStore();
+    await secrets.set(`slate-clerk-client:${key}`, "client-a");
+    const { http, requests } = transport(replies);
+    return { auth: new NativeClerkClient(key, http, secrets), requests, secrets };
+  }
+  const path = (request?: NativeHttpRequest) => {
+    const url = new URL(request!.url);
+    return `${url.pathname}?${[...url.searchParams].filter(([name]) => name !== "__clerk_api_version").map(([name, value]) => `${name}=${value}`).join("&")}`;
+  };
+
+  it("reads the picture only when the user uploaded one, plus the name parts and whether deletion is on", async () => {
+    const { auth } = await signedIn([
+      response(clientOf({ username: "sam", has_image: true, image_url: "https://img.clerk.com/sam.png" })),
+      response(clientOf({ delete_self_enabled: false, first_name: null, last_name: null })),
+    ]);
+    expect(await auth.restoreSession()).toEqual({
+      ...current,
+      username: "sam",
+      imageUrl: "https://img.clerk.com/sam.png",
+    });
+    // Clerk still reports a generated avatar URL for users without a picture.
+    expect(await auth.restoreSession()).toEqual({
+      id: "sess_one",
+      userId: "user_one",
+      email: "sam@example.com",
+    });
+  });
+
+  it("changes the first and last name as a method-overridden PATCH and returns the stored name", async () => {
+    const { auth, requests } = await signedIn([
+      response({ object: "user" }, "client-b"),
+      response(clientOf({ first_name: "Samantha", last_name: "" }), "client-c"),
+    ]);
+    const updated = await auth.updateName(current, { firstName: "  Samantha ", lastName: " " });
+    expect(updated).toMatchObject({ name: "Samantha", firstName: "Samantha" });
+    expect(updated.lastName).toBeUndefined();
+    expect(requests.map(path)).toEqual([
+      "/v1/me?_is_native=1&_method=PATCH&_clerk_session_id=sess_one",
+      "/v1/client?_is_native=1",
+    ]);
+    expect(requests[0]).toMatchObject({
+      method: "POST",
+      body: "first_name=Samantha&last_name=",
+      headers: { Authorization: "client-a", "Content-Type": "application/x-www-form-urlencoded" },
+    });
+    expect(requests[1]!.headers.Authorization).toBe("client-b");
+  });
+
+  it("uploads a picture as a native multipart image part and removes it with a method-overridden DELETE", async () => {
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0x00]);
+    const { auth, requests } = await signedIn([
+      response({ object: "image" }),
+      response(clientOf({ has_image: true, image_url: "https://img.clerk.com/new.png" })),
+      response({ object: "image" }),
+      response(clientOf()),
+    ]);
+    const uploaded = await auth.setProfileImage(current, new File([bytes], "IMG_0042 (1).PNG", { type: "image/png" }));
+    expect(uploaded.imageUrl).toBe("https://img.clerk.com/new.png");
+    expect(requests[0]).toMatchObject({
+      method: "POST",
+      upload: { field: "file", fileName: "profile.png", contentType: "image/png", base64: "iVBOR/8A" },
+    });
+    expect(requests[0]!.body).toBeUndefined();
+    expect(requests[0]!.headers["Content-Type"]).toBeUndefined();
+    expect(path(requests[0])).toBe("/v1/me/profile_image?_is_native=1&_clerk_session_id=sess_one");
+    expect((await auth.removeProfileImage(uploaded)).imageUrl).toBeUndefined();
+    expect(path(requests[2])).toBe("/v1/me/profile_image?_is_native=1&_method=DELETE&_clerk_session_id=sess_one");
+    expect(requests[2]!.upload).toBeUndefined();
+  });
+
+  it("refuses unsupported, oversized, empty and unrecognised pictures before any request", async () => {
+    const { auth, requests } = await signedIn([]);
+    const refused = (file: Blob) => auth.setProfileImage(current, file);
+    await expect(refused(new File(["<svg/>"], "a.svg", { type: "image/svg+xml" }))).rejects.toMatchObject({
+      code: "avatar_file_type_invalid",
+    });
+    await expect(refused(new File(["x"], "photo.heic"))).rejects.toMatchObject({ code: "avatar_file_type_invalid" });
+    await expect(refused(new File([new Uint8Array(10 * 1024 * 1024 + 1)], "a.png", { type: "image/png" }))).rejects.toMatchObject({
+      code: "avatar_file_size_exceeded",
+      message: "That picture is too large. Choose one under 10 MB.",
+    });
+    await expect(refused(new File([], "a.png", { type: "image/png" }))).rejects.toMatchObject({
+      code: "avatar_file_unreadable",
+    });
+    expect(requests).toEqual([]);
+  });
+
+  it("accepts a picture whose provider reported no type when the file name says what it is", async () => {
+    const { auth, requests } = await signedIn([response({}), response(clientOf())]);
+    await auth.setProfileImage(current, new File([Uint8Array.of(1, 2, 3)], "camera.JPEG"));
+    expect(requests[0]!.upload).toMatchObject({ contentType: "image/jpeg", fileName: "profile.jpg", base64: "AQID" });
+  });
+
+  it("deletes the user, clears the client token and then restores as signed out without a request", async () => {
+    const { auth, requests, secrets } = await signedIn([response({ object: "deleted_object", deleted: true }, "client-rotated")]);
+    await auth.deleteAccount(current);
+    expect(path(requests[0])).toBe("/v1/me?_is_native=1&_method=DELETE&_clerk_session_id=sess_one");
+    expect(requests[0]).toMatchObject({ method: "POST", headers: { Authorization: "client-a" } });
+    expect(await secrets.get(`slate-clerk-client:${key}`)).toBeNull();
+    expect(await auth.restoreSession()).toBeNull();
+    expect(requests).toHaveLength(1);
+  });
+
+  it("keeps the client token when Clerk refuses the deletion and explains it without server detail", async () => {
+    const { auth, secrets } = await signedIn([failure(403, "forbidden"), failure(403, "session_reverification_required")]);
+    await expect(auth.deleteAccount(current)).rejects.toMatchObject({
+      code: "account_delete_failed",
+      message: "Your account could not be deleted. Please try again.",
+    });
+    await expect(auth.deleteAccount(current)).rejects.toMatchObject({
+      code: "session_reverification_required",
+      message: "For your security, sign out and sign in again, then try once more.",
+    });
+    expect(await secrets.get(`slate-clerk-client:${key}`)).toBe("client-a");
+  });
+
+  it("names rejected profile edits in plain words and never as a sign-in failure", async () => {
+    const { auth } = await signedIn([
+      failure(422, "form_param_nil"),
+      failure(400, "avatar_file_type_invalid"),
+      failure(500, "internal_error"),
+      failure(422, "form_param_nil"),
+    ]);
+    const edit = { firstName: "", lastName: "Slate" };
+    await expect(auth.updateName(current, edit)).rejects.toMatchObject({ message: "Enter the missing name and try again." });
+    await expect(auth.setProfileImage(current, new File(["x"], "a.png", { type: "image/png" }))).rejects.toMatchObject({
+      message: "That picture type is not supported. Choose a JPG, PNG, GIF or WEBP image.",
+    });
+    await expect(auth.updateName(current, edit)).rejects.toMatchObject({
+      message: "Your account could not be updated. Please try again.",
+    });
+    // The sign-up form has no name field, so a missing parameter there stays a sign-in failure.
+    await expect(auth.beginEmail("sam@example.com", "sign-up")).rejects.toMatchObject({
+      code: "authentication_failed",
+    });
+  });
+
+  it("treats an expired session on a profile call as signed out", async () => {
+    const { auth, secrets } = await signedIn([failure(401, "authentication_invalid")]);
+    await expect(auth.updateName(current, { firstName: "A", lastName: "B" })).rejects.toMatchObject({
+      code: "session_unavailable",
+    });
+    expect(await secrets.get(`slate-clerk-client:${key}`)).toBeNull();
   });
 });
