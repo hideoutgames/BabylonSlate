@@ -531,6 +531,20 @@ function keepSourceName(sourceName: string): string {
   return sourceName;
 }
 
+const instanceCompileHolds = new WeakMap<Scene, () => boolean>();
+
+/**
+ * Lets a Scene's host hold model and foliage instance compiles while a load
+ * realizes the Scene. Until that load's warm-up, its lights, their Forward
+ * admission, shadow maps, fog and each instance's receiver flags are not final,
+ * so a compile then builds variants the first frame never draws. While `held`
+ * returns true, `prepareInstanceMaterials` admits textures only and the load's
+ * warm-up and readiness probes compile what draws.
+ */
+export function holdSceneInstanceCompiles(scene: Scene, held: () => boolean): void {
+  instanceCompileHolds.set(scene, held);
+}
+
 /**
  * Prepare only this unpublished instance's actual material/mesh variants. A
  * stall deadline that fires a held gap late (a synchronous shader link kept the
@@ -538,7 +552,8 @@ function keepSourceName(sourceName: string): string {
  * expires while shaders keep finishing on the Engine (short synchronous links
  * earn no held credit). All the meshes of one call share one
  * `SCENE_THREAD_HELD_BUDGET_MS` and one compile watch, so a stuck material
- * still fails.
+ * still fails. While the Scene's load holds instance compiles
+ * (`holdSceneInstanceCompiles`), only the textures are prepared.
  */
 export async function prepareInstanceMaterials(
   root: Mesh,
@@ -579,6 +594,8 @@ export async function prepareInstanceMaterials(
           return leaves.length === materials.length && leaves.every((material, index) => material === materials[index]);
         };
         if (!stillAssigned()) continue;
+        // A held load compiles this mesh in its own warm-up, once lighting is final.
+        if (instanceCompileHolds.get(mesh.getScene())?.()) break;
         // Each mesh's deadline renews only for what compiles in its own windows.
         compiles.restart();
         const deadline = createStallDeadline((unit) => `Model material preparation stalled${unit ? ` at ${unit}` : ""}`, SCENE_SHADER_WARM_TIMEOUT_MS, () => compiles.renew(), budget);

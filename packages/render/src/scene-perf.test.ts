@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  Matrix,
   Mesh,
   MeshBuilder,
   MorphTarget,
@@ -80,19 +81,29 @@ describe("applyEditorMaterialFreeze", () => {
 });
 
 describe("prewarmSceneMaterials", () => {
-  it("warms shared material consumers separately and includes instanced variants", async () => {
+  it("warms each consumer in the variants Babylon draws it with", async () => {
     const engine = new NullEngine();
+    // Babylon adds thin instances only where instanced arrays exist.
+    engine.getCaps().instancedArrays = true;
     const scene = new Scene(engine);
     try {
       const first = MeshBuilder.CreateBox("static", {}, scene);
       const second = MeshBuilder.CreateBox("instanced", {}, scene);
-      first.material = second.material = new PBRMaterial("shared", scene);
+      const thin = MeshBuilder.CreateBox("thin", {}, scene);
+      const empty = new Mesh("empty", scene);
+      first.material = second.material = thin.material = empty.material = new PBRMaterial("shared", scene);
       second.createInstance("copy");
+      thin.thinInstanceAdd(Matrix.Identity());
+      expect(thin.hasThinInstances).toBe(true);
       const compile = vi.spyOn(first.material, "forceCompilationAsync").mockResolvedValue();
       await prewarmSceneMaterials(scene);
       expect(compile).toHaveBeenCalledWith(first);
       expect(compile).toHaveBeenCalledWith(second);
       expect(compile).toHaveBeenCalledWith(second, { useInstances: true });
+      // Thin instances draw only instanced, and a mesh without vertices draws nothing.
+      expect(compile).toHaveBeenCalledWith(thin, { useInstances: true });
+      expect(compile).not.toHaveBeenCalledWith(thin);
+      expect(compile.mock.calls.filter(([mesh]) => mesh === empty)).toEqual([]);
     } finally {
       scene.dispose();
       engine.dispose();
@@ -354,13 +365,13 @@ describe("prewarmSceneMaterials", () => {
     vi.useFakeTimers();
     const engine = new NullEngine();
     const scene = new Scene(engine);
-    const mesh = new Mesh("warm-mesh", scene);
+    const mesh = MeshBuilder.CreateBox("warm-mesh", {}, scene);
     mesh.material = scene.defaultMaterial;
     let finishCompile!: () => void;
     vi.spyOn(scene.defaultMaterial, "forceCompilationAsync").mockReturnValue(
       new Promise((resolve) => { finishCompile = resolve; }),
     );
-    const next = new Mesh("next-mesh", scene);
+    const next = MeshBuilder.CreateBox("next-mesh", {}, scene);
     next.material = new PBRMaterial("next-material", scene);
     const nextCompile = vi.spyOn(next.material, "forceCompilationAsync");
     const done = prewarmSceneMaterials(scene);
@@ -384,7 +395,7 @@ describe("prewarmSceneMaterials", () => {
     const perVariant = SCENE_SHADER_WARM_TIMEOUT_MS / 2;
     const compiles: string[] = [];
     for (let index = 0; index < 4; index++) {
-      const mesh = new Mesh(`slow-mesh-${index}`, scene);
+      const mesh = MeshBuilder.CreateBox(`slow-mesh-${index}`, {}, scene);
       mesh.material = new PBRMaterial(`slow-material-${index}`, scene);
       vi.spyOn(mesh.material, "forceCompilationAsync").mockImplementation(
         () => new Promise((resolve) => setTimeout(() => { compiles.push(mesh.name); resolve(); }, perVariant)),
@@ -409,7 +420,7 @@ describe("prewarmSceneMaterials", () => {
       const engine = new NullEngine();
       if (parallel) engine.getCaps().parallelShaderCompile = { COMPLETION_STATUS_KHR: 0x91b1 };
       const scene = new Scene(engine);
-      const mesh = new Mesh("water-mesh", scene);
+      const mesh = MeshBuilder.CreateBox("water-mesh", {}, scene);
       const material = new PBRMaterial("water-material", scene);
       mesh.material = material;
       let compiled = false;
@@ -459,7 +470,7 @@ describe("prewarmSceneMaterials", () => {
     const clock = installTimerClock();
     const engine = new NullEngine();
     const scene = new Scene(engine);
-    const mesh = new Mesh("held-mesh", scene);
+    const mesh = MeshBuilder.CreateBox("held-mesh", {}, scene);
     mesh.material = new PBRMaterial("held-material", scene);
     vi.spyOn(mesh.material, "forceCompilationAsync").mockReturnValue(new Promise(() => {}));
     let outcome: string | null = null;
@@ -482,10 +493,10 @@ describe("prewarmSceneMaterials", () => {
     vi.useFakeTimers();
     const engine = new NullEngine();
     const scene = new Scene(engine);
-    const quick = new Mesh("quick-mesh", scene);
+    const quick = MeshBuilder.CreateBox("quick-mesh", {}, scene);
     quick.material = new PBRMaterial("quick-material", scene);
     vi.spyOn(quick.material, "forceCompilationAsync").mockResolvedValue();
-    const stuck = new Mesh("stuck-mesh", scene);
+    const stuck = MeshBuilder.CreateBox("stuck-mesh", {}, scene);
     stuck.material = new PBRMaterial("stuck-material", scene);
     vi.spyOn(stuck.material, "forceCompilationAsync").mockReturnValue(new Promise(() => {}));
     const rejected = expect(prewarmSceneMaterials(scene)).rejects.toThrow(

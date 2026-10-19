@@ -1,7 +1,7 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type Effect, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Material, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type AbstractMesh, type Effect, type Mesh } from "@babylonjs/core";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import {
@@ -363,6 +363,41 @@ describe("Play createEngine view", () => {
       expect(fogWhenCompiled.length).toBeGreaterThan(0);
       expect(fogWhenCompiled.every(Boolean)).toBe(true);
     } finally { scheduling.mockRestore(); compile.mockRestore(); }
+  });
+
+  it("compiles a loaded model's Materials in the load's warm-up, and a model added later as it publishes", async () => {
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: sharedEngine(), editor: true });
+    handles.push(handle);
+    handle.loadScene({ ...createDefaultScene(), actors: [] });
+    const model = (id: string) => {
+      const mesh = createMeshComponent(`${id}-mesh`, "box");
+      mesh.properties.assetGuid = "model";
+      return createActor(id, "Model", { components: [mesh] });
+    };
+    const lamp = createActor("lamp", "Lamp", { components: [{ id: "light", classId: "LightComponent", properties: { lightKind: "point" } }] });
+    const base = createDefaultScene();
+    const next = { ...base, actors: [...base.actors, model("first"), lamp] };
+    let phase = "load";
+    const compiled: Array<{ mesh: AbstractMesh; phase: string }> = [];
+    const compile = vi.spyOn(Material.prototype, "forceCompilationAsync").mockImplementation(async (mesh) => {
+      compiled.push({ mesh, phase });
+    });
+    const partsOf = (actorId: string) => visualMeshes(handle.editor!.sync.meshForActor(actorId)!);
+    const phasesFor = (actorId: string) => compiled.filter(({ mesh }) => partsOf(actorId).includes(mesh)).map((entry) => entry.phase);
+    try {
+      await handle.loadSceneAsync(next, { signal: new AbortController().signal, assets: { modelBytes: new Map([["model", encodeTriangleGlb()]]) } });
+      await handle.whenEditorModelsReady();
+      expect(partsOf("first").length).toBeGreaterThan(0);
+      // Its lights and their shadow maps are final only once the load warms up.
+      expect(compiled.map(({ mesh }) => mesh.name)).toEqual([]);
+      phase = "warm-up";
+      await handle.prewarmSceneMaterials();
+      expect(phasesFor("first")).toContain("warm-up");
+      phase = "edit";
+      handle.loadScene({ ...next, actors: [...next.actors, model("second")] });
+      await handle.whenEditorModelsReady();
+      expect(phasesFor("second")).toContain("edit");
+    } finally { compile.mockRestore(); }
   });
 
   describe("a loaded Material whose program the Engine cannot compile", () => {

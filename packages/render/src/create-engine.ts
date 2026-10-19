@@ -149,6 +149,7 @@ import {
 import { waterKindForClass, DEFORMER_COMPONENT_CLASS_ID, deformerTargetMesh, parseDeformerProperties } from "@babylonslate/core";
 import {
   accountedGeometryBytesForScene,
+  holdSceneInstanceCompiles,
   isEditorModelPlaceholder,
 } from "./glb-anim";
 import { cssCanvasPixelSize, snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
@@ -950,6 +951,10 @@ function initializeEngine(
   let worldLoading = false;
   let worldLoadId = 0;
   let worldSceneAssetGuid: string | null = null;
+  // A world load's model and foliage instances compile in its warm-up, under final lighting, not as they publish.
+  // The editor's blocking load holds while its generation is current, Play's while its scene load is.
+  let instanceCompileHold: (() => boolean) | null = null;
+  holdSceneInstanceCompiles(scene, () => instanceCompileHold?.() ?? false);
   const layerLoads = new Map<string, { loadId: number; ready: boolean }>();
   type PendingPresentation = {
     promise: Promise<void>;
@@ -1896,6 +1901,7 @@ function initializeEngine(
     if (!editorSync) throw new Error("Chunked scene realization requires an editor scene.");
     frameReportFeed.cancel("The scene changed before frame capture completed.");
     const generation = ++loadGeneration;
+    instanceCompileHold = () => generation === loadGeneration;
     worldRenderer.invalidate();
     cancelPresentation(new Error("Scene loading was superseded."), "world");
     if (load.materialDocuments) installMaterialDocuments(load.materialDocuments, load.materialFunctions);
@@ -3536,6 +3542,8 @@ function initializeEngine(
         worldSceneAssetGuid = command.sceneAssetGuid;
         postProcessParameters.clear();
         worldLoading = true;
+        const sceneLoadId = command.sceneLoadId;
+        instanceCompileHold = () => worldLoading && sceneLoadId === worldLoadId;
         worldRenderer.invalidate();
         cancelPresentation(new Error("Scene loading was superseded."), "world");
       }
@@ -4200,6 +4208,8 @@ function initializeEngine(
     },
     prewarmSceneMaterials: async (owner) => {
       const scope = loadingScope(owner);
+      // Every instance the load published is in the Scene now; later ones compile as they publish.
+      if (!owner) instanceCompileHold = null;
       applyRenderingQuality();
       // Water's blend and placement (flat) are otherwise first settled by the first frame's update, after the shader
       // warm-up and the graph's probes compiled every variant without them: each then compiles twice. Copy intent is
