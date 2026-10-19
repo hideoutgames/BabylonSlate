@@ -109,6 +109,7 @@ import {
   ViewportShadingOverlay,
   type ViewportShadingMode,
 } from "./viewport-shading-mode";
+import { isText2DOverlayMesh } from "./overlay-transform-box";
 import { createGizmoHost, type GizmoHost } from "./gizmo-host";
 import { createWaterHandles } from "./water-handles";
 import { createSplineHandles } from "./spline-handles";
@@ -2125,6 +2126,18 @@ function initializeEngine(
     const pointHandles = (): ShapeHandlesHost<never>[] => [splineHandles, deformerHandles];
     // A selected spline or deformer point takes the translate gizmo until a viewport
     // tap outside the handles or a new selection returns it to the actor.
+    // The 2D transform box frames every selected root, not just the one it
+    // attaches to: the others follow its drags through the multi-select delta.
+    const selectionBoxVisuals = (attachId: string) => {
+      if (!options.overlayTransformBox) return editorSync.visualMeshesForActor(attachId);
+      const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
+      if (roots.length < 2) return editorSync.visualMeshesForActor(attachId);
+      return roots.flatMap((id) => {
+        const mesh = editorSync.meshForActor(id);
+        if (!mesh) return [];
+        return isText2DOverlayMesh(mesh) && id !== attachId ? [mesh] : editorSync.visualMeshesForActor(id);
+      });
+    };
     const attachSelectionGizmo = () => {
       const point = splineHandles.selectedNode() ?? deformerHandles.selectedNode();
       if (point) {
@@ -2145,7 +2158,7 @@ function initializeEngine(
       });
       gizmos.attachTo(
         attachId ? editorSync.meshForActor(attachId) : null,
-        attachId ? editorSync.visualMeshesForActor(attachId) : [],
+        attachId ? selectionBoxVisuals(attachId) : [],
       );
     };
     onRollback(() => splineHandles.dispose());
