@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID } from "@babylonslate/bridge";
+import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, sameDebugObserveTarget } from "@babylonslate/bridge";
 import {
   ANIM_STATE_LAYOUT_GAP_X,
   animGraphMembersFromVariables,
@@ -64,7 +64,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useAnimGraphEditing } from "../context/anim-graph-editing-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { useGraphEditing } from "../context/graph-editing-context";
-import { useGraphDebugStore } from "../context/graph-debug-context";
+import { useGraphDebugStore, useGraphDebugTarget } from "../context/graph-debug-context";
 import { commitAnimGraphVariables } from "../lib/anim-graph-variables";
 import { createGraphRunTrace } from "../lib/graph-run-trace";
 import { InspectorPanel } from "../panels/inspector-panel";
@@ -446,13 +446,15 @@ export function AnimObjectVariablesPanel(_props: IDockviewPanelProps) {
 export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   void _props;
   const { doc, latestDoc, commit, documentId, catalog, graphGuid } = useAnimGraphDocument();
-  // While a Simulation runs, the State Machine shows the states the followed instance samples and its transitions.
+  // While a Simulation debugs this graph, the State Machine shows the states the followed instance samples and its transitions.
   const graphDebug = useGraphDebugStore();
+  const debugTarget = useGraphDebugTarget();
+  const debugging = graphGuid !== undefined && sameDebugObserveTarget(debugTarget, { kind: "animationGraph", assetGuid: graphGuid });
   const runTrace = useMemo(
-    () => graphDebug && graphGuid
+    () => graphDebug && graphGuid && debugging
       ? createGraphRunTrace(graphDebug, graphGuid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID)
       : undefined,
-    [graphDebug, graphGuid],
+    [graphDebug, graphGuid, debugging],
   );
   const {
     selectedId,

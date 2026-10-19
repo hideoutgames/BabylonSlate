@@ -409,6 +409,20 @@ describe("BehaviourTreeEditor", () => {
       expect(screen.queryByTestId("bt-blackboard-watch")).toBeNull();
     });
 
+    it("explains a node's status in a tip only while a Simulation debugs the tree", async () => {
+      livePlay.playing = true;
+      renderTree(treeWithWait());
+      const hover = () => fireEvent.pointerOver(screen.getByTestId("bt-node-task"));
+      hover();
+      expect(screen.queryByTestId("graph-node-status-tip")).toBeNull();
+
+      follow("guard");
+      hover();
+      expect(screen.getByTestId("graph-node-status-tip").textContent).toBe("No status yet");
+      act(() => debug.store!.receiveBtState(btState("guard", { btNodeId: "task", stack: [{ nodeId: "task" }] })));
+      await waitFor(() => expect(screen.getByTestId("graph-node-status-tip").textContent).toBe("Running"));
+    });
+
     it("shows nothing of another instance than the followed one", async () => {
       livePlay.playing = true;
       const view = renderTree(treeWithWait());

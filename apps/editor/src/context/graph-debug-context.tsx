@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from "react";
+import type { DebugObserveTarget } from "@babylonslate/bridge";
 import { GraphDebugStore, type GraphDebugSnapshot } from "../services/graph-debug-store";
 
 const GraphDebugContext = createContext<GraphDebugStore | null>(null);
@@ -24,4 +25,16 @@ const noSnapshot = (): GraphDebugSnapshot | null => null;
 export function useGraphDebugSnapshot(): GraphDebugSnapshot | null {
   const store = useGraphDebugStore();
   return useSyncExternalStore(store?.subscribe ?? noStore, store?.getSnapshot ?? noSnapshot);
+}
+
+const noTarget = (): DebugObserveTarget | null => null;
+
+/**
+ * What the debugger watches, or null when no Simulation debugs the focused graph. Unlike the
+ * snapshot it changes only with the target, so a graph canvas that gates its run trace on it does
+ * not render again as instances spawn and despawn.
+ */
+export function useGraphDebugTarget(): DebugObserveTarget | null {
+  const store = useGraphDebugStore();
+  return useSyncExternalStore(store?.subscribe ?? noStore, store ? () => store.getSnapshot().target : noTarget);
 }

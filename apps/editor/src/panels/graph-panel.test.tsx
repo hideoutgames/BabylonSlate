@@ -14,7 +14,10 @@ import {
   type DocumentActions,
 } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
+import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
 import { GraphEditingProvider } from "../context/graph-editing-context";
+import type { GraphDebugStore } from "../services/graph-debug-store";
+import { classIdForGraphPath } from "../services/script-compiler";
 import { ValidationProvider } from "../context/validation-context";
 import { createProjectAsset } from "../lib/create-project-asset";
 import {
@@ -268,5 +271,48 @@ describe("Graph panel", () => {
       ),
     );
     expect(panelApi.close).toHaveBeenCalled();
+  });
+});
+
+describe("Graph panel run tips", () => {
+  it("shows a pin's last value only while a Simulation debugs the Class", async () => {
+    let debug: GraphDebugStore | null = null;
+    function DebugProbe() {
+      debug = useGraphDebugStore();
+      return null;
+    }
+    const { container } = render(
+      <DocumentProvider>
+        <GraphDebugProvider>
+          <DebugProbe />
+          <MainClassGraph />
+        </GraphDebugProvider>
+      </DocumentProvider>,
+    );
+    await waitFor(() => expect(seen.documents?.homepageReady).toBe(true));
+    const actions = seen.actions!;
+    await act(() => actions.createEmptyProject("Debugged", { kind: "2d" }));
+    await act(() => actions.openDocument({ kind: "graph", path: MAIN_CLASS_FILE, label: "Main" }));
+    const graph = openContent<SerializedGraph>(MAIN_CLASS_ID);
+    await act(() =>
+      actions.applyGraphChange(MAIN_CLASS_ID, {
+        ...graph,
+        nodes: [{ id: "tick", type: "flow.event.tick", position: { x: 0, y: 0 }, data: {} }],
+        edges: [],
+      }),
+    );
+    const pin = await waitFor(() => {
+      const found = container.querySelector('[data-id="tick"] [data-pin-side="out"][data-pin-id="deltaSeconds"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+
+    // Editing a Class shows no run tips.
+    fireEvent.pointerOver(pin);
+    expect(screen.queryByTestId("graph-pin-value-tip")).toBeNull();
+
+    act(() => debug!.setTarget({ kind: "class", classId: classIdForGraphPath(MAIN_CLASS_FILE) }));
+    fireEvent.pointerOver(pin);
+    expect(screen.getByTestId("graph-pin-value-tip").textContent).toBe("No value yet");
   });
 });

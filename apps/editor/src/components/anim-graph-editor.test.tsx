@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createDefaultAnimGraph, createDefaultTransitionRuleGraph, setTransitionBidirectional, type AnimGraphDocument } from "@babylonslate/anim-graph";
+import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
+import type { GraphDebugStore } from "../services/graph-debug-store";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context";
 import { GraphEditingProvider } from "../context/graph-editing-context";
@@ -131,6 +133,10 @@ vi.mock("../context/document-context", async () => {
             path: "assets/Settings.babasset",
           },
         ],
+        getByPath: (path: string) =>
+          path === "assets/Loco.anim.babasset"
+            ? { header: { guid: "loco-graph", name: "Loco", type: "AnimationGraph" }, path }
+            : undefined,
         getByGuid: (guid: string) =>
           guid === "spr-1"
             ? { header: { guid: "spr-1", name: "Hero", type: "Sprite" } }
@@ -589,5 +595,78 @@ describe("AnimGraphEditor", () => {
       }),
     );
     expect(screen.queryByTestId("property-clipName")).toBeNull();
+  });
+});
+
+describe("AnimGraphEditor while a Simulation debugs the graph", () => {
+  const target = { kind: "animationGraph", assetGuid: "loco-graph" } as const;
+  let animated: Element[] = [];
+  let frames: Array<() => void> = [];
+  let debug: GraphDebugStore | null = null;
+  function DebugProbe() {
+    debug = useGraphDebugStore();
+    return null;
+  }
+
+  beforeEach(() => {
+    animated = [];
+    frames = [];
+    Element.prototype.animate = function (this: Element) {
+      animated.push(this);
+      return { cancel() {}, play() {} } as unknown as Animation;
+    };
+    window.matchMedia = (() => ({ matches: false })) as unknown as typeof window.matchMedia;
+    vi.stubGlobal("requestAnimationFrame", (callback: () => void) => frames.push(callback));
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+  });
+  afterEach(() => {
+    delete (Element.prototype as { animate?: unknown }).animate;
+    vi.unstubAllGlobals();
+    debug = null;
+  });
+
+  function renderDebugged() {
+    store.reset(locoGraph() as unknown as Record<string, unknown>);
+    return render(
+      <GraphDebugProvider>
+        <DebugProbe />
+        <ValidationProvider>
+          <DocumentWorkspaceProvider documentId={DOC_ID}>
+            <AnimGraphEditingProvider>
+              <PrefabEditingProvider>
+                <GraphEditingProvider>
+                  <AnimGraphGraphPanel {...panelProps} />
+                </GraphEditingProvider>
+              </PrefabEditingProvider>
+            </AnimGraphEditingProvider>
+          </DocumentWorkspaceProvider>
+        </ValidationProvider>
+      </GraphDebugProvider>,
+    );
+  }
+  const trace = (nodes: string[]) => ({
+    target, instanceId: "hero", tickIndex: 1,
+    graphs: [{ assetGuid: "loco-graph", graphId: "state-machine", nodes, edges: [], values: [] }],
+  });
+  const runFrames = () => act(() => { const pending = frames; frames = []; for (const frame of pending) frame(); });
+
+  it("lights the state the followed instance samples, and nothing before the debugger watches the graph", async () => {
+    const { container } = renderDebugged();
+    await waitFor(() => expect(container.querySelector('[data-id="run"] [data-node-role="anim-state"]')).not.toBeNull());
+    const runState = container.querySelector('[data-id="run"] [data-node-role="anim-state"]')!;
+
+    // Not watched yet: a trace has nowhere to go.
+    act(() => debug!.receiveTrace(trace(["run"])));
+    runFrames();
+    expect(animated).toEqual([]);
+
+    act(() => {
+      debug!.setTarget(target);
+      debug!.receiveRoster({ target, reset: true, added: [{ id: "hero", kind: "component", label: "Hero" }], removed: [] });
+    });
+    act(() => debug!.receiveTrace(trace(["run"])));
+    runFrames();
+    expect(animated).toContain(runState);
+    expect(animated).not.toContain(container.querySelector('[data-id="idle"] [data-node-role="anim-state"]'));
   });
 });
