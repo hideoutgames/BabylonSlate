@@ -489,6 +489,11 @@ function clipDurationMs(
   return Math.max(1, (clip?.durationMs ?? 1000) / Math.max(0.001, state.speed));
 }
 
+/** Seconds a state's clock advances in a tick: a state at Speed 0 or below holds its pose. */
+function clockStepSeconds(state: AnimState, dtSeconds: number): number {
+  return state.speed > 0 ? dtSeconds : 0;
+}
+
 function advanceClock(
   previousTimeMs: number,
   previousLoopCount: number,
@@ -645,7 +650,7 @@ export function evaluateAnimGraph(
     previous?.timeMs ?? 0,
     previous?.loopCount ?? 0,
     previous?.normalisedTime ?? 0,
-    dtSeconds,
+    clockStepSeconds(current, dtSeconds),
     duration,
     current.loop,
   );
@@ -724,7 +729,7 @@ export function evaluateAnimGraph(
       blendFromTimeMs,
       0,
       blendFromTimeMs / fromDuration,
-      startedBlend ? 0 : dtSeconds,
+      startedBlend ? 0 : clockStepSeconds(blendState, dtSeconds),
       fromDuration,
       blendState.loop,
     );

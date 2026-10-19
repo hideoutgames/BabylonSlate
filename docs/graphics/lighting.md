@@ -9,7 +9,7 @@ Lights, environment lighting and the light budget decide how lit surfaces look i
 
 You can also select an actor and use **Add Component > Rendering** to add **Light**, **Rectangular Area Light** or **Hemispheric Fill Light**.
 
-New 3D scenes already contain a warm **Directional Light** with **Cast Shadows** on, a Skybox and a Camera. A PBR scene with no lights and no environment lighting renders dark, including meshes with no Material, which draw a [grey checker](models.md#materials) only while a light reaches them. A **Blank** project's first scene is empty, so add a light before you place meshes.
+New 3D scenes already contain a warm **Directional Light** with **Cast Shadows** on, a Skybox and a Camera. The light starts about 45° above the horizon and to the left of the camera, so surfaces facing the camera are well lit and their shadows stay crisp. A PBR scene with no lights and no environment lighting renders dark, including meshes with no Material, which draw a [grey checker](models.md#materials) only while a light reaches them. A **Blank** project's first scene is empty, so add a light before you place meshes.
 
 ## Light types
 

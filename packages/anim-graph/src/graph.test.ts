@@ -38,6 +38,21 @@ describe("anim graph evaluator", () => {
     expect(b.blendWeights.idle).toBe(1);
   });
 
+  it("holds the pose of a state at Speed 0 and scales the clock of any other speed", () => {
+    const run = (speed: number) => {
+      const doc = createDefaultAnimGraph();
+      doc.states[0]!.speed = speed;
+      let state: AnimEvalState | null = null;
+      for (let tick = 0; tick < 10; tick++) state = evaluateAnimGraph(doc, state, 0.1, {});
+      return state!;
+    };
+    // The default idle clip lasts one second: ten 0.1 s ticks cover all of it at Speed 1, half at 0.5.
+    expect(run(0.5).normalisedTime).toBeCloseTo(0.5, 5);
+    const held = run(0);
+    expect(held.normalisedTime).toBe(0);
+    expect(held.timeMs).toBe(0);
+  });
+
   it("transitions when the rule decides enter and exit", () => {
     const doc = createDefaultAnimGraph();
     doc.states.push({

@@ -400,6 +400,68 @@ describe("Play createEngine view", () => {
     } finally { compile.mockRestore(); }
   });
 
+  describe("a model that Play assigns while the world loads", () => {
+    /** Play's world with a Material compile that only records which model it was for and which phase it ran in. */
+    function playModelCompiles() {
+      const { handle } = playHandle(sharedEngine());
+      handle.setMeshAssets({ modelBytes: new Map([["model", encodeTriangleGlb()]]) });
+      let phase = "load";
+      const compiled: Array<{ mesh: AbstractMesh; phase: string }> = [];
+      const compile = vi.spyOn(Material.prototype, "forceCompilationAsync").mockImplementation(async (mesh) => {
+        compiled.push({ mesh, phase });
+      });
+      const parts = (slotId: number) => visualMeshes(handle.scene.getMeshByName(`actor-${slotId}`)!);
+      return {
+        handle,
+        restore: () => compile.mockRestore(),
+        enter: (next: string) => { phase = next; },
+        /** Assigns the model to a slot and waits for it to publish. */
+        assign: async (slotId: number) => {
+          handle.applyCommand({ type: "assignMesh", slotId, actorGuid: `hero-${slotId}`, meshKind: "box", meshAssetGuid: "model" });
+          await handle.whenEditorModelsReady();
+          expect(parts(slotId).length).toBeGreaterThan(0);
+        },
+        /** The phases the slot's model compiled in. */
+        phases: (slotId: number) => compiled.filter(({ mesh }) => parts(slotId).includes(mesh)).map((entry) => entry.phase),
+      };
+    }
+
+    it("compiles nothing until the world's warm-up, including a model of the load a newer one superseded", async () => {
+      const play = playModelCompiles();
+      try {
+        play.handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "first", sceneLoadId: 1 });
+        await play.assign(2);
+        play.handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "second", sceneLoadId: 2 });
+        await play.assign(3);
+        // Its lights and their shadow maps are final only once the load warms up.
+        expect([play.phases(2), play.phases(3)]).toEqual([[], []]);
+        play.enter("warm-up");
+        await play.handle.prewarmSceneMaterials();
+        expect(play.phases(2)).toContain("warm-up");
+        expect(play.phases(3)).toContain("warm-up");
+        // What spawns after the warm-up compiles as it publishes.
+        play.enter("spawn");
+        await play.assign(4);
+        expect(play.phases(4)).toContain("spawn");
+      } finally { play.restore(); }
+    });
+
+    it("compiles as it publishes once its load failed, and holds through the failure of an older load", async () => {
+      const play = playModelCompiles();
+      try {
+        play.handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "first", sceneLoadId: 1 });
+        play.handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "second", sceneLoadId: 2 });
+        play.handle.applyCommand({ type: "sceneLoadFailed", sceneAssetGuid: "first", sceneLoadId: 1, message: "Superseded" });
+        await play.assign(2);
+        expect(play.phases(2)).toEqual([]);
+        play.enter("after-failure");
+        play.handle.applyCommand({ type: "sceneLoadFailed", sceneAssetGuid: "second", sceneLoadId: 2, message: "Realization failed" });
+        await play.assign(3);
+        expect(play.phases(3)).toContain("after-failure");
+      } finally { play.restore(); }
+    });
+  });
+
   describe("a loaded Material whose program the Engine cannot compile", () => {
     const log = "FRAGMENT SHADER ERROR: 0:12: 'albedo' : undeclared identifier";
 

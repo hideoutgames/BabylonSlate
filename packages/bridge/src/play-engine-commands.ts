@@ -54,6 +54,7 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "cableFrame",
   "sceneLoading",
   "activeScene",
+  "sceneLoadFailed",
   "sceneStreamLoading",
   "sceneStreamRemoved",
   "sceneLayerLoading",

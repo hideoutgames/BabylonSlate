@@ -18,6 +18,7 @@ import { isEnvironmentLightingReady } from "./environment-lighting";
 import { withSceneReadinessState } from "./scene-readiness-signal";
 import { createHeldThreadBudget, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
+import { drawnMaterialVariants } from "./drawn-variants";
 import { admittedSceneMeshes, admittedSceneParticles, admittedSceneTextures } from "./scene-stream-admission";
 // Kept on the ./scene-perf subpath. Modules in scene-perf's transitive import
 // graph must import these from the leaves, or they close an import cycle back
@@ -136,15 +137,15 @@ export async function prewarmMeshMaterials(
           : new Set([material]);
         for (const entry of materials) {
           check(mesh);
-          // Babylon draws a mesh with thin instances only instanced; one with instances also draws plain while none shows.
-          if (!mesh.hasThinInstances) {
+          const drawn = drawnMaterialVariants(mesh);
+          if (drawn.plain) {
             const unit = `"${entry.name}" for "${mesh.name}"`;
             deadline.advance(unit);
             await attributeCompileFailure(unit, () => entry instanceof NodeMaterial ? prewarmMaterial(entry, mesh) : entry.forceCompilationAsync(mesh));
             check(mesh);
           }
-          if (mesh.hasThinInstances || mesh.instances.length > 0) {
-            const instanced = `"${entry.name}" for instances of "${mesh.name}"`;
+          if (drawn.instanced) {
+            const instanced =`"${entry.name}" for instances of "${mesh.name}"`;
             deadline.advance(instanced);
             await attributeCompileFailure(instanced, () => entry.forceCompilationAsync(mesh, { useInstances: true }));
             check(mesh);
