@@ -533,8 +533,8 @@ function keepSourceName(sourceName: string): string {
 /**
  * Prepare only this unpublished instance's actual material/mesh variants. A
  * stall deadline that fires a held gap late (a synchronous shader link kept the
- * material from progressing) starts a fresh window; every mesh of this call
- * spends one `SCENE_THREAD_HELD_BUDGET_MS`, so a stuck material still fails.
+ * material from progressing) starts a fresh window. All the meshes of one call
+ * share one `SCENE_THREAD_HELD_BUDGET_MS`, so a stuck material still fails.
  */
 export async function prepareInstanceMaterials(
   root: Mesh,
