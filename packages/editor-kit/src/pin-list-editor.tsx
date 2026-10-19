@@ -349,7 +349,8 @@ export function PinListEditor({
                     >
                       <SelectTrigger
                         id={`${testIdPrefix}-${row.id}-unit`}
-                        className="h-7 min-h-7 w-32 text-xs"
+                        size="sm"
+                        className="w-32 text-xs"
                         data-testid={`${testIdPrefix}-${row.id}-unit`}
                       >
                         <SelectValue>

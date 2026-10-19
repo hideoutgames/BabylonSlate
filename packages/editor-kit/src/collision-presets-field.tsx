@@ -85,7 +85,7 @@ export function CollisionPresetsField({
                     >
                       <SelectTrigger
                         aria-label={`${preset.name} Layer`}
-                        className={`${ROW_CONTROL} w-28`}
+                        className="w-28 py-0 text-xs data-[size=default]:h-6 pointer-coarse:data-[size=default]:h-9"
                         data-testid={`${testId}-${row}-layer`}
                       >
                         <SelectValue>{() => layers[current] ?? `Layer ${current + 1}`}</SelectValue>
