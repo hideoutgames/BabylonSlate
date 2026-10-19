@@ -10,7 +10,7 @@ In the **Content Browser**, choose **New Asset > Rendering > Water**. Choose a *
 
 Double-tap the asset to open it. The window has **Preview** and an **Inspector**.
 
-- **Preview** shows a lake of this water that you can orbit. Edits apply while the waves keep moving.
+- **Preview** shows a lake of this water. Drag to orbit around its centre; pinch or use the mouse wheel to zoom. Edits apply while the waves keep moving.
 - The **Inspector** edits the look, waves, foam and surface detail. Settings marked "Render only" do not affect buoyancy or queries.
 - **Refraction** and **Object Reflections** show in scene viewports and Play, not in Preview.
 

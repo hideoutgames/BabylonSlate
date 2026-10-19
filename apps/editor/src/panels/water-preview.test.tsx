@@ -41,6 +41,7 @@ vi.mock("@babylonslate/render", async () => {
       harness.hosts.push(host);
       return host;
     },
+    attachMaterialPreviewGestures: () => ({ dispose: () => {} }),
     createMaterialPreviewPresenter: () => ({ present: () => { harness.presents += 1; }, dispose: () => {} }),
     createWaterMesh: (scene: unknown, _name: string, _body: unknown, definition: WaterDefinition, material: unknown) => {
       const mesh = { host: harness.hosts.find((host) => host.scene === scene)!, definition: structuredClone(definition), material };
