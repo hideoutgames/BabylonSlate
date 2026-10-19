@@ -1,4 +1,6 @@
-import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import type { GraphRunTrace } from "@babylonslate/graph-ui";
+import { createGraphRunTrace } from "../lib/graph-run-trace";
 import { GraphDebugStore, type GraphDebugSnapshot } from "../services/graph-debug-store";
 
 const GraphDebugContext = createContext<GraphDebugStore | null>(null);
@@ -24,4 +26,24 @@ const noSnapshot = (): GraphDebugSnapshot | null => null;
 export function useGraphDebugSnapshot(): GraphDebugSnapshot | null {
   const store = useGraphDebugStore();
   return useSyncExternalStore(store?.subscribe ?? noStore, store?.getSnapshot ?? noSnapshot);
+}
+
+/**
+ * What a Class graph canvas draws of the running Simulation: the runs of the followed instance
+ * of `classId` in this graph. Undefined while the debugger follows no target of that class (no
+ * Simulation, or another graph in focus), so editing a graph outside a Simulation shows no
+ * flash and no pin tip.
+ */
+export function useClassGraphRunTrace(
+  assetPath: string | undefined,
+  classId: string | undefined,
+  graphId: string,
+): GraphRunTrace | undefined {
+  const store = useGraphDebugStore();
+  const target = useGraphDebugSnapshot()?.target;
+  const followsClass = target?.kind === "class" && target.classId === classId;
+  return useMemo(
+    () => store && assetPath !== undefined && followsClass ? createGraphRunTrace(store, assetPath, graphId) : undefined,
+    [store, assetPath, followsClass, graphId],
+  );
 }

@@ -43,8 +43,7 @@ import {
   defaultNodeRegistry,
 } from "../services/graph-validation";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
-import { useGraphDebugStore } from "../context/graph-debug-context";
-import { createGraphRunTrace } from "../lib/graph-run-trace";
+import { useClassGraphRunTrace } from "../context/graph-debug-context";
 import { sceneAssetClassId } from "@babylonslate/object-model";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import {
@@ -136,20 +135,14 @@ export function GraphPanel(
     () => serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),
     [doc?.ref.kind, doc?.content],
   );
-  // While a Simulation runs, the canvas shows what the followed instance ran in this graph.
-  const graphDebug = useGraphDebugStore();
+  // While a Simulation follows an instance of this Class, the canvas shows what that instance ran in this graph.
   const runGraphId = activeFunctionId
     ? functionGraphExportName({
         id: activeFunctionId,
         name: graphContent?.members?.find((member) => member.id === activeFunctionId)?.name,
       })
     : "event-graph";
-  const runTrace = useMemo(
-    () => graphDebug && doc?.ref.kind === "graph"
-      ? createGraphRunTrace(graphDebug, doc.ref.path, runGraphId)
-      : undefined,
-    [graphDebug, doc?.ref.kind, doc?.ref.path, runGraphId],
-  );
+  const runTrace = useClassGraphRunTrace(doc?.ref.kind === "graph" ? doc.ref.path : undefined, classId, runGraphId);
   const memberSymbols = useMemo(() => {
     const graphs = { ...otherClassGraphs };
     if (classId && graphContent) graphs[classId] = graphContent;

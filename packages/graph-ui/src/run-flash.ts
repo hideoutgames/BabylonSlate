@@ -20,9 +20,13 @@ const NODE_FRAMES: Frames = {
     { outlineStyle: "solid", outlineWidth: "2px", outlineOffset: "0px", outlineColor: FLASH_COLOR },
   ],
 };
-// One keyframe: the wire fades from the flash colour back to whatever its own style paints.
+// The wire fades from the flash colour back to whatever its own style paints, so its one keyframe is
+// the start (`offset: 0`); the end is implicit. The start is a `color-mix()` rather than a bare
+// `var(--selection)`: that is a legacy `rgb()` colour, which Chromium interpolates wrongly against
+// the `oklch()` pin colours the wires are painted in.
+const WIRE_FLASH_START = `color-mix(in oklab, ${FLASH_COLOR} 100%, transparent)`;
 const WIRE_FRAMES: Frames = {
-  keyframes: [{ stroke: FLASH_COLOR }],
+  keyframes: [{ offset: 0, stroke: WIRE_FLASH_START }],
   reduced: [{ stroke: FLASH_COLOR }, { stroke: FLASH_COLOR }],
 };
 const PIN_FRAMES: Frames = {
