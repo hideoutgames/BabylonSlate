@@ -358,6 +358,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Enable Collision", typeId: "bool", propertyKey: "enableCollision" },
       { name: "Layer", typeId: "int", propertyKey: "layer" },
       { name: "Mask", typeId: "int", propertyKey: "mask" },
+      { name: "Overlap Mask", typeId: "int", propertyKey: "overlapMask" },
       { name: "Cast Shadows", typeId: "bool", propertyKey: "castShadows" },
       { name: "Receive Shadows", typeId: "bool", propertyKey: "receiveShadows" },
     ],
@@ -515,6 +516,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Collision Mode", typeId: "string", propertyKey: "collisionMode" },
       { name: "Layer", typeId: "int", propertyKey: "layer" },
       { name: "Mask", typeId: "int", propertyKey: "mask" },
+      { name: "Overlap Mask", typeId: "int", propertyKey: "overlapMask" },
     ],
   },
   {
@@ -717,6 +719,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Restitution", typeId: "float", propertyKey: "restitution" },
       { name: "Layer", typeId: "int", propertyKey: "layer" },
       { name: "Mask", typeId: "int", propertyKey: "mask" },
+      { name: "Overlap Mask", typeId: "int", propertyKey: "overlapMask" },
       { name: "Render In Game", typeId: "bool", propertyKey: "renderInGame" },
     ],
     events: COLLIDER_EVENTS,
@@ -783,6 +786,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Restitution", typeId: "float", propertyKey: "restitution" },
       { name: "Layer", typeId: "int", propertyKey: "layer" },
       { name: "Mask", typeId: "int", propertyKey: "mask" },
+      { name: "Overlap Mask", typeId: "int", propertyKey: "overlapMask" },
     ],
     functions: [{
       name: "Add Impulse", runtime: "addImpulse",

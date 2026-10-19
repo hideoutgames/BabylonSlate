@@ -95,7 +95,7 @@ export class RagdollPhysics {
         shape: length > 1e-6 ? { kind: "capsule", radius, halfHeight: length / 2 - radius } : { kind: "sphere", radius },
         translation: { x: offset.x / 2, y: offset.y / 2, z: offset.z / 2 },
         rotation: length > 1e-6 ? capsuleRotation(offset, length) : identity(),
-        friction: tuning.friction, restitution: tuning.restitution, layer: tuning.layer, mask: tuning.mask, isTrigger: false };
+        friction: tuning.friction, restitution: tuning.restitution, layer: tuning.layer, mask: tuning.mask, overlapMask: tuning.overlapMask, isTrigger: false };
       const parent = bone.parentName === null ? undefined : selected.get(bone.parentName);
       const joint: ConstraintDesc | undefined = parent ? {
         id: `${bodyId}:joint`, kind: "ballSocket", bodyAId: parent.bodyId, bodyBId: bodyId,

@@ -82,11 +82,12 @@ export class RuntimePropertyWrites {
   refreshComponent(component: ActorComponent, propertyName?: string): void {
     const owner = component.owner;
     if (!owner || owner.destroyed) return;
-    // A written Layer or Collides With makes the collider Custom, keeping its preset's other value.
-    if (propertyName === "layer" || propertyName === "mask") {
+    // A written Layer, Mask or Overlap Mask makes the collider Custom, keeping its preset's other values.
+    if (propertyName === "layer" || propertyName === "mask" || propertyName === "overlapMask") {
       const preset = this.host.physics().collisionPreset(component.getVariable("collisionPreset"));
       if (preset) {
-        component.setVariable(propertyName === "layer" ? "mask" : "layer", propertyName === "layer" ? preset.mask : preset.layer);
+        for (const key of ["layer", "mask", "overlapMask"] as const)
+          if (key !== propertyName) component.setVariable(key, preset[key]);
         component.setVariable("collisionPreset", CUSTOM_COLLISION_PRESET);
       }
     }
@@ -122,7 +123,7 @@ export class RuntimePropertyWrites {
       return;
     }
     if (component.classId === "DynamicRuntimeMeshComponent" &&
-      (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask" || propertyName === "collisionPreset")) {
+      (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask" || propertyName === "overlapMask" || propertyName === "collisionPreset")) {
       if (propertyName === "materialGuid" && slotId !== undefined) renderEmitter.emitMaterialAssignments([component], slotId, true);
       // Geometry collision changes are coalesced by the next physics step.
       return;

@@ -1,7 +1,7 @@
 import { WaterWorld } from "./water-world";
 import { dynamicRuntimeGeometry } from "./dynamic-runtime-mesh";
 import { DynamicMeshCollisionCache, dynamicMeshCollisionDescriptor } from "./dynamic-mesh-collision";
-import { landscapeCollisionMesh, normalizeWaterBuoyancy, resolveCollisionFilter, sameCollisionTriangleMesh, type CollisionPreset, type CollisionTriangleMesh, type MovementProperties, type Transform } from "@babylonslate/core";
+import { landscapeCollisionMesh, normalizeWaterBuoyancy, resolveCollisionFilter, sameCollisionTriangleMesh, type CollisionFilter, type CollisionPreset, type CollisionTriangleMesh, type MovementProperties, type Transform } from "@babylonslate/core";
 import { parsedMovementProperties } from "./movement-settings";
 import type {
   ColliderDesc,
@@ -259,17 +259,19 @@ export class PhysicsWorldSync {
     return this.backend;
   }
 
-  /** A collider's layer and mask in this world: its Collision Preset's, or its own when Custom. */
-  collisionFilter(layer: number, mask: number, presetRef: unknown): { layer: number; mask: number } {
-    const resolved = resolveCollisionFilter({ layer, mask, overlapMask: 0 }, presetRef, this.collisionPresets);
-    return { layer: resolved.layer, mask: resolved.mask };
+  /** A collider's layer and responses in this world: its Collision Preset's, or its own when Custom. */
+  collisionFilter(own: CollisionFilter, presetRef: unknown): CollisionFilter {
+    return resolveCollisionFilter(own, presetRef, this.collisionPresets);
   }
 
   /** Mesh, Dynamic Runtime Mesh and Landscape collision. */
-  private meshCollisionFilter(component: ActorComponent): { layer: number; mask: number } {
+  private meshCollisionFilter(component: ActorComponent): CollisionFilter {
     return this.collisionFilter(
-      parseMeshCollisionLayer(component.getVariable("layer")),
-      parseMeshCollisionMask(component.getVariable("mask")),
+      {
+        layer: parseMeshCollisionLayer(component.getVariable("layer")),
+        mask: parseMeshCollisionMask(component.getVariable("mask")),
+        overlapMask: overlapMaskOf(component.getVariable("overlapMask")),
+      },
       component.getVariable("collisionPreset"),
     );
   }
@@ -1645,7 +1647,7 @@ export class PhysicsWorldSync {
         friction: collider.friction,
         restitution: collider.restitution,
         isTrigger: collider.isTrigger,
-        ...this.collisionFilter(collider.layer, collider.mask, component.getVariable("collisionPreset")),
+        ...this.collisionFilter(collider, component.getVariable("collisionPreset")),
         translation: baked.translation,
         rotation: baked.rotation,
       });
@@ -1748,7 +1750,7 @@ export class PhysicsWorldSync {
       this.ordinaryByComponent.set(component, prepared);
     }
     const tuning = Object.fromEntries(
-      ["friction", "restitution", "isTrigger", "layer", "mask", "collisionPreset"].map((name) => [
+      ["friction", "restitution", "isTrigger", "layer", "mask", "overlapMask", "collisionPreset"].map((name) => [
         name,
         component.getVariable(name),
       ]),
@@ -1954,7 +1956,7 @@ export class PhysicsWorldSync {
     colliders: Map<string, ColliderDesc>,
   ): void {
     for (const component of this.meshPhysicsComponents(actor)) {
-      const { layer, mask } = this.meshCollisionFilter(component);
+      const { layer, mask, overlapMask } = this.meshCollisionFilter(component);
       for (const collision of this.resolvedMeshCollisions(component)) {
         const colliderId = componentColliderPhysicsId(
           actor.guid,
@@ -1996,6 +1998,7 @@ export class PhysicsWorldSync {
           isTrigger: false,
           layer,
           mask,
+          overlapMask,
           translation: baked.translation,
           rotation: baked.rotation,
         });
@@ -2099,7 +2102,7 @@ export class PhysicsWorldSync {
         friction: collider.friction,
         restitution: collider.restitution,
         isTrigger: collider.isTrigger,
-        ...this.collisionFilter(collider.layer, collider.mask, component.getVariable("collisionPreset")),
+        ...this.collisionFilter(collider, component.getVariable("collisionPreset")),
         translation: baked.translation,
         rotation: baked.rotation,
       });
@@ -2307,6 +2310,7 @@ function sameColliderDescriptor(
     a.isTrigger === b.isTrigger &&
     a.layer === b.layer &&
     a.mask === b.mask &&
+    (a.overlapMask ?? 0) === (b.overlapMask ?? 0) &&
     a.translation?.x === b.translation?.x &&
     a.translation?.y === b.translation?.y &&
     a.translation?.z === b.translation?.z &&
@@ -2367,6 +2371,7 @@ const COLLISION_DESCRIPTOR_VARIABLES = [
   "isTrigger",
   "layer",
   "mask",
+  "overlapMask",
   "collisionPreset",
   "collisionMode",
   "meshKind",
@@ -2453,4 +2458,9 @@ function meshAssetGuid(component: ActorComponent): string | null {
   const variable = component.getVariable("assetGuid");
   if (typeof variable === "string") return variable.trim() || null;
   return component.assetGuid;
+}
+
+/** A component's `overlapMask`: layers it overlaps without blocking; none when unset. */
+function overlapMaskOf(value: unknown): number {
+  return typeof value === "number" && Number.isInteger(value) ? value >>> 0 : 0;
 }

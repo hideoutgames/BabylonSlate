@@ -62,7 +62,7 @@ export function defaultComponentAuthoringProperties(
     case "MovementComponent":
       return { ...parseMovementProperties({}) };
     case "DynamicRuntimeMeshComponent":
-      return { materialGuid: null, enableCollision: false, castShadows: true, receiveShadows: true, layer: 1, mask: 0xffffffff, collisionPreset: DEFAULT_COLLISION_PRESET_ID };
+      return { materialGuid: null, enableCollision: false, castShadows: true, receiveShadows: true, layer: 1, mask: 0xffffffff, overlapMask: 0, collisionPreset: DEFAULT_COLLISION_PRESET_ID };
     case "MeshComponent":
       return {
         meshKind: "box",
@@ -70,6 +70,7 @@ export function defaultComponentAuthoringProperties(
         collisionMode: "none",
         layer: 1,
         mask: 0xffffffff,
+        overlapMask: 0,
         collisionPreset: DEFAULT_COLLISION_PRESET_ID,
       };
     case "SpriteComponent":

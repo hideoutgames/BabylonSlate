@@ -78,7 +78,10 @@ export type ColliderProperties = {
   restitution: number;
   isTrigger: boolean;
   layer: number;
+  /** Layers it blocks. */
   mask: number;
+  /** Layers it overlaps without blocking. */
+  overlapMask: number;
   /** Play/export world dashes; editor always draws them. Default false. */
   renderInGame: boolean;
 };
@@ -119,6 +122,7 @@ export function parseColliderProperties(
     isTrigger: source.isTrigger === true,
     layer: numberOr(source.layer, 1),
     mask: numberOr(source.mask, 0xffffffff),
+    overlapMask: numberOr(source.overlapMask, 0),
     renderInGame: source.renderInGame === true,
   };
 }

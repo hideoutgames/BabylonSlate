@@ -5,7 +5,7 @@ import { ClassRegistry, World } from "@babylonslate/object-model";
 import { PhysicsWorldSync } from "./physics-sync";
 
 const box = { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } };
-const PRESETS = [{ id: "ghost-pass", layer: 2, mask: 0xffffffef, overlapMask: 0 }];
+const PRESETS = [{ id: "ghost-pass", layer: 2, mask: 0xffffffef, overlapMask: 0x10 }];
 
 function filterOf(variables: Record<string, unknown>, collisionPresets?: typeof PRESETS) {
   const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
@@ -19,7 +19,7 @@ function filterOf(variables: Record<string, unknown>, collisionPresets?: typeof 
   try {
     sync.syncFromWorld(world);
     const desc = commit.mock.calls.flatMap(([, changes]) => changes.upsert).at(-1);
-    return desc && { layer: desc.layer, mask: desc.mask };
+    return desc && { layer: desc.layer, mask: desc.mask, overlapMask: desc.overlapMask };
   } finally {
     sync.dispose();
   }
@@ -27,12 +27,13 @@ function filterOf(variables: Record<string, unknown>, collisionPresets?: typeof 
 
 describe("Collision Presets", () => {
   it("gives a collider its preset's layer and mask", () => {
-    expect(filterOf({ layer: 1, mask: 4, collisionPreset: "ghost-pass" }, PRESETS)).toEqual({ layer: 2, mask: 0xffffffef });
+    expect(filterOf({ layer: 1, mask: 4, collisionPreset: "ghost-pass" }, PRESETS)).toEqual({ layer: 2, mask: 0xffffffef, overlapMask: 0x10 });
   });
 
-  it("keeps a Custom collider's own layer and mask, and a missing or removed preset is Custom", () => {
-    expect(filterOf({ layer: 1, mask: 4, collisionPreset: "custom" }, PRESETS)).toEqual({ layer: 1, mask: 4 });
-    expect(filterOf({ layer: 1, mask: 4 }, PRESETS)).toEqual({ layer: 1, mask: 4 });
-    expect(filterOf({ layer: 1, mask: 4, collisionPreset: "removed" }, PRESETS)).toEqual({ layer: 1, mask: 4 });
+  it("keeps a Custom collider's own layer and responses, and a missing or removed preset is Custom", () => {
+    const own = { layer: 1, mask: 4, overlapMask: 8 };
+    expect(filterOf({ ...own, collisionPreset: "custom" }, PRESETS)).toEqual(own);
+    expect(filterOf(own, PRESETS)).toEqual(own);
+    expect(filterOf({ ...own, collisionPreset: "removed" }, PRESETS)).toEqual(own);
   });
 });
