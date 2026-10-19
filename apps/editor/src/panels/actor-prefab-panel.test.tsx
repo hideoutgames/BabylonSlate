@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createMeshComponent } from "@babylonslate/core";
 import {
@@ -8,6 +8,7 @@ import {
 } from "./actor-prefab-panel";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import type { ProjectAddComponentAsset } from "./add-component-catalog";
+import { KeybindProvider } from "../context/keybind-context";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -21,10 +22,11 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 const frameActor = vi.hoisted(() => vi.fn());
 const setSelectedIds = vi.hoisted(() => vi.fn());
 const renameComponent = vi.hoisted(() => vi.fn());
+const removeSelected = vi.hoisted(() => vi.fn());
 const setSelectedMemberId = vi.hoisted(() => vi.fn());
 const setSelectedNodeIds = vi.hoisted(() => vi.fn());
 const harness = vi.hoisted(() => ({
-  components: [] as Array<{ id: string; classId: string; name?: string; parentId?: string | null; properties?: Record<string, unknown> }>,
+  components: [] as Array<{ id: string; classId: string; name?: string; parentId?: string | null; properties?: Record<string, unknown>; inheritedFrom?: string }>,
   selectedId: "prefab-root" as string | null,
   selectedIds: ["prefab-root"] as string[],
   assets: [] as ProjectAddComponentAsset[],
@@ -37,7 +39,7 @@ vi.mock("../context/prefab-editing-context", () => ({
     selectedIds: harness.selectedIds,
     setSelectedIds,
     addComponent: vi.fn(),
-    removeSelected: vi.fn(),
+    removeSelected,
     reparentComponent: vi.fn(),
     renameComponent,
   }),
@@ -93,6 +95,7 @@ afterEach(() => {
   frameActor.mockClear();
   setSelectedIds.mockClear();
   renameComponent.mockClear();
+  removeSelected.mockClear();
   setSelectedMemberId.mockClear();
   setSelectedNodeIds.mockClear();
   harness.assets = [];
@@ -121,6 +124,17 @@ describe("flattenPrefabComponents", () => {
       ["orphan", 1],
       ["loop-a", 1],
       ["loop-b", 1],
+    ]);
+  });
+
+  it("lists search matches flat under Prefab Root", () => {
+    const body = createMeshComponent("body", "box");
+    const arm = { ...createMeshComponent("arm", "box"), name: "Arm Mesh", parentId: "body" };
+    const light = { id: "light", classId: "PointLightComponent", name: "Lamp", parentId: "arm", properties: {} };
+    const nodes = flattenPrefabComponents([body, arm, light], new Set(["body"]), undefined, undefined, "arm");
+    expect(nodes.map((node) => [node.id, node.depth, node.hasChildren])).toEqual([
+      [PREFAB_ROOT_ID, 0, true],
+      ["arm", 1, false],
     ]);
   });
 });
@@ -174,5 +188,51 @@ describe("ActorPrefabPanel", () => {
     fireEvent.change(input, { target: { value: "MyCustomNamedComponent" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(renameComponent).toHaveBeenCalledWith("mesh-1", "MyCustomNamedComponent");
+  });
+
+  it("deletes from a row menu after selecting a row outside the selection", async () => {
+    harness.components = [createMeshComponent("mesh-1", "box"), createMeshComponent("mesh-2", "box")];
+    harness.selectedId = "mesh-1";
+    harness.selectedIds = ["mesh-1"];
+    render(<ActorPrefabPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByTestId("prefab-row-menu-mesh-2"));
+    expect(setSelectedIds).toHaveBeenLastCalledWith(["mesh-2"]);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }));
+    expect(removeSelected).toHaveBeenCalledOnce();
+  });
+
+  it("keeps Delete unavailable for an inherited component", async () => {
+    harness.components = [{ ...createMeshComponent("mesh-1", "box"), inheritedFrom: "BaseHero" }];
+    harness.selectedId = "mesh-1";
+    harness.selectedIds = ["mesh-1"];
+    render(<KeybindProvider><ActorPrefabPanel {...({} as IDockviewPanelProps)} /></KeybindProvider>);
+    fireEvent.click(screen.getByTestId("prefab-row-menu-mesh-1"));
+    const remove = await screen.findByRole("menuitem", { name: "Delete" });
+    expect(remove.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.keyDown(screen.getByRole("tree"), { key: "Delete", code: "Delete" });
+    expect(removeSelected).not.toHaveBeenCalled();
+  });
+
+  it("deletes the selection with the Delete key unless the search field has focus", async () => {
+    harness.components = [createMeshComponent("mesh-1", "box")];
+    harness.selectedId = "mesh-1";
+    harness.selectedIds = ["mesh-1"];
+    render(<KeybindProvider><ActorPrefabPanel {...({} as IDockviewPanelProps)} /></KeybindProvider>);
+    const search = screen.getByTestId("prefab-component-search");
+    search.focus();
+    fireEvent.keyDown(search, { key: "Delete", code: "Delete" });
+    expect(removeSelected).not.toHaveBeenCalled();
+    const tree = screen.getByRole("tree");
+    tree.focus();
+    fireEvent.keyDown(tree, { key: "Delete", code: "Delete" });
+    await waitFor(() => expect(removeSelected).toHaveBeenCalledOnce());
+  });
+
+  it("names the selected component as the Add Component target", () => {
+    harness.components = [{ ...createMeshComponent("mesh-1", "box"), name: "Body" }];
+    harness.selectedId = "mesh-1";
+    harness.selectedIds = ["mesh-1"];
+    render(<ActorPrefabPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("prefab-add-component").getAttribute("aria-label")).toBe("Add Component To Body");
   });
 });

@@ -206,6 +206,29 @@ describe("collectClassGraphsForPalette", () => {
     ]);
   });
 
+  it("keeps component names and Material Instances through a closed Class header", () => {
+    // Open-time sync copies both from the Class onto its instances, so a closed Class that lost them
+    // would strip them from every placed instance.
+    const components = [
+      {
+        id: "trigger",
+        classId: "ColliderComponent",
+        name: "Launch Trigger",
+        properties: { isTrigger: true },
+        parentId: null,
+        transform: { position: [0, 0.5, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+        materialInstance: {
+          materialGuid: "material-1",
+          parameters: { Tint: { kind: "color" as const, value: [1, 0.5, 0, 1] as [number, number, number, number] } },
+        },
+      },
+    ] satisfies NonNullable<SerializedGraph["components"]>;
+    const header = classHeaderMeta({ members: [], components });
+    expect(
+      classGraphFromHeaderPayload(header as unknown as Record<string, unknown>).components,
+    ).toEqual(components);
+  });
+
   it("keeps Array and Map variables through a closed Class header", () => {
     const members = [
       { id: "var-1", kind: "variable" as const, name: "Waypoints", typeId: "vec3", container: "array" as const },

@@ -12,6 +12,8 @@ import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from ".
 import { isDisposedGpuTexture, isDisposedNodeMaterial } from "./gpu-resource-live";
 import { OwnedPostProcess } from "./owned-post-process";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
+import { SCENE_SHADER_WARM_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
+import { installTimerClock, installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
 
 const disposers: Array<() => void> = [];
 
@@ -977,7 +979,10 @@ describe("material compiler", () => {
       return { texture, loaded, result };
     }
 
-    afterEach(() => { vi.useRealTimers(); });
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
 
     it("does not charge the texture wait against the shader compile budget", async () => {
       vi.useFakeTimers();
@@ -1011,6 +1016,46 @@ describe("material compiler", () => {
       vi.advanceTimersByTime(2_000);
       expect(result.buildState).toBe("failed");
       expect(await result.ready).toEqual([expect.objectContaining({ code: "material.compile.glsl", severity: "error" })]);
+    });
+
+    /**
+     * Texture loaded, so the readiness probe creates the probe effect. Each probe
+     * that finds the effect takes `held(probe)` of virtual time, and `ready(probe)`
+     * says whether the effect has compiled by then.
+     */
+    async function probeWithVirtualClock(held: (probe: number) => number, ready: (probe: number) => boolean) {
+      const clock = installVirtualClock();
+      const { texture, loaded, result } = await compileWithLoadingTexture();
+      loaded.mockReturnValue(true);
+      const isReadyForSubMesh = result.material.isReadyForSubMesh.bind(result.material);
+      let probe = 0;
+      vi.spyOn(result.material, "isReadyForSubMesh").mockImplementation((...args) => {
+        isReadyForSubMesh(...args);
+        if (!args[1].effect) return false;
+        probe += 1;
+        clock.advance(held(probe));
+        return ready(probe);
+      });
+      const rebuilt = new Promise((resolve) => result.material.onBuildObservable.addOnce(resolve));
+      texture.onLoadObservable.notifyObservers(texture);
+      await rebuilt;
+      return { clock, result };
+    }
+
+    // Without KHR_parallel_shader_compile the probe links the effect before it returns.
+    it("does not charge a probe that held the thread against the shader compile budget", async () => {
+      const { result } = await probeWithVirtualClock((probe) => probe === 1 ? 20_000 : POLL_MS, (probe) => probe > 1);
+      expect(await result.ready).toEqual([]);
+      expect(result.buildState).toBe("ready");
+    });
+
+    it("fails a shader that never compiles while every probe holds the thread, once the credit budget is spent", async () => {
+      const held = 10_000;
+      const { clock, result } = await probeWithVirtualClock(() => held, () => false);
+      expect(await result.ready).toEqual([expect.objectContaining({ code: "material.compile.glsl", severity: "error" })]);
+      expect(result.buildState).toBe("failed");
+      expect(clock.elapsed()).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS);
+      expect(clock.elapsed()).toBeLessThanOrEqual(15_000 + SCENE_THREAD_HELD_BUDGET_MS + held);
     });
 
     it("reports a texture diagnostic instead of a GLSL timeout when textures never become ready", async () => {
@@ -1628,6 +1673,61 @@ describe("material compiler", () => {
     const force = vi.spyOn(result.material, "forceCompilationAsync");
     await prewarmMaterial(result.material, mesh);
     expect(force).not.toHaveBeenCalled();
+  });
+
+  // Without KHR_parallel_shader_compile one of Babylon's compile polls links the effect before it returns, and a
+  // plain 4 s timer then fires overdue, ahead of the next poll.
+  describe("prewarmMaterial while the thread is held", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    /** A mesh whose compile never settles until `compiled()`. */
+    function pendingCompile() {
+      const scene = host();
+      const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), { scene, name: "held-prewarm" });
+      if (!result.ok) throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+      disposers.push(() => result.material.dispose());
+      const mesh = MeshBuilder.CreateBox("box", {}, scene);
+      disposers.push(() => mesh.dispose());
+      mesh.material = result.material;
+      let compiled!: () => void;
+      vi.spyOn(result.material, "forceCompilationAsync").mockReturnValue(new Promise<void>((resolve) => { compiled = resolve; }));
+      const clock = installTimerClock();
+      let outcome = "pending";
+      prewarmMaterial(result.material, mesh).then(
+        () => { outcome = "ready"; },
+        (error: Error) => { outcome = error.message; },
+      );
+      return { clock, outcome: () => outcome, compiled: () => compiled() };
+    }
+
+    it("waits out a compile poll that held the thread past the shader warm bound", async () => {
+      const { clock, outcome, compiled } = pendingCompile();
+      await vi.advanceTimersByTimeAsync(0);
+      clock.hold(SCENE_SHADER_WARM_TIMEOUT_MS * 4);
+      await clock.run(16);
+      expect(outcome()).toBe("pending");
+      compiled();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(outcome()).toBe("ready");
+    });
+
+    it("still reports a compile that never finishes once the credit budget is spent", async () => {
+      const { clock, outcome } = pendingCompile();
+      await vi.advanceTimersByTimeAsync(0);
+      const held = 10_000;
+      let elapsed = 0;
+      while (outcome() === "pending" && elapsed < 2 * SCENE_THREAD_HELD_BUDGET_MS) {
+        clock.hold(held);
+        await clock.run(16);
+        elapsed += held + 16;
+      }
+      expect(outcome()).toBe("Material shader compilation timed out");
+      expect(elapsed).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS);
+      expect(elapsed).toBeLessThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS + SCENE_THREAD_HELD_BUDGET_MS + held + 16);
+    });
   });
 
   it("keeps invertY false on the compiled sampling TextureBlock", () => {

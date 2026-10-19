@@ -16,7 +16,7 @@ export function SceneModeSelect({ disabled = false }: { disabled?: boolean }) {
         if (activeDocumentId && value) setSceneMode(activeDocumentId, normalizeSceneMode(value));
       }}
     >
-      <SelectTrigger size="sm" aria-label="Scene Mode" data-testid="scene-mode-select" className="chrome-action-button">
+      <SelectTrigger size="sm" aria-label="Scene Mode" data-testid="scene-mode-select" className="chrome-action-button aria-expanded:bg-accent aria-expanded:text-accent-foreground">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

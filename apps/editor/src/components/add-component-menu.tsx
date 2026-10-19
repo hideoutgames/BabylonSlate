@@ -31,6 +31,7 @@ export function AddComponentMenu({
   projectItems = [],
   overlay = false,
   physicsWorld = "3d",
+  title = "Add Component",
   "data-testid": testId = "add-component-catalog",
 }: {
   open: boolean;
@@ -40,6 +41,8 @@ export function AddComponentMenu({
   projectItems?: readonly AddComponentItem[];
   overlay?: boolean;
   physicsWorld?: "2d" | "3d";
+  /** Names where the component goes, e.g. `Add Component To Mesh`. */
+  title?: string;
   "data-testid"?: string;
 }) {
   const items = useMemo(
@@ -60,7 +63,7 @@ export function AddComponentMenu({
     <CatalogMenu
       open={open}
       onOpenChange={onOpenChange}
-      title="Add Component"
+      title={title}
       items={items}
       anchor={anchor}
       onSelect={({ source }) =>

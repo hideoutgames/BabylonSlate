@@ -214,7 +214,7 @@ describe("ViewportToolbar", () => {
     expect(harness.applySceneChange).toHaveBeenLastCalledWith("scene:assets/Main.scene.babasset", expect.objectContaining({
       settings: expect.objectContaining({ grid: expect.objectContaining({ showGrid: false }) }),
     }));
-    fireEvent.click(screen.getByTestId("viewport-settings"));
+    fireEvent.click(screen.getByTestId("viewport-view"));
     const grid = screen.getByTestId("viewport-show-grid-toggle");
     expect(grid.getAttribute("aria-keyshortcuts")).toBe("Shift+J");
     expect(grid.querySelector('[data-slot="shortcut-keys"]')?.textContent).toBe("J");
@@ -358,8 +358,8 @@ describe("ViewportToolbar", () => {
     const snap = screen.getByRole("button", { name: "Snap Grid" });
     expect(snap.textContent).toBe("2");
     expect(snap.getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByText("Wireframe")).toBeTruthy();
-    expect(screen.getByText("Game Camera")).toBeTruthy();
+    expect(screen.getByTestId("viewport-view").textContent).toContain("Wireframe");
+    expect(screen.getByTestId("viewport-game-camera-toggle").getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(snap);
     expect(harness.setSnapEnabled).toHaveBeenCalledWith(false);
     expect(harness.applySceneChange).toHaveBeenCalledWith(
@@ -442,12 +442,10 @@ describe("ViewportToolbar", () => {
     expect(harness.setGizmoSpace).toHaveBeenLastCalledWith("world");
   });
 
-  it("toggles viewport mode in both directions with one current-mode button", () => {
+  it("switches viewport mode in both directions from the 2D / 3D segments", () => {
     const { rerender } = renderToolbar();
-    const mode = screen.getByRole("button", {
-      name: "3D Viewport; Switch To 2D",
-    });
-    fireEvent.click(mode);
+    expect(screen.getByTestId("viewport-mode-3d").getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByTestId("viewport-mode-2d"));
     expect(harness.setViewportMode).toHaveBeenCalledWith("2d");
     expect(harness.applySceneChange).toHaveBeenLastCalledWith(
       "scene:assets/Main.scene.babasset",
@@ -461,9 +459,8 @@ describe("ViewportToolbar", () => {
         <ViewportToolbar />
       </TooltipProvider>,
     );
-    expect(mode.textContent).toBe("2D");
-    expect(mode.getAttribute("aria-label")).toBe("2D Viewport; Switch To 3D");
-    fireEvent.click(mode);
+    expect(screen.getByTestId("viewport-mode-2d").getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByTestId("viewport-mode-3d"));
     expect(harness.setViewportMode).toHaveBeenLastCalledWith("3d");
     expect(harness.applySceneChange).toHaveBeenLastCalledWith(
       "scene:assets/Main.scene.babasset",
@@ -530,7 +527,6 @@ describe("ViewportToolbar", () => {
     };
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
-    fireEvent.click(screen.getByTestId("viewport-settings-submenu"));
     fireEvent.click(screen.getByTestId("viewport-grid-size"));
     expect(screen.getByTestId("viewport-grid-size-dialog")).toBeTruthy();
     expect(screen.getByTestId("number-prompt-input")).toHaveProperty(
@@ -542,7 +538,6 @@ describe("ViewportToolbar", () => {
   it("saves independent grid and snap steps, including arithmetic on Enter", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
-    fireEvent.click(screen.getByTestId("viewport-settings-submenu"));
     fireEvent.click(screen.getByTestId("viewport-grid-size"));
     fireEvent.change(screen.getByTestId("number-prompt-input"), {
       target: { value: "4" },
@@ -577,7 +572,6 @@ describe("ViewportToolbar", () => {
   it("finishes field drafts on Save, keeping the dialog open for an invalid one", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
-    fireEvent.click(screen.getByTestId("viewport-settings-submenu"));
     fireEvent.click(screen.getByTestId("viewport-grid-size"));
     fireEvent.change(screen.getByTestId("number-prompt-input"), {
       target: { value: "40/" },
@@ -602,7 +596,7 @@ describe("ViewportToolbar", () => {
 
   it("persists Show Navmesh onto the scene document", () => {
     renderToolbar();
-    fireEvent.click(screen.getByTestId("viewport-settings"));
+    fireEvent.click(screen.getByTestId("viewport-view"));
     fireEvent.click(screen.getByTestId("viewport-show-navmesh-toggle"));
     expect(harness.setNavmeshVisible).toHaveBeenCalledWith(true);
     expect(harness.applySceneChange).toHaveBeenCalledWith(
@@ -615,7 +609,7 @@ describe("ViewportToolbar", () => {
 
   it("toggles Show Collisions without writing the scene document", () => {
     renderToolbar();
-    fireEvent.click(screen.getByTestId("viewport-settings"));
+    fireEvent.click(screen.getByTestId("viewport-view"));
     fireEvent.click(screen.getByTestId("viewport-show-collisions-toggle"));
     expect(harness.setCollisionsVisible).toHaveBeenCalledWith(true);
     expect(harness.applySceneChange).not.toHaveBeenCalled();
@@ -649,9 +643,9 @@ describe("ViewportToolbar", () => {
     renderToolbar({ showViewportModeToggle: false });
     expect(screen.queryByTestId("viewport-mode-toggle")).toBeNull();
     expect(screen.queryByText("Unlit")).toBeNull();
-    fireEvent.click(screen.getByTestId("viewport-settings"));
+    fireEvent.click(screen.getByTestId("viewport-view"));
     expect(screen.getByTestId("viewport-show-grid-toggle")).toBeTruthy();
-    expect(screen.queryByTestId("viewport-shading-mode")).toBeNull();
+    expect(screen.queryByTestId("viewport-shading-pbr")).toBeNull();
   });
 
   it("hides Move / Rotate / Scale when showGizmoTools is false", () => {
@@ -663,10 +657,9 @@ describe("ViewportToolbar", () => {
     expect(screen.getByTestId("viewport-settings")).toBeTruthy();
   });
 
-  it("opens Viewport Mode radios and keeps PBR selected by default", () => {
+  it("opens the View menu's shading radios and keeps PBR selected by default", () => {
     renderToolbar();
-    fireEvent.click(screen.getByTestId("viewport-settings"));
-    fireEvent.click(screen.getByTestId("viewport-shading-mode"));
+    fireEvent.click(screen.getByTestId("viewport-view"));
     expect(
       screen.getByTestId("viewport-shading-pbr").getAttribute("aria-checked"),
     ).toBe("true");
@@ -674,25 +667,30 @@ describe("ViewportToolbar", () => {
     expect(screen.getByTestId("viewport-shading-wireframe")).toBeTruthy();
     expect(screen.queryByTestId("viewport-shading-points-cloud")).toBeNull();
     expect(
-      screen.getByTestId("viewport-mode-toggle").getAttribute("aria-label"),
-    ).toBe("3D Viewport; Switch To 2D");
+      screen.getByTestId("viewport-mode-3d").getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 
   it("sets Unlit shading without writing the scene document", () => {
     renderToolbar();
-    fireEvent.click(screen.getByTestId("viewport-settings"));
-    fireEvent.click(screen.getByTestId("viewport-shading-mode"));
+    fireEvent.click(screen.getByTestId("viewport-view"));
     fireEvent.click(screen.getByTestId("viewport-shading-unlit"));
     expect(harness.setViewportShadingMode).toHaveBeenCalledWith("unlit");
     expect(harness.applySceneChange).not.toHaveBeenCalled();
   });
 
   it.each(["unlit", "wireframe"] as const)(
-    "keeps the %s shading badge on world viewports",
+    "names %s shading on the View button of world viewports",
     (mode) => {
       harness.viewportShadingMode = mode;
       renderToolbar();
-      expect(screen.getByText(mode === "unlit" ? "Unlit" : "Wireframe")).toBeTruthy();
+      expect(screen.getByTestId("viewport-view").textContent).toContain(mode === "unlit" ? "Unlit" : "Wireframe");
     },
   );
+
+  it("previews the Game Camera from its island toggle", () => {
+    renderToolbar();
+    fireEvent.click(screen.getByTestId("viewport-game-camera-toggle"));
+    expect(harness.setPreviewGameCamera).toHaveBeenCalledWith(true);
+  });
 });

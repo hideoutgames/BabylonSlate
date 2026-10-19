@@ -45,7 +45,8 @@ World Scene documents in the Haptic editor: schema, selection, command path, vie
 
 - Place Actors copies the ancestor-merged Class prefab and stamps `sourceId`. Name, actor transform, visible, locked, `parentId`, `folderId` stay instance-owned.
 - `overrideKeys` mark instance-owned component fields; `suppressedComponentSourceIds` stops sync resurrecting deleted prefab rows.
-- Opening a Scene syncs instances in memory; if that changes it, history is dropped and the Scene is dirty. Closed Scene files are never rewritten in the background. Prefab edits with the Scene open sync through scene commands.
+- Opening a Scene syncs instances in memory; if that changes it, history is dropped and the Scene is dirty. Sync compares instances structurally, so object key order alone is not a change. Closed Scene files are never rewritten in the background. Prefab edits with the Scene open sync through scene commands.
+- A closed Class or Prefab syncs from its header alone, so the header's component rows must carry every field sync copies onto an instance (`name`, `properties`, `transform`, `parentId`, `materialInstance`). A field the header drops is stripped from instances on every open and leaves the Scene dirty. Writer and reader share `classHeaderComponentRow` and `classGraphComponentFromHeaderRow`. A header is rewritten only when its Class is saved, so a Class saved before a field joined the header keeps stripping that field until it is saved again.
 - Prefab is a window of the Class document, not a `DocumentKind`. Its world origin is the Prefab Root, which equals `SerializedActor.transform` once placed.
 
 ## Viewport rules
@@ -64,5 +65,5 @@ World Scene documents in the Haptic editor: schema, selection, command path, vie
 ## Modes, Play seed and Simulation
 
 - Scene Mode Design / Landscape / Foliage share one scene and history; each has its own DockView layout. Foliage is static thin-instanced geometry (no actors, scripts or bodies). Landscape sculpting edits one `LandscapeSculptSession` and rebuilds once per pointer event.
-- Play from Scene (default on) seeds the open Scene tab, else `startupSceneGuid`, which Preview never writes. Overlay Play and Preview Build never share an Engine.
+- Start In Open Scene (Debug menu, default on) seeds the open Scene tab, else `startupSceneGuid`, which Preview never writes. Overlay Play and Preview Build never share an Engine.
 - `captureSimulationScene` captures only at an acknowledged quiescent boundary and returns a complete scene or a named failure, never a subset. It rejects streamed/overlay instances, Dynamic Runtime Mesh and ambiguous identities. References use `$sceneValue` tags resolved by `hydrateScenePropertyReferences`.

@@ -132,6 +132,38 @@
   opacity: 0.5;
 }
 
+.chrome-stop-button {
+  background: var(--stop);
+  color: var(--stop-foreground);
+}
+
+.chrome-stop-button:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--stop) 90%, var(--stop-foreground));
+}
+
+.chrome-stop-button:disabled {
+  opacity: 0.6;
+}
+
+/* Simulation's input segments sit flat inside the Play island. */
+.chrome-simulation-input {
+  gap: 1px;
+  padding: 2px;
+}
+
+.chrome-simulation-input > button {
+  height: auto;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 2px);
+  color: var(--muted-foreground);
+  box-shadow: none;
+}
+
+.chrome-simulation-input > button[aria-pressed="true"] {
+  background: color-mix(in oklch, var(--foreground) 14%, transparent);
+  color: var(--foreground);
+}
+
 .chrome-action-button {
   min-height: var(--chrome-row, 28px);
   border-radius: var(--radius-sm);
@@ -357,7 +389,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-top: 1px solid var(--border);
   background: var(--panel-header);
   padding-inline: 8px;
   color: var(--muted-foreground);

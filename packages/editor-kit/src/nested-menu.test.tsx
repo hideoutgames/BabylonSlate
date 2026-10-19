@@ -47,6 +47,30 @@ describe("NestedMenu dropdown", () => {
     expect(getByTestId("menu-content").hasAttribute("data-closed")).toBe(true);
   });
 
+  it("dismisses on a touch press on any other element that consumes native events", () => {
+    const { getByTestId } = render(
+      <>
+        <NestedMenu
+          items={[leaf()]}
+          trigger={<button type="button" data-testid="menu-trigger">Open</button>}
+          contentTestId="menu-content"
+        />
+        <div role="treeitem" aria-selected={false} data-testid="tree-row">Camera</div>
+      </>,
+    );
+    const row = getByTestId("tree-row");
+    row.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    });
+    fireEvent.click(getByTestId("menu-trigger"));
+    expect(getByTestId("menu-content").hasAttribute("data-open")).toBe(true);
+
+    act(() => dispatchPointerEvent(row, "pointerdown", { pointerType: "touch" }));
+
+    expect(getByTestId("menu-content").hasAttribute("data-closed")).toBe(true);
+  });
+
   it("opens a submenu on tap and runs a leaf action", () => {
     const onSelect = vi.fn();
     const { getByTestId } = render(

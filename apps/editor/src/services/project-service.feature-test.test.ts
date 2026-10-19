@@ -9,6 +9,7 @@ import {
   type SerializedSceneLayer,
 } from "@babylonslate/core";
 import { validateAnimGraph, type AnimGraphDocument } from "@babylonslate/anim-graph";
+import { DEFAULT_EDIT_BYTE_BUDGET, EditSession } from "@babylonslate/edit";
 import {
   normalizeParticleGraphDocument,
   validateParticleGraphDocument,
@@ -33,10 +34,13 @@ import {
 } from "../lib/content-browser-helpers";
 import { loadOptionalEngineContent } from "../lib/engine-content";
 import { FEATURE_TEST_OPTIONAL_SLOTS } from "../lib/feature-test/engine-content-files";
+import { JournalBuffer } from "../lib/journal-buffer";
 import { modelSimpleColliderCounter } from "../lib/physics-pairing-diagnostics";
+import { DocumentEditingService } from "./document-editing-service";
 import { DocumentService } from "./document-service";
 import { createPlayContentService } from "./play-content-service";
 import { ProjectService } from "./project-service";
+import { SourceControlService } from "./source-control-service";
 
 /** Source types FeatureTest imports from repository content. */
 const IMPORTED_ASSET_TYPES = ["Texture", "Model", "Skeleton", "Animation", "Material", "Font"] as const;
@@ -114,6 +118,41 @@ describe("FeatureTest starter", () => {
       assets.filter((asset) => asset.header.type === "Class").map((asset) => asset.header.parentClass ?? ""),
     );
     expect(ENGINE_BASE_CLASSES.filter((base) => !parents.has(base))).toEqual([]);
+  });
+
+  it("opens every scene without rewriting its Class and Prefab instances", async () => {
+    const documents = new DocumentService();
+    const editing = new DocumentEditingService({
+      documents,
+      editSession: new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
+      project: reopened,
+      sourceControl: new SourceControlService(),
+      journal: new JournalBuffer(async () => {}),
+      derivedStorage: () => Promise.reject(new Error("Recovery is not part of this test.")),
+      bump: () => {},
+      scheduleDebouncedSave: () => {},
+      onHistoryCleared: () => {},
+      registryTick: () => 0,
+      isProjectDirty: () => false,
+      onRecoveryResolved: () => {},
+    });
+    // A scene the open-time sync rewrites is dirty before the user touches it, and a later scene's
+    // open asks to Save or Discard it. Every Class here is closed, so sync reads its header rows; this
+    // test cannot exercise the key-order-insensitive comparison, because bodies and headers are written
+    // with sorted keys. document-editing-service.test.ts covers key order and a Class that is open
+    // while its Scene opens.
+    const dirtyOnOpen: string[] = [];
+    for (const asset of reopened.registry!.list().filter((entry) => entry.header.type === "Scene")) {
+      const id = await documents.openDocument(
+        reopened,
+        { kind: "scene", path: asset.path, label: asset.header.name },
+        null,
+        true,
+      );
+      await editing.syncPrefabInstances({ quiet: true });
+      if (documents.getDocument(id)!.dirty) dirtyOnOpen.push(asset.path);
+    }
+    expect(dirtyOnOpen).toEqual([]);
   });
 
   it("resolves every reference and decodes every document", async () => {

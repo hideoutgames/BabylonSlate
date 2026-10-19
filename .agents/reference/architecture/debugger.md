@@ -70,6 +70,7 @@ The command system is always present; only the debugger UI and debug-tier comman
 - Runs the game runtime in the open Scene viewport on a separate game Scene of the shared Engine. Authoring is locked (read-only editors, central write locks); Save Game writes are dropped on Stop.
 - Keep Simulation Changes (default off) applies one **Apply Simulation Changes** command from a complete capture or fails with Retry / Discard; never partial. Streamed Scenes, SceneLayers and generated resources cannot be kept.
 - Trace, performance recording and Frame Capture are refused in Simulation.
+- Session controls live in the global toolbar's Play island: Simulate becomes a red **Stop** (accessible name says keep or discard), with **Pause**, **Game | Edit** input and, when another document is active, **Return To Scene**. `PlayOverlay` owns pause and input mode and publishes them through `SimulationControlsProvider` (an external store, so a pause re-renders only its readers). Controls marked `data-simulation-control` act without first releasing game input. The viewport keeps only Stats / Console and, in Edit, the icon-only Move / Rotate / Scale island; authored documents show a one-line read-only strip.
 
 ## Performance and Frame Capture
 

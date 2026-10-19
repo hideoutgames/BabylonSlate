@@ -19,15 +19,17 @@ function DropdownMenu({
 
   React.useEffect(() => {
     if (!isOpen) return
-    const dismissFromCanvas = (event: PointerEvent) => {
-      // Viewport input can capture or consume native pointer events and prevent
-      // the compatibility click. Close before those handlers run, including touch.
-      if (event.target instanceof HTMLCanvasElement && !event.target.closest('[role="menu"]')) {
-        actions.current?.close()
-      }
+    const dismissFromOutside = (event: PointerEvent) => {
+      // Viewport input, tree rows and other touch handlers can capture or
+      // consume native pointer events and prevent the compatibility click the
+      // menu waits for. Close on any press outside the open menu and its own
+      // trigger, before those handlers run, including touch.
+      if (!(event.target instanceof Element)) return
+      if (event.target.closest('[role="menu"], [aria-haspopup="menu"][aria-expanded="true"]')) return
+      actions.current?.close()
     }
-    document.addEventListener("pointerdown", dismissFromCanvas, true)
-    return () => document.removeEventListener("pointerdown", dismissFromCanvas, true)
+    document.addEventListener("pointerdown", dismissFromOutside, true)
+    return () => document.removeEventListener("pointerdown", dismissFromOutside, true)
   }, [actions, isOpen])
 
   return <MenuPrimitive.Root

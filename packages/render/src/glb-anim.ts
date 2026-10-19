@@ -28,7 +28,7 @@ import { accountedGeometryBytes } from "./perf-ceilings";
 import { VisualBundle } from "./visual-bundle";
 import { ownedMaterialPreparation } from "./material-library";
 import { prewarmMaterial } from "./material-compiler";
-import { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { createHeldThreadBudget, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { attachModelLods, generateModelLods, type ModelLodSet } from "./model-lod";
 import { nativePreparationForEngine, type NativePreparationPriority } from "./native-preparation";
 
@@ -530,12 +530,18 @@ function keepSourceName(sourceName: string): string {
   return sourceName;
 }
 
-/** Prepare only this unpublished instance's actual material/mesh variants. */
+/**
+ * Prepare only this unpublished instance's actual material/mesh variants. A
+ * stall deadline that fires a held gap late (a synchronous shader link kept the
+ * material from progressing) starts a fresh window. All the meshes of one call
+ * share one `SCENE_THREAD_HELD_BUDGET_MS`, so a stuck material still fails.
+ */
 export async function prepareInstanceMaterials(
   root: Mesh,
   assertCurrent: () => void,
   cancellation: Promise<never>,
 ): Promise<void> {
+  const budget = createHeldThreadBudget();
   let finished = false;
   const check = () => {
     if (finished) throw new Error("Model material preparation was cancelled");
@@ -568,7 +574,7 @@ export async function prepareInstanceMaterials(
           return leaves.length === materials.length && leaves.every((material, index) => material === materials[index]);
         };
         if (!stillAssigned()) continue;
-        const deadline = createStallDeadline((unit) => `Model material preparation stalled${unit ? ` at ${unit}` : ""}`, SCENE_SHADER_WARM_TIMEOUT_MS);
+        const deadline = createStallDeadline((unit) => `Model material preparation stalled${unit ? ` at ${unit}` : ""}`, SCENE_SHADER_WARM_TIMEOUT_MS, undefined, budget);
         await deadline.race(Promise.race([(async () => {
           for (const material of materials) {
             check();

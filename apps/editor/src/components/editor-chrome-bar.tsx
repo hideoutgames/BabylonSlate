@@ -78,6 +78,8 @@ import {
   useSaveState,
 } from "../context/document-context";
 import { usePlay } from "../context/play-context";
+import { useSimulationControls } from "../context/simulation-controls-context";
+import { SimulationToolbarControls } from "./simulation-toolbar-controls";
 import { useValidation } from "../context/validation-context";
 import type { OpenDocument } from "../services/document-service";
 import { modelSimpleColliderCounter, physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
@@ -86,12 +88,12 @@ import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { FeatureTestCheckDialog } from "./feature-test-check-dialog";
 import { useIsFeatureTestProject } from "../lib/use-is-feature-test-project";
-import { useDebugMode } from "../context/app-settings-context";
+import { useAppSettings, useDebugMode } from "../context/app-settings-context";
 import { IconActionButton } from "./icon-action-button";
 import { ActionFeedbackButton } from "./action-feedback-button";
 import { CompilationErrorIndicator } from "./compilation-error-indicator";
 import { WindowsMenu } from "./windows-menu";
-import { PlayDebugMenuItems } from "./play-debug-menu-items";
+import { PlayDebugMenuItems, type PlayLaunchMode } from "./play-debug-menu-items";
 import { useMaterialRenderControl } from "../context/material-render-control-context";
 import {
   playChromeLaunchAriaLabel,
@@ -303,7 +305,15 @@ export function EditorChromeBar({
     setOverlayInspector,
     setOverlayProfiler,
     setPauseOnPlay,
+    requestSimulate,
+    simulationUnavailableReason,
+    sessionState,
+    sessionOwner,
+    simulationDocumentId,
   } = usePlay();
+  // A running Simulation turns Simulate into Stop with its controls beside it.
+  const simulationRunning = sessionState.mode === "simulate" && !sessionState.quarantined;
+  const simulationControls = useSimulationControls();
   const { errorCount, setDiagnostics } = useValidation();
   const [settingsScope, setSettingsScope] = useState<
     "project" | "engine" | null
@@ -371,8 +381,21 @@ export function EditorChromeBar({
   const playChord = useKeybindChord("play.start");
   const projectSettingsChord = useKeybindChord("editor.projectSettings");
   const engineSettingsChord = useKeybindChord("editor.engineSettings");
-  const playEnabled = Boolean(projectName) && !playing && !preparing && canPlay && !sceneViewportLoading;
+  // The Play Mode is a saved preference: Simulate wins over Preview Build.
+  const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
+  const simulateSelected = appSettings.debuggerDefaults.simulate;
+  const setSimulateSelected = (simulate: boolean) => {
+    if (simulate !== simulateSelected) void updateDebuggerDefaults({ simulate });
+  };
+  const launchMode: PlayLaunchMode = simulateSelected ? "simulate" : previewBuild ? "preview" : "play";
+  const simulating = launchMode === "simulate";
+  const playEnabled = Boolean(projectName) && !playing && !preparing && !sceneViewportLoading &&
+    (simulating ? simulationUnavailableReason === null : canPlay);
   const launchPlay = () => {
+    if (simulating) {
+      void requestSimulate();
+      return;
+    }
     const inject =
       typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("previewThrow") === "1";
@@ -421,12 +444,17 @@ export function EditorChromeBar({
         <ChevronDownIcon data-icon="inline-end" />
       </DropdownMenuTrigger>
       <PlayDebugMenuItems
+        mode={launchMode}
+        onModeChange={(next) => {
+          setSimulateSelected(next === "simulate");
+          if (next !== "simulate") setPreviewBuild(next === "preview");
+        }}
+        simulateUnavailableReason={simulationUnavailableReason}
         overlayStats={overlayStats}
         overlayConsole={overlayConsole}
         overlayInspector={overlayInspector}
         overlayProfiler={overlayProfiler}
         pauseOnPlay={pauseOnPlay}
-        previewBuild={previewBuild}
         playFromScene={playFromScene}
         sessionLocked={playing || preparing}
         onOverlayStatsChange={setOverlayStats}
@@ -434,7 +462,6 @@ export function EditorChromeBar({
         onOverlayInspectorChange={setOverlayInspector}
         onOverlayProfilerChange={setOverlayProfiler}
         onPauseOnPlayChange={setPauseOnPlay}
-        onPreviewBuildChange={setPreviewBuild}
         onPlayFromSceneChange={setPlayFromScene}
         onRunFeatureTestCheck={featureTestCheck ? () => {
           setToolsOpen(false);
@@ -801,6 +828,17 @@ export function EditorChromeBar({
 
         <div className="editor-global-toolbar-center">
           <div className="editor-play-island" data-testid="play-debug-island">
+            {simulationRunning ? (
+              <SimulationToolbarControls
+                controls={simulationControls}
+                stopping={sessionState.lifecycle === "stopping"}
+                phone={phone}
+                onStop={() => { void sessionOwner.stop(); }}
+                onReturnToScene={simulationDocumentId && activeDocumentId !== simulationDocumentId
+                  ? () => setActiveDocument(simulationDocumentId)
+                  : undefined}
+              />
+            ) : (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -809,11 +847,13 @@ export function EditorChromeBar({
                     variant="ghost"
                     data-testid="play-preview"
                     className="chrome-action-button chrome-play-button relative"
-                    aria-label={playChromeLaunchAriaLabel(previewBuild, canPlay, {
-                      playFromScene,
-                    })}
+                    aria-label={simulating
+                      ? simulationUnavailableReason ? `Simulate (${simulationUnavailableReason})` : "Simulate"
+                      : playChromeLaunchAriaLabel(previewBuild, canPlay, { playFromScene })}
                     title={
-                      !canPlay
+                      simulating
+                        ? simulationUnavailableReason ?? undefined
+                        : !canPlay
                         ? playFromScene && !previewBuild
                           ? "Open a scene to play"
                           : "Set Startup Scene in Project Settings."
@@ -828,9 +868,11 @@ export function EditorChromeBar({
                 }
               >
                 <PlayIcon data-icon="inline-start" fill="currentColor" />
-                {phone && previewBuild
-                  ? "Build"
-                  : playChromeLaunchLabel(previewBuild)}
+                {simulating
+                  ? "Simulate"
+                  : phone && previewBuild
+                    ? "Build"
+                    : playChromeLaunchLabel(previewBuild)}
                 {errorCount > 0 ? (
                   <span
                     className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-md bg-destructive text-[10px] text-white"
@@ -840,13 +882,14 @@ export function EditorChromeBar({
                   </span>
                 ) : null}
               </TooltipTrigger>
-              {canPlay && !sceneViewportLoading ? (
+              {(simulating ? simulationUnavailableReason === null : canPlay) && !sceneViewportLoading ? (
                 <TooltipContent>
-                  {phone && previewBuild ? "Build" : playChromeLaunchLabel(previewBuild)}
+                  {simulating ? "Simulate" : phone && previewBuild ? "Build" : playChromeLaunchLabel(previewBuild)}
                   <ShortcutKeys chord={playChord} decorative />
                 </TooltipContent>
               ) : null}
             </Tooltip>
+            )}
             {!phone ? debugMenu : null}
           </div>
         </div>

@@ -30,6 +30,11 @@ const state = vi.hoisted(() => ({
   sceneViewportLoading: false,
   compileDiagnostics: [] as Diagnostic[],
   setDiagnostics: vi.fn(),
+  requestPlay: vi.fn(),
+  requestSimulate: vi.fn(),
+  simulationUnavailableReason: null as string | null,
+  sessionState: { generation: 0, mode: null as "simulate" | null, lifecycle: "idle", quarantined: false, error: null },
+  stopSession: vi.fn(),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -44,7 +49,13 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   collectPlayPreviewScripts: async () => ({ bundles: [], diagnostics: state.compileDiagnostics }),
 })));
 vi.mock("../context/play-context", () => ({
-  usePlay: () => ({ playing: false, preparing: false, canPlay: state.canPlay, sceneViewportLoading: state.sceneViewportLoading }),
+  usePlay: () => ({
+    playing: false, preparing: false, canPlay: state.canPlay, sceneViewportLoading: state.sceneViewportLoading,
+    requestPlay: state.requestPlay, requestSimulate: state.requestSimulate,
+    simulationUnavailableReason: state.simulationUnavailableReason,
+    previewBuild: false, setPreviewBuild: vi.fn(), playFromScene: true,
+    sessionState: state.sessionState, sessionOwner: { stop: state.stopSession }, simulationDocumentId: null,
+  }),
 }));
 vi.mock("../context/validation-context", () => ({
   useValidation: () => ({ errorCount: state.errorCount, setDiagnostics: state.setDiagnostics }),
@@ -103,6 +114,11 @@ afterEach(() => {
   state.sceneViewportLoading = false;
   state.compileDiagnostics = [];
   state.setDiagnostics.mockClear();
+  state.requestPlay.mockClear();
+  state.requestSimulate.mockClear();
+  state.simulationUnavailableReason = null;
+  state.sessionState = { generation: 0, mode: null, lifecycle: "idle", quarantined: false, error: null };
+  state.stopSession.mockClear();
 });
 
 describe("chrome Play", () => {
@@ -116,6 +132,34 @@ describe("chrome Play", () => {
     state.sceneViewportLoading = false;
     rerender(<Chrome />);
     expect(screen.getByTestId("play-preview").hasAttribute("disabled")).toBe(false);
+  });
+});
+
+describe("chrome Play Mode", () => {
+  it("turns Play into a remembered Simulate when Simulate is chosen", async () => {
+    state.canPlay = true;
+    const { getAppSettingsSnapshot } = await import("../context/app-settings-context");
+    render(<Chrome />);
+    fireEvent.click(screen.getByTestId("debug-menu"));
+    fireEvent.click(await screen.findByTestId("play-mode-simulate"));
+    await waitFor(() => expect(screen.getByTestId("play-preview").textContent).toContain("Simulate"));
+    expect(getAppSettingsSnapshot().settings.debuggerDefaults.simulate).toBe(true);
+    fireEvent.click(screen.getByTestId("play-preview"));
+    expect(state.requestSimulate).toHaveBeenCalledTimes(1);
+    expect(state.requestPlay).not.toHaveBeenCalled();
+    // Choosing a mode keeps the Debug menu open.
+    fireEvent.click(screen.getByTestId("play-mode-play"));
+    await waitFor(() => expect(screen.getByTestId("play-preview").textContent).toContain("Play"));
+  });
+});
+
+describe("chrome Simulation", () => {
+  it("turns Simulate into a Stop that ends the running Simulation", () => {
+    state.sessionState = { generation: 1, mode: "simulate", lifecycle: "running", quarantined: false, error: null };
+    render(<Chrome />);
+    expect(screen.queryByTestId("play-preview")).toBeNull();
+    fireEvent.click(screen.getByTestId("simulation-session-stop"));
+    expect(state.stopSession).toHaveBeenCalledOnce();
   });
 });
 

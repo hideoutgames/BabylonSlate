@@ -63,25 +63,24 @@ async function startSimulation(page: Page) {
   expect(gameCanvas!.y).toBeGreaterThanOrEqual(viewport!.y - 1);
   expect(gameCanvas!.x + gameCanvas!.width).toBeLessThanOrEqual(viewport!.x + viewport!.width + 1);
   expect(gameCanvas!.y + gameCanvas!.height).toBeLessThanOrEqual(viewport!.y + viewport!.height + 1);
-  await expect(page.getByTestId("play-overlay")).toContainText("Discard On Stop");
+  await expect(page.getByTestId("simulation-session-stop")).toHaveAccessibleName("Stop Simulation and Discard Changes");
   await expect.poll(() => state(page)).toMatchObject({ generation: previous.generation + 1, mode: "simulate", lifecycle: "running", quarantined: false });
   await expect.poll(() => tick(page), { timeout: 30_000 }).toBeGreaterThan(2);
 }
 async function enterEdit(page: Page) {
-  const input = page.getByTestId("simulation-input-mode");
-  await expect(input).toContainText("Game Input");
-  await input.click();
-  await expect(input).toContainText("Return To Game");
+  await expect(page.getByTestId("simulation-input-game")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("simulation-input-edit").click();
+  await expect(page.getByTestId("simulation-input-edit")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("simulation-outliner")).toBeVisible();
   await expect(page.getByTestId("simulation-inspector")).toBeVisible();
 }
 async function pause(page: Page) {
-  await page.getByTestId("play-overlay-pause").click();
-  await expect(page.getByTestId("play-overlay-pause")).toHaveAccessibleName("Resume");
+  await page.getByTestId("simulation-pause").click();
+  await expect(page.getByTestId("simulation-pause")).toHaveAccessibleName("Resume");
   await expect.poll(async () => (await state(page)).lifecycle).toBe("paused");
 }
 async function stopSimulation(page: Page) {
-  await page.getByTestId("play-overlay-close").click();
+  await page.getByTestId("simulation-session-stop").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 30_000 });
   // UI closure is insufficient: idle is admitted only after the native release promise.
   await expect.poll(() => state(page), { timeout: 30_000 }).toMatchObject({ mode: null, lifecycle: "idle", quarantined: false, error: null });
@@ -203,8 +202,8 @@ test("Simulation Edit and Pause neutralize held gamepad input until a fresh tran
     await expect.poll(moveX).toBeGreaterThan(0.5);
     await enterEdit(page);
     await expect.poll(moveX).toBe(0);
-    await page.getByTestId("simulation-input-mode").click();
-    await expect(page.getByTestId("simulation-input-mode")).toContainText("Game Input");
+    await page.getByTestId("simulation-input-game").click();
+    await expect(page.getByTestId("simulation-input-game")).toHaveAttribute("aria-pressed", "true");
     await expect.poll(moveX).toBe(0);
     // Returning does not reinterpret the original still-held gesture.
     const returnTick = await tick(page);
@@ -217,7 +216,7 @@ test("Simulation Edit and Pause neutralize held gamepad input until a fresh tran
     await expect.poll(moveX).toBeGreaterThan(0.5);
     await pause(page);
     await expect.poll(moveX).toBe(0);
-    await page.getByTestId("play-overlay-pause").click();
+    await page.getByTestId("simulation-pause").click();
     await expect.poll(async () => (await state(page)).lifecycle).toBe("running");
     await expect.poll(moveX).toBe(0);
     await inject(0);
@@ -253,7 +252,7 @@ test("Simulation freezes real physics while Edit camera redraws and resumes with
   const imageAfter = await canvas.screenshot();
   expect(imageAfter.equals(imageBefore), "The paused camera must produce a new visible frame").toBe(false);
   await testInfo.attach("paused-edit-camera", { body: imageAfter, contentType: "image/png" });
-  await page.getByTestId("play-overlay-pause").click();
+  await page.getByTestId("simulation-pause").click();
   await expect.poll(() => tick(page)).toBeGreaterThan(before.at(-1)!.tick);
   // Sample the first following browser frames: a pause interval must not become
   // hundreds of accumulated fixed steps in one resumed boundary.
@@ -360,7 +359,7 @@ test("Simulation redraws initialized GPU particles without advancing their visib
     samples.push(sample);
   }
   await testInfo.attach("gpu-particles-paused", { body: await page.screenshot(), contentType: "image/png" });
-  await page.getByTestId("play-overlay-pause").click();
+  await page.getByTestId("simulation-pause").click();
   await expect.poll(async () => (await pixels()).redHash).not.toBe(frozen.redHash);
   await stopSimulation(page);
   await expect.poll(stats).toMatchObject({ systems: 0, playing: 0, gpuSystems: 0 });
