@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
+import { blockingSceneLoadOpen } from "../lib/blocking-scene-loads";
 
 afterEach(() => {
   cleanup();
@@ -19,6 +20,22 @@ describe("SceneLoadingDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy Error" }));
     expect(writeText).toHaveBeenCalledWith("Error: shader compile failed");
     await waitFor(() => expect(screen.getByTestId("scene-loading-copy").textContent).toBe("Copied"));
+  });
+
+  // Background captures on the shared Engine wait while it holds the load.
+  it("holds a blocking scene load while it shows progress, not while it shows a failure or is closed", () => {
+    const props = { progress: 40, phase: "Loading Models" as const, onRetry: () => {}, onDismiss: () => {} };
+    const { rerender, unmount } = render(<SceneLoadingDialog {...props} open />);
+    expect(blockingSceneLoadOpen()).toBe(true);
+    rerender(<SceneLoadingDialog {...props} open failed />);
+    expect(blockingSceneLoadOpen()).toBe(false);
+    rerender(<SceneLoadingDialog {...props} open />);
+    expect(blockingSceneLoadOpen()).toBe(true);
+    rerender(<SceneLoadingDialog {...props} open={false} />);
+    expect(blockingSceneLoadOpen()).toBe(false);
+    rerender(<SceneLoadingDialog {...props} open />);
+    unmount();
+    expect(blockingSceneLoadOpen()).toBe(false);
   });
 
   it("offers Copy Details while a scene is still loading", () => {

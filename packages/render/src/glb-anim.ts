@@ -579,6 +579,8 @@ export async function prepareInstanceMaterials(
           return leaves.length === materials.length && leaves.every((material, index) => material === materials[index]);
         };
         if (!stillAssigned()) continue;
+        // Each mesh's deadline renews only for what compiles in its own windows.
+        compiles.restart();
         const deadline = createStallDeadline((unit) => `Model material preparation stalled${unit ? ` at ${unit}` : ""}`, SCENE_SHADER_WARM_TIMEOUT_MS, () => compiles.renew(), budget);
         await deadline.race(Promise.race([(async () => {
           for (const material of materials) {
