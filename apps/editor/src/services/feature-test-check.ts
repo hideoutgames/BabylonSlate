@@ -19,13 +19,19 @@ export function featureTestCheckCommands(sceneName: string, mode: FeatureTestChe
 
 export type FeatureTestCheckMode = "quick" | "full" | "benchmark";
 
-/** Performance profiles a Benchmark sweeps per scene: each quality tier, then Clustered Forward at High. */
+/**
+ * Performance profiles a Benchmark sweeps per scene: each quality tier, then
+ * Clustered Forward at High, then fixed-shape forward lighting at Medium with
+ * each seat guard (compare with "medium · forward").
+ */
 export const FEATURE_TEST_BENCHMARK_PROFILES = [
   { label: "low · forward", commands: ["renderpath forward", "quality low"] },
   { label: "medium · forward", commands: ["renderpath forward", "quality medium"] },
   { label: "high · forward", commands: ["renderpath forward", "quality high"] },
   { label: "ultra · forward", commands: ["renderpath forward", "quality ultra"] },
   { label: "high · clustered", commands: ["renderpath clusteredForward", "quality high"] },
+  { label: "medium · fixed lights", commands: ["renderpath forward", "quality medium", "fixedlights multiply"] },
+  { label: "medium · fixed lights · branch", commands: ["renderpath forward", "quality medium", "fixedlights branch"] },
 ] as const;
 
 /** Above any display refresh, so a Benchmark measures the device rather than the project frame cap. */
@@ -355,7 +361,8 @@ async function runCommand(
 
 /**
  * Sweeps FEATURE_TEST_BENCHMARK_PROFILES on the running scene with the frame
- * cap lifted, then restores the session's quality, render path and cap.
+ * cap lifted, then restores the session's fixed-shape lighting, quality, render
+ * path and cap.
  */
 async function benchmarkProfiles(
   sceneName: string,
@@ -405,6 +412,7 @@ async function benchmarkProfiles(
     }
   } finally {
     if (!signal.aborted) {
+      await run("fixedlights reset");
       await run("quality reset");
       await run("renderpath reset");
       await run(`framecap ${cap ?? 60}`);

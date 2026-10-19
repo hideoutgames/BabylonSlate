@@ -27,6 +27,12 @@ export type CommandResult = {
   output: string;
 };
 
+/** Session fixed-shape forward lighting request; `guard` is how a shader skips an empty light seat. */
+export type FixedShapeLightingRequest = {
+  enabled: boolean;
+  guard: "multiply" | "branch";
+};
+
 export type ConsoleCommandHost = {
   /** Returns false when no loaded scene matches the guid. */
   changeScene(sceneAssetGuid: string): boolean | void;
@@ -35,6 +41,9 @@ export type ConsoleCommandHost = {
   setRenderPath(path: RenderPath | null): void;
   /** Last render path status the engine reported, or null before the first report. */
   getRenderPath(): RenderPathStatus | null;
+  /** Switch fixed-shape forward lighting for the session (not persisted). */
+  setFixedShapeLighting?(request: FixedShapeLightingRequest): void;
+  getFixedShapeLighting?(): FixedShapeLightingRequest;
   setFrameCap(fps: number): void;
   setVolume(volume: number): void;
   getFrameCap?(): number;

@@ -953,6 +953,8 @@ export type CommandMessage =
   | { type: "sessionPaused"; paused: boolean }
   | { type: "setScalability"; transaction: ScalabilityTransaction }
   | { type: "setLightsDebug"; enabled: boolean }
+  /** Session fixed-shape forward lighting (console `fixedlights`); the Play Engine restores its own state when Play ends. */
+  | { type: "setFixedShapeLighting"; enabled: boolean; guard: "multiply" | "branch" }
   | { type: "setFreeCam"; enabled: boolean }
   | { type: "setShowFps"; enabled: boolean }
   | { type: "setStat"; name: string; enabled: boolean }
