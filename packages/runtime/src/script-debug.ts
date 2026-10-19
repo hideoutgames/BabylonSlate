@@ -108,11 +108,15 @@ class GraphRecorder implements ScriptGraphRecorder {
   private readonly outputs = new Map<string, Map<string, PinSlot>>();
   private pending: PinSlot[] = [];
 
-  constructor(
-    private readonly assetGuid: string,
-    private readonly graphId: string,
-    private readonly sink: { readonly closed: boolean },
-  ) {}
+  private readonly assetGuid: string;
+  private readonly graphId: string;
+  private readonly sink: { readonly closed: boolean };
+
+  constructor(assetGuid: string, graphId: string, sink: { readonly closed: boolean }) {
+    this.assetGuid = assetGuid;
+    this.graphId = graphId;
+    this.sink = sink;
+  }
 
   exec(nodeId: string): void {
     if (!this.sink.closed) this.nodes.add(nodeId);
@@ -276,7 +280,11 @@ export class ScriptDebugObserver {
   private sent: Map<string, DebugInstance> | null = null;
   private basis: RosterBasis | null = null;
 
-  constructor(private readonly host: ScriptDebugObserverHost) {}
+  private readonly host: ScriptDebugObserverHost;
+
+  constructor(host: ScriptDebugObserverHost) {
+    this.host = host;
+  }
 
   get observing(): boolean {
     return this.target !== null;

@@ -974,6 +974,25 @@ describe("script compiler service", () => {
     expect(exported[0]?.source).not.toContain("checkInfiniteLoop");
   });
 
+  it("instruments event and function graphs for the graph debugger only when a Simulation asks", () => {
+    const withFunction: SerializedGraph = {
+      ...tickToLog,
+      members: [{ id: "fn-open", kind: "function", name: "Open Door", pins: [] }],
+      functionGraphs: { "fn-open": { nodes: tickToLog.nodes, edges: tickToLog.edges } },
+    } as SerializedGraph;
+    const path = "assets/main.class.babasset";
+    const plain = compileGraphDocument(withFunction, { path });
+    expect(plain?.source).not.toContain("__dbg");
+
+    const traced = compileGraphDocument(withFunction, { path, instrumentExecutionTrace: true });
+    expect(traced?.source).toContain('ctx.debugTrace?.graph("assets/main.class.babasset", "event-graph")');
+    // A function graph reports under its export name, which the editor maps from the member name.
+    expect(traced?.source).toContain('ctx.debugTrace?.graph("assets/main.class.babasset", "Open_Door")');
+
+    const released = compileGraphDocument(withFunction, { path, instrumentExecutionTrace: true, stripDevelopmentOnly: true });
+    expect(released?.source).not.toContain("__dbg");
+  });
+
   it("compiles OnCommandRun into a core console command", () => {
     const graph: SerializedGraph = {
       nodes: [
@@ -1316,6 +1335,25 @@ describe("GraphScriptCompileCache", () => {
     cache.clear();
     expect(cache.retainedBytes).toBe(0);
     expect(first.source).toContain("export function");
+  });
+
+  it("keeps instrumented and plain compiles apart, and never splits a release compile on the flag", () => {
+    const cache = new GraphScriptCompileCache();
+    const documents = [{ path: "assets/Door.class.babasset", content: tickToLog }];
+    const plain = compileGraphDocuments(documents, { cache })[0]!;
+    const traced = compileGraphDocuments(documents, { cache, instrumentExecutionTrace: true })[0]!;
+    expect(cache.compiles).toBe(2);
+    expect(plain.source).not.toContain("__dbg");
+    expect(traced.source).toContain("__dbg");
+    // Each is served from the cache now.
+    expect(compileGraphDocuments(documents, { cache })[0]).toBe(plain);
+    expect(compileGraphDocuments(documents, { cache, instrumentExecutionTrace: true })[0]).toBe(traced);
+    expect(cache.compiles).toBe(2);
+
+    // The compiler drops the trace for a release compile, so asking for it there is the plain release compile.
+    const release = compileGraphDocuments(documents, { cache, stripDevelopmentOnly: true })[0]!;
+    expect(compileGraphDocuments(documents, { cache, stripDevelopmentOnly: true, instrumentExecutionTrace: true })[0]).toBe(release);
+    expect(release.source).not.toContain("__dbg");
   });
 
   it("bounds combined graph and animation retention by bytes and skips oversized results", async () => {

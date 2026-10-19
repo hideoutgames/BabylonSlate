@@ -73,6 +73,7 @@ import {
   snapshotTickIndex,
   type CommandMessage,
   type ControlMessage,
+  type DebugObserveTarget,
   type ScriptBundleEntry,
 } from "@babylonslate/bridge";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
@@ -262,6 +263,21 @@ export function applyPlayBehaviourTreeStateObserved(
   else target.runtime?.applyBehaviourTreeStateObserved(observed);
 }
 
+export type PlaySessionGraphDebugTarget = {
+  worker?: { postControl: (message: ControlMessage) => void } | null;
+  runtime?: { applyDebugObserve(target: DebugObserveTarget | null, instanceId: string | null): void } | null;
+};
+
+/** Point the runtime's graph debugger at a target and instance: a worker control, or the in-process runtime directly. */
+export function applyPlayGraphDebugObserve(
+  target: PlaySessionGraphDebugTarget,
+  observe: DebugObserveTarget | null,
+  instanceId: string | null,
+): void {
+  if (target.worker) target.worker.postControl({ type: "debugObserve", target: observe, instanceId });
+  else target.runtime?.applyDebugObserve(observe, instanceId);
+}
+
 export function playSessionBootControls(options: {
   load: Extract<ControlMessage, { type: "load" }>;
   scripts?: readonly ScriptBundleEntry[];
@@ -392,6 +408,12 @@ export interface PlaySession {
    * default). Starting it publishes every tree's current state at once.
    */
   setBehaviourTreeStateObserved: (observed: boolean) => void;
+  /**
+   * Point the graph debugger at the live instances of `target` (null stops) and follow
+   * `instanceId`. The runtime answers with `onDebugRoster` and, for the followed instance
+   * only, `onExecutionTrace` each tick.
+   */
+  observeGraphDebug: (target: DebugObserveTarget | null, instanceId: string | null) => void;
   requestPausedRedraw: () => { accepted: boolean; reason?: string };
   /** Last resolved Move.x from the in-process runtime; null on the worker path. */
   lastMoveX: () => number | null;
@@ -701,6 +723,8 @@ export function startPlaySession(options: {
   onBehaviourTreeSnapshot?: (
     trees: readonly import("@babylonslate/bridge").DebugBehaviourTree[],
   ) => void;
+  onDebugRoster?: (roster: Extract<CommandMessage, { type: "debugRoster" }>) => void;
+  onExecutionTrace?: (trace: Extract<CommandMessage, { type: "executionTrace" }>) => void;
   onBtState?: (state: {
     slotId: number;
     status: string;
@@ -1438,6 +1462,9 @@ export function startPlaySession(options: {
     }
     if (command.type === "simulationQuiesced") { acceptQuiesced(command); return; }
     if (command.type === "simulationCaptureChunk" || command.type === "simulationCaptureResult") { captureClient.receive(command); return; }
+    // Debug views are not activity and never reach the renderer.
+    if (command.type === "debugRoster") { options.onDebugRoster?.(command); return; }
+    if (command.type === "executionTrace") { options.onExecutionTrace?.(command); return; }
     if (captureFenceActive && shouldForwardPlayEngineCommand(command.type)) captureFenceChanged = true;
     if (materialEditHost.receive(command)) return;
     if (command.type === "sessionBoundaryResult") { boundaryClient.receive(command); return; }
@@ -1887,6 +1914,9 @@ export function startPlaySession(options: {
     },
     setBehaviourTreeStateObserved: (observed) => {
       if (!stopped) applyPlayBehaviourTreeStateObserved({ worker, runtime }, observed);
+    },
+    observeGraphDebug: (target, instanceId) => {
+      if (!stopped) applyPlayGraphDebugObserve({ worker, runtime }, target, instanceId);
     },
     requestPausedRedraw: () => handle.requestPausedRedraw(),
     lastMoveX: () => {
