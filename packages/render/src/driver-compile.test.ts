@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { MeshBuilder, NullEngine, Scene, type AbstractMesh, type Effect } from "@babylonjs/core";
-import { COMPILE_AHEAD_LIMIT, DriverCompileWatch, pendingDriverCompiles, requestCompilesAhead } from "./driver-compile";
+import { FreeCamera, MeshBuilder, NullEngine, ObjectRenderer, Scene, Vector3, type AbstractMesh, type Effect } from "@babylonjs/core";
+import {
+  COMPILE_AHEAD_LIMIT, DriverCompileWatch, pendingDriverCompiles, readinessScanMeshes, requestCompilesAhead,
+} from "./driver-compile";
 import { SCENE_DRIVER_COMPILE_TIMEOUT_MS } from "./stall-deadline";
 
 function engineWith(parallel: boolean) {
@@ -153,5 +155,22 @@ describe("compiles requested ahead of a readiness scan", () => {
     ahead(requested, (head) => { rest.push(head.name); return false; });
     expect(probed).toEqual([]);
     expect(rest).toEqual([]);
+  });
+
+  it("walks the meshes a renderer without a render list scans: outside a frame graph, the scene's active ones", () => {
+    const { engine } = engineWith(true);
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 0, -5), scene);
+    camera.setTarget(Vector3.Zero());
+    const inView = MeshBuilder.CreateBox("in view", {}, scene);
+    MeshBuilder.CreateBox("behind the camera", {}, scene).position.z = -20;
+    scene.render();
+    const renderer = new ObjectRenderer("probe", scene);
+    renderer.renderList = null;
+    expect(readinessScanMeshes(renderer, scene)).toEqual([inView]);
+    renderer.renderList = [inView];
+    expect(readinessScanMeshes(renderer, scene)).toBe(renderer.renderList);
+    renderer.dispose();
   });
 });

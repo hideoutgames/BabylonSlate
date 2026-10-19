@@ -3,7 +3,7 @@ import { Color4, Constants, type AbstractMesh, type EngineCapabilities } from "@
 import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
 import type { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPass";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
-import { requestCompilesAhead } from "./driver-compile";
+import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { LightNeutralGeometryRendererTask } from "./light-neutral-tasks";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 
@@ -56,6 +56,15 @@ export class LogicalGeometryTask extends LightNeutralGeometryRendererTask {
   /** Meshes this pass probed ahead of its readiness scan since it was last ready (`requestCompilesAhead`). */
   private readonly requestedAhead = new Set<AbstractMesh>();
 
+  /**
+   * Forget the meshes probed ahead, so the next scan probes them ahead again
+   * and the pass keeps none alive: after a readiness invalidation, or when the
+   * owner drops its object list.
+   */
+  forgetCompilesAhead(): void {
+    this.requestedAhead.clear();
+  }
+
   override isReady(): boolean {
     const ready = this.objectRenderer.customIsReadyFunction;
     // Native default refreshRate=1 probes only geometry, not its material.
@@ -66,8 +75,8 @@ export class LogicalGeometryTask extends LightNeutralGeometryRendererTask {
     this.objectRenderer.customIsReadyFunction = (mesh, _rate, prewarm) => {
       if (probe(mesh, prewarm)) return true;
       // The scan stops here; a parallel-compile driver links the next meshes' variants meanwhile.
-      requestCompilesAhead(this._frameGraph.engine, this.objectRenderer.renderList ?? [], mesh, this.requestedAhead,
-        (other) => probe(other, prewarm));
+      requestCompilesAhead(this._frameGraph.engine, readinessScanMeshes(this.objectRenderer, this._frameGraph.scene), mesh,
+        this.requestedAhead, (other) => probe(other, prewarm));
       return false;
     };
     try {
