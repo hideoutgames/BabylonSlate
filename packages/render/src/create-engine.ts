@@ -2715,10 +2715,11 @@ function initializeEngine(
     }) : null;
     admissionPreparationMs = 0;
     let coherentFrame = true;
-    // Water created or enabled since the last update (an editor edit or drop, a Play spawn) settles before the world's
-    // strict probes below request its variants.
-    settleSceneWater(scene);
     beginEngineDrawCallFrame(engine);
+    // Water created or enabled since the last update (an editor edit or drop, a Play spawn) settles before the world's
+    // strict probes below request its variants, and counts in this frame's draw calls. A load frame that draws no world
+    // leaves it to the load's own settle, so spawn batches arriving over frames never settle partial sets.
+    if (!worldLoading || pendingPresentations.has("world")) settleSceneWater(scene);
     if (rttPresent) rttPresent.bind();
     if (!options.playMode) {
       updateSceneTilemapAnimations(scene, frameStart - tilemapPreviewStart);
