@@ -1,7 +1,7 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Effect, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type Effect, type Mesh } from "@babylonjs/core";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import {
@@ -45,6 +45,7 @@ import { prewarmMaterial } from "./material-compiler";
 import { MaterialLibrary } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
 import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_FIRST_FRAME_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
+import { SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS } from "./stall-deadline";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { SharedOutlineView } from "./shared-outline";
@@ -1160,6 +1161,38 @@ describe("Play createEngine view", () => {
     }
   });
 
+  // WebGPU builds each render pipeline a draw created in the GPU queue, inside that draw's submitted-work wait.
+  it("gives a validated first draw longer to complete for each render pipeline it created", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    handle.setPaused(true);
+    const pipelines = 30;
+    const cancel = vi.fn();
+    const submission = vi.spyOn(presentation, "submitPresentedFrame").mockImplementation((_engine, draw) => {
+      draw();
+      WebGPUCacheRenderPipeline.NumCacheMiss += pipelines;
+      return { completed: new Promise<void>(() => {}), cancel, fenceWaiting: () => false };
+    });
+    vi.useFakeTimers();
+    let state = "pending";
+    const frame = handle.presentFirstFrame().then(() => { state = "ready"; }, (error) => { state = "failed"; return error as Error; });
+    try {
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      await vi.advanceTimersByTimeAsync(SCENE_DRIVER_COMPILE_TIMEOUT_MS + 5_000);
+      expect(state).toBe("pending");
+      await vi.advanceTimersByTimeAsync(pipelines * SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS);
+      expect(await frame).toMatchObject({ message: expect.stringContaining(`render pipelines created: ${pipelines}.`) });
+      expect(state).toBe("failed");
+    } finally {
+      handle.dispose();
+      await frame;
+      submission.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it("does not spend a loading permit on a sibling view or a hidden document", async () => {
     const engine = sharedEngine();
     const runLoop = vi.spyOn(engine, "runRenderLoop");
@@ -1247,6 +1280,40 @@ describe("Play createEngine view", () => {
     } finally {
       handle.dispose();
       await frame;
+      vi.useRealTimers();
+    }
+  });
+
+  // Where links are synchronous the first draws' readiness probes link each variant themselves: a link shorter than a
+  // second earns no held-thread credit, but every one that finishes renews the budget.
+  it("renews the first-frame budget while shaders keep finishing on the Engine, and fails once they stop", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    handle.setPaused(true);
+    handle.scene.addIsReadyCheck({ isReady: () => false });
+    markSceneReadinessDirty(handle.scene);
+    vi.useFakeTimers();
+    // DriverCompileWatch reads performance.now; follow the faked clock whether or not it is faked itself.
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => Date.now());
+    const effects = (engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
+    let state = "pending";
+    const frame = handle.presentFirstFrame().then(() => { state = "ready"; }, (error) => { state = "failed"; return error as Error; });
+    try {
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      for (let second = 0; second < 2 * SCENE_FIRST_FRAME_TIMEOUT_MS / 1_000; second++) {
+        effects[`linked-${second}`] = { isReady: () => true, getCompilationError: () => "" };
+        await vi.advanceTimersByTimeAsync(1_000);
+      }
+      expect(state).toBe("pending");
+      await vi.advanceTimersByTimeAsync(2 * SCENE_FIRST_FRAME_TIMEOUT_MS);
+      expect(await frame).toMatchObject({ message: expect.stringContaining("loading deadline") });
+      expect(state).toBe("failed");
+    } finally {
+      handle.dispose();
+      await frame;
+      clock.mockRestore();
       vi.useRealTimers();
     }
   });

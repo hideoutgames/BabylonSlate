@@ -31,6 +31,25 @@ export const SCENE_FIRST_FRAME_TIMEOUT_MS = 20_000;
 export const SCENE_PREPARATION_CEILING_MS = 300_000;
 
 /**
+ * Extra time a loading owner's validated first draw gets to complete on the GPU
+ * for each render pipeline it created. WebGPU builds new pipelines in the GPU
+ * queue, so they all finish inside that draw's submitted-work wait, which shows
+ * no progress until then; on an iPad (WebKit WebGPU) each was seen to take about
+ * a second. This allows twice that.
+ */
+export const SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS = 2_000;
+
+/**
+ * Budget for a validated first draw's GPU completion: the longest driver
+ * compile the loading budgets tolerate, plus `SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS`
+ * per render pipeline the draw created, at most `SCENE_PREPARATION_CEILING_MS`.
+ */
+export function firstFrameCompletionMs(pipelines: number): number {
+  return Math.min(SCENE_DRIVER_COMPILE_TIMEOUT_MS + Math.max(0, pipelines) * SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS,
+    SCENE_PREPARATION_CEILING_MS);
+}
+
+/**
  * A gap of at least this long between two checkpoints of a polling loading step
  * is time the step could neither spend nor observe. The loops step every 16 ms
  * and a probe on a healthy host takes milliseconds, so a longer gap means a
