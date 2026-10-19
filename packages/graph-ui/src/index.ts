@@ -13,6 +13,13 @@ export * from "./graph-types";
 export * from "./graph-format";
 export * from "./graph-marquee";
 export * from "./graph-drop-hint";
+export {
+  NO_VALUE_TEXT,
+  type GraphRunEvent,
+  type GraphRunTrace,
+  type RunGraph,
+} from "./run-trace";
+export { RUN_FLASH_MS } from "./run-flash";
 export * from "./node-theme";
 export { displayPinTypesForGraph, type PinDisplayLookup } from "./wildcard-display";
 export {
