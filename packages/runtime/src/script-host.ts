@@ -1821,7 +1821,9 @@ export class ScriptHost {
       context.self = self;
       context.deltaSeconds = deltaSeconds;
       context.tickIndex = tickIndex;
-      context.debugTrace = self !== null && self === this.debugObject ? this.debugSink : null;
+      // The instance is `self`, except for an Animation Graph's scripts, which run on the actor
+      // while the graph's instance is its component (the variable store).
+      context.debugTrace = this.debugObject !== null && store === this.debugObject ? this.debugSink : null;
       context.commandArgs = commandArgs;
       context.args = commandArgs;
       context.animFacts = extras?.animFacts;

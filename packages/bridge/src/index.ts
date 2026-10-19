@@ -51,6 +51,7 @@ export {
   type ScriptBundleEntry,
   type ScriptConsoleCommand,
 } from "./channels";
+export { sameDebugObserveTarget } from "./debug-target";
 export {
   PLAY_ENGINE_COMMAND_TYPES,
   isPlayEngineCommandType,

@@ -1,16 +1,18 @@
 import type { CommandMessage, DebugBehaviourTree } from "@babylonslate/bridge";
 import { eulerDegreesToQuaternion } from "@babylonslate/core";
 import type { TraceBtState } from "@babylonslate/debugger";
-import type { Actor, World } from "@babylonslate/object-model";
+import type { Actor, ActorComponent, BObject, World } from "@babylonslate/object-model";
 import type { PhysicsWorldKind } from "@babylonslate/physics";
 import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
 import {
+  btEdgeId,
   evaluateBehaviourTree,
   builtinClassId,
   type BehaviourTreeDocument,
   type BlackboardDocument,
   type BlackboardValues,
   type BtEvalState,
+  type BtEvalTrace,
   type BtResult,
 } from "@babylonslate/behaviour-tree";
 import {
@@ -20,10 +22,12 @@ import {
   multiplyQuaternion,
 } from "./actor-world-transform";
 import { blackboardInspectTypes, blackboardTargetPosition, copyBlackboard, sameBlackboard, snapshotBlackboard } from "./bt-blackboard";
+import { behaviourTreeGuidOf, evaluatedBehaviourTreeComponent } from "./component-assets";
 import type { RuntimeDiagnostic } from "./diagnostics";
 import { copyPlainData, samePlainData } from "./plain-data";
 import { navPointFromUnknown, type RuntimeNavigation } from "./runtime-navigation";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
+import { BT_DEBUG_GRAPH_ID, type ScriptDebugTrace, type ScriptGraphRecorder } from "./script-debug";
 import type { ScriptHost } from "./script-host";
 import { walkComponentOwners } from "./world-component-index";
 
@@ -84,8 +88,14 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
    * unchanged tick is recognised without sanitizing (a JSON round trip) the live values.
    */
   private readonly blackboardBaseline = new Map<number, BlackboardValues>();
-  /** The Behaviour Tree editor is showing live state; `btState` is published only then. */
-  private stateObserved = false;
+  /**
+   * The BehaviourTreeComponent the editor's graph debugger follows, and where its ticks are reported.
+   * Only that component's tree reports what it ran and publishes `btState`.
+   */
+  private debugComponent: ActorComponent | null = null;
+  private debugSink: ScriptDebugTrace | null = null;
+  /** The evaluation hooks bound to the recorder of the followed tree, so a followed tick allocates none. */
+  private debugTrace: { recorder: ScriptGraphRecorder; trace: BtEvalTrace } | null = null;
   private debug = false;
   private lastDebugMs = -Infinity;
   private readonly host: BehaviourTreeRuntimeHost;
@@ -227,13 +237,6 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
 
   private stringGuid(value: unknown): string | null {
     return typeof value === "string" && value.length > 0 ? value : null;
-  }
-
-  private treeGuid(component: {
-    assetGuid: string | null;
-    getVariable(name: string): unknown;
-  }): string | null {
-    return this.stringGuid(component.getVariable("treeGuid")) ?? component.assetGuid;
   }
 
   private blackboardDefaults(guid: string | null): BlackboardValues {
@@ -591,16 +594,13 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     if (!this.host.canTick(actor)) return;
     const slotId = this.host.slot(actor);
     if (slotId === undefined) return;
-    const component = actor.components.find(
-      (entry) =>
-        entry.classId === "BehaviourTreeComponent" && !entry.destroyed,
-    );
+    const component = evaluatedBehaviourTreeComponent(actor);
     if (!component) {
       // A removed BehaviourTreeComponent takes its tree's running work with it.
       if (this.sourceBySlot.has(slotId)) this.resetEvaluation(actor, slotId, dtSeconds);
       return;
     }
-    const guid = this.treeGuid(component);
+    const guid = behaviourTreeGuidOf(component);
     if (!guid) {
       this.emitMissing(actor.guid, "BehaviourTreeComponent has no treeGuid");
       return;
@@ -620,8 +620,10 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     const previous = this.evalBySlot.get(slotId) ?? null;
     // Evaluation copies its Blackboard input, so the previous state's is passed as is.
     const blackboard: BlackboardValues = previous ? previous.blackboard : this.blackboardDefaults(blackboardGuid);
+    const followed = component === this.debugComponent;
     const next = evaluateBehaviourTree(document, previous, dtSeconds, {
       seed: this.host.seed(),
+      trace: followed ? this.followedTrace(guid) : undefined,
       blackboard,
       host: {
         tick: (node, board, dtSeconds, memory) =>
@@ -655,28 +657,51 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     this.evalBySlot.set(slotId, next);
     this.nodeId = null;
     this.assetGuid = null;
-    if (this.stateObserved) this.publishState(slotId, next);
+    if (followed) this.publishState(slotId, next);
   }
 
   /**
-   * `btState` feeds only the Behaviour Tree editor's Play overlay and Blackboard watch, so an
-   * unobserved session sanitizes, compares and sends nothing. Turning observation on publishes
-   * every evaluated tree's current state at once, so the editor is not blank until the next
-   * change; turning it off forgets what was published, so a later observer is sent fresh state.
+   * The editor's graph debugger follows `object` (a BehaviourTreeComponent; anything else follows
+   * nothing here) and reports into `sink`. Only that component's tree reports the nodes and links
+   * each evaluation touched and publishes `btState`, which feeds the Behaviour Tree editor's node
+   * status and Blackboard watch; every other tree, and an unobserved session, sanitizes, compares
+   * and sends nothing. Following publishes the tree's current state at once, so the editor is not
+   * blank until the next change; what was published for an earlier follow is forgotten, so a new
+   * one is sent fresh state.
    */
-  setStateObserved(observed: boolean): void {
-    if (observed === this.stateObserved) return;
-    this.stateObserved = observed;
-    if (observed) {
-      for (const [slotId, state] of this.evalBySlot) this.publishState(slotId, state);
-      return;
-    }
+  setDebugTrace(object: BObject | null, sink: ScriptDebugTrace | null): void {
+    const component = object?.classId === "BehaviourTreeComponent" ? object as ActorComponent : null;
+    this.debugComponent = sink ? component : null;
+    this.debugSink = this.debugComponent ? sink : null;
+    this.debugTrace = null;
     this.lastState.clear();
     this.blackboardBaseline.clear();
+    const owner = this.debugComponent?.owner;
+    const slotId = owner && !owner.destroyed ? this.host.slot(owner) : undefined;
+    const state = slotId === undefined ? undefined : this.evalBySlot.get(slotId);
+    if (slotId !== undefined && state) this.publishState(slotId, state);
+  }
+
+  /** The hooks that report an evaluation of the followed tree into its recorder, or none once the follow has ended. */
+  private followedTrace(treeGuid: string): BtEvalTrace | undefined {
+    const recorder = this.debugSink?.graph(treeGuid, BT_DEBUG_GRAPH_ID) ?? null;
+    if (!recorder) return undefined;
+    if (this.debugTrace?.recorder !== recorder) {
+      this.debugTrace = {
+        recorder,
+        trace: {
+          visit: (nodeId) => recorder.exec(nodeId),
+          link: (parentId, childId) => recorder.edge(btEdgeId(parentId, childId)),
+        },
+      };
+    }
+    return this.debugTrace.trace;
   }
 
   /** Emit the slot's `btState` unless it equals the one last published. */
   private publishState(slotId: number, next: BtEvalState): void {
+    const followed = this.debugComponent;
+    if (!followed) return;
     const last = this.lastState.get(slotId);
     const baseline = this.blackboardBaseline.get(slotId);
     // The sanitized Blackboard last published equals the sanitized baseline copy (below), so
@@ -695,7 +720,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     this.blackboardBaseline.set(slotId, copyBlackboard(next.blackboard));
     if (samePlainData(last, state)) return;
     this.lastState.set(slotId, state);
-    this.host.emit({ type: "btState", slotId, ...state });
+    this.host.emit({ type: "btState", instanceId: followed.guid, slotId, ...state });
   }
 
   /**
@@ -742,10 +767,9 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
       if (actor.destroyed) continue;
       const slotId = this.host.slot(actor);
       if (slotId === undefined) continue;
-      const component = actor.components.find((entry) =>
-        entry.classId === "BehaviourTreeComponent" && !entry.destroyed);
+      const component = evaluatedBehaviourTreeComponent(actor);
       if (!component) continue;
-      const treeGuid = this.treeGuid(component);
+      const treeGuid = behaviourTreeGuidOf(component);
       const document = treeGuid ? this.documents.get(treeGuid) : null;
       if (!treeGuid || !document) continue;
       const state = this.evalBySlot.get(slotId);

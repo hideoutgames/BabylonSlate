@@ -27,7 +27,7 @@ describe("isPlayEngineCommandType", () => {
   });
 
   it("does not forward host-only commands such as stats or the graph debugger's views", () => {
-    for (const type of ["stats", "debugRoster", "executionTrace"]) {
+    for (const type of ["stats", "debugRoster", "executionTrace", "btState"]) {
       expect(isPlayEngineCommandType(type), type).toBe(false);
     }
   });

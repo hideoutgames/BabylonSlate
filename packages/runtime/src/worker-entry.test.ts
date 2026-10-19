@@ -310,7 +310,7 @@ describe("worker entry snapshot transport", () => {
     expect(runtime.getWorld().clock.tickIndex).toBe(tickIndex);
   });
 
-  it("posts btState only while the host observes behaviour tree state, starting with the current state", async () => {
+  it("posts btState only while the host follows a behaviour tree, starting with the current state", async () => {
     const guard = createActor("guard", "Guard", {
       components: [{ id: "bt-1", classId: "BehaviourTreeComponent", properties: { treeGuid: "tree-1" } }],
     });
@@ -318,6 +318,7 @@ describe("worker entry snapshot transport", () => {
       { type: "load", sceneAssetGuid: "main", scene: { ...createDefaultScene(), actors: [guard] } },
       [{ type: "loadBehaviourTrees", trees: [{ guid: "tree-1", document: createDefaultBehaviourTree("Guard") }] }]);
     const btStates = () => posts.flatMap((post) => post.kind === "command" && post.command.type === "btState" ? [post.command] : []);
+    const rosters = () => posts.flatMap((post) => post.kind === "command" && post.command.type === "debugRoster" ? [post.command] : []);
     for (let i = 0; i < 100 && !kinds().includes("sceneRealized"); i++) {
       runFrames(1);
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -325,13 +326,19 @@ describe("worker entry snapshot transport", () => {
     runFrames(4);
     expect(btStates()).toEqual([]);
 
-    send!({ type: "setBehaviourTreeStateObserved", observed: true });
-    expect(btStates()).toEqual([expect.objectContaining({ type: "btState", status: "success" })]);
+    // Watching the tree lists the component that runs it; only following it sends its state.
+    const target = { kind: "behaviourTree", assetGuid: "tree-1" } as const;
+    send!({ type: "debugObserve", target, instanceId: null });
+    expect(btStates()).toEqual([]);
+    const instanceId = rosters()[0]?.added[0]?.id;
+    expect(instanceId).toEqual(expect.any(String));
+    send!({ type: "debugObserve", target, instanceId: instanceId! });
+    expect(btStates()).toEqual([expect.objectContaining({ type: "btState", instanceId, status: "success" })]);
     runFrames(4);
     expect(btStates()).toHaveLength(1);
 
-    send!({ type: "setBehaviourTreeStateObserved", observed: false });
-    send!({ type: "setBehaviourTreeStateObserved", observed: true });
+    send!({ type: "debugObserve", target: null, instanceId: null });
+    send!({ type: "debugObserve", target, instanceId: instanceId! });
     expect(btStates()).toHaveLength(2);
   });
 
