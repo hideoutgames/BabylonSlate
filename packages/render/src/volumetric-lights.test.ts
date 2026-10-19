@@ -19,6 +19,7 @@ import {
   createVolumetricSlots,
   fillVolumetricSlots,
   selectVolumetricLights,
+  volumeShadowPlaceholders,
   type VolumeShadow,
   type VolumeShadowPlaceholders,
 } from "./volumetric-lights";
@@ -208,6 +209,76 @@ it("binds each slot's map for its light's shadow kind and a placeholder to every
     expect(shadows()[0]).toEqual(["volumeShadow0", 0, 0]);
     expect(bindShadowLight).not.toHaveBeenCalled();
     expect(placeholders()[0]).toEqual(["shadowTexture0", "compare"]);
+  } finally {
+    scene.dispose();
+    engine.dispose();
+  }
+});
+
+it("keeps one set of shadow placeholders per live scene and releases it with that scene", () => {
+  const engine = new NullEngine();
+  const first = new Scene(engine);
+  const second = new Scene(engine);
+  try {
+    const targets = engine._renderTargetWrapperCache.length;
+    const placeholders = volumeShadowPlaceholders(first);
+    expect(volumeShadowPlaceholders(first)).toBe(placeholders);
+    const other = volumeShadowPlaceholders(second);
+    expect(other).not.toBe(placeholders);
+    expect(new Set([...Object.values(placeholders), ...Object.values(other)]).size).toBe(6);
+    expect(engine._renderTargetWrapperCache.length).toBe(targets + 6);
+    first.dispose();
+    expect(Object.values(placeholders).map((texture) => texture.getInternalTexture())).toEqual([null, null, null]);
+    expect(Object.values(other).every((texture) => texture.getInternalTexture() !== null)).toBe(true);
+    expect(engine._renderTargetWrapperCache.length).toBe(targets + 3);
+    // A disposed scene never notifies its disposal again: textures made for it now would never be released.
+    expect(() => volumeShadowPlaceholders(first)).toThrow();
+    second.dispose();
+    expect(engine._renderTargetWrapperCache.length).toBe(targets);
+  } finally {
+    first.dispose();
+    second.dispose();
+    engine.dispose();
+  }
+});
+
+it("binds a Full Quality capture's march to the sun map fitted to the capture's camera, and none once the scene map goes", async () => {
+  const { engine, scene, camera, shadowed } = shadowedScene();
+  try {
+    const sun = shadowed(new DirectionalLight("sun", new Vector3(0, -1, 0.2), scene));
+    const controller = sceneShadowController(scene);
+    const capture = new FreeCamera("capture", new Vector3(300, 2, 300), scene);
+    capture.getViewMatrix();
+    const view = controller.attachView(capture);
+    const main = controller.generator(sun)!;
+    const own = controller.viewBoundGenerator(sun, capture)!;
+    expect(own).not.toBe(main);
+    const mainBind = vi.spyOn(main, "bindShadowLight").mockImplementation(() => {});
+    const ownBind = vi.spyOn(own, "bindShadowLight").mockImplementation(() => {});
+    const effect = { setFloat4: vi.fn(), setFloat2: vi.fn(), setFloat: vi.fn(), setTexture: vi.fn() };
+    const textures = { compare: { name: "compare" }, cube: { name: "cube" }, cascades: { name: "cascades" } } as unknown as VolumeShadowPlaceholders;
+    const slots = createVolumetricSlots();
+    const settings = { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, maxLights: 1, maxDistance: 10 };
+    const bind = (drawn: FreeCamera) => {
+      for (const spy of [...Object.values(effect), mainBind, ownBind]) spy.mockClear();
+      fillVolumetricSlots(slots, scene, drawn, settings);
+      bindVolumetricLights(effect as unknown as Effect, scene, drawn, slots, 1, textures, { ...NONE });
+    };
+    // The capture's march samples the map its own pass drew, with that map's matrices; the scene view's, the scene's.
+    bind(capture);
+    expect(ownBind).toHaveBeenCalledExactlyOnceWith("0", effect);
+    expect(mainBind).not.toHaveBeenCalled();
+    bind(camera);
+    expect(mainBind).toHaveBeenCalledExactlyOnceWith("0", effect);
+    expect(ownBind).not.toHaveBeenCalled();
+    // Without an admitted scene map the capture binds no sun map, the scene's or its own.
+    controller.register(sun, false);
+    controller.sync();
+    bind(capture);
+    expect(mainBind).not.toHaveBeenCalled();
+    expect(ownBind).not.toHaveBeenCalled();
+    expect(effect.setFloat2).toHaveBeenCalledWith("volumeShadow0", 0, 0);
+    await view.release();
   } finally {
     scene.dispose();
     engine.dispose();
