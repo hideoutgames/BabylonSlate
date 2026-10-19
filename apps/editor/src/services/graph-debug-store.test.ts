@@ -148,3 +148,84 @@ describe("GraphDebugStore traces", () => {
     expect(store.value("Door.class", "event-graph", "n", "p", "in")).toBeUndefined();
   });
 });
+
+describe("GraphDebugStore Behaviour Tree state", () => {
+  const GUARD: DebugObserveTarget = { kind: "behaviourTree", assetGuid: "guard-tree" };
+  const component = (id: string): DebugInstance => ({ id, kind: "component", label: id });
+  const state = (instanceId: string, patch: Partial<Parameters<GraphDebugStore["receiveBtState"]>[0]> = {}) => ({
+    instanceId, btNodeId: null, lastResults: {}, stack: [], blackboard: {}, ...patch,
+  });
+  function following(...ids: string[]) {
+    const store = new GraphDebugStore();
+    store.setTarget(GUARD);
+    store.receiveRoster({ target: GUARD, reset: true, added: ids.map(component), removed: [] });
+    return store;
+  }
+
+  it("shows the followed tree's node statuses, running for the whole active branch", () => {
+    const store = following("a");
+    store.receiveBtState(state("a", {
+      btNodeId: "wait", lastResults: { blocked: "failure", wait: "running" },
+      stack: [{ nodeId: "root" }, { nodeId: "wait" }],
+    }));
+    expect(["root", "blocked", "wait", "other"].map((id) => store.status("guard-tree", id)))
+      .toEqual(["running", "failure", "running", undefined]);
+    // Another tree's canvas reads nothing of this one.
+    expect(store.status("other-tree", "root")).toBeUndefined();
+  });
+
+  it("wakes only the nodes whose status changed", () => {
+    const store = following("a");
+    const woken: string[] = [];
+    for (const id of ["root", "wait", "done"]) store.subscribeStatus(id, () => woken.push(id));
+    store.receiveBtState(state("a", { lastResults: { done: "success" }, stack: [{ nodeId: "root" }, { nodeId: "wait" }] }));
+    expect(woken.sort()).toEqual(["done", "root", "wait"]);
+    woken.length = 0;
+    store.receiveBtState(state("a", { lastResults: { done: "success" }, stack: [{ nodeId: "root" }, { nodeId: "wait" }], blackboard: { hp: 1 } }));
+    expect(woken).toEqual([]);
+    store.receiveBtState(state("a", { lastResults: { done: "success", wait: "success" }, stack: [{ nodeId: "root" }] }));
+    expect(woken).toEqual(["wait"]);
+  });
+
+  it("holds the Blackboard the tree last reported and wakes its readers", () => {
+    const store = following("a");
+    const woken = vi.fn();
+    store.subscribeBlackboard(woken);
+    expect(store.blackboard("guard-tree")).toBeNull();
+    store.receiveBtState(state("a", { blackboard: { hp: 3 } }));
+    expect(store.blackboard("guard-tree")).toEqual({ hp: 3 });
+    expect(store.blackboard("other-tree")).toBeNull();
+    expect(woken).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops the state of an instance that is not followed, and of a target that is not a tree", () => {
+    const store = following("a", "b");
+    store.receiveBtState(state("b", { stack: [{ nodeId: "root" }], blackboard: { hp: 9 } }));
+    expect(store.status("guard-tree", "root")).toBeUndefined();
+    expect(store.blackboard("guard-tree")).toBeNull();
+
+    const classStore = observed().store;
+    classStore.receiveRoster(roster([actor("a")], [], true));
+    classStore.receiveBtState(state("a", { stack: [{ nodeId: "root" }] }));
+    expect(classStore.status("guard-tree", "root")).toBeUndefined();
+  });
+
+  it("forgets the status and Blackboard of an instance when another is followed or the target goes away", () => {
+    const store = following("a", "b");
+    const woken: string[] = [];
+    store.subscribeStatus("root", () => woken.push("root"));
+    store.subscribeBlackboard(() => woken.push("blackboard"));
+    store.receiveBtState(state("a", { stack: [{ nodeId: "root" }], blackboard: { hp: 3 } }));
+    woken.length = 0;
+
+    store.select("b");
+    expect(woken.sort()).toEqual(["blackboard", "root"]);
+    expect(store.status("guard-tree", "root")).toBeUndefined();
+    expect(store.blackboard("guard-tree")).toBeNull();
+
+    store.receiveBtState(state("b", { stack: [{ nodeId: "root" }], blackboard: { hp: 1 } }));
+    woken.length = 0;
+    store.setTarget(null);
+    expect(woken.sort()).toEqual(["blackboard", "root"]);
+  });
+});

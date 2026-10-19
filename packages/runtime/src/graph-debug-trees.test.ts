@@ -71,9 +71,10 @@ describe("Behaviour Tree graph debugging", () => {
   it("lists the components that run the tree, by the tree they evaluate", () => {
     const { runtime, roster } = start({ playScene: guards(), behaviourTrees: trees() });
     runtime.applyDebugObserve(bt("guard"), null);
+    // A component is named for its actor.
     expect(roster(bt("guard")).map((entry) => [entry.id, entry.label, entry.ownerLabel])).toEqual([
-      ["bt-1", "BehaviourTreeComponent", "Guard"],
-      ["bt-2", "BehaviourTreeComponent", "Scout"],
+      ["bt-1", "Guard", undefined],
+      ["bt-2", "Scout", undefined],
     ]);
     runtime.applyDebugObserve(bt("kitchen"), null);
     expect(roster(bt("kitchen")).map((entry) => entry.id)).toEqual(["bt-3"]);
@@ -187,7 +188,7 @@ describe("Animation Graph debugging", () => {
   it("lists every component that runs the graph, including a second one on the same actor", async () => {
     const { runtime, roster } = await startHeroes();
     runtime.applyDebugObserve(anim("loco"), null);
-    expect(roster(anim("loco")).map((entry) => [entry.id, entry.ownerLabel])).toEqual([["anim-1", "Hero"], ["anim-3", "Villain"]]);
+    expect(roster(anim("loco")).map((entry) => [entry.id, entry.label])).toEqual([["anim-1", "Hero"], ["anim-3", "Villain"]]);
     runtime.applyDebugObserve(anim("face"), null);
     expect(roster(anim("face")).map((entry) => entry.id)).toEqual(["anim-2"]);
   });

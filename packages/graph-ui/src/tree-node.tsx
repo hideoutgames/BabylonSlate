@@ -18,6 +18,7 @@ import { BlueprintNodeShell, type CanvasNode } from "./graph-nodes";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { nodeRoleClass, type NodeVisualRole } from "./node-theme";
 import { isPinWired } from "./pin-connections";
+import { useRunNodeStatus } from "./use-run-node-status";
 
 const DOUBLE_TAP_MS = 350;
 
@@ -56,10 +57,9 @@ const KIND_ICON: Record<string, LucideIcon> = {
   task: PlayIcon,
 };
 
-function treeState(running: boolean, lastResult: string | null): string {
-  if (running) return "running";
-  if (lastResult === "success" || lastResult === "failure") return lastResult;
-  return "idle";
+/** `running`, `success` or `failure` from the run trace; anything else, or none, is idle. */
+function treeState(status: string | undefined): "running" | "success" | "failure" | "idle" {
+  return status === "running" || status === "success" || status === "failure" ? status : "idle";
 }
 
 function TreePinHandle({
@@ -124,13 +124,13 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const title = typeof data.title === "string" ? data.title : id;
   const kind = typeof data.kind === "string" ? data.kind : "task";
   const sortIndex = typeof data.sortIndex === "number" ? data.sortIndex : 0;
-  const lastResult = typeof data.lastResult === "string" ? data.lastResult : null;
-  const running = data.running === true;
   const protectedNode = data.__protected === true;
   const decorators = asRows(data.decorators);
   const services = asRows(data.services);
   const showChildren = kind !== "task";
-  const state = treeState(running, lastResult);
+  // Only this node renders when its status changes; a run never re-renders the canvas.
+  const state = treeState(useRunNodeStatus(id));
+  const running = state === "running";
   const nodeMenuItems = useMemo(
     () => contextMenuItemsForNode?.(id) ?? [],
     [contextMenuItemsForNode, id],
@@ -168,11 +168,7 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const kindLabel = protectedNode
     ? `Root ${humanizePropertyLabel(kind)}`
     : humanizePropertyLabel(kind);
-  const stateLabel = running
-    ? "Running"
-    : lastResult
-      ? humanizePropertyLabel(lastResult)
-      : "";
+  const stateLabel = state === "idle" ? "" : humanizePropertyLabel(state);
 
   return (
     <BlueprintNodeShell
@@ -196,9 +192,8 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
         type="button"
         className="bt-node-drag-handle flex h-12 w-full items-center gap-2.5 px-2.5 text-left"
         data-testid={`bt-node-${id}`}
-        data-running={running ? "true" : "false"}
-        data-last-result={lastResult ?? ""}
         data-bt-state={state}
+        data-run-status-tip=""
         aria-label={`${title}, ${humanizePropertyLabel(kind)}, priority ${sortIndex}, ${state}`}
         onClick={handleHeaderClick}
         onContextMenu={(event) => {

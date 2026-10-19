@@ -249,20 +249,6 @@ export function applyPlaySessionStep(target: PlaySessionStepTarget): boolean {
   return false;
 }
 
-export type PlaySessionBtObservationTarget = {
-  worker?: { postControl: (message: ControlMessage) => void } | null;
-  runtime?: { applyBehaviourTreeStateObserved(observed: boolean): void } | null;
-};
-
-/** Start or stop the runtime's `btState` stream: a worker control, or the in-process runtime directly. */
-export function applyPlayBehaviourTreeStateObserved(
-  target: PlaySessionBtObservationTarget,
-  observed: boolean,
-): void {
-  if (target.worker) target.worker.postControl({ type: "setBehaviourTreeStateObserved", observed });
-  else target.runtime?.applyBehaviourTreeStateObserved(observed);
-}
-
 export type PlaySessionGraphDebugTarget = {
   worker?: { postControl: (message: ControlMessage) => void } | null;
   runtime?: { applyDebugObserve(target: DebugObserveTarget | null, instanceId: string | null): void } | null;
@@ -404,14 +390,9 @@ export interface PlaySession {
   setInputMode: (mode: "game" | "edit") => Promise<void>;
   setEditorInputSuppressed: (suppressed: boolean) => Promise<void>;
   /**
-   * Start or stop the runtime's `btState` stream, which only the Behaviour Tree editor reads (off by
-   * default). Starting it publishes every tree's current state at once.
-   */
-  setBehaviourTreeStateObserved: (observed: boolean) => void;
-  /**
    * Point the graph debugger at the live instances of `target` (null stops) and follow
    * `instanceId`. The runtime answers with `onDebugRoster` and, for the followed instance
-   * only, `onExecutionTrace` each tick.
+   * only, `onExecutionTrace` each tick (and a Behaviour Tree's `onBtState`).
    */
   observeGraphDebug: (target: DebugObserveTarget | null, instanceId: string | null) => void;
   requestPausedRedraw: () => { accepted: boolean; reason?: string };
@@ -725,14 +706,7 @@ export function startPlaySession(options: {
   ) => void;
   onDebugRoster?: (roster: Extract<CommandMessage, { type: "debugRoster" }>) => void;
   onExecutionTrace?: (trace: Extract<CommandMessage, { type: "executionTrace" }>) => void;
-  onBtState?: (state: {
-    slotId: number;
-    status: string;
-    btNodeId: string | null;
-    lastResults: Record<string, string>;
-    blackboard: Record<string, unknown>;
-    stack: Array<{ nodeId: string; childIndex: number; opened: boolean }>;
-  }) => void;
+  onBtState?: (state: Extract<CommandMessage, { type: "btState" }>) => void;
 }): PlaySession {
   options = { ...options };
   const { canvas, sharedEngine } = options;
@@ -1465,6 +1439,7 @@ export function startPlaySession(options: {
     // Debug views are not activity and never reach the renderer.
     if (command.type === "debugRoster") { options.onDebugRoster?.(command); return; }
     if (command.type === "executionTrace") { options.onExecutionTrace?.(command); return; }
+    if (command.type === "btState") { options.onBtState?.(command); return; }
     if (captureFenceActive && shouldForwardPlayEngineCommand(command.type)) captureFenceChanged = true;
     if (materialEditHost.receive(command)) return;
     if (command.type === "sessionBoundaryResult") { boundaryClient.receive(command); return; }
@@ -1551,16 +1526,6 @@ export function startPlaySession(options: {
       onStat: options.onStatHighlight,
       onFreeCam: options.onFreeCam,
     });
-    if (command.type === "btState") {
-      options.onBtState?.({
-        slotId: command.slotId,
-        status: command.status,
-        btNodeId: command.btNodeId,
-        lastResults: command.lastResults,
-        blackboard: command.blackboard,
-        stack: command.stack,
-      });
-    }
     if (command.type === "setBehaviourTreeDebug")
       options.onBehaviourTreeDebug?.(command.enabled);
     if (command.type === "behaviourTreeSnapshot")
@@ -1911,9 +1876,6 @@ export function startPlaySession(options: {
           if (reset) handle.setSimulationEditMode(mode === "edit");
         }
       }
-    },
-    setBehaviourTreeStateObserved: (observed) => {
-      if (!stopped) applyPlayBehaviourTreeStateObserved({ worker, runtime }, observed);
     },
     observeGraphDebug: (target, instanceId) => {
       if (!stopped) applyPlayGraphDebugObserve({ worker, runtime }, target, instanceId);

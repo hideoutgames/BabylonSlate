@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ComponentProps,
 } from "react";
 import { MessageDetails } from "./message-details";
@@ -42,10 +43,8 @@ import {
   type BlackboardDocument,
   type BtAbortMode,
   type BtCatalogEntry,
-  type BtGraphOverlay,
   type BtNode,
   type BtPropertyField,
-  type BtResult,
 } from "@babylonslate/behaviour-tree";
 import {
   AssetPicker,
@@ -84,9 +83,10 @@ import {
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useBehaviourTreeEditing } from "../context/behaviour-tree-editing-context";
-import { useLiveBtState, useObserveBtState, usePlay } from "../context/play-context";
+import { usePlay } from "../context/play-context";
+import { useGraphDebugStore } from "../context/graph-debug-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
-import { useDockPanelShown } from "../lib/use-dock-panel-shown";
+import { createBehaviourTreeRunTrace } from "../lib/graph-run-trace";
 
 /** Org-chart wires: a trunk from the parent splits into square drops to each child. */
 const BT_EDGE_OPTIONS = { type: "smoothstep", pathOptions: { borderRadius: 8 } };
@@ -147,7 +147,6 @@ function useBehaviourTreeDocument() {
   const { openDocument, applyAssetDocumentChange, loadAssetDocument } = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
   const play = usePlay();
-  const liveBtState = useLiveBtState();
   const entry = useOpenDocument(workspaceDocumentId);
   const doc = useMemo(
     () => asTree((entry?.content ?? {}) as Record<string, unknown>),
@@ -164,22 +163,16 @@ function useBehaviourTreeDocument() {
     },
     [applyAssetDocumentChange, workspaceDocumentId],
   );
-  const overlay = useMemo((): BtGraphOverlay | undefined => {
-    if (!play.playing || !liveBtState) return undefined;
-    return {
-      lastResults: liveBtState.lastResults as Record<string, BtResult>,
-      btNodeId: liveBtState.btNodeId,
-      stack: (liveBtState.stack ?? []).map((frame) => ({
-        nodeId: frame.nodeId,
-        childIndex: frame.childIndex,
-        opened: frame.opened,
-      })),
-    };
-  }, [play.playing, liveBtState]);
   const initialGraph = useMemo(
-    () => hydrateBehaviourTreeForEditor(behaviourTreeToSerialized(doc, overlay)),
-    [doc, overlay],
+    () => hydrateBehaviourTreeForEditor(behaviourTreeToSerialized(doc)),
+    [doc],
   );
+  // The tree's guid names it to the running game; a Simulation's live node status and Blackboard are its.
+  const documentPath = entry?.ref.path;
+  const treeGuid = useMemo(() => {
+    void registryEpoch;
+    return documentPath ? assetRegistry?.getByPath(documentPath)?.header.guid : undefined;
+  }, [assetRegistry, registryEpoch, documentPath]);
   // Registry headers mutate without replacing the registry; the epoch tracks them.
   const { assets, parentOf, paletteNodes, decoratorCatalog, serviceCatalog } = useMemo(() => {
     void registryEpoch;
@@ -339,7 +332,7 @@ function useBehaviourTreeDocument() {
     doc,
     commit,
     play,
-    liveBtState,
+    treeGuid,
     initialGraph,
     paletteNodes,
     decoratorCatalog,
@@ -358,13 +351,13 @@ function useBehaviourTreeDocument() {
   };
 }
 
-export function BehaviourTreeGraphPanel({ api }: IDockviewPanelProps) {
-  // The running-branch overlay is live Play state, which Play publishes only while an editor shows it.
-  useObserveBtState(useDockPanelShown(api));
+export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
+  void _props;
   const {
     doc,
     commit,
     play,
+    treeGuid,
     initialGraph,
     paletteNodes,
     diagnostics,
@@ -373,6 +366,12 @@ export function BehaviourTreeGraphPanel({ api }: IDockviewPanelProps) {
   } = useBehaviourTreeDocument();
   const { sessionViewport, onSessionViewportChange } =
     useGraphSessionViewport(documentId);
+  // While a Simulation runs, the canvas shows what the followed instance ran and each node's status.
+  const graphDebug = useGraphDebugStore();
+  const runTrace = useMemo(
+    () => graphDebug && treeGuid ? createBehaviourTreeRunTrace(graphDebug, treeGuid) : undefined,
+    [graphDebug, treeGuid],
+  );
   const {
     selectedId,
     attachmentId,
@@ -614,6 +613,7 @@ export function BehaviourTreeGraphPanel({ api }: IDockviewPanelProps) {
           canConnect={canConnect}
           commitPositionsOnDragEnd
           readOnly={play.playing}
+          runTrace={runTrace}
           paletteNodes={paletteNodes}
           diagnostics={diagnostics}
           focusedNodeId={play.focusedNodeId ?? focusedNodeId ?? undefined}
@@ -634,19 +634,28 @@ export function BehaviourTreeGraphPanel({ api }: IDockviewPanelProps) {
   );
 }
 
-export function BehaviourTreeBlackboardPanel({ api }: IDockviewPanelProps) {
-  // The Blackboard watch is live Play state, which Play publishes only while an editor shows it.
-  useObserveBtState(useDockPanelShown(api));
+/** The Blackboard values of the Simulation's followed instance of the tree, or null before it reports. */
+function useBlackboardWatch(treeGuid: string | undefined): Readonly<Record<string, unknown>> | null {
+  const store = useGraphDebugStore();
+  const subscribe = useCallback(
+    (listener: () => void) => store?.subscribeBlackboard(listener) ?? (() => {}),
+    [store],
+  );
+  return useSyncExternalStore(subscribe, () => (store && treeGuid ? store.blackboard(treeGuid) : null));
+}
+
+export function BehaviourTreeBlackboardPanel(_props: IDockviewPanelProps) {
+  void _props;
   const {
     doc,
     commit,
-    liveBtState,
+    treeGuid,
     assets,
     blackboardAsset,
     blackboardDocument,
   } = useBehaviourTreeDocument();
   const [blackboardPick, setBlackboardPick] = useState(false);
-  const blackboardWatch = liveBtState?.blackboard ?? null;
+  const blackboardWatch = useBlackboardWatch(treeGuid);
   const keys = blackboardDocument?.keys ?? [];
 
   return (

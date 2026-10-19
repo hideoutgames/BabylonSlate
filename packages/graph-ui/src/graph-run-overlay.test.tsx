@@ -49,18 +49,28 @@ function mountCanvas() {
     </div>`;
   root.innerHTML = `
     <div class="react-flow__node" data-id="make">${side("out", "then")}${side("out", "value")}</div>
-    <div class="react-flow__node" data-id="log">${side("in", "exec")}${side("in", "message")}${side("in", "extra")}</div>`;
+    <div class="react-flow__node" data-id="log">${side("in", "exec")}${side("in", "message")}${side("in", "extra")}</div>
+    <div class="react-flow__node" data-id="wait"><button data-run-status-tip><span>Wait</span></button></div>`;
   document.body.append(root);
   return root;
 }
 
-function fakeTrace(values: Record<string, string>) {
+function fakeTrace(values: Record<string, string>, statuses?: Record<string, string>) {
   const listeners = new Set<(run: GraphRunEvent) => void>();
+  const watchers = new Set<() => void>();
   const trace: GraphRunTrace = {
     subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     value: (nodeId, pinId, direction) => values[`${nodeId}.${pinId}.${direction}`],
+    ...(statuses ? {
+      status: (nodeId: string) => statuses[nodeId],
+      subscribeStatus: (_nodeId: string, listener: () => void) => { watchers.add(listener); return () => { watchers.delete(listener); }; },
+    } : {}),
   };
-  return { trace, values, emit: () => act(() => { for (const listener of listeners) listener({ nodes: [], edges: [] }); }) };
+  return {
+    trace, values, statuses, watchers,
+    emit: () => act(() => { for (const listener of listeners) listener({ nodes: [], edges: [] }); }),
+    changeStatus: (nodeId: string, status: string) => act(() => { statuses![nodeId] = status; for (const watcher of watchers) watcher(); }),
+  };
 }
 
 function pointer(target: Element, type: string, init: { pointerType?: string; relatedTarget?: Element | null } = {}) {
@@ -69,15 +79,17 @@ function pointer(target: Element, type: string, init: { pointerType?: string; re
   act(() => { target.dispatchEvent(event); });
 }
 
-function setup(values: Record<string, string> = {}) {
+function setup(values: Record<string, string> = {}, statuses?: Record<string, string>) {
   const root = mountCanvas();
-  const probe = fakeTrace(values);
+  const probe = fakeTrace(values, statuses);
   render(<GraphRunOverlay root={{ current: root }} trace={probe.trace} graph={() => graph} />);
   const side = (nodeId: string, pinId: string) => root.querySelector(`[data-id="${nodeId}"] [data-pin-id="${pinId}"]`)!;
-  return { root, side, ...probe };
+  const header = (nodeId: string) => root.querySelector(`[data-id="${nodeId}"] [data-run-status-tip]`)!;
+  return { root, side, header, ...probe };
 }
 
 const tip = () => screen.queryByTestId("graph-pin-value-tip");
+const statusTip = () => screen.queryByTestId("graph-node-status-tip");
 
 describe("pin value tip on desktop", () => {
   it("shows No value yet over a pin nothing has run through, then its last value as runs arrive", () => {
@@ -162,6 +174,56 @@ describe("pin value tip on touch", () => {
     pointer(label, "pointerdown", { pointerType: "mouse" });
     act(() => { label.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
     expect(tip()).toBeNull();
+  });
+});
+
+describe("node status tip", () => {
+  it("shows a node's status in Title Case over its header, and says so when it has none", () => {
+    const { header } = setup({}, { wait: "running" });
+    pointer(header("wait"), "pointerover");
+    expect(statusTip()?.textContent).toBe("Running");
+    expect(tip()).toBeNull();
+    pointer(header("wait"), "pointerout", { relatedTarget: document.body });
+    expect(statusTip()).toBeNull();
+  });
+
+  it("says there is no status yet before the node has one", () => {
+    const { header } = setup({}, {});
+    pointer(header("wait"), "pointerover");
+    expect(statusTip()?.textContent).toBe("No status yet");
+  });
+
+  it("follows the node's status while the tip is open, and stops watching it when it closes", () => {
+    const { header, changeStatus, watchers } = setup({}, { wait: "running" });
+    pointer(header("wait"), "pointerover");
+    expect(watchers.size).toBe(1);
+    changeStatus("wait", "failure");
+    expect(statusTip()?.textContent).toBe("Running");
+    runFrame();
+    expect(statusTip()?.textContent).toBe("Failure");
+    pointer(header("wait"), "pointerout", { relatedTarget: document.body });
+    expect(watchers.size).toBe(0);
+  });
+
+  it("opens on a touch tap of the header and closes on the next tap or a press elsewhere", () => {
+    const { header, root } = setup({}, { wait: "success" });
+    const tapHeader = () => {
+      pointer(header("wait"), "pointerdown", { pointerType: "touch" });
+      act(() => { header("wait").dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+    };
+    tapHeader();
+    expect(statusTip()?.textContent).toBe("Success");
+    tapHeader();
+    expect(statusTip()).toBeNull();
+    tapHeader();
+    pointer(root, "pointerdown", { pointerType: "touch" });
+    expect(statusTip()).toBeNull();
+  });
+
+  it("offers nothing when the graph reports no node status", () => {
+    const { header } = setup();
+    pointer(header("wait"), "pointerover");
+    expect(statusTip()).toBeNull();
   });
 });
 

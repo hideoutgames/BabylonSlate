@@ -93,8 +93,9 @@ describe("createRunFlasher", () => {
     for (const [nodeId, pinId] of [["make", "then"], ["log", "exec"], ["add", "sum"], ["log", "message"]]) {
       expect(animated(root, `[data-nodeid="${nodeId}"][data-handleid="${pinId}"] .graph-pin-visual`), `${nodeId}.${pinId}`).toHaveLength(1);
     }
+    // Wires whose stylesheet stroke is !important ignore `stroke`, so they fade `--run-flash` as well.
     expect(calls.find((call) => call.element.classList.contains("react-flow__edge-path"))!.keyframes[0])
-      .toMatchObject({ stroke: "var(--selection)" });
+      .toMatchObject({ stroke: "var(--selection)", "--run-flash": "100%" });
   });
 
   it("restarts the same element's fade from full strength instead of stacking animations", () => {

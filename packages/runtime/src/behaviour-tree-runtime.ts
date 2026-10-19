@@ -1,4 +1,4 @@
-import type { CommandMessage, DebugBehaviourTree } from "@babylonslate/bridge";
+import { BT_DEBUG_GRAPH_ID, type CommandMessage, type DebugBehaviourTree } from "@babylonslate/bridge";
 import { eulerDegreesToQuaternion } from "@babylonslate/core";
 import type { TraceBtState } from "@babylonslate/debugger";
 import type { Actor, ActorComponent, BObject, World } from "@babylonslate/object-model";
@@ -27,7 +27,7 @@ import type { RuntimeDiagnostic } from "./diagnostics";
 import { copyPlainData, samePlainData } from "./plain-data";
 import { navPointFromUnknown, type RuntimeNavigation } from "./runtime-navigation";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
-import { BT_DEBUG_GRAPH_ID, type ScriptDebugTrace, type ScriptGraphRecorder } from "./script-debug";
+import type { ScriptDebugTrace, ScriptGraphRecorder } from "./script-debug";
 import type { ScriptHost } from "./script-host";
 import { walkComponentOwners } from "./world-component-index";
 

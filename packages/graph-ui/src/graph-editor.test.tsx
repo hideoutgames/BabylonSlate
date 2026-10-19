@@ -4304,8 +4304,6 @@ describe("GraphEditor", () => {
                 classId: "bt.composite.selector",
                 sortIndex: 0,
                 __protected: true,
-                running: true,
-                lastResult: "running",
                 decorators: [
                   {
                     id: "dec-1",
@@ -4331,7 +4329,6 @@ describe("GraphEditor", () => {
                 kind: "task",
                 classId: "bt.task.wait",
                 sortIndex: 1,
-                lastResult: "success",
               },
             },
           ],
@@ -4339,6 +4336,11 @@ describe("GraphEditor", () => {
         }}
         nodeTypes={treeNodeTypes}
         nodeDragHandle=".bt-node-drag-handle"
+        runTrace={{
+          subscribe: () => () => {},
+          value: () => undefined,
+          status: (nodeId) => ({ root: "running", task: "success" })[nodeId],
+        }}
       />,
     );
     await waitFor(() => {

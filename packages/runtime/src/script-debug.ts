@@ -20,10 +20,6 @@ import { componentOwners } from "./world-component-index";
  * at the end of the tick.
  */
 
-/** `DebugGraphTrace.graphId` of a Behaviour Tree the runtime evaluates. */
-export const BT_DEBUG_GRAPH_ID = "behaviour-tree";
-/** `DebugGraphTrace.graphId` of an Animation Graph's State Machine, which the runtime evaluates. */
-export const ANIM_STATE_MACHINE_DEBUG_GRAPH_ID = "state-machine";
 
 /** What a debug-instrumented graph reports while it runs for the followed instance. */
 export interface ScriptGraphRecorder {
@@ -273,11 +269,13 @@ function collectInstances(world: World, target: DebugObserveTarget, limit: numbe
 export function debugInstancesOf(world: World, target: DebugObserveTarget, limit = DEBUG_ROSTER_LIMIT): DebugInstance[] {
   const instances: DebugInstance[] = [];
   collectInstances(world, target, limit, (object, kind, owner) => {
+    // A Behaviour Tree or Animation Graph component has no name worth showing: it is the actor's.
+    const byClass = target.kind === "class";
     instances.push({
       id: object.guid,
       kind,
-      label: instanceLabel(object),
-      ...(owner ? { ownerLabel: instanceLabel(owner) } : {}),
+      label: instanceLabel(byClass || !owner ? object : owner),
+      ...(byClass && owner ? { ownerLabel: instanceLabel(owner) } : {}),
     });
   });
   return instances;

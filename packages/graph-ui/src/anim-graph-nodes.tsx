@@ -55,6 +55,7 @@ export function AnimStateNode({
         data.entry === true && "anim-state-node-entry",
       )}
       data-testid={`anim-state-node-${id}`}
+      data-node-role="anim-state"
     >
       {ANIM_STATE_SIDES.map((side) => (
         <span key={side} className="contents">

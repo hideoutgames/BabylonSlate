@@ -42,6 +42,7 @@ import {
   validateSerializedGraph,
   defaultNodeRegistry,
 } from "../services/graph-validation";
+import { ANIM_OBJECT_DEBUG_GRAPH_ID } from "@babylonslate/bridge";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
 import { useGraphDebugStore } from "../context/graph-debug-context";
 import { createGraphRunTrace } from "../lib/graph-run-trace";
@@ -144,12 +145,15 @@ export function GraphPanel(
         name: graphContent?.members?.find((member) => member.id === activeFunctionId)?.name,
       })
     : "event-graph";
-  const runTrace = useMemo(
-    () => graphDebug && doc?.ref.kind === "graph"
-      ? createGraphRunTrace(graphDebug, doc.ref.path, runGraphId)
-      : undefined,
-    [graphDebug, doc?.ref.kind, doc?.ref.path, runGraphId],
-  );
+  const documentKind = doc?.ref.kind;
+  const documentPath = doc?.ref.path;
+  const runTrace = useMemo(() => {
+    if (!graphDebug || documentPath === undefined) return undefined;
+    // An Animation Graph's Animation Object graph is compiled like a Class graph, under its own id.
+    if (documentKind === "graph") return createGraphRunTrace(graphDebug, documentPath, runGraphId);
+    if (documentKind === "anim-graph") return createGraphRunTrace(graphDebug, documentPath, ANIM_OBJECT_DEBUG_GRAPH_ID);
+    return undefined;
+  }, [graphDebug, documentKind, documentPath, runGraphId]);
   const memberSymbols = useMemo(() => {
     const graphs = { ...otherClassGraphs };
     if (classId && graphContent) graphs[classId] = graphContent;

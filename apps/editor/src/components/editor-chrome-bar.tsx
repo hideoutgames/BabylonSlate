@@ -82,8 +82,7 @@ import { useSimulationControls } from "../context/simulation-controls-context";
 import { useGraphDebugStore } from "../context/graph-debug-context";
 import { SimulationToolbarControls } from "./simulation-toolbar-controls";
 import { GraphDebugInstanceSelect } from "./graph-debug-instance-select";
-import { registryClassParentLookup } from "../lib/class-asset-lookup";
-import { classGraphDebugTarget } from "../lib/graph-debug-target";
+import { documentGraphDebugTarget } from "../lib/graph-debug-target";
 import { useValidation } from "../context/validation-context";
 import type { OpenDocument } from "../services/document-service";
 import { modelSimpleColliderCounter, physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
@@ -358,18 +357,20 @@ export function EditorChromeBar({
   );
   const activeKind = visibleDocuments.find((doc) => doc.id === activeDocumentId)
     ?.ref.kind;
-  // A running Simulation debugs the focused Class graph against the live instances of its class.
-  const activeGraphPath = activeKind === "graph"
-    ? visibleDocuments.find((doc) => doc.id === activeDocumentId)?.ref.path
-    : undefined;
-  const debugClassId = useMemo(() => {
+  // A running Simulation debugs the focused graph against the live objects that run it: a Class's
+  // instances, or the components that run a Behaviour Tree or Animation Graph.
+  const activeRef = visibleDocuments.find((doc) => doc.id === activeDocumentId)?.ref;
+  const activeRefKind = activeRef?.kind;
+  const activeRefPath = activeRef?.path;
+  const debugTarget = useMemo(() => {
     void registryEpoch;
-    if (!simulationRunning || activeGraphPath === undefined) return null;
-    return classGraphDebugTarget(activeGraphPath, registryClassParentLookup(assetRegistry))?.classId ?? null;
-  }, [simulationRunning, activeGraphPath, assetRegistry, registryEpoch]);
+    return simulationRunning && activeRefKind !== undefined && activeRefPath !== undefined
+      ? documentGraphDebugTarget({ kind: activeRefKind, path: activeRefPath }, assetRegistry)
+      : null;
+  }, [simulationRunning, activeRefKind, activeRefPath, assetRegistry, registryEpoch]);
   useEffect(() => {
-    graphDebug?.setTarget(debugClassId ? { kind: "class", classId: debugClassId } : null);
-  }, [graphDebug, debugClassId]);
+    graphDebug?.setTarget(debugTarget);
+  }, [graphDebug, debugTarget]);
   const canFocus = canFocusLayout(activeKind);
 
   const sensors = useSensors(
@@ -856,7 +857,7 @@ export function EditorChromeBar({
                     ? () => setActiveDocument(simulationDocumentId)
                     : undefined}
                 />
-                {debugClassId ? <GraphDebugInstanceSelect /> : null}
+                {debugTarget ? <GraphDebugInstanceSelect /> : null}
               </>
             ) : (
             <Tooltip>

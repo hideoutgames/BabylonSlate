@@ -6,9 +6,9 @@ import { PlayOverlay } from "./play-overlay";
 
 vi.mock("../services/play-session", () => ({ startPlaySession: vi.fn() }));
 vi.mock("../context/play-context", () => ({
-  usePlay: () => ({ reportBtState: reportBtState, appendLog: appendLog }),
+  usePlay: () => ({ appendLog: appendLog }),
 }));
-const { reportBtState, appendLog } = vi.hoisted(() => ({ reportBtState: () => {}, appendLog: vi.fn() }));
+const { appendLog } = vi.hoisted(() => ({ appendLog: vi.fn() }));
 vi.mock("../context/app-settings-context", () => ({
   useAppSettings: () => ({ settings: {} }),
 }));

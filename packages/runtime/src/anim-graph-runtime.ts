@@ -1,4 +1,4 @@
-import type { CommandMessage } from "@babylonslate/bridge";
+import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type CommandMessage } from "@babylonslate/bridge";
 import type { TraceAnimGraphState } from "@babylonslate/debugger";
 import { Actor, ActorComponent, type BObject, type World } from "@babylonslate/object-model";
 import {
@@ -13,7 +13,7 @@ import {
 } from "@babylonslate/anim-graph";
 import { animGraphGuidOf } from "./component-assets";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
-import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type ScriptDebugTrace } from "./script-debug";
+import type { ScriptDebugTrace } from "./script-debug";
 import type { AnimGraphControl, ScriptHost } from "./script-host";
 import { walkComponentOwners } from "./world-component-index";
 

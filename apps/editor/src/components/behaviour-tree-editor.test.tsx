@@ -10,7 +10,8 @@ import {
 } from "@babylonslate/behaviour-tree";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
-import type { LiveBtState } from "../context/play-context";
+import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
+import type { GraphDebugStore } from "../services/graph-debug-store";
 import {
   BehaviourTreeBlackboardPanel,
   BehaviourTreeCompilerResultsPanel,
@@ -187,6 +188,10 @@ vi.mock("../context/document-context", async () => {
             path: "assets/run.spriteanim.babasset",
           },
         ],
+        getByPath: (path: string) =>
+          path === "assets/Patrol.bt.babasset"
+            ? { header: { guid: "tree-1", name: "Patrol", type: "BehaviourTree" }, path }
+            : undefined,
         getByGuid: (guid: string) =>
           guid === "bb-1"
             ? {
@@ -238,29 +243,13 @@ vi.mock("../context/document-context", async () => {
   });
 });
 
-const livePlay = vi.hoisted(() => ({
-  playing: false,
-  snapshot: null as LiveBtState | null,
-  /** The panels counted as showing live state right now. */
-  observers: 0,
+const livePlay = vi.hoisted(() => ({ playing: false }));
+vi.mock("../context/play-context", () => ({
+  usePlay: () => ({
+    playing: livePlay.playing,
+    focusedNodeId: null,
+  }),
 }));
-vi.mock("../context/play-context", async () => {
-  const { useEffect } = await import("react");
-  return {
-    usePlay: () => ({
-      playing: livePlay.playing,
-      focusedNodeId: null,
-    }),
-    useLiveBtState: () => livePlay.snapshot,
-    useObserveBtState: (shown: boolean) => {
-      useEffect(() => {
-        if (!shown) return undefined;
-        livePlay.observers += 1;
-        return () => { livePlay.observers -= 1; };
-      }, [shown]);
-    },
-  };
-});
 
 afterEach(() => {
   cleanup();
@@ -273,8 +262,7 @@ beforeEach(() => {
   graphContext.last = undefined;
   tabs.active = DOC_ID;
   livePlay.playing = false;
-  livePlay.snapshot = null;
-  livePlay.observers = 0;
+  debug.store = null;
   store.applyAssetDocumentChange.mockClear();
   loadAssetDocument.mockResolvedValue(defaultBlackboard);
   store.reset(
@@ -284,6 +272,13 @@ beforeEach(() => {
 
 const panelProps = {} as IDockviewPanelProps;
 
+/** The graph debugger store the panels read, as the Simulation's overlay feeds it. */
+const debug = { store: null as GraphDebugStore | null };
+function DebugProbe() {
+  debug.store = useGraphDebugStore();
+  return null;
+}
+
 function renderTree(payload: BehaviourTreeDocument = createDefaultBehaviourTree()) {
   store.reset(payload as unknown as Record<string, unknown>);
   return render(<TreePanels />);
@@ -291,14 +286,17 @@ function renderTree(payload: BehaviourTreeDocument = createDefaultBehaviourTree(
 
 function TreePanels() {
   return (
-    <DocumentWorkspaceProvider documentId={DOC_ID}>
-      <BehaviourTreeEditingProvider>
-        <BehaviourTreeGraphPanel {...panelProps} />
-        <BehaviourTreeDetailsPanel {...panelProps} />
-        <BehaviourTreeBlackboardPanel {...panelProps} />
-        <BehaviourTreeCompilerResultsPanel {...panelProps} />
-      </BehaviourTreeEditingProvider>
-    </DocumentWorkspaceProvider>
+    <GraphDebugProvider>
+      <DebugProbe />
+      <DocumentWorkspaceProvider documentId={DOC_ID}>
+        <BehaviourTreeEditingProvider>
+          <BehaviourTreeGraphPanel {...panelProps} />
+          <BehaviourTreeDetailsPanel {...panelProps} />
+          <BehaviourTreeBlackboardPanel {...panelProps} />
+          <BehaviourTreeCompilerResultsPanel {...panelProps} />
+        </BehaviourTreeEditingProvider>
+      </DocumentWorkspaceProvider>
+    </GraphDebugProvider>
   );
 }
 
@@ -374,44 +372,72 @@ describe("BehaviourTreeEditor", () => {
     expect(lastCommit().nodes.find((node) => node.id === "sequence")?.children[0]).not.toBe("task");
   });
 
-  it("updates live node results and blackboard watches, then clears them when Play stops", async () => {
-    livePlay.playing = true;
-    livePlay.snapshot = {
-      slotId: 1, status: "running", btNodeId: "task", lastResults: {},
-      blackboard: { hp: 3 }, stack: [{ nodeId: "sequence", childIndex: 0, opened: true }],
-    };
-    const view = renderTree(treeWithWait());
-    const task = () => view.container.querySelector('[data-id="task"] [data-bt-state]');
-    await waitFor(() => expect(task()?.getAttribute("data-bt-state")).toBe("running"));
-    expect(screen.getByTestId("bt-blackboard-watch").textContent).toContain("hp: 3");
+  describe("while a Simulation follows an instance of the tree", () => {
+    const target = { kind: "behaviourTree", assetGuid: "tree-1" } as const;
+    const btState = (instanceId: string, patch: Record<string, unknown>) => ({
+      instanceId, btNodeId: null, lastResults: {}, stack: [], blackboard: {}, ...patch,
+    });
+    function follow(...instances: string[]) {
+      act(() => {
+        debug.store!.setTarget(target);
+        debug.store!.receiveRoster({
+          target, reset: true, removed: [],
+          added: instances.map((id) => ({ id, kind: "component" as const, label: id })),
+        });
+      });
+    }
 
-    livePlay.snapshot = { ...livePlay.snapshot, btNodeId: null, lastResults: { task: "success" }, blackboard: { hp: 2 }, stack: [] };
-    view.rerender(<TreePanels />);
-    await waitFor(() => expect(task()?.getAttribute("data-bt-state")).toBe("success"));
-    expect(screen.getByTestId("bt-blackboard-watch").textContent).toContain("hp: 2");
+    it("shows the followed instance's node status and Blackboard, and clears them when the follow ends", async () => {
+      livePlay.playing = true;
+      const view = renderTree(treeWithWait());
+      const task = () => view.container.querySelector('[data-id="task"] [data-bt-state]');
+      expect(task()?.getAttribute("data-bt-state")).toBe("idle");
+      follow("guard");
 
-    livePlay.playing = false;
-    livePlay.snapshot = null;
-    view.rerender(<TreePanels />);
-    await waitFor(() => expect(task()?.getAttribute("data-bt-state")).toBe("idle"));
-    expect(screen.queryByTestId("bt-blackboard-watch")).toBeNull();
-  });
+      act(() => debug.store!.receiveBtState(btState("guard", {
+        btNodeId: "task", blackboard: { hp: 3 }, stack: [{ nodeId: "sequence" }],
+      })));
+      await waitFor(() => expect(task()?.getAttribute("data-bt-state")).toBe("running"));
+      expect(screen.getByTestId("bt-blackboard-watch").textContent).toContain("hp: 3");
 
-  it("counts only the Graph and Blackboard panels of the active tree as showing live Play state", () => {
-    const view = renderTree(treeWithWait());
-    // Details and Compiler Results show no live state.
-    expect(livePlay.observers).toBe(2);
+      act(() => debug.store!.receiveBtState(btState("guard", { lastResults: { task: "success" }, blackboard: { hp: 2 } })));
+      await waitFor(() => expect(task()?.getAttribute("data-bt-state")).toBe("success"));
+      expect(screen.getByTestId("bt-blackboard-watch").textContent).toContain("hp: 2");
 
-    // A background tab keeps its panels mounted but hidden.
-    tabs.active = "behaviour-tree:assets/Other.bt.babasset";
-    view.rerender(<TreePanels />);
-    expect(livePlay.observers).toBe(0);
+      act(() => debug.store!.setTarget(null));
+      await waitFor(() => expect(task()?.getAttribute("data-bt-state")).toBe("idle"));
+      expect(screen.queryByTestId("bt-blackboard-watch")).toBeNull();
+    });
 
-    tabs.active = DOC_ID;
-    view.rerender(<TreePanels />);
-    expect(livePlay.observers).toBe(2);
-    view.unmount();
-    expect(livePlay.observers).toBe(0);
+    it("shows nothing of another instance than the followed one", async () => {
+      livePlay.playing = true;
+      const view = renderTree(treeWithWait());
+      follow("guard", "scout");
+      act(() => debug.store!.receiveBtState(btState("scout", { btNodeId: "task", blackboard: { hp: 9 } })));
+      expect(view.container.querySelector('[data-id="task"] [data-bt-state]')?.getAttribute("data-bt-state")).toBe("idle");
+      expect(screen.queryByTestId("bt-blackboard-watch")).toBeNull();
+
+      act(() => debug.store!.select("scout"));
+      act(() => debug.store!.receiveBtState(btState("scout", { btNodeId: "task", blackboard: { hp: 9 } })));
+      await waitFor(() => expect(view.container.querySelector('[data-id="task"] [data-bt-state]')?.getAttribute("data-bt-state")).toBe("running"));
+      expect(screen.getByTestId("bt-blackboard-watch").textContent).toContain("hp: 9");
+    });
+
+    it("leaves the graph context alone as the tree runs, so no node renders for a status change it does not show", async () => {
+      livePlay.playing = true;
+      renderTree(treeWithWait());
+      await waitFor(() => expect(graphContext.last).toBeDefined());
+      follow("guard");
+      await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+      const context = graphContext.last;
+      graphContext.seen.clear();
+      for (let tick = 0; tick < 5; tick++) {
+        act(() => debug.store!.receiveBtState(btState("guard", {
+          btNodeId: "task", lastResults: { task: tick % 2 ? "running" : "success" }, stack: [{ nodeId: "task" }],
+        })));
+      }
+      expect([...graphContext.seen].every((seen) => seen === context)).toBe(true);
+    });
   });
 
   it("adds Move To Blackboard Key and offers only spatial linked keys", async () => {

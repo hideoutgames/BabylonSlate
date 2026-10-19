@@ -200,6 +200,8 @@ describe("FeatureTest starter", () => {
     });
     const { bundles } = await playContent.collectPlayPreviewScripts(undefined, undefined, undefined, { traceExecution: true });
     expect(bundles.some((bundle) => bundle.source.includes("__dbg"))).toBe(true);
+    // The starter's Animation Graphs are probed too, their Animation Object graph under its own id.
+    expect(bundles.some((bundle) => bundle.classId.startsWith("AnimGraph:") && bundle.source.includes('"animation-object")'))).toBe(true);
     const loadErrors: string[] = [];
     for (const bundle of bundles) {
       await loadCompiledModule(bundle.source, bundle.classId).catch((error: unknown) => {

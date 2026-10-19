@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DebugInstance } from "@babylonslate/bridge";
-import { classGraphDebugTarget, debugInstanceNames } from "./graph-debug-target";
+import { classGraphDebugTarget, debugInstanceNames, documentGraphDebugTarget } from "./graph-debug-target";
 
 describe("classGraphDebugTarget", () => {
   const parents: Record<string, string> = {
@@ -18,6 +18,31 @@ describe("classGraphDebugTarget", () => {
 
   it.each(["Helpers", "MoreHelpers", "Cheats", "Tooling"])("offers nothing for %s, which never has instances", (name) => {
     expect(classGraphDebugTarget(`assets/${name}.class.babasset`, parentOf)).toBeNull();
+  });
+});
+
+describe("documentGraphDebugTarget", () => {
+  const registry = {
+    generation: 1,
+    list: () => [{ path: "assets/Door.class.babasset", header: { type: "Class", name: "Door", parentClass: "Actor" } }],
+    getByPath: (path: string) => path.startsWith("assets/Guard") ? { header: { guid: `guid:${path}` } } : undefined,
+  } as unknown as Parameters<typeof documentGraphDebugTarget>[1];
+
+  it("debugs a Class graph against its class, and a tree or an Animation Graph against the asset's guid", () => {
+    expect(documentGraphDebugTarget({ kind: "graph", path: "assets/Door.class.babasset" }, registry))
+      .toEqual({ kind: "class", classId: "Door" });
+    expect(documentGraphDebugTarget({ kind: "behaviour-tree", path: "assets/Guard.bt.babasset" }, registry))
+      .toEqual({ kind: "behaviourTree", assetGuid: "guid:assets/Guard.bt.babasset" });
+    expect(documentGraphDebugTarget({ kind: "anim-graph", path: "assets/Guard.anim.babasset" }, registry))
+      .toEqual({ kind: "animationGraph", assetGuid: "guid:assets/Guard.anim.babasset" });
+  });
+
+  it("offers nothing for another document, an asset the registry does not know, or no document", () => {
+    expect(documentGraphDebugTarget({ kind: "scene", path: "assets/Main.scene.babasset" }, registry)).toBeNull();
+    expect(documentGraphDebugTarget({ kind: "blackboard", path: "assets/Guard.blackboard.babasset" }, registry)).toBeNull();
+    expect(documentGraphDebugTarget({ kind: "behaviour-tree", path: "assets/Missing.bt.babasset" }, registry)).toBeNull();
+    expect(documentGraphDebugTarget({ kind: "behaviour-tree", path: "assets/Guard.bt.babasset" }, null)).toBeNull();
+    expect(documentGraphDebugTarget(undefined, registry)).toBeNull();
   });
 });
 

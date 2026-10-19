@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID } from "@babylonslate/bridge";
 import {
   ANIM_STATE_LAYOUT_GAP_X,
   animGraphMembersFromVariables,
@@ -63,7 +64,9 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useAnimGraphEditing } from "../context/anim-graph-editing-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { useGraphEditing } from "../context/graph-editing-context";
+import { useGraphDebugStore } from "../context/graph-debug-context";
 import { commitAnimGraphVariables } from "../lib/anim-graph-variables";
+import { createGraphRunTrace } from "../lib/graph-run-trace";
 import { InspectorPanel } from "../panels/inspector-panel";
 import { useValidation } from "../context/validation-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
@@ -268,7 +271,13 @@ function useAnimGraphDocument() {
       mergeKey,
     );
   };
-  return { doc, latestDoc, commit, assetRegistry, documentId, catalog };
+  // The graph's guid names it to the running game; a Simulation's live State Machine is reported under it.
+  const documentPath = entry?.ref.path;
+  const graphGuid = useMemo(() => {
+    void registryEpoch;
+    return documentPath ? assetRegistry?.getByPath(documentPath)?.header.guid : undefined;
+  }, [assetRegistry, registryEpoch, documentPath]);
+  return { doc, latestDoc, commit, assetRegistry, documentId, catalog, graphGuid };
 }
 
 function AnimGraphVariablesList({
@@ -436,7 +445,15 @@ export function AnimObjectVariablesPanel(_props: IDockviewPanelProps) {
 
 export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { doc, latestDoc, commit, documentId, catalog } = useAnimGraphDocument();
+  const { doc, latestDoc, commit, documentId, catalog, graphGuid } = useAnimGraphDocument();
+  // While a Simulation runs, the State Machine shows the states the followed instance samples and its transitions.
+  const graphDebug = useGraphDebugStore();
+  const runTrace = useMemo(
+    () => graphDebug && graphGuid
+      ? createGraphRunTrace(graphDebug, graphGuid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID)
+      : undefined,
+    [graphDebug, graphGuid],
+  );
   const {
     selectedId,
     setSelectedId,
@@ -642,6 +659,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
       <div className="anim-graph-canvas flex h-full min-h-0 flex-col" data-testid="anim-graph-editor">
         <GraphEditor
           initialGraph={initialGraph}
+          runTrace={runTrace}
           commitPositionsOnDragEnd
           paletteNodes={animPaletteNodes()}
           nodeTypes={animGraphNodeTypes}

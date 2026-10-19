@@ -2,6 +2,7 @@ import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { GraphEditor } from "./graph-editor";
 import type { GraphDocument } from "./graph-types";
+import { treeNodeTypes } from "./tree-node";
 import type { GraphRunEvent, GraphRunTrace } from "./run-trace";
 
 let animated: Element[] = [];
@@ -79,4 +80,38 @@ it("stops listening to runs when the canvas unmounts", () => {
   expect(run.listeners.size).toBeGreaterThan(0);
   view.unmount();
   expect(run.listeners.size).toBe(0);
+});
+
+it("updates only the Behaviour Tree node whose status changed", () => {
+  const statuses: Record<string, string> = { a: "running" };
+  const watchers = new Map<string, Set<() => void>>();
+  const reads: string[] = [];
+  const trace: GraphRunTrace = {
+    subscribe: () => () => {},
+    value: () => undefined,
+    status: (nodeId) => { reads.push(nodeId); return statuses[nodeId]; },
+    subscribeStatus: (nodeId, listener) => {
+      const set = watchers.get(nodeId) ?? new Set();
+      watchers.set(nodeId, set.add(listener));
+      return () => { set.delete(listener); };
+    },
+  };
+  const tree: GraphDocument = {
+    nodes: ["a", "b"].map((id, index) => ({
+      id, type: "bt.node", position: { x: index * 300, y: 0 },
+      data: { title: id, kind: "task", classId: "bt.task.wait", sortIndex: index, __pins: [{ id: "parent", name: "parent", kind: "exec", direction: "in", type: { kind: "exec" } }] },
+    })),
+    edges: [],
+  };
+  const { getByTestId } = render(<GraphEditor initialGraph={tree} nodeTypes={treeNodeTypes} runTrace={trace} />);
+  const state = (id: string) => getByTestId(`bt-node-${id}`).getAttribute("data-bt-state");
+  expect([state("a"), state("b")]).toEqual(["running", "idle"]);
+
+  const before = reads.filter((id) => id === "b").length;
+  act(() => {
+    statuses.a = "failure";
+    for (const listener of watchers.get("a") ?? []) listener();
+  });
+  expect([state("a"), state("b")]).toEqual(["failure", "idle"]);
+  expect(reads.filter((id) => id === "b")).toHaveLength(before);
 });
