@@ -10,7 +10,7 @@ Audio assets are not created from **New Asset**. In the **Content Browser**, cho
 
 Double-tap the asset to open it. The window has **Preview**, **Inspector** and **Clips**.
 
-- **Preview** has **Play** and **Stop**, a **Loop** toggle and the waveform. Preview is never 3D.
+- **Preview** has **Play** and **Stop**, a **Loop** toggle and the waveform. While a clip plays, a playhead with the elapsed time moves across the waveform. Preview is never 3D.
 - **Clips** lists the asset's sound files. **Add Clip** imports another WAV, MP3 or OGG file, up to 8 clips. Each play picks one clip at random by its **Weight**; a percentage shows each clip's share. The first clip cannot be removed.
 - The **Inspector** has **Playback** and **Routing**.
 

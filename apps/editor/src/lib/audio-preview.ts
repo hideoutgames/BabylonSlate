@@ -19,6 +19,8 @@ export type AudioPreviewSession = {
   prefetch(payload: AudioPayload | Record<string, unknown>): Promise<void>;
   play(payload: AudioPayload | Record<string, unknown>): AudioPreviewPlayResult;
   clipBytes(chunkId: string): Uint8Array | undefined;
+  /** Seconds of the clip played by the current voice (pitch applied, loops not wrapped); null before it starts. */
+  playedSeconds(): number | null;
   stop(): void;
   dispose(): void;
 };
@@ -29,10 +31,13 @@ export function createAudioPreviewSession(options: {
   random?: () => number;
   onError?: (error: { code: string; message: string }) => void;
   onEnded?: () => void;
+  now?: () => number;
 }): AudioPreviewSession {
   const cache = new Map<string, Uint8Array>();
   const random = options.random ?? Math.random;
+  const now = options.now ?? (() => performance.now());
   let voiceId: string | null = null;
+  let started: { at: number; rate: number } | null = null;
   let sequence = 0;
   let disposed = false;
   const lifecycle = attachAudioLifecycle(options.backend);
@@ -45,12 +50,14 @@ export function createAudioPreviewSession(options: {
     if (!voiceId) return;
     const id = voiceId;
     voiceId = null;
+    started = null;
     options.backend.stop(id);
   };
 
   options.backend.onVoiceEnded = (id) => {
     if (voiceId !== id) return;
     voiceId = null;
+    started = null;
     options.backend.stop(id);
     options.onEnded?.();
   };
@@ -107,6 +114,7 @@ export function createAudioPreviewSession(options: {
           return;
         }
         options.backend.setVoicePlaybackRate(id, pitch);
+        started = { at: now(), rate: pitch };
       }).catch(failed);
       return {
         ok: true,
@@ -114,6 +122,9 @@ export function createAudioPreviewSession(options: {
         clipChunkId: clip.chunkId,
         pitch,
       };
+    },
+    playedSeconds() {
+      return started ? ((now() - started.at) / 1000) * started.rate : null;
     },
     stop,
     dispose() {

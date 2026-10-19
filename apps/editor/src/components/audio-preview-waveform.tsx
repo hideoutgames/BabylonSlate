@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { AudioWaveformPeak } from "@babylonslate/assets";
 import { cn } from "@babylonslate/ui/lib/utils";
 
@@ -10,12 +11,48 @@ export function AudioPreviewWaveform({
   durationSeconds,
   color,
   className,
+  playedSeconds,
+  loop = false,
 }: {
   peaks: readonly AudioWaveformPeak[];
   durationSeconds: number | null;
   color?: string;
   className?: string;
+  /** While previewing: seconds played so far, or null before the voice starts. Read every frame. */
+  playedSeconds?: (() => number | null) | null;
+  loop?: boolean;
 }) {
+  const playheadRef = useRef<HTMLDivElement>(null);
+  const playheadTimeRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const head = playheadRef.current;
+    if (!head || !playedSeconds || !durationSeconds || durationSeconds <= 0) return;
+    let frame = 0;
+    const draw = () => {
+      const played = playedSeconds();
+      if (played === null) {
+        head.hidden = true;
+      } else {
+        const seconds = loop ? played % durationSeconds : Math.min(played, durationSeconds);
+        head.hidden = false;
+        head.style.left = `${(seconds / durationSeconds) * 100}%`;
+        const label = playheadTimeRef.current;
+        if (label) {
+          label.textContent = formatSeconds(seconds, durationSeconds);
+          // Past three quarters the time sits left of the line so it stays inside.
+          const flip = seconds / durationSeconds > 0.75;
+          label.style.left = flip ? "auto" : "6px";
+          label.style.right = flip ? "6px" : "auto";
+        }
+      }
+      frame = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => {
+      cancelAnimationFrame(frame);
+      head.hidden = true;
+    };
+  }, [playedSeconds, durationSeconds, loop]);
   const bars =
     peaks.length > 0
       ? peaks
@@ -55,6 +92,19 @@ export function AudioPreviewWaveform({
             );
           })}
         </svg>
+        <div
+          ref={playheadRef}
+          hidden
+          aria-hidden
+          data-testid="audio-preview-playhead"
+          className="pointer-events-none absolute inset-y-0 w-px -translate-x-1/2 bg-foreground"
+        >
+          <span className="absolute -top-px left-1/2 size-0 -translate-x-1/2 border-x-[5px] border-t-[6px] border-x-transparent border-t-foreground" />
+          <span
+            ref={playheadTimeRef}
+            className="absolute top-0.5 whitespace-nowrap rounded-sm bg-background/80 px-1 text-[11px] tabular-nums text-foreground"
+          />
+        </div>
         {peaks.length === 0 ? (
           <span className="absolute inset-x-0 bottom-2 text-center text-xs text-muted-foreground">
             No Waveform
