@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 
 /**
- * Blocking scene loads open in the editor: a Scene viewport's load or rendering
- * update, a scene document read, a Play scene transition, each while its Scene
- * Loading dialog shows progress (not once it shows a failure). Background work
+ * Blocking scene loads open in the editor: a Scene viewport's load, a scene
+ * document read, a Play scene transition, each while its Scene Loading dialog
+ * shows progress (not once it shows a failure, and not for a rendering update,
+ * which every settings change starts). Background work
  * on the shared project Engine, such as Content Browser thumbnail captures,
  * waits until none is open: its shader compiles would otherwise count as the
  * load's compile progress and keep a stuck load alive.

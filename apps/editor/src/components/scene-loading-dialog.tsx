@@ -59,9 +59,11 @@ export function SceneLoadingDialog({
   onCopyDetails,
   reason,
 }: SceneLoadingDialogProps) {
-  // Every blocking load shows this dialog: while it shows progress, background
-  // captures on the shared Engine wait.
-  useBlockingSceneLoad(open && !failed);
+  // Every blocking load shows this dialog: while it shows a load's progress,
+  // background captures on the shared Engine wait. A rendering update does not
+  // hold them: each settings change starts one, and a dragged slider would
+  // interrupt the same capture over and over.
+  useBlockingSceneLoad(open && !failed && !rendering);
   return (
     <Dialog open={open} onOpenChange={() => {}}>
       <ProgressDialogContent

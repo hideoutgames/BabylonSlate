@@ -31,6 +31,15 @@ export const SCENE_FIRST_FRAME_TIMEOUT_MS = 20_000;
 export const SCENE_PREPARATION_CEILING_MS = 300_000;
 
 /**
+ * Absolute bound on one Content Browser thumbnail capture, which renews its
+ * waits on compile progress like a load. Captures queue one after another on
+ * the shared Engine, so unrelated compiles there (material editing, Play) must
+ * not hold the queue for a whole `SCENE_PREPARATION_CEILING_MS`; a capture that
+ * runs out keeps the asset's type icon.
+ */
+export const SCENE_CAPTURE_CEILING_MS = 90_000;
+
+/**
  * Extra time a loading owner's validated first draw gets to complete on the GPU
  * for each render pipeline it created. WebGPU builds new pipelines in the GPU
  * queue, so they all finish inside that draw's submitted-work wait, which shows

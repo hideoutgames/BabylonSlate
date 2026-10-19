@@ -86,7 +86,7 @@ import { registerLatticeShadowAdapter } from "./lattice-deformer-binding";
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { LinearColorBlock } from "./linear-color-block";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
-import { renewOnCompileProgress } from "./driver-compile";
+import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
 
 /** Custom GLSL's hidden probe effect, from when the effect exists to its compile. */
 const CUSTOM_GLSL_COMPILE_TIMEOUT_MS = 15_000;
@@ -776,9 +776,14 @@ export function compileMaterialPlan(
         // before it returns; a link that held the thread is not charged, and both
         // bounds start again while shaders keep finishing on the Engine. Each has
         // its own watch, so one bound's renewal never spends the other's progress.
+        // On a parallel-compile driver a probe effect still pending renews either
+        // bound until it has been pending SCENE_DRIVER_COMPILE_TIMEOUT_MS
+        // (DriverCompileWatch), so a hung compile fails after about 75 s, not 15 s.
         const dependencyBound = createHeldThreadBound(CUSTOM_GLSL_TEXTURE_TIMEOUT_MS, undefined, renewOnCompileProgress(scene.getEngine()));
-        const compileProgress = renewOnCompileProgress(scene.getEngine());
+        const compileWatch = new DriverCompileWatch(scene.getEngine());
+        const compileProgress = (now: number) => compileWatch.renew(now);
         let compileBound = createHeldThreadBound(CUSTOM_GLSL_COMPILE_TIMEOUT_MS, undefined, compileProgress);
+        let awaitingEffect = false;
         const check = () => {
           if (disposed) return;
           try {
@@ -805,6 +810,11 @@ export function compileMaterialPlan(
                 return;
               }
               compileBound = createHeldThreadBound(CUSTOM_GLSL_COMPILE_TIMEOUT_MS, undefined, compileProgress);
+              awaitingEffect = true;
+            } else if (awaitingEffect) {
+              // The compile budget starts with the effect: shaders that finished while textures loaded renew nothing.
+              awaitingEffect = false;
+              compileWatch.restart();
             }
             const effect = subMesh?.effect ?? effects.find((entry) => entry?.getCompilationError());
             const error = effect?.getCompilationError();

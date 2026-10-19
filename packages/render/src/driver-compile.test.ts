@@ -109,6 +109,37 @@ describe("driver compile watch", () => {
     expect(watch.renew(1)).toBe(false);
   });
 
+  // A watch shared by sequential waits restarts at each one: only that wait's progress renews it.
+  it("renews a restarted watch only for variants that finish after the restart", () => {
+    const { engine, add } = setup(false);
+    const watch = new DriverCompileWatch(engine);
+    add("before the restart", { ready: true });
+    watch.restart();
+    expect(watch.renew(0)).toBe(false);
+    add("after the restart", { ready: true });
+    expect(watch.renew(1)).toBe(true);
+  });
+
+  it("keeps a hung pending set's age across restarts, so each wait does not grant it the compile bound again", () => {
+    const { engine, add } = setup();
+    const watch = new DriverCompileWatch(engine);
+    add("water");
+    expect(watch.renew(0)).toBe(true);
+    watch.restart();
+    expect(watch.renew(SCENE_DRIVER_COMPILE_TIMEOUT_MS / 2)).toBe(true);
+    watch.restart();
+    expect(watch.renew(SCENE_DRIVER_COMPILE_TIMEOUT_MS + 1_000)).toBe(false);
+  });
+
+  it("ends at the ceiling its owner gives it", () => {
+    const { engine, add } = setup();
+    const watch = new DriverCompileWatch(engine, 0, 90_000);
+    add("finished", { ready: true });
+    expect(watch.renew(89_999)).toBe(true);
+    add("finished later", { ready: true });
+    expect(watch.renew(90_000)).toBe(false);
+  });
+
   it("renews nothing from its ceiling on, however much keeps compiling", () => {
     const { engine, add } = setup();
     const watch = new DriverCompileWatch(engine, 0);

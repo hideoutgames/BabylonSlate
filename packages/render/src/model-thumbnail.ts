@@ -18,7 +18,7 @@ import {
 } from "./material-preview";
 import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import { waitForPreviewMeshesReady } from "./preview-readiness";
-import { createHeldThreadBudget } from "./stall-deadline";
+import { createHeldThreadBudget, SCENE_CAPTURE_CEILING_MS } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { encodeRgbaPng } from "./png-encode";
@@ -88,9 +88,9 @@ async function captureAdmittedModelThumbnail(
 ): Promise<Uint8Array | null> {
   // The readiness wait and the frame wait credit held time from one budget, so a
   // capture that never becomes ready cannot hold the serialized queue for a full
-  // budget at each step; one compile watch renews both up to one ceiling.
+  // budget at each step; one compile watch renews both up to one capture ceiling.
   const budget = createHeldThreadBudget();
-  const compiles = new DriverCompileWatch(engine);
+  const compiles = new DriverCompileWatch(engine, undefined, SCENE_CAPTURE_CEILING_MS);
   const host = createModelPreviewScene(engine, { transparent: true });
   let loaded: Awaited<ReturnType<typeof loadModelPreviewSource>> = null;
   let sourceHost: MaterialPreviewScene | null = null;
@@ -140,7 +140,8 @@ async function captureAdmittedModelThumbnail(
     host.camera.outputRenderTarget = rtt;
     // A one-shot render must await imported PBR materials and textures.
     if (!(await waitForPreviewMeshesReady(host.mesh, budget, compiles)) || options.signal?.aborted) return null;
-    if (!(await renderPreviewFrame(host, () => !options.signal?.aborted, budget, compiles))) return null;
+    // The capture's ceiling also ends the preview renderer's own preparation.
+    if (!(await renderPreviewFrame(host, () => !options.signal?.aborted && performance.now() < compiles.ceiling, budget, compiles))) return null;
     const buffer = await rtt.readPixels();
     if (!buffer || options.signal?.aborted) return null;
     const pixels = rgbaBytesFromReadback(buffer, size * size * 4);

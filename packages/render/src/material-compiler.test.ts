@@ -12,7 +12,7 @@ import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from ".
 import { isDisposedGpuTexture, isDisposedNodeMaterial } from "./gpu-resource-live";
 import { OwnedPostProcess } from "./owned-post-process";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
-import { SCENE_SHADER_WARM_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
+import { SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { installTimerClock, installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
 
 const disposers: Array<() => void> = [];
@@ -1013,6 +1013,29 @@ describe("material compiler", () => {
       texture.onLoadObservable.notifyObservers(texture);
       await rebuilt;
       vi.advanceTimersByTime(14_000);
+      expect(result.buildState).toBe("pending");
+      vi.advanceTimersByTime(2_000);
+      expect(result.buildState).toBe("failed");
+      expect(await result.ready).toEqual([expect.objectContaining({ code: "material.compile.glsl", severity: "error" })]);
+    });
+
+    // A parallel-compile driver (D3D11 through ANGLE) reports completion only, so a probe effect still pending is not
+    // a stall until the same set has been pending for SCENE_DRIVER_COMPILE_TIMEOUT_MS: a hung compile ends about 75 s in.
+    it("waits for a probe compile pending on a parallel-compile driver for the driver bound past the shader compile budget", async () => {
+      vi.useFakeTimers();
+      const { texture, loaded, result } = await compileWithLoadingTexture();
+      result.material.getScene().getEngine().getCaps().parallelShaderCompile = { COMPLETION_STATUS_KHR: 0x91b1 };
+      loaded.mockReturnValue(true);
+      const isReadyForSubMesh = result.material.isReadyForSubMesh.bind(result.material);
+      vi.spyOn(result.material, "isReadyForSubMesh").mockImplementation((...args) => {
+        isReadyForSubMesh(...args);
+        if (args[1].effect) vi.spyOn(args[1].effect, "isReady").mockReturnValue(false);
+        return false;
+      });
+      const rebuilt = new Promise((resolve) => result.material.onBuildObservable.addOnce(resolve));
+      texture.onLoadObservable.notifyObservers(texture);
+      await rebuilt;
+      vi.advanceTimersByTime(15_000 + SCENE_DRIVER_COMPILE_TIMEOUT_MS - 1_000);
       expect(result.buildState).toBe("pending");
       vi.advanceTimersByTime(2_000);
       expect(result.buildState).toBe("failed");

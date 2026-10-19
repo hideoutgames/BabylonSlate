@@ -23,11 +23,13 @@ describe("SceneLoadingDialog", () => {
   });
 
   // Background captures on the shared Engine wait while it holds the load.
-  it("holds a blocking scene load while it shows progress, not while it shows a failure or is closed", () => {
+  it("holds a blocking scene load while it shows a load's progress, not a failure, a rendering update or closed", () => {
     const props = { progress: 40, phase: "Loading Models" as const, onRetry: () => {}, onDismiss: () => {} };
     const { rerender, unmount } = render(<SceneLoadingDialog {...props} open />);
     expect(blockingSceneLoadOpen()).toBe(true);
     rerender(<SceneLoadingDialog {...props} open failed />);
+    expect(blockingSceneLoadOpen()).toBe(false);
+    rerender(<SceneLoadingDialog {...props} open rendering />);
     expect(blockingSceneLoadOpen()).toBe(false);
     rerender(<SceneLoadingDialog {...props} open />);
     expect(blockingSceneLoadOpen()).toBe(true);

@@ -24,7 +24,7 @@ import type { MeshAssetContext } from "./mesh-assets";
 import { applyMaterialToVisualMeshes } from "./visual-meshes";
 import { acquireMaterialTexture, bindResourceCacheToHandle, resourceCacheForEngine } from "./resource-cache";
 import { waitUntilReady } from "./preview-readiness";
-import { createHeldThreadBound, createHeldThreadBudget, type HeldThreadBudget } from "./stall-deadline";
+import { createHeldThreadBound, createHeldThreadBudget, SCENE_CAPTURE_CEILING_MS, type HeldThreadBudget } from "./stall-deadline";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { encodeRgbaPng } from "./png-encode";
@@ -120,13 +120,15 @@ export async function captureAssetThumbnailPng(
   if (!shouldContinue()) return null;
   // Every wait of this capture credits held time from one budget, so a capture
   // that never becomes ready cannot hold the serialized thumbnail queue for a
-  // full budget at each step; one compile watch gives them one ceiling.
-  const bounds: CaptureBounds = { budget: createHeldThreadBudget(), compiles: new DriverCompileWatch(engine) };
-  const { budget, compiles } = bounds;
+  // full budget at each step; one compile watch gives them one ceiling, which
+  // also ends the capture's own preparation (`current`).
+  const compiles = new DriverCompileWatch(engine, undefined, SCENE_CAPTURE_CEILING_MS);
+  const bounds: CaptureBounds = { budget: createHeldThreadBudget(), compiles };
+  const { budget } = bounds;
   const host = createMaterialPreviewScene(engine, { mesh: "sphere" });
   const binding = bindResourceCacheToHandle(resourceCacheForEngine(engine));
   const controller = new AbortController();
-  const current = () => shouldContinue() && !host.scene.isDisposed;
+  const current = () => shouldContinue() && !host.scene.isDisposed && performance.now() < compiles.ceiling;
   const preparations: Promise<boolean>[] = [];
   const resolved = new Map<string, Material | null>();
   const functions = request.functions ?? {};
