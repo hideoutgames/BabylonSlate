@@ -16,12 +16,12 @@ import {
 import {
   canonicalizeForwardLightSlots,
   exchangeForwardLightSlots,
+  forwardSlotClass,
   NO_FORWARD_LIGHT_SLOT_EXCHANGES,
   settleForwardLightSlots,
   type ForwardLightSlotExchange,
 } from "./forward-light-slots";
 import { lightingSamplerCapacity, lightSamplerCost, lightSamplerCount } from "./light-sampler-budget";
-import { receiverSignature } from "./shadow-receiver-handoff";
 
 const authoredEnabled = new WeakMap<
   Light,
@@ -303,9 +303,10 @@ export const FORWARD_KIND_CHANGE_DISTANCE_RATIO = 1.25;
 
 /**
  * When the ranked selection would change the admitted local lights' mix of
- * slot kinds (`receiverSignature`: type, cast shadows and the other per-light
- * defines), reorder `candidates` so each kind first fills as many places as it
- * held before (its nearest lights by rank), unless that keeps a light more than
+ * slot kinds (`forwardSlotClass`: a bound shadow map, then the light's type
+ * and other per-light defines; a forward-dropped light keeps its standby map),
+ * reorder `candidates` so each kind first fills as many places as it held
+ * before (its nearest lights by rank), unless that keeps a light more than
  * FORWARD_KIND_CHANGE_DISTANCE_RATIO times farther than the light the ranked
  * selection would admit in its place.
  */
@@ -323,7 +324,7 @@ function keepAdmittedSlotKinds(scene: Scene, candidates: Light[], previous: Read
     if (unchanged) return;
     const kind = (light: Light) => {
       let value = kinds.get(light);
-      if (value === undefined) kinds.set(light, (value = receiverSignature(light)));
+      if (value === undefined) kinds.set(light, (value = forwardSlotClass(scene, light)));
       return value;
     };
     const change = (set: ReadonlySet<Light>, light: Light, delta: number) => {

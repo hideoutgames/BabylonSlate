@@ -125,9 +125,11 @@ export function exchangeForwardLightSlots(
 
 /**
  * A light's place in the canonical order: whether it binds a shadow map, then
- * the defines it gives its slot on every receiver.
+ * the defines it gives its slot on every receiver. Lights of one class are
+ * interchangeable in the canonical arrangement's shaders; a forward-dropped
+ * light keeps its standby map, so it keeps its class.
  */
-function slotClass(scene: Scene, light: Light): string {
+export function forwardSlotClass(scene: Scene, light: Light): string {
   const shadowed = !!(light.getShadowGenerator(scene.activeCamera) ?? light.getShadowGenerator());
   return `${shadowed ? 1 : 0}${receiverSignature(light)}`;
 }
@@ -162,7 +164,7 @@ export function canonicalizeForwardLightSlots(
     (light.isEnabled() ? enabled : disabled).push(light);
   }
   const classes = new Map<Light, string>();
-  for (const light of enabled) classes.set(light, slotClass(scene, light));
+  for (const light of enabled) classes.set(light, forwardSlotClass(scene, light));
   enabled.sort((a, b) => {
     const left = classes.get(a)!;
     const right = classes.get(b)!;

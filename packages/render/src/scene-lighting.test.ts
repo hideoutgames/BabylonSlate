@@ -686,6 +686,18 @@ describe("scene material lighting", () => {
       expect(part.materialDefines!.toString()).toBe(defines);
     });
 
+    it("counts a light with a shadow map as another kind than one without", () => {
+      const { scene, camera, lamps, receiver } = swapFixture([0, 9]);
+      receiver.receiveShadows = true;
+      new ShadowGenerator(64, lamps[0] as SpotLight).addShadowCaster(MeshBuilder.CreateBox("caster", {}, scene));
+      beginFrame(scene);
+      // The shadowed spot is now farthest, but only 48 / 42 times as far as the unshadowed spot it would admit.
+      camera.position.x = 48;
+      beginFrame(scene);
+      expect(isForwardLightExcluded(lamps[0]!)).toBe(false);
+      expect(isForwardLightExcluded(lamps[9]!)).toBe(true);
+    });
+
     it("re-sorts the admitted lights by slot kind and refreshes frozen receivers when the slot defines differ", async () => {
       // The spot at x = 0 ends up 130 / 80 times as far as the nearest point it would keep out.
       const { scene, camera, lamps, material, receiver, part } = swapFixture([0, 4], (index) => (index ? 40 + index * 10 : 0));
