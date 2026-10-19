@@ -556,6 +556,31 @@ describe("scene material lighting", () => {
     expect(scene.blockMaterialDirtyMechanism).toBe(true);
   });
 
+  it("keeps a receiver's Effect when a light it cannot see is turned off, on or removed", async () => {
+    const scene = host();
+    const lamps = lights(scene, 6);
+    const material = new StandardMaterial("receiver", scene);
+    const mesh = MeshBuilder.CreateBox("receiver", {}, scene);
+    mesh.material = material;
+    // Five lamps reach the receiver; the sixth only changes the scene's enabled count.
+    lamps[5]!.excludedMeshes.push(mesh);
+    const compile = async () => {
+      beginFrame(scene);
+      await material.forceCompilationAsync(mesh);
+      material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!);
+      return mesh.subMeshes[0]!.effect;
+    };
+    const effect = await compile();
+    expect(effect?.defines).toContain("#define LIGHT4");
+    expect(effect?.defines).not.toContain("#define LIGHT5");
+    setAuthoredLightEnabled(lamps[5]!, false);
+    expect(await compile()).toBe(effect);
+    setAuthoredLightEnabled(lamps[5]!, true);
+    expect(await compile()).toBe(effect);
+    lamps[5]!.dispose();
+    expect(await compile()).toBe(effect);
+  });
+
   it("keeps unlit materials unchanged", () => {
     const scene = host();
     lights(scene, 6);
