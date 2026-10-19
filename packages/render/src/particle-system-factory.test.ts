@@ -16,6 +16,15 @@ import {
   gpuParticlesSupported,
   particleLifetimeBound,
 } from "./particle-system-factory";
+import { SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { installTimerClock } from "./virtual-clock-test-fixtures";
+
+// Pass-through unless a test sets `build`: stands in for a Material build that takes as long as the test needs.
+const prewarm = vi.hoisted(() => ({ build: null as (() => Promise<void>) | null }));
+vi.mock("./material-compiler", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./material-compiler")>();
+  return { ...actual, prewarmMaterial: (...args: Parameters<typeof actual.prewarmMaterial>) => prewarm.build?.() ?? actual.prewarmMaterial(...args) };
+});
 
 describe("particle-system-factory", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
@@ -310,5 +319,78 @@ describe("particle-system-factory", () => {
     expect(remove).toHaveBeenCalledWith(add.mock.calls[0]![0]);
     system.dispose();
     expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  // The Material's build (a Custom GLSL particle Material links a probe effect before it is built) can outlast the
+  // bound while synchronous shader links keep the thread; the bound must not charge that time.
+  describe("while the Material's build outlasts synchronous shader links", () => {
+    afterEach(() => {
+      prewarm.build = null;
+      vi.useRealTimers();
+    });
+
+    /** A bind whose Material build `finish()` completes, on a virtual clock. */
+    async function binding() {
+      const clock = installTimerClock();
+      const { scene } = host();
+      const system = createBabylonParticleSystem("slow", scene, 16, false);
+      const material = new NodeMaterial("slow material", scene);
+      material.mode = NodeMaterialModes.Particle;
+      const createEffect = vi.fn();
+      material.createEffectForParticles = createEffect;
+      let finish!: () => void;
+      const build = new Promise<void>((resolve) => { finish = resolve; });
+      prewarm.build = () => build;
+      // Timers the Scene and the system start for themselves are not the bind's.
+      await clock.run(64);
+      const timers = vi.getTimerCount();
+      const startedAt = performance.now();
+      let outcome: "pending" | "bound" | Error = "pending";
+      void bindParticleMaterial(system, material).then(() => { outcome = "bound"; }, (error: Error) => { outcome = error; });
+      return {
+        clock, system, createEffect, finish, timers,
+        outcome: () => outcome,
+        elapsed: () => performance.now() - startedAt,
+        /** A synchronous call held the thread: time passes, and the timers that fell due in it fire when it ends. */
+        hold: async (ms: number) => { clock.hold(ms); await vi.advanceTimersByTimeAsync(ms); },
+      };
+    }
+
+    it("binds once the build completes after a link held the thread past the bound", async () => {
+      const { clock, system, createEffect, finish, outcome, hold } = await binding();
+      await hold(5_000);
+      expect(outcome()).toBe("pending");
+      finish();
+      await clock.run(32);
+      expect(outcome()).toBe("bound");
+      expect(createEffect).toHaveBeenCalledWith(system);
+    });
+
+    it("rejects a build that never completes at the bound, with the shader state", async () => {
+      const { clock, outcome, elapsed, createEffect } = await binding();
+      await clock.run(SCENE_SHADER_WARM_TIMEOUT_MS - 100);
+      expect(outcome()).toBe("pending");
+      await clock.run(200);
+      expect(outcome()).toBeInstanceOf(Error);
+      expect((outcome() as Error).message).toMatch(/^Particle material preparation timed out\. Shaders: 0 compiled while waiting, 0 still compiling, \d+ on the Engine/);
+      expect(elapsed()).toBeLessThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS + 100);
+      expect(createEffect).not.toHaveBeenCalled();
+    });
+
+    it("stops watching once the bind completes", async () => {
+      const { clock, finish, outcome, timers } = await binding();
+      finish();
+      await clock.run(32);
+      expect(outcome()).toBe("bound");
+      expect(vi.getTimerCount()).toBe(timers);
+    });
+
+    it("stops watching when the system is disposed first", async () => {
+      const { clock, system, outcome, timers } = await binding();
+      system.dispose();
+      await clock.run(32);
+      expect(outcome()).toBe("bound");
+      expect(vi.getTimerCount()).toBe(timers);
+    });
   });
 });

@@ -5,6 +5,7 @@ import {
   GraphEditor,
   GRAPH_DEFAULT_ZOOM,
   type GraphCanvasDropApi,
+  type GraphPasteElements,
   type PaletteNode,
 } from "@babylonslate/graph-ui";
 import { formatEventMemberName, NamePromptDialog, PanelFrame, walkAncestry } from "@babylonslate/editor-kit";
@@ -29,6 +30,7 @@ import { useGraphEditing } from "../context/graph-editing-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import { applyDataGraphAssetPicks } from "../lib/data-graph";
+import { prepareClassGraphPaste } from "../lib/graph-paste";
 import { canRenameCustomEvent, customEventRenameError, functionLibraryShowsEventGraphEmpty, renameCustomEvent } from "../lib/class-members";
 import {
   classMemberSymbolsFromGraphs,
@@ -62,7 +64,12 @@ import {
   collectImplementedInterfaceContexts,
   collectParentFunctionSignatures,
 } from "../lib/overridable-functions";
-import type { FunctionGraphPanelParams } from "../shell/function-graph-panels";
+import {
+  EVENT_GRAPH_PANEL_ID,
+  openFunctionGraphPanel,
+  type FunctionGraphPanelParams,
+} from "../shell/function-graph-panels";
+import { claimFocusRouting, graphOwningNode } from "../lib/function-graph-focus";
 
 const registry = defaultNodeRegistry;
 const VALIDATION_DEBOUNCE_MS = 250;
@@ -258,6 +265,27 @@ export function GraphPanel(
     if (title && panelApi.title !== title) panelApi.setTitle(title);
   }, [functionId, functionMember?.name, functionMissing, panelApi]);
 
+  // A node chosen elsewhere (Session Report, project search) can live in a
+  // graph whose tab is not showing: bring that tab forward so the node frames.
+  const graphContentRef = useRef(graphContent);
+  graphContentRef.current = graphContent;
+  const containerApi = props.containerApi as
+    | IDockviewPanelProps["containerApi"]
+    | undefined;
+  useEffect(() => {
+    const nodeId = focusDiagnostic?.nodeId;
+    if (!focusDiagnostic || !nodeId || !containerApi || documentId !== activeDocumentId) return;
+    const content = graphContentRef.current;
+    const owner = graphOwningNode(content, nodeId);
+    if (!owner || !claimFocusRouting(focusDiagnostic)) return;
+    if (owner.kind === "event") {
+      if (functionId !== null) containerApi.getPanel(EVENT_GRAPH_PANEL_ID)?.api.setActive();
+    } else if (owner.functionId !== functionId) {
+      const name = content?.members?.find((member) => member.id === owner.functionId)?.name;
+      openFunctionGraphPanel(containerApi, owner.functionId, name ?? owner.functionId);
+    }
+  }, [activeDocumentId, containerApi, documentId, focusDiagnostic, functionId]);
+
   const [canvasApi, setCanvasApi] = useState<GraphCanvasDropApi | null>(null);
   useEffect(() => {
     if (!focused) return;
@@ -449,6 +477,12 @@ export function GraphPanel(
     [graphContent],
   );
 
+  const preparePaste = useCallback(
+    (pasted: GraphPasteElements, current: GraphPasteElements) =>
+      prepareClassGraphPaste(pasted, current, graphContent, activeFunctionId),
+    [activeFunctionId, graphContent],
+  );
+
   const showLibraryEmpty = functionLibraryShowsEventGraphEmpty({
     parentClass,
     parentOf,
@@ -490,6 +524,7 @@ export function GraphPanel(
             onNavigateRequest={onNavigateRequest}
             onSelectionChange={setSelectedNodeIds}
             contextMenuItemsForNode={contextMenuItemsForNode}
+            preparePaste={preparePaste}
             onChange={(next) => {
               if (!doc) return;
               const edited = applyDataGraphAssetPicks(graph, next, dataAssets);

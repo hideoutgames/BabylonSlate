@@ -44,7 +44,6 @@ const MESH_COLLISION_2D =
   "Mesh Collision works only in a 3D physics world, so this Mesh does not collide. Set Physics World to 3D (Havok), or give the actor a Rigid Body and a 2D Collider.";
 
 const MOVEMENT_CONFLICTS = new Map([
-  ["RigidBodyComponent", "Rigid Body"],
   ["NavAgentComponent", "Nav Agent"],
   ["RagdollComponent", "Ragdoll"],
   ["WaterBuoyancyComponent", "Water Buoyancy"],
@@ -87,9 +86,12 @@ export function physicsActorDiagnostics(
       const label = MOVEMENT_CONFLICTS.get(component.classId);
       return label ? [label] : [];
     }))];
+    // A dynamic Rigid Body is steered by Movement and a kinematic one is moved by it; a static one cannot move.
+    const firstBody = live.find((component) => component.classId === "RigidBodyComponent");
     const problems = [
       ...(movements.length > 1 ? ["keep only one Movement component"] : []),
       ...(conflicts.length > 0 ? [`remove ${conflicts.join(", ")}`] : []),
+      ...(firstBody?.properties?.motionType === "static" ? ["set the Rigid Body's Motion Type to Dynamic or Kinematic"] : []),
     ];
     if (problems.length > 0) {
       return movements.map((component) => ({
@@ -100,7 +102,7 @@ export function physicsActorDiagnostics(
         componentId: component.id,
       }));
     }
-    // Movement owns the actor's capsule body.
+    // Movement owns the actor's body: its own capsule, or a Rigid Body with its own colliders or that capsule.
     return [];
   }
   const is3d = context.physicsWorld !== "2d";
