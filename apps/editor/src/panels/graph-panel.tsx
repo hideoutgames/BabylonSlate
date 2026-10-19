@@ -45,7 +45,7 @@ import {
   defaultNodeRegistry,
 } from "../services/graph-validation";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
-import { useClassGraphRunTrace } from "../context/graph-debug-context";
+import { useAnimObjectGraphRunTrace, useClassGraphRunTrace } from "../context/graph-debug-context";
 import { sceneAssetClassId } from "@babylonslate/object-model";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import {
@@ -149,7 +149,13 @@ export function GraphPanel(
         name: graphContent?.members?.find((member) => member.id === activeFunctionId)?.name,
       })
     : "event-graph";
-  const runTrace = useClassGraphRunTrace(doc?.ref.kind === "graph" ? doc.ref.path : undefined, classId, runGraphId);
+  const classRunTrace = useClassGraphRunTrace(doc?.ref.kind === "graph" ? doc.ref.path : undefined, classId, runGraphId);
+  // An Animation Graph's Animation Object graph is compiled like a Class graph, under its own id.
+  const animObjectRunTrace = useAnimObjectGraphRunTrace(
+    doc?.ref.kind === "anim-graph" ? doc.ref.path : undefined,
+    indexed?.header.guid,
+  );
+  const runTrace = classRunTrace ?? animObjectRunTrace;
   const memberSymbols = useMemo(() => {
     const graphs = { ...otherClassGraphs };
     if (classId && graphContent) graphs[classId] = graphContent;

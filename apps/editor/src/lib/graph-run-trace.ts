@@ -1,3 +1,4 @@
+import { BT_DEBUG_GRAPH_ID } from "@babylonslate/bridge";
 import type { GraphRunTrace } from "@babylonslate/graph-ui";
 import type { GraphDebugStore } from "../services/graph-debug-store";
 
@@ -16,5 +17,14 @@ export function createGraphRunTrace(store: GraphDebugStore, assetGuid: string, g
       }
     }),
     value: (nodeId, pinId, direction) => store.value(assetGuid, graphId, nodeId, pinId, direction),
+  };
+}
+
+/** The same for a Behaviour Tree, whose nodes also carry the status of the followed instance (running, success or failure). */
+export function createBehaviourTreeRunTrace(store: GraphDebugStore, treeGuid: string): GraphRunTrace {
+  return {
+    ...createGraphRunTrace(store, treeGuid, BT_DEBUG_GRAPH_ID),
+    status: (nodeId) => store.status(treeGuid, nodeId),
+    subscribeStatus: (nodeId, listener) => store.subscribeStatus(nodeId, listener),
   };
 }

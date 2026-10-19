@@ -5,9 +5,10 @@ import {
   type SerializedGraph,
   type TagRegistry,
 } from "@babylonslate/core";
-import type {
-  ScriptBundleEntry,
-  ScriptConsoleCommand,
+import {
+  ANIM_OBJECT_DEBUG_GRAPH_ID,
+  type ScriptBundleEntry,
+  type ScriptConsoleCommand,
 } from "@babylonslate/bridge";
 import {
   animGraphScriptClassId,
@@ -812,6 +813,8 @@ function animGraphCompileCacheKey(
     guid: entry.guid,
     path: entry.path,
     stripDevelopmentOnly: options.stripDevelopmentOnly === true,
+    // Only the Animation Object graph carries probes; as for Class graphs, a release compile ignores them.
+    instrumentExecutionTrace: options.instrumentExecutionTrace === true && options.stripDevelopmentOnly !== true,
     tags: tagRegistryCompileFingerprint(options.tagRegistry),
     types: options.typesFingerprint,
     dataAssets: options.dataFingerprint,
@@ -831,7 +834,7 @@ function compileAnimGraphDocument(
     ...options,
     path: entry.path,
     className: entry.name,
-    graphId: "animation-object",
+    graphId: ANIM_OBJECT_DEBUG_GRAPH_ID,
     parentClassId: "BObject",
     stripDevelopmentOnly: options.stripDevelopmentOnly,
     tagRegistry: options.tagRegistry,

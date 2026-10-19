@@ -35,7 +35,6 @@ import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
 import { emptyPlayAudioLibrary, type PlayAudioLibrary, type PlayAudioSourceLoader } from "../lib/play-audio";
 import { appendOutputLogLines, OUTPUT_LOG_RING_CAP } from "../lib/output-log-ring";
-import { createBtStateObservers, type BtStateObservers } from "../lib/bt-state-observers";
 import { createFrameFlush } from "../lib/use-debug-console-logs";
 import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { PlayFailedDialog, PlayPrepareDialog } from "../components/play-prepare-dialog";
@@ -152,15 +151,6 @@ type PlayOptions = {
   saveChoice?: PlayUnsavedChoice;
 };
 
-export type LiveBtState = {
-  slotId: number;
-  status: string;
-  btNodeId: string | null;
-  lastResults: Record<string, string>;
-  blackboard: Record<string, unknown>;
-  stack: Array<{ nodeId: string; childIndex: number; opened: boolean }>;
-};
-
 interface PlayContextValue {
   sessionState: GameSessionState;
   sessionOwner: GameSessionOwner<PlaySessionResult>;
@@ -201,9 +191,6 @@ interface PlayContextValue {
   focusedNodeId: string | null;
   clearFocusedNode: () => void;
   appendLog: (line: string) => void;
-  reportBtState: (state: LiveBtState | null) => void;
-  /** Behaviour Tree editor panels showing live state; the running session publishes `btState` only while one does. */
-  btStateObservers: BtStateObservers;
 }
 
 const PlayContext = createContext<PlayContextValue | null>(null);
@@ -212,8 +199,7 @@ const PlayContext = createContext<PlayContextValue | null>(null);
 const PlaySimulationDocumentIdContext = createContext<string | null>(null);
 const PlayFocusedNodeIdContext = createContext<string | null>(null);
 const OutputLogContext = createContext<{ lines: string[] }>({ lines: [] });
-const LiveBtStateContext = createContext<LiveBtState | null>(null);
-type PlayDiagnosticsActions = Pick<PlayContextValue, "appendLog" | "reportBtState" | "btStateObservers"> & {
+type PlayDiagnosticsActions = Pick<PlayContextValue, "appendLog"> & {
   /** Counts a visible Output Log window until the returned release runs. */
   showOutputLogWindow: () => () => void;
   outputLogWindowVisible: () => boolean;
@@ -223,9 +209,7 @@ const PlayDiagnosticsActionsContext = createContext<PlayDiagnosticsActions | nul
 /** High-frequency updates must not rerender the session owner or its overlays. */
 function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
   const [logLines, setLogLines] = useState<string[]>([]);
-  const [liveBtState, setLiveBtState] = useState<LiveBtState | null>(null);
   const outputLogWindows = useRef(0);
-  const [btStateObservers] = useState(createBtStateObservers);
   // A burst of lines (engine logs, session diagnostics) commits once per frame, in arrival order.
   const [logFeed] = useState(() => {
     let pending: string[] = [];
@@ -253,23 +237,19 @@ function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
   const actions = useMemo<PlayDiagnosticsActions>(
     () => ({
       appendLog,
-      reportBtState: setLiveBtState,
-      btStateObservers,
       showOutputLogWindow: () => {
         outputLogWindows.current += 1;
         return () => { outputLogWindows.current -= 1; };
       },
       outputLogWindowVisible: () => outputLogWindows.current > 0,
     }),
-    [appendLog, btStateObservers],
+    [appendLog],
   );
   const outputLog = useMemo(() => ({ lines: logLines }), [logLines]);
   return (
     <PlayDiagnosticsActionsContext.Provider value={actions}>
       <OutputLogContext.Provider value={outputLog}>
-        <LiveBtStateContext.Provider value={liveBtState}>
-          {children}
-        </LiveBtStateContext.Provider>
+        {children}
       </OutputLogContext.Provider>
     </PlayDiagnosticsActionsContext.Provider>
   );
@@ -306,7 +286,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
 }
 
 function PlaySessionProvider({ children }: { children: ReactNode }) {
-  const { appendLog, reportBtState, btStateObservers, outputLogWindowVisible } = useContext(PlayDiagnosticsActionsContext)!;
+  const { appendLog, outputLogWindowVisible } = useContext(PlayDiagnosticsActionsContext)!;
   const { settings: appSettings, updateDebuggerDefaults } = useAppSettings();
   const engineRef = useRef<AbstractEngine | null>(null);
   const providerMountRef = useRef(0);
@@ -1602,7 +1582,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       playSourceLifetimeRef.current?.abort();
       setPlayOpen(false);
       setSessionPlayScene(null);
-      reportBtState(null);
       setDropped(result.droppedDiagnostics);
       setReportEntries(result.diagnostics);
       setLastRuntimeMode(result.runtimeMode);
@@ -1626,7 +1605,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         void openRecordedTrace(result.lastTrace);
       }
     },
-    [appendLog, openRecordedTrace, reportBtState, sessionOwner],
+    [appendLog, openRecordedTrace, sessionOwner],
   );
 
   const value = useMemo<PlayContextValue>(
@@ -1669,8 +1648,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       focusedNodeId,
       clearFocusedNode: () => setFocusedNodeId(null),
       appendLog,
-      reportBtState,
-      btStateObservers,
     }),
     [
       sessionState,
@@ -1710,8 +1687,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       reportSceneViewportLoading,
       focusedNodeId,
       appendLog,
-      reportBtState,
-      btStateObservers,
     ],
   );
 
@@ -1751,7 +1726,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           <PlayOverlay
             sessionOwner={sessionOwner}
             sessionTicket={sessionTicketRef.current}
-            btStateObservers={btStateObservers}
             simulationSaveStorage={simulationRef.current?.storage}
             simulationSession={simulationRef.current ?? undefined}
             simulationAssetGuids={simulationAssetGuids}
@@ -2066,13 +2040,10 @@ export function usePlayFocusedNodeId(): string | null {
 }
 
 /**
- * Output Log and live BT writers only. Stable for the provider's lifetime, so
- * a caller that only logs does not re-render when Play state changes.
+ * Output Log writer only. Stable for the provider's lifetime, so a caller that only
+ * logs does not re-render when Play state changes.
  */
-export function usePlayDiagnosticsActions(): Pick<
-  PlayContextValue,
-  "appendLog" | "reportBtState"
-> {
+export function usePlayDiagnosticsActions(): Pick<PlayContextValue, "appendLog"> {
   const actions = useContext(PlayDiagnosticsActionsContext);
   if (!actions) {
     throw new Error("usePlayDiagnosticsActions requires PlayProvider");
@@ -2094,17 +2065,3 @@ export function useOutputLogWindow(visible: boolean): void {
   useEffect(() => (visible ? actions?.showOutputLogWindow() : undefined), [actions, visible]);
 }
 
-/** Subscribe only the behaviour-tree debugger to live snapshots. */
-export function useLiveBtState(): LiveBtState | null {
-  return useContext(LiveBtStateContext);
-}
-
-/**
- * Counts the caller as showing live behaviour tree state while it is mounted and `shown`. The
- * Play runtime publishes `btState` only while at least one caller does, and sends every tree's
- * current state when the first one starts.
- */
-export function useObserveBtState(shown: boolean): void {
-  const actions = useContext(PlayDiagnosticsActionsContext);
-  useEffect(() => (shown ? actions?.btStateObservers.observe() : undefined), [actions, shown]);
-}

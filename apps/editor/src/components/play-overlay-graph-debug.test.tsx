@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import type { Engine } from "@babylonjs/core";
-import type { CommandMessage } from "@babylonslate/bridge";
+import type { CommandMessage, DebugObserveTarget } from "@babylonslate/bridge";
 import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
 import type { GraphDebugStore } from "../services/graph-debug-store";
 import { startPlaySession, type PlaySession } from "../services/play-session";
@@ -10,9 +10,9 @@ import { PlayOverlay } from "./play-overlay";
 
 vi.mock("../services/play-session", () => ({ startPlaySession: vi.fn() }));
 // Stable: a new callback each render would restart the session effect.
-const { reportBtState } = vi.hoisted(() => ({ reportBtState: vi.fn() }));
+const play = vi.hoisted(() => ({}));
 vi.mock("../context/play-context", () => ({
-  usePlay: () => ({ reportBtState }),
+  usePlay: () => play,
 }));
 vi.mock("../context/app-settings-context", () => ({
   useAppSettings: () => ({ settings: {} }),
@@ -24,7 +24,6 @@ vi.mock("@babylonslate/vfs", async (importOriginal) => ({
 vi.mock("../services/lifecycle-pause", () => ({ attachLifecyclePause: () => () => {} }));
 
 beforeEach(() => {
-  reportBtState.mockClear();
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   const setInterval = window.setInterval.bind(window);
   vi.spyOn(window, "setInterval").mockImplementation((handler, delay, ...args) =>
@@ -33,24 +32,25 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 const DOOR = { kind: "class", classId: "Door" } as const;
+const GUARD = { kind: "behaviourTree", assetGuid: "guard" } as const;
 type Roster = Extract<CommandMessage, { type: "debugRoster" }>;
 type Trace = Extract<CommandMessage, { type: "executionTrace" }>;
+type BtState = Extract<CommandMessage, { type: "btState" }>;
 
 let store: GraphDebugStore | null = null;
-/** The editor has a Class graph focused before the session starts. */
-function FocusedClass() {
+/** The editor has a graph focused before the session starts. */
+function Focused({ target }: { target: DebugObserveTarget }) {
   const current = useGraphDebugStore();
   store = current;
-  useLayoutEffect(() => { current?.setTarget(DOOR); }, [current]);
+  useLayoutEffect(() => { current?.setTarget(target); }, [current, target]);
   return null;
 }
 
-async function openSession(mode: "simulate" | "play") {
+async function openSession(mode: "simulate" | "play", target: DebugObserveTarget = DOOR) {
   const observeGraphDebug = vi.fn();
   vi.mocked(startPlaySession).mockReturnValue({
     handle: { resize() {}, setSize() {}, scheduler: { setResizing() {} } },
     executeConsoleCommand: () => Promise.resolve({ success: true, output: "" }),
-    setBehaviourTreeStateObserved() {},
     observeGraphDebug,
     stop: () => ({
       diagnostics: [], droppedDiagnostics: 0, textureCountBefore: 0,
@@ -60,7 +60,7 @@ async function openSession(mode: "simulate" | "play") {
   } as unknown as PlaySession);
   render(
     <GraphDebugProvider>
-      <FocusedClass />
+      <Focused target={target} />
       <PlayOverlay sharedEngine={{} as Engine} sessionTicket={{ mode } as never} onClose={() => {}} />
     </GraphDebugProvider>,
   );
@@ -68,6 +68,7 @@ async function openSession(mode: "simulate" | "play") {
   const options = vi.mocked(startPlaySession).mock.calls.at(-1)![0] as unknown as {
     onDebugRoster?: (roster: Roster) => void;
     onExecutionTrace?: (trace: Trace) => void;
+    onBtState?: (state: BtState) => void;
   };
   return { observeGraphDebug, options };
 }
@@ -101,6 +102,19 @@ describe("Simulation graph debugging in the Play overlay", () => {
     expect(store!.value("Door.class", "event-graph", "a", "p", "in")).toBe("7");
   });
 
+  it("hands a followed Behaviour Tree's state to the store", async () => {
+    const { observeGraphDebug, options } = await openSession("simulate", GUARD);
+    expect(observeGraphDebug).toHaveBeenCalledExactlyOnceWith(GUARD, null);
+    act(() => options.onDebugRoster!({ ...roster(["bt-1"]), target: GUARD }));
+    expect(observeGraphDebug).toHaveBeenLastCalledWith(GUARD, "bt-1");
+    act(() => options.onBtState!({
+      type: "btState", instanceId: "bt-1", slotId: 0, status: "running", btNodeId: "wait",
+      lastResults: {}, blackboard: { hp: 3 }, stack: [{ nodeId: "root", childIndex: 0, opened: true }],
+    }));
+    expect(store!.status("guard", "root")).toBe("running");
+    expect(store!.blackboard("guard")).toEqual({ hp: 3 });
+  });
+
   it("stops asking, and forgets the target, once the Simulation closes", async () => {
     const { observeGraphDebug } = await openSession("simulate");
     cleanup();
@@ -113,6 +127,7 @@ describe("Simulation graph debugging in the Play overlay", () => {
     const { observeGraphDebug, options } = await openSession("play");
     expect(options.onDebugRoster).toBeUndefined();
     expect(options.onExecutionTrace).toBeUndefined();
+    expect(options.onBtState).toBeUndefined();
     expect(observeGraphDebug).not.toHaveBeenCalled();
   });
 });

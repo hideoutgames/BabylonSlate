@@ -1356,6 +1356,23 @@ describe("GraphScriptCompileCache", () => {
     expect(release.source).not.toContain("__dbg");
   });
 
+  it("probes an Animation Object graph only for a Simulation compile, under the id the canvas reads", async () => {
+    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { compileAnimGraphScripts } = await import("./script-compiler");
+    const cache = new GraphScriptCompileCache();
+    const documents = [{ guid: "loco", path: "assets/Loco.anim.babasset", document: createDefaultAnimGraph() }];
+    const objectGraph = (options: Parameters<typeof compileAnimGraphScripts>[1]) =>
+      compileAnimGraphScripts(documents, { cache, ...options }).find((script) => script.classId === "AnimGraph:loco")!;
+    const plain = objectGraph({});
+    const traced = objectGraph({ instrumentExecutionTrace: true });
+    expect(plain.source).not.toContain("__dbg");
+    expect(traced.source).toContain('ctx.debugTrace.graph("assets/Loco.anim.babasset", "animation-object")');
+    // Each is cached under its own key, and a release compile never carries the probes.
+    expect(objectGraph({})).toBe(plain);
+    expect(objectGraph({ instrumentExecutionTrace: true })).toBe(traced);
+    expect(objectGraph({ stripDevelopmentOnly: true, instrumentExecutionTrace: true }).source).not.toContain("__dbg");
+  });
+
   it("bounds combined graph and animation retention by bytes and skips oversized results", async () => {
     const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
     const { compileAnimGraphScripts } = await import("./script-compiler");

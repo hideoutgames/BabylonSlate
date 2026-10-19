@@ -4,16 +4,22 @@ import type {
   DebugInstance,
   DebugObserveTarget,
 } from "@babylonslate/bridge";
+import { sameDebugObserveTarget } from "@babylonslate/bridge";
 import { formatValue } from "@babylonslate/core";
 import { BObject, type Actor, type World } from "@babylonslate/object-model";
+import { animGraphGuidOf, behaviourTreeGuidOf, evaluatedBehaviourTreeComponent } from "./component-assets";
+import { componentOwners } from "./world-component-index";
 
 /**
  * Graph debugging for the editor's Simulation. A debug-instrumented script
  * reaches the recorder of the one instance the editor follows through
  * `ctx.debugTrace`; every other instance gets null and pays a null check per
- * probe. The recorder gathers what ran during a tick; `ScriptDebugObserver`
- * sends it, and the live instance roster, at the end of the tick.
+ * probe. The Behaviour Tree and Animation Graph runtimes report the graphs they
+ * evaluate themselves into the same recorder. The recorder gathers what ran
+ * during a tick; `ScriptDebugObserver` sends it, and the live instance roster,
+ * at the end of the tick.
  */
+
 
 /** What a debug-instrumented graph reports while it runs for the followed instance. */
 export interface ScriptGraphRecorder {
@@ -216,45 +222,89 @@ function instanceLabel(object: BObject): string {
   return typeof name === "string" && name.length > 0 ? name : object.classId;
 }
 
-/** Live objects of exactly `classId`: Game Instance, subsystems, then each actor followed by its components. */
-function collectInstances(world: World, classId: string, limit: number, found: (object: BObject, kind: DebugInstance["kind"], owner?: Actor) => boolean | void): void {
+type InstanceVisitor = (object: BObject, kind: DebugInstance["kind"], owner?: Actor) => boolean | void;
+
+/**
+ * The live objects `target` debugs, in world order, until `found` returns true or `limit` objects were
+ * visited. A class target lists objects of exactly that class: Game Instance, subsystems, then each actor
+ * followed by its components. A Behaviour Tree or Animation Graph target lists the components that run the
+ * asset, the tree a component evaluates being its actor's first live Behaviour Tree component.
+ */
+function collectInstances(world: World, target: DebugObserveTarget, limit: number, found: InstanceVisitor): void {
   let count = 0;
   const visit = (object: BObject, kind: DebugInstance["kind"], owner?: Actor): boolean => {
-    if (object.classId !== classId || object.destroyed) return false;
     count += 1;
     return found(object, kind, owner) === true || count >= limit;
   };
-  if (world.gameInstance && visit(world.gameInstance, "gameInstance")) return;
-  for (const subsystem of world.getGameSubsystems()) if (visit(subsystem, "subsystem")) return;
-  for (const subsystem of world.getSceneSubsystems()) if (visit(subsystem, "subsystem")) return;
+  if (target.kind === "behaviourTree") {
+    for (const actor of componentOwners(world, "BehaviourTreeComponent")) {
+      const component = actor.destroyed ? undefined : evaluatedBehaviourTreeComponent(actor);
+      if (component && behaviourTreeGuidOf(component) === target.assetGuid && visit(component, "component", actor)) return;
+    }
+    return;
+  }
+  if (target.kind === "animationGraph") {
+    for (const actor of componentOwners(world, "AnimationGraphComponent")) {
+      if (actor.destroyed) continue;
+      for (const component of actor.components) {
+        if (component.classId !== "AnimationGraphComponent" || component.destroyed) continue;
+        if (animGraphGuidOf(component) === target.assetGuid && visit(component, "component", actor)) return;
+      }
+    }
+    return;
+  }
+  const { classId } = target;
+  const visitClass = (object: BObject, kind: DebugInstance["kind"], owner?: Actor): boolean =>
+    object.classId === classId && !object.destroyed && visit(object, kind, owner);
+  if (world.gameInstance && visitClass(world.gameInstance, "gameInstance")) return;
+  for (const subsystem of world.getGameSubsystems()) if (visitClass(subsystem, "subsystem")) return;
+  for (const subsystem of world.getSceneSubsystems()) if (visitClass(subsystem, "subsystem")) return;
   for (const actor of world.getActors()) {
-    if (visit(actor, "actor")) return;
-    for (const component of actor.components) if (visit(component, "component", actor)) return;
+    if (visitClass(actor, "actor")) return;
+    for (const component of actor.components) if (visitClass(component, "component", actor)) return;
   }
 }
 
-/** The first live instances of `classId`, in world order. */
-export function debugInstancesOf(world: World, classId: string, limit = DEBUG_ROSTER_LIMIT): DebugInstance[] {
+/** The first live instances of `target`, in world order. */
+export function debugInstancesOf(world: World, target: DebugObserveTarget, limit = DEBUG_ROSTER_LIMIT): DebugInstance[] {
   const instances: DebugInstance[] = [];
-  collectInstances(world, classId, limit, (object, kind, owner) => {
+  collectInstances(world, target, limit, (object, kind, owner) => {
+    // A Behaviour Tree or Animation Graph component has no name worth showing: it is the actor's.
+    const byClass = target.kind === "class";
     instances.push({
       id: object.guid,
       kind,
-      label: instanceLabel(object),
-      ...(owner ? { ownerLabel: instanceLabel(owner) } : {}),
+      label: instanceLabel(byClass || !owner ? object : owner),
+      ...(byClass && owner ? { ownerLabel: instanceLabel(owner) } : {}),
     });
   });
   return instances;
 }
 
-function findInstance(world: World, classId: string, id: string): BObject | null {
+function findInstance(world: World, target: DebugObserveTarget, id: string): BObject | null {
   let match: BObject | null = null;
-  collectInstances(world, classId, Number.MAX_SAFE_INTEGER, (object) => {
+  collectInstances(world, target, Number.MAX_SAFE_INTEGER, (object) => {
     if (object.guid !== id) return false;
     match = object;
     return true;
   });
   return match;
+}
+
+/** Whether the live components of a Behaviour Tree or Animation Graph target are the roster last sent, in order. */
+function sameComponentRoster(world: World, target: DebugObserveTarget, sent: ReadonlyMap<string, DebugInstance>): boolean {
+  const expected = sent.values();
+  let same = true;
+  let count = 0;
+  collectInstances(world, target, DEBUG_ROSTER_LIMIT, (object, _kind, owner) => {
+    const before = expected.next();
+    if (before.done || before.value.id !== object.guid || before.value.label !== instanceLabel(owner ?? object)) {
+      same = false;
+      return true;
+    }
+    count += 1;
+  });
+  return same && count === sent.size;
 }
 
 export interface ScriptDebugObserverHost {
@@ -292,7 +342,7 @@ export class ScriptDebugObserver {
 
   /** Applies the editor's request; it replaces the previous one. */
   observe(target: DebugObserveTarget | null, instanceId: string | null): void {
-    const changed = target?.kind !== this.target?.kind || target?.classId !== this.target?.classId;
+    const changed = !sameDebugObserveTarget(target, this.target);
     this.target = target;
     if (changed) {
       this.sent = null;
@@ -305,7 +355,7 @@ export class ScriptDebugObserver {
     this.publishRoster();
     if (instanceId === null) this.follow(null);
     else if (changed || this.followed?.guid !== instanceId || this.followed.destroyed) {
-      this.follow(findInstance(this.host.world(), target.classId, instanceId));
+      this.follow(findInstance(this.host.world(), target, instanceId));
     }
   }
 
@@ -339,13 +389,20 @@ export class ScriptDebugObserver {
     const target = this.target;
     if (!target) return;
     const world = this.host.world();
-    const subsystems = world.getGameSubsystems().length + world.getSceneSubsystems().length;
-    const basis = this.basis;
-    if (basis && basis.revision === world.structuralRevision && basis.gameInstance === world.gameInstance &&
-      basis.subsystems === subsystems) return;
-    this.basis = { revision: world.structuralRevision, gameInstance: world.gameInstance, subsystems };
-    const current = debugInstancesOf(world, target.classId);
     const previous = this.sent;
+    if (target.kind === "class") {
+      // A class never changes, so the world's structure decides whether its roster can have changed.
+      const subsystems = world.getGameSubsystems().length + world.getSceneSubsystems().length;
+      const basis = this.basis;
+      if (basis && basis.revision === world.structuralRevision && basis.gameInstance === world.gameInstance &&
+        basis.subsystems === subsystems) return;
+      this.basis = { revision: world.structuralRevision, gameInstance: world.gameInstance, subsystems };
+    } else if (previous && sameComponentRoster(world, target, previous)) {
+      // The asset a component runs is a variable a script can set, so a component target is walked each tick
+      // (only the actors owning such a component), allocating nothing while the roster holds.
+      return;
+    }
+    const current = debugInstancesOf(world, target);
     const next = new Map(current.map((instance) => [instance.id, instance]));
     this.sent = next;
     if (!previous) {

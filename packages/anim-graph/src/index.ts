@@ -45,6 +45,7 @@ export {
   ANIM_STATE_SIDES,
   animGraphToSerialized,
   animPaletteNodes,
+  animTransitionEdgeId,
   findReverseTransition,
   hydrateAnimGraphForEditor,
   animStateHandle,

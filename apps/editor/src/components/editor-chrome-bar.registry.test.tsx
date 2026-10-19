@@ -243,6 +243,21 @@ describe("chrome graph debugger", () => {
     expect(screen.queryByRole("combobox", { name: "Debug Instance" })).toBeNull();
   });
 
+  it.each([
+    ["behaviour-tree", { kind: "behaviourTree", assetGuid: "asset-guid" }],
+    ["anim-graph", { kind: "animationGraph", assetGuid: "asset-guid" }],
+  ] as const)("aims the debugger at the focused %s asset's components, by the asset's guid", async (kind, target) => {
+    await createRegistry();
+    simulate();
+    state.activeId = "asset";
+    state.documents = [openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF), openDocument("asset", createDocumentRef(kind, "assets/Guard.babasset"))];
+    vi.spyOn(state.registry!, "getByPath").mockReturnValue({ header: { guid: "asset-guid" } } as unknown as ReturnType<AssetRegistry["getByPath"]>);
+    render(<DebugChrome />);
+    expect(store!.getSnapshot().target).toEqual(target);
+    act(() => store!.receiveRoster({ target, reset: true, added: [{ id: "c1", kind: "component", label: "Guard" }], removed: [] }));
+    expect(screen.getByRole("combobox", { name: "Debug Instance" }).textContent).toContain("Guard");
+  });
+
   it("offers no select for a Class that never has instances", async () => {
     const registry = await createRegistry();
     void registry;

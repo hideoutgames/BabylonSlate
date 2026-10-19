@@ -40,25 +40,51 @@ While a Simulation runs, its controls sit in the toolbar where **Simulate** was:
 | **Stop** (red) | Ends the Simulation. Its tooltip says whether your changes are kept or discarded. |
 | **Game** / **Edit** | **Game** sends keys, touch and the mouse to the game. **Edit** lets you select, inspect and move runtime objects with the **Move**, **Rotate** and **Scale** tools in the viewport. Clicking outside the game, or pressing Esc or Tab, also switches to **Edit**. |
 | **Return To Scene** | Appears when another tab is open, and brings the simulated scene back. |
-| **Debug Instance** | Appears while a Class is open. Picks which object's graph run you watch ([Watch a graph run](#watch-a-graph-run)). |
+| **Debug Instance** | Appears while a Class, Behaviour Tree or Animation Graph is open. Picks which object's graph run you watch ([Watch a graph run](#watch-a-graph-run)). |
 
 The editor camera you move in **Edit** does not change the game camera. Authored documents stay read-only until you stop.
 
 ## Watch a graph run
 
-While a Simulation runs, open a Class to see its graphs run for one object, the way a debugger would.
+While a Simulation runs, open a Class, a Behaviour Tree or an Animation Graph to see it run for one object, the way a debugger would.
 
-**Debug Instance** lists every live object whose class is exactly the open Class: actors, components, the Game Instance and subsystems. An object of a subclass is not listed here; open the subclass instead. Objects with the same name show the start of their id after the name, and a component shows its actor in brackets. The list holds the first 128 objects.
+**Debug Instance** lists the live objects that run the open document:
 
-- It starts on the first object in the list, shows **None** when there are none, and moves to the first remaining object when the one you watch is destroyed. Choose **None** to stop watching; it stays on **None** until you open another Class.
+| Open | Lists |
+| --- | --- |
+| Class | Every live object whose class is exactly the open Class: actors, components, the Game Instance and subsystems. An object of a subclass is not listed here; open the subclass instead. |
+| [Behaviour Tree](../assets/behaviour-tree.md) | The actors that run the tree through a [Behaviour Tree component](../components/behaviour-tree.md). An actor with several Behaviour Tree components runs only the first, so only that one counts. |
+| [Animation Graph](../assets/animation-graph.md) | The actors that run the graph through an [Animation Graph component](../components/animation-graph.md), once for each such component. |
+
+Objects with the same name show the start of their id after the name, and a Class component shows its actor in brackets. The list holds the first 128 objects.
+
+- It starts on the first object in the list, shows **None** when there are none, and moves to the first remaining object when the one you watch is destroyed. Choose **None** to stop watching; it stays on **None** until you open another document.
 - Pick another object at any time. The graphs show only the object you picked.
-- Changing the open Class, or a Class that has no objects (a function library, for example), changes or removes the list.
+- Changing the open document, or opening a Class that has no objects (a function library, for example), changes or removes the list.
 
-When a node runs for that object, its outline turns orange and fades over a quarter of a second. Each new run starts the fade again, so a node that runs every tick stays lit. The pins and wires involved light up with it: the execution wire that was taken, and the data wires the node read, including those that pass through [pure nodes](../scripting/index.md#nodes-and-pins). Nodes without execution pins never get an outline of their own. With reduced motion turned on in your system settings the highlight does not fade: it stays lit for the same time, then clears.
+When a node runs for that object, its outline turns orange and fades over a quarter of a second. Each new run starts the fade again, so a node that runs every tick stays lit. The wires and pins involved light up with it. With reduced motion turned on in your system settings the highlight does not fade: it stays lit for the same time, then clears.
+
+### Classes and Animation Object graphs
+
+The execution wire that was taken lights up, and so do the data wires the node read, including those that pass through [pure nodes](../scripting/index.md#nodes-and-pins). Nodes without execution pins never get an outline of their own.
 
 Hover a data pin on a computer, or tap its name on a touch screen (tap it again, or anywhere else, to close it), to see the last value it held: `3.5`, a piece of text, or the class and id of an object. Numbers show four decimals at most and long text is cut after about 100 characters. A pin that has not run yet shows **No value yet**. A pin that is not wired shows the value typed on the node itself, so it has no tip. A pure node's pins show the value a node that ran read through them.
 
-The graphs stay read-only: watching never changes your Class or the running game. Outside a Simulation a graph shows no highlights and no tips, and editing it works as always. Only a Simulation compiles Class graphs for this. Play, Preview Build and exported games do not, so they pay nothing for it.
+The **Animation Object** mode of an Animation Graph works the same way for the object you picked.
+
+### Behaviour Trees
+
+Every node the tree works on in a tick lights up, along with the wire down to each child it starts or resumes. A task that keeps running stays lit. The composites above it light when they start and each time a child hands control back.
+
+Each node also shows its status for the object you picked: **Running** for every node on the active branch, otherwise the **Success** or **Failure** of its last run. A node that has not run yet shows nothing. Hover a node on a computer, or tap it on a touch screen, to read its status in a tip.
+
+The **Blackboard** window lists the current values of the object's Blackboard.
+
+### Animation Graph State Machines
+
+The **State Machine** lights each state the graph plays in a tick: the active state, and the state a blend is leaving. A transition's wire lights up when the transition is taken. A Both Ways pair is one wire, so it lights for either direction. [Jump To State](../scripting/class/jump-to-state.md) changes the active state without a transition. Transition rule graphs do not show a run.
+
+The graphs stay read-only: watching never changes your assets or the running game. Outside a Simulation a graph shows no highlights and no tips, and editing it works as always. Only a Simulation compiles Class graphs and Animation Object graphs for this. Play, Preview Build and exported games do not, so they pay nothing for it.
 
 ## Stats
 

@@ -9,6 +9,7 @@ import {
 } from "@babylonslate/core";
 import type { BehaviourTreeDocument } from "@babylonslate/behaviour-tree";
 import { generateNavMesh, initNavigation } from "@babylonslate/navigation";
+import { followBehaviourTree } from "./behaviour-tree-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 
 function leafTree(
@@ -132,7 +133,7 @@ describe("P19 behaviour tree task hosts", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
-    runtime.applyBehaviourTreeStateObserved(true);
+    followBehaviourTree(runtime, commands, "tree-1");
     runtime.tick();
     expect(
       commands.filter((command) => command.type === "btState").at(-1),
@@ -167,7 +168,7 @@ describe("P19 behaviour tree task hosts", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
-    runtime.applyBehaviourTreeStateObserved(true);
+    followBehaviourTree(runtime, commands, "tree-1");
     runtime.tick();
     const mid = commands.filter((command) => command.type === "animState");
     expect(mid).toEqual([
@@ -269,7 +270,7 @@ describe("P19 behaviour tree task hosts", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
-    runtime.applyBehaviourTreeStateObserved(true);
+    followBehaviourTree(runtime, commands, "tree-1");
     runtime.tick();
     expect(commands.filter((command) => command.type === "animState")).toEqual([]);
     expect(
@@ -353,7 +354,7 @@ describe("P19 behaviour tree task hosts", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
-    runtime.applyBehaviourTreeStateObserved(true);
+    followBehaviourTree(runtime, commands, "tree-1");
     runtime.tick();
     expect(commands.some((command) => command.type === "animState")).toBe(true);
     expect(
@@ -394,7 +395,7 @@ describe("P19 behaviour tree task hosts", () => {
     });
     runtime.start();
     runtime.realizePlayWorld();
-    runtime.applyBehaviourTreeStateObserved(true);
+    followBehaviourTree(runtime, commands, "tree-1");
     runtime.tick();
     expect(commands.filter((command) => command.type === "animState")).toEqual([
       expect.objectContaining({

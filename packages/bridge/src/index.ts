@@ -52,6 +52,12 @@ export {
   type ScriptConsoleCommand,
 } from "./channels";
 export {
+  ANIM_OBJECT_DEBUG_GRAPH_ID,
+  ANIM_STATE_MACHINE_DEBUG_GRAPH_ID,
+  BT_DEBUG_GRAPH_ID,
+  sameDebugObserveTarget,
+} from "./debug-target";
+export {
   PLAY_ENGINE_COMMAND_TYPES,
   isPlayEngineCommandType,
   type PlayEngineCommandType,

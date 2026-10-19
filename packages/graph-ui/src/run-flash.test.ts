@@ -103,6 +103,8 @@ describe("createRunFlasher", () => {
     // A lone keyframe without an offset is the END of an animation, which would fade the wire towards the flash colour.
     expect(wire!.keyframes).toHaveLength(1);
     expect(wire!.keyframes[0]).toMatchObject({ offset: 0, stroke: expect.stringContaining("var(--selection)") as unknown as string });
+    // Wires whose stylesheet stroke is !important ignore `stroke`, so they fade `--run-flash` from full strength as well.
+    expect(wire!.keyframes[0]).toMatchObject({ "--run-flash": "100%" });
   });
 
   it("restarts the same element's fade from full strength instead of stacking animations", () => {

@@ -152,6 +152,9 @@ function hasAnimatedTiles(tilemaps: ReadonlyMap<string, TilemapPayload>, tileset
   );
 }
 
+/** The graph debugger's views: editor-bound, not scene state, so they stay out of the command revision a final capture compares. */
+const DEBUG_VIEW_COMMANDS: ReadonlySet<string> = new Set(["debugRoster", "executionTrace", "btState"]);
+
 /** The session class registry; `Enemy` is the class of the empty-Preview demo actor. */
 function createClassRegistry(): ClassRegistry {
   const registry = new ClassRegistry();
@@ -495,7 +498,11 @@ class InProcessRuntime implements RuntimeDriver {
     this.scriptDebug = new ScriptDebugObserver({
       world: () => this.world,
       emit: (command) => this.emit(command),
-      setDebugTrace: (object, sink) => this.scriptHost.setDebugTrace(object, sink),
+      setDebugTrace: (object, sink) => {
+        this.scriptHost.setDebugTrace(object, sink);
+        this.behaviourTrees.setDebugTrace(object, sink);
+        this.animGraphs.setDebugTrace(object, sink);
+      },
     });
 
     // 8. Lifecycle hooks, in Stop order.
@@ -1369,10 +1376,6 @@ class InProcessRuntime implements RuntimeDriver {
     this.overlay.focusNavigate(reverse);
   }
 
-  applyBehaviourTreeStateObserved(observed: boolean): void {
-    this.behaviourTrees.setStateObserved(observed);
-  }
-
   applyDebugObserve(target: DebugObserveTarget | null, instanceId: string | null): void {
     if (this.stopped) return;
     this.scriptDebug.observe(target, instanceId);
@@ -2116,7 +2119,7 @@ class InProcessRuntime implements RuntimeDriver {
     command = this.voices.prepare(this.inspector.annotate(command));
 
     // Debug views carry no scene state; counting them would break a final-capture fence.
-    if (command.type !== "executionTrace" && command.type !== "debugRoster") this.commandRevision++;
+    if (!DEBUG_VIEW_COMMANDS.has(command.type)) this.commandRevision++;
     // Every log line and Print String reaches the ring that `dumplog` and the
     // session report read, not only the ones routed through reportLog.
     if (command.type === "log") {

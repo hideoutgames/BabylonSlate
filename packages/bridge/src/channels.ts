@@ -276,15 +276,10 @@ export type ControlMessage =
   | { type: "stop" }
   | { type: "setPaused"; paused: boolean }
   /**
-   * The Behaviour Tree editor starts or stops showing live state. The runtime publishes `btState`
-   * only while observed (off by default), sending every evaluated tree's current state when
-   * observation starts.
-   */
-  | { type: "setBehaviourTreeStateObserved"; observed: boolean }
-  /**
    * The editor's graph debugger watches `target` (null stops) and follows `instanceId` (null follows
    * nothing). The runtime publishes `debugRoster` for the target and, only for the followed instance,
-   * a per-tick `executionTrace`. Each message replaces the previous request.
+   * a per-tick `executionTrace` (and, for a Behaviour Tree, its `btState`). Each message replaces the
+   * previous request.
    */
   | { type: "debugObserve"; target: DebugObserveTarget | null; instanceId: string | null }
   | { type: "console"; line: string }
@@ -434,10 +429,16 @@ export type DebugBehaviourTree = {
 };
 
 /**
- * What the editor's graph debugger watches while a Simulation runs. Class graphs watch the live
- * instances whose class is exactly `classId`; other graph kinds add members here.
+ * What the editor's graph debugger watches while a Simulation runs.
+ * - `class`: the live instances whose class is exactly `classId`.
+ * - `behaviourTree`: the Behaviour Tree components that run the tree asset `assetGuid`.
+ * - `animationGraph`: the Animation Graph components that run the graph asset `assetGuid`; the same
+ *   instances serve its State Machine and its Animation Object graph.
  */
-export type DebugObserveTarget = { kind: "class"; classId: string };
+export type DebugObserveTarget =
+  | { kind: "class"; classId: string }
+  | { kind: "behaviourTree"; assetGuid: string }
+  | { kind: "animationGraph"; assetGuid: string };
 
 /** One live object a graph can be debugged against. */
 export type DebugInstance = {
@@ -450,15 +451,25 @@ export type DebugInstance = {
   ownerLabel?: string;
 };
 
-/** What ran in one graph for the observed instance during one tick. */
+/**
+ * What ran in one graph for the observed instance during one tick. A compiled graph names its asset
+ * as script diagnostics do (a Class or Animation Graph asset path). A graph the runtime evaluates
+ * itself names its asset by guid.
+ */
 export type DebugGraphTrace = {
-  /** The graph's asset, as script diagnostics name it (a Class asset path). */
   assetGuid: string;
-  /** `event-graph`, or a function graph's export name. */
+  /** `event-graph`, a function graph's export name, `animation-object`, `state-machine` or `behaviour-tree`. */
   graphId: string;
-  /** Nodes that ran, in first-visit order. */
+  /**
+   * Nodes that ran, in first-visit order. A Behaviour Tree reports the nodes its evaluation entered,
+   * resumed or ticked; an Animation Graph's State Machine the states it sampled, including one a
+   * blend is leaving.
+   */
   nodes: string[];
-  /** Exec wires taken. */
+  /**
+   * Wires taken: exec wires, the parent-child links a Behaviour Tree evaluation went down, or an
+   * Animation Graph transition (as the id of the edge the canvas draws for it).
+   */
   edges: string[];
   /** Values that changed since the last report: node id, pin id, whether read or produced, display text. */
   values: Array<[nodeId: string, pinId: string, direction: "in" | "out", text: string]>;
@@ -869,8 +880,14 @@ export type CommandMessage =
         weight: number;
       }>;
     }
+  /**
+   * The followed Behaviour Tree's live state: sent when it changes, and once as the follow starts.
+   * A debug view like `executionTrace`: it carries no scene state.
+   */
   | {
       type: "btState";
+      /** The followed Behaviour Tree component. */
+      instanceId: string;
       slotId: number;
       status: "success" | "failure" | "running";
       btNodeId: string | null;

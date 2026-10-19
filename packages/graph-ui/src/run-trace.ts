@@ -17,6 +17,13 @@ export interface GraphRunTrace {
   subscribe(listener: (run: GraphRunEvent) => void): () => void;
   /** The text last read from (`in`) or produced on (`out`) a pin, or undefined before any run. */
   value(nodeId: string, pinId: string, direction: "in" | "out"): string | undefined;
+  /**
+   * A node's live status (a Behaviour Tree node's `running`, `success` or `failure`), or undefined
+   * before it has one. Only graphs whose nodes have a status supply it.
+   */
+  status?(nodeId: string): string | undefined;
+  /** Calls `listener` when that node's status changes, until the returned function is called. */
+  subscribeStatus?(nodeId: string, listener: () => void): () => void;
 }
 
 /** The part of a canvas graph the trace needs: React Flow's node and edge shapes. */
@@ -28,6 +35,7 @@ export type RunGraph = {
 type RunEdge = RunGraph["edges"][number];
 
 export const NO_VALUE_TEXT = "No value yet";
+export const NO_STATUS_TEXT = "No status yet";
 
 type GraphIndex = {
   nodes: Map<string, RunGraph["nodes"][number]>;

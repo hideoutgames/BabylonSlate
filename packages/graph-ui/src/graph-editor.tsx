@@ -208,8 +208,9 @@ export interface GraphEditorProps {
   }) => void;
   /**
    * What ran in this graph while its owner runs (a Simulation's followed instance). The canvas
-   * flashes the nodes, pins and wires that ran and shows a pin's last value in a tip, all
-   * without rendering a node: it never edits the graph.
+   * flashes the nodes, pins and wires that ran and shows a pin's last value, or a node's status
+   * where the graph has one, in a tip, all without rendering a node per run: it never edits the
+   * graph. Memoize it: a new identity re-renders every node.
    */
   runTrace?: GraphRunTrace;
   /** Pan/zoom only: no connect, node drag, palette, or Cut/Paste/Delete/Format. */
@@ -2844,6 +2845,7 @@ function GraphEditorCanvas({
       renderNodeBody,
       nodeMenu,
       connectionRefusal,
+      runTrace,
       connectionLineKind:
         defaultEdgeOptions.type === "animTransition" ||
         defaultEdgeOptions.type === "animTransitionBoth"
@@ -2873,6 +2875,7 @@ function GraphEditorCanvas({
       renderNodeBody,
       nodeMenu,
       connectionRefusal,
+      runTrace,
       defaultEdgeOptions.type,
     ],
   );

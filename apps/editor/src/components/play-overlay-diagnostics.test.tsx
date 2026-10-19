@@ -8,9 +8,8 @@ import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
 import { PlayOverlay } from "./play-overlay";
 
 vi.mock("../services/play-session", () => ({ startPlaySession: vi.fn() }));
-const { reportBtState } = vi.hoisted(() => ({ reportBtState: () => {} }));
 vi.mock("../context/play-context", () => ({
-  usePlay: () => ({ reportBtState, overlayStats: true }),
+  usePlay: () => ({ overlayStats: true }),
 }));
 vi.mock("../context/app-settings-context", () => ({
   useAppSettings: () => ({ settings: {} }),

@@ -1,32 +1,45 @@
 import { useEffect, useState, type RefObject } from "react";
+import { humanizePropertyLabel } from "@babylonslate/editor-kit";
 import { createRunFlasher } from "./run-flash";
-import { NO_VALUE_TEXT, pinShowsValue, resolvePinValue, type GraphRunTrace, type RunGraph } from "./run-trace";
+import { NO_STATUS_TEXT, NO_VALUE_TEXT, pinShowsValue, resolvePinValue, type GraphRunTrace, type RunGraph } from "./run-trace";
 
-type PinTip = {
-  nodeId: string;
-  pinId: string;
-  direction: "in" | "out";
+/** What a tip is about: a data pin's last value, or a node's status. */
+type TipTarget =
+  | { kind: "pin"; nodeId: string; pinId: string; direction: "in" | "out" }
+  | { kind: "status"; nodeId: string };
+
+type Tip = {
+  target: TipTarget;
   text: string;
-  /** Viewport point the tip hangs from: the middle of the pin's side of its row. */
+  /** Viewport point the tip hangs from: the middle of the anchor's top and bottom edge. */
   x: number;
   top: number;
   bottom: number;
 };
 
 const SIDE = "[data-pin-side]";
+const STATUS = "[data-run-status-tip]";
+const ANCHOR = `${SIDE}, ${STATUS}`;
 const TIP_HALF_WIDTH = 168;
 const EDGE_GAP = 8;
 
-function sideTarget(element: EventTarget | null): Element | null {
-  return element instanceof Element ? element.closest(SIDE) : null;
+function anchorAt(element: EventTarget | null): Element | null {
+  return element instanceof Element ? element.closest(ANCHOR) : null;
+}
+
+function sameTarget(a: TipTarget, b: TipTarget): boolean {
+  if (a.kind === "status") return b.kind === "status" && a.nodeId === b.nodeId;
+  return b.kind === "pin" && a.nodeId === b.nodeId && a.pinId === b.pinId && a.direction === b.direction;
 }
 
 /**
  * A canvas that shows a running owner's graph. It draws what ran (`createRunFlasher`) and
- * answers a pin with its last value: hovering a pin's side of its row with a mouse, or
- * tapping its label by touch (a tap on the handle stays tap-to-connect). Both are found by
- * event delegation from the canvas element, so no node or pin renders per run, and only the
- * tip itself, which holds its own state, re-renders as the pointer moves between pins.
+ * answers with a tip: a data pin's last value, or a node's status where the graph reports one.
+ * A mouse opens a tip by hovering its anchor (a pin's side of its row, a node's status header);
+ * touch taps a pin's label (a tap on the handle stays tap-to-connect) or the status header. All
+ * of it is found by event delegation from the canvas element, so no node or pin renders per run,
+ * and only the tip itself, which holds its own state, re-renders as the pointer moves between
+ * anchors.
  */
 export function GraphRunOverlay({
   root,
@@ -38,7 +51,7 @@ export function GraphRunOverlay({
   /** The canvas's current nodes and wires; read when a run arrives or a tip opens. */
   graph: () => RunGraph;
 }) {
-  const [tip, setTip] = useState<PinTip | null>(null);
+  const [tip, setTip] = useState<Tip | null>(null);
 
   useEffect(() => {
     const element = root.current;
@@ -55,27 +68,56 @@ export function GraphRunOverlay({
     const element = root.current;
     if (!element) return undefined;
     let pointerType = "mouse";
-    let open: Pick<PinTip, "nodeId" | "pinId" | "direction"> | null = null;
+    let open: TipTarget | null = null;
+    let unwatchStatus: (() => void) | null = null;
 
     const hide = () => {
       open = null;
+      unwatchStatus?.();
+      unwatchStatus = null;
       setTip(null);
     };
-    const textOf = (nodeId: string, pinId: string, direction: "in" | "out") =>
-      resolvePinValue(trace, graph(), nodeId, pinId, direction) ?? NO_VALUE_TEXT;
-    const show = (side: Element) => {
-      const nodeId = side.closest(".react-flow__node")?.getAttribute("data-id");
-      const pinId = side.getAttribute("data-pin-id");
-      const direction = side.getAttribute("data-pin-side");
-      if (!nodeId || pinId === null || (direction !== "in" && direction !== "out") ||
-        !pinShowsValue(graph(), nodeId, pinId, direction)) {
+    const textOf = (target: TipTarget) => {
+      if (target.kind === "status") {
+        const status = trace.status?.(target.nodeId);
+        return status ? humanizePropertyLabel(status) : NO_STATUS_TEXT;
+      }
+      return resolvePinValue(trace, graph(), target.nodeId, target.pinId, target.direction) ?? NO_VALUE_TEXT;
+    };
+    const targetOf = (anchor: Element): TipTarget | null => {
+      const nodeId = anchor.closest(".react-flow__node")?.getAttribute("data-id");
+      if (!nodeId) return null;
+      if (anchor.matches(STATUS)) return trace.status ? { kind: "status", nodeId } : null;
+      const pinId = anchor.getAttribute("data-pin-id");
+      const direction = anchor.getAttribute("data-pin-side");
+      if (pinId === null || (direction !== "in" && direction !== "out") ||
+        !pinShowsValue(graph(), nodeId, pinId, direction)) return null;
+      return { kind: "pin", nodeId, pinId, direction };
+    };
+    // The tip shows live values while it is open: refresh it, at most once a frame, as runs and status changes arrive.
+    let refresh: number | null = null;
+    const scheduleRefresh = () => {
+      if (!open || refresh !== null) return;
+      refresh = requestAnimationFrame(() => {
+        refresh = null;
+        if (!open) return;
+        const text = textOf(open);
+        setTip((current) => current && current.text !== text ? { ...current, text } : current);
+      });
+    };
+    const show = (anchor: Element) => {
+      const target = targetOf(anchor);
+      if (!target) {
         hide();
         return;
       }
-      const rect = side.getBoundingClientRect();
-      open = { nodeId, pinId, direction };
+      const watching = target.kind === "status" ? trace.subscribeStatus?.(target.nodeId, scheduleRefresh) ?? null : null;
+      unwatchStatus?.();
+      unwatchStatus = watching;
+      const rect = anchor.getBoundingClientRect();
+      open = target;
       setTip({
-        nodeId, pinId, direction, text: textOf(nodeId, pinId, direction),
+        target, text: textOf(target),
         x: Math.min(Math.max(rect.left + rect.width / 2, TIP_HALF_WIDTH + EDGE_GAP), window.innerWidth - TIP_HALF_WIDTH - EDGE_GAP),
         top: rect.top,
         bottom: rect.bottom,
@@ -84,43 +126,32 @@ export function GraphRunOverlay({
 
     const onPointerOver = (event: PointerEvent) => {
       if (event.pointerType === "touch") return;
-      const side = sideTarget(event.target);
-      if (side) show(side);
+      const anchor = anchorAt(event.target);
+      if (anchor) show(anchor);
     };
     const onPointerOut = (event: PointerEvent) => {
       // A touch pointer leaves right after every tap, before the click that opens or toggles the tip.
       if (event.pointerType === "touch") return;
-      const side = sideTarget(event.target);
-      if (!side || (event.relatedTarget instanceof Node && side.contains(event.relatedTarget))) return;
+      const anchor = anchorAt(event.target);
+      if (!anchor || (event.relatedTarget instanceof Node && anchor.contains(event.relatedTarget))) return;
       hide();
     };
     const onPointerDown = (event: PointerEvent) => {
       pointerType = event.pointerType;
-      // A press anywhere but a pin label ends a touch tip; the label's own tap toggles it.
-      if (event.pointerType === "touch" && !(event.target instanceof Element && event.target.closest("[data-pin-label]"))) hide();
+      // A press anywhere but a pin label or a status header ends a touch tip; its own tap toggles it.
+      if (event.pointerType === "touch" && !(event.target instanceof Element && event.target.closest(`[data-pin-label], ${STATUS}`))) hide();
     };
     const onClick = (event: MouseEvent) => {
       if (pointerType !== "touch" || !(event.target instanceof Element)) return;
-      const side = event.target.closest("[data-pin-label]") && sideTarget(event.target);
-      if (!side) return;
-      const nodeId = side.closest(".react-flow__node")?.getAttribute("data-id");
-      if (open && nodeId === open.nodeId && side.getAttribute("data-pin-id") === open.pinId &&
-        side.getAttribute("data-pin-side") === open.direction) hide();
-      else show(side);
+      const anchor = anchorAt(event.target);
+      // A pin opens from its label only; its handle stays tap-to-connect.
+      if (!anchor || (anchor.matches(SIDE) && !event.target.closest("[data-pin-label]"))) return;
+      const target = targetOf(anchor);
+      if (target && open && sameTarget(open, target)) hide();
+      else show(anchor);
     };
 
-    // The tip shows live values while it is open: refresh it, at most once a frame, as runs arrive.
-    let refresh: number | null = null;
-    const unsubscribe = trace.subscribe(() => {
-      if (!open || refresh !== null) return;
-      refresh = requestAnimationFrame(() => {
-        refresh = null;
-        if (!open) return;
-        const { nodeId, pinId, direction } = open;
-        const text = textOf(nodeId, pinId, direction);
-        setTip((current) => current && current.text !== text ? { ...current, text } : current);
-      });
-    });
+    const unsubscribe = trace.subscribe(scheduleRefresh);
 
     element.addEventListener("pointerover", onPointerOver);
     element.addEventListener("pointerout", onPointerOut);
@@ -134,19 +165,21 @@ export function GraphRunOverlay({
       element.removeEventListener("click", onClick);
       element.removeEventListener("wheel", hide);
       unsubscribe();
+      unwatchStatus?.();
       if (refresh !== null) cancelAnimationFrame(refresh);
       open = null;
     };
   }, [root, trace, graph]);
 
   if (!tip) return null;
-  // Above the pin, or below it where the canvas edge leaves no room.
+  // Above the anchor, or below it where the canvas edge leaves no room.
   const above = tip.top > 48;
+  const pin = tip.target.kind === "pin" ? tip.target : null;
   return (
     <div
       role="tooltip"
-      data-testid="graph-pin-value-tip"
-      data-pin-id={tip.pinId}
+      data-testid={pin ? "graph-pin-value-tip" : "graph-node-status-tip"}
+      data-pin-id={pin?.pinId}
       className="pointer-events-none fixed z-50 w-fit max-w-xs rounded-md bg-foreground px-3 py-1.5 text-xs break-words whitespace-pre-wrap text-background shadow-md"
       style={{
         left: tip.x,

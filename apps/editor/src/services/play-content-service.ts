@@ -92,7 +92,7 @@ export const GRAPH_SIGNATURE_KINDS = ["graph", "anim-graph", "input-action", "in
 
 /** How a Play compile differs from the default editor compile. */
 export type PlayScriptCompileOptions = {
-  /** A Simulation compiles Class graphs with the probes its graph debugger reads. */
+  /** A Simulation compiles Class graphs and Animation Object graphs with the probes its graph debugger reads. */
   traceExecution?: boolean;
 };
 
@@ -431,6 +431,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       }),
       ...compileAnimGraphScripts(animDocuments, {
         cache: requiredGuids ? undefined : compileCache,
+        instrumentExecutionTrace: compileOptions?.traceExecution,
         inputAssets: inputAssetCatalog(assets, openDocuments),
         dataAssets: collectDataGraphAssets(assets, openDocuments),
         ...typeSchemas,

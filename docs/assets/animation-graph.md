@@ -46,6 +46,10 @@ A script graph that runs for each Animation Graph component using the graph. It 
 
 Variables can be Bool, Int, Float, String, Tag or Tag Container. Rule graphs read them with Get Variable nodes.
 
+## Watch the graph run
+
+Start a Simulation with the graph open and pick an actor in **Debug Instance**. In **State Machine** mode the states the graph plays light up, and a transition lights up when it is taken. **Animation Object** mode lights up the nodes that run, like a Class. See [Watch a graph run](../debugging/index.md#watch-a-graph-run).
+
 ## Notes
 
 - Add an [Animation Graph component](../components/animation-graph.md) to an actor to run the graph.

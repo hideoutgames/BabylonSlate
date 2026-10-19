@@ -262,7 +262,7 @@ describe("runtime graph debugging", () => {
     ]);
     const roster = async (classId: string) => {
       runtime.applyDebugObserve({ kind: "class", classId }, null);
-      return rosters().filter((message) => message.target.classId === classId).at(-1)!.added;
+      return rosters().filter((message) => message.target.kind === "class" && message.target.classId === classId).at(-1)!.added;
     };
     // Runtime components carry no editor name, so a component reads as its class under its actor.
     expect(await roster("Hinge")).toEqual([{ id: "c1", kind: "component", label: "Hinge", ownerLabel: "Front" }]);
