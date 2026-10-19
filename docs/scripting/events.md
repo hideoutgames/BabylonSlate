@@ -13,6 +13,8 @@ In the **Class** window, tap **+** next to **Events**. The **Add Event** menu li
 
 Each event can be on the graph only once. The **Events** section lists the events on the graph; tap one to jump to it. A second copy, such as two **Event Tick** nodes or two custom events with the same name, is a compile error. Keep one and use a [Sequence](class/sequence.md) to run several chains. Component events count per component, and input events per Input Action or Input Axis.
 
+Copying an event never breaks this rule; see [Copy and duplicate events](#copy-and-duplicate-events).
+
 ## Lifecycle events
 
 | Parent class | Events |
@@ -37,6 +39,13 @@ When the Game Instance and subsystem events fire is described in [Game Instance 
 To run a custom event on another object, drag from a pin that holds that object and choose its Call entry; the node gets a **Target** pin. For an event of this class the pin reads **Target (Self)** while it is unconnected, so the event runs on the running object; connect another object of the class to run it there. The caller continues straight away and does not wait for latent nodes inside the event.
 
 A child class can override an inherited custom event by adding it from **Add Event**. It comes wired to [Call Parent Event](class/call-parent-event.md), which runs the parent's version.
+
+## Copy and duplicate events
+
+**Paste** and **Duplicate** (<kbd>Mod</kbd>+<kbd>D</kbd>) copy a selection of nodes as new nodes with the same values and the wires between them. For events, each one stays on the graph once:
+
+- A custom event gets a new name: **Open Door** becomes **Open Door Copy**, then **Open Door Copy 2**. It never repeats the name of another custom event in the class, in this graph or a function graph. Calls to the original keep calling the original. A copy keeps its name only when no other custom event uses it, such as after you delete the original.
+- An event that cannot be renamed, such as **Event Tick**, **Event Begin Play**, a component event or an input event, is left out when the graph already has it. The wires to and from it are dropped, the rest of the selection is still pasted, and a notice such as **Event Tick is already in this graph.** appears for a few seconds. Pasting it into a graph without that event adds it.
 
 ## Actor Defaults
 
