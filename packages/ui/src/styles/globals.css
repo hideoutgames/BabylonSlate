@@ -440,6 +440,16 @@
   color: var(--foreground);
 }
 
+/* A read-only value in an island (backend, counts): plain text, no pill. */
+.toolbar-island .toolbar-island-readout {
+  padding-inline: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+}
+
 /* Coarse pointers get full touch targets in islands that live over a running
  * game (Play, Preview Build), unlike the dense editor viewport islands. */
 @media (pointer: coarse) {

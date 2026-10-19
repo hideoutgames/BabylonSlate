@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { PauseIcon, PlayIcon, RotateCcwIcon } from "lucide-react";
 import type { ParticlePreviewStats } from "@babylonslate/render";
-import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Empty,
@@ -105,7 +104,7 @@ function BadgeHint({ hint, children }: { hint?: string; children: ReactNode }) {
   if (!hint) return <>{children}</>;
   return (
     <Tooltip>
-      <TooltipTrigger render={<span tabIndex={0} className="inline-flex rounded-4xl" />}>
+      <TooltipTrigger render={<span tabIndex={0} className="inline-flex rounded-md" />}>
         {children}
       </TooltipTrigger>
       <TooltipContent>{hint}</TooltipContent>
@@ -150,13 +149,12 @@ export function ParticlePreviewSurface({
       {state.status === "ready" ? (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
-            className="pointer-events-auto toolbar-island"
+            className="pointer-events-auto toolbar-island toolbar-island-touch"
             data-testid="particle-preview-controls"
           >
             <IconActionButton
               label="Restart"
               variant="ghost"
-              className="pointer-coarse:size-[var(--touch-target)]"
               onClick={onRestart}
               data-testid="particle-preview-restart"
             >
@@ -165,7 +163,6 @@ export function ParticlePreviewSurface({
             <IconActionButton
               label={paused ? "Play" : "Pause"}
               variant="ghost"
-              className="pointer-coarse:size-[var(--touch-target)]"
               aria-pressed={paused}
               onClick={() => onPausedChange(!paused)}
               data-testid="particle-preview-play"
@@ -174,11 +171,11 @@ export function ParticlePreviewSurface({
             </IconActionButton>
             {shown ? (
               <>
-                <Separator orientation="vertical" className="mx-0.5 my-1" />
+                <Separator orientation="vertical" />
                 <BadgeHint hint={backendHint ?? DEFAULT_BACKEND_HINT[shown.backend]}>
-                  <Badge variant="secondary" data-testid="particle-preview-backend">
+                  <span className="toolbar-island-readout" data-testid="particle-preview-backend">
                     {BACKEND_LABEL[shown.backend]}
-                  </Badge>
+                  </span>
                 </BadgeHint>
                 <BadgeHint
                   hint={
@@ -187,21 +184,20 @@ export function ParticlePreviewSurface({
                       : undefined
                   }
                 >
-                  <Badge
-                    variant="outline"
-                    className="tabular-nums"
+                  <span
+                    className="toolbar-island-readout"
                     aria-label={`${shown.approximate ? "About " : ""}${activeOf} particles active`}
                     data-testid="particle-preview-count"
                   >
                     {`${shown.approximate ? "~" : ""}${count(shown.active)} / ${count(shown.capacity)}`}
-                  </Badge>
+                  </span>
                 </BadgeHint>
               </>
             ) : null}
             {state.updating ? (
-              <Badge variant="ghost" data-testid="particle-preview-updating">
-                Updating
-              </Badge>
+              <span className="toolbar-island-readout" data-testid="particle-preview-updating">
+                Updating…
+              </span>
             ) : null}
           </div>
         </div>
