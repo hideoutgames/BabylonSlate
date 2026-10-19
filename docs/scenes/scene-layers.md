@@ -56,7 +56,7 @@ Respond with [Event On Focus Enter](../scripting/class/event-on-focus-enter.md),
 
 ## Things to know
 
-- In Play, the layer's canvas fills the whole game view. If the screen's shape differs from **Layer Width** × **Layer Height**, the layer stretches to fit.
+- In Play, the layer is never stretched. If the screen's shape differs from **Layer Width** × **Layer Height**, such as on an ultra-wide monitor, the layer keeps its proportions, the canvas stays centred, and the extra space appears at the sides (or top and bottom). Add a [2D Anchor](../components/2d-anchor.md) to keep an element at a screen edge or corner.
 - Layers draw after the world and its post-processing, so world effects never touch them. In the editor a layer has a black background; in the game it is transparent.
 - With **Enable Physics** off, Rigid Bodies stay where scripts put them and no hit or overlap events fire. With it on, bodies in different layers, or in a layer and the world, never collide.
 - Physics queries from a layer's scripts, such as [Line Trace](../scripting/class/line-trace.md), only see that layer.

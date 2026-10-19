@@ -29,7 +29,7 @@ export function pointInInflatedWorldAabb(
   return Math.abs(x - centerX) <= hw && Math.abs(y - centerY) <= hh;
 }
 
-/** Overlay ortho canvas CSS pixels → world XY (Y up, matching the layerBounds camera). */
+/** Overlay ortho canvas CSS pixels → world XY (Y up, matching the layer view-bounds camera). */
 export function overlayCanvasToWorld(
   canvasX: number,
   canvasY: number,

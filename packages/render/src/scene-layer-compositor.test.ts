@@ -86,7 +86,7 @@ describe("SceneLayerCompositor", () => {
     compositor.dispose();
   });
 
-  it("sizes the HUD ortho to the orange layerBounds, not a height-9 aspect box", () => {
+  it("sizes the HUD ortho to the orange layerBounds widened to the output aspect, never stretched", () => {
     const { engine, compositor } = world();
     vi.spyOn(engine, "getRenderWidth").mockReturnValue(1920);
     vi.spyOn(engine, "getRenderHeight").mockReturnValue(1080);
@@ -114,10 +114,19 @@ describe("SceneLayerCompositor", () => {
       layerBounds: { width: 20, height: 10 },
     });
     const wide = compositor.layers().find((layer) => layer.layerId === "wide")!;
+    // A 2:1 canvas on 16:9 output keeps its width and gains height.
     expect(wide.camera.orthoLeft).toBeCloseTo(-10);
     expect(wide.camera.orthoRight).toBeCloseTo(10);
-    expect(wide.camera.orthoTop).toBeCloseTo(5);
-    expect(wide.camera.orthoBottom).toBeCloseTo(-5);
+    expect(wide.camera.orthoTop).toBeCloseTo(5.625);
+    expect(wide.camera.orthoBottom).toBeCloseTo(-5.625);
+
+    // Ultra-wide output: the 16:9 canvas keeps its height and gains width.
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(3440);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(1440);
+    compositor.resize();
+    expect(camera.orthoTop).toBeCloseTo(9);
+    expect(camera.orthoRight).toBeCloseTo(9 * 3440 / 1440);
+    expect(compositor.layers()[0]!.viewBounds).toEqual({ width: 18 * 3440 / 1440, height: 18 });
   });
 
   it("leaves an untouched HUD camera and its matrices alone each frame, and restores one another owner moved", () => {

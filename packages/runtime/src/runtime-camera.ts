@@ -1,5 +1,5 @@
 import type { CommandMessage } from "@babylonslate/bridge";
-import { deprojectCursorRay, SCENE_LAYER_DEFAULT_LAYER_BOUNDS, type SerializedScene } from "@babylonslate/core";
+import { deprojectCursorRay, type SerializedScene } from "@babylonslate/core";
 import type { ResolvedInputTick } from "@babylonslate/input";
 import type { Actor, World } from "@babylonslate/object-model";
 import { actorChainWorldTransform } from "./actor-world-transform";
@@ -27,7 +27,7 @@ interface RuntimeCameraHost {
   streams(): Pick<SceneStreams, "isStreamActor">;
   /** The cursor of the most recent resolved input tick. */
   cursor(): ResolvedInputTick["cursor"];
-  overlay(): Pick<SceneLayerOverlay, "canvasSize">;
+  overlay(): Pick<SceneLayerOverlay, "canvasSize" | "viewBounds">;
   physics(): Pick<RuntimePhysicsWorlds, "main" | "layer">;
   /** False strips Project Cursor To Scene's debug lines whatever `drawDebug` says; true when omitted. */
   traceDebugDraw?: boolean;
@@ -220,13 +220,13 @@ export class RuntimeCamera implements RuntimeSubsystem {
   /**
    * `Project Cursor To Scene` from a Scene Layer's script: the cursor through
    * that layer's orthographic camera (at z = -10 looking along +Z, Layer Width
-   * × Height stretched over the Play canvas, as the compositor draws and picks
+   * × Height widened to the Play canvas aspect, as the compositor draws and picks
    * it) to a point on the layer plane, answered by the first collider of the
    * layer's own 2D world there. No hit when the layer has no physics. It draws
    * no debug line: debug draws render in the main Scene, not in layers.
    */
   projectCursorToSceneLayer(layerGuid: string, channel?: string) {
-    const bounds = this.host.world().findSceneLayer(layerGuid)?.layerBounds ?? SCENE_LAYER_DEFAULT_LAYER_BOUNDS;
+    const bounds = this.host.overlay().viewBounds(this.host.world().findSceneLayer(layerGuid));
     const canvas = this.host.overlay().canvasSize();
     const cursor = this.host.cursor();
     const point = {

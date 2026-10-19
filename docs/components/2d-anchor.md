@@ -18,6 +18,7 @@ Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Anc
 
 - Scene Layers only.
 - Layer units are the units of **Layer Width** and **Layer Height** in the Scene Layer's settings.
+- When the screen is wider or taller than **Layer Width** × **Layer Height**, the anchor point moves to that screen edge or corner and the actor keeps its distance from it, at its original size.
 - An actor that holds only a 2D Anchor is an anchor helper. It has no position of its own, no Transform and no visual, and it anchors its parent actor. A helper with no parent does nothing.
 - When an actor and one of its ancestors both have an anchor, the topmost anchor applies and the rest of the branch follows it.
 - Animate the offset with [Tween Anchor Offset](../scripting/class/tween-anchor-offset.md).
