@@ -16,6 +16,12 @@ import {
 import { captureModelThumbnailPng } from "./model-thumbnail";
 import { PNG_SIGNATURE } from "./png-encode";
 import { nativePreparationForEngine } from "./native-preparation";
+import { SCENE_CAPTURE_CEILING_MS } from "./stall-deadline";
+import type { ThumbnailCaptureResult } from "./thumbnail-capture";
+import { installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
+
+/** The PNG of a capture that produced one. */
+const pngOf = (result: ThumbnailCaptureResult) => result.outcome === "captured" ? result.png : undefined;
 
 describe("captureModelThumbnailPng", () => {
   const handles: Array<{
@@ -41,13 +47,13 @@ describe("captureModelThumbnailPng", () => {
     vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockResolvedValue(
       pixels,
     );
-    const png = await captureModelThumbnailPng(
+    const png = pngOf(await captureModelThumbnailPng(
       handle.engine,
       encodeTriangleGlb(),
       [],
       () => null,
-    );
-    expect(png).not.toBeNull();
+    ));
+    expect(png).toBeDefined();
     expect([...png!.subarray(0, 8)]).toEqual([...PNG_SIGNATURE]);
   });
 
@@ -58,13 +64,13 @@ describe("captureModelThumbnailPng", () => {
     vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockResolvedValue(
       pixels,
     );
-    const png = await captureModelThumbnailPng(
+    const png = pngOf(await captureModelThumbnailPng(
       handle.engine,
       encodeTriangleGlb(),
       [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }],
       () => null,
-    );
-    expect(png).not.toBeNull();
+    ));
+    expect(png).toBeDefined();
     expect([...png!.subarray(0, 8)]).toEqual([...PNG_SIGNATURE]);
   });
 
@@ -84,7 +90,7 @@ describe("captureModelThumbnailPng", () => {
     const gameplay = scheduler.schedule({ label: "Next Actor", temporaryBytes: 1 }, async () => { order.push("gameplay"); });
     unblock();
     await Promise.all([blocker, gameplay]);
-    expect(await capture).not.toBeNull();
+    expect(pngOf(await capture)).toBeDefined();
     expect(order).toEqual(["gameplay", "thumbnail"]);
     expect(scheduler.snapshot()).toMatchObject({ active: 0, queued: 0, temporaryBytes: 0 });
     expect(scheduler.snapshot().peakTemporaryBytes).toBeGreaterThanOrEqual(encodeTriangleGlb().byteLength * 4);
@@ -97,7 +103,8 @@ describe("captureModelThumbnailPng", () => {
     const bytes = encodeTriangleGlb();
     const scheduler = nativePreparationForEngine(handle.engine, { maxConcurrent: 1, temporaryBytes: bytes.byteLength * 4 - 1 });
     const readback = vi.spyOn(RenderTargetTexture.prototype, "readPixels");
-    expect(await captureModelThumbnailPng(handle.engine, bytes, [], () => null)).toBeNull();
+    // Refused for its size: another attempt would be refused too.
+    expect(await captureModelThumbnailPng(handle.engine, bytes, [], () => null)).toEqual({ outcome: "failed" });
     expect(scheduler.snapshot()).toMatchObject({ active: 0, queued: 0, peakTemporaryBytes: 0 });
     expect(handle.engine.scenes).toEqual([handle.scene]);
 
@@ -110,7 +117,7 @@ describe("captureModelThumbnailPng", () => {
     const capture = captureModelThumbnailPng(other.engine, bytes, [], () => null, undefined, { signal: controller.signal });
     expect(queuedScheduler.snapshot().queued).toBe(1);
     controller.abort();
-    expect(await capture).toBeNull();
+    expect(await capture).toEqual({ outcome: "cancelled" });
     expect(queuedScheduler.snapshot()).toMatchObject({ active: 1, queued: 0, temporaryBytes: 1 });
     expect(other.engine.scenes).toEqual([other.scene]);
     expect(readback).not.toHaveBeenCalled();
@@ -136,7 +143,7 @@ describe("captureModelThumbnailPng", () => {
     const gameplay = scheduler.schedule({ label: "Next Actor", temporaryBytes: 1 }, async () => { scenesWhenAdmitted = [...handle.engine.scenes]; });
     expect(scheduler.snapshot().queued).toBe(1);
     finish(new Uint8Array(128 * 128 * 4));
-    expect(await capture).toBeNull();
+    expect(await capture).toEqual({ outcome: "cancelled" });
     await gameplay;
     expect(scenesWhenAdmitted).toEqual([handle.scene]);
     expect(scheduler.snapshot()).toMatchObject({ active: 0, queued: 0, temporaryBytes: 0 });
@@ -154,13 +161,13 @@ describe("captureModelThumbnailPng", () => {
     vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockResolvedValue(
       pixels,
     );
-    const png = await captureModelThumbnailPng(
+    const png = pngOf(await captureModelThumbnailPng(
       handle.engine,
       view,
       [],
       () => null,
-    );
-    expect(png).not.toBeNull();
+    ));
+    expect(png).toBeDefined();
     expect([...png!.subarray(0, 8)]).toEqual([...PNG_SIGNATURE]);
   });
 
@@ -186,7 +193,7 @@ describe("captureModelThumbnailPng", () => {
     await vi.waitFor(() => expect(readiness).toHaveBeenCalled());
     expect(readback).not.toHaveBeenCalled();
     materialReady = true;
-    expect(await capture).not.toBeNull();
+    expect(pngOf(await capture)).toBeDefined();
     expect(readback).toHaveBeenCalledOnce();
   });
 
@@ -213,15 +220,15 @@ describe("captureModelThumbnailPng", () => {
           return Promise.resolve(new Uint8Array(128 * 128 * 4));
         },
       );
-      const png = await captureModelThumbnailPng(
+      const png = pngOf(await captureModelThumbnailPng(
         handle.engine,
         retargeted ? encodeParentedAnimatedTriangleGlb("Idle") : posed,
         [],
         () => null,
         undefined,
         { clipName: "Idle", ...(retargeted ? { sourceClipBytes: posed } : {}) },
-      );
-      expect(png).not.toBeNull();
+      ));
+      expect(png).toBeDefined();
       expect(capturedY).toBeCloseTo(2);
       expect(handle.engine.scenes).toEqual([handle.scene]);
     },
@@ -240,9 +247,49 @@ describe("captureModelThumbnailPng", () => {
       () => null,
     );
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(await capture).toBeNull();
+    expect(await capture).toEqual({ outcome: "expired" });
     expect(readback).not.toHaveBeenCalled();
     expect(handle.engine.scenes).toEqual([handle.scene]);
+  });
+
+  // A retry of a capture that ran out passes a longer ceiling; unrelated shaders finishing on the Engine renew the wait until it.
+  describe("with shaders finishing elsewhere on the Engine while the model never becomes ready", () => {
+    function neverReady(handle: ReturnType<typeof createTestEngine>) {
+      const clock = installVirtualClock();
+      const effects = (handle.engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
+      let probes = 0;
+      vi.spyOn(PBRMaterial.prototype, "isReadyForSubMesh").mockImplementation(() => {
+        probes += 1;
+        effects[`elsewhere-${probes}`] = { isReady: () => true, getCompilationError: () => "" };
+        clock.advance(POLL_MS);
+        return false;
+      });
+      return clock;
+    }
+
+    it.each([
+      ["its ceiling", undefined, SCENE_CAPTURE_CEILING_MS],
+      ["the ceiling it was given", { ceilingMs: 1.5 * SCENE_CAPTURE_CEILING_MS }, 1.5 * SCENE_CAPTURE_CEILING_MS],
+    ])("expires at %s", { timeout: 30_000 }, async (_name, options, ceiling) => {
+      const handle = createTestEngine();
+      handles.push(handle);
+      const clock = neverReady(handle);
+      expect(await captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], () => null, undefined, options)).toEqual({ outcome: "expired" });
+      expect(clock.elapsed()).toBeGreaterThanOrEqual(ceiling);
+      expect(clock.elapsed()).toBeLessThanOrEqual(ceiling + POLL_MS);
+    });
+
+    it("stops waiting as soon as the capture is cancelled", async () => {
+      const handle = createTestEngine();
+      handles.push(handle);
+      const controller = new AbortController();
+      const clock = neverReady(handle);
+      const capture = captureModelThumbnailPng(handle.engine, encodeTriangleGlb(), [], () => null, undefined, { signal: controller.signal });
+      await vi.waitFor(() => expect(PBRMaterial.prototype.isReadyForSubMesh).toHaveBeenCalled());
+      controller.abort();
+      expect(await capture).toEqual({ outcome: "cancelled" });
+      expect(clock.elapsed()).toBeLessThan(SCENE_CAPTURE_CEILING_MS);
+    });
   });
 
   it("does not cache a rest pose when the requested animation is absent", async () => {
@@ -258,12 +305,12 @@ describe("captureModelThumbnailPng", () => {
         undefined,
         { clipName: "Missing" },
       ),
-    ).toBeNull();
+    ).toEqual({ outcome: "failed" });
     expect(readback).not.toHaveBeenCalled();
     expect(handle.engine.scenes).toEqual([handle.scene]);
   });
 
-  it("returns null for OBJ stubs with no loadable mesh", async () => {
+  it("reports a failure for OBJ stubs with no loadable mesh", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     await expect(
@@ -273,6 +320,6 @@ describe("captureModelThumbnailPng", () => {
         [],
         () => null,
       ),
-    ).resolves.toBeNull();
+    ).resolves.toEqual({ outcome: "failed" });
   });
 });

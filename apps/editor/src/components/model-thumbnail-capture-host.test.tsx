@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
+import type { ThumbnailCaptureResult } from "@babylonslate/render";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { holdBlockingSceneLoad } from "../lib/blocking-scene-loads";
 import { ModelThumbnailCaptureHost } from "./model-thumbnail-capture-host";
+
+function captured(bytes: number[] = [137, 80, 78, 71]): ThumbnailCaptureResult {
+  return { outcome: "captured", png: new Uint8Array(bytes) };
+}
+const expired: ThumbnailCaptureResult = { outcome: "expired" };
+const retryCeilingMs = vi.hoisted(() => 300_000);
 
 const captureModelThumbnailPng = vi.fn<
   (
@@ -16,11 +23,12 @@ const captureModelThumbnailPng = vi.fn<
       clipName?: string;
       sourceClipBytes?: Uint8Array | null;
       signal?: AbortSignal;
+      ceilingMs?: number;
     },
-  ) => Promise<Uint8Array | null>
->(async () => new Uint8Array([137, 80, 78, 71]));
+  ) => Promise<ThumbnailCaptureResult>
+>(async () => captured());
 const MaterialLibrary = vi.fn();
-const captureAssetThumbnailPng = vi.fn<(...args: unknown[]) => Promise<Uint8Array | null>>(async () => new Uint8Array([137, 80, 78, 71]));
+const captureAssetThumbnailPng = vi.fn<(...args: unknown[]) => Promise<ThumbnailCaptureResult>>(async () => captured());
 const prepareAssetThumbnailInput = vi.fn<(input: unknown) => Promise<{ kind: string; materials: Map<string, unknown> }>>(async () => ({ kind: "Material", materials: new Map() }));
 let projectGuid = "project-a";
 let thumbnailsEnabled = true;
@@ -31,7 +39,7 @@ const collectPlayMaterialLibrary = vi.fn(async () => ({
   textureGuids: [],
 }));
 const collectPlayTextureBytes = vi.fn(async () => new Map());
-const writeAssetThumbnail = vi.fn(async () => undefined);
+const writeAssetThumbnail = vi.fn<(guid: string, png: Uint8Array, options?: { cacheKey: string; projectGuid: string }) => Promise<void>>(async () => undefined);
 const scopes: Array<{ dispose: ReturnType<typeof vi.fn> }> = [];
 const createAssetLoadScope = vi.fn(() => {
   const scope = { dispose: vi.fn() };
@@ -59,6 +67,7 @@ vi.mock("@babylonslate/render", () => ({
       clipName?: string;
       sourceClipBytes?: Uint8Array | null;
       signal?: AbortSignal;
+      ceilingMs?: number;
     },
   ) =>
     captureModelThumbnailPng(
@@ -81,6 +90,7 @@ vi.mock("@babylonslate/render", () => ({
   resourceCacheForEngine: () => resourceCacheForEngine(),
   getMaterialTexture: vi.fn(),
   materialUnavailable: () => true,
+  SCENE_CAPTURE_RETRY_CEILING_MS: retryCeilingMs,
 }));
 
 vi.mock("../lib/asset-thumbnail-input", () => ({
@@ -111,7 +121,7 @@ afterEach(() => {
   cleanup();
   captureModelThumbnailPng
     .mockReset()
-    .mockResolvedValue(new Uint8Array([137, 80, 78, 71]));
+    .mockResolvedValue(captured());
   MaterialLibrary.mockClear();
   resourceCacheForEngine.mockClear();
   collectPlayMaterialLibrary.mockClear();
@@ -123,7 +133,7 @@ afterEach(() => {
   assets.clear();
   projectGuid = "project-a";
   thumbnailsEnabled = true;
-  captureAssetThumbnailPng.mockReset().mockResolvedValue(new Uint8Array([137, 80, 78, 71]));
+  captureAssetThumbnailPng.mockReset().mockResolvedValue(captured());
   prepareAssetThumbnailInput.mockClear();
   sharedEngine.engine = { id: "shared-engine" };
   sharedEngine.generation = 1;
@@ -157,7 +167,7 @@ describe("ModelThumbnailCaptureHost", () => {
   });
 
   it.each(["project switch", "disabled thumbnails", "unmount"])("discards an in-flight capture after %s", async (change) => {
-    let finish!: (png: Uint8Array) => void;
+    let finish!: (capture: ThumbnailCaptureResult) => void;
     captureAssetThumbnailPng.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
     assets.set("asset", { path: "assets/preview.babasset", header: { type: "Material", payload: {} } });
     const view = render(<ModelThumbnailCaptureHost />);
@@ -171,14 +181,14 @@ describe("ModelThumbnailCaptureHost", () => {
     else view.rerender(<ModelThumbnailCaptureHost />);
     expect(shouldContinue()).toBe(false);
     expect(scopes[0]!.dispose).toHaveBeenCalledOnce();
-    finish(new Uint8Array([1]));
+    finish(captured([1]));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(writeAssetThumbnail).not.toHaveBeenCalled();
     expect(scopes[0]!.dispose).toHaveBeenCalledOnce();
   });
 
   it("replaces queued saves with the newest revision without overlapping captures", async () => {
-    let finish!: (png: Uint8Array) => void;
+    let finish!: (capture: ThumbnailCaptureResult) => void;
     captureAssetThumbnailPng.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
     assets.set("asset", { path: "assets/preview.babasset", header: { type: "Material", payload: {} } });
     render(<ModelThumbnailCaptureHost />);
@@ -187,7 +197,7 @@ describe("ModelThumbnailCaptureHost", () => {
     await waitFor(() => expect(captureAssetThumbnailPng).toHaveBeenCalledOnce());
     enqueueModelThumbnailJobs([{ ...job, cacheKey: "middle" }, { ...job, cacheKey: "new" }]);
     expect(captureAssetThumbnailPng).toHaveBeenCalledOnce();
-    finish(new Uint8Array([1]));
+    finish(captured([1]));
     await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("asset", expect.any(Uint8Array), { projectGuid, cacheKey: "new" }));
     expect(writeAssetThumbnail).toHaveBeenCalledOnce();
     expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(2);
@@ -214,7 +224,7 @@ describe("ModelThumbnailCaptureHost", () => {
     });
 
     it("stops the capture in progress when a load opens and captures the asset again once it closes", async () => {
-      let finish!: (png: Uint8Array) => void;
+      let finish!: (capture: ThumbnailCaptureResult) => void;
       captureAssetThumbnailPng.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
       assets.set("asset", { path: material.path, header: { type: "Material", payload: {} } });
       render(<ModelThumbnailCaptureHost />);
@@ -224,13 +234,137 @@ describe("ModelThumbnailCaptureHost", () => {
       const closeLoad = openLoad();
       expect(shouldContinue()).toBe(false);
       expect(scopes[0]!.dispose).toHaveBeenCalledOnce();
-      finish(new Uint8Array([1]));
+      finish(captured([1]));
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(writeAssetThumbnail).not.toHaveBeenCalled();
       expect(captureAssetThumbnailPng).toHaveBeenCalledOnce();
       closeLoad();
       await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledOnce());
       expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(2);
+    });
+
+    it("starts no retry of a capture that ran out of time until the load closes", async () => {
+      let closeLoad!: () => void;
+      // The load opens after the capture ended, while its retry waits for an idle queue.
+      captureAssetThumbnailPng.mockImplementationOnce(async () => {
+        setTimeout(() => { closeLoad = openLoad(); }, 0);
+        return expired;
+      });
+      assets.set("asset", { path: material.path, header: { type: "Material", payload: {} } });
+      render(<ModelThumbnailCaptureHost />);
+      enqueueModelThumbnailJobs([material]);
+      await waitFor(() => expect(captureAssetThumbnailPng).toHaveBeenCalledOnce());
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(captureAssetThumbnailPng).toHaveBeenCalledOnce();
+      closeLoad();
+      await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledOnce());
+      expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("a capture that runs out of time", () => {
+    const register = (guid: string) => assets.set(guid, { path: `assets/${guid}.babasset`, header: { type: "Material", payload: {} } });
+    const backfill = (guid: string, revision = 1) => ({
+      guid, path: `assets/${guid}.babasset`, type: "Material" as const, payload: {}, cacheKey: `${guid}.revision-${revision}`, projectGuid, onlyIfMissing: true,
+    });
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+    const capturedPaths = () => prepareAssetThumbnailInput.mock.calls.map(([input]) => (input as { asset: { path: string } }).asset.path);
+    const ceilings = () => captureAssetThumbnailPng.mock.calls.map((call) => call[4]);
+    const writtenGuids = () => writeAssetThumbnail.mock.calls.map(([guid]) => guid);
+
+    it("is retried once with a longer ceiling and keeps the thumbnail the retry produces", async () => {
+      register("a");
+      captureAssetThumbnailPng.mockResolvedValueOnce(expired);
+      render(<ModelThumbnailCaptureHost />);
+      enqueueModelThumbnailJobs([backfill("a")]);
+      await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("a", expect.any(Uint8Array), { cacheKey: "a.revision-1", projectGuid }));
+      expect(writeAssetThumbnail).toHaveBeenCalledOnce();
+      expect(ceilings()).toEqual([undefined, retryCeilingMs]);
+      expect(scopes).toHaveLength(2);
+      expect(scopes.every((scope) => scope.dispose.mock.calls.length === 1)).toBe(true);
+    });
+
+    it("is retried with the longer ceiling for a Model too", async () => {
+      captureModelThumbnailPng.mockResolvedValueOnce(expired);
+      render(<ModelThumbnailCaptureHost />);
+      enqueueModelThumbnailJobs([{ guid: "model", path: "assets/model.babasset", payload: {} }]);
+      await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("model", expect.any(Uint8Array)));
+      expect(captureModelThumbnailPng.mock.calls.map((call) => call[5]?.ceilingMs)).toEqual([undefined, retryCeilingMs]);
+    });
+
+    it("keeps the type icon when the retry runs out too, and a repeated backfill does not start another", async () => {
+      register("a");
+      captureAssetThumbnailPng.mockResolvedValue(expired);
+      render(<ModelThumbnailCaptureHost />);
+      enqueueModelThumbnailJobs([backfill("a")]);
+      await waitFor(() => expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(2));
+      enqueueModelThumbnailJobs([backfill("a")]);
+      await settle();
+      expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(2);
+      expect(writeAssetThumbnail).not.toHaveBeenCalled();
+      expect(scopes.every((scope) => scope.dispose.mock.calls.length === 1)).toBe(true);
+    });
+
+    it("is not retried when the capture failed", async () => {
+      register("a");
+      captureAssetThumbnailPng.mockResolvedValue({ outcome: "failed" });
+      render(<ModelThumbnailCaptureHost />);
+      enqueueModelThumbnailJobs([backfill("a")]);
+      await waitFor(() => expect(captureAssetThumbnailPng).toHaveBeenCalledOnce());
+      await settle();
+      expect(captureAssetThumbnailPng).toHaveBeenCalledOnce();
+      expect(writeAssetThumbnail).not.toHaveBeenCalled();
+    });
+
+    it("is retried only after the work queued behind it", async () => {
+      register("a");
+      register("b");
+      captureAssetThumbnailPng.mockResolvedValueOnce(expired);
+      render(<ModelThumbnailCaptureHost />);
+      enqueueModelThumbnailJobs([backfill("a"), backfill("b")]);
+      await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledTimes(2));
+      expect(capturedPaths()).toEqual(["assets/a.babasset", "assets/b.babasset", "assets/a.babasset"]);
+      expect(writtenGuids()).toEqual(["b", "a"]);
+    });
+
+    it("is replaced by a newer save of the asset", async () => {
+      register("a");
+      register("b");
+      let finishB!: (capture: ThumbnailCaptureResult) => void;
+      captureAssetThumbnailPng
+        .mockResolvedValueOnce(expired)
+        .mockImplementationOnce(() => new Promise((resolve) => { finishB = resolve; }));
+      render(<ModelThumbnailCaptureHost />);
+      enqueueModelThumbnailJobs([backfill("a"), backfill("b")]);
+      await waitFor(() => expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(2));
+      enqueueModelThumbnailJobs([backfill("a", 2)]);
+      finishB(captured([1]));
+      await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("a", expect.any(Uint8Array), { cacheKey: "a.revision-2", projectGuid }));
+      await settle();
+      expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(3);
+      expect(writtenGuids()).toEqual(["b", "a"]);
+    });
+
+    it("is interrupted by new work, which goes first, and runs again afterwards", async () => {
+      register("a");
+      register("b");
+      let holdRetry!: (capture: ThumbnailCaptureResult) => void;
+      captureAssetThumbnailPng
+        .mockResolvedValueOnce(expired)
+        .mockImplementationOnce(() => new Promise((resolve) => { holdRetry = resolve; }));
+      render(<ModelThumbnailCaptureHost />);
+      enqueueModelThumbnailJobs([backfill("a")]);
+      await waitFor(() => expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(2));
+      const retryWanted = captureAssetThumbnailPng.mock.calls[1]![2] as () => boolean;
+      expect(retryWanted()).toBe(true);
+      enqueueModelThumbnailJobs([backfill("b")]);
+      expect(retryWanted()).toBe(false);
+      expect(scopes[1]!.dispose).toHaveBeenCalledOnce();
+      holdRetry({ outcome: "cancelled" });
+      await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledTimes(2));
+      expect(capturedPaths()).toEqual(["assets/a.babasset", "assets/a.babasset", "assets/b.babasset", "assets/a.babasset"]);
+      expect(ceilings()).toEqual([undefined, retryCeilingMs, undefined, retryCeilingMs]);
+      expect(writtenGuids()).toEqual(["b", "a"]);
     });
   });
 

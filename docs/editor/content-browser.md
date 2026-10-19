@@ -46,6 +46,8 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 
 Hold empty space in the grid for **New Folder**, **New Asset** and **Import**.
 
+A heavy asset can take long to draw on a slow device. A thumbnail that runs out of time keeps the asset's type icon, and Haptic tries once more when nothing else is waiting. Choose **Generate Thumbnail** to draw it again at any time.
+
 ## Move assets
 
 - Hold a row in the folder tree, then drag it onto a folder.

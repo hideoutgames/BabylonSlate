@@ -19,10 +19,14 @@ import { encodeRgbaPng, PNG_SIGNATURE } from "./png-encode";
 import { acquireMaterialTexture, releaseResourceCacheForEngine, resourceCacheForEngine } from "./resource-cache";
 import { nativePreparationForEngine } from "./native-preparation";
 import { SCENE_CAPTURE_CEILING_MS, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import type { ThumbnailCaptureResult } from "./thumbnail-capture";
 import { installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
 
 /** How long loading and readback may take before a capture expires. */
 const CAPTURE_BOUND_MS = 30_000;
+
+/** The PNG of a capture that produced one. */
+const pngOf = (result: ThumbnailCaptureResult) => result.outcome === "captured" ? result.png : undefined;
 
 const handles: ReturnType<typeof createTestEngine>[] = [];
 afterEach(() => {
@@ -60,9 +64,9 @@ describe("asset thumbnail capture", () => {
       };
       return Promise.resolve(new Uint8Array(32 * 32 * 4));
     });
-    const png = await captureAssetThumbnailPng(engine, {
+    const png = pngOf(await captureAssetThumbnailPng(engine, {
       kind: "Material", materialGuid: "paint", materials: new Map([["paint", document]]),
-    }, undefined, 32);
+    }, undefined, 32));
     expect(png?.subarray(0, 8)).toEqual(PNG_SIGNATURE);
     expect(new DataView(png!.buffer, png!.byteOffset).getUint32(16)).toBe(32);
     expect(captured?.vertices).toBeGreaterThan(100);
@@ -139,7 +143,7 @@ describe("asset thumbnail capture", () => {
     const gameplay = scheduler.schedule({ label: "Next Actor", temporaryBytes: 1 }, async () => { order.push("gameplay"); });
     unblock();
     await Promise.all([blocker, gameplay]);
-    const png = await capture;
+    const png = pngOf(await capture);
     expect(order).toEqual(["gameplay", "thumbnail"]);
     expect(scheduler.snapshot()).toMatchObject({ active: 0, queued: 0, temporaryBytes: 0 });
     expect(png?.subarray(0, 8)).toEqual(PNG_SIGNATURE);
@@ -177,11 +181,11 @@ describe("asset thumbnail capture", () => {
       sampledExisting = material.getActiveTextures().includes(retained.resource);
       return Promise.resolve(new Uint8Array(128 * 128 * 4));
     });
-    const png = await captureAssetThumbnailPng(engine, {
+    const png = pngOf(await captureAssetThumbnailPng(engine, {
       kind: "Material", materialGuid: "paint", materials: new Map([["paint", document]]),
       assets: { textureBytes: new Map([["albedo", bytes]]) },
-    });
-    expect(png).not.toBeNull();
+    }));
+    expect(png).toBeDefined();
     expect(sampledExisting).toBe(true);
     expect(cache.resourceStats().leases).toBe(1);
     expect(retained.resource.isReady()).toBe(true);
@@ -204,7 +208,7 @@ describe("asset thumbnail capture", () => {
     await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
     active = false;
     release(new Uint8Array(128 * 128 * 4));
-    expect(await capture).toBeNull();
+    expect(await capture).toEqual({ outcome: "cancelled" });
     expect(capturedScene?.isDisposed).toBe(true);
     expect(engine.scenes).toEqual([scene]);
   });
@@ -241,7 +245,7 @@ describe("asset thumbnail capture", () => {
       clock = installVirtualClock();
       probeSphere((probe) => probe === 1 ? 15_000 : POLL_MS, (probe) => probe > 1);
       vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockResolvedValue(new Uint8Array(32 * 32 * 4));
-      const png = await captureAssetThumbnailPng(engine, material, undefined, 32);
+      const png = pngOf(await captureAssetThumbnailPng(engine, material, undefined, 32));
       expect(png?.subarray(0, 8)).toEqual(PNG_SIGNATURE);
       expect(clock.elapsed()).toBeGreaterThan(SCENE_SHADER_WARM_TIMEOUT_MS);
     });
@@ -251,7 +255,7 @@ describe("asset thumbnail capture", () => {
       clock = installVirtualClock();
       probeSphere(() => POLL_MS, () => false);
       const read = vi.spyOn(RenderTargetTexture.prototype, "readPixels");
-      expect(await captureAssetThumbnailPng(engine, material, undefined, 32)).toBeNull();
+      expect(await captureAssetThumbnailPng(engine, material, undefined, 32)).toEqual({ outcome: "expired" });
       expect(clock.elapsed()).toBeGreaterThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS);
       expect(clock.elapsed()).toBeLessThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS + POLL_MS);
       expect(read).not.toHaveBeenCalled();
@@ -266,9 +270,24 @@ describe("asset thumbnail capture", () => {
         effects[`elsewhere-${probe}`] = { isReady: () => true, getCompilationError: () => "" };
         return POLL_MS;
       }, () => false);
-      expect(await captureAssetThumbnailPng(engine, material, undefined, 32)).toBeNull();
+      expect(await captureAssetThumbnailPng(engine, material, undefined, 32)).toEqual({ outcome: "expired" });
       expect(clock.elapsed()).toBeGreaterThanOrEqual(SCENE_CAPTURE_CEILING_MS);
       expect(clock.elapsed()).toBeLessThanOrEqual(SCENE_CAPTURE_CEILING_MS + POLL_MS);
+    });
+
+    // A retry of a capture that ran out passes a longer ceiling.
+    it("ends a capture at the ceiling it was given instead", async () => {
+      const { engine } = fixture();
+      clock = installVirtualClock();
+      const effects = (engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
+      probeSphere((probe) => {
+        effects[`elsewhere-${probe}`] = { isReady: () => true, getCompilationError: () => "" };
+        return POLL_MS;
+      }, () => false);
+      const ceiling = 2 * SCENE_CAPTURE_CEILING_MS;
+      expect(await captureAssetThumbnailPng(engine, material, undefined, 32, ceiling)).toEqual({ outcome: "expired" });
+      expect(clock.elapsed()).toBeGreaterThanOrEqual(ceiling);
+      expect(clock.elapsed()).toBeLessThanOrEqual(ceiling + POLL_MS);
     });
 
     /** A readback that never returns until `release`; `onPoll` runs at each of the capture's 16 ms expiry checks. */
@@ -295,7 +314,7 @@ describe("asset thumbnail capture", () => {
     it("lets a readback finish after a synchronous call held the thread past the capture bound", async () => {
       const { engine } = fixture();
       clock = installVirtualClock();
-      const png = await captureAssetThumbnailPng(engine, material, readbackHeldPastBound(), 32);
+      const png = pngOf(await captureAssetThumbnailPng(engine, material, readbackHeldPastBound(), 32));
       expect(png?.subarray(0, 8)).toEqual(PNG_SIGNATURE);
     });
 
@@ -307,7 +326,7 @@ describe("asset thumbnail capture", () => {
       // The mesh wait spends the whole 60 s of credit (six 10 s holds) and then succeeds...
       probeSphere((probe) => probe <= 6 ? 10_000 : POLL_MS, (probe) => probe > 6);
       // ...so the same readback that finishes above now has nothing left to be credited from.
-      expect(await captureAssetThumbnailPng(engine, material, readbackHeldPastBound(), 32)).toBeNull();
+      expect(await captureAssetThumbnailPng(engine, material, readbackHeldPastBound(), 32)).toEqual({ outcome: "expired" });
       // The capture got as far as its readback before it gave up.
       expect(RenderTargetTexture.prototype.readPixels).toHaveBeenCalledOnce();
     });
@@ -316,7 +335,7 @@ describe("asset thumbnail capture", () => {
       const { engine } = fixture();
       clock = installVirtualClock();
       const shouldContinue = stalledReadback(() => { clock.advance(POLL_MS); });
-      expect(await captureAssetThumbnailPng(engine, material, shouldContinue, 32)).toBeNull();
+      expect(await captureAssetThumbnailPng(engine, material, shouldContinue, 32)).toEqual({ outcome: "expired" });
       expect(clock.elapsed()).toBeGreaterThanOrEqual(CAPTURE_BOUND_MS);
       expect(clock.elapsed()).toBeLessThanOrEqual(CAPTURE_BOUND_MS + POLL_MS);
     });
@@ -325,12 +344,13 @@ describe("asset thumbnail capture", () => {
   it("keeps unavailable materials and empty prefabs on their fallback icons", async () => {
     const { engine, scene } = fixture();
     const read = vi.spyOn(RenderTargetTexture.prototype, "readPixels");
+    // Nothing a later attempt would change, unlike a capture that ran out of time.
     expect(await captureAssetThumbnailPng(engine, {
       kind: "Material", materialGuid: "missing", materials: new Map(),
-    })).toBeNull();
+    })).toEqual({ outcome: "failed" });
     expect(await captureAssetThumbnailPng(engine, {
       kind: "ActorPrefab", prefab: { ...createDefaultScene(), actors: [] }, materials: new Map(),
-    })).toBeNull();
+    })).toEqual({ outcome: "failed" });
     expect(read).not.toHaveBeenCalled();
     expect(engine.scenes).toEqual([scene]);
   });
