@@ -579,13 +579,15 @@ function holdWaterLinks(engine: NullEngine) {
 }
 
 /** Realistic, Painted and Toon water side by side, warmed as a load warms: three bodies whose variants all differ. */
-async function threeWaterBodies(scene: Scene): Promise<void> {
+async function threeWaterBodies(scene: Scene): Promise<Mesh[]> {
   const looks = [createDefaultWaterDefinition(), createDefaultWaterDefinition("stylized"), createDefaultWaterDefinition("stylized", "toon")];
-  looks.forEach((water, index) => {
+  const bodies = looks.map((water, index) => {
     const mesh = createWaterMesh(scene, `water-${index}`, normalizeWaterBody({ width: 4, length: 4, resolution: 8 }), water);
     mesh.position.x = (index - 1) * 4;
+    return mesh;
   });
   await prewarmSceneMaterials(scene, undefined, isBuiltInWaterMesh);
+  return bodies;
 }
 
 /** Time for the graph's readiness loop, which probes every 16 ms, to probe several more times. */
@@ -649,6 +651,42 @@ it("links the transparent pass's water while an earlier geometry pass still link
   expect(await prepared).toEqual({ path: "frameGraph" });
   graph.dispose();
 });
+
+it.each([["transparent", false], ["geometry", true]] as const)(
+  "links ahead again, in the %s pass, the water it already linked ahead once a change mid-load gives it new variants",
+  async (_pass, geometry) => {
+    const { engine, scene, camera } = host();
+    // The spatial chain (its geometry pass feeds the resolve's velocity) needs four float targets and depth sampling.
+    if (geometry) Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true, textureFloatRender: true, texelFetch: true });
+    updateSceneRenderingSettings(scene, {
+      quality: normalizeRenderingQuality({ water: { profile: "ultra" } }),
+      ...(geometry ? { effects: { ...DEFAULT_RENDER_EFFECTS, temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } } } : {}),
+    });
+    const [first, second] = await threeWaterBodies(scene);
+    const links = holdWaterLinks(engine);
+    const graph = new ForwardSceneFrameGraph(scene);
+    const prepared = graph.prepare(camera);
+    // The pass's probe waits on the first body and has linked the second body's variants ahead.
+    await vi.waitFor(() => expect(links.requested().length).toBeGreaterThan(2));
+    const pass = geometry
+      ? scene.objectRenderers.find((renderer) => renderer.name === "Spatial Geometry")!.renderPassId
+      : graph.waterSceneCopyDiagnostics()!.renderPassId;
+    /** Whether the pass holds `mesh`'s fog variant. */
+    const fogged = (mesh: Mesh) => /#define FOG\n/.test(mesh.subMeshes[0]!._getDrawWrapper(pass)?.effect?.defines ?? "");
+    expect([fogged(first!), fogged(second!)]).toEqual([false, false]);
+    // Fog gives every body new variants before the load is ready (outside Scene observables, so the change marks
+    // readiness dirty itself) and the links requested so far finish. The probe waits on the first body's new
+    // variant, and the second body's link ahead again meanwhile.
+    scene.fogMode = Scene.FOGMODE_EXP2;
+    graph.markReadinessDirty();
+    links.release(links.requested().length);
+    await vi.waitFor(() => expect(fogged(first!)).toBe(true));
+    await vi.waitFor(() => expect(fogged(second!)).toBe(true));
+    links.releaseAll();
+    expect(await prepared).toEqual({ path: "frameGraph" });
+    graph.dispose();
+  },
+);
 
 it("names only water with the built-in material as built-in, so a Custom Material water mesh is still warmed", () => {
   const { scene } = host();
