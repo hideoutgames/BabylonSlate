@@ -983,7 +983,7 @@ export function SettingsModal({
                 data-testid="settings-collision-presets"
               />
               <FieldDescription>
-                Each preset sets a Layer and the layers it collides with. Colliders pick a preset or Custom.
+                Each preset sets a Layer and an Ignore, Overlap or Block response to every layer. Colliders pick a preset or Custom.
               </FieldDescription>
             </Field>
           </FieldSet>
