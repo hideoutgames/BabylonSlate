@@ -673,6 +673,83 @@ describe("Play createEngine view", () => {
     expect(holds).toEqual([true, false]);
     expect(isSceneGameTimePaused(handle.scene)).toBe(false);
     expect(isSceneGameTimePaused(layerScene)).toBe(false);
+    holding.mockRestore();
+  });
+
+  /**
+   * A Play view on a driver that links effects in the background. While `ready` is false the scene fails its
+   * strict readiness probe, and `linked` says whether the effect behind that wait has finished compiling.
+   */
+  function playViewWithCompilingEffect() {
+    const engine = sharedEngine();
+    engine.getCaps().parallelShaderCompile = { COMPLETION_STATUS_KHR: 0x91b1 };
+    const holds: boolean[] = [];
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement,
+      { sharedEngine: engine, playMode: true, onPipelineHold: (held) => holds.push(held) });
+    handles.push(handle);
+    const effects = (engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
+    const state = { ready: true, linked: true };
+    effects["lit-variant"] = { isReady: () => state.linked, getCompilationError: () => "" };
+    handle.scene.addIsReadyCheck({ isReady: () => state.ready });
+    const set = (change: Partial<typeof state>) => { Object.assign(state, change); markSceneReadinessDirty(handle.scene); };
+    // Each frame is 100 ms after the last, past the Play frame cap's cadence gate.
+    let now = performance.now();
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    handles.push({ dispose: () => clock.mockRestore() });
+    const frame = () => {
+      now += 100;
+      handle.scheduler.invalidate("manual");
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+    };
+    return { handle, holds, set, frame };
+  }
+
+  it("pauses Play's game time but keeps drawing while an effect compiles mid-session, until a frame draws", async () => {
+    const { handle, holds, set, frame } = playViewWithCompilingEffect();
+    await handle.prewarmSceneMaterials();
+    // The first frame waits behind the load, which already pauses the game: its compiling effects add no hold.
+    set({ ready: false, linked: false });
+    const presented = handle.presentFirstFrame();
+    frame();
+    expect(holds).toEqual([]);
+    set({ ready: true, linked: true });
+    frame();
+    await presented;
+    expect(holds).toEqual([]);
+    // A light switches on: the view keeps its last image and the game waits.
+    set({ ready: false, linked: false });
+    frame();
+    expect(holds).toEqual([true]);
+    expect(isSceneGameTimePaused(handle.scene)).toBe(true);
+    // The frame that finds the effects ready must still draw.
+    expect(handle.scheduler.shouldRender(Number.MAX_SAFE_INTEGER)).toBe(true);
+    // The picture is still frozen once the effect has linked, so the game keeps waiting.
+    set({ linked: true });
+    frame();
+    expect(holds).toEqual([true]);
+    expect(isSceneGameTimePaused(handle.scene)).toBe(true);
+    set({ ready: true });
+    frame();
+    expect(holds).toEqual([true, false]);
+    expect(isSceneGameTimePaused(handle.scene)).toBe(false);
+  });
+
+  it("releases a compile hold when the Engine is disposed, so a host never keeps its rendering pause", async () => {
+    const { handle, holds, set, frame } = playViewWithCompilingEffect();
+    await handle.prewarmSceneMaterials();
+    const presented = handle.presentFirstFrame();
+    frame();
+    await presented;
+    set({ ready: false, linked: false });
+    frame();
+    expect(holds).toEqual([true]);
+    handle.dispose();
+    expect(holds).toEqual([true, false]);
+    // Disposing again changes nothing.
+    handle.dispose();
+    expect(holds).toEqual([true, false]);
   });
 
   it("keeps manual Pause and blocking streaming pauses independent", () => {

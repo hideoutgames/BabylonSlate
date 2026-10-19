@@ -468,9 +468,10 @@ export interface CreateEngineOptions {
   playMode?: boolean;
   /**
    * The world view started (true) or stopped (false) holding its last image
-   * while WebGPU render pipelines it needs compile. Play hosts pause the game
-   * runtime for the hold (pause reason `rendering`), as for a blocking load;
-   * this Engine already pauses its own game time, audio and particles.
+   * while WebGPU render pipelines, or on any backend effects the driver still
+   * compiles, are needed. Play hosts pause the game runtime for the hold (pause
+   * reason `rendering`), as for a blocking load; this Engine already pauses its
+   * own game time, audio and particles. Disposing the Engine ends a hold.
    */
   onPipelineHold?: (held: boolean) => void;
   maxActors?: number;
@@ -3270,11 +3271,12 @@ function initializeEngine(
   let callerPaused = false;
   let sceneStreamingPaused = false;
   let gameTimePaused = false;
-  /** The world view holds its last image for WebGPU pipelines (`SceneRenderCoordinator.holdingForPipelines`). */
+  /** The world view holds its last image for GPU work: WebGPU pipelines, or effects still
+   * compiling on any backend (`SceneRenderCoordinator.holdingForPipelines`). */
   let pipelineHold = false;
   /** Play pauses its game time, audio and particles while the view holds, as
    * for a blocking load, but keeps drawing: the frame that finds the
-   * pipelines ready ends the hold. Resuming never consumes the held interval. */
+   * pipelines or effects ready ends the hold. Resuming never consumes the held interval. */
   const heldForPipelines = () => pipelineHold && options.playMode === true;
   const applyPause = () => {
     const paused = callerPaused || sceneStreamingPaused || gameTimePaused;
@@ -3453,6 +3455,12 @@ function initializeEngine(
       if (ownsEngine) {
         releaseResourceCacheForEngine(engine);
         engine.dispose();
+      }
+      // No frame will ever end a hold the disposed view still has: a host that
+      // keeps a `rendering` pause for it must not wait for one.
+      if (pipelineHold) {
+        pipelineHold = false;
+        options.onPipelineHold?.(false);
       }
     },
     whenReleased: () => releasedHandle ?? Promise.resolve(),
