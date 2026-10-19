@@ -11,7 +11,7 @@ When a file refers to texture files outside it, pick them together with the mode
 | Created asset | When |
 | --- | --- |
 | [Model](../assets/model.md) | Always. |
-| [Material](../assets/material.md) and [Texture](../assets/texture.md) assets | For the file's materials and images. |
+| [Material](../assets/material.md) and [Texture](../assets/texture.md) assets | For the file's materials and images. A file with no materials gets one plain grey Material. |
 | [Skeleton](../assets/skeleton.md) | When the model is rigged with a skin, or built from parented mesh parts. |
 | [Animation](../assets/animation.md) | One per animation clip in the file. |
 
@@ -29,6 +29,8 @@ A Model has one material slot per material in the file.
 - Meshes with no Material draw a grey checker, so missing materials are easy to spot. The checker is lit like any other surface, so a 3D scene needs a [light](lighting.md) for it to show. A **Blank** project's scene has none: add a light, or the meshes draw black.
 
 When the file uses material features a Haptic Material cannot represent, the Model keeps the original material, and the imported Material asset says so.
+
+When a file stores no normals for a mesh, Haptic shades that mesh flat, as glTF requires, so its faces look faceted. Include normals in the file for smooth shading.
 
 See [Materials](materials.md) to edit imported Materials or make your own.
 
@@ -62,6 +64,7 @@ Limits:
 - LOD reduces triangles, not draw calls.
 - Levels switch without a cross-fade.
 - Model previews, thumbnails and foliage always use full detail.
+- Meshes that the file stores without normals draw at full detail.
 - Levels are generated each time the game loads; they are not saved in the project or export.
 
 [Set Geometry Quality](../scripting/class/set-geometry-quality.md) changes these settings for the session.
