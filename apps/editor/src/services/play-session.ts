@@ -57,6 +57,7 @@ import {
   createSceneLoadReadiness,
   createSceneStreamingReadiness,
   describeEngineTexture,
+  internalTexturesHeldByScene,
   waitForSceneLoadingPaint,
   type SceneLoadProgress,
   navDebugBlockersFromActors,
@@ -327,15 +328,27 @@ export function playSessionBootControls(options: {
  * Textures created during a session that are still in the shared Engine's
  * cache, compared by identity rather than count. Babylon's 1×1 placeholders
  * are created once per Engine on first use and live as long as it, so they
- * are not a session leak.
+ * are not a session leak. Nor is a texture a live Scene outside the session
+ * still references: an editor preview opened mid-session (a Class graph's
+ * viewport) draws on the shared Engine and creates its own default checker and
+ * BRDF table, which it releases when it closes. A texture no live Scene
+ * references, or that only one of `playScenes` does, stays retained.
  */
 export function texturesRetainedAfterPlay(
-  engine: Pick<EngineHandle["engine"], "getLoadedTexturesCache">,
+  engine: Pick<EngineHandle["engine"], "getLoadedTexturesCache" | "scenes">,
   before: ReadonlySet<unknown>,
+  playScenes: ReadonlySet<EngineHandle["scene"]>,
 ): ReturnType<EngineHandle["engine"]["getLoadedTexturesCache"]> {
   const native = engine as unknown as Partial<Record<"_emptyTexture" | "_emptyCubeTexture" | "_emptyTexture3D" | "_emptyTexture2DArray", unknown>>;
   const placeholders = new Set([native._emptyTexture, native._emptyCubeTexture, native._emptyTexture3D, native._emptyTexture2DArray]);
-  return engine.getLoadedTexturesCache().filter((texture) => !before.has(texture) && !placeholders.has(texture));
+  const created = engine.getLoadedTexturesCache().filter((texture) => !before.has(texture) && !placeholders.has(texture));
+  if (created.length === 0) return created;
+  const heldByOthers = new Set<unknown>();
+  for (const scene of engine.scenes) {
+    if (playScenes.has(scene)) continue;
+    for (const texture of internalTexturesHeldByScene(scene)) heldByOthers.add(texture);
+  }
+  return created.filter((texture) => !heldByOthers.has(texture));
 }
 
 /** Each retained texture by name, with its size, native references and ResourceCache owner, so a leak report names the owner. */
@@ -2029,6 +2042,8 @@ export function startPlaySession(options: {
       sceneSourceScopes.clear();
       preparedSourceScopes.clear();
       const liveAfter = handle.liveObjectCounts();
+      // The leak check runs once release confirms, when these Scenes are disposed. One that is not still owns what it holds.
+      const playScenes = new Set([handle.scene, ...handle.sceneLayerScenes().map((layer) => layer.scene)]);
       handle.dispose();
       releaseSessionSources?.();
       releaseSessionSources = undefined;
@@ -2048,7 +2063,7 @@ export function startPlaySession(options: {
         .then(([quarantined]) => {
           const textureCountAfter =
             sharedEngine.getLoadedTexturesCache().length;
-          const retained = texturesRetainedAfterPlay(sharedEngine, texturesBefore);
+          const retained = texturesRetainedAfterPlay(sharedEngine, texturesBefore, playScenes);
           const textureLeak = retained.length > 0;
           const textureLeakDetail = textureLeak ? describeRetainedTextures(sharedEngine, retained) : undefined;
           if (textureLeak && !quarantined) {
