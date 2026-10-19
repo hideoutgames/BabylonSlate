@@ -150,11 +150,32 @@ export function syncDirectionalLightPolicy(scene: Scene): void {
   }
 }
 
+/** What the Forward budget may admit in one sync. */
+export type ForwardLightCapacity = { lights: number; locals: number; samplers: number };
+
+/**
+ * Replaces the ranked, kind-keeping selection of `syncForwardLightPolicy`
+ * (fixed-shape lighting's per-class admission). It ranks `candidates` (the
+ * eligible lights) itself, pushes the lights it leaves out to `limited`, and
+ * those the sampler headroom leaves out also to `samplerLimited`, and returns
+ * the lights it admits with the lighting samplers they use. Everything after
+ * the selection (slot exchanges, canonical order, toggles) stays the same.
+ */
+export type ForwardLightSelection = (
+  scene: Scene,
+  candidates: Light[],
+  previous: ReadonlySet<Light>,
+  capacity: Readonly<ForwardLightCapacity>,
+  limited: Light[],
+  samplerLimited: Light[],
+) => { admitted: Iterable<Light>; samplers: number };
+
 /** Scene-local conventional selection; authored Enabled and priority are retained. */
 export function syncForwardLightPolicy(
   scene: Scene,
   slots: number,
   localSlots = Number.MAX_SAFE_INTEGER,
+  select?: ForwardLightSelection,
 ): {
   requested: number;
   admitted: number;
@@ -174,26 +195,34 @@ export function syncForwardLightPolicy(
       (!isAuthoredLocal(scene, light) || isClusteredLocalAllowed(scene, light))
     )
       candidates.push(light);
-  const capacity: Capacity = {
+  const capacity: ForwardLightCapacity = {
     lights: Math.max(0, Math.floor(slots)),
     locals: Math.max(0, Math.floor(localSlots)),
     samplers: lightingSamplerCapacity(scene),
   };
-  if (
-    candidates.length > capacity.lights ||
-    countLocals(scene, candidates) > capacity.locals ||
-    lightSamplerCount(scene, candidates) > capacity.samplers
-  ) {
-    sortLightsByAdmission(scene, candidates, previous);
-    // Clustered Forward orders lights itself; light sorting re-sorts every receiver.
-    if (!hasClusteredLightPolicy(scene) && !scene.requireLightSorting)
-      keepAdmittedSlotKinds(scene, candidates, previous, capacity);
-  }
   const selected = previous;
-  selected.clear();
   const limited: Light[] = [];
   const samplerLimited: Light[] = [];
-  const samplers = admit(scene, candidates, capacity, selected, limited, samplerLimited);
+  let samplers: number;
+  if (select) {
+    const selection = select(scene, candidates, previous, capacity, limited, samplerLimited);
+    selected.clear();
+    for (const light of selection.admitted) selected.add(light);
+    samplers = selection.samplers;
+  } else {
+    if (
+      candidates.length > capacity.lights ||
+      countLocals(scene, candidates) > capacity.locals ||
+      lightSamplerCount(scene, candidates) > capacity.samplers
+    ) {
+      sortLightsByAdmission(scene, candidates, previous);
+      // Clustered Forward orders lights itself; light sorting re-sorts every receiver.
+      if (!hasClusteredLightPolicy(scene) && !scene.requireLightSorting)
+        keepAdmittedSlotKinds(scene, candidates, previous, capacity);
+    }
+    selected.clear();
+    samplers = admit(scene, candidates, capacity, selected, limited, samplerLimited);
+  }
   // Decide every light before toggling any, so receivers can be prepared for
   // the whole change. An eligible light the clustered policy kept out of the
   // candidates is limited too; fill that set once, and only when needed.
@@ -254,8 +283,6 @@ export function syncForwardLightPolicy(
   };
 }
 
-type Capacity = { lights: number; locals: number; samplers: number };
-
 /**
  * The budget's selection: admits `candidates` in order while the shader slots,
  * the local-light budget and the lighting samplers allow. Returns the samplers
@@ -264,7 +291,7 @@ type Capacity = { lights: number; locals: number; samplers: number };
 function admit(
   scene: Scene,
   candidates: readonly Light[],
-  capacity: Capacity,
+  capacity: ForwardLightCapacity,
   selected: Set<Light>,
   limited?: Light[],
   samplerLimited?: Light[],
@@ -312,7 +339,7 @@ export const FORWARD_KIND_CHANGE_DISTANCE_RATIO = 1.25;
  * FORWARD_KIND_CHANGE_DISTANCE_RATIO times farther than the light the ranked
  * selection would admit in its place.
  */
-function keepAdmittedSlotKinds(scene: Scene, candidates: Light[], previous: ReadonlySet<Light>, capacity: Capacity): void {
+function keepAdmittedSlotKinds(scene: Scene, candidates: Light[], previous: ReadonlySet<Light>, capacity: ForwardLightCapacity): void {
   if (!previous.size) return;
   const ranked = scratchRanked;
   const stable = scratchStable;

@@ -121,6 +121,14 @@ export { webGpuMaterialCompatibilityReason } from "./material-backend-compatibil
 
 export { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-path";
 export { renderPathSession, requestRenderPath, subscribeRenderPathSession } from "./render-path-session";
+export {
+  fixedLightSlotTable,
+  fixedShapeMaterialSamplerBudget,
+  isFixedShapeLightingEnabled,
+  setFixedShapeLightingEnabled,
+  type FixedLightSlotTable,
+} from "./fixed-light-admission";
+export type { FixedLightSeat } from "./fixed-light-seats";
 export * from "./shared-outline";
 export { CommandSourcePreparation, commandSourceGuids, type CommandSourceLoader, type CommandFontMode, type CommandFontModes } from "./command-source-preparation";
 export * from "./shared-outline-task";

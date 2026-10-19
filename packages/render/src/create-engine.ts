@@ -39,6 +39,7 @@ import { requestRenderPath, retainPlayRenderPathSession, subscribeRenderPathSess
 import type { RenderPath, ResolvedRenderingPipeline } from "@babylonslate/core";
 import { submitPresentedFrame } from "./presented-frame";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { setFixedShapeLightingWorldScene } from "./fixed-light-admission";
 import { SceneOutlineHost, isOutlineOnlySceneEdit, type SceneOutlineSelection } from "./scene-outline-host";
 import { SceneDeformerHost, isDeformerOnlySceneEdit } from "./scene-deformer-host";
 import { markLatticeComponentRoot } from "./lattice-deformer";
@@ -936,6 +937,8 @@ function initializeEngine(
   const heldEngineViews = registeredView && options.playMode ? holdOtherEngineViews(engine, canvas) : [];
 
   const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
+  // The editor world view, Play and the exported player; Prefab Preview keeps the legacy lighting path.
+  if (!presentRtt) setFixedShapeLightingWorldScene(scene);
   // Every view shares the same graph path for authored and selection outlines.
   // The graph owns its active queue; editor world matrices still freeze.
   // The world view draws every frame and presents only rendered ones, so a
