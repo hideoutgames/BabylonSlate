@@ -50,6 +50,8 @@ Work with containers through the **Array** and **Map** nodes, such as [Array Get
 
 In an actor class, every component also appears in the **Class** window as a Get-only variable in the **Components** folder. Select it to change its **Category** in the **Inspector**; clear the field to show it without a folder. Drag it onto the graph, then drag from its pin to reach that component's settings and functions. See also [Get Component](class/get-component.md).
 
+Copying a component variable and pasting it into a Class adds a copy of that component to it; see [Select, copy and paste members](classes.md#select-copy-and-paste-members).
+
 ## Local variables
 
 A local variable exists only inside one function and starts from its default each time the function runs.
@@ -58,3 +60,5 @@ A local variable exists only inside one function and starts from its default eac
 2. Tap **+** next to **Local Variables** and pick a type.
 
 Local variables appear in **Add Node** only while their function is open.
+
+To reuse one, select it, choose **Copy**, then choose **Paste** with the target function selected or open. See [Select, copy and paste members](classes.md#select-copy-and-paste-members).

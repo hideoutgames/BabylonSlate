@@ -1,6 +1,7 @@
 import type {
   GraphClassMember,
   GraphClassMemberPin,
+  SerializedComponent,
   SerializedGraph,
 } from "@babylonslate/core";
 import { nextCopyName } from "@babylonslate/assets";
@@ -15,12 +16,20 @@ import {
   estimateGraphNodeSize,
   graphNodesBounds,
 } from "@babylonslate/graph-ui";
-import { singletonEventKey } from "@babylonslate/scripting";
+import {
+  isSceneLayerAllowedComponent,
+  isSceneLayerExclusiveComponent,
+} from "@babylonslate/object-model";
+import { singletonEventKey, variableTypeFromPinType } from "@babylonslate/scripting";
+import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { renamedComponentName } from "../panels/add-component-catalog";
 import {
   canRenameCustomEvent,
   classAllowsMemberKind,
+  ensureCallParentForEvent,
   isScriptCatalogNodeAllowed,
   joinNames,
+  nativeEventStubs,
   nativeEventTitle,
   patchVariableAccessNode,
   seedFunctionGraph,
@@ -28,6 +37,7 @@ import {
 } from "./class-members";
 import { eventNameKeys } from "./graph-paste";
 import { customEventsFromGraph } from "./overridable-functions";
+import { defaultPrefabComponents, nextPrefabComponentId } from "./prefab-preview";
 
 type GraphNode = SerializedGraph["nodes"][number];
 type GraphEdge = SerializedGraph["edges"][number];
@@ -36,9 +46,14 @@ const CUSTOM_EVENT = "flow.event.custom";
 const FUNCTION_INPUT = "flow.function.input";
 const FUNCTION_OUTPUT = "flow.function.output";
 
-/** A copied variable with its full definition. */
+/**
+ * A copied variable with its full definition. A local variable keeps the
+ * `functionId` of its source function; a component variable carries the
+ * component it stands for, because the variable itself is not stored.
+ */
 export type ClipboardVariable = {
   member: GraphClassMember;
+  component?: SerializedComponent;
   /** The Class whose names its function bodies were written against. */
   sourceClassId?: string;
 };
@@ -91,10 +106,39 @@ function collectClassMembers(
   if (rows.length === 0) return null;
   const clip: ClassMemberClipboard = { variables: [], functions: [], events: [] };
   for (const row of rows) {
-    if (row.kind === "interface" || row.componentId || row.functionId) return null;
+    if (row.kind === "interface") return null;
     const owner = row.inheritedFrom ? source.parentGraphs?.[row.inheritedFrom] : source.graph;
     const sourceClassId = row.inheritedFrom ?? source.classId;
     if (!owner) return null;
+    if (row.componentId) {
+      // The Class's own list wins: it holds the overrides of an inherited component.
+      const component = [source.graph, owner]
+        .flatMap((graph) => graph.components ?? [])
+        .find((entry) => entry.id === row.componentId);
+      if (row.kind !== "variable" || !component) return null;
+      clip.variables.push({
+        member: {
+          id: `component:${component.id}`,
+          kind: "variable",
+          name: row.name,
+          typeId: "object",
+          typeClassId: component.classId,
+          componentId: component.id,
+        },
+        component,
+        ...(sourceClassId ? { sourceClassId } : {}),
+      });
+      continue;
+    }
+    if (row.functionId) {
+      const local = (owner.members ?? []).find(
+        (entry) =>
+          entry.kind === "variable" && entry.id === row.id && entry.functionId === row.functionId,
+      );
+      if (row.kind !== "variable" || row.inheritedFrom || !local) return null;
+      clip.variables.push({ member: local, ...(sourceClassId ? { sourceClassId } : {}) });
+      continue;
+    }
     if (row.kind === "event") {
       if (row.inheritedFrom) return null;
       const node = owner.nodes.find((entry) => entry.id === row.id);
@@ -133,9 +177,8 @@ function collectClassMembers(
 
 /**
  * Whether Copy applies to the selected rows: at least one, and only
- * variables, functions and events. A Script Interface, a component, a local
- * variable (it travels with its function) or a row whose source is gone rules
- * it out.
+ * variables (including local and component variables), functions and events.
+ * A Script Interface or a row whose source is gone rules it out.
  */
 export function canCopyClassMembers(
   rows: readonly ClassMemberCopyRow[],
@@ -182,6 +225,8 @@ export type ClassMemberPasteOptions = {
   eventOptions?: ClassEventOptions;
   /** Components of the target, for events bound to one. */
   componentIds?: ReadonlySet<string>;
+  /** The function of the target that local variables go into: the selected one, else the focused one. */
+  targetFunctionId?: string | null;
   idFactory?: () => string;
 };
 
@@ -189,13 +234,20 @@ export type PastedClassMember = {
   kind: "variable" | "function" | "event";
   id: string;
   name: string;
+  /** A pasted component variable: the id of the component added with it. */
+  componentId?: string;
+  /** A pasted local variable: the function it went into. */
+  functionId?: string;
 };
 
 export type SkippedClassMember = {
   kind: "variable" | "function" | "event";
   name: string;
-  /** `kind`: the Class cannot have that member. `unavailable`: the Class lacks what it needs. `present`: it already has it. */
-  reason: "kind" | "unavailable" | "present";
+  /**
+   * `kind`: the Class cannot have that member. `unavailable`: the Class lacks what it needs.
+   * `present`: it already has it. `function`: a local variable with no function to go into.
+   */
+  reason: "kind" | "unavailable" | "present" | "function";
 };
 
 export type ClassMemberPasteResult = {
@@ -262,6 +314,25 @@ function nativeEventBaseName(node: Pick<GraphNode, "type" | "data">): string {
   return formatEventMemberName(title).replace(/\s*\([^)]*\)\s*$/, "").trim() || "Event";
 }
 
+let nodeRegistry: ReturnType<typeof createDefaultNodeRegistry> | undefined;
+
+/** The data outputs a native event node carries, as the parameters of a custom event: same names, types and order. */
+function nativeEventOutputPins(node: Pick<GraphNode, "type" | "data">): GraphClassMemberPin[] {
+  nodeRegistry ??= createDefaultNodeRegistry();
+  return (nodeRegistry.get(node.type)?.pins(node.data) ?? [])
+    .filter((pin) => pin.kind === "data" && pin.direction === "out")
+    .map((pin) => {
+      const type = variableTypeFromPinType(pin.type);
+      return {
+        name: pin.name,
+        typeId: type.typeId,
+        direction: "out" as const,
+        ...(type.container !== "single" ? { container: type.container } : {}),
+        ...(type.typeClassId ? { typeClassId: type.typeClassId } : {}),
+      };
+    });
+}
+
 function eventTitleForNotice(node: Pick<GraphNode, "type" | "data">): string {
   return node.type === CUSTOM_EVENT
     ? customEventName(node)
@@ -311,6 +382,8 @@ type FunctionPaste = {
 type ReferenceTargets = {
   classId?: string;
   pastedVariablesById: Map<string, GraphClassMember>;
+  /** Source component id → the variable of its copy. */
+  pastedComponents: Map<string, GraphClassMember>;
   pastedVariablesByName: Map<string, GraphClassMember>;
   pastedFunctionsByName: Map<string, GraphClassMember>;
   pastedEventsByName: Map<string, { name: string; classId?: string }>;
@@ -340,6 +413,13 @@ function remapReferences(node: GraphNode, fn: FunctionPaste, refs: ReferenceTarg
           fn.locals.get(String(data.variableId)) ??
           [...fn.locals.values()].find((entry) => entry.name === data.variableName);
         return local ? patchVariableAccessNode(node, local) : node;
+      }
+      if (typeof data.componentId === "string") {
+        // A component pasted in the same paste is a copy with a new id; any other binding stays.
+        const copy = refs.pastedComponents.get(data.componentId);
+        if (!copy) return node;
+        const patched = patchVariableAccessNode(node, copy);
+        return withClassId({ ...patched, data: { ...patched.data, componentId: copy.componentId } }, refs.classId);
       }
       if (!isSelf || data.propertyKey) return node;
       const pasted = isOwn
@@ -435,6 +515,51 @@ function declaredMembers(graph: SerializedGraph | undefined, kind: GraphClassMem
 }
 
 /**
+ * The target's component tree. `local` is what the Class authors; a Class that
+ * never authored any and inherits none shows the starter box, which a new
+ * component must not displace. `components` adds the inherited ones, whose ids
+ * a copy must not take.
+ */
+function componentTarget(options: ClassMemberPasteOptions): {
+  local: SerializedComponent[];
+  components: SerializedComponent[];
+  accepts: (classId: string) => boolean;
+} {
+  const inherited = (options.ancestors ?? []).flatMap((ancestor) => ancestor.graph.components ?? []);
+  const authored = options.graph.components;
+  const local = Array.isArray(authored) ? authored : inherited.length > 0 ? [] : defaultPrefabComponents();
+  const parentOf = options.eventOptions?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
+  const overlay = walkAncestry(options.eventOptions?.parentClass ?? null, parentOf).includes("SceneLayerActor");
+  return {
+    local,
+    components: [...inherited, ...local],
+    accepts: (classId) =>
+      overlay ? isSceneLayerAllowedComponent(classId) : !isSceneLayerExclusiveComponent(classId),
+  };
+}
+
+/** A component label that is free: unchanged, else the next ` 2`, ` 3`, … as component rows are numbered. */
+function uniqueComponentName(name: string, taken: Set<string>): string {
+  let unique = name;
+  for (let suffix = 2; taken.has(unique); suffix++) unique = `${name.replace(/ \d+$/, "")} ${suffix}`;
+  taken.add(unique);
+  return unique;
+}
+
+/** Properties that name another component (`targetComponentId`) follow it when that one was copied too. */
+function remapComponentReferences(
+  properties: Record<string, unknown>,
+  copies: ReadonlyMap<string, GraphClassMember>,
+): Record<string, unknown> {
+  const mapped: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(properties)) {
+    const copy = key.endsWith("ComponentId") && typeof value === "string" ? copies.get(value) : undefined;
+    mapped[key] = copy?.componentId ?? value;
+  }
+  return mapped;
+}
+
+/**
  * Paste the snapshot into a Class as duplicates, in one graph change.
  *
  * - Variables, functions (and their locals) and custom events take a free
@@ -442,9 +567,14 @@ function declaredMembers(graph: SerializedGraph | undefined, kind: GraphClassMem
  * - Function bodies are copied with fresh node ids and their references
  *   remapped (see `remapReferences`); a function's interface and override
  *   bindings stay with the original.
+ * - Local variables go into `targetFunctionId`; without one they are left out.
+ * - A component variable adds a copy of its component to the Class (attached
+ *   to the root, or to the copy of its parent when that came too).
  * - Events go into the event graph below the existing nodes. A native event
- *   the target does not have, authored or inherited, is pasted as that
- *   event; one it has becomes a custom event named like a duplicate (`Begin Play 1`).
+ *   the target's own graph lacks, and its Class can have, is pasted as that
+ *   event, wired to Call Parent like one added by hand; otherwise it becomes
+ *   a custom event named like a duplicate (`Begin Play 1`) with the native
+ *   event's data outputs as its parameters.
  */
 export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMemberPasteResult {
   const { clipboard, classId } = options;
@@ -464,6 +594,7 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
   const refs: ReferenceTargets = {
     classId,
     pastedVariablesById: new Map(),
+    pastedComponents: new Map(),
     pastedVariablesByName: new Map(),
     pastedFunctionsByName: new Map(),
     pastedEventsByName: new Map(),
@@ -487,24 +618,85 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
     ],
   };
 
-  if (clipboard.variables.length > 0 && !classAllowsMemberKind("variable", options.eventOptions)) {
-    for (const entry of clipboard.variables) {
-      skipped.push({ kind: "variable", name: entry.member.name, reason: "kind" });
-    }
-  } else {
-    for (const entry of clipboard.variables) {
-      const copy: GraphClassMember = {
-        ...structuredClone(entry.member),
-        id: newId(),
-        name: uniqueName(entry.member.name, takenVariables),
+  // Local variables go into one function of the target; a component variable
+  // brings a copy of its component. Neither is a member row of the Class.
+  const targetFunctionId = (options.graph.members ?? []).find(
+    (member) => member.kind === "function" && !member.functionId && member.id === options.targetFunctionId,
+  )?.id;
+  const variablesAllowed = classAllowsMemberKind("variable", options.eventOptions);
+  const target = componentTarget(options);
+  const pastedComponents: Array<{ source: SerializedComponent; copy: SerializedComponent }> = [];
+  for (const entry of clipboard.variables) {
+    const name = entry.member.name;
+    if (entry.component) {
+      const source = entry.component;
+      if (!variablesAllowed || !target.accepts(source.classId)) {
+        skipped.push({ kind: "variable", name, reason: "kind" });
+        continue;
+      }
+      const label = uniqueComponentName(name, takenVariables);
+      const copy: SerializedComponent = {
+        id: nextPrefabComponentId([...target.components, ...pastedComponents.map((entry) => entry.copy)]),
+        classId: source.classId,
+        ...(renamedComponentName(source.classId, label) ? { name: label } : {}),
+        ...(source.category !== undefined ? { category: source.category } : {}),
+        properties: structuredClone(source.properties),
+        parentId: null,
+        ...(source.transform ? { transform: structuredClone(source.transform) } : {}),
       };
-      delete copy.functionId;
-      added.push(copy);
-      refs.pastedVariablesById.set(entry.member.id, copy);
-      refs.pastedVariablesByName.set(nameKey(entry.sourceClassId, entry.member.name), copy);
-      pasted.push({ kind: "variable", id: copy.id, name: copy.name });
+      pastedComponents.push({ source, copy });
+      const variable: GraphClassMember = {
+        id: `component:${copy.id}`,
+        kind: "variable",
+        name: label,
+        typeId: "object",
+        typeClassId: copy.classId,
+        componentId: copy.id,
+      };
+      refs.pastedComponents.set(source.id, variable);
+      pasted.push({ kind: "variable", id: variable.id, name: label, componentId: copy.id });
+      continue;
     }
+    if (entry.member.functionId) {
+      if (!classAllowsMemberKind("variable", { ...options.eventOptions, local: true })) {
+        skipped.push({ kind: "variable", name, reason: "kind" });
+      } else if (!targetFunctionId) {
+        skipped.push({ kind: "variable", name, reason: "function" });
+      } else {
+        const local: GraphClassMember = {
+          ...structuredClone(entry.member),
+          id: newId(),
+          name: uniqueName(name, takenVariables),
+          functionId: targetFunctionId,
+        };
+        added.push(local);
+        pasted.push({ kind: "variable", id: local.id, name: local.name, functionId: targetFunctionId });
+      }
+      continue;
+    }
+    if (!variablesAllowed) {
+      skipped.push({ kind: "variable", name, reason: "kind" });
+      continue;
+    }
+    const copy: GraphClassMember = {
+      ...structuredClone(entry.member),
+      id: newId(),
+      name: uniqueName(name, takenVariables),
+    };
+    added.push(copy);
+    refs.pastedVariablesById.set(entry.member.id, copy);
+    refs.pastedVariablesByName.set(nameKey(entry.sourceClassId, name), copy);
+    pasted.push({ kind: "variable", id: copy.id, name: copy.name });
   }
+  // A copy is attached to the Class root unless the component it hung from came along.
+  const components = pastedComponents.map(({ source, copy }) => {
+    const parent = source.parentId ? refs.pastedComponents.get(source.parentId)?.componentId : undefined;
+    return {
+      ...copy,
+      parentId: parent ?? null,
+      properties: remapComponentReferences(copy.properties, refs.pastedComponents),
+    };
+  });
 
   const functions: FunctionPaste[] = [];
   for (const entry of clipboard.functions) {
@@ -532,6 +724,8 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
 
   // Events: names and nodes first, so function bodies can call the copies.
   const eventNodes: GraphNode[] = [];
+  const callParents: Array<{ id: string; eventType: string }> = [];
+  const parentClassId = options.eventOptions?.parentClass?.trim();
   const eventsAllowed = classAllowsMemberKind("event", options.eventOptions);
   const presentEvents = new Set<string>();
   const takenEvents = new Set<string>();
@@ -542,12 +736,9 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
     const key = eventKey(node);
     if (key !== undefined) presentEvents.add(key);
   }
+  // Only the target's own nodes make a native event present; a parent's does not.
   const inheritedEvents = new Set<string>();
   for (const ancestor of ancestors) {
-    for (const node of ancestor.graph.nodes) {
-      const key = eventKey(node);
-      if (key !== undefined) inheritedEvents.add(key);
-    }
     for (const event of customEventsFromGraph(ancestor.graph)) {
       claimEvent(event.name);
       inheritedEvents.add(`${CUSTOM_EVENT}\0${event.name}`);
@@ -618,24 +809,32 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
       }
       continue;
     }
-    if (!isScriptCatalogNodeAllowed(source.type, options.eventOptions)) {
-      skipped.push({ kind: "event", name: title, reason: "unavailable" });
-      continue;
-    }
     if (typeof source.data.componentId === "string" && !options.componentIds?.has(source.data.componentId)) {
       skipped.push({ kind: "event", name: title, reason: "unavailable" });
       continue;
     }
     const key = eventKey(source);
-    if (key !== undefined && (presentEvents.has(key) || inheritedEvents.has(key))) {
-      // The native event holds its own name, so its copy is the first duplicate of it.
+    if (!isScriptCatalogNodeAllowed(source.type, options.eventOptions) || (key !== undefined && presentEvents.has(key))) {
+      // A native event the Class cannot have, or already has, is a custom event that
+      // takes its outputs. The native event holds its own name, so its copy is the first duplicate of it.
       const base = nativeEventBaseName(source);
-      customEvent(uniqueEventName(base, new Set([...takenEvents, ...eventNameKeys({ name: base })])), []);
+      customEvent(
+        uniqueEventName(base, new Set([...takenEvents, ...eventNameKeys({ name: base })])),
+        nativeEventOutputPins(source),
+      );
       continue;
     }
     if (key !== undefined) presentEvents.add(key);
     const node = placeEvent(source, []);
     pasted.push({ kind: "event", id: node.id, name: title });
+    // Like a Begin Play added by hand: a child's event replaces its parent's unless it calls it.
+    if (
+      parentClassId &&
+      typeof source.data.componentId !== "string" &&
+      nativeEventStubs(options.eventOptions).some((stub) => stub.eventType === source.type)
+    ) {
+      callParents.push({ id: node.id, eventType: node.type });
+    }
   }
 
   const functionGraphs: NonNullable<SerializedGraph["functionGraphs"]> = {};
@@ -645,18 +844,23 @@ export function pasteClassMembers(options: ClassMemberPasteOptions): ClassMember
   }
 
   if (pasted.length === 0) return { graph: options.graph, pasted, skipped };
-  return {
-    graph: {
-      ...options.graph,
-      members: [...(options.graph.members ?? []), ...added],
-      nodes: [...options.graph.nodes, ...eventNodes],
-      ...(functions.length > 0
-        ? { functionGraphs: { ...options.graph.functionGraphs, ...functionGraphs } }
-        : {}),
-    },
-    pasted,
-    skipped,
+  let graph: SerializedGraph = {
+    ...options.graph,
+    members: [...(options.graph.members ?? []), ...added],
+    nodes: [...options.graph.nodes, ...eventNodes],
+    ...(functions.length > 0
+      ? { functionGraphs: { ...options.graph.functionGraphs, ...functionGraphs } }
+      : {}),
+    ...(components.length > 0 ? { components: [...target.local, ...components] } : {}),
   };
+  for (const call of callParents) {
+    graph = ensureCallParentForEvent(graph, {
+      eventNodeId: call.id,
+      eventType: call.eventType,
+      parentClassId: parentClassId!,
+    });
+  }
+  return { graph, pasted, skipped };
 }
 
 /** One sentence per reason for the members a paste left out, or null when it left out none. */
@@ -666,6 +870,7 @@ export function skippedMembersNotice(skipped: readonly SkippedClassMember[]): st
     ["kind", () => "can't be added to this Class."],
     ["unavailable", (plural) => `${plural ? "aren't" : "isn't"} available in this Class.`],
     ["present", (plural) => `${plural ? "are" : "is"} already in this graph.`],
+    ["function", (plural) => `${plural ? "need" : "needs"} a function. Select or open one first.`],
   ];
   for (const [reason, tail] of reasons) {
     const names = skipped.filter((entry) => entry.reason === reason).map((entry) => entry.name);

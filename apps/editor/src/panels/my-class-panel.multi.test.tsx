@@ -330,14 +330,14 @@ describe("Class tree context menu", () => {
     expect(menuLabels()).toEqual(["Get", "Set", "Select", "Rename", "Copy", "Paste", "Delete"]);
   });
 
-  it("offers no Copy or Delete when a component variable is selected", () => {
+  it("offers Copy but no Delete when a component variable is selected", () => {
     const graph = heroGraph();
     graph.components = [createText3DComponent("text-1")];
     renderPanel(graph);
     click("var-health");
     click("component:text-1", { ctrlKey: true });
     openMenu("component:text-1");
-    expect(menuLabels()).toEqual(["Deselect", "Paste"]);
+    expect(menuLabels()).toEqual(["Deselect", "Copy", "Paste"]);
   });
 
   it("offers only Paste on a section row and on the tree background", () => {
@@ -457,19 +457,60 @@ describe("Class tree copy and paste", () => {
     click("evt-begin");
     openMenu("evt-begin");
     fireEvent.click(screen.getByTestId("class-menu-copy"));
-    // A Game Instance has On Init, not Begin Play.
-    harness.graphs["assets/Game.class.babasset"] = { nodes: [], edges: [] };
+    // A Function Library has no Event Graph.
+    harness.graphs["assets/Lib.class.babasset"] = { nodes: [], edges: [] };
     harness.assets = [
-      { path: "assets/Game.class.babasset", header: { type: "Class", name: "Game", guid: "game", parentClass: "GameInstance" } },
+      { path: "assets/Lib.class.babasset", header: { type: "Class", name: "Lib", guid: "lib", parentClass: "FunctionLibrary" } },
     ];
-    harness.path = "assets/Game.class.babasset";
+    harness.path = "assets/Lib.class.babasset";
     view.rerender(panel());
     fireEvent.contextMenu(screen.getByTestId("my-blueprint-tree"), { clientX: 5, clientY: 390 });
     fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
     expect(applyGraphChange).not.toHaveBeenCalled();
     expect(screen.getByTestId("class-notice").textContent).toBe(
-      "Event Begin Play isn't available in this Class.",
+      "Event Begin Play can't be added to this Class.",
     );
+  });
+
+  describe("local variables", () => {
+    function copyLocal() {
+      const hero = heroGraph();
+      hero.members = [
+        ...hero.members!,
+        { id: "var-temp", kind: "variable", name: "Temp", typeId: "float", functionId: "fn-jump" },
+      ];
+      const view = renderPanel(hero);
+      // Opening the function shows its local variables.
+      click("fn-jump");
+      click("var-temp");
+      openMenu("var-temp");
+      fireEvent.click(screen.getByTestId("class-menu-copy"));
+      harness.graphs["assets/Enemy.class.babasset"] = addClassMember(enemyGraph(), "function", "Run", () => "fn-run");
+      harness.path = "assets/Enemy.class.babasset";
+      view.rerender(panel());
+    }
+
+    it("go into the function selected in the target tree", () => {
+      copyLocal();
+      click("fn-run");
+      openMenu("fn-run");
+      fireEvent.click(screen.getByTestId("class-menu-paste"));
+      expect(applyGraphChange).toHaveBeenCalledTimes(1);
+      expect(applyGraphChange.mock.calls[0]![1].members!.at(-1)).toMatchObject({
+        kind: "variable",
+        name: "Temp",
+        functionId: "fn-run",
+      });
+    });
+
+    it("are left out, and named, when the target has no function selected or open", () => {
+      copyLocal();
+      click("enemy-health");
+      fireEvent.contextMenu(screen.getByTestId("my-blueprint-tree"), { clientX: 5, clientY: 390 });
+      fireEvent.click(screen.getByRole("menuitem", { name: "Paste" }));
+      expect(applyGraphChange).not.toHaveBeenCalled();
+      expect(screen.getByTestId("class-notice").textContent).toBe("Temp needs a function. Select or open one first.");
+    });
   });
 });
 
