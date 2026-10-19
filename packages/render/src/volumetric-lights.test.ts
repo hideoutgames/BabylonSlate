@@ -7,13 +7,18 @@ import {
   SpotLight,
   TransformNode,
   Vector3,
+  type Effect,
 } from "@babylonjs/core";
 import { DEFAULT_RENDER_EFFECTS, normalizeShadowSettings } from "@babylonslate/core";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { registerClusteredLightPolicy } from "./clustered-light-policy";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { sceneShadowController } from "./shadow-controller";
 import {
+  bindVolumetricLights,
+  createVolumetricSlots,
+  fillVolumetricSlots,
+  lightsFillVolumetricLayout,
   selectVolumetricLights,
   volumetricLayout,
   volumetricLayoutMatches,
@@ -179,6 +184,68 @@ it("matches a built layout while lights of the same shadow shape trade places, a
     near.setEnabled(false);
     expect(volumetricLayoutMatches(scene, camera, settings, [NONE, NONE])).toBe(false);
     expect(volumetricLayoutMatches(scene, camera, settings, [NONE])).toBe(true);
+  } finally {
+    scene.dispose();
+    engine.dispose();
+  }
+});
+
+it("lets lights stay in a layout's slots only while they are alive and their maps are the slots' shapes", () => {
+  const { engine, scene, shadowed } = shadowedScene();
+  try {
+    const sun = shadowed(new DirectionalLight("sun", new Vector3(0, -1, 0.2), scene));
+    const near = new PointLight("near", new Vector3(1, 0, 0), scene);
+    const scratch: VolumeShadow = { kind: "none", cascades: 0, packed: false };
+    const fills = (lights: Parameters<typeof lightsFillVolumetricLayout>[1]) =>
+      lightsFillVolumetricLayout(scene, lights, [NONE, COMPARE], scratch);
+    expect(fills([near, sun])).toBe(true);
+    // A light with the other shape, a missing light and a map that went away are no longer what the slots sample.
+    expect(fills([sun, near])).toBe(false);
+    expect(fills([near])).toBe(false);
+    sun.shadowEnabled = false;
+    expect(fills([near, sun])).toBe(false);
+    sun.shadowEnabled = true;
+    expect(fills([near, sun])).toBe(true);
+    near.dispose();
+    expect(fills([near, sun])).toBe(false);
+  } finally {
+    scene.dispose();
+    engine.dispose();
+  }
+});
+
+it("lets go of the lights a smaller fill leaves out", () => {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  try {
+    const camera = new FreeCamera("camera", Vector3.Zero(), scene);
+    camera.getViewMatrix();
+    const a = new PointLight("a", new Vector3(1, 0, 0), scene);
+    const b = new PointLight("b", new Vector3(2, 0, 0), scene);
+    const settings = { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, maxLights: 2, maxDistance: 10 };
+    const slots = createVolumetricSlots();
+    fillVolumetricSlots(slots, scene, camera, settings);
+    expect([slots.count, slots.lights[0], slots.lights[1]]).toEqual([2, a, b]);
+    a.setEnabled(false);
+    fillVolumetricSlots(slots, scene, camera, settings);
+    expect([slots.count, slots.lights[0], slots.lights[1]]).toEqual([1, b, undefined]);
+  } finally {
+    scene.dispose();
+    engine.dispose();
+  }
+});
+
+it("binds a shadow map only to a slot compiled for one", () => {
+  const { engine, scene, camera, shadowed } = shadowedScene();
+  try {
+    const sun = shadowed(new DirectionalLight("sun", new Vector3(0, -1, 0.2), scene));
+    const bindShadowLight = vi.spyOn(sceneShadowController(scene).generator(sun)!, "bindShadowLight").mockImplementation(() => {});
+    const effect = { setFloat4: vi.fn(), setFloat2: vi.fn() } as unknown as Effect;
+    // The sun's map is not what a slot compiled without a shadow samples.
+    bindVolumetricLights(effect, scene, camera, [sun], [NONE]);
+    expect(bindShadowLight).not.toHaveBeenCalled();
+    bindVolumetricLights(effect, scene, camera, [sun], [COMPARE]);
+    expect(bindShadowLight).toHaveBeenCalledExactlyOnceWith("0", effect);
   } finally {
     scene.dispose();
     engine.dispose();

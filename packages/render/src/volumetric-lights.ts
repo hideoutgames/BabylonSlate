@@ -86,6 +86,7 @@ export function fillVolumetricSlots(
   settings: VolumetricLightingSettings,
 ): void {
   const limit = settings.maxLights;
+  const previous = slots.count;
   let count = 0;
   if (scene.lightsEnabled) {
     const lights = sceneEffectLights(scene);
@@ -137,6 +138,7 @@ export function fillVolumetricSlots(
     volumeShadowLayout(scene, light, (slots.shapes[i] ??= { kind: "none", cascades: 0, packed: false }));
   }
   slots.count = count;
+  for (let i = count; i < previous; i++) slots.lights[i] = undefined;
   // Insertion sort by shape, then creation: at most `maxLights` entries, each moving its light and shape together.
   for (let i = 1; i < count; i++) {
     const light = slots.lights[i]!;
@@ -159,6 +161,24 @@ export function fillVolumetricSlots(
 export function volumetricSlotsMatch(slots: VolumetricSlots, layout: VolumetricLayout): boolean {
   if (slots.count !== layout.length) return false;
   for (let i = 0; i < slots.count; i++) if (compareVolumeShadows(slots.shapes[i]!, layout[i]!) !== 0) return false;
+  return true;
+}
+
+/**
+ * Whether these lights, in slot order, still have the shadow shapes the layout was compiled for: none disposed, and
+ * each light's map is the sampler kind of its slot. `scratch` receives the current shapes.
+ */
+export function lightsFillVolumetricLayout(
+  scene: Scene,
+  lights: readonly (VolumeLight | undefined)[],
+  layout: VolumetricLayout,
+  scratch: VolumeShadow,
+): boolean {
+  for (let i = 0; i < layout.length; i++) {
+    const light = lights[i];
+    if (!light || light.isDisposed() || compareVolumeShadows(volumeShadowLayout(scene, light, scratch), layout[i]!) !== 0)
+      return false;
+  }
   return true;
 }
 
@@ -250,15 +270,15 @@ export function volumeShadowLayout(
   return out;
 }
 
-/** Binds the first `count` lights to the slots in order; each slot's shadow shape must be the one it was compiled for. */
+/** Binds the lights to the layout's slots in order; each light's shadow shape must be its slot's. */
 export function bindVolumetricLights(
   effect: Effect,
   scene: Scene,
   camera: Camera,
   lights: readonly (VolumeLight | undefined)[],
-  count: number,
+  layout: VolumetricLayout,
 ): void {
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < layout.length; i++) {
     const light = lights[i]!;
     const transformed = light.computeTransformedInformation();
     const position = transformed ? light.transformedPosition : light.position;
@@ -298,9 +318,9 @@ export function bindVolumetricLights(
       spot ? light.exponent : 1,
     );
     // Maps remain controller-owned and can be replaced during admission. Resolve
-    // and bind the current map here, after the graph's managed shadow task.
-    const generator = volumeShadowGenerator(scene, light);
-    generator?.bindShadowLight(String(i), effect);
+    // and bind the current map here, after the graph's managed shadow task. A slot
+    // compiled without a shadow has no sampler to bind, whatever map its light has.
+    if (layout[i]!.kind !== "none") volumeShadowGenerator(scene, light)?.bindShadowLight(String(i), effect);
     const min = light.getDepthMinZ(camera);
     effect.setFloat2(`volumeDepth${i}`, min, min + light.getDepthMaxZ(camera));
   }

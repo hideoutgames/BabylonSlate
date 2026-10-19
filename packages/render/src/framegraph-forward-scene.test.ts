@@ -1028,19 +1028,27 @@ it("skips a running fog march for the frame in which shadow admission drops one 
   graph.dispose();
 });
 
-it("skips a running fog march for the frame in which the lights nearest the camera no longer fill its slots, then re-plans it", async () => {
+it("draws a running fog march with the lights it bound for the frame in which the nearest lights stop filling its slots, then re-plans it", async () => {
   const volumetricLighting = { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, density: 0.3 };
   const { scene, camera, graph, skipped, far } = await fogHost({ volumetricLighting }, normalizeRenderingQuality(qualityPresetPatch("high")));
   const builds = graph.diagnostics().graphBuilds;
   expect(skipped()).toEqual([]);
-  // The view checked its graph before the frame moved a second light into reach. The march binds the lights nearest
-  // the camera in the frame, which the one slot it was built with cannot hold.
+  const bound = vi.spyOn(Effect.prototype, "setFloat4");
+  const slotPositions = (slot: number) => bound.mock.calls.filter(([name]) => name === `volumePosition${slot}`).map(([, ...position]) => position);
+  // The view checked its graph before the frame moved a second light into reach. The one slot the march was built with
+  // cannot hold both, but the light it bound still fits, so the frame keeps its fog rather than present it unfogged
+  // while the graph is rebuilt.
   scene.onBeforeRenderObservable.addOnce(() => { far.position.x = 1; });
-  expect(skipped().sort()).toEqual(FOG_ONLY_TASKS);
+  bound.mockClear();
+  expect(skipped()).toEqual([]);
+  expect(slotPositions(0)).toEqual([[0, 2, 0, 1]]);
+  expect(slotPositions(1)).toEqual([]);
   expect(graph.readiness(camera)).toMatchObject({ preparationRequired: true });
   await graph.prepare(camera);
   expect(graph.diagnostics().graphBuilds).toBe(builds + 1);
+  bound.mockClear();
   expect(skipped()).toEqual([]);
+  expect(slotPositions(1)).toEqual([[1, 2, 0, 1]]);
   graph.dispose();
 });
 

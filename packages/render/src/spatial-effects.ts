@@ -20,9 +20,11 @@ import {
   bindVolumetricLights,
   createVolumetricSlots,
   fillVolumetricSlots,
+  lightsFillVolumetricLayout,
   volumetricLayoutMatches,
   volumetricLayoutOf,
   volumetricSlotsMatch,
+  type VolumeShadow,
   type VolumetricLayout,
 } from "./volumetric-lights";
 import {
@@ -106,8 +108,8 @@ export interface SpatialStage {
   idle?: () => boolean;
   /**
    * The volumetric march's slot layout: the shadow sampler shape of each slot it was compiled for, in canonical order.
-   * Each frame binds the lights then nearest the camera by shape, so the view rebuilds only once the march would run
-   * for another layout.
+   * Each frame binds the lights then nearest the camera by shape (the lights it bound last when those no longer fit),
+   * so the view rebuilds only once the march would run for another layout.
    */
   lightLayout?: VolumetricLayout;
   bind(effect: Effect): void;
@@ -446,15 +448,22 @@ export function createSpatialStages(
       // The view checks the slot layout before each frame, but the frame then
       // moves the camera (inputs, animation) and shadow admission can release
       // or stand by a map: a march that wakes after a check that found it idle,
-      // or runs on after the nearest lights or a map changed, can hold lights
-      // whose shadow shapes no longer fill its slots. Take the frame's nearest
-      // lights into the slots and skip it when their shapes differ from the
-      // compiled ones rather than bind a sampler a slot was not compiled for;
-      // the view rebuilds on the next. Evaluated once per frame, before the
-      // march binds the slots.
+      // or runs on after the nearest lights or a map changed, finds the frame's
+      // nearest lights with other shapes than its slots. The lights it bound
+      // last still fit them while their maps are what the slots were compiled
+      // for, so it draws with those and the view rebuilds on the next frame;
+      // only a bound light whose map changed or that is gone skips the frame,
+      // rather than bind a sampler a slot was not compiled for. Evaluated once
+      // per frame, before the march binds `slots`.
+      const candidates = createVolumetricSlots();
+      const held: VolumeShadow = { kind: "none", cascades: 0, packed: false };
       const slotsCurrent = () => {
-        fillVolumetricSlots(slots, scene, camera, volume);
-        return volumetricSlotsMatch(slots, lightLayout);
+        fillVolumetricSlots(candidates, scene, camera, volume);
+        if (volumetricSlotsMatch(candidates, lightLayout)) {
+          for (let i = 0; i < lightLayout.length; i++) slots.lights[i] = candidates.lights[i];
+          return true;
+        }
+        return lightsFillVolumetricLayout(scene, slots.lights, lightLayout, held);
       };
       const idle = () => volumetricMarchIdle(scene, camera, volume, localVolumes) || !slotsCurrent();
       stages.push({
@@ -492,7 +501,7 @@ export function createSpatialStages(
             scene.useRightHandedSystem ? -1 : 1,
             camera.mode === Camera.ORTHOGRAPHIC_CAMERA ? 1 : 0,
           );
-          bindVolumetricLights(effect, scene, camera, slots.lights, slots.count);
+          bindVolumetricLights(effect, scene, camera, slots.lights, lightLayout);
           if (localVolumes) bindFogVolumes(effect, scene, camera, volume.maxDistance);
         },
       });
