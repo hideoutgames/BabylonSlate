@@ -168,8 +168,14 @@ export class SceneRenderCoordinator {
       checkpoint = now;
       if (grant > 0) { creditLeft -= grant; deadline += grant; finalDeadline += grant; }
     };
-    /** Created once a previous owner's preparation settled: its ceiling bounds this preparation alone. */
+    /**
+     * Created after the first presentation-fence wait (it asks every Engine
+     * effect for readiness, a synchronous GL query for one still linking), its
+     * ceiling counted from `started`, once a previous owner's preparation
+     * settled: it bounds this preparation alone.
+     */
     let compiles!: DriverCompileWatch;
+    let started = 0;
     /**
      * Shaders that finished compiling since the last renewal, or a driver still
      * compiling, renew both bounds: synchronous links each shorter than
@@ -208,8 +214,7 @@ export class SceneRenderCoordinator {
         try { await previous.promise; }
         catch { /* previous owner's outcome */ }
       }
-      checkpoint = performance.now();
-      compiles = new DriverCompileWatch(this.scene.getEngine(), checkpoint);
+      checkpoint = started = performance.now();
       creditLeft = SCENE_THREAD_HELD_BUDGET_MS;
       finalDeadline = checkpoint + PREPARATION_TOTAL_TIMEOUT_MS;
       restartDeadline();
@@ -221,6 +226,7 @@ export class SceneRenderCoordinator {
         // preparation time, so it extends both bounds.
         const waited = await whenPresentationFenceClear(this.scene.getEngine(), () => check(false));
         if (waited > 0) { finalDeadline += waited; restartDeadline(); }
+        compiles ??= new DriverCompileWatch(this.scene.getEngine(), started);
         flushSceneLatticeDeformers(this.scene);
         if (expired()) throw timedOut();
         const camera = this.camera();

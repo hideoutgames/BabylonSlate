@@ -85,6 +85,55 @@ describe("ScriptHost nested dispatch", () => {
     expect(reportError).toHaveBeenCalledTimes(2);
   });
 
+  it("never runs a member call on the running object when its receiver is null", async () => {
+    const host = new ScriptHost(services({ interfaceRegistry: interfaces({ value: 5 }) }));
+    await host.load(script("Hero", [
+      "export function onTick(ctx) {",
+      "  ctx.invokeCustomEvent(null, 'OnPing', {});",
+      "  ctx.invokeFunction(null, 'Jump', {});",
+      "  ctx.setVariableOn(null, 'hp', 99);",
+      "  ctx.self.setVariable('read', [ctx.getVariableFrom(null, 'hp'), ctx.getComponentById(null, 'mesh'), ctx.callComponentFunction(null, 'play', {})]);",
+      "  ctx.self.setVariable('interface', ctx.callInterface(undefined, 'probe', 'Probe', {}));",
+      "}",
+      "export function OnPing(ctx) { ctx.self.setVariable('ping', true); }",
+      "export function Jump(ctx) { ctx.self.setVariable('jumped', true); return {}; }",
+      "export function Probe(ctx) { ctx.self.setVariable('probed', true); return { value: 1 }; }",
+    ].join("\n"), {
+      entryPoints: [
+        { name: "onTick", event: "onTick", isAsync: false },
+        { name: "OnPing", event: "OnPing", isAsync: false },
+      ],
+      interfaceImplementations: [{ interfaceGuid: "probe", method: "Probe", exportName: "Probe" }],
+    }));
+    const hero = new Actor({ classId: "Hero", implementedInterfaces: ["probe"] });
+    hero.setVariable("hp", 10);
+    host.bindInterfaceHandlers(hero);
+
+    host.hooksFor("Hero")!.onTick!(hero, tick);
+
+    expect(hero.getVariable("ping")).toBeUndefined();
+    expect(hero.getVariable("jumped")).toBeUndefined();
+    expect(hero.getVariable("probed")).toBeUndefined();
+    expect(hero.getVariable("hp")).toBe(10);
+    expect(hero.getVariable("read")).toEqual([undefined, null, {}]);
+    expect(hero.getVariable("interface")).toEqual({ value: 5 });
+  });
+
+  it("logs a null access as an error through the host log, and never throws", () => {
+    const logged: unknown[][] = [];
+    const host = new ScriptHost(services({ log: (...args) => { logged.push(args); } }));
+    const { nullAccess } = host.createContext(null, 0, 0);
+
+    nullAccess("Hero: Destroy Actor (Target) tried to access null.");
+    nullAccess("Hero: Destroy Actor (Target) tried to access null.");
+
+    // Every occurrence is reported; nothing collapses repeats.
+    expect(logged).toEqual([
+      ["error", "Script", "Hero: Destroy Actor (Target) tried to access null."],
+      ["error", "Script", "Hero: Destroy Actor (Target) tried to access null."],
+    ]);
+  });
+
   it("returns the method's pin defaults when Call Interface has no receiver", () => {
     const host = new ScriptHost(services({ interfaceRegistry: interfaces({ value: 5 }) }));
     expect(host.createContext(null, 0, 0).callInterface(null, "probe", "Probe")).toEqual({ value: 5 });

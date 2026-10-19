@@ -20,4 +20,4 @@ Returns the name of an actor as text.
 
 ## Notes
 
-- Returns an empty string when the reference is empty.
+- Returns an empty string, and logs an error, when the reference is empty.

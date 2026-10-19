@@ -21,5 +21,5 @@ Returns the value of a variable on an Animation Graph component.
 
 ## Notes
 
-- **Name** must match a variable defined in the Animation Graph. An invalid target or unknown name returns an empty value.
+- **Name** must match a variable defined in the Animation Graph. An unknown name returns an empty value, and an empty target returns an empty value and logs an error.
 - Only available in Actor class graphs.

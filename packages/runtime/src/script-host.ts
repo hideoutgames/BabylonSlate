@@ -340,6 +340,11 @@ export interface ScriptContext {
   formatValue(value: unknown): string;
   checkInfiniteLoop(location?: ScriptLoopLocation): void;
   log(severity: LogSeverity, category: string, message: string): void;
+  /**
+   * A compiled node found null on an input it acts on and skipped itself. Logs `message` as an error
+   * ("Hero: Destroy Actor (Target) tried to access null.") every time, and never throws.
+   */
+  nullAccess(message: string): void;
   print(
     message: string,
     key: string,
@@ -765,7 +770,7 @@ type LoadedScript = {
  */
 export type HostContextKey =
   | "getSaveData" | "getSaveField" | "setSaveField" | "newGame" | "saveGame" | "loadGame" | "listSaves"
-  | "deleteSave" | "registerSaveActor" | "assetRegistry" | "formatValue" | "checkInfiniteLoop" | "log" | "print"
+  | "deleteSave" | "registerSaveActor" | "assetRegistry" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "print"
   | "drawDebug" | "getPostProcessEntry" | "getMaterialFloatParameter" | "getMaterialColorParameter"
   | "getMaterialTextureParameter" | "resetMaterialFloatParameter" | "resetMaterialColorParameter"
   | "resetMaterialTextureParameter" | "setMeshMaterial" | "getMaterialAsset" | "setMaterialFloatParameter"
@@ -1436,6 +1441,7 @@ export class ScriptHost {
       },
       log: (severity, category, message) =>
         services.log(severity, category, message),
+      nullAccess: (message) => services.log("error", "Script", message),
       print: (message, key, duration, color) =>
         services.print(message, key, duration, color),
       drawDebug: (payload) => {
@@ -1855,8 +1861,7 @@ export class ScriptHost {
         }
         store?.setVariable(name, value);
       };
-      context.getVariableFrom = (target, name) => {
-        const object = target ?? self;
+      context.getVariableFrom = (object, name) => {
         if (object instanceof ActorComponent && object.classId === "2DRichTextComponent" &&
           (name === "appearProgress" || name === "isRevealed")) {
           const progress = services.text2DAppearProgress?.(object) ?? 1;
@@ -1867,8 +1872,7 @@ export class ScriptHost {
         }
         return object?.getVariable(name);
       };
-      context.setVariableOn = (target, name, value) => {
-        const object = target ?? self;
+      context.setVariableOn = (object, name, value) => {
         if (object instanceof ActorComponent && object.classId === "DeformerComponent" &&
           (DEFORMER_PROPERTY_KEYS as readonly string[]).includes(name)) {
           if (!this.canInvokeOwner(object)) return;
@@ -2010,7 +2014,7 @@ export class ScriptHost {
       context.callInterface = (target, interfaceGuid, method, args) => {
         const registry = services.interfaceRegistry;
         if (!registry) return {};
-        const receiver = (target ?? self) as InterfaceDispatchTarget | null;
+        const receiver = target as InterfaceDispatchTarget | null | undefined;
         // A missing or unadmitted receiver runs no handler and reads the pin defaults.
         const dispatchTarget: InterfaceDispatchTarget = !receiver ? NO_INTERFACE_RECEIVER
           : !(receiver instanceof BObject) || this.canInvokeOwner(receiver) ? receiver
@@ -2027,7 +2031,7 @@ export class ScriptHost {
         asActor(actor)?.components.find((c) => c.classId === classId && !c.destroyed) ??
         null;
       context.getComponentById = (actor, componentId) => {
-        const target = actor ?? self;
+        const target = actor ?? null;
         // Spawned prefabs resolve their own sourceId before an authored scene
         // component with the same id can claim the stream-wide translation.
         const local = findComponentById(asActor(target), componentId);
@@ -2040,7 +2044,7 @@ export class ScriptHost {
         );
       };
       context.callComponentFunction = (target, name, args) =>
-        this.callNativeComponentFunction(target ?? self, String(name ?? ""), args ?? {});
+        this.callNativeComponentFunction(target, String(name ?? ""), args ?? {});
       context.addComponent = (actor, classId, transform) => {
         const target = asActor(actor);
         if (!target) return null;
@@ -2087,7 +2091,7 @@ export class ScriptHost {
         return scene && !scene.destroyed ? scene : null;
       };
       context.invokeCustomEvent = (target, eventName, eventArgs) => {
-        const receiver = (target ?? self) as BObject | null;
+        const receiver = target as BObject | null | undefined;
         if (!receiver || !this.canInvokeOwner(receiver) || typeof eventName !== "string" || !eventName) return;
         // The event runs inside the caller's frame: delta, tick index and input
         // follow it. Caller extras (Behaviour Tree, Animation Graph) belong to
@@ -2128,7 +2132,7 @@ export class ScriptHost {
         if (typeof target === "string") {
           loaded = this.functionScriptsFor(target, functionName);
         } else {
-          const object = (target ?? self) as BObject | null;
+          const object = target as BObject | null | undefined;
           if (!object || !this.canInvokeOwner(object)) {
             if (extras?.saveMigrationData) throw new SaveGameError("incompatible", "A save migration function's owner is unavailable.");
             return {};

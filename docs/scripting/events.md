@@ -36,7 +36,7 @@ When the Game Instance and subsystem events fire is described in [Game Instance 
 2. With the event selected, add **Outputs** in the **Inspector** for the values it receives. Use **Rename Event** to rename it together with its calls in this class.
 3. To run it, drag the event from the **Class** window onto the graph, or choose **Call** followed by its name in **Add Node**. This places a [Call Custom Event](class/call-custom-event.md) node with one input per output.
 
-To run a custom event on another object, drag from a pin that holds that object and choose its Call entry; the node gets a **Target** pin. The caller continues straight away and does not wait for latent nodes inside the event.
+To run a custom event on another object, drag from a pin that holds that object and choose its Call entry; the node gets a **Target** pin. For an event of this class the pin reads **Target (Self)** while it is unconnected, so the event runs on the running object; connect another object of the class to run it there. The caller continues straight away and does not wait for latent nodes inside the event.
 
 A child class can override an inherited custom event by adding it from **Add Event**. It comes wired to [Call Parent Event](class/call-parent-event.md), which runs the parent's version.
 
