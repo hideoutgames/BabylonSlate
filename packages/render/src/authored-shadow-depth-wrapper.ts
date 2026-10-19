@@ -18,7 +18,7 @@ export class AuthoredShadowDepthWrapper extends ShadowDepthWrapper {
   private readonly retirements = new Set<OwnedEffectRetirement>();
   private readonly meshObservers = new Map<AbstractMesh, Observer<Node>>();
   /** ShadowGenerator.dispose never reaches the materials its map drew; its shadow map's disposal ends the generator's entries. */
-  private readonly mapObservers = new Map<ShadowGenerator,{ map: RenderTargetTexture; observer: Observer<BaseTexture> }>();
+  private readonly mapObservers = new Map<ShadowGenerator, { map: RenderTargetTexture; observer: Observer<BaseTexture> }>();
   private readonly effectObserver: Observer<{ effect: Effect; subMesh: SubMesh | null }>;
   private get native(): NativeShadowResources { return this as unknown as NativeShadowResources; }
   constructor(material: NodeMaterial) {
@@ -35,7 +35,8 @@ export class AuthoredShadowDepthWrapper extends ShadowDepthWrapper {
     }, -1, true);
   }
   override isReadyForSubMesh(subMesh: SubMesh, defines: string[], generator: ShadowGenerator, instances: boolean, passId: number): boolean {
-    if (this.released) return false;
+    // A disposed generator has no map to observe; it must not create an entry nobody retires.
+    if (this.released || !generator.getShadowMap()) return false;
     this.pruneRetirements();
     const entries = this.native._subMeshToDepthWrapper.mm.get(subMesh);
     const previous = entries?.get(generator);
@@ -69,10 +70,14 @@ export class AuthoredShadowDepthWrapper extends ShadowDepthWrapper {
   }
   private retireEntry(subMesh: SubMesh | null, entry: NativeShadowEntry): void {
     const effect = entry.mainDrawWrapper.effect;
+    const geometry = subMesh?.getRenderingMesh().geometry;
     const wrappers = new Set([entry.mainDrawWrapper, ...entry.drawWrapper.filter((value): value is DrawWrapper => value != null)]);
-    if (effect) subMesh?.getRenderingMesh().geometry?._releaseVertexArrayObject(effect);
     for (const wrapper of wrappers) { wrapper.setEffect(null); wrapper.dispose(true); }
-    this.retirements.add(retireOwnedEffect(effect, () => effect?.dispose()));
+    this.retirements.add(retireOwnedEffect(effect, () => {
+      effect?.dispose();
+      // A shared Effect keeps the vertex array object its remaining entries bind.
+      if (effect?.isDisposed) geometry?._releaseVertexArrayObject(effect);
+    }));
   }
   private retireSubMesh(subMesh: SubMesh | null): void {
     const entries = this.native._subMeshToDepthWrapper.mm.get(subMesh);
