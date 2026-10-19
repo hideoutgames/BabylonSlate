@@ -25,9 +25,8 @@ export const SCENE_FIRST_FRAME_TIMEOUT_MS = 20_000;
  * (`DriverCompileWatch.renew`), from the start of the wait whatever it credits.
  * Renewals measure progress, so this only ends a wait that keeps compiling and
  * never becomes ready (a define churn that recompiles forever), with an error
- * instead of an endless loading screen. It leaves a cold load that links every
- * variant synchronously (WebKit WebGL2, SwiftShader) several times the longest
- * such load seen.
+ * instead of an endless loading screen. It is meant to sit well above any cold
+ * load that links every variant synchronously (WebKit WebGL2, SwiftShader).
  */
 export const SCENE_PREPARATION_CEILING_MS = 300_000;
 
