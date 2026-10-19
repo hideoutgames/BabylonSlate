@@ -160,6 +160,14 @@ export type CompileOptions = {
    * abort runaway scripts. Release export leaves this unset.
    */
   instrumentInfiniteLoops?: boolean;
+  /**
+   * Editor Simulation compiles report what runs for the instance the editor
+   * observes (`ctx.debugTrace`): each exec node visit, the exec edge taken, and
+   * the values nodes read and produce. An unobserved instance pays one null
+   * check per probe. Ignored when `stripDevelopmentOnly` is set, so release
+   * exports never carry it.
+   */
+  instrumentExecutionTrace?: boolean;
   /** Function-local `let` lines inserted at the start of each export. */
   localPreamble?: string[];
   /**
@@ -276,19 +284,35 @@ function execOutPins(node: GraphNode, pinRef?: string): GraphPin[] {
   return byId.length > 0 ? byId : outs.filter((pin) => pin.name === pinRef);
 }
 
+/**
+ * Input events whose chain runs only on ticks where the input fired; the
+ * trace reports their visit inside the gate, not on every tick.
+ */
+const GATED_EVENT_TYPE_IDS: ReadonlySet<string> = new Set([
+  "input.actionEvent",
+  "input.axisEvent",
+  "input.onAnyKeyPressed",
+  "input.onGamepadConnected",
+  "input.onGamepadDisconnected",
+]);
+
+/** An exec wire followed to its target; `GraphEdge` fits. */
+type ExecTarget = { id: string; targetNodeId: string; targetPinId: string };
+
 function execSuccessorEdges(
   index: GraphIndex,
   nodeId: string,
   pinRef?: string,
-): Array<{ targetNodeId: string; targetPinId: string }> {
+): ExecTarget[] {
   const node = index.node(nodeId);
   if (!node) return [];
   const leaving = index.outgoing(nodeId);
-  const result: Array<{ targetNodeId: string; targetPinId: string }> = [];
+  const result: ExecTarget[] = [];
   for (const out of execOutPins(node, pinRef)) {
     for (const e of leaving) {
       if (e.sourcePinId === out.id) {
         result.push({
+          id: e.id,
           targetNodeId: e.targetNodeId,
           targetPinId: e.targetPinId,
         });
@@ -458,6 +482,10 @@ export function compileGraph(
   const index = indexGraph(graph);
   const exportName = options.exportName ?? "run";
   const preamble = [`//# sourceURL=babylonslate:///${options.assetGuid}.js`];
+  // `var` stays valid when a document concatenates its graphs' modules.
+  if (options.instrumentExecutionTrace === true && options.stripDevelopmentOnly !== true) {
+    preamble.push("var __dv = (t, node, pin, value) => (t === null ? value : t.read(node, pin, value));");
+  }
   if (graph.nodes.some((node) => node.typeId.startsWith("tags."))) {
     preamble.push(...tagRuntimeSource(options.tagRegistry).split("\n"));
   }
@@ -476,6 +504,14 @@ export function compileGraph(
   const shouldStrip = (node: GraphNode) =>
     options.stripDevelopmentOnly === true && isDevelopmentOnlyNode(node);
   const instrumentLoops = options.instrumentInfiniteLoops === true;
+  const traceExecution =
+    options.instrumentExecutionTrace === true && options.stripDevelopmentOnly !== true;
+  /**
+   * Execution-trace probes run only for the observed instance: `__dbg` is its
+   * recorder, null for every other instance, so an unobserved probe is one
+   * null check. Probe text never allocates and never changes evaluation order.
+   */
+  const traceProbe = (call: string) => `  if (__dbg !== null) ${call};`;
   const loopCheck = (nodeId: string) => `ctx.checkInfiniteLoop(${JSON.stringify({
     assetGuid: options.assetGuid, graphId: graph.id, nodeId,
   })});`;
@@ -608,6 +644,17 @@ export function compileGraph(
     return memoExpression(`in:${node.id}:${p.id}`, expression);
   }
 
+  /**
+   * A node that runs records what it read from a wired data input. Pure nodes inline into their
+   * consumers, so they record nothing; an unwired input shows its literal on the node.
+   */
+  function tracedRead(node: GraphNode, p: GraphPin, expression: string): string {
+    if (!traceExecution || options.registry.get(node.typeId)?.pure) return expression;
+    const edge = index.incoming(node.id, p.id);
+    if (!edge || !index.node(edge.sourceNodeId)) return expression;
+    return `__dv(__dbg, ${JSON.stringify(node.id)}, ${JSON.stringify(p.id)}, ${expression})`;
+  }
+
   /** `bound` names the variables that already hold a node's subject inputs. */
   function makeCtx(node: GraphNode, continuation?: (expression: string) => void,
     branch?: (expression: string, truePin: string, falsePin: string) => void,
@@ -619,7 +666,8 @@ export function compileGraph(
       input(pinName) {
         const p = pinForCodegen(node, pinName, "in");
         if (!p) return "undefined";
-        return bound?.get(p.id) ?? inputExpression(node, p);
+        // A bound subject was recorded where it was bound; every other wired read is recorded here.
+        return bound?.get(p.id) ?? tracedRead(node, p, inputExpression(node, p));
       },
       isWired(pinId) { return index.incoming(node.id, pinId) !== undefined; },
       reference(pinName) { return referenceExpr(node, pinName); },
@@ -724,7 +772,7 @@ export function compileGraph(
       const slot = `__s_${jsIdent(node.id)}_${jsIdent(subject.pin.id)}`;
       bound.set(subject.pin.id, slot);
       outputDecls.set(slot, `  let ${slot};`);
-      emitBody(`  ${slot} = ${inputExpression(node, subject.pin)};`, anchor);
+      emitBody(`  ${slot} = ${tracedRead(node, subject.pin, inputExpression(node, subject.pin))};`, anchor);
     }
     for (const subject of subjects) {
       emitBody(`  if (${bound.get(subject.pin.id)} == null) ctx.nullAccess(${JSON.stringify(subject.message)});`, anchor);
@@ -734,6 +782,7 @@ export function compileGraph(
     declareDataOuts(node, ctx);
     if (subjects.length === 0) {
       def.codegen(ctx);
+      emitOutputProbe(node, ctx);
       return { ctx };
     }
     const condition = subjects.map((subject) => `${bound.get(subject.pin.id)} != null`).join(" && ");
@@ -743,6 +792,7 @@ export function compileGraph(
     if (body.length === start) {
       // The node emitted nothing (its work is a continuation): no empty block.
       body.pop();
+      emitOutputProbe(node, ctx);
       return { ctx, condition };
     }
     const resets = node.pins
@@ -753,6 +803,7 @@ export function compileGraph(
       for (const reset of resets) emitBody(reset, anchor);
     }
     emitBody("  }", anchor);
+    emitOutputProbe(node, ctx);
     return { ctx, condition };
   }
 
@@ -760,16 +811,23 @@ export function compileGraph(
    * Several successor chains share one function scope, so each gets its own
    * block: a node reached on two of them must not declare a local twice.
    */
-  function emitAlong(
-    edges: Array<{ targetNodeId: string; targetPinId: string }>,
-    visited: ExecPath,
-  ) {
+  function emitAlong(edges: ExecTarget[], visited: ExecPath) {
     const scoped = edges.length > 1;
     for (const edge of edges) {
       if (scoped) emitBody("  {");
-      emitExecChain(edge.targetNodeId, new Map(visited), edge.targetPinId);
+      emitExecChain(edge.targetNodeId, new Map(visited), edge.targetPinId, edge.id);
       if (scoped) emitBody("  }");
     }
+  }
+
+  /** Records every data output of `node` once its statements have run. */
+  function emitOutputProbe(node: GraphNode, ctx: CodegenContext) {
+    if (!traceExecution) return;
+    const outs = node.pins.filter((p) => p.kind === "data" && p.direction === "out");
+    if (outs.length === 0) return;
+    const writes = outs.map((p) =>
+      `__dbg.write(${JSON.stringify(node.id)}, ${JSON.stringify(p.id)}, ${ctx.output(p.id)});`);
+    emitBody(`  if (__dbg !== null) { ${writes.join(" ")} }`);
   }
 
   function declareDataOuts(node: GraphNode, ctx: CodegenContext) {
@@ -903,6 +961,7 @@ export function compileGraph(
         );
         if (instrumentLoops) emitBody(`      ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`      ${indexSlot} = ${iter};`, anchor);
+        emitOutputProbe(node, ctx);
         loopStack.push({ label: `__loop_${nextLabel++}`, opening });
         emitAlong(
           execSuccessorEdges(index, node.id, meta.loopBodyPin),
@@ -930,6 +989,7 @@ export function compileGraph(
         if (instrumentLoops) emitBody(`      ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`      ${indexSlot} = ${iter};`, anchor);
         emitBody(`      ${elementSlot} = ${snap}[${iter}];`, anchor);
+        emitOutputProbe(node, ctx);
         loopStack.push({ label: `__loop_${nextLabel++}`, opening });
         emitAlong(
           execSuccessorEdges(index, node.id, meta.loopBodyPin),
@@ -960,6 +1020,7 @@ export function compileGraph(
         emitBody(`      ${indexSlot} = ${iter};`, anchor);
         emitBody(`      ${keySlot} = ${snap}[${iter}][0];`, anchor);
         emitBody(`      ${valueSlot} = ${snap}[${iter}][1];`, anchor);
+        emitOutputProbe(node, ctx);
         loopStack.push({ label: `__loop_${nextLabel++}`, opening });
         emitAlong(
           execSuccessorEdges(index, node.id, meta.loopBodyPin),
@@ -1013,6 +1074,7 @@ export function compileGraph(
       emitBody(`    if (__st.count == null) __st.count = 0;`, anchor);
       emitBody(`    if ((__st.count | 0) < ((${nExpr}) | 0)) {`, anchor);
       emitBody(`      ${counterSlot} = __st.count | 0;`, anchor);
+      emitOutputProbe(node, ctx);
       emitBody(`      __st.count = (__st.count | 0) + 1;`, anchor);
       emitAlong(execSuccessorEdges(index, node.id, meta.thenPin), visited);
       emitBody(`    }`, anchor);
@@ -1031,6 +1093,7 @@ export function compileGraph(
       emitBody(`    const __isA = __st.nextIsB !== true;`, anchor);
       emitBody(`    __st.nextIsB = __isA;`, anchor);
       emitBody(`    ${isASlot} = __isA;`, anchor);
+      emitOutputProbe(node, ctx);
       emitBody(`    if (__isA) {`, anchor);
       emitAlong(execSuccessorEdges(index, node.id, meta.aPin), visited);
       emitBody(`    } else {`, anchor);
@@ -1087,13 +1150,20 @@ export function compileGraph(
     startId: string,
     visited: ExecPath = new Map(),
     entryPinId?: string,
+    viaEdgeId?: string,
   ) {
     let current: string | undefined = startId;
     let currentEntryPin = entryPinId;
+    let currentVia = viaEdgeId;
     const scopes: ExecScope[] = [];
     while (current) {
       const node = index.node(current);
       if (!node) break;
+      // Taking a wire is reported before the node's loop wrapper opens (once per
+      // arrival) and also before a back edge's `continue`, never on loop re-entry.
+      if (traceExecution && currentVia !== undefined) {
+        emitBody(traceProbe(`__dbg.edge(${JSON.stringify(currentVia)})`));
+      }
       // Control inputs (Gate Open/Close, Do Once Reset) are distinct states.
       const input = currentEntryPin ?? node.pins.find(
         (pin) => pin.kind === "exec" && pin.direction === "in",
@@ -1128,6 +1198,7 @@ export function compileGraph(
         if (targets.length === 1) {
           current = targets[0]!.targetNodeId;
           currentEntryPin = targets[0]!.targetPinId;
+          currentVia = targets[0]!.id;
           continue;
         }
         emitAlong(targets, visited);
@@ -1142,6 +1213,10 @@ export function compileGraph(
           nodeId: node.id,
         });
         break;
+      }
+      // Event entries that gate their chain on live input report inside the gate.
+      if (traceExecution && !GATED_EVENT_TYPE_IDS.has(node.typeId)) {
+        emitBody(traceProbe(`__dbg.exec(${JSON.stringify(node.id)})`));
       }
       if (useEpoch) emitBody("  __stmt++;");
 
@@ -1305,6 +1380,10 @@ export function compileGraph(
             `    if (__phase === "${phase}" && ${snapshot}?.${phase}) {`,
             anchor,
           );
+          if (traceExecution) {
+            emitBody(traceProbe(`__dbg.exec(${JSON.stringify(node.id)})`));
+            emitOutputProbe(node, ctx);
+          }
           emitAlong(execSuccessorEdges(index, node.id, phase), new Map(visited));
           emitBody("    }", anchor);
         }
@@ -1328,6 +1407,10 @@ export function compileGraph(
         );
         if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`    ${ctx.output("key")} = ${pressedKey};`, anchor);
+        if (traceExecution) {
+          emitBody(traceProbe(`__dbg.exec(${JSON.stringify(node.id)})`));
+          emitOutputProbe(node, ctx);
+        }
         emitAlong(execSuccessorEdges(index, node.id, "Then"), visited);
         emitBody("  }", anchor);
         break;
@@ -1354,6 +1437,10 @@ export function compileGraph(
         );
         if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`    ${padIndexSlot} = __pad.gamepadIndex;`, anchor);
+        if (traceExecution) {
+          emitBody(traceProbe(`__dbg.exec(${JSON.stringify(node.id)})`));
+          emitOutputProbe(node, ctx);
+        }
         emitAlong(execSuccessorEdges(index, node.id, "then"), visited);
         emitBody(`  }`, anchor);
         break;
@@ -1410,6 +1497,7 @@ export function compileGraph(
       if (edges.length === 1) {
         current = edges[0]!.targetNodeId;
         currentEntryPin = edges[0]!.targetPinId;
+        currentVia = edges[0]!.id;
         continue;
       }
       emitAlong(edges, visited);
@@ -1463,6 +1551,9 @@ export function compileGraph(
         ...(entry ? entryComponentId(entry) : {}),
       },
       declLines: [
+        ...(traceExecution
+          ? [`  const __dbg = ctx.debugTrace === null ? null : ctx.debugTrace.graph(${JSON.stringify(options.assetGuid)}, ${JSON.stringify(graph.id)});`]
+          : []),
         ...outputDecls.values(),
         ...pureExpressions.declarations,
         ...(memoDecls.length > 0 ? ["  let __stmt = 0;", ...memoDecls] : []),

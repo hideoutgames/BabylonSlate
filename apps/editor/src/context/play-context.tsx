@@ -42,6 +42,7 @@ import { PlayFailedDialog, PlayPrepareDialog } from "../components/play-prepare-
 import { PlayUnsavedDialog, type PlayUnsavedChoice } from "../components/play-unsaved-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
 import { SimulationControlsProvider } from "./simulation-controls-context";
+import { GraphDebugProvider } from "./graph-debug-context";
 import { PlayOverlay } from "../components/play-overlay";
 import { PreparingPreviewDialog, type PreviewPreparePhase } from "../components/preparing-preview-dialog";
 import { PreviewBuildOverlay } from "../components/preview-build-overlay";
@@ -296,7 +297,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   return (
     <DiagnosticResultsProvider>
       <PlayDiagnosticsProvider>
-        <PlaySessionProvider>{children}</PlaySessionProvider>
+        <GraphDebugProvider>
+          <PlaySessionProvider>{children}</PlaySessionProvider>
+        </GraphDebugProvider>
       </PlayDiagnosticsProvider>
     </DiagnosticResultsProvider>
   );
@@ -1418,7 +1421,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           documentOverrides: playDocumentOverrides(assetRegistry, sourceDocuments),
           project: projectDocument,
           createScope: playRequestInputsRef.current.documents.createAssetLoadScope,
-          compile: required => collectPlayPreviewScripts(required, sourceDocuments, projectDocument),
+          traceExecution: simulating,
+          compile: required => collectPlayPreviewScripts(required, sourceDocuments, projectDocument, { traceExecution: simulating }),
         };
         playSourceHostRef.current = sourceHost;
         const projectAssets = requiredProjectAssets(assetRegistry, projectDocument);

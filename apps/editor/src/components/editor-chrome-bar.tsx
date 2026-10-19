@@ -31,7 +31,7 @@ import {
   Maximize2Icon,
   EllipsisIcon,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   CONTENT_BROWSER_ID,
   type DocumentRef,
@@ -79,7 +79,11 @@ import {
 } from "../context/document-context";
 import { usePlay } from "../context/play-context";
 import { useSimulationControls } from "../context/simulation-controls-context";
+import { useGraphDebugStore } from "../context/graph-debug-context";
 import { SimulationToolbarControls } from "./simulation-toolbar-controls";
+import { GraphDebugInstanceSelect } from "./graph-debug-instance-select";
+import { registryClassParentLookup } from "../lib/class-asset-lookup";
+import { classGraphDebugTarget } from "../lib/graph-debug-target";
 import { useValidation } from "../context/validation-context";
 import type { OpenDocument } from "../services/document-service";
 import { modelSimpleColliderCounter, physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
@@ -314,6 +318,7 @@ export function EditorChromeBar({
   // A running Simulation turns Simulate into Stop with its controls beside it.
   const simulationRunning = sessionState.mode === "simulate" && !sessionState.quarantined;
   const simulationControls = useSimulationControls();
+  const graphDebug = useGraphDebugStore();
   const { errorCount, setDiagnostics } = useValidation();
   const [settingsScope, setSettingsScope] = useState<
     "project" | "engine" | null
@@ -353,6 +358,18 @@ export function EditorChromeBar({
   );
   const activeKind = visibleDocuments.find((doc) => doc.id === activeDocumentId)
     ?.ref.kind;
+  // A running Simulation debugs the focused Class graph against the live instances of its class.
+  const activeGraphPath = activeKind === "graph"
+    ? visibleDocuments.find((doc) => doc.id === activeDocumentId)?.ref.path
+    : undefined;
+  const debugClassId = useMemo(() => {
+    void registryEpoch;
+    if (!simulationRunning || activeGraphPath === undefined) return null;
+    return classGraphDebugTarget(activeGraphPath, registryClassParentLookup(assetRegistry))?.classId ?? null;
+  }, [simulationRunning, activeGraphPath, assetRegistry, registryEpoch]);
+  useEffect(() => {
+    graphDebug?.setTarget(debugClassId ? { kind: "class", classId: debugClassId } : null);
+  }, [graphDebug, debugClassId]);
   const canFocus = canFocusLayout(activeKind);
 
   const sensors = useSensors(
@@ -829,15 +846,18 @@ export function EditorChromeBar({
         <div className="editor-global-toolbar-center">
           <div className="editor-play-island" data-testid="play-debug-island">
             {simulationRunning ? (
-              <SimulationToolbarControls
-                controls={simulationControls}
-                stopping={sessionState.lifecycle === "stopping"}
-                phone={phone}
-                onStop={() => { void sessionOwner.stop(); }}
-                onReturnToScene={simulationDocumentId && activeDocumentId !== simulationDocumentId
-                  ? () => setActiveDocument(simulationDocumentId)
-                  : undefined}
-              />
+              <>
+                <SimulationToolbarControls
+                  controls={simulationControls}
+                  stopping={sessionState.lifecycle === "stopping"}
+                  phone={phone}
+                  onStop={() => { void sessionOwner.stop(); }}
+                  onReturnToScene={simulationDocumentId && activeDocumentId !== simulationDocumentId
+                    ? () => setActiveDocument(simulationDocumentId)
+                    : undefined}
+                />
+                {debugClassId ? <GraphDebugInstanceSelect /> : null}
+              </>
             ) : (
             <Tooltip>
               <TooltipTrigger

@@ -18,6 +18,7 @@ export const domLogicTests = [
   "packages/graph-ui/src/graph-connect.test.ts",
   "packages/graph-ui/src/graph-marquee.test.ts",
   "packages/graph-ui/src/graph-canvas-api.test.ts",
+  "packages/graph-ui/src/run-flash.test.ts",
   "packages/vfs/src/web-adapter.test.ts",
   "packages/vfs/src/test-mode.test.ts",
   "packages/vfs/src/template-storage.test.ts",

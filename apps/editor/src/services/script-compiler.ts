@@ -112,6 +112,14 @@ function jsIdent(name: string): string {
   return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`;
 }
 
+/**
+ * The id a Class's function graph compiles and reports under (script diagnostics,
+ * the graph debugger's execution trace): its export name, not the member id.
+ */
+export function functionGraphExportName(member: { id: string; name?: string }): string {
+  return jsIdent(member.name ?? member.id);
+}
+
 export function compileGraphDocument(
   content: SerializedGraph | LogicGraph,
   options: {
@@ -123,6 +131,8 @@ export function compileGraphDocument(
     parentClassId?: string | null;
     stripDevelopmentOnly?: boolean;
     instrumentInfiniteLoops?: boolean;
+    /** Simulation compiles report what runs for the instance the graph debugger follows. */
+    instrumentExecutionTrace?: boolean;
     inputAssets?: HydrateGraphOptions["inputAssets"];
     dataAssets?: HydrateGraphOptions["dataAssets"];
     enums?: HydrateGraphOptions["enums"];
@@ -191,6 +201,7 @@ export function compileGraphDocument(
         tagRegistry: options.tagRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
         instrumentInfiniteLoops,
+        instrumentExecutionTrace: options.instrumentExecutionTrace,
         isLatentFunction,
       }),
     );
@@ -198,7 +209,7 @@ export function compileGraphDocument(
   if (serialized?.functionGraphs) {
     for (const [memberId, slice] of Object.entries(serialized.functionGraphs)) {
       const member = serialized.members?.find((entry) => entry.id === memberId);
-      const exportName = jsIdent(member?.name ?? memberId);
+      const exportName = functionGraphExportName({ id: memberId, name: member?.name });
       const fnLogic = materializeLogicGraph(
         { nodes: slice.nodes, edges: slice.edges },
         exportName,
@@ -218,6 +229,7 @@ export function compileGraphDocument(
           exportName,
           stripDevelopmentOnly: options.stripDevelopmentOnly,
           instrumentInfiniteLoops,
+          instrumentExecutionTrace: options.instrumentExecutionTrace,
           localPreamble: localVariablePreamble(locals),
           isLatentFunction,
         }),
@@ -233,6 +245,7 @@ export function compileGraphDocument(
         tagRegistry: options.tagRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
         instrumentInfiniteLoops,
+        instrumentExecutionTrace: options.instrumentExecutionTrace,
         isLatentFunction,
       }),
     );
@@ -439,6 +452,8 @@ export function graphsNeedCompile(
 
 export type GraphCompileCacheOptions = {
   stripDevelopmentOnly?: boolean;
+  /** Editor Simulation only; release compiles ignore it. Part of the cache key. */
+  instrumentExecutionTrace?: boolean;
   inputAssets?: HydrateGraphOptions["inputAssets"];
   dataAssets?: HydrateGraphOptions["dataAssets"];
   enums?: HydrateGraphOptions["enums"];
@@ -505,6 +520,8 @@ function graphDocumentCompileCacheKey(
       parentClassId: doc.parentClassId,
     }),
     stripDevelopmentOnly: options.stripDevelopmentOnly === true,
+    // The compiler ignores the trace for a release compile, so it cannot split that key.
+    instrumentExecutionTrace: options.instrumentExecutionTrace === true && options.stripDevelopmentOnly !== true,
     types:
       options.typesFingerprint ??
       typeSchemasFingerprint(options.enums, options.structs, options.dataDefinitions),
@@ -626,6 +643,7 @@ function compileGraphDocumentCached(
       className: doc.className,
       parentClassId: doc.parentClassId,
       stripDevelopmentOnly: options.stripDevelopmentOnly,
+      instrumentExecutionTrace: options.instrumentExecutionTrace,
       inputAssets: options.inputAssets,
       dataAssets: options.dataAssets,
       enums: options.enums,

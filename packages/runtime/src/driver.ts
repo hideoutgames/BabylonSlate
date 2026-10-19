@@ -31,7 +31,9 @@ import {
   type SimulationCaptureRequest,
   type DiagnosticOperationRequest,
   type DiagnosticOperationResult,
+  type DebugObserveTarget,
 } from "@babylonslate/bridge";
+import { ScriptDebugObserver } from "./script-debug";
 import {
   ClassRegistry,
   World,
@@ -304,6 +306,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly layers: SceneLayers;
   private readonly dataCatalog: RuntimeDataCatalog;
   private readonly scriptHost: ScriptHost;
+  private readonly scriptDebug: ScriptDebugObserver;
 
   get lastScriptMs(): number {
     return this.ticks.lastScriptMs;
@@ -489,6 +492,11 @@ class InProcessRuntime implements RuntimeDriver {
     for (const [guid, value] of Object.entries(options.renderTargets ?? {})) this.sourceRenderTargets.set(guid, value);
     for (const [guid, value] of Object.entries(options.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
     this.scriptHost = this.createScriptHost(options, registry);
+    this.scriptDebug = new ScriptDebugObserver({
+      world: () => this.world,
+      emit: (command) => this.emit(command),
+      setDebugTrace: (object, sink) => this.scriptHost.setDebugTrace(object, sink),
+    });
 
     // 8. Lifecycle hooks, in Stop order.
     this.registerSubsystems();
@@ -1365,6 +1373,11 @@ class InProcessRuntime implements RuntimeDriver {
     this.behaviourTrees.setStateObserved(observed);
   }
 
+  applyDebugObserve(target: DebugObserveTarget | null, instanceId: string | null): void {
+    if (this.stopped) return;
+    this.scriptDebug.observe(target, instanceId);
+  }
+
   applySceneLayerControl(message: Extract<ControlMessage, { type: "sceneLayerControl" }>): void {
     this.overlay.control(message);
   }
@@ -1792,6 +1805,7 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.world.end();
     // Release scripts.
+    this.scriptDebug.dispose();
     this.scriptHost.dispose();
     this.scriptRuntime.unregisterClasses();
     this.anchors.clear();
@@ -1922,6 +1936,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.tickSceneSystems(simDt);
     if (this.stopped) return;
     this.ticks.closePhaseTiming();
+    this.scriptDebug.flush(this.world.clock.tickIndex);
     this.flushComponentCommands();
     const completedFrameId = this.frameId;
     this.frameId += 1;
@@ -2100,7 +2115,8 @@ class InProcessRuntime implements RuntimeDriver {
   private emit(command: CommandMessage): void {
     command = this.voices.prepare(this.inspector.annotate(command));
 
-    this.commandRevision++;
+    // Debug views carry no scene state; counting them would break a final-capture fence.
+    if (command.type !== "executionTrace" && command.type !== "debugRoster") this.commandRevision++;
     // Every log line and Print String reaches the ring that `dumplog` and the
     // session report read, not only the ones routed through reportLog.
     if (command.type === "log") {

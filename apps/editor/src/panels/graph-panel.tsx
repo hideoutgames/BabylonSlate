@@ -44,7 +44,8 @@ import {
   validateSerializedGraph,
   defaultNodeRegistry,
 } from "../services/graph-validation";
-import { classIdForGraphPath } from "../services/script-compiler";
+import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
+import { useClassGraphRunTrace } from "../context/graph-debug-context";
 import { sceneAssetClassId } from "@babylonslate/object-model";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import {
@@ -141,6 +142,14 @@ export function GraphPanel(
     () => serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),
     [doc?.ref.kind, doc?.content],
   );
+  // While a Simulation follows an instance of this Class, the canvas shows what that instance ran in this graph.
+  const runGraphId = activeFunctionId
+    ? functionGraphExportName({
+        id: activeFunctionId,
+        name: graphContent?.members?.find((member) => member.id === activeFunctionId)?.name,
+      })
+    : "event-graph";
+  const runTrace = useClassGraphRunTrace(doc?.ref.kind === "graph" ? doc.ref.path : undefined, classId, runGraphId);
   const memberSymbols = useMemo(() => {
     const graphs = { ...otherClassGraphs };
     if (classId && graphContent) graphs[classId] = graphContent;
@@ -498,6 +507,7 @@ export function GraphPanel(
             renderNodeBody={renderNodeBody}
             key={`${documentId}:${activeFunctionId ?? "event"}`}
             initialGraph={graph}
+            runTrace={runTrace}
             commitPositionsOnDragEnd
             singleExecOutputOnConnect
             colorMode="dark"

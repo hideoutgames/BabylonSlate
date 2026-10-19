@@ -90,6 +90,12 @@ import {
 /** Class graphs, Animation Graphs and the typed asset catalogs their compilation reads. */
 export const GRAPH_SIGNATURE_KINDS = ["graph", "anim-graph", "input-action", "input-axis", "data-definition", "data-tree", "structure", "enum"] as const;
 
+/** How a Play compile differs from the default editor compile. */
+export type PlayScriptCompileOptions = {
+  /** A Simulation compiles Class graphs with the probes its graph debugger reads. */
+  traceExecution?: boolean;
+};
+
 export interface PlayContentServiceOptions {
   documents: DocumentService;
   project: ProjectService;
@@ -357,7 +363,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     });
   };
 
-  const collectPlayPreviewScripts = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], sourceProject?: ProjectDocument): Promise<{
+  const collectPlayPreviewScripts = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], sourceProject?: ProjectDocument, compileOptions?: PlayScriptCompileOptions): Promise<{
     bundles: ScriptBundleEntry[];
     diagnostics: Diagnostic[];
   }> => {
@@ -420,6 +426,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         structs: typeSchemas.structs,
         dataDefinitions: typeSchemas.dataDefinitions,
         tagRegistry: (sourceProject ?? options.projectDocument())?.settings.tags,
+        instrumentExecutionTrace: compileOptions?.traceExecution,
         cache: requiredGuids ? undefined : compileCache,
       }),
       ...compileAnimGraphScripts(animDocuments, {
