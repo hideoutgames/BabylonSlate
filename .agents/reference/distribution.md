@@ -144,7 +144,7 @@ Find the run in Actions and preserve its run ID, source and per-platform manifes
 | Invalid source, version, missing checks or conflicting tag | Correct the request or complete exact-source checks; dispatch again. Never move a tag. |
 | Missing credentials, signing failure, icon/privacy rejection | Fix environment/assets or compliance configuration; inspect the sanitized stage result. Do not publish private logs to diagnose it. |
 | Duplicate/superseded Apple number | Fresh dispatch. Audit offsets if the workflow was renamed/recreated; never wrap counters. |
-| Upload failed with uncertain outcome | Check App Store Connect for the exact version/build before retrying; an upload error does not mean Apple received nothing. |
+| Upload failed with uncertain outcome | Check App Store Connect for the exact version/build before retrying; an upload error does not mean Apple received nothing. The log prints Apple's response: up to six `ITMS-` or error lines, with team, key, issuer and app IDs, emails, UUIDs, absolute paths and token-like strings redacted (`scripts/distribution/apple-upload-errors.mjs`); everything else stays private. |
 | Uploaded, still processing, finalization API failure | Retry only finalization against the original identity (command above). Do not archive/upload again. |
 | Awaiting Beta App Review | Complete beta review/contact/compliance details privately in App Store Connect, then retry finalization (separate from App Store submission). |
 | One desktop/Android job failed | Rerun failed jobs; the shared validate identity keeps one tag/version and publication waits for every requested GitHub Release platform. Preserve successful artifacts. |
