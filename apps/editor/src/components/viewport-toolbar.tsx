@@ -43,6 +43,7 @@ import {
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { GridSizeDialog } from "./grid-size-dialog";
+import { anchorBelow } from "../lib/menu-anchor";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { IconActionButton } from "./icon-action-button";
 import { useKeybindings, useKeybindCommand } from "../context/keybind-context";
@@ -99,9 +100,16 @@ export function ViewportToolbar({
   const [numberPrompt, setNumberPrompt] = useState<null | "grid" | "camera">(
     null,
   );
+  // Grid Settings opens as a context popup under the control that asked for it.
+  const [gridAnchor, setGridAnchor] = useState<{ x: number; y: number } | null>(null);
+  const openGridSettings = (fromTestId: string) => {
+    const from = toolbarRef.current?.querySelector(`[data-testid="${testIdPrefix}${fromTestId}"]`);
+    setGridAnchor(from ? anchorBelow(from) : null);
+    setNumberPrompt("grid");
+  };
   const snapMenu = useLongPressMenu({
     suppressClickAfterHold: true,
-    onMenu: () => setNumberPrompt("grid"),
+    onMenu: () => openGridSettings("gizmo-snap-toggle"),
   });
   const {
     gizmoTool,
@@ -306,7 +314,7 @@ export function ViewportToolbar({
       id: "grid-size",
       label: "Grid Settings",
       testId: `${testIdPrefix}viewport-grid-size`,
-      onSelect: () => setNumberPrompt("grid"),
+      onSelect: () => openGridSettings("viewport-settings"),
     },
     {
       id: "camera-speed",
@@ -540,6 +548,7 @@ export function ViewportToolbar({
       ) : null}
       <GridSizeDialog
         open={numberPrompt === "grid"}
+        anchor={gridAnchor}
         onOpenChange={(open) => {
           if (!open) setNumberPrompt(null);
         }}

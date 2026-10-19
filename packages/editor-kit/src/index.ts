@@ -13,7 +13,9 @@ export {
   CatalogMenu,
   type CatalogMenuItem,
   type CatalogMenuProps,
+  popupMenuFrame,
 } from "./catalog-menu";
+export { POPUP_PICKER_ATTRIBUTE, usePopupOutsideDismiss } from "./use-popup-outside-dismiss";
 export {
   CatalogCard,
   CatalogCardGrid,

@@ -238,7 +238,7 @@ describe("ViewportToolbar", () => {
     expect(drop).toHaveBeenCalledOnce();
   });
 
-  it("opens snap settings by right-click without toggling, and Cancel discards edits", () => {
+  it("opens snap settings by right-click without toggling, and a press outside keeps valid edits", async () => {
     harness.scene!.settings.grid.tileSize = 4;
     harness.scene!.settings.grid.snapTranslate = 0.5;
     harness.scene!.settings.grid.snapRotateDeg = 45;
@@ -251,19 +251,24 @@ describe("ViewportToolbar", () => {
       "45",
     );
     expect(screen.getByLabelText("Scale Snap")).toHaveProperty("value", "0.1");
-    fireEvent.change(screen.getByLabelText("Scale Snap"), {
-      target: { value: "2" },
-    });
-    fireEvent.change(screen.getByLabelText("Grid Size"), { target: { value: "8" } });
-    fireEvent.change(screen.getByLabelText("Grid Snap"), { target: { value: "2" } });
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(harness.setSnapEnabled).not.toHaveBeenCalled();
+    // Unchanged values close without writing the scene.
+    fireEvent.pointerDown(document.body);
     expect(harness.applySceneChange).not.toHaveBeenCalled();
     fireEvent.contextMenu(snap);
-    expect(screen.getByLabelText("Grid Size")).toHaveProperty("value", "4");
-    expect(screen.getByLabelText("Grid Snap")).toHaveProperty("value", "0.5");
-    expect(screen.getByLabelText("Scale Snap")).toHaveProperty("value", "0.1");
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.change(screen.getByLabelText("Grid Size"), { target: { value: "8" } });
+    fireEvent.change(screen.getByLabelText("Grid Snap"), { target: { value: "2" } });
+    fireEvent.pointerDown(document.body);
+    expect(harness.setSnapEnabled).not.toHaveBeenCalled();
+    expect(harness.applySceneChange).toHaveBeenCalledOnce();
+    expect(harness.applySceneChange).toHaveBeenLastCalledWith(
+      "scene:assets/Main.scene.babasset",
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          grid: expect.objectContaining({ tileSize: 8, snapTranslate: 2, snapScale: 0.1 }),
+        }),
+      }),
+    );
+    await waitFor(() => expect(screen.queryByTestId("viewport-grid-size-dialog")).toBeNull());
     fireEvent.click(snap, { detail: 0 });
     expect(harness.setSnapEnabled).toHaveBeenCalledWith(true);
   });
@@ -279,7 +284,7 @@ describe("ViewportToolbar", () => {
       clientY: 20,
     });
     act(() => vi.advanceTimersByTime(500));
-    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Grid Settings" })).toBeTruthy();
     fireEvent.pointerUp(snap, { pointerType: "touch", pointerId: 4 });
     fireEvent.click(snap, { detail: 1 });
     expect(harness.setSnapEnabled).not.toHaveBeenCalled();
@@ -310,7 +315,7 @@ describe("ViewportToolbar", () => {
       if (reason === "scroll") fireEvent.scroll(document);
       if (reason === "unmount") unmount();
       act(() => vi.advanceTimersByTime(600));
-      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
       expect(harness.setSnapEnabled).not.toHaveBeenCalled();
     },
   );
@@ -338,7 +343,7 @@ describe("ViewportToolbar", () => {
     fireEvent.change(screen.getByLabelText("Grid Snap"), {
       target: { value: "0.25" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(harness.patchPrefs).toHaveBeenCalledWith({
       viewportGridSize: 2,
       viewportSnapTranslate: 0.25,
@@ -570,7 +575,7 @@ describe("ViewportToolbar", () => {
     );
   });
 
-  it("finishes field drafts on Save, keeping the dialog open for an invalid one", () => {
+  it("finishes field drafts on Done, keeping the popup open for an invalid one", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
     fireEvent.click(screen.getByTestId("viewport-grid-size"));
